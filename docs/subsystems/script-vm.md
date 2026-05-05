@@ -141,6 +141,7 @@ These are sub-dispatchers — the operand byte selects a sub-command.
 | 1 | base 13 bytes; +2+payload when peek-at-`pc+13` byte is 0x40 | Effect / sprite spawn with optional captured-PC. Walks actor list at `_DAT_8007C354`; if found, skips spawn. Otherwise calls `FUN_801E5668(ctx, ..., pos, packed24, mode)`; `mode = 1 + (op0 & 1)`. When `capture_flag == 0x40`, captures payload bytes onto the spawned actor's `+0x94`. |
 | 2 | 3 bytes | Actor-pool capture-and-yield. Walks list looking for entry whose `+0x90 == ctx`; if found AND `b1 == 0x40`, captures forward-PC and emits `caseD_4` (STATE_RESUME → Yield). |
 | 3 | 4 bytes | Play 3D animation via `func_0x800252EC(operand1+1, ctx+0x14, ctx+0x24)`. Looks up an offset in the buffer at `_DAT_8007B8D0` (= the `bse.dat` master bank) using `*(u16*)(buf + 2 + idx*2)`, then spawns an actor via `FUN_80021B04(pos, ?, buf+ofs, 0x1000)`. Buffer layout matches the [ANM container shape](../formats/anm.md). |
+| 4..=15 | — | No `case` arm in `FUN_801de840`; falls through `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` — halts at PC. |
 
 #### 0x35 BGM
 
@@ -223,6 +224,7 @@ If halt was *not* acquired: falls through to a generic skip-and-return path.
 | 0xC | 5 bytes | Allocate scripted actor via `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`. |
 | 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
+| 0x16+ | — | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) — halts at PC. |
 
 #### 0x43 sub-0x10..0x15 — emitter setup family
 
@@ -266,7 +268,7 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
 | 0x4B | `ANIMATE` | Multi-keyframe setup. Writes `ctx[+0xB0+N] / +0xB8 / +0xC8`, sets `+0x10` bit 0x1000 (animation flag). PC += 3 + count*4. |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See below. |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
-| 0x4E | `INVENTORY_CMP` | Compare-and-jump across page-banked inventory state and party-money/XP banks. |
+| 0x4E | `INVENTORY_CMP` | Compare-and-jump across page-banked inventory state and party-money/XP banks. Sub-ops 0/1 (page-banked compare, 7 bytes), 2/3/5/6/7/8/9 (absolute jump to operand[2..4]), 10/11 (party-bank u32 compare, 9 bytes), 12..=15 (no test, fall through default arm with PC += 7). Sub-op 4 calls `func_0x80056798` (BIOS Rand thunk) and returns the random value as the next PC — almost certainly a dev/debug stub, not yet ported. |
 | 0x4F | `SCENE_REGISTER_WRITE` | Writes three `u16` values to `_DAT_801C6EA4 + 0x10/+0x12/+0x14`. |
 
 ### 0x4C MENU_CTRL — outer-nibble dispatch
@@ -315,6 +317,7 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | B | `_DAT_8007BCD4` | Sister of A. |
 | C | `_DAT_8007BCD8` | Sister of A. |
 | D | `_DAT_8007B910` | Same shape but value is `(input * _DAT_8008457C) >> 12` (fixed-point scale; host owns the transform). |
+| E / F | — | Inner switch's `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()` — halts at PC. |
 
 Sub-9's tristate dispatch:
 

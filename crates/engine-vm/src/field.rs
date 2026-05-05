@@ -2599,7 +2599,16 @@ pub fn step<H: FieldHost>(
                                 }
                             }
                         }
-                        _ => StepResult::Pending { opcode, pc },
+                        // Sub-ops 0xE/0xF have no `case` arm in the original
+                        // case-4 inner switch (line 6188 of the dump): they
+                        // hit `default: func_0x8001a068(s_SUB_40_ERROR_801cec88);
+                        // iVar18 = switchD_801e00f4::default(); return iVar18;`
+                        // — the dispatcher's default returns `param_2` ⇒ halt
+                        // at PC.
+                        0xE..=0xF => StepResult::Halt { final_pc: pc },
+                        // `op0 & 0x0F` is at most 0xF; the arms above cover
+                        // every value, so this arm is dead code.
+                        16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                     }
                 }
                 // Outer nibble 5 — sound directional + dialog dispatch.
@@ -3460,7 +3469,16 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                _ => StepResult::Pending { opcode, pc },
+                // Sub-op 4: `iVar18 = func_0x80056798(); return iVar18;` —
+                // FUN_80056798 is a BIOS thunk (`jr 0xA0` with t1=0x2F = Rand).
+                // The original returns the random value as the next PC, which
+                // is broken in any sane execution. Almost certainly a dev /
+                // debug-only stub; treat as `Pending` until a host hook
+                // surfaces actual usage.
+                4 => StepResult::Pending { opcode, pc },
+                // `mode_byte >> 4` is at most 0xF; arms above cover every
+                // value, so this arm is dead code.
+                16..=u8::MAX => unreachable!("mode_byte >> 4 is at most 0xF"),
             }
         }
 
@@ -3655,7 +3673,12 @@ pub fn step<H: FieldHost>(
                         next_pc: pc + header_size + 2,
                     }
                 }
-                _ => StepResult::Pending { opcode, pc },
+                // Sub-ops 4..=0xF: original has no `case` arm; falls through
+                // `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }`
+                // at line 4811-4814 of the dump ⇒ halt at PC.
+                4..=15 => StepResult::Halt { final_pc: pc },
+                // `op0 >> 4` is at most 0xF; arms above cover every value.
+                16..=u8::MAX => unreachable!("op0 >> 4 is at most 0xF"),
             }
         }
 
@@ -3974,7 +3997,12 @@ pub fn step<H: FieldHost>(
                         next_pc: pc + header_size + 13,
                     }
                 }
-                _ => StepResult::Pending { opcode, pc },
+                // Sub-ops 0x16..=0xFF: original `case 0x43` inner switch has
+                // no `case` arm beyond 0x15. Such sub-ops fall out of the
+                // inner switch with `iVar45 = param_2` (initialised at
+                // line 4511 of the dump) and hit the outer `break;` ⇒
+                // halt at PC.
+                _ => StepResult::Halt { final_pc: pc },
             }
         }
 
@@ -5415,6 +5443,54 @@ mod tests {
         assert_eq!(r, StepResult::Advance { next_pc: 19 });
     }
 
+    #[test]
+    fn op_34_sub_f_halts_at_pc() {
+        // Top of the 4-bit sub-op range. Same dispatch path as sub-4.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &[0x34, 0xF0, 0], 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_43_subop_ff_halts_at_pc() {
+        // 0xFF is the sentinel "uninitialised bytecode" byte. 0x43 sub-op
+        // 0xFF has no original handler ⇒ halt at PC.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x43, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            0,
+        );
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n4_sub_e_or_f_halts_at_pc() {
+        // 0x4C outer-nibble 4 inner switch (line 5901 of the dump) has cases
+        // 0..=0xD followed by an explicit `default:` that prints
+        // `SUB_40_ERROR` and routes via `switchD_801e00f4::default()` ⇒
+        // halt at PC for sub-ops 0xE/0xF. The instruction is 6 bytes.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x4E, 0x00, 0x00, 0x00, 0x00],
+            0,
+        );
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x4F, 0x00, 0x00, 0x00, 0x00],
+            0,
+        );
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
     // -- 0x3E WARP / INTERACT -------------------------------------------
 
     #[test]
@@ -6769,13 +6845,14 @@ mod tests {
     }
 
     #[test]
-    fn op_34_high_subop_pending() {
+    fn op_34_high_subop_halts() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // sub-4..=sub-F (op0 >> 4 >= 4) is the unhandled fallthrough — the
-        // original returns `iVar47` (a no-op stay-in-place) for these.
+        // sub-4..=sub-F (op0 >> 4 >= 4) hits the original's
+        // `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` at
+        // line 4811-4814 of the dump ⇒ halt at PC.
         let r = step(&mut host, &mut ctx, &[0x34, 0x40, 0], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x34, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
     }
 
     // -- 0x43 ACTOR_CTRL sub-8 ------------------------------------------
@@ -6795,17 +6872,19 @@ mod tests {
     }
 
     #[test]
-    fn op_43_other_subops_pending() {
+    fn op_43_other_subops_halt() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // Sub-op 0x16 (out-of-range, no handler) — still Pending.
+        // Sub-op 0x16 (no handler in the original `case 0x43` inner switch);
+        // falls through with `iVar45 = param_2` (initialised at line 4511 of
+        // the dump) ⇒ halt at PC.
         let r = step(
             &mut host,
             &mut ctx,
             &[0x43, 0x16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             0,
         );
-        assert!(matches!(r, StepResult::Pending { opcode: 0x43, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
     }
 
     #[test]
