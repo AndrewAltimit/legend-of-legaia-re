@@ -171,7 +171,7 @@ PC += 4.
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x37 / 0x41 / 0x47 | `YIELD` family | 1 byte (0x47 is 4 bytes) | Save PC into `ctx[+0x94]`, clear `ctx[+0x54]`, set `ctx[+0x10]` bit 0x400 (HALT). If ctx is the player, also propagate the halt to the caller's ctx. |
-| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Camera/visual register write. If `op1 & 0x7F == 0`, copies `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx[+0x26]`. |
+| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Camera/visual register write. If `op1 & 0x7F == 0`: simple path — copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx[+0x26]`. Else: halt-acquire path — same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player), yield with `resume_pc = pc + 3`; on fail fall through to dispatcher default. |
 | 0x39 | `PLAY_SFX` | `[39, sfx_id]` | Calls `func_0x8004313C()` then `func_0x800421D4(sfx_id, 1)`. |
 | 0x3A | `ADD_MONEY` | `[3A, b0, b1, b2]` | 24-bit signed delta: `_DAT_8008459C += sext24(operand)`. Clamp to `[0, 9999999]`. |
 | 0x3B | `SET_ITEM_COUNT` | `[3B, slot, count]` | Set inventory entry: `*(byte*)(0x80084340 + (slot & 0xF) + (slot >> 4) * 0x414) = count`, then `func_0x80042558()` to refresh inventory display. Inventory pages of 0x414 bytes. |
@@ -261,7 +261,7 @@ func_0x800468a4(6, signed16(operand[1..3]), signed16(operand[3..5]),
 | 0x44 | `COUNTER` | `func_0x8003D064` 3-int return + `func_0x8003BDE0` — likely a per-frame counter / score / hit-counter tick. |
 | 0x45 | `CAMERA` | Sub-dispatch on `op0 & 0xC0`: `0x00` = configure 10 sub-words, `0x40` = LOAD (`FUN_801DBC20`), `0x80` = SAVE (`FUN_801DE004`), `0xC0` = APPLY (`FUN_801DAB90` + `FUN_801DAA50` then absolute jump). |
 | 0x46 | `RENDER_CFG` | Fog/render params. `op0 == 0x24` writes 4 bytes (DAT_1F8003E8-EB); else short 2-byte form. |
-| 0x49 | `STATE_RESUME` | Multi-frame state machine on `_DAT_8007B450`: tristate (Idle / Armed / Done) with sub-cases 0..0xD. Done-state sub-6/8/9/C/D all jump through `LAB_801df898` for PC += 5. |
+| 0x49 | `STATE_RESUME` | Multi-frame state machine on `_DAT_8007B450`: tristate (Idle / Armed / Done) with sub-cases 0..0xD. Done-state sub-6/8/9/C/D all jump through `LAB_801df898` for PC += 5. Done-state sub-0 walks an inline MES-shape payload via `func_0x8003CA38` (counts bytes > 0x1E with one-byte peek-extension for `0xCx` prefix bytes); `length = pbVar47[2]` selects the arg-stream length and PC advances by `5 + length + walked`. |
 | 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |
 | 0x4B | `ANIMATE` | Multi-keyframe setup. Writes `ctx[+0xB0+N] / +0xB8 / +0xC8`, sets `+0x10` bit 0x1000 (animation flag). PC += 3 + count*4. |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See below. |

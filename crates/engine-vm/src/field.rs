@@ -1478,7 +1478,8 @@ pub trait FieldHost {
     /// party-leader/scene state. PC += 2.
     fn op4c_n_e_sub_e_snapshot_84570(&mut self) {}
 
-    /// Op 0x43 sub-0/1/A/B — halt-acquire dispatcher.
+    /// Halt-acquire dispatcher used by op 0x38 (CAM_CFG yield path) and
+    /// op 0x43 sub-0/1/A/B (actor-control halts).
     ///
     /// The original at `0x801df30c+` halts the active script (and the
     /// system-channel caller, when the active ctx is the player) by:
@@ -1486,9 +1487,12 @@ pub trait FieldHost {
     /// - setting `ctx.flags |= 0x400` (HALT bit),
     /// - clearing `ctx.wait_accum`.
     ///
-    /// Then it returns the absolute resume PC via `func_0x8003CE9C(target)`:
+    /// For op 0x43 sub-0/1/A/B the resume PC is encoded in the operand:
     /// - Sub-0/1: `target = operand + 3` → bytecode bytes `pc+4..pc+6`.
     /// - Sub-A/B: `target = operand + 7` → bytecode bytes `pc+8..pc+10`.
+    ///
+    /// For op 0x38 the resume PC is `pc + 3` (post-instruction); there is no
+    /// operand-encoded target.
     ///
     /// Acquisition succeeds only when:
     /// - `ctx.saved_pc != 0` OR `ctx == player_ctx`, AND
@@ -1496,33 +1500,42 @@ pub trait FieldHost {
     ///   `_DAT_801C6EA4 + 0x8` is non-zero.
     ///
     /// On success: VM emits `Yield { resume_pc: target_pc }` (the host's
-    /// state-resume layer drives re-entry). On failure: VM advances PC by
-    /// the default amount (5 for sub-0/1, 9 for sub-A/B).
+    /// state-resume layer drives re-entry). On failure for op 0x43 the VM
+    /// advances PC by the default amount (5 for sub-0/1, 9 for sub-A/B); on
+    /// failure for op 0x38 the VM `Halt`s at the current PC (matching the
+    /// original's `switchD_801e00f4::default()` fallthrough).
+    ///
+    /// `which` is the originating opcode/sub-op tag so hosts that need to
+    /// distinguish the call site can — it's `0x38` for op 0x38, and the raw
+    /// op-0x43 sub-op (`0`, `1`, `0xA`, `0xB`) for op 0x43.
     ///
     /// The default impl returns `true` (always acquire), which keeps the
     /// original's control-flow shape; hosts that don't model the player
     /// pointer can model their own predicate.
-    fn op43_halt_acquire_predicate(&self, ctx: &FieldCtx, sub_op: u8) -> bool {
-        let _ = (ctx, sub_op);
+    fn field_halt_acquire_predicate(&self, ctx: &FieldCtx, which: u8) -> bool {
+        let _ = (ctx, which);
         true
     }
 
-    /// Side effect of [`op43_halt_acquire_predicate`] returning `true`.
+    /// Side effect of [`field_halt_acquire_predicate`] returning `true`.
     ///
     /// The original also writes the same halt fields onto the system-channel
     /// (`param_3`) when `ctx == player_ctx`. Engines that maintain a separate
     /// caller channel use this hook; default no-op.
     ///
     /// `resume_pc` is the absolute PC the script will resume at; `coords` is
-    /// the (x, y, z) position the original copies into a scratch local.
-    fn op43_halt_acquire_apply(
+    /// the (x, y, z) position the original copies into a scratch local on the
+    /// op-0x43 path. Op 0x38 passes `[0; 3]` since it has no coord operands.
+    ///
+    /// [`field_halt_acquire_predicate`]: FieldHost::field_halt_acquire_predicate
+    fn field_halt_acquire_apply(
         &mut self,
         ctx: &mut FieldCtx,
-        sub_op: u8,
+        which: u8,
         resume_pc: usize,
         coords: [i16; 3],
     ) {
-        let _ = (ctx, sub_op, resume_pc, coords);
+        let _ = (ctx, which, resume_pc, coords);
     }
 }
 
@@ -1618,6 +1631,34 @@ pub fn peek_extended(bytecode: &[u8], pc: usize) -> Option<u8> {
 fn grid_to_world(b: u8) -> u16 {
     let base = u16::from(b & 0x7F) * 0x80 + 0x40;
     if b & 0x80 != 0 { base + 0x40 } else { base }
+}
+
+/// MES-shape bytecode walker. Mirrors `FUN_8003ca38`: counts payload bytes
+/// starting at `buf[0]` until a terminator (`≤ 0x1E`), with a one-byte
+/// peek-extension for `0xCx` prefix bytes (each consumes its trailing pair
+/// byte). Used by op 0x49 sub-0 in the `Done` arm to advance past an inline
+/// MES payload.
+///
+/// Returns the number of bytes walked. The walker stops at the first
+/// terminator or at end-of-slice (defensive: the original reads past EOF
+/// without bounds checks).
+fn walk_mes_bytecode(buf: &[u8]) -> usize {
+    let mut i = 0;
+    while let Some(&b) = buf.get(i) {
+        if b <= 0x1E {
+            break;
+        }
+        if b & 0xF0 == 0xC0 {
+            if buf.get(i + 1).is_none() {
+                i += 1;
+                break;
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    i
 }
 
 /// Decode and execute one instruction.
@@ -1891,10 +1932,24 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x38 — CAM_CFG (simple path only). When op1 & 0x7F == 0, the
-        // original copies the lookup-table u16 into ctx.field_26 and returns
-        // pc+3. Other paths trigger a YIELD-like halt — those return
-        // `StepResult::Pending` until we port the full sub-dispatch.
+        // 0x38 — CAM_CFG. Two paths share the 3-byte instruction `[38, op0,
+        // op1]`:
+        //
+        // - **Simple path** (`op1 & 0x7F == 0`): the original copies
+        //   `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx.field_26`
+        //   and returns `pc + 3`.
+        //
+        // - **Halt-acquire path** (`op1 & 0x7F != 0`): identical predicate +
+        //   apply pair to op 0x43 sub-0/1/A/B (see
+        //   [`field_halt_acquire_predicate`]). Predicate succeeds → `ctx`
+        //   acquires the HALT bit + `saved_pc + wait_accum=0`, the player-vs-
+        //   caller mirror fires, and the VM yields with `resume_pc = pc + 3`
+        //   (script halts but its post-instruction PC is the resume target).
+        //   Predicate fails → the original falls into
+        //   `switchD_801e00f4::default()`; for op 0x38 that path is not in the
+        //   0x50/0x60/0x70 system-flag arm, so the dispatcher halts at PC.
+        //
+        // [`field_halt_acquire_predicate`]: FieldHost::field_halt_acquire_predicate
         0x38 => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -1909,11 +1964,15 @@ pub fn step<H: FieldHost>(
                 StepResult::Advance {
                     next_pc: pc + header_size + 2,
                 }
+            } else if host.field_halt_acquire_predicate(ctx, 0x38) {
+                let resume = pc + header_size + 2;
+                ctx.flags |= 0x400;
+                ctx.wait_accum = 0;
+                ctx.saved_pc = pc as u32;
+                host.field_halt_acquire_apply(ctx, 0x38, resume, [0; 3]);
+                StepResult::Yield { resume_pc: resume }
             } else {
-                // Yield-like sub-path lives in the original; defer until the
-                // YIELD machinery generalises (the original gates it on
-                // ctx.saved_pc != 0 etc.).
-                StepResult::Pending { opcode, pc }
+                StepResult::Halt { final_pc: pc }
             }
         }
 
@@ -3399,6 +3458,26 @@ pub fn step<H: FieldHost>(
                 Op49State::Done => {
                     host.op49_clear();
                     match sub_op {
+                        // sub-0 in DONE state — embedded MES bytecode walker.
+                        // Instruction: `[49, 0, length, ...length args..., ...mes_bytes]`.
+                        // The original reads `length = pbVar47[2]`, then calls
+                        // `func_0x8003ca38(pbVar47 + length + 3)` (= the MES-shape
+                        // walker that counts bytes > 0x1E, with one-byte
+                        // peek-extension for 0xCx prefix bytes), and returns
+                        // `param_2 + length + 5 + mes_count`.
+                        0 => {
+                            let Some(&length) = bytecode.get(operand + 1) else {
+                                return StepResult::Unknown { opcode, pc };
+                            };
+                            let mes_start = operand + 2 + length as usize;
+                            if mes_start > bytecode.len() {
+                                return StepResult::Unknown { opcode, pc };
+                            }
+                            let mes_count = walk_mes_bytecode(&bytecode[mes_start..]);
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 4 + length as usize + mes_count,
+                            }
+                        }
                         1 | 3 | 7 => StepResult::Advance {
                             next_pc: pc + header_size + 2,
                         },
@@ -3575,7 +3654,7 @@ pub fn step<H: FieldHost>(
                         ]),
                     ];
                     let target_offset = if wide { 7 } else { 3 };
-                    if host.op43_halt_acquire_predicate(ctx, sub_op) {
+                    if host.field_halt_acquire_predicate(ctx, sub_op) {
                         let resume = i16::from_le_bytes([
                             bytecode[operand + target_offset],
                             bytecode[operand + target_offset + 1],
@@ -3583,7 +3662,7 @@ pub fn step<H: FieldHost>(
                         ctx.flags |= 0x400;
                         ctx.wait_accum = 0;
                         ctx.saved_pc = pc as u32;
-                        host.op43_halt_acquire_apply(ctx, sub_op, resume, coords);
+                        host.field_halt_acquire_apply(ctx, sub_op, resume, coords);
                         StepResult::Yield { resume_pc: resume }
                     } else {
                         let advance_by = if wide { 9 } else { 5 };
@@ -4505,17 +4584,17 @@ mod tests {
         fn op4c_n_e_sub_e_snapshot_84570(&mut self) {
             self.n_e_snapshot_84570_calls += 1;
         }
-        fn op43_halt_acquire_predicate(&self, _ctx: &FieldCtx, _sub_op: u8) -> bool {
+        fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
             self.halt_acquire_predicate
         }
-        fn op43_halt_acquire_apply(
+        fn field_halt_acquire_apply(
             &mut self,
             _ctx: &mut FieldCtx,
-            sub_op: u8,
+            which: u8,
             resume_pc: usize,
             coords: [i16; 3],
         ) {
-            self.halt_acquire_calls.push((sub_op, resume_pc, coords));
+            self.halt_acquire_calls.push((which, resume_pc, coords));
         }
     }
 
@@ -5085,12 +5164,38 @@ mod tests {
     }
 
     #[test]
-    fn cam_cfg_complex_path_returns_pending() {
-        let mut host = TestHost::default();
+    fn cam_cfg_halt_acquire_succeeds_and_yields() {
+        // op1 != 0 → halt-acquire path. With the predicate set to true (the
+        // default test impl), the VM marks ctx halted (saved_pc + wait_accum
+        // + flag 0x400) and yields with `resume_pc = pc + 3`.
+        let mut host = TestHost {
+            halt_acquire_predicate: true,
+            ..Default::default()
+        };
         let mut ctx = FieldCtx::default();
-        // op1 != 0 -> the YIELD-like sub-path; not yet ported.
+        let r = step(&mut host, &mut ctx, &[0x38, 0x05, 0x01], 0);
+        assert_eq!(r, StepResult::Yield { resume_pc: 3 });
+        assert!(ctx.is_halted());
+        assert_eq!(ctx.flags & 0x400, 0x400);
+        assert_eq!(ctx.saved_pc, 0);
+        assert_eq!(ctx.wait_accum, 0);
+        assert_eq!(host.halt_acquire_calls, vec![(0x38u8, 3usize, [0i16; 3])]);
+    }
+
+    #[test]
+    fn cam_cfg_halt_acquire_failed_predicate_halts_at_pc() {
+        // op1 != 0 + predicate false → original falls into the dispatcher
+        // default-arm path; for op 0x38 (not a 0x50/0x60/0x70 opcode) that
+        // halts the VM at the current PC.
+        let mut host = TestHost {
+            halt_acquire_predicate: false,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &[0x38, 0x00, 0x01], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x38, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert!(!ctx.is_halted());
+        assert_eq!(host.halt_acquire_calls, vec![]);
     }
 
     // -- 0x39 PLAY_SFX ---------------------------------------------------
@@ -6487,11 +6592,80 @@ mod tests {
             ..Default::default()
         };
         let mut ctx = FieldCtx::default();
-        // Sub-ops 1/2/3/4/5/6/7/8/9/C/D are now wired. Pick sub-0xA which
+        // Sub-ops 0/1/2/3/4/5/6/7/8/9/C/D are now wired. Pick sub-0xA which
         // remains in the catch-all "_DAT_8007b450 = 0; return param_2" path
         // (any sub-op outside the explicit set falls through with no advance).
         let r = step(&mut host, &mut ctx, &[0x49, 0xA, 0, 0, 0], 0);
         assert!(matches!(r, StepResult::Pending { opcode: 0x49, .. }));
+    }
+
+    #[test]
+    fn op_49_done_sub0_walks_inline_mes_payload() {
+        // `[49, 0, length, ...length args..., ...mes_bytes, terminator, ...]`.
+        // The original at FUN_801DE840 (case 0x49 / DONE / sub-0) reads
+        // `length = pbVar47[2]`, then walks the inline MES bytecode starting
+        // at `pbVar47 + length + 3` via `func_0x8003ca38` (counts bytes > 0x1E,
+        // pair-extends 0xCx prefix bytes), and advances PC by `5 + length +
+        // walked`.
+        let mut host = TestHost {
+            op49_state_value: Op49State::Done,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        // length = 2 (two args), MES bytes = [0x50, 0xC3, 0xAA, 0x00 terminator]
+        // → walker counts 4 bytes (0x50 = 1, 0xC3 0xAA pair = 2, then sees 0x00).
+        let bc = &[
+            0x49, // opcode
+            0x00, // sub-op
+            0x02, // length
+            0xAA, 0xBB, // 2 args (ignored by walker — walker starts past them)
+            0x50, 0xC3, 0xAA, 0x00, // MES body (3 bytes walked) + terminator
+        ];
+        let r = step(&mut host, &mut ctx, bc, 0);
+        // PC = 0 + (header_size=1) + 4 + length=2 + walked=3 = 10. The
+        // terminator is NOT consumed by the walker — it stops at it.
+        assert_eq!(r, StepResult::Advance { next_pc: 10 });
+        assert_eq!(host.op49_clears, 1);
+    }
+
+    #[test]
+    fn op_49_done_sub0_empty_mes_advances_5_plus_length() {
+        // length = 0, no MES body, immediate terminator.
+        let mut host = TestHost {
+            op49_state_value: Op49State::Done,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let bc = &[0x49, 0x00, 0x00, 0x00];
+        let r = step(&mut host, &mut ctx, bc, 0);
+        // PC = 1 + 4 + 0 + 0 = 5.
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    }
+
+    #[test]
+    fn walk_mes_bytecode_terminates_on_low_byte() {
+        // Standard byte run terminates on a byte ≤ 0x1E.
+        assert_eq!(walk_mes_bytecode(&[0x50, 0x60, 0x70, 0x10, 0x80]), 3);
+        // Empty buffer.
+        assert_eq!(walk_mes_bytecode(&[]), 0);
+        // Immediate terminator.
+        assert_eq!(walk_mes_bytecode(&[0x05]), 0);
+    }
+
+    #[test]
+    fn walk_mes_bytecode_pair_extends_cx_prefix() {
+        // 0xC0..0xCF prefix bytes consume one extra byte each (the pair byte).
+        // 0xC0 0x05 (pair 0x05 NOT a terminator, because it's a pair byte not
+        // a top-level byte) — counts 2.
+        assert_eq!(walk_mes_bytecode(&[0xC0, 0x05, 0x10]), 2);
+        // 0xCF 0x99 — counts 2; then 0x50 — counts 3 total; then 0x10 stops.
+        assert_eq!(walk_mes_bytecode(&[0xCF, 0x99, 0x50, 0x10]), 3);
+    }
+
+    #[test]
+    fn walk_mes_bytecode_eof_mid_pair_stops_gracefully() {
+        // 0xC0 at end of buffer — original would read past EOF; we stop.
+        assert_eq!(walk_mes_bytecode(&[0xC0]), 1);
     }
 
     // -- 0x34 EFFECT sub-3 ----------------------------------------------
