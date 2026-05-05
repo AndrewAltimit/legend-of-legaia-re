@@ -1,0 +1,39 @@
+# legaia-engine-core
+
+Engine-agnostic primitives for the clean-room engine reimplementation:
+virtual filesystem, asset cache, frame timing.
+
+No `wgpu` / windowing / audio dependencies — the asset crates (Track 1)
+talk to this layer, and the render and audio crates read from it.
+
+## What it provides
+
+### `Vfs` trait
+
+Source of asset bytes. Two backends:
+
+- `DirVfs` — filesystem-backed, rooted at a directory. Used in
+  development against the output of `legaia-extract`.
+- (Planned) `DiscVfs` — reads directly from a disc image, so end users
+  don't need to extract anything ahead of time.
+
+Both yield raw bytes addressed by a logical name (e.g.
+`"prot/0123_some_entry.bin"`). The asset crates above this layer turn
+bytes into typed structures.
+
+### Asset cache
+
+A bounded in-memory cache keyed by Vfs name. Avoids re-decoding the same
+TIM/TMD/VAB on every frame when an actor is referenced repeatedly.
+
+### Frame timing
+
+`FrameClock` — fixed-step driver that targets the PSX's nominal NTSC
+60 Hz. Returns the number of logical ticks elapsed since the last call,
+so the host can drive the script VMs deterministically regardless of
+render rate.
+
+## See also
+
+- [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) — the
+  clean-room boundary and architecture for the engine track.
