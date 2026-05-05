@@ -67,6 +67,7 @@
 pub mod battle_action;
 pub mod effect_vm;
 pub mod field;
+pub mod field_helpers;
 pub mod move_vm;
 
 /// Width of one bytecode instruction in bytes.

@@ -1633,6 +1633,159 @@ pub trait FieldHost {
     /// exits via `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
     fn op4c_n_e_sub_a_call_c7ec(&mut self) {}
 
+    /// Op 0x4C outer-nibble-E sub-1 — spawn a screen-anchored text balloon
+    /// from the bytecode operand stream, then advance PC past the packet.
+    ///
+    /// Variable-length instruction `[4C, 0xE1, b1, ...string..., terminator]`.
+    /// The dispatcher's PC advance is `pc + 3 + packet_length(buf)` where the
+    /// packet runs from `operand + 1` until any byte `<= 0x1E` (see
+    /// [`field_helpers::packet_length`]). The terminator byte is consumed.
+    ///
+    /// The original calls `FUN_8003C764(buf, ctx_ptr)` to allocate a centered
+    /// "field text balloon" actor: priority `0x78`, screen-X centered around
+    /// the measured glyph width (`(0x140 - text_width) / 2`), screen-Y `0xB4`.
+    /// The actor is skipped when `b1 == 0`, but PC always advances by the
+    /// measured length. This hook handles the spawn; the dispatcher computes
+    /// the PC delta itself via [`field_helpers::packet_length`].
+    ///
+    /// `text_buf` is the slice from `operand + 1` to the terminator (NOT
+    /// including the terminator). `script_id` is the active script's ID,
+    /// passed in lieu of the original `param_3` ctx pointer.
+    ///
+    /// [`field_helpers::packet_length`]: crate::field_helpers::packet_length
+    fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+        let _ = (text_buf, script_id);
+    }
+
+    /// Op 0x4C outer-nibble-C sub-1 — reset every entry in the global
+    /// "trigger flag" array based on per-record flags.
+    ///
+    /// 1-byte instruction `[4C, 0xC1]`. The original walks the
+    /// `_DAT_80073ED8` record array (count `DAT_80073EDC`, stride `0xB`):
+    /// for each record, reads bytes 9 and 10 to form a 16-bit index,
+    /// queries [`field_helpers::party_flag_test`] against the trigger-flag
+    /// array, and writes 1 to record byte 0 if the bit is **clear**, else 0.
+    /// Then jumps to `LAB_801df09c` (= PC += 2 via the standard "addiu s8,
+    /// s8, 0x2; j epilogue" block at `0x801df09c`).
+    ///
+    /// When `_DAT_80073ED8` is null OR the count is zero, the original
+    /// `goto code_r0x801df098` skips the loop and still advances PC += 2.
+    ///
+    /// `flags` is the trigger-flag byte array (the bit storage queried
+    /// per-record). Hosts that don't model the record array can leave the
+    /// default no-op in place — the dispatcher always advances PC += 2
+    /// regardless. The two callers (gate set / clear) merge into a single
+    /// hook because the original's two branches differ only in side-effect
+    /// (the loop body) and the PC delta is identical.
+    ///
+    /// [`field_helpers::party_flag_test`]: crate::field_helpers::party_flag_test
+    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, flags: &[u8]) {
+        let _ = flags;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-1 — linked-list lookup gate.
+    ///
+    /// 2-byte instruction `[4C, 0xD1]`. The original walks the global
+    /// list-head at `_DAT_8007C34C` via `FUN_8003CF04(head, FUN_801DC0BC)`
+    /// (the linked-list "search by predicate match" helper) and:
+    /// - if the search returns null OR the matched entry's `[+0x10] & 8 != 0`
+    ///   (the "deleted" bit) → `return param_2 + 4` (PC += 4),
+    /// - else → `pbVar43 = pbVar47 + 1; goto LAB_801E360C` which calls
+    ///   `func_0x8003CE9C(pbVar43)` (the variable-length signed-int reader)
+    ///   and returns its result as the new PC.
+    ///
+    /// The host hook returns `Some(new_pc)` for the LAB path or `None` to
+    /// take the PC += 4 path. The default impl returns `None` — engines
+    /// without a list-walking model fall through to the safe "no jump"
+    /// branch.
+    fn op4c_n_d_sub_1_list_lookup_jump(&mut self, ctx: &FieldCtx) -> Option<usize> {
+        let _ = ctx;
+        None
+    }
+
+    /// Op 0x4C outer-nibble-D sub-2 — channel-lookup conditional spawn,
+    /// then halt at PC.
+    ///
+    /// 2-byte instruction `[4C, 0xD2, b1]`. The original calls
+    /// `func_0x8003C83C(b1)` (the script-context resolver — see
+    /// `docs/subsystems/script-vm.md` "intra-function label catalogue"
+    /// for the F8/FB system-channel idiom). When the result is **zero**
+    /// (no resolved context), the original spawns a new script context via
+    /// `func_0x8003D064` + `func_0x8003A1E4` with the rendering-busy
+    /// guard (`*(_DAT_801C6EA4 + 8) = 1` around the call). Then halts.
+    ///
+    /// Hosts that don't yet model the channel resolver should leave this as
+    /// a no-op — the halt-at-PC behaviour is handled by the dispatcher.
+    fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
+        let _ = channel;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-7 — register a list-walk callback then
+    /// halt at PC.
+    ///
+    /// 1-byte instruction `[4C, 0xD7]`. The original sets `pcVar33 =
+    /// FUN_801DC0BC` (the "delete-if-flag" predicate) then jumps to
+    /// `LAB_801E2DC4`, which calls `func_0x8003CF40(_DAT_8007C34C, pcVar33)`
+    /// (a list-walk that invokes `pcVar33` per entry) and returns via the
+    /// standard halt-acquire dispatcher. The script resumes when the walk
+    /// finishes and re-arms the field VM.
+    fn op4c_n_d_sub_7_register_list_walk(&mut self) {}
+
+    /// Op 0x4C outer-nibble-D sub-B — call the overlay-resident
+    /// `FUN_801E57F0` then advance PC by 13 bytes.
+    ///
+    /// 13-byte instruction (the original's call site at line 7085 passes
+    /// `pbVar47` and falls through to `LAB_801E2EA0: return param_2 + 0xD`).
+    ///
+    /// `FUN_801E57F0` was not successfully decompiled — Ghidra's dump (see
+    /// `ghidra/scripts/funcs/overlay_0897_801e57f0.txt`) shows ~441
+    /// instructions of `lb s8, 0x6814(zero)` data masquerading as code,
+    /// indicating Ghidra mis-parsed the function's start. The actual call
+    /// target at `0x801E57F0` is overlay-resident and not currently dumpable.
+    ///
+    /// `bytecode` is the operand stream starting at `operand + 0` (the same
+    /// `pbVar47` the original passes); hosts that model this opcode read
+    /// fields at `bytecode[1..=12]`.
+    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+        let _ = bytecode;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-C — small-table lookup, then conditional
+    /// per-party-record write.
+    ///
+    /// 5-byte instruction `[4C, 0xDC, b1, ?, ?]` (the trailing operand
+    /// bytes are consumed by the LAB_801E360C tail's `func_0x8003CE9C` read).
+    ///
+    /// The original at line 7087:
+    /// 1. Calls [`field_helpers::small_table_search`] (`FUN_80042EE0(b1)`)
+    ///    to look up `b1` in the gp-relative short-table at `0x80085958`.
+    /// 2. If the table lookup hits AND a party-record search across
+    ///    `DAT_80084594` slots (party-record stride `0x414`, byte at `+0x196`)
+    ///    matches `b1`, the slot is updated.
+    /// 3. If neither hits, returns `param_2 + 5` (PC += 5).
+    /// 4. On hit, falls through to `LAB_801E360C` which reads `ce9c(p+2)`
+    ///    and returns it as the new PC.
+    ///
+    /// The host hook returns `Some(new_pc)` for the ce9c-jump path, or `None`
+    /// to take the PC += 5 path. Default impl returns `None` (safe fallback).
+    ///
+    /// [`field_helpers::small_table_search`]: crate::field_helpers::small_table_search
+    fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
+        let _ = needle;
+        None
+    }
+
+    /// Op 0x4C outer-nibble-D sub-E — small-table lookup query (sister of
+    /// sub-C without the per-party-record write side-effect).
+    ///
+    /// 5-byte instruction `[4C, 0xDE, b1, ?, ?]`. Same control flow as
+    /// sub-C but the party-record loop only **tests** for a match — no slot
+    /// update. PC is `param_2 + 5` on miss, ce9c-jump on hit.
+    fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
+        let _ = needle;
+        None
+    }
+
     /// Halt-acquire dispatcher used by op 0x38 (CAM_CFG yield path) and
     /// op 0x43 sub-0/1/A/B (actor-control halts).
     ///
@@ -3051,16 +3204,27 @@ pub fn step<H: FieldHost>(
                     }
                 }
                 // Outer nibble 0xC — small per-actor / per-scene writes.
-                // Ported subset covers sub-2 (field_42), sub-4 (sub-tile
-                // broadcast), sub-7 (sound trigger), sub-8 (field_74 XOR),
-                // sub-9 (global-pair compare gate — PC += 2 unless globals
-                // differ, then halt), sub-0xA / sub-0xB / sub-0xC (slot table
-                // writes), sub-0xE (b6ac write), sub-0xF (position broadcast).
-                // Sub-0/1 (move-table cancel + linked-list walk), sub-3
-                // (script-table teleport), sub-5/6 (conditional jumps via
-                // `func_0x8003CE64`), sub-0xD (script-context alloc with
-                // halt) remain `Pending` (overlay-resident helpers).
+                // Ported subset covers sub-1 (flag-loop reset, PC += 2),
+                // sub-2 (field_42), sub-4 (sub-tile broadcast), sub-7 (sound
+                // trigger), sub-8 (field_74 XOR), sub-9 (global-pair compare
+                // gate — PC += 2 unless globals differ, then halt), sub-0xA
+                // / sub-0xB / sub-0xC (slot table writes), sub-0xE (b6ac
+                // write), sub-0xF (position broadcast). Sub-0 (move-table
+                // cancel), sub-3 (script-table teleport), sub-5/6
+                // (conditional jumps via `func_0x8003CE64`), sub-0xD
+                // (script-context alloc with halt) remain `Pending`.
                 0xC => match op0 & 0x0F {
+                    // Sub-1: 1-byte. Walk the trigger-flag record array,
+                    // resetting each record's byte-0 from a per-record
+                    // 16-bit index queried against the flag bit-array.
+                    // Always advances PC += 2 (whether the array is empty
+                    // or the loop completes).
+                    1 => {
+                        host.op4c_n_c_sub_1_flag_loop_reset(&[]);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
                     2 => {
                         let Some(&b1) = bytecode.get(operand + 1) else {
                             return StepResult::Unknown { opcode, pc };
@@ -3179,17 +3343,45 @@ pub fn step<H: FieldHost>(
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 0xD — party state + camera-ish setup.
-                // Ported subset covers sub-3 (party state setup, 14-byte),
-                // sub-6 (`field_74` bitfield mutation, 3-byte, halts at PC),
-                // sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9 (inverted-Y
+                // Ported subset covers sub-1 (linked-list lookup gate, 2-byte
+                // host-Option, PC += 4 on miss), sub-2 (channel-spawn halt,
+                // 2-byte), sub-3 (party state setup, 14-byte), sub-6
+                // (`field_74` bitfield mutation, 3-byte, halts at PC),
+                // sub-7 (list-walk register + halt, 1-byte), sub-8
+                // (`FUN_801D77F4` 4-arg call, 9-byte), sub-9 (inverted-Y
                 // mirror set, 4-byte), sub-0xA (clear mirror + collision-Y
-                // refresh, 2-byte), sub-0xD (field_58 write, 3-byte), sub-0xF
-                // (scene byte write, 3-byte). Sub-0 (field SE trigger),
-                // sub-1 (linked-list halt-acquire), sub-2 (position broadcast),
-                // sub-4/5/7 (camera/effect transition cluster), sub-0xB
-                // (FUN_801E57F0 + LAB_801E2EA0 yield), sub-0xC / sub-0xE
-                // (inventory query + jump) remain `Pending`.
+                // refresh, 2-byte), sub-0xB (FUN_801E57F0 yield, 13-byte),
+                // sub-0xC (party search-and-set, 5-byte), sub-0xD (field_58
+                // write, 3-byte), sub-0xE (party search query, 5-byte),
+                // sub-0xF (scene byte write, 3-byte). Sub-0 (field SE
+                // trigger), sub-4/5 (16-element u16 OR/AND mask via
+                // overlay helpers) remain `Pending`.
                 0xD => match op0 & 0x0F {
+                    // Sub-1: 1-byte. Linked-list lookup via `FUN_8003CF04`.
+                    // Host returns `Some(new_pc)` for the ce9c-jump path,
+                    // `None` for PC += 4 on miss. Default host returns None.
+                    1 => match host.op4c_n_d_sub_1_list_lookup_jump(ctx) {
+                        Some(new_pc) => StepResult::Advance { next_pc: new_pc },
+                        None => StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        },
+                    },
+                    // Sub-2: 2-byte `[4C, 0xD2, b1]`. Calls the channel
+                    // resolver; halts at PC after the (possibly conditional)
+                    // spawn.
+                    2 => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        host.op4c_n_d_sub_2_channel_spawn(b1);
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-7: 1-byte. Register `FUN_801DC0BC` callback then
+                    // halt at PC.
+                    7 => {
+                        host.op4c_n_d_sub_7_register_list_walk();
+                        StepResult::Halt { final_pc: pc }
+                    }
                     3 => {
                         if operand + 13 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
@@ -3292,6 +3484,46 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 2,
                         }
                     }
+                    // Sub-B: 13-byte. Call FUN_801E57F0(operand) then PC += 13.
+                    // Total instruction = opcode (1) + 12 operand bytes; the
+                    // helper receives the 12-byte operand slice starting at
+                    // the sub-op byte.
+                    0xB => {
+                        if operand + 12 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        host.op4c_n_d_sub_b_call_e57f0(&bytecode[operand..operand + 12]);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 12,
+                        }
+                    }
+                    // Sub-C: 5-byte `[4C, 0xDC, b1, ?, ?]`. Small-table search
+                    // + party-record write. Host returns `Some(new_pc)` for
+                    // the ce9c-jump path or `None` for the PC += 5 miss path.
+                    0xC => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        match host.op4c_n_d_sub_c_party_search_set(b1) {
+                            Some(new_pc) => StepResult::Advance { next_pc: new_pc },
+                            None => StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            },
+                        }
+                    }
+                    // Sub-E: 5-byte. Sister of sub-C without the per-record
+                    // write — same control flow.
+                    0xE => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        match host.op4c_n_d_sub_e_party_search_query(b1) {
+                            Some(new_pc) => StepResult::Advance { next_pc: new_pc },
+                            None => StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            },
+                        }
+                    }
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 0xE — misc scene writes + emitter helper calls.
@@ -3314,6 +3546,23 @@ pub fn step<H: FieldHost>(
                         };
                         host.op4c_n_e_sub0_state_write(b1);
                         StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-1: variable-length text balloon. Spawns a
+                    // screen-anchored text actor when the leading byte is
+                    // non-zero; PC always advances by `3 + packet_length`
+                    // (opcode byte + sub-op byte + terminator + payload).
+                    1 => {
+                        let Some(&first) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        let payload = &bytecode[operand + 1..];
+                        let length = crate::field_helpers::packet_length(payload);
+                        if first != 0 {
+                            host.op4c_n_e_sub_1_text_actor(&payload[..length], ctx.script_id);
+                        }
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 2 + length,
+                        }
                     }
                     2 => {
                         if operand + 3 > bytecode.len() {
@@ -4570,6 +4819,17 @@ mod tests {
         n_e_capture_ddf48_calls: u32,
         n_e_ba66_writes: Vec<u8>,
         n_e_snapshot_84570_calls: u32,
+        // Round 16 — overlay-helper hooks.
+        n_c_sub_1_flag_loops: u32,
+        n_d_sub_1_jump_target: Option<usize>,
+        n_d_sub_2_channel_calls: Vec<u8>,
+        n_d_sub_7_list_walk_regs: u32,
+        n_d_sub_b_e57f0_calls: Vec<Vec<u8>>,
+        n_d_sub_c_jump_target: Option<usize>,
+        n_d_sub_c_calls: Vec<u8>,
+        n_d_sub_e_jump_target: Option<usize>,
+        n_d_sub_e_calls: Vec<u8>,
+        n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
         // 0x43 halt-acquire (sub-0/1/A/B).
         halt_acquire_predicate: bool,
         halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
@@ -5007,6 +5267,33 @@ mod tests {
         }
         fn op4c_n_e_sub_a_call_c7ec(&mut self) {
             self.n_e_sub_a_calls += 1;
+        }
+        fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+            self.n_e_sub_1_text_calls
+                .push((text_buf.to_vec(), script_id));
+        }
+        fn op4c_n_c_sub_1_flag_loop_reset(&mut self, _flags: &[u8]) {
+            self.n_c_sub_1_flag_loops += 1;
+        }
+        fn op4c_n_d_sub_1_list_lookup_jump(&mut self, _ctx: &FieldCtx) -> Option<usize> {
+            self.n_d_sub_1_jump_target
+        }
+        fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
+            self.n_d_sub_2_channel_calls.push(channel);
+        }
+        fn op4c_n_d_sub_7_register_list_walk(&mut self) {
+            self.n_d_sub_7_list_walk_regs += 1;
+        }
+        fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+            self.n_d_sub_b_e57f0_calls.push(bytecode.to_vec());
+        }
+        fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
+            self.n_d_sub_c_calls.push(needle);
+            self.n_d_sub_c_jump_target
+        }
+        fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
+            self.n_d_sub_e_calls.push(needle);
+            self.n_d_sub_e_jump_target
         }
         fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
             self.halt_acquire_predicate
@@ -8577,5 +8864,203 @@ mod tests {
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 9 });
+    }
+
+    // -- Round 16: helper-driven sub-ops --------------------------------
+
+    #[test]
+    fn op_4c_n_c_sub_1_flag_loop_reset_advances_2_bytes() {
+        let bytecode = [0x4Cu8, 0xC1];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_1_flag_loops, 1);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_1_no_jump_advances_4_bytes() {
+        let bytecode = [0x4Cu8, 0xD1, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_1_jump_target: None,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_1_jump_target_takes_ce9c_path() {
+        let bytecode = [0x4Cu8, 0xD1, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_1_jump_target: Some(0xABCD),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0xABCD });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_2_channel_spawn_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xD2, 0xFB];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_d_sub_2_channel_calls, vec![0xFBu8]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_7_register_list_walk_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xD7];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_d_sub_7_list_walk_regs, 1);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_b_e57f0_advances_13_bytes() {
+        // 13 total bytes: opcode + sub-op + 11 payload.
+        let mut bytecode = vec![0x4Cu8, 0xDB];
+        bytecode.extend_from_slice(&[
+            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55,
+        ]);
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 13 });
+        assert_eq!(host.n_d_sub_b_e57f0_calls.len(), 1);
+        // 12-byte slice starting from the 0xDB sub-op byte.
+        assert_eq!(host.n_d_sub_b_e57f0_calls[0].len(), 12);
+        assert_eq!(host.n_d_sub_b_e57f0_calls[0][0], 0xDB);
+        assert_eq!(host.n_d_sub_b_e57f0_calls[0][11], 0x55);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_b_truncated_buffer_returns_unknown() {
+        // 12 bytes only — sub-B needs 13.
+        let bytecode = [0x4Cu8, 0xDB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_d_sub_b_e57f0_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_c_no_jump_advances_5_bytes() {
+        let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_c_jump_target: None,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_d_sub_c_calls, vec![0x42u8]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_c_jump_target_takes_ce9c_path() {
+        let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_c_jump_target: Some(0x100),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_e_query_no_jump_advances_5_bytes() {
+        let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_e_jump_target: None,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_d_sub_e_calls, vec![0x99u8]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_e_query_jump_target_takes_ce9c_path() {
+        let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_e_jump_target: Some(0x40),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x40 });
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_zero_first_byte_skips_spawn() {
+        // First byte 0 → no spawn; PC still advances by 3 (0 has no payload).
+        // packet_length([0]) = 0 → advance by 3 + 0 = 3.
+        let bytecode = [0x4Cu8, 0xE1, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 3 });
+        // No spawn because first byte is 0.
+        assert!(host.n_e_sub_1_text_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_short_string_advances_correctly() {
+        // [4C, E1, 'A', 'B', 'C', 0] — packet length 3, total advance 6.
+        let bytecode = [0x4Cu8, 0xE1, b'A', b'B', b'C', 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            script_id: 0x42,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_e_sub_1_text_calls.len(), 1);
+        assert_eq!(host.n_e_sub_1_text_calls[0].0, vec![b'A', b'B', b'C']);
+        assert_eq!(host.n_e_sub_1_text_calls[0].1, 0x42);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_with_escape_sequences() {
+        // [4C, E1, 'A', 0xC1, 0xAB, 'B', 0] — escape pair counts as 2,
+        // total packet length = 4, total advance = 7.
+        let bytecode = [0x4Cu8, 0xE1, b'A', 0xC1, 0xAB, b'B', 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 7 });
+        assert_eq!(host.n_e_sub_1_text_calls[0].0.len(), 4);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_truncated_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE1]; // first byte missing
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_1_text_calls.is_empty());
     }
 }
