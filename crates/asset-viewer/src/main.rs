@@ -29,12 +29,15 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_engine_audio::{AudioOut, DEFAULT_INPUT_RATE, Sequencer};
+use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_render::{
-    RenderTarget, Renderer, Scene as RenderScene, SceneDraw, UploadedLines, UploadedMesh,
-    UploadedTexture, UploadedVram, UploadedVramMesh,
+    RenderTarget, Renderer, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay,
+    UploadedFontAtlas, UploadedLines, UploadedMesh, UploadedTexture, UploadedVram,
+    UploadedVramMesh,
     glam::{Mat4, Vec3},
     legaia_tim::Vram,
 };
+use legaia_font::Font;
 use legaia_prot::{archive::Archive, cdname};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -178,6 +181,28 @@ enum Cmd {
         /// Root path containing the `tim_scan/` directory tree. Bundles
         /// resolve their PROT-entry paths under this root. Defaults to
         /// `extracted/`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+    },
+    /// Boot a CDNAME scene as a playable field-mode demo: opens a window,
+    /// uploads the scene's TMDs as actors, wires keyboard / gamepad input
+    /// through `engine-core::input`, and overlays HUD text rendered via the
+    /// extracted dialog font. The field VM ticks each frame against
+    /// whatever bytecode is loaded (none by default — overlay-resident
+    /// scripts aren't statically extractable yet, so the VM no-ops).
+    ///
+    /// First milestone toward the "playable demo" path: proves the engine
+    /// layers (input + scene + render + text) compose end-to-end.
+    Field {
+        /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
+        scene: String,
+        /// Maximum actors to spawn. Capped at the number of distinct TMDs
+        /// the scene's tmd_scan dir provides, then at
+        /// `engine-core::world::MAX_ACTORS` (64).
+        #[arg(long, default_value_t = 6)]
+        max_actors: usize,
+        /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/
+        /// + tim_scan/ + font/.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
     },
@@ -1415,6 +1440,512 @@ fn parse_prot_dir_index(name: &str) -> Option<u32> {
     lead.parse().ok()
 }
 
+/// Convert a laid-out string into [`TextDraw`]s anchored at `(pen_x, pen_y)`
+/// with the supplied tint. Glyph atlas coordinates come from the layout;
+/// destination coordinates are pen-relative pixels with one quad per glyph.
+fn text_draws_for(layout: &legaia_font::Layout, pen: (i32, i32), color: [f32; 4]) -> Vec<TextDraw> {
+    layout
+        .glyphs
+        .iter()
+        .map(|g| TextDraw {
+            dst: (pen.0 + g.dst_x, pen.1 + g.dst_y, g.width, g.height),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color,
+        })
+        .collect()
+}
+
+/// Map winit physical keys to PSX pad button bits. Keyboard mapping mirrors
+/// the conventional emulator default:
+///
+/// - Arrows → D-pad
+/// - Z → Cross, X → Square, A → Triangle, S → Circle
+/// - Enter → Start, Right Shift → Select
+/// - Q / W → L1 / R1, 1 / 2 → L2 / R2
+fn keymap_pad(code: KeyCode) -> Option<PadButton> {
+    Some(match code {
+        KeyCode::ArrowUp => PadButton::Up,
+        KeyCode::ArrowDown => PadButton::Down,
+        KeyCode::ArrowLeft => PadButton::Left,
+        KeyCode::ArrowRight => PadButton::Right,
+        KeyCode::KeyZ => PadButton::Cross,
+        KeyCode::KeyX => PadButton::Square,
+        KeyCode::KeyA => PadButton::Triangle,
+        KeyCode::KeyS => PadButton::Circle,
+        KeyCode::Enter => PadButton::Start,
+        KeyCode::ShiftRight => PadButton::Select,
+        KeyCode::KeyQ => PadButton::L1,
+        KeyCode::KeyW => PadButton::R1,
+        KeyCode::Digit1 => PadButton::L2,
+        KeyCode::Digit2 => PadButton::R2,
+        _ => return None,
+    })
+}
+
+/// Friendly button-name string for HUD readouts. Returns `"_"` for
+/// unset bits so the readout has a fixed grid shape.
+fn pad_button_label(b: PadButton) -> &'static str {
+    match b {
+        PadButton::Up => "U",
+        PadButton::Down => "D",
+        PadButton::Left => "L",
+        PadButton::Right => "R",
+        PadButton::Cross => "X",
+        PadButton::Circle => "O",
+        PadButton::Square => "[]",
+        PadButton::Triangle => "/\\",
+        PadButton::Start => "ST",
+        PadButton::Select => "SE",
+        PadButton::L1 => "L1",
+        PadButton::R1 => "R1",
+        PadButton::L2 => "L2",
+        PadButton::R2 => "R2",
+        PadButton::L3 => "L3",
+        PadButton::R3 => "R3",
+    }
+}
+
+fn run_field(scene_name: &str, max_actors: usize, extracted_root: &Path) -> Result<()> {
+    use legaia_engine_core::scene::ProtIndex;
+    use legaia_engine_core::world::{SceneMode, World};
+
+    if max_actors == 0 {
+        anyhow::bail!("max_actors must be >= 1");
+    }
+    let prot_path = extracted_root.join("PROT.DAT");
+    let cdname_path = extracted_root.join("CDNAME.TXT");
+    if !prot_path.exists() {
+        anyhow::bail!("missing {} (run legaia-extract first)", prot_path.display());
+    }
+    if !cdname_path.exists() {
+        anyhow::bail!(
+            "missing {} (run legaia-extract first)",
+            cdname_path.display()
+        );
+    }
+    let font = Font::load_from_extracted(extracted_root).with_context(|| {
+        format!(
+            "load extracted font under {} (run legaia-extract first?)",
+            extracted_root.display()
+        )
+    })?;
+    let index = ProtIndex::open_extracted(extracted_root)
+        .with_context(|| format!("open ProtIndex at {}", extracted_root.display()))?;
+    let (start, end) = index.block_range(scene_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "scene '{}' not found in CDNAME map at {}",
+            scene_name,
+            cdname_path.display()
+        )
+    })?;
+    log::info!(
+        "scene '{}' covers PROT [{}..{}) ({} entries)",
+        scene_name,
+        start,
+        end,
+        end - start
+    );
+    let tmd_paths = collect_scene_tmds(extracted_root, start, end);
+    let actor_count = tmd_paths.len().min(max_actors);
+    let tim_dirs = collect_scene_tim_dirs(extracted_root, start, end);
+    let tim_dir_refs: Vec<&Path> = tim_dirs.iter().map(|p| p.as_path()).collect();
+    let (vram, tim_count) = build_vram_from_dirs(&tim_dir_refs);
+    log::info!(
+        "field scene: {} actors over {} TIM(s) across {} tim_scan dir(s)",
+        actor_count,
+        tim_count,
+        tim_dirs.len()
+    );
+
+    let mut world = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    let radius = 800.0_f32;
+    for i in 0..actor_count {
+        let theta = (i as f32) * std::f32::consts::TAU / (actor_count.max(1) as f32);
+        let x = (radius * theta.cos()) as i16;
+        let z = (radius * theta.sin()) as i16;
+        let actor = world.spawn_actor(i);
+        actor.move_state.world_x = x;
+        actor.move_state.world_y = 0;
+        actor.move_state.world_z = z;
+    }
+
+    let event_loop = EventLoop::new().context("create event loop")?;
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = FieldApp {
+        title: format!(
+            "Field — scene '{}' [{} actors, tim_count={}]",
+            scene_name, actor_count, tim_count
+        ),
+        scene_name: scene_name.to_string(),
+        scene_range: (start, end),
+        actor_count,
+        window: None,
+        renderer: None,
+        font,
+        font_atlas: None,
+        vram_cpu: Some(vram),
+        uploaded_vram: None,
+        tmd_paths,
+        meshes: Vec::new(),
+        world,
+        scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
+        input: InputState::new(),
+        last_dt_ms: 16,
+        started_at: Instant::now(),
+        last_tick: Instant::now(),
+    };
+    event_loop.run_app(&mut app).context("event loop")?;
+    Ok(())
+}
+
+/// Field-mode viewer state. Owned by the winit event loop.
+struct FieldApp {
+    title: String,
+    scene_name: String,
+    scene_range: (u32, u32),
+    actor_count: usize,
+    window: Option<Arc<Window>>,
+    renderer: Option<Renderer>,
+    font: Font,
+    font_atlas: Option<UploadedFontAtlas>,
+    vram_cpu: Option<Vram>,
+    uploaded_vram: Option<UploadedVram>,
+    tmd_paths: Vec<PathBuf>,
+    meshes: Vec<WorldActorMesh>,
+    world: legaia_engine_core::world::World,
+    /// Synthetic AABB enclosing every spawn point — drives the camera.
+    scene_aabb: ([f32; 3], [f32; 3]),
+    input: InputState,
+    /// Last per-frame delta in ms, smoothed for the FPS HUD readout.
+    last_dt_ms: u32,
+    started_at: Instant,
+    last_tick: Instant,
+}
+
+impl FieldApp {
+    /// Upload TMDs as actor meshes plus the shared VRAM and font atlas.
+    /// Must be called once a renderer is attached.
+    fn upload_assets(&mut self) {
+        let Some(r) = &self.renderer else {
+            return;
+        };
+        for path in &self.tmd_paths {
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("skip TMD {}: read error: {e}", path.display());
+                    continue;
+                }
+            };
+            let tmd = match legaia_tmd::parse(&bytes) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::warn!("skip TMD {}: parse error: {e}", path.display());
+                    continue;
+                }
+            };
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes);
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            let aabb = mesh_aabb(&vmesh.positions);
+            match r.upload_vram_mesh(&vmesh.positions, &vmesh.uvs, &vmesh.cba_tsb, &vmesh.indices) {
+                Ok(mesh) => self.meshes.push(WorldActorMesh {
+                    mesh,
+                    aabb_lo: aabb.0,
+                    aabb_hi: aabb.1,
+                }),
+                Err(e) => log::warn!("skip TMD {}: upload error: {e}", path.display()),
+            }
+            if self.meshes.len() >= self.actor_count {
+                break;
+            }
+        }
+        if let Some(vram_cpu) = self.vram_cpu.take() {
+            match r.upload_vram(&vram_cpu) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("VRAM upload failed: {e:#}"),
+            }
+        }
+        let (aw, ah) = self.font.atlas_dimensions();
+        match r.upload_font_atlas(self.font.atlas_rgba(), aw, ah) {
+            Ok(a) => self.font_atlas = Some(a),
+            Err(e) => log::error!("font atlas upload failed: {e:#}"),
+        }
+        // Recompute scene AABB from the union of every mesh's local AABB +
+        // its current position so the camera frames the whole scene.
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        for (slot, m) in self.meshes.iter().enumerate() {
+            let actor = &self.world.actors[slot];
+            let cx = actor.move_state.world_x as f32;
+            let cy = actor.move_state.world_y as f32;
+            let cz = actor.move_state.world_z as f32;
+            for ax in 0..3 {
+                let lo_world = [m.aabb_lo[0] + cx, m.aabb_lo[1] + cy, m.aabb_lo[2] + cz][ax];
+                let hi_world = [m.aabb_hi[0] + cx, m.aabb_hi[1] + cy, m.aabb_hi[2] + cz][ax];
+                if lo_world < lo[ax] {
+                    lo[ax] = lo_world;
+                }
+                if hi_world > hi[ax] {
+                    hi[ax] = hi_world;
+                }
+            }
+        }
+        if lo[0].is_finite() && hi[0].is_finite() {
+            self.scene_aabb = (lo, hi);
+        }
+    }
+
+    fn camera_mvp(&self, aspect: f32) -> Mat4 {
+        let (lo, hi) = self.scene_aabb;
+        let center = Vec3::new(
+            0.5 * (lo[0] + hi[0]),
+            0.5 * (lo[1] + hi[1]),
+            0.5 * (lo[2] + hi[2]),
+        );
+        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        let radius = (0.5 * extent.length()).max(1.0);
+        let distance = radius / (30f32.to_radians().tan()) * 1.6;
+        let angle = self.started_at.elapsed().as_secs_f32() * 0.25;
+        let eye = center
+            + Vec3::new(
+                distance * angle.cos(),
+                -distance * 0.4,
+                distance * angle.sin(),
+            );
+        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+        let near = (distance * 0.05).max(0.1);
+        let far = distance * 4.0 + 1000.0;
+        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+        proj * view
+    }
+
+    fn actor_model(&self, slot: usize) -> Mat4 {
+        let a = &self.world.actors[slot];
+        let pos = Vec3::new(
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        );
+        let spin = self.started_at.elapsed().as_secs_f32() * 0.6
+            + (slot as f32) * std::f32::consts::FRAC_PI_2;
+        Mat4::from_translation(pos)
+            * Mat4::from_rotation_y(spin)
+            * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
+    /// Build the HUD overlay for this frame. White text on the upper-left
+    /// shows scene name + frame info; the bottom strip shows the live pad
+    /// state. Returns an empty list if the font atlas hasn't uploaded yet.
+    fn build_hud(&self) -> Vec<TextDraw> {
+        if self.font_atlas.is_none() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let white = [1.0, 1.0, 1.0, 1.0];
+        let dim = [0.7, 0.85, 1.0, 1.0];
+
+        let line1 = format!(
+            "scene {}  prot[{}..{})  actors {}",
+            self.scene_name, self.scene_range.0, self.scene_range.1, self.actor_count
+        );
+        let layout1 = self.font.layout_ascii(&line1);
+        out.extend(text_draws_for(&layout1, (8, 8), white));
+
+        let fps = 1000u32.checked_div(self.last_dt_ms).unwrap_or(0);
+        let line2 = format!(
+            "frame {}   {:>3} fps   t {:.1}s",
+            self.world.frame,
+            fps,
+            self.started_at.elapsed().as_secs_f32()
+        );
+        let layout2 = self.font.layout_ascii(&line2);
+        out.extend(text_draws_for(&layout2, (8, 26), dim));
+
+        // Pad state — show one cell per logical button.
+        let buttons = [
+            PadButton::Up,
+            PadButton::Down,
+            PadButton::Left,
+            PadButton::Right,
+            PadButton::Cross,
+            PadButton::Circle,
+            PadButton::Square,
+            PadButton::Triangle,
+            PadButton::Start,
+            PadButton::Select,
+            PadButton::L1,
+            PadButton::R1,
+            PadButton::L2,
+            PadButton::R2,
+        ];
+        let mut pad_str = String::with_capacity(64);
+        for b in buttons {
+            let label = pad_button_label(b);
+            if self.input.pressed(b) {
+                pad_str.push_str(label);
+            } else {
+                for _ in 0..label.len() {
+                    pad_str.push('-');
+                }
+            }
+            pad_str.push(' ');
+        }
+        let layout3 = self.font.layout_ascii(&pad_str);
+        let (_, h) = self
+            .renderer
+            .as_ref()
+            .map(|r| r.surface_size())
+            .unwrap_or((960, 720));
+        out.extend(text_draws_for(
+            &layout3,
+            (8, (h as i32) - 24),
+            [0.95, 0.95, 0.6, 1.0],
+        ));
+        out
+    }
+}
+
+impl ApplicationHandler for FieldApp {
+    fn resumed(&mut self, evl: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let attrs = WindowAttributes::default()
+            .with_title(&self.title)
+            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
+        let window = match evl.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                log::error!("create_window: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        let size = window.inner_size();
+        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Renderer::new: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        self.window = Some(window);
+        self.renderer = Some(renderer);
+        self.upload_assets();
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
+    }
+
+    fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => evl.exit(),
+            WindowEvent::Resized(size) => {
+                if let Some(r) = self.renderer.as_mut() {
+                    r.resize(size.width, size.height);
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(code),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
+                    evl.exit();
+                    return;
+                }
+                if let Some(button) = keymap_pad(code) {
+                    let mut mask = self.input.pad();
+                    if state == ElementState::Pressed {
+                        mask |= button.mask();
+                    } else {
+                        mask &= !button.mask();
+                    }
+                    // Defer the edge update until the next tick; we only
+                    // mutate the held-mask snapshot here so multiple keys
+                    // pressed within one frame all coalesce into the same
+                    // tick.
+                    self.input.set_pad(mask);
+                }
+            }
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = now
+                    .duration_since(self.last_tick)
+                    .min(std::time::Duration::from_secs(1));
+                self.last_dt_ms = dt.as_millis().min(1000) as u32;
+                self.last_tick = now;
+                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
+                for _ in 0..target_frames.min(8) {
+                    self.world.tick();
+                }
+                // Move the player slot 0 on D-pad input — gives the demo a
+                // visible response to keyboard / gamepad input even with no
+                // field bytecode loaded.
+                let speed = 6.0_f32;
+                if self.actor_count > 0 {
+                    let actor = &mut self.world.actors[0];
+                    if self.input.pressed(PadButton::Right) {
+                        actor.move_state.world_x = (actor.move_state.world_x as f32 + speed) as i16;
+                    }
+                    if self.input.pressed(PadButton::Left) {
+                        actor.move_state.world_x = (actor.move_state.world_x as f32 - speed) as i16;
+                    }
+                    if self.input.pressed(PadButton::Up) {
+                        actor.move_state.world_z = (actor.move_state.world_z as f32 - speed) as i16;
+                    }
+                    if self.input.pressed(PadButton::Down) {
+                        actor.move_state.world_z = (actor.move_state.world_z as f32 + speed) as i16;
+                    }
+                }
+                if let (Some(r), Some(vram), Some(atlas)) = (
+                    &self.renderer,
+                    self.uploaded_vram.as_ref(),
+                    self.font_atlas.as_ref(),
+                ) {
+                    let (w, h) = r.surface_size();
+                    let aspect = w as f32 / h.max(1) as f32;
+                    let cam = self.camera_mvp(aspect);
+                    let draws: Vec<SceneDraw<'_>> = self
+                        .meshes
+                        .iter()
+                        .enumerate()
+                        .map(|(slot, m)| SceneDraw {
+                            mesh: &m.mesh,
+                            mvp: cam * self.actor_model(slot),
+                        })
+                        .collect();
+                    let hud = self.build_hud();
+                    let overlay = TextOverlay { atlas, draws: &hud };
+                    let scene = RenderScene {
+                        vram,
+                        draws: &draws,
+                        overlay_lines: None,
+                        overlay_text: Some(&overlay),
+                    };
+                    if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
+                        log::error!("render error: {e:#}");
+                    }
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Multi-actor world viewer state. Owned by the winit event loop.
 struct WorldApp {
     title: String,
@@ -1648,6 +2179,7 @@ impl ApplicationHandler for WorldApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_text: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                         log::error!("render error: {e:#}");
@@ -1685,6 +2217,15 @@ fn main() -> Result<()> {
     } = args.cmd
     {
         return run_world(&scene, max_actors, &extracted_root, with_move_vm);
+    }
+
+    if let Cmd::Field {
+        scene,
+        max_actors,
+        extracted_root,
+    } = args.cmd
+    {
+        return run_field(&scene, max_actors, &extracted_root);
     }
 
     let (pending, browser, mesh_browser, stage_browser) = match args.cmd {
@@ -1955,6 +2496,7 @@ fn main() -> Result<()> {
         }
         Cmd::Seq { .. } => unreachable!("Cmd::Seq handled by the early-return path above"),
         Cmd::World { .. } => unreachable!("Cmd::World handled by the early-return path above"),
+        Cmd::Field { .. } => unreachable!("Cmd::Field handled by the early-return path above"),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

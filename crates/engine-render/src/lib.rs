@@ -126,6 +126,45 @@ impl UploadedVramMesh {
     }
 }
 
+/// GPU-resident font atlas. Built by [`Renderer::upload_font_atlas`] from a
+/// pre-decoded RGBA8 buffer. Used as the texture binding for the 2D text
+/// pipeline.
+pub struct UploadedFontAtlas {
+    bind_group: wgpu::BindGroup,
+    width: u32,
+    height: u32,
+}
+
+impl UploadedFontAtlas {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+/// One textured quad in screen space. Coordinates are pixel-space relative
+/// to the top-left of the surface; the renderer converts to NDC at draw
+/// time. Atlas coordinates are pixel-space inside the source font atlas.
+#[derive(Debug, Clone, Copy)]
+pub struct TextDraw {
+    /// Destination rectangle: `(x, y, w, h)` in surface pixels.
+    pub dst: (i32, i32, u32, u32),
+    /// Source rectangle: `(x, y, w, h)` in atlas pixels.
+    pub src: (u32, u32, u32, u32),
+    /// RGBA tint multiplied with the sampled atlas texel.
+    pub color: [f32; 4],
+}
+
+/// Batch of [`TextDraw`]s to render in one pass against a shared font atlas.
+/// Cheap to construct each frame; the renderer copies the geometry into a
+/// reusable dynamic buffer before drawing.
+pub struct TextOverlay<'a> {
+    pub atlas: &'a UploadedFontAtlas,
+    pub draws: &'a [TextDraw],
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -191,11 +230,13 @@ pub struct SceneDraw<'a> {
 
 /// Multi-actor scene payload. Drawn against a single shared VRAM with one
 /// MVP per actor. Optionally overlays a [`UploadedLines`] mesh (e.g. a
-/// stage-geometry wireframe) using the supplied MVP.
+/// stage-geometry wireframe) using the supplied MVP, and/or a 2D text
+/// batch (HUD / debug text / dialog).
 pub struct Scene<'a> {
     pub vram: &'a UploadedVram,
     pub draws: &'a [SceneDraw<'a>],
     pub overlay_lines: Option<(&'a UploadedLines, Mat4)>,
+    pub overlay_text: Option<&'a TextOverlay<'a>>,
 }
 
 pub struct Renderer {
@@ -239,6 +280,24 @@ pub struct Renderer {
     /// Lines pipeline: LineList topology, per-vertex color, depth-tested.
     /// Used for wireframe rendering of stage geometry.
     lines_pipeline: wgpu::RenderPipeline,
+    /// Text pipeline: 2D textured quads, alpha-blended, no depth. Group 0
+    /// binds a sampled font atlas. Used for HUD / debug / dialog overlays.
+    text_pipeline: wgpu::RenderPipeline,
+    /// Bind-group layout for the font-atlas texture binding (group 0 of
+    /// [`Self::text_pipeline`]). Reused when uploading new atlases.
+    text_atlas_bgl: wgpu::BindGroupLayout,
+    /// Sampler used by the text pipeline. Nearest-neighbour to keep PSX
+    /// pixel-art glyphs crisp.
+    text_sampler: wgpu::Sampler,
+    /// Per-frame text vertex / index buffers (RefCell-borrowed from the
+    /// non-mut `render` API; resized geometrically on demand).
+    text_vbuf: std::cell::RefCell<wgpu::Buffer>,
+    text_ibuf: std::cell::RefCell<wgpu::Buffer>,
+    /// Capacity of [`Self::text_vbuf`] in vertex slots and
+    /// [`Self::text_ibuf`] in index slots. Both grow together — one quad
+    /// per `TextDraw` is 4 vertices and 6 indices.
+    text_vertex_capacity: std::cell::Cell<u32>,
+    text_index_capacity: std::cell::Cell<u32>,
     /// Depth target — recreated on resize.
     depth_view: wgpu::TextureView,
 }
@@ -865,6 +924,118 @@ impl Renderer {
             cache: None,
         });
 
+        // Text pipeline: 2D textured quads in NDC, alpha blended, no depth.
+        // Vertex layout = 8 (pos: Float32x2) + 8 (uv: Float32x2) +
+        // 16 (color: Float32x4) = 32 bytes.
+        let text_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("legaia text shader"),
+            source: wgpu::ShaderSource::Wgsl(TEXT_SHADER_SRC.into()),
+        });
+        let text_atlas_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("text atlas bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let text_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("text atlas sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("legaia text pipeline layout"),
+            bind_group_layouts: &[&text_atlas_bgl],
+            push_constant_ranges: &[],
+        });
+        let text_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: 32,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 8,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        };
+        let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("legaia text pipeline"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &text_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[text_vertex_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &text_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            // Scene render pass binds a depth attachment; every pipeline used
+            // in that pass must declare a matching depth-stencil format.
+            // Text never reads or writes depth — `Always` + write disabled
+            // keeps it a pure overlay pass.
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let initial_text_quads: u32 = 64;
+        let text_vbuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text vertex buffer"),
+            size: (initial_text_quads as u64) * 4 * 32,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let text_ibuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("text index buffer"),
+            size: (initial_text_quads as u64) * 6 * 4,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
@@ -891,6 +1062,13 @@ impl Renderer {
             scene_uniforms_capacity: std::cell::Cell::new(initial_scene_capacity),
             uniform_offset_alignment,
             lines_pipeline,
+            text_pipeline,
+            text_atlas_bgl,
+            text_sampler,
+            text_vbuf: std::cell::RefCell::new(text_vbuf),
+            text_ibuf: std::cell::RefCell::new(text_ibuf),
+            text_vertex_capacity: std::cell::Cell::new(initial_text_quads * 4),
+            text_index_capacity: std::cell::Cell::new(initial_text_quads * 6),
             depth_view,
         })
     }
@@ -1168,6 +1346,78 @@ impl Renderer {
         })
     }
 
+    /// Upload a font atlas. Used by the 2D text pipeline; one atlas can back
+    /// many [`TextOverlay`] batches.
+    pub fn upload_font_atlas(
+        &self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<UploadedFontAtlas> {
+        if rgba.len() as u32 != width * height * 4 {
+            anyhow::bail!(
+                "font atlas RGBA length {} doesn't match {}x{} (expected {})",
+                rgba.len(),
+                width,
+                height,
+                width * height * 4
+            );
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("font atlas"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("font atlas bg"),
+            layout: &self.text_atlas_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.text_sampler),
+                },
+            ],
+        });
+        Ok(UploadedFontAtlas {
+            bind_group,
+            width,
+            height,
+        })
+    }
+
     pub fn upload_texture(&self, rgba: &[u8], width: u32, height: u32) -> Result<UploadedTexture> {
         let expected = (width as usize) * (height as usize) * 4;
         if rgba.len() != expected {
@@ -1263,6 +1513,9 @@ impl Renderer {
             }
             RenderTarget::Scene(scene) => {
                 self.stage_scene_uniforms(scene);
+                if let Some(text) = scene.overlay_text {
+                    self.stage_text_overlay(text);
+                }
             }
             RenderTarget::Clear => {}
         }
@@ -1383,6 +1636,17 @@ impl Renderer {
                         rp.set_index_buffer(lines.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                         rp.draw_indexed(0..lines.index_count, 0, 0..1);
                     }
+                    if let Some(text) = scene.overlay_text
+                        && let Some(quads) = text_quad_count(text)
+                    {
+                        rp.set_pipeline(&self.text_pipeline);
+                        rp.set_bind_group(0, &text.atlas.bind_group, &[]);
+                        let vbuf_borrow = self.text_vbuf.borrow();
+                        let ibuf_borrow = self.text_ibuf.borrow();
+                        rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
+                        rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
+                        rp.draw_indexed(0..(quads * 6), 0, 0..1);
+                    }
                 }
             }
         }
@@ -1448,6 +1712,107 @@ impl Renderer {
         let buf_borrow = self.scene_uniforms_buf.borrow();
         let buf: &wgpu::Buffer = &buf_borrow;
         self.queue.write_buffer(buf, 0, &bytes);
+    }
+}
+
+/// Number of quads in `text` capped at u32::MAX/6, or `None` if there's
+/// nothing to draw. Pulled out so the pre-pass staging and the in-pass draw
+/// agree on what counts as renderable.
+fn text_quad_count(text: &TextOverlay<'_>) -> Option<u32> {
+    let n = text.draws.len();
+    if n == 0 {
+        return None;
+    }
+    Some(n as u32)
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct TextVertex {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    color: [f32; 4],
+}
+
+impl Renderer {
+    /// Build the per-frame text vertex/index buffers from `overlay`. Pixel
+    /// coords are converted to NDC using the current surface size; atlas
+    /// pixel coords are converted to `[0, 1]` UVs using the atlas size.
+    fn stage_text_overlay(&self, overlay: &TextOverlay<'_>) {
+        let Some(quads) = text_quad_count(overlay) else {
+            return;
+        };
+        let needed_v = quads * 4;
+        let needed_i = quads * 6;
+        if needed_v > self.text_vertex_capacity.get() {
+            let cap = needed_v.next_power_of_two().max(needed_v);
+            *self.text_vbuf.borrow_mut() = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("text vertex buffer (resized)"),
+                size: (cap as u64) * 32,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.text_vertex_capacity.set(cap);
+        }
+        if needed_i > self.text_index_capacity.get() {
+            let cap = needed_i.next_power_of_two().max(needed_i);
+            *self.text_ibuf.borrow_mut() = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("text index buffer (resized)"),
+                size: (cap as u64) * 4,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.text_index_capacity.set(cap);
+        }
+
+        let surf_w = self.config.width.max(1) as f32;
+        let surf_h = self.config.height.max(1) as f32;
+        let atlas_w = overlay.atlas.width.max(1) as f32;
+        let atlas_h = overlay.atlas.height.max(1) as f32;
+
+        let mut verts: Vec<TextVertex> = Vec::with_capacity(needed_v as usize);
+        let mut idxs: Vec<u32> = Vec::with_capacity(needed_i as usize);
+        for (i, draw) in overlay.draws.iter().enumerate() {
+            let (dx, dy, dw, dh) = draw.dst;
+            let (sx, sy, sw, sh) = draw.src;
+            let nx0 = (dx as f32 / surf_w) * 2.0 - 1.0;
+            let ny0 = 1.0 - (dy as f32 / surf_h) * 2.0;
+            let nx1 = ((dx + dw as i32) as f32 / surf_w) * 2.0 - 1.0;
+            let ny1 = 1.0 - ((dy + dh as i32) as f32 / surf_h) * 2.0;
+            let u0 = sx as f32 / atlas_w;
+            let v0 = sy as f32 / atlas_h;
+            let u1 = (sx + sw) as f32 / atlas_w;
+            let v1 = (sy + sh) as f32 / atlas_h;
+            let color = draw.color;
+            let base = (i as u32) * 4;
+            verts.push(TextVertex {
+                pos: [nx0, ny0],
+                uv: [u0, v0],
+                color,
+            });
+            verts.push(TextVertex {
+                pos: [nx1, ny0],
+                uv: [u1, v0],
+                color,
+            });
+            verts.push(TextVertex {
+                pos: [nx0, ny1],
+                uv: [u0, v1],
+                color,
+            });
+            verts.push(TextVertex {
+                pos: [nx1, ny1],
+                uv: [u1, v1],
+                color,
+            });
+            idxs.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+        }
+        let vbuf_borrow = self.text_vbuf.borrow();
+        let ibuf_borrow = self.text_ibuf.borrow();
+        self.queue
+            .write_buffer(&vbuf_borrow, 0, bytemuck::cast_slice(&verts));
+        self.queue
+            .write_buffer(&ibuf_borrow, 0, bytemuck::cast_slice(&idxs));
     }
 }
 
@@ -1755,6 +2120,39 @@ fn vs_main(@location(0) position: vec3<f32>, @location(1) color: vec4<f32>) -> V
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     return in.color;
+}
+"#;
+
+/// 2D text shader: pre-converted NDC positions + atlas UVs + per-vertex
+/// RGBA tint. The fragment multiplies the tint with the sampled atlas
+/// texel; the alpha-blend pipeline handles final compositing.
+const TEXT_SHADER_SRC: &str = r#"
+struct VsOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(
+    @location(0) pos: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+) -> VsOut {
+    var out: VsOut;
+    out.clip_pos = vec4<f32>(pos, 0.0, 1.0);
+    out.uv = uv;
+    out.color = color;
+    return out;
+}
+
+@group(0) @binding(0) var t_atlas: texture_2d<f32>;
+@group(0) @binding(1) var s_atlas: sampler;
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let texel = textureSample(t_atlas, s_atlas, in.uv);
+    return vec4<f32>(in.color.rgb * texel.rgb, in.color.a * texel.a);
 }
 "#;
 
