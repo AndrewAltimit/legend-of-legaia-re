@@ -83,6 +83,10 @@ pub struct ActorState {
     pub anim_40: i16,
     /// `+0x42` — generic per-actor scalar (op 0x10).
     pub field_42: u16,
+    /// `+0x50` — midpoint blend / sub-state byte. Set by ext op 0x0C and
+    /// incremented by ext op 0x0D; consumed as the 4th argument to the
+    /// `FUN_801E45BC` midpoint helper from ext ops 0x0E / 0x12.
+    pub field_50: u16,
     /// `+0x52` — control word written by op 0x15 (the `0x400` bit additionally
     /// clears `flags & 0x80`).
     pub field_52: u16,
@@ -567,6 +571,31 @@ pub trait MoveHost {
     /// Extension sub-op 0x17 — initial / configuration write to the same
     /// struct as `ext_world_struct_write`. 5 u16 values from operand+6..16.
     fn ext_world_struct_init(&mut self, _index: i16, _values: [i16; 5]) {}
+
+    /// Read 4 bytes from the move-VM 16-slot scratch table at
+    /// `&DAT_801F3498`. Each slot is 8 bytes wide; `dword_off` is `0` or
+    /// `4`. Used by ext sub-ops 0x26 / 0x32 / 0x35 (load) and 0x12 / 0x28
+    /// (read-modify-write). Default impl returns 0 — hosts that care
+    /// about cross-actor save/restore override this.
+    fn move_slot_load_u32(&self, _slot: u16, _dword_off: u8) -> u32 {
+        0
+    }
+
+    /// Write 4 bytes to the move-VM 16-slot scratch table. See
+    /// [`Self::move_slot_load_u32`]. Used by ext sub-ops 0x25 / 0x31 (and
+    /// the partial-slot pair below). `dword_off` is `0` or `4`.
+    fn move_slot_save_u32(&mut self, _slot: u16, _dword_off: u8, _value: u32) {}
+
+    /// Read 2 bytes from the move-VM 16-slot scratch table. `byte_off` is
+    /// `0`..`6` (even). Used by ext sub-op 0x35 (single-u16 reload).
+    fn move_slot_load_u16(&self, _slot: u16, _byte_off: u8) -> u16 {
+        0
+    }
+
+    /// Write 2 bytes to the move-VM 16-slot scratch table. `byte_off` is
+    /// `0`..`6` (even). Used by ext sub-ops 0x27 (3 × u16 from `+0x90`) and
+    /// 0x34 (1 × u16 from `+0x72`).
+    fn move_slot_save_u16(&mut self, _slot: u16, _byte_off: u8, _value: u16) {}
 }
 
 fn ext_default_dispatch<H: MoveHost + ?Sized>(
@@ -624,18 +653,27 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // ext_dispatch entirely.
         0x08..=0x0B => MoveExtResult::default_arm(),
 
-        // 0x0C — write `actor[+0x50] = op[2]`. We don't yet model `+0x50`
-        // on ActorState (it's a sub-state byte separate from `move_substate`
-        // at `+0x56`), so this is a stub default arm.
-        0x0C | 0x0D => MoveExtResult::default_arm(),
+        // 0x0C — `actor[+0x50] = op_w(2)` (set midpoint blend / sub-state).
+        0x0C => {
+            state.field_50 = op_w(2);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x0D — `actor[+0x50] += op_w(2)` (additive variant).
+        0x0D => {
+            state.field_50 = state.field_50.wrapping_add(op_w(2));
+            MoveExtResult::default_arm()
+        }
 
         // 0x0E — midpoint position calc + write to actor world.
-        // Reads param_2 + 4/6/8 (a) + 10/12/14 (off) + 16/18/20 (b).
+        // Reads param_2 + 4/6/8 (a) + 10/12/14 (off) + 16/18/20 (b). The
+        // midpoint helper consumes `actor[+0x50]` (the blend amount set by
+        // ext ops 0x0C/0x0D).
         0x0E => {
             let a = [op_w(2) as i16, op_w(3) as i16, op_w(4) as i16];
             let off = [op_w(5) as i16, op_w(6) as i16, op_w(7) as i16];
             let b = [op_w(8) as i16, op_w(9) as i16, op_w(10) as i16];
-            let mode = state.field_52;
+            let mode = state.field_50;
             host.ext_midpoint_set(state, a, b, off, mode);
             MoveExtResult::with_size(2)
         }
@@ -747,9 +785,120 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // uses player coords. Default arm.
         0x24 | 0x2A => MoveExtResult::default_arm(),
 
-        // 0x25 / 0x26 / 0x27 / 0x28 / 0x31 / 0x32 / 0x34 / 0x35 — table
-        // save/restore variants on `&DAT_801F3498`. Default arm.
-        0x25 | 0x26 | 0x27 | 0x28 | 0x31 | 0x32 | 0x34 | 0x35 => MoveExtResult::default_arm(),
+        // 0x25 — save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
+        // the 16-slot scratch table at `&DAT_801F3498`. Each slot is 8 bytes:
+        // `slot[0..4] = (world_x:u16, world_y:u16)`,
+        // `slot[4..8] = (world_z:u16, world_y_mirror:u16)`.
+        0x25 => {
+            let slot = op_w(2);
+            let lo = (state.world_x as u16 as u32) | ((state.world_y as u16 as u32) << 16);
+            let hi = (state.world_z as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
+            host.move_slot_save_u32(slot, 0, lo);
+            host.move_slot_save_u32(slot, 4, hi);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x26 — load 8 bytes from the scratch slot back into
+        // `actor[+0x14..+0x1C]`.
+        0x26 => {
+            let slot = op_w(2);
+            let lo = host.move_slot_load_u32(slot, 0);
+            let hi = host.move_slot_load_u32(slot, 4);
+            state.world_x = (lo & 0xFFFF) as i16;
+            state.world_y = ((lo >> 16) & 0xFFFF) as i16;
+            state.world_z = (hi & 0xFFFF) as i16;
+            state.world_y_mirror = ((hi >> 16) & 0xFFFF) as i16;
+            MoveExtResult::default_arm()
+        }
+
+        // 0x27 — save the three tween-source u16s `actor[+0x90..+0x96]` into
+        // the slot's first 6 bytes (slot[0/2/4] = tween_src_x/y/z).
+        0x27 => {
+            let slot = op_w(2);
+            host.move_slot_save_u16(slot, 0, state.tween_src_x as u16);
+            host.move_slot_save_u16(slot, 2, state.tween_src_y as u16);
+            host.move_slot_save_u16(slot, 4, state.tween_src_z as u16);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x28 — load 3 × u16 from the slot, scale `+0x92/+0x94` by
+        // `op_w(3)/op_w(4)` (with `>> 12` fixed-point shift), and clamp the
+        // scaled outputs to `[-0xFF, 0xFF]`. Returns size 5 when the third
+        // result needs the upper-bound branch (mirroring the original
+        // `iVar16 = 5` shortcut), default-arm size otherwise.
+        //
+        // The upper-z bound check has to stay as a separate `if` (rather
+        // than a `clamp` call) because the dump's "did we clamp z to the
+        // upper bound" flag is what selects the return size.
+        #[allow(clippy::manual_clamp)]
+        0x28 => {
+            let slot = op_w(2);
+            let scale_y = op_w(3) as i16 as i32;
+            let scale_z = op_w(4) as i16 as i32;
+            state.tween_src_x = host.move_slot_load_u16(slot, 0) as i16;
+            let raw_y = host.move_slot_load_u16(slot, 2) as i16 as i32;
+            let raw_z = host.move_slot_load_u16(slot, 4) as i16 as i32;
+            let mut y_scaled = ((raw_y * scale_y) >> 12) as i16;
+            let mut z_scaled = ((raw_z * scale_z) >> 12) as i16;
+            if y_scaled < -0xFF {
+                y_scaled = -0xFF;
+            }
+            if y_scaled > 0xFF {
+                y_scaled = 0xFF;
+            }
+            if z_scaled < -0xFF {
+                z_scaled = -0xFF;
+            }
+            let upper_bound_branch = z_scaled > 0xFF;
+            if upper_bound_branch {
+                z_scaled = 0xFF;
+            }
+            state.tween_src_y = y_scaled;
+            state.tween_src_z = z_scaled;
+            if upper_bound_branch {
+                MoveExtResult::default_arm()
+            } else {
+                MoveExtResult::with_size(5)
+            }
+        }
+
+        // 0x31 — save `actor[+0x24..+0x2C]` (the three render banks +
+        // `+0x2A` Y mirror) into the slot.
+        0x31 => {
+            let slot = op_w(2);
+            let lo = (state.render_24 as u16 as u32) | ((state.render_26 as u16 as u32) << 16);
+            let hi = (state.render_28 as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
+            host.move_slot_save_u32(slot, 0, lo);
+            host.move_slot_save_u32(slot, 4, hi);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x32 — load 8 bytes from the slot back into the render-bank
+        // section at `+0x24..+0x2C`.
+        0x32 => {
+            let slot = op_w(2);
+            let lo = host.move_slot_load_u32(slot, 0);
+            let hi = host.move_slot_load_u32(slot, 4);
+            state.render_24 = (lo & 0xFFFF) as i16;
+            state.render_26 = ((lo >> 16) & 0xFFFF) as i16;
+            state.render_28 = (hi & 0xFFFF) as i16;
+            state.world_y_mirror = ((hi >> 16) & 0xFFFF) as i16;
+            MoveExtResult::default_arm()
+        }
+
+        // 0x34 — save `actor[+0x72]` (`field_72`) into slot[0..2].
+        0x34 => {
+            let slot = op_w(2);
+            host.move_slot_save_u16(slot, 0, state.field_72);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x35 — load slot[0..2] into `actor[+0x72]`.
+        0x35 => {
+            let slot = op_w(2);
+            state.field_72 = host.move_slot_load_u16(slot, 0);
+            MoveExtResult::default_arm()
+        }
 
         // 0x29 — scratchpad ramp or immediate write. op_w(2)=slot,
         // op_w(3)=target, op_w(4)=ticks.
@@ -1660,6 +1809,8 @@ mod tests {
         ext_emit_ot_calls: u32,
         ext_set_8007b9d8_calls: Vec<i32>,
         ext_fade_calls: Vec<([u8; 3], u16)>,
+        /// Models the 16-slot 8-byte-stride scratch table at `&DAT_801F3498`.
+        slot_table: [[u8; 8]; 16],
     }
 
     impl MoveHost for TestHost {
@@ -1728,6 +1879,26 @@ mod tests {
         }
         fn ext_world_struct_init(&mut self, idx: i16, vals: [i16; 5]) {
             self.ext_world_struct_inits.push((idx, vals));
+        }
+        fn move_slot_save_u32(&mut self, slot: u16, dword_off: u8, value: u32) {
+            let slot_idx = (slot as usize) & 0xF;
+            let off = dword_off as usize;
+            self.slot_table[slot_idx][off..off + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        fn move_slot_load_u32(&self, slot: u16, dword_off: u8) -> u32 {
+            let slot_idx = (slot as usize) & 0xF;
+            let off = dword_off as usize;
+            u32::from_le_bytes(self.slot_table[slot_idx][off..off + 4].try_into().unwrap())
+        }
+        fn move_slot_save_u16(&mut self, slot: u16, byte_off: u8, value: u16) {
+            let slot_idx = (slot as usize) & 0xF;
+            let off = byte_off as usize;
+            self.slot_table[slot_idx][off..off + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        fn move_slot_load_u16(&self, slot: u16, byte_off: u8) -> u16 {
+            let slot_idx = (slot as usize) & 0xF;
+            let off = byte_off as usize;
+            u16::from_le_bytes(self.slot_table[slot_idx][off..off + 2].try_into().unwrap())
         }
     }
 
@@ -2106,6 +2277,121 @@ mod tests {
         assert_eq!(state.anim_block_u16(22), 2022);
         assert_eq!(state.anim_block_u16(24), 3033);
         assert_eq!(state.anim_block_u16(26), 4044);
+    }
+
+    #[test]
+    fn op2f_subop_0c_writes_field_50() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x0C, 0xABCD]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.field_50, 0xABCD);
+    }
+
+    #[test]
+    fn op2f_subop_0d_adds_to_field_50_with_wrap() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.field_50 = 0xFFFE;
+        let bc = program(&[0x2F, 0x0D, 5]);
+        step(&mut host, &mut state, &bc);
+        // 0xFFFE + 5 wraps to 0x0003.
+        assert_eq!(state.field_50, 0x0003);
+    }
+
+    #[test]
+    fn op2f_subop_25_then_26_round_trips_world_coords() {
+        // Save world coords to slot 3, perturb the actor, then load back.
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.world_x = 100;
+        state.world_y = 200;
+        state.world_z = 300;
+        state.world_y_mirror = 400;
+        let save = program(&[0x2F, 0x25, 3]);
+        step(&mut host, &mut state, &save);
+        // Perturb.
+        state.world_x = -1;
+        state.world_y = -1;
+        state.world_z = -1;
+        state.world_y_mirror = -1;
+        // Reset PC for the second program.
+        state.pc = 0;
+        let load = program(&[0x2F, 0x26, 3]);
+        step(&mut host, &mut state, &load);
+        assert_eq!(state.world_x, 100);
+        assert_eq!(state.world_y, 200);
+        assert_eq!(state.world_z, 300);
+        assert_eq!(state.world_y_mirror, 400);
+    }
+
+    #[test]
+    fn op2f_subop_27_saves_tween_src_triple_into_first_six_bytes_of_slot() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.tween_src_x = 0x1111;
+        state.tween_src_y = 0x2222;
+        state.tween_src_z = 0x3333;
+        let bc = program(&[0x2F, 0x27, 5]);
+        step(&mut host, &mut state, &bc);
+        // slot[5] bytes 0..2/2..4/4..6 should match the three i16 values.
+        assert_eq!(host.move_slot_load_u16(5, 0), 0x1111);
+        assert_eq!(host.move_slot_load_u16(5, 2), 0x2222);
+        assert_eq!(host.move_slot_load_u16(5, 4), 0x3333);
+    }
+
+    #[test]
+    fn op2f_subop_28_loads_scales_and_clamps() {
+        // Pre-load slot 7 with three known u16 values, then run sub-op 0x28
+        // with scale operands chosen so that the y-axis result clamps to
+        // -0xFF and the z-axis result clamps to +0xFF.
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        host.move_slot_save_u16(7, 0, 1000); // becomes tween_src_x as-is
+        host.move_slot_save_u16(7, 2, -2000i16 as u16); // raw_y = -2000
+        host.move_slot_save_u16(7, 4, 2000); // raw_z = 2000
+        // op_w(2)=slot=7, op_w(3)=scale_y, op_w(4)=scale_z. Use 0x4000
+        // (=2.0 in 12.4 fixed) so raw * scale >> 12 hits the clamp band.
+        let bc = program(&[0x2F, 0x28, 7, 0x4000, 0x4000]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.tween_src_x, 1000);
+        // -2000 * 0x4000 >> 12 = -8000 → clamps to -0xFF.
+        assert_eq!(state.tween_src_y, -0xFF);
+        // 2000 * 0x4000 >> 12 = 8000 → clamps to +0xFF.
+        assert_eq!(state.tween_src_z, 0xFF);
+    }
+
+    #[test]
+    fn op2f_subop_31_then_32_round_trips_render_banks() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.render_24 = -100;
+        state.render_26 = -200;
+        state.render_28 = -300;
+        state.world_y_mirror = -400;
+        step(&mut host, &mut state, &program(&[0x2F, 0x31, 9]));
+        state.render_24 = 0;
+        state.render_26 = 0;
+        state.render_28 = 0;
+        state.world_y_mirror = 0;
+        state.pc = 0;
+        step(&mut host, &mut state, &program(&[0x2F, 0x32, 9]));
+        assert_eq!(state.render_24, -100);
+        assert_eq!(state.render_26, -200);
+        assert_eq!(state.render_28, -300);
+        assert_eq!(state.world_y_mirror, -400);
+    }
+
+    #[test]
+    fn op2f_subop_34_then_35_round_trips_field_72() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.field_72 = 0xCAFE;
+        step(&mut host, &mut state, &program(&[0x2F, 0x34, 12]));
+        state.field_72 = 0;
+        state.pc = 0;
+        step(&mut host, &mut state, &program(&[0x2F, 0x35, 12]));
+        assert_eq!(state.field_72, 0xCAFE);
     }
 
     // ---- actor_tick / decrement_wait_timer wiring ----

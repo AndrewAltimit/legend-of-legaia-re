@@ -41,3 +41,4 @@ Some entries contain bytes past the streaming terminator. `asset extract` preser
 - The [scene-TMD-prefixed streaming](scene-bundles.md) shape is structurally similar but the leading chunk has no `[u32 type_size]` header and the inner content is a bare TMD instead of a TIM.
 - The [scene-VAB-prefixed streaming](scene-bundles.md) shape uses the same chunk0-header trick but with VAB content.
 - [Pack format](pack.md) lives *inside* TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.
+- A handful of entries (`0157_rikuroa`, `0228_station`, `0373_taiku`, `1205_other5`) carry the streaming layout but the **final** chunk's declared `size` walks past EOF without a terminator on disc. The runtime extends the chunk via streaming DMA continuation rather than consuming a literal terminator. Detector: `crates/asset/src/data_field_truncated.rs` (class `data_field_truncated`).

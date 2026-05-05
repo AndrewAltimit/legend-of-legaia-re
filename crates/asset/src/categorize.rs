@@ -31,6 +31,14 @@ pub enum Class {
     TimPassthrough,
     /// Parses as a DATA_FIELD streaming container (FUN_8002541c 0x14 branch).
     DataFieldStreaming,
+    /// Sister of [`Class::DataFieldStreaming`] — leading chunks parse cleanly
+    /// (all known types, all magic-OK) but the final chunk's declared `size`
+    /// walks past EOF without a terminator. Real PROT entries (`0157_rikuroa`,
+    /// `0228_station`, `0373_taiku`) carry a per-scene secondary table whose
+    /// declared size exceeds the on-disc body — the runtime extends the chunk
+    /// via streaming DMA continuation rather than a literal terminator.
+    /// See [`crate::data_field_truncated`].
+    DataFieldTruncated,
     /// Matches the standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
     /// See `crates/prot/src/timpack.rs`.
     TimPack,
@@ -134,6 +142,7 @@ impl Class {
             Class::ConstantByte => "constant_byte",
             Class::TimPassthrough => "tim_passthrough",
             Class::DataFieldStreaming => "data_field_streaming",
+            Class::DataFieldTruncated => "data_field_truncated",
             Class::TimPack => "tim_pack",
             Class::LzsContainer => "lzs_container",
             Class::StageGeometry => "stage_geometry",
@@ -326,6 +335,24 @@ pub fn classify(buf: &[u8]) -> FileReport {
             zero_fraction,
         );
         report.stream_chunks = Some(r.chunks.len());
+        return report;
+    }
+
+    // Sister of `data_field_streaming` — leading chunks decode cleanly but
+    // the final chunk's declared size walks past EOF without a terminator.
+    // Strict structural detector: requires >= 3 leading chunks, all known
+    // types and magic-OK, plus a partial trailing chunk with a known type.
+    if let Some(t) = crate::data_field_truncated::detect(buf) {
+        let mut report = mk(
+            Class::DataFieldTruncated,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(t.leading_chunks);
         return report;
     }
 

@@ -134,6 +134,8 @@ param_3 = func_0x801d362c(actor, op);
 
 **Escape to overlay-defined extension opcodes.** The town overlay's `FUN_801D362C` reads `op[1]` as a 16-bit sub-opcode (range `0x00..0x3C`) and dispatches via its own JT at `0x801CE868` (61 entries × 4 bytes). Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0`, `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of this table.
 
+The 16-slot, 8-byte-stride scratch table at `&DAT_801F3498` is shared across actors — sub-ops `0x25/0x26` round-trip world coords (8 B), `0x27/0x28` round-trip the tween-source triple at `+0x90` (with `>> 12` fixed-point scaling and `[-0xFF, 0xFF]` clamping on read), `0x31/0x32` round-trip the render-bank section at `+0x24..+0x2C`, and `0x34/0x35` round-trip `actor[+0x72]`. Sub-op `0x0C` sets `actor[+0x50]` (the midpoint blend / sub-state byte consumed by the `FUN_801E45BC` mid-point helper from sub-ops `0x0E` / `0x12`); sub-op `0x0D` is the additive variant.
+
 ### 0x30 — `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
 
 If `actor[+0xA8]` was heap-allocated, calls `FUN_800583C8(actor + 0xA0, buf)`; else uses the inline buffer at `actor + 0xAC`. Clears `actor[+0x9C]`. Goto `caseD_22` epilogue.

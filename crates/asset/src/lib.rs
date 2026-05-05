@@ -17,6 +17,7 @@ use serde::Serialize;
 
 pub mod anm_detect;
 pub mod categorize;
+pub mod data_field_truncated;
 pub mod effect_bundle;
 pub mod field_pack;
 pub mod mips_overlay;

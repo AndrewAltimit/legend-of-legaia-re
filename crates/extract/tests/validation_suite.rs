@@ -34,6 +34,15 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("all_zeros", 1),
     ("data_field_streaming", 26),
+    // Added 2026-05-05: sister of `data_field_streaming` — leading chunks parse
+    // cleanly (all known types, all magic-OK) but the final chunk's declared
+    // `size` walks past EOF without a terminator. The runtime extends the chunk
+    // via streaming DMA continuation rather than a literal terminator on disc.
+    // Promoted 3 entries from `unknown_other` (`0157_rikuroa`, `0228_station`,
+    // `0373_taiku` — scene streams with 2-3 leading chunks then a partial
+    // MOVE/VDF chunk) and 1 from `unknown_low_entropy` (`1205_other5` — a 6-
+    // leading-chunk stream with a partial TIM tail).
+    ("data_field_truncated", 4),
     ("effect_bundle", 1),
     // 2026-05-04: dropped 4 → 3 after the scene_v12_table detector promoted
     // `0002_gameover_data.BIN` (v12 header at offset 0; field_pack magic at
@@ -115,15 +124,21 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // ~64 entries; further dropped 17 → 12 after `scene_event_scripts` took
     // 5 (0318/0337/0399/0587/0646).
     ("unknown_high_entropy", 12),
-    ("unknown_low_entropy", 74),
+    // 2026-05-05: dropped 74 → 73 after `data_field_truncated` claimed
+    // `1205_other5` (a 6-chunk streaming buffer with a partial TIM tail
+    // that previously hid in the low-entropy bucket because the chunk-0
+    // header word `0x00008220` masked as zero-leading).
+    ("unknown_low_entropy", 73),
     // 2026-05-05: dropped 95 → 50 in working dir after `tmd_size_prefix` (34)
     // and `scene_scripted_asset_table` (~13). Further dropped 50 → 34 after
     // `scene_event_scripts` took ~14 entries (large town/scene bundles whose
     // prescript holds field-VM event scripts but whose post-prescript payload
-    // isn't a canonical asset table). The disc-mode count is 34 (vs. 36 in
-    // working dir) because `categorize.json` and `manifest.json` are
-    // working-dir artifacts, not real PROT entries.
-    ("unknown_other", 34),
+    // isn't a canonical asset table). Then dropped 34 → 31 after
+    // `data_field_truncated` claimed `0157_rikuroa`, `0228_station`,
+    // `0373_taiku` (scene streams with a partial MOVE/VDF tail). The disc-
+    // mode count is 31 (vs. 33 in working dir) because `categorize.json`
+    // and `manifest.json` are working-dir artifacts, not real PROT entries.
+    ("unknown_other", 31),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter
