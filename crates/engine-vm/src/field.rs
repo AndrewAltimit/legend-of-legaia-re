@@ -1315,6 +1315,26 @@ pub trait FieldHost {
         ctx.field_68 == 0
     }
 
+    /// Op 0x4C outer-nibble-8 sub-5 / sub-0xE / sub-0xF — halt-acquire idiom.
+    ///
+    /// All three sub-ops share the **same** inner-switch body in the dump
+    /// (lines 6550-6570 of `overlay_0897_801de840.txt`): a conditional
+    /// "halt-acquire" that, if the actor is acquireable, writes
+    /// `ctx.saved_pc = current PC`, clears `ctx.wait_accum`, and sets the
+    /// halt bit (`flags |= 0x400`). On `iVar18 == _DAT_8007c364` (system
+    /// channel) the same fields are mirrored to the system context. Both
+    /// the success and failure exits halt at PC (success returns
+    /// `switchD_801e00f4::default()`; failure goes to `LAB_801dee50`).
+    ///
+    /// The default impl performs the standard ctx mutation (saved_pc +
+    /// wait_accum + halt bit). Real hosts can override to also mirror to
+    /// the system actor or to refuse the acquire.
+    fn op4c_n8_halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
+        ctx.saved_pc = opcode_pc;
+        ctx.wait_accum = 0;
+        ctx.flags |= 0x400;
+    }
+
     /// Op 0x4C outer-nibble-8 sub-9 — write `_DAT_80073F00`.
     ///
     /// 4-byte instruction `[4C, 0x89, lo, hi]`. Writes
@@ -1467,6 +1487,17 @@ pub trait FieldHost {
         let _ = value;
     }
 
+    /// Op 0x4C outer-nibble-C sub-9 — global-pair compare gate.
+    ///
+    /// 2-byte instruction `[4C, 0xC9]`. The original at line 6851 reads two
+    /// 16-bit globals `_DAT_8007BAB8` and `_DAT_8007BA9C` and halts at PC if
+    /// they differ; otherwise advances by 2. Default returns `false` (globals
+    /// match → advance). Real hosts return `true` to model an in-flight
+    /// transition.
+    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+        false
+    }
+
     /// Op 0x4C outer-nibble-D sub-3 — party state setup + FUN_801D596C.
     ///
     /// 14-byte instruction `[4C, 0xD3, lo_a, hi_a, lo_b, hi_b, lo_c, hi_c,
@@ -1512,6 +1543,28 @@ pub trait FieldHost {
         let _ = value;
     }
 
+    /// Op 0x4C outer-nibble-D sub-6 — `ctx.field_74` bitfield mutation.
+    ///
+    /// 3-byte instruction `[4C, 0xD6, b1]`. The original at line 7028 writes:
+    /// - if `b1 == 4`: clear the top bit only (`field_74 &= 0x7FFFFFFF`)
+    /// - else: clear bits `0x83000000`, then set bit `0x80000000` and OR in
+    ///   `(b1 as u32) << 24` (low byte of `b1` into the top byte of `field_74`).
+    ///
+    /// Pure ctx mutation — host hook is a side-effect-only ack. Halt at PC
+    /// (the dump exits via `goto LAB_801e00bc`).
+    fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {}
+
+    /// Op 0x4C outer-nibble-D sub-8 — `FUN_801D77F4` 4-arg call.
+    ///
+    /// 9-byte instruction `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
+    /// The original at line 7042 reads three 16-bit values from the operand,
+    /// adds the global `_DAT_8007B6F8` to `x` (sign-extended u16 truncation),
+    /// then calls `FUN_801D77F4(b1, x, y, z)` — overlay-resident. Hosts apply
+    /// the call if needed. PC += 9.
+    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+        let _ = (b1, words);
+    }
+
     /// Op 0x4C outer-nibble-E sub-2 — set 2 globals.
     ///
     /// 6-byte instruction `[4C, 0xE2, lo, hi, _, _]`. Writes
@@ -1552,6 +1605,33 @@ pub trait FieldHost {
     /// `_DAT_800845DC = _DAT_80084570` — a single-direction snapshot of the
     /// party-leader/scene state. PC += 2.
     fn op4c_n_e_sub_e_snapshot_84570(&mut self) {}
+
+    /// Op 0x4C outer-nibble-E sub-0 — three-way scene/menu state write.
+    ///
+    /// 2-byte instruction `[4C, 0xE0, b1]`. The original at line 7173:
+    /// - `b1 == 0`: `DAT_801F2744 = 1`
+    /// - `b1 < 100`: `DAT_801F2740 = b1`
+    /// - else: `*(u16*)(_DAT_801C6EA4 + 0xE) = b1 - 100`
+    ///
+    /// Halt at PC (`goto LAB_801e00bc`).
+    fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
+        let _ = b1;
+    }
+
+    /// Op 0x4C outer-nibble-E sub-9 — clear `_DAT_8007B9C4` then PC += 2.
+    ///
+    /// 1-byte instruction `[4C, 0xE9]`. The original at line 7362 clears
+    /// `_DAT_8007B9C4` (a global state byte) and tail-calls
+    /// `switchD_801e0f24::caseD_4()` — which is the `addiu s8, s8, 0x2;
+    /// j epilogue` block at `0x801df098`, i.e. PC += 2.
+    fn op4c_n_e_sub9_clear_b9c4(&mut self) {}
+
+    /// Op 0x4C outer-nibble-E sub-A — call `func_0x8003C7EC` then halt at PC.
+    ///
+    /// 1-byte instruction `[4C, 0xEA]`. The original at line 7367 calls the
+    /// overlay-resident `func_0x8003C7EC()` (an actor-list mutator) then
+    /// exits via `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
+    fn op4c_n_e_sub_a_call_c7ec(&mut self) {}
 
     /// Halt-acquire dispatcher used by op 0x38 (CAM_CFG yield path) and
     /// op 0x43 sub-0/1/A/B (actor-control halts).
@@ -2774,14 +2854,16 @@ pub fn step<H: FieldHost>(
                 }
                 // Outer nibble 8 — large multi-purpose dispatcher. The
                 // ported subset covers the simple writes + the field_68
-                // conditional-jump + sub-9 (DAT_80073F00 write — the
-                // "FUN_801E3620 dispatch" was a Ghidra mis-rendering of an
-                // internal `goto code_r0x801e3620` label that just sets
-                // PC += 4). Sub-0 (actor allocator with halt-acquire), sub-1
-                // (ramp scheduler), sub-3 (box-fill table), sub-5/0xE/0xF
-                // (halt-acquire variants), sub-6 (script-context resolution),
-                // sub-0xB / sub-0xD (inventory search + conditional jump)
-                // remain `Pending`.
+                // conditional-jump + sub-9 (DAT_80073F00 write) + sub-5/E/F
+                // (halt-acquire idiom — the original at lines 6550-6570
+                // shares one inner-switch arm body across all three sub-ops:
+                // ctx mutation that sets saved_pc + halt bit + clears
+                // wait_accum, then halts at PC). Sub-0 (actor allocator),
+                // sub-1 (ramp scheduler), sub-3 (box-fill table), sub-6
+                // (script-context resolution), sub-0xB / sub-0xD (inventory
+                // search) remain `Pending` because they require overlay-
+                // resident helpers (`func_0x80020de0`, `func_0x8003ce64`,
+                // `FUN_801D5630`, `func_0x8003cf04`).
                 8 => match op0 & 0x0F {
                     2 => {
                         let Some(&page) = bytecode.get(operand + 1) else {
@@ -2875,6 +2957,16 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 3,
                         }
                     }
+                    // Sub-5/E/F all share the halt-acquire body. The host
+                    // hook applies the standard ctx mutation; the dispatch
+                    // halts at PC regardless of acquire success/failure
+                    // (both paths in the dump halt — success via
+                    // `switchD_801e00f4::default()`, failure via
+                    // `LAB_801dee50`).
+                    5 | 0xE | 0xF => {
+                        host.op4c_n8_halt_acquire(ctx, pc as u32);
+                        StepResult::Halt { final_pc: pc }
+                    }
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 9 — fade family + table copy + callback.
@@ -2961,14 +3053,13 @@ pub fn step<H: FieldHost>(
                 // Outer nibble 0xC — small per-actor / per-scene writes.
                 // Ported subset covers sub-2 (field_42), sub-4 (sub-tile
                 // broadcast), sub-7 (sound trigger), sub-8 (field_74 XOR),
-                // sub-0xA / sub-0xB / sub-0xC (slot table writes), sub-0xE
-                // (b6ac write), sub-0xF (position broadcast — the original's
-                // "FUN_801E3620" exits were Ghidra mis-rendered branches to
-                // `code_r0x801e3620`, all PC += 4). Sub-0/1 (move-table cancel
-                // + linked-list walk), sub-3 (script-table teleport), sub-5/6/9
-                // (conditional jumps depending on FUN_801df8dc /
-                // func_0x8003CE64 globals), sub-0xD (script-context alloc with
-                // halt) remain `Pending`.
+                // sub-9 (global-pair compare gate — PC += 2 unless globals
+                // differ, then halt), sub-0xA / sub-0xB / sub-0xC (slot table
+                // writes), sub-0xE (b6ac write), sub-0xF (position broadcast).
+                // Sub-0/1 (move-table cancel + linked-list walk), sub-3
+                // (script-table teleport), sub-5/6 (conditional jumps via
+                // `func_0x8003CE64`), sub-0xD (script-context alloc with
+                // halt) remain `Pending` (overlay-resident helpers).
                 0xC => match op0 & 0x0F {
                     2 => {
                         let Some(&b1) = bytecode.get(operand + 1) else {
@@ -3048,6 +3139,17 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 2,
                         }
                     }
+                    // Sub-9: 2-byte `[4C, 0xC9]`. PC += 2 unless host says
+                    // globals differ, then halt at PC.
+                    9 => {
+                        if host.op4c_n_c_sub9_globals_differ() {
+                            StepResult::Halt { final_pc: pc }
+                        } else {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 1,
+                            }
+                        }
+                    }
                     // Sub-0xF: 4-byte `[4C, 0xCF, b1, b2]`. Each byte selects
                     // either the actor's world coordinate (0xFF), the
                     // tile-center conversion (`b * 0x80 + 0x40` for non-zero),
@@ -3078,12 +3180,13 @@ pub fn step<H: FieldHost>(
                 },
                 // Outer nibble 0xD — party state + camera-ish setup.
                 // Ported subset covers sub-3 (party state setup, 14-byte),
-                // sub-9 (inverted-Y mirror set, 4-byte), sub-0xA (clear
-                // mirror + collision-Y refresh, 2-byte), sub-0xD (field_58
-                // write, 3-byte), sub-0xF (scene byte write, 3-byte).
-                // Sub-0 (field SE trigger with gate), sub-1 (linked-list
-                // halt-acquire), sub-2 (position broadcast / dialog), sub-4
-                // through sub-8 (camera/effect transition cluster), sub-0xB
+                // sub-6 (`field_74` bitfield mutation, 3-byte, halts at PC),
+                // sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9 (inverted-Y
+                // mirror set, 4-byte), sub-0xA (clear mirror + collision-Y
+                // refresh, 2-byte), sub-0xD (field_58 write, 3-byte), sub-0xF
+                // (scene byte write, 3-byte). Sub-0 (field SE trigger),
+                // sub-1 (linked-list halt-acquire), sub-2 (position broadcast),
+                // sub-4/5/7 (camera/effect transition cluster), sub-0xB
                 // (FUN_801E57F0 + LAB_801E2EA0 yield), sub-0xC / sub-0xE
                 // (inventory query + jump) remain `Pending`.
                 0xD => match op0 & 0x0F {
@@ -3109,6 +3212,41 @@ pub fn step<H: FieldHost>(
                         host.op4c_n_d_sub3_party_setup(ab, cd, ef);
                         StepResult::Advance {
                             next_pc: pc + header_size + 13,
+                        }
+                    }
+                    // Sub-6: 3-byte `[4C, 0xD6, b1]`. Pure ctx.field_74
+                    // bitfield mutation; halts at PC.
+                    6 => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        if b1 == 4 {
+                            ctx.field_74 &= 0x7FFF_FFFF;
+                        } else {
+                            ctx.field_74 =
+                                (ctx.field_74 & 0x7CFF_FFFF) | 0x8000_0000 | (u32::from(b1) << 24);
+                        }
+                        host.op4c_n_d_sub6_field74_mutate_ack();
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-8: 9-byte `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
+                    // Calls the overlay-resident `FUN_801D77F4` with `(b1, x, y, z)`
+                    // (the host applies the call); PC += 9.
+                    8 => {
+                        if operand + 8 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let b1 = bytecode[operand + 1];
+                        let mut words = [0i16; 3];
+                        for (i, w) in words.iter_mut().enumerate() {
+                            *w = i16::from_le_bytes([
+                                bytecode[operand + 2 + i * 2],
+                                bytecode[operand + 3 + i * 2],
+                            ]);
+                        }
+                        host.op4c_n_d_sub8_call_d77f4(b1, words);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 8,
                         }
                     }
                     9 => {
@@ -3157,16 +3295,26 @@ pub fn step<H: FieldHost>(
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 0xE — misc scene writes + emitter helper calls.
-                // Ported subset covers sub-2 (set globals, 6-byte), sub-6
-                // (FUN_801D8280, 8-byte), sub-0xC (capture FUN_801DDF48,
-                // 2-byte), sub-0xD (set ba66, 3-byte), sub-0xE (snapshot
-                // 84570, 2-byte). Sub-0 (scene state writes), sub-1 (variable
-                // packet via FUN_801F8004), sub-3 (teleport to script ctx),
-                // sub-4 (bbox-test halt-or-advance), sub-5 (XP add + halt),
-                // sub-7 (ramp scheduler with FUN_801E212C return), sub-8
-                // (camera config), sub-9 (clear ba9c via STATE_RESUME),
-                // sub-0xA (clear func_0x8003c7ec) remain `Pending`.
+                // Ported subset covers sub-0 (3-way state write, halt at PC),
+                // sub-2 (set globals, 6-byte), sub-6 (FUN_801D8280, 8-byte),
+                // sub-9 (clear b9c4 via caseD_4 = PC += 2), sub-0xA (call
+                // c7ec then halt), sub-0xC (capture FUN_801DDF48, 2-byte),
+                // sub-0xD (set ba66, 3-byte), sub-0xE (snapshot 84570,
+                // 2-byte). Sub-1 (variable-length packet via FUN_801F8004),
+                // sub-3 (teleport to script ctx), sub-4 (bbox-test
+                // halt-or-advance), sub-5 (XP add + LAB_801df89c), sub-7
+                // (ramp scheduler with FUN_801E212C return), sub-8 (camera
+                // config), sub-0xB (actor lookup) remain `Pending`.
                 0xE => match op0 & 0x0F {
+                    // Sub-0: 2-byte `[4C, 0xE0, b1]`. 3-way write (host
+                    // performs based on b1 value); halt at PC.
+                    0 => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        host.op4c_n_e_sub0_state_write(b1);
+                        StepResult::Halt { final_pc: pc }
+                    }
                     2 => {
                         if operand + 3 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
@@ -3193,6 +3341,21 @@ pub fn step<H: FieldHost>(
                         StepResult::Advance {
                             next_pc: pc + header_size + 7,
                         }
+                    }
+                    // Sub-9: 1-byte. Clear `_DAT_8007B9C4` then PC += 2 via
+                    // `caseD_4` (the standard `addiu s8, s8, 0x2; j epilogue`
+                    // block at 0x801df098).
+                    9 => {
+                        host.op4c_n_e_sub9_clear_b9c4();
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-A: 1-byte. Call overlay-resident `func_0x8003C7EC`,
+                    // halt at PC.
+                    0xA => {
+                        host.op4c_n_e_sub_a_call_c7ec();
+                        StepResult::Halt { final_pc: pc }
                     }
                     0xC => {
                         host.op4c_n_e_sub_c_capture_ddf48();
@@ -4381,6 +4544,7 @@ mod tests {
         n8_global_writes: Vec<(i16, u8, u8)>,
         n8_quad_writes: Vec<([i16; 3], u32)>,
         n8_sub9_writes: Vec<i16>,
+        n8_halt_acquires: Vec<u32>,
         n9_dde34_calls: Vec<(u8, u8, [i16; 3])>,
         n9_table_copies: Vec<[i16; 16]>,
         n9_callback_regs: u32,
@@ -4392,6 +4556,12 @@ mod tests {
         n_c_slot_adjusts: Vec<(u8, i16, bool)>,
         n_c_b6ac_writes: Vec<u8>,
         n_c_sub_f_broadcasts: Vec<(i16, i16)>,
+        n_c_sub9_globals_differ: bool,
+        n_d_sub6_acks: u32,
+        n_d_sub8_calls: Vec<(u8, [i16; 3])>,
+        n_e_sub0_writes: Vec<u8>,
+        n_e_sub9_clears: u32,
+        n_e_sub_a_calls: u32,
         n_d_party_setups: Vec<(u32, u32, u32)>,
         n_d_collision_y_calls: u32,
         n_d_scene_byte_writes: Vec<u8>,
@@ -4813,6 +4983,30 @@ mod tests {
         }
         fn op4c_n_e_sub_e_snapshot_84570(&mut self) {
             self.n_e_snapshot_84570_calls += 1;
+        }
+        fn op4c_n8_halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
+            ctx.saved_pc = opcode_pc;
+            ctx.wait_accum = 0;
+            ctx.flags |= 0x400;
+            self.n8_halt_acquires.push(opcode_pc);
+        }
+        fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+            self.n_c_sub9_globals_differ
+        }
+        fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {
+            self.n_d_sub6_acks += 1;
+        }
+        fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+            self.n_d_sub8_calls.push((b1, words));
+        }
+        fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
+            self.n_e_sub0_writes.push(b1);
+        }
+        fn op4c_n_e_sub9_clear_b9c4(&mut self) {
+            self.n_e_sub9_clears += 1;
+        }
+        fn op4c_n_e_sub_a_call_c7ec(&mut self) {
+            self.n_e_sub_a_calls += 1;
         }
         fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
             self.halt_acquire_predicate
@@ -8032,6 +8226,126 @@ mod tests {
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 3 });
         assert_eq!(ctx.field_42, 0x55);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_5_halt_acquire_writes_ctx_and_halts() {
+        let bytecode = [0x4Cu8, 0x85];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            wait_accum: 7,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(ctx.saved_pc, 0);
+        assert_eq!(ctx.wait_accum, 0);
+        assert_eq!(ctx.flags & 0x400, 0x400);
+        assert_eq!(host.n8_halt_acquires, vec![0u32]);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_e_and_f_share_halt_acquire_body() {
+        for sub in [0x8Eu8, 0x8F] {
+            let bytecode = [0x4Cu8, sub];
+            let mut host = TestHost::default();
+            let mut ctx = FieldCtx::default();
+            let r = step(&mut host, &mut ctx, &bytecode, 0);
+            assert_eq!(r, StepResult::Halt { final_pc: 0 });
+            assert_eq!(host.n8_halt_acquires, vec![0u32]);
+        }
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_9_advances_when_globals_match() {
+        let bytecode = [0x4Cu8, 0xC9];
+        let mut host = TestHost {
+            n_c_sub9_globals_differ: false,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_9_halts_when_globals_differ() {
+        let bytecode = [0x4Cu8, 0xC9];
+        let mut host = TestHost {
+            n_c_sub9_globals_differ: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_6_b1_eq_4_clears_top_bit_only() {
+        let bytecode = [0x4Cu8, 0xD6, 0x04];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            field_74: 0xFFFF_FFFF,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(ctx.field_74, 0x7FFF_FFFF);
+        assert_eq!(host.n_d_sub6_acks, 1);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_6_b1_neq_4_sets_high_byte() {
+        let bytecode = [0x4Cu8, 0xD6, 0x12];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            field_74: 0,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        // Sets bit 0x80000000 + (0x12 << 24) = 0x92000000.
+        assert_eq!(ctx.field_74, 0x9200_0000);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_8_passes_b1_and_three_words_advances_9() {
+        let bytecode = [0x4Cu8, 0xD8, 0x05, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 9 });
+        assert_eq!(host.n_d_sub8_calls, vec![(5u8, [0x10i16, 0x20, 0x30])]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_0_writes_b1_and_halts() {
+        let bytecode = [0x4Cu8, 0xE0, 0x42];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_e_sub0_writes, vec![0x42u8]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_9_clears_global_and_advances_2() {
+        let bytecode = [0x4Cu8, 0xE9];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_e_sub9_clears, 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_a_calls_overlay_and_halts() {
+        let bytecode = [0x4Cu8, 0xEA];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_e_sub_a_calls, 1);
     }
 
     #[test]
