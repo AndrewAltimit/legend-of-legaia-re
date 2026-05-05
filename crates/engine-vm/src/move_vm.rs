@@ -765,8 +765,18 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x2B — `actor.anim_block[2..6] = op[1..4]` style write.
-        0x2B => MoveExtResult::default_arm(),
+        // 0x2B — `actor[+0xB4..+0xBC] = op_w(2..6)`. Writes 4 u16 anim-block
+        // slots (`anim_block_u16` at byte-off 8/10/12/14 = `+0xB4/B6/B8/BA`).
+        // Per the dump, the dispatcher's default-arm closes the case after
+        // the writes; engines treating the sub-op as a 5-u16 instruction
+        // can override `ext_dispatch` if they need accurate PC math.
+        0x2B => {
+            state.anim_block_u16_set(8, op_w(2));
+            state.anim_block_u16_set(10, op_w(3));
+            state.anim_block_u16_set(12, op_w(4));
+            state.anim_block_u16_set(14, op_w(5));
+            MoveExtResult::default_arm()
+        }
 
         // 0x2C — overlay sub-routine.
         0x2C => {
@@ -775,7 +785,16 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         }
 
         // 0x2D — additive variant of 0x2B.
-        0x2D => MoveExtResult::default_arm(),
+        // `actor[+0xB4..+0xBC] += op_w(2..6)`. Wrapping add per the
+        // `*(short *)` semantics in the original.
+        0x2D => {
+            for (slot, idx) in [(8, 2), (10, 3), (12, 4), (14, 5)] {
+                let cur = state.anim_block_u16(slot);
+                let add = op_w(idx);
+                state.anim_block_u16_set(slot, cur.wrapping_add(add));
+            }
+            MoveExtResult::default_arm()
+        }
 
         // 0x2E — emit OT packet.
         0x2E => {
@@ -792,8 +811,17 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // 0x30 — opaque func56798 (same as 0x05).
         0x30 => host.ext_func56798(state),
 
-        // 0x33 — `actor.anim_c0[0..4] += op[1..4]` (4 i16s).
-        0x33 => MoveExtResult::default_arm(),
+        // 0x33 — `actor[+0xC0..+0xC8] += op_w(2..6)` (4 i16 anim-block slots
+        // at byte-off 20/22/24/26 = `+0xC0/C2/C4/C6`). Wrapping add per the
+        // `*(short *) +` semantics in the original.
+        0x33 => {
+            for (slot, idx) in [(20, 2), (22, 3), (24, 4), (26, 5)] {
+                let cur = state.anim_block_u16(slot);
+                let add = op_w(idx);
+                state.anim_block_u16_set(slot, cur.wrapping_add(add));
+            }
+            MoveExtResult::default_arm()
+        }
 
         // 0x36..0x39 — distance / threshold predicates (manhattan/euclidean
         // to the player). Default arm.
@@ -2021,6 +2049,63 @@ mod tests {
         let bc = program(&[0x2F, 0x15]);
         step(&mut host, &mut state, &bc);
         assert_eq!(state.flags & 0x800000, 0x800000);
+    }
+
+    // ---- 0x2B / 0x2D / 0x33 anim-block writes ----
+
+    #[test]
+    fn op2f_subop_2b_writes_anim_block_b4_through_ba() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // [0x2F, 0x2B, w0, w1, w2, w3] — writes to +0xB4/B6/B8/BA.
+        let bc = program(&[0x2F, 0x2B, 0x1111, 0x2222, 0x3333, 0x4444]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.anim_block_u16(8), 0x1111);
+        assert_eq!(state.anim_block_u16(10), 0x2222);
+        assert_eq!(state.anim_block_u16(12), 0x3333);
+        assert_eq!(state.anim_block_u16(14), 0x4444);
+    }
+
+    #[test]
+    fn op2f_subop_2d_adds_to_anim_block_b4_through_ba() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.anim_block_u16_set(8, 100);
+        state.anim_block_u16_set(10, 200);
+        state.anim_block_u16_set(12, 300);
+        state.anim_block_u16_set(14, 400);
+        let bc = program(&[0x2F, 0x2D, 5, 6, 7, 8]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.anim_block_u16(8), 105);
+        assert_eq!(state.anim_block_u16(10), 206);
+        assert_eq!(state.anim_block_u16(12), 307);
+        assert_eq!(state.anim_block_u16(14), 408);
+    }
+
+    #[test]
+    fn op2f_subop_2d_wrapping_add_when_overflowed() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.anim_block_u16_set(8, 0xFFFF);
+        let bc = program(&[0x2F, 0x2D, 1, 0, 0, 0]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.anim_block_u16(8), 0x0000);
+    }
+
+    #[test]
+    fn op2f_subop_33_adds_to_anim_block_c0_through_c6() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.anim_block_u16_set(20, 1000);
+        state.anim_block_u16_set(22, 2000);
+        state.anim_block_u16_set(24, 3000);
+        state.anim_block_u16_set(26, 4000);
+        let bc = program(&[0x2F, 0x33, 11, 22, 33, 44]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.anim_block_u16(20), 1011);
+        assert_eq!(state.anim_block_u16(22), 2022);
+        assert_eq!(state.anim_block_u16(24), 3033);
+        assert_eq!(state.anim_block_u16(26), 4044);
     }
 
     // ---- actor_tick / decrement_wait_timer wiring ----

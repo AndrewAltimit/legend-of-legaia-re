@@ -23,6 +23,7 @@ pub mod mips_overlay;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod scene_asset_table;
+pub mod scene_event_scripts;
 pub mod scene_scripted_asset_table;
 pub mod scene_tmd_stream;
 pub mod scene_v12_table;

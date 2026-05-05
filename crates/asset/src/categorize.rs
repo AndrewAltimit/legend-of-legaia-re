@@ -91,6 +91,13 @@ pub enum Class {
     /// holds the standard 7-asset scene bundle. 77 PROT entries match.
     /// See [`crate::scene_scripted_asset_table`].
     SceneScriptedAssetTable,
+    /// `[u16 count][u16 offsets[count]][record bodies]` — same prescript
+    /// shape as [`Class::SceneScriptedAssetTable`] but the post-prescript
+    /// payload is **not** a canonical scene-asset-table. Detected when at
+    /// least 50 % of records open with the field-VM frame sentinel
+    /// `0xFFFF 0x0000`. ~20 PROT entries match. See
+    /// [`crate::scene_event_scripts`].
+    SceneEventScripts,
     /// MIPS code blob — the static disc copy of a runtime overlay. Leads
     /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
     /// follow-up instruction. 22 PROT entries match — all in the `0901..=0969`
@@ -140,6 +147,7 @@ impl Class {
             Class::SceneV12Table => "scene_v12_table",
             Class::SceneAssetTable => "scene_asset_table",
             Class::SceneScriptedAssetTable => "scene_scripted_asset_table",
+            Class::SceneEventScripts => "scene_event_scripts",
             Class::MipsOverlay => "mips_overlay",
             Class::OverlayPtrTable => "overlay_ptr_table",
             Class::PochiFiller => "pochi_filler",
@@ -374,6 +382,25 @@ pub fn classify(buf: &[u8]) -> FileReport {
     if crate::scene_asset_table::detect(buf).is_some() {
         return mk(
             Class::SceneAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Scene event-scripts: same `[u16 count][u16 offsets]` prescript shape as
+    // `scene_scripted_asset_table` but with no canonical asset table after.
+    // Runs after both scripted-and-asset-table and plain asset-table so the
+    // more specific layouts claim their entries first. Frame-opener-rate gate
+    // (>= 50% of records start with the field-VM `0xFFFF 0x0000` sentinel)
+    // keeps this zero-false-positive against random `[count][offsets]`-shaped
+    // data.
+    if crate::scene_event_scripts::detect(buf).is_some() {
+        return mk(
+            Class::SceneEventScripts,
             size,
             head,
             first_u32,

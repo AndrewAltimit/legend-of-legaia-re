@@ -177,3 +177,36 @@ Strict structural checks:
 4. Each object's vert / normal / primitive ranges fit within the claimed total.
 
 The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been located; likely the loader allocates `claimed_total` bytes of RAM and either (a) zero-fills the missing tail, or (b) streams the remainder from another PROT entry.
+
+## scene_event_scripts — prescript-only
+
+Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][u16 offsets]` prescript exists at offset 0, but the post-prescript payload is **not** a canonical 7-asset table. Implementation: `crates/asset/src/scene_event_scripts.rs`. ~20 PROT entries match.
+
+```text
++0x00              u16  count             ; 3..=4096
++0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
+                                          ; monotonically non-decreasing,
+                                          ; all <= file size
++offsets[i]        record bytecode        ; per-record opcodes; the bulk
+                                          ; of records open with the
+                                          ; field-VM frame sentinel
+                                          ; `0xFFFF 0x0000`
+...                                       ; bulk asset payload after the
+                                          ; prescript (per-scene secondary
+                                          ; header; format unconfirmed —
+                                          ; appears to be a small `(count,
+                                          ; descriptor[count])` table at
+                                          ; the next 0x800 boundary, with
+                                          ; alternating `(type, size)` and
+                                          ; runtime-buffer offset pairs)
+```
+
+Strict structural detection:
+1. Prescript shape valid (count `3..=4096`, `offsets[0] == 2 + count*2`, monotonic, in-bounds).
+2. **Frame-opener rate ≥ 50 %** of records start with the field-VM `0xFFFF 0x0000` sentinel.
+
+The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
+
+The prescript records are field-VM (`FUN_801DE840`) event scripts — the same per-frame bytecode shape used by `scene_scripted_asset_table` (`0xFFFF 0x0000` is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.
+
+Detection runs after `scene_scripted_asset_table` and `scene_asset_table`, so any composite layouts those detectors recognize claim their entries first.
