@@ -1315,6 +1315,38 @@ pub trait FieldHost {
         ctx.field_68 == 0
     }
 
+    /// Op 0x4C outer-nibble-8 sub-9 — write `_DAT_80073F00`.
+    ///
+    /// 4-byte instruction `[4C, 0x89, lo, hi]`. Writes
+    /// `_DAT_80073F00 = signed_16(operand[1..3])`. The original at line 6604
+    /// of the dump then "calls FUN_801e3620 and returns" — but `0x801e3620`
+    /// is actually a *branch label* inside FUN_801de840 (Ghidra mis-rendered
+    /// the goto as a function call). The label body sets `iVar45 = param_2 + 4`
+    /// and exits the dispatch normally; `_DAT_80073F00` is the only side
+    /// effect. PC += 4.
+    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+        let _ = value;
+    }
+
+    /// Op 0x4C outer-nibble-0xC sub-0xF — position broadcast.
+    ///
+    /// 4-byte instruction `[4C, 0xCF, b1, b2]`. The original at lines
+    /// 6912-6931 of the dump computes two 16-bit values and writes them to
+    /// `_DAT_8007B628` (X) and `_DAT_8007B62A` (Z):
+    /// - `b1 == 0xFF` → use `ctx.world_x`.
+    /// - `b1 == 0` → 0.
+    /// - else → `(b1 as u16) * 0x80 + 0x40` (the standard "tile center"
+    ///   conversion seen elsewhere in the dispatcher).
+    /// - `b2` is computed the same way but reads `ctx.world_z` for the 0xFF
+    ///   case.
+    ///
+    /// The original's three exits (`iVar18 = FUN_801e3620(); return iVar18;`
+    /// and `goto code_r0x801e3620;`) all converge on the same "PC += 4" label.
+    /// PC += 4 in every path.
+    fn op4c_n_c_sub_f_position_broadcast(&mut self, x_global: i16, z_global: i16) {
+        let _ = (x_global, z_global);
+    }
+
     /// Op 0x4C outer-nibble-9 sub-0/1/2 — fade/effect dispatch via FUN_801DDE34.
     ///
     /// 9-byte instruction `[4C, 0x9N, b1, lo0, hi0, lo1, hi1, lo2, hi2]` where
@@ -2742,10 +2774,12 @@ pub fn step<H: FieldHost>(
                 }
                 // Outer nibble 8 — large multi-purpose dispatcher. The
                 // ported subset covers the simple writes + the field_68
-                // conditional-jump. Sub-0 (actor allocator with
-                // halt-acquire), sub-1 (ramp scheduler), sub-3 (box-fill
-                // table), sub-5/0xE/0xF (halt-acquire variants), sub-6
-                // (script-context resolution), sub-9 (FUN_801E3620 dispatch),
+                // conditional-jump + sub-9 (DAT_80073F00 write — the
+                // "FUN_801E3620 dispatch" was a Ghidra mis-rendering of an
+                // internal `goto code_r0x801e3620` label that just sets
+                // PC += 4). Sub-0 (actor allocator with halt-acquire), sub-1
+                // (ramp scheduler), sub-3 (box-fill table), sub-5/0xE/0xF
+                // (halt-acquire variants), sub-6 (script-context resolution),
                 // sub-0xB / sub-0xD (inventory search + conditional jump)
                 // remain `Pending`.
                 8 => match op0 & 0x0F {
@@ -2826,6 +2860,19 @@ pub fn step<H: FieldHost>(
                             StepResult::Advance {
                                 next_pc: pc + header_size + 3,
                             }
+                        }
+                    }
+                    // Sub-9: write `_DAT_80073F00 = i16(operand[1..3])`, then
+                    // PC += 4 (`code_r0x801e3620` exit label).
+                    9 => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let value =
+                            i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
+                        host.op4c_n8_sub9_set_73f00(value);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
                         }
                     }
                     _ => StepResult::Pending { opcode, pc },
@@ -2915,11 +2962,13 @@ pub fn step<H: FieldHost>(
                 // Ported subset covers sub-2 (field_42), sub-4 (sub-tile
                 // broadcast), sub-7 (sound trigger), sub-8 (field_74 XOR),
                 // sub-0xA / sub-0xB / sub-0xC (slot table writes), sub-0xE
-                // (b6ac write). Sub-0/1 (move-table cancel + linked-list
-                // walk), sub-3 (script-table teleport), sub-5/6/9 (conditional
-                // jumps depending on FUN_801df8dc / func_0x8003CE64 globals),
-                // sub-0xD (script-context alloc with halt), sub-0xF (position
-                // broadcast via FUN_801E3620) remain `Pending`.
+                // (b6ac write), sub-0xF (position broadcast — the original's
+                // "FUN_801E3620" exits were Ghidra mis-rendered branches to
+                // `code_r0x801e3620`, all PC += 4). Sub-0/1 (move-table cancel
+                // + linked-list walk), sub-3 (script-table teleport), sub-5/6/9
+                // (conditional jumps depending on FUN_801df8dc /
+                // func_0x8003CE64 globals), sub-0xD (script-context alloc with
+                // halt) remain `Pending`.
                 0xC => match op0 & 0x0F {
                     2 => {
                         let Some(&b1) = bytecode.get(operand + 1) else {
@@ -2997,6 +3046,32 @@ pub fn step<H: FieldHost>(
                         host.op4c_n_c_sub_e_set_b6ac(value);
                         StepResult::Advance {
                             next_pc: pc + header_size + 2,
+                        }
+                    }
+                    // Sub-0xF: 4-byte `[4C, 0xCF, b1, b2]`. Each byte selects
+                    // either the actor's world coordinate (0xFF), the
+                    // tile-center conversion (`b * 0x80 + 0x40` for non-zero),
+                    // or 0. PC += 4.
+                    0xF => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let b1 = bytecode[operand + 1];
+                        let b2 = bytecode[operand + 2];
+                        let resolve = |b: u8, world: u16| -> i16 {
+                            if b == 0xFF {
+                                world as i16
+                            } else if b != 0 {
+                                ((u16::from(b) << 7) | 0x40) as i16
+                            } else {
+                                0
+                            }
+                        };
+                        let x = resolve(b1, ctx.world_x);
+                        let z = resolve(b2, ctx.world_z);
+                        host.op4c_n_c_sub_f_position_broadcast(x, z);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
                         }
                     }
                     _ => StepResult::Pending { opcode, pc },
@@ -4305,6 +4380,7 @@ mod tests {
         n8_callback_regs: u32,
         n8_global_writes: Vec<(i16, u8, u8)>,
         n8_quad_writes: Vec<([i16; 3], u32)>,
+        n8_sub9_writes: Vec<i16>,
         n9_dde34_calls: Vec<(u8, u8, [i16; 3])>,
         n9_table_copies: Vec<[i16; 16]>,
         n9_callback_regs: u32,
@@ -4315,6 +4391,7 @@ mod tests {
         n_c_slot_writes: Vec<(u8, i16)>,
         n_c_slot_adjusts: Vec<(u8, i16, bool)>,
         n_c_b6ac_writes: Vec<u8>,
+        n_c_sub_f_broadcasts: Vec<(i16, i16)>,
         n_d_party_setups: Vec<(u32, u32, u32)>,
         n_d_collision_y_calls: u32,
         n_d_scene_byte_writes: Vec<u8>,
@@ -4679,6 +4756,9 @@ mod tests {
         fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
             self.n8_quad_writes.push((slots, packed));
         }
+        fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+            self.n8_sub9_writes.push(value);
+        }
         fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
             self.n9_dde34_calls.push((sub, b1, words));
         }
@@ -4706,6 +4786,9 @@ mod tests {
         }
         fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
             self.n_c_b6ac_writes.push(value);
+        }
+        fn op4c_n_c_sub_f_position_broadcast(&mut self, x_global: i16, z_global: i16) {
+            self.n_c_sub_f_broadcasts.push((x_global, z_global));
         }
         fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
             self.n_d_party_setups.push((ab, cd, ef));
@@ -7754,6 +7837,17 @@ mod tests {
     }
 
     #[test]
+    fn op_4c_n8_sub_9_writes_signed_16_and_advances_4() {
+        // [4C, 0x89, 0x34, 0x12] writes 0x1234 then PC += 4.
+        let bytecode = [0x4Cu8, 0x89, 0x34, 0x12];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        assert_eq!(host.n8_sub9_writes, vec![0x1234i16]);
+    }
+
+    #[test]
     fn op_4c_n9_sub_0_passes_b1_and_three_words() {
         // [4C, 0x90, b1=7, lo,hi, lo,hi, lo,hi]
         let mut bytecode = vec![0x4C, 0x90, 0x07];
@@ -7938,6 +8032,35 @@ mod tests {
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 3 });
         assert_eq!(ctx.field_42, 0x55);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_f_uses_actor_world_when_byte_is_ff() {
+        // [4C, 0xCF, 0xFF, 0xFF] — both bytes select the actor's coords.
+        let bytecode = [0x4Cu8, 0xCF, 0xFF, 0xFF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            world_x: 0x1234,
+            world_z: 0x5678,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        assert_eq!(
+            host.n_c_sub_f_broadcasts,
+            vec![(0x1234u16 as i16, 0x5678u16 as i16)]
+        );
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_f_zero_yields_zero_nonzero_yields_tile_center() {
+        // b1=0 → 0; b2=2 → 2*0x80 + 0x40 = 0x140.
+        let bytecode = [0x4Cu8, 0xCF, 0x00, 0x02];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        assert_eq!(host.n_c_sub_f_broadcasts, vec![(0, 0x0140)]);
     }
 
     #[test]
