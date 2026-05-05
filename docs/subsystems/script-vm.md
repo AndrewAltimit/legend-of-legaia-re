@@ -389,4 +389,29 @@ The "table" *is* the [CDNAME.TXT name map](../formats/cdname.md)'s per-scene blo
 - **`LAB_801df09c`** is just `j 0x801e3628; move v0, s8` — return `s8` unchanged. Most callsites jump there with an `addiu s8, s8, N` in the **delay slot of the j**, supplying the per-callsite PC delta. **`code_r0x801df098`** is the *preceding* instruction `addiu s8, s8, 0x2` — jumping there gives PC += 2 with no per-callsite delta. **`switchD_801e0f24::caseD_4`** has its entry at `0x801df098` and so always does PC += 2 then return.
 - **`LAB_801e00b8` = `addiu s8, s8, 0x3; j 0x801e00bc`**. **`LAB_801e00bc` = `j epilogue`** with no advance, used by paths that already incremented `s8` upstream.
 - **0x42 mode 0 jump-take target** is `pc + 3 + LE_u16(operand[2..4])` (non-extended), found via the join point `LAB_801e35fc: return iVar18 + uVar31 + iVar24` — not the obvious `pc + 2 + delta`.
-- **"`iVar18 = FUN_801e3620(); return iVar18;`" is not a function call.** Ghidra renders four sites in the dispatcher (lines 5021, 6606, 6923, 6928 of the dump) as if they call a function at `0x801e3620`, but `0x801e3620` is a *branch label inside FUN_801de840 itself* (line 5024: `code_r0x801e3620: iVar45 = param_2 + 4; ... break;`). A separate `FUN_801e3620` "function" dump in `ghidra/scripts/funcs/` actually shows entry `0x801e3578` — the dump filename's address is just inside that function's epilogue. All four sites mean the same thing: **set next_pc = pc + 4 and exit the dispatcher normally.** This unlocks 0x4C nibble-8 sub-9, 0x4C nibble-C sub-0xF, and 0x3A's overflow path.
+### Intra-function label catalogue
+
+`FUN_801de840` is a 17.5 KB function. Several `iVar = FUN_801xxxxx(); return iVar;` patterns in its C decompile look like calls into separate helpers but are actually **intra-function `j` targets** that Ghidra promoted to fake function names. Each label is a `addiu s8, s8, N; j epilogue` block (or a small variant); calling "into" it just supplies the PC delta and falls through to the dispatcher's tail.
+
+Use this table as the lookup when interpreting the dump:
+
+| Label | Aliases in C decomp | Semantic |
+|---|---|---|
+| `0x801df098` | `code_r0x801df098`, `switchD_801e0f24::caseD_4` | `addiu s8, s8, 0x2; j 0x801df09c` → **PC += 2** |
+| `0x801df09c` | `LAB_801df09c`, `switchD_801e00f4::default()` | `j 0x801e3628; move v0, s8` → **PC unchanged** (function epilogue) |
+| `0x801df8dc` | `FUN_801df8dc()` (lines 6250, 6284, 6384, 6449) | `addiu s8, s8, 0x6; j epilogue` → **PC += 6** |
+| `0x801dee50` | `LAB_801dee50` | "halt-acquire failed" path — **halts at PC** (resets to loop start) |
+| `0x801e00b8` | `LAB_801e00b8` | `addiu s8, s8, 0x3; j 0x801e00bc` → **PC += 3** |
+| `0x801e00bc` | `LAB_801e00bc` | `j epilogue` — **PC unchanged** for callers that already did `addiu s8, s8, N` upstream |
+| `0x801e212c` | `code_r0x801e212c`, `FUN_801e212c()` (lines 4749, 4772, 7285) | `return param_2 + 7;` → **PC += 7** |
+| `0x801e35fc` | `LAB_801e35fc` | Join point: `return iVar18 + uVar31 + iVar24` → **PC = pc + 3 + LE_u16(operand[2..4])** for 0x42 mode 0 |
+| `0x801e3614` | `FUN_801e3614()` (lines 7252, 7416) | `addiu v0, v0, -2; j 0x801e3624; addu s8, s8, v0` → **PC = s8 + skip - 2** (= `pc + 5 + skip` in the standard 0x4D / nE sub-4 BBOX outside-box context) |
+| `0x801e3620` | `code_r0x801e3620`, `FUN_801e3620()` (lines 5021, 6606, 6923, 6928) | `iVar45 = param_2 + 4; ... break;` → **PC += 4** |
+
+Pitfalls when verifying:
+
+1. The misleadingly-named dump file `ghidra/scripts/funcs/overlay_0897_801e3620.txt` shows entry `0x801e3578` — the address `0x801e3620` is just inside that function's epilogue (`lw ra, 0x14(sp)`). The dump filename uses Ghidra's call-site rendering, not the actual entry. Same trap for `overlay_0897_801e212c.txt` if you ever generate one.
+2. **Always cross-check `grep -n "0x<addr>" overlay_0897_801de840.txt`** before treating an `FUN_xxxxxxxx` reference as a separate function. Inside the FUN_801de840 dump, `j 0x<addr>` and `beq …, 0x<addr>` instructions reveal intra-function targets that Ghidra mis-promotes.
+3. The C decomp sometimes collapses sub-op-first dispatch ordering. Round 11's 0x4C nibble-A bug was an inversion that only became visible after reading raw asm at `0x801e2568` (`bne a1, zero, 0x801e258c` dispatching on sub-op BEFORE the ctx[+0x10] check). When tests pass but the C reads suspicious, walk the asm.
+
+A standing audit pass — picking 5 random ported sub-ops and cross-checking against the dump — turned up **no further inversion bugs** as of round 15.
