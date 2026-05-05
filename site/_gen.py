@@ -2,18 +2,20 @@
 """Generate the multi-page site from per-page content fragments.
 
 Layout is shared via JS (site/js/layout.js), so each generated HTML file is
-just <head> + <main> with the page-specific content. The sidebar nav is
-injected at runtime by layout.js.
+just <head> + <main> with the page-specific content. The sidebar nav, TOC
+rail, and prev/next footer are injected at runtime by layout.js.
+
+Also writes site/search-index.json: one entry per (page, h2/h3 heading)
+plus one root entry per page. Drives the in-page search overlay.
 
 Run from the repo root:
     python3 site/_gen.py
-
-Or after editing _content/*:
-    python3 site/_gen.py && open site/index.html
 """
 from __future__ import annotations
-import os
+import json
+import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -25,7 +27,6 @@ def html_template(title: str, depth: int, active_key: str, body: str, extra_head
     layout_js = "../" * depth + "js/layout.js"
     main_js = "../" * depth + "js/main.js"
     favicon = "../" * depth + "img/favicon.svg"
-    home_href = "../" * depth + "index.html" if depth else "index.html"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,33 +55,155 @@ def html_template(title: str, depth: int, active_key: str, body: str, extra_head
 # (out_path, title, active_key, body_file)
 PAGES: list[tuple[str, str, str, str]] = [
     # depth = 0 (root)
-    ("index.html",                "Home",                  "home",                       "home.html"),
-    ("architecture.html",         "How the layers stack",  "architecture",               "architecture.html"),
-    ("quickstart.html",           "Quick start",           "quickstart",                 "quickstart.html"),
-    ("viewer.html",               "Asset viewer (WASM)",   "viewer",                     "viewer.html"),
+    ("index.html",                 "Home",                          "home",                       "home.html"),
+    ("architecture.html",          "How the layers stack",          "architecture",               "architecture.html"),
+    ("quickstart.html",            "Quick start",                   "quickstart",                 "quickstart.html"),
+    ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),
     # depth = 1
-    ("subsystems/index.html",     "Subsystems",            "subsystems/index",           "subsystems/index.html"),
-    ("subsystems/boot.html",      "Boot path",             "subsystems/boot",            "subsystems/boot.html"),
-    ("subsystems/asset-loader.html","Asset loader",        "subsystems/asset-loader",    "subsystems/asset-loader.html"),
-    ("subsystems/script-vm.html", "Field / event script VM","subsystems/script-vm",      "subsystems/script-vm.html"),
-    ("subsystems/actor-vm.html",  "Actor / sprite VM",     "subsystems/actor-vm",        "subsystems/actor-vm.html"),
-    ("subsystems/move-vm.html",   "Move-table VM",         "subsystems/move-vm",         "subsystems/move-vm.html"),
-    ("subsystems/effect-vm.html", "Effect VM",             "subsystems/effect-vm",       "subsystems/effect-vm.html"),
-    ("subsystems/battle.html",    "Battle",                "subsystems/battle",          "subsystems/battle.html"),
-    ("subsystems/battle-action.html","Battle action state machine","subsystems/battle-action","subsystems/battle-action.html"),
-    ("subsystems/audio.html",     "Audio",                 "subsystems/audio",           "subsystems/audio.html"),
-    ("subsystems/renderer.html",  "Renderer",              "subsystems/renderer",        "subsystems/renderer.html"),
-    ("subsystems/engine.html",    "Engine reimplementation","subsystems/engine",         "subsystems/engine.html"),
-    ("formats/index.html",        "Formats",               "formats/index",              "formats/index.html"),
-    ("tooling/index.html",        "Tooling",               "tooling/index",              "tooling/index.html"),
-    ("reference/index.html",      "Reference",             "reference/index",            "reference/index.html"),
-    ("reference/functions.html",  "Key functions",         "reference/functions",        "reference/functions.html"),
-    ("reference/memory-map.html", "PSX RAM map",           "reference/memory-map",       "reference/memory-map.html"),
+    ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
+    ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
+    ("subsystems/asset-loader.html","Asset loader",                 "subsystems/asset-loader",    "subsystems/asset-loader.html"),
+    ("subsystems/script-vm.html",  "Field / event script VM",       "subsystems/script-vm",       "subsystems/script-vm.html"),
+    ("subsystems/actor-vm.html",   "Actor / sprite VM",             "subsystems/actor-vm",        "subsystems/actor-vm.html"),
+    ("subsystems/move-vm.html",    "Move-table VM",                 "subsystems/move-vm",         "subsystems/move-vm.html"),
+    ("subsystems/effect-vm.html",  "Effect VM",                     "subsystems/effect-vm",       "subsystems/effect-vm.html"),
+    ("subsystems/battle.html",     "Battle",                        "subsystems/battle",          "subsystems/battle.html"),
+    ("subsystems/battle-action.html","Battle action state machine", "subsystems/battle-action",   "subsystems/battle-action.html"),
+    ("subsystems/audio.html",      "Audio",                         "subsystems/audio",           "subsystems/audio.html"),
+    ("subsystems/renderer.html",   "Renderer",                      "subsystems/renderer",        "subsystems/renderer.html"),
+    ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
+    ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
+    ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
+    ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
+    ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
+    ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Search-index extraction
+# ---------------------------------------------------------------------------
+
+class _IndexParser(HTMLParser):
+    """Extract: lede paragraph, h2/h3 headings, and surrounding text snippets."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.lede: list[str] = []
+        self.headings: list[dict] = []  # [{level, text, id, snippet}]
+        self._current_heading: dict | None = None
+        self._capture_into: list[str] | None = None
+        self._lede_open = False
+        self._h_open = False
+        self._h_level = 0
+        self._h_attrs: dict[str, str] = {}
+        self._section_id: str | None = None
+        self._snippet_buf: list[str] = []
+        self._section_text_buf: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_d = dict(attrs)
+        if tag == "p" and self._lede_open is False and "lede" in (attrs_d.get("class") or ""):
+            self._lede_open = True
+            self._capture_into = self.lede
+        elif tag in ("h2", "h3"):
+            # close any prior heading: store accumulated snippet
+            if self._current_heading is not None:
+                self._current_heading["snippet"] = " ".join(self._snippet_buf).strip()[:200]
+                self.headings.append(self._current_heading)
+                self._current_heading = None
+            self._h_open = True
+            self._h_level = 2 if tag == "h2" else 3
+            self._h_attrs = attrs_d
+            self._capture_into = []
+            self._snippet_buf = []
+        elif tag == "section" and "doc-section" in (attrs_d.get("class") or ""):
+            self._section_id = attrs_d.get("id")
+
+    def handle_endtag(self, tag):
+        if tag == "p" and self._lede_open:
+            self._lede_open = False
+            self._capture_into = None
+        elif tag in ("h2", "h3") and self._h_open:
+            text = "".join(self._capture_into or []).strip()
+            self._h_open = False
+            heading_id = self._h_attrs.get("id") or self._section_id or _slugify(text)
+            self._current_heading = {
+                "level": self._h_level,
+                "text": text,
+                "id": heading_id,
+            }
+            self._capture_into = None
+            # subsequent text feeds into snippet
+            self._snippet_buf = []
+        elif tag == "section" and self._current_heading is not None:
+            # finalize last heading on section close
+            self._current_heading["snippet"] = " ".join(self._snippet_buf).strip()[:200]
+            self.headings.append(self._current_heading)
+            self._current_heading = None
+            self._snippet_buf = []
+            self._section_id = None
+
+    def handle_data(self, data):
+        if self._capture_into is not None:
+            self._capture_into.append(data)
+        elif self._current_heading is not None:
+            self._snippet_buf.append(data)
+
+    def close(self) -> None:
+        if self._current_heading is not None:
+            self._current_heading["snippet"] = " ".join(self._snippet_buf).strip()[:200]
+            self.headings.append(self._current_heading)
+            self._current_heading = None
+        super().close()
+
+
+def _slugify(s: str) -> str:
+    out = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+    return out or "section"
+
+
+def build_search_entries(out_path: str, title: str, body: str, section_label: str) -> list[dict]:
+    parser = _IndexParser()
+    parser.feed(body)
+    parser.close()
+
+    lede_text = re.sub(r"\s+", " ", "".join(parser.lede)).strip()
+    entries: list[dict] = []
+
+    # Page-root entry
+    entries.append({
+        "href": out_path,
+        "title": title,
+        "section": section_label,
+        "snippet": lede_text[:240],
+    })
+
+    # Per-heading entries
+    for h in parser.headings:
+        if not h["text"]:
+            continue
+        entries.append({
+            "href": out_path,
+            "anchor": h["id"],
+            "title": h["text"],
+            "section": title,
+            "snippet": (h.get("snippet") or "")[:200],
+        })
+
+    return entries
+
+
+def section_label_for(out_path: str) -> str:
+    if "/" not in out_path:
+        return "overview"
+    return out_path.split("/", 1)[0]
 
 
 def main() -> int:
     written = 0
+    search_index: list[dict] = []
+
     for out_path, title, active, body_file in PAGES:
         depth = out_path.count("/")
         src = CONTENT / body_file
@@ -88,20 +211,29 @@ def main() -> int:
             print(f"  skip {out_path:40s} (no content yet)")
             continue
         body = src.read_text()
-        # Optional per-page head extras (e.g. inline SVG style overrides) marked
-        # by a leading `<!--HEAD: ... -->` line.
+
         extra_head = ""
         if body.startswith("<!--HEAD:"):
             end = body.find("-->")
             extra_head = body[len("<!--HEAD:"):end].strip()
             body = body[end + 3:].lstrip()
+
         html = html_template(title, depth, active, body, extra_head)
         out = ROOT / out_path
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(html)
         written += 1
         print(f"  wrote {out_path}")
-    print(f"\n{written} pages written")
+
+        # Build search index entries from body fragment
+        search_index.extend(
+            build_search_entries(out_path, title, body, section_label_for(out_path))
+        )
+
+    # Write search-index.json
+    idx_path = ROOT / "search-index.json"
+    idx_path.write_text(json.dumps(search_index, ensure_ascii=False, separators=(",", ":")))
+    print(f"\n{written} pages written, {len(search_index)} search entries")
     return 0
 
 
