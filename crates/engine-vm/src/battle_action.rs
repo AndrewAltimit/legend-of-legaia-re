@@ -1456,9 +1456,7 @@ fn spirit_arts_sustain<H: BattleActionHost + ?Sized>(
         .actor(slot)
         .map(|a| a.current_anim != 0)
         .unwrap_or(false);
-    if nonzero_anim
-        && let Some(actor) = host.actor_mut(slot)
-    {
+    if nonzero_anim && let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = 0;
     }
     let timer_done = tick_frame_timer(host, ctx);
@@ -1626,9 +1624,7 @@ fn capture_start<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     let r = host.rng();
-    ctx.combo_timer = ctx
-        .combo_timer
-        .wrapping_add(0x780 + (r % 2) as i16 * 0x80);
+    ctx.combo_timer = ctx.combo_timer.wrapping_add(0x780 + (r % 2) as i16 * 0x80);
     host.pose(slot, Pose::Idle);
     host.recompute_battle_order();
     ctx.frame_timer = 0x1E;

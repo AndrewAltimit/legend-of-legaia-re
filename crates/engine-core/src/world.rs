@@ -23,6 +23,7 @@ use vm::battle_action::{
     BattleActionCtx, BattleActionHost, BattleActor, BattleEndCause, Pose, StepOutcome,
 };
 use vm::effect_vm::{EffectHost, MasterSlot, Pool, StateOutcome};
+use vm::field::{FieldCtx, FieldHost, StepResult as FieldStepResult};
 use vm::move_vm::{ActorState as MoveActorState, MoveExtResult, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 
@@ -114,6 +115,22 @@ pub struct World {
     pub actors: Vec<Actor>,
     pub battle_ctx: BattleActionCtx,
     pub effect_pool: Pool,
+    /// Field VM execution context. Live in `SceneMode::Field` and
+    /// `SceneMode::Cutscene` (cutscenes are field scenes that suppress
+    /// player input via context flags).
+    pub field_ctx: FieldCtx,
+    /// Field VM bytecode buffer. Engines load this from a scene's PROT
+    /// asset bundle when entering a field scene; `field_pc` indexes it.
+    pub field_bytecode: Vec<u8>,
+    /// Current field-VM PC. Updated by `tick()` based on the StepResult.
+    pub field_pc: usize,
+    /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
+    /// vec means "no active move" — the move VM is not ticked for that
+    /// actor. Set via [`World::set_move_bytecode`].
+    pub move_bytecode: Vec<Vec<u16>>,
+    /// Story-flag word (`_DAT_1F800394` in retail). Read by field-VM
+    /// op 0x30 GFLAG_TST and friends.
+    pub story_flags: u32,
 
     /// PRNG state consumed by every VM that calls `host.rng()`. Default uses
     /// a deterministic LCG so tests are reproducible.
@@ -161,6 +178,11 @@ impl World {
             actors: (0..MAX_ACTORS).map(|_| Actor::new()).collect(),
             battle_ctx: BattleActionCtx::new(),
             effect_pool: Pool::new(),
+            field_ctx: FieldCtx::default(),
+            field_bytecode: Vec::new(),
+            field_pc: 0,
+            move_bytecode: vec![Vec::new(); MAX_ACTORS],
+            story_flags: 0,
             rng_state: 0x1234_5678,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
@@ -174,6 +196,23 @@ impl World {
             battle_end: None,
             frame: 0,
         }
+    }
+
+    /// Set / clear the move-VM bytecode for `slot`. `None` clears the
+    /// buffer; subsequent ticks won't run the move VM on this actor.
+    pub fn set_move_bytecode(&mut self, slot: usize, bytecode: Option<Vec<u16>>) {
+        if slot < self.move_bytecode.len() {
+            self.move_bytecode[slot] = bytecode.unwrap_or_default();
+        }
+    }
+
+    /// Replace the field-VM bytecode buffer + reset PC. Engines call this
+    /// when entering a new field scene (loading the scene's per-event
+    /// script) to start interpretation from the beginning.
+    pub fn load_field_script(&mut self, bytecode: Vec<u8>) {
+        self.field_bytecode = bytecode;
+        self.field_pc = 0;
+        self.field_ctx = FieldCtx::default();
     }
 
     /// Activate a slot and return a mutable reference to the actor.
@@ -254,13 +293,74 @@ impl World {
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
     /// Returns the battle-step outcome when in [`SceneMode::Battle`], else
     /// `None`.
+    ///
+    /// Order of operations:
+    ///  1. Effect pool tick — runs every frame regardless of mode.
+    ///  2. Per-actor move-VM tick — only for actors with bytecode loaded.
+    ///  3. Mode-specific VM:
+    ///     - `Battle`     → battle-action state machine step.
+    ///     - `Field`      → field-VM step (or no-op if no bytecode loaded).
+    ///     - `Cutscene`   → field-VM step (cutscenes use the same script VM).
+    ///     - `Title`      → no further VM.
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
         self.tick_effects();
+        self.tick_move_vms();
         match self.mode {
             SceneMode::Battle => Some(self.step_battle()),
-            SceneMode::Field | SceneMode::Cutscene | SceneMode::Title => None,
+            SceneMode::Field | SceneMode::Cutscene => {
+                self.step_field();
+                None
+            }
+            SceneMode::Title => None,
         }
+    }
+
+    /// Per-actor move-VM tick. Calls `step` once per active actor that has
+    /// bytecode loaded. The retail equivalent runs in `FUN_80021DF4`
+    /// (per-frame actor tick) and yields when `wait_timer >= 0`.
+    pub fn tick_move_vms(&mut self) {
+        for slot in 0..self.actors.len() {
+            if !self.actors[slot].active {
+                continue;
+            }
+            let bc = self.move_bytecode.get(slot).cloned().unwrap_or_default();
+            if bc.is_empty() {
+                continue;
+            }
+            // Decrement wait timer; if non-negative, skip.
+            if self.actors[slot].move_state.wait_timer > 0 {
+                self.actors[slot].move_state.wait_timer -= 1;
+                continue;
+            }
+            let _ = self.step_move_vm(slot, &bc);
+        }
+    }
+
+    /// One field-VM step. Drives `field_ctx` + `field_pc` from the loaded
+    /// `field_bytecode`. No-op when no bytecode is loaded.
+    pub fn step_field(&mut self) -> Option<FieldStepResult> {
+        if self.field_bytecode.is_empty() {
+            return None;
+        }
+        let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
+        let bc_ptr: *const Vec<u8> = &self.field_bytecode;
+        let pc = self.field_pc;
+        let mut host = FieldHostImpl { world: self };
+        // SAFETY: FieldHostImpl never borrows `world.field_ctx` or
+        // `world.field_bytecode` through the borrow.
+        let ctx = unsafe { &mut *ctx_ptr };
+        let bc: &[u8] = unsafe { (*bc_ptr).as_slice() };
+        let res = vm::field::step(&mut host, ctx, bc, pc);
+        match &res {
+            FieldStepResult::Advance { next_pc } => self.field_pc = *next_pc,
+            FieldStepResult::Yield { resume_pc } => self.field_pc = *resume_pc,
+            FieldStepResult::Halt { final_pc } => self.field_pc = *final_pc,
+            FieldStepResult::Pending { pc, .. } | FieldStepResult::Unknown { pc, .. } => {
+                self.field_pc = *pc;
+            }
+        }
+        Some(res)
     }
 }
 
@@ -391,6 +491,26 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
         // Default world has no state-transition wiring; let the slot terminate
         // so the pool doesn't leak. Engines that wire sprites override this.
         StateOutcome::Terminate
+    }
+}
+
+// --- field VM host ---------------------------------------------------------
+
+struct FieldHostImpl<'a> {
+    world: &'a mut World,
+}
+
+impl<'a> FieldHost for FieldHostImpl<'a> {
+    fn global_flags(&self) -> u32 {
+        self.world.story_flags
+    }
+    fn set_global_flags(&mut self, value: u32) {
+        self.world.story_flags = value;
+    }
+    fn frame_delta(&self) -> u16 {
+        // Default world ticks one logical frame per `tick()`. Engines that
+        // run faster-than-frame can override this on a custom host wrapper.
+        1
     }
 }
 
@@ -602,6 +722,68 @@ mod tests {
         world.tick_effects();
         // Default advance_state returns Terminate → slot zeroes out.
         assert_eq!(world.effect_pool.master_slots[0].child_count, 0);
+    }
+
+    #[test]
+    fn world_tick_in_field_mode_steps_field_vm() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // Bytecode: 0x37 YIELD. Should set ctx.flags |= 0x400 + advance PC
+        // past the yield.
+        world.load_field_script(vec![0x37, 0x00]);
+        let _ = world.tick();
+        assert_eq!(world.field_ctx.flags & 0x400, 0x400, "halt bit set");
+        assert!(
+            world.field_pc > 0,
+            "field_pc should advance after yield, got {}",
+            world.field_pc
+        );
+    }
+
+    #[test]
+    fn world_tick_field_mode_no_bytecode_is_noop() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // No bytecode loaded. Tick should not panic and should not advance
+        // field_pc.
+        let _ = world.tick();
+        assert_eq!(world.field_pc, 0);
+    }
+
+    #[test]
+    fn world_tick_drives_per_actor_move_vm() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.actors[0].active = true;
+        // Move-VM bytecode: WORLD_SET (op 0x07) x=42, y=10, z=5, then HALT.
+        world.set_move_bytecode(0, Some(vec![0x0007, 42, 10, 5, 0x0008]));
+        let _ = world.tick();
+        // First step is WORLD_SET; should write the position.
+        assert_eq!(world.actors[0].move_state.world_x, 42);
+        assert_eq!(world.actors[0].move_state.world_y, 10);
+    }
+
+    #[test]
+    fn world_tick_skips_move_vm_when_wait_timer_set() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        world.actors[0].move_state.wait_timer = 5;
+        world.set_move_bytecode(0, Some(vec![0x0007, 99, 99, 99, 0x0008]));
+        let _ = world.tick();
+        // Wait timer decremented, but move VM didn't run -> position unchanged.
+        assert_eq!(world.actors[0].move_state.wait_timer, 4);
+        assert_eq!(world.actors[0].move_state.world_x, 0);
+    }
+
+    #[test]
+    fn load_field_script_resets_pc_and_ctx() {
+        let mut world = World::new();
+        world.field_pc = 42;
+        world.field_ctx.flags = 0xFFFF;
+        world.load_field_script(vec![0xFF; 8]);
+        assert_eq!(world.field_pc, 0);
+        assert_eq!(world.field_ctx.flags, 0);
+        assert_eq!(world.field_bytecode.len(), 8);
     }
 
     #[test]

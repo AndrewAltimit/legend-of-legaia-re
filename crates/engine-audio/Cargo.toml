@@ -12,3 +12,5 @@ path = "src/lib.rs"
 anyhow.workspace = true
 cpal = "0.15"
 log = "0.4"
+legaia-xa = { path = "../xa" }
+legaia-vab = { path = "../vab" }

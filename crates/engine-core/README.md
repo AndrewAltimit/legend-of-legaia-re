@@ -33,6 +33,24 @@ TIM/TMD/VAB on every frame when an actor is referenced repeatedly.
 so the host can drive the script VMs deterministically regardless of
 render rate.
 
+### Composite `World`
+
+`world::World` ties together the actor, move, effect, field, and battle
+VMs. One actor table (default capacity 64) is shared across all four
+script VMs; the `Host` traits are implemented by routing through this
+struct. `World::tick` runs:
+
+1. Effect pool tick (every frame, every mode).
+2. Per-actor move-VM tick — only for active actors with bytecode loaded
+   via `set_move_bytecode`.
+3. Mode-specific top-level VM:
+   - `SceneMode::Battle` → battle-action state machine step.
+   - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step.
+   - `SceneMode::Title` → no further VM.
+
+Engines that want a different storage layout (ECS, custom parallelism)
+implement the per-VM `Host` traits themselves; `World` is the default.
+
 ## See also
 
 - [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) — the
