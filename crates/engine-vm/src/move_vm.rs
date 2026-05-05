@@ -662,6 +662,66 @@ pub trait MoveHost {
     fn move_bytecode_write_u16(&mut self, _word_off: usize, _value: u16) {}
 }
 
+/// Clean-room RGB→HSV port of `FUN_8001a78c`. Inputs are 0..255; outputs are
+/// `(H ∈ 0..0x167, S ∈ 0..255, V ∈ 0..255)`. Used by ext sub-ops 0x1F / 0x20
+/// to rotate a packed RGB color in HSV space.
+///
+/// The original SCUS implementation uses signed-integer division with
+/// fixed-point scaling by `0x100` and the `0x60 / 0x100 = 60/256` segment
+/// multiplier — the result space is effectively degrees in 0..360 (= 0x168).
+fn rgb_to_hsv(r: i32, g: i32, b: i32) -> (i32, i32, i32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let diff = max - min;
+    let v = max;
+    if max == 0 {
+        return (0, 0, 0);
+    }
+    let s = (diff * 0x100) / max;
+    if s == 0 {
+        return (0, 0, v);
+    }
+    // Hue computation in segment-based form.
+    let mut h = if r == max {
+        ((g - b) * 0x100) / diff
+    } else if g == max {
+        ((b - r) * 0x100) / diff + 0x200
+    } else {
+        ((r - g) * 0x100) / diff + 0x400
+    };
+    h = (h * 0x3C) >> 8;
+    if h < 0 {
+        h += 0x168;
+    }
+    (h, s, v)
+}
+
+/// Clean-room HSV→RGB port of `FUN_8001a8dc`. `H ∈ 0..0x167`, `S, V ∈ 0..256`.
+/// Returns `(R, G, B)` each in 0..255 (caller may clamp further; FUN_8001a6c8
+/// caps at 0xF8). Used by ext sub-ops 0x1F / 0x20.
+fn hsv_to_rgb(h: i32, s: i32, v: i32) -> (i32, i32, i32) {
+    let s = s.clamp(0, 0x100);
+    let v = v.clamp(0, 0x100);
+    let mut h_scaled = (h.rem_euclid(0x168)) * 0x100;
+    if h_scaled < 0 {
+        h_scaled += 0x16800;
+    }
+    let f = ((h_scaled / 0x3C) & 0xFF) as u32 as i32;
+    let segment = (h_scaled / 0x3C) >> 8;
+    let p = (v * (0x100 - s)) >> 8;
+    let q = (v * (0x100 - ((s * f) >> 8))) >> 8;
+    let t = (v * (0x100 - ((s * (0x100 - f)) >> 8))) >> 8;
+    match segment {
+        0 | 6 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        5 => (v, p, q),
+        _ => (0, 0, 0),
+    }
+}
+
 fn ext_default_dispatch<H: MoveHost + ?Sized>(
     host: &mut H,
     state: &mut ActorState,
@@ -986,8 +1046,47 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x1F / 0x20 — fade RGB ramp. Default arm.
-        0x1F | 0x20 => MoveExtResult::default_arm(),
+        // 0x1F / 0x20 — HSV-space color ramp on `actor[+0xa0]` (sub-op 0x1F)
+        // or `actor[+0xa4]` (sub-op 0x20). The packed u32 holds an RGB triple:
+        // R = byte 0, G = byte 1, B = byte 2 (bit 24-31 reserved).
+        //
+        // Per FUN_801D362C (overlay_0897_801d362c, case 0x1f/0x20):
+        //   1. Decompose puVar14[0..3] into R/G/B (each 0..255).
+        //   2. RGB→HSV via FUN_8001a78c → (H ∈ 0..0x167, S ∈ 0..255, V ∈ 0..255).
+        //   3. H += op[2]; wrap into [0, 0x167]. S += op[3], clamp 0..255.
+        //      V += op[4], clamp 0..255.
+        //   4. HSV→RGB via FUN_8001a6c8 (which clamps each output to 0..0xF8).
+        //   5. Re-pack `puVar14[0] = R | G<<8 | B<<16`.
+        //
+        // Returns default_arm() (size 1) — the bytecode operand stream is
+        // re-interpreted as outer opcode 0x1F / 0x20 on the next dispatch
+        // (intentional self-modifying layout — see also sub-ops 0x04/0x1B/0x1E).
+        0x1F | 0x20 => {
+            let kd_offset = if sub_opcode == 0x1F { 0 } else { 2 };
+            let lo = state.keyframe_desc[kd_offset];
+            let hi = state.keyframe_desc[kd_offset + 1];
+            let r = (lo & 0xFF) as i32;
+            let g = ((lo >> 8) & 0xFF) as i32;
+            let b = (hi & 0xFF) as i32;
+            let (mut h, mut s, mut v) = rgb_to_hsv(r, g, b);
+            h += op_w(2) as i16 as i32;
+            while h < 0 {
+                h += 0x168;
+            }
+            while h > 0x167 {
+                h -= 0x168;
+            }
+            s = (s + op_w(3) as i16 as i32).clamp(0, 0xFF);
+            v = (v + op_w(4) as i16 as i32).clamp(0, 0xFF);
+            let (nr, ng, nb) = hsv_to_rgb(h, s, v);
+            // FUN_8001a6c8 clamps each channel to 0..0xF8.
+            let nr = nr.min(0xF8) as u16;
+            let ng = ng.min(0xF8) as u16;
+            let nb = nb.min(0xF8) as u16;
+            state.keyframe_desc[kd_offset] = nr | (ng << 8);
+            state.keyframe_desc[kd_offset + 1] = (hi & 0xFF00) | nb;
+            MoveExtResult::default_arm()
+        }
 
         // 0x21 — `actor.anim_3c..40 += op_w(2..4)`.
         0x21 => {
@@ -3427,5 +3526,121 @@ mod tests {
         let before = host.bytecode_buffer.clone();
         step(&mut host, &mut state, &bc);
         assert_eq!(host.bytecode_buffer, before);
+    }
+
+    // --- HSV helpers + ext sub-op 0x1F / 0x20 -----------------------------
+
+    #[test]
+    fn rgb_to_hsv_pure_red_round_trip() {
+        let (h, s, v) = rgb_to_hsv(0xFF, 0, 0);
+        assert_eq!(h, 0, "pure red has H = 0");
+        assert!(s > 0xF0, "pure red is fully saturated, got {s:#x}");
+        assert_eq!(v, 0xFF, "pure red has V = 0xFF");
+    }
+
+    #[test]
+    fn rgb_to_hsv_pure_green_lands_in_segment_2() {
+        let (h, _s, _v) = rgb_to_hsv(0, 0xFF, 0);
+        // Green = 120 deg = 0x78 in this encoding.
+        assert_eq!(h, 0x78);
+    }
+
+    #[test]
+    fn rgb_to_hsv_pure_blue_lands_in_segment_4() {
+        let (h, _s, _v) = rgb_to_hsv(0, 0, 0xFF);
+        // Blue = 240 deg = 0xF0.
+        assert_eq!(h, 0xF0);
+    }
+
+    #[test]
+    fn rgb_to_hsv_zero_returns_zero() {
+        assert_eq!(rgb_to_hsv(0, 0, 0), (0, 0, 0));
+    }
+
+    #[test]
+    fn hsv_to_rgb_segment_dispatch_matches_each_arm() {
+        // V = 0xFF, S = 0xFF — picks the segment based on H.
+        // Segment 0 (H=0): (V, t, p) — pure red.
+        let (r, g, b) = hsv_to_rgb(0, 0xFF, 0xFF);
+        assert!(r >= 0xF0 && g <= 1 && b <= 1, "segment 0 ≈ pure red");
+        // Segment 2 (H=0x78=120 deg): green.
+        let (r, g, b) = hsv_to_rgb(0x78, 0xFF, 0xFF);
+        assert!(r <= 1 && g >= 0xF0 && b <= 1, "segment 2 ≈ pure green");
+        // Segment 4 (H=0xF0=240 deg): blue.
+        let (r, g, b) = hsv_to_rgb(0xF0, 0xFF, 0xFF);
+        assert!(r <= 1 && g <= 1 && b >= 0xF0, "segment 4 ≈ pure blue");
+    }
+
+    #[test]
+    fn hsv_to_rgb_zero_saturation_returns_grey() {
+        let (r, g, b) = hsv_to_rgb(0x55, 0, 0x80);
+        assert_eq!((r, g, b), (0x80, 0x80, 0x80));
+    }
+
+    #[test]
+    fn op2f_subop_1f_rotates_hue_on_keyframe_desc_lo() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // Pre-set actor[+0xa0..+0xa3] = packed pure-red RGB.
+        state.keyframe_desc[0] = 0x00FF; // R=0xFF, G=0
+        state.keyframe_desc[1] = 0x0000; // B=0
+        // Sub-op 0x1F: delta H = 0x78 (= 120 deg), delta S = 0, delta V = 0.
+        // Should rotate red → green.
+        let bc = program(&[0x2F, 0x1F, 0x78, 0, 0]);
+        step(&mut host, &mut state, &bc);
+        let r = state.keyframe_desc[0] & 0xFF;
+        let g = (state.keyframe_desc[0] >> 8) & 0xFF;
+        let b = state.keyframe_desc[1] & 0xFF;
+        assert!(
+            g > r,
+            "hue-rotated by 120 deg should make G dominant ({r:#x},{g:#x},{b:#x})"
+        );
+        assert!(
+            g > b,
+            "hue-rotated by 120 deg should make G dominate B ({r:#x},{g:#x},{b:#x})"
+        );
+        // FUN_8001a6c8 caps at 0xF8.
+        assert!(g <= 0xF8);
+        // PC advances by 1 (default_arm).
+        assert_eq!(state.pc, 1);
+    }
+
+    #[test]
+    fn op2f_subop_20_targets_keyframe_desc_hi_pair() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // Pre-set actor[+0xa4..+0xa7] = packed pure-blue.
+        state.keyframe_desc[2] = 0x0000;
+        state.keyframe_desc[3] = 0x00FF; // B=0xFF
+        // Sub-op 0x20: delta H = 0x78 (= 120 deg). Blue → red.
+        let bc = program(&[0x2F, 0x20, 0x78, 0, 0]);
+        step(&mut host, &mut state, &bc);
+        let r = state.keyframe_desc[2] & 0xFF;
+        let g = (state.keyframe_desc[2] >> 8) & 0xFF;
+        let b = state.keyframe_desc[3] & 0xFF;
+        assert!(r > g);
+        assert!(r > b);
+        // 0x1F slot must be untouched.
+        assert_eq!(state.keyframe_desc[0], 0);
+        assert_eq!(state.keyframe_desc[1], 0);
+    }
+
+    #[test]
+    fn op2f_subop_1f_value_decrement_dims_color() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.keyframe_desc[0] = 0x80FF; // R=0xFF, G=0x80
+        state.keyframe_desc[1] = 0x0040; // B=0x40
+        let v_before = (state.keyframe_desc[0] & 0xFF).max((state.keyframe_desc[0] >> 8) & 0xFF);
+        // Delta H = 0, delta S = 0, delta V = -0x40 (use signed).
+        let bc = program(&[0x2F, 0x1F, 0, 0, (-0x40i16) as u16]);
+        step(&mut host, &mut state, &bc);
+        let r_after = state.keyframe_desc[0] & 0xFF;
+        let g_after = (state.keyframe_desc[0] >> 8) & 0xFF;
+        let v_after = r_after.max(g_after);
+        assert!(
+            v_after < v_before,
+            "lowering V should reduce the dominant channel ({v_before:#x} -> {v_after:#x})"
+        );
     }
 }

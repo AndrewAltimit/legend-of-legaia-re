@@ -24,7 +24,7 @@ use vm::battle_action::{
 };
 use vm::effect_vm::{EffectHost, MasterSlot, Pool, StateOutcome};
 use vm::field::{FieldCtx, FieldHost, StepResult as FieldStepResult};
-use vm::move_vm::{ActorState as MoveActorState, MoveExtResult, MoveHost};
+use vm::move_vm::{ActorState as MoveActorState, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 
 /// Maximum simultaneous actors in the world. Mirrors the battle-side cap of
@@ -128,6 +128,16 @@ pub struct World {
     /// vec means "no active move" — the move VM is not ticked for that
     /// actor. Set via [`World::set_move_bytecode`].
     pub move_bytecode: Vec<Vec<u16>>,
+    /// Move-VM global predicate at `_DAT_801F22F4` (set by ext sub-op 0x08,
+    /// cleared by 0x09; sub-ops 0x0A / 0x0B branch on it).
+    pub move_predicate: u32,
+    /// Move-VM global counter at `_DAT_801F22F6` (cleared by ext sub-op 0x0F,
+    /// cycled mod 16 by sub-op 0x10).
+    pub move_counter: u16,
+    /// Move-VM 16-slot 8-byte-stride scratch table at `&DAT_801F3498`. Used
+    /// by ext sub-ops 0x11 / 0x12 / 0x25 / 0x27 / 0x28 / 0x31 / 0x32 / 0x34
+    /// / 0x35 to checkpoint world coords + tween state per actor / animation.
+    pub move_slot_table: [[u8; 8]; 16],
     /// Story-flag word (`_DAT_1F800394` in retail). Read by field-VM
     /// op 0x30 GFLAG_TST and friends.
     pub story_flags: u32,
@@ -182,6 +192,9 @@ impl World {
             field_bytecode: Vec::new(),
             field_pc: 0,
             move_bytecode: vec![Vec::new(); MAX_ACTORS],
+            move_predicate: 0,
+            move_counter: 0,
+            move_slot_table: [[0u8; 8]; 16],
             story_flags: 0,
             rng_state: 0x1234_5678,
             sin_lut: Vec::new(),
@@ -247,8 +260,16 @@ impl World {
     ///
     /// Engines typically call this in a loop on each per-frame actor tick
     /// until the inner step returns `Halt` or `Wait`.
+    ///
+    /// Writes the host's `move_bytecode_write_u16` calls (issued by ext
+    /// sub-ops 0x04 / 0x1B / 0x1E / 0x36) back to `world.move_bytecode[slot]`
+    /// after step completes — see the `MoveVmHostImpl` deferred-writes map.
     pub fn step_move_vm(&mut self, slot: usize, bytecode: &[u16]) -> vm::move_vm::StepResult {
-        let mut host = MoveVmHostImpl { world: self };
+        let mut host = MoveVmHostImpl {
+            world: self,
+            current_slot: Some(slot),
+            deferred_writes: std::collections::BTreeMap::new(),
+        };
         let actor_state = unsafe {
             // SAFETY: the host borrows `world.actors[slot]` only through
             // queries that don't read this slot's `move_state`. The host
@@ -256,7 +277,19 @@ impl World {
             // only reads sin/cos LUTs and other engine-side data.
             &mut *(&mut host.world.actors[slot].move_state as *mut MoveActorState)
         };
-        vm::move_vm::step(&mut host, actor_state, bytecode)
+        let result = vm::move_vm::step(&mut host, actor_state, bytecode);
+        let writes = std::mem::take(&mut host.deferred_writes);
+        if !writes.is_empty()
+            && let Some(buf) = self.move_bytecode.get_mut(slot)
+        {
+            for (off, value) in writes {
+                if off >= buf.len() {
+                    buf.resize(off + 1, 0);
+                }
+                buf[off] = value;
+            }
+        }
+        result
     }
 
     /// Run one battle-action state-machine step.
@@ -446,6 +479,20 @@ impl<'a> ActorVmHost for ActorVmHostImpl<'a> {
 
 struct MoveVmHostImpl<'a> {
     world: &'a mut World,
+    /// Actor slot currently being stepped. Routes `move_bytecode_*` callbacks
+    /// to the right `world.move_bytecode[slot]` buffer and the `*_slot_*`
+    /// table reads to per-slot scratch (the shared 16-slot table is global,
+    /// not per actor; this is unused there).
+    current_slot: Option<usize>,
+    /// Deferred bytecode writes accumulated during one `step` call. The VM
+    /// borrows `world.move_bytecode[slot]` immutably as the bytecode slice;
+    /// we can't write back through the same borrow, so the host buffers
+    /// writes and `step_move_vm` flushes them after step returns.
+    ///
+    /// Reads consult this map first so an in-flight write within the same
+    /// step (e.g. 0x1B copy loop reading from a freshly-mutated word) sees
+    /// the latest value.
+    deferred_writes: std::collections::BTreeMap<usize, u16>,
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
@@ -459,23 +506,70 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         // Default mirrors retail's startup-time write of `DAT_1F80037D`.
         0x10
     }
-    fn ext_dispatch(
-        &mut self,
-        state: &mut MoveActorState,
-        sub_opcode: u16,
-        operand: &[u16],
-    ) -> MoveExtResult {
-        // Defer to the in-VM default dispatcher, which itself returns
-        // `default_arm()` for sub-ops we haven't ported.
-        vm::move_vm::MoveHost::ext_dispatch(&mut PassthroughMoveHost, state, sub_opcode, operand)
-    }
-}
 
-/// Empty MoveHost used to forward to the in-VM default dispatcher when the
-/// world doesn't override any sub-op behaviour. Kept zero-sized so it
-/// optimises to nothing.
-struct PassthroughMoveHost;
-impl MoveHost for PassthroughMoveHost {}
+    // --- ext-VM globals -----------------------------------------------
+
+    fn move_global_predicate_get(&self) -> u32 {
+        self.world.move_predicate
+    }
+    fn move_global_predicate_set(&mut self, value: u32) {
+        self.world.move_predicate = value;
+    }
+    fn move_global_counter_get(&self) -> u16 {
+        self.world.move_counter
+    }
+    fn move_global_counter_set(&mut self, value: u16) {
+        self.world.move_counter = value;
+    }
+
+    // --- ext-VM 16-slot scratch table ---------------------------------
+
+    fn move_slot_load_u32(&self, slot: u16, dword_off: u8) -> u32 {
+        let i = (slot & 0x0F) as usize;
+        let off = (dword_off & 0x4) as usize; // 0 or 4
+        let bytes = &self.world.move_slot_table[i][off..off + 4];
+        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+    }
+    fn move_slot_save_u32(&mut self, slot: u16, dword_off: u8, value: u32) {
+        let i = (slot & 0x0F) as usize;
+        let off = (dword_off & 0x4) as usize;
+        self.world.move_slot_table[i][off..off + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    fn move_slot_load_u16(&self, slot: u16, byte_off: u8) -> u16 {
+        let i = (slot & 0x0F) as usize;
+        let off = (byte_off & 0x6) as usize; // even, 0..6
+        let bytes = &self.world.move_slot_table[i][off..off + 2];
+        u16::from_le_bytes([bytes[0], bytes[1]])
+    }
+    fn move_slot_save_u16(&mut self, slot: u16, byte_off: u8, value: u16) {
+        let i = (slot & 0x0F) as usize;
+        let off = (byte_off & 0x6) as usize;
+        self.world.move_slot_table[i][off..off + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    // --- bytecode self-modify (0x04 / 0x1B / 0x1E) --------------------
+
+    fn move_bytecode_read_u16(&self, word_off: usize) -> u16 {
+        if let Some(&v) = self.deferred_writes.get(&word_off) {
+            return v;
+        }
+        let Some(slot) = self.current_slot else {
+            return 0;
+        };
+        self.world
+            .move_bytecode
+            .get(slot)
+            .and_then(|bc| bc.get(word_off))
+            .copied()
+            .unwrap_or(0)
+    }
+    fn move_bytecode_write_u16(&mut self, word_off: usize, value: u16) {
+        self.deferred_writes.insert(word_off, value);
+    }
+
+    // `ext_dispatch` uses the default trait impl, which routes through
+    // `self` — so sub-op handlers see the world-backed callbacks above.
+}
 
 // --- effect VM host --------------------------------------------------------
 
@@ -796,5 +890,98 @@ mod tests {
         assert_eq!(world.effect_pool.master_slots[0].state, 4);
         // Slot still active.
         assert_eq!(world.effect_pool.master_slots[0].child_count, 4);
+    }
+
+    // --- move-VM host wiring (round 5) ------------------------------------
+
+    #[test]
+    fn move_vm_global_predicate_round_trips_through_world() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // Move bytecode: 0x2F sub-op 0x08 (set predicate to 1), then HALT.
+        world.set_move_bytecode(0, Some(vec![0x002F, 0x0008, 0x0008]));
+        let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
+        assert_eq!(
+            world.move_predicate, 1,
+            "ext sub-op 0x08 should set move_predicate to 1"
+        );
+    }
+
+    #[test]
+    fn move_vm_global_counter_set_and_get() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // 0x2F sub-op 0x0F clears counter, then HALT.
+        world.move_counter = 5;
+        world.set_move_bytecode(0, Some(vec![0x002F, 0x000F, 0x0008]));
+        let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
+        assert_eq!(world.move_counter, 0);
+    }
+
+    #[test]
+    fn move_vm_slot_table_save_and_load_round_trip() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        world.actors[0].move_state.world_x = 0x1234u16 as i16;
+        world.actors[0].move_state.world_y = 0x5678u16 as i16;
+        world.actors[0].move_state.world_z = 0x9ABCu16 as i16;
+        world.actors[0].move_state.world_y_mirror = 0xDEF0u16 as i16;
+        world.actors[0].move_state.field_86 = 0x0003; // slot index = 3
+        // 0x2F sub-op 0x11 — save world coords into slot 3, then HALT.
+        world.set_move_bytecode(0, Some(vec![0x002F, 0x0011, 0x0008]));
+        let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
+        // Verify the bytes landed in slot 3.
+        let lo = u32::from_le_bytes(world.move_slot_table[3][0..4].try_into().unwrap());
+        let hi = u32::from_le_bytes(world.move_slot_table[3][4..8].try_into().unwrap());
+        assert_eq!(lo & 0xFFFF, 0x1234);
+        assert_eq!((lo >> 16) & 0xFFFF, 0x5678);
+        assert_eq!(hi & 0xFFFF, 0x9ABC);
+        assert_eq!((hi >> 16) & 0xFFFF, 0xDEF0);
+    }
+
+    #[test]
+    fn move_vm_bytecode_write_persists_after_step() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        world.actors[0].move_state.world_x = 100;
+        world.actors[0].move_state.world_y = 200;
+        world.actors[0].move_state.world_z = 50;
+        // 0x2F sub-op 0x04 — write actor world XYZ to bytecode at
+        // pc + op[2] + 3. With pc=0 and op[2]=2, target indices are 5/6/7.
+        let bc = vec![
+            0x002F, 0x0004, 0x0002, 0xCAFE, 0xCAFE, 0x0000, 0x0000, 0x0000,
+        ];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        // After step, the world's stored bytecode should reflect the writes.
+        assert_eq!(world.move_bytecode[0][5], 100u16);
+        assert_eq!(world.move_bytecode[0][6], 200u16);
+        assert_eq!(world.move_bytecode[0][7], 50u16);
+    }
+
+    #[test]
+    fn move_vm_bytecode_inplace_add_sees_prior_step_writes() {
+        // 0x2F sub-op 0x1E does buffer[pc + op[2] + 4] += op[3].
+        // After two consecutive steps each adding 5, the slot should hold 10
+        // (proving the world flushes deferred writes between steps).
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // Two 0x1E ops back-to-back, each pointing at the same operand slot.
+        // Each op is size 1 (default_arm), so we step it twice.
+        // Slot 4 from instruction at pc=0 lands at index 4.
+        let bc = vec![0x002F, 0x001E, 0, 5, 0]; // op[2]=0, op[3]=5
+        world.set_move_bytecode(0, Some(bc.clone()));
+        // First step: bytecode[0 + 0 + 4] (= 0) += 5 → 5.
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(world.move_bytecode[0][4], 5);
+        // Step again with a fresh-cloned bytecode read of the world's buffer.
+        let bc2 = world.move_bytecode[0].clone();
+        // PC has advanced; reset for the same op to fire again.
+        world.actors[0].move_state.pc = 0;
+        let _ = world.step_move_vm(0, &bc2);
+        assert_eq!(
+            world.move_bytecode[0][4], 10,
+            "second 0x1E should see flushed write from first step"
+        );
     }
 }
