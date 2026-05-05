@@ -632,6 +632,21 @@ pub trait MoveHost {
     fn move_fixed_origin_xz(&self) -> (i32, i32) {
         (0, 0)
     }
+
+    /// Read `_DAT_1F800393` — a u8 scratchpad slot used by ext sub-op 0x23
+    /// as the numerator of a 12.0 fixed-point ramp ratio against the
+    /// operand-supplied denominator. Default returns 0 (the lerp becomes
+    /// a no-op).
+    fn move_dat_1f800393(&self) -> u8 {
+        0
+    }
+
+    /// Read `_DAT_8007C348` — the axis offset used by ext sub-ops 0x36 / 0x37
+    /// for the `0x8E - axis` threshold predicate. Default returns 0 (so the
+    /// threshold collapses to `op[2] < 0x8E` / `op[2] > 0x8E`).
+    fn move_axis_threshold(&self) -> i16 {
+        0
+    }
 }
 
 fn ext_default_dispatch<H: MoveHost + ?Sized>(
@@ -771,14 +786,21 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // 0x0E — midpoint position calc + write to actor world.
         // Reads param_2 + 4/6/8 (a) + 10/12/14 (off) + 16/18/20 (b). The
         // midpoint helper consumes `actor[+0x50]` (the blend amount set by
-        // ext ops 0x0C/0x0D).
+        // ext ops 0x0C/0x0D). Original returns `iVar16 = 0xb0000` → size 11
+        // (opcode + sub-op + 9 operand u16s).
         0x0E => {
             let a = [op_w(2) as i16, op_w(3) as i16, op_w(4) as i16];
             let off = [op_w(5) as i16, op_w(6) as i16, op_w(7) as i16];
             let b = [op_w(8) as i16, op_w(9) as i16, op_w(10) as i16];
             let mode = state.field_50;
             host.ext_midpoint_set(state, a, b, off, mode);
-            MoveExtResult::with_size(2)
+            // Pre-stage the world coords the way the original does (the
+            // helper may overwrite them depending on `mode`, but a host that
+            // doesn't model the helper still gets the average write-through).
+            state.world_x = off[0].wrapping_add(((a[0] as i32 + b[0] as i32) >> 1) as i16);
+            state.world_y = off[1].wrapping_add(((a[1] as i32 + b[1] as i32) >> 1) as i16);
+            state.world_z = off[2].wrapping_add(((a[2] as i32 + b[2] as i32) >> 1) as i16);
+            MoveExtResult::with_size(11)
         }
 
         // 0x0F — `DAT_801F22F6 = 0` (clear move-VM global counter).
@@ -818,19 +840,52 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x12 — read from same table, midpoint with operand fields, then
-        // host applies the result to actor world.
-        0x12 => MoveExtResult::with_size(2),
+        // 0x12 — slot-indexed midpoint variant of 0x0E. Reads
+        // `actor[+0x86] & 0xFF` as a slot index, loads `slot.x/y/z` from the
+        // 16-slot scratch table at `&DAT_801F3498`, then computes
+        //   actor.world.{x,y,z} = op[2/3/4] + (slot.{x,y,z} + op[5/6/7]) / 2
+        // before passing through the same midpoint helper as 0x0E. The
+        // operand layout is `(op[2..4]=offset, op[5..7]=b)` — `a` comes from
+        // the slot, not from the bytecode. Original returns `iVar16 =
+        // 0x80000` → size 8 (opcode + sub-op + 6 operand u16s).
+        0x12 => {
+            let slot = state.field_86 & 0xFF;
+            let slot_lo = host.move_slot_load_u32(slot, 0);
+            let slot_hi = host.move_slot_load_u32(slot, 4);
+            let a = [
+                (slot_lo & 0xFFFF) as i16,
+                ((slot_lo >> 16) & 0xFFFF) as i16,
+                (slot_hi & 0xFFFF) as i16,
+            ];
+            let b = [op_w(5) as i16, op_w(6) as i16, op_w(7) as i16];
+            let off = [op_w(2) as i16, op_w(3) as i16, op_w(4) as i16];
+            let mode = state.field_50;
+            host.ext_midpoint_set(state, a, b, off, mode);
+            state.world_x = off[0].wrapping_add(((a[0] as i32 + b[0] as i32) >> 1) as i16);
+            state.world_y = off[1].wrapping_add(((a[1] as i32 + b[1] as i32) >> 1) as i16);
+            state.world_z = off[2].wrapping_add(((a[2] as i32 + b[2] as i32) >> 1) as i16);
+            MoveExtResult::with_size(8)
+        }
 
-        // 0x13 / 0x14 — flag-bank predicate tests.
-        // op_w(2) = flag index (param_2 + 4).
+        // 0x13 / 0x14 — flag-bank predicate tests against the fourth flag
+        // bank `DAT_80086D70` (via `func_0x8003CE64`). op_w(2) = flag index.
+        // Both jump to the shared `LAB_801D4830` epilogue: returns 1 when
+        // `predicate != 0`, else 4. 0x13 falls through unconditionally
+        // (`goto LAB_801D4830`); 0x14 inverts (returns 4 when predicate is
+        // set, default-arm when clear).
         0x13 => {
-            let _ = host.ext_query_flag_bank(op_w(2) as i16);
-            MoveExtResult::default_arm()
+            if host.ext_query_flag_bank(op_w(2) as i16) != 0 {
+                MoveExtResult::default_arm()
+            } else {
+                MoveExtResult::with_size(4)
+            }
         }
         0x14 => {
-            let _ = host.ext_query_flag_bank(op_w(2) as i16);
-            MoveExtResult::with_size(2)
+            if host.ext_query_flag_bank(op_w(2) as i16) != 0 {
+                MoveExtResult::with_size(4)
+            } else {
+                MoveExtResult::default_arm()
+            }
         }
 
         // 0x15 / 0x16 — set a flag bit on actor.flags (mask 0x800000 / 0x200000).
@@ -905,8 +960,38 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x23 — animation interpolation. Default arm.
-        0x23 => MoveExtResult::default_arm(),
+        // 0x23 — animation lerp toward target world coords using the
+        // scratchpad ramp counter at `_DAT_1F800393`. Per the dump:
+        //   t = (DAT_1F800393 << 12) / op[5];                  // 12.0 ratio
+        //   anim_3c -= (anim_3c * t) >> 12;                     // remove old
+        //   anim_3e -= (anim_3e * t) >> 12;
+        //   anim_40 -= (anim_40 * t) >> 12;
+        //   anim_3c += ((op[2] - actor.world_x) * t) >> 12;     // toward target
+        //   anim_3e += ((op[3] - actor.world_y) * t) >> 12;
+        //   anim_40 += ((op[4] - actor.world_z) * t) >> 12;
+        // The original `trap(0x1c00)` / `trap(0x1800)` divide-by-zero traps are
+        // skipped at the source-line level by the MIPS divide-trap pattern;
+        // we simply guard `denom == 0` and skip the update. This is faithful
+        // to the in-game behavior because the trap signal would terminate
+        // execution rather than continue with a bogus ratio.
+        0x23 => {
+            let denom = op_w(5) as i16 as i32;
+            if denom != 0 {
+                let dat = host.move_dat_1f800393() as u32 as i32;
+                let t = (dat << 12) / denom;
+                let s = |v: i16| -> i16 { v.wrapping_sub(((v as i32 * t) >> 12) as i16) };
+                state.anim_3c = s(state.anim_3c);
+                state.anim_3e = s(state.anim_3e);
+                state.anim_40 = s(state.anim_40);
+                let dx = ((op_w(2) as i16 as i32 - state.world_x as i32) * t) >> 12;
+                let dy = ((op_w(3) as i16 as i32 - state.world_y as i32) * t) >> 12;
+                let dz = ((op_w(4) as i16 as i32 - state.world_z as i32) * t) >> 12;
+                state.anim_3c = state.anim_3c.wrapping_add(dx as i16);
+                state.anim_3e = state.anim_3e.wrapping_add(dy as i16);
+                state.anim_40 = state.anim_40.wrapping_add(dz as i16);
+            }
+            MoveExtResult::default_arm()
+        }
 
         // 0x24 / 0x2A — fixed-point lerp on actor world coords. Both share
         // the per-axis form `actor[axis] = op[axis] + ((target - op[axis]) *
@@ -1134,9 +1219,44 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x36..0x39 — distance / threshold predicates (manhattan/euclidean
-        // to the player). Default arm.
-        0x36..=0x39 => MoveExtResult::with_size(2),
+        // 0x36 / 0x37 — axis threshold against `0x8E - DAT_8007C348`.
+        // 0x38 / 0x39 — squared-distance to the player.
+        // All four predicates funnel through `LAB_801D4830`: returns 1 when
+        // the predicate is true, else 4 (skip a 3-u16 follow-up payload).
+        //
+        //  - 0x36: op[2] < (0x8E - axis)            ; "outside lower bound"
+        //  - 0x37: (0x8E - axis) < op[2]            ; "above upper bound"
+        //  - 0x38: op[2]^2 < ((dx*dx) + (dz*dz))    ; "outside radius"
+        //  - 0x39: ((dx*dx) + (dz*dz)) < op[2]^2    ; "inside radius"
+        //
+        // dx/dz are `actor.world - player.world`. The default `MoveHost`
+        // returns the origin for the player, so engines that don't model
+        // the player position get "actor at the origin offset" — close
+        // enough for static unit tests; real hosts override.
+        0x36..=0x39 => {
+            let v = op_w(2) as i16 as i32;
+            let predicate = match sub_opcode {
+                0x36 => v < 0x8E - (host.move_axis_threshold() as i32),
+                0x37 => 0x8E - (host.move_axis_threshold() as i32) < v,
+                _ => {
+                    let player = host.move_player_world_xyz();
+                    let dx = state.world_x as i32 - player[0] as i32;
+                    let dz = state.world_z as i32 - player[2] as i32;
+                    let dist_sq = dx * dx + dz * dz;
+                    let r_sq = v * v;
+                    if sub_opcode == 0x38 {
+                        r_sq < dist_sq
+                    } else {
+                        dist_sq < r_sq
+                    }
+                }
+            };
+            if predicate {
+                MoveExtResult::default_arm()
+            } else {
+                MoveExtResult::with_size(4)
+            }
+        }
 
         // 0x3A — angle to player → operand slot at param_2 + op_w(2)*2 + 6.
         0x3A => {
@@ -1982,6 +2102,13 @@ mod tests {
         player_xyz: [i16; 3],
         /// Models the fixed-origin pair at `_DAT_80089118 / _DAT_80089120`.
         fixed_origin_xz: (i32, i32),
+        /// Models `_DAT_1F800393` (scratchpad ramp ratio numerator).
+        dat_1f800393: u8,
+        /// Models `_DAT_8007C348` (axis threshold offset).
+        axis_threshold: i16,
+        /// Constant value returned by `ext_query_flag_bank` (lets predicate
+        /// tests select the expected branch).
+        ext_query_flag_bank_returns: u32,
     }
 
     impl MoveHost for TestHost {
@@ -2088,6 +2215,15 @@ mod tests {
         }
         fn move_fixed_origin_xz(&self) -> (i32, i32) {
             self.fixed_origin_xz
+        }
+        fn move_dat_1f800393(&self) -> u8 {
+            self.dat_1f800393
+        }
+        fn move_axis_threshold(&self) -> i16 {
+            self.axis_threshold
+        }
+        fn ext_query_flag_bank(&self, _idx: i16) -> u32 {
+            self.ext_query_flag_bank_returns
         }
     }
 
@@ -2994,5 +3130,181 @@ mod tests {
             ActorTickOutcome::Halted
         );
         assert_eq!(state.render_26, 42);
+    }
+
+    #[test]
+    fn op2f_subop_0e_advances_pc_by_eleven_and_writes_world_average() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // a = (10, 20, 30), off = (1, 2, 3), b = (40, 60, 90)
+        // mid = ((10+40)/2 + 1, (20+60)/2 + 2, (30+90)/2 + 3) = (26, 42, 63)
+        let bc = program(&[0x2F, 0x0E, 10, 20, 30, 1, 2, 3, 40, 60, 90]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.world_x, 26);
+        assert_eq!(state.world_y, 42);
+        assert_eq!(state.world_z, 63);
+        assert_eq!(
+            state.pc, 11,
+            "0x0E must advance past the entire 11-word instruction"
+        );
+    }
+
+    #[test]
+    fn op2f_subop_12_uses_slot_indexed_by_field_86_low_byte() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.field_86 = 0x4205; // slot index = 5
+        // Pre-populate slot 5 with a = (50, 60, 70).
+        host.move_slot_save_u32(5, 0, (50u16 as u32) | ((60u16 as u32) << 16));
+        host.move_slot_save_u32(5, 4, (70u16 as u32) | ((0u16 as u32) << 16));
+        // off = (1, 2, 3), b = (50, 60, 70)
+        // mid_x = ((50 + 50)/2) + 1 = 51
+        // mid_y = ((60 + 60)/2) + 2 = 62
+        // mid_z = ((70 + 70)/2) + 3 = 73
+        let bc = program(&[0x2F, 0x12, 1, 2, 3, 50, 60, 70]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.world_x, 51);
+        assert_eq!(state.world_y, 62);
+        assert_eq!(state.world_z, 73);
+        assert_eq!(state.pc, 8, "0x12 must advance past the 8-word instruction");
+    }
+
+    #[test]
+    fn op2f_subop_13_falls_through_when_flag_set() {
+        let mut host = TestHost::default();
+        host.ext_query_flag_bank_returns = 1;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x13, 7]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1, "predicate-true → default-arm size 1");
+    }
+
+    #[test]
+    fn op2f_subop_13_skips_when_flag_clear() {
+        let mut host = TestHost::default();
+        host.ext_query_flag_bank_returns = 0;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x13, 7]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 4, "predicate-false → skip past 3-u16 follow-up");
+    }
+
+    #[test]
+    fn op2f_subop_14_inverts_predicate() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // 0x14 with predicate set → SKIP (size 4).
+        host.ext_query_flag_bank_returns = 1;
+        let bc = program(&[0x2F, 0x14, 7]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 4);
+        // 0x14 with predicate clear → fall through (size 1).
+        let mut host2 = TestHost::default();
+        host2.ext_query_flag_bank_returns = 0;
+        let mut state2 = ActorState::new();
+        step(&mut host2, &mut state2, &bc);
+        assert_eq!(state2.pc, 1);
+    }
+
+    #[test]
+    fn op2f_subop_36_axis_threshold_below() {
+        // 0x36 predicate: op[2] < (0x8E - axis). axis=0, op[2]=0x40 → 0x40 < 0x8E true.
+        let mut host = TestHost::default();
+        host.axis_threshold = 0;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x36, 0x40]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1, "predicate true → default-arm");
+    }
+
+    #[test]
+    fn op2f_subop_36_axis_threshold_above_skips() {
+        // op[2]=0xFF, axis=0: 0xFF < 0x8E is false → skip 4.
+        let mut host = TestHost::default();
+        host.axis_threshold = 0;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x36, 0xFF]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 4);
+    }
+
+    #[test]
+    fn op2f_subop_37_is_inverse_of_36() {
+        // 0x37: (0x8E - axis) < op[2]. With axis=0, op[2]=0xFF → 0x8E < 0xFF true.
+        let mut host = TestHost::default();
+        host.axis_threshold = 0;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x37, 0xFF]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1);
+        // axis=0, op[2]=0x40 → 0x8E < 0x40 false → skip.
+        let mut state2 = ActorState::new();
+        let bc2 = program(&[0x2F, 0x37, 0x40]);
+        step(&mut host, &mut state2, &bc2);
+        assert_eq!(state2.pc, 4);
+    }
+
+    #[test]
+    fn op2f_subop_38_predicate_outside_radius() {
+        let mut host = TestHost::default();
+        host.player_xyz = [0, 0, 0];
+        let mut state = ActorState::new();
+        // Actor at (10, 0, 0), player at origin → dist² = 100. r=8 → r²=64.
+        // 0x38: r² < dist² → 64 < 100 true → default-arm.
+        state.world_x = 10;
+        let bc = program(&[0x2F, 0x38, 8]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1);
+    }
+
+    #[test]
+    fn op2f_subop_39_predicate_inside_radius() {
+        let mut host = TestHost::default();
+        host.player_xyz = [0, 0, 0];
+        let mut state = ActorState::new();
+        // Actor at (3, 0, 4), player at origin → dist² = 25. r=10 → r²=100.
+        // 0x39: dist² < r² → 25 < 100 true → default-arm.
+        state.world_x = 3;
+        state.world_z = 4;
+        let bc = program(&[0x2F, 0x39, 10]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1);
+        // Move actor to (100, 0, 0): dist² = 10000, r²=100 → false → skip.
+        let mut state2 = ActorState::new();
+        state2.world_x = 100;
+        let bc2 = program(&[0x2F, 0x39, 10]);
+        step(&mut host, &mut state2, &bc2);
+        assert_eq!(state2.pc, 4);
+    }
+
+    #[test]
+    fn op2f_subop_23_anim_lerp_zero_denom_is_noop() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.anim_3c = 100;
+        state.anim_3e = 200;
+        state.anim_40 = 300;
+        // op[5] = 0 → divide-trap path; we skip the update.
+        let bc = program(&[0x2F, 0x23, 0, 0, 0, 0]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.anim_3c, 100);
+        assert_eq!(state.anim_3e, 200);
+        assert_eq!(state.anim_40, 300);
+        assert_eq!(state.pc, 1);
+    }
+
+    #[test]
+    fn op2f_subop_23_anim_lerp_full_ratio_writes_target_offset() {
+        let mut host = TestHost::default();
+        host.dat_1f800393 = 1;
+        let mut state = ActorState::new();
+        // With dat=1, denom=1: t = (1 << 12) / 1 = 4096.
+        // anim_3c = 0; first pass: 0 - (0 * 4096 >> 12) = 0
+        //          ; second pass: 0 + ((100 - 0) * 4096 >> 12) = 100
+        let bc = program(&[0x2F, 0x23, 100, 200, 300, 1]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.anim_3c, 100);
+        assert_eq!(state.anim_3e, 200);
+        assert_eq!(state.anim_40, 300);
     }
 }
