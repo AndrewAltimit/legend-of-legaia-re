@@ -22,9 +22,11 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+pub mod sequencer;
 pub mod spu;
 pub mod vab_bind;
 
+pub use sequencer::Sequencer;
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
@@ -37,11 +39,17 @@ pub use vab_bind::{UploadedVag, VabBank};
 /// (verified against several extracted banks).
 pub const DEFAULT_INPUT_RATE: u32 = 22_050;
 
+/// Microseconds elapsed per SPU internal sample period (1/44100 s).
+const US_PER_SPU_TICK: f64 = 1_000_000.0 / SPU_INTERNAL_RATE as f64;
+
 /// Output-side resampler that drains the SPU at 44.1 kHz and produces samples
 /// at the host device rate. Linear interpolation; one-pole IIR is overkill
 /// for the use case (asset-viewer playback + scene BGM) and adds latency.
 struct StreamResampler {
     spu: Spu,
+    /// Optional active sequencer. Ticked once per SPU sample so timing is
+    /// locked to the audio clock instead of frame timing.
+    sequencer: Option<Sequencer>,
     /// Cached previous sample (one frame, stereo).
     prev: (i16, i16),
     /// Cached current sample (the SPU output we'll interpolate against).
@@ -57,6 +65,7 @@ impl StreamResampler {
         let step = SPU_INTERNAL_RATE as f64 / device_rate as f64;
         Self {
             spu: Spu::new(),
+            sequencer: None,
             prev: (0, 0),
             cur: (0, 0),
             phase: 0.0,
@@ -69,6 +78,9 @@ impl StreamResampler {
     fn next_frame(&mut self) -> (i16, i16) {
         // Advance the SPU as many ticks as needed to push `phase` into [0,1).
         while self.phase >= 1.0 {
+            if let Some(seq) = &mut self.sequencer {
+                seq.tick_us(&mut self.spu, US_PER_SPU_TICK);
+            }
             self.prev = self.cur;
             self.cur = self.spu.tick();
             self.phase -= 1.0;
@@ -246,6 +258,51 @@ impl AudioOut {
         let mut s = self.state.lock().unwrap();
         s.spu.voices[0].key_off();
     }
+
+    /// Install a sequencer. The cpal callback ticks it once per SPU sample
+    /// (every `1 / 44100` s) for sample-accurate timing. Replacing an
+    /// existing sequencer silences any active notes from the prior one.
+    pub fn attach_sequencer(&self, seq: Sequencer) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(mut prev) = s.sequencer.take() {
+            prev.stop(&mut s.spu);
+        }
+        s.sequencer = Some(seq);
+    }
+
+    /// Detach the active sequencer (if any) and key-off whatever it had
+    /// running.
+    pub fn detach_sequencer(&self) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(mut seq) = s.sequencer.take() {
+            seq.stop(&mut s.spu);
+        }
+    }
+
+    /// Snapshot of the sequencer's progress, returned `None` if no sequencer
+    /// is currently attached. Caller-side polling for UI / progress bars.
+    pub fn sequencer_progress(&self) -> Option<SequencerProgress> {
+        let s = self.state.lock().unwrap();
+        s.sequencer.as_ref().map(|seq| SequencerProgress {
+            tick: seq.playhead_ticks(),
+            bpm: seq.bpm(),
+            active_notes: seq.active_notes(),
+            finished: seq.is_finished(),
+        })
+    }
+}
+
+/// Read-only view onto the active sequencer for diagnostics / UI.
+#[derive(Debug, Clone, Copy)]
+pub struct SequencerProgress {
+    /// Sequencer playhead in PPQN ticks since start (or last loop rewind).
+    pub tick: u64,
+    /// Current tempo in BPM.
+    pub bpm: f32,
+    /// Currently-keyed-on note count.
+    pub active_notes: usize,
+    /// Has the sequencer reached end-of-track (looping disabled)?
+    pub finished: bool,
 }
 
 /// Convert raw PCM into a stream of "silence-filtered" SPU-ADPCM blocks

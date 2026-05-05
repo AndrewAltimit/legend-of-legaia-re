@@ -12,3 +12,7 @@ path = "src/lib.rs"
 anyhow.workspace = true
 log = "0.4"
 legaia-engine-vm = { path = "../engine-vm" }
+legaia-asset = { path = "../asset" }
+legaia-prot = { path = "../prot" }
+legaia-seq = { path = "../seq" }
+legaia-vab = { path = "../vab" }

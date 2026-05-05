@@ -47,6 +47,10 @@ pub enum Class {
     /// 28-entry schema followed by packed TMD primitive groups + TIMs.
     /// See [`crate::effect_bundle`].
     EffectBundle,
+    /// PsyQ SEQ sequenced-music file — leads with the 4-byte ASCII magic
+    /// `pQES` (0x70 0x51 0x45 0x53) followed by a 9-byte header. Drives the
+    /// SsAPI sequencer at runtime. See [`docs/formats/seq.md`].
+    SeqContainer,
     /// `[u32 size][bare TMD][streaming chunks]` — a streaming-format variant
     /// where the first asset is a Legaia TMD without a typed chunk header.
     /// See [`crate::scene_tmd_stream`].
@@ -107,6 +111,7 @@ impl Class {
             Class::StageGeometry => "stage_geometry",
             Class::FieldPack => "field_pack",
             Class::EffectBundle => "effect_bundle",
+            Class::SeqContainer => "seq_container",
             Class::SceneTmdStream => "scene_tmd_stream",
             Class::SceneVabStream => "scene_vab_stream",
             Class::SceneV12Table => "scene_v12_table",
@@ -211,6 +216,26 @@ pub fn classify(buf: &[u8]) -> FileReport {
     if first_u32 == Some(0x0000_0010) {
         return mk(
             Class::TimPassthrough,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // PsyQ SEQ — `pQES` magic + version `0x0001` + non-zero PPQN + non-zero
+    // tempo. Specific 4-byte signature with structural follow-up so a
+    // chance-match on the magic alone won't fire.
+    if buf.len() >= 13
+        && &buf[0..4] == b"pQES"
+        && u16::from_be_bytes([buf[4], buf[5]]) == 1
+        && u16::from_be_bytes([buf[6], buf[7]]) > 0
+        && (buf[8] != 0 || buf[9] != 0 || buf[10] != 0)
+    {
+        return mk(
+            Class::SeqContainer,
             size,
             head,
             first_u32,
@@ -591,6 +616,29 @@ mod tests {
         buf.resize(64, 0xAA);
         let r = classify(&buf);
         assert_eq!(r.class, Class::TimPassthrough);
+    }
+
+    #[test]
+    fn detects_seq_container() {
+        // pQES + version 1 BE + ppqn 480 BE + tempo 500_000 us + 4/4
+        let mut buf = b"pQES".to_vec();
+        buf.extend_from_slice(&[0x00, 0x01]); // version
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.resize(128, 0); // event stream filler
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::SeqContainer);
+    }
+
+    #[test]
+    fn rejects_seq_with_wrong_version() {
+        let mut buf = b"pQES".to_vec();
+        buf.extend_from_slice(&[0x00, 0x02]); // version 2 — not the SsAPI shape
+        buf.resize(128, 0);
+        let r = classify(&buf);
+        assert_ne!(r.class, Class::SeqContainer);
     }
 
     #[test]
