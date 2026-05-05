@@ -31,6 +31,14 @@ pub enum Class {
     TimPassthrough,
     /// Parses as a DATA_FIELD streaming container (FUN_8002541c 0x14 branch).
     DataFieldStreaming,
+    /// Sister of [`Class::DataFieldStreaming`] — leading chunks parse cleanly
+    /// (all known types, all magic-OK) but the final chunk's declared `size`
+    /// walks past EOF without a terminator. Real PROT entries (`0157_rikuroa`,
+    /// `0228_station`, `0373_taiku`) carry a per-scene secondary table whose
+    /// declared size exceeds the on-disc body — the runtime extends the chunk
+    /// via streaming DMA continuation rather than a literal terminator.
+    /// See [`crate::data_field_truncated`].
+    DataFieldTruncated,
     /// Matches the standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
     /// See `crates/prot/src/timpack.rs`.
     TimPack,
@@ -51,10 +59,24 @@ pub enum Class {
     /// `pQES` (0x70 0x51 0x45 0x53) followed by a 9-byte header. Drives the
     /// SsAPI sequencer at runtime. See [`docs/formats/seq.md`].
     SeqContainer,
+    /// Legaia ANM animation pack — `[u32 count][u32 offset[count]][records...]`
+    /// where every record's `+4..+6` u16 equals `0x080C` (the per-record
+    /// marker_1). 8/8 hits across the title + town overlay corpus carry the
+    /// marker, so the detector is zero-false-positive against random data.
+    /// See [`docs/formats/anm.md`].
+    AnmContainer,
     /// `[u32 size][bare TMD][streaming chunks]` — a streaming-format variant
     /// where the first asset is a Legaia TMD without a typed chunk header.
     /// See [`crate::scene_tmd_stream`].
     SceneTmdStream,
+    /// `[u32 claimed_total][TMD magic][TMD flags=0][nobj]` — a TMD-fronted
+    /// resource where the prefix u32 claims a total size *larger than the
+    /// on-disc bytes*. The on-disc file is a prefix of a logical TMD whose
+    /// remainder is supplied by the runtime (streaming tail elsewhere or
+    /// zero-fill). Sister to [`Class::SceneTmdStream`] — captures the
+    /// truncated subset that detector intentionally rejects.
+    /// See [`crate::tmd_size_prefix`].
+    TmdSizePrefix,
     /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` —
     /// a streaming-format variant where the leading chunk is a Sony VAB
     /// instrument bank instead of a TMD. The single largest distributed
@@ -70,6 +92,20 @@ pub enum Class {
     /// `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` asset sequence. 80 PROT
     /// entries match. See [`crate::scene_asset_table`].
     SceneAssetTable,
+    /// Composite shape: `[u16 count][u16 offsets[count]][record bodies]
+    /// [zero pad to next 0x800 sector][canonical scene_asset_table]`. The
+    /// leading prescript carries scene-event-script bytecode (likely
+    /// field-VM frames) and the asset table at the next sector boundary
+    /// holds the standard 7-asset scene bundle. 77 PROT entries match.
+    /// See [`crate::scene_scripted_asset_table`].
+    SceneScriptedAssetTable,
+    /// `[u16 count][u16 offsets[count]][record bodies]` — same prescript
+    /// shape as [`Class::SceneScriptedAssetTable`] but the post-prescript
+    /// payload is **not** a canonical scene-asset-table. Detected when at
+    /// least 50 % of records open with the field-VM frame sentinel
+    /// `0xFFFF 0x0000`. ~20 PROT entries match. See
+    /// [`crate::scene_event_scripts`].
+    SceneEventScripts,
     /// MIPS code blob — the static disc copy of a runtime overlay. Leads
     /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
     /// follow-up instruction. 22 PROT entries match — all in the `0901..=0969`
@@ -106,16 +142,21 @@ impl Class {
             Class::ConstantByte => "constant_byte",
             Class::TimPassthrough => "tim_passthrough",
             Class::DataFieldStreaming => "data_field_streaming",
+            Class::DataFieldTruncated => "data_field_truncated",
             Class::TimPack => "tim_pack",
             Class::LzsContainer => "lzs_container",
             Class::StageGeometry => "stage_geometry",
             Class::FieldPack => "field_pack",
             Class::EffectBundle => "effect_bundle",
             Class::SeqContainer => "seq_container",
+            Class::AnmContainer => "anm_container",
             Class::SceneTmdStream => "scene_tmd_stream",
+            Class::TmdSizePrefix => "tmd_size_prefix",
             Class::SceneVabStream => "scene_vab_stream",
             Class::SceneV12Table => "scene_v12_table",
             Class::SceneAssetTable => "scene_asset_table",
+            Class::SceneScriptedAssetTable => "scene_scripted_asset_table",
+            Class::SceneEventScripts => "scene_event_scripts",
             Class::MipsOverlay => "mips_overlay",
             Class::OverlayPtrTable => "overlay_ptr_table",
             Class::PochiFiller => "pochi_filler",
@@ -148,6 +189,8 @@ pub struct FileReport {
     pub lzs_descriptor_count: Option<usize>,
     /// For stage_geometry: number of records found in the largest table.
     pub stage_geom_records: Option<usize>,
+    /// For tmd_size_prefix: claimed total in-RAM size from the leading u32.
+    pub tmd_size_prefix_total: Option<u32>,
 }
 
 /// Classify a single buffer.
@@ -245,6 +288,22 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
+    // ANM container — strict structural detector that requires every
+    // record's `marker_1` u16 to equal 0x080C. Runs early so the more
+    // permissive structural heuristics (TimPack / lzs_container) don't
+    // claim ANM payloads first.
+    if crate::anm_detect::detect(buf).is_some() {
+        return mk(
+            Class::AnmContainer,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
     // pochi-fill placeholder slot: ASCII "pochi" repeating up to byte 0x785,
     // then `0x1A` (DOS EOF) at offset 0x786. Cheap to check and very specific.
     if is_pochi_filler(buf) {
@@ -279,6 +338,24 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
+    // Sister of `data_field_streaming` — leading chunks decode cleanly but
+    // the final chunk's declared size walks past EOF without a terminator.
+    // Strict structural detector: requires >= 3 leading chunks, all known
+    // types and magic-OK, plus a partial trailing chunk with a known type.
+    if let Some(t) = crate::data_field_truncated::detect(buf) {
+        let mut report = mk(
+            Class::DataFieldTruncated,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(t.leading_chunks);
+        return report;
+    }
+
     // MIPS overlay-code blob — leads with `addiu sp, sp, -X`. Specific
     // 4-byte signature with no overlap against any other detector. Runs early
     // so we don't waste time on heavier structural checks.
@@ -309,6 +386,21 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
+    // Scripted scene-asset-table — `[u16 prescript][bodies][pad][scene_asset_table]`.
+    // Runs before plain `scene_asset_table` because the script-prefixed
+    // variant is strictly more specific.
+    if crate::scene_scripted_asset_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneScriptedAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
     // 7-asset scene table — leads with `07 00 00 00`, then 7 descriptor pairs.
     // Strict structural detector (no LZS-decode requirement) so it captures
     // both the LZS-payload and raw-payload variants uniformly. Runs before
@@ -317,6 +409,25 @@ pub fn classify(buf: &[u8]) -> FileReport {
     if crate::scene_asset_table::detect(buf).is_some() {
         return mk(
             Class::SceneAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Scene event-scripts: same `[u16 count][u16 offsets]` prescript shape as
+    // `scene_scripted_asset_table` but with no canonical asset table after.
+    // Runs after both scripted-and-asset-table and plain asset-table so the
+    // more specific layouts claim their entries first. Frame-opener-rate gate
+    // (>= 50% of records start with the field-VM `0xFFFF 0x0000` sentinel)
+    // keeps this zero-false-positive against random `[count][offsets]`-shaped
+    // data.
+    if crate::scene_event_scripts::detect(buf).is_some() {
+        return mk(
+            Class::SceneEventScripts,
             size,
             head,
             first_u32,
@@ -386,6 +497,24 @@ pub fn classify(buf: &[u8]) -> FileReport {
             zero_fraction,
         );
         report.stream_chunks = Some(s.tail_chunks.len());
+        return report;
+    }
+
+    // TMD-with-size-prefix — sister of `scene_tmd_stream` for the truncated
+    // case (claimed_total > on-disc len). Runs immediately after
+    // `scene_tmd_stream` so any complete-on-disc TMD-stream files are claimed
+    // by the more permissive sister detector first.
+    if let Some(t) = crate::tmd_size_prefix::detect(buf) {
+        let mut report = mk(
+            Class::TmdSizePrefix,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.tmd_size_prefix_total = Some(t.claimed_total);
         return report;
     }
 
@@ -546,6 +675,7 @@ fn mk(
         stream_chunks: None,
         lzs_descriptor_count: None,
         stage_geom_records: None,
+        tmd_size_prefix_total: None,
     }
 }
 

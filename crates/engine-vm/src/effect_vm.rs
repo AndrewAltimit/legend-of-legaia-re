@@ -732,4 +732,117 @@ mod tests {
         ];
         assert_eq!(host.events, want);
     }
+
+    /// Pool exhaustion: spawning into a fully-occupied pool returns `None`.
+    /// Mirrors retail's "no free slot → drop spawn" branch in `FUN_801DFDF8`.
+    #[test]
+    fn spawn_returns_none_when_pool_exhausted() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+
+        // Mark every master slot in use.
+        for m in &mut pool.master_slots {
+            m.child_count = 1;
+        }
+
+        let r = pool.spawn(&mut host, 10, [0, 0, 0], 0, &EffectScript::default(), &[]);
+        assert_eq!(r, None);
+        // No host event was recorded — the pool returned before any work.
+        assert!(host.events.is_empty());
+    }
+
+    /// Spawn → tick to completion → slot freed → respawn. Validates the
+    /// full lifecycle of a master slot: terminate clears `child_count`,
+    /// then the next allocator call returns the same slot index.
+    #[test]
+    fn spawn_terminate_respawn_reuses_slot() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+        let script = EffectScript::default();
+
+        // First spawn — slot 0.
+        let s0 = pool
+            .spawn(&mut host, 10, [1, 2, 3], 0x111, &script, &[])
+            .expect("first spawn ok");
+        assert_eq!(s0, 0);
+        assert_eq!(pool.master_slots[0].child_count, 0); // EffectScript::default() has 0 children
+        // child_count == 0 means the slot is "empty" by allocator rules. To
+        // simulate a real spawn that activates the slot, mark it manually.
+        pool.master_slots[0].child_count = 1;
+
+        // Tick once — host returns Terminate for this slot.
+        host.advance_outcomes = vec![StateOutcome::Terminate];
+        pool.master_slots[0].state = 0; // ensure work-path runs
+        pool.tick(&mut host);
+        assert_eq!(pool.master_slots[0].child_count, 0); // freed
+
+        // Second spawn — should reuse slot 0 since it's the first empty.
+        let s1 = pool
+            .spawn(&mut host, 11, [4, 5, 6], 0x222, &script, &[])
+            .expect("respawn ok");
+        assert_eq!(s1, 0);
+    }
+
+    /// Tick a Wait-encoded slot through several frames — each tick subtracts
+    /// 8 (saturating) until state hits 0, at which point the next tick fires
+    /// `advance_state`. Mirrors retail's `state -= 8` countdown at
+    /// `0x801e0130..0x801e015f`.
+    #[test]
+    fn wait_state_subtracts_8_per_tick_across_multiple_frames() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+
+        // Seed slot 0 with state = 24 — three ticks of `-= 8` before reaching 0.
+        pool.master_slots[0].child_count = 1;
+        pool.master_slots[0].state = 24;
+
+        // After tick: 24 → 16. No advance_state.
+        pool.tick(&mut host);
+        assert_eq!(pool.master_slots[0].state, 16);
+        assert!(host.events.is_empty(), "advance_state called too early");
+
+        // After tick: 16 → 8.
+        pool.tick(&mut host);
+        assert_eq!(pool.master_slots[0].state, 8);
+        assert!(host.events.is_empty());
+
+        // After tick: 8 → 0 (still NOT a work tick — saturates).
+        pool.tick(&mut host);
+        assert_eq!(pool.master_slots[0].state, 0);
+        assert!(host.events.is_empty());
+
+        // After tick: state==0 → advance_state fires.
+        host.advance_outcomes = vec![StateOutcome::Continue];
+        pool.tick(&mut host);
+        assert_eq!(host.events, vec![HostEvent::AdvanceState(0)]);
+    }
+
+    /// `is_summon_effect` short-circuits BEFORE consuming a master slot.
+    /// Verifies that a summon dispatch leaves the pool fully empty (no
+    /// allocator call, no child population). Guards against accidentally
+    /// committing pool state on the summon path.
+    #[test]
+    fn summon_path_does_not_consume_master_slot() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+        host.summon_ids.insert(4);
+
+        let r = pool.spawn(
+            &mut host,
+            4,
+            [10, 20, 30],
+            0x123,
+            &EffectScript::default(),
+            &[],
+        );
+        assert_eq!(r, None);
+
+        // Every slot must remain empty.
+        for m in &pool.master_slots {
+            assert_eq!(m.child_count, 0);
+            assert_eq!(m.pos_x, 0);
+        }
+        // Allocator should still hand out slot 0 on a non-summon spawn.
+        assert_eq!(pool.allocate_master(), Some(0));
+    }
 }

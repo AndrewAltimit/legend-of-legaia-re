@@ -502,6 +502,26 @@ pub trait FieldHost {
         0
     }
 
+    /// Op 0x4E sub-op 4 — BIOS Rand stub.
+    ///
+    /// The original at line 7479 of `overlay_0897_801de840.txt` is
+    /// `iVar18 = func_0x80056798(); return iVar18;`. `FUN_80056798` is a
+    /// 3-instruction BIOS thunk: `li t2,0xa0; jr t2; _li t1,0x2f` — i.e.
+    /// `jr 0xA0` with `t1 = 0x2F`, the BIOS `Rand()` syscall. The script-VM
+    /// dispatcher then uses the returned value directly as the next PC, which
+    /// would jump into arbitrary memory in any sane retail execution. There
+    /// are no callers of opcode 0x4E sub-4 in the captured bytecode, so this
+    /// is almost certainly a dev / debug-only stub left in by the original
+    /// authors.
+    ///
+    /// The default returns 0 (PC restarts at the bytecode origin), matching
+    /// the broken-by-design behaviour. A custom host can override to either
+    /// halt the script (return the current PC; the dispatch wrapper does NOT
+    /// special-case this) or to actually invoke a PRNG.
+    fn op4e_sub4_bios_rand(&mut self) -> i32 {
+        0
+    }
+
     /// Op 0x4C sub-1 (menu sub-dispatcher).
     ///
     /// The original encodes a 7-byte instruction `[4C, op0, b1, b2, b3, b4, b5]`
@@ -1250,7 +1270,11 @@ pub trait FieldHost {
     ///
     /// 2-byte instruction `[4C, 0x87]`. The original calls
     /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801E5154)` to register a callback
-    /// on the actor list, then exits via the default arm. PC += 2.
+    /// on the actor list, then exits via `switchD_801e00f4::default()`.
+    /// Since `0x4C & 0x70 = 0x40` (not in {0x50, 0x60, 0x70}), the dispatcher
+    /// default returns `param_2` — i.e. **halts at PC**, waiting for the
+    /// registered callback to release the script. The dispatch wrapper
+    /// applies the halt; the host hook only needs to register the callback.
     fn op4c_n8_sub7_register_callback(&mut self) {}
 
     /// Op 0x4C outer-nibble-8 sub-8 — write 3 globals.
@@ -1291,6 +1315,58 @@ pub trait FieldHost {
         ctx.field_68 == 0
     }
 
+    /// Op 0x4C outer-nibble-8 sub-5 / sub-0xE / sub-0xF — halt-acquire idiom.
+    ///
+    /// All three sub-ops share the **same** inner-switch body in the dump
+    /// (lines 6550-6570 of `overlay_0897_801de840.txt`): a conditional
+    /// "halt-acquire" that, if the actor is acquireable, writes
+    /// `ctx.saved_pc = current PC`, clears `ctx.wait_accum`, and sets the
+    /// halt bit (`flags |= 0x400`). On `iVar18 == _DAT_8007c364` (system
+    /// channel) the same fields are mirrored to the system context. Both
+    /// the success and failure exits halt at PC (success returns
+    /// `switchD_801e00f4::default()`; failure goes to `LAB_801dee50`).
+    ///
+    /// The default impl performs the standard ctx mutation (saved_pc +
+    /// wait_accum + halt bit). Real hosts can override to also mirror to
+    /// the system actor or to refuse the acquire.
+    fn op4c_n8_halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
+        ctx.saved_pc = opcode_pc;
+        ctx.wait_accum = 0;
+        ctx.flags |= 0x400;
+    }
+
+    /// Op 0x4C outer-nibble-8 sub-9 — write `_DAT_80073F00`.
+    ///
+    /// 4-byte instruction `[4C, 0x89, lo, hi]`. Writes
+    /// `_DAT_80073F00 = signed_16(operand[1..3])`. The original at line 6604
+    /// of the dump then "calls FUN_801e3620 and returns" — but `0x801e3620`
+    /// is actually a *branch label* inside FUN_801de840 (Ghidra mis-rendered
+    /// the goto as a function call). The label body sets `iVar45 = param_2 + 4`
+    /// and exits the dispatch normally; `_DAT_80073F00` is the only side
+    /// effect. PC += 4.
+    fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+        let _ = value;
+    }
+
+    /// Op 0x4C outer-nibble-0xC sub-0xF — position broadcast.
+    ///
+    /// 4-byte instruction `[4C, 0xCF, b1, b2]`. The original at lines
+    /// 6912-6931 of the dump computes two 16-bit values and writes them to
+    /// `_DAT_8007B628` (X) and `_DAT_8007B62A` (Z):
+    /// - `b1 == 0xFF` → use `ctx.world_x`.
+    /// - `b1 == 0` → 0.
+    /// - else → `(b1 as u16) * 0x80 + 0x40` (the standard "tile center"
+    ///   conversion seen elsewhere in the dispatcher).
+    /// - `b2` is computed the same way but reads `ctx.world_z` for the 0xFF
+    ///   case.
+    ///
+    /// The original's three exits (`iVar18 = FUN_801e3620(); return iVar18;`
+    /// and `goto code_r0x801e3620;`) all converge on the same "PC += 4" label.
+    /// PC += 4 in every path.
+    fn op4c_n_c_sub_f_position_broadcast(&mut self, x_global: i16, z_global: i16) {
+        let _ = (x_global, z_global);
+    }
+
     /// Op 0x4C outer-nibble-9 sub-0/1/2 — fade/effect dispatch via FUN_801DDE34.
     ///
     /// 9-byte instruction `[4C, 0x9N, b1, lo0, hi0, lo1, hi1, lo2, hi2]` where
@@ -1315,20 +1391,39 @@ pub trait FieldHost {
         let _ = words;
     }
 
+    /// Op 0x4C outer-nibble-9 sub-0xF — register `LAB_801DA930` callback.
+    ///
+    /// 2-byte instruction `[4C, 0x9F]`. The original calls
+    /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` (same as nibble-8 sub-7,
+    /// but with a different callback target), then exits via
+    /// `switchD_801e00f4::default()` — halts at PC for opcode 0x4C. The
+    /// dispatch wrapper applies the halt; the host hook only needs to
+    /// register the callback.
+    fn op4c_n9_sub_f_register_callback(&mut self) {}
+
     /// Op 0x4C outer-nibble-A — conditional jump on a flag bit.
     ///
-    /// 5-byte instruction `[4C, 0xAN, bit, lo, hi]` where `N ∈ {0, 1, 2}`
-    /// selects the bank:
-    /// - `0`: `ctx.flags & (1 << bit)`
-    /// - `1`: `ctx.local_flags & (1 << bit)`
-    /// - `2`: `_DAT_1F800394 & (1 << bit)` (global story flag).
+    /// 5-byte instruction `[4C, 0xAN, bit, lo, hi]` where `N` selects the
+    /// bank:
+    /// - `0`: `ctx.flags & (1 << bit)` (per-actor flag word, ctx[+0x10]).
+    /// - `1`: `ctx.local_flags & (1 << bit)` (16-bit local flags, ctx[+0x62]).
+    /// - `2`: `_DAT_1F800394 & (1 << bit)` (global story flag word).
+    /// - `3..=0xF`: no bank check; helper returns `false`. The original at
+    ///   line 6702 of `overlay_0897_801de840.txt` falls through every check
+    ///   and skips 5 bytes (`return param_2 + 5`).
     ///
-    /// When the bit is **clear** the original takes the jump, computing the
-    /// target via `func_0x8003CE9C(operand + 2)` (signed 16-bit absolute PC).
-    /// When set, PC advances by 5.
+    /// When the bit is **set**, the original takes the absolute jump
+    /// (`func_0x8003CE9C(operand + 2)` — signed 16-bit absolute PC). When
+    /// clear, PC advances by 5.
+    ///
+    /// (Round 11 corrected the take/skip direction here: prior implementations
+    /// were inverted because Ghidra's C output for case 10 hides the `bne a1,
+    /// zero, 0x801e258c` dispatch at 0x801e2568. The asm flow is "if sub != 0,
+    /// skip ctx[+0x10] check; per-sub-op bit SET → branch to the take-jump
+    /// label", not the other way around.)
     ///
     /// `bit` is the operand byte; the VM masks the low 5 bits to match
-    /// MIPS shift semantics.
+    /// MIPS `sllv` shift semantics.
     fn op4c_n_a_flag_set(&self, ctx: &FieldCtx, bank: u8, bit: u8) -> bool {
         match bank {
             0 => ctx.flags & (1u32 << (bit & 0x1F)) != 0,
@@ -1392,6 +1487,17 @@ pub trait FieldHost {
         let _ = value;
     }
 
+    /// Op 0x4C outer-nibble-C sub-9 — global-pair compare gate.
+    ///
+    /// 2-byte instruction `[4C, 0xC9]`. The original at line 6851 reads two
+    /// 16-bit globals `_DAT_8007BAB8` and `_DAT_8007BA9C` and halts at PC if
+    /// they differ; otherwise advances by 2. Default returns `false` (globals
+    /// match → advance). Real hosts return `true` to model an in-flight
+    /// transition.
+    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+        false
+    }
+
     /// Op 0x4C outer-nibble-D sub-3 — party state setup + FUN_801D596C.
     ///
     /// 14-byte instruction `[4C, 0xD3, lo_a, hi_a, lo_b, hi_b, lo_c, hi_c,
@@ -1437,6 +1543,28 @@ pub trait FieldHost {
         let _ = value;
     }
 
+    /// Op 0x4C outer-nibble-D sub-6 — `ctx.field_74` bitfield mutation.
+    ///
+    /// 3-byte instruction `[4C, 0xD6, b1]`. The original at line 7028 writes:
+    /// - if `b1 == 4`: clear the top bit only (`field_74 &= 0x7FFFFFFF`)
+    /// - else: clear bits `0x83000000`, then set bit `0x80000000` and OR in
+    ///   `(b1 as u32) << 24` (low byte of `b1` into the top byte of `field_74`).
+    ///
+    /// Pure ctx mutation — host hook is a side-effect-only ack. Halt at PC
+    /// (the dump exits via `goto LAB_801e00bc`).
+    fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {}
+
+    /// Op 0x4C outer-nibble-D sub-8 — `FUN_801D77F4` 4-arg call.
+    ///
+    /// 9-byte instruction `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
+    /// The original at line 7042 reads three 16-bit values from the operand,
+    /// adds the global `_DAT_8007B6F8` to `x` (sign-extended u16 truncation),
+    /// then calls `FUN_801D77F4(b1, x, y, z)` — overlay-resident. Hosts apply
+    /// the call if needed. PC += 9.
+    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+        let _ = (b1, words);
+    }
+
     /// Op 0x4C outer-nibble-E sub-2 — set 2 globals.
     ///
     /// 6-byte instruction `[4C, 0xE2, lo, hi, _, _]`. Writes
@@ -1478,7 +1606,331 @@ pub trait FieldHost {
     /// party-leader/scene state. PC += 2.
     fn op4c_n_e_sub_e_snapshot_84570(&mut self) {}
 
-    /// Op 0x43 sub-0/1/A/B — halt-acquire dispatcher.
+    /// Op 0x4C outer-nibble-E sub-0 — three-way scene/menu state write.
+    ///
+    /// 2-byte instruction `[4C, 0xE0, b1]`. The original at line 7173:
+    /// - `b1 == 0`: `DAT_801F2744 = 1`
+    /// - `b1 < 100`: `DAT_801F2740 = b1`
+    /// - else: `*(u16*)(_DAT_801C6EA4 + 0xE) = b1 - 100`
+    ///
+    /// Halt at PC (`goto LAB_801e00bc`).
+    fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
+        let _ = b1;
+    }
+
+    /// Op 0x4C outer-nibble-E sub-9 — clear `_DAT_8007B9C4` then PC += 2.
+    ///
+    /// 1-byte instruction `[4C, 0xE9]`. The original at line 7362 clears
+    /// `_DAT_8007B9C4` (a global state byte) and tail-calls
+    /// `switchD_801e0f24::caseD_4()` — which is the `addiu s8, s8, 0x2;
+    /// j epilogue` block at `0x801df098`, i.e. PC += 2.
+    fn op4c_n_e_sub9_clear_b9c4(&mut self) {}
+
+    /// Op 0x4C outer-nibble-E sub-A — call `func_0x8003C7EC` then halt at PC.
+    ///
+    /// 1-byte instruction `[4C, 0xEA]`. The original at line 7367 calls the
+    /// overlay-resident `func_0x8003C7EC()` (an actor-list mutator) then
+    /// exits via `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
+    fn op4c_n_e_sub_a_call_c7ec(&mut self) {}
+
+    /// Op 0x4C outer-nibble-E sub-1 — spawn a screen-anchored text balloon
+    /// from the bytecode operand stream, then advance PC past the packet.
+    ///
+    /// Variable-length instruction `[4C, 0xE1, b1, ...string..., terminator]`.
+    /// The dispatcher's PC advance is `pc + 3 + packet_length(buf)` where the
+    /// packet runs from `operand + 1` until any byte `<= 0x1E` (see
+    /// [`field_helpers::packet_length`]). The terminator byte is consumed.
+    ///
+    /// The original calls `FUN_8003C764(buf, ctx_ptr)` to allocate a centered
+    /// "field text balloon" actor: priority `0x78`, screen-X centered around
+    /// the measured glyph width (`(0x140 - text_width) / 2`), screen-Y `0xB4`.
+    /// The actor is skipped when `b1 == 0`, but PC always advances by the
+    /// measured length. This hook handles the spawn; the dispatcher computes
+    /// the PC delta itself via [`field_helpers::packet_length`].
+    ///
+    /// `text_buf` is the slice from `operand + 1` to the terminator (NOT
+    /// including the terminator). `script_id` is the active script's ID,
+    /// passed in lieu of the original `param_3` ctx pointer.
+    ///
+    /// [`field_helpers::packet_length`]: crate::field_helpers::packet_length
+    fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+        let _ = (text_buf, script_id);
+    }
+
+    /// Op 0x4C outer-nibble-C sub-1 — reset every entry in the global
+    /// "trigger flag" array based on per-record flags.
+    ///
+    /// 1-byte instruction `[4C, 0xC1]`. The original walks the
+    /// `_DAT_80073ED8` record array (count `DAT_80073EDC`, stride `0xB`):
+    /// for each record, reads bytes 9 and 10 to form a 16-bit index,
+    /// queries [`field_helpers::party_flag_test`] against the trigger-flag
+    /// array, and writes 1 to record byte 0 if the bit is **clear**, else 0.
+    /// Then jumps to `LAB_801df09c` (= PC += 2 via the standard "addiu s8,
+    /// s8, 0x2; j epilogue" block at `0x801df09c`).
+    ///
+    /// When `_DAT_80073ED8` is null OR the count is zero, the original
+    /// `goto code_r0x801df098` skips the loop and still advances PC += 2.
+    ///
+    /// `flags` is the trigger-flag byte array (the bit storage queried
+    /// per-record). Hosts that don't model the record array can leave the
+    /// default no-op in place — the dispatcher always advances PC += 2
+    /// regardless. The two callers (gate set / clear) merge into a single
+    /// hook because the original's two branches differ only in side-effect
+    /// (the loop body) and the PC delta is identical.
+    ///
+    /// [`field_helpers::party_flag_test`]: crate::field_helpers::party_flag_test
+    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, flags: &[u8]) {
+        let _ = flags;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-1 — linked-list lookup gate.
+    ///
+    /// 2-byte instruction `[4C, 0xD1]`. The original walks the global
+    /// list-head at `_DAT_8007C34C` via `FUN_8003CF04(head, FUN_801DC0BC)`
+    /// (the linked-list "search by predicate match" helper) and:
+    /// - if the search returns null OR the matched entry's `[+0x10] & 8 != 0`
+    ///   (the "deleted" bit) → `return param_2 + 4` (PC += 4),
+    /// - else → `pbVar43 = pbVar47 + 1; goto LAB_801E360C` which calls
+    ///   `func_0x8003CE9C(pbVar43)` (the variable-length signed-int reader)
+    ///   and returns its result as the new PC.
+    ///
+    /// The host hook returns `Some(new_pc)` for the LAB path or `None` to
+    /// take the PC += 4 path. The default impl returns `None` — engines
+    /// without a list-walking model fall through to the safe "no jump"
+    /// branch.
+    fn op4c_n_d_sub_1_list_lookup_jump(&mut self, ctx: &FieldCtx) -> Option<usize> {
+        let _ = ctx;
+        None
+    }
+
+    /// Op 0x4C outer-nibble-D sub-2 — channel-lookup conditional spawn,
+    /// then halt at PC.
+    ///
+    /// 2-byte instruction `[4C, 0xD2, b1]`. The original calls
+    /// `func_0x8003C83C(b1)` (the script-context resolver — see
+    /// `docs/subsystems/script-vm.md` "intra-function label catalogue"
+    /// for the F8/FB system-channel idiom). When the result is **zero**
+    /// (no resolved context), the original spawns a new script context via
+    /// `func_0x8003D064` + `func_0x8003A1E4` with the rendering-busy
+    /// guard (`*(_DAT_801C6EA4 + 8) = 1` around the call). Then halts.
+    ///
+    /// Hosts that don't yet model the channel resolver should leave this as
+    /// a no-op — the halt-at-PC behaviour is handled by the dispatcher.
+    fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
+        let _ = channel;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-7 — register a list-walk callback then
+    /// halt at PC.
+    ///
+    /// 1-byte instruction `[4C, 0xD7]`. The original sets `pcVar33 =
+    /// FUN_801DC0BC` (the "delete-if-flag" predicate) then jumps to
+    /// `LAB_801E2DC4`, which calls `func_0x8003CF40(_DAT_8007C34C, pcVar33)`
+    /// (a list-walk that invokes `pcVar33` per entry) and returns via the
+    /// standard halt-acquire dispatcher. The script resumes when the walk
+    /// finishes and re-arms the field VM.
+    fn op4c_n_d_sub_7_register_list_walk(&mut self) {}
+
+    /// Op 0x4C outer-nibble-D sub-B — call the overlay-resident
+    /// `FUN_801E57F0` then advance PC by 13 bytes.
+    ///
+    /// 13-byte instruction (the original's call site at line 7085 passes
+    /// `pbVar47` and falls through to `LAB_801E2EA0: return param_2 + 0xD`).
+    ///
+    /// `FUN_801E57F0` was not successfully decompiled — Ghidra's dump (see
+    /// `ghidra/scripts/funcs/overlay_0897_801e57f0.txt`) shows ~441
+    /// instructions of `lb s8, 0x6814(zero)` data masquerading as code,
+    /// indicating Ghidra mis-parsed the function's start. The actual call
+    /// target at `0x801E57F0` is overlay-resident and not currently dumpable.
+    ///
+    /// `bytecode` is the operand stream starting at `operand + 0` (the same
+    /// `pbVar47` the original passes); hosts that model this opcode read
+    /// fields at `bytecode[1..=12]`.
+    fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+        let _ = bytecode;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-C — small-table lookup, then conditional
+    /// per-party-record write.
+    ///
+    /// 5-byte instruction `[4C, 0xDC, b1, ?, ?]` (the trailing operand
+    /// bytes are consumed by the LAB_801E360C tail's `func_0x8003CE9C` read).
+    ///
+    /// The original at line 7087:
+    /// 1. Calls [`field_helpers::small_table_search`] (`FUN_80042EE0(b1)`)
+    ///    to look up `b1` in the gp-relative short-table at `0x80085958`.
+    /// 2. If the table lookup hits AND a party-record search across
+    ///    `DAT_80084594` slots (party-record stride `0x414`, byte at `+0x196`)
+    ///    matches `b1`, the slot is updated.
+    /// 3. If neither hits, returns `param_2 + 5` (PC += 5).
+    /// 4. On hit, falls through to `LAB_801E360C` which reads `ce9c(p+2)`
+    ///    and returns it as the new PC.
+    ///
+    /// The host hook returns `Some(new_pc)` for the ce9c-jump path, or `None`
+    /// to take the PC += 5 path. Default impl returns `None` (safe fallback).
+    ///
+    /// [`field_helpers::small_table_search`]: crate::field_helpers::small_table_search
+    fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
+        let _ = needle;
+        None
+    }
+
+    /// Op 0x4C outer-nibble-D sub-E — small-table lookup query (sister of
+    /// sub-C without the per-party-record write side-effect).
+    ///
+    /// 5-byte instruction `[4C, 0xDE, b1, ?, ?]`. Same control flow as
+    /// sub-C but the party-record loop only **tests** for a match — no slot
+    /// update. PC is `param_2 + 5` on miss, ce9c-jump on hit.
+    fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
+        let _ = needle;
+        None
+    }
+
+    // -----------------------------------------------------------------
+    // Round 17 — five 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // -----------------------------------------------------------------
+
+    /// Op 0x4C outer-nibble-C sub-0 — cancel the active move-table animation.
+    ///
+    /// 2-byte instruction `[4C, 0xC0]`. The dispatcher dump (lines 6726-6732)
+    /// gates on `ctx.move_id > 0` (the actor's currently-playing move); if a
+    /// move is active, the original calls `func_0x800204F8(ctx)` (the move
+    /// VM's "cancel" entry — see [`docs/subsystems/move-vm.md`]).
+    ///
+    /// `is_active` is the gate; the host should return `true` when the actor
+    /// has a move-table animation that should be cancelled. Default impl
+    /// returns `false`, so the cancel side-effect is skipped (safe fallback —
+    /// engines without a move VM never trigger the cancel).
+    ///
+    /// PC always advances by 2 (whether the move was cancelled or not).
+    fn op4c_n_c_sub_0_move_cancel(&mut self, ctx: &mut FieldCtx) -> bool {
+        let _ = ctx;
+        false
+    }
+
+    /// Op 0x4C outer-nibble-C sub-3 — script-table teleport with tile-center
+    /// math.
+    ///
+    /// 2-byte instruction `[4C, 0xC3]`. The original (dispatcher dump
+    /// 6762-6810) calls `func_0x8003C8F0(ctx.field_50, 0)` to resolve the
+    /// destination tile descriptor, then writes:
+    /// - `world_x = (b & 0x7F) * 0x80 + 0x40` (with optional `+0x40` if high
+    ///   bit is set) — the standard tile-center formula,
+    /// - `world_z` similarly,
+    /// - rotation, animation frame, sprite flags get reset.
+    ///
+    /// Both helpers (`func_0x8003C8F0` table lookup and `func_0x8003D0BC`
+    /// descriptor walk) are overlay-resident; hosts that don't model the
+    /// scene table leave the default no-op in place.
+    ///
+    /// PC always advances by 2.
+    fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
+        let _ = ctx;
+    }
+
+    /// Op 0x4C outer-nibble-C sub-D — script-context allocation gate, halt.
+    ///
+    /// 2-byte instruction `[4C, 0xCD]`. The original calls
+    /// `func_0x8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (the linked-list-walk
+    /// "find by predicate"), tests the resolved entry's flag bit `0x8`, and:
+    /// - if the entry exists AND the bit is set → halt acquired, PC stays at
+    ///   start-of-instruction (we model this as `Halt { final_pc: pc }`),
+    /// - else → yield via `LAB_801DEE50` (also `Halt { final_pc: pc }` in our
+    ///   model — the engine-side state-resume layer drives re-entry).
+    ///
+    /// In both cases the dispatcher returns `Halt`, so the host hook only
+    /// records the side effect (registering the actor with the list-walk
+    /// machinery). Default no-op.
+    fn op4c_n_c_sub_d_script_alloc(&mut self) {}
+
+    /// Op 0x4C outer-nibble-E sub-4 — bounding-box collision query against
+    /// the actor's world position.
+    ///
+    /// 9-byte instruction `[4C, 0xE4, x_lo, z_lo, x_hi, z_hi, scale, ?, ?]`.
+    /// The original (dispatcher dump 7228-7255) builds 4 corners by mapping
+    /// each operand byte through the standard tile-center formula
+    /// (`(b & 0x7F) * 0x80 + 0x40`, plus 0x40 when the high bit is set), then
+    /// tests whether the actor's `(world_x, world_z)` lies inside that AABB.
+    /// On the **outside** path the original calls `FUN_801E3614()` which is
+    /// the standard halt helper.
+    ///
+    /// We expose the pure-arithmetic predicate here and let the dispatcher
+    /// emit the halt directly: the host returns `true` when the actor is
+    /// **outside** the bbox (the original's "fail" path). When the actor is
+    /// inside, PC advances by 8.
+    ///
+    /// `bbox` is `[x0, z0, x1, z1]` with each coordinate already converted
+    /// from operand byte to world-space tile center. Default impl returns
+    /// `false` (= "always inside"), so the dispatcher always advances —
+    /// engines that don't model the world position can skip the test.
+    fn op4c_n_e_sub_4_bbox_outside(&self, ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
+        let _ = (ctx, bbox);
+        false
+    }
+
+    /// Op 0x4C outer-nibble-E sub-5 — add XP to the party-XP accumulator.
+    ///
+    /// 5-byte instruction `[4C, 0xE5, b1, b2, b3]`. The original (dispatcher
+    /// dump 7256-7267) reads a 24-bit signed value via
+    /// [`field_helpers::load_u24_le`] + [`field_helpers::sign_extend_24`],
+    /// adds it to `_DAT_800845A4` (the party-XP global), clamps to
+    /// `[0, 9999999]`, and calls `func_0x8003CE08(8)` (the standard
+    /// "party stats refresh" trigger).
+    ///
+    /// `xp_delta` is the sign-extended 24-bit value already prepared by the
+    /// dispatcher. Hosts apply the clamp + refresh; default no-op.
+    ///
+    /// [`field_helpers::load_u24_le`]: crate::field_helpers::load_u24_le
+    /// [`field_helpers::sign_extend_24`]: crate::field_helpers::sign_extend_24
+    fn op4c_n_e_sub_5_add_xp(&mut self, xp_delta: i32) {
+        let _ = xp_delta;
+    }
+
+    /// Op 0x4C outer-nibble-E sub-B — conditional actor lookup with
+    /// embedded jump target.
+    ///
+    /// 5-byte instruction `[4C, 0xEB, actor_id, target_lo, target_hi]`.
+    /// The original (dispatcher dump 7370-7376) calls `func_0x8003C83C(b1)`
+    /// (the actor-table walker — see also [`docs/subsystems/script-vm.md`]'s
+    /// "intra-function label catalogue" for the F8/FB system-channel idiom).
+    ///
+    /// Two outcomes:
+    /// - **actor resolved** → return `pc + 5` (PC advances 5),
+    /// - **actor not resolved** → return absolute jump to
+    ///   `LE_u16(operand+2..=operand+3)`.
+    ///
+    /// The host returns `Some(new_pc)` to take the resolved-actor "pc + 5"
+    /// path (the host has confirmed the actor exists), or `None` to take the
+    /// embedded-jump path (actor lookup missed). Default impl returns `None`
+    /// — engines without an actor pool always take the jump.
+    fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+        let _ = actor_id;
+        None
+    }
+
+    /// Read 16-bit value used by op 0x4C nC sub-5/6 — the operand-stream
+    /// equivalent of `func_0x8003CE9C` followed by [`party_flag_test`] over
+    /// the trigger-flag bank.
+    ///
+    /// Both sub-5 (jump-if-zero) and sub-6 (jump-if-nonzero) read a 16-bit
+    /// value from `bytecode[operand+1..=operand+2]` and test whether the
+    /// corresponding bit is set in the trigger-flag array. The dispatcher
+    /// computes the index via [`field_helpers::load_u16_le`] and asks the
+    /// host whether that bit is set.
+    ///
+    /// Returns `true` when the bit is set (= the original's `0xFF` saturation
+    /// from `FUN_8003CE64`), `false` otherwise. Default impl returns `false`
+    /// — engines without a flag bank treat all bits as clear.
+    ///
+    /// [`field_helpers::load_u16_le`]: crate::field_helpers::load_u16_le
+    /// [`party_flag_test`]: crate::field_helpers::party_flag_test
+    fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
+        let _ = flag_idx;
+        false
+    }
+
+    /// Halt-acquire dispatcher used by op 0x38 (CAM_CFG yield path) and
+    /// op 0x43 sub-0/1/A/B (actor-control halts).
     ///
     /// The original at `0x801df30c+` halts the active script (and the
     /// system-channel caller, when the active ctx is the player) by:
@@ -1486,9 +1938,12 @@ pub trait FieldHost {
     /// - setting `ctx.flags |= 0x400` (HALT bit),
     /// - clearing `ctx.wait_accum`.
     ///
-    /// Then it returns the absolute resume PC via `func_0x8003CE9C(target)`:
+    /// For op 0x43 sub-0/1/A/B the resume PC is encoded in the operand:
     /// - Sub-0/1: `target = operand + 3` → bytecode bytes `pc+4..pc+6`.
     /// - Sub-A/B: `target = operand + 7` → bytecode bytes `pc+8..pc+10`.
+    ///
+    /// For op 0x38 the resume PC is `pc + 3` (post-instruction); there is no
+    /// operand-encoded target.
     ///
     /// Acquisition succeeds only when:
     /// - `ctx.saved_pc != 0` OR `ctx == player_ctx`, AND
@@ -1496,34 +1951,275 @@ pub trait FieldHost {
     ///   `_DAT_801C6EA4 + 0x8` is non-zero.
     ///
     /// On success: VM emits `Yield { resume_pc: target_pc }` (the host's
-    /// state-resume layer drives re-entry). On failure: VM advances PC by
-    /// the default amount (5 for sub-0/1, 9 for sub-A/B).
+    /// state-resume layer drives re-entry). On failure for op 0x43 the VM
+    /// advances PC by the default amount (5 for sub-0/1, 9 for sub-A/B); on
+    /// failure for op 0x38 the VM `Halt`s at the current PC (matching the
+    /// original's `switchD_801e00f4::default()` fallthrough).
+    ///
+    /// `which` is the originating opcode/sub-op tag so hosts that need to
+    /// distinguish the call site can — it's `0x38` for op 0x38, and the raw
+    /// op-0x43 sub-op (`0`, `1`, `0xA`, `0xB`) for op 0x43.
     ///
     /// The default impl returns `true` (always acquire), which keeps the
     /// original's control-flow shape; hosts that don't model the player
     /// pointer can model their own predicate.
-    fn op43_halt_acquire_predicate(&self, ctx: &FieldCtx, sub_op: u8) -> bool {
-        let _ = (ctx, sub_op);
+    fn field_halt_acquire_predicate(&self, ctx: &FieldCtx, which: u8) -> bool {
+        let _ = (ctx, which);
         true
     }
 
-    /// Side effect of [`op43_halt_acquire_predicate`] returning `true`.
+    /// Side effect of [`field_halt_acquire_predicate`] returning `true`.
     ///
     /// The original also writes the same halt fields onto the system-channel
     /// (`param_3`) when `ctx == player_ctx`. Engines that maintain a separate
     /// caller channel use this hook; default no-op.
     ///
     /// `resume_pc` is the absolute PC the script will resume at; `coords` is
-    /// the (x, y, z) position the original copies into a scratch local.
-    fn op43_halt_acquire_apply(
+    /// the (x, y, z) position the original copies into a scratch local on the
+    /// op-0x43 path. Op 0x38 passes `[0; 3]` since it has no coord operands.
+    ///
+    /// [`field_halt_acquire_predicate`]: FieldHost::field_halt_acquire_predicate
+    fn field_halt_acquire_apply(
         &mut self,
         ctx: &mut FieldCtx,
-        sub_op: u8,
+        which: u8,
         resume_pc: usize,
         coords: [i16; 3],
     ) {
-        let _ = (ctx, sub_op, resume_pc, coords);
+        let _ = (ctx, which, resume_pc, coords);
     }
+
+    // -- Round 18: 0x4C n8 actor-allocator + nE camera + nD/n5 dialog --
+
+    /// Set actor model + animation frame (op 0x4C n8 sub-1, 9 bytes).
+    ///
+    /// `[4C, 0x81, m0, m1, m2, anim_lo, anim_hi, frames_lo, frames_hi]`. The
+    /// 24-bit `model_id` is the standard `load_u24_le` decode of bytes 1..3;
+    /// `anim_frame` and `tween_frames` are 16-bit LE pairs at bytes 4..5 and
+    /// 6..7 respectively.
+    ///
+    /// The original at lines 6496-6515 of the dispatcher dump has three paths:
+    /// - `tween_frames == 0`: write `*(int *)(ctx + 0x74) = model_id;
+    ///   *(short *)(ctx + 0x78) = anim_frame`. Done — caller advances PC by 9.
+    /// - `tween_frames != 0` and `ctx + 0x78 == 0` (no current anim):
+    ///   `*(int *)(ctx + 0x74) = model_id`. (Anim left untouched.)
+    /// - Otherwise call `func_0x8003C5F0(ctx, ctx + 0x74, 3, ctx[0x74],
+    ///   model_id, tween_frames)` to schedule a tween.
+    ///
+    /// This hook receives all four pieces of operand state — the host decides
+    /// which path to take based on its own state model. The default impl is a
+    /// no-op; the VM always advances PC by 9.
+    fn op4c_n_8_sub_1_set_model_anim(
+        &mut self,
+        ctx: &mut FieldCtx,
+        model_id: u32,
+        anim_frame: u16,
+        tween_frames: u16,
+    ) {
+        let _ = (ctx, model_id, anim_frame, tween_frames);
+    }
+
+    /// Look up an actor and apply a 6-axis rotation matrix (op 0x4C n8 sub-6,
+    /// 15 bytes).
+    ///
+    /// `[4C, 0x86, x_lo, x_hi, y_lo, y_hi, z_lo, z_hi, rx_lo, rx_hi, ry_lo,
+    /// ry_hi, rz_lo, rz_hi, actor_id]`. Six 16-bit LE values for the rotation
+    /// matrix axes (decoded via `load_u16_le`), then a 1-byte actor selector
+    /// at the tail.
+    ///
+    /// The original at lines 6571-6585 first calls `func_0x8003C83C(actor_id)`
+    /// to resolve the actor pointer; if 0 (not found), falls through to
+    /// `return param_2 + 0xF` (advance PC by 15 with no side effect).
+    /// Otherwise calls `FUN_801E573C(ctx, target, x, y, z, rx, ry, rz)` to
+    /// apply, then yields via the standard switch-default.
+    ///
+    /// This hook returns `true` if the actor was found (host applied the
+    /// rotation); `false` if the actor lookup missed. PC advances by 15 in
+    /// both cases — the only observable difference is whether the host's
+    /// rotation pipeline ran.
+    ///
+    /// The default impl returns `false` (no actor pool).
+    fn op4c_n_8_sub_6_actor_set_rotation(
+        &mut self,
+        ctx: &mut FieldCtx,
+        actor_id: u8,
+        position: [i16; 3],
+        rotation: [i16; 3],
+    ) -> bool {
+        let _ = (ctx, actor_id, position, rotation);
+        false
+    }
+
+    /// Count active actors of a given type (op 0x4C n8 sub-B, 5 bytes).
+    ///
+    /// `[4C, 0x8B, type_byte, target_lo, target_hi]`. The original at lines
+    /// 6621-6644 walks the active actor pool (`DAT_80084594` = pool count;
+    /// each slot is 0x414 bytes wide, indexed by the per-slot type byte at
+    /// `+0x458`) and increments a count for every entry whose stored type
+    /// matches `type_byte`.
+    ///
+    /// If any match: jump to absolute `LE_u16(operand+2..=operand+3)`.
+    /// If no match: advance PC by 5.
+    ///
+    /// The host decides the pool layout — this hook just answers
+    /// "is there at least one actor of `type_byte` active?". Default impl
+    /// returns `false` (no actor pool).
+    fn op4c_n_8_sub_b_actor_type_present(&self, type_byte: u8) -> bool {
+        let _ = type_byte;
+        false
+    }
+
+    /// Search a per-character actor sub-table for a matching marker
+    /// (op 0x4C n8 sub-D, 6 bytes).
+    ///
+    /// `[4C, 0x8D, char_idx, marker, target_lo, target_hi]`. The original at
+    /// lines 6652-6667 indexes `DAT_8008488D[char_idx * 0x414]` for the
+    /// per-character sub-table size and walks the table comparing each entry
+    /// against `marker`.
+    ///
+    /// Three outcomes:
+    /// - [`ActorSearchResult::EmptySlot`]: per-character sub-table is empty
+    ///   (size byte is 0). Advance PC by 6.
+    /// - [`ActorSearchResult::Found`]: found a matching entry. Jump to
+    ///   absolute `LE_u16(operand+3..=operand+4)`.
+    /// - [`ActorSearchResult::NoMatch`]: sub-table is non-empty but no entry
+    ///   matched. Halt at PC.
+    ///
+    /// The default impl returns [`ActorSearchResult::EmptySlot`] (advance,
+    /// no match) which is the safest fallback for engines without an actor
+    /// pool.
+    fn op4c_n_8_sub_d_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
+        let _ = (char_idx, marker);
+        ActorSearchResult::EmptySlot
+    }
+
+    /// Camera-anchored teleport (op 0x4C nE sub-3, 2 bytes).
+    ///
+    /// `[4C, 0xE3, actor_id]`. The original at lines 7208-7227 resolves
+    /// the actor via `func_0x8003C83C(actor_id)`, then copies the active
+    /// camera's world-space position (`_DAT_8007C364 + 0x14/+0x18`) into
+    /// the actor's `+0x14/+0x18` slots and the camera's rotation
+    /// (`_DAT_8007C364 + 0x16`) into the actor's `+0x16`. If the actor's
+    /// `flags & 0x20000000` is set, the actor's `+0x8E` (inverted-Y mirror)
+    /// is also negated to match.
+    ///
+    /// PC always advances by 2; if the actor lookup fails the original is a
+    /// silent no-op. Hosts get the actor ID and decide whether to apply.
+    fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
+        let _ = (ctx, actor_id);
+    }
+
+    /// Camera position animate (op 0x4C nE sub-7, 7 bytes).
+    ///
+    /// `[4C, 0xE7, t0, t1, t2, d0, d1]`. Mixed-width operand: a 24-bit LE
+    /// `target` at bytes 1..3 and a 16-bit LE `duration` at bytes 4..5.
+    /// (The agent's first-pass spec said both were LE24; the actual
+    /// dispatcher at lines 7282-7288 calls `func_0x8003ceb8` (LE24) at
+    /// `pbVar47+1` and `func_0x8003ce9c` (LE16) at `pbVar47+4`.)
+    ///
+    /// Behaviour:
+    /// - `duration == 0` → write `_DAT_80073EE4 = target` immediately.
+    /// - `duration != 0` → call `func_0x8003C5F0(0, &_DAT_80073EE4, 0,
+    ///   _DAT_80073EE4, target, duration)` to schedule the tween.
+    ///
+    /// PC advances by 7. Hosts model the camera tween however they like.
+    fn op4c_n_e_sub_7_camera_animate(&mut self, target: u32, duration: u16) {
+        let _ = (target, duration);
+    }
+
+    /// Camera zoom config (op 0x4C nE sub-8, 10 bytes).
+    ///
+    /// `[4C, 0xE8, x0, x1, y0, y1, z0, z1, m0, m1]`. Four 16-bit LE values:
+    /// `zoom_x`, `zoom_y`, `zoom_z`, and a `mode` selector. The agent's
+    /// first-pass spec said three 24-bit LE values; the actual dispatcher
+    /// at lines 7300-7303 reads `func_0x8003ce9c` (LE16) four times at
+    /// `pbVar47 + 1/3/5/7`.
+    ///
+    /// Mode dispatch (line 7305+):
+    /// - `mode == 0`: default zoom. Write `_DAT_801C6EA4 + 0x4C/+0x4E/+0x50
+    ///   = (zoom_x or 0x40), (zoom_y or 8), (zoom_z or 4)` — each input is
+    ///   replaced with the constant when zero.
+    /// - `mode == 1` and `zoom_x == 0`: set bit `0x80000` on the resolved
+    ///   actor's `+0x10` flags.
+    /// - `mode == 1` and `zoom_x != 0`: set per-actor zoom at
+    ///   `_DAT_801C6EA4 + 0x52 = zoom_x`.
+    /// - `mode == 2`: clear bit `0x80000` on the resolved actor.
+    /// - `mode == 3`: set bit `8` on the resolved actor and clear flag
+    ///   `0x400` on its parent actor (`*(int *)(actor + 0x94)`).
+    ///
+    /// PC advances by 10. Default impl is a no-op; the host owns the camera
+    /// struct.
+    fn op4c_n_e_sub_8_camera_zoom(&mut self, zoom_x: i16, zoom_y: i16, zoom_z: i16, mode: i16) {
+        let _ = (zoom_x, zoom_y, zoom_z, mode);
+    }
+
+    /// Field SE trigger with conditional 16-bit pair (op 0x4C nD sub-0,
+    /// 6 bytes).
+    ///
+    /// `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`. The original at lines 6936-6944
+    /// reads the two 16-bit LE values; if any of three flag globals
+    /// (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`) is non-zero,
+    /// calls `func_0x8002B994(a, b)` (the SE trigger). Otherwise no-op.
+    ///
+    /// PC advances by 6 in both branches. The hook returns nothing — the
+    /// host decides whether the SE fires based on its own gate state.
+    fn op4c_n_d_sub_0_field_se_trigger(&mut self, a: u16, b: u16) {
+        let _ = (a, b);
+    }
+
+    /// Dialog wait poll (op 0x4C n5 sub-3, 2 bytes).
+    ///
+    /// `[4C, 0x53]`. The original at lines 6295-6298 calls
+    /// `FUN_801D65D8(1)` (dialog "is finished?" query) and falls through to
+    /// `joined_r0x801E28C4`. The dispatch ends in either case — this is a
+    /// halt-style instruction — but PC has been incremented to `pc + 2`
+    /// before the joined block runs.
+    ///
+    /// The hook is purely a side-effect callback (the host pumps its dialog
+    /// state machine). PC advances by 2 and the VM halts (yields to the
+    /// host); the next pump reads from `pc + 2`.
+    fn op4c_n_5_sub_3_dialog_wait(&mut self, ctx: &mut FieldCtx) {
+        let _ = ctx;
+    }
+
+    /// Dialog advance poll (op 0x4C n5 sub-4, 2 bytes).
+    ///
+    /// `[4C, 0x54]`. The original at lines 6299-6310 calls
+    /// `FUN_801D65D8(0)` (dialog "advance one frame" query) and:
+    /// - Returns non-zero (dialog still active) → halt at the standard
+    ///   switch-default (PC unchanged for this pump cycle).
+    /// - Returns zero (dialog done) → clear `DAT_8007B648`, copy 6 bytes
+    ///   from the directional-sound state globals, and advance PC by 2.
+    ///
+    /// The hook returns `true` when the dialog is still active (VM halts at
+    /// PC), `false` when done (VM advances PC by 2). Default impl returns
+    /// `false` — engines without a dialog renderer immediately complete.
+    fn op4c_n_5_sub_4_dialog_advance(&mut self, ctx: &mut FieldCtx) -> bool {
+        let _ = ctx;
+        false
+    }
+}
+
+/// Tristate result for [`FieldHost::op4c_n_8_sub_d_actor_search`] (op 0x4C
+/// n8 sub-D).
+///
+/// The dispatcher's three-way branch maps:
+/// - [`EmptySlot`](Self::EmptySlot): the per-character actor sub-table is
+///   empty. The dispatcher takes the standard "advance PC by 6" tail.
+/// - [`Found`](Self::Found): a matching marker was located. The dispatcher
+///   takes the absolute-jump path (`LE_u16(operand+3..=operand+4)`).
+/// - [`NoMatch`](Self::NoMatch): the sub-table is non-empty but no entry
+///   matched the marker. The dispatcher halts at the current PC via the
+///   `switchD::default` fallthrough.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActorSearchResult {
+    /// Per-character sub-table is empty — advance PC.
+    #[default]
+    EmptySlot,
+    /// Marker matched — take the absolute-jump path.
+    Found,
+    /// Sub-table populated but no match — halt at PC.
+    NoMatch,
 }
 
 /// Camera parameter for op 0x45 CONFIGURE. The bit index in the mask
@@ -1618,6 +2314,34 @@ pub fn peek_extended(bytecode: &[u8], pc: usize) -> Option<u8> {
 fn grid_to_world(b: u8) -> u16 {
     let base = u16::from(b & 0x7F) * 0x80 + 0x40;
     if b & 0x80 != 0 { base + 0x40 } else { base }
+}
+
+/// MES-shape bytecode walker. Mirrors `FUN_8003ca38`: counts payload bytes
+/// starting at `buf[0]` until a terminator (`≤ 0x1E`), with a one-byte
+/// peek-extension for `0xCx` prefix bytes (each consumes its trailing pair
+/// byte). Used by op 0x49 sub-0 in the `Done` arm to advance past an inline
+/// MES payload.
+///
+/// Returns the number of bytes walked. The walker stops at the first
+/// terminator or at end-of-slice (defensive: the original reads past EOF
+/// without bounds checks).
+fn walk_mes_bytecode(buf: &[u8]) -> usize {
+    let mut i = 0;
+    while let Some(&b) = buf.get(i) {
+        if b <= 0x1E {
+            break;
+        }
+        if b & 0xF0 == 0xC0 {
+            if buf.get(i + 1).is_none() {
+                i += 1;
+                break;
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    i
 }
 
 /// Decode and execute one instruction.
@@ -1891,10 +2615,24 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x38 — CAM_CFG (simple path only). When op1 & 0x7F == 0, the
-        // original copies the lookup-table u16 into ctx.field_26 and returns
-        // pc+3. Other paths trigger a YIELD-like halt — those return
-        // `StepResult::Pending` until we port the full sub-dispatch.
+        // 0x38 — CAM_CFG. Two paths share the 3-byte instruction `[38, op0,
+        // op1]`:
+        //
+        // - **Simple path** (`op1 & 0x7F == 0`): the original copies
+        //   `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into `ctx.field_26`
+        //   and returns `pc + 3`.
+        //
+        // - **Halt-acquire path** (`op1 & 0x7F != 0`): identical predicate +
+        //   apply pair to op 0x43 sub-0/1/A/B (see
+        //   [`field_halt_acquire_predicate`]). Predicate succeeds → `ctx`
+        //   acquires the HALT bit + `saved_pc + wait_accum=0`, the player-vs-
+        //   caller mirror fires, and the VM yields with `resume_pc = pc + 3`
+        //   (script halts but its post-instruction PC is the resume target).
+        //   Predicate fails → the original falls into
+        //   `switchD_801e00f4::default()`; for op 0x38 that path is not in the
+        //   0x50/0x60/0x70 system-flag arm, so the dispatcher halts at PC.
+        //
+        // [`field_halt_acquire_predicate`]: FieldHost::field_halt_acquire_predicate
         0x38 => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -1909,11 +2647,15 @@ pub fn step<H: FieldHost>(
                 StepResult::Advance {
                     next_pc: pc + header_size + 2,
                 }
+            } else if host.field_halt_acquire_predicate(ctx, 0x38) {
+                let resume = pc + header_size + 2;
+                ctx.flags |= 0x400;
+                ctx.wait_accum = 0;
+                ctx.saved_pc = pc as u32;
+                host.field_halt_acquire_apply(ctx, 0x38, resume, [0; 3]);
+                StepResult::Yield { resume_pc: resume }
             } else {
-                // Yield-like sub-path lives in the original; defer until the
-                // YIELD machinery generalises (the original gates it on
-                // ctx.saved_pc != 0 etc.).
-                StepResult::Pending { opcode, pc }
+                StepResult::Halt { final_pc: pc }
             }
         }
 
@@ -1996,18 +2738,25 @@ pub fn step<H: FieldHost>(
         //   `host.extra_flags() & (1 << bit)` is clear → skip 5 bytes.
         //   If set → jump to `pc + 3 + LE_u16(lo, hi)` (non-extended).
         //
-        // Mode 1: screen-mode test. `[42, 1, op1, lo, hi]`. The original
-        //   tests `host.screen_mode()` against:
+        // Mode 1: screen-mode test. `[42, 1, op1, lo, hi]`. The original at
+        //   `case 0x42` of FUN_801de840 (line 5176 of the dump) tests
+        //   `host.screen_mode()` against:
         //     - `host.screen_mode_table(op1)` for `op1 < 8` (high-nibble check)
         //     - bit `0x20` for `op1 == 8`
         //     - bit `0x40` for `op1 == 9`
         //     - bit `0x80` for `op1 == 10`
         //     - bit `0x10` for `op1 == 0xB`
-        //     - any other op1 returns the "default" (skip 5 bytes).
+        //     - `op1 >= 0xC`: none of the conditional-skip branches match,
+        //       so control falls through to the unconditional take-jump
+        //       path (`iVar18 = param_2 + 3; LAB_801e35f8`). Treat as
+        //       always-take.
         //   If the test FAILS, skip 5 bytes; if it succeeds, take the jump
         //   `pc + 3 + LE_u16(lo, hi)`.
         //
-        // Other modes return Unknown (the original's default-arm fallthrough).
+        // Mode 2+: the original calls `switchD_801e00f4::default()`. The
+        //   dispatcher's default arm checks `opcode_byte & 0x70`; since
+        //   0x42 & 0x70 = 0x40 (not in {0x50,0x60,0x70}), it returns
+        //   `param_2` — halt at PC.
         0x42 => {
             let Some(&mode) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2031,9 +2780,10 @@ pub fn step<H: FieldHost>(
                     9 => host.screen_mode() & 0x40 != 0,
                     10 => host.screen_mode() & 0x80 != 0,
                     11 => host.screen_mode() & 0x10 != 0,
-                    _ => return StepResult::Pending { opcode, pc },
+                    // op1 >= 0xC: unconditional take-jump path.
+                    _ => true,
                 },
-                _ => return StepResult::Pending { opcode, pc },
+                _ => return StepResult::Halt { final_pc: pc },
             };
             if !test_passed {
                 // Skip the whole 5-byte instruction (header + 4 operand bytes).
@@ -2346,7 +3096,10 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 1,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    // All 16 sub-ops covered above; this arm is dead code
+                    // but the compiler can't prove it because the value is
+                    // narrowed to `op0 & 0x0F` in this match's scrutinee.
+                    16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                 },
                 4 => {
                     // 0x4C outer nibble 4 — immediate-or-ramp cluster.
@@ -2529,7 +3282,16 @@ pub fn step<H: FieldHost>(
                                 }
                             }
                         }
-                        _ => StepResult::Pending { opcode, pc },
+                        // Sub-ops 0xE/0xF have no `case` arm in the original
+                        // case-4 inner switch (line 6188 of the dump): they
+                        // hit `default: func_0x8001a068(s_SUB_40_ERROR_801cec88);
+                        // iVar18 = switchD_801e00f4::default(); return iVar18;`
+                        // — the dispatcher's default returns `param_2` ⇒ halt
+                        // at PC.
+                        0xE..=0xF => StepResult::Halt { final_pc: pc },
+                        // `op0 & 0x0F` is at most 0xF; the arms above cover
+                        // every value, so this arm is dead code.
+                        16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                     }
                 }
                 // Outer nibble 5 — sound directional + dialog dispatch.
@@ -2537,7 +3299,10 @@ pub fn step<H: FieldHost>(
                 // (NPC move + run with halt-acquire), sub-2/3/4 (dialog
                 // query cluster) remain `Pending` because they thread
                 // halt-acquire and STATE_RESUME branches that need their
-                // own host-hook surface.
+                // own host-hook surface. Sub-ops 5..=0xF have no `case`
+                // arm in the original inner switch, so they silently
+                // fall through and the function returns `iVar45 = param_2`
+                // (initialised at the top of FUN_801de840) — halt at PC.
                 5 => match op0 & 0x0F {
                     0 => {
                         let Some(&lo) = bytecode.get(operand + 1) else {
@@ -2558,12 +3323,43 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 3,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    // Sub-3: 2-byte `[4C, 0x53]`. Dialog-wait poll. The
+                    // original at lines 6295-6298 of the dispatcher dump
+                    // calls `FUN_801D65D8(1)` then `goto
+                    // joined_r0x801E28C4`; both branches halt-style return
+                    // after `param_2 = param_2 + 2`. We model this as
+                    // "halt at pc+2" — the host pumps its dialog state
+                    // machine through the side-effect hook.
+                    3 => {
+                        host.op4c_n_5_sub_3_dialog_wait(ctx);
+                        StepResult::Halt {
+                            final_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-4: 2-byte `[4C, 0x54]`. Dialog-advance poll. The
+                    // original at lines 6299-6310 calls `FUN_801D65D8(0)`;
+                    // if non-zero (dialog still active) goes to
+                    // `LAB_801DEE50` (halt at PC), else clears
+                    // `DAT_8007B648`, snapshots state bytes, advances PC by
+                    // 2. Host returns `true` when still active.
+                    4 => {
+                        if host.op4c_n_5_sub_4_dialog_advance(ctx) {
+                            StepResult::Halt { final_pc: pc }
+                        } else {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 1,
+                            }
+                        }
+                    }
+                    1..=2 => StepResult::Pending { opcode, pc },
+                    _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 6 — emitter call families.
                 // Only op0 == 0x60 (6-word emitter) is ported. op0 == 0x61
                 // is a halt-acquire variant whose 16-byte encoding interacts
-                // with cross-context dispatch; remaining values halt at PC.
+                // with cross-context dispatch; remaining values (0x62..=0x6F)
+                // hit `else { return param_2; }` in the original at line
+                // 6330 of the dump — halt at PC.
                 6 => match op0 {
                     0x60 => {
                         if operand + 13 > bytecode.len() {
@@ -2581,7 +3377,8 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 13,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    0x61 => StepResult::Pending { opcode, pc },
+                    _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 7 — VRAM tile-flag bulk operation. 7-byte
                 // instruction. Sub-0/1 yield via STATE_RESUME; sub-2/3
@@ -2613,13 +3410,37 @@ pub fn step<H: FieldHost>(
                 }
                 // Outer nibble 8 — large multi-purpose dispatcher. The
                 // ported subset covers the simple writes + the field_68
-                // conditional-jump. Sub-0 (actor allocator with
-                // halt-acquire), sub-1 (ramp scheduler), sub-3 (box-fill
-                // table), sub-5/0xE/0xF (halt-acquire variants), sub-6
-                // (script-context resolution), sub-9 (FUN_801E3620 dispatch),
-                // sub-0xB / sub-0xD (inventory search + conditional jump)
-                // remain `Pending`.
+                // conditional-jump + sub-9 (DAT_80073F00 write) + sub-5/E/F
+                // (halt-acquire idiom — the original at lines 6550-6570
+                // shares one inner-switch arm body across all three sub-ops:
+                // ctx mutation that sets saved_pc + halt bit + clears
+                // wait_accum, then halts at PC). Sub-0 (actor allocator),
+                // sub-1 (ramp scheduler), sub-3 (box-fill table), sub-6
+                // (script-context resolution), sub-0xB / sub-0xD (inventory
+                // search) remain `Pending` because they require overlay-
+                // resident helpers (`func_0x80020de0`, `func_0x8003ce64`,
+                // `FUN_801D5630`, `func_0x8003cf04`).
                 8 => match op0 & 0x0F {
+                    // Sub-1: 9-byte `[4C, 0x81, m0, m1, m2, anim_lo,
+                    // anim_hi, frames_lo, frames_hi]`. Set actor model +
+                    // animation frame, optionally with a tween if
+                    // `tween_frames != 0`. Dispatcher lines 6496-6515; the
+                    // host applies whichever path applies based on its own
+                    // state model. PC always advances by 9.
+                    1 => {
+                        if operand + 8 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let model_id = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
+                        let anim_frame =
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 4..]);
+                        let tween_frames =
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 6..]);
+                        host.op4c_n_8_sub_1_set_model_anim(ctx, model_id, anim_frame, tween_frames);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 8,
+                        }
+                    }
                     2 => {
                         let Some(&page) = bytecode.get(operand + 1) else {
                             return StepResult::Unknown { opcode, pc };
@@ -2627,6 +3448,33 @@ pub fn step<H: FieldHost>(
                         host.op4c_n8_sub2_party_page_mirror(page);
                         StepResult::Advance {
                             next_pc: pc + header_size + 2,
+                        }
+                    }
+                    // Sub-6: 15-byte `[4C, 0x86, x_lo..rz_hi, actor_id]`.
+                    // Six 16-bit LE values for position+rotation matrix
+                    // axes, then a 1-byte actor selector at the tail.
+                    // Dispatcher lines 6571-6585: actor lookup misses fall
+                    // through to PC + 15 with no side effect; on hit, host
+                    // applies the rotation matrix. PC always advances by
+                    // 15.
+                    6 => {
+                        if operand + 14 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let position = [
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 1..]) as i16,
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 3..]) as i16,
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 5..]) as i16,
+                        ];
+                        let rotation = [
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 7..]) as i16,
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 9..]) as i16,
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 11..]) as i16,
+                        ];
+                        let actor_id = bytecode[operand + 13];
+                        host.op4c_n_8_sub_6_actor_set_rotation(ctx, actor_id, position, rotation);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 14,
                         }
                     }
                     4 => {
@@ -2639,10 +3487,15 @@ pub fn step<H: FieldHost>(
                         }
                     }
                     7 => {
+                        // Register callback then halt at PC. The original
+                        // calls `switchD_801e00f4::default()` (= halt for
+                        // 0x4C since `0x4C & 0x70 = 0x40`); script resumes
+                        // when the registered callback fires. Distinct from
+                        // an Advance — a re-entry of the dispatcher at the
+                        // same PC re-registers, so the host's hook should
+                        // be idempotent.
                         host.op4c_n8_sub7_register_callback();
-                        StepResult::Advance {
-                            next_pc: pc + header_size + 1,
-                        }
+                        StepResult::Halt { final_pc: pc }
                     }
                     8 => {
                         if operand + 5 > bytecode.len() {
@@ -2694,12 +3547,82 @@ pub fn step<H: FieldHost>(
                             }
                         }
                     }
+                    // Sub-9: write `_DAT_80073F00 = i16(operand[1..3])`, then
+                    // PC += 4 (`code_r0x801e3620` exit label).
+                    9 => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let value =
+                            i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
+                        host.op4c_n8_sub9_set_73f00(value);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        }
+                    }
+                    // Sub-5/E/F all share the halt-acquire body. The host
+                    // hook applies the standard ctx mutation; the dispatch
+                    // halts at PC regardless of acquire success/failure
+                    // (both paths in the dump halt — success via
+                    // `switchD_801e00f4::default()`, failure via
+                    // `LAB_801dee50`).
+                    5 | 0xE | 0xF => {
+                        host.op4c_n8_halt_acquire(ctx, pc as u32);
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-B: 5-byte `[4C, 0x8B, type_byte, target_lo,
+                    // target_hi]`. Conditional jump if any actor of
+                    // `type_byte` is active. Dispatcher lines 6621-6644:
+                    // count > 0 → jump to absolute u16; count == 0 →
+                    // advance PC by 5.
+                    0xB => {
+                        if operand + 4 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let type_byte = bytecode[operand + 1];
+                        if host.op4c_n_8_sub_b_actor_type_present(type_byte) {
+                            let target =
+                                crate::field_helpers::load_u16_le(&bytecode[operand + 2..]);
+                            StepResult::Advance {
+                                next_pc: target as usize,
+                            }
+                        } else {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            }
+                        }
+                    }
+                    // Sub-D: 6-byte `[4C, 0x8D, char_idx, marker, target_lo,
+                    // target_hi]`. Tristate per-character actor sub-table
+                    // search. Dispatcher lines 6652-6667.
+                    0xD => {
+                        if operand + 5 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let char_idx = bytecode[operand + 1];
+                        let marker = bytecode[operand + 2];
+                        match host.op4c_n_8_sub_d_actor_search(char_idx, marker) {
+                            ActorSearchResult::EmptySlot => StepResult::Advance {
+                                next_pc: pc + header_size + 5,
+                            },
+                            ActorSearchResult::Found => {
+                                let target =
+                                    crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+                                StepResult::Advance {
+                                    next_pc: target as usize,
+                                }
+                            }
+                            ActorSearchResult::NoMatch => StepResult::Halt { final_pc: pc },
+                        }
+                    }
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 9 — fade family + table copy + callback.
                 // Sub-0/1/2 (fade dispatch, 9-byte) and sub-0xE (16-word
                 // table copy, 34-byte) ported. Sub-0xF (callback registration
-                // via LAB_801da930) remains `Pending`. Other sub-ops halt.
+                // via LAB_801da930) remains `Pending`. Sub-3..=0xD have no
+                // `case` arm in the original (line 6694–6696 of the dump
+                // returns `param_2` when `2 < uVar27 < 0xE`) — halt at PC.
                 9 => {
                     let sub = op0 & 0x0F;
                     match sub {
@@ -2736,44 +3659,125 @@ pub fn step<H: FieldHost>(
                                 next_pc: pc + header_size + 33,
                             }
                         }
-                        _ => StepResult::Pending { opcode, pc },
+                        // Sub-0xF: register `LAB_801DA930` callback then halt
+                        // at PC. The original goes through
+                        // `switchD_801e00f4::default()`, which for opcode 0x4C
+                        // (`& 0x70 = 0x40`) returns `param_2` — halt at PC.
+                        // The script resumes when the registered callback
+                        // fires.
+                        0xF => {
+                            host.op4c_n9_sub_f_register_callback();
+                            StepResult::Halt { final_pc: pc }
+                        }
+                        _ => StepResult::Halt { final_pc: pc },
                     }
                 }
                 // Outer nibble 0xA — conditional jump on flag bit. The 5-byte
-                // instruction `[4C, 0xAN, bit, lo, hi]` reads `bit` and dispatches:
-                // sub-0 → ctx.flags, sub-1 → ctx.local_flags, sub-2 → global story.
-                // When the bit is **clear** the original takes the absolute jump;
-                // set falls through to PC += 5.
+                // instruction `[4C, 0xAN, bit, lo, hi]` dispatches first on
+                // sub-op (`bne a1, zero, 0x801e258c` at 0x801e2568 of the
+                // overlay disassembly), then per-sub-op checks one bit:
+                // sub-0 → ctx.flags, sub-1 → ctx.local_flags, sub-2 → global
+                // story flag word. When the bit is **set** the original
+                // branches to the absolute-jump label (`bne v1, zero,
+                // 0x801e360c`); clear (or sub-op 3..=0xF) falls through to
+                // `s8 += 5` (PC += 5).
                 0xA => {
-                    let sub = op0 & 0x0F;
-                    if !matches!(sub, 0..=2) {
-                        return StepResult::Pending { opcode, pc };
-                    }
                     if operand + 4 > bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }
+                    let sub = op0 & 0x0F;
                     let bit = bytecode[operand + 1];
                     let target = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
                     if host.op4c_n_a_flag_set(ctx, sub, bit) {
                         StepResult::Advance {
-                            next_pc: pc + header_size + 4,
+                            next_pc: target as i32 as usize,
                         }
                     } else {
                         StepResult::Advance {
-                            next_pc: target as i32 as usize,
+                            next_pc: pc + header_size + 4,
                         }
                     }
                 }
                 // Outer nibble 0xC — small per-actor / per-scene writes.
-                // Ported subset covers sub-2 (field_42), sub-4 (sub-tile
-                // broadcast), sub-7 (sound trigger), sub-8 (field_74 XOR),
-                // sub-0xA / sub-0xB / sub-0xC (slot table writes), sub-0xE
-                // (b6ac write). Sub-0/1 (move-table cancel + linked-list
-                // walk), sub-3 (script-table teleport), sub-5/6/9 (conditional
-                // jumps depending on FUN_801df8dc / func_0x8003CE64 globals),
-                // sub-0xD (script-context alloc with halt), sub-0xF (position
-                // broadcast via FUN_801E3620) remain `Pending`.
+                // Ported subset covers sub-0 (move-table cancel, PC += 2),
+                // sub-1 (flag-loop reset, PC += 2), sub-2 (field_42), sub-3
+                // (script-table teleport, PC += 2), sub-4 (sub-tile
+                // broadcast), sub-5/6 (party-flag conditional jumps via
+                // `func_0x8003CE9C` + `party_flag_test`), sub-7 (sound
+                // trigger), sub-8 (field_74 XOR), sub-9 (global-pair compare
+                // gate — PC += 2 unless globals differ, then halt), sub-0xA
+                // / sub-0xB / sub-0xC (slot table writes), sub-0xD
+                // (script-context alloc, halt), sub-0xE (b6ac write), sub-0xF
+                // (position broadcast). All 16 sub-ops in nibble 0xC are now
+                // handled.
                 0xC => match op0 & 0x0F {
+                    // Sub-0: 2-byte. Cancel move-table animation if active
+                    // (`func_0x800204F8`). Always advances PC += 2.
+                    0 => {
+                        host.op4c_n_c_sub_0_move_cancel(ctx);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-3: 2-byte. Script-table teleport with tile-center
+                    // math. Helper `func_0x8003C8F0`/`8003D0BC` is overlay-
+                    // resident; hosts decide what fields to write. PC += 2.
+                    3 => {
+                        host.op4c_n_c_sub_3_script_teleport(ctx);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-5: 4-byte `[4C, 0xC5, idx_lo, idx_hi]`. Reads the
+                    // 16-bit flag index via `load_u16_le`, queries the host's
+                    // party-flag bank, and jumps to `LAB_801E2A10` when the
+                    // bit is **clear** (jump-if-zero polarity). The original's
+                    // jump target is the dispatcher's "no-op fallthrough" —
+                    // both branches advance PC += 4.
+                    5 => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
+                        // Both polarities (5 = jump-if-zero, 6 = jump-if-nonzero)
+                        // share the same dispatcher fallthrough — the original's
+                        // `joined_r0x801e28c4` block returns `param_2 + 4` either
+                        // way. The polarity selects which arm runs the
+                        // host-visible side effect, but PC delta is constant.
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        }
+                    }
+                    // Sub-6: 4-byte. Sister of sub-5 with opposite polarity
+                    // (jump-if-nonzero). PC always advances by 4.
+                    6 => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        }
+                    }
+                    // Sub-D: 2-byte. Allocate / register a script context.
+                    // Halts at PC regardless of allocation outcome.
+                    0xD => {
+                        host.op4c_n_c_sub_d_script_alloc();
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-1: 1-byte. Walk the trigger-flag record array,
+                    // resetting each record's byte-0 from a per-record
+                    // 16-bit index queried against the flag bit-array.
+                    // Always advances PC += 2 (whether the array is empty
+                    // or the loop completes).
+                    1 => {
+                        host.op4c_n_c_sub_1_flag_loop_reset(&[]);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
                     2 => {
                         let Some(&b1) = bytecode.get(operand + 1) else {
                             return StepResult::Unknown { opcode, pc };
@@ -2852,19 +3856,102 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 2,
                         }
                     }
+                    // Sub-9: 2-byte `[4C, 0xC9]`. PC += 2 unless host says
+                    // globals differ, then halt at PC.
+                    9 => {
+                        if host.op4c_n_c_sub9_globals_differ() {
+                            StepResult::Halt { final_pc: pc }
+                        } else {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 1,
+                            }
+                        }
+                    }
+                    // Sub-0xF: 4-byte `[4C, 0xCF, b1, b2]`. Each byte selects
+                    // either the actor's world coordinate (0xFF), the
+                    // tile-center conversion (`b * 0x80 + 0x40` for non-zero),
+                    // or 0. PC += 4.
+                    0xF => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let b1 = bytecode[operand + 1];
+                        let b2 = bytecode[operand + 2];
+                        let resolve = |b: u8, world: u16| -> i16 {
+                            if b == 0xFF {
+                                world as i16
+                            } else if b != 0 {
+                                ((u16::from(b) << 7) | 0x40) as i16
+                            } else {
+                                0
+                            }
+                        };
+                        let x = resolve(b1, ctx.world_x);
+                        let z = resolve(b2, ctx.world_z);
+                        host.op4c_n_c_sub_f_position_broadcast(x, z);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        }
+                    }
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 0xD — party state + camera-ish setup.
-                // Ported subset covers sub-3 (party state setup, 14-byte),
-                // sub-9 (inverted-Y mirror set, 4-byte), sub-0xA (clear
-                // mirror + collision-Y refresh, 2-byte), sub-0xD (field_58
-                // write, 3-byte), sub-0xF (scene byte write, 3-byte).
-                // Sub-0 (field SE trigger with gate), sub-1 (linked-list
-                // halt-acquire), sub-2 (position broadcast / dialog), sub-4
-                // through sub-8 (camera/effect transition cluster), sub-0xB
-                // (FUN_801E57F0 + LAB_801E2EA0 yield), sub-0xC / sub-0xE
-                // (inventory query + jump) remain `Pending`.
+                // Ported subset covers sub-1 (linked-list lookup gate, 2-byte
+                // host-Option, PC += 4 on miss), sub-2 (channel-spawn halt,
+                // 2-byte), sub-3 (party state setup, 14-byte), sub-6
+                // (`field_74` bitfield mutation, 3-byte, halts at PC),
+                // sub-7 (list-walk register + halt, 1-byte), sub-8
+                // (`FUN_801D77F4` 4-arg call, 9-byte), sub-9 (inverted-Y
+                // mirror set, 4-byte), sub-0xA (clear mirror + collision-Y
+                // refresh, 2-byte), sub-0xB (FUN_801E57F0 yield, 13-byte),
+                // sub-0xC (party search-and-set, 5-byte), sub-0xD (field_58
+                // write, 3-byte), sub-0xE (party search query, 5-byte),
+                // sub-0xF (scene byte write, 3-byte). Sub-0 (field SE
+                // trigger), sub-4/5 (16-element u16 OR/AND mask via
+                // overlay helpers) remain `Pending`.
                 0xD => match op0 & 0x0F {
+                    // Sub-0: 6-byte `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`.
+                    // Field SE trigger with conditional u16 pair. The
+                    // original at lines 6936-6944 of the dispatcher dump
+                    // gates the call on three flag globals; PC advances by
+                    // 6 in both branches. Host owns the gate state and the
+                    // SE pipeline.
+                    0 => {
+                        if operand + 5 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let a = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let b = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+                        host.op4c_n_d_sub_0_field_se_trigger(a, b);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 5,
+                        }
+                    }
+                    // Sub-1: 1-byte. Linked-list lookup via `FUN_8003CF04`.
+                    // Host returns `Some(new_pc)` for the ce9c-jump path,
+                    // `None` for PC += 4 on miss. Default host returns None.
+                    1 => match host.op4c_n_d_sub_1_list_lookup_jump(ctx) {
+                        Some(new_pc) => StepResult::Advance { next_pc: new_pc },
+                        None => StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        },
+                    },
+                    // Sub-2: 2-byte `[4C, 0xD2, b1]`. Calls the channel
+                    // resolver; halts at PC after the (possibly conditional)
+                    // spawn.
+                    2 => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        host.op4c_n_d_sub_2_channel_spawn(b1);
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-7: 1-byte. Register `FUN_801DC0BC` callback then
+                    // halt at PC.
+                    7 => {
+                        host.op4c_n_d_sub_7_register_list_walk();
+                        StepResult::Halt { final_pc: pc }
+                    }
                     3 => {
                         if operand + 13 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
@@ -2887,6 +3974,41 @@ pub fn step<H: FieldHost>(
                         host.op4c_n_d_sub3_party_setup(ab, cd, ef);
                         StepResult::Advance {
                             next_pc: pc + header_size + 13,
+                        }
+                    }
+                    // Sub-6: 3-byte `[4C, 0xD6, b1]`. Pure ctx.field_74
+                    // bitfield mutation; halts at PC.
+                    6 => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        if b1 == 4 {
+                            ctx.field_74 &= 0x7FFF_FFFF;
+                        } else {
+                            ctx.field_74 =
+                                (ctx.field_74 & 0x7CFF_FFFF) | 0x8000_0000 | (u32::from(b1) << 24);
+                        }
+                        host.op4c_n_d_sub6_field74_mutate_ack();
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-8: 9-byte `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
+                    // Calls the overlay-resident `FUN_801D77F4` with `(b1, x, y, z)`
+                    // (the host applies the call); PC += 9.
+                    8 => {
+                        if operand + 8 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let b1 = bytecode[operand + 1];
+                        let mut words = [0i16; 3];
+                        for (i, w) in words.iter_mut().enumerate() {
+                            *w = i16::from_le_bytes([
+                                bytecode[operand + 2 + i * 2],
+                                bytecode[operand + 3 + i * 2],
+                            ]);
+                        }
+                        host.op4c_n_d_sub8_call_d77f4(b1, words);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 8,
                         }
                     }
                     9 => {
@@ -2932,19 +4054,86 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 2,
                         }
                     }
+                    // Sub-B: 13-byte. Call FUN_801E57F0(operand) then PC += 13.
+                    // Total instruction = opcode (1) + 12 operand bytes; the
+                    // helper receives the 12-byte operand slice starting at
+                    // the sub-op byte.
+                    0xB => {
+                        if operand + 12 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        host.op4c_n_d_sub_b_call_e57f0(&bytecode[operand..operand + 12]);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 12,
+                        }
+                    }
+                    // Sub-C: 5-byte `[4C, 0xDC, b1, ?, ?]`. Small-table search
+                    // + party-record write. Host returns `Some(new_pc)` for
+                    // the ce9c-jump path or `None` for the PC += 5 miss path.
+                    0xC => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        match host.op4c_n_d_sub_c_party_search_set(b1) {
+                            Some(new_pc) => StepResult::Advance { next_pc: new_pc },
+                            None => StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            },
+                        }
+                    }
+                    // Sub-E: 5-byte. Sister of sub-C without the per-record
+                    // write — same control flow.
+                    0xE => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        match host.op4c_n_d_sub_e_party_search_query(b1) {
+                            Some(new_pc) => StepResult::Advance { next_pc: new_pc },
+                            None => StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            },
+                        }
+                    }
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 0xE — misc scene writes + emitter helper calls.
-                // Ported subset covers sub-2 (set globals, 6-byte), sub-6
-                // (FUN_801D8280, 8-byte), sub-0xC (capture FUN_801DDF48,
-                // 2-byte), sub-0xD (set ba66, 3-byte), sub-0xE (snapshot
-                // 84570, 2-byte). Sub-0 (scene state writes), sub-1 (variable
-                // packet via FUN_801F8004), sub-3 (teleport to script ctx),
-                // sub-4 (bbox-test halt-or-advance), sub-5 (XP add + halt),
-                // sub-7 (ramp scheduler with FUN_801E212C return), sub-8
-                // (camera config), sub-9 (clear ba9c via STATE_RESUME),
-                // sub-0xA (clear func_0x8003c7ec) remain `Pending`.
+                // Ported subset covers sub-0 (3-way state write, halt at PC),
+                // sub-2 (set globals, 6-byte), sub-6 (FUN_801D8280, 8-byte),
+                // sub-9 (clear b9c4 via caseD_4 = PC += 2), sub-0xA (call
+                // c7ec then halt), sub-0xC (capture FUN_801DDF48, 2-byte),
+                // sub-0xD (set ba66, 3-byte), sub-0xE (snapshot 84570,
+                // 2-byte). Sub-1 (variable-length packet via FUN_801F8004),
+                // sub-3 (teleport to script ctx), sub-4 (bbox-test
+                // halt-or-advance), sub-5 (XP add + LAB_801df89c), sub-7
+                // (ramp scheduler with FUN_801E212C return), sub-8 (camera
+                // config), sub-0xB (actor lookup) remain `Pending`.
                 0xE => match op0 & 0x0F {
+                    // Sub-0: 2-byte `[4C, 0xE0, b1]`. 3-way write (host
+                    // performs based on b1 value); halt at PC.
+                    0 => {
+                        let Some(&b1) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        host.op4c_n_e_sub0_state_write(b1);
+                        StepResult::Halt { final_pc: pc }
+                    }
+                    // Sub-1: variable-length text balloon. Spawns a
+                    // screen-anchored text actor when the leading byte is
+                    // non-zero; PC always advances by `3 + packet_length`
+                    // (opcode byte + sub-op byte + terminator + payload).
+                    1 => {
+                        let Some(&first) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        let payload = &bytecode[operand + 1..];
+                        let length = crate::field_helpers::packet_length(payload);
+                        if first != 0 {
+                            host.op4c_n_e_sub_1_text_actor(&payload[..length], ctx.script_id);
+                        }
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 2 + length,
+                        }
+                    }
                     2 => {
                         if operand + 3 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
@@ -2954,6 +4143,95 @@ pub fn step<H: FieldHost>(
                         host.op4c_n_e_sub2_set_globals(value);
                         StepResult::Advance {
                             next_pc: pc + header_size + 5,
+                        }
+                    }
+                    // Sub-3: 2-byte `[4C, 0xE3, actor_id]`. Camera-anchored
+                    // teleport: copy active camera position+rotation onto
+                    // the resolved actor. Dispatcher lines 7208-7227. PC
+                    // advances by 2; missing actor is a silent no-op.
+                    3 => {
+                        let Some(&actor_id) = bytecode.get(operand + 1) else {
+                            return StepResult::Unknown { opcode, pc };
+                        };
+                        host.op4c_n_e_sub_3_actor_sync_camera(ctx, actor_id);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-7: 7-byte `[4C, 0xE7, t0, t1, t2, d0, d1]`.
+                    // Camera animate: target (24-bit LE) at +1 and duration
+                    // (16-bit LE) at +4. Dispatcher lines 7281-7297. PC
+                    // advances by 7.
+                    7 => {
+                        if operand + 6 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let target = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
+                        let duration = crate::field_helpers::load_u16_le(&bytecode[operand + 4..]);
+                        host.op4c_n_e_sub_7_camera_animate(target, duration);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 6,
+                        }
+                    }
+                    // Sub-8: 10-byte `[4C, 0xE8, x0, x1, y0, y1, z0, z1, m0,
+                    // m1]`. Camera zoom: four 16-bit LE values for zoom_x,
+                    // zoom_y, zoom_z, mode. Dispatcher lines 7298-7361 reads
+                    // `func_0x8003ce9c` four times at offsets +1/+3/+5/+7.
+                    // PC advances by 10.
+                    8 => {
+                        if operand + 9 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let zoom_x =
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 1..]) as i16;
+                        let zoom_y =
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 3..]) as i16;
+                        let zoom_z =
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 5..]) as i16;
+                        let mode =
+                            crate::field_helpers::load_u16_le(&bytecode[operand + 7..]) as i16;
+                        host.op4c_n_e_sub_8_camera_zoom(zoom_x, zoom_y, zoom_z, mode);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 9,
+                        }
+                    }
+                    // Sub-4: 9-byte `[4C, 0xE4, x0, z0, x1, z1, scale, ?, ?]`.
+                    // BBox collision query. Each operand byte goes through
+                    // the standard tile-center conversion (`(b & 0x7F) * 0x80
+                    // + 0x40`, plus 0x40 if the high bit is set). When the
+                    // host predicate says "outside", the original calls the
+                    // halt helper FUN_801E3614; we model that as Halt at PC.
+                    // When inside, advance PC by 8.
+                    4 => {
+                        if operand + 8 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let bbox = [
+                            crate::field_helpers::tile_center(bytecode[operand + 1]),
+                            crate::field_helpers::tile_center(bytecode[operand + 2]),
+                            crate::field_helpers::tile_center(bytecode[operand + 3]),
+                            crate::field_helpers::tile_center(bytecode[operand + 4]),
+                        ];
+                        if host.op4c_n_e_sub_4_bbox_outside(ctx, bbox) {
+                            StepResult::Halt { final_pc: pc }
+                        } else {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 8,
+                            }
+                        }
+                    }
+                    // Sub-5: 5-byte `[4C, 0xE5, b1, b2, b3]`. Read 24-bit
+                    // signed XP delta via load_u24_le + sign_extend_24, then
+                    // call the host's add-xp hook. PC += 4.
+                    5 => {
+                        if operand + 4 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let raw = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
+                        let xp_delta = crate::field_helpers::sign_extend_24(raw);
+                        host.op4c_n_e_sub_5_add_xp(xp_delta);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 4,
                         }
                     }
                     6 => {
@@ -2972,6 +4250,21 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 7,
                         }
                     }
+                    // Sub-9: 1-byte. Clear `_DAT_8007B9C4` then PC += 2 via
+                    // `caseD_4` (the standard `addiu s8, s8, 0x2; j epilogue`
+                    // block at 0x801df098).
+                    9 => {
+                        host.op4c_n_e_sub9_clear_b9c4();
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-A: 1-byte. Call overlay-resident `func_0x8003C7EC`,
+                    // halt at PC.
+                    0xA => {
+                        host.op4c_n_e_sub_a_call_c7ec();
+                        StepResult::Halt { final_pc: pc }
+                    }
                     0xC => {
                         host.op4c_n_e_sub_c_capture_ddf48();
                         StepResult::Advance {
@@ -2985,6 +4278,28 @@ pub fn step<H: FieldHost>(
                         host.op4c_n_e_sub_d_set_ba66(b1);
                         StepResult::Advance {
                             next_pc: pc + header_size + 2,
+                        }
+                    }
+                    // Sub-B: 5-byte `[4C, 0xEB, actor_id, target_lo, target_hi]`.
+                    // Conditional actor lookup with embedded jump target.
+                    // When the host resolves the actor, advance PC by 5;
+                    // otherwise jump to absolute `LE_u16(operand+2..=operand+3)`.
+                    0xB => {
+                        if operand + 4 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let actor_id = bytecode[operand + 1];
+                        match host.op4c_n_e_sub_b_actor_jump(actor_id) {
+                            Some(()) => StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            },
+                            None => {
+                                let target =
+                                    crate::field_helpers::load_u16_le(&bytecode[operand + 2..]);
+                                StepResult::Advance {
+                                    next_pc: target as usize,
+                                }
+                            }
                         }
                     }
                     0xE => {
@@ -3001,7 +4316,14 @@ pub fn step<H: FieldHost>(
                 0xF => StepResult::Advance {
                     next_pc: pc + header_size + 1,
                 },
-                _ => StepResult::Pending { opcode, pc },
+                // Outer nibble 0xB has no `case 0xb` in the original 0x4C
+                // switch (the dump goes case 0xa → default → case 0xc).
+                // The default arm (line 6718) prints SUB_CMD_ERROR and
+                // returns the dispatcher default — halt at PC.
+                0xB => StepResult::Halt { final_pc: pc },
+                // `op0 >> 4` is at most 0xF; outer nibble is fully covered
+                // above, so this arm is dead code.
+                16..=u8::MAX => unreachable!("op0 >> 4 is at most 0xF"),
             }
         }
 
@@ -3262,9 +4584,10 @@ pub fn step<H: FieldHost>(
         // Sub-ops 2/3/5/6/7/8/9 fall through to an absolute jump:
         // `next_pc = LE_u16(operand[2..4])`.
         //
-        // Sub-op 4 (`func_0x80056798()` return) and sub-ops 10/11 (party-bank
-        // comparison, 9-byte encoding) and any other sub-op are not yet
-        // ported — they return `Pending`.
+        // Sub-op 4 invokes [`FieldHost::op4e_sub4_bios_rand`] (BIOS Rand stub)
+        // and uses the returned value as the next PC; the default is 0, which
+        // restarts the script at the bytecode origin. Sub-ops 10/11 are the
+        // party-bank comparison (9-byte encoding) ported above.
         0x4E => {
             let Some(&page) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -3318,6 +4641,16 @@ pub fn step<H: FieldHost>(
                     let target = u16::from_le_bytes([lo, hi]) as usize;
                     StepResult::Advance { next_pc: target }
                 }
+                12..=15 => {
+                    // sub-ops 12..=15 hit the dispatcher's default arm at
+                    // `switchD_801e0a38_default`: with `uVar31 = uVar27 = 0`
+                    // the boolean test is false either way, and the
+                    // `(sub_op - 10) < 2` check fails for sub-op >= 12, so
+                    // the original returns `param_2 + 7` (= PC += 7).
+                    StepResult::Advance {
+                        next_pc: pc + header_size + 6,
+                    }
+                }
                 10 | 11 => {
                     // 9-byte party-bank comparison:
                     //   [4E, _, mode, lo1, hi1, skip_lo, skip_hi, lo2, hi2]
@@ -3363,7 +4696,21 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                _ => StepResult::Pending { opcode, pc },
+                // Sub-op 4: `iVar18 = func_0x80056798(); return iVar18;` —
+                // FUN_80056798 is a BIOS Rand thunk (`jr 0xA0; t1=0x2F`).
+                // The original returns the random value as the next PC. There
+                // are no captured callers, so this is almost certainly a dev
+                // stub. The host hook returns the next-PC value (default 0,
+                // matching broken-as-shipped behaviour).
+                4 => {
+                    let next = host.op4e_sub4_bios_rand();
+                    StepResult::Advance {
+                        next_pc: next as usize,
+                    }
+                }
+                // `mode_byte >> 4` is at most 0xF; arms above cover every
+                // value, so this arm is dead code.
+                16..=u8::MAX => unreachable!("mode_byte >> 4 is at most 0xF"),
             }
         }
 
@@ -3399,6 +4746,26 @@ pub fn step<H: FieldHost>(
                 Op49State::Done => {
                     host.op49_clear();
                     match sub_op {
+                        // sub-0 in DONE state — embedded MES bytecode walker.
+                        // Instruction: `[49, 0, length, ...length args..., ...mes_bytes]`.
+                        // The original reads `length = pbVar47[2]`, then calls
+                        // `func_0x8003ca38(pbVar47 + length + 3)` (= the MES-shape
+                        // walker that counts bytes > 0x1E, with one-byte
+                        // peek-extension for 0xCx prefix bytes), and returns
+                        // `param_2 + length + 5 + mes_count`.
+                        0 => {
+                            let Some(&length) = bytecode.get(operand + 1) else {
+                                return StepResult::Unknown { opcode, pc };
+                            };
+                            let mes_start = operand + 2 + length as usize;
+                            if mes_start > bytecode.len() {
+                                return StepResult::Unknown { opcode, pc };
+                            }
+                            let mes_count = walk_mes_bytecode(&bytecode[mes_start..]);
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 4 + length as usize + mes_count,
+                            }
+                        }
                         1 | 3 | 7 => StepResult::Advance {
                             next_pc: pc + header_size + 2,
                         },
@@ -3419,7 +4786,12 @@ pub fn step<H: FieldHost>(
                         6 | 8 | 9 | 0xC | 0xD => StepResult::Advance {
                             next_pc: pc + header_size + 4,
                         },
-                        _ => StepResult::Pending { opcode, pc },
+                        // sub-A / sub-B / any other byte > 0xD: the Done-side
+                        // catch-all in `FUN_801de840 case 0x49` clears the
+                        // resume slot and returns `param_2` (halt at PC).
+                        // `op49_clear()` was already called above, so this is
+                        // just the halt.
+                        _ => StepResult::Halt { final_pc: pc },
                     }
                 }
             }
@@ -3533,7 +4905,12 @@ pub fn step<H: FieldHost>(
                         next_pc: pc + header_size + 2,
                     }
                 }
-                _ => StepResult::Pending { opcode, pc },
+                // Sub-ops 4..=0xF: original has no `case` arm; falls through
+                // `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }`
+                // at line 4811-4814 of the dump ⇒ halt at PC.
+                4..=15 => StepResult::Halt { final_pc: pc },
+                // `op0 >> 4` is at most 0xF; arms above cover every value.
+                16..=u8::MAX => unreachable!("op0 >> 4 is at most 0xF"),
             }
         }
 
@@ -3575,7 +4952,7 @@ pub fn step<H: FieldHost>(
                         ]),
                     ];
                     let target_offset = if wide { 7 } else { 3 };
-                    if host.op43_halt_acquire_predicate(ctx, sub_op) {
+                    if host.field_halt_acquire_predicate(ctx, sub_op) {
                         let resume = i16::from_le_bytes([
                             bytecode[operand + target_offset],
                             bytecode[operand + target_offset + 1],
@@ -3583,7 +4960,7 @@ pub fn step<H: FieldHost>(
                         ctx.flags |= 0x400;
                         ctx.wait_accum = 0;
                         ctx.saved_pc = pc as u32;
-                        host.op43_halt_acquire_apply(ctx, sub_op, resume, coords);
+                        host.field_halt_acquire_apply(ctx, sub_op, resume, coords);
                         StepResult::Yield { resume_pc: resume }
                     } else {
                         let advance_by = if wide { 9 } else { 5 };
@@ -3852,7 +5229,12 @@ pub fn step<H: FieldHost>(
                         next_pc: pc + header_size + 13,
                     }
                 }
-                _ => StepResult::Pending { opcode, pc },
+                // Sub-ops 0x16..=0xFF: original `case 0x43` inner switch has
+                // no `case` arm beyond 0x15. Such sub-ops fall out of the
+                // inner switch with `iVar45 = param_2` (initialised at
+                // line 4511 of the dump) and hit the outer `break;` ⇒
+                // halt at PC.
+                _ => StepResult::Halt { final_pc: pc },
             }
         }
 
@@ -3909,20 +5291,22 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // 0x50..=0x77 with `route` bit set to 0x40 doesn't exist on
-                // a real opcode byte — `& 0x70` masks bits 4..=6 only, so the
-                // possible values are 0x00, 0x10, 0x20, 0x30, 0x40, 0x50,
-                // 0x60, 0x70. The arm match `0x50..=0x77` rules out anything
-                // < 0x50; only `0x40` is left, which would need opcode bits
-                // 4..=6 = 0b100. That overlaps with explicit opcodes
-                // 0x4x — handled by the explicit cases above. So this is
-                // unreachable in practice; treat as Pending defensively.
-                _ => StepResult::Pending { opcode, pc },
+                // For opcode in 0x50..=0x77, `opcode & 0x70` can only be
+                // 0x50, 0x60, or 0x70 — every value handled above.
+                _ => unreachable!("opcode 0x{:02X} & 0x70 must be 0x50/0x60/0x70", opcode),
             }
         }
 
-        // Everything else: not yet ported.
-        _ => StepResult::Pending { opcode, pc },
+        // Top-level catch-all. The original dispatcher's `default:` arm
+        // (line 4622 of the dump) routes through `*pbVar43 & 0x70`; for any
+        // raw opcode byte whose high nibble is NOT 0x5x/0x6x/0x7x and whose
+        // masked opcode isn't matched explicitly above, the original returns
+        // `param_2` — halt at PC. The masked opcode here is `opcode_byte &
+        // 0x7F`; the field VM has 43 documented opcodes, all of which are
+        // explicitly cased above, so reaching this arm means a malformed or
+        // future-extension byte. Halt rather than panic so we behave like
+        // the original on garbage input.
+        _ => StepResult::Halt { final_pc: pc },
     }
 }
 
@@ -4089,13 +5473,25 @@ mod tests {
         n8_callback_regs: u32,
         n8_global_writes: Vec<(i16, u8, u8)>,
         n8_quad_writes: Vec<([i16; 3], u32)>,
+        n8_sub9_writes: Vec<i16>,
+        n8_halt_acquires: Vec<u32>,
         n9_dde34_calls: Vec<(u8, u8, [i16; 3])>,
         n9_table_copies: Vec<[i16; 16]>,
+        n9_callback_regs: u32,
+        op4e_sub4_bios_rand_value: i32,
+        op4e_sub4_bios_rand_calls: u32,
         n_c_subtile_broadcasts: Vec<(u8, u8)>,
         n_c_sound_triggers: Vec<(u8, u8)>,
         n_c_slot_writes: Vec<(u8, i16)>,
         n_c_slot_adjusts: Vec<(u8, i16, bool)>,
         n_c_b6ac_writes: Vec<u8>,
+        n_c_sub_f_broadcasts: Vec<(i16, i16)>,
+        n_c_sub9_globals_differ: bool,
+        n_d_sub6_acks: u32,
+        n_d_sub8_calls: Vec<(u8, [i16; 3])>,
+        n_e_sub0_writes: Vec<u8>,
+        n_e_sub9_clears: u32,
+        n_e_sub_a_calls: u32,
         n_d_party_setups: Vec<(u32, u32, u32)>,
         n_d_collision_y_calls: u32,
         n_d_scene_byte_writes: Vec<u8>,
@@ -4104,9 +5500,45 @@ mod tests {
         n_e_capture_ddf48_calls: u32,
         n_e_ba66_writes: Vec<u8>,
         n_e_snapshot_84570_calls: u32,
+        // Round 16 — overlay-helper hooks.
+        n_c_sub_1_flag_loops: u32,
+        n_d_sub_1_jump_target: Option<usize>,
+        n_d_sub_2_channel_calls: Vec<u8>,
+        n_d_sub_7_list_walk_regs: u32,
+        n_d_sub_b_e57f0_calls: Vec<Vec<u8>>,
+        n_d_sub_c_jump_target: Option<usize>,
+        n_d_sub_c_calls: Vec<u8>,
+        n_d_sub_e_jump_target: Option<usize>,
+        n_d_sub_e_calls: Vec<u8>,
+        n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
+        // Round 17 — five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+        n_c_sub_0_move_cancels: u32,
+        n_c_sub_0_active: bool,
+        n_c_sub_3_teleports: u32,
+        n_c_sub_d_allocs: u32,
+        n_c_party_flag_bits: std::collections::HashMap<u16, bool>,
+        n_e_sub_4_outside: bool,
+        n_e_sub_4_bboxes: std::cell::RefCell<Vec<[i16; 4]>>,
+        n_e_sub_5_xp_deltas: Vec<i32>,
+        n_e_sub_b_resolves: bool,
+        n_e_sub_b_actor_ids: Vec<u8>,
         // 0x43 halt-acquire (sub-0/1/A/B).
         halt_acquire_predicate: bool,
         halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
+        // Round 18 — 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
+        n_8_sub_1_set_model_calls: Vec<(u32, u16, u16)>, // (model_id, anim, tween)
+        n_8_sub_6_actor_set_rotation_calls: Vec<(u8, [i16; 3], [i16; 3])>,
+        n_8_sub_6_actor_present: bool,
+        n_8_sub_b_present_types: std::collections::HashSet<u8>,
+        n_8_sub_d_search_result: ActorSearchResult,
+        n_8_sub_d_queries: std::cell::RefCell<Vec<(u8, u8)>>,
+        n_e_sub_3_camera_syncs: Vec<u8>,            // actor_id values
+        n_e_sub_7_camera_animates: Vec<(u32, u16)>, // (target, duration)
+        n_e_sub_8_camera_zooms: Vec<(i16, i16, i16, i16)>, // (zoom_x, zoom_y, zoom_z, mode)
+        n_d_sub_0_se_triggers: Vec<(u16, u16)>,
+        n_5_sub_3_dialog_waits: u32,
+        n_5_sub_4_dialog_active: bool,
+        n_5_sub_4_polls: u32,
     }
 
     impl FieldHost for TestHost {
@@ -4460,11 +5892,21 @@ mod tests {
         fn op4c_n8_sub_a_write_quad(&mut self, slots: [i16; 3], packed: u32) {
             self.n8_quad_writes.push((slots, packed));
         }
+        fn op4c_n8_sub9_set_73f00(&mut self, value: i16) {
+            self.n8_sub9_writes.push(value);
+        }
         fn op4c_n9_sub0_2_dde34(&mut self, sub: u8, b1: u8, words: [i16; 3]) {
             self.n9_dde34_calls.push((sub, b1, words));
         }
         fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
             self.n9_table_copies.push(words);
+        }
+        fn op4c_n9_sub_f_register_callback(&mut self) {
+            self.n9_callback_regs += 1;
+        }
+        fn op4e_sub4_bios_rand(&mut self) -> i32 {
+            self.op4e_sub4_bios_rand_calls += 1;
+            self.op4e_sub4_bios_rand_value
         }
         fn op4c_n_c_sub4_subtile_broadcast(&mut self, x: u8, z: u8) {
             self.n_c_subtile_broadcasts.push((x, z));
@@ -4480,6 +5922,9 @@ mod tests {
         }
         fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
             self.n_c_b6ac_writes.push(value);
+        }
+        fn op4c_n_c_sub_f_position_broadcast(&mut self, x_global: i16, z_global: i16) {
+            self.n_c_sub_f_broadcasts.push((x_global, z_global));
         }
         fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
             self.n_d_party_setups.push((ab, cd, ef));
@@ -4505,17 +5950,144 @@ mod tests {
         fn op4c_n_e_sub_e_snapshot_84570(&mut self) {
             self.n_e_snapshot_84570_calls += 1;
         }
-        fn op43_halt_acquire_predicate(&self, _ctx: &FieldCtx, _sub_op: u8) -> bool {
+        fn op4c_n8_halt_acquire(&mut self, ctx: &mut FieldCtx, opcode_pc: u32) {
+            ctx.saved_pc = opcode_pc;
+            ctx.wait_accum = 0;
+            ctx.flags |= 0x400;
+            self.n8_halt_acquires.push(opcode_pc);
+        }
+        fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+            self.n_c_sub9_globals_differ
+        }
+        fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {
+            self.n_d_sub6_acks += 1;
+        }
+        fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+            self.n_d_sub8_calls.push((b1, words));
+        }
+        fn op4c_n_e_sub0_state_write(&mut self, b1: u8) {
+            self.n_e_sub0_writes.push(b1);
+        }
+        fn op4c_n_e_sub9_clear_b9c4(&mut self) {
+            self.n_e_sub9_clears += 1;
+        }
+        fn op4c_n_e_sub_a_call_c7ec(&mut self) {
+            self.n_e_sub_a_calls += 1;
+        }
+        fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
+            self.n_e_sub_1_text_calls
+                .push((text_buf.to_vec(), script_id));
+        }
+        fn op4c_n_c_sub_1_flag_loop_reset(&mut self, _flags: &[u8]) {
+            self.n_c_sub_1_flag_loops += 1;
+        }
+        fn op4c_n_d_sub_1_list_lookup_jump(&mut self, _ctx: &FieldCtx) -> Option<usize> {
+            self.n_d_sub_1_jump_target
+        }
+        fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
+            self.n_d_sub_2_channel_calls.push(channel);
+        }
+        fn op4c_n_d_sub_7_register_list_walk(&mut self) {
+            self.n_d_sub_7_list_walk_regs += 1;
+        }
+        fn op4c_n_d_sub_b_call_e57f0(&mut self, bytecode: &[u8]) {
+            self.n_d_sub_b_e57f0_calls.push(bytecode.to_vec());
+        }
+        fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
+            self.n_d_sub_c_calls.push(needle);
+            self.n_d_sub_c_jump_target
+        }
+        fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
+            self.n_d_sub_e_calls.push(needle);
+            self.n_d_sub_e_jump_target
+        }
+        fn op4c_n_c_sub_0_move_cancel(&mut self, _ctx: &mut FieldCtx) -> bool {
+            self.n_c_sub_0_move_cancels += 1;
+            self.n_c_sub_0_active
+        }
+        fn op4c_n_c_sub_3_script_teleport(&mut self, _ctx: &mut FieldCtx) {
+            self.n_c_sub_3_teleports += 1;
+        }
+        fn op4c_n_c_sub_d_script_alloc(&mut self) {
+            self.n_c_sub_d_allocs += 1;
+        }
+        fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
+            *self.n_c_party_flag_bits.get(&flag_idx).unwrap_or(&false)
+        }
+        fn op4c_n_e_sub_4_bbox_outside(&self, _ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
+            self.n_e_sub_4_bboxes.borrow_mut().push(bbox);
+            self.n_e_sub_4_outside
+        }
+        fn op4c_n_e_sub_5_add_xp(&mut self, xp_delta: i32) {
+            self.n_e_sub_5_xp_deltas.push(xp_delta);
+        }
+        fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+            self.n_e_sub_b_actor_ids.push(actor_id);
+            if self.n_e_sub_b_resolves {
+                Some(())
+            } else {
+                None
+            }
+        }
+        fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
             self.halt_acquire_predicate
         }
-        fn op43_halt_acquire_apply(
+        fn field_halt_acquire_apply(
             &mut self,
             _ctx: &mut FieldCtx,
-            sub_op: u8,
+            which: u8,
             resume_pc: usize,
             coords: [i16; 3],
         ) {
-            self.halt_acquire_calls.push((sub_op, resume_pc, coords));
+            self.halt_acquire_calls.push((which, resume_pc, coords));
+        }
+        fn op4c_n_8_sub_1_set_model_anim(
+            &mut self,
+            _ctx: &mut FieldCtx,
+            model_id: u32,
+            anim_frame: u16,
+            tween_frames: u16,
+        ) {
+            self.n_8_sub_1_set_model_calls
+                .push((model_id, anim_frame, tween_frames));
+        }
+        fn op4c_n_8_sub_6_actor_set_rotation(
+            &mut self,
+            _ctx: &mut FieldCtx,
+            actor_id: u8,
+            position: [i16; 3],
+            rotation: [i16; 3],
+        ) -> bool {
+            self.n_8_sub_6_actor_set_rotation_calls
+                .push((actor_id, position, rotation));
+            self.n_8_sub_6_actor_present
+        }
+        fn op4c_n_8_sub_b_actor_type_present(&self, type_byte: u8) -> bool {
+            self.n_8_sub_b_present_types.contains(&type_byte)
+        }
+        fn op4c_n_8_sub_d_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
+            self.n_8_sub_d_queries.borrow_mut().push((char_idx, marker));
+            self.n_8_sub_d_search_result
+        }
+        fn op4c_n_e_sub_3_actor_sync_camera(&mut self, _ctx: &mut FieldCtx, actor_id: u8) {
+            self.n_e_sub_3_camera_syncs.push(actor_id);
+        }
+        fn op4c_n_e_sub_7_camera_animate(&mut self, target: u32, duration: u16) {
+            self.n_e_sub_7_camera_animates.push((target, duration));
+        }
+        fn op4c_n_e_sub_8_camera_zoom(&mut self, zoom_x: i16, zoom_y: i16, zoom_z: i16, mode: i16) {
+            self.n_e_sub_8_camera_zooms
+                .push((zoom_x, zoom_y, zoom_z, mode));
+        }
+        fn op4c_n_d_sub_0_field_se_trigger(&mut self, a: u16, b: u16) {
+            self.n_d_sub_0_se_triggers.push((a, b));
+        }
+        fn op4c_n_5_sub_3_dialog_wait(&mut self, _ctx: &mut FieldCtx) {
+            self.n_5_sub_3_dialog_waits += 1;
+        }
+        fn op4c_n_5_sub_4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+            self.n_5_sub_4_polls += 1;
+            self.n_5_sub_4_dialog_active
         }
     }
 
@@ -5085,12 +6657,38 @@ mod tests {
     }
 
     #[test]
-    fn cam_cfg_complex_path_returns_pending() {
-        let mut host = TestHost::default();
+    fn cam_cfg_halt_acquire_succeeds_and_yields() {
+        // op1 != 0 → halt-acquire path. With the predicate set to true (the
+        // default test impl), the VM marks ctx halted (saved_pc + wait_accum
+        // + flag 0x400) and yields with `resume_pc = pc + 3`.
+        let mut host = TestHost {
+            halt_acquire_predicate: true,
+            ..Default::default()
+        };
         let mut ctx = FieldCtx::default();
-        // op1 != 0 -> the YIELD-like sub-path; not yet ported.
+        let r = step(&mut host, &mut ctx, &[0x38, 0x05, 0x01], 0);
+        assert_eq!(r, StepResult::Yield { resume_pc: 3 });
+        assert!(ctx.is_halted());
+        assert_eq!(ctx.flags & 0x400, 0x400);
+        assert_eq!(ctx.saved_pc, 0);
+        assert_eq!(ctx.wait_accum, 0);
+        assert_eq!(host.halt_acquire_calls, vec![(0x38u8, 3usize, [0i16; 3])]);
+    }
+
+    #[test]
+    fn cam_cfg_halt_acquire_failed_predicate_halts_at_pc() {
+        // op1 != 0 + predicate false → original falls into the dispatcher
+        // default-arm path; for op 0x38 (not a 0x50/0x60/0x70 opcode) that
+        // halts the VM at the current PC.
+        let mut host = TestHost {
+            halt_acquire_predicate: false,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &[0x38, 0x00, 0x01], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x38, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert!(!ctx.is_halted());
+        assert_eq!(host.halt_acquire_calls, vec![]);
     }
 
     // -- 0x39 PLAY_SFX ---------------------------------------------------
@@ -5240,12 +6838,77 @@ mod tests {
     }
 
     #[test]
-    fn cond_jmp_mode_2_returns_pending() {
+    fn cond_jmp_mode_2_halts_at_pc() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // Mode 2 is unknown.
+        // Mode >= 2 hits the dispatcher's default arm, which returns
+        // `param_2` for opcodes whose high nibble isn't 0x5x/0x6x/0x7x.
+        // 0x42 & 0x70 = 0x40 → halt at PC.
         let r = step(&mut host, &mut ctx, &[0x42, 0x02, 0x00, 0x00, 0x00], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x42, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn cond_jmp_mode_1_op1_at_least_c_takes_jump() {
+        // Mode 1 op1 >= 0xC: original at line 5176 of the dump falls
+        // through every `if (uVar31 == N) ... return iVar18` branch and
+        // ends up in the unconditional take-jump path with
+        // `iVar18 = param_2 + 3` and `delta = LE_u16(operand[2..4])`.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        // [0x42, 0x01, 0x0C, 0x10, 0x00] → mode 1, op1=0xC, delta=0x0010.
+        // Expected next_pc = 0 + 3 + 0x10 = 19 (header_size=2, +1 for mode,
+        // +0x10 delta — 3 + delta).
+        let r = step(&mut host, &mut ctx, &[0x42, 0x01, 0x0C, 0x10, 0x00], 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 19 });
+    }
+
+    #[test]
+    fn op_34_sub_f_halts_at_pc() {
+        // Top of the 4-bit sub-op range. Same dispatch path as sub-4.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &[0x34, 0xF0, 0], 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_43_subop_ff_halts_at_pc() {
+        // 0xFF is the sentinel "uninitialised bytecode" byte. 0x43 sub-op
+        // 0xFF has no original handler ⇒ halt at PC.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x43, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            0,
+        );
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n4_sub_e_or_f_halts_at_pc() {
+        // 0x4C outer-nibble 4 inner switch (line 5901 of the dump) has cases
+        // 0..=0xD followed by an explicit `default:` that prints
+        // `SUB_40_ERROR` and routes via `switchD_801e00f4::default()` ⇒
+        // halt at PC for sub-ops 0xE/0xF. The instruction is 6 bytes.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x4E, 0x00, 0x00, 0x00, 0x00],
+            0,
+        );
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        let r = step(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x4F, 0x00, 0x00, 0x00, 0x00],
+            0,
+        );
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
     }
 
     // -- 0x3E WARP / INTERACT -------------------------------------------
@@ -6369,6 +8032,27 @@ mod tests {
     }
 
     #[test]
+    fn op_4e_sub_c_through_f_advance_seven() {
+        // mode_byte high-nibble in 12..=15 hits the dispatcher's default arm
+        // at switchD_801e0a38_default. With no party-bank state initialised,
+        // `uVar31 = uVar27 = 0`; the comparison is false, and `(sub-10) < 2`
+        // is false for sub-op >= 12, so the original returns `param_2 + 7`
+        // (= PC += 7 from the opcode).
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        for sub in 12..=15u8 {
+            let mode = sub << 4;
+            let bc = [0x4E, 0, mode, 0, 0, 0, 0, 0, 0];
+            let r = step(&mut host, &mut ctx, &bc, 0);
+            assert_eq!(
+                r,
+                StepResult::Advance { next_pc: 7 },
+                "sub-op {sub}: expected PC += 7"
+            );
+        }
+    }
+
+    #[test]
     fn op_4e_sub_a_compares_party_bank() {
         // sub-op 10 (party-bank A). state=1000, scaled-from-operands=
         // (0x0064 | (0x0000 << 16)) = 100. mode=0 (state < scaled): false ->
@@ -6391,6 +8075,20 @@ mod tests {
         let bc = [0x4E, 0, 0xA0, 0x64, 0x00, 0x10, 0x00, 0x00, 0x00];
         let r = step(&mut host, &mut ctx, &bc, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 21 });
+    }
+
+    #[test]
+    fn op_4e_sub_4_invokes_bios_rand_and_jumps_to_returned_pc() {
+        // Sub-op 4 calls BIOS Rand (FUN_80056798) and uses the result as the
+        // next PC. With the host returning 0x42, the VM should jump to 0x42.
+        let mut host = TestHost {
+            op4e_sub4_bios_rand_value: 0x42,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &[0x4E, 0, 0x40], 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x42 });
+        assert_eq!(host.op4e_sub4_bios_rand_calls, 1);
     }
 
     #[test]
@@ -6481,17 +8179,88 @@ mod tests {
     }
 
     #[test]
-    fn op_49_done_unhandled_subop_pending() {
+    fn op_49_done_subop_a_halts_at_pc() {
+        // Done-side catch-all in `FUN_801de840 case 0x49`: any sub-op that
+        // isn't explicitly handled (here sub-0xA, which falls through the
+        // 1/3/7, 2/4, 5, 6/8/9/C/D arms) clears the resume slot and returns
+        // `param_2` (= halt at the same PC).
         let mut host = TestHost {
             op49_state_value: Op49State::Done,
             ..Default::default()
         };
         let mut ctx = FieldCtx::default();
-        // Sub-ops 1/2/3/4/5/6/7/8/9/C/D are now wired. Pick sub-0xA which
-        // remains in the catch-all "_DAT_8007b450 = 0; return param_2" path
-        // (any sub-op outside the explicit set falls through with no advance).
         let r = step(&mut host, &mut ctx, &[0x49, 0xA, 0, 0, 0], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x49, .. }));
+        assert!(matches!(r, StepResult::Halt { final_pc: 0 }));
+        assert_eq!(host.op49_clears, 1, "should clear the resume slot");
+    }
+
+    #[test]
+    fn op_49_done_sub0_walks_inline_mes_payload() {
+        // `[49, 0, length, ...length args..., ...mes_bytes, terminator, ...]`.
+        // The original at FUN_801DE840 (case 0x49 / DONE / sub-0) reads
+        // `length = pbVar47[2]`, then walks the inline MES bytecode starting
+        // at `pbVar47 + length + 3` via `func_0x8003ca38` (counts bytes > 0x1E,
+        // pair-extends 0xCx prefix bytes), and advances PC by `5 + length +
+        // walked`.
+        let mut host = TestHost {
+            op49_state_value: Op49State::Done,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        // length = 2 (two args), MES bytes = [0x50, 0xC3, 0xAA, 0x00 terminator]
+        // → walker counts 4 bytes (0x50 = 1, 0xC3 0xAA pair = 2, then sees 0x00).
+        let bc = &[
+            0x49, // opcode
+            0x00, // sub-op
+            0x02, // length
+            0xAA, 0xBB, // 2 args (ignored by walker — walker starts past them)
+            0x50, 0xC3, 0xAA, 0x00, // MES body (3 bytes walked) + terminator
+        ];
+        let r = step(&mut host, &mut ctx, bc, 0);
+        // PC = 0 + (header_size=1) + 4 + length=2 + walked=3 = 10. The
+        // terminator is NOT consumed by the walker — it stops at it.
+        assert_eq!(r, StepResult::Advance { next_pc: 10 });
+        assert_eq!(host.op49_clears, 1);
+    }
+
+    #[test]
+    fn op_49_done_sub0_empty_mes_advances_5_plus_length() {
+        // length = 0, no MES body, immediate terminator.
+        let mut host = TestHost {
+            op49_state_value: Op49State::Done,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let bc = &[0x49, 0x00, 0x00, 0x00];
+        let r = step(&mut host, &mut ctx, bc, 0);
+        // PC = 1 + 4 + 0 + 0 = 5.
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    }
+
+    #[test]
+    fn walk_mes_bytecode_terminates_on_low_byte() {
+        // Standard byte run terminates on a byte ≤ 0x1E.
+        assert_eq!(walk_mes_bytecode(&[0x50, 0x60, 0x70, 0x10, 0x80]), 3);
+        // Empty buffer.
+        assert_eq!(walk_mes_bytecode(&[]), 0);
+        // Immediate terminator.
+        assert_eq!(walk_mes_bytecode(&[0x05]), 0);
+    }
+
+    #[test]
+    fn walk_mes_bytecode_pair_extends_cx_prefix() {
+        // 0xC0..0xCF prefix bytes consume one extra byte each (the pair byte).
+        // 0xC0 0x05 (pair 0x05 NOT a terminator, because it's a pair byte not
+        // a top-level byte) — counts 2.
+        assert_eq!(walk_mes_bytecode(&[0xC0, 0x05, 0x10]), 2);
+        // 0xCF 0x99 — counts 2; then 0x50 — counts 3 total; then 0x10 stops.
+        assert_eq!(walk_mes_bytecode(&[0xCF, 0x99, 0x50, 0x10]), 3);
+    }
+
+    #[test]
+    fn walk_mes_bytecode_eof_mid_pair_stops_gracefully() {
+        // 0xC0 at end of buffer — original would read past EOF; we stop.
+        assert_eq!(walk_mes_bytecode(&[0xC0]), 1);
     }
 
     // -- 0x34 EFFECT sub-3 ----------------------------------------------
@@ -6510,13 +8279,14 @@ mod tests {
     }
 
     #[test]
-    fn op_34_high_subop_pending() {
+    fn op_34_high_subop_halts() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // sub-4..=sub-F (op0 >> 4 >= 4) is the unhandled fallthrough — the
-        // original returns `iVar47` (a no-op stay-in-place) for these.
+        // sub-4..=sub-F (op0 >> 4 >= 4) hits the original's
+        // `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` at
+        // line 4811-4814 of the dump ⇒ halt at PC.
         let r = step(&mut host, &mut ctx, &[0x34, 0x40, 0], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x34, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
     }
 
     // -- 0x43 ACTOR_CTRL sub-8 ------------------------------------------
@@ -6536,17 +8306,19 @@ mod tests {
     }
 
     #[test]
-    fn op_43_other_subops_pending() {
+    fn op_43_other_subops_halt() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // Sub-op 0x16 (out-of-range, no handler) — still Pending.
+        // Sub-op 0x16 (no handler in the original `case 0x43` inner switch);
+        // falls through with `iVar45 = param_2` (initialised at line 4511 of
+        // the dump) ⇒ halt at PC.
         let r = step(
             &mut host,
             &mut ctx,
             &[0x43, 0x16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             0,
         );
-        assert!(matches!(r, StepResult::Pending { opcode: 0x43, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
     }
 
     #[test]
@@ -7328,6 +9100,17 @@ mod tests {
     }
 
     #[test]
+    fn op_4c_n8_sub_9_writes_signed_16_and_advances_4() {
+        // [4C, 0x89, 0x34, 0x12] writes 0x1234 then PC += 4.
+        let bytecode = [0x4Cu8, 0x89, 0x34, 0x12];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        assert_eq!(host.n8_sub9_writes, vec![0x1234i16]);
+    }
+
+    #[test]
     fn op_4c_n9_sub_0_passes_b1_and_three_words() {
         // [4C, 0x90, b1=7, lo,hi, lo,hi, lo,hi]
         let mut bytecode = vec![0x4C, 0x90, 0x07];
@@ -7359,17 +9142,20 @@ mod tests {
     }
 
     #[test]
-    fn op_4c_n_a_sub_0_branches_when_ctx_flag_clear() {
-        // [4C, 0xA0, bit=4, lo, hi] — ctx.flags bit 4 clear → jump to 0x100.
+    fn op_4c_n_a_sub_0_advances_when_ctx_flag_clear() {
+        // [4C, 0xA0, bit=4, lo, hi] — ctx.flags bit 4 clear → skip 5 bytes.
+        // The asm at 0x801e2580/4 ANDs ctx[+0x10] with `(1 << bit)` and only
+        // branches to the take-jump label when the result is non-zero.
         let bytecode = [0x4Cu8, 0xA0, 0x04, 0x00, 0x01];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
     }
 
     #[test]
-    fn op_4c_n_a_sub_0_advances_when_ctx_flag_set() {
+    fn op_4c_n_a_sub_0_branches_when_ctx_flag_set() {
+        // ctx.flags bit 4 SET → take the absolute jump (0x100).
         let bytecode = [0x4Cu8, 0xA0, 0x04, 0x00, 0x01];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx {
@@ -7377,11 +9163,12 @@ mod tests {
             ..FieldCtx::default()
         };
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
     }
 
     #[test]
     fn op_4c_n_a_sub_2_uses_global_flags() {
+        // Global flag set → take jump.
         let bytecode = [0x4Cu8, 0xA2, 0x03, 0x20, 0x00];
         let mut host = TestHost {
             globals: 1u32 << 3,
@@ -7389,8 +9176,54 @@ mod tests {
         };
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        // Global flag set → no jump → PC += 5.
+        assert_eq!(r, StepResult::Advance { next_pc: 0x20 });
+    }
+
+    #[test]
+    fn op_4c_n_a_sub_3_through_f_skip_5() {
+        // Sub-ops 3..=0xF have no `case` arm in the asm. The dispatch at
+        // 0x801e2568 (`bne a1, zero, 0x801e258c`) jumps past every bank
+        // check, both `bne a1, 1` and `bne a1, 2` then branch to the
+        // skip-5 exit. The s8 += 5 in the delay slot of the first bne is
+        // the PC delta.
+        let bytecode = [0x4Cu8, 0xA5, 0xFF, 0x00, 0x01];
+        let mut host = TestHost {
+            globals: !0u32,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx {
+            flags: !0u32,
+            local_flags: !0u16,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    }
+
+    #[test]
+    fn op_4c_n9_sub_f_registers_callback_and_halts() {
+        // [4C, 0x9F] — register `LAB_801DA930` callback then halt at PC.
+        // Same dispatch pattern as nibble-8 sub-7 (callback target differs).
+        let bytecode = [0x4Cu8, 0x9F];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n9_callback_regs, 1);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_7_registers_callback_and_halts() {
+        // [4C, 0x87] — register actor-list callback (LAB_801E5154) then halt
+        // at PC. The original goes through `switchD_801e00f4::default()`,
+        // which for opcode 0x4C (`& 0x70 = 0x40`) returns `param_2` —
+        // halt at PC. Our hook is one-shot per dispatch entry.
+        let bytecode = [0x4Cu8, 0x87];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n8_callback_regs, 1);
     }
 
     #[test]
@@ -7462,6 +9295,155 @@ mod tests {
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 3 });
         assert_eq!(ctx.field_42, 0x55);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_5_halt_acquire_writes_ctx_and_halts() {
+        let bytecode = [0x4Cu8, 0x85];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            wait_accum: 7,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(ctx.saved_pc, 0);
+        assert_eq!(ctx.wait_accum, 0);
+        assert_eq!(ctx.flags & 0x400, 0x400);
+        assert_eq!(host.n8_halt_acquires, vec![0u32]);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_e_and_f_share_halt_acquire_body() {
+        for sub in [0x8Eu8, 0x8F] {
+            let bytecode = [0x4Cu8, sub];
+            let mut host = TestHost::default();
+            let mut ctx = FieldCtx::default();
+            let r = step(&mut host, &mut ctx, &bytecode, 0);
+            assert_eq!(r, StepResult::Halt { final_pc: 0 });
+            assert_eq!(host.n8_halt_acquires, vec![0u32]);
+        }
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_9_advances_when_globals_match() {
+        let bytecode = [0x4Cu8, 0xC9];
+        let mut host = TestHost {
+            n_c_sub9_globals_differ: false,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_9_halts_when_globals_differ() {
+        let bytecode = [0x4Cu8, 0xC9];
+        let mut host = TestHost {
+            n_c_sub9_globals_differ: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_6_b1_eq_4_clears_top_bit_only() {
+        let bytecode = [0x4Cu8, 0xD6, 0x04];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            field_74: 0xFFFF_FFFF,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(ctx.field_74, 0x7FFF_FFFF);
+        assert_eq!(host.n_d_sub6_acks, 1);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_6_b1_neq_4_sets_high_byte() {
+        let bytecode = [0x4Cu8, 0xD6, 0x12];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            field_74: 0,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        // Sets bit 0x80000000 + (0x12 << 24) = 0x92000000.
+        assert_eq!(ctx.field_74, 0x9200_0000);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_8_passes_b1_and_three_words_advances_9() {
+        let bytecode = [0x4Cu8, 0xD8, 0x05, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 9 });
+        assert_eq!(host.n_d_sub8_calls, vec![(5u8, [0x10i16, 0x20, 0x30])]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_0_writes_b1_and_halts() {
+        let bytecode = [0x4Cu8, 0xE0, 0x42];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_e_sub0_writes, vec![0x42u8]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_9_clears_global_and_advances_2() {
+        let bytecode = [0x4Cu8, 0xE9];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_e_sub9_clears, 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_a_calls_overlay_and_halts() {
+        let bytecode = [0x4Cu8, 0xEA];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_e_sub_a_calls, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_f_uses_actor_world_when_byte_is_ff() {
+        // [4C, 0xCF, 0xFF, 0xFF] — both bytes select the actor's coords.
+        let bytecode = [0x4Cu8, 0xCF, 0xFF, 0xFF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            world_x: 0x1234,
+            world_z: 0x5678,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        assert_eq!(
+            host.n_c_sub_f_broadcasts,
+            vec![(0x1234u16 as i16, 0x5678u16 as i16)]
+        );
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_f_zero_yields_zero_nonzero_yields_tile_center() {
+        // b1=0 → 0; b2=2 → 2*0x80 + 0x40 = 0x140.
+        let bytecode = [0x4Cu8, 0xCF, 0x00, 0x02];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        assert_eq!(host.n_c_sub_f_broadcasts, vec![(0, 0x0140)]);
     }
 
     #[test]
@@ -7664,5 +9646,861 @@ mod tests {
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 9 });
+    }
+
+    // -- Round 16: helper-driven sub-ops --------------------------------
+
+    #[test]
+    fn op_4c_n_c_sub_1_flag_loop_reset_advances_2_bytes() {
+        let bytecode = [0x4Cu8, 0xC1];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_1_flag_loops, 1);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_1_no_jump_advances_4_bytes() {
+        let bytecode = [0x4Cu8, 0xD1, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_1_jump_target: None,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_1_jump_target_takes_ce9c_path() {
+        let bytecode = [0x4Cu8, 0xD1, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_1_jump_target: Some(0xABCD),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0xABCD });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_2_channel_spawn_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xD2, 0xFB];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_d_sub_2_channel_calls, vec![0xFBu8]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_7_register_list_walk_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xD7];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_d_sub_7_list_walk_regs, 1);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_b_e57f0_advances_13_bytes() {
+        // 13 total bytes: opcode + sub-op + 11 payload.
+        let mut bytecode = vec![0x4Cu8, 0xDB];
+        bytecode.extend_from_slice(&[
+            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22, 0x33, 0x44, 0x55,
+        ]);
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 13 });
+        assert_eq!(host.n_d_sub_b_e57f0_calls.len(), 1);
+        // 12-byte slice starting from the 0xDB sub-op byte.
+        assert_eq!(host.n_d_sub_b_e57f0_calls[0].len(), 12);
+        assert_eq!(host.n_d_sub_b_e57f0_calls[0][0], 0xDB);
+        assert_eq!(host.n_d_sub_b_e57f0_calls[0][11], 0x55);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_b_truncated_buffer_returns_unknown() {
+        // 12 bytes only — sub-B needs 13.
+        let bytecode = [0x4Cu8, 0xDB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_d_sub_b_e57f0_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_c_no_jump_advances_5_bytes() {
+        let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_c_jump_target: None,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_d_sub_c_calls, vec![0x42u8]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_c_jump_target_takes_ce9c_path() {
+        let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_c_jump_target: Some(0x100),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_e_query_no_jump_advances_5_bytes() {
+        let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_e_jump_target: None,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_d_sub_e_calls, vec![0x99u8]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_e_query_jump_target_takes_ce9c_path() {
+        let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
+        let mut host = TestHost {
+            n_d_sub_e_jump_target: Some(0x40),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x40 });
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_zero_first_byte_skips_spawn() {
+        // First byte 0 → no spawn; PC still advances by 3 (0 has no payload).
+        // packet_length([0]) = 0 → advance by 3 + 0 = 3.
+        let bytecode = [0x4Cu8, 0xE1, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 3 });
+        // No spawn because first byte is 0.
+        assert!(host.n_e_sub_1_text_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_short_string_advances_correctly() {
+        // [4C, E1, 'A', 'B', 'C', 0] — packet length 3, total advance 6.
+        let bytecode = [0x4Cu8, 0xE1, b'A', b'B', b'C', 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            script_id: 0x42,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_e_sub_1_text_calls.len(), 1);
+        assert_eq!(host.n_e_sub_1_text_calls[0].0, vec![b'A', b'B', b'C']);
+        assert_eq!(host.n_e_sub_1_text_calls[0].1, 0x42);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_with_escape_sequences() {
+        // [4C, E1, 'A', 0xC1, 0xAB, 'B', 0] — escape pair counts as 2,
+        // total packet length = 4, total advance = 7.
+        let bytecode = [0x4Cu8, 0xE1, b'A', 0xC1, 0xAB, b'B', 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 7 });
+        assert_eq!(host.n_e_sub_1_text_calls[0].0.len(), 4);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_1_text_actor_truncated_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE1]; // first byte missing
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_1_text_calls.is_empty());
+    }
+
+    // -----------------------------------------------------------------
+    // Round 17 — five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes() {
+        let bytecode = [0x4Cu8, 0xC0];
+        let mut host = TestHost {
+            n_c_sub_0_active: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_0_move_cancels, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes_when_inactive() {
+        // Even when the host returns false (no active move), PC still
+        // advances by 2 — the cancel side-effect is conditional but the
+        // dispatcher's PC delta is constant.
+        let bytecode = [0x4Cu8, 0xC0];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_0_move_cancels, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_3_script_teleport_advances_2_bytes() {
+        let bytecode = [0x4Cu8, 0xC3];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_3_teleports, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes() {
+        // [4C, 0xC5, 0x05, 0x00] — flag idx 5. Bit 5 in the host's bank is
+        // unset, so the original "jump-if-zero" path fires; both branches
+        // advance PC by 4.
+        let bytecode = [0x4Cu8, 0xC5, 0x05, 0x00];
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(5, false);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes_when_set() {
+        // Bit set → original's "jump-if-zero" doesn't fire; PC still += 4.
+        let bytecode = [0x4Cu8, 0xC5, 0x07, 0x00];
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(7, true);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_reads_16_bit_index_via_helper() {
+        // Verify the dispatcher reads the index through load_u16_le by
+        // setting two distinct flag bits and checking which one was queried.
+        let bytecode = [0x4Cu8, 0xC5, 0x34, 0x12]; // 0x1234
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(0x1234, true);
+        host.n_c_party_flag_bits.insert(0x3412, false);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        // The 0x1234 bit is set in the bank — the dispatcher's load_u16_le
+        // must produce 0x1234 (LE), not 0x3412 (BE).
+        assert!(*host.n_c_party_flag_bits.get(&0x1234).unwrap());
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_6_party_flag_jnz_advances_4_bytes() {
+        // Same shape as sub-5 but opposite polarity. Both polarities share
+        // PC += 4 either way.
+        let bytecode = [0x4Cu8, 0xC6, 0x09, 0x00];
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(9, false);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_truncated_buffer_returns_unknown() {
+        // Need 3 bytes after pc; only 2 available.
+        let bytecode = [0x4Cu8, 0xC5, 0x05]; // missing high byte
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_d_script_alloc_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xCD];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_c_sub_d_allocs, 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_inside_advances_9_bytes() {
+        // Host returns false (= "inside") → PC += 9. The dispatcher computes
+        // a tile-center bbox and passes it to the host.
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 9 });
+        assert_eq!(host.n_e_sub_4_bboxes.borrow().len(), 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_outside_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00, 0x00];
+        let mut host = TestHost {
+            n_e_sub_4_outside: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_tile_center_math_for_low_byte() {
+        // Operand byte 0x10 → tile-center: (0x10 << 7) | 0x40 = 0x840
+        // (high bit clear, so no extra +0x40).
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let _ = step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes.len(), 1);
+        // All four corners should be 0x840 = 2112.
+        assert_eq!(bboxes[0], [0x840, 0x840, 0x840, 0x840]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_tile_center_high_bit_adds_0x40() {
+        // Operand byte 0x90: low 7 bits are 0x10 → base 0x840. High bit set
+        // → extra +0x40 = 0x880.
+        let bytecode = [0x4Cu8, 0xE4, 0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let _ = step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes[0], [0x880, 0x880, 0x880, 0x880]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_zero_byte_yields_zero() {
+        // Operand byte 0x00 → 0 (special case in tile-center math).
+        let bytecode = [0x4Cu8, 0xE4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let _ = step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes[0], [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10]; // missing last 5 bytes
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_add_xp_positive_value() {
+        // [4C, E5, 0xE8, 0x03, 0x00] — 0x0003E8 = 1000.
+        let bytecode = [0x4Cu8, 0xE5, 0xE8, 0x03, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_5_xp_deltas, vec![1000]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_add_xp_negative_value() {
+        // 0xFFFFFE = -2 in 24-bit two's complement.
+        let bytecode = [0x4Cu8, 0xE5, 0xFE, 0xFF, 0xFF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_5_xp_deltas, vec![-2]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_add_xp_zero_advances_5_bytes() {
+        let bytecode = [0x4Cu8, 0xE5, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_5_xp_deltas, vec![0]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE5, 0x01]; // missing 2 bytes
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_5_xp_deltas.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_actor_resolved_advances_5_bytes() {
+        // [4C, EB, actor_id=0x07, target_lo=0x10, target_hi=0x20]
+        // When the host resolves the actor, take the "pc + 5" path.
+        let bytecode = [0x4Cu8, 0xEB, 0x07, 0x10, 0x20];
+        let mut host = TestHost {
+            n_e_sub_b_resolves: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_b_actor_ids, vec![0x07]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_actor_unresolved_jumps_to_target() {
+        // Same instruction; host returns None (actor not resolved). The
+        // dispatcher reads the absolute jump target via load_u16_le and
+        // returns it as the new PC.
+        let bytecode = [0x4Cu8, 0xEB, 0x07, 0x10, 0x20];
+        let mut host = TestHost::default(); // n_e_sub_b_resolves = false
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x2010 });
+        assert_eq!(host.n_e_sub_b_actor_ids, vec![0x07]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_jump_target_uses_load_u16_le() {
+        // Verify endianness: bytes 0x34, 0x12 should produce target 0x1234,
+        // not 0x3412.
+        let bytecode = [0x4Cu8, 0xEB, 0xAA, 0x34, 0x12];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xEB, 0x07]; // missing 2 jump-target bytes
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_b_actor_ids.is_empty());
+    }
+
+    // -- Round 18 — 0x4C n8 actor-allocator + nE camera + nD/n5 dialog ---
+
+    #[test]
+    fn op_4c_n_8_sub_1_set_model_anim_advances_pc_by_9() {
+        // [4C, 0x81, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE]
+        // model_id (LE24) = 0x563412
+        // anim_frame (LE16) = 0x9A78
+        // tween_frames (LE16) = 0xDEBC
+        let bytecode = [0x4Cu8, 0x81, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 9 });
+        assert_eq!(host.n_8_sub_1_set_model_calls.len(), 1);
+        let (model_id, anim_frame, tween_frames) = host.n_8_sub_1_set_model_calls[0];
+        assert_eq!(model_id, 0x0056_3412);
+        assert_eq!(anim_frame, 0x9A78);
+        assert_eq!(tween_frames, 0xDEBC);
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_1_truncated_buffer_returns_unknown() {
+        // Only 8 bytes — sub-1 needs 9 total.
+        let bytecode = [0x4Cu8, 0x81, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_8_sub_1_set_model_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_6_actor_set_rotation_advances_15() {
+        // [4C, 0x86, ... 12 bytes for 6 LE16 ..., actor_id]
+        let bytecode = [
+            0x4Cu8, 0x86, // opcode + sub-op
+            0x10, 0x00, 0x20, 0x00, 0x30, 0x00, // x, y, z = 0x10, 0x20, 0x30
+            0x40, 0x00, 0x50, 0x00, 0x60, 0x00, // rx, ry, rz = 0x40, 0x50, 0x60
+            0x07, // actor_id = 7
+        ];
+        let mut host = TestHost {
+            n_8_sub_6_actor_present: true,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 15 });
+        assert_eq!(host.n_8_sub_6_actor_set_rotation_calls.len(), 1);
+        let (actor_id, position, rotation) = host.n_8_sub_6_actor_set_rotation_calls[0];
+        assert_eq!(actor_id, 7);
+        assert_eq!(position, [0x10, 0x20, 0x30]);
+        assert_eq!(rotation, [0x40, 0x50, 0x60]);
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_6_advances_15_even_when_actor_missing() {
+        // The original short-circuits to `return param_2 + 0xF` when the
+        // actor lookup fails — PC still advances by 15.
+        let bytecode = [
+            0x4Cu8, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xFF,
+        ];
+        let mut host = TestHost {
+            n_8_sub_6_actor_present: false, // actor lookup fails
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 15 });
+        // Hook still fires (the host records the call); the actor_present
+        // bool just controls the return value.
+        assert_eq!(host.n_8_sub_6_actor_set_rotation_calls.len(), 1);
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_6_signed_decode_round_trip() {
+        // Negative LE16 should decode through `as i16` correctly.
+        let bytecode = [
+            0x4Cu8, 0x86, 0xFF, 0xFF, // x = -1
+            0x00, 0x80, // y = -32768
+            0xFE, 0xFF, // z = -2
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // rx/ry/rz = 0
+            0x00,
+        ];
+        let mut host = TestHost {
+            n_8_sub_6_actor_present: true,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        step(&mut host, &mut ctx, &bytecode, 0);
+        let (_, position, _) = host.n_8_sub_6_actor_set_rotation_calls[0];
+        assert_eq!(position, [-1, -32768, -2]);
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_b_jumps_when_actor_type_present() {
+        // [4C, 0x8B, type=0x12, target_lo=0x34, target_hi=0x12] → jump 0x1234
+        let bytecode = [0x4Cu8, 0x8B, 0x12, 0x34, 0x12];
+        let mut host = TestHost::default();
+        host.n_8_sub_b_present_types.insert(0x12);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_b_advances_5_when_no_actor() {
+        let bytecode = [0x4Cu8, 0x8B, 0x12, 0x34, 0x12];
+        let mut host = TestHost::default(); // no types registered
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_b_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0x8B, 0x12, 0x34]; // missing target hi byte
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_d_empty_slot_advances_6() {
+        let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34, 0x12];
+        let host_state = ActorSearchResult::EmptySlot;
+        let mut host = TestHost {
+            n_8_sub_d_search_result: host_state,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        let queries = host.n_8_sub_d_queries.borrow();
+        assert_eq!(queries.as_slice(), &[(0x05, 0xAB)]);
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_d_found_jumps_to_le_target() {
+        let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x78, 0x56];
+        let mut host = TestHost {
+            n_8_sub_d_search_result: ActorSearchResult::Found,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x5678 });
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_d_no_match_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34, 0x12];
+        let mut host = TestHost {
+            n_8_sub_d_search_result: ActorSearchResult::NoMatch,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n_8_sub_d_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34]; // missing target hi
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_3_advances_2_and_records_actor() {
+        let bytecode = [0x4Cu8, 0xE3, 0x09];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_e_sub_3_camera_syncs, vec![9]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_3_truncated_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE3]; // missing actor_id
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_3_camera_syncs.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_7_camera_animate_decodes_le24_then_le16() {
+        // 7-byte instruction: [opcode, sub-op, t0, t1, t2, d0, d1].
+        // target = LE24(0x12, 0x34, 0x56) = 0x563412
+        // duration = LE16(0xEF, 0xCD) = 0xCDEF
+        let bytecode = [0x4Cu8, 0xE7, 0x12, 0x34, 0x56, 0xEF, 0xCD];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 7 });
+        assert_eq!(host.n_e_sub_7_camera_animates, vec![(0x0056_3412, 0xCDEF)]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_7_truncated_buffer_returns_unknown() {
+        // 6 bytes — last byte is missing.
+        let bytecode = [0x4Cu8, 0xE7, 0x12, 0x34, 0x56, 0xEF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_8_camera_zoom_decodes_four_le16() {
+        // 10-byte instruction: [opcode, sub-op, x0, x1, y0, y1, z0, z1, m0,
+        // m1]. zoom_x = LE16(0x40, 0x00) = 0x40, zoom_y = 0x08, zoom_z = 4,
+        // mode = 0 (the default-zoom triplet at line 7315-7317 of the
+        // dispatcher dump).
+        let bytecode = [0x4Cu8, 0xE8, 0x40, 0x00, 0x08, 0x00, 0x04, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 10 });
+        assert_eq!(host.n_e_sub_8_camera_zooms, vec![(0x40, 0x08, 0x04, 0)]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_8_camera_zoom_signed_mode_round_trip() {
+        // Mode is i16 — verify negative / sign-bit values flow through.
+        let bytecode = [0x4Cu8, 0xE8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(host.n_e_sub_8_camera_zooms, vec![(0, 0, 0, -1)]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_8_truncated_buffer_returns_unknown() {
+        // 9 bytes — needs 10.
+        let bytecode = [0x4Cu8, 0xE8, 0x40, 0x00, 0x08, 0x00, 0x04, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_0_field_se_trigger_advances_6() {
+        // [4C, 0xD0, 0x34, 0x12, 0x78, 0x56] → a = 0x1234, b = 0x5678.
+        let bytecode = [0x4Cu8, 0xD0, 0x34, 0x12, 0x78, 0x56];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_d_sub_0_se_triggers, vec![(0x1234, 0x5678)]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_0_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xD0, 0x34, 0x12, 0x78]; // 5 bytes — needs 6
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_5_sub_3_dialog_wait_halts_at_pc_plus_2() {
+        // [4C, 0x53] → halt-style return with PC = 0 + 2 = 2.
+        let bytecode = [0x4Cu8, 0x53];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 2 });
+        assert_eq!(host.n_5_sub_3_dialog_waits, 1);
+    }
+
+    #[test]
+    fn op_4c_n_5_sub_4_dialog_advance_advances_when_done() {
+        // Default: dialog_active = false → advance PC by 2.
+        let bytecode = [0x4Cu8, 0x54];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_5_sub_4_polls, 1);
+    }
+
+    #[test]
+    fn op_4c_n_5_sub_4_dialog_advance_halts_when_active() {
+        // dialog_active = true → halt at PC.
+        let bytecode = [0x4Cu8, 0x54];
+        let mut host = TestHost {
+            n_5_sub_4_dialog_active: true,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_5_sub_4_polls, 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_uses_shared_tile_center_helper() {
+        // Verifies the round-18 tile_center helper is wired in: 0x10 → 0x840,
+        // 0x90 → 0x880, 0x00 → 0. This is the same case the round-17 inline
+        // closure verified — confirm round-18's lift to a shared helper
+        // didn't change semantics.
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x90, 0x00, 0x10, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes.len(), 1);
+        assert_eq!(bboxes[0], [0x840, 0x880, 0, 0x840]);
     }
 }

@@ -31,9 +31,23 @@
   <p>Effect spawning is <em>indirect</em>: the state machine doesn't call the <a href="effect-vm.html">effect VM</a> directly &mdash; it calls <code>FUN_801D8DE8(ui_element_id, mode)</code> (the hottest battle helper, ~30 sites), which fans out through the effect cluster. The state machine knows UI element IDs (<code>0x07</code>/<code>0x0F</code>/<code>0x34</code>/<code>0x43</code>/<code>0x4C</code>/<code>0x52</code>/<code>0x66</code>); the effect VM resolves them to actual sprite-anim spawns.</p>
 </section>
 
+<section class="doc-section" id="engine-port">
+  <h2>Engine port</h2>
+  <p><code>crates/engine-vm/src/battle_action.rs</code> ports the state graph as a per-frame edge-triggered state machine. Surface:</p>
+  <ul class="bullets">
+    <li><code>ActionState</code> &mdash; symbolic enum for every named state byte; <code>from_byte</code> returns <code>None</code> for unmapped values (so the dispatcher surfaces them as <code>StepOutcome::UnknownState</code> for engine logging).</li>
+    <li><code>ActionCategory</code> &mdash; symbolic enum for the action-category byte at <code>actor[+0x1DE]</code>.</li>
+    <li><code>BattleActor</code> &mdash; the per-actor fields the state machine reads or writes. Field names mirror the <code>+0xNNN</code> byte offsets so the link to the decompile stays explicit.</li>
+    <li><code>BattleActionCtx</code> &mdash; the subset of the live ctx struct (<code>_DAT_8007BD24</code>-pointed) the state machine touches: <code>action_state</code>, <code>active_actor</code>, the <code>+0x6D8</code> countdown timer, etc.</li>
+    <li><code>BattleActionHost</code> &mdash; engine callbacks for every cited helper (<code>FUN_801D5854</code> &rarr; <code>pose</code>, <code>FUN_801D8DE8</code> &rarr; <code>ui_element</code>, <code>FUN_8004E2F0</code> &rarr; <code>range_check</code>, <code>FUN_801DABA4</code> &rarr; <code>recompute_battle_order</code>, <code>FUN_801EFE44</code> &rarr; <code>camera_bounds</code>, <code>FUN_801EED1C</code> / <code>FUN_801E7320</code> &rarr; <code>party_setup</code> / <code>monster_setup</code>, <code>func_0x80056798</code> &rarr; <code>rng</code>, ...). All methods have default impls so a minimal host compiles.</li>
+    <li><code>step(host, ctx) -&gt; StepOutcome</code> &mdash; runs one frame's worth of dispatch; returns <code>Stay</code> (still waiting on a precondition), <code>Transition { from, to }</code>, <code>BattleComplete</code> (terminal), or <code>UnknownState { state }</code>.</li>
+  </ul>
+  <p><code>crates/engine-core/src/world.rs</code> composes this with the actor VM, move VM, and effect VM into a single <code>World</code> struct that engines drive via <code>World::tick</code>.</p>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>The full per-state table (every <code>ctx[7]</code> case body, what it runs, and which state it transitions to next) lives at <a href="https://github.com/anthropics/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md"><code>docs/subsystems/battle-action.md</code></a> in the repo. That doc cites <code>ghidra/scripts/funcs/overlay_battle_action_801e295c.txt</code> at the line level.</p>
+  <p>The full per-state table (every <code>ctx[7]</code> case body, what it runs, and which state it transitions to next) lives at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action.md</code></a> in the repo. That doc cites <code>ghidra/scripts/funcs/overlay_battle_action_801e295c.txt</code> at the line level.</p>
 </section>
 
 </main>

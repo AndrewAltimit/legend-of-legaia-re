@@ -34,16 +34,31 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("all_zeros", 1),
     ("data_field_streaming", 26),
+    // Added 2026-05-05: sister of `data_field_streaming` — leading chunks parse
+    // cleanly (all known types, all magic-OK) but the final chunk's declared
+    // `size` walks past EOF without a terminator. The runtime extends the chunk
+    // via streaming DMA continuation rather than a literal terminator on disc.
+    // Promoted 3 entries from `unknown_other` (`0157_rikuroa`, `0228_station`,
+    // `0373_taiku` — scene streams with 2-3 leading chunks then a partial
+    // MOVE/VDF chunk) and 1 from `unknown_low_entropy` (`1205_other5` — a 6-
+    // leading-chunk stream with a partial TIM tail).
+    ("data_field_truncated", 4),
     ("effect_bundle", 1),
     // 2026-05-04: dropped 4 → 3 after the scene_v12_table detector promoted
     // `0002_gameover_data.BIN` (v12 header at offset 0; field_pack magic at
     // 0x39800 was a coincidental embedded region).
-    ("field_pack", 3),
+    // 2026-05-05: dropped 3 → 2 after the scene_event_scripts detector took
+    // `0003_town01.BIN` (prescript shape at offset 0; the previous field_pack
+    // hit was on a deeper magic occurrence inside the prescript records).
+    ("field_pack", 2),
     // 2026-05-04: dropped 70 → 44 after the scene_asset_table detector promoted
     // 26 entries that previously matched `n=1` only (a coincidental first-
     // descriptor match). Those 26 are now classed `scene_asset_table` along
     // with 54 sibling entries that didn't pass the LZS-decode gate.
-    ("lzs_container", 44),
+    // 2026-05-05: dropped 44 → 42 after `scene_event_scripts` promoted 2
+    // entries whose prescript shape + 50%-FFFF-opener rate is a much more
+    // specific signal than "happens to LZS-decode for some descriptors".
+    ("lzs_container", 42),
     // Added 2026-05-04: MIPS overlay-code detector recognises `addiu sp, sp, -X`
     // followed by a plausible MIPS prologue continuation (`sw`, `addiu`, `lui`,
     // `lw`, R-type). All 22 matches are in the `0901..=0969_xxx_dat` cluster —
@@ -84,11 +99,46 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // (219 → 124), 1 from `unknown_other` (169 → 168), 1 from `field_pack`
     // (4 → 3 — `0002_gameover_data.BIN` had v12 at offset 0).
     ("scene_v12_table", 97),
+    // Added 2026-05-05: composite shape — `[u16 prescript][bodies][pad][canonical
+    // 7-asset scene_asset_table]`. The leading prescript carries scene-event
+    // bytecode (likely field-VM frames); the asset table at the next 0x800
+    // sector boundary holds the standard scene bundle. Promoted ~64 entries
+    // from `unknown_high_entropy` (81 → 17) and ~13 from `unknown_other`
+    // (95 → 82 in disc-mode).
+    ("scene_scripted_asset_table", 79),
+    // Added 2026-05-05: sister of `scene_scripted_asset_table` — same
+    // `[u16 count][u16 offsets[count]]` prescript shape, but no canonical
+    // 7-asset table at the next sector boundary. Frame-opener gate
+    // (>= 50% of records lead with the field-VM `0xFFFF 0x0000` sentinel)
+    // keeps it zero-false-positive. 20 entries: 5 from `unknown_high_entropy`,
+    // 14 from `unknown_other`, 1 reclaimed from a coincidental `field_pack`
+    // false positive (`0003_town01.BIN`).
+    ("scene_event_scripts", 20),
     ("tim_pack", 7),
-    ("unknown_high_entropy", 81),
-    ("unknown_low_entropy", 74),
-    ("unknown_other", 95),
-    // 1 + 26 + 1 + 3 + 44 + 22 + 29 + 42 + 265 + 80 + 148 + 217 + 97 + 7 + 81 + 74 + 95 = 1232
+    // Added 2026-05-05: TMD-size-prefix detector — sister of `scene_tmd_stream`
+    // for the *truncated* case (`prefix_size > on-disc len`). On-disc file is
+    // a prefix of a logical TMD whose remainder is supplied at runtime. Promoted
+    // 34 entries from `unknown_other` (95 → 61 in disc-mode).
+    ("tmd_size_prefix", 34),
+    // 2026-05-05: dropped 81 → 17 after `scene_scripted_asset_table` promoted
+    // ~64 entries; further dropped 17 → 12 after `scene_event_scripts` took
+    // 5 (0318/0337/0399/0587/0646).
+    ("unknown_high_entropy", 12),
+    // 2026-05-05: dropped 74 → 73 after `data_field_truncated` claimed
+    // `1205_other5` (a 6-chunk streaming buffer with a partial TIM tail
+    // that previously hid in the low-entropy bucket because the chunk-0
+    // header word `0x00008220` masked as zero-leading).
+    ("unknown_low_entropy", 73),
+    // 2026-05-05: dropped 95 → 50 in working dir after `tmd_size_prefix` (34)
+    // and `scene_scripted_asset_table` (~13). Further dropped 50 → 34 after
+    // `scene_event_scripts` took ~14 entries (large town/scene bundles whose
+    // prescript holds field-VM event scripts but whose post-prescript payload
+    // isn't a canonical asset table). Then dropped 34 → 31 after
+    // `data_field_truncated` claimed `0157_rikuroa`, `0228_station`,
+    // `0373_taiku` (scene streams with a partial MOVE/VDF tail). The disc-
+    // mode count is 31 (vs. 33 in working dir) because `categorize.json`
+    // and `manifest.json` are working-dir artifacts, not real PROT entries.
+    ("unknown_other", 31),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter

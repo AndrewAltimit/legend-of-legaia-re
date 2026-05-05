@@ -129,3 +129,84 @@ if let Some(t) = scene_asset_table::detect(buf) {
 ```
 
 The runtime consumer is the field-loader chain documented under the [asset-loader subsystem](../subsystems/asset-loader.md): `FUN_8001F7C0` + `FUN_800255B8` plus the dispatcher at `FUN_8001F05C` consumes each descriptor pair after LZS-decoding the payload region into a working buffer.
+
+## scene_scripted_asset_table — scripted prefix + canonical bundle
+
+A composite shape that pairs a `[u16 count][u16 offsets[count]]` script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: `crates/asset/src/scene_scripted_asset_table.rs`. ~6% of all PROT entries match.
+
+```text
++0x00              u16  count             ; 1..=4096 — number of script records
++0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
+                                          ; monotonically non-decreasing
++offsets[i]        record bytecode        ; per-record opcodes (typical
+                                          ; opener: 0xFFFF 0x0000 sentinel +
+                                          ; field-VM-shaped frame ops)
++0x800-aligned     u32  count = 7         ; canonical scene-asset-table lead
+...                                       ; same layout as scene_asset_table
+```
+
+Strict gate validates **both** the prescript and the inner asset table:
+1. `u16[0]` is the record count (`1..=4096`).
+2. `u16[1]` algebraically ties to the count: `offsets[0] = 2 + count*2`.
+3. All offsets monotonic, in-bounds.
+4. Past the last record offset, the next `0x800`-aligned position carries `u32 count = 7` plus a valid `scene_asset_table` header (first descriptor at `+0x40`, all type bytes `<= 0x14`).
+
+The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary `[count][offsets]`-shaped data, but the asset-table check at the next sector boundary is a strong second signal.
+
+The prescript is plausibly the **scene event-script bytecode** that the field VM (`FUN_801DE840`) executes when the scene loads. The 0xFFFF 0x0000 sentinels at record starts strongly resemble field-VM frame-divider opcodes. The runtime is presumed to walk the prescript first (loading scene-specific event scripts), then load the asset bundle from the sector-aligned position. The exact prescript opcode set is unconfirmed pending more reverse work.
+
+## tmd_size_prefix — truncated TMD-prefix
+
+Sister to `scene_tmd_stream` for the *truncated* case: same outer shape (`[u32 prefix][TMD magic at +4][zero flags][nobj]`), but the on-disc payload is **shorter than the prefix claims**. Implementation: `crates/asset/src/tmd_size_prefix.rs`. ~3% of all PROT entries match.
+
+```text
++0x00   u32  total_size       ; claimed total in-memory size, > on-disc len
++0x04   u32  0x80000002       ; Legaia TMD magic
++0x08   u32  0x00000000       ; TMD flags (on-disc; runtime sets to 1)
++0x0C   u32  nobj             ; small (typically 2 or 4)
++0x10   object_table[nobj]    ; 28 bytes per object (PsyQ TMD layout)
++0x10 + nobj*0x1C             ; primitive data (truncated at sector boundary)
+```
+
+All object pointers (`vert_top`, `norm_top`, `prim_top`) point **within the prefix-claimed total size** — so the on-disc file is genuinely a prefix of a larger logical resource, not a malformed header.
+
+Strict structural checks:
+1. TMD magic at `+4`, flags == 0 at `+8`, `1 <= nobj <= 8`.
+2. `claimed_total > buf.len()` — distinguishes from `scene_tmd_stream` which catches the complete case.
+3. Object table fits on disc.
+4. Each object's vert / normal / primitive ranges fit within the claimed total.
+
+The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been located; likely the loader allocates `claimed_total` bytes of RAM and either (a) zero-fills the missing tail, or (b) streams the remainder from another PROT entry.
+
+## scene_event_scripts — prescript-only
+
+Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][u16 offsets]` prescript exists at offset 0, but the post-prescript payload is **not** a canonical 7-asset table. Implementation: `crates/asset/src/scene_event_scripts.rs`. ~20 PROT entries match.
+
+```text
++0x00              u16  count             ; 3..=4096
++0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
+                                          ; monotonically non-decreasing,
+                                          ; all <= file size
++offsets[i]        record bytecode        ; per-record opcodes; the bulk
+                                          ; of records open with the
+                                          ; field-VM frame sentinel
+                                          ; `0xFFFF 0x0000`
+...                                       ; bulk asset payload after the
+                                          ; prescript (per-scene secondary
+                                          ; header; format unconfirmed —
+                                          ; appears to be a small `(count,
+                                          ; descriptor[count])` table at
+                                          ; the next 0x800 boundary, with
+                                          ; alternating `(type, size)` and
+                                          ; runtime-buffer offset pairs)
+```
+
+Strict structural detection:
+1. Prescript shape valid (count `3..=4096`, `offsets[0] == 2 + count*2`, monotonic, in-bounds).
+2. **Frame-opener rate ≥ 50 %** of records start with the field-VM `0xFFFF 0x0000` sentinel.
+
+The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
+
+The prescript records are field-VM (`FUN_801DE840`) event scripts — the same per-frame bytecode shape used by `scene_scripted_asset_table` (`0xFFFF 0x0000` is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.
+
+Detection runs after `scene_scripted_asset_table` and `scene_asset_table`, so any composite layouts those detectors recognize claim their entries first.

@@ -2537,4 +2537,129 @@ mod tests {
         let out = step(&mut host, &mut ctx);
         assert_eq!(out, StepOutcome::BattleComplete);
     }
+
+    /// Full magic-spell flow walking from `MagicCastBegin` all the way to
+    /// `EndOfAction`, asserting each band transition. Mirrors the attack-flow
+    /// round-trip but exercises the magic dispatch table — `magic_cast_begin`
+    /// → `magic_pre_cast_wait` (with a cleared sub-route so we don't divert
+    /// to summon) → `magic_anim_chain` → `magic_sustain` → `magic_hit_loop`
+    /// → `magic_recovery` → `magic_exit` → `done_cleanup` → `done_fade_down`
+    /// → `end_of_action`.
+    #[test]
+    fn full_magic_flow_round_trips() {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::MagicCastBegin.as_byte();
+
+        // Set spell ID + MP cost so MagicCastBegin doesn't crash on division.
+        host.actors[1].params[0] = 0x10;
+        host.actors[1].params[1] = 0x21; // first chain anim
+        host.actors[1].params[2] = 0xFF; // chain terminator
+        host.actors[1].mp = 100;
+        host.spell_costs.insert(0x10, 20);
+        host.actors[1].sub_route = 0; // not summon
+        host.actors[1].current_anim = 0;
+        host.actors[1].hit_count_bound = 0;
+
+        // MagicCastBegin → MagicPreCastWait (no capture spell).
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicPreCastWait.as_byte());
+        assert_eq!(host.actors[1].mp, 80); // 100 - 20
+
+        // MagicPreCastWait gates on frame_timer; it was set to 0x14 by the
+        // previous step. Tick until the timer fires the transition.
+        let mut iters = 0;
+        while ctx.action_state == ActionState::MagicPreCastWait.as_byte() {
+            step(&mut host, &mut ctx);
+            iters += 1;
+            assert!(iters < 1000, "stuck in MagicPreCastWait");
+        }
+        assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+
+        // MagicAnimChain reads `params[strike_index]` then increments. We
+        // have `params = [0x10, 0x21, 0xFF, ...]` and `strike_index = 0`,
+        // so three iterations: params[0]=0x10 queued, params[1]=0x21
+        // queued, params[2]=0xFF terminator transitions.
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicAnimChain.as_byte());
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicSustain.as_byte());
+
+        // MagicSustain holds while spell_iter != 0; we need to clear it.
+        host.actors[1].spell_iter = 0;
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicHitLoop.as_byte());
+
+        // MagicHitLoop exits when current_anim == 0 (default).
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicRecovery.as_byte());
+
+        // MagicRecovery stays unless gate is 0 (default 0).
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::MagicExit.as_byte());
+
+        // MagicExit similarly stays unless gate is 0 (default 0).
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+
+        // DoneCleanup → DoneFadeDown.
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::DoneFadeDown.as_byte());
+
+        // Drain DoneFadeDown's frame timer. Should land on EndOfAction.
+        let mut tick_count = 0;
+        while ctx.action_state == ActionState::DoneFadeDown.as_byte() {
+            step(&mut host, &mut ctx);
+            tick_count += 1;
+            assert!(tick_count < 1000, "stuck in DoneFadeDown");
+        }
+        assert_eq!(ctx.action_state, ActionState::EndOfAction.as_byte());
+    }
+
+    /// `MagicCastBegin` with `bits & 0x10` set (quarter-cost) AND a divisible
+    /// cost — verifies the cost path picks the *quarter* branch over the
+    /// `bits & 0x20` half branch when both bits are set (retail's switch
+    /// checks bit 0x10 first via `if/else if`).
+    #[test]
+    fn magic_cast_begin_quarter_takes_priority_over_half() {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::MagicCastBegin.as_byte();
+        host.actors[1].mp = 100;
+        host.actors[1].params[0] = 0x10;
+        host.spell_costs.insert(0x10, 40);
+        // Both bits set — retail picks 0x10 first.
+        host.ability_bits.insert(1, 0x10 | 0x20);
+        step(&mut host, &mut ctx);
+        // 100 - (40 / 4) = 90.
+        assert_eq!(host.actors[1].mp, 90);
+        assert_eq!(host.actors[1].last_mp_cost, 10);
+    }
+
+    /// `PreActionWait` is gated on `previous_action_cleared`. With the gate
+    /// closed, the state holds; flipping the gate transitions to `ActionSeed`
+    /// on the next step.
+    #[test]
+    fn pre_action_wait_holds_until_prev_cleared_flips() {
+        let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+        ctx.action_state = ActionState::PreActionWait.as_byte();
+        host.prev_cleared = false;
+
+        // Several steps with the gate closed must not transition.
+        for _ in 0..8 {
+            assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+            assert_eq!(ctx.action_state, ActionState::PreActionWait.as_byte());
+        }
+
+        // Flip the gate. Next step transitions.
+        host.prev_cleared = true;
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(
+            out,
+            StepOutcome::Transition {
+                to,
+                ..
+            } if to == ActionState::ActionSeed.as_byte()
+        ));
+    }
 }

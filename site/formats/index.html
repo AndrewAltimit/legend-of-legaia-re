@@ -74,6 +74,10 @@
       <div class="card-title">VAB sound bank</div>
       <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live in battle_data / level_up — vab_01 is misleading.</div>
     </a>
+    <a class="card" id="seq" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/seq.md" target="_blank" rel="noopener">
+      <div class="card-title">PsyQ SEQ</div>
+      <div class="card-body">PsyQ's MIDI-derived sequence format (<code>pQES</code> magic). 13-byte header (PPQN, tempo, time-sig) + delta-time / MIDI events with running status. Drives <code>SsSeqOpen</code> / <code>SsSeqPlay</code>. <code>crates/seq</code> parses + walks; <code>engine-audio::Sequencer</code> plays one against a VAB.</div>
+    </a>
     <a class="card" id="mes" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mes.md" target="_blank" rel="noopener">
       <div class="card-title">MES dialog</div>
       <div class="card-body">Two variants: Compact (<code>0x404</code> magic) and Records (<code>0x44 0x78</code>). Bytecode tokens (Glyph / Op65 / Op4c / Op26 / End). Renderer is overlay-resident.</div>
@@ -98,11 +102,11 @@
   <div class="card-grid">
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/data-field.md" target="_blank" rel="noopener">
       <div class="card-title">DATA_FIELD streaming</div>
-      <div class="card-body">Chunked container parsed by <code>crates/asset::parse_streaming</code>. Real per-field structure past the wrapper is still partly opaque.</div>
+      <div class="card-body">Chunked container parsed by <code>crates/asset::parse_streaming</code>. Sister detector <code>data_field_truncated</code> catches the shape where the final chunk's declared size walks past EOF (runtime extends via streaming DMA continuation).</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/scene-bundles.md" target="_blank" rel="noopener">
       <div class="card-title">Scene bundles</div>
-      <div class="card-body"><code>scene_tmd_stream</code> and <code>scene_vab_stream</code> per-scene asset prefixes; covers ~30% of PROT entries.</div>
+      <div class="card-body">Five sister detectors covering ~50% of PROT entries: <code>scene_tmd_stream</code>, <code>scene_vab_stream</code>, <code>scene_asset_table</code> (canonical 7-asset table), <code>scene_scripted_asset_table</code> (script prescript + asset table), <code>scene_event_scripts</code> (prescript-only), plus <code>tmd_size_prefix</code> (truncated TMD-prefix).</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/effect.md" target="_blank" rel="noopener">
       <div class="card-title">Effect bundles</div>
