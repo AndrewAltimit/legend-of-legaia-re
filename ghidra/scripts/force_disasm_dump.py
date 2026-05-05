@@ -1,12 +1,15 @@
 # @category Legaia
 # @runtime Jython
-# Force-disassemble + create function at SCUS addresses that are valid
-# `jal` targets but unanalyzed. Dumps each.
+# Force-disassemble + create function at addresses that are valid `jal`
+# targets but unanalyzed. Dumps each.
 #
 # Strategy: use DisassembleCommand to disassemble starting at the target.
 # If it produces >=8 instructions ending in `jr $ra`, create a function
-# via CreateFunctionCmd and dump it. Stricter than the round-24 v1 disaster
-# because we VALIDATE before creating.
+# via CreateFunctionCmd and dump it. Validation happens before creation
+# so the project DB doesn't pick up phantom stubs.
+#
+# Input: one hex address per line in `ADDRS_FILE` (place the file alongside
+# this script — gitignored, so each session populates it on demand).
 
 import os
 from ghidra.app.cmd.disassemble import DisassembleCommand
@@ -16,7 +19,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 from ghidra.program.model.address import AddressSet
 
 OUT_DIR = "/scripts/funcs"
-ADDRS_FILE = "/scripts/missing_addrs.txt"
+ADDRS_FILE = "/scripts/force_disasm_targets.txt"
 
 prog = currentProgram
 fm = prog.getFunctionManager()

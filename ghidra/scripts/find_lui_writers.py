@@ -1,10 +1,14 @@
 # @category Legaia
 # @runtime Jython
 #
-# Find writers to 0x801C70F0 (and surrounding region) by manually scanning
-# for `lui R, 0x801c` followed by `addiu R, R, 0x70F0` (or close offsets),
-# or `sw R, 0x70F0(R)` after a `lui R, 0x801c`. Ghidra's reference manager
-# misses some of these, especially store-base + offset combos.
+# Generic LUI + ADDIU/load/store resolver. Walks every instruction, tracks
+# the most-recent `lui R, hi` per register (resets at function boundaries),
+# and reports any subsequent `addiu R, R, lo` or memory access whose
+# effective address falls in the [LO, HI] window. Ghidra's reference
+# manager misses these combined accesses, especially store-base + offset
+# combos.
+#
+# Edit LO / HI below to point at the address range you're tracing.
 
 prog = currentProgram
 af = prog.getAddressFactory()

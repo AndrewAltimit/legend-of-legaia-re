@@ -79,16 +79,18 @@ Computed addresses are still missed — `lw r4, 0x18(r3)` where `r3 = 0x80080000
 
 ### "Find what writes / reads a global"
 
-Use `find_writes_to_8007b85c.py` (edit `TARGETS`). If the global is read via `lui+addiu`, also run `find_lui_writers.py`.
+Use `find_lui_writers.py` with `LO` / `HI` narrowed to the target address — it
+catches the LUI+ADDIU/load/store combos that Ghidra's reference manager misses.
 
 ### "Find callers of a function"
 
-Use `find_callers.py` (generic) or `dispatcher_callers.py` (built-in targets).
+Use `find_callers_of.py` (edit `TARGETS_HEX` to the entry point) or
+`dispatcher_callers.py` for the asset-dispatcher / LZS chain specifically.
 
 ### "Is this function actually called?"
 
 The reference manager is unreliable for indirect calls. Use:
-- `find_callers.py` for direct `jal` references.
+- `find_callers_of.py` for direct `jal` references.
 - `find_addr_data.py` to find the address as data (function-pointer tables, callbacks).
 
 If both return zero hits, the function has no static caller *in the program currently loaded into Ghidra* — that's NOT the same as "dead code in retail". Most game logic lives in RAM-loaded overlays at `0x801C0000+` that aren't part of `SCUS_942.54`. The negative result bounds where the caller can possibly live, but doesn't prove the function unreachable.
@@ -122,28 +124,78 @@ Empirical workflow:
 
 ## Script catalogue
 
-The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scripts/`:
+The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scripts/`. Edit the `TARGETS` / `LO` / `HI` constants at the top of any script to point at the addresses you want to trace.
+
+**Per-function dumps**
 
 | Script | Purpose |
 |---|---|
-| `dump_funcs.py` | Dumps disassembly + decompiled C for a hardcoded list of function entry points (SCUS targets). |
-| `dump_top_missing.py` | Dumps the next batch of high-citation missing helpers (SCUS range). Refresh `TARGETS` from `scripts/function-coverage.py --json`. |
-| `dump_top_overlay_missing.py` / `dump_round6_overlay_missing.py` | Same as above for overlay programs. |
-| `dump_battle_overlay_funcs.py` / `create_and_dump_battle_funcs.py` | Battle-overlay variants; the `create_and_dump` form force-creates functions Ghidra didn't auto-detect (JALR-only entry points). |
-| `find_lui_writers.py` | Big LUI+ADDIU resolver. Critical for finding references the ref manager misses. |
-| `find_addr_data.py` | Searches for a 4-byte LE word matching a target address — catches function-pointer tables. |
-| `find_callers.py` / `find_callers_of.py` | Generic xref tools. |
-| `find_writes_to_8007b85c.py` / `find_dat_80084540_writers.py` | Targeted writers/readers of specific globals. |
-| `find_debug_flag_writers.py` | Two-pass scan for writers in the documented debug-flag RAM band. |
-| `find_sound_path_builders.py` | Walks LUI+ADDIU pairs landing in the sound-driver string cluster `0x8007B380..0x8007B3D0`. |
-| `find_move_table_consumers.py` | Two-pass scan for readers of the MOVE / MOVE2 buffers. |
-| `find_effect_bundle_consumers.py` | Run on a battle-overlay save state to surface the effect-bundle subsystem (init / spawn / walker). |
-| `find_field_program_xrefs.py` / `find_game_mode_dispatcher.py` / `find_game_mode_writers.py` / `find_gp_init_and_mode_table.py` / `dump_mode_table.py` / `dump_mode_names_and_handlers.py` | Game-mode state-machine recon family — locate the 28-mode table at `0x8007078C` and trace handler functions. |
-| `inventory_overlay.py` | Per-program function inventory dumper. Emits `inventory_<programname>.csv` with one row per function (entry / size / outgoing / incoming / top callees). |
-| `find_tmd_renderer.py` / `find_tmd_table_readers.py` / `find_gte_users.py` | TMD renderer recon — locate readers of the TMD pointer table and count GTE ops per function. |
-| `dump_data_region.py` | Dumps arbitrary byte ranges as hex + u32 LE. Useful for extracting in-binary tables once their address is known. |
-| `dump_field_vm_dispatchers.py` | One-shot dumper for the field-VM 0x50/0x60/0x70 default-route trio + the generic ramp scheduler. |
+| `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. |
+| `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has `>=8` instructions ending in `jr $ra` before committing the function. |
+
+**LUI+ADDIU and address-resolution helpers**
+
+| Script | Purpose |
+|---|---|
+| `find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. |
+| `find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address — catches function-pointer tables. |
+| `find_string_xrefs.py` | Resolve dev-path string literals (`h:\\prot\\...`) to RAM addresses and dump every code site that references them. |
+
+**Caller / xref helpers**
+
+| Script | Purpose |
+|---|---|
+| `find_callers_of.py` | Generic "callers of these target functions" tool. Edit `TARGETS_HEX`. |
+| `find_callers_of.py` + `find_addr_data.py` | Combined check for "is this function actually called?" — direct `jal` plus address-as-data. |
+| `dispatcher_callers.py` | Callers of `FUN_8001f05c` (asset dispatcher) and `FUN_8001a55c` (LZS). |
+| `find_jalr_handlers.py` | Locate dispatch-table indirect calls (`lw R, +0x10(...)` followed by `jalr R`). |
+
+**Subsystem-targeted scanners**
+
+| Script | Purpose |
+|---|---|
+| `find_sound_path_builders.py` | LUI+ADDIU pairs landing in the sound-driver string cluster `0x8007B380..0x8007B3D0` (see [`docs/formats/sound-driver.md`](../formats/sound-driver.md)). |
+| `find_debug_flag_writers.py` | Two-pass scan for writers/readers of the documented debug-flag RAM band `0x8007B400..0x8007BCFF`. |
+| `find_move_table_consumers.py` | Readers of the MOVE / MOVE2 buffers (`0x8007B888` / `0x8007B840`). |
+| `find_anm_buffer_users.py` | Readers/writers of the ANM buffer pointer (`_DAT_8007b7c8`). |
+| `find_mes_buffer_users.py` | Readers/writers of the MES dialog buffer pointer (`_DAT_8007b8a8`). |
+| `find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
+| `find_gte_users.py` | Count COP2 / GTE instructions per function — surfaces renderer + transform candidates. |
+| `find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
+| `find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
+| `find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
+| `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |
+| `asset_table_xrefs.py` | Xrefs to and around `0x801C70F0` (the in-RAM PROT TOC). |
+| `find_effect_bundle_consumers.py` | Effect-bundle init / spawn / walker (run on an imported battle overlay). |
+
+**Game-mode state-machine recon**
+
+| Script | Purpose |
+|---|---|
+| `find_field_program_xrefs.py` | Resolve the field-program / mode-name string literals and dump xrefs. |
+| `find_game_mode_dispatcher.py` | Hunt for the game-mode dispatcher via the documented mode strings. |
+| `find_game_mode_writers.py` | Writers of the game-mode register at `gp[0x524]` / `gp[0x494]`. |
+| `find_gp_init_and_mode_table.py` | Locate `$gp` initialization and readers of the 28-entry mode table at `0x8007078C`. |
+| `find_per_mode_callers.py` | Direct or indirect callers of any handler in the mode table. |
+
+**Overlay capture and analysis**
+
+| Script | Purpose |
+|---|---|
+| `find_overlay_candidates.py` | Stand-alone Python (no Ghidra) — scans extracted PROT entries for MIPS-code-likelihood and ranks candidates. |
+| `dump_overlay.lua` | PCSX-Redux Lua: dump the runtime overlay code window `0x801C0000..0x801EFFFF` to `/tmp/`. |
 | `import_overlay.sh` | Bash wrapper that imports + analyzes a captured overlay dump as Raw Binary at base `0x801C0000`. |
+| `find_overlay_calls.py` | Every call (jal or resolved jalr) into the RAM-resident overlay region `0x801C0000..0x801FFFFF`. |
+| `find_overlay_asset_loads.py` | Run on an imported overlay program: const-track every `jal` to a known SCUS asset loader and emit a CSV of `loader,prot_index_or_string,caller_func,call_site`. |
+| `inventory_overlay.py` | Per-program function inventory. Emits `inventory_<programname>.csv` with one row per function (entry / size / outgoing / incoming / top callees). |
+| `list_overlay_functions.py` | List functions in the active overlay program sorted by size, with outgoing-call counts. |
+| `list_programs.py` | List every program currently in the Ghidra project. |
+
+**Static-analysis utilities**
+
+| Script | Purpose |
+|---|---|
+| `explore.py` | Dump a JSON report of `SCUS_942.54`: every function with an LZSS-decoder fingerprint score, plus every defined string and its inbound xrefs. |
 
 Cross-cutting helpers under `scripts/` (host-side, not Ghidra):
 

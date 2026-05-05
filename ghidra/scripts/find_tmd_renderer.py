@@ -4,17 +4,11 @@
 # Find functions that read from the TMD pointer table at 0x8007C018 + idx*4.
 #
 # FUN_80026b4c writes registered TMDs to *(0x8007C018 + DAT_8007b774 * 4).
-# This script looks for indexed reads of that table.
-#
-# IMPORTANT: a previous version of this script had a register-tracking bug --
-# it didn't invalidate per-register knowledge when a non-LUI/ADDIU instruction
-# wrote to the register. That gave false positives where `lui v0,0x8008; lw
-# v0,-0x72b4(v0); lw a0,0x18(v0)` was misread as "lw a0 at 0x8007C018" when
-# actually the second lw had loaded a totally different pointer into v0
-# (PTR_PTR_80078d4c, the PSX GPU library function table).
-#
-# Now we use Ghidra's `getResultObjects()` to detect any write to a register
-# and drop our tracked LUI/ADDIU value when that happens.
+# This script looks for indexed reads of that table by tracking LUI/ADDIU
+# pairs per register and using `getResultObjects()` to invalidate the
+# tracked value whenever a non-LUI/ADDIU instruction writes to the register
+# (necessary to avoid false positives where the register has been reloaded
+# with an unrelated pointer between the LUI and the indexed access).
 
 from ghidra.program.model.lang import Register
 
@@ -23,9 +17,8 @@ af = prog.getAddressFactory()
 fm = prog.getFunctionManager()
 listing = prog.getListing()
 
-TABLE_ADDR = 0x8007C018  # exact start of the TMD pointer table
-# (recovered from FUN_80026b4c: lui 0x8008 + addiu -0x3FE8 = 0x8007C018,
-# NOT 0x80080018 as previous notes claimed)
+# Recovered from FUN_80026b4c: lui 0x8008 + addiu -0x3FE8 = 0x8007C018.
+TABLE_ADDR = 0x8007C018
 
 
 def parse_load_offset(operand):

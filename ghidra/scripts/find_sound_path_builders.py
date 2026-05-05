@@ -4,10 +4,8 @@
 # Sweep SCUS for LUI+ADDIU pairs that combine to land in the sound-driver
 # string cluster (0x8007B38C..0x8007B3C8). Reports each instruction whose
 # computed address falls in that range, plus the function it belongs to.
-#
-# This unblocks PRD section 4.1 row "Sound-driver output formats" -- we need
-# to find the path-builder consumers before we can match extension to PROT
-# entry.
+# This locates the path-builder consumers that drive the sound-driver
+# loaders (.dpk / .spk / .MAP / .PCH / etc.). See docs/formats/sound-driver.md.
 #
 # Run with:
 #   docker compose exec -T ghidra /ghidra/support/analyzeHeadless \

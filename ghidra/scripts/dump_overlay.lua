@@ -3,10 +3,9 @@
 -- PCSX-Redux GUI, or paste into the Lua console.
 --
 -- The overlay window holds code that is NOT present in SCUS_942.54: per-mode
--- handlers, the script VM, and various subsystem modules loaded at runtime.
--- Static scanning of every extracted file failed to find this code (see
--- BACKLOG 4.3.1 / project_overlay_hunt memory). Dynamic capture is the only
--- known path.
+-- handlers, the field/actor/effect VMs, and various subsystem modules loaded
+-- at runtime. Static scanning of the disc-extracted files cannot locate these
+-- as code; dynamic capture is the canonical path.
 --
 -- Usage:
 --   1. Boot the game in PCSX-Redux past the title screen (so overlays are
@@ -15,7 +14,7 @@
 --   2. Run this script. It dumps 0x801C0000..0x801EFFFF (192 KB) to a file
 --      under /tmp/.
 --   3. The console prints the output path. Copy that file into the Ghidra
---      container and import per docs/REVERSING.md.
+--      container and import via ghidra/scripts/import_overlay.sh.
 
 local BASE       = 0x801C0000   -- KSEG0 virtual address
 local END        = 0x801F0000   -- exclusive
@@ -86,4 +85,4 @@ end
 print("[overlay-dump] done.")
 print("[overlay-dump] To analyze: copy into the Ghidra container and import")
 print("[overlay-dump] with -loader BinaryLoader -loader-baseAddr 0x801C0000")
-print("[overlay-dump] -processor MIPS:LE:32:default. See docs/REVERSING.md.")
+print("[overlay-dump] -processor MIPS:LE:32:default. See docs/tooling/overlay-capture.md.")

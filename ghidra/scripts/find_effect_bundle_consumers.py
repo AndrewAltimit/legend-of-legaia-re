@@ -3,9 +3,9 @@
 #
 # Find consumers of the effect-bundle data structure in the battle overlay.
 #
-# Background: 503 PROT entries use the 0x02018B0C / 28-entry-schema effect
-# bundle format. The runtime consumer is overlay-resident — zero references
-# to the magic word or the buffer pointers in SCUS_942.54 or in non-battle
+# Background: PROT entries that use the 0x02018B0C / 28-entry-schema effect
+# bundle format have an overlay-resident consumer — zero references to the
+# magic word or the buffer pointers exist in SCUS_942.54 or in non-battle
 # overlays. Once a battle overlay is imported (see scripts/import_overlay.sh
 # pointed at /tmp/legaia_overlay_battle.bin), this script locates:
 #
@@ -28,7 +28,7 @@ af = prog.getAddressFactory()
 fm = prog.getFunctionManager()
 listing = prog.getListing()
 
-# Memory addresses we care about. From session 2026-05.
+# Memory addresses we care about.
 TARGETS = {
     0x8007BD30: "_DAT_8007BD30 (registered effects table)",
     0x8007BD5C: "_DAT_8007BD5C (efect.dat buffer pointer)",
