@@ -54,33 +54,33 @@
 <section class="doc-section" id="status">
   <h2>Where we are</h2>
   <p class="lede" style="font-size: 1.05rem;">
-    The disc is fully readable. Every major subsystem is traced and documented. Three out of three script VMs are decoded; two are ported. The battle and combat-stat machinery is decoded. Asset preservation track ships round-trip parsers for every documented format.
+    The disc is fully readable. Every major subsystem is traced and documented. All three core game VMs are ported, plus the battle action state machine and effect pool. The combat-stat machinery is decoded. The asset preservation track ships round-trip parsers for every documented format.
   </p>
 
   <div class="status-grid">
     <div class="status-card status-done">
       <div class="status-card-title">Disc + asset preservation</div>
-      <div class="status-card-body">Mode2/2352 reader, ISO9660 walker, PROT.DAT TOC math, 24 format detectors classifying ~80% of PROT entries by class. Round-trip parsers ship for TIM, TMD, VAB, MES (partial), ANM, MDT, LZS, scene bundles.</div>
+      <div class="status-card-body">Mode2/2352 reader, ISO9660 walker, PROT.DAT TOC math, format detectors classifying the bulk of PROT entries by class. Round-trip parsers ship for TIM, TMD, VAB, SEQ, MES (partial), ANM, MDT, LZS, plus the scene-bundle family.</div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Static analysis</div>
-      <div class="status-card-body">1310 function dumps committed; 98.5% closed-loop on the citation graph (1119 / 1136 cited helpers covered). Three game VMs decoded. All major SCUS subsystems traced.</div>
+      <div class="status-card-body">Function dumps committed for the bulk of the binary. Closed-loop on the citation graph at &gt;98%. All three game VMs decoded plus the battle action state machine. All major SCUS subsystems traced.</div>
     </div>
     <div class="status-card status-partial">
       <div class="status-card-title">Engine port — Phase 1</div>
-      <div class="status-card-body">Asset viewer with PSX VRAM emulation, textured TMD rendering, stage geometry, VAB playback. <a href="viewer.html">In-browser version live.</a></div>
+      <div class="status-card-body">Asset viewer with PSX VRAM emulation, textured TMD rendering, stage geometry, VAB playback, SEQ + VAB sequencer. <a href="viewer.html">In-browser version live.</a></div>
+    </div>
+    <div class="status-card status-done">
+      <div class="status-card-title">Engine port — Phase 2</div>
+      <div class="status-card-body">Runtime port. Actor VM (13 ops), Field VM (43 ops), Move VM (71 + 61 ext sub-ops), Effect VM, and the battle action state machine all ported. Composite <code>World</code> in <code>engine-core</code> wires them together. Clean-room SPU mixer + sequencer drive playback.</div>
     </div>
     <div class="status-card status-partial">
-      <div class="status-card-title">Engine port — Phase 2</div>
-      <div class="status-card-body">Runtime port. Actor + Field VMs fully ported (13 + 43 opcodes). Move VM port in progress (71 + 61 opcodes).</div>
-    </div>
-    <div class="status-card status-open">
       <div class="status-card-title">Engine port — Phase 3</div>
-      <div class="status-card-body">Gameplay assembly. Field map + dialog, battle subsystem, menus, save/load. Not started.</div>
+      <div class="status-card-body">Gameplay assembly. Battle action FSM is in place; field map / dialog / menus / save-load still to wire.</div>
     </div>
     <div class="status-card status-open">
       <div class="status-card-title">Open work</div>
-      <div class="status-card-body">Move-VM port wrap-up, dialog font glyph atlas extraction (need VRAM dump), MES dialog renderer (overlay-resident), DATA_FIELD per-field layout final reverse.</div>
+      <div class="status-card-body">Sprite engine wiring (sheet &rarr; wgpu draw calls + per-frame tween), dialog font glyph atlas extraction (needs VRAM dump), MES dialog renderer (overlay-resident dispatcher in <code>FUN_801ED710</code>), DATA_FIELD per-field layout final reverse.</div>
     </div>
   </div>
 </section>

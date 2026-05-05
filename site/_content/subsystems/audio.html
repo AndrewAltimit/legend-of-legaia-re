@@ -188,6 +188,46 @@
   <p>Engine reimpl can map the entire cluster to <code>std::fs</code> + a frame-paced sleep.</p>
 </section>
 
+<section class="doc-section" id="engine-spu">
+  <h2>Engine-audio model &mdash; clean-room SPU port</h2>
+  <p><code>crates/engine-audio</code> ports the SPU side of the audio stack as a clean-room model. No Sony bytes; the spec is this page plus the libspu API surface and the standard PSX SPU register layout.</p>
+  <table>
+    <thead><tr><th>Module</th><th>Maps to</th></tr></thead>
+    <tbody>
+      <tr><td><code>spu::Spu</code></td><td>The 24-voice mixer (one <code>Voice</code> per slot) + master volume + a stub reverb-mode register.</td></tr>
+      <tr><td><code>spu::voice::Voice</code></td><td>Per-voice state: sample address, loop point, pitch, ADSR, L/R volume &mdash; the libspu <code>SpuSetVoiceAttr</code> surface.</td></tr>
+      <tr><td><code>spu::adsr</code></td><td>The 5-phase ADSR envelope (Attack &ndash; Decay &ndash; Sustain &ndash; Release &ndash; Off) with linear / exponential / increase / decrease modes per the standard PSX formula.</td></tr>
+      <tr><td><code>spu::adpcm</code></td><td>Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block <code>prev1</code>/<code>prev2</code> history.</td></tr>
+      <tr><td><code>spu::ram</code></td><td>512 KB SPU RAM model + libspu-shaped transfer engine (<code>SpuRam::set_direction</code> / <code>write</code> / <code>read</code> + <code>SpuAllocator</code> for <code>SsSpuMalloc</code> / <code>SpuFree</code>).</td></tr>
+      <tr><td><code>vab_bind::VabBank</code></td><td>Bridges <code>legaia_vab::VabReport</code> into the SPU: <code>upload(spu, alloc, report, buf)</code> drops every VAG body into SPU RAM through the allocator, and <code>play_note(spu, voice, prog, note, velocity)</code> translates a MIDI key into voice config + key-on. Pitch math matches <code>_SsKey2Pitch</code> / libspu key-to-pitch.</td></tr>
+      <tr><td><code>AudioOut</code></td><td>Owns a single cpal output stream that drains the <code>Spu</code> at 44.1 kHz and resamples to the host device rate (linear). Engines call <code>with_spu(|spu| ...)</code> from outside the audio thread to push voice attributes / key-on masks.</td></tr>
+    </tbody>
+  </table>
+  <p>What this <strong>does not</strong> model (out of scope for the first port pass):</p>
+  <ul class="bullets">
+    <li><strong>Reverb.</strong> The reverb register is stored, never interpreted. Spirit Arts use it; needs work before those play correctly.</li>
+    <li><strong>Pitch modulation, noise, FM.</strong> None used by Legaia (verified against the libspu calls in the SCUS dumps &mdash; <code>SpuSetPitch</code> is the only pitch path).</li>
+    <li><strong>Asynchronous DMA timing.</strong> The transfer engine here is synchronous (queue + drain collapsed) &mdash; fine because the playback layer reads SPU RAM directly during voice ticks. The model preserves the <em>API shape</em> (<code>set_transfer_start_units_8</code> / <code>set_direction</code> / <code>write</code>) so the libspu callers map cleanly.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="engine-sequencer">
+  <h2>Engine-audio model &mdash; Sequencer port</h2>
+  <p>The <code>legaia-engine-audio::Sequencer</code> is the runtime side of the SsAPI sequencer cluster above. Surface mirrors <code>SsSeqOpen</code> / <code>SsSeqPlay</code> / <code>SsSeqClose</code> / <code>SsSeqSetVol</code> without copying any Sony bytes:</p>
+  <table>
+    <thead><tr><th>Method</th><th>Maps to</th></tr></thead>
+    <tbody>
+      <tr><td><code>Sequencer::new(seq, bank)</code></td><td><code>SsSeqOpen</code> &mdash; bind one SEQ + one VAB bank, allocate channel state.</td></tr>
+      <tr><td><code>Sequencer::tick_us(spu, dt_us)</code></td><td>Per-frame poller &mdash; drains events whose accumulated us elapsed at current tempo.</td></tr>
+      <tr><td><code>Sequencer::set_master_vol(vol)</code></td><td><code>SsSeqSetVol</code> master.</td></tr>
+      <tr><td><code>Sequencer::set_loop_to(idx)</code></td><td>Loop point (<code>_DAT_801CD2C0[i] + 0x98</code> repeat-bit equivalent).</td></tr>
+      <tr><td><code>Sequencer::stop(spu)</code></td><td><code>_SsSeqCtrl(mode=1)</code> &mdash; silences and freezes.</td></tr>
+      <tr><td><code>Sequencer::rewind_to(idx, spu)</code></td><td><code>SsSeqRewind</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>Voice allocation is round-robin over the 24 SPU voices, with the sequencer tracking <code>(channel, key) &rarr; voice</code> so the matching key-off can shut down the right slot. Tempo events from the SEQ override the running tempo at the event's absolute tick (matching libsnd's mid-stream <code>0xFF 0x51</code>). PitchBend / Aftertouch are accepted by the parser and ignored by the playback path until the engine wires per-voice modulation.</p>
+</section>
+
 <section class="doc-section" id="xa">
   <h2>XA-ADPCM (in-progress)</h2>
   <p><code>crates/xa</code> decodes the format spec correctly on synthetic inputs. The on-disc <code>.XA</code> files use a non-standard interleave &mdash; ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.</p>
