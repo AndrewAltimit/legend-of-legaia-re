@@ -1,0 +1,98 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · functions</div>
+  <h1>Key functions</h1>
+  <p class="lede">A directory of the Ghidra-traced anchor functions across the codebase. The full per-function reference (with descriptions) is in the markdown doc on GitHub. This page is a quick orientation that groups them by subsystem.</p>
+</header>
+
+<section class="doc-section">
+  <h2>By subsystem</h2>
+
+  <div class="fnref-grid">
+    <div class="fnref-block">
+      <h3>Boot + asset loader</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_8003E4E8</code> — boot-time TOC loader; reads first 3 sectors of PROT.DAT into <code>0x801C70F0</code></li>
+        <li><code>FUN_8003E8A8</code> — LBA resolver against the in-RAM TOC</li>
+        <li><code>FUN_8003E6BC</code> — path-based file opener (<code>data\battle\efect.dat</code> etc.)</li>
+        <li><code>FUN_8001F05C</code> — asset-type dispatcher</li>
+        <li><code>FUN_80020224</code> — descriptor-pair walker</li>
+        <li><code>FUN_8002541C</code> — streaming-asset driver</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>Game VMs</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_801D6628</code> — actor / sprite VM (13 opcodes, JT at <code>0x801CED70</code>)</li>
+        <li><code>FUN_80023070</code> — move-table VM (71 opcodes, JT at <code>0x80010778</code>)</li>
+        <li><code>FUN_801D362C</code> — move-VM extension (61 sub-opcodes via op <code>0x2F</code>)</li>
+        <li><code>FUN_801DE840</code> — field / event script VM (43 ops, switch at <code>0x801E00F4</code>)</li>
+        <li><code>FUN_800204F8</code> — move-buffer setup (Tactical Arts)</li>
+        <li><code>FUN_80021DF4</code> — per-frame actor tick</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>Renderer + GTE</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_8002735C</code> — Legaia TMD renderer (60 GTE ops)</li>
+        <li><code>FUN_80026B4C</code> — TMD validate + register</li>
+        <li><code>FUN_800268DC</code> — TMD pointer fixup</li>
+        <li><code>0x80010778</code> — move-VM jump table</li>
+        <li><code>DAT_8007326C</code> — per-mode primitive descriptor table</li>
+        <li><code>0x801CE868</code> — move-VM extension JT</li>
+        <li><code>0x800EB654</code> — battle context struct (pointed to by <code>_DAT_8007BD24</code>)</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>Battle</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_801E295C</code> — battle action state machine (16 KB)</li>
+        <li><code>FUN_801D0748</code> — battle main dispatcher</li>
+        <li><code>FUN_800520F0</code> — battle scene loader</li>
+        <li><code>FUN_8004E2F0</code> — battle range / line-of-sight</li>
+        <li><code>FUN_80054CB0</code> — monster init</li>
+        <li><code>FUN_80042558</code> — per-frame stat aggregator</li>
+        <li><code>FUN_8003FB10</code> — action validator</li>
+        <li><code>FUN_800431D0</code> — ability bitmask read</li>
+        <li><code>0x801C9370</code> — 8-actor pointer table</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>Audio (PsyQ)</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_8001FA88</code> — sound init / .dpk loader</li>
+        <li><code>FUN_8001FC00</code> — streaming-asset loader (sound\)</li>
+        <li><code>FUN_8001EBEC</code> — mode-aware ext dispatcher</li>
+        <li><code>FUN_800243F0</code> — BGM lookup (PROT-relative)</li>
+        <li><code>FUN_8003E104</code> — monster.snd loader</li>
+        <li><code>0x80061-0x80067</code> — libsnd SsAPI sequencer cluster</li>
+        <li><code>0x80068-0x6D</code> — libspu SPU control cluster</li>
+        <li><code>FUN_80069B18</code> — SPU DMA transfer state machine</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>BIOS + libapi</h3>
+      <ul class="fnref-list">
+        <li><code>0x80056678</code> — <code>EnterCriticalSection</code></li>
+        <li><code>0x80056688</code> — <code>ExitCriticalSection</code></li>
+        <li><code>0x80056658</code> — <code>TestEvent</code></li>
+        <li><code>0x8006B844</code> — <code>WaitEvent</code></li>
+        <li><code>0x80057024</code> — <code>memmove</code></li>
+        <li><code>0x8005ACAC</code> — <code>memset</code></li>
+        <li><code>0x8005E540</code> — <code>memcpy</code></li>
+        <li><code>0x80056698+</code> stride 0x10 — BIOS B-vector thunk cluster</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Full reference</h2>
+  <p>Every function above (and ~50 more) is described in detail with provenance citations in the markdown doc:</p>
+  <p><a class="cta" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md" target="_blank" rel="noopener">docs/reference/functions.md →</a></p>
+  <p>Per-function dumps (Ghidra disassembly + decompile) live under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> in the repo. There are 1310+ of these; coverage of the citation graph is at 98.5%.</p>
+</section>

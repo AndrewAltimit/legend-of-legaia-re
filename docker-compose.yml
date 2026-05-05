@@ -1,0 +1,46 @@
+# Ghidra service for headless analysis of the Legaia executable + assets.
+#
+# Built from `docker/ghidra.Dockerfile`, which wraps `blacktop/ghidra:latest`
+# in a UID/GID-matched user so files written by Ghidra (project DB, function
+# dumps, inventory CSVs) come back as the host user instead of root.
+#
+# UID/GID resolution order:
+#   1. `USER_ID` / `GROUP_ID` env vars in this shell (or `.env` at the project
+#      root — docker compose auto-reads it).
+#   2. Default `1000:1000` (matches the base image's `ubuntu` account on
+#      most Linux hosts).
+#
+# To pin to your host user explicitly, drop a `.env` file alongside this
+# `docker-compose.yml`:
+#   USER_ID=1000
+#   GROUP_ID=1000
+# or pass them on the command line:
+#   USER_ID=$(id -u) GROUP_ID=$(id -g) docker compose build ghidra
+#
+# Usage examples:
+#   docker compose build ghidra        # (re)build after Dockerfile changes
+#   docker compose up -d ghidra        # start the long-running service
+#   docker compose exec ghidra /ghidra/support/analyzeHeadless \
+#       /projects legaia -import /data/SLUS_006.84 -processor MIPS:LE:32:R3000
+#   docker compose down
+#
+# Existing root-owned files: if you already ran the older container (which
+# wrote files as root), one-time chown them back to your user before bringing
+# the new build up:
+#   sudo chown -R $(id -u):$(id -g) ghidra/projects ghidra/scripts/funcs
+
+services:
+  ghidra:
+    build:
+      context: .
+      dockerfile: docker/ghidra.Dockerfile
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    init: true
+    volumes:
+      - ./extracted:/data:ro
+      - ./ghidra/projects:/projects
+      - ./ghidra/scripts:/scripts
+    working_dir: /projects
+    command: ["sleep", "infinity"]

@@ -1,0 +1,77 @@
+# Format Reference
+
+Every format documented here has a clean-room Rust parser somewhere in the workspace, an Ghidra-traced provenance, and a byte-level layout. Confidence levels:
+
+- **Confirmed** — verified end-to-end against real on-disc data, with passing tests.
+- **Inferred** — deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.
+- **Unknown** — known to exist but not yet decoded.
+
+## Disc + container layer
+
+| Page | What it covers |
+|---|---|
+| [PSX disc geometry](disc.md) | Mode2/2352 sector layout, ISO9660 walk |
+| [PROT.DAT / DMY.DAT TOC](prot.md) | Top-level archive: 1232 numbered entries, TOC math, in-RAM TOC at `0x801C70F0` |
+| [CDNAME.TXT name map](cdname.md) | The `#define`-driven naming for PROT entries |
+
+## Compression + dispatch
+
+| Page | What it covers |
+|---|---|
+| [Legaia LZS](lzs.md) | The custom LZSS variant (`FUN_8001A55C`); 4096-byte ring buffer, init pos 0xFEE, LSB-first control bits |
+| [Asset type dispatcher](asset-type.md) | `FUN_8001F05C` — type-byte table that routes per-asset payloads |
+| [Pack format](pack.md) | `u32 count + u32 offsets[]` used inside DATA_FIELD chunks |
+| [Standalone TIM-pack](tim-pack.md) | Distinct outer container with `(magic_lo, magic_hi, count<16, marker=0x01)` header |
+
+## Per-asset formats
+
+| Page | What it covers |
+|---|---|
+| [PSX TIM](tim.md) | Texture format. 4/8/16/24bpp. CLUT-aware. PNG export round-trips. |
+| [Legaia TMD](tmd.md) | Custom PSX TMD variant (magic `0x80000002`). 8-byte group header, `count × ilen*4` stride. Renderer at `FUN_8002735C`. |
+| [VAB sound bank](vab.md) | Sony's standard SPU instrument bank — `VABp` magic, 128 program × 16 tone slots, SPU-ADPCM bodies. |
+| [MES dialog](mes.md) | Two variants (Compact `0x404` and Records `0x44 0x78`); offset table + bytecode. Renderer is overlay-resident. |
+| [Dialog font](dialog-font.md) | Proportional Latin font for dialog/menu text. Width table at `0x80073F1C`, escape table at `0x80074050`, glyph bitmaps in VRAM at `(896, 0)`. |
+| [ANM animation](anm.md) | `(u16 count, u16 offsets[count], records)` layout. Asset type `0x06`. |
+| [MDT move table](mdt.md) | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
+
+## Streaming + scene containers
+
+| Page | What it covers |
+|---|---|
+| [DATA_FIELD streaming](data-field.md) | `[type, size, data]` chunk stream consumed by `FUN_8002541C` |
+| [Scene bundles](scene-bundles.md) | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) — the dominant per-scene asset shapes |
+| [Effect bundles](effect.md) | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
+| [Field-pack format](field-pack.md) | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
+
+## Runtime overlay carriers
+
+| Page | What it covers |
+|---|---|
+| [MIPS overlay code](mips-overlay.md) | PROT entries that carry runtime code blobs (recognized by `addiu sp, sp, -X` prologue) |
+| [Overlay pointer-table code](overlay-ptr-table.md) | Sister format — entries whose first chunk is a function/jump-table header pointing into `0x801C0000..=0x801FFFFF` |
+
+## Audio path-strings
+
+| Page | What it covers |
+|---|---|
+| [Sound-driver path-string cluster](sound-driver.md) | The string-builder cluster at `0x8007B38C` and the eight file extensions the runtime resolves through it (`.spk`, `.LZS`, `.dpk`, `.MAP`, `.PCH`, `.pac`, `STR`, `bse.dat`) |
+
+## Placeholders + dev fixtures
+
+| Page | What it covers |
+|---|---|
+| [Pochi-filler placeholder slots](pochi.md) | 265 PROT entries are dev-fill placeholders — recognised by `pochipochi…` ASCII + `0x1A` DOS-EOF marker at `+0x786` |
+| [DMY.DAT (dev fixtures)](dmy.md) | Memory-bus test pattern + paired random blobs. Not real game data. |
+
+## Asset-descriptor format (still hunting a runtime caller)
+
+| Page | What it covers |
+|---|---|
+| [Asset descriptor format](asset-descriptor.md) | `(type_size, data_offset)` pair walker (`FUN_80020224`) — known structure, runtime caller is `FUN_801D6704` (town init) |
+
+## Video / pre-rendered
+
+`MOV/MV*.STR` files are PSX MDEC video streams. Public decoders exist (jPSXdec, PSX-MDEC docs); the engine track delegates to those rather than re-implementing.
+
+`XA/XA*.XA` files are XA-ADPCM audio streams. The decoder in `crates/xa` is spec-correct on synthetic input but the on-disc files use a non-standard interleave; this is still under investigation.

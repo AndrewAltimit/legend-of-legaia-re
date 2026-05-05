@@ -1,0 +1,209 @@
+# Move-table opcode VM
+
+A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from the [field/event script VM](script-vm.md) and the [actor / sprite VM](actor-vm.md): the move VM lives in `SCUS_942.54`, runs on the per-actor "move buffer" set up by `FUN_800204F8`, and is invoked every frame from the actor tick. The opcode space is **71 instructions** (`0x00..0x46`); opcode `0x2F` escapes to a per-overlay extension dispatcher in the town overlay (`FUN_801D362C`, **61 sub-opcodes** `0x00..0x3C`).
+
+## Three-VM picture
+
+| VM | Driver fn | Where | Opcode count | Operand width |
+|---|---|---|---|---|
+| Actor / sprite VM | `FUN_801D6628` | Title-screen overlay (0971) | 13 (`docs/subsystems/actor-vm.md`) | byte stream |
+| **Move VM** | `FUN_80023070` | `SCUS_942.54` | 71 (`0x00..0x46`) | u16 stream |
+| Field / event VM | `FUN_801DE840` | Town overlay (0897) | 43 (`0x21..0x4F`, with gaps) + 0x5x/6x/7x default-route | byte stream |
+
+The three are wired:
+- Field VM op `0x22` `EXEC_MOVE` calls `FUN_800204F8`, which finds the move record for `move_id` and stages it into the actor at `actor[+0x48]` (buffer base) / `actor[+0x70]` (PC).
+- Actor tick (`FUN_80021DF4`, per frame) and actor spawn (`FUN_80021B04`, one-shot) both call `FUN_80023070(actor)` to step the move buffer.
+- Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **scene-specific extension opcodes** that live in the town overlay.
+
+## Function signature
+
+```c
+int FUN_80023070(int actor);
+```
+
+No PC argument: the PC is stored on the actor at `+0x70`. The function loops, executing opcodes until one of them clears the loop flag (e.g. opcode `0x08` "halt"). Each handler updates `actor[+0x70]` by writing `param_3` (the local "size in u16 units") into a register that the loop epilogue commits.
+
+## Top-level dispatch
+
+```c
+short* op = (short*)(actor[+0x48] + actor[+0x70] * 2);   // u16-aligned PC
+short  v1 = op[0];
+if (v1 >= 0x47) goto epilogue;                            // out-of-range → end loop
+v0 = jt[v1];                                              // JT at 0x80010778
+goto v0;                                                  // computed jump
+```
+
+- Buffer base: `actor[+0x48]`. The pointer `_DAT_8007B888` (MOVE) or `_DAT_8007B840` (MOVE2) is the runtime root, but per-actor offsets are baked in at setup time by `FUN_800204F8`.
+- PC: `actor[+0x70]` (i16, in **u16 units**). Each handler advances by its case-specific size.
+- Jump table: `0x80010778` in `SCUS_942.54`, **71 entries × 4 bytes**.
+
+## Actor-side state surfaced by opcodes
+
+The move VM rewrites a wide swath of the actor struct:
+
+| Offset | Type | Use |
+|---|---|---|
+| `+0x10` | u32 | Actor flag word. Bit `0x8` set by op `0x08`; `0x2`/`0x1000`/`0x10000`/`0x40000000` toggled by various opcodes. |
+| `+0x14`/`+0x16`/`+0x18` | u16 | World X / Y / Z (op `0x07` absolute set, op `0x01` add, op `0x03` rotate-add). |
+| `+0x22` | u16 | Y-rotation (per-frame ramp by op `0x2D`/`0x35`/`0x37`). |
+| `+0x24`/`+0x26`/`+0x28` | u16 | Camera/render slots (op `0x05` add, op `0x06` write `+0x26`, op `0x39` write all three). |
+| `+0x2A` | u16 | World Y mirror (kept in sync with `+0x16` for collision lookup). |
+| `+0x3C`/`+0x3E`/`+0x40` | u16 | Animation bank (op `0x00`: `[v << 3]`). |
+| `+0x44` | int* | Pointer to a per-actor scratch struct (used by `0x3C` and the `0x44+` family). |
+| `+0x54` | u16 | Wait/timer (op `0x09` set; ticked down by `FUN_80021DF4`). |
+| `+0x62` | u16 | Local flag bank — 16 bits. AND/OR by ops `0x31`/`0x32`. |
+| `+0x70` | i16 | **The move-VM PC** (in u16 units). |
+| `+0x74` | u32 | Composite control word (op `0x33` clears bit `0x40000000`). |
+| `+0x80`/`+0x82`/`+0x84` | u16 | Animation slots, `[v << 3]` (op `0x04`). |
+| `+0x90`/`+0x92`/`+0x94` | u16 | Tween source (op `0x35`/`0x37` absolute / increment). |
+| `+0x96`/`+0x98`/`+0x9A` | u16 | Tween scale (op `0x2E`, `[v << 3]`). |
+| `+0x9C`/`+0xA0`/`+0xA4`/`+0xA8` | i32 | Tween block (op `0x34`, 9-word setup). |
+| `+0xAC..+0xCA` | mixed | Per-frame anim slots (key/curve data; op `0x2C` configures, `+0xC0` is the duration). |
+| `+0xB0..` | u8 | Per-keyframe descriptor (op `0x0A` writes `count` 3-byte slots). |
+| `+0xB2` | i16 | Misc (op `0x38` add). |
+
+## Opcode reference
+
+The cases below are paraphrased from `FUN_80023070` (`ghidra/scripts/funcs/80023070.txt`). Sizes are in **u16 units** (each opcode + operands consumes `param_3` halfwords).
+
+### 0x00 — `ANIM_BANK_SET` (size 4)
+
+`[u16 op, u16 v1, u16 v2, u16 v3]`. `actor[+0x3C..+0x40] = v1..v3 << 3`.
+
+### 0x01 — `WORLD_ADD` (size 4)
+
+`actor[+0x14] += v1; actor[+0x16] += v2; actor[+0x2A] += v2; actor[+0x18] += v3` (Y mirror in `+0x2A`).
+
+### 0x02 — `BANK_SET_98` (size 2)
+
+`actor[+0x98] = v1 << 3`.
+
+### 0x03 — `WORLD_ROTATE_ADD` (size 2)
+
+Adds rotated `v1` into world X / Z using sin/cos table at `_DAT_8007B81C` / `DAT_8007B7F8` indexed by `actor[+0x96] & 0xFFF`.
+
+### 0x04 — `ANIM_BANK_2` (size 4)
+
+`actor[+0x80..+0x84] = v1..v3 << 3`.
+
+### 0x05 — `RENDER_BANK_ADD` (size 4)
+
+`actor[+0x24..+0x28] += v1..v3`.
+
+### 0x06 — `WRITE_26` (size 2)
+
+`actor[+0x26] = v1`.
+
+### 0x07 — `WORLD_SET` (size 4)
+
+Absolute `actor[+0x14..+0x18] = v1..v3` (Y mirror in `+0x2A` matches `v2`).
+
+### 0x08 — `HALT` (size 0, ends loop)
+
+`actor[+0x10] |= 0x8`. Sets `bVar3 = false` so the dispatcher exits without advancing PC.
+
+### 0x09 — `WAIT_SET` (size 2, ends loop)
+
+`actor[+0x54] = v1 << 3` (the wait timer; `FUN_80021DF4` ticks it down each frame).
+
+### 0x0A — `KEYFRAME_LOAD` (variable, size = `3 + count*3`)
+
+`actor[+0x10] |= 0x1000`. `actor[+0x6C] = byte(op[2])`. Then loops `count = op[2]` writing `actor[+0xB0+i] = byte(op[3+3*i])` and two scaled curves for `+0xB8` / `+0xC8` per slot.
+
+### 0x16 — `STUB` (size 2)
+
+Calls `FUN_80024C80(actor, op[1])`. The body is a pure `jr ra` / nop — the opcode is a no-op. A clean-room port can implement it as PC-advance only; see `ghidra/scripts/funcs/80024c80.txt`.
+
+### 0x2C — `KEY_BUFFER_ALLOC` (size 5)
+
+`[op, count_x, count_y, w, h]` configures `actor[+0xA0..+0xA6] = ops[1..4]`. If `w >= 0x11` allocates `w * h * 2` bytes via `FUN_80017888` and stores at `actor[+0xA8]`; else uses the inline buffer at `actor[+0xAC]`. Then `FUN_8005842C` initialises the descriptor at `actor[+0xA0]`.
+
+### 0x2D — `WORLD_INC_VARIANT` (size 4)
+
+`actor[+0x90] += v1; actor[+0x92] += v2; actor[+0x94] += v3`.
+
+### 0x2E — `TWEEN_SCALE_SET` (size 4)
+
+`actor[+0x96] = v1 << 3; actor[+0x98] = v2 << 3; actor[+0x9A] = v3 << 3`.
+
+### 0x2F — `OVERLAY_EXT` (size = handler return)
+
+```c
+param_3 = func_0x801d362c(actor, op);
+```
+
+**Escape to overlay-defined extension opcodes.** The town overlay's `FUN_801D362C` reads `op[1]` as a 16-bit sub-opcode (range `0x00..0x3C`) and dispatches via its own JT at `0x801CE868` (61 entries × 4 bytes). Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0`, `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of this table.
+
+### 0x30 — `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
+
+If `actor[+0xA8]` was heap-allocated, calls `FUN_800583C8(actor + 0xA0, buf)`; else uses the inline buffer at `actor + 0xAC`. Clears `actor[+0x9C]`. Goto `caseD_22` epilogue.
+
+### 0x31 — `LFLAG_AND` (size 2)
+
+`actor[+0x62] &= v1`. Per-actor local flag bank (16 bits).
+
+### 0x32 — `LFLAG_OR` (size 2)
+
+`actor[+0x62] |= v1`.
+
+### 0x33 — `CLEAR_BIT_40000000` (size 1)
+
+`actor[+0x74] &= ~0x40000000`.
+
+### 0x34 — `TWEEN_SETUP` (size 9)
+
+Loads 8 i16 operands into `actor[+0xAC..+0xC8]` (with `+0xAC`/`+0x9C..0xA8` zero-extended to i32). 9-u16 instruction.
+
+### 0x35 — `WORLD_INC_VARIANT2` (size 3)
+
+`actor[+0x90] += v1; actor[+0x92] += v2`.
+
+### 0x36 — `TWEEN_DURATION_SET` (size 3)
+
+`actor[+0x98] = v1 << 3; actor[+0x9A] = v2 << 3; actor[+0xB8] = 0`.
+
+### 0x37 — `WORLD_SET_VARIANT2` (size 3)
+
+`actor[+0x90] = v1; actor[+0x92] = v2`.
+
+### 0x38 — `B2_ADD` (size 2)
+
+`actor[+0xB2] += v1`.
+
+### 0x39 — `RENDER_BANK_SET` (size 4)
+
+Absolute `actor[+0x24..+0x28] = v1..v3`.
+
+### 0x3A / 0x3B — `FLAG_2_SET` / `FLAG_2_CLEAR` (size 1)
+
+`actor[+0x10] |= 2` / `actor[+0x10] &= ~2`.
+
+### 0x3C — `SCRATCH_WRITE` (size ?)
+
+Writes `(int)(short)v1` into `*actor[+0x44]` (the indirect scratch slot).
+
+(Cases beyond `0x3C` are documented in the function dump but follow the same pattern; consult `ghidra/scripts/funcs/80023070.txt` for the exhaustive list.)
+
+## Control flow
+
+The interpreter loops: read opcode at `actor[+0x70]`, dispatch, write the new PC `actor[+0x70] += param_3`, then either continue or break depending on `bVar3`. Break opcodes:
+
+- `0x08` (HALT): clears the loop flag.
+- `0x09` (WAIT_SET): wait timer is set; further opcodes deferred to next frame.
+- A few epilogue cases (e.g. `0x30`) jump to the epilogue without advancing.
+
+After the loop exits, the function returns; the caller (`FUN_80021B04` or `FUN_80021DF4`) gets a "tick complete for this actor" signal. The next frame's `FUN_80021DF4` updates physics, then re-enters `FUN_80023070` from the saved PC.
+
+## Connection to other crates
+
+- **`crates/mdt`** — parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, `crates/mdt` can grow a disassembler.
+- **`crates/engine-vm`** — clean-room Rust port lives in `move_vm.rs`. The dispatcher (`step` / `run_until_break`), every opcode handler, and the `MoveHost` callback trait live there. Per-frame entry is `move_vm::actor_tick`, which mirrors the gate at `FUN_80021DF4 + 0x80022B94..0x80022BBC`: skip when `wait_timer >= 0`, otherwise step the VM and report `Halted` if the post-call `flags & 0x8` bit is set. `decrement_wait_timer` is the matching pre-tick helper.
+- **Field VM op `0x22`** (`EXEC_MOVE`) — the gateway from script-VM into move-VM; calls `FUN_800204F8` to set up the per-actor buffer.
+
+## Decompile quirks worth knowing
+
+- **Operand units are u16**, not bytes. `op[1]` is the 16-bit operand at offset 2 from the opcode word.
+- **PC is also in u16 units.** `actor[+0x70]` × 2 is the byte offset.
+- **`param_3` is the size in u16 units**, not bytes. The dispatcher epilogue does `actor[+0x70] += param_3`.
+- **0x47-bound check**: `sltiu v0, v1, 0x47`. Out-of-range opcodes silently fall through to the loop-exit, the same shape as the field-VM `default` arm. Treat any opcode `>= 0x47` as "end of move buffer" rather than "unknown opcode".
+- **Cases that "look like NOPs" in the C decompile** still advance the PC via `param_3` — the increment is set in MIPS branch-delay slots and is invisible at the C level (same pattern as the field VM, see `script-vm.md` § "Decompile quirks").

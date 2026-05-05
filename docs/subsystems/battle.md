@@ -1,0 +1,159 @@
+# Battle subsystem
+
+The battle overlay (`0898_xxx_dat`) carries the battle scene loader, the per-actor state machine, and the effect VM cluster. Loaded at RAM `0x801CE818` (same load slot as the town overlay; battle and town never coexist).
+
+## Battle scene loader (`FUN_800520F0`)
+
+11-case state machine. Notable cases:
+
+- **Case 6** — loads the `befect_data` bundle (PROT 0x369–0x36B).
+- **Case 0xE** — initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
+- **Case 0xFF** — dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
+
+The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
+
+## Battle action state machine (`FUN_801E295C`)
+
+16 KB / 4099 instructions / 155 outgoing calls. The action-execution dispatcher: it takes the player's selected action and runs it to completion across multiple frames.
+
+`_DAT_8007BD24` is a **pointer** to the active battle context struct (typed `int*` in the decompile output). The pointer itself is resolved at battle entry; `*_DAT_8007BD24` = `0x800EB654` for the captured battle. The action state machine accesses fields as `(*_DAT_8007BD24)[N]` — i.e. byte N of the pointed-to struct.
+
+The outer dispatch is `switch((*_DAT_8007BD24)[7])` — byte +0x07 of the ctx struct, which holds the **active action ID** for the currently-resolving party action slot. (Byte +0x06 holds the parallel ID for the monster action slot; only one is non-`0xFF` at a time.) The inner dispatch is `switch(actor[+0x1DE])` — the per-actor **action sub-state** (windup → execute → recover-style staging within each action).
+
+Action IDs surfaced from save-state captures:
+
+| ID | Action |
+|---|---|
+| `0x20` | Special move / capture (different sub-states) |
+| `0x28` | Action-menu cursor active (player still selecting) |
+| `0x35` | Magic — summon |
+| `0x47` | Spirit |
+| `0x50` | Martial-arts directional input mode |
+
+The function reads battle actor pointers via `(&DAT_801C9370)[ctx[0x13]]` (resolves the active actor via `ctx[0x13]` = actor slot index, then indexes the 8-slot pointer table). It guards on `_DAT_800846C0 != 2` (game-state check). The global pointer `_DAT_8007BD24` plays the same role as the field-VM context pointer — this is a state machine, not a bytecode VM, but it shares the field VM's "context-pointer-as-VM-state" idiom.
+
+Distinct from:
+- The [field/event script VM](script-vm.md) (which doesn't run in battle).
+- The [effect VM cluster](effect-vm.md) (which handles per-effect spawn/render but doesn't drive actor decisions).
+- The [move-table VM](move-vm.md) (which drives Tactical Arts inputs and per-action keyframe scheduling — a layer below this one).
+
+Found via the `overlay_battle_action.bin` import (mc8 save state with action menu open). Dumped as `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`. The 78-function inventory of the battle overlay is in `overlay_battle_action_inventory.txt` (top 80 dumped). All 6 captured battle modes (summon / special-move / martial-arts-input / spirit / action / capture) load identical battle overlay code — only data buffers (actor table at `0x801C9370`, ctx struct at `0x800EB654`, GPU OT lists, audio scratch) differ between captures.
+
+## Battle context struct
+
+The active battle context lives at `0x800EB654` (resolved at battle entry; the global pointer at `0x8007BD24` is set to this address). 32-byte fixed prefix followed by a per-battle dialog/text buffer.
+
+| Offset | Type | Use |
+|---|---|---|
+| `+0x00` | u8 × 6 | Battle phase/state flags (mostly `01 01 01 00 00 00` while a turn is resolving). |
+| `+0x06` | u8 | Monster-slot active action ID (or `0xFF` if no monster action queued). |
+| `+0x07` | u8 | Party-slot active action ID (or `0xFF`). The outer `switch((*_DAT_8007BD24)[7])` in `FUN_801E295C` keys on this. |
+| `+0x09` | u8 | Turn / phase counter. |
+| `+0x13` | u8 | Active-actor slot index — used to look up the actor pointer via `(&DAT_801C9370)[ctx[0x13]]`. |
+| `+0x14..+0x17` | u8 × 4 | Per-action parameter bytes (target slot, sub-action, etc. — varies by action ID at +0x07). |
+| `+0x18..+0x1B` | u8 × 4 | More action params (dir/elem byte at +0x18, second target at +0x1A, etc.). |
+| `+0x1D` | u8 | Action context flag — `0x03` for summon and capture; `0x00` otherwise. |
+| `+0x29..+0x2D` | string | Active spell/move icon glyph (`0xCE 0x14 0x20 'G' 'i' 'm' 'a' 'r' 'd' …`). |
+| `+0xA9..+0xEC` | text | Battle dialog buffer (`"Vahn won the battle!|Gained …Experience and …G."`). |
+| `+0x6D6..` | u8 × N | The action state machine's "PC offset" / sub-state cursor (read by `*(byte*)(ctx + 0x6D6)`). |
+
+Only the leading 32 bytes vary between captures. Beyond `+0x40` the buffer is a long text-rendering scratch area populated when battle messages are printed. Engine port models this as a 1-of-N enum for the action-ID byte, with side-data fields populated per-action.
+
+| Slot | Role |
+|---|---|
+| `0..2` | Active party members (ordered by formation). |
+| `3..7` | Monster slots (up to 5 enemies per battle). |
+
+Combatant struct fields surfaced by helpers analysed so far:
+
+| Offset | Type | Use |
+|---|---|---|
+| `+0x07` | u8 | Per-actor state byte. Drives `FUN_801E295C`. |
+| `+0x13` | u8 | Active-character index (read from `_DAT_8007BD24+0x13`). |
+| `+0x1F` | u8 | Hit-radius / size byte. Used by `FUN_8004E2F0` (range). |
+| `+0x34` / `+0x38` | i16 | Current world X / Z. |
+| `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
+| `+0x4A` | u8 | Magic-slot count. |
+| `+0x4C` | int* | Magic-slot list pointer (each entry is `[byte type, …]`). |
+| `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max — three-way mirror layout. |
+| `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
+| `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
+| `+0x1EF..+0x1F3` | u8 | Magic-resistance per element (5 elements). |
+| `+0x230` | u32 | Monster XP / drop record (set from `param_1[1]` in the monster init). |
+
+## Range / line-of-sight (`FUN_8004E2F0`)
+
+`FUN_8004E2F0(actor_a_id, actor_b_id) -> i16 distance` is the canonical battle range check, called 5+ times from the per-actor state machine. Reads `[DAT_801C9370 + id*4]` for both actors, computes a euclidean distance from `+0x34/+0x38` (or `+0x3C/+0x40` for the b-actor), then sums the two `+0x1F` size bytes (party-member size table at `0x80078878`, monster size byte read from the live actor) to get the hit radius. Final value is clamped to a per-actor cap and `0xF` per `param_2 < 3` party tier.
+
+## Monster init (`FUN_80054CB0`)
+
+Called from `FUN_800542C8` (secondary battle archive loader). Populates a battle-actor at `[DAT_801C9370 + (slot+3)*4]` from a monster record:
+
+- HP / MP / SP triplets at `+0x14C..0x158` and `+0x172..0x174`.
+- Magic-resistance bytes at `+0x1EF..+0x1F3` (5 elements; one nibble per element).
+- Walks the spell list at `+0x4C` (count at `+0x4A`) and indexes into a per-element resistance table.
+- Final XP / drop record into `+0x230`.
+
+This is the canonical "monster spawn" path. Engine port reads the record once, populates the actor struct, and lets `FUN_801E295C` take over.
+
+## Stat aggregator (`FUN_80042558`)
+
+Per-frame helper that walks the 3 active party members (stride `0x414` — see [character record layout](#character-record-layout)) and:
+
+1. Caps each character's stats at `0x3E7` (999, the in-game stat ceiling).
+2. ORs the character's "active abilities" 16-byte block at `+0xF4..0x100` into a global 4×u32 bitmask at `0x80074358..0x80074368`. This is the "currently-active accessory effects" register read by every other game system.
+3. For each character, calls `FUN_800432BC` / `FUN_80042DBC` to add/remove temporary spells per the active spell-slot layout at `+0x2B0`.
+
+The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` — `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from the action validator (`FUN_8003FB10`) and most damage / status code paths, so a clean-room port models it as `BattleState::ability_active(u8) -> bool`.
+
+`FUN_800349EC` and `FUN_80035EA8` are the HP / MP threshold UI classifiers — given a character index they compare current vs max and return one of `2` (dead/zero) / `6` (low) / `7` (warn) / `9` (healthy). The dialog renderer keys text colour on the result.
+
+`FUN_8003FB10` is the **action validator** that decides whether a queued action can proceed for the active actor. It sub-dispatches on `actor[+0x9A8]` (the queued-action byte) into 16+ handler arms; each arm consults a mix of per-actor state, the current target's record at `0x80084708 + tgt*0x414`, the global ability bitmask via `FUN_800431D0`, and the `0x8007BD10` actor-type table to gate the action with a 16-bit return code (action-OK, blocked, requires-target-flag, etc.). Engine reimpl wires this between the move VM and the per-actor state machine `FUN_801E295C`.
+
+## Battle archive (`FUN_80052FA0` / `FUN_800542C8`)
+
+Two SCUS-side archive loaders feed the battle state. Their record-walk helpers:
+
+- `FUN_800536BC` — copies records of stride `0x1C` from the archive into runtime layout, applying delta fixups to 6 of the 7 u32 fields (offset → absolute pointer pattern: `record[+0x18..0x30]`).
+- `FUN_80053898` — bubble-sort over the 7-u32-stride records keyed on parallel byte arrays.
+- `FUN_80053B9C` — copies short-array records into the per-slot UI buffer at `iVar1 + 0x894 + slot*0x1E0`, OR-ing `0x8000` into each entry (the "active" flag).
+
+Both archive loaders interact with the battle character / monster slots via the 8-actor table at `0x801C9370`.
+
+## Character record layout
+
+Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at `0x80084708 + n*0x414`). Surfaced by the inventory/spell helpers (`FUN_80042558`, `FUN_80042DBC`, `FUN_800432BC`, `FUN_800431FC`, `FUN_80043264`):
+
+| Offset | Use |
+|---|---|
+| `+0x13C` | u8 spell-list count. |
+| `+0x13D..+0x160` | u8 spell IDs (variable-length; up to 36). |
+| `+0x161..+0x184` | u8 parallel spell-level / experience array. |
+| `+0x196..+0x19D` | u8 equipment slot bytes (8 slots; weapon, armour, accessories). |
+| `+0x141`-ish | Character name string (used by the `FUN_80036044` `0xC1` text-escape). |
+| `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
+| `+0xF4..0x100` | "Active abilities" 16-byte block — OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
+| `+0x104..0x110` | HP / MP / SP triplets (cur, max stored as separate u16s). |
+| `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
+
+## Battle main dispatcher (`FUN_801D0748`)
+
+11 KB / 182 calls. The top of the per-frame battle loop. Routes through every active battle subsystem (rendering, AI, animation, hit detection).
+
+## Hottest battle utility (`FUN_801D8DE8`)
+
+3 KB / 77 incoming refs. The single most-cited battle helper — likely a per-actor utility that every state arm bottoms out into.
+
+## Weapon / effect trail builder (`FUN_80048310` + `FUN_800485BC`)
+
+Visual-only helpers that build the swept geometry behind a moving battle actor (sword trails, dash plumes, particle ribbons). `FUN_80048310` iterates the 16-slot per-actor frame buffer at `actor[+0x68]`, copies vertex triplets from the per-actor pose pool at `gp[0xa0c] + 0x6f4` (stride `0xC`), and calls `FUN_800485BC` twice — once for the outline, once for the base — blending two endpoint colours over N steps via a `0..N` gradient loop.
+
+`FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] * 0xFFF`, runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` (GP0 G3 textured-quad) packets into the OT.
+
+These are pure rendering helpers — no gameplay state changes. Engine reimpl can defer them until visuals matter.
+
+## Inventory (`crates/asset` page-banked layout)
+
+Battle reads inventory through the same page-banked structure the field VM's op `0x3B` `SET_ITEM_COUNT` writes: 16 entries × 16-bit per page × 0x414-byte stride. The page index is the high nibble of the slot byte; the entry index is the low nibble.
+
+The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 0x80085918)` — adjacent to the fourth-flag-bank bitfield at `DAT_80086D70` (see [field VM](script-vm.md) → "fourth flag bank"). The field VM's op `0x4C` sub-3 sub-2 zeros the entire region.

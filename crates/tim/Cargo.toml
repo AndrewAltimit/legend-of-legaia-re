@@ -1,0 +1,19 @@
+[package]
+name = "legaia-tim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_tim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tim"
+path = "src/bin/tim.rs"
+
+[dependencies]
+anyhow.workspace = true
+bytemuck = { version = "1", features = ["derive"] }
+clap.workspace = true
+png = "0.17"

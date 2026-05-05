@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engine reimplementation — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; engine reimplementation</div>
+  <h1>Engine reimplementation</h1>
+  <p class="lede">A clean-room Rust port of Legend of Legaia. End-user model: ship the engine as a binary; users supply their own disc image; the engine extracts assets at first run and plays the game using fresh Rust ports of every runtime subsystem.</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>"Clean-room" here means exactly what it means in the ScummVM / OpenRCT2 / OpenMW / OpenLara projects: every line of code in the engine port is fresh Rust, written from <em>format documentation + decompile-then-rewrite logic</em>, not by auto-translating MIPS assembly. We read the Ghidra dumps to understand <em>what</em> each function does; we write the Rust to <em>do that thing</em> idiomatically. The decompiled C in <code>ghidra/scripts/funcs/*.txt</code> is reference material, not committable engine code.</p>
+  <p>The legal posture: <strong>zero Sony bytes ship in the repo or in any released binary.</strong> No game executable, no asset data, no decompressed Sony strings, no decompiled-C dumps with literal data &mdash; all gitignored. The engine binary is empty until you point it at your own disc image. CI runs without disc data, so disc-dependent tests skip when <code>LEGAIA_DISC_BIN</code> is unset. This is the same model used by the projects above and is well-established legal territory.</p>
+</section>
+
+<section class="doc-section" id="goal-non-goals">
+  <h2>Goal &amp; non-goals</h2>
+  <p><strong>Goal:</strong> a playable port of Legend of Legaia (NA SCUS-94254) on modern systems via Rust + wgpu, with optional WASM/web target. JP/EU regions land after NA is solid.</p>
+  <p><strong>Non-goals:</strong></p>
+  <ul class="bullets">
+    <li>Improving the game (no HD remaster, no balance changes, no QoL beyond what the original supported).</li>
+    <li>Modding kit (useful as a side-effect, not as a designed deliverable).</li>
+    <li>Translation work.</li>
+    <li>Static recompilation of <code>SCUS_942.54</code>. The engine is clean-room from documented specs and decompile-then-rewrite logic &mdash; <em>not</em> auto-translated MIPS.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="principles">
+  <h2>Architectural principles</h2>
+  <ul class="bullets">
+    <li><strong>Asset crates stay engine-agnostic.</strong> <code>crates/tim</code>, <code>crates/tmd</code>, etc. don't depend on wgpu / SDL3 / cpal. They produce typed in-memory representations; the engine layer turns those into GPU resources / audio buffers.</li>
+    <li><strong>Mockable I/O for tests.</strong> The disc read path is abstracted via <code>crates/iso::RawDisc</code>; the same pattern extends to file-system extraction so tests can run without a disc.</li>
+    <li><strong>Deterministic gameplay.</strong> RNG seeded from a known value; physics tick on a fixed timestep. Required for any future TAS / verification work.</li>
+    <li><strong>No "fix the bug" temptation.</strong> If the original game has quirky damage rounding or oddly-timed cutscenes, replicate them. Behavioural fidelity is in scope; QoL is not.</li>
+    <li><strong>Behaviour tests against runtime traces.</strong> Long-term, capture inputs + RNG + frame outputs from the original game, replay through the engine, diff. The asset-viewer phase landed enough infrastructure to make this possible later.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="crate-layering">
+  <h2>Crate layering</h2>
+  <pre><code>iso          &larr; (none)
+prot         &rarr; iso (conceptual)
+lzs          &larr; (none)
+asset        &rarr; lzs, prot
+tmd          &larr; (none)
+tim          &larr; (none)
+xa           &larr; (none)
+vab          &rarr; xa  (shares SPU-ADPCM F0/F1 filter constants)
+mdt          &larr; (none)
+mes          &larr; (none)
+anm          &larr; (none)
+extract      &rarr; all of the above
+
+engine-core  &larr; (none)
+engine-render &rarr; engine-core
+engine-audio &rarr; engine-core
+engine-vm    &rarr; engine-core
+asset-viewer &rarr; engine-*, all parser crates</code></pre>
+  <p>A future <code>sound</code> crate (sequencer playback for <code>.spk</code> sequences and the <code>.dpk / .MAP / .PCH</code> family) would depend on <code>vab</code>. A future battle / menu module belongs inside <code>engine-vm</code> next to the actor + field VMs rather than as a separate crate.</p>
+</section>
+
+<section class="doc-section" id="phase1">
+  <h2>Phase 1 &mdash; asset viewer (de-risks integration)</h2>
+  <p>A standalone binary that loads the disc, lets the user navigate PROT entries, and renders / plays them. Render API: <strong>winit + wgpu</strong> (Vulkan / Metal / DX12 / WebGPU backends). Audio: cpal-backed mixer.</p>
+
+  <h3>Implemented</h3>
+  <table>
+    <thead><tr><th>Crate</th><th>What's there</th></tr></thead>
+    <tbody>
+      <tr><td><code>engine-core</code></td><td><code>Vfs</code> trait + <code>DirVfs</code> (extracted-dir backend), <code>AssetCache</code>, <code>FrameTime</code>. Engine-agnostic, no GPU deps.</td></tr>
+      <tr><td><code>engine-render</code></td><td><code>Renderer</code> (wgpu device + surface + textured-quad pipeline + flat / textured-mesh pipelines + lines pipeline). Aspect-preserving letterbox. Software PSX VRAM emulation (1024&times;512 R16Uint, per-prim CBA/TSB + 4/8/15bpp + CLUT decoded in fragment shader).</td></tr>
+      <tr><td><code>engine-audio</code></td><td><code>AudioOut</code> (cpal-backed), single-voice mixer with linear resample + mono-to-N-channel fanout, supports F32 / I16 / U16 device formats.</td></tr>
+      <tr><td><code>asset-viewer</code></td><td>winit binary with subcommands: <code>tim</code>, <code>tmd</code>, <code>stage</code>, <code>vab</code>, <code>prot</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <p>The PROT browser dispatch handles <code>tim_passthrough</code>, <code>tim_pack</code>, <code>data_field_streaming</code>, <code>scene_tmd_stream</code>, <code>scene_vab_stream</code>, and a VAB byte-search fallback for any class with embedded banks.</p>
+
+  <h3>Open Phase 1 milestones</h3>
+  <ul class="bullets">
+    <li>XA stream playback (streaming voice in <code>engine-audio</code>).</li>
+    <li>Multi-voice mixer (the PSX SPU runs 24 voices; current mixer plays one).</li>
+    <li>ADSR shaping for VAB tones.</li>
+    <li>Per-vertex normals from the TMD per-object normal table (currently the renderer derives normals via screen-space derivatives, which is flat-shading).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="phase2">
+  <h2>Phase 2 &mdash; runtime port</h2>
+  <p>Port the script VM, field-loader chain, and effect VM. Handler-by-handler translation: dump each opcode handler from Ghidra, hand-port to Rust, unit-test against captured runtime traces. Aim for behavioural fidelity per opcode, not byte-exactness of the VM internals.</p>
+
+  <h3>In progress</h3>
+  <ul class="bullets">
+    <li><strong><a href="actor-vm.html">Actor VM</a></strong> &mdash; <code>crates/engine-vm/src/lib.rs</code>. 13 opcodes, full unit-test coverage. Drives the title screen sprite cluster.</li>
+    <li><strong><a href="script-vm.html">Field VM</a></strong> &mdash; <code>crates/engine-vm/src/field.rs</code>. All 43 explicit opcodes of <code>FUN_801DE840</code> are ported with a <code>FieldHost</code> trait abstracting every SCUS callback. Cross-context dispatch (extended-bit prefix), YIELD caller-propagation, <code>Op49State</code> tristate, the <code>0x4C</code> outer-nibble dispatcher, and the <code>0x5x/0x6x/0x7x</code> default-route fourth-flag-bank dispatchers are all wired.</li>
+  </ul>
+
+  <h3>Pending Phase 2</h3>
+  <ul class="bullets">
+    <li><strong><a href="effect-vm.html">Effect VM</a></strong> &mdash; runtime <code>efect.dat</code> consumer cluster (3 functions, ~0xC10 bytes) is fully decompiled. Port-ready; choose state-machine vs. opcode-table representation.</li>
+    <li><strong>MES renderer</strong> &mdash; <code>FUN_801ED710</code> in the 0897 town overlay. The container parser is done; the bytecode-to-glyph renderer is still extractable from the same overlay we already have.</li>
+    <li><strong>Sprite engine</strong> &mdash; back the actor VM's <code>Host</code> trait with real actor state.</li>
+    <li><strong>Field / cutscene / battle / menu VMs</strong> &mdash; overlay capture pipeline ready for the ones still pending capture.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="phase3-4">
+  <h2>Phases 3 &amp; 4</h2>
+  <table>
+    <thead><tr><th>Phase</th><th>Scope</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Phase 3 &mdash; gameplay assembly</strong></td>
+        <td>Game-mode driver (28-entry table at <code>0x8007078C</code>), field map + dialog, the <a href="battle.html">battle subsystem</a> including Tactical Arts and the per-actor state machine <code>FUN_801E295C</code>, menu + save / load.</td>
+      </tr>
+      <tr>
+        <td><strong>Phase 4 &mdash; targets</strong></td>
+        <td>Native (winit + wgpu via Vulkan / Metal / DX12), WASM browser target. Mobile / console targets are deferred.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="provenance">
+  <h2>Provenance + memory hygiene</h2>
+  <p>The decompiled C dumps under <code>ghidra/scripts/funcs/</code> are reference material. Engine code in <code>crates/engine-vm/</code> is fresh Rust written <em>from</em> the decompile &mdash; never paste, always rewrite from the documented spec.</p>
+  <p>Per-opcode tests live next to the port; they use synthetic bytecode (no Sony bytes) so the test suite stays clean-room.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'subsystems/engine' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

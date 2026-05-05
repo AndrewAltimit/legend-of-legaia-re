@@ -1,0 +1,204 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle</div>
+  <h1>Battle subsystem</h1>
+  <p class="lede">The battle overlay carries the battle scene loader, the per-actor action state machine, and the <a href="effect-vm.html">effect VM cluster</a>. Loaded at RAM <code>0x801CE818</code> &mdash; the same load slot as the town overlay, so battle and town never coexist in memory.</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>Battles are a separate top-level game mode, and Legaia handles them by loading a dedicated <strong>battle overlay</strong> over the same RAM region the town overlay was using. The whole field state goes away; the battle context takes over. When the battle ends, the town overlay loads back in.</p>
+
+  <p>Inside the battle overlay there are three big systems running in parallel:</p>
+  <ul class="bullets">
+    <li>The <strong>scene loader</strong> brings in character meshes, monster meshes, the active sound bank, and the visual-effect script archive. Same shape as other scene loaders &mdash; an 11-case state machine, dev/retail split, etc.</li>
+    <li>The <strong>action state machine</strong> takes the player's selected action (attack, magic, summon, special, item) and runs it to completion across multiple frames. It's a state machine, not a bytecode VM: the outer dispatch keys on the action ID byte at <code>+0x07</code> of the battle context, and the inner dispatch keys on a per-actor "sub-state" byte at <code>+0x1DE</code>.</li>
+    <li>The <a href="effect-vm.html">effect VM cluster</a> handles per-effect spawn / render but doesn't drive actor decisions.</li>
+  </ul>
+
+  <p>The <a href="move-vm.html">move VM</a> still runs in battle &mdash; it's how Tactical Arts directional inputs play out per-frame &mdash; but the action validator decides whether a queued action can fire in the first place, and the action state machine sequences "windup &rarr; execute &rarr; recover" stages around it. So battle-time animation actually involves all three layers cooperating.</p>
+</section>
+
+<section class="doc-section" id="scene-loader">
+  <h2>Battle scene loader</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_800520F0</code></dd>
+    <dt>Shape</dt><dd>11-case state machine</dd>
+  </dl>
+  <table>
+    <thead><tr><th>Case</th><th>Loads</th></tr></thead>
+    <tbody>
+      <tr><td>6</td><td>The <code>befect_data</code> bundle (PROT 0x369&ndash;0x36B)</td></tr>
+      <tr><td>0xE</td><td>Initialises the runtime <a href="effect-vm.html">effect 2-pack wrapper</a> via <code>FUN_801DE914</code>. Also fires for the field-VM op <code>0x3E</code> warp/interact path on the system context.</td></tr>
+      <tr><td>0xFF</td><td>Dispatches the side-band streaming-effect handler <code>0x801F17F8</code> for <code>summon.dat</code> / <code>readef.dat</code></td></tr>
+    </tbody>
+  </table>
+  <p class="hint">The asset-viewer's <code>--bundle battle</code> mode mirrors this loader's PROT 865&ndash;890 set so character meshes have the right CLUT bindings.</p>
+</section>
+
+<section class="doc-section" id="action-state-machine">
+  <h2>Battle action state machine</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_801E295C</code></dd>
+    <dt>Size</dt><dd>16 KB / 4099 instructions / 155 outgoing calls</dd>
+    <dt>Outer key</dt><dd><code>switch((*_DAT_8007BD24)[7])</code> &mdash; the active action ID byte at ctx+0x07</dd>
+    <dt>Inner key</dt><dd><code>switch(actor[+0x1DE])</code> &mdash; the per-actor action sub-state</dd>
+  </dl>
+
+  <p>The action-execution dispatcher: takes the player's selected action and runs it to completion across multiple frames. <code>_DAT_8007BD24</code> is a <strong>pointer</strong> to the active battle context struct; the pointer itself is resolved at battle entry (<code>*_DAT_8007BD24 = 0x800EB654</code> for the captured battle).</p>
+
+  <p>Action IDs surfaced from save-state captures:</p>
+  <table>
+    <thead><tr><th>ID</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x20</code></td><td>Special move / capture (different sub-states)</td></tr>
+      <tr><td><code>0x28</code></td><td>Action-menu cursor active (player still selecting)</td></tr>
+      <tr><td><code>0x35</code></td><td>Magic &mdash; summon</td></tr>
+      <tr><td><code>0x47</code></td><td>Spirit</td></tr>
+      <tr><td><code>0x50</code></td><td>Martial-arts directional input mode</td></tr>
+    </tbody>
+  </table>
+
+  <p>The function reads battle actor pointers via <code>(&amp;DAT_801C9370)[ctx[0x13]]</code> &mdash; resolves the active actor via <code>ctx[0x13]</code> (slot index), then indexes the 8-slot pointer table. It guards on <code>_DAT_800846C0 != 2</code> (game-state check). The global pointer <code>_DAT_8007BD24</code> plays the same role as the field-VM context pointer &mdash; this is a state machine, not a bytecode VM, but it shares the field VM's "context-pointer-as-VM-state" idiom.</p>
+
+  <p>This is distinct from:</p>
+  <ul class="bullets">
+    <li>The <a href="script-vm.html">field/event script VM</a> (which doesn't run in battle).</li>
+    <li>The <a href="effect-vm.html">effect VM cluster</a> (which handles per-effect spawn/render but doesn't drive actor decisions).</li>
+    <li>The <a href="move-vm.html">move-table VM</a> (which drives Tactical Arts inputs and per-action keyframe scheduling &mdash; a layer below this one).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="ctx-struct">
+  <h2>Battle context struct</h2>
+  <p>The active battle context lives at <code>0x800EB654</code> (resolved at battle entry; the global pointer at <code>0x8007BD24</code> is set to this address). 32-byte fixed prefix followed by a per-battle dialog/text buffer.</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Type</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>u8 &times; 6</td><td>Battle phase/state flags (<code>01 01 01 00 00 00</code> while a turn resolves).</td></tr>
+      <tr><td><code>+0x06</code></td><td>u8</td><td>Monster-slot active action ID (<code>0xFF</code> if none queued).</td></tr>
+      <tr><td><code>+0x07</code></td><td>u8</td><td>Party-slot active action ID. The outer switch in <code>FUN_801E295C</code> keys on this.</td></tr>
+      <tr><td><code>+0x09</code></td><td>u8</td><td>Turn / phase counter.</td></tr>
+      <tr><td><code>+0x13</code></td><td>u8</td><td>Active-actor slot index &mdash; used to look up the actor pointer via <code>(&amp;DAT_801C9370)[ctx[0x13]]</code>.</td></tr>
+      <tr><td><code>+0x14..+0x1B</code></td><td>u8 &times; 8</td><td>Per-action parameter bytes (target slot, sub-action, dir/elem, etc.).</td></tr>
+      <tr><td><code>+0x1D</code></td><td>u8</td><td>Action context flag &mdash; <code>0x03</code> for summon and capture; <code>0x00</code> otherwise.</td></tr>
+      <tr><td><code>+0x29..+0x2D</code></td><td>string</td><td>Active spell/move icon glyph.</td></tr>
+      <tr><td><code>+0xA9..+0xEC</code></td><td>text</td><td>Battle dialog buffer.</td></tr>
+      <tr><td><code>+0x6D6..</code></td><td>u8 &times; N</td><td>Action state machine's PC offset / sub-state cursor.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="actor-table">
+  <h2>Battle actor table</h2>
+  <p>8-slot pointer table at <code>0x801C9370</code>:</p>
+  <table>
+    <thead><tr><th>Slot</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0..2</code></td><td>Active party members (ordered by formation).</td></tr>
+      <tr><td><code>3..7</code></td><td>Monster slots (up to 5 enemies per battle).</td></tr>
+    </tbody>
+  </table>
+
+  <p>Selected combatant struct fields:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Type</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x07</code></td><td>u8</td><td>Per-actor state byte. Drives <code>FUN_801E295C</code>.</td></tr>
+      <tr><td><code>+0x1F</code></td><td>u8</td><td>Hit-radius / size byte. Used by <code>FUN_8004E2F0</code> (range).</td></tr>
+      <tr><td><code>+0x34 / +0x38</code></td><td>i16</td><td>Current world X / Z.</td></tr>
+      <tr><td><code>+0x3C / +0x40</code></td><td>i16</td><td>Previous-frame X / Z (for delta tracking).</td></tr>
+      <tr><td><code>+0x4A / +0x4C</code></td><td>u8 / int*</td><td>Magic-slot count + list pointer.</td></tr>
+      <tr><td><code>+0x14C..+0x158</code></td><td>u16</td><td>HP / MP / SP triplets (cur/max).</td></tr>
+      <tr><td><code>+0x172..+0x174</code></td><td>u16</td><td>HP/MP secondary mirror.</td></tr>
+      <tr><td><code>+0x1DF</code></td><td>u8</td><td>Monster size byte (read from a monster record at <code>+0x1F</code> and stored here at init).</td></tr>
+      <tr><td><code>+0x1EF..+0x1F3</code></td><td>u8</td><td>Magic-resistance per element (5 elements).</td></tr>
+      <tr><td><code>+0x230</code></td><td>u32</td><td>Monster XP / drop record.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="range-check">
+  <h2>Range / line-of-sight</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_8004E2F0(actor_a_id, actor_b_id) -&gt; i16 distance</code></dd>
+    <dt>Called from</dt><dd>Per-actor state machine (5+ sites)</dd>
+  </dl>
+  <p>The canonical battle range check. Reads <code>[DAT_801C9370 + id*4]</code> for both actors, computes a euclidean distance from <code>+0x34/+0x38</code> (or <code>+0x3C/+0x40</code> for the b-actor), then sums the two <code>+0x1F</code> size bytes (party-member size table at <code>0x80078878</code>, monster size byte read from the live actor) to get the hit radius.</p>
+</section>
+
+<section class="doc-section" id="monster-init">
+  <h2>Monster init</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_80054CB0</code></dd>
+    <dt>Called from</dt><dd><code>FUN_800542C8</code> (secondary battle archive loader)</dd>
+  </dl>
+  <p>Populates a battle-actor at <code>[DAT_801C9370 + (slot+3)*4]</code> from a monster record:</p>
+  <ul class="bullets">
+    <li>HP / MP / SP triplets at <code>+0x14C..0x158</code> and <code>+0x172..0x174</code>.</li>
+    <li>Magic-resistance bytes at <code>+0x1EF..+0x1F3</code> (5 elements; one nibble per element).</li>
+    <li>Walks the spell list at <code>+0x4C</code> (count at <code>+0x4A</code>) and indexes into a per-element resistance table.</li>
+    <li>Final XP / drop record into <code>+0x230</code>.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="stat-aggregator">
+  <h2>Stat aggregator</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_80042558</code></dd>
+    <dt>Called</dt><dd>Per frame</dd>
+  </dl>
+  <p>Walks the 3 active party members (stride <code>0x414</code>) and:</p>
+  <ol class="bullets">
+    <li>Caps each character's stats at <code>0x3E7</code> (999, the in-game stat ceiling).</li>
+    <li>ORs the character's "active abilities" 16-byte block at <code>+0xF4..0x100</code> into a global 4&times;u32 bitmask at <code>0x80074358..0x80074368</code>. This is the "currently-active accessory effects" register read by every other game system.</li>
+    <li>For each character, calls <code>FUN_800432BC</code> / <code>FUN_80042DBC</code> to add/remove temporary spells per the active spell-slot layout at <code>+0x2B0</code>.</li>
+  </ol>
+  <p>The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is <code>FUN_800431D0(bit_id) -&gt; bool</code>.</p>
+</section>
+
+<section class="doc-section" id="action-validator">
+  <h2>Action validator</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_8003FB10</code></dd>
+  </dl>
+  <p>Decides whether a queued action can proceed for the active actor. Sub-dispatches on <code>actor[+0x9A8]</code> (the queued-action byte) into 16+ handler arms; each arm consults a mix of per-actor state, the current target's record at <code>0x80084708 + tgt*0x414</code>, the global ability bitmask via <code>FUN_800431D0</code>, and the <code>0x8007BD10</code> actor-type table to gate the action with a 16-bit return code (action-OK, blocked, requires-target-flag, etc.).</p>
+  <p>Engine reimpl wires this between the move VM and the per-actor state machine <code>FUN_801E295C</code>.</p>
+</section>
+
+<section class="doc-section" id="character-record">
+  <h2>Character record layout</h2>
+  <p>Stride <code>0x414</code> bytes per character, base <code>0x80084708</code> (so character <em>n</em> lives at <code>0x80084708 + n*0x414</code>):</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x13C</code></td><td>u8 spell-list count</td></tr>
+      <tr><td><code>+0x13D..+0x160</code></td><td>u8 spell IDs (variable-length; up to 36)</td></tr>
+      <tr><td><code>+0x161..+0x184</code></td><td>u8 parallel spell-level / experience array</td></tr>
+      <tr><td><code>+0x196..+0x19D</code></td><td>u8 equipment slot bytes (8 slots; weapon, armour, accessories)</td></tr>
+      <tr><td><code>+0x141</code>-ish</td><td>Character name string (used by <code>FUN_80036044</code> <code>0xC1</code> text-escape)</td></tr>
+      <tr><td><code>+0x2B0..+0x37F</code></td><td>Active spell-slot array (stride <code>0x14</code>)</td></tr>
+      <tr><td><code>+0xF4..0x100</code></td><td>"Active abilities" 16-byte block &mdash; OR'd into global ability bitmask</td></tr>
+      <tr><td><code>+0x104..0x110</code></td><td>HP / MP / SP triplets</td></tr>
+      <tr><td><code>+0x11A</code></td><td>Stat-cap field (clamped to <code>0x3E7</code>)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="other-helpers">
+  <h2>Other notable helpers</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_801D0748</code></td><td>Battle main dispatcher (11 KB / 182 calls). The top of the per-frame battle loop. Routes through every active battle subsystem (rendering, AI, animation, hit detection).</td></tr>
+      <tr><td><code>FUN_801D8DE8</code></td><td>Hottest battle utility (3 KB / 77 incoming refs). Likely a per-actor utility that every state arm bottoms out into.</td></tr>
+      <tr><td><code>FUN_80048310</code> + <code>FUN_800485BC</code></td><td>Weapon / effect trail builder &mdash; visual-only quad-strip emitters for sword trails, dash plumes, particle ribbons. Iterates the 16-slot per-actor frame buffer at <code>actor[+0x68]</code>, runs each vertex through GTE projection, drops textured-quad packets into the OT.</td></tr>
+      <tr><td><code>FUN_800349EC</code> / <code>FUN_80035EA8</code></td><td>HP / MP threshold UI classifiers. Return one of <code>2</code> (dead), <code>6</code> (low), <code>7</code> (warn), <code>9</code> (healthy); the dialog renderer keys text colour on the result.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="inventory">
+  <h2>Inventory</h2>
+  <p>Battle reads inventory through the same page-banked structure the field VM's op <code>0x3B SET_ITEM_COUNT</code> writes: 16 entries &times; 16-bit per page &times; <code>0x414</code>-byte stride. The page index is the high nibble of the slot byte; the entry index is the low nibble.</p>
+  <p>The page-banked inventory state lives in the 512-byte region at <code>[0x80085718 .. 0x80085918)</code> &mdash; adjacent to the fourth-flag-bank bitfield at <code>DAT_80086D70</code> (see <a href="script-vm.html">field VM &rarr; "fourth flag bank"</a>). The field VM's op <code>0x4C</code> sub-3 sub-2 zeros the entire region.</p>
+</section>

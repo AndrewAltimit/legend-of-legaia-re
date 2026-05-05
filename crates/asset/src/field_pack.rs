@@ -1,0 +1,259 @@
+//! Field-pack container — the most common shape under PROT entries that hold
+//! field/town/dungeon scene data.
+//!
+//! ## Format
+//!
+//! 124 PROT entries (out of 1234) share an identical 388-byte schema block.
+//! The schema is preceded by a 4-byte magic and followed by packed PSX TIMs
+//! and Legaia TMDs:
+//!
+//! ```text
+//! [file start]
+//!   ...preamble (variable size, content shape currently unknown)...
+//!   [zero padding to 4-byte alignment]
+//!   [u32 LE = MAGIC = 0x01059B84]
+//!   [97 × u32 LE — schema table, identical across all 124 instances]
+//!   [packed TIMs — back-to-back, each TIM begins with 0x10000000 magic]
+//!   [packed TMDs — each preceded by a u32 LE size header]
+//! [file end]
+//! ```
+//!
+//! The 97 schema entries are ascending u32 LE values from `0x60` to `0x16651`.
+//! They are the *same offsets in every fieldpack* — i.e. the schema describes
+//! a static abstract sub-record layout, not file-relative offsets. The
+//! preamble bytes that fill those slots vary per-scene; the runtime mapping
+//! between preamble bytes and schema slots is not yet understood, so this
+//! parser only locates the schema and the packed asset regions after it.
+//!
+//! ## What this gives us
+//!
+//! - Reliable detection (`detect`) with no false positives — the magic plus
+//!   the strict ascending-u32 schema is a high-bar signature.
+//! - Boundary information: where the preamble ends, where the TIMs start,
+//!   how many sub-record slots the schema declares, and the implied size of
+//!   each slot from `offset[i+1] - offset[i]`.
+//! - A per-PROT-entry classifier so downstream tooling can route fieldpack
+//!   PROT entries through this parser and everything else through the older
+//!   detectors in [`crate::categorize`].
+//!
+//! ## What this doesn't (yet) do
+//!
+//! - Map preamble bytes to schema slots. The schema offsets cover a 91 KB
+//!   range, but in many fieldpack files the preamble is only ~47 KB —
+//!   meaning the offsets cannot be plain file-relative byte offsets. They
+//!   may index into a runtime-reconstructed buffer (preamble decompressed
+//!   into a fixed-shape RAM region), but the reconstruction step has not
+//!   been traced yet.
+//! - Walk the TIM region. [`crate::tim_scan`] already enumerates TIMs by
+//!   magic-scanning the raw bytes, which is sufficient for now.
+
+use serde::Serialize;
+
+/// Magic word that immediately precedes the 97-entry schema table.
+pub const MAGIC: u32 = 0x0105_9B84;
+
+/// Number of u32 entries in the schema table.
+pub const RECORD_COUNT: usize = 97;
+
+/// Size of the schema table in bytes.
+pub const SCHEMA_SIZE: usize = RECORD_COUNT * 4;
+
+/// First value in the schema (= start of first abstract record).
+pub const SCHEMA_FIRST: u32 = 0x60;
+
+/// Last value in the schema (= start of the 97th abstract record).
+pub const SCHEMA_LAST: u32 = 0x16651;
+
+/// Parsed location and slot layout of a fieldpack inside a PROT entry buffer.
+#[derive(Debug, Clone, Serialize)]
+pub struct FieldPack {
+    /// File offset of the 4-byte magic word.
+    pub magic_offset: usize,
+    /// File offset of the first byte of the 97-entry schema table.
+    pub table_offset: usize,
+    /// File offset immediately after the schema table — first byte of the
+    /// packed-TIM region.
+    pub assets_start: usize,
+    /// Total file size, for convenience when reporting.
+    pub file_size: usize,
+    /// 97 abstract record slots, each `(offset, size)`. Sizes are derived
+    /// from `offset[i+1] - offset[i]`; the last slot's size is unknown and
+    /// reported as `None`.
+    pub slots: Vec<SchemaSlot>,
+}
+
+/// One abstract record slot from the schema.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SchemaSlot {
+    /// Offset of this record in the schema's abstract coordinate space.
+    /// **Not** a file offset.
+    pub offset: u32,
+    /// Size of this record (`offset[i+1] - offset[i]`); `None` for the last
+    /// slot, whose size depends on per-file preamble layout that we don't
+    /// yet decode.
+    pub size: Option<u32>,
+}
+
+impl FieldPack {
+    /// File-offset range of the preamble (before the magic). Its content
+    /// shape is unknown — see module docs.
+    pub fn preamble_range(&self) -> (usize, usize) {
+        (0, self.magic_offset)
+    }
+
+    /// File-offset range of the asset region (TIMs + TMDs after the schema).
+    pub fn assets_range(&self) -> (usize, usize) {
+        (self.assets_start, self.file_size)
+    }
+}
+
+/// Look for a fieldpack in `buf`. Returns the first match, scanning forward.
+///
+/// Detection criteria (all must hold):
+/// 1. `MAGIC` (LE) appears at some offset `m`.
+/// 2. 388 bytes follow at `m + 4` and lie within the buffer.
+/// 3. Those 388 bytes parse as 97 strictly-ascending u32 LE values.
+/// 4. `slots[0] == 0x60` and `slots[96] == 0x16651`.
+///
+/// The combination of magic + strict shape + boundary anchors is specific
+/// enough that incidental hits are vanishingly unlikely.
+pub fn detect(buf: &[u8]) -> Option<FieldPack> {
+    let magic_bytes = MAGIC.to_le_bytes();
+    let mut search_from = 0usize;
+    while let Some(rel) = find_subslice(&buf[search_from..], &magic_bytes) {
+        let magic_offset = search_from + rel;
+        if let Some(fp) = parse_at(buf, magic_offset) {
+            return Some(fp);
+        }
+        search_from = magic_offset + 1;
+    }
+    None
+}
+
+fn parse_at(buf: &[u8], magic_offset: usize) -> Option<FieldPack> {
+    let table_offset = magic_offset + 4;
+    let assets_start = table_offset + SCHEMA_SIZE;
+    if assets_start > buf.len() {
+        return None;
+    }
+    let mut slots = Vec::with_capacity(RECORD_COUNT);
+    let mut prev: Option<u32> = None;
+    for i in 0..RECORD_COUNT {
+        let p = table_offset + i * 4;
+        let v = u32::from_le_bytes(buf[p..p + 4].try_into().unwrap());
+        if let Some(prev_v) = prev
+            && v <= prev_v
+        {
+            return None;
+        }
+        prev = Some(v);
+        slots.push(SchemaSlot {
+            offset: v,
+            size: None,
+        });
+    }
+    if slots[0].offset != SCHEMA_FIRST || slots[RECORD_COUNT - 1].offset != SCHEMA_LAST {
+        return None;
+    }
+    for i in 0..RECORD_COUNT - 1 {
+        let next = slots[i + 1].offset;
+        let cur = slots[i].offset;
+        slots[i].size = Some(next - cur);
+    }
+    Some(FieldPack {
+        magic_offset,
+        table_offset,
+        assets_start,
+        file_size: buf.len(),
+        slots,
+    })
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a synthetic fieldpack header that satisfies the detector.
+    fn synthetic(preamble: usize) -> Vec<u8> {
+        let mut buf = vec![0u8; preamble];
+        buf.extend_from_slice(&MAGIC.to_le_bytes());
+        // Build a strictly-ascending schema with first=0x60 and last=0x16651.
+        // Distribute the remaining 95 values evenly between them.
+        let span = SCHEMA_LAST - SCHEMA_FIRST;
+        let step = span / (RECORD_COUNT as u32 - 1);
+        for i in 0..RECORD_COUNT {
+            let v = if i == 0 {
+                SCHEMA_FIRST
+            } else if i == RECORD_COUNT - 1 {
+                SCHEMA_LAST
+            } else {
+                SCHEMA_FIRST + step * i as u32
+            };
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        // Trailing data — pretend there's some asset bytes after the table.
+        buf.extend_from_slice(&[0xAAu8; 64]);
+        buf
+    }
+
+    #[test]
+    fn detects_synthetic_fieldpack() {
+        let buf = synthetic(1024);
+        let fp = detect(&buf).expect("should detect");
+        assert_eq!(fp.magic_offset, 1024);
+        assert_eq!(fp.table_offset, 1028);
+        assert_eq!(fp.assets_start, 1028 + SCHEMA_SIZE);
+        assert_eq!(fp.slots.len(), RECORD_COUNT);
+        assert_eq!(fp.slots[0].offset, SCHEMA_FIRST);
+        assert_eq!(fp.slots[RECORD_COUNT - 1].offset, SCHEMA_LAST);
+        assert!(fp.slots[RECORD_COUNT - 1].size.is_none());
+        assert!(fp.slots[0].size.is_some());
+    }
+
+    #[test]
+    fn rejects_buffer_with_only_magic() {
+        let mut buf = vec![0u8; 100];
+        buf.extend_from_slice(&MAGIC.to_le_bytes());
+        // No table follows.
+        assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn rejects_non_ascending_table() {
+        let mut buf = vec![0u8; 100];
+        buf.extend_from_slice(&MAGIC.to_le_bytes());
+        // First entry correct but second goes backward.
+        buf.extend_from_slice(&SCHEMA_FIRST.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        for _ in 2..RECORD_COUNT {
+            buf.extend_from_slice(&0u32.to_le_bytes());
+        }
+        assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn rejects_wrong_anchors() {
+        // Ascending and 97 entries, but boundary values don't match.
+        let mut buf = vec![0u8; 100];
+        buf.extend_from_slice(&MAGIC.to_le_bytes());
+        for i in 0..RECORD_COUNT {
+            buf.extend_from_slice(&((i as u32) * 4).to_le_bytes());
+        }
+        assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn slot_sizes_sum_to_known_range() {
+        let buf = synthetic(0);
+        let fp = detect(&buf).unwrap();
+        let total: u32 = fp.slots.iter().filter_map(|s| s.size).sum();
+        assert_eq!(total, SCHEMA_LAST - SCHEMA_FIRST);
+    }
+}

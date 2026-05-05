@@ -1,0 +1,481 @@
+//! TMD → triangulated mesh conversion.
+//!
+//! Produces engine-agnostic position + index buffers suitable for upload to a
+//! GPU. Quads are split into two triangles using the standard PSX SDK winding
+//! `(v0, v1, v2)` + `(v1, v3, v2)` — Sony's libgs draws GT4/FT4 as two
+//! triangles that share the (v1, v2) diagonal.
+//!
+//! Out-of-range vertex indices and prims with no decoded indices (i.e. the
+//! `legaia_prims::vertex_offset_bytes` lookup returned None) are skipped
+//! silently. Validated against the full TMD corpus, where this hasn't been
+//! observed in practice.
+
+use crate::{Tmd, legaia_prims};
+
+/// Triangulated mesh with per-vertex UVs.
+///
+/// Verts are duplicated per prim-corner (no shared verts between prims), so
+/// `positions[i]`, `uvs[i]` always belong together. UVs are floats in `[0, 1)`
+/// addressing a single texture page (caller's responsibility to bind the
+/// right TIM). The PSX UV bytes are normalized by 256 — the texture page is
+/// 256 pixels wide regardless of the actual TIM dimensions.
+#[derive(Debug, Clone)]
+pub struct TexturedMesh {
+    pub positions: Vec<[f32; 3]>,
+    pub uvs: Vec<[f32; 2]>,
+    /// Per-triangle vertex indices into `positions`/`uvs` (always paired).
+    pub indices: Vec<u32>,
+    /// Texture-page byte for the first textured prim found, for caller use
+    /// (which texture to bind). Decode with [`tpage_xy`](legaia_prims::Prim::tpage_xy).
+    /// `0` if no textured prim was found.
+    pub tpage_tsb: u16,
+    /// CLUT base for the first textured prim found.
+    pub clut_cba: u16,
+}
+
+impl TexturedMesh {
+    pub fn triangle_count(&self) -> usize {
+        self.indices.len() / 3
+    }
+
+    pub fn aabb(&self) -> ([f32; 3], [f32; 3]) {
+        if self.positions.is_empty() {
+            return ([0.0; 3], [0.0; 3]);
+        }
+        let mut lo = self.positions[0];
+        let mut hi = self.positions[0];
+        for p in &self.positions[1..] {
+            for i in 0..3 {
+                if p[i] < lo[i] {
+                    lo[i] = p[i];
+                }
+                if p[i] > hi[i] {
+                    hi[i] = p[i];
+                }
+            }
+        }
+        (lo, hi)
+    }
+}
+
+/// Build a textured mesh from a parsed TMD. Each prim contributes its own
+/// fresh (pos, uv) verts so per-corner UVs are preserved. Quads are split
+/// the same way as [`tmd_to_mesh`].
+pub fn tmd_to_textured_mesh(tmd: &Tmd, buf: &[u8]) -> TexturedMesh {
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    let mut first_tsb = 0u16;
+    let mut first_cba = 0u16;
+
+    for o in &tmd.objects {
+        let object_vert_count = o.header.n_vert;
+        let groups = match legaia_prims::iter_groups(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        ) {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
+
+        for g in &groups {
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                if first_tsb == 0 && prim.tsb != 0 {
+                    first_tsb = prim.tsb;
+                    first_cba = prim.cba;
+                }
+                // UVs may be empty (untextured prim) — fall back to zeros.
+                let uv_at = |i: usize| -> [f32; 2] {
+                    prim.uvs
+                        .get(i)
+                        .map(|(u, v)| [*u as f32 / 256.0, *v as f32 / 256.0])
+                        .unwrap_or([0.0, 0.0])
+                };
+                let push_vert = |positions: &mut Vec<[f32; 3]>,
+                                 uvs: &mut Vec<[f32; 2]>,
+                                 vidx: u16,
+                                 uv_idx: usize|
+                 -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = positions.len() as u32;
+                    positions.push([v.x as f32, v.y as f32, v.z as f32]);
+                    uvs.push(uv_at(uv_idx));
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(&mut positions, &mut uvs, raw_idx[0], 0);
+                        let i1 = push_vert(&mut positions, &mut uvs, raw_idx[1], 1);
+                        let i2 = push_vert(&mut positions, &mut uvs, raw_idx[2], 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        // Quad → two triangles sharing (v1, v2) diagonal,
+                        // matching tmd_to_mesh.
+                        let i0 = push_vert(&mut positions, &mut uvs, raw_idx[0], 0);
+                        let i1 = push_vert(&mut positions, &mut uvs, raw_idx[1], 1);
+                        let i2 = push_vert(&mut positions, &mut uvs, raw_idx[2], 2);
+                        let i3 = push_vert(&mut positions, &mut uvs, raw_idx[3], 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    TexturedMesh {
+        positions,
+        uvs,
+        indices,
+        tpage_tsb: first_tsb,
+        clut_cba: first_cba,
+    }
+}
+
+/// VRAM-aware textured mesh: per-vertex `(u, v)` and per-vertex `(cba, tsb)`
+/// PSX VRAM addresses. Built by [`tmd_to_vram_mesh`]; consumed by the
+/// engine-render VRAM-mesh pipeline, which does the page+CLUT lookup in
+/// the fragment shader and so handles meshes that sample multiple texture
+/// pages and palettes correctly (the single-binding [`TexturedMesh`] path
+/// does not).
+#[derive(Debug, Clone)]
+pub struct VramMesh {
+    pub positions: Vec<[f32; 3]>,
+    pub uvs: Vec<[u8; 2]>,
+    pub cba_tsb: Vec<[u16; 2]>,
+    pub indices: Vec<u32>,
+}
+
+impl VramMesh {
+    pub fn triangle_count(&self) -> usize {
+        self.indices.len() / 3
+    }
+
+    pub fn aabb(&self) -> ([f32; 3], [f32; 3]) {
+        if self.positions.is_empty() {
+            return ([0.0; 3], [0.0; 3]);
+        }
+        let mut lo = self.positions[0];
+        let mut hi = self.positions[0];
+        for p in &self.positions[1..] {
+            for i in 0..3 {
+                if p[i] < lo[i] {
+                    lo[i] = p[i];
+                }
+                if p[i] > hi[i] {
+                    hi[i] = p[i];
+                }
+            }
+        }
+        (lo, hi)
+    }
+}
+
+/// Build a VRAM mesh from a parsed TMD. Each prim contributes its own
+/// fresh per-corner verts (so per-corner UVs and per-prim CBA/TSB are
+/// preserved exactly). Quads split the same way as [`tmd_to_mesh`].
+///
+/// Untextured prims (no UVs decoded) are skipped — they wouldn't sample
+/// anything meaningful from VRAM, and emitting them would draw black /
+/// transparent triangles that obscure other geometry.
+pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut cba_tsb = Vec::new();
+    let mut indices = Vec::new();
+
+    for o in &tmd.objects {
+        let object_vert_count = o.header.n_vert;
+        let groups = match legaia_prims::iter_groups(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        ) {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
+
+        for g in &groups {
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                if prim.uvs.is_empty() {
+                    continue;
+                }
+                let ct = [prim.cba, prim.tsb];
+                let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = positions.len() as u32;
+                    positions.push([v.x as f32, v.y as f32, v.z as f32]);
+                    let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
+                    uvs.push([u8v, v8v]);
+                    cba_tsb.push(ct);
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        let i3 = push_vert(raw_idx[3], 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    VramMesh {
+        positions,
+        uvs,
+        cba_tsb,
+        indices,
+    }
+}
+
+/// Triangulated mesh ready for GPU upload.
+#[derive(Debug, Clone)]
+pub struct Mesh {
+    /// Per-vertex `[x, y, z]` in TMD-native integer space (i16 promoted to f32
+    /// without scaling). Caller-supplied transforms (perspective, view, model
+    /// rotation) handle scale.
+    pub positions: Vec<[f32; 3]>,
+    /// Per-triangle vertex indices into `positions`. Always a multiple of 3.
+    pub indices: Vec<u32>,
+}
+
+impl Mesh {
+    pub fn triangle_count(&self) -> usize {
+        self.indices.len() / 3
+    }
+
+    pub fn vertex_count(&self) -> usize {
+        self.positions.len()
+    }
+
+    /// Axis-aligned bounding box `(min, max)` over [`Self::positions`].
+    /// Returns `(zero, zero)` for empty meshes.
+    pub fn aabb(&self) -> ([f32; 3], [f32; 3]) {
+        if self.positions.is_empty() {
+            return ([0.0; 3], [0.0; 3]);
+        }
+        let mut lo = self.positions[0];
+        let mut hi = self.positions[0];
+        for p in &self.positions[1..] {
+            for i in 0..3 {
+                if p[i] < lo[i] {
+                    lo[i] = p[i];
+                }
+                if p[i] > hi[i] {
+                    hi[i] = p[i];
+                }
+            }
+        }
+        (lo, hi)
+    }
+}
+
+/// Build a triangulated mesh from a parsed TMD plus the original buffer
+/// (needed to walk the per-object primitive section). Concatenates every
+/// object's verts into one position list with per-object index offsets, so
+/// caller can render the whole TMD as a single draw.
+pub fn tmd_to_mesh(tmd: &Tmd, buf: &[u8]) -> Mesh {
+    let mut positions = Vec::new();
+    let mut indices = Vec::new();
+    let mut vert_base: u32 = 0;
+
+    for o in &tmd.objects {
+        let v_start = vert_base;
+        for v in &o.vertices {
+            positions.push([v.x as f32, v.y as f32, v.z as f32]);
+        }
+        let v_end = positions.len() as u32;
+        let object_vert_count = v_end - v_start;
+
+        let groups = match legaia_prims::iter_groups(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        ) {
+            Ok(g) => g,
+            Err(_) => {
+                // Skip objects whose prim section won't walk; their verts
+                // remain in the buffer but contribute no faces.
+                vert_base = v_end;
+                continue;
+            }
+        };
+
+        for g in &groups {
+            for prim in &g.prims {
+                let idxs = prim.vertex_indices();
+                if idxs.is_empty() {
+                    continue;
+                }
+                if idxs.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                match idxs.len() {
+                    3 => {
+                        indices.push(v_start + idxs[0] as u32);
+                        indices.push(v_start + idxs[1] as u32);
+                        indices.push(v_start + idxs[2] as u32);
+                    }
+                    4 => {
+                        // Standard PSX quad split — verts arrive as (v0, v1,
+                        // v2, v3) where v3 is opposite v0; emit two triangles
+                        // sharing the (v1, v2) diagonal.
+                        let v0 = v_start + idxs[0] as u32;
+                        let v1 = v_start + idxs[1] as u32;
+                        let v2 = v_start + idxs[2] as u32;
+                        let v3 = v_start + idxs[3] as u32;
+                        indices.push(v0);
+                        indices.push(v1);
+                        indices.push(v2);
+                        indices.push(v1);
+                        indices.push(v3);
+                        indices.push(v2);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        vert_base = v_end;
+    }
+
+    Mesh { positions, indices }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse;
+
+    /// Same synthetic pyramid as the parser test: 4-vert base + apex,
+    /// 4 triangles + 1 quad. Build the bytes inline so the test doesn't
+    /// reach into the parser test module.
+    fn synth_pyramid_tmd() -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Header
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        // Object table: prims start at offset 28 (right after table), then
+        // verts. Synthetic prim section has 1 group of 4 FT3 prims (count=4
+        // flags=0x20 olen=7 ilen=5) for 8 + 4*20 = 88 bytes, plus a 20-byte
+        // footer slot, plus a 4-byte terminator = 112 bytes total.
+        let prim_top: u32 = 28;
+        let prim_size: u32 = 8 + (4 + 1) * 20 + 4; // 112
+        let vert_top: u32 = prim_top + prim_size; // 140
+        buf.extend_from_slice(&vert_top.to_le_bytes()); // vert_top
+        buf.extend_from_slice(&5u32.to_le_bytes()); // n_vert
+        buf.extend_from_slice(&0u32.to_le_bytes()); // normal_top
+        buf.extend_from_slice(&0u32.to_le_bytes()); // n_normal
+        buf.extend_from_slice(&prim_top.to_le_bytes()); // prim_top
+        buf.extend_from_slice(&4u32.to_le_bytes()); // n_primitive
+        buf.extend_from_slice(&0i32.to_le_bytes()); // scale
+        // Group header: count=4 flags=0x20 olen=7 ilen=5 flag=1 mode=0x27
+        buf.extend_from_slice(&4u16.to_le_bytes());
+        buf.extend_from_slice(&0x0020u16.to_le_bytes());
+        buf.extend_from_slice(&[7, 5, 1, 0x27]);
+        // 4 prims of 20 bytes each, vertex indices at byte offset 14 (raw
+        // byte-offset = array_idx * 8). Apex-fan: (4,0,1) (4,1,2) (4,2,3) (4,3,0)
+        let fan: [(u16, u16, u16); 4] = [(4, 0, 1), (4, 1, 2), (4, 2, 3), (4, 3, 0)];
+        for (a, b, c) in fan {
+            let mut prim = vec![0u8; 20];
+            prim[14..16].copy_from_slice(&(a * 8).to_le_bytes());
+            prim[16..18].copy_from_slice(&(b * 8).to_le_bytes());
+            prim[18..20].copy_from_slice(&(c * 8).to_le_bytes());
+            buf.extend_from_slice(&prim);
+        }
+        // Footer slot (one extra prim-stride of zeros).
+        buf.extend_from_slice(&[0u8; 20]);
+        // Terminator u32.
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        // Vertices: 4 base @ y=85, apex at (0, -170, 0).
+        let verts = [
+            (64i16, 85i16, 0i16),
+            (0, 85, -64),
+            (-64, 85, 0),
+            (0, 85, 64),
+            (0, -170, 0),
+        ];
+        for (x, y, z) in verts {
+            buf.extend_from_slice(&x.to_le_bytes());
+            buf.extend_from_slice(&y.to_le_bytes());
+            buf.extend_from_slice(&z.to_le_bytes());
+            buf.extend_from_slice(&0i16.to_le_bytes());
+        }
+        buf
+    }
+
+    #[test]
+    fn pyramid_to_mesh() {
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        let mesh = tmd_to_mesh(&tmd, &buf);
+        assert_eq!(mesh.vertex_count(), 5);
+        assert_eq!(mesh.triangle_count(), 4); // 4 FT3 fan tris
+        assert_eq!(mesh.indices.len(), 12);
+        // Apex (vertex 4) is in every triangle.
+        for tri in mesh.indices.chunks_exact(3) {
+            assert!(tri.contains(&4u32), "expected apex (4) in tri {:?}", tri);
+        }
+    }
+
+    #[test]
+    fn aabb_pyramid() {
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        let mesh = tmd_to_mesh(&tmd, &buf);
+        let (lo, hi) = mesh.aabb();
+        assert_eq!(lo, [-64.0, -170.0, -64.0]);
+        assert_eq!(hi, [64.0, 85.0, 64.0]);
+    }
+
+    #[test]
+    fn vram_mesh_pyramid_has_per_corner_verts() {
+        // Synth pyramid prims are FT3 (flags=0x20) — the parser decodes a
+        // texture block with all-zero UVs/CBA/TSB. tmd_to_vram_mesh emits
+        // 4 prims × 3 corners = 12 verts, one per (prim, corner) pair.
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        let vmesh = tmd_to_vram_mesh(&tmd, &buf);
+        assert_eq!(vmesh.positions.len(), 12);
+        assert_eq!(vmesh.uvs.len(), 12);
+        assert_eq!(vmesh.cba_tsb.len(), 12);
+        assert_eq!(vmesh.indices.len(), 12);
+        assert_eq!(vmesh.triangle_count(), 4);
+        for ct in &vmesh.cba_tsb {
+            assert_eq!(*ct, [0, 0]);
+        }
+    }
+
+    #[test]
+    fn empty_object_produces_empty_mesh() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        let tmd = parse(&buf).unwrap();
+        let mesh = tmd_to_mesh(&tmd, &buf);
+        assert_eq!(mesh.vertex_count(), 0);
+        assert_eq!(mesh.triangle_count(), 0);
+    }
+}

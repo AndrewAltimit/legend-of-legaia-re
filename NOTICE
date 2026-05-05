@@ -1,0 +1,51 @@
+legend-of-legaia-re
+===================
+
+This project is dual-licensed at the user's option under either:
+
+  * The Unlicense (public-domain dedication) — see LICENSE
+  * The MIT License                            — see LICENSE-MIT
+
+These licenses cover ONLY the original work in this repository: the Rust
+source code, build scripts, analysis tooling, and documentation authored
+by the project's contributors.
+
+
+Scope of the licenses
+---------------------
+
+The Unlicense / MIT grants in this repository do NOT, and cannot, extend
+to any intellectual property owned by third parties. In particular:
+
+  * Legend of Legaia is © 1998 Sony Computer Entertainment Inc., developed
+    by Contrail and Prokion. The game's executable (`SCUS_942.54`), asset
+    data, audio, music, text, and any other content originating from the
+    retail disc remain the property of their respective rights holders.
+
+  * No Sony-owned bytes are committed to this repository. The `extracted/`
+    directory and Ghidra project databases are gitignored. Disc-dependent
+    tests skip when no disc image is supplied. End users must provide
+    their own legally obtained copy of the game disc to run the
+    extraction pipeline or the engine.
+
+  * Format documentation in `docs/formats/` and decompiled-C reference
+    notes in `ghidra/scripts/funcs/` describe Sony software for
+    interoperability and preservation purposes. Where any portion of
+    that material is held to be a derivative work of Sony's code, the
+    Unlicense / MIT grants do not apply to that portion; the underlying
+    rights remain with the original rights holder.
+
+  * The engine reimplementation (`crates/engine-*`) is a clean-room Rust
+    port written from format documentation and decompile-then-rewrite
+    reference notes. It contains no copied Sony code or data and is
+    distributed under the licenses above. It is functional only when
+    paired with a disc image the user has supplied.
+
+
+Trademarks
+----------
+
+"Legend of Legaia", "Sony", "PlayStation", and related marks are
+trademarks of their respective owners. Use of those names in this
+repository is descriptive (identifying the subject of the
+reverse-engineering work) and does not imply endorsement.

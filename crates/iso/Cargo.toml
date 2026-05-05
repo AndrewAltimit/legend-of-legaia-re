@@ -1,0 +1,21 @@
+[package]
+name = "legaia-iso"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_iso"
+path = "src/lib.rs"
+
+[[bin]]
+name = "disc-extract"
+path = "src/bin/disc-extract.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+sha2 = "0.10"

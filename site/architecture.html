@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How the layers stack — legend-of-legaia-re</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> · architecture</div>
+  <h1>How the layers stack</h1>
+  <p class="lede">Click any layer to see what crate handles it and what's documented for it.</p>
+</header>
+
+<section class="doc-section">
+  <h2>The pipeline at a glance</h2>
+  <p>Going top-to-bottom: a PSX disc image, then the ISO filesystem, then the project's archive (PROT.DAT), then per-entry containers, then individual sub-assets. Each layer is owned by exactly one crate.</p>
+
+  <!-- Interactive layer diagram. Each .layer is clickable. -->
+  <div class="layers-diagram" id="layers" aria-label="Layered architecture diagram">
+
+    <a class="layer" href="formats/index.html#disc" data-detail="disc">
+      <div class="layer-head">
+        <span class="layer-num">1</span>
+        <span class="layer-title">PSX disc image (.bin Mode2/2352)</span>
+      </div>
+      <div class="layer-body">
+        <div class="layer-crate">crates/iso → <code>disc-extract</code></div>
+        <div class="layer-desc">Raw 2352-byte sector reader. Strips the 24-byte sector overhead and returns 2048-byte user data per sector.</div>
+      </div>
+    </a>
+
+    <div class="layer-arrow">↓</div>
+
+    <a class="layer" href="formats/index.html#iso" data-detail="iso">
+      <div class="layer-head">
+        <span class="layer-num">2</span>
+        <span class="layer-title">ISO9660 filesystem</span>
+      </div>
+      <div class="layer-body">
+        <div class="layer-crate">crates/iso</div>
+        <div class="layer-desc">PROT.DAT, DMY.DAT, SCUS_942.54, MOV/, XA/, CDNAME.TXT, SYSTEM.CNF.</div>
+      </div>
+    </a>
+
+    <div class="layer-arrow">↓</div>
+
+    <a class="layer" href="formats/index.html#prot" data-detail="prot">
+      <div class="layer-head">
+        <span class="layer-num">3</span>
+        <span class="layer-title">PROT.DAT — the project archive</span>
+      </div>
+      <div class="layer-body">
+        <div class="layer-crate">crates/prot → <code>prot-extract</code></div>
+        <div class="layer-desc">1234 entries indexed by a 16-byte TOC walked at boot by <code>FUN_8003E4E8</code>. Names from CDNAME.TXT (block-start <code>#define</code> markers; names inherit forward).</div>
+      </div>
+    </a>
+
+    <div class="layer-arrow">↓</div>
+
+    <a class="layer" href="subsystems/asset-loader.html" data-detail="asset">
+      <div class="layer-head">
+        <span class="layer-num">4</span>
+        <span class="layer-title">Asset dispatch + categorize</span>
+      </div>
+      <div class="layer-body">
+        <div class="layer-crate">crates/asset → <code>asset</code></div>
+        <div class="layer-desc">24 format detectors classify each entry: LZS, TIM-pack, DATA_FIELD streaming, scene-bundle, effect-bundle, sound-driver outputs, VAB banks, MIPS overlays. Handlers dispatch to per-format crates.</div>
+      </div>
+    </a>
+
+    <div class="layer-arrow">↓</div>
+
+    <div class="layer-fanout">
+      <a class="leaf" href="formats/index.html#tim">PSX TIM<br><small>crates/tim</small></a>
+      <a class="leaf" href="formats/index.html#tmd">Legaia TMD<br><small>crates/tmd</small></a>
+      <a class="leaf" href="formats/index.html#vab">VAB sound bank<br><small>crates/vab</small></a>
+      <a class="leaf" href="formats/index.html#mes">MES dialog<br><small>crates/mes</small></a>
+      <a class="leaf" href="formats/index.html#anm">ANM animation<br><small>crates/anm</small></a>
+      <a class="leaf" href="formats/index.html#mdt">MDT moves<br><small>crates/mdt</small></a>
+      <a class="leaf" href="formats/index.html#lzs">LZS<br><small>crates/lzs</small></a>
+    </div>
+
+    <div class="layer-arrow">↓</div>
+
+    <a class="layer layer-engine" href="subsystems/engine.html">
+      <div class="layer-head">
+        <span class="layer-num">5</span>
+        <span class="layer-title">Engine reimplementation</span>
+      </div>
+      <div class="layer-body">
+        <div class="layer-crate">engine-core / engine-render / engine-audio / engine-vm</div>
+        <div class="layer-desc">Clean-room Rust port. Phase 1 (asset viewer) ships. Phase 2 (runtime) wires the script VMs and asset loader chain. Phase 3 (gameplay) assembles field/battle/menus.</div>
+      </div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Three VMs, three layers</h2>
+  <p>Legaia's runtime is driven by three independent bytecode VMs that talk to one shared actor model. Click each card to read the dedicated subsystem page.</p>
+
+  <div class="vm-grid">
+    <a class="vm-card" href="subsystems/actor-vm.html">
+      <div class="vm-card-num">VM 1</div>
+      <div class="vm-card-title">Actor / sprite VM</div>
+      <dl>
+        <dt>Driver</dt>      <dd><code>FUN_801D6628</code></dd>
+        <dt>Where</dt>       <dd>Title-screen overlay (0971)</dd>
+        <dt>Opcodes</dt>     <dd>13</dd>
+        <dt>Operands</dt>    <dd>byte stream</dd>
+        <dt>Status</dt>      <dd class="status-done">Fully ported</dd>
+      </dl>
+    </a>
+    <a class="vm-card" href="subsystems/move-vm.html">
+      <div class="vm-card-num">VM 2</div>
+      <div class="vm-card-title">Move-table VM</div>
+      <dl>
+        <dt>Driver</dt>      <dd><code>FUN_80023070</code></dd>
+        <dt>Where</dt>       <dd>SCUS_942.54 + town overlay</dd>
+        <dt>Opcodes</dt>     <dd>71 + 61 sub-ops</dd>
+        <dt>Operands</dt>    <dd>u16 stream</dd>
+        <dt>Status</dt>      <dd class="status-partial">Documented, port in progress</dd>
+      </dl>
+    </a>
+    <a class="vm-card" href="subsystems/script-vm.html">
+      <div class="vm-card-num">VM 3</div>
+      <div class="vm-card-title">Field / event script VM</div>
+      <dl>
+        <dt>Driver</dt>      <dd><code>FUN_801DE840</code></dd>
+        <dt>Where</dt>       <dd>Town overlay (0897)</dd>
+        <dt>Opcodes</dt>     <dd>43 + default-route extensions</dd>
+        <dt>Operands</dt>    <dd>byte stream</dd>
+        <dt>Status</dt>      <dd class="status-done">Fully ported (43/43)</dd>
+      </dl>
+    </a>
+  </div>
+
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>.</p>
+</section>
+
+</main>
+</div>
+<script src="js/layout.js"></script>
+<script>injectLayout({ active: 'architecture' });</script>
+<script src="js/main.js"></script>
+</body>
+</html>

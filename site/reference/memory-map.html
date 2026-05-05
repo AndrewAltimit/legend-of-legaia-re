@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSX RAM map — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  <style>
+.memmap {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  margin: 1.5rem 0;
+}
+.memmap-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.memmap-row:hover { background: var(--bg-card); }
+.memmap-row.active { background: var(--accent-soft); }
+.memmap-row:last-child { border-bottom: none; }
+.memmap-addr { color: var(--accent); font-weight: 500; }
+.memmap-label { color: var(--text); }
+.memmap-detail {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  margin-top: 1rem;
+  min-height: 6rem;
+  border-radius: 4px;
+}
+.memmap-detail h4 { margin-top: 0; color: var(--accent); }
+.memmap-detail .empty { color: var(--text-dim); font-style: italic; }
+.memmap-section-head {
+  background: var(--bg-code);
+  padding: 0.4rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> · <a href="index.html">reference</a> · PSX RAM map</div>
+  <h1>PSX RAM map</h1>
+  <p class="lede">2 MB of main RAM at <code>0x80000000-0x801FFFFF</code>. Click any region to see what lives there.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Interactive map</h2>
+  <p>Order: low addresses on top. Hover for a one-liner, click for full detail.</p>
+
+  <div class="memmap" id="memmap">
+    <div class="memmap-section-head">BIOS / OS area</div>
+    <div class="memmap-row" data-key="bios">
+      <span class="memmap-addr">0x80000000 — 0x8000FFFF</span>
+      <span class="memmap-label">PSX BIOS workspace, kernel TCB, exception vectors</span>
+    </div>
+
+    <div class="memmap-section-head">SCUS_942.54 (the game executable)</div>
+    <div class="memmap-row" data-key="scus-text">
+      <span class="memmap-addr">0x80010000 — 0x8005FFFF</span>
+      <span class="memmap-label">SCUS code (.text + libsnd / libspu / libcd / libapi)</span>
+    </div>
+    <div class="memmap-row" data-key="scus-data">
+      <span class="memmap-addr">0x80060000 — 0x8007FFFF</span>
+      <span class="memmap-label">SCUS .rodata + .data (jump tables, global state)</span>
+    </div>
+
+    <div class="memmap-section-head">Game state globals (in SCUS .bss)</div>
+    <div class="memmap-row" data-key="actor-table">
+      <span class="memmap-addr">0x801C9370</span>
+      <span class="memmap-label">Battle 8-actor pointer table</span>
+    </div>
+    <div class="memmap-row" data-key="char-records">
+      <span class="memmap-addr">0x80084708</span>
+      <span class="memmap-label">Character record array (stride 0x414)</span>
+    </div>
+    <div class="memmap-row" data-key="ability-bitmask">
+      <span class="memmap-addr">0x80074358 — 0x80074367</span>
+      <span class="memmap-label">4×u32 active-ability bitmask</span>
+    </div>
+    <div class="memmap-row" data-key="prot-toc">
+      <span class="memmap-addr">0x801C70F0</span>
+      <span class="memmap-label">In-RAM PROT.DAT TOC (loaded at boot)</span>
+    </div>
+    <div class="memmap-row" data-key="battle-ctx-ptr">
+      <span class="memmap-addr">0x8007BD24</span>
+      <span class="memmap-label">Pointer to active battle context struct</span>
+    </div>
+
+    <div class="memmap-section-head">Heap + scratch</div>
+    <div class="memmap-row" data-key="heap">
+      <span class="memmap-addr">0x80080000 — 0x801BFFFF</span>
+      <span class="memmap-label">Game heap (asset buffers, runtime state, dialog buffer)</span>
+    </div>
+    <div class="memmap-row" data-key="battle-ctx">
+      <span class="memmap-addr">0x800EB654</span>
+      <span class="memmap-label">Active battle context struct (pointed to by 0x8007BD24)</span>
+    </div>
+
+    <div class="memmap-section-head">Runtime overlay window</div>
+    <div class="memmap-row" data-key="overlay-low">
+      <span class="memmap-addr">0x801C0000 — 0x801CFFFF</span>
+      <span class="memmap-label">Overlay header / shared dispatch region</span>
+    </div>
+    <div class="memmap-row" data-key="overlay-mid">
+      <span class="memmap-addr">0x801D0000 — 0x801EFFFF</span>
+      <span class="memmap-label">Overlay code (varies by game mode: title / town / battle / menu)</span>
+    </div>
+    <div class="memmap-row" data-key="overlay-extended">
+      <span class="memmap-addr">0x801F0000 — 0x80205FFF</span>
+      <span class="memmap-label">Extended overlay region (used by 256 KB town overlay)</span>
+    </div>
+
+    <div class="memmap-section-head">Stack</div>
+    <div class="memmap-row" data-key="stack">
+      <span class="memmap-addr">~0x801FFF00 (top, grows down)</span>
+      <span class="memmap-label">CPU stack</span>
+    </div>
+  </div>
+
+  <div class="memmap-detail" id="memmap-detail">
+    <p class="empty">Click any row above to see details.</p>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Notes</h2>
+  <ul>
+    <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen (0971), town (0897), battle (0898), menu, options/0896.</li>
+    <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to in-heap structs. The battle context at <code>0x8007BD24</code> is the canonical example — Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
+    <li>The PROT TOC at <code>0x801C70F0</code> is loaded from disc at boot. Sam's earlier TOC math used a wrong offset (<code>toc[p+5]-toc[p+2]</code> instead of <code>toc[p+5]-toc[p+3]+4</code>); fixing it shifted classification of hundreds of entries.</li>
+  </ul>
+</section>
+
+<script>
+const DETAILS = {
+  'bios': {
+    title: 'BIOS workspace',
+    body: `<p>PSX kernel data lives here. Vectors at <code>0x80000080</code> (general), <code>0x80000180</code> (interrupt). Game code never reads/writes this directly.</p>`
+  },
+  'scus-text': {
+    title: 'SCUS code segment',
+    body: `<p>The game executable is loaded by the PSX-EXE loader at base address <code>0x80010000</code> after stripping the 0x800-byte header. This is what you import into Ghidra as <code>SCUS_942.54</code>.</p><p>Includes: game code, the move VM (<code>FUN_80023070</code>), all PsyQ libraries (libsnd at <code>0x80061-0x80067</code>, libspu at <code>0x80068-0x6D</code>, libcd at <code>0x8005CCB4-0x8005E574</code>, libapi BIOS dispatchers).</p>`
+  },
+  'scus-data': {
+    title: 'SCUS data',
+    body: `<p>Initialized data: jump tables (move-VM JT at <code>0x80010778</code>, opcode dispatch tables, GTE descriptor tables), string literals, baked-in tables (font glyph metadata at <code>0x80074050</code>, BGM IDs).</p>`
+  },
+  'actor-table': {
+    title: 'Battle actor table',
+    body: `<p>8 × <code>int*</code> = 32 bytes. Slots <code>0..2</code> are the active party (ordered by formation); slots <code>3..7</code> are up to 5 monsters per battle. Every battle helper looks up an actor through <code>(&amp;DAT_801C9370)[slot_index]</code>.</p><p>The slot pointers themselves point into the heap; the actor structs are dynamically allocated per-battle.</p>`
+  },
+  'char-records': {
+    title: 'Character records',
+    body: `<p>Stride <code>0x414</code> bytes per character. Notable fields: <code>+0x13C</code> spell-list count, <code>+0x196</code> equipment slots, <code>+0x2B0</code> active spell-slot array, <code>+0xF4..0x100</code> 16-byte active-abilities block (OR'd into the global ability bitmask each frame).</p>`
+  },
+  'ability-bitmask': {
+    title: 'Active-ability bitmask',
+    body: `<p>4 × u32 = 128 bits. Per frame, <code>FUN_80042558</code> walks the 3 active party members and ORs their per-character ability blocks into this global. The renderer keys "auto-counter / regen / magic-up" indicators on bits in this mask. Read-side primitive: <code>FUN_800431D0(bit_id) → bool</code>.</p>`
+  },
+  'prot-toc': {
+    title: 'In-RAM PROT.DAT TOC',
+    body: `<p>The boot-time TOC loader (<code>FUN_8003E4E8</code>) reads the first 3 sectors of PROT.DAT here. Subsequent asset loads resolve PROT indices through this in-RAM copy via <code>FUN_8003E8A8</code>.</p>`
+  },
+  'battle-ctx-ptr': {
+    title: 'Battle context pointer',
+    body: `<p>4-byte pointer to the active battle context struct in heap. Resolves to <code>0x800EB654</code> for the captured battle. Byte <code>+0x07</code> of the pointed-to struct is the party-action ID; byte <code>+0x06</code> is the monster-action ID. The battle action state machine (<code>FUN_801E295C</code>) keys on these.</p>`
+  },
+  'heap': {
+    title: 'Game heap',
+    body: `<p>Asset buffers (TIMs, TMDs, sound banks), runtime state (the active battle context, dialog text buffer, scene-asset table at <code>0x80084540</code>), per-actor scratch.</p>`
+  },
+  'battle-ctx': {
+    title: 'Active battle context',
+    body: `<p>32-byte fixed prefix followed by a per-battle dialog/text buffer. Bytes <code>+0x06</code> / <code>+0x07</code> hold the active monster / party action IDs (one is <code>0xFF</code> = inactive at any time). The PC offset at <code>+0x6D6</code> tracks the action state machine's progress.</p>`
+  },
+  'overlay-low': {
+    title: 'Overlay header region',
+    body: `<p>The first 60 KB of the overlay window holds shared dispatch code, jump tables, and per-overlay global state. The 0896 options-menu overlay is exactly this prefix-region (it's 0897 + 36 KB prefix).</p>`
+  },
+  'overlay-mid': {
+    title: 'Overlay code',
+    body: `<p>Where the actual game-mode code lives. Title overlay (0971), town overlay (0897, the largest at ~190 KB containing the field VM), battle overlay (0898 with the battle action state machine), menu overlay (the inventory / equip / spell screens). Different overlays are mutually exclusive — battle and town never coexist.</p>`
+  },
+  'overlay-extended': {
+    title: 'Extended overlay region',
+    body: `<p>Used by the town overlay when imported at 256 KB instead of 192 KB. Some helper functions cite addresses in this range that aren't reachable from a plain 192 KB import.</p>`
+  },
+  'stack': {
+    title: 'CPU stack',
+    body: `<p>Standard PSX convention: stack grows down from near the top of RAM. SP is initialized at boot.</p>`
+  },
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  const detail = document.getElementById('memmap-detail');
+  document.querySelectorAll('.memmap-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.memmap-row.active').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+      const key = row.getAttribute('data-key');
+      const info = DETAILS[key];
+      if (info) {
+        detail.innerHTML = '<h4>' + info.title + '</h4>' + info.body;
+      }
+    });
+  });
+});
+</script>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'reference/memory-map' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

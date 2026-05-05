@@ -1,0 +1,24 @@
+[package]
+name = "legaia-asset-viewer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "asset-viewer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+env_logger = "0.11"
+legaia-asset = { path = "../asset" }
+legaia-engine-audio = { path = "../engine-audio" }
+legaia-engine-core = { path = "../engine-core" }
+legaia-engine-render = { path = "../engine-render" }
+legaia-prot = { path = "../prot" }
+legaia-tim = { path = "../tim" }
+legaia-tmd = { path = "../tmd" }
+legaia-vab = { path = "../vab" }
+log = "0.4"
+winit = "0.30"

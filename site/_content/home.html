@@ -1,0 +1,72 @@
+<header class="page-header" id="top">
+  <div class="breadcrumb">project · NA SCUS-94254 · 1998 · sony psx</div>
+  <h1>Legend of Legaia &mdash; reverse engineering &amp; clean-room engine port</h1>
+  <p class="lede">
+    Two coordinated tracks under one repo. <strong>Track 1:</strong> extract every asset on the disc, document every format with provenance back to a Ghidra function, build round-trip parsers. <strong>Track 2:</strong> a clean-room Rust engine port that consumes the extracted data, in the same legal pattern as <a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/openrct2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, and <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a>. Bring your own disc image; the toolkit handles the rest.
+  </p>
+</header>
+
+<section class="doc-section" id="start-here">
+  <h2>Start here</h2>
+  <p>Pick the track that matches what you want to do.</p>
+  <div class="card-grid">
+    <a class="card" href="architecture.html">
+      <div class="card-title">How the layers stack</div>
+      <div class="card-body">A guided tour from the disc image down to per-asset rendering. Interactive layer diagram you can click through.</div>
+    </a>
+    <a class="card" href="quickstart.html">
+      <div class="card-title">Quick start</div>
+      <div class="card-body">Build the workspace, run the extraction pipeline, browse the assets, run Ghidra in Docker. The "first 10 minutes" page.</div>
+    </a>
+    <a class="card" href="viewer.html">
+      <div class="card-title">Asset viewer (WASM)</div>
+      <div class="card-body">In-browser viewer. Provide your own disc image; the WASM runtime parses it client-side and renders TIM textures and TMD meshes. Nothing leaves your machine.</div>
+    </a>
+    <a class="card" href="subsystems/index.html">
+      <div class="card-title">Subsystems</div>
+      <div class="card-body">How the engine works under the hood — boot path, asset loader, three script VMs, renderer, audio, battle. Each subsystem gets its own page.</div>
+    </a>
+    <a class="card" href="formats/index.html">
+      <div class="card-title">Formats</div>
+      <div class="card-body">Byte-level specs for the 24 formats on the disc, each with provenance back to a Ghidra-traced function dump.</div>
+    </a>
+    <a class="card" href="tooling/index.html">
+      <div class="card-title">Tooling</div>
+      <div class="card-body">Per-stage extraction CLIs, the headless-Ghidra-in-Docker workflow, and the runtime-overlay capture pipeline.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="status">
+  <h2>Where we are</h2>
+  <p class="lede" style="font-size: 1.05rem;">
+    The disc is fully readable. Every major subsystem is traced and documented. Three out of three script VMs are decoded; two are ported. The battle and combat-stat machinery is decoded. Asset preservation track ships round-trip parsers for every documented format.
+  </p>
+
+  <div class="status-grid">
+    <div class="status-card status-done">
+      <div class="status-card-title">Disc + asset preservation</div>
+      <div class="status-card-body">Mode2/2352 reader, ISO9660 walker, PROT.DAT TOC math, 24 format detectors classifying ~80% of PROT entries by class. Round-trip parsers ship for TIM, TMD, VAB, MES (partial), ANM, MDT, LZS, scene bundles.</div>
+    </div>
+    <div class="status-card status-done">
+      <div class="status-card-title">Static analysis</div>
+      <div class="status-card-body">1310 function dumps committed; 98.5% closed-loop on the citation graph (1119 / 1136 cited helpers covered). Three game VMs decoded. All major SCUS subsystems traced.</div>
+    </div>
+    <div class="status-card status-partial">
+      <div class="status-card-title">Engine port — Phase 1</div>
+      <div class="status-card-body">Asset viewer with PSX VRAM emulation, textured TMD rendering, stage geometry, VAB playback. <a href="viewer.html">In-browser version live.</a></div>
+    </div>
+    <div class="status-card status-partial">
+      <div class="status-card-title">Engine port — Phase 2</div>
+      <div class="status-card-body">Runtime port. Actor + Field VMs fully ported (13 + 43 opcodes). Move VM port in progress (71 + 61 opcodes).</div>
+    </div>
+    <div class="status-card status-open">
+      <div class="status-card-title">Engine port — Phase 3</div>
+      <div class="status-card-body">Gameplay assembly. Field map + dialog, battle subsystem, menus, save/load. Not started.</div>
+    </div>
+    <div class="status-card status-open">
+      <div class="status-card-title">Open work</div>
+      <div class="status-card-body">Move-VM port wrap-up, dialog font glyph atlas extraction (need VRAM dump), MES dialog renderer (overlay-resident), DATA_FIELD per-field layout final reverse.</div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,17 @@
+[package]
+name = "legaia-lzs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_lzs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lzs-decode"
+path = "src/bin/lzs-decode.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "legaia-mes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_mes"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mes"
+path = "src/bin/mes.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true

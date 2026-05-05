@@ -1,0 +1,17 @@
+[package]
+name = "legaia-xa"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_xa"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xa"
+path = "src/bin/xa.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true

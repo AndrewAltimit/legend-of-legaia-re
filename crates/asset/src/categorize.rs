@@ -1,0 +1,634 @@
+//! Bulk classification of unknown PROT entries.
+//!
+//! Tries every known parser against a buffer; if none match, falls back to
+//! statistical features (entropy, byte distribution, leading-zero run).
+//!
+//! The point isn't to get every entry right — it's to shrink the
+//! "uncategorized" pile so we can see clusters worth reversing next.
+
+use serde::Serialize;
+
+use crate::{AssetType, parse_player_lzs, parse_streaming};
+
+/// Top-level classification result for one file.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum Class {
+    /// 0-byte file.
+    Empty,
+    /// < 32 bytes.
+    Tiny,
+    /// All bytes are 0x00.
+    AllZeros,
+    /// At least 95% of bytes are 0x00 (and at least one byte isn't).
+    /// Distinct from [`Class::AllZeros`] because the non-zero bytes might
+    /// signal a small terminator, count, or footer that's worth noting.
+    /// Captures the "this PROT slot is reserved but never populated" shape.
+    MostlyZeros,
+    /// All bytes are the same non-zero value.
+    ConstantByte,
+    /// Starts with the PSX TIM magic (0x10).
+    TimPassthrough,
+    /// Parses as a DATA_FIELD streaming container (FUN_8002541c 0x14 branch).
+    DataFieldStreaming,
+    /// Matches the standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
+    /// See `crates/prot/src/timpack.rs`.
+    TimPack,
+    /// Parses as a player.lzs-style descriptor container at some count
+    /// (1, 2, 3, 4, 8, 16) and at least one descriptor decodes via LZS.
+    LzsContainer,
+    /// Contains a stage-geometry table (12-byte fixed prefix + 8-byte
+    /// payload at 20-byte stride). See [`crate::stage_geom`].
+    StageGeometry,
+    /// Field-pack container — 4-byte magic + 97-entry schema followed by
+    /// packed TIMs and TMDs. See [`crate::field_pack`].
+    FieldPack,
+    /// Effect-bundle container — magic `0x02018B0C` + constant header words +
+    /// 28-entry schema followed by packed TMD primitive groups + TIMs.
+    /// See [`crate::effect_bundle`].
+    EffectBundle,
+    /// `[u32 size][bare TMD][streaming chunks]` — a streaming-format variant
+    /// where the first asset is a Legaia TMD without a typed chunk header.
+    /// See [`crate::scene_tmd_stream`].
+    SceneTmdStream,
+    /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` —
+    /// a streaming-format variant where the leading chunk is a Sony VAB
+    /// instrument bank instead of a TMD. The single largest distributed
+    /// VAB carrier in the corpus (200+ entries). See [`crate::scene_vab_stream`].
+    SceneVabStream,
+    /// Strict 8-word v12 header — `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]` — used
+    /// by 97 scene-named PROT entries (one per scene). Format meaning open;
+    /// likely candidates are per-scene navmesh / collision / event-trigger
+    /// data. See [`crate::scene_v12_table`].
+    SceneV12Table,
+    /// Canonical 7-asset scene bundle — leads with `07 00 00 00`, then 7
+    /// descriptor pairs (`(type<<24)|size, data_offset`) covering the
+    /// `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` asset sequence. 80 PROT
+    /// entries match. See [`crate::scene_asset_table`].
+    SceneAssetTable,
+    /// MIPS code blob — the static disc copy of a runtime overlay. Leads
+    /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
+    /// follow-up instruction. 22 PROT entries match — all in the `0901..=0969`
+    /// `xxx_dat` cluster. See [`crate::mips_overlay`].
+    MipsOverlay,
+    /// Sister cluster to [`Class::MipsOverlay`] — MIPS overlay code blob
+    /// that leads with a function/jump-table header (4-64 consecutive u32
+    /// values, each in the `0x801C0000..=0x801FFFFF` overlay window) instead
+    /// of a `addiu sp, sp, -X` prologue. 42 PROT entries match — all in the
+    /// `0900..=0968` `xxx_dat` cluster. See [`crate::overlay_ptr_table`].
+    OverlayPtrTable,
+    /// "pochi"-fill placeholder: the first 1926 bytes are the ASCII pattern
+    /// `pochipochipochi...\r\n` (Japanese dev fill, "ポチ" = generic dog name)
+    /// with `0x1A` (DOS EOF) at offset `0x786`. Marks an unused / reserved PROT
+    /// slot. Found at consistent offsets within each scene CDNAME block —
+    /// scenes reserve N asset slots but only fill some, leaving the rest as
+    /// dev-fill. Distinct from data: post-prefix bytes are scratch / leftover.
+    PochiFiller,
+    /// High entropy (>= 7.5 bits/byte). Likely already-compressed or encrypted.
+    UnknownHighEntropy,
+    /// Low entropy (< 4 bits/byte). Tabular data, sparse vectors, padding.
+    UnknownLowEntropy,
+    /// Mid-entropy and otherwise unidentified.
+    UnknownOther,
+}
+
+impl Class {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Class::Empty => "empty",
+            Class::Tiny => "tiny",
+            Class::AllZeros => "all_zeros",
+            Class::MostlyZeros => "mostly_zeros",
+            Class::ConstantByte => "constant_byte",
+            Class::TimPassthrough => "tim_passthrough",
+            Class::DataFieldStreaming => "data_field_streaming",
+            Class::TimPack => "tim_pack",
+            Class::LzsContainer => "lzs_container",
+            Class::StageGeometry => "stage_geometry",
+            Class::FieldPack => "field_pack",
+            Class::EffectBundle => "effect_bundle",
+            Class::SceneTmdStream => "scene_tmd_stream",
+            Class::SceneVabStream => "scene_vab_stream",
+            Class::SceneV12Table => "scene_v12_table",
+            Class::SceneAssetTable => "scene_asset_table",
+            Class::MipsOverlay => "mips_overlay",
+            Class::OverlayPtrTable => "overlay_ptr_table",
+            Class::PochiFiller => "pochi_filler",
+            Class::UnknownHighEntropy => "unknown_high_entropy",
+            Class::UnknownLowEntropy => "unknown_low_entropy",
+            Class::UnknownOther => "unknown_other",
+        }
+    }
+}
+
+/// Per-file feature dump.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileReport {
+    pub class: Class,
+    pub size: usize,
+    /// First 16 bytes (or fewer), hex.
+    pub head: String,
+    /// First u32 LE (None if file < 4 bytes).
+    pub first_u32: Option<u32>,
+    /// Shannon entropy in bits/byte.
+    pub entropy_bits: f32,
+    /// Length of leading-zero run.
+    pub leading_zeros: usize,
+    /// Fraction of bytes equal to 0x00 across the whole buffer (0.0..=1.0).
+    /// Useful for downstream filtering even when the class doesn't depend on it.
+    pub zero_fraction: f32,
+    /// For data_field_streaming: chunk count.
+    pub stream_chunks: Option<usize>,
+    /// For lzs_container: descriptor count that worked.
+    pub lzs_descriptor_count: Option<usize>,
+    /// For stage_geometry: number of records found in the largest table.
+    pub stage_geom_records: Option<usize>,
+}
+
+/// Classify a single buffer.
+pub fn classify(buf: &[u8]) -> FileReport {
+    let size = buf.len();
+    let head = hex_head(buf, 16);
+    let first_u32 = if buf.len() >= 4 {
+        Some(u32::from_le_bytes(buf[..4].try_into().unwrap()))
+    } else {
+        None
+    };
+    let entropy_bits = entropy(buf);
+    let leading_zeros = buf.iter().take_while(|&&b| b == 0).count();
+    let zero_count = buf.iter().filter(|&&b| b == 0).count();
+    let zero_fraction = if buf.is_empty() {
+        0.0
+    } else {
+        zero_count as f32 / buf.len() as f32
+    };
+
+    // Run all detectors; pick the first one that fires in this priority order.
+    if size == 0 {
+        return mk(
+            Class::Empty,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if leading_zeros == size {
+        return mk(
+            Class::AllZeros,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if size < 32 {
+        return mk(
+            Class::Tiny,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if buf.iter().all(|&b| b == buf[0]) {
+        return mk(
+            Class::ConstantByte,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+    if first_u32 == Some(0x0000_0010) {
+        return mk(
+            Class::TimPassthrough,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // pochi-fill placeholder slot: ASCII "pochi" repeating up to byte 0x785,
+    // then `0x1A` (DOS EOF) at offset 0x786. Cheap to check and very specific.
+    if is_pochi_filler(buf) {
+        return mk(
+            Class::PochiFiller,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Streaming format: don't accept just 1 chunk (too many false positives).
+    if let Ok(r) = parse_streaming(buf, 4096)
+        && r.terminated
+        && r.all_known_types
+        && r.all_magic_ok
+        && r.chunks.len() >= 2
+    {
+        let mut report = mk(
+            Class::DataFieldStreaming,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(r.chunks.len());
+        return report;
+    }
+
+    // MIPS overlay-code blob — leads with `addiu sp, sp, -X`. Specific
+    // 4-byte signature with no overlap against any other detector. Runs early
+    // so we don't waste time on heavier structural checks.
+    if crate::mips_overlay::detect(buf).is_some() {
+        return mk(
+            Class::MipsOverlay,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Sister of `mips_overlay` — leads with a 4–64 u32 run, each in the
+    // overlay window. Strict structural detector with no overlap against
+    // any other class.
+    if crate::overlay_ptr_table::detect(buf).is_some() {
+        return mk(
+            Class::OverlayPtrTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // 7-asset scene table — leads with `07 00 00 00`, then 7 descriptor pairs.
+    // Strict structural detector (no LZS-decode requirement) so it captures
+    // both the LZS-payload and raw-payload variants uniformly. Runs before
+    // lzs_container so the 26 entries that previously matched as `n=1`
+    // (a coincidental first-descriptor match) get the more specific class.
+    if crate::scene_asset_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // v12 strict-magic header — `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]`. This
+    // outer-shape header at offset 0 is more authoritative than fieldpack
+    // magic that may appear deeper in the file (e.g. `0002_gameover_data.BIN`
+    // has v12 at offset 0 and a fieldpack-shaped region at 0x39800).
+    if crate::scene_v12_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneV12Table,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Field-pack: magic + 97-entry schema. Detect before TimPack /
+    // stage_geometry / lzs_container — fieldpack files often satisfy
+    // weaker heuristics, so the most-specific signature wins.
+    if crate::field_pack::detect(buf).is_some() {
+        return mk(
+            Class::FieldPack,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Effect-bundle: same logic as field-pack — strict-schema detector
+    // gates this before the weaker heuristics.
+    if crate::effect_bundle::detect(buf).is_some() {
+        return mk(
+            Class::EffectBundle,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // TMD-prefixed scene stream — `[u32 size][bare TMD][streaming chunks]`.
+    // Strict structural detector (TMD magic at +4, sane nobj, in-bounds size
+    // prefix, walkable streaming tail) — runs before the weaker LZS-container
+    // and stage-geometry heuristics so the most-specific schema wins.
+    if let Some(s) = crate::scene_tmd_stream::detect(buf) {
+        let mut report = mk(
+            Class::SceneTmdStream,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(s.tail_chunks.len());
+        return report;
+    }
+
+    // VAB-prefixed scene stream — same outer wrapper as scene_tmd_stream, but
+    // chunk0 carries a Sony VAB sound bank (`VABp` magic at +4). Strict
+    // structural detector validates the magic + version + ps/ts counts.
+    if let Some(s) = crate::scene_vab_stream::detect(buf) {
+        let mut report = mk(
+            Class::SceneVabStream,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stream_chunks = Some(s.tail_chunks);
+        return report;
+    }
+
+    // Standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
+    if legaia_prot::timpack::is_tim_pack(buf) {
+        return mk(
+            Class::TimPack,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Stage-geometry table (Cluster A successor). One run of >= 4
+    // consecutive records is enough — the 12-byte signature is too
+    // specific to coincide.
+    let geom_tables = crate::stage_geom::scan(buf);
+    if let Some(largest) = geom_tables.iter().max_by_key(|t| t.records) {
+        let mut report = mk(
+            Class::StageGeometry,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.stage_geom_records = Some(largest.records);
+        return report;
+    }
+
+    // player.lzs-style container: try a handful of descriptor counts. We accept
+    // it only if EVERY descriptor decodes via LZS (some by raw is fine too) AND
+    // at least one decodes (no zero-descriptor fits).
+    for &n in &[1usize, 2, 3, 4, 8, 16] {
+        if let Some(_count) = try_lzs_container(buf, n) {
+            let mut report = mk(
+                Class::LzsContainer,
+                size,
+                head,
+                first_u32,
+                entropy_bits,
+                leading_zeros,
+                zero_fraction,
+            );
+            report.lzs_descriptor_count = Some(n);
+            return report;
+        }
+    }
+
+    // Mostly-zeros placeholder. Run after structural detectors so a sparse
+    // stage-geometry / streaming entry isn't shadowed. The 0.95 threshold
+    // catches near-empty PROT slots without sweeping in real (sparse) tables.
+    if zero_fraction >= 0.95 {
+        return mk(
+            Class::MostlyZeros,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Statistical fallback.
+    let class = if entropy_bits >= 7.5 {
+        Class::UnknownHighEntropy
+    } else if entropy_bits < 4.0 {
+        Class::UnknownLowEntropy
+    } else {
+        Class::UnknownOther
+    };
+    mk(
+        class,
+        size,
+        head,
+        first_u32,
+        entropy_bits,
+        leading_zeros,
+        zero_fraction,
+    )
+}
+
+/// Detects the "pochi-fill" placeholder pattern used in unused PROT slots.
+///
+/// Layout:
+/// - Bytes 0..0x786: ASCII `"pochi"` repeating (lines of 50 chars + CRLF
+///   terminator), where 0x786 = 1926 = 37 lines × 52 bytes + 2 bytes ("po").
+/// - Byte 0x786: `0x1A` (DOS EOF marker).
+/// - Bytes 0x787..end: scratch / leftover data (sometimes non-zero).
+///
+/// We don't validate the full prefix byte-by-byte — checking the first 5
+/// bytes for `"pochi"` plus the magic at 0x786 is enough to be specific
+/// (no real format starts with 5 ASCII letters and then has 0x1A at exactly
+/// that offset).
+fn is_pochi_filler(buf: &[u8]) -> bool {
+    buf.len() > 0x786 && buf.starts_with(b"pochi") && buf[0x786] == 0x1A
+}
+
+fn try_lzs_container(buf: &[u8], count: usize) -> Option<usize> {
+    let header_end = (8 + count * 8) as u32;
+    let c = parse_player_lzs(buf, count).ok()?;
+    // All descriptors need: known type, sane size, in-bounds offset.
+    if !c.descriptors.iter().all(|d| {
+        !matches!(d.asset_type(), AssetType::Unknown(_))
+            && (32..=4 * 1024 * 1024).contains(&d.size)
+            && d.data_offset >= header_end
+            && (d.data_offset as usize) < buf.len()
+    }) {
+        return None;
+    }
+    // At least one must decode via LZS to count as evidence.
+    let any_lzs = c
+        .descriptors
+        .iter()
+        .any(|d| crate::decode(buf, d, crate::DecodeMode::Lzs).is_ok());
+    if any_lzs { Some(count) } else { None }
+}
+
+fn mk(
+    class: Class,
+    size: usize,
+    head: String,
+    first_u32: Option<u32>,
+    entropy_bits: f32,
+    leading_zeros: usize,
+    zero_fraction: f32,
+) -> FileReport {
+    FileReport {
+        class,
+        size,
+        head,
+        first_u32,
+        entropy_bits,
+        leading_zeros,
+        zero_fraction,
+        stream_chunks: None,
+        lzs_descriptor_count: None,
+        stage_geom_records: None,
+    }
+}
+
+fn hex_head(buf: &[u8], n: usize) -> String {
+    buf.iter()
+        .take(n)
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn entropy(buf: &[u8]) -> f32 {
+    if buf.is_empty() {
+        return 0.0;
+    }
+    let mut counts = [0u32; 256];
+    for &b in buf {
+        counts[b as usize] += 1;
+    }
+    let n = buf.len() as f32;
+    let mut h = 0.0f32;
+    for c in counts.iter().filter(|&&c| c > 0) {
+        let p = (*c as f32) / n;
+        h -= p * p.log2();
+    }
+    h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_all_zeros() {
+        let r = classify(&vec![0u8; 1024]);
+        assert_eq!(r.class, Class::AllZeros);
+        assert_eq!(r.zero_fraction, 1.0);
+    }
+
+    #[test]
+    fn detects_mostly_zeros_above_threshold() {
+        // 1024 zeros + 10 non-zero bytes = ~99% zeros.
+        let mut buf = vec![0u8; 1024];
+        for i in 0..10 {
+            buf.push(0xAA + i as u8);
+        }
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::MostlyZeros);
+        assert!(r.zero_fraction >= 0.95);
+    }
+
+    #[test]
+    fn does_not_classify_75pct_zeros_as_mostly_zeros() {
+        // Sparse-but-real tables (75-95% zeros) must stay in low_entropy
+        // so they get reverse-engineered, not buried as placeholders.
+        let mut buf = vec![0u8; 1024];
+        // 256 non-zero bytes scattered = 75% zeros.
+        for i in 0..256 {
+            buf[i * 4] = 0xAA;
+        }
+        let r = classify(&buf);
+        assert_ne!(r.class, Class::MostlyZeros);
+    }
+
+    #[test]
+    fn detects_tim_passthrough() {
+        let mut buf = vec![0x10u8, 0, 0, 0, 0x08, 0, 0, 0];
+        buf.resize(64, 0xAA);
+        let r = classify(&buf);
+        assert_eq!(r.class, Class::TimPassthrough);
+    }
+
+    #[test]
+    fn detects_constant_byte() {
+        let r = classify(&vec![0xAAu8; 1024]);
+        assert_eq!(r.class, Class::ConstantByte);
+    }
+
+    #[test]
+    fn detects_empty_and_tiny() {
+        assert_eq!(classify(&[]).class, Class::Empty);
+        assert_eq!(classify(&[1, 2, 3]).class, Class::Tiny);
+    }
+
+    #[test]
+    fn high_entropy_random_bytes() {
+        let buf: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        let r = classify(&buf);
+        // 256 symbols uniform → 8 bits of entropy
+        assert!(r.entropy_bits > 7.9);
+        assert_eq!(r.class, Class::UnknownHighEntropy);
+    }
+
+    #[test]
+    fn low_entropy_repetitive() {
+        // 4096-byte buffer at 90% zeros (below the 95% MostlyZeros gate)
+        // with a 4-symbol alphabet — low entropy but real content.
+        let mut buf = vec![0u8; 4096];
+        for i in 0..400 {
+            buf[i * 10] = (i % 3 + 1) as u8;
+        }
+        let r = classify(&buf);
+        assert!(r.entropy_bits < 4.0, "entropy was {}", r.entropy_bits);
+        assert!(
+            r.zero_fraction < 0.95,
+            "zero_fraction was {}",
+            r.zero_fraction
+        );
+        assert_eq!(r.class, Class::UnknownLowEntropy);
+    }
+}

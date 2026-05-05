@@ -1,0 +1,118 @@
+---
+# Placeholder CI + GitHub Pages deploy for legend-of-legaia-re.
+# Modeled on faultline/.github/workflows/main-ci.yml (same self-hosted runner
+# convention). Tailored:
+#   - No WASM build step (no wasm crate yet).
+#   - No scenarios symlink to materialize.
+#   - cargo runs directly on the runner (no docker-compose `rust-ci` service
+#     in this repo yet; the only compose service here is `ghidra`).
+#   - Validation suite is gated on LEGAIA_DISC_BIN, which is intentionally
+#     not provided in CI: this repo ships no game data. The gated tests
+#     print a skip notice and pass.
+
+name: Main CI
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: main-ci-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  # -- Cargo CI ---------------------------------------------------------------
+  ci:
+    name: Legaia CI
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --workspace -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --release
+
+      - name: Build
+        run: cargo build --release --workspace
+
+  # -- Deploy GitHub Pages ----------------------------------------------------
+  deploy-pages:
+    name: Deploy GitHub Pages
+    needs: [ci]
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            curl -fsSL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          fi
+          wasm-pack --version
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build web-viewer WASM
+        run: wasm-pack build crates/web-viewer --target web --release --out-dir ../../site/wasm
+
+      - name: Generate site pages
+        run: python3 site/_gen.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # -- CI Summary -------------------------------------------------------------
+  notify:
+    name: CI Summary
+    needs: [ci, deploy-pages]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Main CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Pages | ${{ needs.deploy-pages.result == 'success' && 'pass' || needs.deploy-pages.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.ci.result }}" == "failure" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
