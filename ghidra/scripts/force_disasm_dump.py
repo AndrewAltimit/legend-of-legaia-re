@@ -9,7 +9,7 @@
 # so the project DB doesn't pick up phantom stubs.
 #
 # Input: one hex address per line in `ADDRS_FILE` (place the file alongside
-# this script — gitignored, so each session populates it on demand).
+# this script -- gitignored, so each session populates it on demand).
 
 import os
 from ghidra.app.cmd.disassemble import DisassembleCommand

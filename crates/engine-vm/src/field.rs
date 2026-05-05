@@ -3377,6 +3377,16 @@ pub fn step<H: FieldHost>(
                     let target = u16::from_le_bytes([lo, hi]) as usize;
                     StepResult::Advance { next_pc: target }
                 }
+                12..=15 => {
+                    // sub-ops 12..=15 hit the dispatcher's default arm at
+                    // `switchD_801e0a38_default`: with `uVar31 = uVar27 = 0`
+                    // the boolean test is false either way, and the
+                    // `(sub_op - 10) < 2` check fails for sub-op >= 12, so
+                    // the original returns `param_2 + 7` (= PC += 7).
+                    StepResult::Advance {
+                        next_pc: pc + header_size + 6,
+                    }
+                }
                 10 | 11 => {
                     // 9-byte party-bank comparison:
                     //   [4E, _, mode, lo1, hi1, skip_lo, skip_hi, lo2, hi2]
@@ -3498,7 +3508,12 @@ pub fn step<H: FieldHost>(
                         6 | 8 | 9 | 0xC | 0xD => StepResult::Advance {
                             next_pc: pc + header_size + 4,
                         },
-                        _ => StepResult::Pending { opcode, pc },
+                        // sub-A / sub-B / any other byte > 0xD: the Done-side
+                        // catch-all in `FUN_801de840 case 0x49` clears the
+                        // resume slot and returns `param_2` (halt at PC).
+                        // `op49_clear()` was already called above, so this is
+                        // just the halt.
+                        _ => StepResult::Halt { final_pc: pc },
                     }
                 }
             }
@@ -6474,6 +6489,27 @@ mod tests {
     }
 
     #[test]
+    fn op_4e_sub_c_through_f_advance_seven() {
+        // mode_byte high-nibble in 12..=15 hits the dispatcher's default arm
+        // at switchD_801e0a38_default. With no party-bank state initialised,
+        // `uVar31 = uVar27 = 0`; the comparison is false, and `(sub-10) < 2`
+        // is false for sub-op >= 12, so the original returns `param_2 + 7`
+        // (= PC += 7 from the opcode).
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        for sub in 12..=15u8 {
+            let mode = sub << 4;
+            let bc = [0x4E, 0, mode, 0, 0, 0, 0, 0, 0];
+            let r = step(&mut host, &mut ctx, &bc, 0);
+            assert_eq!(
+                r,
+                StepResult::Advance { next_pc: 7 },
+                "sub-op {sub}: expected PC += 7"
+            );
+        }
+    }
+
+    #[test]
     fn op_4e_sub_a_compares_party_bank() {
         // sub-op 10 (party-bank A). state=1000, scaled-from-operands=
         // (0x0064 | (0x0000 << 16)) = 100. mode=0 (state < scaled): false ->
@@ -6586,17 +6622,19 @@ mod tests {
     }
 
     #[test]
-    fn op_49_done_unhandled_subop_pending() {
+    fn op_49_done_subop_a_halts_at_pc() {
+        // Done-side catch-all in `FUN_801de840 case 0x49`: any sub-op that
+        // isn't explicitly handled (here sub-0xA, which falls through the
+        // 1/3/7, 2/4, 5, 6/8/9/C/D arms) clears the resume slot and returns
+        // `param_2` (= halt at the same PC).
         let mut host = TestHost {
             op49_state_value: Op49State::Done,
             ..Default::default()
         };
         let mut ctx = FieldCtx::default();
-        // Sub-ops 0/1/2/3/4/5/6/7/8/9/C/D are now wired. Pick sub-0xA which
-        // remains in the catch-all "_DAT_8007b450 = 0; return param_2" path
-        // (any sub-op outside the explicit set falls through with no advance).
         let r = step(&mut host, &mut ctx, &[0x49, 0xA, 0, 0, 0], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x49, .. }));
+        assert!(matches!(r, StepResult::Halt { final_pc: 0 }));
+        assert_eq!(host.op49_clears, 1, "should clear the resume slot");
     }
 
     #[test]
