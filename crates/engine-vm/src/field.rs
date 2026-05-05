@@ -1250,7 +1250,11 @@ pub trait FieldHost {
     ///
     /// 2-byte instruction `[4C, 0x87]`. The original calls
     /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801E5154)` to register a callback
-    /// on the actor list, then exits via the default arm. PC += 2.
+    /// on the actor list, then exits via `switchD_801e00f4::default()`.
+    /// Since `0x4C & 0x70 = 0x40` (not in {0x50, 0x60, 0x70}), the dispatcher
+    /// default returns `param_2` — i.e. **halts at PC**, waiting for the
+    /// registered callback to release the script. The dispatch wrapper
+    /// applies the halt; the host hook only needs to register the callback.
     fn op4c_n8_sub7_register_callback(&mut self) {}
 
     /// Op 0x4C outer-nibble-8 sub-8 — write 3 globals.
@@ -1315,20 +1319,39 @@ pub trait FieldHost {
         let _ = words;
     }
 
+    /// Op 0x4C outer-nibble-9 sub-0xF — register `LAB_801DA930` callback.
+    ///
+    /// 2-byte instruction `[4C, 0x9F]`. The original calls
+    /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` (same as nibble-8 sub-7,
+    /// but with a different callback target), then exits via
+    /// `switchD_801e00f4::default()` — halts at PC for opcode 0x4C. The
+    /// dispatch wrapper applies the halt; the host hook only needs to
+    /// register the callback.
+    fn op4c_n9_sub_f_register_callback(&mut self) {}
+
     /// Op 0x4C outer-nibble-A — conditional jump on a flag bit.
     ///
-    /// 5-byte instruction `[4C, 0xAN, bit, lo, hi]` where `N ∈ {0, 1, 2}`
-    /// selects the bank:
-    /// - `0`: `ctx.flags & (1 << bit)`
-    /// - `1`: `ctx.local_flags & (1 << bit)`
-    /// - `2`: `_DAT_1F800394 & (1 << bit)` (global story flag).
+    /// 5-byte instruction `[4C, 0xAN, bit, lo, hi]` where `N` selects the
+    /// bank:
+    /// - `0`: `ctx.flags & (1 << bit)` (per-actor flag word, ctx[+0x10]).
+    /// - `1`: `ctx.local_flags & (1 << bit)` (16-bit local flags, ctx[+0x62]).
+    /// - `2`: `_DAT_1F800394 & (1 << bit)` (global story flag word).
+    /// - `3..=0xF`: no bank check; helper returns `false`. The original at
+    ///   line 6702 of `overlay_0897_801de840.txt` falls through every check
+    ///   and skips 5 bytes (`return param_2 + 5`).
     ///
-    /// When the bit is **clear** the original takes the jump, computing the
-    /// target via `func_0x8003CE9C(operand + 2)` (signed 16-bit absolute PC).
-    /// When set, PC advances by 5.
+    /// When the bit is **set**, the original takes the absolute jump
+    /// (`func_0x8003CE9C(operand + 2)` — signed 16-bit absolute PC). When
+    /// clear, PC advances by 5.
+    ///
+    /// (Round 11 corrected the take/skip direction here: prior implementations
+    /// were inverted because Ghidra's C output for case 10 hides the `bne a1,
+    /// zero, 0x801e258c` dispatch at 0x801e2568. The asm flow is "if sub != 0,
+    /// skip ctx[+0x10] check; per-sub-op bit SET → branch to the take-jump
+    /// label", not the other way around.)
     ///
     /// `bit` is the operand byte; the VM masks the low 5 bits to match
-    /// MIPS shift semantics.
+    /// MIPS `sllv` shift semantics.
     fn op4c_n_a_flag_set(&self, ctx: &FieldCtx, bank: u8, bit: u8) -> bool {
         match bank {
             0 => ctx.flags & (1u32 << (bit & 0x1F)) != 0,
@@ -2725,10 +2748,15 @@ pub fn step<H: FieldHost>(
                         }
                     }
                     7 => {
+                        // Register callback then halt at PC. The original
+                        // calls `switchD_801e00f4::default()` (= halt for
+                        // 0x4C since `0x4C & 0x70 = 0x40`); script resumes
+                        // when the registered callback fires. Distinct from
+                        // an Advance — a re-entry of the dispatcher at the
+                        // same PC re-registers, so the host's hook should
+                        // be idempotent.
                         host.op4c_n8_sub7_register_callback();
-                        StepResult::Advance {
-                            next_pc: pc + header_size + 1,
-                        }
+                        StepResult::Halt { final_pc: pc }
                     }
                     8 => {
                         if operand + 5 > bytecode.len() {
@@ -2824,32 +2852,42 @@ pub fn step<H: FieldHost>(
                                 next_pc: pc + header_size + 33,
                             }
                         }
-                        0xF => StepResult::Pending { opcode, pc },
+                        // Sub-0xF: register `LAB_801DA930` callback then halt
+                        // at PC. The original goes through
+                        // `switchD_801e00f4::default()`, which for opcode 0x4C
+                        // (`& 0x70 = 0x40`) returns `param_2` — halt at PC.
+                        // The script resumes when the registered callback
+                        // fires.
+                        0xF => {
+                            host.op4c_n9_sub_f_register_callback();
+                            StepResult::Halt { final_pc: pc }
+                        }
                         _ => StepResult::Halt { final_pc: pc },
                     }
                 }
                 // Outer nibble 0xA — conditional jump on flag bit. The 5-byte
-                // instruction `[4C, 0xAN, bit, lo, hi]` reads `bit` and dispatches:
-                // sub-0 → ctx.flags, sub-1 → ctx.local_flags, sub-2 → global story.
-                // When the bit is **clear** the original takes the absolute jump;
-                // set falls through to PC += 5.
+                // instruction `[4C, 0xAN, bit, lo, hi]` dispatches first on
+                // sub-op (`bne a1, zero, 0x801e258c` at 0x801e2568 of the
+                // overlay disassembly), then per-sub-op checks one bit:
+                // sub-0 → ctx.flags, sub-1 → ctx.local_flags, sub-2 → global
+                // story flag word. When the bit is **set** the original
+                // branches to the absolute-jump label (`bne v1, zero,
+                // 0x801e360c`); clear (or sub-op 3..=0xF) falls through to
+                // `s8 += 5` (PC += 5).
                 0xA => {
-                    let sub = op0 & 0x0F;
-                    if !matches!(sub, 0..=2) {
-                        return StepResult::Pending { opcode, pc };
-                    }
                     if operand + 4 > bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }
+                    let sub = op0 & 0x0F;
                     let bit = bytecode[operand + 1];
                     let target = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
                     if host.op4c_n_a_flag_set(ctx, sub, bit) {
                         StepResult::Advance {
-                            next_pc: pc + header_size + 4,
+                            next_pc: target as i32 as usize,
                         }
                     } else {
                         StepResult::Advance {
-                            next_pc: target as i32 as usize,
+                            next_pc: pc + header_size + 4,
                         }
                     }
                 }
@@ -4243,6 +4281,7 @@ mod tests {
         n8_quad_writes: Vec<([i16; 3], u32)>,
         n9_dde34_calls: Vec<(u8, u8, [i16; 3])>,
         n9_table_copies: Vec<[i16; 16]>,
+        n9_callback_regs: u32,
         n_c_subtile_broadcasts: Vec<(u8, u8)>,
         n_c_sound_triggers: Vec<(u8, u8)>,
         n_c_slot_writes: Vec<(u8, i16)>,
@@ -4617,6 +4656,9 @@ mod tests {
         }
         fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
             self.n9_table_copies.push(words);
+        }
+        fn op4c_n9_sub_f_register_callback(&mut self) {
+            self.n9_callback_regs += 1;
         }
         fn op4c_n_c_sub4_subtile_broadcast(&mut self, x: u8, z: u8) {
             self.n_c_subtile_broadcasts.push((x, z));
@@ -7697,17 +7739,20 @@ mod tests {
     }
 
     #[test]
-    fn op_4c_n_a_sub_0_branches_when_ctx_flag_clear() {
-        // [4C, 0xA0, bit=4, lo, hi] — ctx.flags bit 4 clear → jump to 0x100.
+    fn op_4c_n_a_sub_0_advances_when_ctx_flag_clear() {
+        // [4C, 0xA0, bit=4, lo, hi] — ctx.flags bit 4 clear → skip 5 bytes.
+        // The asm at 0x801e2580/4 ANDs ctx[+0x10] with `(1 << bit)` and only
+        // branches to the take-jump label when the result is non-zero.
         let bytecode = [0x4Cu8, 0xA0, 0x04, 0x00, 0x01];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
     }
 
     #[test]
-    fn op_4c_n_a_sub_0_advances_when_ctx_flag_set() {
+    fn op_4c_n_a_sub_0_branches_when_ctx_flag_set() {
+        // ctx.flags bit 4 SET → take the absolute jump (0x100).
         let bytecode = [0x4Cu8, 0xA0, 0x04, 0x00, 0x01];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx {
@@ -7715,11 +7760,12 @@ mod tests {
             ..FieldCtx::default()
         };
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
     }
 
     #[test]
     fn op_4c_n_a_sub_2_uses_global_flags() {
+        // Global flag set → take jump.
         let bytecode = [0x4Cu8, 0xA2, 0x03, 0x20, 0x00];
         let mut host = TestHost {
             globals: 1u32 << 3,
@@ -7727,8 +7773,54 @@ mod tests {
         };
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        // Global flag set → no jump → PC += 5.
+        assert_eq!(r, StepResult::Advance { next_pc: 0x20 });
+    }
+
+    #[test]
+    fn op_4c_n_a_sub_3_through_f_skip_5() {
+        // Sub-ops 3..=0xF have no `case` arm in the asm. The dispatch at
+        // 0x801e2568 (`bne a1, zero, 0x801e258c`) jumps past every bank
+        // check, both `bne a1, 1` and `bne a1, 2` then branch to the
+        // skip-5 exit. The s8 += 5 in the delay slot of the first bne is
+        // the PC delta.
+        let bytecode = [0x4Cu8, 0xA5, 0xFF, 0x00, 0x01];
+        let mut host = TestHost {
+            globals: !0u32,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx {
+            flags: !0u32,
+            local_flags: !0u16,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    }
+
+    #[test]
+    fn op_4c_n9_sub_f_registers_callback_and_halts() {
+        // [4C, 0x9F] — register `LAB_801DA930` callback then halt at PC.
+        // Same dispatch pattern as nibble-8 sub-7 (callback target differs).
+        let bytecode = [0x4Cu8, 0x9F];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n9_callback_regs, 1);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_7_registers_callback_and_halts() {
+        // [4C, 0x87] — register actor-list callback (LAB_801E5154) then halt
+        // at PC. The original goes through `switchD_801e00f4::default()`,
+        // which for opcode 0x4C (`& 0x70 = 0x40`) returns `param_2` —
+        // halt at PC. Our hook is one-shot per dispatch entry.
+        let bytecode = [0x4Cu8, 0x87];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n8_callback_regs, 1);
     }
 
     #[test]

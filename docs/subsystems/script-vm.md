@@ -285,9 +285,9 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers:
 | 5 | 0x50..0x5F | Sound directional / dialog query / NPC movement halt-acquire |
 | 6 | 0x60..0x6F | 6-word emitter (`func_0x80058490`) + 16-byte halt-acquire |
 | 7 | 0x70..0x7F | VRAM tile-flag bulk SET/CLEAR via 7-byte operand |
-| 8 | 0x80..0x8F | Large multi-purpose dispatcher (party page mirror, conditional jump on `+0x68`, …) |
-| 9 | 0x90..0x9F | Fade family + 16-word table copy + callback |
-| A | 0xA0..0xAF | Conditional jump on flag bit (3 banks: `ctx.flags`, `ctx.local_flags`, global story flag) |
+| 8 | 0x80..0x8F | Large multi-purpose dispatcher (party page mirror, conditional jump on `+0x68`, …). Sub-7 (`func_0x8003CF40(_DAT_8007C34C, &LAB_801E5154)`) registers an actor-list callback then halts at PC via the dispatcher default. |
+| 9 | 0x90..0x9F | Fade family (sub-0..2 via `FUN_801DDE34`), 16-word table copy (sub-0xE), callback registration (sub-0xF: `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` then halt at PC). |
+| A | 0xA0..0xAF | Conditional jump on flag bit. Sub-0 reads `ctx.flags`, sub-1 reads `ctx.local_flags`, sub-2 reads the global story flag word. Bit SET → take absolute jump from operand[2..4]; bit CLEAR (or sub-3..=0xF) → skip 5 bytes. (The asm dispatches on sub-op first at 0x801e2568, so sub-3..=0xF skip both the per-bank check and the take-jump path.) |
 | C | 0xC0..0xCF | Small per-actor / per-scene writes (slot table, sub-tile broadcast, sound trigger, `field_74` XOR) |
 | D | 0xD0..0xDF | Party state + inverted-Y mirror cluster |
 | E | 0xE0..0xEF | Misc scene writes + emitter helpers |
