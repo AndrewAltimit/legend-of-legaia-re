@@ -16,6 +16,7 @@
 //! | [`load_u16_le`]         | `FUN_8003CE9C`    | `0x4C nC sub-5/6`, `nD sub-1`|
 //! | [`load_u24_le`]         | `FUN_8003CEB8`    | `0x4C nE sub-5` (XP add)     |
 //! | [`load_u32_le`]         | `FUN_8003CED8`    | 32-bit immediates            |
+//! | [`tile_center`]         | inline (multi-arm) | `0x4C nE sub-3/4`, MOVE_TO  |
 //!
 //! Provenance for each port lives next to the function in the doc comment.
 //!
@@ -187,6 +188,40 @@ pub fn load_u32_le(buf: &[u8]) -> u32 {
 /// of `value` is ignored.
 pub fn sign_extend_24(value: u32) -> i32 {
     ((value << 8) as i32) >> 8
+}
+
+/// Decode a grid-coordinate byte to a tile-center world coordinate (signed).
+///
+/// The field VM stores per-tile positions as packed bytes: the low 7 bits are
+/// the tile index along one axis, and the high bit is a "+0x40 fine offset"
+/// half-tile flag. The original dispatcher inlines this conversion in nine
+/// distinct sub-ops (most prominently `0x4C nE sub-3/4` for camera-anchored
+/// teleport / bbox queries, and the `MOVE_TO` family at op 0x23 / 0x3F).
+///
+/// Formula:
+/// - `b == 0` returns `0` (the origin tile is treated as not-yet-positioned;
+///   the original's `lb / beq / move zero` chain at `0x801E2810` short-circuits
+///   the multiplication).
+/// - Otherwise `(b & 0x7F) << 7 | 0x40` (= `(b & 0x7F) * 0x80 + 0x40` =
+///   tile-grid origin + half-tile center).
+/// - If `b & 0x80` is set, add another `0x40` (= the fine-offset bit pushes
+///   the position to the next half-tile boundary).
+///
+/// The signed return matches the dispatcher's local-variable type — bbox /
+/// camera coordinates are stored as `short` and can be compared with negative
+/// reference values produced by tween / scroll operations. Callers that need an
+/// unsigned value (e.g. world-space `ctx.world_x` writes for MOVE_TO) cast back
+/// via `value as u16`.
+///
+/// The output range is `[0, 0x4000]` (max input `0xFF` = (`0x7F << 7`) +
+/// `0x40` + `0x40` = `0x4000`). The signed return type never goes negative
+/// for valid input.
+pub fn tile_center(b: u8) -> i16 {
+    if b == 0 {
+        return 0;
+    }
+    let base = (i16::from(b & 0x7F)) << 7 | 0x40;
+    if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
 #[cfg(test)]
@@ -447,6 +482,45 @@ mod tests {
         // The function only looks at the low 24 bits.
         assert_eq!(sign_extend_24(0xABFF_FFFF), -1);
         assert_eq!(sign_extend_24(0xCD00_0000), 0);
+    }
+
+    #[test]
+    fn tile_center_zero_is_zero() {
+        // The dispatcher short-circuits b == 0 to 0 — verifies the special
+        // case isn't lost in arithmetic.
+        assert_eq!(tile_center(0), 0);
+    }
+
+    #[test]
+    fn tile_center_low_byte_examples() {
+        // Verified against the original's `(b & 0x7F) << 7 | 0x40` formula.
+        assert_eq!(tile_center(0x01), 0xC0); // 1 * 0x80 + 0x40
+        assert_eq!(tile_center(0x02), 0x140); // 2 * 0x80 + 0x40
+        assert_eq!(tile_center(0x10), 0x840); // 16 * 0x80 + 0x40
+        assert_eq!(tile_center(0x7F), 0x3FC0); // 127 * 0x80 + 0x40
+    }
+
+    #[test]
+    fn tile_center_high_bit_adds_fine_offset() {
+        // b & 0x80 set adds another 0x40.
+        assert_eq!(tile_center(0x90), 0x880); // 16 * 0x80 + 0x40 + 0x40
+        assert_eq!(tile_center(0xFF), 0x4000); // 127 * 0x80 + 0x40 + 0x40 = 0x3FC0 + 0x40
+        assert_eq!(tile_center(0x81), 0x100); // 1 * 0x80 + 0x40 + 0x40
+    }
+
+    #[test]
+    fn tile_center_high_bit_only_does_not_zero_out() {
+        // 0x80 has the fine-offset bit set but tile index 0. The original
+        // does NOT short-circuit for this — only b == 0 zeroes out.
+        assert_eq!(tile_center(0x80), 0x80); // 0 * 0x80 + 0x40 + 0x40
+    }
+
+    #[test]
+    fn tile_center_output_is_non_negative() {
+        // For all valid inputs the output is non-negative (max ~0x40C0).
+        for b in 0..=u8::MAX {
+            assert!(tile_center(b) >= 0, "byte {b:#x} produced negative output");
+        }
     }
 
     #[test]
