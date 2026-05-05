@@ -11,3 +11,4 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 log = "0.4"
+legaia-engine-vm = { path = "../engine-vm" }

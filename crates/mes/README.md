@@ -51,12 +51,24 @@ dialog-rendering overlay is captured) will fill in the meanings.
   cross-checked against the interpreter.
 - Handle `Format::Records` beyond locating record boundaries.
 
+## Bytecode interpreter
+
+`interp::Interpreter` walks the offset-table-driven bytecode of a
+`Format::Compact` blob and emits a higher-level `MesEvent` stream
+(`Glyph` / `EndOfMessage` / `PageBreak` / `Op65` / `Op4c` / `Op26` /
+`Unknown`). `Interpreter::render_summary` formats events as a printable
+diff-friendly form; `EventStats` is a histogram. See
+[`docs/formats/mes.md`](../../docs/formats/mes.md) for the event
+catalogue.
+
 ## CLI
 
 ```bash
-mes info   <path>                # detect format + summary
-mes disasm <path>                # walk bytecode tokens
-mes json   <path>                # JSON dump
+mes info       <path>             # detect format + summary
+mes disasm     <path>             # walk bytecode tokens
+mes json       <path>             # JSON dump
+mes events     <path> [--index N] # walk one message via the interpreter
+mes stats-all  <path>             # event-type histogram across every message
 ```
 
 ## See also
