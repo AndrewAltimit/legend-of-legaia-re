@@ -42,6 +42,12 @@ cargo build --release
 
 Binaries land in `target/release/`. Run `<binary> --help` for full subcommand listings.
 
+If you plan to commit, run the hook installer once — it points `core.hooksPath` at `scripts/git-hooks/` so `cargo fmt --check` and `cargo clippy -D warnings` run before each commit (matching CI). The hook auto-skips when no Rust files are staged.
+
+```bash
+scripts/install-hooks.sh
+```
+
 ### Run the whole pipeline
 
 ```bash

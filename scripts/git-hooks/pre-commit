@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: runs the same gates CI runs.
+#
+# Install (once per clone):
+#     scripts/install-hooks.sh
+#
+# Then every `git commit` runs the same `cargo fmt --check` and
+# `cargo clippy -D warnings` that .github/workflows/main-ci.yml runs, so a
+# CI break should never reach `main` unless someone explicitly bypasses with
+# `--no-verify`.
+#
+# Skip (in emergencies only) by exporting `LEGAIA_SKIP_PRECOMMIT=1` for one
+# command, e.g. `LEGAIA_SKIP_PRECOMMIT=1 git commit -m "..."`.
+#
+# Tests are intentionally NOT in the hook -- they take long enough that the
+# usual workflow is to run `cargo test --workspace` manually before pushing.
+
+set -euo pipefail
+
+if [[ "${LEGAIA_SKIP_PRECOMMIT:-0}" == "1" ]]; then
+    printf '[pre-commit] LEGAIA_SKIP_PRECOMMIT=1 -- skipping checks\n' >&2
+    exit 0
+fi
+
+# Resolve the repo root so the hook works from worktrees and submodules.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# If the commit only touches files outside the Rust workspace (e.g. docs,
+# site/, ghidra/scripts/), skip the cargo gates -- they're slow and would
+# add nothing.
+RUST_TOUCHED=0
+while IFS= read -r path; do
+    case "$path" in
+        Cargo.toml|Cargo.lock|crates/*|rust-toolchain*|.cargo/*)
+            RUST_TOUCHED=1
+            break
+            ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [[ "$RUST_TOUCHED" -eq 0 ]]; then
+    printf '[pre-commit] no Rust files staged; skipping cargo gates\n'
+    exit 0
+fi
+
+printf '[pre-commit] cargo fmt --all -- --check\n'
+cargo fmt --all -- --check
+
+printf '[pre-commit] cargo clippy --all-targets --workspace -- -D warnings\n'
+cargo clippy --all-targets --workspace -- -D warnings
+
+printf '[pre-commit] OK\n'

@@ -240,6 +240,159 @@ pub fn extract_all_messages(buf: &[u8]) -> Result<Vec<Vec<MesEvent>>> {
     Ok(out)
 }
 
+/// A frame-paced dialog player. Wraps an [`Interpreter`] and surfaces one
+/// "step" per call to [`DialogPlayer::tick`], emitting a [`PlayerState`] the
+/// renderer can drive: print one more glyph (per the typewriter speed),
+/// hold-on-page-break-until-input, finish-on-end.
+///
+/// This is the thin runtime model an engine wants: typewriter-paced glyphs
+/// plus page break gating. It does not own the glyph bitmaps or the
+/// renderer; it's just the timing and control-flow layer between bytecode
+/// and the frame-by-frame text-actor tick.
+///
+/// The retail equivalent is the dialog overlay's per-frame text advance
+/// (FUN_8003CD00 multi-line / FUN_80031D00 text-actor tick — see
+/// `docs/reference/functions.md`). Those live in an uncaptured overlay so
+/// this is a clean-room model of the *behaviour* that the runtime exhibits,
+/// not a port of any specific function.
+#[derive(Debug)]
+pub struct DialogPlayer<'a> {
+    interp: Interpreter<'a>,
+    /// Frames between glyph emits. 1 = one glyph per call to `tick`.
+    /// Higher values slow the typewriter down. Default 1.
+    pub glyphs_per_frame: u8,
+    /// Internal tick counter: advances every call, gates emit on
+    /// `tick_count % glyphs_per_frame == 0`.
+    tick_count: u64,
+    /// `true` once the player saw a [`MesEvent::PageBreak`] and is waiting
+    /// for `advance_page` to be called.
+    waiting_for_input: bool,
+    /// `true` after `EndOfMessage` is consumed.
+    done: bool,
+}
+
+/// One frame of dialog playback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlayerState {
+    /// No glyph emitted this frame (the typewriter is paused for pacing).
+    Idle,
+    /// Print one glyph this frame.
+    Glyph(u8),
+    /// Page-break event; the player will return [`PlayerState::WaitingForInput`]
+    /// on subsequent ticks until [`DialogPlayer::advance_page`] is called.
+    PageBreak,
+    /// Awaiting the engine to clear the page break by calling
+    /// [`DialogPlayer::advance_page`].
+    WaitingForInput,
+    /// Pass-through control event; the engine handles whatever side-effect
+    /// the original opcode mapped to (color change, voice trigger, etc.).
+    Control(MesEvent),
+    /// End of message — renderer should tear the dialog window down. Once
+    /// emitted, every subsequent `tick` returns [`PlayerState::Done`].
+    Done,
+}
+
+impl<'a> DialogPlayer<'a> {
+    pub fn new(interp: Interpreter<'a>) -> Self {
+        Self {
+            interp,
+            glyphs_per_frame: 1,
+            tick_count: 0,
+            waiting_for_input: false,
+            done: false,
+        }
+    }
+
+    /// Set the typewriter pacing. `1` = one glyph per `tick` call (fastest).
+    /// `0` is treated as `1` to avoid divide-by-zero.
+    pub fn set_glyphs_per_frame(&mut self, n: u8) {
+        self.glyphs_per_frame = n.max(1);
+    }
+
+    /// Advance the player by one frame. Returns the [`PlayerState`] for the
+    /// renderer.
+    pub fn tick(&mut self) -> PlayerState {
+        if self.done {
+            return PlayerState::Done;
+        }
+        if self.waiting_for_input {
+            return PlayerState::WaitingForInput;
+        }
+        self.tick_count += 1;
+        // Pacing gate: only advance the interpreter on multiples of
+        // `glyphs_per_frame`. Off-frames return Idle.
+        if !self.tick_count.is_multiple_of(self.glyphs_per_frame as u64) {
+            return PlayerState::Idle;
+        }
+        match self.interp.next_event() {
+            Some(MesEvent::Glyph(g)) => PlayerState::Glyph(g),
+            Some(MesEvent::PageBreak) => {
+                self.waiting_for_input = true;
+                PlayerState::PageBreak
+            }
+            Some(MesEvent::EndOfMessage) => {
+                self.done = true;
+                PlayerState::Done
+            }
+            Some(ev) => PlayerState::Control(ev),
+            None => {
+                self.done = true;
+                PlayerState::Done
+            }
+        }
+    }
+
+    /// Player has been paused on a page break; player input has been
+    /// received, so resume.
+    pub fn advance_page(&mut self) {
+        self.waiting_for_input = false;
+    }
+
+    /// True once `EndOfMessage` has been consumed.
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// True if the player is paused on a page break.
+    pub fn is_waiting_for_input(&self) -> bool {
+        self.waiting_for_input
+    }
+}
+
+/// Per-message validation outcome. Reports the event mix and a "looks valid"
+/// heuristic: a message whose `unknown` event share is above 15% is likely
+/// not real bytecode (or our token classification is wrong on this stream).
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct MessageValidation {
+    pub message_index: usize,
+    pub events: usize,
+    pub stats: EventStats,
+    pub looks_valid: bool,
+}
+
+/// Walk every message in a [`Format::Compact`] blob and report parse health.
+/// Useful for sweeping the extracted MES corpus to flag bad detection vs
+/// real-but-truncated bytecode without redistributing any Sony bytes
+/// (analyse-only).
+pub fn validate_compact(buf: &[u8]) -> Result<Vec<MessageValidation>> {
+    let messages = extract_all_messages(buf)?;
+    let mut out = Vec::with_capacity(messages.len());
+    for (i, evs) in messages.iter().enumerate() {
+        let stats = EventStats::from_events(evs);
+        let total = evs.len();
+        let unknowns = stats.unknowns;
+        // Heuristic: <= 15% Unknown events == well-formed.
+        let looks_valid = total == 0 || (unknowns as f32 / total as f32) <= 0.15;
+        out.push(MessageValidation {
+            message_index: i,
+            events: total,
+            stats,
+            looks_valid,
+        });
+    }
+    Ok(out)
+}
+
 /// Counted summary of an event sequence — useful for QA / corpus stats.
 #[derive(Debug, Clone, Copy, Default, Serialize)]
 pub struct EventStats {
@@ -498,5 +651,129 @@ mod tests {
         let large = blob.offset_table.as_ref().unwrap().len() + 100;
         let err = Interpreter::new_compact(&blob, &buf, large).unwrap_err();
         assert!(err.to_string().contains("out of range"));
+    }
+
+    // --- DialogPlayer / validate_compact ----------------------------------
+
+    /// Helper: build a player at the start of the bytecode region. Bypasses
+    /// `new_compact` — its `&'a MesBlob` parameter would tie the result's
+    /// lifetime to a local `blob`, but `new_at` only needs the buffer.
+    fn player_at_start(buf: &[u8]) -> DialogPlayer<'_> {
+        let interp = Interpreter::new_at(buf, crate::compact::OFFSET_TABLE_END);
+        DialogPlayer::new(interp)
+    }
+
+    #[test]
+    fn dialog_player_emits_one_glyph_per_tick_at_unity_pace() {
+        let prog = [0x61, 0xA1, 0x61, 0xA2, 0x00];
+        let buf = build_compact_with_program(&prog);
+        let mut player = player_at_start(&buf);
+        {
+            let player = &mut player;
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA1));
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA2));
+            assert_eq!(player.tick(), PlayerState::Done);
+            assert!(player.is_done());
+        }
+    }
+
+    #[test]
+    fn dialog_player_paces_glyphs_at_3_frames_per_glyph() {
+        let prog = [0x61, 0xA1, 0x61, 0xA2, 0x00];
+        let buf = build_compact_with_program(&prog);
+        let mut player = player_at_start(&buf);
+        {
+            let player = &mut player;
+            player.set_glyphs_per_frame(3);
+            // First two ticks idle (waiting on pacing), third emits.
+            assert_eq!(player.tick(), PlayerState::Idle);
+            assert_eq!(player.tick(), PlayerState::Idle);
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA1));
+            // Same again for the second glyph.
+            assert_eq!(player.tick(), PlayerState::Idle);
+            assert_eq!(player.tick(), PlayerState::Idle);
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA2));
+        }
+    }
+
+    #[test]
+    fn dialog_player_pauses_on_page_break() {
+        let prog = [0x61, 0xA1, 0x26, 0xFE, 0xFF, 0x61, 0xA2, 0x00];
+        let buf = build_compact_with_program(&prog);
+        let mut player = player_at_start(&buf);
+        {
+            let player = &mut player;
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA1));
+            assert_eq!(player.tick(), PlayerState::PageBreak);
+            // Player is now waiting; subsequent ticks should NOT advance.
+            assert_eq!(player.tick(), PlayerState::WaitingForInput);
+            assert_eq!(player.tick(), PlayerState::WaitingForInput);
+            assert!(player.is_waiting_for_input());
+            // Engine signals the page-break dismissed.
+            player.advance_page();
+            assert!(!player.is_waiting_for_input());
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA2));
+            assert_eq!(player.tick(), PlayerState::Done);
+        }
+    }
+
+    #[test]
+    fn dialog_player_treats_glyphs_per_frame_zero_as_one() {
+        let prog = [0x61, 0xA1, 0x00];
+        let buf = build_compact_with_program(&prog);
+        let mut player = player_at_start(&buf);
+        {
+            let player = &mut player;
+            player.set_glyphs_per_frame(0);
+            // Should not panic / divide-by-zero. Behaves as 1.
+            assert_eq!(player.glyphs_per_frame, 1);
+            assert_eq!(player.tick(), PlayerState::Glyph(0xA1));
+        }
+    }
+
+    #[test]
+    fn dialog_player_after_done_keeps_returning_done() {
+        let prog = [0x00];
+        let buf = build_compact_with_program(&prog);
+        let mut player = player_at_start(&buf);
+        {
+            let player = &mut player;
+            assert_eq!(player.tick(), PlayerState::Done);
+            // Subsequent ticks remain Done forever.
+            for _ in 0..5 {
+                assert_eq!(player.tick(), PlayerState::Done);
+            }
+        }
+    }
+
+    #[test]
+    fn validate_compact_flags_clean_and_garbage_messages() {
+        // Build a blob with two messages: msg 0 = clean glyphs+end,
+        // msg 1 = mostly unknown bytes.
+        let prog = [
+            0x61, 0xA1, 0x61, 0xA2, 0x00, // msg 0 at offset 0
+            0x99, 0x88, 0x77, 0x66, 0x55, 0x00, // msg 1 at offset 5: 5 unknowns + end
+        ];
+        let mut buf = build_compact_with_program(&prog);
+        buf[crate::compact::OFFSET_TABLE_OFFSET + 3] = 5;
+        buf[crate::compact::OFFSET_TABLE_OFFSET + 4] = 0;
+        buf[crate::compact::OFFSET_TABLE_OFFSET + 5] = 0;
+        // Make subsequent table entries point past the buffer so the walker
+        // stops cleanly at message 2.
+        let past_end = (prog.len() + 1000) as u32;
+        for i in 2..16 {
+            let off = crate::compact::OFFSET_TABLE_OFFSET + i * 3;
+            buf[off] = past_end as u8;
+            buf[off + 1] = (past_end >> 8) as u8;
+            buf[off + 2] = (past_end >> 16) as u8;
+        }
+        let report = validate_compact(&buf).unwrap();
+        // First message: clean.
+        assert!(report[0].looks_valid);
+        assert_eq!(report[0].stats.glyphs, 2);
+        assert_eq!(report[0].stats.unknowns, 0);
+        // Second message: 5 unknowns out of 6 events -> not valid.
+        assert!(!report[1].looks_valid);
+        assert!(report[1].stats.unknowns >= 4);
     }
 }
