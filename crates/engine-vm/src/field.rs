@@ -502,6 +502,26 @@ pub trait FieldHost {
         0
     }
 
+    /// Op 0x4E sub-op 4 — BIOS Rand stub.
+    ///
+    /// The original at line 7479 of `overlay_0897_801de840.txt` is
+    /// `iVar18 = func_0x80056798(); return iVar18;`. `FUN_80056798` is a
+    /// 3-instruction BIOS thunk: `li t2,0xa0; jr t2; _li t1,0x2f` — i.e.
+    /// `jr 0xA0` with `t1 = 0x2F`, the BIOS `Rand()` syscall. The script-VM
+    /// dispatcher then uses the returned value directly as the next PC, which
+    /// would jump into arbitrary memory in any sane retail execution. There
+    /// are no callers of opcode 0x4E sub-4 in the captured bytecode, so this
+    /// is almost certainly a dev / debug-only stub left in by the original
+    /// authors.
+    ///
+    /// The default returns 0 (PC restarts at the bytecode origin), matching
+    /// the broken-by-design behaviour. A custom host can override to either
+    /// halt the script (return the current PC; the dispatch wrapper does NOT
+    /// special-case this) or to actually invoke a PRNG.
+    fn op4e_sub4_bios_rand(&mut self) -> i32 {
+        0
+    }
+
     /// Op 0x4C sub-1 (menu sub-dispatcher).
     ///
     /// The original encodes a 7-byte instruction `[4C, op0, b1, b2, b3, b4, b5]`
@@ -3396,9 +3416,10 @@ pub fn step<H: FieldHost>(
         // Sub-ops 2/3/5/6/7/8/9 fall through to an absolute jump:
         // `next_pc = LE_u16(operand[2..4])`.
         //
-        // Sub-op 4 (`func_0x80056798()` return) and sub-ops 10/11 (party-bank
-        // comparison, 9-byte encoding) and any other sub-op are not yet
-        // ported — they return `Pending`.
+        // Sub-op 4 invokes [`FieldHost::op4e_sub4_bios_rand`] (BIOS Rand stub)
+        // and uses the returned value as the next PC; the default is 0, which
+        // restarts the script at the bytecode origin. Sub-ops 10/11 are the
+        // party-bank comparison (9-byte encoding) ported above.
         0x4E => {
             let Some(&page) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -3508,12 +3529,17 @@ pub fn step<H: FieldHost>(
                     }
                 }
                 // Sub-op 4: `iVar18 = func_0x80056798(); return iVar18;` —
-                // FUN_80056798 is a BIOS thunk (`jr 0xA0` with t1=0x2F = Rand).
-                // The original returns the random value as the next PC, which
-                // is broken in any sane execution. Almost certainly a dev /
-                // debug-only stub; treat as `Pending` until a host hook
-                // surfaces actual usage.
-                4 => StepResult::Pending { opcode, pc },
+                // FUN_80056798 is a BIOS Rand thunk (`jr 0xA0; t1=0x2F`).
+                // The original returns the random value as the next PC. There
+                // are no captured callers, so this is almost certainly a dev
+                // stub. The host hook returns the next-PC value (default 0,
+                // matching broken-as-shipped behaviour).
+                4 => {
+                    let next = host.op4e_sub4_bios_rand();
+                    StepResult::Advance {
+                        next_pc: next as usize,
+                    }
+                }
                 // `mode_byte >> 4` is at most 0xF; arms above cover every
                 // value, so this arm is dead code.
                 16..=u8::MAX => unreachable!("mode_byte >> 4 is at most 0xF"),
@@ -4282,6 +4308,8 @@ mod tests {
         n9_dde34_calls: Vec<(u8, u8, [i16; 3])>,
         n9_table_copies: Vec<[i16; 16]>,
         n9_callback_regs: u32,
+        op4e_sub4_bios_rand_value: i32,
+        op4e_sub4_bios_rand_calls: u32,
         n_c_subtile_broadcasts: Vec<(u8, u8)>,
         n_c_sound_triggers: Vec<(u8, u8)>,
         n_c_slot_writes: Vec<(u8, i16)>,
@@ -4659,6 +4687,10 @@ mod tests {
         }
         fn op4c_n9_sub_f_register_callback(&mut self) {
             self.n9_callback_regs += 1;
+        }
+        fn op4e_sub4_bios_rand(&mut self) -> i32 {
+            self.op4e_sub4_bios_rand_calls += 1;
+            self.op4e_sub4_bios_rand_value
         }
         fn op4c_n_c_sub4_subtile_broadcast(&mut self, x: u8, z: u8) {
             self.n_c_subtile_broadcasts.push((x, z));
@@ -6697,6 +6729,20 @@ mod tests {
         let bc = [0x4E, 0, 0xA0, 0x64, 0x00, 0x10, 0x00, 0x00, 0x00];
         let r = step(&mut host, &mut ctx, &bc, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 21 });
+    }
+
+    #[test]
+    fn op_4e_sub_4_invokes_bios_rand_and_jumps_to_returned_pc() {
+        // Sub-op 4 calls BIOS Rand (FUN_80056798) and uses the result as the
+        // next PC. With the host returning 0x42, the VM should jump to 0x42.
+        let mut host = TestHost {
+            op4e_sub4_bios_rand_value: 0x42,
+            ..Default::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &[0x4E, 0, 0x40], 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x42 });
+        assert_eq!(host.op4e_sub4_bios_rand_calls, 1);
     }
 
     #[test]
