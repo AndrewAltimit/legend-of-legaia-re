@@ -203,6 +203,31 @@ The runtime sequencer chain is now nearly fully mapped: slot bitmap @ `_DAT_801C
 
 The dev/retail split for sound + monster-bank loading routes the dev branch through libapi-style file primitives at `FUN_800608E0..FUN_80060A04`: `fopen` / `fseek` / `fread` / `fclose` plus a `vsync_wait` (`FUN_8005FCCC`) and a `BREAK 0x105` trap at `FUN_80060A04`. These are PsyQ kernel-call wrappers around the BIOS `A()` table — `FUN_80056738` / `FUN_80056748` / `FUN_80056768` / `FUN_80057014` / `FUN_8005ACE8` are all `jr 0xA0` BIOS dispatchers. Engine reimpl can map the entire cluster to `std::fs` + a frame-paced sleep.
 
+## Engine-audio model — Sequencer port
+
+The `legaia-engine-audio::Sequencer` is the runtime side of the SsAPI
+sequencer cluster above. Surface mirrors `SsSeqOpen` / `SsSeqPlay` /
+`SsSeqClose` / `SsSeqSetVol` without copying any Sony bytes:
+
+| Method | Maps to |
+|---|---|
+| `Sequencer::new(seq, bank)` | `SsSeqOpen` — bind one SEQ + one VAB bank, allocate channel state |
+| `Sequencer::tick_us(spu, dt_us)` | per-frame poller — drains events whose accumulated us elapsed at current tempo |
+| `Sequencer::set_master_vol(vol)` | `SsSeqSetVol` master |
+| `Sequencer::set_loop_to(idx)` | loop point (`_DAT_801CD2C0[i] + 0x98` repeat bit equivalent) |
+| `Sequencer::stop(spu)` | `_SsSeqCtrl(mode=1)` — silences and freezes |
+| `Sequencer::rewind_to(idx, spu)` | `SsSeqRewind` |
+
+Voice allocation is round-robin over the 24 SPU voices, with the
+sequencer tracking `(channel, key) → voice` so the matching key-off can
+shut down the right slot. Tempo events from the SEQ override the running
+tempo at the event's absolute tick (matching libsnd's mid-stream
+`0xFF 0x51`). PitchBend / Aftertouch are accepted by the parser and
+ignored by the playback path until the engine wires per-voice modulation.
+
+See [`crates/engine-audio/src/sequencer.rs`](../../crates/engine-audio/src/sequencer.rs)
+for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
+
 ## Engine-audio model — clean-room SPU port
 
 `crates/engine-audio` ports the SPU side of the audio stack as a clean-room model. No Sony bytes; the spec is this file plus the libspu API surface and the standard PSX SPU register layout. Surface:

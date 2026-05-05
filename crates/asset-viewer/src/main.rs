@@ -28,7 +28,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use legaia_engine_audio::{AudioOut, DEFAULT_INPUT_RATE};
+use legaia_engine_audio::{AudioOut, DEFAULT_INPUT_RATE, Sequencer};
 use legaia_engine_render::{
     RenderTarget, Renderer, UploadedLines, UploadedMesh, UploadedTexture, UploadedVram,
     UploadedVramMesh,
@@ -75,6 +75,26 @@ enum Cmd {
         /// Sample rate to play at. PSX VAGs in Legaia are typically 22050.
         #[arg(long, default_value_t = DEFAULT_INPUT_RATE)]
         rate: u32,
+    },
+    /// Play a PsyQ SEQ file through the SsAPI-shape sequencer + a VAB bank.
+    /// The viewer keeps a status window open showing tick / BPM / active-note
+    /// counts while playback runs (Esc / window-close to stop).
+    Seq {
+        /// Path to the SEQ file (begins with `pQES`).
+        seq: PathBuf,
+        /// Path to the VAB bank (or any container with a VAB header at
+        /// `--vab-offset`).
+        vab: PathBuf,
+        /// Byte offset of the VAB header inside `vab`. Use this to pick a
+        /// bank embedded in a PROT entry; default 0 for a standalone bank.
+        #[arg(long, value_parser = parse_hex_u64, default_value_t = 0)]
+        vab_offset: u64,
+        /// Loop the sequence at end-of-track (rewinds to event 0).
+        #[arg(long, default_value_t = false)]
+        looped: bool,
+        /// Master sequencer volume, 0..=127.
+        #[arg(long, default_value_t = 100)]
+        master_vol: u8,
     },
     /// Render a stage-geometry PROT entry as a wireframe. PATH may be a
     /// single PROT-entry file (e.g. `extracted/PROT/0000_init_data.BIN`),
@@ -1071,9 +1091,112 @@ impl ApplicationHandler for App {
     }
 }
 
+/// Headless SEQ playback. Opens AudioOut, builds a `Sequencer` over the
+/// parsed SEQ + uploaded VAB, attaches it, and prints progress until
+/// end-of-track (or forever if `--looped`). Ctrl-C to exit.
+fn run_seq_playback(
+    seq_path: &Path,
+    vab_path: &Path,
+    vab_offset: usize,
+    looped: bool,
+    master_vol: u8,
+) -> Result<()> {
+    use legaia_engine_audio::spu::ram::SPU_RAM_BYTES;
+    use legaia_engine_audio::{Spu, SpuAllocator, VabBank};
+    use legaia_seq::Seq;
+
+    let seq_bytes =
+        std::fs::read(seq_path).with_context(|| format!("read {}", seq_path.display()))?;
+    let seq = Seq::parse(&seq_bytes).context("parse SEQ")?;
+    log::info!(
+        "seq: {} events, {} ticks, init {:.1} BPM @ {} PPQN",
+        seq.events.len(),
+        seq.total_ticks(),
+        seq.header.bpm(),
+        seq.header.ppqn
+    );
+
+    let vab_bytes =
+        std::fs::read(vab_path).with_context(|| format!("read {}", vab_path.display()))?;
+    let report = legaia_vab::parse(&vab_bytes, vab_offset).context("parse VAB")?;
+    log::info!(
+        "vab: {} programs, {} samples (offset 0x{:X})",
+        report.header.ps,
+        report.vag_samples.len(),
+        vab_offset
+    );
+
+    let audio = AudioOut::new().context("open audio output")?;
+
+    // Build the bank inside the AudioOut's SPU (via with_spu) so the
+    // sequencer's SPU references match the playback SPU. Reserve the
+    // first 4 KB for voice 0 / scratchpad, allocate from there onward.
+    let bank = audio.with_spu(|spu: &mut Spu| {
+        let mut alloc = SpuAllocator::new(0x1000, SPU_RAM_BYTES as u32 - 0x1000);
+        VabBank::upload(spu, &mut alloc, &report, &vab_bytes)
+    });
+
+    let mut sequencer = Sequencer::new(seq, bank);
+    sequencer.set_master_vol(master_vol);
+    if looped {
+        sequencer.set_loop_to(0);
+    }
+    audio.attach_sequencer(sequencer);
+
+    log::info!(
+        "playing SEQ {} (vab {} @ 0x{:X}, looped={}, master_vol={})",
+        seq_path.display(),
+        vab_path.display(),
+        vab_offset,
+        looped,
+        master_vol
+    );
+
+    // Poll the sequencer's progress at ~10 Hz, print one status line per
+    // change, and exit when finished (or never, if --looped).
+    let start = Instant::now();
+    let mut last_tick: u64 = 0;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let Some(p) = audio.sequencer_progress() else {
+            break;
+        };
+        if p.tick != last_tick {
+            log::info!(
+                "  +{:.1}s tick={} bpm={:.1} active={}",
+                start.elapsed().as_secs_f32(),
+                p.tick,
+                p.bpm,
+                p.active_notes
+            );
+            last_tick = p.tick;
+        }
+        if p.finished {
+            log::info!(
+                "end of track ({:.1}s elapsed)",
+                start.elapsed().as_secs_f32()
+            );
+            break;
+        }
+    }
+    audio.detach_sequencer();
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
+
+    if let Cmd::Seq {
+        seq,
+        vab,
+        vab_offset,
+        looped,
+        master_vol,
+    } = args.cmd
+    {
+        return run_seq_playback(&seq, &vab, vab_offset as usize, looped, master_vol);
+    }
 
     let (pending, browser, mesh_browser, stage_browser) = match args.cmd {
         Cmd::Tim { path, clut } => {
@@ -1341,6 +1464,7 @@ fn main() -> Result<()> {
                 None,
             )
         }
+        Cmd::Seq { .. } => unreachable!("Cmd::Seq handled by the early-return path above"),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

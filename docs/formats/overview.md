@@ -30,6 +30,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [PSX TIM](tim.md) | Texture format. 4/8/16/24bpp. CLUT-aware. PNG export round-trips. |
 | [Legaia TMD](tmd.md) | Custom PSX TMD variant (magic `0x80000002`). 8-byte group header, `count × ilen*4` stride. Renderer at `FUN_8002735C`. |
 | [VAB sound bank](vab.md) | Sony's standard SPU instrument bank — `VABp` magic, 128 program × 16 tone slots, SPU-ADPCM bodies. |
+| [PsyQ SEQ](seq.md) | PsyQ's MIDI-derived sequence format (`pQES` magic). 13-byte header, delta-time + MIDI events with running status. Drives `SsSeqOpen` / `SsSeqPlay`. |
 | [MES dialog](mes.md) | Two variants (Compact `0x404` and Records `0x44 0x78`); offset table + bytecode. Renderer is overlay-resident. |
 | [Dialog font](dialog-font.md) | Proportional Latin font for dialog/menu text. Width table at `0x80073F1C`, escape table at `0x80074050`, glyph bitmaps in VRAM at `(896, 0)`. |
 | [ANM animation](anm.md) | `(u16 count, u16 offsets[count], records)` layout. Asset type `0x06`. |

@@ -20,5 +20,6 @@ legaia-prot = { path = "../prot" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
 legaia-vab = { path = "../vab" }
+legaia-seq = { path = "../seq" }
 log = "0.4"
 winit = "0.30"

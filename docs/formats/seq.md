@@ -1,0 +1,101 @@
+# SEQ — PsyQ sequenced-music format
+
+PsyQ's `SsSeqOpen` / `SsSeqPlay` accepts a 13-byte-header SEQ file: a thin
+MIDI variant that names a single track with delta-time + event records.
+Legaia uses it for in-game music, paired with a [VAB](vab.md) sound bank
+that holds the instrument samples.
+
+The format is a publicly-documented PsyQ SDK shape (header layout +
+event encoding). This page describes byte order, the meaning of every
+header field, and how Sony's SsAPI sequencer consumes the event stream
+— **no Sony bytes appear here**.
+
+## Header (13 bytes)
+
+```text
++0x00  u8[4]   magic   "pQES"  (0x70 0x51 0x45 0x53)
++0x04  u16 BE  version          (typically 1)
++0x06  u16 BE  resolution       PPQN — ticks per quarter note
++0x08  u24 BE  initial tempo    microseconds per quarter note
++0x0B  u8      time-sig num     (e.g. 4)
++0x0C  u8      time-sig denom   power of 2 (2 means /4, 3 means /8)
++0x0D  ...     event stream
+```
+
+`version` is verified by the SsAPI loader (`FUN_80062410` in SCUS, see
+[`subsystems/audio.md`](../subsystems/audio.md)). Files with `version != 1`
+emit `s_This_is_an_old_SEQ_Data_Format_*`.
+
+## Event stream
+
+Each event is a *delta-time* (variable-length integer) followed by a
+status byte and zero or more data bytes. Running status applies: if the
+first byte of an event is `< 0x80`, reuse the previous status byte and
+treat that byte as data.
+
+| Status range | Event              | Data bytes |
+| ------------ | ------------------ | ---------- |
+| `0x80..=0x8F`| Note Off           | 2 (key, velocity) |
+| `0x90..=0x9F`| Note On            | 2 (key, velocity) — `velocity == 0` ≡ NoteOff |
+| `0xA0..=0xAF`| Poly Aftertouch    | 2 |
+| `0xB0..=0xBF`| Control Change     | 2 (controller, value) |
+| `0xC0..=0xCF`| Program Change     | 1 (program) |
+| `0xD0..=0xDF`| Channel Aftertouch | 1 |
+| `0xE0..=0xEF`| Pitch Bend         | 2 (LSB, MSB; both 7-bit) |
+| `0xFF NN LL` | Meta event         | LL bytes (LL is VLQ) |
+
+Channel index is the low nibble of the status byte (`0..=15`).
+
+### Variable-length quantity (VLQ)
+
+A VLQ is a big-endian sequence of 7-bit groups; the high bit of each
+byte is `1` for "more bytes follow", `0` for the final group. Maximum
+4 bytes per delta. SEQ uses VLQ both for delta-times and meta-event
+length fields. See `legaia_seq::read_vlq`.
+
+### Meta events
+
+| Kind | Length | Meaning |
+| ---- | ------ | ------- |
+| `0x2F` | 0 | End-of-Track (always the final event) |
+| `0x51` | 3 | Set Tempo (u24 BE microseconds per quarter note) |
+| `0x58` | 4 | Time signature (numerator, denominator-pow2, MIDI clocks/metronome, 32nds/quarter) |
+| `0x59` | 2 | Key signature (sharps as `i8`, minor flag) |
+| other | LL | surfaced as `MetaMessage::Other { kind, data }` |
+
+End-of-Track is required and terminates parsing.
+
+## Tempo math
+
+`tempo` is microseconds per quarter note; `ppqn` is ticks per quarter
+note. Per-tick duration is `tempo / ppqn` microseconds, and the SsAPI
+runtime accumulates real-world time against this rate. A mid-stream
+`SetTempo` overrides for **future** events only — events that already
+fired at the previous tempo are unaffected.
+
+`legaia_seq::us_per_tick(tempo, ppqn)` returns the per-tick duration as
+`f64`.
+
+## Where the data lives
+
+SEQ payloads are loaded by the PsyQ libsnd `SsSeqOpen` family — see
+[`subsystems/audio.md`](../subsystems/audio.md) → "Public SEQ API". On-disc,
+SEQ data lives inside the same scene-VAB-prefixed streaming containers
+described in [scene-bundles.md](scene-bundles.md). The `_DAT_8007BAC8`
+slot the field VM writes (opcode `0x35`) is consumed by `FUN_800243F0`,
+which resolves a SEQ payload through the [CDNAME](cdname.md) per-scene
+block and hands it to `FUN_80062340` (`SsSeqOpen`) for playback.
+
+## Tooling
+
+`crates/seq` (binary `seq`) parses SEQ files end-to-end:
+
+```
+seq info    <PATH>    # header summary + event-type histogram
+seq events  <PATH>    # disassemble every event in source order
+seq json    <PATH>    # full parse as JSON
+```
+
+Playback is the engine side: `legaia_engine_audio::Sequencer` consumes
+a parsed `Seq` + a loaded `VabBank` and drives the clean-room SPU
+model. See `docs/subsystems/audio.md` → "Engine-audio model".

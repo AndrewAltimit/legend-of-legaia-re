@@ -5,6 +5,7 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies — the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
+pub mod scene;
 pub mod world;
 
 use anyhow::{Context, Result};

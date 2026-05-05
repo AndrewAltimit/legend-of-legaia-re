@@ -111,6 +111,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/tim`](crates/tim/README.md) | `tim` | PSX TIM parser + PNG exporter. |
 | [`crates/xa`](crates/xa/README.md) | `xa` | XA-ADPCM decoder + WAV exporter. |
 | [`crates/vab`](crates/vab/README.md) | `vab` | VAB sound bank extractor + SPU-ADPCM decoder. |
+| [`crates/seq`](crates/seq/README.md) | `seq` | PsyQ SEQ parser + CLI inspector. |
 | [`crates/mdt`](crates/mdt/README.md) | `mdt` | Move table (Tactical Arts) parser. |
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
@@ -122,7 +123,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 |---|---|---|
 | [`crates/engine-core`](crates/engine-core/README.md) | — | VFS, asset cache, frame timing. |
 | [`crates/engine-render`](crates/engine-render/README.md) | — | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader). |
-| [`crates/engine-audio`](crates/engine-audio/README.md) | — | cpal-backed audio mixer. |
+| [`crates/engine-audio`](crates/engine-audio/README.md) | — | cpal-backed audio mixer + clean-room SPU + SsAPI-shape SEQ sequencer. |
 | [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect VM ports. |
 | [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, stage geometry, VAB playback, PROT browser, scene-bundle presets. |
 | [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. |
