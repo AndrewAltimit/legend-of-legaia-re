@@ -10,9 +10,9 @@ fm = prog.getFunctionManager()
 ref_mgr = prog.getReferenceManager()
 listing = prog.getListing()
 
+# Edit this list to point at the function entry points you want callers for.
 TARGETS_HEX = [
-    "80024cfc",  # ANM consumer: play_anm_by_id(id, actor, ...)?
-    "80020de0",  # called inside 80024cfc - likely actor-state setup
+    "80024cfc",
 ]
 
 for t in TARGETS_HEX:

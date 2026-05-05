@@ -1,0 +1,66 @@
+# legaia-mes
+
+Partial parser for Legaia MES (asset type `0x04`) blobs.
+
+MES is the SCUS asset-type byte `0x04` in dispatcher `FUN_8001f05c`. The
+dispatcher just allocates a 4-byte-aligned buffer and decodes the
+payload (LZS or raw); the bytecode interpreter and format-specific
+parsing live in an overlay we haven't fully reversed.
+
+## Two on-disc layouts
+
+Both have been observed in real RAM captures (a town-init blob and an
+in-dialog blob):
+
+### `Format::Compact`
+
+Magic `0x00000404` (LE bytes `04 04 00 00`) followed by 36 zero bytes,
+a 16-byte header of runtime-patched pointers, a 32-byte i16 array, an
+8-byte "count + size" word pair, then a u24 LE offset table, then
+bytecode at the end. Used for short message sets (~4 KB).
+
+### `Format::Records`
+
+No fixed magic. A stream of variable-stride records marked by recurring
+`0x44 0x78` markers (typically every 20–36 bytes). Used for large
+NPC-dialog sets.
+
+## Bytecode tokens (observed in `Format::Compact`)
+
+| Token | Meaning |
+|---|---|
+| `0x00` | end-of-message terminator (very common). |
+| `0x61 XX` | print glyph `XX`. Confirmed by an observed sequential run `61 9D 61 9E ... 61 AA` — clearly an alphabet sequence. |
+| `0x65 XX` | similar single-byte-arg opcode (likely "small numeric" or "wait N frames"). |
+| `0x4C XX` | 2-byte token (1-byte arg) — recurring control. |
+| `0x26 XX YY` | 3-byte token (2-byte arg) — possibly "page break" when arg is `0xFEFF`. |
+| `0x21 0x21 0x26 0xFE 0xFF` | recurring 5-byte sequence — likely a fixed page-break / message-boundary marker. |
+
+All other opcodes are emitted as `Token::Unknown` with the raw byte.
+Future reverse-engineering of the bytecode interpreter (when a
+dialog-rendering overlay is captured) will fill in the meanings.
+
+## What this crate does NOT do
+
+- Decode the bytecode to readable text. The glyph→character mapping
+  needs a font tile sheet that hasn't been located yet (the proportional
+  dialog font is in VRAM but not extracted; see
+  [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md)).
+- Validate offset tables against the bytecode region. The offset-table
+  base/encoding (u24 LE vs another stride) is empirical and not yet
+  cross-checked against the interpreter.
+- Handle `Format::Records` beyond locating record boundaries.
+
+## CLI
+
+```bash
+mes info   <path>                # detect format + summary
+mes disasm <path>                # walk bytecode tokens
+mes json   <path>                # JSON dump
+```
+
+## See also
+
+- [`docs/formats/mes.md`](../../docs/formats/mes.md)
+- [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md)
+  — opcode `0x3F` of the field VM is the dialog opener.
