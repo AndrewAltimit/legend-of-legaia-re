@@ -13,6 +13,9 @@
 //! | [`packet_length`]       | `FUN_8003CA38`    | `0x4C nE sub-1`, `0x49`      |
 //! | [`party_flag_test`]     | `FUN_8003CE64`    | `0x4C nC sub-1/5/6`          |
 //! | [`small_table_search`]  | `FUN_80042EE0`    | `0x4C nD sub-C/E`            |
+//! | [`load_u16_le`]         | `FUN_8003CE9C`    | `0x4C nC sub-5/6`, `nD sub-1`|
+//! | [`load_u24_le`]         | `FUN_8003CEB8`    | `0x4C nE sub-5` (XP add)     |
+//! | [`load_u32_le`]         | `FUN_8003CED8`    | 32-bit immediates            |
 //!
 //! Provenance for each port lives next to the function in the doc comment.
 //!
@@ -121,6 +124,69 @@ pub fn small_table_search(needle: u8, table: &[u8], lo: i16, hi: i16) -> u32 {
         }
     }
     SEARCH_NOT_FOUND
+}
+
+/// Load a little-endian unsigned 16-bit value from the head of a byte buffer.
+///
+/// Ported from `FUN_8003CE9C` (see `ghidra/scripts/funcs/8003ce9c.txt`). The
+/// original is a 2-instruction `lbu / lbu / sll / or / jr` sequence that the
+/// PSX MIPS toolchain emits for unaligned 16-bit loads — the field VM stores
+/// 16-bit operand fields as raw byte pairs, so most call sites pass a pointer
+/// somewhere into the bytecode stream.
+///
+/// Returns the byte at `buf[0]` as the low 8 bits and `buf[1] << 8` as the
+/// high 8 bits, exactly matching the original's `(b0 | (b1 << 8))` formula.
+///
+/// On a buffer shorter than 2 bytes this returns the partial value extending
+/// missing bytes as zero — matching the `try_get`-style guard the dispatcher
+/// arms wrap their operand reads in. Callers that need the strict 2-byte
+/// invariant should pre-validate.
+pub fn load_u16_le(buf: &[u8]) -> u16 {
+    let lo = buf.first().copied().unwrap_or(0);
+    let hi = buf.get(1).copied().unwrap_or(0);
+    u16::from(lo) | (u16::from(hi) << 8)
+}
+
+/// Load a little-endian unsigned 24-bit value, returned in the low 24 bits of
+/// a `u32`.
+///
+/// Ported from `FUN_8003CEB8` (see `ghidra/scripts/funcs/8003ceb8.txt`). The
+/// original assembles `b0 | (b1 << 8) | (b2 << 16)`. Used by the field VM's
+/// XP-add opcode (`0x4C nE sub-5`), where the 24-bit immediate is clamped to
+/// `[0, 9999999]` after this helper extracts it.
+///
+/// The high byte of the returned `u32` is always zero — to sign-extend the
+/// 24-bit value into an `i32`, callers should compute
+/// `(value << 8) as i32 >> 8`.
+pub fn load_u24_le(buf: &[u8]) -> u32 {
+    let b0 = u32::from(buf.first().copied().unwrap_or(0));
+    let b1 = u32::from(buf.get(1).copied().unwrap_or(0));
+    let b2 = u32::from(buf.get(2).copied().unwrap_or(0));
+    b0 | (b1 << 8) | (b2 << 16)
+}
+
+/// Load a little-endian unsigned 32-bit value from the head of a byte buffer.
+///
+/// Ported from `FUN_8003CED8` (see `ghidra/scripts/funcs/8003ced8.txt`).
+/// Companion to [`load_u16_le`] / [`load_u24_le`]; the original assembles four
+/// 8-bit reads into a single 32-bit immediate. Used rarely by the field VM
+/// (most operands are 16-bit) but the helper is small enough to bundle here
+/// alongside the rest of the LE-load family.
+pub fn load_u32_le(buf: &[u8]) -> u32 {
+    let b0 = u32::from(buf.first().copied().unwrap_or(0));
+    let b1 = u32::from(buf.get(1).copied().unwrap_or(0));
+    let b2 = u32::from(buf.get(2).copied().unwrap_or(0));
+    let b3 = u32::from(buf.get(3).copied().unwrap_or(0));
+    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+/// Sign-extend a 24-bit value (in the low 24 bits of a `u32`) to an `i32`.
+///
+/// Helper for callers of [`load_u24_le`] that need a signed value (e.g. the
+/// XP-add opcode, where the 24-bit immediate can be negative). The high byte
+/// of `value` is ignored.
+pub fn sign_extend_24(value: u32) -> i32 {
+    ((value << 8) as i32) >> 8
 }
 
 #[cfg(test)]
@@ -303,5 +369,95 @@ mod tests {
         assert_eq!(small_table_search(0xBB, &table, 0, 1), SEARCH_NOT_FOUND);
         assert_eq!(small_table_search(0xBB, &table, 0, 2), 1);
         assert_eq!(small_table_search(0xCC, &table, 2, 3), 2);
+    }
+
+    #[test]
+    fn load_u16_le_assembles_low_then_high_byte() {
+        assert_eq!(load_u16_le(&[0x34, 0x12]), 0x1234);
+        assert_eq!(load_u16_le(&[0xFF, 0xFF]), 0xFFFF);
+        assert_eq!(load_u16_le(&[0x00, 0x80]), 0x8000);
+    }
+
+    #[test]
+    fn load_u16_le_short_buffer_zero_extends() {
+        assert_eq!(load_u16_le(&[]), 0);
+        assert_eq!(load_u16_le(&[0xAB]), 0x00AB);
+    }
+
+    #[test]
+    fn load_u16_le_ignores_trailing_bytes() {
+        // Helper reads exactly 2 bytes; trailing bytes never contribute.
+        assert_eq!(load_u16_le(&[0x34, 0x12, 0xFF, 0xFF]), 0x1234);
+    }
+
+    #[test]
+    fn load_u24_le_assembles_three_bytes() {
+        assert_eq!(load_u24_le(&[0x56, 0x34, 0x12]), 0x123456);
+        assert_eq!(load_u24_le(&[0xFF, 0xFF, 0xFF]), 0x00FF_FFFF);
+        assert_eq!(load_u24_le(&[0x00, 0x00, 0x80]), 0x0080_0000);
+    }
+
+    #[test]
+    fn load_u24_le_short_buffer_zero_extends() {
+        assert_eq!(load_u24_le(&[]), 0);
+        assert_eq!(load_u24_le(&[0xAA]), 0x0000_00AA);
+        assert_eq!(load_u24_le(&[0xAA, 0xBB]), 0x0000_BBAA);
+    }
+
+    #[test]
+    fn load_u24_le_high_byte_is_always_zero() {
+        // 24-bit value never sets bits 24..32.
+        assert_eq!(load_u24_le(&[0xFF, 0xFF, 0xFF]) & 0xFF00_0000, 0);
+    }
+
+    #[test]
+    fn load_u32_le_assembles_four_bytes() {
+        assert_eq!(load_u32_le(&[0x78, 0x56, 0x34, 0x12]), 0x1234_5678);
+        assert_eq!(load_u32_le(&[0xFF, 0xFF, 0xFF, 0xFF]), 0xFFFF_FFFF);
+        assert_eq!(load_u32_le(&[0x00, 0x00, 0x00, 0x80]), 0x8000_0000);
+    }
+
+    #[test]
+    fn load_u32_le_short_buffer_zero_extends() {
+        assert_eq!(load_u32_le(&[]), 0);
+        assert_eq!(load_u32_le(&[0x11]), 0x0000_0011);
+        assert_eq!(load_u32_le(&[0x11, 0x22]), 0x0000_2211);
+        assert_eq!(load_u32_le(&[0x11, 0x22, 0x33]), 0x0033_2211);
+    }
+
+    #[test]
+    fn sign_extend_24_preserves_positive_values() {
+        assert_eq!(sign_extend_24(0), 0);
+        assert_eq!(sign_extend_24(1), 1);
+        assert_eq!(sign_extend_24(0x7F_FFFF), 0x7F_FFFF);
+    }
+
+    #[test]
+    fn sign_extend_24_extends_negative_values() {
+        // 0x80_0000 is the most-negative 24-bit value: -8388608.
+        assert_eq!(sign_extend_24(0x80_0000), -0x80_0000);
+        // 0xFF_FFFF is -1 in 24-bit two's complement.
+        assert_eq!(sign_extend_24(0xFF_FFFF), -1);
+        // 0xFF_FFFE is -2.
+        assert_eq!(sign_extend_24(0xFF_FFFE), -2);
+    }
+
+    #[test]
+    fn sign_extend_24_ignores_high_byte() {
+        // The function only looks at the low 24 bits.
+        assert_eq!(sign_extend_24(0xABFF_FFFF), -1);
+        assert_eq!(sign_extend_24(0xCD00_0000), 0);
+    }
+
+    #[test]
+    fn load_helpers_form_consistent_family() {
+        // u16 of "abc" prefix matches u24 of "abc" masked to 16 bits, etc.
+        let buf = [0x11, 0x22, 0x33, 0x44];
+        let u16v = u32::from(load_u16_le(&buf));
+        let u24v = load_u24_le(&buf);
+        let u32v = load_u32_le(&buf);
+        assert_eq!(u24v & 0xFFFF, u16v);
+        assert_eq!(u32v & 0xFF_FFFF, u24v);
+        assert_eq!(u32v & 0xFFFF, u16v);
     }
 }

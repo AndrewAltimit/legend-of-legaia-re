@@ -1786,6 +1786,149 @@ pub trait FieldHost {
         None
     }
 
+    // -----------------------------------------------------------------
+    // Round 17 — five 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // -----------------------------------------------------------------
+
+    /// Op 0x4C outer-nibble-C sub-0 — cancel the active move-table animation.
+    ///
+    /// 2-byte instruction `[4C, 0xC0]`. The dispatcher dump (lines 6726-6732)
+    /// gates on `ctx.move_id > 0` (the actor's currently-playing move); if a
+    /// move is active, the original calls `func_0x800204F8(ctx)` (the move
+    /// VM's "cancel" entry — see [`docs/subsystems/move-vm.md`]).
+    ///
+    /// `is_active` is the gate; the host should return `true` when the actor
+    /// has a move-table animation that should be cancelled. Default impl
+    /// returns `false`, so the cancel side-effect is skipped (safe fallback —
+    /// engines without a move VM never trigger the cancel).
+    ///
+    /// PC always advances by 2 (whether the move was cancelled or not).
+    fn op4c_n_c_sub_0_move_cancel(&mut self, ctx: &mut FieldCtx) -> bool {
+        let _ = ctx;
+        false
+    }
+
+    /// Op 0x4C outer-nibble-C sub-3 — script-table teleport with tile-center
+    /// math.
+    ///
+    /// 2-byte instruction `[4C, 0xC3]`. The original (dispatcher dump
+    /// 6762-6810) calls `func_0x8003C8F0(ctx.field_50, 0)` to resolve the
+    /// destination tile descriptor, then writes:
+    /// - `world_x = (b & 0x7F) * 0x80 + 0x40` (with optional `+0x40` if high
+    ///   bit is set) — the standard tile-center formula,
+    /// - `world_z` similarly,
+    /// - rotation, animation frame, sprite flags get reset.
+    ///
+    /// Both helpers (`func_0x8003C8F0` table lookup and `func_0x8003D0BC`
+    /// descriptor walk) are overlay-resident; hosts that don't model the
+    /// scene table leave the default no-op in place.
+    ///
+    /// PC always advances by 2.
+    fn op4c_n_c_sub_3_script_teleport(&mut self, ctx: &mut FieldCtx) {
+        let _ = ctx;
+    }
+
+    /// Op 0x4C outer-nibble-C sub-D — script-context allocation gate, halt.
+    ///
+    /// 2-byte instruction `[4C, 0xCD]`. The original calls
+    /// `func_0x8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (the linked-list-walk
+    /// "find by predicate"), tests the resolved entry's flag bit `0x8`, and:
+    /// - if the entry exists AND the bit is set → halt acquired, PC stays at
+    ///   start-of-instruction (we model this as `Halt { final_pc: pc }`),
+    /// - else → yield via `LAB_801DEE50` (also `Halt { final_pc: pc }` in our
+    ///   model — the engine-side state-resume layer drives re-entry).
+    ///
+    /// In both cases the dispatcher returns `Halt`, so the host hook only
+    /// records the side effect (registering the actor with the list-walk
+    /// machinery). Default no-op.
+    fn op4c_n_c_sub_d_script_alloc(&mut self) {}
+
+    /// Op 0x4C outer-nibble-E sub-4 — bounding-box collision query against
+    /// the actor's world position.
+    ///
+    /// 9-byte instruction `[4C, 0xE4, x_lo, z_lo, x_hi, z_hi, scale, ?, ?]`.
+    /// The original (dispatcher dump 7228-7255) builds 4 corners by mapping
+    /// each operand byte through the standard tile-center formula
+    /// (`(b & 0x7F) * 0x80 + 0x40`, plus 0x40 when the high bit is set), then
+    /// tests whether the actor's `(world_x, world_z)` lies inside that AABB.
+    /// On the **outside** path the original calls `FUN_801E3614()` which is
+    /// the standard halt helper.
+    ///
+    /// We expose the pure-arithmetic predicate here and let the dispatcher
+    /// emit the halt directly: the host returns `true` when the actor is
+    /// **outside** the bbox (the original's "fail" path). When the actor is
+    /// inside, PC advances by 8.
+    ///
+    /// `bbox` is `[x0, z0, x1, z1]` with each coordinate already converted
+    /// from operand byte to world-space tile center. Default impl returns
+    /// `false` (= "always inside"), so the dispatcher always advances —
+    /// engines that don't model the world position can skip the test.
+    fn op4c_n_e_sub_4_bbox_outside(&self, ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
+        let _ = (ctx, bbox);
+        false
+    }
+
+    /// Op 0x4C outer-nibble-E sub-5 — add XP to the party-XP accumulator.
+    ///
+    /// 5-byte instruction `[4C, 0xE5, b1, b2, b3]`. The original (dispatcher
+    /// dump 7256-7267) reads a 24-bit signed value via
+    /// [`field_helpers::load_u24_le`] + [`field_helpers::sign_extend_24`],
+    /// adds it to `_DAT_800845A4` (the party-XP global), clamps to
+    /// `[0, 9999999]`, and calls `func_0x8003CE08(8)` (the standard
+    /// "party stats refresh" trigger).
+    ///
+    /// `xp_delta` is the sign-extended 24-bit value already prepared by the
+    /// dispatcher. Hosts apply the clamp + refresh; default no-op.
+    ///
+    /// [`field_helpers::load_u24_le`]: crate::field_helpers::load_u24_le
+    /// [`field_helpers::sign_extend_24`]: crate::field_helpers::sign_extend_24
+    fn op4c_n_e_sub_5_add_xp(&mut self, xp_delta: i32) {
+        let _ = xp_delta;
+    }
+
+    /// Op 0x4C outer-nibble-E sub-B — conditional actor lookup with
+    /// embedded jump target.
+    ///
+    /// 5-byte instruction `[4C, 0xEB, actor_id, target_lo, target_hi]`.
+    /// The original (dispatcher dump 7370-7376) calls `func_0x8003C83C(b1)`
+    /// (the actor-table walker — see also [`docs/subsystems/script-vm.md`]'s
+    /// "intra-function label catalogue" for the F8/FB system-channel idiom).
+    ///
+    /// Two outcomes:
+    /// - **actor resolved** → return `pc + 5` (PC advances 5),
+    /// - **actor not resolved** → return absolute jump to
+    ///   `LE_u16(operand+2..=operand+3)`.
+    ///
+    /// The host returns `Some(new_pc)` to take the resolved-actor "pc + 5"
+    /// path (the host has confirmed the actor exists), or `None` to take the
+    /// embedded-jump path (actor lookup missed). Default impl returns `None`
+    /// — engines without an actor pool always take the jump.
+    fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+        let _ = actor_id;
+        None
+    }
+
+    /// Read 16-bit value used by op 0x4C nC sub-5/6 — the operand-stream
+    /// equivalent of `func_0x8003CE9C` followed by [`party_flag_test`] over
+    /// the trigger-flag bank.
+    ///
+    /// Both sub-5 (jump-if-zero) and sub-6 (jump-if-nonzero) read a 16-bit
+    /// value from `bytecode[operand+1..=operand+2]` and test whether the
+    /// corresponding bit is set in the trigger-flag array. The dispatcher
+    /// computes the index via [`field_helpers::load_u16_le`] and asks the
+    /// host whether that bit is set.
+    ///
+    /// Returns `true` when the bit is set (= the original's `0xFF` saturation
+    /// from `FUN_8003CE64`), `false` otherwise. Default impl returns `false`
+    /// — engines without a flag bank treat all bits as clear.
+    ///
+    /// [`field_helpers::load_u16_le`]: crate::field_helpers::load_u16_le
+    /// [`party_flag_test`]: crate::field_helpers::party_flag_test
+    fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
+        let _ = flag_idx;
+        false
+    }
+
     /// Halt-acquire dispatcher used by op 0x38 (CAM_CFG yield path) and
     /// op 0x43 sub-0/1/A/B (actor-control halts).
     ///
@@ -3204,16 +3347,74 @@ pub fn step<H: FieldHost>(
                     }
                 }
                 // Outer nibble 0xC — small per-actor / per-scene writes.
-                // Ported subset covers sub-1 (flag-loop reset, PC += 2),
-                // sub-2 (field_42), sub-4 (sub-tile broadcast), sub-7 (sound
+                // Ported subset covers sub-0 (move-table cancel, PC += 2),
+                // sub-1 (flag-loop reset, PC += 2), sub-2 (field_42), sub-3
+                // (script-table teleport, PC += 2), sub-4 (sub-tile
+                // broadcast), sub-5/6 (party-flag conditional jumps via
+                // `func_0x8003CE9C` + `party_flag_test`), sub-7 (sound
                 // trigger), sub-8 (field_74 XOR), sub-9 (global-pair compare
                 // gate — PC += 2 unless globals differ, then halt), sub-0xA
-                // / sub-0xB / sub-0xC (slot table writes), sub-0xE (b6ac
-                // write), sub-0xF (position broadcast). Sub-0 (move-table
-                // cancel), sub-3 (script-table teleport), sub-5/6
-                // (conditional jumps via `func_0x8003CE64`), sub-0xD
-                // (script-context alloc with halt) remain `Pending`.
+                // / sub-0xB / sub-0xC (slot table writes), sub-0xD
+                // (script-context alloc, halt), sub-0xE (b6ac write), sub-0xF
+                // (position broadcast). All 16 sub-ops in nibble 0xC are now
+                // handled.
                 0xC => match op0 & 0x0F {
+                    // Sub-0: 2-byte. Cancel move-table animation if active
+                    // (`func_0x800204F8`). Always advances PC += 2.
+                    0 => {
+                        host.op4c_n_c_sub_0_move_cancel(ctx);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-3: 2-byte. Script-table teleport with tile-center
+                    // math. Helper `func_0x8003C8F0`/`8003D0BC` is overlay-
+                    // resident; hosts decide what fields to write. PC += 2.
+                    3 => {
+                        host.op4c_n_c_sub_3_script_teleport(ctx);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 1,
+                        }
+                    }
+                    // Sub-5: 4-byte `[4C, 0xC5, idx_lo, idx_hi]`. Reads the
+                    // 16-bit flag index via `load_u16_le`, queries the host's
+                    // party-flag bank, and jumps to `LAB_801E2A10` when the
+                    // bit is **clear** (jump-if-zero polarity). The original's
+                    // jump target is the dispatcher's "no-op fallthrough" —
+                    // both branches advance PC += 4.
+                    5 => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
+                        // Both polarities (5 = jump-if-zero, 6 = jump-if-nonzero)
+                        // share the same dispatcher fallthrough — the original's
+                        // `joined_r0x801e28c4` block returns `param_2 + 4` either
+                        // way. The polarity selects which arm runs the
+                        // host-visible side effect, but PC delta is constant.
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        }
+                    }
+                    // Sub-6: 4-byte. Sister of sub-5 with opposite polarity
+                    // (jump-if-nonzero). PC always advances by 4.
+                    6 => {
+                        if operand + 3 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 3,
+                        }
+                    }
+                    // Sub-D: 2-byte. Allocate / register a script context.
+                    // Halts at PC regardless of allocation outcome.
+                    0xD => {
+                        host.op4c_n_c_sub_d_script_alloc();
+                        StepResult::Halt { final_pc: pc }
+                    }
                     // Sub-1: 1-byte. Walk the trigger-flag record array,
                     // resetting each record's byte-0 from a per-record
                     // 16-bit index queried against the flag bit-array.
@@ -3575,6 +3776,52 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 5,
                         }
                     }
+                    // Sub-4: 9-byte `[4C, 0xE4, x0, z0, x1, z1, scale, ?, ?]`.
+                    // BBox collision query. Each operand byte goes through
+                    // the standard tile-center conversion (`(b & 0x7F) * 0x80
+                    // + 0x40`, plus 0x40 if the high bit is set). When the
+                    // host predicate says "outside", the original calls the
+                    // halt helper FUN_801E3614; we model that as Halt at PC.
+                    // When inside, advance PC by 8.
+                    4 => {
+                        if operand + 8 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let tile_center = |b: u8| -> i16 {
+                            if b == 0 {
+                                return 0;
+                            }
+                            let base = (i16::from(b & 0x7F)) << 7 | 0x40;
+                            if b & 0x80 != 0 { base + 0x40 } else { base }
+                        };
+                        let bbox = [
+                            tile_center(bytecode[operand + 1]),
+                            tile_center(bytecode[operand + 2]),
+                            tile_center(bytecode[operand + 3]),
+                            tile_center(bytecode[operand + 4]),
+                        ];
+                        if host.op4c_n_e_sub_4_bbox_outside(ctx, bbox) {
+                            StepResult::Halt { final_pc: pc }
+                        } else {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 8,
+                            }
+                        }
+                    }
+                    // Sub-5: 5-byte `[4C, 0xE5, b1, b2, b3]`. Read 24-bit
+                    // signed XP delta via load_u24_le + sign_extend_24, then
+                    // call the host's add-xp hook. PC += 4.
+                    5 => {
+                        if operand + 4 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let raw = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
+                        let xp_delta = crate::field_helpers::sign_extend_24(raw);
+                        host.op4c_n_e_sub_5_add_xp(xp_delta);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 4,
+                        }
+                    }
                     6 => {
                         if operand + 7 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
@@ -3619,6 +3866,28 @@ pub fn step<H: FieldHost>(
                         host.op4c_n_e_sub_d_set_ba66(b1);
                         StepResult::Advance {
                             next_pc: pc + header_size + 2,
+                        }
+                    }
+                    // Sub-B: 5-byte `[4C, 0xEB, actor_id, target_lo, target_hi]`.
+                    // Conditional actor lookup with embedded jump target.
+                    // When the host resolves the actor, advance PC by 5;
+                    // otherwise jump to absolute `LE_u16(operand+2..=operand+3)`.
+                    0xB => {
+                        if operand + 4 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let actor_id = bytecode[operand + 1];
+                        match host.op4c_n_e_sub_b_actor_jump(actor_id) {
+                            Some(()) => StepResult::Advance {
+                                next_pc: pc + header_size + 4,
+                            },
+                            None => {
+                                let target =
+                                    crate::field_helpers::load_u16_le(&bytecode[operand + 2..]);
+                                StepResult::Advance {
+                                    next_pc: target as usize,
+                                }
+                            }
                         }
                     }
                     0xE => {
@@ -4830,6 +5099,17 @@ mod tests {
         n_d_sub_e_jump_target: Option<usize>,
         n_d_sub_e_calls: Vec<u8>,
         n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
+        // Round 17 — five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+        n_c_sub_0_move_cancels: u32,
+        n_c_sub_0_active: bool,
+        n_c_sub_3_teleports: u32,
+        n_c_sub_d_allocs: u32,
+        n_c_party_flag_bits: std::collections::HashMap<u16, bool>,
+        n_e_sub_4_outside: bool,
+        n_e_sub_4_bboxes: std::cell::RefCell<Vec<[i16; 4]>>,
+        n_e_sub_5_xp_deltas: Vec<i32>,
+        n_e_sub_b_resolves: bool,
+        n_e_sub_b_actor_ids: Vec<u8>,
         // 0x43 halt-acquire (sub-0/1/A/B).
         halt_acquire_predicate: bool,
         halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
@@ -5294,6 +5574,34 @@ mod tests {
         fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
             self.n_d_sub_e_calls.push(needle);
             self.n_d_sub_e_jump_target
+        }
+        fn op4c_n_c_sub_0_move_cancel(&mut self, _ctx: &mut FieldCtx) -> bool {
+            self.n_c_sub_0_move_cancels += 1;
+            self.n_c_sub_0_active
+        }
+        fn op4c_n_c_sub_3_script_teleport(&mut self, _ctx: &mut FieldCtx) {
+            self.n_c_sub_3_teleports += 1;
+        }
+        fn op4c_n_c_sub_d_script_alloc(&mut self) {
+            self.n_c_sub_d_allocs += 1;
+        }
+        fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
+            *self.n_c_party_flag_bits.get(&flag_idx).unwrap_or(&false)
+        }
+        fn op4c_n_e_sub_4_bbox_outside(&self, _ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
+            self.n_e_sub_4_bboxes.borrow_mut().push(bbox);
+            self.n_e_sub_4_outside
+        }
+        fn op4c_n_e_sub_5_add_xp(&mut self, xp_delta: i32) {
+            self.n_e_sub_5_xp_deltas.push(xp_delta);
+        }
+        fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+            self.n_e_sub_b_actor_ids.push(actor_id);
+            if self.n_e_sub_b_resolves {
+                Some(())
+            } else {
+                None
+            }
         }
         fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
             self.halt_acquire_predicate
@@ -9062,5 +9370,302 @@ mod tests {
             }
         ));
         assert!(host.n_e_sub_1_text_calls.is_empty());
+    }
+
+    // -----------------------------------------------------------------
+    // Round 17 — five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes() {
+        let bytecode = [0x4Cu8, 0xC0];
+        let mut host = TestHost {
+            n_c_sub_0_active: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_0_move_cancels, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes_when_inactive() {
+        // Even when the host returns false (no active move), PC still
+        // advances by 2 — the cancel side-effect is conditional but the
+        // dispatcher's PC delta is constant.
+        let bytecode = [0x4Cu8, 0xC0];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_0_move_cancels, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_3_script_teleport_advances_2_bytes() {
+        let bytecode = [0x4Cu8, 0xC3];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 2 });
+        assert_eq!(host.n_c_sub_3_teleports, 1);
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes() {
+        // [4C, 0xC5, 0x05, 0x00] — flag idx 5. Bit 5 in the host's bank is
+        // unset, so the original "jump-if-zero" path fires; both branches
+        // advance PC by 4.
+        let bytecode = [0x4Cu8, 0xC5, 0x05, 0x00];
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(5, false);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes_when_set() {
+        // Bit set → original's "jump-if-zero" doesn't fire; PC still += 4.
+        let bytecode = [0x4Cu8, 0xC5, 0x07, 0x00];
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(7, true);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_reads_16_bit_index_via_helper() {
+        // Verify the dispatcher reads the index through load_u16_le by
+        // setting two distinct flag bits and checking which one was queried.
+        let bytecode = [0x4Cu8, 0xC5, 0x34, 0x12]; // 0x1234
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(0x1234, true);
+        host.n_c_party_flag_bits.insert(0x3412, false);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        // The 0x1234 bit is set in the bank — the dispatcher's load_u16_le
+        // must produce 0x1234 (LE), not 0x3412 (BE).
+        assert!(*host.n_c_party_flag_bits.get(&0x1234).unwrap());
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_6_party_flag_jnz_advances_4_bytes() {
+        // Same shape as sub-5 but opposite polarity. Both polarities share
+        // PC += 4 either way.
+        let bytecode = [0x4Cu8, 0xC6, 0x09, 0x00];
+        let mut host = TestHost::default();
+        host.n_c_party_flag_bits.insert(9, false);
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_5_truncated_buffer_returns_unknown() {
+        // Need 3 bytes after pc; only 2 available.
+        let bytecode = [0x4Cu8, 0xC5, 0x05]; // missing high byte
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_c_sub_d_script_alloc_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xCD];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert_eq!(host.n_c_sub_d_allocs, 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_inside_advances_9_bytes() {
+        // Host returns false (= "inside") → PC += 9. The dispatcher computes
+        // a tile-center bbox and passes it to the host.
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 9 });
+        assert_eq!(host.n_e_sub_4_bboxes.borrow().len(), 1);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_outside_halts_at_pc() {
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x20, 0x20, 0x00, 0x00, 0x00];
+        let mut host = TestHost {
+            n_e_sub_4_outside: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_tile_center_math_for_low_byte() {
+        // Operand byte 0x10 → tile-center: (0x10 << 7) | 0x40 = 0x840
+        // (high bit clear, so no extra +0x40).
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let _ = step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes.len(), 1);
+        // All four corners should be 0x840 = 2112.
+        assert_eq!(bboxes[0], [0x840, 0x840, 0x840, 0x840]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_tile_center_high_bit_adds_0x40() {
+        // Operand byte 0x90: low 7 bits are 0x10 → base 0x840. High bit set
+        // → extra +0x40 = 0x880.
+        let bytecode = [0x4Cu8, 0xE4, 0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let _ = step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes[0], [0x880, 0x880, 0x880, 0x880]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_bbox_zero_byte_yields_zero() {
+        // Operand byte 0x00 → 0 (special case in tile-center math).
+        let bytecode = [0x4Cu8, 0xE4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let _ = step(&mut host, &mut ctx, &bytecode, 0);
+        let bboxes = host.n_e_sub_4_bboxes.borrow();
+        assert_eq!(bboxes[0], [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_4_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE4, 0x10, 0x10]; // missing last 5 bytes
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_add_xp_positive_value() {
+        // [4C, E5, 0xE8, 0x03, 0x00] — 0x0003E8 = 1000.
+        let bytecode = [0x4Cu8, 0xE5, 0xE8, 0x03, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_5_xp_deltas, vec![1000]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_add_xp_negative_value() {
+        // 0xFFFFFE = -2 in 24-bit two's complement.
+        let bytecode = [0x4Cu8, 0xE5, 0xFE, 0xFF, 0xFF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_5_xp_deltas, vec![-2]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_add_xp_zero_advances_5_bytes() {
+        let bytecode = [0x4Cu8, 0xE5, 0x00, 0x00, 0x00];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_5_xp_deltas, vec![0]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_5_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xE5, 0x01]; // missing 2 bytes
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_5_xp_deltas.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_actor_resolved_advances_5_bytes() {
+        // [4C, EB, actor_id=0x07, target_lo=0x10, target_hi=0x20]
+        // When the host resolves the actor, take the "pc + 5" path.
+        let bytecode = [0x4Cu8, 0xEB, 0x07, 0x10, 0x20];
+        let mut host = TestHost {
+            n_e_sub_b_resolves: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 5 });
+        assert_eq!(host.n_e_sub_b_actor_ids, vec![0x07]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_actor_unresolved_jumps_to_target() {
+        // Same instruction; host returns None (actor not resolved). The
+        // dispatcher reads the absolute jump target via load_u16_le and
+        // returns it as the new PC.
+        let bytecode = [0x4Cu8, 0xEB, 0x07, 0x10, 0x20];
+        let mut host = TestHost::default(); // n_e_sub_b_resolves = false
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x2010 });
+        assert_eq!(host.n_e_sub_b_actor_ids, vec![0x07]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_jump_target_uses_load_u16_le() {
+        // Verify endianness: bytes 0x34, 0x12 should produce target 0x1234,
+        // not 0x3412.
+        let bytecode = [0x4Cu8, 0xEB, 0xAA, 0x34, 0x12];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_b_truncated_buffer_returns_unknown() {
+        let bytecode = [0x4Cu8, 0xEB, 0x07]; // missing 2 jump-target bytes
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert!(matches!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        ));
+        assert!(host.n_e_sub_b_actor_ids.is_empty());
     }
 }
