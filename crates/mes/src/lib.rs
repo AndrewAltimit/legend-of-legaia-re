@@ -52,6 +52,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod interp;
+pub use interp::{EventStats, Interpreter, MesEvent, extract_all_messages, extract_message};
+
 use anyhow::{Result, bail};
 use serde::Serialize;
 
@@ -294,6 +297,7 @@ pub fn iter_tokens(buf: &[u8], start: usize) -> TokenIter<'_> {
 
 /// Iterator returned by [`iter_tokens`]. Tracks position so callers can
 /// inspect [`TokenIter::pos`] after iteration.
+#[derive(Debug)]
 pub struct TokenIter<'a> {
     buf: &'a [u8],
     pos: usize,

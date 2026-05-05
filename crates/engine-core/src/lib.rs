@@ -1,7 +1,11 @@
-//! Engine core primitives: virtual filesystem, asset cache, frame time.
+//! Engine core primitives: virtual filesystem, asset cache, frame time, and
+//! the composite [`world::World`] that wires the per-VM hosts from
+//! `legaia-engine-vm` into a single runtime.
 //!
 //! Engine-agnostic. No wgpu / windowing / audio dependencies — the asset
 //! crates talk to this layer, the render and audio crates read from it.
+
+pub mod world;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;

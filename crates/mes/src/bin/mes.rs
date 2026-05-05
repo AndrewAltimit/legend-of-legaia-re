@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use legaia_mes::{Token, iter_tokens, parse};
+use legaia_mes::{EventStats, Interpreter, Token, extract_all_messages, iter_tokens, parse};
 
 #[derive(Parser)]
 #[command(name = "mes", about = "Legaia MES (asset type 0x04) inspector")]
@@ -29,6 +29,19 @@ enum Cmd {
     },
     /// Emit a JSON dump of the parsed structure (for tooling).
     Json { path: PathBuf },
+    /// Walk the bytecode interpreter for a single message and print events.
+    /// `--index` selects the offset-table entry; default 0.
+    Events {
+        path: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        index: usize,
+        /// Print as one event per line ("Glyph 0x9D"), else use the
+        /// compact `render_summary` form.
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
+    },
+    /// Walk every offset-table entry, print event-stats for each message.
+    StatsAll { path: PathBuf },
 }
 
 fn main() -> Result<()> {
@@ -36,6 +49,12 @@ fn main() -> Result<()> {
         Cmd::Info { path } => info(&path),
         Cmd::Disasm { path, start, limit } => disasm(&path, start, limit),
         Cmd::Json { path } => json(&path),
+        Cmd::Events {
+            path,
+            index,
+            verbose,
+        } => events(&path, index, verbose),
+        Cmd::StatsAll { path } => stats_all(&path),
     }
 }
 
@@ -129,6 +148,68 @@ fn json(path: &PathBuf) -> Result<()> {
     let blob = parse(&raw).with_context(|| format!("parse {}", path.display()))?;
     let s = serde_json::to_string_pretty(&blob)?;
     println!("{}", s);
+    Ok(())
+}
+
+fn events(path: &PathBuf, index: usize, verbose: bool) -> Result<()> {
+    let raw = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let blob = parse(&raw).with_context(|| format!("parse {}", path.display()))?;
+    let mut interp = Interpreter::new_compact(&blob, &raw, index)?;
+    let events = interp.collect_events();
+    println!(
+        "# message {} from {} ({} events)",
+        index,
+        path.display(),
+        events.len()
+    );
+    if verbose {
+        for ev in &events {
+            println!("  {ev:?}");
+        }
+    } else {
+        println!("{}", Interpreter::render_summary(&events));
+    }
+    Ok(())
+}
+
+fn stats_all(path: &PathBuf) -> Result<()> {
+    let raw = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let messages = extract_all_messages(&raw)
+        .with_context(|| format!("extract messages from {}", path.display()))?;
+    println!(
+        "# {} messages from {} ({} bytes)",
+        messages.len(),
+        path.display(),
+        raw.len()
+    );
+    let mut totals = EventStats::default();
+    for (i, evs) in messages.iter().enumerate() {
+        let s = EventStats::from_events(evs);
+        totals.glyphs += s.glyphs;
+        totals.page_breaks += s.page_breaks;
+        totals.op65 += s.op65;
+        totals.op4c += s.op4c;
+        totals.op26 += s.op26;
+        totals.unknowns += s.unknowns;
+        totals.end_of_message += s.end_of_message;
+        if i < 16 {
+            println!(
+                "  [{:>3}] {} glyphs, {} page-breaks, {} unknown, {} ev total",
+                i,
+                s.glyphs,
+                s.page_breaks,
+                s.unknowns,
+                evs.len(),
+            );
+        }
+    }
+    if messages.len() > 16 {
+        println!("  ... +{} more messages", messages.len() - 16);
+    }
+    println!(
+        "totals: {} glyphs, {} page-breaks, {} op65, {} op4c, {} op26, {} unknown",
+        totals.glyphs, totals.page_breaks, totals.op65, totals.op4c, totals.op26, totals.unknowns,
+    );
     Ok(())
 }
 
