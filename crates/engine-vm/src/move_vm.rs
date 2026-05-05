@@ -647,6 +647,19 @@ pub trait MoveHost {
     fn move_axis_threshold(&self) -> i16 {
         0
     }
+
+    /// Read a u16 from the actor's move-bytecode buffer at the given absolute
+    /// word offset (`actor[+0x48][word_off]`). Used by ext sub-ops 0x1B (copy
+    /// loop) and 0x1E (read-modify-write). Default returns 0 — hosts that
+    /// model the move buffer (e.g. engine-core's `World`) override.
+    fn move_bytecode_read_u16(&self, _word_off: usize) -> u16 {
+        0
+    }
+
+    /// Write a u16 to the actor's move-bytecode buffer. Used by ext sub-ops
+    /// 0x04 (write actor world to operand slot), 0x1B (copy loop), and 0x1E
+    /// (read-modify-write). Default no-op.
+    fn move_bytecode_write_u16(&mut self, _word_off: usize, _value: u16) {}
 }
 
 fn ext_default_dispatch<H: MoveHost + ?Sized>(
@@ -684,10 +697,18 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x04 — write actor world XYZ into the operand slot at offset
-        // `op[2] * 2 + 6`. The "self-modifying" pattern stores a copy of
-        // current pos into the bytecode itself. Default-arm size.
-        0x04 => MoveExtResult::default_arm(),
+        // 0x04 — write actor world XYZ into the operand slot at u16-index
+        // `op[2] + 3`. The "self-modifying" pattern stores a copy of the
+        // current world coords into the move-bytecode itself; the absolute
+        // word offset is `state.pc + op[2] + 3`. 3 consecutive writes for
+        // x/y/z. Default-arm size.
+        0x04 => {
+            let base = state.pc as usize + op_w(2) as usize + 3;
+            host.move_bytecode_write_u16(base, state.world_x as u16);
+            host.move_bytecode_write_u16(base + 1, state.world_y as u16);
+            host.move_bytecode_write_u16(base + 2, state.world_z as u16);
+            MoveExtResult::default_arm()
+        }
 
         // 0x05 — opaque func56798().
         0x05 => host.ext_func56798(state),
@@ -925,8 +946,24 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x1B — copy operand slot → operand slot loop. Pure local effect.
-        0x1B => MoveExtResult::default_arm(),
+        // 0x1B — in-bytecode copy loop. For `i in 0..op[4]`:
+        //   buffer[state.pc + op[3] + i + 5] = buffer[state.pc + op[2] + i + 5]
+        // The base offset of 5 (= u16-index 5) targets the operand region
+        // *past* the count word — the bytecode following this instruction
+        // is treated as an inline scratch buffer indexed by op[2]/op[3].
+        // Falls into default-arm regardless of the count.
+        0x1B => {
+            let count = op_w(4) as i16;
+            if count > 0 {
+                let src_base = state.pc as usize + op_w(2) as usize + 5;
+                let dst_base = state.pc as usize + op_w(3) as usize + 5;
+                for i in 0..count as usize {
+                    let v = host.move_bytecode_read_u16(src_base + i);
+                    host.move_bytecode_write_u16(dst_base + i, v);
+                }
+            }
+            MoveExtResult::default_arm()
+        }
 
         // 0x1C / 0x1D — set / clear flag bank. op_w(2) = flag index.
         0x1C => {
@@ -938,8 +975,16 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(3)
         }
 
-        // 0x1E — operand[op[1] + 3] += op[2].
-        0x1E => MoveExtResult::default_arm(),
+        // 0x1E — in-place add: `buffer[state.pc + op[2] + 4] += op[3]`.
+        // Read-modify-write of a single u16 inside the move bytecode.
+        // Wrapping i16 add per the original `*(short *)(...) + *(short *)(...)`.
+        0x1E => {
+            let off = state.pc as usize + op_w(2) as usize + 4;
+            let cur = host.move_bytecode_read_u16(off) as i16;
+            let new = cur.wrapping_add(op_w(3) as i16);
+            host.move_bytecode_write_u16(off, new as u16);
+            MoveExtResult::default_arm()
+        }
 
         // 0x1F / 0x20 — fade RGB ramp. Default arm.
         0x1F | 0x20 => MoveExtResult::default_arm(),
@@ -2109,6 +2154,11 @@ mod tests {
         /// Constant value returned by `ext_query_flag_bank` (lets predicate
         /// tests select the expected branch).
         ext_query_flag_bank_returns: u32,
+        /// Mirrors the actor's move bytecode buffer for sub-ops 0x04 / 0x1B
+        /// / 0x1E. Tests that exercise these ops pre-seed the buffer to
+        /// match the program they pass to `step`, then assert on the
+        /// post-step contents.
+        bytecode_buffer: Vec<u16>,
     }
 
     impl MoveHost for TestHost {
@@ -2224,6 +2274,15 @@ mod tests {
         }
         fn ext_query_flag_bank(&self, _idx: i16) -> u32 {
             self.ext_query_flag_bank_returns
+        }
+        fn move_bytecode_read_u16(&self, word_off: usize) -> u16 {
+            self.bytecode_buffer.get(word_off).copied().unwrap_or(0)
+        }
+        fn move_bytecode_write_u16(&mut self, word_off: usize, value: u16) {
+            if word_off >= self.bytecode_buffer.len() {
+                self.bytecode_buffer.resize(word_off + 1, 0);
+            }
+            self.bytecode_buffer[word_off] = value;
         }
     }
 
@@ -3306,5 +3365,67 @@ mod tests {
         assert_eq!(state.anim_3c, 100);
         assert_eq!(state.anim_3e, 200);
         assert_eq!(state.anim_40, 300);
+    }
+
+    #[test]
+    fn op2f_subop_04_writes_actor_world_into_bytecode_buffer() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.world_x = 10;
+        state.world_y = 20;
+        state.world_z = 30;
+        // op[2] = 5 → writes at state.pc(0) + 5 + 3 = word indices 8, 9, 10.
+        let bc = program(&[0x2F, 0x04, 5]);
+        host.bytecode_buffer = bc.clone();
+        step(&mut host, &mut state, &bc);
+        assert_eq!(host.bytecode_buffer[8], 10);
+        assert_eq!(host.bytecode_buffer[9], 20);
+        assert_eq!(host.bytecode_buffer[10], 30);
+        assert_eq!(state.pc, 1, "default-arm");
+    }
+
+    #[test]
+    fn op2f_subop_1e_in_place_add_to_bytecode() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // op[2] = 3, op[3] = 5 → buffer[state.pc(0) + 3 + 4 = 7] += 5.
+        let bc = program(&[0x2F, 0x1E, 3, 5]);
+        host.bytecode_buffer = bc.clone();
+        host.bytecode_buffer[7] = 100;
+        step(&mut host, &mut state, &bc);
+        assert_eq!(host.bytecode_buffer[7], 105);
+    }
+
+    #[test]
+    fn op2f_subop_1b_copy_loop_within_bytecode() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        // op[2] = 0 (src), op[3] = 4 (dst), op[4] = 3 (count).
+        // src base = state.pc(0) + 0 + 5 = 5. dst base = 0 + 4 + 5 = 9.
+        // Copies buffer[5..8] → buffer[9..12].
+        let bc = program(&[0x2F, 0x1B, 0, 4, 3]);
+        host.bytecode_buffer = bc.clone();
+        host.bytecode_buffer[5] = 0xAAAA;
+        host.bytecode_buffer[6] = 0xBBBB;
+        host.bytecode_buffer[7] = 0xCCCC;
+        // Pre-fill destination with sentinels so we can detect writes.
+        host.bytecode_buffer[9] = 0;
+        host.bytecode_buffer[10] = 0;
+        host.bytecode_buffer[11] = 0;
+        step(&mut host, &mut state, &bc);
+        assert_eq!(host.bytecode_buffer[9], 0xAAAA);
+        assert_eq!(host.bytecode_buffer[10], 0xBBBB);
+        assert_eq!(host.bytecode_buffer[11], 0xCCCC);
+    }
+
+    #[test]
+    fn op2f_subop_1b_zero_count_is_noop() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x1B, 0, 4, 0]);
+        host.bytecode_buffer = bc.clone();
+        let before = host.bytecode_buffer.clone();
+        step(&mut host, &mut state, &bc);
+        assert_eq!(host.bytecode_buffer, before);
     }
 }
