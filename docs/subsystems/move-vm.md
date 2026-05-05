@@ -146,6 +146,8 @@ Three sub-ops mutate the move bytecode buffer in place — these are "self-modif
 
 Sub-ops `0x1F` / `0x20` are HSV-space ramps on a packed 24-bit RGB color stored in `actor[+0xa0..+0xa3]` (`0x1F`) or `actor[+0xa4..+0xa7]` (`0x20`). The packed `(R, G, B)` is decomposed (R = byte 0, G = byte 1, B = byte 2), converted RGB→HSV via the SCUS helper at `FUN_8001a78c` (H ∈ 0..0x167, S ∈ 0..255, V ∈ 0..255), then `op[2..4]` are added per channel (H wraps mod `0x168`, S/V clamp to 0..255), then HSV→RGB via `FUN_8001a8dc` (clamped to 0..0xF8 by `FUN_8001a6c8`) and re-packed. The size-1 default-arm return is intentional — the operand stream `op[2..]` is also re-interpreted as outer opcode `0x1F` / `0x20` on the next dispatch (a bytecode-density trick: one HSV ramp instruction simultaneously seeds an `actor[+0x9E..+0xAE]` anim-block update). `crates/engine-vm` ships the clean-room `rgb_to_hsv` / `hsv_to_rgb` pair that mirrors the SCUS algorithms exactly.
 
+The fourth flag bank at `DAT_80086D70` is shared between the move VM (sub-ops `0x13` / `0x14` predicate, `0x1C` / `0x1D` set / clear) and the field VM (high-byte default routes `0x5x` set / `0x6x` clear / `0x7x` test). `engine-core::World` exposes it as a single lazily-grown `system_flags: Vec<u8>` with MSB-first bit ordering (mirroring `FUN_8003CE08`'s `0x80 >> (idx & 7)`). The field VM's `idx` encoding `((opcode_byte & 0x8F) << 8) | operand_byte` ranges over `0..=0x87FF`, which is why the bank can't be a fixed-size 256-bit array.
+
 ### 0x30 — `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
 
 If `actor[+0xA8]` was heap-allocated, calls `FUN_800583C8(actor + 0xA0, buf)`; else uses the inline buffer at `actor + 0xAC`. Clears `actor[+0x9C]`. Goto `caseD_22` epilogue.

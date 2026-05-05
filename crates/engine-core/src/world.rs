@@ -138,6 +138,44 @@ pub struct World {
     /// by ext sub-ops 0x11 / 0x12 / 0x25 / 0x27 / 0x28 / 0x31 / 0x32 / 0x34
     /// / 0x35 to checkpoint world coords + tween state per actor / animation.
     pub move_slot_table: [[u8; 8]; 16],
+    /// Move-VM axis offset at `_DAT_8007C348` — used by ext sub-ops 0x36 / 0x37
+    /// for the `0x8E - axis` threshold predicate. Engines write per-scene.
+    pub move_axis_threshold: i16,
+    /// Move-VM scratchpad ramp ratio numerator at `_DAT_1F800393` — used by
+    /// ext sub-op 0x23 (anim-bank lerp) as the numerator of a 12.0 fixed-point
+    /// ratio against the operand-supplied denominator.
+    pub move_ramp_ratio: u8,
+    /// Fixed map origin pair at `(_DAT_80089118, _DAT_80089120)` — used by ext
+    /// sub-op 0x24 (world position lerp toward fixed map origin).
+    pub map_origin_xz: (i32, i32),
+    /// Player actor slot — when `Some(slot)`, ext sub-ops 0x06 / 0x07 / 0x2A
+    /// / 0x36 / 0x39 read `actors[slot].move_state.world_{x,y,z}` as the
+    /// player position. `None` falls back to the origin (default impl).
+    pub player_actor_slot: Option<u8>,
+    /// Move-VM `_DAT_8007B9D8` — globally-shared 32-bit slot written by ext
+    /// sub-op 0x2F. Engines read this on whatever frame-tick they want.
+    pub move_dat_8007b9d8: i32,
+    /// Move-VM 16-slot scratchpad ramp targets at `_DAT_1F80035C` — used by
+    /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
+    /// pairs (target, current); engines apply per-frame interpolation.
+    pub scratchpad_targets: [i16; 16],
+    /// Shared system flag bank at `_DAT_80086D70` — bitfield read / written
+    /// by:
+    /// - field VM high-byte default routes 0x5x / 0x6x / 0x7x
+    ///   (`system_flag_set` / `system_flag_clear` / `system_flag_test`)
+    /// - move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D
+    ///   (`ext_query_flag_bank` / `ext_set_flag_bank` / `ext_clear_flag_bank`)
+    ///
+    /// Lazily grown on write — the field VM's opcode-encoded idx ranges over
+    /// `0..=0x87FF`, so a fixed 256-bit array is too small.
+    pub system_flags: Vec<u8>,
+    /// Field-VM `extra_flags` register read by op 0x42 mode 0 — a 32-bit
+    /// auxiliary flag word (origin TBD; treated as scene-local state).
+    pub extra_flags: u32,
+    /// Field-VM `screen_mode` register read by op 0x42 mode 1 — packed mode
+    /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
+    /// against `screen_mode_table`).
+    pub screen_mode: u32,
     /// Story-flag word (`_DAT_1F800394` in retail). Read by field-VM
     /// op 0x30 GFLAG_TST and friends.
     pub story_flags: u32,
@@ -195,6 +233,15 @@ impl World {
             move_predicate: 0,
             move_counter: 0,
             move_slot_table: [[0u8; 8]; 16],
+            move_axis_threshold: 0,
+            move_ramp_ratio: 0,
+            map_origin_xz: (0, 0),
+            player_actor_slot: None,
+            move_dat_8007b9d8: 0,
+            scratchpad_targets: [0; 16],
+            system_flags: Vec::new(),
+            extra_flags: 0,
+            screen_mode: 0,
             story_flags: 0,
             rng_state: 0x1234_5678,
             sin_lut: Vec::new(),
@@ -216,6 +263,39 @@ impl World {
     pub fn set_move_bytecode(&mut self, slot: usize, bytecode: Option<Vec<u16>>) {
         if slot < self.move_bytecode.len() {
             self.move_bytecode[slot] = bytecode.unwrap_or_default();
+        }
+    }
+
+    /// Set bit `idx` in the shared system flag bank. `idx >> 3` is the byte
+    /// offset; the bit mask is `0x80 >> (idx & 7)` (MSB-first, mirroring the
+    /// SCUS helper at `FUN_8003CE08`). The bank grows lazily as needed.
+    pub fn system_flag_set(&mut self, idx: u16) {
+        let byte = (idx >> 3) as usize;
+        if byte >= self.system_flags.len() {
+            self.system_flags.resize(byte + 1, 0);
+        }
+        self.system_flags[byte] |= 0x80u8 >> (idx & 7);
+    }
+
+    /// Clear bit `idx` in the shared system flag bank. See [`system_flag_set`].
+    /// Out-of-bounds clears are no-ops (the bit is already zero).
+    ///
+    /// [`system_flag_set`]: World::system_flag_set
+    pub fn system_flag_clear(&mut self, idx: u16) {
+        let byte = (idx >> 3) as usize;
+        if byte < self.system_flags.len() {
+            self.system_flags[byte] &= !(0x80u8 >> (idx & 7));
+        }
+    }
+
+    /// Test bit `idx` in the shared system flag bank. Returns `false` for
+    /// indices past the currently-grown size.
+    pub fn system_flag_test(&self, idx: u16) -> bool {
+        let byte = (idx >> 3) as usize;
+        if byte < self.system_flags.len() {
+            self.system_flags[byte] & (0x80u8 >> (idx & 7)) != 0
+        } else {
+            false
         }
     }
 
@@ -567,6 +647,63 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.deferred_writes.insert(word_off, value);
     }
 
+    // --- player / map-origin queries ----------------------------------
+
+    fn move_player_world_xyz(&self) -> [i16; 3] {
+        match self.world.player_actor_slot {
+            Some(slot) => {
+                let s = &self.world.actors[slot as usize].move_state;
+                [s.world_x, s.world_y, s.world_z]
+            }
+            None => [0, 0, 0],
+        }
+    }
+    fn move_fixed_origin_xz(&self) -> (i32, i32) {
+        self.world.map_origin_xz
+    }
+    fn move_axis_threshold(&self) -> i16 {
+        self.world.move_axis_threshold
+    }
+    fn move_dat_1f800393(&self) -> u8 {
+        self.world.move_ramp_ratio
+    }
+
+    // --- shared system flag bank --------------------------------------
+
+    fn ext_query_flag_bank(&self, flag_index: i16) -> u32 {
+        if self.world.system_flag_test(flag_index as u16) {
+            1
+        } else {
+            0
+        }
+    }
+    fn ext_set_flag_bank(&mut self, flag_index: i16) {
+        self.world.system_flag_set(flag_index as u16);
+    }
+    fn ext_clear_flag_bank(&mut self, flag_index: i16) {
+        self.world.system_flag_clear(flag_index as u16);
+    }
+
+    // --- ext sub-op 0x29 scratchpad ramp ------------------------------
+
+    fn ext_scratchpad_write(&mut self, slot_index: i16, value: i16) {
+        let i = (slot_index as u16 & 0x0F) as usize;
+        self.world.scratchpad_targets[i] = value;
+    }
+    fn ext_scratchpad_ramp(&mut self, slot_index: i16, target: i16, _ticks: i16) {
+        // Default world has no per-frame ramp scheduler; record the target
+        // immediately so reads see the final state. Engines override to
+        // model the per-frame interpolation.
+        let i = (slot_index as u16 & 0x0F) as usize;
+        self.world.scratchpad_targets[i] = target;
+    }
+
+    // --- ext sub-op 0x2F global slot ---------------------------------
+
+    fn ext_set_8007b9d8(&mut self, value: i32) {
+        self.world.move_dat_8007b9d8 = value;
+    }
+
     // `ext_dispatch` uses the default trait impl, which routes through
     // `self` — so sub-op handlers see the world-backed callbacks above.
 }
@@ -605,6 +742,25 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Default world ticks one logical frame per `tick()`. Engines that
         // run faster-than-frame can override this on a custom host wrapper.
         1
+    }
+    fn extra_flags(&self) -> u32 {
+        self.world.extra_flags
+    }
+    fn screen_mode(&self) -> u32 {
+        self.world.screen_mode
+    }
+
+    // Shared system flag bank — same fourth-flag-bank at `_DAT_80086D70`
+    // that move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D query, plus the
+    // 0x5x / 0x6x / 0x7x default-route opcodes.
+    fn system_flag_set(&mut self, idx: u16) {
+        self.world.system_flag_set(idx);
+    }
+    fn system_flag_clear(&mut self, idx: u16) {
+        self.world.system_flag_clear(idx);
+    }
+    fn system_flag_test(&self, idx: u16) -> bool {
+        self.world.system_flag_test(idx)
     }
 }
 
@@ -982,6 +1138,183 @@ mod tests {
         assert_eq!(
             world.move_bytecode[0][4], 10,
             "second 0x1E should see flushed write from first step"
+        );
+    }
+
+    // --- system flag bank (round 6) -------------------------------------
+
+    #[test]
+    fn system_flag_set_and_test_round_trips_through_world() {
+        let mut world = World::new();
+        world.system_flag_set(0);
+        world.system_flag_set(7);
+        world.system_flag_set(15);
+        world.system_flag_set(255);
+        assert!(world.system_flag_test(0));
+        assert!(world.system_flag_test(7));
+        assert!(world.system_flag_test(15));
+        assert!(world.system_flag_test(255));
+        assert!(!world.system_flag_test(1));
+        assert!(!world.system_flag_test(254));
+        // Out-of-bounds idx returns false.
+        assert!(!world.system_flag_test(256));
+        assert!(!world.system_flag_test(0xFFFF));
+    }
+
+    #[test]
+    fn system_flag_clear_only_touches_target_bit() {
+        let mut world = World::new();
+        world.system_flag_set(3);
+        world.system_flag_set(4);
+        world.system_flag_clear(3);
+        assert!(!world.system_flag_test(3));
+        assert!(world.system_flag_test(4));
+    }
+
+    #[test]
+    fn move_vm_ext_query_flag_bank_reads_world_system_flags() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        world.system_flag_set(42);
+        // Bytecode: 0x2F sub-op 0x13 — predicate-true → default_arm (size 1),
+        // predicate-false → size 4.
+        let bc = vec![0x002F, 0x0013, 42];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        // Predicate true → PC advanced by 1.
+        assert_eq!(world.actors[0].move_state.pc, 1);
+        // Now clear and re-run — predicate false → PC += 4.
+        world.system_flag_clear(42);
+        world.actors[0].move_state.pc = 0;
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(world.actors[0].move_state.pc, 4);
+    }
+
+    #[test]
+    fn move_vm_ext_set_flag_bank_writes_world_system_flags() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // Bytecode: 0x2F sub-op 0x1C — set flag bank (idx = op_w(2)).
+        let bc = vec![0x002F, 0x001C, 100];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        assert!(!world.system_flag_test(100));
+        let _ = world.step_move_vm(0, &bc);
+        assert!(world.system_flag_test(100));
+    }
+
+    #[test]
+    fn field_vm_system_flag_set_routes_to_world() {
+        // Field-VM 0x5x default-route SET — `[0x50 | nibble, idx_byte]`.
+        // idx encoding: `((opcode_byte & 0x8F) << 8) | idx_byte`. For raw
+        // opcode 0x50, top bit clear, low nibble 0 → idx = idx_byte.
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.load_field_script(vec![0x50, 42]);
+        let _ = world.tick();
+        assert!(
+            world.system_flag_test(42),
+            "0x50 default-route should set system flag 42"
+        );
+    }
+
+    #[test]
+    fn field_vm_system_flag_set_with_low_nibble_includes_high_byte() {
+        // 0x52 with low-nibble 2 → idx = (0x02 << 8) | idx_byte.
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.load_field_script(vec![0x52, 7]);
+        let _ = world.tick();
+        assert!(
+            world.system_flag_test(0x0207),
+            "0x52 default-route should set system flag 0x0207"
+        );
+    }
+
+    #[test]
+    fn field_vm_system_flag_clear_routes_to_world() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.system_flag_set(99);
+        // 0x60 CLEAR with operand 99.
+        world.load_field_script(vec![0x60, 99]);
+        let _ = world.tick();
+        assert!(!world.system_flag_test(99));
+    }
+
+    #[test]
+    fn field_vm_system_flag_test_takes_jump_when_bit_set() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.system_flag_set(33);
+        // 0x70 TEST with idx=33, jump delta = 10.
+        world.load_field_script(vec![0x70, 33, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let _ = world.tick();
+        // pc was 0; header_size = 1; +1 (idx byte) + delta(10) = 12.
+        assert_eq!(world.field_pc, 12);
+    }
+
+    #[test]
+    fn field_vm_extra_flags_op42_reads_world() {
+        // Op 0x42 mode=0 — host.extra_flags() & (1 << (op1 & 0x1F)) test.
+        // Set bit 5 in extra_flags; op_42 with op1=5 should take the jump.
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.extra_flags = 1 << 5;
+        // [0x42, mode=0, op1=5, lo=4, hi=0] — header_size + 4 = 5 byte total
+        // for skip path; jump path = pc + header_size + 2 + delta.
+        world.load_field_script(vec![0x42, 0, 5, 4, 0]);
+        let _ = world.tick();
+        // With extra_flags bit 5 set, predicate is true → jump.
+        // Jump target = 0 + 1 (header) + 2 + 4 = 7.
+        assert_eq!(world.field_pc, 7, "extra_flags-true 0x42 should take jump");
+    }
+
+    #[test]
+    fn move_vm_ext_set_8007b9d8_writes_world_field() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // 0x2F sub-op 0x2F — `_DAT_8007B9D8 = (i32) op[1]`. Note: op[1] in
+        // sub-op space = sub-op selector 0x2F itself, op[2] = the value.
+        // Per the move_vm port, ext sub-op 0x2F passes op[1] (the sub-op
+        // word's "next slot" in the operand stream).
+        let bc = vec![0x002F, 0x002F, 0xCAFE];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        // Whatever the sub-op handler writes, world.move_dat_8007b9d8 should
+        // pick up a non-zero value.
+        assert_ne!(world.move_dat_8007b9d8, 0);
+    }
+
+    #[test]
+    fn move_player_world_xyz_reads_designated_player_slot() {
+        let mut world = World::new();
+        world.actors[2].active = true;
+        world.actors[2].move_state.world_x = 100;
+        world.actors[2].move_state.world_y = 200;
+        world.actors[2].move_state.world_z = 300;
+        world.player_actor_slot = Some(2);
+        // No direct API to read move_player_world_xyz; verify by stepping
+        // sub-op 0x39 (squared-distance "inside radius" predicate). With
+        // actor 0 at origin and player at (100, _, 300), dist_sq = 100²+300² =
+        // 100000 — predicate fails for r=10 (r² = 100), passes for r=400
+        // (r² = 160000).
+        world.actors[0].active = true;
+        // Predicate fail → PC += 4.
+        let bc = vec![0x002F, 0x0039, 10, 0, 0, 0];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(
+            world.actors[0].move_state.pc, 4,
+            "small-radius 0x39 should fail"
+        );
+        // Predicate pass → PC += 1.
+        world.actors[0].move_state.pc = 0;
+        let bc2 = vec![0x002F, 0x0039, 400, 0, 0, 0];
+        world.set_move_bytecode(0, Some(bc2.clone()));
+        let _ = world.step_move_vm(0, &bc2);
+        assert_eq!(
+            world.actors[0].move_state.pc, 1,
+            "large-radius 0x39 should pass"
         );
     }
 }
