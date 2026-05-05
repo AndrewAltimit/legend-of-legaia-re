@@ -173,6 +173,29 @@ pub enum RenderTarget<'a> {
     /// Wireframe line mesh (stage-geometry viewer). Same depth-tested 3D
     /// pipeline; per-vertex color, no lighting.
     Lines { mesh: &'a UploadedLines, mvp: Mat4 },
+    /// Multi-actor scene: N VRAM meshes drawn in one render pass with a
+    /// shared VRAM and per-actor MVPs. Optionally overlays a single
+    /// wireframe-lines mesh (stage geometry / debug grid) drawn after the
+    /// solid actors.
+    ///
+    /// Used by the `world` viewer to render every active actor in the
+    /// World composite per frame.
+    Scene(&'a Scene<'a>),
+}
+
+/// Per-actor draw inside a [`Scene`].
+pub struct SceneDraw<'a> {
+    pub mesh: &'a UploadedVramMesh,
+    pub mvp: Mat4,
+}
+
+/// Multi-actor scene payload. Drawn against a single shared VRAM with one
+/// MVP per actor. Optionally overlays a [`UploadedLines`] mesh (e.g. a
+/// stage-geometry wireframe) using the supplied MVP.
+pub struct Scene<'a> {
+    pub vram: &'a UploadedVram,
+    pub draws: &'a [SceneDraw<'a>],
+    pub overlay_lines: Option<(&'a UploadedLines, Mat4)>,
 }
 
 pub struct Renderer {
@@ -196,6 +219,23 @@ pub struct Renderer {
     /// VRAM-mesh pipeline: per-vertex CBA/TSB + R16Uint VRAM texture lookup.
     vram_mesh_pipeline: wgpu::RenderPipeline,
     vram_bgl: wgpu::BindGroupLayout,
+    /// Multi-actor "scene" VRAM-mesh pipeline. Identical to
+    /// [`Self::vram_mesh_pipeline`] but binds [`Self::scene_uniforms_bgl`]
+    /// at group 0 (with `has_dynamic_offset = true`) so a single render
+    /// pass can draw N actors with one bind group + N dynamic offsets.
+    scene_vram_mesh_pipeline: wgpu::RenderPipeline,
+    /// Lines pipeline shadowing the scene path (uses the scene-uniforms
+    /// dynamic-offset layout). Used by [`Self::render`] when a `Scene`
+    /// carries `overlay_lines`.
+    scene_lines_pipeline: wgpu::RenderPipeline,
+    scene_uniforms_bgl: wgpu::BindGroupLayout,
+    scene_uniforms_bg: std::cell::RefCell<wgpu::BindGroup>,
+    scene_uniforms_buf: std::cell::RefCell<wgpu::Buffer>,
+    /// Capacity (in `MeshUniforms` slots) of [`Self::scene_uniforms_buf`].
+    scene_uniforms_capacity: std::cell::Cell<usize>,
+    /// `min_uniform_buffer_offset_alignment` reported by the adapter.
+    /// Per-actor uniform writes are padded up to this stride.
+    uniform_offset_alignment: u32,
     /// Lines pipeline: LineList topology, per-vertex color, depth-tested.
     /// Used for wireframe rendering of stage geometry.
     lines_pipeline: wgpu::RenderPipeline,
@@ -665,6 +705,166 @@ impl Renderer {
             cache: None,
         });
 
+        // Scene-uniforms layout: a single dynamic-offset uniform buffer
+        // holding N `MeshUniforms` slots, each `uniform_offset_alignment`
+        // bytes apart. Reused for the multi-actor VRAM-mesh and lines
+        // pipelines below.
+        let uniform_offset_alignment = device.limits().min_uniform_buffer_offset_alignment.max(256);
+        let scene_uniforms_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("scene mesh uniforms bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: std::num::NonZeroU64::new(
+                            std::mem::size_of::<MeshUniforms>() as u64,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+        // Initial capacity: one slot. Grown on demand by render_scene.
+        let initial_scene_capacity: usize = 1;
+        let scene_uniforms_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene mesh uniforms"),
+            size: (initial_scene_capacity * uniform_offset_alignment as usize) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let scene_uniforms_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene mesh uniforms bg"),
+            layout: &scene_uniforms_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &scene_uniforms_buf,
+                    offset: 0,
+                    size: std::num::NonZeroU64::new(std::mem::size_of::<MeshUniforms>() as u64),
+                }),
+            }],
+        });
+
+        let scene_vram_mesh_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("legaia scene vram mesh pipeline layout"),
+                bind_group_layouts: &[&scene_uniforms_bgl, &vram_bgl],
+                push_constant_ranges: &[],
+            });
+        let scene_vram_mesh_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("legaia scene vram mesh pipeline"),
+                layout: Some(&scene_vram_mesh_layout),
+                vertex: wgpu::VertexState {
+                    module: &vram_mesh_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: 20,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: wgpu::VertexFormat::Float32x3,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 12,
+                                shader_location: 1,
+                                format: wgpu::VertexFormat::Uint8x4,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 16,
+                                shader_location: 2,
+                                format: wgpu::VertexFormat::Uint16x2,
+                            },
+                        ],
+                    }],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &vram_mesh_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
+        let scene_lines_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("legaia scene lines pipeline layout"),
+            bind_group_layouts: &[&scene_uniforms_bgl],
+            push_constant_ranges: &[],
+        });
+        let scene_lines_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("legaia scene lines pipeline"),
+            layout: Some(&scene_lines_layout),
+            vertex: wgpu::VertexState {
+                module: &lines_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: 16,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Unorm8x4,
+                        },
+                    ],
+                }],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &lines_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
@@ -683,6 +883,13 @@ impl Renderer {
             textured_mesh_pipeline,
             vram_mesh_pipeline,
             vram_bgl,
+            scene_vram_mesh_pipeline,
+            scene_lines_pipeline,
+            scene_uniforms_bgl,
+            scene_uniforms_bg: std::cell::RefCell::new(scene_uniforms_bg),
+            scene_uniforms_buf: std::cell::RefCell::new(scene_uniforms_buf),
+            scene_uniforms_capacity: std::cell::Cell::new(initial_scene_capacity),
+            uniform_offset_alignment,
             lines_pipeline,
             depth_view,
         })
@@ -1054,6 +1261,9 @@ impl Renderer {
                     }]),
                 );
             }
+            RenderTarget::Scene(scene) => {
+                self.stage_scene_uniforms(scene);
+            }
             RenderTarget::Clear => {}
         }
 
@@ -1079,6 +1289,7 @@ impl Renderer {
                     | RenderTarget::TexturedMesh { .. }
                     | RenderTarget::VramMesh { .. }
                     | RenderTarget::Lines { .. }
+                    | RenderTarget::Scene(_)
             )
             .then(|| wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
@@ -1146,11 +1357,97 @@ impl Renderer {
                     rp.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                     rp.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
+                RenderTarget::Scene(scene) => {
+                    let bg_borrow = self.scene_uniforms_bg.borrow();
+                    let bg: &wgpu::BindGroup = &bg_borrow;
+                    rp.set_pipeline(&self.scene_vram_mesh_pipeline);
+                    rp.set_bind_group(1, &scene.vram.bind_group, &[]);
+                    let stride = self.uniform_offset_alignment;
+                    for (i, draw) in scene.draws.iter().enumerate() {
+                        let off = (i as u32) * stride;
+                        rp.set_bind_group(0, bg, &[off]);
+                        rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
+                        rp.set_index_buffer(
+                            draw.mesh.index_buf.slice(..),
+                            wgpu::IndexFormat::Uint32,
+                        );
+                        rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
+                    }
+                    if let Some((lines, _mvp)) = scene.overlay_lines {
+                        // Overlay-lines uniforms live at slot N (one past
+                        // the last actor), staged by `stage_scene_uniforms`.
+                        let off = (scene.draws.len() as u32) * stride;
+                        rp.set_pipeline(&self.scene_lines_pipeline);
+                        rp.set_bind_group(0, bg, &[off]);
+                        rp.set_vertex_buffer(0, lines.vertex_buf.slice(..));
+                        rp.set_index_buffer(lines.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+                        rp.draw_indexed(0..lines.index_count, 0, 0..1);
+                    }
+                }
             }
         }
         self.queue.submit(std::iter::once(enc.finish()));
         frame.present();
         Ok(())
+    }
+
+    /// Resize the scene-uniforms buffer (and its bind group) to hold at
+    /// least `slots` `MeshUniforms` entries, then write each entry.
+    fn stage_scene_uniforms(&self, scene: &Scene<'_>) {
+        let stride = self.uniform_offset_alignment as usize;
+        let needed = scene.draws.len() + scene.overlay_lines.is_some() as usize;
+        if needed == 0 {
+            return;
+        }
+        let mut cap = self.scene_uniforms_capacity.get();
+        if cap < needed {
+            // Grow geometrically so we don't churn on small N.
+            cap = needed.next_power_of_two().max(needed);
+            let new_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("scene mesh uniforms (resized)"),
+                size: (cap * stride) as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let new_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("scene mesh uniforms bg (resized)"),
+                layout: &self.scene_uniforms_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &new_buf,
+                        offset: 0,
+                        size: std::num::NonZeroU64::new(std::mem::size_of::<MeshUniforms>() as u64),
+                    }),
+                }],
+            });
+            *self.scene_uniforms_buf.borrow_mut() = new_buf;
+            *self.scene_uniforms_bg.borrow_mut() = new_bg;
+            self.scene_uniforms_capacity.set(cap);
+        }
+        // Build a flat byte buffer with one MeshUniforms entry per slot,
+        // padded to `stride`. wgpu rejects overlapping writes, so we hand
+        // the queue a single contiguous range.
+        let total = needed * stride;
+        let mut bytes = vec![0u8; total];
+        let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
+            let u = MeshUniforms {
+                mvp: mvp.to_cols_array_2d(),
+                light_dir: normalize3([0.4, -0.8, 0.4]),
+            };
+            let off = slot * stride;
+            let n = std::mem::size_of::<MeshUniforms>();
+            bytes[off..off + n].copy_from_slice(bytemuck::bytes_of(&u));
+        };
+        for (i, draw) in scene.draws.iter().enumerate() {
+            push(&mut bytes, i, draw.mvp);
+        }
+        if let Some((_, mvp)) = scene.overlay_lines {
+            push(&mut bytes, scene.draws.len(), mvp);
+        }
+        let buf_borrow = self.scene_uniforms_buf.borrow();
+        let buf: &wgpu::Buffer = &buf_borrow;
+        self.queue.write_buffer(buf, 0, &bytes);
     }
 }
 

@@ -1151,6 +1151,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-anm",
  "legaia-lzs",
  "legaia-prot",
  "legaia-tim",
@@ -1170,6 +1171,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-render",
+ "legaia-engine-vm",
  "legaia-prot",
  "legaia-seq",
  "legaia-tim",

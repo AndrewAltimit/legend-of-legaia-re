@@ -51,6 +51,12 @@ pub enum Class {
     /// `pQES` (0x70 0x51 0x45 0x53) followed by a 9-byte header. Drives the
     /// SsAPI sequencer at runtime. See [`docs/formats/seq.md`].
     SeqContainer,
+    /// Legaia ANM animation pack — `[u32 count][u32 offset[count]][records...]`
+    /// where every record's `+4..+6` u16 equals `0x080C` (the per-record
+    /// marker_1). 8/8 hits across the title + town overlay corpus carry the
+    /// marker, so the detector is zero-false-positive against random data.
+    /// See [`docs/formats/anm.md`].
+    AnmContainer,
     /// `[u32 size][bare TMD][streaming chunks]` — a streaming-format variant
     /// where the first asset is a Legaia TMD without a typed chunk header.
     /// See [`crate::scene_tmd_stream`].
@@ -112,6 +118,7 @@ impl Class {
             Class::FieldPack => "field_pack",
             Class::EffectBundle => "effect_bundle",
             Class::SeqContainer => "seq_container",
+            Class::AnmContainer => "anm_container",
             Class::SceneTmdStream => "scene_tmd_stream",
             Class::SceneVabStream => "scene_vab_stream",
             Class::SceneV12Table => "scene_v12_table",
@@ -236,6 +243,22 @@ pub fn classify(buf: &[u8]) -> FileReport {
     {
         return mk(
             Class::SeqContainer,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // ANM container — strict structural detector that requires every
+    // record's `marker_1` u16 to equal 0x080C. Runs early so the more
+    // permissive structural heuristics (TimPack / lzs_container) don't
+    // claim ANM payloads first.
+    if crate::anm_detect::detect(buf).is_some() {
+        return mk(
+            Class::AnmContainer,
             size,
             head,
             first_u32,

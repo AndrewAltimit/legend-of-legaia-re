@@ -30,8 +30,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_engine_audio::{AudioOut, DEFAULT_INPUT_RATE, Sequencer};
 use legaia_engine_render::{
-    RenderTarget, Renderer, UploadedLines, UploadedMesh, UploadedTexture, UploadedVram,
-    UploadedVramMesh,
+    RenderTarget, Renderer, Scene as RenderScene, SceneDraw, UploadedLines, UploadedMesh,
+    UploadedTexture, UploadedVram, UploadedVramMesh,
     glam::{Mat4, Vec3},
     legaia_tim::Vram,
 };
@@ -180,6 +180,30 @@ enum Cmd {
         /// `extracted/`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+    },
+    /// Run the engine-core `World` composite over a CDNAME scene with N
+    /// actors backed by TMDs from the scene's tmd_scan dir, rendered via
+    /// the multi-actor pipeline. Each actor orbits its origin so the demo
+    /// makes the World tick visible.
+    World {
+        /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`). The
+        /// matching CDNAME block range is loaded via engine-core's
+        /// `Scene::load`.
+        scene: String,
+        /// Number of actors to spawn. Capped at the number of distinct
+        /// TMDs found in the scene's `tmd_scan/` dir, then at
+        /// `engine-core::world::MAX_ACTORS` (64).
+        #[arg(long, default_value_t = 6)]
+        max_actors: usize,
+        /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/
+        /// + tim_scan/.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Run the move VM with synthetic bytecode each frame (every actor
+        /// gets `WORLD_SET → WAIT_SET → HALT`). Off by default; the demo
+        /// just animates positions analytically through `World::tick`.
+        #[arg(long, default_value_t = false)]
+        with_move_vm: bool,
     },
 }
 
@@ -1183,6 +1207,461 @@ fn run_seq_playback(
     Ok(())
 }
 
+// ---- world (multi-actor) viewer -------------------------------------------
+//
+// `asset-viewer world <SCENE>` runs the engine-core `World` composite over a
+// real CDNAME scene. It loads up to N TMDs from `<extracted>/tmd_scan/<entry>/`
+// for entries inside the scene's CDNAME block, builds VRAM from the matching
+// `tim_scan/` dirs, spawns one actor per TMD, and ticks the World at ~60 Hz.
+//
+// Each actor's MVP is computed from its `move_state.world_x/y/z`. The default
+// path animates positions analytically (sinusoidal orbit) so the multi-actor
+// renderer is exercised without depending on real per-scene move bytecode.
+// `--with-move-vm` instead loads a synthetic `WORLD_SET → WAIT_SET → HALT`
+// program per actor so the move-VM port runs every tick.
+
+struct WorldActorMesh {
+    mesh: legaia_engine_render::UploadedVramMesh,
+    /// AABB of the local TMD geometry (pre-transform). Used to size the
+    /// camera frustum.
+    aabb_lo: [f32; 3],
+    aabb_hi: [f32; 3],
+}
+
+fn run_world(
+    scene_name: &str,
+    max_actors: usize,
+    extracted_root: &Path,
+    with_move_vm: bool,
+) -> Result<()> {
+    use legaia_engine_core::scene::ProtIndex;
+    use legaia_engine_core::world::{SceneMode, World};
+
+    if max_actors == 0 {
+        anyhow::bail!("max_actors must be >= 1");
+    }
+
+    let prot_path = extracted_root.join("PROT.DAT");
+    let cdname_path = extracted_root.join("CDNAME.TXT");
+    if !prot_path.exists() {
+        anyhow::bail!("missing {} (run legaia-extract first)", prot_path.display());
+    }
+    if !cdname_path.exists() {
+        anyhow::bail!(
+            "missing {} (run legaia-extract first)",
+            cdname_path.display()
+        );
+    }
+    let index = ProtIndex::open_extracted(extracted_root)
+        .with_context(|| format!("open ProtIndex at {}", extracted_root.display()))?;
+    let (start, end) = index.block_range(scene_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "scene '{}' not found in CDNAME map at {}",
+            scene_name,
+            cdname_path.display()
+        )
+    })?;
+    log::info!(
+        "scene '{}' covers PROT [{}..{}) ({} entries)",
+        scene_name,
+        start,
+        end,
+        end - start
+    );
+
+    // Collect TMDs from the scene block's tmd_scan/ subdirs.
+    let tmd_paths = collect_scene_tmds(extracted_root, start, end);
+    if tmd_paths.is_empty() {
+        anyhow::bail!(
+            "no TMDs found in tmd_scan for scene '{}' (PROT block {}..{})",
+            scene_name,
+            start,
+            end
+        );
+    }
+    let actor_count = tmd_paths.len().min(max_actors);
+    log::info!(
+        "loaded {} TMD(s) under tmd_scan; spawning {} actor(s)",
+        tmd_paths.len(),
+        actor_count
+    );
+
+    // Build a shared VRAM from every tim_scan/ dir in the scene block.
+    let tim_dirs = collect_scene_tim_dirs(extracted_root, start, end);
+    let tim_dir_refs: Vec<&Path> = tim_dirs.iter().map(|p| p.as_path()).collect();
+    let (vram, tim_count) = build_vram_from_dirs(&tim_dir_refs);
+    log::info!(
+        "built VRAM from {} TIM(s) across {} tim_scan dir(s)",
+        tim_count,
+        tim_dirs.len()
+    );
+
+    // Build the world composite + spawn the actors with the picked TMDs.
+    let mut world = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    let radius = 800.0_f32;
+    for i in 0..actor_count {
+        let theta = (i as f32) * std::f32::consts::TAU / (actor_count as f32);
+        let x = (radius * theta.cos()) as i16;
+        let z = (radius * theta.sin()) as i16;
+        let actor = world.spawn_actor(i);
+        actor.move_state.world_x = x;
+        actor.move_state.world_y = 0;
+        actor.move_state.world_z = z;
+        if with_move_vm {
+            // Synthetic: WORLD_SET (x, y, z) → WAIT_SET 8 → HALT.
+            world.set_move_bytecode(
+                i,
+                Some(vec![0x0007, x as u16, 0, z as u16, 0x0009, 8, 0x0008]),
+            );
+        }
+    }
+
+    // Hand off to the windowing loop.
+    let event_loop = EventLoop::new().context("create event loop")?;
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = WorldApp {
+        title: format!(
+            "World — scene '{}' [{} actor(s), tim_count={}]",
+            scene_name, actor_count, tim_count
+        ),
+        window: None,
+        renderer: None,
+        vram_cpu: Some(vram),
+        uploaded_vram: None,
+        tmd_paths,
+        meshes: Vec::new(),
+        world,
+        actor_count,
+        with_move_vm,
+        scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
+        started_at: Instant::now(),
+        last_tick: Instant::now(),
+    };
+    event_loop.run_app(&mut app).context("event loop")?;
+    Ok(())
+}
+
+/// Collect every `tmd_scan/<NNNN_label>/*.tmd` for entries within
+/// `[start, end)`. Returns paths sorted by entry index then filename so the
+/// per-actor mesh assignment is deterministic.
+fn collect_scene_tmds(extracted_root: &Path, start: u32, end: u32) -> Vec<PathBuf> {
+    let tmd_root = extracted_root.join("tmd_scan");
+    let Ok(rd) = std::fs::read_dir(&tmd_root) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = Vec::new();
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(idx) = parse_prot_dir_index(name) else {
+            continue;
+        };
+        if idx < start || idx >= end {
+            continue;
+        }
+        let Ok(inner) = std::fs::read_dir(&p) else {
+            continue;
+        };
+        for ent in inner.flatten() {
+            let q = ent.path();
+            if q.extension().is_some_and(|e| e.eq_ignore_ascii_case("tmd")) {
+                paths.push(q);
+            }
+        }
+    }
+    paths.sort();
+    paths
+}
+
+/// Collect every `tim_scan/<NNNN_label>/` directory for entries in the
+/// scene block. Used to populate the shared VRAM.
+fn collect_scene_tim_dirs(extracted_root: &Path, start: u32, end: u32) -> Vec<PathBuf> {
+    let tim_root = extracted_root.join("tim_scan");
+    let Ok(rd) = std::fs::read_dir(&tim_root) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(idx) = parse_prot_dir_index(name) else {
+            continue;
+        };
+        if idx < start || idx >= end {
+            continue;
+        }
+        dirs.push(p);
+    }
+    dirs.sort();
+    dirs
+}
+
+/// Parse the leading `NNNN_` index from `tim_scan/0123_label/` etc.
+fn parse_prot_dir_index(name: &str) -> Option<u32> {
+    let (lead, _) = name.split_once('_')?;
+    lead.parse().ok()
+}
+
+/// Multi-actor world viewer state. Owned by the winit event loop.
+struct WorldApp {
+    title: String,
+    window: Option<Arc<Window>>,
+    renderer: Option<Renderer>,
+    vram_cpu: Option<Vram>,
+    uploaded_vram: Option<UploadedVram>,
+    tmd_paths: Vec<PathBuf>,
+    meshes: Vec<WorldActorMesh>,
+    world: legaia_engine_core::world::World,
+    actor_count: usize,
+    with_move_vm: bool,
+    /// Synthetic AABB enclosing every spawn point — drives the camera.
+    scene_aabb: ([f32; 3], [f32; 3]),
+    started_at: Instant,
+    last_tick: Instant,
+}
+
+impl WorldApp {
+    fn upload_meshes(&mut self) {
+        let Some(r) = &self.renderer else {
+            return;
+        };
+        for path in &self.tmd_paths {
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("skip TMD {}: read error: {e}", path.display());
+                    continue;
+                }
+            };
+            let tmd = match legaia_tmd::parse(&bytes) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::warn!("skip TMD {}: parse error: {e}", path.display());
+                    continue;
+                }
+            };
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes);
+            if vmesh.indices.is_empty() {
+                log::warn!(
+                    "skip TMD {}: zero triangles after primitive walk",
+                    path.display()
+                );
+                continue;
+            }
+            let aabb = mesh_aabb(&vmesh.positions);
+            match r.upload_vram_mesh(&vmesh.positions, &vmesh.uvs, &vmesh.cba_tsb, &vmesh.indices) {
+                Ok(mesh) => self.meshes.push(WorldActorMesh {
+                    mesh,
+                    aabb_lo: aabb.0,
+                    aabb_hi: aabb.1,
+                }),
+                Err(e) => log::warn!("skip TMD {}: upload error: {e}", path.display()),
+            }
+            if self.meshes.len() >= self.actor_count {
+                break;
+            }
+        }
+        if self.meshes.is_empty() {
+            log::error!("no TMDs uploaded successfully — nothing to draw");
+        }
+        if let Some(vram_cpu) = self.vram_cpu.take() {
+            match r.upload_vram(&vram_cpu) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("VRAM upload failed: {e:#}"),
+            }
+        }
+        // Recompute scene AABB from the union of every mesh's local AABB +
+        // its current position so the camera frames the whole scene.
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        for (slot, m) in self.meshes.iter().enumerate() {
+            let actor = &self.world.actors[slot];
+            let cx = actor.move_state.world_x as f32;
+            let cy = actor.move_state.world_y as f32;
+            let cz = actor.move_state.world_z as f32;
+            for ax in 0..3 {
+                let lo_world = [m.aabb_lo[0] + cx, m.aabb_lo[1] + cy, m.aabb_lo[2] + cz][ax];
+                let hi_world = [m.aabb_hi[0] + cx, m.aabb_hi[1] + cy, m.aabb_hi[2] + cz][ax];
+                if lo_world < lo[ax] {
+                    lo[ax] = lo_world;
+                }
+                if hi_world > hi[ax] {
+                    hi[ax] = hi_world;
+                }
+            }
+        }
+        if lo[0].is_finite() && hi[0].is_finite() {
+            self.scene_aabb = (lo, hi);
+        }
+    }
+
+    /// Compute the camera MVP for this frame. Orbits the scene center.
+    fn camera_mvp(&self, aspect: f32) -> Mat4 {
+        let (lo, hi) = self.scene_aabb;
+        let center = Vec3::new(
+            0.5 * (lo[0] + hi[0]),
+            0.5 * (lo[1] + hi[1]),
+            0.5 * (lo[2] + hi[2]),
+        );
+        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        let radius = (0.5 * extent.length()).max(1.0);
+        let distance = radius / (30f32.to_radians().tan()) * 1.6;
+        let angle = self.started_at.elapsed().as_secs_f32() * 0.25;
+        let eye = center
+            + Vec3::new(
+                distance * angle.cos(),
+                -distance * 0.4,
+                distance * angle.sin(),
+            );
+        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+        let near = (distance * 0.05).max(0.1);
+        let far = distance * 4.0 + 1000.0;
+        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+        proj * view
+    }
+
+    /// Per-actor model matrix. PSX has Y-down geometry — flip Y in the
+    /// model so the meshes appear right-side-up in the Y-up camera.
+    fn actor_model(&self, slot: usize) -> Mat4 {
+        let a = &self.world.actors[slot];
+        let pos = Vec3::new(
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        );
+        // Slight per-actor spin so individual meshes are visibly animated.
+        let spin = self.started_at.elapsed().as_secs_f32() * 0.6
+            + (slot as f32) * std::f32::consts::FRAC_PI_2;
+        Mat4::from_translation(pos)
+            * Mat4::from_rotation_y(spin)
+            * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+}
+
+impl ApplicationHandler for WorldApp {
+    fn resumed(&mut self, evl: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let attrs = WindowAttributes::default()
+            .with_title(&self.title)
+            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
+        let window = match evl.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                log::error!("create_window: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        let size = window.inner_size();
+        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Renderer::new: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        self.window = Some(window);
+        self.renderer = Some(renderer);
+        self.upload_meshes();
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
+    }
+
+    fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => evl.exit(),
+            WindowEvent::Resized(size) => {
+                if let Some(r) = self.renderer.as_mut() {
+                    r.resize(size.width, size.height);
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => evl.exit(),
+            WindowEvent::RedrawRequested => {
+                // Tick the world at the actual elapsed dt, capped to one
+                // second so a paused window doesn't fast-forward thousands
+                // of frames on resume.
+                let now = Instant::now();
+                let dt = now
+                    .duration_since(self.last_tick)
+                    .min(std::time::Duration::from_secs(1));
+                self.last_tick = now;
+                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
+                for _ in 0..target_frames.min(8) {
+                    self.world.tick();
+                }
+                // Analytic motion for the demo: gently orbit each actor's
+                // initial position. Move-VM mode (when wired in) drives
+                // positions through the move bytecode instead, so only
+                // animate analytically when the VM isn't.
+                if !self.with_move_vm {
+                    let t = self.started_at.elapsed().as_secs_f32();
+                    for slot in 0..self.actor_count {
+                        let actor = &mut self.world.actors[slot];
+                        let theta = (slot as f32) * std::f32::consts::TAU
+                            / (self.actor_count as f32)
+                            + t * 0.3;
+                        let r = 800.0_f32;
+                        actor.move_state.world_x = (r * theta.cos()) as i16;
+                        actor.move_state.world_z = (r * theta.sin()) as i16;
+                        actor.move_state.world_y = (60.0 * (t + slot as f32).sin()) as i16;
+                    }
+                }
+                if let (Some(r), Some(vram)) = (&self.renderer, self.uploaded_vram.as_ref()) {
+                    let (w, h) = r.surface_size();
+                    let aspect = w as f32 / h.max(1) as f32;
+                    let cam = self.camera_mvp(aspect);
+                    let draws: Vec<SceneDraw<'_>> = self
+                        .meshes
+                        .iter()
+                        .enumerate()
+                        .map(|(slot, m)| SceneDraw {
+                            mesh: &m.mesh,
+                            mvp: cam * self.actor_model(slot),
+                        })
+                        .collect();
+                    let scene = RenderScene {
+                        vram,
+                        draws: &draws,
+                        overlay_lines: None,
+                    };
+                    if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
+                        log::error!("render error: {e:#}");
+                    }
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
@@ -1196,6 +1675,16 @@ fn main() -> Result<()> {
     } = args.cmd
     {
         return run_seq_playback(&seq, &vab, vab_offset as usize, looped, master_vol);
+    }
+
+    if let Cmd::World {
+        scene,
+        max_actors,
+        extracted_root,
+        with_move_vm,
+    } = args.cmd
+    {
+        return run_world(&scene, max_actors, &extracted_root, with_move_vm);
     }
 
     let (pending, browser, mesh_browser, stage_browser) = match args.cmd {
@@ -1465,6 +1954,7 @@ fn main() -> Result<()> {
             )
         }
         Cmd::Seq { .. } => unreachable!("Cmd::Seq handled by the early-return path above"),
+        Cmd::World { .. } => unreachable!("Cmd::World handled by the early-return path above"),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
