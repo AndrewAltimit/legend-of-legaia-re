@@ -136,6 +136,10 @@ param_3 = func_0x801d362c(actor, op);
 
 The 16-slot, 8-byte-stride scratch table at `&DAT_801F3498` is shared across actors — sub-ops `0x25/0x26` round-trip world coords (8 B), `0x27/0x28` round-trip the tween-source triple at `+0x90` (with `>> 12` fixed-point scaling and `[-0xFF, 0xFF]` clamping on read), `0x31/0x32` round-trip the render-bank section at `+0x24..+0x2C`, and `0x34/0x35` round-trip `actor[+0x72]`. Sub-op `0x0C` sets `actor[+0x50]` (the midpoint blend / sub-state byte consumed by the `FUN_801E45BC` mid-point helper from sub-ops `0x0E` / `0x12`); sub-op `0x0D` is the additive variant.
 
+Two move-VM globals live alongside the slot table: `DAT_801F22F4` (a u32 predicate set/cleared by sub-ops `0x08`/`0x09` and tested by `0x0A`/`0x0B`) and `DAT_801F22F6` (a u16 counter wrapped mod 16). Sub-op `0x0F` clears the counter; `0x10` reads it (wrapping when `>= 16`), captures the low byte into `actor.field_86`, and increments. Sub-op `0x11` then saves world coords to `slot_table[field_86 & 0xFF]` — i.e. the cycle counter feeds the slot-save index, distinct from `0x25` which takes the index from the operand stream.
+
+World-position lerp lives in sub-ops `0x24` / `0x2A`. Both share the per-axis form `actor[axis] = base + ((target - base) * t) >> 12`. The Y axis always lerps toward `_DAT_8007C364 + 0x16` (player Y). For X / Z, sub-op `0x24` uses the fixed map origin `(_DAT_80089118, _DAT_80089120)` (target = `-(base + origin)`); sub-op `0x2A` uses the player position (target = player X / Z). Sub-ops `0x06` / `0x07` are the bbox-vs-player gate variants — `0x06` skips a 7-u16 follow-up payload when the player is **outside** the canonicalised box `[xa..xb]×[za..zb]` (each scaled by `0x80` with a `0x40` half-cell margin); `0x07` skips when the player is **inside**.
+
 ### 0x30 — `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
 
 If `actor[+0xA8]` was heap-allocated, calls `FUN_800583C8(actor + 0xA0, buf)`; else uses the inline buffer at `actor + 0xAC`. Clears `actor[+0x9C]`. Goto `caseD_22` epilogue.

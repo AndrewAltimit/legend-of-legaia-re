@@ -596,6 +596,42 @@ pub trait MoveHost {
     /// `0`..`6` (even). Used by ext sub-ops 0x27 (3 × u16 from `+0x90`) and
     /// 0x34 (1 × u16 from `+0x72`).
     fn move_slot_save_u16(&mut self, _slot: u16, _byte_off: u8, _value: u16) {}
+
+    /// Read the move-VM global predicate at `&DAT_801F22F4` (set by ext
+    /// sub-op 0x08, cleared by 0x09). Sub-ops 0x0A / 0x0B branch on it.
+    /// Default returns 0 — equivalent to "predicate is false / never set"
+    /// (sub-op 0x0A skips, sub-op 0x0B falls through).
+    fn move_global_predicate_get(&self) -> u32 {
+        0
+    }
+
+    /// Write the move-VM global predicate. Used by ext sub-ops 0x08 / 0x09.
+    fn move_global_predicate_set(&mut self, _value: u32) {}
+
+    /// Read the move-VM global counter at `&DAT_801F22F6`. Cleared by ext
+    /// sub-op 0x0F; cycled mod 16 by sub-op 0x10 (which also writes the
+    /// captured low byte into `actor[+0x86]`).
+    fn move_global_counter_get(&self) -> u16 {
+        0
+    }
+
+    /// Write the move-VM global counter. Used by ext sub-ops 0x0F / 0x10.
+    fn move_global_counter_set(&mut self, _value: u16) {}
+
+    /// Player position read from `_DAT_8007C364 + 0x14..+0x1A` — a 3 × i16
+    /// triple. Used by ext sub-op 0x2A (world position lerp toward player)
+    /// and the bbox-vs-player tests at 0x06 / 0x07 / 0x36 / 0x39. Default
+    /// returns the origin (engine-vm test hosts override).
+    fn move_player_world_xyz(&self) -> [i16; 3] {
+        [0, 0, 0]
+    }
+
+    /// Map fixed-origin pair `(_DAT_80089118, _DAT_80089120)` — the (x, z)
+    /// origin used by ext sub-op 0x24 (world position lerp toward fixed
+    /// map origin). Default returns `(0, 0)`.
+    fn move_fixed_origin_xz(&self) -> (i32, i32) {
+        (0, 0)
+    }
 }
 
 fn ext_default_dispatch<H: MoveHost + ?Sized>(
@@ -641,17 +677,84 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // 0x05 — opaque func56798().
         0x05 => host.ext_func56798(state),
 
-        // 0x06 / 0x07 — bbox in/out test. The VM canonicalizes the box in
-        // the operand stream (handled by default fall-through) and
-        // optionally fast-paths to the default arm; we hand off both.
-        0x06 | 0x07 => MoveExtResult::with_size(2),
+        // 0x06 / 0x07 — bbox-vs-player test. The original canonicalises the
+        // box in-place by swapping `op_w(2)/(4)` if `op_w(4) < op_w(2)`, then
+        // tests whether the player position falls inside `[(xa-0x40)/0x80,
+        // (xb+0x40)/0x80]` × `[(za-0x40)/0x80, (zb+0x40)/0x80]`. 0x06 means
+        // "default-arm if inside, size 7 if outside"; 0x07 means the opposite.
+        // The size-7 branch skips a 7-u16 follow-up payload. We can't mutate
+        // the operand stream from here (it's a read-only slice), so the port
+        // forwards the predicate to the host: `move_player_world_xyz` returns
+        // the player position. If the host reports the origin (the default
+        // impl), the test always reads "outside the box" — so we model 0x06
+        // as a skip (size 7) and 0x07 as a continue (default-arm). Hosts
+        // that surface real player coords get the right behavior.
+        0x06 | 0x07 => {
+            let player = host.move_player_world_xyz();
+            // op_w(2)..op_w(5) are the four corner u16s. We do NOT swap in
+            // place because the operand is a read-only slice.
+            let mut xa = op_w(2) as i16 as i32;
+            let mut xb = op_w(4) as i16 as i32;
+            let mut za = op_w(3) as i16 as i32;
+            let mut zb = op_w(5) as i16 as i32;
+            if xb < xa {
+                std::mem::swap(&mut xa, &mut xb);
+            }
+            if zb < za {
+                std::mem::swap(&mut za, &mut zb);
+            }
+            // Original scales by 0x80 with a 0x40 half-cell margin.
+            let outside = (player[0] as i32) < xa * 0x80 + 0x40
+                || (player[2] as i32) < za * 0x80 + 0x40
+                || xb * 0x80 + 0x40 < player[0] as i32
+                || zb * 0x80 + 0x40 < player[2] as i32;
+            // 0x06: outside is the skip path (size 7); 0x07: inside is.
+            let skip = if sub_opcode == 0x06 {
+                outside
+            } else {
+                !outside
+            };
+            if skip {
+                MoveExtResult::with_size(7)
+            } else {
+                MoveExtResult::default_arm()
+            }
+        }
 
-        // 0x08 — `DAT_801F22F4 = 1`.
-        // 0x09 — `DAT_801F22F4 = 0`.
-        // 0x0A / 0x0B — branchless predicates on `DAT_801F22F4`. We model
-        // them as default arms; engines that need true gating can override
-        // ext_dispatch entirely.
-        0x08..=0x0B => MoveExtResult::default_arm(),
+        // 0x08 — `DAT_801F22F4 = 1` (set move-VM global predicate).
+        0x08 => {
+            host.move_global_predicate_set(1);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x09 — `DAT_801F22F4 = 0` (clear).
+        0x09 => {
+            host.move_global_predicate_set(0);
+            MoveExtResult::default_arm()
+        }
+
+        // 0x0A — predicate gate: if `DAT_801F22F4 != 0` falls into default
+        // (size 1, advance and continue); else returns size 3 (skip a 3-u16
+        // payload). Per the dump's `iVar16 = 3; if (DAT_801f22f4 != 0)
+        // goto LAB_801d38c8; ...; default:` shape — `LAB_801d38c8` is the
+        // default-arm label, and the fall-through hits `iVar16 << 0x10 break`
+        // with `iVar16 = 3`.
+        0x0A => {
+            if host.move_global_predicate_get() != 0 {
+                MoveExtResult::default_arm()
+            } else {
+                MoveExtResult::with_size(3)
+            }
+        }
+
+        // 0x0B — opposite predicate (skip when set).
+        0x0B => {
+            if host.move_global_predicate_get() == 0 {
+                MoveExtResult::default_arm()
+            } else {
+                MoveExtResult::with_size(3)
+            }
+        }
 
         // 0x0C — `actor[+0x50] = op_w(2)` (set midpoint blend / sub-state).
         0x0C => {
@@ -678,17 +781,42 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(2)
         }
 
-        // 0x0F — clear DAT_801F22F6.
-        0x0F => MoveExtResult::default_arm(),
+        // 0x0F — `DAT_801F22F6 = 0` (clear move-VM global counter).
+        0x0F => {
+            host.move_global_counter_set(0);
+            MoveExtResult::default_arm()
+        }
 
-        // 0x10 — bump DAT_801F22F6 (mod 16) and merge low byte into
-        // `state.field_86`. The global is host-side; we just leave field_86
-        // unchanged in this stubbed default impl.
-        0x10 => MoveExtResult::default_arm(),
+        // 0x10 — wrap `DAT_801F22F6` mod 16, capture low byte into
+        // `actor.field_86` (preserving the high byte), then increment the
+        // counter. Per the original:
+        //   if (0xf < c) c = 0;
+        //   captured = c & 0xff;
+        //   c += 1;
+        //   actor.field_86 = (actor.field_86 & 0xff00) | captured;
+        0x10 => {
+            let mut counter = host.move_global_counter_get();
+            if counter > 0xF {
+                counter = 0;
+            }
+            let captured = counter & 0xFF;
+            host.move_global_counter_set(counter.wrapping_add(1));
+            state.field_86 = (state.field_86 & 0xFF00) | captured;
+            MoveExtResult::default_arm()
+        }
 
-        // 0x11 — write actor world to `&DAT_801F3498 + (low(field_86) * 8)`
-        // table. Hosts model the table; default arm passes through.
-        0x11 => MoveExtResult::default_arm(),
+        // 0x11 — save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
+        // the scratch slot indexed by `actor.field_86 & 0xFF`. Same shape
+        // as sub-op 0x25 but the slot index comes from the cycle counter
+        // updated by sub-ops 0x0F / 0x10 instead of an operand u16.
+        0x11 => {
+            let slot = state.field_86 & 0xFF;
+            let lo = (state.world_x as u16 as u32) | ((state.world_y as u16 as u32) << 16);
+            let hi = (state.world_z as u16 as u32) | ((state.world_y_mirror as u16 as u32) << 16);
+            host.move_slot_save_u32(slot, 0, lo);
+            host.move_slot_save_u32(slot, 4, hi);
+            MoveExtResult::default_arm()
+        }
 
         // 0x12 — read from same table, midpoint with operand fields, then
         // host applies the result to actor world.
@@ -780,10 +908,44 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // 0x23 — animation interpolation. Default arm.
         0x23 => MoveExtResult::default_arm(),
 
-        // 0x24 / 0x2A — interpolate world toward (op[1], op[3]) by op[4]/0x1000.
-        // Sub-0x24 uses fixed origins (`-DAT_80089118/-DAT_80089120`); sub-0x2A
-        // uses player coords. Default arm.
-        0x24 | 0x2A => MoveExtResult::default_arm(),
+        // 0x24 / 0x2A — fixed-point lerp on actor world coords. Both share
+        // the per-axis form `actor[axis] = op[axis] + ((target - op[axis]) *
+        // op[axis_t]) >> 12`. The Y axis always lerps toward player.world_y
+        // (with operand `op_w(3)` as base, `op_w(6)` as t). The X axis and
+        // Z axis differ by sub-op:
+        //   0x24 — uses `(_DAT_80089118, _DAT_80089120)` map origin: target
+        //          = `-(op + origin)` (i.e. fixed map-relative anchor).
+        //   0x2A — uses `(player.world_x, player.world_z)`.
+        //
+        // Operand layout: op_w(2,3,4) = base x/y/z; op_w(5)=t_x, op_w(6)=t_y,
+        // op_w(7)=t_z (each scaled by `>> 12`).
+        0x24 | 0x2A => {
+            let player = host.move_player_world_xyz();
+            let (origin_x, origin_z) = host.move_fixed_origin_xz();
+            let base_x = op_w(2) as i16 as i32;
+            let base_y = op_w(3) as i16 as i32;
+            let base_z = op_w(4) as i16 as i32;
+            let t_x = op_w(5) as i16 as i32;
+            let t_y = op_w(6) as i16 as i32;
+            let t_z = op_w(7) as i16 as i32;
+
+            let (target_x, target_z) = if sub_opcode == 0x24 {
+                // Fixed-origin path: the dump's `-op - origin` is the
+                // signed displacement from `-(op + origin)`.
+                (-(base_x + origin_x), -(base_z + origin_z))
+            } else {
+                (player[0] as i32, player[2] as i32)
+            };
+
+            // X axis.
+            state.world_x = (base_x + (((target_x - base_x).wrapping_mul(t_x)) >> 12)) as i16;
+            // Y axis (always vs. player).
+            state.world_y =
+                (base_y + (((player[1] as i32 - base_y).wrapping_mul(t_y)) >> 12)) as i16;
+            // Z axis.
+            state.world_z = (base_z + (((target_z - base_z).wrapping_mul(t_z)) >> 12)) as i16;
+            MoveExtResult::default_arm()
+        }
 
         // 0x25 — save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
         // the 16-slot scratch table at `&DAT_801F3498`. Each slot is 8 bytes:
@@ -1783,6 +1945,7 @@ pub fn decrement_wait_timer(state: &mut ActorState, delta: u16) {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 
@@ -1811,6 +1974,14 @@ mod tests {
         ext_fade_calls: Vec<([u8; 3], u16)>,
         /// Models the 16-slot 8-byte-stride scratch table at `&DAT_801F3498`.
         slot_table: [[u8; 8]; 16],
+        /// Models `_DAT_801F22F4` (move-VM global predicate).
+        global_predicate: u32,
+        /// Models `_DAT_801F22F6` (move-VM global counter, mod 16).
+        global_counter: u16,
+        /// Models the player's world coords at `_DAT_8007C364 + 0x14..+0x1A`.
+        player_xyz: [i16; 3],
+        /// Models the fixed-origin pair at `_DAT_80089118 / _DAT_80089120`.
+        fixed_origin_xz: (i32, i32),
     }
 
     impl MoveHost for TestHost {
@@ -1899,6 +2070,24 @@ mod tests {
             let slot_idx = (slot as usize) & 0xF;
             let off = byte_off as usize;
             u16::from_le_bytes(self.slot_table[slot_idx][off..off + 2].try_into().unwrap())
+        }
+        fn move_global_predicate_get(&self) -> u32 {
+            self.global_predicate
+        }
+        fn move_global_predicate_set(&mut self, value: u32) {
+            self.global_predicate = value;
+        }
+        fn move_global_counter_get(&self) -> u16 {
+            self.global_counter
+        }
+        fn move_global_counter_set(&mut self, value: u16) {
+            self.global_counter = value;
+        }
+        fn move_player_world_xyz(&self) -> [i16; 3] {
+            self.player_xyz
+        }
+        fn move_fixed_origin_xz(&self) -> (i32, i32) {
+            self.fixed_origin_xz
         }
     }
 
@@ -2392,6 +2581,213 @@ mod tests {
         state.pc = 0;
         step(&mut host, &mut state, &program(&[0x2F, 0x35, 12]));
         assert_eq!(state.field_72, 0xCAFE);
+    }
+
+    #[test]
+    fn op2f_subop_08_sets_global_predicate_and_subop_09_clears_it() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        step(&mut host, &mut state, &program(&[0x2F, 0x08]));
+        assert_eq!(host.global_predicate, 1);
+        state.pc = 0;
+        step(&mut host, &mut state, &program(&[0x2F, 0x09]));
+        assert_eq!(host.global_predicate, 0);
+    }
+
+    #[test]
+    fn op2f_subop_0a_falls_through_when_predicate_set() {
+        let mut host = TestHost::default();
+        host.global_predicate = 1;
+        let mut state = ActorState::new();
+        // The convention in this VM: dispatcher's `default_arm()` returns
+        // `size_u16 = 1` so the main step advances PC by 1 (matching the
+        // PSX dispatcher's `iVar16 = 1; default: iVar16 << 0x10; return
+        // iVar16 >> 0x10` shape).
+        let bc = program(&[0x2F, 0x0A]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 1);
+    }
+
+    #[test]
+    fn op2f_subop_0a_skips_when_predicate_clear() {
+        let mut host = TestHost::default();
+        host.global_predicate = 0;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x0A]);
+        step(&mut host, &mut state, &bc);
+        // Skip path = `with_size(3)` → PC += 3.
+        assert_eq!(state.pc, 3);
+    }
+
+    #[test]
+    fn op2f_subop_0b_skips_when_predicate_set() {
+        let mut host = TestHost::default();
+        host.global_predicate = 1;
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x0B]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 3);
+    }
+
+    #[test]
+    fn op2f_subop_0b_falls_through_when_predicate_clear() {
+        let mut host = TestHost::default();
+        host.global_predicate = 0;
+        let mut state = ActorState::new();
+        step(&mut host, &mut state, &program(&[0x2F, 0x0B]));
+        assert_eq!(state.pc, 1);
+    }
+
+    #[test]
+    fn op2f_subop_0f_clears_global_counter() {
+        let mut host = TestHost::default();
+        host.global_counter = 7;
+        let mut state = ActorState::new();
+        step(&mut host, &mut state, &program(&[0x2F, 0x0F]));
+        assert_eq!(host.global_counter, 0);
+    }
+
+    #[test]
+    fn op2f_subop_10_cycles_counter_and_writes_low_byte_to_field_86() {
+        let mut host = TestHost::default();
+        host.global_counter = 5;
+        let mut state = ActorState::new();
+        // Pre-set the high byte of field_86 to verify it's preserved.
+        state.field_86 = 0xAA00;
+        step(&mut host, &mut state, &program(&[0x2F, 0x10]));
+        // Captured value (5) goes to low byte of field_86; counter increments.
+        assert_eq!(state.field_86, 0xAA05);
+        assert_eq!(host.global_counter, 6);
+    }
+
+    #[test]
+    fn op2f_subop_10_wraps_counter_at_16() {
+        let mut host = TestHost::default();
+        host.global_counter = 16; // > 15 → wraps to 0 first
+        let mut state = ActorState::new();
+        step(&mut host, &mut state, &program(&[0x2F, 0x10]));
+        // Counter wrapped to 0, captured 0, then incremented to 1.
+        assert_eq!(state.field_86 & 0xFF, 0);
+        assert_eq!(host.global_counter, 1);
+    }
+
+    #[test]
+    fn op2f_subop_2a_lerps_world_toward_player_position() {
+        // op_w(2..4) = base x/y/z; op_w(5..7) = per-axis t (`>> 12` shift).
+        // With t=0x1000 (= 1.0 in 12.4 fixed) the result lands exactly on
+        // the player position.
+        let mut host = TestHost::default();
+        host.player_xyz = [1000, 2000, 3000];
+        let mut state = ActorState::new();
+        let bc = program(&[
+            0x2F, 0x2A, // sub-op
+            500, 800, 1500, // base
+            0x1000, 0x1000, 0x1000, // t = 1.0
+        ]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.world_x, 1000);
+        assert_eq!(state.world_y, 2000);
+        assert_eq!(state.world_z, 3000);
+    }
+
+    #[test]
+    fn op2f_subop_2a_at_t_zero_keeps_base() {
+        let mut host = TestHost::default();
+        host.player_xyz = [9999, 9999, 9999];
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x2A, 500, 800, 1500, 0, 0, 0]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.world_x, 500);
+        assert_eq!(state.world_y, 800);
+        assert_eq!(state.world_z, 1500);
+    }
+
+    #[test]
+    fn op2f_subop_24_uses_fixed_origin_for_x_and_z() {
+        // Sub-0x24 X: target = -(base + origin); Y still toward player.
+        let mut host = TestHost::default();
+        host.fixed_origin_xz = (200, 300);
+        host.player_xyz = [0, 5000, 0]; // Y target
+        let mut state = ActorState::new();
+        // base = (100, 1000, 50), t = (0x1000, 0x1000, 0x1000)
+        let bc = program(&[0x2F, 0x24, 100, 1000, 50, 0x1000, 0x1000, 0x1000]);
+        step(&mut host, &mut state, &bc);
+        // X target = -(100 + 200) = -300. Lerp at t=1 → -300.
+        assert_eq!(state.world_x, -300);
+        // Y target = player.world_y (5000). Lerp at t=1 → 5000.
+        assert_eq!(state.world_y, 5000);
+        // Z target = -(50 + 300) = -350.
+        assert_eq!(state.world_z, -350);
+    }
+
+    #[test]
+    fn op2f_subop_11_saves_world_to_slot_indexed_by_field_86_low_byte() {
+        // The pair 0x10 + 0x11 round-trips: cycle counter writes low byte
+        // of field_86, then 0x11 saves world to that slot. Verify with a
+        // pre-set field_86 value to keep the test free of cycle-counter
+        // sequencing.
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.field_86 = 0xAA0B; // low byte = 11 → slot index 11 (& 0xF = 11)
+        state.world_x = -50;
+        state.world_y = -100;
+        state.world_z = -150;
+        state.world_y_mirror = -200;
+        step(&mut host, &mut state, &program(&[0x2F, 0x11]));
+        assert_eq!(host.move_slot_load_u16(11, 0) as i16, -50);
+        assert_eq!(host.move_slot_load_u16(11, 2) as i16, -100);
+        assert_eq!(host.move_slot_load_u16(11, 4) as i16, -150);
+        assert_eq!(host.move_slot_load_u16(11, 6) as i16, -200);
+    }
+
+    #[test]
+    fn op2f_subop_10_then_subop_11_produces_a_running_capture() {
+        // Cycle the counter twice (each captures the pre-increment value
+        // into field_86 low byte) and verify the slot writes hit the right
+        // indices. Counter starts at 0:
+        //   step 0x10: captures 0 → field_86 lo = 0; counter becomes 1.
+        //   step 0x11: saves world to slot 0.
+        //   step 0x10: captures 1 → field_86 lo = 1; counter becomes 2.
+        //   step 0x11: saves world to slot 1.
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.world_x = 100;
+        for expected_slot in 0..3 {
+            state.world_x = 100 + expected_slot as i16;
+            state.pc = 0;
+            step(&mut host, &mut state, &program(&[0x2F, 0x10]));
+            state.pc = 0;
+            step(&mut host, &mut state, &program(&[0x2F, 0x11]));
+            assert_eq!(
+                host.move_slot_load_u16(expected_slot as u16, 0) as i16,
+                100 + expected_slot as i16
+            );
+        }
+        assert_eq!(host.global_counter, 3);
+    }
+
+    #[test]
+    fn op2f_subop_06_skips_when_player_outside_box() {
+        // Box corners (xa=10, za=20, xb=20, zb=30) scaled by 0x80 + 0x40 =
+        // x in [1344, 2624], z in [2624, 3904]. Player at (0, 0, 0) is
+        // outside → 0x06 takes the size-7 skip.
+        let mut host = TestHost::default();
+        host.player_xyz = [0, 0, 0];
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x06, 10, 20, 20, 30]);
+        step(&mut host, &mut state, &bc);
+        assert_eq!(state.pc, 7);
+    }
+
+    #[test]
+    fn op2f_subop_06_continues_when_player_inside_box() {
+        let mut host = TestHost::default();
+        host.player_xyz = [2000, 0, 3000]; // inside the [1344..2624] × [2624..3904] band
+        let mut state = ActorState::new();
+        let bc = program(&[0x2F, 0x06, 10, 20, 20, 30]);
+        step(&mut host, &mut state, &bc);
+        // default-arm = size_u16 = 1 → PC += 1.
+        assert_eq!(state.pc, 1);
     }
 
     // ---- actor_tick / decrement_wait_timer wiring ----
