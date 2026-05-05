@@ -2114,6 +2114,89 @@ mod tests {
         assert_eq!(r, ActorTickOutcome::BudgetExhausted);
     }
 
+    /// Composed bytecode walks several explicit-size opcodes — WORLD_SET,
+    /// FACE_ROTATION, ext sub 0x1C (set-flag-bank, size 3), then HALT.
+    /// `run_until_break` should exit at HALT with all per-op state changes
+    /// applied. Avoids the default-arm sub-ops whose `size_u16 = 1`
+    /// semantics leave PC pointing at the sub-op byte (which would then be
+    /// re-interpreted as a new opcode). Mirrors session-20's integration
+    /// style for the field VM but exercises the move-VM dispatch table.
+    #[test]
+    fn run_until_break_walks_explicit_size_opcodes_then_halts() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+
+        // Bytecode:
+        // op 0x07 1 2 3                       — WORLD_SET (size 4)
+        // op 0x21 7 100 200 300 400 0x8000   — face rotation (size 7)
+        // op 0x2F sub 0x1C 42                 — ext set_flag_bank (size 3)
+        // op 0x08                              — HALT (size 0)
+        let bc = program(&[
+            0x07, 1, 2, 3, // WORLD_SET
+            0x21, 7, 100, 200, 300, 400, 0x8000, // FACE_ROT
+            0x2F, 0x1C, 42,   // ext set_flag_bank(42), size 3
+            0x08, // HALT
+        ]);
+
+        let r = run_until_break(&mut host, &mut state, &bc, 64);
+        assert_eq!(r, StepResult::Halt);
+
+        // World coords from WORLD_SET.
+        assert_eq!(state.world_x, 1);
+        assert_eq!(state.world_y, 2);
+        assert_eq!(state.world_z, 3);
+        // Face rotation index recorded.
+        assert_eq!(state.face_rotation, 7);
+        assert_eq!(host.face_rot_calls.len(), 1);
+        // Ext set_flag_bank captured the index.
+        assert_eq!(host.ext_set_flag_bank_calls, vec![42]);
+        // HALT bit set.
+        assert_eq!(state.flags & 0x8, 0x8);
+        // PC stops at the HALT word (size 0). 4 + 7 + 3 = 14.
+        assert_eq!(state.pc, 14);
+    }
+
+    /// `actor_tick` composed with `decrement_wait_timer` for a multi-frame
+    /// scenario where the script seeds a new wait inside the VM and the
+    /// next frame must decrement that wait before re-entering. Mirrors a
+    /// retail per-frame loop where one script `WAIT_SET` keeps the actor
+    /// idle for a known number of frames.
+    #[test]
+    fn actor_tick_wait_set_then_decrements_to_resume() {
+        let mut host = TestHost::default();
+        let mut state = ActorState::new();
+        state.wait_timer = -1; // VM eligible
+
+        // WAIT_SET 4 (sets timer = 32 = 4<<3) then HALT.
+        let bc = program(&[0x09, 4, 0x08]);
+
+        // Frame 1: VM runs, hits WAIT_SET, breaks with WaitSeeded.
+        let r1 = actor_tick(&mut host, &mut state, &bc, 16);
+        assert_eq!(r1, ActorTickOutcome::WaitSeeded);
+        assert_eq!(state.wait_timer, 32);
+
+        // Frames 2..N: pre-tick decrements; until timer is back negative,
+        // VM is gated. Use delta=8 so it takes 5 frames (32 → 24 → 16 → 8 → 0 → -8).
+        for expected in [24, 16, 8, 0] {
+            decrement_wait_timer(&mut state, 8);
+            assert_eq!(state.wait_timer, expected);
+            assert_eq!(
+                actor_tick(&mut host, &mut state, &bc, 16),
+                ActorTickOutcome::Waiting
+            );
+        }
+
+        // One more pre-tick → timer = -8 (negative). VM runs, but we're
+        // sitting at the HALT instruction now (PC was advanced past the
+        // 2-word WAIT_SET on the seed step).
+        decrement_wait_timer(&mut state, 8);
+        assert_eq!(state.wait_timer, -8);
+        assert_eq!(
+            actor_tick(&mut host, &mut state, &bc, 16),
+            ActorTickOutcome::Halted
+        );
+    }
+
     #[test]
     fn actor_tick_pretick_then_tick_models_retail_frame() {
         // Compose decrement_wait_timer + actor_tick to model a full frame.

@@ -61,6 +61,14 @@ pub enum Class {
     /// where the first asset is a Legaia TMD without a typed chunk header.
     /// See [`crate::scene_tmd_stream`].
     SceneTmdStream,
+    /// `[u32 claimed_total][TMD magic][TMD flags=0][nobj]` — a TMD-fronted
+    /// resource where the prefix u32 claims a total size *larger than the
+    /// on-disc bytes*. The on-disc file is a prefix of a logical TMD whose
+    /// remainder is supplied by the runtime (streaming tail elsewhere or
+    /// zero-fill). Sister to [`Class::SceneTmdStream`] — captures the
+    /// truncated subset that detector intentionally rejects.
+    /// See [`crate::tmd_size_prefix`].
+    TmdSizePrefix,
     /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` —
     /// a streaming-format variant where the leading chunk is a Sony VAB
     /// instrument bank instead of a TMD. The single largest distributed
@@ -76,6 +84,13 @@ pub enum Class {
     /// `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` asset sequence. 80 PROT
     /// entries match. See [`crate::scene_asset_table`].
     SceneAssetTable,
+    /// Composite shape: `[u16 count][u16 offsets[count]][record bodies]
+    /// [zero pad to next 0x800 sector][canonical scene_asset_table]`. The
+    /// leading prescript carries scene-event-script bytecode (likely
+    /// field-VM frames) and the asset table at the next sector boundary
+    /// holds the standard 7-asset scene bundle. 77 PROT entries match.
+    /// See [`crate::scene_scripted_asset_table`].
+    SceneScriptedAssetTable,
     /// MIPS code blob — the static disc copy of a runtime overlay. Leads
     /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
     /// follow-up instruction. 22 PROT entries match — all in the `0901..=0969`
@@ -120,9 +135,11 @@ impl Class {
             Class::SeqContainer => "seq_container",
             Class::AnmContainer => "anm_container",
             Class::SceneTmdStream => "scene_tmd_stream",
+            Class::TmdSizePrefix => "tmd_size_prefix",
             Class::SceneVabStream => "scene_vab_stream",
             Class::SceneV12Table => "scene_v12_table",
             Class::SceneAssetTable => "scene_asset_table",
+            Class::SceneScriptedAssetTable => "scene_scripted_asset_table",
             Class::MipsOverlay => "mips_overlay",
             Class::OverlayPtrTable => "overlay_ptr_table",
             Class::PochiFiller => "pochi_filler",
@@ -155,6 +172,8 @@ pub struct FileReport {
     pub lzs_descriptor_count: Option<usize>,
     /// For stage_geometry: number of records found in the largest table.
     pub stage_geom_records: Option<usize>,
+    /// For tmd_size_prefix: claimed total in-RAM size from the leading u32.
+    pub tmd_size_prefix_total: Option<u32>,
 }
 
 /// Classify a single buffer.
@@ -332,6 +351,21 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
+    // Scripted scene-asset-table — `[u16 prescript][bodies][pad][scene_asset_table]`.
+    // Runs before plain `scene_asset_table` because the script-prefixed
+    // variant is strictly more specific.
+    if crate::scene_scripted_asset_table::detect(buf).is_some() {
+        return mk(
+            Class::SceneScriptedAssetTable,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
     // 7-asset scene table — leads with `07 00 00 00`, then 7 descriptor pairs.
     // Strict structural detector (no LZS-decode requirement) so it captures
     // both the LZS-payload and raw-payload variants uniformly. Runs before
@@ -409,6 +443,24 @@ pub fn classify(buf: &[u8]) -> FileReport {
             zero_fraction,
         );
         report.stream_chunks = Some(s.tail_chunks.len());
+        return report;
+    }
+
+    // TMD-with-size-prefix — sister of `scene_tmd_stream` for the truncated
+    // case (claimed_total > on-disc len). Runs immediately after
+    // `scene_tmd_stream` so any complete-on-disc TMD-stream files are claimed
+    // by the more permissive sister detector first.
+    if let Some(t) = crate::tmd_size_prefix::detect(buf) {
+        let mut report = mk(
+            Class::TmdSizePrefix,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+        report.tmd_size_prefix_total = Some(t.claimed_total);
         return report;
     }
 
@@ -569,6 +621,7 @@ fn mk(
         stream_chunks: None,
         lzs_descriptor_count: None,
         stage_geom_records: None,
+        tmd_size_prefix_total: None,
     }
 }
 

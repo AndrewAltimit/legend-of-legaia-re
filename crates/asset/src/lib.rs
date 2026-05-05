@@ -23,12 +23,14 @@ pub mod mips_overlay;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod scene_asset_table;
+pub mod scene_scripted_asset_table;
 pub mod scene_tmd_stream;
 pub mod scene_v12_table;
 pub mod scene_vab_stream;
 pub mod stage_geom;
 pub mod tim_scan;
 pub mod tmd_scan;
+pub mod tmd_size_prefix;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssetType {

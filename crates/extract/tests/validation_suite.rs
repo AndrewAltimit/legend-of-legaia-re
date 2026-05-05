@@ -84,11 +84,29 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // (219 → 124), 1 from `unknown_other` (169 → 168), 1 from `field_pack`
     // (4 → 3 — `0002_gameover_data.BIN` had v12 at offset 0).
     ("scene_v12_table", 97),
+    // Added 2026-05-05: composite shape — `[u16 prescript][bodies][pad][canonical
+    // 7-asset scene_asset_table]`. The leading prescript carries scene-event
+    // bytecode (likely field-VM frames); the asset table at the next 0x800
+    // sector boundary holds the standard scene bundle. Promoted ~64 entries
+    // from `unknown_high_entropy` (81 → 17) and ~13 from `unknown_other`
+    // (95 → 82 in disc-mode).
+    ("scene_scripted_asset_table", 79),
     ("tim_pack", 7),
-    ("unknown_high_entropy", 81),
+    // Added 2026-05-05: TMD-size-prefix detector — sister of `scene_tmd_stream`
+    // for the *truncated* case (`prefix_size > on-disc len`). On-disc file is
+    // a prefix of a logical TMD whose remainder is supplied at runtime. Promoted
+    // 34 entries from `unknown_other` (95 → 61 in disc-mode).
+    ("tmd_size_prefix", 34),
+    // 2026-05-05: dropped 81 → 17 after `scene_scripted_asset_table` promoted
+    // ~64 entries that combine a u16 script prescript with a canonical scene
+    // asset table at the next sector boundary.
+    ("unknown_high_entropy", 17),
     ("unknown_low_entropy", 74),
-    ("unknown_other", 95),
-    // 1 + 26 + 1 + 3 + 44 + 22 + 29 + 42 + 265 + 80 + 148 + 217 + 97 + 7 + 81 + 74 + 95 = 1232
+    // 2026-05-05: dropped 95 → 50 in working dir after `tmd_size_prefix` (34)
+    // and `scene_scripted_asset_table` (~13 from this bucket) promoted entries
+    // out. Disc-mode count may differ by a small amount; if a count mismatch
+    // surfaces under LEGAIA_DISC_BIN this is the first place to update.
+    ("unknown_other", 50),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter
