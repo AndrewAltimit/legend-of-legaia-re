@@ -1,0 +1,69 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; effect VM</div>
+  <h1>Effect VM (battle effect cluster)</h1>
+  <p class="lede">The runtime that drives battle-spawn effects &mdash; spell casts, item-use animations, hit sparks. Implemented as a per-slot state machine rather than a clean bytecode dispatcher: there's no central switch on a per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the per-frame walker.</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>When you cast a fireball in battle, three things happen visually: the spell-cast pose plays on the caster, a sequence of sprites animates between caster and target (the "fireball flying" frames), and a hit explosion plays on the target. Internally that's <em>one effect script</em> doing all three &mdash; one entry in <code>efect.dat</code> describing the whole thing as a sequence of frame batches.</p>
+
+  <p>The effect VM is what runs that script. It owns a fixed pool of "master slots" (32 of them, one per simultaneous effect) and "child slots" (128 of them, one per active sprite within an effect). Every frame, the per-frame walker iterates the master slots and pushes each one through its state machine: spawn the next batch of children, update positions, decrement timers, retire finished sprites, advance to the next state.</p>
+
+  <p>Unlike the <a href="script-vm.html">field VM</a> or the <a href="move-vm.html">move VM</a>, this isn't a clean bytecode dispatcher with a switch table. It's a state machine where the "next state" tokens live inside the on-disc effect script, and the walker reads them inline. Producing a clean opcode table from it would mean extracting the per-state transition logic by hand (~10&ndash;20 cases). The cleaner port path is to model the walker as a state-machine class and accept its decompile shape rather than insisting on an opcode table.</p>
+
+  <p>The on-disc input is the <a href="../formats/index.html">runtime 2-pack wrapper</a> at PROT entry 873 (<code>data\battle\efect.dat</code>): pack0 holds 14 sprite-anim records, pack1 holds 33 effect-ID scripts indexed by the public effect ID.</p>
+</section>
+
+<section class="doc-section" id="placement">
+  <h2>Where it lives</h2>
+  <p>All three functions are in the battle overlay (<code>0898_xxx_dat</code>):</p>
+  <table>
+    <thead><tr><th>Function</th><th>Span</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801DE914</code></td><td>0x138</td><td>Init / pack-fixup. Called from <code>FUN_800520F0</code> case <code>0xE</code> with <code>(id=0x1000, param=0xA00)</code>.</td></tr>
+      <tr><td><code>0x801DFDF8</code></td><td>0x290</td><td>Public spawn-effect API: <code>(byte effect_id, short* world_pos, ushort angle)</code>.</td></tr>
+      <tr><td><code>0x801E0088</code></td><td>0x970</td><td>Per-frame walker (update + render). 600+ instructions of inlined state transitions.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="dispatch">
+  <h2>How it dispatches</h2>
+  <p>Each 28-byte master slot carries:</p>
+  <pre><code>(state, counter, ?, sub_state, pos_x, pos_y, pos_z, data_ptr)</code></pre>
+  <p>The walker reads <code>*data_ptr</code> as the next-state token, but state transitions are inlined throughout <code>FUN_801E0088</code>. To produce a clean-room opcode table you'd need to extract per-state-byte transition logic by hand. The 32-master / 128-child slot pool, the spawn API, and the per-frame walker are all well-understood &mdash; the port itself is straightforward; the only question is whether to label the format an "opcode table" or a "state machine".</p>
+</section>
+
+<section class="doc-section" id="pool">
+  <h2>Pool layout</h2>
+  <p>One contiguous 5008-byte block at <code>_DAT_8007BD30</code>:</p>
+  <pre><code>+0x000  16 bytes   table-head record set by init
++0x010  4096 bytes 128 &times; 32-byte child slots &mdash; per-sprite render state
++0x1010 896 bytes  32 &times; 28-byte master slots &mdash; per-effect-instance state
++0x1390 1968 bytes (unused / future expansion)</code></pre>
+  <p>32 max simultaneous effects &times; ~4 sprites avg = 128-child sprite pool.</p>
+</section>
+
+<section class="doc-section" id="streaming">
+  <h2>Side-band streaming-effect handler</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>0x801F17F8</code></dd>
+    <dt>Called from</dt><dd><code>FUN_800520F0</code> case <code>0xFF</code></dd>
+    <dt>Buffer size per slot</dt><dd><code>0x10800</code> = 67584 bytes</dd>
+  </dl>
+  <p>Streams two specific runtime-only files via <code>FUN_800558FC</code>:</p>
+  <table>
+    <thead><tr><th>File</th><th>PROT</th><th>Trigger</th></tr></thead>
+    <tbody>
+      <tr><td><code>data\battle\summon.dat</code></td><td><code>0x37F</code></td><td>Selected when <code>_DAT_8007BD24[0x26B] &amp; 0x80 != 0</code></td></tr>
+      <tr><td><code>data\battle\readef.dat</code></td><td><code>0x380</code></td><td>Opposite branch</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Format unverified; may share the 2-pack layout but not yet confirmed.</p>
+</section>
+
+<section class="doc-section" id="effect-id-mapping">
+  <h2>Effect-ID &rarr; human effect name mapping</h2>
+  <p>Effect IDs are anonymous; no string table maps id &rarr; "fireball / thunder / heal". To name effects, trace call sites of <code>FUN_801DFDF8</code> in damage / battle-action code (in the town/level-up overlays). Each caller passes a literal byte for <code>effect_id</code>; correlate with the action that triggered it (a Tactical Arts move, an item use, a spell cast).</p>
+</section>

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asset viewer (WASM) — legend-of-legaia-re</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+.viewer-shell { display: flex; flex-direction: column; gap: 1rem; }
+.viewer-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+@media (max-width: 880px) {
+  .viewer-layout { grid-template-columns: 1fr; }
+}
+.viewer-list-pane {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  display: flex; flex-direction: column;
+  max-height: 600px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.viewer-list-toolbar {
+  display: flex; gap: 0.5rem; padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  align-items: center; flex-wrap: wrap;
+}
+.viewer-list-toolbar select,
+.viewer-list-toolbar input {
+  background: var(--bg-code); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  font-family: inherit; font-size: 0.78rem;
+  flex: 1;
+}
+.viewer-list {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.viewer-list li {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  gap: 0.5rem;
+  transition: background var(--transition);
+}
+.viewer-list li:hover { background: var(--bg-raised); }
+.viewer-list li.active { background: var(--accent-soft); border-left: 2px solid var(--accent); }
+.viewer-list .li-idx { color: var(--accent); font-weight: 500; }
+.viewer-list .li-meta { color: var(--text-muted); }
+.viewer-list .li-class { color: var(--text); font-size: 0.72rem; }
+
+.viewer-host {
+  border: 1px solid var(--border);
+  background: var(--bg-code);
+  min-height: 480px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  overflow: auto;
+}
+.viewer-canvas {
+  display: block;
+  background: #000;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  max-width: 100%;
+}
+.viewer-prompt {
+  text-align: center;
+  padding: 2rem;
+  max-width: 500px;
+}
+.viewer-prompt h3 { color: var(--accent); margin-bottom: 0.75rem; }
+.file-input-group {
+  display: flex; gap: 0.75rem; align-items: center;
+  flex-wrap: wrap;
+}
+.file-input-group input[type="file"] {
+  font-family: var(--font-mono); font-size: 0.85rem;
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.5rem;
+}
+.viewer-controls {
+  display: flex; gap: 0.5rem; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 0.85rem;
+  align-items: center;
+}
+.viewer-controls button {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); padding: 0.4rem 0.75rem;
+  cursor: pointer; font-family: inherit;
+}
+.viewer-controls button:hover { border-color: var(--accent); color: var(--accent); }
+.viewer-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.viewer-status {
+  font-family: var(--font-mono); font-size: 0.85rem;
+  color: var(--text-muted); padding: 0.5rem 0;
+}
+.viewer-info {
+  font-family: var(--font-mono); font-size: 0.8rem;
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem; color: var(--text-muted);
+  flex: 1;
+}
+.viewer-info b { color: var(--accent); font-weight: 500; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
+  <h1>Asset viewer</h1>
+  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) or just <code>PROT.DAT</code> — the WASM build parses it client-side, classifies every PROT entry, and filters to the ones with renderable TIMs. Nothing leaves your machine.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Open a disc image</h2>
+
+  <div class="viewer-shell">
+    <div class="file-input-group">
+      <label for="viewer-file"><strong>Choose file:</strong></label>
+      <input type="file" id="viewer-file" accept=".bin,.dat,.tim,.tmd">
+      <span class="viewer-status" id="viewer-status">No file loaded.</span>
+    </div>
+
+    <div class="viewer-layout">
+      <!-- Sidebar: filtered list of viewable entries -->
+      <div class="viewer-list-pane" id="viewer-list-pane" style="display: none;">
+        <div class="viewer-list-toolbar">
+          <select id="class-filter" title="Filter by classification">
+            <option value="">all viewable</option>
+          </select>
+        </div>
+        <div class="viewer-list-toolbar" style="font-size: 0.78rem;">
+          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
+            <input type="checkbox" id="tmd-filter"> 3D only
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
+            <input type="checkbox" id="textured-toggle" checked> textured
+          </label>
+        </div>
+        <div class="viewer-list-toolbar">
+          <input type="number" id="jump-input" placeholder="PROT idx" min="0" max="9999">
+          <button id="jump-btn" type="button" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.5rem; font-family: inherit; font-size: 0.78rem; cursor: pointer;">go</button>
+        </div>
+        <ul class="viewer-list" id="viewer-list"></ul>
+      </div>
+
+      <!-- Render target -->
+      <div class="viewer-host" id="viewer-host">
+        <div class="viewer-prompt">
+          <h3>Bring your own disc</h3>
+          <p>This viewer doesn't ship any Sony bytes. Provide a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (NA SCUS-94254), the extracted <code>PROT.DAT</code>, or a single <code>.tim</code> file.</p>
+          <p style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.85rem;">
+            Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="viewer-controls" id="viewer-controls" style="display: none;">
+      <button id="prev-btn">&larr; Prev</button>
+      <button id="next-btn">Next &rarr;</button>
+      <button id="autorotate-btn" title="Toggle auto-rotate (space)">⏸ stop spin</button>
+      <button id="reset-btn" title="Reset camera (R or double-click)">⟲ reset</button>
+      <span class="viewer-info" id="viewer-info"></span>
+    </div>
+
+    <div id="camera-hint" style="display: none; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim); padding: 0.25rem 0;">
+      <strong>3D controls:</strong> drag to orbit · scroll to zoom · WASD to pan · space = pause/resume spin · R / double-click = reset
+    </div>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>What this viewer does</h2>
+  <p>When you load a full disc, the WASM module:</p>
+  <ol>
+    <li>Walks ISO9660 to find <code>PROT.DAT</code></li>
+    <li>Parses the PROT TOC to locate all 1232 entries</li>
+    <li>Classifies each entry through the same detector chain the native pipeline uses (<code>tim_passthrough</code>, <code>tim_pack</code>, <code>data_field_streaming</code>, <code>scene_tmd_stream</code>, <code>field_pack</code>, <code>effect_bundle</code>, etc.)</li>
+    <li>Runs <code>tim_scan</code> against each entry — including LZS decompression — and keeps only the entries with at least one decodable PSX TIM</li>
+    <li>Builds the filtered sidebar list, grouped by classification</li>
+  </ol>
+
+  <p>This typically narrows ~1232 raw entries down to ~300-400 viewable ones, sorted by PROT index. Use the filter dropdown to narrow further by class (e.g. only <code>scene_tmd_stream</code> for character meshes' textures, or only <code>tim_passthrough</code> for standalone images).</p>
+
+  <p>The 3D path renders Legaia TMDs in <strong>textured 3D</strong> by default: WebGL2-backed, with the same paletted fragment shader the native engine uses (1024×512 R16UI VRAM, per-prim CBA/TSB, 4/8/15bpp + CLUT lookup decoded per-fragment). Toggle "textured" off in the sidebar for a flat-shaded fallback (Canvas 2D, painter's-algorithm depth sort).</p>
+
+  <p class="hint">The native build (<code>./target/release/asset-viewer prot extracted/PROT.DAT</code>) additionally plays VAB samples, renders stage geometry, and supports <code>--vram-extra-dir</code> for cross-PROT-entry CLUT chains. Run that for the full experience.</p>
+</section>
+
+<section class="doc-section">
+  <h2>Privacy + legal</h2>
+  <p>This page never uploads your disc image anywhere. The WASM module reads bytes via the browser's <code>FileReader</code> API directly into WebAssembly memory, parses them locally, and renders to a canvas. No network requests for the disc data.</p>
+  <p>The legal model is the same as ScummVM, OpenRCT2, OpenMW, OpenLara: zero Sony bytes ship with this project; you supply your own disc image. <a href="subsystems/engine.html">Read the engine port plan</a> for the legal posture in detail.</p>
+</section>
+
+<script src="js/webgl-tmd.js"></script>
+<script>
+(function () {
+  const fileInput = document.getElementById('viewer-file');
+  const status = document.getElementById('viewer-status');
+  const host = document.getElementById('viewer-host');
+  const controls = document.getElementById('viewer-controls');
+  const info = document.getElementById('viewer-info');
+  const listPane = document.getElementById('viewer-list-pane');
+  const list = document.getElementById('viewer-list');
+  const classFilter = document.getElementById('class-filter');
+  const jumpInput = document.getElementById('jump-input');
+  const jumpBtn = document.getElementById('jump-btn');
+
+  if (!fileInput) return;
+
+  let viewer = null;
+  let allEntries = [];      /* entry-list-json output */
+  let visibleSlots = [];    /* indices into allEntries that match current filter */
+  let rafId = null;          /* current 3D loop's requestAnimationFrame id */
+  let glRenderer = null;     /* TmdRenderer (WebGL) — created lazily */
+
+  /* Shared camera state across both render paths. Persists across entries
+   * so a user who orbits to a particular angle stays there as they navigate. */
+  const cam = {
+    yaw: 0,
+    pitch: 0.25,
+    distance: 2.5,    /* unit-radius units */
+    panX: 0,          /* view-space x offset, unit-radius units */
+    panY: 0,          /* view-space y offset, unit-radius units */
+    autoRotate: true,
+  };
+
+  /* Currently-pressed WASD keys for continuous pan. Integrated each frame. */
+  const keysDown = new Set();
+  const PAN_SPEED = 1.5;  /* unit-radii per second at distance=2.5 */
+
+  function stopRaf() {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+  function disposeGl() {
+    if (glRenderer) {
+      glRenderer.dispose();
+      glRenderer = null;
+    }
+  }
+  function resetCamera() {
+    cam.yaw = 0;
+    cam.pitch = 0.25;
+    cam.distance = 2.5;
+    cam.panX = 0;
+    cam.panY = 0;
+    cam.autoRotate = true;
+    updateAutoRotateLabel();
+  }
+
+  /* Integrate WASD presses into pan deltas. Called once per frame from the
+   * render loops; dt is seconds since the previous frame. Pan speed scales
+   * with distance so panning feels consistent across zoom levels. */
+  function applyKeyboardPan(dt) {
+    if (keysDown.size === 0) return;
+    const speed = PAN_SPEED * dt * (cam.distance / 2.5);
+    if (keysDown.has('w')) cam.panY += speed;
+    if (keysDown.has('s')) cam.panY -= speed;
+    if (keysDown.has('a')) cam.panX -= speed;
+    if (keysDown.has('d')) cam.panX += speed;
+  }
+  function updateAutoRotateLabel() {
+    const btn = document.getElementById('autorotate-btn');
+    if (btn) btn.textContent = cam.autoRotate ? '⏸ stop spin' : '▶ start spin';
+  }
+
+  /* Hook mouse + wheel + keyboard events on the canvas. Called whenever a
+   * fresh canvas is created (by start*TmdLoop) since the canvas element
+   * gets replaced when switching modes. */
+  function attachCameraControls(canvas) {
+    let dragging = false;
+    let lastX = 0, lastY = 0;
+    canvas.style.cursor = 'grab';
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      canvas.style.cursor = 'grabbing';
+      cam.autoRotate = false;
+      updateAutoRotateLabel();
+      e.preventDefault();
+    });
+    window.addEventListener('mouseup', () => {
+      dragging = false;
+      canvas.style.cursor = 'grab';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      /* 0.005 rad per pixel — feels right at default canvas size. */
+      cam.yaw += dx * 0.008;
+      cam.pitch += dy * 0.008;
+      const limit = Math.PI / 2 - 0.05;
+      cam.pitch = Math.max(-limit, Math.min(limit, cam.pitch));
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = Math.exp(e.deltaY * 0.001);
+      /* No upper bound; lower bound is just an epsilon so the camera doesn't
+       * cross through origin (matrix singularity). Past distance ≈ 1.0 the
+       * camera enters the bounding sphere — that's the fly-through view. */
+      cam.distance = Math.max(0.001, Math.min(500.0, cam.distance * factor));
+    }, { passive: false });
+
+    canvas.addEventListener('dblclick', resetCamera);
+  }
+
+  /* Doc-level keyboard: spacebar toggles auto-rotate, R resets, WASD pans.
+   * Pan keys are accumulated in keysDown and applied each frame so holding
+   * the key produces smooth motion. */
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    const k = e.key.toLowerCase();
+    if (e.code === 'Space') {
+      cam.autoRotate = !cam.autoRotate;
+      updateAutoRotateLabel();
+      e.preventDefault();
+    } else if (k === 'r') {
+      resetCamera();
+    } else if ('wasd'.includes(k)) {
+      keysDown.add(k);
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    const k = e.key.toLowerCase();
+    if ('wasd'.includes(k)) keysDown.delete(k);
+  });
+  /* Drop pressed-key state when window blurs so a release isn't missed. */
+  window.addEventListener('blur', () => keysDown.clear());
+
+  function refreshInfo() {
+    if (!viewer) return;
+    const stat = JSON.parse(viewer.status());
+    const mb = stat.bpp ? `${stat.width}×${stat.height} @ ${stat.bpp}bpp` : 'no TIM';
+    const tc = stat.tim_count > 1 ? ` · ${stat.tim_count} TIMs` : '';
+    let summary = `${stat.class} · ${mb}${tc}`;
+    if (stat.has_tmd) {
+      summary = `${stat.class} · TMD ${stat.tmd_tris} tris / ${stat.tmd_verts} verts (auto-rotate)${stat.tim_count ? ` · also ${stat.tim_count} TIM(s)` : ''}`;
+    }
+    info.innerHTML = `<b>PROT ${stat.prot_index}</b> · ${summary} · slot ${stat.slot + 1}/${allEntries.length}`;
+    list.querySelectorAll('li').forEach(li => li.classList.remove('active'));
+    const active = list.querySelector(`li[data-slot="${stat.slot}"]`);
+    if (active) {
+      active.classList.add('active');
+      active.scrollIntoView({ block: 'nearest' });
+    }
+
+    stopRaf();
+    disposeGl();
+    const cameraHint = document.getElementById('camera-hint');
+    if (stat.has_tmd) {
+      if (cameraHint) cameraHint.style.display = 'block';
+      const useTextured = document.getElementById('textured-toggle')?.checked;
+      if (useTextured) {
+        startTexturedTmdLoop();
+      } else {
+        startFlatTmdLoop();
+      }
+    } else {
+      if (cameraHint) cameraHint.style.display = 'none';
+    }
+  }
+
+  /* Textured 3D loop. WebGL2-backed; uses the same paletted fragment shader
+   * shape as the native engine (1024x512 R16UI VRAM with 4bpp/8bpp/15bpp
+   * decoding done per-fragment). */
+  function startTexturedTmdLoop() {
+    const oldCanvas = document.getElementById('viewer-canvas');
+    if (!oldCanvas) return;
+    const w = 800, h = 600;
+
+    /* Replace canvas — switching contexts on an existing canvas isn't
+     * permitted, so we destroy and recreate when switching modes. */
+    const fresh = document.createElement('canvas');
+    fresh.id = 'viewer-canvas';
+    fresh.className = 'viewer-canvas';
+    fresh.width = w;
+    fresh.height = h;
+    oldCanvas.replaceWith(fresh);
+
+    try {
+      glRenderer = new window.TmdRenderer(fresh);
+    } catch (err) {
+      console.warn('WebGL2 init failed, falling back to flat-shaded:', err);
+      status.textContent = 'WebGL2 not available; flat-shaded fallback in use.';
+      startFlatTmdLoop();
+      return;
+    }
+
+    /* Upload VRAM + mesh once per entry. */
+    const vramBytes = viewer.current_vram_bytes();
+    const positions = viewer.mesh_positions();
+    const uvs       = viewer.mesh_uvs();
+    const cbaTsb    = viewer.mesh_cba_tsb();
+    const indices   = viewer.mesh_indices();
+    const bounds    = viewer.mesh_bounds();
+    if (positions.length === 0 || indices.length === 0) {
+      console.warn('TMD has no textured triangles; falling back to flat-shaded');
+      status.textContent = 'TMD has no textured prims; flat-shaded fallback.';
+      startFlatTmdLoop();
+      return;
+    }
+    console.log(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
+    glRenderer.uploadVram(vramBytes);
+    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
+
+    const center = [bounds[0], bounds[1], bounds[2]];
+    const radius = bounds[3];
+
+    attachCameraControls(fresh);
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (cam.autoRotate) cam.yaw += dt * 0.6;
+      applyKeyboardPan(dt);
+      glRenderer.render(cam.yaw, cam.pitch, cam.distance, cam.panX, cam.panY, center, radius);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  /* Flat-shaded fallback. Canvas 2D, painter's-algorithm depth sort,
+   * triangle data computed in Rust each frame. */
+  function startFlatTmdLoop() {
+    const oldCanvas = document.getElementById('viewer-canvas');
+    if (!oldCanvas) return;
+    const w = 800, h = 600;
+
+    const fresh = document.createElement('canvas');
+    fresh.id = 'viewer-canvas';
+    fresh.className = 'viewer-canvas';
+    fresh.width = w;
+    fresh.height = h;
+    oldCanvas.replaceWith(fresh);
+    const ctx = fresh.getContext('2d');
+
+    attachCameraControls(fresh);
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (cam.autoRotate) cam.yaw += dt * 0.6;
+      applyKeyboardPan(dt);
+
+      const tris = viewer.render_tmd_triangles(cam.yaw, cam.pitch, cam.distance, cam.panX, cam.panY, w, h);
+      ctx.fillStyle = '#0a0e15';
+      ctx.fillRect(0, 0, w, h);
+
+      const FLOATS = 7;
+      const n = tris.length / FLOATS;
+      for (let i = 0; i < n; i++) {
+        const o = i * FLOATS;
+        const b = Math.floor(tris[o + 6] * 200) + 30;
+        ctx.fillStyle = `rgb(${b},${b},${b})`;
+        ctx.beginPath();
+        ctx.moveTo(tris[o], tris[o + 1]);
+        ctx.lineTo(tris[o + 2], tris[o + 3]);
+        ctx.lineTo(tris[o + 4], tris[o + 5]);
+        ctx.closePath();
+        ctx.fill();
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function rebuildList() {
+    const filter = classFilter.value;
+    const onlyTmd = document.getElementById('tmd-filter')?.checked;
+    visibleSlots = allEntries
+      .map((e, i) => i)
+      .filter(i => (!filter || allEntries[i].class === filter)
+                && (!onlyTmd || allEntries[i].has_tmd));
+
+    list.innerHTML = visibleSlots.map(i => {
+      const e = allEntries[i];
+      const dims = e.bpp ? `${e.w}×${e.h}` : '—';
+      const tag = e.has_tmd ? '<span style="color:var(--accent)">3D</span> · ' : '';
+      return `<li data-slot="${i}"><span class="li-idx">${e.prot_index}</span><span class="li-meta">${tag}${e.class}<br><span class="li-class">${dims}</span></span></li>`;
+    }).join('');
+
+    list.querySelectorAll('li').forEach(li => {
+      li.addEventListener('click', () => {
+        const slot = parseInt(li.dataset.slot, 10);
+        viewer.set_slot(slot);
+        refreshInfo();
+      });
+    });
+  }
+
+  function populateClassFilter(entries) {
+    const classes = [...new Set(entries.map(e => e.class))].sort();
+    classFilter.innerHTML = '<option value="">all viewable (' + entries.length + ')</option>'
+      + classes.map(c => {
+        const n = entries.filter(e => e.class === c).length;
+        return `<option value="${c}">${c} (${n})</option>`;
+      }).join('');
+  }
+
+  fileInput.addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) {
+      status.textContent = 'No file loaded.';
+      return;
+    }
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — classifying entries…`;
+
+    /* Set up canvas before WASM init so the viewer can resolve it. */
+    host.innerHTML = '<canvas id="viewer-canvas" class="viewer-canvas" width="1024" height="768"></canvas>';
+
+    try {
+      const mod = await import('./wasm/legaia_web_viewer.js');
+      await mod.default();
+      const buf = new Uint8Array(await f.arrayBuffer());
+      viewer = new mod.LegaiaViewer('viewer-canvas');
+      const count = viewer.load_disc(buf);
+
+      if (count > 0) {
+        allEntries = JSON.parse(viewer.entry_list_json());
+        populateClassFilter(allEntries);
+        rebuildList();
+        listPane.style.display = 'flex';
+        controls.style.display = 'flex';
+        status.textContent = `Loaded: ${f.name} — ${count} viewable entries.`;
+        refreshInfo();
+      } else {
+        status.textContent = `Loaded: ${f.name} — standalone TIM rendered.`;
+      }
+
+      classFilter.addEventListener('change', rebuildList);
+      const tmdFilter = document.getElementById('tmd-filter');
+      if (tmdFilter) tmdFilter.addEventListener('change', rebuildList);
+      const texturedToggle = document.getElementById('textured-toggle');
+      if (texturedToggle) texturedToggle.addEventListener('change', refreshInfo);
+
+      jumpBtn.onclick = () => {
+        const idx = parseInt(jumpInput.value, 10);
+        if (Number.isNaN(idx)) return;
+        const slot = allEntries.findIndex(e => e.prot_index === idx);
+        if (slot >= 0) {
+          viewer.set_slot(slot);
+          refreshInfo();
+        } else {
+          status.textContent = `PROT entry ${idx} is not in the viewable list (it has no decodable TIM).`;
+        }
+      };
+
+      const nextSlot = (delta) => {
+        if (visibleSlots.length === 0) return;
+        const stat = JSON.parse(viewer.status());
+        const cur = visibleSlots.indexOf(stat.slot);
+        const next = cur < 0 ? 0 : (cur + delta + visibleSlots.length) % visibleSlots.length;
+        viewer.set_slot(visibleSlots[next]);
+        refreshInfo();
+      };
+
+      document.getElementById('next-btn').onclick = () => nextSlot(1);
+      document.getElementById('prev-btn').onclick = () => nextSlot(-1);
+      document.getElementById('autorotate-btn').onclick = () => {
+        cam.autoRotate = !cam.autoRotate;
+        updateAutoRotateLabel();
+      };
+      document.getElementById('reset-btn').onclick = resetCamera;
+      updateAutoRotateLabel();
+
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        if (e.key === 'ArrowRight' || e.key === 'n') nextSlot(1);
+        else if (e.key === 'ArrowLeft' || e.key === 'p') nextSlot(-1);
+      });
+    } catch (err) {
+      status.textContent = `Couldn't load: ${err.message || err}.`;
+      console.warn(err);
+    }
+  });
+})();
+</script>
+
+</main>
+</div>
+<script src="js/layout.js"></script>
+<script>injectLayout({ active: 'viewer' });</script>
+<script src="js/main.js"></script>
+</body>
+</html>

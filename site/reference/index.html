@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> · reference</div>
+  <h1>Reference</h1>
+  <p class="lede">Lookup tables for key functions, the PSX RAM map, and cross-region build differences.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Reference pages</h2>
+  <div class="card-grid">
+    <a class="card" href="functions.html">
+      <div class="card-title">Key functions</div>
+      <div class="card-body">A directory of Ghidra-traced anchor functions across the codebase. Boot, asset loader, the three VMs, BIOS thunks, libsnd/libspu, GTE primitives, libcd, the battle and effect systems.</div>
+    </a>
+    <a class="card" href="memory-map.html">
+      <div class="card-title">PSX RAM map</div>
+      <div class="card-body">2 MB main RAM. Where SCUS_942.54 loads, where overlays live, where the global game state lives, where the actor table is, where the scratchpad is.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">
+      <div class="card-title">Builds + region differences</div>
+      <div class="card-body">14 known builds across NA / JP / EU / Demo / preview / debug. SCUS-94254 is the NA build the project targets.</div>
+    </a>
+  </div>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'reference/index' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> · tooling</div>
+  <h1>Tooling</h1>
+  <p class="lede">Extraction CLIs, the headless Ghidra workflow, and the runtime overlay capture pipeline.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Asset extraction</h2>
+  <p>Each crate ships its own extraction binary; the top-level <code>legaia-extract</code> orchestrates them end-to-end.</p>
+<pre><code># Full pipeline
+./target/release/legaia-extract \
+    "/path/to/Legend of Legaia (USA).bin" --out extracted
+
+# Per-stage tools
+./target/release/disc-extract  # Mode2/2352 + ISO9660 walk
+./target/release/prot-extract  # PROT.DAT TOC + CDNAME → per-entry files
+./target/release/lzs-decode    # LZS decompress
+./target/release/asset         # Categorize + sub-asset walk
+./target/release/tim           # PSX TIM → PNG
+./target/release/tmd           # Legaia TMD parser + OBJ export
+./target/release/vab           # VAB extraction → WAV
+./target/release/mes           # MES dialog parse / disasm / json
+./target/release/mdt           # MDT move table parser</code></pre>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/extraction.md" target="_blank" rel="noopener">Full extraction tooling reference →</a></p>
+</section>
+
+<section class="doc-section">
+  <h2>Ghidra in Docker</h2>
+  <p>Headless Ghidra runs in a single Docker service. Volumes mount the extracted disc as read-only data plus the project DB and scripts directory as read-write.</p>
+<pre><code>docker compose up -d ghidra
+
+# One-time: import SCUS_942.54
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -import /data/SCUS_942.54
+
+# Run an analysis script
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 \
+    -postScript dump_funcs.py -noanalysis -scriptPath /scripts</code></pre>
+
+  <h3>The script catalogue</h3>
+  <p>All scripts live in <code>ghidra/scripts/</code>:</p>
+  <ul>
+    <li><code>dump_funcs.py</code> — dump a list of functions by entry address.</li>
+    <li><code>find_lui_writers.py</code> — find LUI+ADDIU pairs that target a specific 32-bit address. Necessary because Ghidra's reference manager doesn't auto-resolve these.</li>
+    <li><code>function-coverage.py</code> — citation-graph closure: which referenced helpers don't have their own dump yet.</li>
+    <li><code>force_disasm_dump.py</code> — for <code>jal</code> targets Ghidra hasn't auto-disassembled. Walks instructions, validates ≥8 instructions, then creates the function and dumps it.</li>
+    <li><code>analyze-overlay.sh</code> — one-shot mednafen save state → labelled overlay program in Ghidra + asset-load CSV.</li>
+    <li><code>import-overlay-named.sh</code> — preserve overlays across imports (for capturing multiple game-mode overlays simultaneously).</li>
+  </ul>
+
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ghidra.md" target="_blank" rel="noopener">Full Ghidra workflow reference →</a></p>
+</section>
+
+<section class="doc-section">
+  <h2>Runtime overlay capture</h2>
+  <p>Static analysis hits a wall when code lives in RAM overlays at <code>0x801C0000+</code>. Capture is from a mednafen save state taken while the relevant overlay is loaded:</p>
+<pre><code>scripts/analyze-overlay.sh \
+    ~/.mednafen/mcs/Legend*Legaia*.mc0 --label level_up
+# Output: /tmp/overlay_loads_level_up.csv</code></pre>
+  <p>The pipeline decompresses the gzipped save state, slices the <code>0x801C0000-0x801F0000</code> window (or <code>0x80200000</code> for extended overlays), re-imports it into Ghidra as <code>overlay.bin</code>, and emits a CSV of every <code>jal</code> to a known SCUS asset loader with the const-tracked <code>$a0</code> argument.</p>
+  <p>Hex args = PROT indices; cross-reference <code>extracted/CDNAME.TXT</code> to identify which scene asset bundle the overlay loads. That's how the actor VM was found and how scene asset bundles get traced.</p>
+
+  <p class="hint">For preserving multiple overlay imports across runs (e.g. menu vs battle_action vs town), use <code>import-overlay-named.sh</code> instead of <code>analyze-overlay.sh</code> — the named version produces <code>overlay_&lt;label&gt;.bin</code> rather than overwriting <code>overlay.bin</code>.</p>
+
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/overlay-capture.md" target="_blank" rel="noopener">Full overlay capture reference →</a></p>
+</section>

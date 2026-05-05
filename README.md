@@ -1,2 +1,161 @@
 # legend-of-legaia-re
-Reverse-engineering Legend of Legaia (PSX, 1999): Ghidra-traced format documentation, Rust extractors for every asset on the disc, and a clean-room engine reimplementation targeting wgpu/SDL3 with optional WASM.  
+
+Reverse engineering for the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254): Ghidra-traced format documentation, Rust extractors for every asset on the disc, and a clean-room engine reimplementation targeting wgpu/SDL3 with optional WASM.
+
+Two coordinated tracks under one Cargo workspace:
+
+1. **Asset preservation + format docs.** Extract every asset on the disc, document every format with provenance back to a Ghidra function, build round-trip parsers (`.bin` → PNG / WAV / OBJ / JSON).
+2. **Engine reimplementation.** Clean-room Rust port of the engine — render via wgpu, audio via the existing XA + VAB decoders, optional WASM target. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara) — bring your own disc image; the toolkit handles the rest.
+
+The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation.
+
+**Status:** local research project. Don't expect API stability.
+
+**License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered — this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same. These licenses apply *only* to the code and documentation in this repository. **Sony's IP — game executable, asset data, ROM contents — is not redistributed and is not covered by these licenses.** You bring your own disc image. The `extracted/` and `ghidra/projects/` directories are gitignored. CI runs without disc data.
+
+## Documentation
+
+The committed docs under `docs/` are organised topic-first as a technical reference:
+
+- **[`docs/overview.md`](docs/overview.md)** — elevator pitch + how the layers stack.
+- **[`docs/formats/`](docs/formats/overview.md)** — per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect, overlays, …).
+- **[`docs/subsystems/`](docs/subsystems/)** — how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [battle](docs/subsystems/battle.md), [engine reimplementation](docs/subsystems/engine.md).
+- **[`docs/tooling/`](docs/tooling/)** — how to use the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md).
+- **[`docs/reference/`](docs/reference/)** — [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [TCRF region data](docs/reference/builds.md).
+
+For workspace conventions and format gotchas (especially MIPS LUI+ADDIU pairs), read [`CLAUDE.md`](CLAUDE.md) first.
+
+## Quick start
+
+### Prerequisites
+
+- Rust toolchain (`cargo`, edition 2024).
+- The Legend of Legaia (USA) disc image as `.bin` + `.cue` (Mode2/2352).
+- (Optional) Docker + docker-compose for headless Ghidra runs.
+- (Optional) mednafen + a save state at the target scene, for runtime overlay capture.
+
+### Build
+
+```bash
+cargo build --release
+```
+
+Binaries land in `target/release/`. Run `<binary> --help` for full subcommand listings.
+
+### Run the whole pipeline
+
+```bash
+./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
+```
+
+Verify → disc → PROT → categorize → streaming sub-asset extract → TIM → PNG. Use `--skip-png` to skip the slowest step or `--skip-verify` to skip the SHA-256 hash. Pass `-v` for per-file output.
+
+### Per-stage CLIs
+
+For driving each stage individually, see [`docs/tooling/extraction.md`](docs/tooling/extraction.md). Verifying the disc image:
+
+```bash
+./target/release/disc-extract verify "/path/to/Legend of Legaia (USA).bin"
+```
+
+| Disc | SHA-256 (Mode2/2352 .bin) |
+|---|---|
+| Legend of Legaia (USA), SCUS-94254 | `e6120a5d70716dd2f026a2da32d0171d52651971b52c4347a68541299f75258c` |
+
+For canonical per-track verification, cross-check against [Redump](http://redump.org/disc/425/).
+
+### Browse the assets
+
+After running the pipeline:
+
+```bash
+# 3D mesh + textures
+./target/release/asset-viewer tmd extracted/tmd_scan/0866_battle_data \
+    --shape character --sort-by-size --bundle battle
+
+# A VAB sample
+./target/release/asset-viewer vab extracted/PROT/0865_battle_data.BIN --offset 0x... --sample 0
+
+# PROT entry browser
+./target/release/asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT
+```
+
+### Static analysis (Ghidra in Docker)
+
+```bash
+docker compose build ghidra        # one-time, sets UID/GID matching the host user
+docker compose up -d ghidra
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 \
+    -noanalysis -postScript find_streaming_consumers.py
+```
+
+Per-function decompile + disassembly dumps land in `ghidra/scripts/funcs/<addr>.txt`. See [`docs/tooling/ghidra.md`](docs/tooling/ghidra.md) for the full script catalogue and gotchas.
+
+### Capture & analyze a runtime overlay
+
+Most game logic (field/battle/menu state machines, dialog renderer, debug-flag writers) lives in RAM overlays loaded at `0x801C0000+`, **not** in `SCUS_942.54`. Save state at the target scene in mednafen and run:
+
+```bash
+scripts/analyze-overlay.sh \
+    ~/.mednafen/mcs/Legend*Legaia*.mc0 \
+    --label level_up
+```
+
+The pipeline decompresses the gzipped save state, slices out the overlay window, re-imports it into Ghidra, and emits a CSV of every `jal` to a known SCUS asset loader with the const-tracked argument. See [`docs/tooling/overlay-capture.md`](docs/tooling/overlay-capture.md).
+
+### Disc-gated tests
+
+```bash
+LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --release
+```
+
+Two integration tests touch a real disc:
+
+- `crates/iso/tests/disc_pipeline.rs` — disc walk, file count, key file SHA-256s.
+- `crates/extract/tests/validation_suite.rs` — full pipeline assertions.
+
+If `LEGAIA_DISC_BIN` is unset, both skip and pass — that's intentional, so CI works without redistributing Sony data.
+
+## Repository layout
+
+```
+legend-of-legaia-re/
+├── Cargo.toml                    # workspace root
+├── docker-compose.yml            # ghidra service (UID/GID-matched user)
+├── docker/ghidra.Dockerfile      # wraps blacktop/ghidra:latest with host-UID mapping
+├── crates/
+│   ├── iso/                      # PSX disc reader + ISO9660 walker
+│   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
+│   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c)
+│   ├── asset/                    # Asset dispatcher, streaming, scene-bundle detectors
+│   ├── tim/                      # PSX TIM parser + PNG exporter
+│   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
+│   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
+│   ├── xa/                       # XA-ADPCM decoder + WAV exporter
+│   ├── mdt/                      # Move table (Tactical Arts) parser
+│   ├── mes/                      # MES dialog container parser
+│   ├── anm/                      # ANM animation container parser
+│   ├── extract/                  # Top-level pipeline driver
+│   ├── engine-core/              # VFS, asset cache, frame timing
+│   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation
+│   ├── engine-audio/             # cpal-backed audio mixer
+│   ├── engine-vm/                # Clean-room actor + field VMs
+│   └── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, PROT browser
+├── docs/                         # Topic-first technical reference (see "Documentation")
+├── ghidra/
+│   ├── projects/                 # Ghidra project DB (gitignored)
+│   └── scripts/                  # Jython analysis scripts + per-function dumps
+├── scripts/                      # Host-side helpers (function-coverage, overlay capture)
+├── site/                         # Project landing site (mirrors docs/)
+└── extracted/                    # Build outputs (gitignored)
+```
+
+## Acknowledgments
+
+- [**The Cutting Room Floor**](https://tcrf.net/Legend_of_Legaia) — developer attribution (Prokion / Contrail), debug-flag addresses, the catalog of 14 known builds.
+- [Sam Ste's PROT.DAT unpacker](https://github.com/SamSteProjects/LegendOfLegaia_.Dat_unpacker) — early Python proof-of-concept that pointed at the right TOC slots and the TIM-pack heuristic.
+- The PSX scene generally — Sony PsyQ docs, Martin Korth's [PSX-SPX](https://problemkaputt.de/psx-spx.htm), and decades of accumulated TIM/TMD/SPU documentation.
+- Reference projects whose legal pattern this repo follows: ScummVM, OpenRCT2, OpenMW, OpenLara.
+
+This project does not redistribute Sony's IP. You bring your own disc image. Tooling co-authored with AI agents under human direction.

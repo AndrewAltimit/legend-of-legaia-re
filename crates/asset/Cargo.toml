@@ -1,0 +1,23 @@
+[package]
+name = "legaia-asset"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_asset"
+path = "src/lib.rs"
+
+[[bin]]
+name = "asset"
+path = "src/bin/asset.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+legaia-lzs = { path = "../lzs" }
+legaia-prot = { path = "../prot" }
+legaia-tim = { path = "../tim" }
+legaia-tmd = { path = "../tmd" }

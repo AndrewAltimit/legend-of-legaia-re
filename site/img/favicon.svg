@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="3" fill="#0d1117"/>
+  <!-- Disc body: outer ring, inner ring, spindle hole -->
+  <circle cx="16" cy="16" r="10.5" fill="none" stroke="#58c4b3" stroke-width="1.4"/>
+  <circle cx="16" cy="16" r="6"   fill="none" stroke="#58c4b3" stroke-width="0.9" opacity="0.55"/>
+  <circle cx="16" cy="16" r="1.6" fill="#0d1117" stroke="#58c4b3" stroke-width="0.8"/>
+  <!-- Horizontal scanline -->
+  <line x1="2" y1="16" x2="30" y2="16" stroke="#58c4b3" stroke-width="0.7" opacity="0.45"/>
+</svg>

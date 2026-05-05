@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick start — legend-of-legaia-re</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> · quick start</div>
+  <h1>Quick start</h1>
+  <p class="lede">Build the workspace, run the extraction pipeline, browse the assets, and bring up Ghidra in Docker. Follow these in order — each step depends on the one before it.</p>
+</header>
+
+<section class="doc-section" id="build">
+  <h2>1 · Build the workspace</h2>
+  <p>The repo is a Cargo workspace with edition 2024. One library + binary per crate.</p>
+<pre><code>git clone https://github.com/AndrewAltimit/legend-of-legaia-re
+cd legend-of-legaia-re
+cargo build --release
+cargo test --workspace --release</code></pre>
+  <p class="hint">Tests gated on a real disc image will skip when <code>LEGAIA_DISC_BIN</code> is unset. CI runs the same way.</p>
+</section>
+
+<section class="doc-section" id="extract">
+  <h2>2 · Extract assets from a disc image</h2>
+  <p>This repo ships zero Sony bytes. You need a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (the NA SCUS-94254 build). Anything else (PAL, JP, Demo) won't match the embedded SHA-256 fingerprints.</p>
+<pre><code>./target/release/legaia-extract \
+    "/path/to/Legend of Legaia (USA).bin" \
+    --out extracted</code></pre>
+  <p>This runs the full pipeline: verify → ISO walk → PROT.DAT → categorize → streaming-format extract → TIM → PNG.</p>
+  <p class="hint"><code>--skip-png</code> and <code>--skip-verify</code> available if you want to iterate faster on the in-RAM dispatch logic without re-rendering thousands of textures.</p>
+</section>
+
+<section class="doc-section" id="browse">
+  <h2>3 · Browse the extracted assets</h2>
+  <p>The <code>asset-viewer</code> binary is a winit + wgpu app with five modes. <a href="viewer.html">A WASM build of the viewer also runs in this browser</a>.</p>
+<pre><code>./target/release/asset-viewer prot extracted/PROT.DAT
+./target/release/asset-viewer tmd extracted/.../foo.tmd
+./target/release/asset-viewer tim extracted/.../bar.tim
+./target/release/asset-viewer stage extracted/.../stage_geom_0123
+./target/release/asset-viewer vab extracted/.../bank.vab</code></pre>
+  <p>Inside the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry; <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10; <kbd>Esc</kbd> = quit. Auto-detects format and shows the first viewable sub-asset.</p>
+</section>
+
+<section class="doc-section" id="ghidra">
+  <h2>4 · Stand up Ghidra in Docker</h2>
+  <p>All static analysis runs through the <code>blacktop/ghidra</code> container. The compose file mounts the extracted disc as read-only data and the project + scripts directories as read-write so dumps land back on the host.</p>
+<pre><code>docker compose up -d ghidra
+
+# import SCUS_942.54 (one-time)
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -import /data/SCUS_942.54
+
+# run an analysis script
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 \
+    -postScript dump_funcs.py -noanalysis -scriptPath /scripts</code></pre>
+  <p class="hint">The container runs as root; chown your output back to your user after each script: <code>chown -R $(id -u):$(id -g) ghidra/scripts/funcs/</code>.</p>
+  <p>For runtime overlay capture (RAM at <code>0x801C0000+</code> while the game runs), see the <a href="tooling/index.html">overlay capture pipeline</a>.</p>
+</section>
+
+<section class="doc-section" id="next">
+  <h2>What to read next</h2>
+  <ul class="next-list">
+    <li><a href="architecture.html">How the layers stack</a> — the conceptual map of the project.</li>
+    <li><a href="subsystems/index.html">Subsystems</a> — pick a subsystem and dive into how it works.</li>
+    <li><a href="formats/index.html">Formats</a> — byte-level specs for everything on the disc.</li>
+    <li><a href="reference/functions.html">Key functions</a> — Ghidra-traced anchor functions across the codebase.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+<script src="js/layout.js"></script>
+<script>injectLayout({ active: 'quickstart' });</script>
+<script src="js/main.js"></script>
+</body>
+</html>

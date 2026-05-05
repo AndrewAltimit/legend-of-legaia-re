@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asset loader — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; asset loader</div>
+  <h1>Asset loader</h1>
+  <p class="lede">How the runtime stitches per-scene assets together. Battle, field, sound, BGM &mdash; each scene type has its own loader, but they all share one idiom: a dev branch that loads by PROT index, and a retail branch that resolves dev-style paths through the CDNAME name map into the same indices.</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>At runtime, "load this scene" doesn't mean "load one file". A single battle scene needs character meshes, monster meshes, the active CLUTs (palettes), the per-monster sound bank, the visual-effect script archive, plus all the text the battle dialog box might print. They're scattered across dozens of PROT entries.</p>
+
+  <p>Each scene type has its own loader function whose job is to go fetch all that. They all share the same shape:</p>
+  <ul class="bullets">
+    <li>The loader is a small state machine with one numbered case per asset slot.</li>
+    <li>Each case calls the asset-type dispatcher <code>FUN_8001F05C</code> with the bytes for one entry.</li>
+    <li>Some cases also kick off async CD reads to stage things into memory while the rest of the scene is initialising.</li>
+  </ul>
+
+  <p>There's a <strong>dev/retail</strong> split that runs through nearly every loader. Dev builds load by PROT index directly &mdash; the index numbers are baked in. Retail builds resolve dev-style paths (<code>h:\PROT\FIELD\&lt;scene&gt;\name</code>) through <code>FUN_8003E6BC</code>, which uses the <a href="../formats/index.html">CDNAME.TXT</a> name map to find the corresponding PROT index. Both branches end up at the same files; only the lookup mechanism differs. That's why we don't see a literal "scene N uses PROT entries [a, b, c]" table anywhere in the executable &mdash; the table is the CDNAME block layout itself.</p>
+
+  <p>The <strong>asset descriptor walker</strong> (<code>FUN_80020224</code>) is the loop that walks a per-scene asset descriptor and calls the dispatcher per descriptor. It has zero static callers in <code>SCUS_942.54</code>, which would suggest "dead code" &mdash; except its sole runtime caller is the town overlay's MAIN_INIT, at the start of every field session. So it <em>is</em> exercised by retail gameplay; the call just lives in RAM.</p>
+</section>
+
+<section class="doc-section" id="battle-loader">
+  <h2>Battle bundle</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_800520F0</code></dd>
+    <dt>Shape</dt><dd>11-case state machine</dd>
+  </dl>
+
+  <p>Notable cases:</p>
+  <table>
+    <thead><tr><th>Case</th><th>Loads</th></tr></thead>
+    <tbody>
+      <tr><td>6</td><td>The <code>befect_data</code> bundle (PROT 0x369&ndash;0x36B)</td></tr>
+      <tr><td>0xE</td><td>Initialises the runtime <a href="effect-vm.html">effect 2-pack wrapper</a> via <code>FUN_801DE914</code></td></tr>
+      <tr><td>0xFF</td><td>Dispatches <code>0x801F17F8</code>, the side-band streaming-effect handler that streams <code>summon.dat</code> and <code>readef.dat</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>Two cases call <code>FUN_8003E104(monster_idx, slot, dst_buf)</code> to populate slots 7 and 8 with the active battle's monster sound banks &mdash; the per-monster body of <code>h:\mpack\monster.snd</code>. Each monster has a <code>(start_lba, end_lba+1)</code> entry pair in the TOC at <code>0x801C8980 - 0x10</code>. See <a href="audio.html">Audio</a> &rarr; "Monster sound bank" for the full loader contract.</p>
+
+  <p class="hint">The asset-viewer's <code>--bundle battle</code> mode mirrors this loader's PROT 865&ndash;890 set so character meshes have the right CLUT bindings.</p>
+</section>
+
+<section class="doc-section" id="field-loader">
+  <h2>Field / town scene loader</h2>
+  <dl class="kv">
+    <dt>Functions</dt><dd><code>FUN_8001F7C0</code> + <code>FUN_800255B8</code></dd>
+    <dt>Path roots</dt><dd><code>DATA\FIELD\</code> and <code>h:\PROT\FIELD\&lt;scene&gt;\</code></dd>
+  </dl>
+
+  <p>Each scene reserves <strong>six file types</strong> in CDNAME's per-scene block, and the loader walks the scene asset table at the leading PROT entry to pull each file in turn. The on-disc form is the canonical 7-typed-asset bundle (<code>07 00 00 00</code> lead).</p>
+
+  <p>The descriptor offsets past the first are <strong>not file-relative</strong> &mdash; they index into the loader's runtime decompression buffer. For example, <code>0031_izumi.BIN</code> is 96&nbsp;KB but <code>desc[2].data_offset = 141&nbsp;KB</code> lands inside the <em>decompressed</em> working buffer, not the source file.</p>
+
+  <p>Per-scene reference resolution is partial &mdash; many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain shape is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher", but the precise indexing scheme is still under investigation for non-battle scenes.</p>
+</section>
+
+<section class="doc-section" id="descriptor-walker">
+  <h2>Asset descriptor walker</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_80020224</code></dd>
+    <dt>Sole runtime caller</dt><dd>Town overlay's <code>FUN_801D6704</code> (MAIN_INIT) at <code>0x801D6B0C</code> with <code>a0 = 0</code></dd>
+    <dt>Result stored at</dt><dd><code>0x80087AF8</code></dd>
+  </dl>
+  <p>Walks the asset descriptor format and calls the asset-type dispatcher per descriptor. So the walker IS exercised by retail gameplay, just not from a static call site inside <code>SCUS_942.54</code>.</p>
+</section>
+
+<section class="doc-section" id="clut-scattering">
+  <h2>CLUT-data scattering</h2>
+  <p>Many character meshes reference CLUT (palette) rows that live in <strong>different PROT entries</strong> from their TMD source. The runtime asset chain stitches them together &mdash; the loader puts the relevant TIMs into VRAM before the TMD is rendered.</p>
+  <p>The asset-viewer's <code>--vram-extra-dir</code> flag is the workaround until the chain is fully traced for every scene type. Battle is fully traced; field, town, and level-up still rely on the workaround.</p>
+</section>
+
+<section class="doc-section" id="bgm-lookup">
+  <h2>Music / SFX selection (BGM lookup)</h2>
+  <p>Documented in detail under the <a href="script-vm.html">field VM</a> &rarr; "BGM lookup table" section. The short version: the BGM ID is a <strong>PROT-relative offset</strong>, not a literal table lookup.</p>
+  <pre><code>// FUN_800243F0
+if (bgm_id < 2000) {
+    prot_idx = scene_local_base + 6 + bgm_id;     // _DAT_80084540 + 6 + bgm_id
+} else {
+    prot_idx = global_pool_base + (bgm_id - 2000); // _DAT_8007BC64 + bgm_id - 2000
+}</code></pre>
+  <p>The "BGM table" <em>is</em> the <a href="../formats/index.html">CDNAME.TXT</a> per-scene block layout. There's no separate BGM index in <code>SCUS_942.54</code>.</p>
+</section>
+
+<section class="doc-section" id="sound-loaders">
+  <h2>Sound bank loader and streaming-asset loader</h2>
+  <table>
+    <thead><tr><th>Function</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>FUN_8001FA88</code></td>
+        <td>Sound subsystem init / <code>.dpk</code> loader. Loads <code>bse.dat</code> master bank once at boot, then per-scene <code>.dpk</code> files via the path-based opener with <code>h:\main\bg\domepack\&lt;name&gt;.dpk</code>. Dev builds bypass the path-builder and load PROT index <code>0x37A</code> (<code>sound_data2</code>) plus <code>param_1 + 5</code> directly.</td>
+      </tr>
+      <tr>
+        <td><code>FUN_8001FC00</code></td>
+        <td>Streaming-asset loader. Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer. Same dev/retail split as the field loader.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Full breakdown in <a href="audio.html">Audio</a>.</p>
+</section>
+
+<section class="doc-section" id="extraction-pipeline">
+  <h2>Top-level extraction pipeline</h2>
+  <p><code>legaia-extract</code> (the binary in <code>crates/extract</code>) drives the offline preservation pipeline:</p>
+  <pre><code>verify &rarr; disc &rarr; PROT &rarr; categorize &rarr; streaming-format extract &rarr; TIM &rarr; PNG</code></pre>
+  <p>See the <a href="../tooling/index.html">extraction tooling page</a> for per-stage CLI invocations.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'subsystems/asset-loader' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

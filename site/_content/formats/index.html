@@ -1,0 +1,138 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> · formats</div>
+  <h1>Formats</h1>
+  <p class="lede">Byte-level specs for everything on the disc, each with provenance back to a Ghidra-traced function dump. The full reference for each format is on GitHub; the cards below are quick orientation.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Disc + container layer</h2>
+  <p>What the disc image looks like before any in-game format gets involved.</p>
+  <div class="card-grid">
+    <a class="card" id="disc" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/disc.md" target="_blank" rel="noopener">
+      <div class="card-title">PSX disc geometry</div>
+      <div class="card-body">Mode2/2352 sectors, 24-byte ECC overhead, ISO9660 path resolution. The <code>iso</code> crate's <code>RawDisc::read_sector</code> hides the sector layer and returns clean 2048-byte user data.</div>
+    </a>
+    <a class="card" id="prot" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/prot.md" target="_blank" rel="noopener">
+      <div class="card-title">PROT.DAT TOC</div>
+      <div class="card-body">The project archive. 1234 entries indexed by a 16-byte TOC. <code>start_lba = toc[p+2]</code>, <code>size = toc[p+5] - toc[p+3] + 4</code>. Walked at boot by <code>FUN_8003E4E8</code>.</div>
+    </a>
+    <a class="card" id="cdname" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/cdname.md" target="_blank" rel="noopener">
+      <div class="card-title">CDNAME.TXT name map</div>
+      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. Some labels are misleading (vab_01, move_program_no) — verify against the loader-call constant or magic bytes.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Compression + dispatch</h2>
+  <div class="card-grid">
+    <a class="card" id="lzs" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/lzs.md" target="_blank" rel="noopener">
+      <div class="card-title">Legaia LZS</div>
+      <div class="card-body">Custom LZSS decoder reverse-engineered from <code>FUN_8001A55C</code>. 4096-byte ring buffer, zero-init. "Decompresses without error" is not a validity signal — always magic-check the decoded output.</div>
+    </a>
+    <a class="card" id="asset-type" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/asset-type.md" target="_blank" rel="noopener">
+      <div class="card-title">Asset type dispatcher</div>
+      <div class="card-body"><code>FUN_8001F05C</code> dispatches by 8-bit type byte: 0=TIM, 2=TMD, 4=MES, 6=ANM, 7=VDF, 8=SIN, 9=TMD2, B=MOVE2. LZS-vs-raw decided per asset.</div>
+    </a>
+    <a class="card" id="pack" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/pack.md" target="_blank" rel="noopener">
+      <div class="card-title">Pack format</div>
+      <div class="card-body">Used inside DATA_FIELD streaming chunks. Header <code>u32 count</code> + <code>u32 word_offsets[count]</code>.</div>
+    </a>
+    <a class="card" id="tim-pack" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/tim-pack.md" target="_blank" rel="noopener">
+      <div class="card-title">Standalone TIM-pack</div>
+      <div class="card-body">Used by some standalone PROT entries. Header <code>(magic_lo, magic_hi, count&lt;16, marker=0x01)</code> + offsets; <code>byte_offset = word_index*4 + 4</code>.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Per-asset formats</h2>
+  <div class="card-grid">
+    <a class="card" id="tim" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/tim.md" target="_blank" rel="noopener">
+      <div class="card-title">PSX TIM</div>
+      <div class="card-body">Standard PlayStation texture format. 4 / 8 / 15 bpp; CLUTs scatter across PROT entries. <code>crates/tim</code> exports to PNG.</div>
+    </a>
+    <a class="card" id="tmd" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/tmd.md" target="_blank" rel="noopener">
+      <div class="card-title">Legaia TMD</div>
+      <div class="card-body">Custom PSX TMD variant — magic <code>0x80000002</code>. Object pointers are byte offsets relative to header end. Primitives use a custom 8-byte group header + per-mode descriptor table at <code>DAT_8007326C</code>.</div>
+    </a>
+    <a class="card" id="vab" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/vab.md" target="_blank" rel="noopener">
+      <div class="card-title">VAB sound bank</div>
+      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live in battle_data / level_up — vab_01 is misleading.</div>
+    </a>
+    <a class="card" id="mes" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mes.md" target="_blank" rel="noopener">
+      <div class="card-title">MES dialog</div>
+      <div class="card-body">Two variants: Compact (<code>0x404</code> magic) and Records (<code>0x44 0x78</code>). Bytecode tokens (Glyph / Op65 / Op4c / Op26 / End). Renderer is overlay-resident.</div>
+    </a>
+    <a class="card" id="dialog-font" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dialog-font.md" target="_blank" rel="noopener">
+      <div class="card-title">Dialog font</div>
+      <div class="card-body">Proportional Latin font (<code>FUN_80036888</code>). 256-byte width table at <code>0x80073F1C</code>; 38-entry escape table at <code>0x80074050</code>; glyph bitmaps in VRAM at <code>(896, 0)</code>, 4bpp, 16x16 cells (drawn 14x15).</div>
+    </a>
+    <a class="card" id="anm" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/anm.md" target="_blank" rel="noopener">
+      <div class="card-title">ANM animation</div>
+      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Per-record bytecode is overlay-resident.</div>
+    </a>
+    <a class="card" id="mdt" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mdt.md" target="_blank" rel="noopener">
+      <div class="card-title">MDT — move tables</div>
+      <div class="card-body">Tactical Arts move records. Both possible layouts parse cleanly; the consumer (<code>FUN_800204F8</code>) is reversed but file/CDNAME mapping is open.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Streaming + scene containers</h2>
+  <div class="card-grid">
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/data-field.md" target="_blank" rel="noopener">
+      <div class="card-title">DATA_FIELD streaming</div>
+      <div class="card-body">Chunked container parsed by <code>crates/asset::parse_streaming</code>. Real per-field structure past the wrapper is still partly opaque.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/scene-bundles.md" target="_blank" rel="noopener">
+      <div class="card-title">Scene bundles</div>
+      <div class="card-body"><code>scene_tmd_stream</code> and <code>scene_vab_stream</code> per-scene asset prefixes; covers ~30% of PROT entries.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/effect.md" target="_blank" rel="noopener">
+      <div class="card-title">Effect bundles</div>
+      <div class="card-body">Magic <code>0x02018B0C</code> (efect.dat). 2-pack wrapper: 14 sprite-anim entries + 33 effect scripts indexed by effect ID.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-pack.md" target="_blank" rel="noopener">
+      <div class="card-title">Field-pack format</div>
+      <div class="card-body">Magic <code>0x01059B84</code>. 124 PROT entries share a 97-entry schema preceding packed TIMs/TMDs.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Runtime overlay carriers</h2>
+  <div class="card-grid">
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mips-overlay.md" target="_blank" rel="noopener">
+      <div class="card-title">MIPS overlay code</div>
+      <div class="card-body">Some PROT entries carry MIPS code that loads into the overlay window at <code>0x801C0000+</code>. The detector finds them by SP-prologue density.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/overlay-ptr-table.md" target="_blank" rel="noopener">
+      <div class="card-title">Overlay pointer-table code</div>
+      <div class="card-body">Sister format to MIPS overlay. Header is a pointer table; the rest is overlay code referenced by those pointers. 42 PROT entries.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section">
+  <h2>Audio path-strings + placeholders</h2>
+  <div class="card-grid">
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/sound-driver.md" target="_blank" rel="noopener">
+      <div class="card-title">Sound-driver path strings</div>
+      <div class="card-body">3 SCUS consumers: sound init / streaming-asset loader / mode-aware ext dispatcher. 8 extensions: .MAP, .PCH, .spk, .dpk, etc.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/pochi.md" target="_blank" rel="noopener">
+      <div class="card-title">Pochi-filler placeholder slots</div>
+      <div class="card-body">265 PROT entries are dev-fill placeholders ("pochipochi..." byte pattern). Reserved-but-unused scene asset slots.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dmy.md" target="_blank" rel="noopener">
+      <div class="card-title">DMY.DAT</div>
+      <div class="card-body">Memory-bus test pattern + paired random blobs. Dev fixtures, not real game data.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/asset-descriptor.md" target="_blank" rel="noopener">
+      <div class="card-title">Asset descriptor format</div>
+      <div class="card-body">The (type_byte &lt;&lt; 24) | size calling convention used by <code>FUN_8001F05C</code> and the descriptor-pair walker.</div>
+    </a>
+  </div>
+</section>

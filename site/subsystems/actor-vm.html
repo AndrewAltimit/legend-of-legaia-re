@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Actor / sprite VM — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
+  <h1>Actor / sprite VM</h1>
+  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. The simplest of Legaia's three VMs &mdash; 13 opcodes, byte-stream operands, no cross-context targeting. <span class="status-done">Fully ported.</span></p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>If you've ever written a sprite-walk script for an old arcade game, this is exactly that. There's an array of "actors" (a sprite is an actor here), each one carries a small amount of per-instance state and a cursor into a bytecode buffer. Every frame, the VM reads the next byte at each actor's cursor and runs the corresponding handler. The handler might move the sprite, trigger an animation, set a flag, or wait for N frames. After the handler runs, the cursor advances and we're done with this actor for this frame.</p>
+
+  <p>The whole VM has 13 opcodes &mdash; the minimum you need for a sprite-animation system: spawn / despawn, position writes, motion, animation triggers, flag set / clear / test, wait, and a terminator. Operands are simple: typically zero or one byte after the opcode. There is no "switch context to a different actor" or "call this other script as a subroutine"; an actor's bytecode runs against itself only.</p>
+
+  <p>Because everything is fixed-width and self-contained, the actor VM was the first VM ported in the clean-room engine, and it's used as the reference implementation pattern (a <code>Host</code> trait abstracts the platform-side hooks; the dispatcher is a plain match statement over opcode bytes).</p>
+</section>
+
+<section class="doc-section" id="placement">
+  <h2>Where it lives</h2>
+  <dl class="kv">
+    <dt>Driver</dt><dd><code>FUN_801D6628</code></dd>
+    <dt>Dispatch table</dt><dd><code>0x801CED70</code> (13 entries)</dd>
+    <dt>Lives in</dt><dd>Title-screen overlay (PROT entry <code>0971</code>)</dd>
+    <dt>Operand format</dt><dd>Byte stream (1 byte opcode + zero-or-more operand bytes per instruction)</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="opcodes">
+  <h2>Opcodes</h2>
+  <p>The 13 opcodes cover the basics every sprite-animation system needs:</p>
+  <ul class="bullets">
+    <li>Spawn / despawn actors.</li>
+    <li>Set / clear a per-actor flag bit (mirrors the lower script-VM banks).</li>
+    <li>Position writes (immediate and packed).</li>
+    <li>Motion: linear interpolation between two endpoints.</li>
+    <li>Trigger an animation (an ANM container indexed by id).</li>
+    <li>Wait / yield.</li>
+    <li>Conditional skip on a flag.</li>
+    <li>Terminator.</li>
+  </ul>
+  <p>Full opcode table and Rust port: <code>crates/engine-vm/src/lib.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="separate-from-field">
+  <h2>Why it's separate from the field VM</h2>
+  <p>The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The <a href="script-vm.html">field VM</a> (<code>FUN_801DE840</code>) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine &mdash; actors at the rendering primitive level, scripts at the gameplay-event level &mdash; and were almost certainly written by different people on the dev team.</p>
+</section>
+
+<section class="doc-section" id="anm-connection">
+  <h2>Connection to ANM</h2>
+  <p>The "trigger animation" opcode hands off an <a href="../formats/index.html">ANM container</a> ID to the animation runner. The container's record body (the per-record bytecode) is overlay-resident &mdash; likely in the same overlay as the actor VM &mdash; so <code>crates/anm</code> parses the container shape but the per-record interpreter still has to be reversed.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'subsystems/actor-vm' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

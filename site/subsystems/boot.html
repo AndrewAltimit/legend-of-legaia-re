@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boot path — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; boot path</div>
+  <h1>Boot path</h1>
+  <p class="lede">What the game does between disc-spin and title screen. Three jobs, in order: read the PROT.DAT directory into RAM, wire up the asset-type dispatcher, and hand control to the title-screen overlay.</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>Almost every PSX game has a built-in archive that bundles the small files together so the disc can stream them efficiently. Legaia's archive is <code>PROT.DAT</code>, and it has its own table of contents (TOC) &mdash; a list saying "entry N starts at sector S and is L bytes long". Before the game can do <em>anything</em>, it has to read that table into RAM. That's job one.</p>
+
+  <p>Job two is wiring up a small <em>asset-type dispatcher</em>. The PROT entries don't all hold the same kind of data &mdash; some are textures, some are 3D meshes, some are dialog blobs, some are animation containers. Each entry's first byte is a type tag, and there's a single function that reads that tag and routes the bytes to the right per-format parser. Once the dispatcher's helper tables are populated, every later "load this entry" call works.</p>
+
+  <p>Job three: the boot code reaches a top-level <strong>game-mode state machine</strong>. This is a 28-entry table where each slot is a function pointer for one major mode of the game &mdash; boot, title, field, battle, world map, menu, cutscene, etc. The mode pointer changes whenever the game transitions; the per-frame loop just calls "whatever the current mode's handler says". The title-screen overlay is loaded next, and the actor VM inside it starts ticking the splash animation.</p>
+
+  <p>One important quirk: the script that drives every running script &mdash; the <em>field VM</em> &mdash; is <strong>not</strong> in the main executable. It lives in a RAM overlay loaded from the disc when you enter a town or field map. That's why the boot path here is so short: most of the gameplay code isn't in <code>SCUS_942.54</code> at all.</p>
+</section>
+
+<section class="doc-section" id="toc-loader">
+  <h2>TOC loader</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_8003E4E8</code></dd>
+    <dt>Reads</dt><dd>First three sectors of <code>PROT.DAT</code> (= 6&nbsp;KB)</dd>
+    <dt>Lands at</dt><dd><code>0x801C70F0</code> in RAM</dd>
+    <dt>Called from</dt><dd><code>FUN_8003EFE8</code> and <code>FUN_8003F08C</code> at boot</dd>
+  </dl>
+
+  <p>The on-disc TOC and the in-RAM TOC have <strong>different strides</strong> &mdash; the on-disc-to-in-RAM transformation runs once at boot, but its function hasn't been reversed yet. See the <a href="../formats/index.html">PROT.DAT format spec</a> for the byte layout.</p>
+
+  <p>After the TOC is in RAM, two resolvers are usable:</p>
+  <table>
+    <thead><tr><th>Resolver</th><th>Mode</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_8003E8A8</code></td><td>Index-based (PROT entry number in)</td><td>Streaming loader, dev-build sound branch</td></tr>
+      <tr><td><code>FUN_8003E6BC</code></td><td>Path-based (resolves <code>data\battle\efect.dat</code>, <code>h:\PROT\FIELD\&lt;scene&gt;\&hellip;</code>)</td><td>Most retail-build code paths</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">The path-based opener runs the dev-style filename through the <a href="../formats/index.html">CDNAME.TXT name map</a> to find the index, then delegates to the index-based resolver. It's a thin layer.</p>
+</section>
+
+<section class="doc-section" id="asset-dispatcher">
+  <h2>Asset-type dispatcher</h2>
+  <dl class="kv">
+    <dt>Function</dt><dd><code>FUN_8001F05C</code></dd>
+    <dt>Calling convention</dt><dd><code>result = FUN_8001F05C(byte *src_data, u32 type_and_size, int param3, int copy_only)</code></dd>
+    <dt>Encoding</dt><dd><code>type_and_size</code> packs the type byte in the high 8 bits, size in the low 24 bits</dd>
+  </dl>
+
+  <p>Every TIM, TMD, MES, ANM, etc. is reached through this one function. The boot path doesn't call it itself &mdash; it just makes sure the buffer pointers it writes to are valid. <code>FUN_80020224</code> (the asset descriptor walker) is one of the dispatcher's two static call sites and is invoked from the town overlay's <code>FUN_801D6704</code> (MAIN_INIT) at runtime. See <a href="asset-loader.html">Asset loader</a> for the full story.</p>
+</section>
+
+<section class="doc-section" id="game-mode">
+  <h2>Game-mode state machine</h2>
+  <p>The 28-mode state machine table at <code>0x8007078C</code> is the top-level "what is the game doing" dispatcher. Each entry is a <code>(handler_addr, &hellip;)</code> tuple corresponding to a major mode &mdash; boot, title, field, battle, world map, menu, cutscene, and so on.</p>
+
+  <p>The script VM that drives every running script is <strong>not</strong> in <code>SCUS_942.54</code>. It lives in RAM overlays at <code>0x801C0000+</code>, loaded on demand:</p>
+
+  <table>
+    <thead><tr><th>VM</th><th>Driver</th><th>Lives in</th></tr></thead>
+    <tbody>
+      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay</td></tr>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town / field overlay</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM cluster</a></td><td><code>FUN_801DE914</code> / <code>801DFDF8</code> / <code>801E0088</code></td><td>Battle overlay</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="debug-flags">
+  <h2>Debug flags</h2>
+  <p>Two RAM bytes that several subsystems branch on at boot time and beyond:</p>
+  <table>
+    <thead><tr><th>Address</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>_DAT_8007B8C2</code></td><td>Dev/retail build toggle. Sound init, the field loader, and the monster-bank loader all carry an "if dev" branch keyed on this byte.</td></tr>
+      <tr><td><code>_DAT_8007B98F</code></td><td>Separate debug-mode flag (NA build offset; JP retail uses <code>0x07D51F</code>, an <code>0x1B90</code> build-shift).</td></tr>
+    </tbody>
+  </table>
+  <p>Neither flag has a writer in <code>SCUS_942.54</code>. The input dispatcher <code>FUN_8001822C</code> reads them but doesn't write them. The writers must live in an unswept overlay (most likely the option-menu / cheat-menu cluster), and TCRF GameShark codes confirm both flags are runtime-writable.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'subsystems/boot' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

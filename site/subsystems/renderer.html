@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Renderer — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; renderer</div>
+  <h1>Renderer (Legaia TMD)</h1>
+  <p class="lede">Legaia uses a custom variant of the PSX TMD format for its 3D meshes, and a custom renderer to draw it. The renderer is <code>FUN_8002735C</code> &mdash; 60 GTE ops, with a per-mode descriptor table that encodes how each primitive group is laid out. The engine port emulates PSX VRAM in a compute-friendly format so multi-page meshes render correctly.</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p>The PSX has dedicated 3D hardware called the GTE (Geometry Transformation Engine), which transforms vertices, and a dedicated 2D framebuffer with its own 1&nbsp;MB of VRAM. The way games typically draw a 3D model: walk the mesh primitive-by-primitive, push each one through the GTE for projection, then drop the resulting 2D primitive (as a "GP0" packet) into an ordering table (OT) that the GPU reads and rasterises. Textures and palettes (CLUTs) live as rectangular regions inside VRAM, addressed by their top-left corner.</p>
+
+  <p>Legaia's TMDs are <em>almost</em> the standard format Sony documented, but with a custom primitive-group header layout and a custom renderer. Each primitive group has an 8-byte header <code>[u16 count, u16 flags, u8 olen, u8 ilen, u8 flag, u8 mode]</code> followed by <code>count &times; ilen*4</code> bytes of per-prim data. The vertex-index byte offset within each prim isn't a fixed field &mdash; it's looked up from a 6-entry descriptor table indexed by <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code>. The descriptor table also encodes which OT-packet shape the renderer emits.</p>
+
+  <p>The clean-room engine port emulates PSX VRAM as a 1024&times;512 R16Uint texture. The fragment shader reads the texture coordinates and CLUT base from the per-primitive bind, decodes 4/8/15bpp, indexes the CLUT, and outputs the final colour. That gives the same per-prim mode-switching the PSX hardware does, but in a single GPU draw call.</p>
+</section>
+
+<section class="doc-section" id="per-mode-table">
+  <h2>Per-mode descriptor table</h2>
+  <p>The renderer indexes into an 8-byte-stride table at <code>0x8007326C</code> using <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1</code>:</p>
+  <table>
+    <thead><tr><th><code>flags</code></th><th>table idx</th><th>byte 0</th><th>byte 4</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x10/11</code></td><td>0</td><td><code>0x04</code></td><td><code>0x05</code></td></tr>
+      <tr><td><code>0x12/13</code></td><td>1</td><td><code>0x09</code></td><td><code>0x07</code></td></tr>
+      <tr><td><code>0x14/15</code></td><td>2</td><td><code>0x04</code></td><td><code>0x00</code></td></tr>
+      <tr><td><code>0x16/17</code></td><td>3</td><td><code>0x06</code></td><td><code>0x06</code></td></tr>
+      <tr><td><code>0x18/19</code></td><td>4</td><td><code>0x07</code></td><td><code>0x07</code></td></tr>
+      <tr><td><code>0x1A/1B</code></td><td>5</td><td><code>0x09</code></td><td><code>0x0B</code></td></tr>
+      <tr><td><code>0x20-23</code></td><td>4</td><td>(same)</td><td>&nbsp;</td></tr>
+    </tbody>
+  </table>
+  <p>Each entry's first u32 has bytes <code>[?, ?, ?, type_bits]</code> where the low 2 bits of byte 3 select the OT packet shape (<code>0/1/2/3</code> &rarr; different DrawPolyXX variants). Each entry's second u32 has the vertex-index offset (in u16 units) within the prim in its low byte. See <a href="../formats/index.html">formats/tmd</a> for the full layout.</p>
+</section>
+
+<section class="doc-section" id="tmd-pointer-table">
+  <h2>TMD pointer table</h2>
+  <p><code>FUN_80026B4C</code> writes registered TMDs to <code>*(int **)(idx * 4 + 0x8007C018)</code>. Consumers in retail (4 functions, all setup-not-render):</p>
+  <table>
+    <thead><tr><th>Function</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80021B04</code></td><td>Actor-spawn helper, builds per-actor OBJECT pointer table.</td></tr>
+      <tr><td><code>FUN_80024D78</code></td><td>Per-actor OBJECT-table rebuild.</td></tr>
+      <tr><td><code>FUN_8001EBEC</code></td><td>Per-frame OBJECT[10/11] swap (pose select for player TMDs).</td></tr>
+      <tr><td><code>FUN_8001E890</code></td><td>DATA_FIELD player loader; loads <code>data_field_player_lzs</code> chains, registers TMDs.</td></tr>
+    </tbody>
+  </table>
+  <p>The per-actor <code>OBJECT[i]</code> is a 28-byte struct copied into <code>actor[0x44][i+1]</code> from <code>tmd + 12 + i*28</code> &mdash; <code>sizeof(OBJECT) = 28</code>.</p>
+</section>
+
+<section class="doc-section" id="vram-emulation">
+  <h2>VRAM emulation in the engine port</h2>
+  <p><code>crates/engine-render</code> emulates a 1024&times;512 R16Uint VRAM page so the per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can happen in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render correctly.</p>
+
+  <p>CLUT data scatters across PROT entries &mdash; many character meshes reference CLUT rows that live in <em>different</em> PROT entries from their TMD source. The viewer's <code>--vram-extra-dir</code> is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field, town, and level-up still rely on the workaround. See <a href="asset-loader.html">Asset loader &rarr; "CLUT-data scattering"</a>.</p>
+</section>
+
+<section class="doc-section" id="stage-geom">
+  <h2>Stage geometry detector (legacy, signal only)</h2>
+  <p>A "12-byte fixed prefix <code>00 F0 84 7F 01 F0 1F 00 00 F1 00 00</code> repeated at 20-byte stride" detector lives at <code>crates/asset/src/stage_geom.rs</code>. It's <strong>not</strong> real stage geometry &mdash; it's the standard primitive-group header for Legaia TMD primitive group data when <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1 == K</code> (where K is the group type that uses 20-byte stride).</p>
+  <p>The detector is preserved as a signal during exploration ("this buffer contains a TMD with effect-style primitives") but for actual geometry extraction use the TMD parser (<code>crates/tmd::legaia_prims</code>).</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'subsystems/renderer' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

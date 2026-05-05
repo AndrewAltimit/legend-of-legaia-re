@@ -1,0 +1,23 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle action FSM</div>
+  <h1>Battle action state machine</h1>
+  <p class="lede">A two-level finite state machine that drives the per-actor execution of a chosen battle action &mdash; the layer between &ldquo;the player picked Attack&rdquo; and &ldquo;the actor's body has finished swinging the sword and HP has been deducted.&rdquo; Lives in the battle overlay (<code>0898</code>, RAM-resident at <code>0x801C0000+</code>); driver is <code>FUN_801E295C</code> (~16 KB / 4099 instructions, the largest function in the battle overlay).</p>
+</header>
+
+<section class="doc-section" id="how-it-works">
+  <h2>How it works</h2>
+  <p><code>FUN_801E295C</code> runs every frame from the <a href="battle.html">battle main dispatcher</a>. It picks the global battle context (<code>_DAT_8007BD24</code>, a pointer to the live struct at <code>0x800EB654</code>), resolves the active actor via the <a href="battle.html">8-slot actor pointer table at <code>0x801C9370</code></a>, and pumps the action through three nested keys:</p>
+  <ul class="bullets">
+    <li><strong>Action category</strong> &mdash; <code>actor[+0x1DE]</code>: <code>0=Tactical Arts</code>, <code>1=Item</code>, <code>2=Magic</code>, <code>3=Attack</code>, <code>4=Spirit</code>, <code>5=Run/Defend</code>. Read at the action-start case (<code>ctx[7] == 0xC</code>) and used to seed the next state.</li>
+    <li><strong>Execution phase</strong> &mdash; <code>ctx[7]</code>: 47 distinct case values, organised in 7 contiguous bands (Attack <code>0x14&ndash;0x20</code>, Magic/Item <code>0x28&ndash;0x2E</code>, Summon <code>0x32&ndash;0x38</code>, Spirit <code>0x3C&ndash;0x40</code> + <code>0x46&ndash;0x48</code>, Done <code>0x50&ndash;0x52</code>/<code>0x5A</code>, Run/Capture <code>0x64&ndash;0x6B</code>, Magic-capture <code>0x6E&ndash;0x71</code>, terminal <code>0xFD</code>/<code>0xFF</code>).</li>
+    <li><strong>Per-actor sub-state</strong> &mdash; <code>actor[+0x1DC]</code> (flag bits) plus several scratch fields (<code>+0x1DA</code> queued anim, <code>+0x1D9</code> current anim, <code>+0x1DF..+0x1F2</code> action-parameter byte stream).</li>
+  </ul>
+  <p>It is <em>not</em> a bytecode VM. There is no opcode table, no PC stride. Each <code>case ctx[7]</code> body waits on a per-actor condition (animation matched, timer expired, distance check passed) and writes the next <code>ctx[7]</code> value when ready. Actions that need multiple frames do nothing on the frames where their condition isn't met yet.</p>
+
+  <p>Effect spawning is <em>indirect</em>: the state machine doesn't call the <a href="effect-vm.html">effect VM</a> directly &mdash; it calls <code>FUN_801D8DE8(ui_element_id, mode)</code> (the hottest battle helper, ~30 sites), which fans out through the effect cluster. The state machine knows UI element IDs (<code>0x07</code>/<code>0x0F</code>/<code>0x34</code>/<code>0x43</code>/<code>0x4C</code>/<code>0x52</code>/<code>0x66</code>); the effect VM resolves them to actual sprite-anim spawns.</p>
+</section>
+
+<section class="doc-section" id="full-reference">
+  <h2>Full reference</h2>
+  <p>The full per-state table (every <code>ctx[7]</code> case body, what it runs, and which state it transitions to next) lives at <a href="https://github.com/anthropics/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md"><code>docs/subsystems/battle-action.md</code></a> in the repo. That doc cites <code>ghidra/scripts/funcs/overlay_battle_action_801e295c.txt</code> at the line level.</p>
+</section>
