@@ -2055,18 +2055,25 @@ pub fn step<H: FieldHost>(
         //   `host.extra_flags() & (1 << bit)` is clear → skip 5 bytes.
         //   If set → jump to `pc + 3 + LE_u16(lo, hi)` (non-extended).
         //
-        // Mode 1: screen-mode test. `[42, 1, op1, lo, hi]`. The original
-        //   tests `host.screen_mode()` against:
+        // Mode 1: screen-mode test. `[42, 1, op1, lo, hi]`. The original at
+        //   `case 0x42` of FUN_801de840 (line 5176 of the dump) tests
+        //   `host.screen_mode()` against:
         //     - `host.screen_mode_table(op1)` for `op1 < 8` (high-nibble check)
         //     - bit `0x20` for `op1 == 8`
         //     - bit `0x40` for `op1 == 9`
         //     - bit `0x80` for `op1 == 10`
         //     - bit `0x10` for `op1 == 0xB`
-        //     - any other op1 returns the "default" (skip 5 bytes).
+        //     - `op1 >= 0xC`: none of the conditional-skip branches match,
+        //       so control falls through to the unconditional take-jump
+        //       path (`iVar18 = param_2 + 3; LAB_801e35f8`). Treat as
+        //       always-take.
         //   If the test FAILS, skip 5 bytes; if it succeeds, take the jump
         //   `pc + 3 + LE_u16(lo, hi)`.
         //
-        // Other modes return Unknown (the original's default-arm fallthrough).
+        // Mode 2+: the original calls `switchD_801e00f4::default()`. The
+        //   dispatcher's default arm checks `opcode_byte & 0x70`; since
+        //   0x42 & 0x70 = 0x40 (not in {0x50,0x60,0x70}), it returns
+        //   `param_2` — halt at PC.
         0x42 => {
             let Some(&mode) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2090,9 +2097,10 @@ pub fn step<H: FieldHost>(
                     9 => host.screen_mode() & 0x40 != 0,
                     10 => host.screen_mode() & 0x80 != 0,
                     11 => host.screen_mode() & 0x10 != 0,
-                    _ => return StepResult::Pending { opcode, pc },
+                    // op1 >= 0xC: unconditional take-jump path.
+                    _ => true,
                 },
-                _ => return StepResult::Pending { opcode, pc },
+                _ => return StepResult::Halt { final_pc: pc },
             };
             if !test_passed {
                 // Skip the whole 5-byte instruction (header + 4 operand bytes).
@@ -2405,7 +2413,10 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 1,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    // All 16 sub-ops covered above; this arm is dead code
+                    // but the compiler can't prove it because the value is
+                    // narrowed to `op0 & 0x0F` in this match's scrutinee.
+                    16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                 },
                 4 => {
                     // 0x4C outer nibble 4 — immediate-or-ramp cluster.
@@ -2596,7 +2607,10 @@ pub fn step<H: FieldHost>(
                 // (NPC move + run with halt-acquire), sub-2/3/4 (dialog
                 // query cluster) remain `Pending` because they thread
                 // halt-acquire and STATE_RESUME branches that need their
-                // own host-hook surface.
+                // own host-hook surface. Sub-ops 5..=0xF have no `case`
+                // arm in the original inner switch, so they silently
+                // fall through and the function returns `iVar45 = param_2`
+                // (initialised at the top of FUN_801de840) — halt at PC.
                 5 => match op0 & 0x0F {
                     0 => {
                         let Some(&lo) = bytecode.get(operand + 1) else {
@@ -2617,12 +2631,15 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 3,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    1..=4 => StepResult::Pending { opcode, pc },
+                    _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 6 — emitter call families.
                 // Only op0 == 0x60 (6-word emitter) is ported. op0 == 0x61
                 // is a halt-acquire variant whose 16-byte encoding interacts
-                // with cross-context dispatch; remaining values halt at PC.
+                // with cross-context dispatch; remaining values (0x62..=0x6F)
+                // hit `else { return param_2; }` in the original at line
+                // 6330 of the dump — halt at PC.
                 6 => match op0 {
                     0x60 => {
                         if operand + 13 > bytecode.len() {
@@ -2640,7 +2657,8 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 13,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    0x61 => StepResult::Pending { opcode, pc },
+                    _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 7 — VRAM tile-flag bulk operation. 7-byte
                 // instruction. Sub-0/1 yield via STATE_RESUME; sub-2/3
@@ -2758,7 +2776,9 @@ pub fn step<H: FieldHost>(
                 // Outer nibble 9 — fade family + table copy + callback.
                 // Sub-0/1/2 (fade dispatch, 9-byte) and sub-0xE (16-word
                 // table copy, 34-byte) ported. Sub-0xF (callback registration
-                // via LAB_801da930) remains `Pending`. Other sub-ops halt.
+                // via LAB_801da930) remains `Pending`. Sub-3..=0xD have no
+                // `case` arm in the original (line 6694–6696 of the dump
+                // returns `param_2` when `2 < uVar27 < 0xE`) — halt at PC.
                 9 => {
                     let sub = op0 & 0x0F;
                     match sub {
@@ -2795,7 +2815,8 @@ pub fn step<H: FieldHost>(
                                 next_pc: pc + header_size + 33,
                             }
                         }
-                        _ => StepResult::Pending { opcode, pc },
+                        0xF => StepResult::Pending { opcode, pc },
+                        _ => StepResult::Halt { final_pc: pc },
                     }
                 }
                 // Outer nibble 0xA — conditional jump on flag bit. The 5-byte
@@ -3060,7 +3081,14 @@ pub fn step<H: FieldHost>(
                 0xF => StepResult::Advance {
                     next_pc: pc + header_size + 1,
                 },
-                _ => StepResult::Pending { opcode, pc },
+                // Outer nibble 0xB has no `case 0xb` in the original 0x4C
+                // switch (the dump goes case 0xa → default → case 0xc).
+                // The default arm (line 6718) prints SUB_CMD_ERROR and
+                // returns the dispatcher default — halt at PC.
+                0xB => StepResult::Halt { final_pc: pc },
+                // `op0 >> 4` is at most 0xF; outer nibble is fully covered
+                // above, so this arm is dead code.
+                16..=u8::MAX => unreachable!("op0 >> 4 is at most 0xF"),
             }
         }
 
@@ -4003,20 +4031,22 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // 0x50..=0x77 with `route` bit set to 0x40 doesn't exist on
-                // a real opcode byte — `& 0x70` masks bits 4..=6 only, so the
-                // possible values are 0x00, 0x10, 0x20, 0x30, 0x40, 0x50,
-                // 0x60, 0x70. The arm match `0x50..=0x77` rules out anything
-                // < 0x50; only `0x40` is left, which would need opcode bits
-                // 4..=6 = 0b100. That overlaps with explicit opcodes
-                // 0x4x — handled by the explicit cases above. So this is
-                // unreachable in practice; treat as Pending defensively.
-                _ => StepResult::Pending { opcode, pc },
+                // For opcode in 0x50..=0x77, `opcode & 0x70` can only be
+                // 0x50, 0x60, or 0x70 — every value handled above.
+                _ => unreachable!("opcode 0x{:02X} & 0x70 must be 0x50/0x60/0x70", opcode),
             }
         }
 
-        // Everything else: not yet ported.
-        _ => StepResult::Pending { opcode, pc },
+        // Top-level catch-all. The original dispatcher's `default:` arm
+        // (line 4622 of the dump) routes through `*pbVar43 & 0x70`; for any
+        // raw opcode byte whose high nibble is NOT 0x5x/0x6x/0x7x and whose
+        // masked opcode isn't matched explicitly above, the original returns
+        // `param_2` — halt at PC. The masked opcode here is `opcode_byte &
+        // 0x7F`; the field VM has 43 documented opcodes, all of which are
+        // explicitly cased above, so reaching this arm means a malformed or
+        // future-extension byte. Halt rather than panic so we behave like
+        // the original on garbage input.
+        _ => StepResult::Halt { final_pc: pc },
     }
 }
 
@@ -5360,12 +5390,29 @@ mod tests {
     }
 
     #[test]
-    fn cond_jmp_mode_2_returns_pending() {
+    fn cond_jmp_mode_2_halts_at_pc() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // Mode 2 is unknown.
+        // Mode >= 2 hits the dispatcher's default arm, which returns
+        // `param_2` for opcodes whose high nibble isn't 0x5x/0x6x/0x7x.
+        // 0x42 & 0x70 = 0x40 → halt at PC.
         let r = step(&mut host, &mut ctx, &[0x42, 0x02, 0x00, 0x00, 0x00], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x42, .. }));
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    }
+
+    #[test]
+    fn cond_jmp_mode_1_op1_at_least_c_takes_jump() {
+        // Mode 1 op1 >= 0xC: original at line 5176 of the dump falls
+        // through every `if (uVar31 == N) ... return iVar18` branch and
+        // ends up in the unconditional take-jump path with
+        // `iVar18 = param_2 + 3` and `delta = LE_u16(operand[2..4])`.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        // [0x42, 0x01, 0x0C, 0x10, 0x00] → mode 1, op1=0xC, delta=0x0010.
+        // Expected next_pc = 0 + 3 + 0x10 = 19 (header_size=2, +1 for mode,
+        // +0x10 delta — 3 + delta).
+        let r = step(&mut host, &mut ctx, &[0x42, 0x01, 0x0C, 0x10, 0x00], 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 19 });
     }
 
     // -- 0x3E WARP / INTERACT -------------------------------------------
