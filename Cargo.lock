@@ -1172,6 +1172,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-render",
  "legaia-engine-vm",
+ "legaia-font",
  "legaia-prot",
  "legaia-seq",
  "legaia-tim",
@@ -1237,6 +1238,16 @@ dependencies = [
  "legaia-tmd",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "legaia-font"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "png",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
