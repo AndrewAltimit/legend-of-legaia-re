@@ -298,6 +298,59 @@ pub fn record_bytes<'a>(payload: &'a [u8], rec: &RecordRange) -> &'a [u8] {
     &payload[rec.offset..rec.offset + rec.size]
 }
 
+/// Frequency of each byte value in a record's bytecode region (i.e. the
+/// bytes after the 8-byte common header).
+///
+/// The per-record bytecode interpreter is not statically reachable in
+/// `SCUS_942.54` — `FUN_80024CFC` is the public entry point but it just
+/// stows the per-record bytecode pointer in `actor[+0x4C]` and lets a
+/// per-frame actor tick consume it (the actual dispatcher hasn't been
+/// captured yet). Until then, this histogram surfaces the byte
+/// distribution so downstream analysis can spot common opcode bytes
+/// without re-deriving the count loop in every consumer.
+///
+/// Returns a 256-element array where index `b` is the count of byte `b`
+/// across the bytecode region.
+pub fn record_bytecode_histogram(record: &[u8]) -> [u32; 256] {
+    let mut hist = [0u32; 256];
+    if record.len() <= RECORD_HEADER_SIZE {
+        return hist;
+    }
+    for &b in &record[RECORD_HEADER_SIZE..] {
+        hist[b as usize] += 1;
+    }
+    hist
+}
+
+/// Same as [`record_bytecode_histogram`] but walks every record in `pack`,
+/// accumulating into one histogram. Useful for a corpus-wide "what bytes
+/// dominate ANM bytecode?" sweep.
+pub fn pack_bytecode_histogram(payload: &[u8], pack: &AnmPack) -> [u32; 256] {
+    let mut hist = [0u32; 256];
+    for rec in &pack.records {
+        let bytes = record_bytes(payload, rec);
+        if bytes.len() > RECORD_HEADER_SIZE {
+            for &b in &bytes[RECORD_HEADER_SIZE..] {
+                hist[b as usize] += 1;
+            }
+        }
+    }
+    hist
+}
+
+/// The top-K most frequent bytes in a histogram, returned as
+/// `(byte, count)` pairs sorted by descending count. Ties resolved by
+/// ascending byte value.
+pub fn top_k(hist: &[u32; 256], k: usize) -> Vec<(u8, u32)> {
+    let mut pairs: Vec<(u8, u32)> = (0..256u16)
+        .map(|b| (b as u8, hist[b as usize]))
+        .filter(|&(_, c)| c > 0)
+        .collect();
+    pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    pairs.truncate(k);
+    pairs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,6 +446,61 @@ mod tests {
         let h = RecordHeader::from_bytes(&rec).unwrap();
         assert!(h.marker_ok);
         assert!(h.flag_known);
+    }
+
+    #[test]
+    fn record_bytecode_histogram_skips_header() {
+        // 8-byte header followed by 4 bytes of bytecode: 0xAA 0xBB 0xAA 0xCC.
+        let mut rec = vec![0u8; RECORD_HEADER_SIZE];
+        rec.extend_from_slice(&[0xAA, 0xBB, 0xAA, 0xCC]);
+        let h = record_bytecode_histogram(&rec);
+        assert_eq!(h[0xAA_usize], 2);
+        assert_eq!(h[0xBB_usize], 1);
+        assert_eq!(h[0xCC_usize], 1);
+        // Header bytes (zeros) should not have been counted.
+        assert_eq!(h[0], 0);
+    }
+
+    #[test]
+    fn record_bytecode_histogram_empty_record() {
+        let rec = vec![0u8; RECORD_HEADER_SIZE]; // header only
+        let h = record_bytecode_histogram(&rec);
+        assert_eq!(h.iter().sum::<u32>(), 0);
+    }
+
+    #[test]
+    fn pack_bytecode_histogram_aggregates_records() {
+        let mut r0 = vec![0u8; RECORD_HEADER_SIZE];
+        r0.extend_from_slice(&[0xAA, 0xBB]);
+        let mut r1 = vec![0u8; RECORD_HEADER_SIZE];
+        r1.extend_from_slice(&[0xAA, 0xCC]);
+        let buf = synthetic(&[&r0, &r1]);
+        let pack = parse(&buf).unwrap();
+        let h = pack_bytecode_histogram(&buf, &pack);
+        assert_eq!(h[0xAA_usize], 2);
+        assert_eq!(h[0xBB_usize], 1);
+        assert_eq!(h[0xCC_usize], 1);
+    }
+
+    #[test]
+    fn top_k_sorts_by_count_then_byte() {
+        let mut hist = [0u32; 256];
+        hist[0x10] = 5;
+        hist[0x20] = 5;
+        hist[0x30] = 3;
+        let top = top_k(&hist, 3);
+        // Count 5 wins; tie broken by ascending byte value.
+        assert_eq!(top[0], (0x10, 5));
+        assert_eq!(top[1], (0x20, 5));
+        assert_eq!(top[2], (0x30, 3));
+    }
+
+    #[test]
+    fn top_k_skips_zero_counts() {
+        let mut hist = [0u32; 256];
+        hist[0x42] = 1;
+        let top = top_k(&hist, 100);
+        assert_eq!(top, vec![(0x42, 1)]);
     }
 
     #[test]
