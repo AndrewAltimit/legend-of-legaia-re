@@ -8,8 +8,14 @@ license.workspace = true
 name = "legaia_font"
 path = "src/lib.rs"
 
+[[bin]]
+name = "font-extract"
+path = "src/bin/font-extract.rs"
+
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
+flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 png = "0.17"

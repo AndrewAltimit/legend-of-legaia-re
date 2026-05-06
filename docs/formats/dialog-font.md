@@ -157,3 +157,16 @@ The dialog opener that reaches this renderer chain from the [field script VM](..
 | `dialog_font_widths.csv` | Just the width table as CSV |
 
 The extractor reads the SCUS executable for the static tables, and a mednafen save state's `&GPURAM[0][0]` section for the live VRAM bytes. The font region is byte-stable across all captured save states (with cosmetic differences only in cells touched by transient UI elements that share the tile-page).
+
+The committed extractor is `crates/font/src/bin/font-extract.rs`:
+
+```
+cargo run -p legaia-font --bin font-extract -- \
+    --scus extracted/SCUS_942.54 \
+    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mc4" \
+    --out extracted/font
+```
+
+Save-state parsing locates VRAM by searching for the `&GPURAM[0][0]` variable
+header (mednafen uses a `u8 name_len; bytes name; u32 size; bytes data;`
+record format inside each section); no MDFNSVST section walk is required.

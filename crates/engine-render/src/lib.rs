@@ -220,6 +220,10 @@ pub enum RenderTarget<'a> {
     /// Used by the `world` viewer to render every active actor in the
     /// World composite per frame.
     Scene(&'a Scene<'a>),
+    /// 2D text-only frame: clear to background, then draw a single
+    /// [`TextOverlay`]. Used by the dialog viewer / any UI mode that
+    /// has no 3D scene to render.
+    TextOnly(&'a TextOverlay<'a>),
 }
 
 /// Per-actor draw inside a [`Scene`].
@@ -643,9 +647,10 @@ impl Renderer {
             bind_group_layouts: &[&mesh_uniforms_bgl, &vram_bgl],
             push_constant_ranges: &[],
         });
-        // 12 (pos) + 4 (uv as Uint8x4) + 4 (cba/tsb as Uint16x2) = 20 bytes
+        // 12 (pos) + 4 (uv as Uint8x4) + 4 (cba/tsb as Uint16x2) + 12
+        // (normal as Float32x3) = 32 bytes
         let vram_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: 20,
+            array_stride: 32,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -662,6 +667,11 @@ impl Renderer {
                     offset: 16,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Uint16x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 20,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
             ],
         };
@@ -820,7 +830,7 @@ impl Renderer {
                     module: &vram_mesh_shader,
                     entry_point: Some("vs_main"),
                     buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: 20,
+                        array_stride: 32,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &[
                             wgpu::VertexAttribute {
@@ -837,6 +847,11 @@ impl Renderer {
                                 offset: 16,
                                 shader_location: 2,
                                 format: wgpu::VertexFormat::Uint16x2,
+                            },
+                            wgpu::VertexAttribute {
+                                offset: 20,
+                                shader_location: 3,
+                                format: wgpu::VertexFormat::Float32x3,
                             },
                         ],
                     }],
@@ -1231,14 +1246,19 @@ impl Renderer {
         positions: &[[f32; 3]],
         uvs: &[[u8; 2]],
         cba_tsb: &[[u16; 2]],
+        normals: &[[f32; 3]],
         indices: &[u32],
     ) -> Result<UploadedVramMesh> {
-        if positions.len() != uvs.len() || positions.len() != cba_tsb.len() {
+        if positions.len() != uvs.len()
+            || positions.len() != cba_tsb.len()
+            || positions.len() != normals.len()
+        {
             anyhow::bail!(
-                "vram mesh attribute length mismatch: pos={} uvs={} cba_tsb={}",
+                "vram mesh attribute length mismatch: pos={} uvs={} cba_tsb={} normals={}",
                 positions.len(),
                 uvs.len(),
-                cba_tsb.len()
+                cba_tsb.len(),
+                normals.len()
             );
         }
         if !indices.len().is_multiple_of(3) {
@@ -1256,8 +1276,13 @@ impl Renderer {
                 positions.len()
             );
         }
-        let mut bytes = Vec::with_capacity(positions.len() * 20);
-        for ((pos, uv), ct) in positions.iter().zip(uvs.iter()).zip(cba_tsb.iter()) {
+        let mut bytes = Vec::with_capacity(positions.len() * 32);
+        for (((pos, uv), ct), n) in positions
+            .iter()
+            .zip(uvs.iter())
+            .zip(cba_tsb.iter())
+            .zip(normals.iter())
+        {
             bytes.extend_from_slice(bytemuck::cast_slice(pos));
             // UV padded to 4 bytes (Uint8x4 — extra bytes ignored by shader).
             bytes.push(uv[0]);
@@ -1266,6 +1291,7 @@ impl Renderer {
             bytes.push(0);
             bytes.extend_from_slice(&ct[0].to_le_bytes());
             bytes.extend_from_slice(&ct[1].to_le_bytes());
+            bytes.extend_from_slice(bytemuck::cast_slice(n));
         }
         let vertex_buf = self
             .device
@@ -1517,6 +1543,9 @@ impl Renderer {
                     self.stage_text_overlay(text);
                 }
             }
+            RenderTarget::TextOnly(overlay) => {
+                self.stage_text_overlay(overlay);
+            }
             RenderTarget::Clear => {}
         }
 
@@ -1543,6 +1572,7 @@ impl Renderer {
                     | RenderTarget::VramMesh { .. }
                     | RenderTarget::Lines { .. }
                     | RenderTarget::Scene(_)
+                    | RenderTarget::TextOnly(_)
             )
             .then(|| wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_view,
@@ -1639,6 +1669,17 @@ impl Renderer {
                     if let Some(text) = scene.overlay_text
                         && let Some(quads) = text_quad_count(text)
                     {
+                        rp.set_pipeline(&self.text_pipeline);
+                        rp.set_bind_group(0, &text.atlas.bind_group, &[]);
+                        let vbuf_borrow = self.text_vbuf.borrow();
+                        let ibuf_borrow = self.text_ibuf.borrow();
+                        rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
+                        rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
+                        rp.draw_indexed(0..(quads * 6), 0, 0..1);
+                    }
+                }
+                RenderTarget::TextOnly(text) => {
+                    if let Some(quads) = text_quad_count(text) {
                         rp.set_pipeline(&self.text_pipeline);
                         rp.set_bind_group(0, &text.atlas.bind_group, &[]);
                         let vbuf_borrow = self.text_vbuf.borrow();
@@ -2007,6 +2048,7 @@ struct VsOut {
     @location(0) world_pos: vec3<f32>,
     @location(1) @interpolate(flat) uv: vec2<u32>,
     @location(2) @interpolate(flat) cba_tsb: vec2<u32>,
+    @location(3) normal: vec3<f32>,
 };
 
 @vertex
@@ -2014,12 +2056,14 @@ fn vs_main(
     @location(0) position: vec3<f32>,
     @location(1) uv_in: vec4<u32>,
     @location(2) cba_tsb_in: vec2<u32>,
+    @location(3) normal_in: vec3<f32>,
 ) -> VsOut {
     var out: VsOut;
     out.clip_pos = u.mvp * vec4<f32>(position, 1.0);
     out.world_pos = position;
     out.uv = vec2<u32>(uv_in.x, uv_in.y);
     out.cba_tsb = cba_tsb_in;
+    out.normal = normal_in;
     return out;
 }
 
@@ -2083,9 +2127,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         discard;
     }
 
-    let dx = dpdx(in.world_pos);
-    let dy = dpdy(in.world_pos);
-    let n = normalize(cross(dx, dy));
+    // Per-vertex normals smooth-shade connected geometry. Mesh-builder
+    // emits the zero vector for unbinned positions (singleton triangles or
+    // degenerate fallback); detect that and fall back to screen-space
+    // derivatives so the result still looks shaded.
+    let n_len = length(in.normal);
+    var n: vec3<f32>;
+    if n_len > 0.001 {
+        n = in.normal / n_len;
+    } else {
+        let dx = dpdx(in.world_pos);
+        let dy = dpdy(in.world_pos);
+        n = normalize(cross(dx, dy));
+    }
     let l = -normalize(u.light_dir.xyz);
     let lambert = max(dot(n, l), 0.0);
     let shade = 0.45 + 0.55 * lambert;

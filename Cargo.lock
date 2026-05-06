@@ -1173,6 +1173,7 @@ dependencies = [
  "legaia-engine-render",
  "legaia-engine-vm",
  "legaia-font",
+ "legaia-mes",
  "legaia-prot",
  "legaia-seq",
  "legaia-tim",
@@ -1245,6 +1246,8 @@ name = "legaia-font"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "flate2",
  "png",
  "serde",
  "serde_json",
@@ -1359,6 +1362,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-iso",
 ]
 
 [[package]]

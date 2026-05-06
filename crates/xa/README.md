@@ -40,15 +40,28 @@ output  = clip(shifted + pred)
 prev2   = prev1; prev1 = output
 ```
 
-## Caveat: Legaia's `.XA` files are non-standard
+## On-disc layout: CD-XA Mode 2 Form 2 with multi-channel mux
 
-Files in `extracted/XA/` are aligned to 128-byte sound groups, but only
-~10% of groups pass standard XA validation (`bytes 8..16` must mirror
-`bytes 0..8`, all filter nibbles ≤ 3). The remaining ~90% appear to be
-either CD-XA subheader/padding interleaved between audio frames or a
-Legaia-specific muxing scheme that hasn't been reverse-engineered yet.
-The decoder itself is spec-correct; it's the muxing that's the open
-problem.
+Legaia's `.XA` files are standard CD-XA Mode 2 Form 2 streams that
+multiplex up to 8 audio channels per file at the sector level. The
+existing `extracted/XA/*.XA` files came out of `legaia-extract`
+reading sectors as Form 1 (2048 user-data bytes per sector), which
+silently dropped 276 bytes of audio per sector AND collapsed every
+channel of the stream into a single shuffled byte sequence.
+
+The fix lives in `legaia_xa::demux`: read raw 2352-byte sectors,
+parse each subheader, filter to `AUDIO + FORM2`, group by
+`(file_no, ch_no)`. Each resulting per-channel buffer is a clean
+concatenation of 128-byte sound groups that the 4-bit XA decoder
+handles directly.
+
+The decoder's validity predicate accepts any sound group with all
+filter nibbles 0..=3. Legaia's encoder writes distinct parameter
+values into bytes 8..16 (possibly a per-half adaptive parameter
+set), but the standard decoder using only bytes 0..8 produces
+smoother output empirically than the 16-distinct-param hypothesis.
+Insisting on the bytes-0..8 == bytes-8..16 redundancy mirror would
+skip ~90% of Legaia's audio.
 
 ## CLI
 
@@ -56,7 +69,12 @@ problem.
 xa info        <file>
 xa convert     <file> <output.wav>
 xa convert-dir <dir>  <out_dir>
+xa demux-disc  <DISC.bin> --lba <LBA> --size <SIZE> --out <OUT_DIR>
 ```
+
+`demux-disc` is the production audio path. `--lba` and `--size`
+come from the ISO9660 directory entry for the target XA file (e.g.
+`XA1.XA` lives at LBA 59449 / size 2179072 on the NA disc).
 
 ## See also
 

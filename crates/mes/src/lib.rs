@@ -53,7 +53,10 @@
 #![forbid(unsafe_code)]
 
 pub mod interp;
-pub use interp::{EventStats, Interpreter, MesEvent, extract_all_messages, extract_message};
+pub use interp::{
+    DialogPlayer, EventStats, Interpreter, MesEvent, PlayerState, extract_all_messages,
+    extract_message,
+};
 
 use anyhow::{Result, bail};
 use serde::Serialize;
