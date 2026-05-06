@@ -1202,6 +1202,8 @@ dependencies = [
  "anyhow",
  "legaia-asset",
  "legaia-engine-vm",
+ "legaia-font",
+ "legaia-mes",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
