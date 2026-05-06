@@ -58,6 +58,49 @@ pub enum SceneMode {
     Cutscene,
 }
 
+/// One sprite frame on a sprite sheet. Equivalent in shape to
+/// `legaia_engine_render::SpriteRequest` but lives in engine-core (which
+/// can't depend on the wgpu-bound render crate). Engine binaries
+/// translate one-to-one when handing the per-frame sprite list to the
+/// renderer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpriteFrame {
+    /// Atlas source rect (`x`, `y`, `w`, `h`) in atlas texels.
+    pub atlas_src: (u32, u32, u32, u32),
+    /// Tint multiplied with the sampled atlas texel.
+    pub tint: [f32; 4],
+    /// World-y offset (pixels) added to the actor's screen-space y when
+    /// the renderer projects [`Actor::move_state`] coords. `0` for ground-
+    /// level sprites.
+    pub anchor_y: i16,
+}
+
+impl Default for SpriteFrame {
+    fn default() -> Self {
+        Self {
+            atlas_src: (0, 0, 0, 0),
+            tint: [1.0; 4],
+            anchor_y: 0,
+        }
+    }
+}
+
+/// Per-actor sprite request emitted by [`World::collect_sprite_requests`].
+/// Engine binaries map this 1:1 to `legaia_engine_render::SpriteRequest`
+/// for the wgpu sprite-batch upload.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ActorSpriteRequest {
+    /// Index in [`World::actors`] this request came from.
+    pub actor_slot: u8,
+    /// Top-left in screen-space pixels (the engine projects
+    /// [`Actor::move_state`] world coords through its camera before
+    /// emitting; this is the post-projection result).
+    pub world_x: i32,
+    pub world_y: i32,
+    pub atlas_src: (u32, u32, u32, u32),
+    pub tint: [f32; 4],
+}
+
 /// Per-actor record held by the world. Composes the per-VM state structs.
 ///
 /// Each VM's `Host` trait reads/writes only the slice it owns, so the per-VM
@@ -100,6 +143,11 @@ pub struct Actor {
     /// Last-frame effect spawn — engine wires whatever rendering / sound
     /// flash it has. We just record the actor id for inspection.
     pub last_effect: u32,
+
+    /// Optional sprite frame for this actor. Drives the per-frame sprite
+    /// batch through [`World::collect_sprite_requests`]. When `None`, the
+    /// actor is invisible (or rendered as a 3D mesh through the TMD path).
+    pub sprite_frame: Option<SpriteFrame>,
 }
 
 impl Actor {
@@ -666,6 +714,96 @@ impl World {
                 continue;
             }
             let _ = self.step_move_vm(slot, &bc);
+        }
+    }
+
+    /// Place the world into [`SceneMode::Battle`] and populate the actor
+    /// pointer table with `party_count` party slots followed by
+    /// `monster_count` monster slots, mirroring the layout
+    /// `FUN_800520F0` produces (slots 0..2 = party, 3..7 = monsters; total
+    /// caps at 8). Each actor is positioned `radius` units left (party)
+    /// or right (monsters) of the origin, with a per-row z spread.
+    ///
+    /// This is the engine-core analogue of the retail battle scene
+    /// loader's "stamp the actor table from the scene record" pre-pass.
+    /// Engines that drive the loader from real scene data (party data +
+    /// monster archive) skip this helper and write the slots directly;
+    /// it's the convenience path for tests + the asset-viewer's
+    /// `battle-scene` subcommand.
+    ///
+    /// The battle-action state machine is seeded at
+    /// [`legaia_engine_vm::battle_action::ActionState::Begin`].
+    pub fn enter_battle(&mut self, party_count: u8, monster_count: u8, radius: i16) {
+        self.mode = SceneMode::Battle;
+        self.party_count = party_count.min(3);
+        let actor_count =
+            ((self.party_count as usize) + (monster_count.min(5) as usize)).min(MAX_ACTORS);
+        // Spread along z. Party left, monsters right, both staggered by 0.6 / 0.4.
+        for i in 0..(self.party_count as usize).min(actor_count) {
+            let z = (i as i16 - 1) * (radius * 6 / 10);
+            let actor = self.spawn_actor(i);
+            actor.move_state.world_x = -radius;
+            actor.move_state.world_y = 0;
+            actor.move_state.world_z = z;
+            actor.battle.liveness = 1;
+        }
+        for i in (self.party_count as usize)..actor_count {
+            let z = (i as i16 - 5) * (radius * 4 / 10);
+            let actor = self.spawn_actor(i);
+            actor.move_state.world_x = radius;
+            actor.move_state.world_y = 0;
+            actor.move_state.world_z = z;
+            actor.battle.liveness = 1;
+        }
+        // Reset the battle ctx and seed at Begin via the public byte API to
+        // avoid pulling battle_action::ActionState into world.rs imports.
+        self.battle_ctx = vm::battle_action::BattleActionCtx::new();
+        self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        self.battle_end = None;
+        // Effect pool is reused across scenes — reset to a fresh instance
+        // (per-battle the head/free-list rebuilds from scratch).
+        self.effect_pool = vm::effect_vm::Pool::new();
+    }
+
+    /// Build the per-frame sprite list for the renderer. One
+    /// [`ActorSpriteRequest`] per active actor with a [`SpriteFrame`] set;
+    /// the screen-space coordinates are derived from the actor's
+    /// `move_state.world_x` / `move_state.world_z` (PSX field coords) by
+    /// flattening to a top-down `(x, z)` view and adding the sprite's
+    /// `anchor_y`. Engines that have a real camera projection pre-process
+    /// the move_state coords before populating [`Actor::sprite_frame`] (or
+    /// override this helper).
+    ///
+    /// Mirrors the retail `FUN_80021DF4` per-frame actor tick's "draw
+    /// sprite at world position" pre-pass — the actual GPU upload happens
+    /// in `legaia_engine_render` against the supplied atlas.
+    pub fn collect_sprite_requests(&self) -> Vec<ActorSpriteRequest> {
+        self.actors
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, a)| {
+                if !a.active {
+                    return None;
+                }
+                let frame = a.sprite_frame?;
+                let world_x = a.move_state.world_x as i32;
+                let world_y = a.move_state.world_z as i32 + frame.anchor_y as i32;
+                Some(ActorSpriteRequest {
+                    actor_slot: slot as u8,
+                    world_x,
+                    world_y,
+                    atlas_src: frame.atlas_src,
+                    tint: frame.tint,
+                })
+            })
+            .collect()
+    }
+
+    /// Set the sprite frame for the actor at `slot`. Idempotent — passing
+    /// `None` removes the frame so the actor stops rendering as a sprite.
+    pub fn set_actor_sprite(&mut self, slot: u8, frame: Option<SpriteFrame>) {
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.sprite_frame = frame;
         }
     }
 
@@ -1614,6 +1752,93 @@ mod tests {
         assert_eq!(world.field_pc, 0);
         assert_eq!(world.field_ctx.flags, 0);
         assert_eq!(world.field_bytecode.len(), 8);
+    }
+
+    #[test]
+    fn enter_battle_populates_party_and_monsters() {
+        let mut world = World::default();
+        world.enter_battle(3, 5, 600);
+        assert_eq!(world.mode, SceneMode::Battle);
+        assert_eq!(world.party_count, 3);
+        // 3 party + 5 monsters = 8 active.
+        let active_count = world.actors.iter().filter(|a| a.active).count();
+        assert_eq!(active_count, 8);
+        // Party slots are at -600 X.
+        for i in 0..3 {
+            assert_eq!(world.actors[i].move_state.world_x, -600);
+            assert_eq!(world.actors[i].battle.liveness, 1);
+        }
+        // Monster slots at +600 X.
+        for i in 3..8 {
+            assert_eq!(world.actors[i].move_state.world_x, 600);
+            assert_eq!(world.actors[i].battle.liveness, 1);
+        }
+        // SM seeded at Begin.
+        assert_eq!(
+            world.battle_ctx.action_state,
+            vm::battle_action::ActionState::Begin.as_byte()
+        );
+    }
+
+    #[test]
+    fn enter_battle_caps_party_at_three() {
+        let mut world = World::default();
+        // Even if asked for more party than the cap, we clamp to 3.
+        world.enter_battle(8, 0, 100);
+        assert_eq!(world.party_count, 3);
+    }
+
+    #[test]
+    fn collect_sprite_requests_emits_one_per_active_actor_with_frame() {
+        let mut world = World::default();
+        // Slot 0: active + sprite frame at (10, 20) world coords.
+        world.actors[0].active = true;
+        world.actors[0].move_state.world_x = 100;
+        world.actors[0].move_state.world_z = 200;
+        world.set_actor_sprite(
+            0,
+            Some(SpriteFrame {
+                atlas_src: (0, 0, 16, 24),
+                tint: [1.0, 1.0, 1.0, 1.0],
+                anchor_y: -8,
+            }),
+        );
+        // Slot 1: active but no frame — shouldn't emit.
+        world.actors[1].active = true;
+        // Slot 2: frame but inactive — shouldn't emit.
+        world.set_actor_sprite(
+            2,
+            Some(SpriteFrame {
+                atlas_src: (16, 0, 16, 24),
+                tint: [1.0; 4],
+                anchor_y: 0,
+            }),
+        );
+
+        let requests = world.collect_sprite_requests();
+        assert_eq!(requests.len(), 1);
+        let r = &requests[0];
+        assert_eq!(r.actor_slot, 0);
+        assert_eq!(r.world_x, 100);
+        // anchor_y subtracts from world_z (z + (-8)) = 192.
+        assert_eq!(r.world_y, 192);
+        assert_eq!(r.atlas_src, (0, 0, 16, 24));
+    }
+
+    #[test]
+    fn set_actor_sprite_with_none_clears_existing_frame() {
+        let mut world = World::default();
+        world.actors[0].active = true;
+        world.set_actor_sprite(
+            0,
+            Some(SpriteFrame {
+                atlas_src: (0, 0, 8, 8),
+                ..Default::default()
+            }),
+        );
+        assert!(world.actors[0].sprite_frame.is_some());
+        world.set_actor_sprite(0, None);
+        assert!(world.actors[0].sprite_frame.is_none());
     }
 
     #[test]

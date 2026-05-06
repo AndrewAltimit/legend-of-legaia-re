@@ -1735,32 +1735,15 @@ fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
     let actor_count = tmd_paths.len();
     log::info!("battle scene: {actor_count} actor TMDs loaded from battle bundle");
 
-    let mut world = World {
-        mode: SceneMode::Battle,
-        party_count: 3,
-        ..World::default()
-    };
-    // Spawn 3 party at -X, 5 monsters at +X. Mark all alive.
+    let mut world = World::default();
     let radius = 600.0_f32;
-    for i in 0..3.min(actor_count) {
-        let z = ((i as f32) - 1.0) * radius * 0.6;
-        let actor = world.spawn_actor(i);
-        actor.move_state.world_x = -(radius as i16);
-        actor.move_state.world_y = 0;
-        actor.move_state.world_z = z as i16;
-        actor.battle.liveness = 1;
-    }
-    for i in 3..actor_count {
-        let z = ((i as f32) - 5.0) * radius * 0.4;
-        let actor = world.spawn_actor(i);
-        actor.move_state.world_x = radius as i16;
-        actor.move_state.world_y = 0;
-        actor.move_state.world_z = z as i16;
-        actor.battle.liveness = 1;
-    }
-    // Queue the requested action and seed the SM at Begin.
+    // 3 party + however many monsters the bundle gave us, capped to 5.
+    let party = 3.min(actor_count) as u8;
+    let monsters = actor_count.saturating_sub(party as usize).min(5) as u8;
+    world.enter_battle(party, monsters, radius as i16);
+    let _ = SceneMode::Battle; // import kept stable for readers
+    // Queue the requested action — enter_battle seeded action_state at Begin.
     world.battle_ctx.queued_action = queued_action;
-    world.battle_ctx.action_state = legaia_engine_vm::battle_action::ActionState::Begin.as_byte();
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);

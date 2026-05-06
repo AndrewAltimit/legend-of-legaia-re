@@ -140,9 +140,10 @@ def main() -> int:
         )
         return 0
 
+    pct = (len(covered) * 100.0 / len(cited)) if cited else 100.0
     print(f"function dumps           : {len(dumped)}")
     print(f"unique cited addresses   : {len(cited)}")
-    print(f"covered (cited & dumped) : {len(covered)}")
+    print(f"covered (cited & dumped) : {len(covered)} ({pct:.1f}%)")
     print(f"missing helpers          : {len(missing)}")
     print()
     print(f"top {min(args.top, len(missing_ranked))} missing helpers (sorted by citation count):")

@@ -87,6 +87,8 @@ Sizes range from ~30 KB to ~387 KB; median ~270 KB. Density >96% nonzero past of
 
 The runtime consumer hasn't been located. Likely candidates: per-scene navmesh / collision data, scene-event trigger tables. The class name reflects the structural signature, not a guessed semantic; it should change once the consumer is reversed.
 
+[`ghidra/scripts/find_scene_v12_consumers.py`](../../ghidra/scripts/find_scene_v12_consumers.py) is the consumer-search complement: it walks every captured program for `lh` / `lhu` instructions at `+2` and `+6` immediate offsets — the offsets where the header's two constant magic words live. Functions that touch both offsets are high-confidence candidates for the v12 reader. Run with `-process` once per overlay; group hits cluster inside the consumer.
+
 ## scene_asset_table — canonical 7-asset bundle
 
 The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: `crates/asset/src/scene_asset_table.rs`. 80 PROT entries match.
