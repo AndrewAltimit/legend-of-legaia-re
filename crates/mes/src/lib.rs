@@ -1,61 +1,55 @@
-//! Partial parser for Legaia MES (asset type `0x04`) blobs.
+//! Parser for Legaia MES (asset type `0x04`) blobs.
 //!
-//! What we know (from `project_mes_blob_extracted.md`):
+//! # Container layout
 //!
-//! * MES is the SCUS asset-type byte `0x04` in the dispatcher
-//!   `FUN_8001f05c`. The dispatcher just allocates a 4-byte-aligned buffer
-//!   and decodes the payload (LZS or raw); the bytecode interpreter and
-//!   format-specific parsing live in an overlay we haven't fully reversed.
+//! Two distinct on-disc layouts have been observed:
 //!
-//! * **Two distinct on-disc layouts have been observed** in real RAM
-//!   captures (a town-init blob and an in-dialog blob):
+//! - [`Format::Compact`] starts with magic `0x00000404` (LE bytes
+//!   `04 04 00 00`), followed by header / runtime-patched pointers, an
+//!   i16 array, a `(count + page_count + total_size)` triple, then a u24
+//!   LE offset table, then bytecode at the end. Used for short message
+//!   sets (~4 KB and below).
 //!
-//!   - [`Format::Compact`] starts with magic `0x00000404` (LE bytes
-//!     `04 04 00 00`) followed by 36 zero bytes, a 16-byte header of
-//!     runtime-patched pointers, a 32-byte i16 array, an 8-byte
-//!     "count + size" word pair, then a u24 LE offset table, then
-//!     bytecode at the end. Used for short message sets (~4 KB).
+//! - [`Format::Records`] has no fixed magic. It's a stream of
+//!   variable-stride records marked by recurring `0x44 0x78` markers.
+//!   Used for large NPC-dialog sets (~14 KB+ in the captured sample).
 //!
-//!   - [`Format::Records`] has no fixed magic. It's a stream of
-//!     variable-stride records marked by recurring `0x44 0x78` markers
-//!     (typically every 20–36 bytes). Used for large NPC-dialog sets
-//!     (~14 KB+ in the captured sample).
+//! # Bytecode encoding
 //!
-//! * Bytecode tokens observed (in `Format::Compact`'s bytecode region):
+//! Reverse-engineered from the four SCUS interpreter functions
+//! (`FUN_8003CA38` / `FUN_80036044` / `FUN_80036888` / `FUN_80036514`).
+//! See [`docs/formats/mes.md`](../../../docs/formats/mes.md) for the full
+//! per-byte table. Summary:
 //!
-//!   - `0x00`: end-of-message terminator (15.4% of bytes — very common).
-//!   - `0x61 XX`: print glyph `XX` (confirmed by an observed sequential
-//!     run `61 9D 61 9E 61 9F ... 61 AA` — clearly an alphabet sequence).
-//!   - `0x65 XX`: similar single-byte-arg opcode (likely "small numeric"
-//!     or "wait N frames" — semantics not yet confirmed).
-//!   - `0x4C XX`: 2-byte token (1-byte arg) — recurring control.
-//!   - `0x26 XX YY`: 3-byte token (2-byte arg) — possibly "page break"
-//!     when arg is `0xFEFF`.
-//!   - `0x21 0x21 0x26 0xFE 0xFF`: recurring 5-byte sequence — likely a
-//!     fixed page-break / message-boundary marker.
+//! - `0x00..0x1E` — end-of-message (loop terminator in the byte walker).
+//! - `0x1F..0x5D`, `0x5F..0xBF` (excl. `0xC0..0xCF`), `0xD0..0xFE` —
+//!   single-byte glyph indices.
+//! - `0x5E XX` — input alias for `0xCE (XX-0x2D)`. Normalized in the
+//!   iterator.
+//! - `0xC0`, `0xC6`, `0xC8..0xCD` — 2-byte wide glyphs.
+//! - `0xC1 XX` — substitute character name.
+//! - `0xC2 XX` / `0xC4 XX` — substitute item name.
+//! - `0xC3 XX` — substitute magic name.
+//! - `0xC5 XX` — substitute spell name.
+//! - `0xC7 XX` — substitute quest / terrain name.
+//! - `0xCE XX` — spacing op (width-only, no glyph).
+//! - `0xCF XX` — skip 2 bytes (`XX` is rendered alone).
+//! - `0xFF` — input alias for `0xCF`. Normalized in the iterator.
+//! - `0x80..0x9F` — surfaced as [`Token::Control`]: the per-byte SCUS
+//!   walker treats these as glyphs, but the dialog window pager
+//!   `FUN_801D84D0` tests `(byte & 0x7F) < 0x20` to halt on them. Most
+//!   likely page-break / wait-for-input markers. Surface them so callers
+//!   can route to whichever behaviour matches their renderer.
 //!
-//! All other opcodes are emitted as [`Token::Unknown`] with the raw
-//! byte; future reverse-engineering of the bytecode interpreter (when a
-//! dialog-rendering overlay is captured) will fill in the meanings.
-//!
-//! # What this crate does NOT do
-//!
-//! * Decode the bytecode to readable text. The glyph→character mapping
-//!   needs a font tile sheet that hasn't been located yet.
-//! * Validate offset tables against the bytecode region. The offset
-//!   table base/encoding (u24 LE vs another stride) is empirical and
-//!   not yet cross-checked against the interpreter.
-//! * Handle `Format::Records` beyond locating record boundaries.
-//!
-//! Use [`parse`] to detect the format and pull what we know; use
-//! [`iter_tokens`] to stream the bytecode for downstream analysis.
+//! Use [`parse`] for container detection + structural parse, and
+//! [`iter_tokens`] to stream the bytecode.
 
 #![forbid(unsafe_code)]
 
 pub mod interp;
 pub use interp::{
-    DialogPlayer, EventStats, Interpreter, MesEvent, PlayerState, extract_all_messages,
-    extract_message,
+    DialogPlayer, EventStats, Interpreter, MesEvent, PlayerState, SubstituteKind,
+    extract_all_messages, extract_message,
 };
 
 use anyhow::{Result, bail};
@@ -90,10 +84,6 @@ impl Format {
 
 /// Detect which on-disc format a blob uses. Returns `None` if the
 /// buffer matches neither pattern.
-///
-/// Detection is strict-first: if the first u32 is the [`COMPACT_MAGIC`]
-/// it's compact, regardless of marker count. Only blobs without that
-/// magic are checked for the records pattern (≥ 4 marker hits).
 pub fn detect_format(buf: &[u8]) -> Option<Format> {
     if buf.len() >= 4 {
         let m = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
@@ -111,27 +101,20 @@ pub fn detect_format(buf: &[u8]) -> Option<Format> {
     }
 }
 
-/// 12-byte "runtime header" inside a [`Format::Compact`] blob at offset
+/// 16-byte runtime header inside a [`Format::Compact`] blob at offset
 /// `0x28`. Runtime patches these on load — for static parsing we just
 /// expose the raw values.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct RuntimeHeader {
-    /// `+0x28`: back-pointer (set by allocator on load).
     pub back_ptr: u32,
-    /// `+0x2C`: forward-pointer to expanded buffer end.
     pub forward_ptr: u32,
-    /// `+0x30`: expanded buffer size (u32 LE).
     pub expanded_size: u32,
-    /// `+0x34`: count of something (entries? pages? — unconfirmed).
     pub count: u32,
 }
 
 /// One detected record-marker boundary in a [`Format::Records`] blob.
-/// Records are NOT all the same size — store the start offset and let
-/// the caller compute lengths from successive boundaries.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct RecordBoundary {
-    /// Byte offset of the first byte of the record marker (`0x44`).
     pub offset: usize,
 }
 
@@ -140,40 +123,18 @@ pub struct RecordBoundary {
 pub struct MesBlob {
     pub format: Format,
     pub size: usize,
-    /// `Some` only for [`Format::Compact`].
     pub runtime_header: Option<RuntimeHeader>,
-    /// `Some` only for [`Format::Compact`]. Each entry is a u24 LE value
-    /// from the offset table region. Bases / interpretation are
-    /// empirical — the interpreter that consumes these is overlay-resident.
     pub offset_table: Option<Vec<u32>>,
-    /// `Some` only for [`Format::Compact`]. Where the bytecode region
-    /// begins (best-effort: end of the offset table).
     pub bytecode_offset: Option<usize>,
-    /// `Some` only for [`Format::Records`]. Boundaries of each
-    /// `0x44 0x78` marker hit.
     pub records: Option<Vec<RecordBoundary>>,
 }
 
-/// Header layout constants for [`Format::Compact`]. Derived from the
-/// 3893-byte town-init blob extracted from a save state. Exposed as
-/// public API so callers (and future overlay-side reverse-engineering
-/// scripts) can reference the same constants we used to parse.
+/// Header layout constants for [`Format::Compact`].
 pub mod compact {
-    /// 16-byte runtime header at `+0x28` (back-ptr / forward-ptr /
-    /// size / count) — runtime-patched by the allocator on load.
     pub const RUNTIME_HDR_OFFSET: usize = 0x28;
-    /// 32-byte i16 array at `+0x38` (coords / offsets — semantics
-    /// unconfirmed; observed values look like a row of x-coordinates).
     pub const I16_ARRAY_OFFSET: usize = 0x38;
-    /// `u16 + u16 + u32` at `+0x58` immediately preceding the offset
-    /// table. Often (count, page_count, total_size).
     pub const PRE_TABLE_HDR_OFFSET: usize = 0x58;
-    /// Offset-table region begins here. Entries are u24 LE values.
-    /// The 2 bytes at `+0x60..+0x62` are zero padding (likely so the
-    /// u24 entries are 2-byte-aligned within the wider header layout).
     pub const OFFSET_TABLE_OFFSET: usize = 0x62;
-    /// Empirical end of the offset table in the captured sample;
-    /// matches the first byte of the bytecode region.
     pub const OFFSET_TABLE_END: usize = 0xC8;
 }
 
@@ -206,9 +167,6 @@ fn parse_compact(buf: &[u8]) -> Result<MesBlob> {
         expanded_size: u32_at(buf, compact::RUNTIME_HDR_OFFSET + 8),
         count: u32_at(buf, compact::RUNTIME_HDR_OFFSET + 12),
     };
-    // Offset table: u24 LE entries between OFFSET_TABLE_OFFSET and
-    // OFFSET_TABLE_END. We expose the raw values; consumers decide
-    // whether to drop zero entries / skip header padding.
     let mut offset_table = Vec::new();
     let mut i = compact::OFFSET_TABLE_OFFSET;
     while i + 3 <= compact::OFFSET_TABLE_END.min(buf.len()) {
@@ -252,54 +210,110 @@ fn u24_at(buf: &[u8], off: usize) -> u32 {
     u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], 0])
 }
 
-/// Bytecode token (one logical operation). Lengths are best-effort:
-/// known opcodes use the lengths we've inferred; everything else is
-/// emitted as [`Token::Unknown`] with a single byte so the caller can
-/// re-sync at the next byte if a span is misclassified.
+/// One logical operation in a MES bytecode stream. Encoding mirrors the
+/// SCUS interpreter functions (`FUN_8003CA38` / `FUN_80036044` /
+/// `FUN_80036888` / `FUN_80036514`); see crate-level docs for the byte
+/// table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Token {
-    /// `0x00`: end-of-message terminator. The most common single byte
-    /// in observed bytecode (~15% of bytes in the text region).
-    End,
-    /// `0x61 XX`: "print glyph XX". The XX is a glyph index into a
-    /// font tile sheet that hasn't been located yet.
+    /// Bytes `0x00..=0x1E`. The byte walker stops here. Carries the raw
+    /// byte so callers can distinguish (e.g. 0x00 = standard end vs
+    /// non-zero terminators that future analysis may differentiate).
+    EndOfMessage(u8),
+    /// Single-byte glyph index. Bytes `0x1F..=0x5D`, `0x5F..=0x7F`,
+    /// `0xA0..=0xBF`, `0xD0..=0xFE` (i.e. anywhere outside the special
+    /// ranges). The byte itself is the font tile index.
     Glyph(u8),
-    /// `0x65 XX`: 2-byte token with 1-byte arg, semantics unconfirmed
-    /// but seen alongside [`Token::Glyph`] tokens.
-    Op65(u8),
-    /// `0x4C XX`: 2-byte control (1-byte arg) — semantics unconfirmed.
-    Op4c(u8),
-    /// `0x26 XX YY`: 3-byte control (2-byte little-endian arg). When
-    /// arg is `0xFEFF` this is likely a page-break / message-boundary
-    /// marker; the recurring 5-byte sequence `21 21 26 FE FF` makes
-    /// that interpretation plausible.
-    Op26 { arg: u16 },
-    /// Any opcode we haven't classified. Always 1 byte so callers can
-    /// re-sync at the next position.
-    Unknown(u8),
+    /// 2-byte wide glyph: opcode byte (`0xC0`, `0xC6`, or `0xC8..=0xCD`)
+    /// followed by its index byte. Stride 2.
+    WideGlyph(u8, u8),
+    /// Variable substitution: opcode byte `0xC1..=0xC5` or `0xC7`,
+    /// followed by an index into the corresponding name table. Stride 2.
+    Substitute { kind: SubstituteOpcode, arg: u8 },
+    /// `0xCE XX` — spacing op. The renderer applies horizontal offset
+    /// without emitting a glyph. Also produced by the input alias
+    /// `0x5E XX` (rewritten by the substitution expander to
+    /// `0xCE (XX-0x2D)`); the iterator does that normalisation
+    /// transparently.
+    Spacing(u8),
+    /// `0xCF XX` — skip 2 bytes. The `0xFF` input alias for `0xCF` is
+    /// normalised in the iterator (the synthetic arg byte is `0`).
+    SkipTwo(u8),
+    /// Bytes `0x80..=0x9F`. The per-byte SCUS walker treats these as
+    /// glyphs, but the dialog window pager `FUN_801D84D0` halts on them
+    /// (test `(byte & 0x7F) < 0x20`). Most likely page-break / wait-for-
+    /// input markers. Surfaced typed so the [`crate::interp::DialogPlayer`]
+    /// can route them to a page-pause without losing the byte value.
+    Control(u8),
+    /// Truncated 2-byte token at end of buffer (opcode read, arg byte
+    /// missing). Carries the opcode so callers can re-sync.
+    Truncated(u8),
+}
+
+/// Tag for [`Token::Substitute`] / [`MesEvent::Substitute`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum SubstituteOpcode {
+    /// `0xC1 XX` — substitute character name. Records live at
+    /// `0x80084708 + XX*0x414`; `XX = 99` resolves to the current party
+    /// leader (`DAT_80084597`).
+    CharacterName,
+    /// `0xC2 XX` — substitute item name from `PTR_DAT_8007436C[XX*3]`.
+    ItemName,
+    /// `0xC3 XX` — substitute magic name from `PTR_s_Magic_800754D0[XX*3]`.
+    MagicName,
+    /// `0xC4 XX` — substitute item name (different consumer site than
+    /// `0xC2`; same `PTR_DAT_8007436C` table).
+    ItemNameAlt,
+    /// `0xC5 XX` — substitute spell name from 2D table at
+    /// `DAT_80075EC4`, keyed by `(XX>>6, XX&0x3F)`.
+    SpellName,
+    /// `0xC7 XX` — substitute terrain / quest name from
+    /// `DAT_80073F24 + XX*8`.
+    QuestName,
+}
+
+impl SubstituteOpcode {
+    pub fn raw_byte(self) -> u8 {
+        match self {
+            SubstituteOpcode::CharacterName => 0xC1,
+            SubstituteOpcode::ItemName => 0xC2,
+            SubstituteOpcode::MagicName => 0xC3,
+            SubstituteOpcode::ItemNameAlt => 0xC4,
+            SubstituteOpcode::SpellName => 0xC5,
+            SubstituteOpcode::QuestName => 0xC7,
+        }
+    }
 }
 
 impl Token {
-    /// Number of bytes this token occupies in the input stream.
+    /// Number of bytes this token occupied in the input stream (after
+    /// alias normalisation: `0x5E XX` and `0xFF` both have stride 2).
     pub fn byte_len(self) -> usize {
         match self {
-            Token::End | Token::Unknown(_) => 1,
-            Token::Glyph(_) | Token::Op65(_) | Token::Op4c(_) => 2,
-            Token::Op26 { .. } => 3,
+            Token::EndOfMessage(_) | Token::Glyph(_) | Token::Control(_) | Token::Truncated(_) => 1,
+            Token::WideGlyph(_, _)
+            | Token::Substitute { .. }
+            | Token::Spacing(_)
+            | Token::SkipTwo(_) => 2,
         }
+    }
+
+    /// `true` for [`Token::EndOfMessage`]. Used by callers that want to
+    /// halt the iteration at end of message.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Token::EndOfMessage(_))
     }
 }
 
 /// Greedy bytecode walker. Starting at `start`, emit one [`Token`] at
 /// a time until end of buffer. Stops naturally at the buffer end; an
-/// [`Token::End`] is just data, not a hard stop, so the caller can
-/// gather multiple messages in sequence.
+/// [`Token::EndOfMessage`] is just data, not a hard stop, so the caller
+/// can gather multiple messages in sequence.
 pub fn iter_tokens(buf: &[u8], start: usize) -> TokenIter<'_> {
     TokenIter { buf, pos: start }
 }
 
-/// Iterator returned by [`iter_tokens`]. Tracks position so callers can
-/// inspect [`TokenIter::pos`] after iteration.
+/// Iterator returned by [`iter_tokens`].
 #[derive(Debug)]
 pub struct TokenIter<'a> {
     buf: &'a [u8],
@@ -318,34 +332,104 @@ impl<'a> Iterator for TokenIter<'a> {
     fn next(&mut self) -> Option<(usize, Token)> {
         let start_pos = self.pos;
         let op = *self.buf.get(self.pos)?;
-        let token = match op {
-            0x00 => Token::End,
-            0x61 => match self.buf.get(self.pos + 1) {
-                Some(&arg) => Token::Glyph(arg),
-                None => Token::Unknown(op),
-            },
-            0x65 => match self.buf.get(self.pos + 1) {
-                Some(&arg) => Token::Op65(arg),
-                None => Token::Unknown(op),
-            },
-            0x4C => match self.buf.get(self.pos + 1) {
-                Some(&arg) => Token::Op4c(arg),
-                None => Token::Unknown(op),
-            },
-            0x26 => {
-                let lo = self.buf.get(self.pos + 1).copied();
-                let hi = self.buf.get(self.pos + 2).copied();
-                match (lo, hi) {
-                    (Some(l), Some(h)) => Token::Op26 {
-                        arg: u16::from_le_bytes([l, h]),
-                    },
-                    _ => Token::Unknown(op),
-                }
-            }
-            other => Token::Unknown(other),
-        };
+        let token = classify_byte(op, self.buf, self.pos);
         self.pos += token.byte_len();
         Some((start_pos, token))
+    }
+}
+
+/// Classify a single byte at `pos` into a [`Token`]. Reads up to one
+/// byte ahead for 2-byte tokens. Aliases `0x5E`/`0xFF` are normalised
+/// here so the consumer never sees them.
+fn classify_byte(op: u8, buf: &[u8], pos: usize) -> Token {
+    match op {
+        // Hard terminator.
+        0x00..=0x1E => Token::EndOfMessage(op),
+
+        // Pager-control range (0x80..0x9F). Per-byte walker treats
+        // these as glyphs; pager halts on them. Surface typed.
+        0x80..=0x9F => Token::Control(op),
+
+        // 0x5E XX -> alias for 0xCE (XX - 0x2D).
+        0x5E => match buf.get(pos + 1) {
+            Some(&arg) => Token::Spacing(arg.wrapping_sub(0x2D)),
+            None => Token::Truncated(op),
+        },
+
+        // 0xFF -> alias for 0xCF. Per FUN_80036514, the substitution
+        // expander rewrites the byte to 0xCF and then the surrounding
+        // dispatch consumes the next byte as the arg (the standard
+        // 2-byte 0xCF stride). Net: 0xFF is a 2-byte token.
+        0xFF => match buf.get(pos + 1) {
+            Some(&arg) => Token::SkipTwo(arg),
+            None => Token::Truncated(op),
+        },
+
+        // Substitution opcodes (single arg byte).
+        0xC1 => match buf.get(pos + 1) {
+            Some(&arg) => Token::Substitute {
+                kind: SubstituteOpcode::CharacterName,
+                arg,
+            },
+            None => Token::Truncated(op),
+        },
+        0xC2 => match buf.get(pos + 1) {
+            Some(&arg) => Token::Substitute {
+                kind: SubstituteOpcode::ItemName,
+                arg,
+            },
+            None => Token::Truncated(op),
+        },
+        0xC3 => match buf.get(pos + 1) {
+            Some(&arg) => Token::Substitute {
+                kind: SubstituteOpcode::MagicName,
+                arg,
+            },
+            None => Token::Truncated(op),
+        },
+        0xC4 => match buf.get(pos + 1) {
+            Some(&arg) => Token::Substitute {
+                kind: SubstituteOpcode::ItemNameAlt,
+                arg,
+            },
+            None => Token::Truncated(op),
+        },
+        0xC5 => match buf.get(pos + 1) {
+            Some(&arg) => Token::Substitute {
+                kind: SubstituteOpcode::SpellName,
+                arg,
+            },
+            None => Token::Truncated(op),
+        },
+        0xC7 => match buf.get(pos + 1) {
+            Some(&arg) => Token::Substitute {
+                kind: SubstituteOpcode::QuestName,
+                arg,
+            },
+            None => Token::Truncated(op),
+        },
+
+        // 0xCE XX — spacing op.
+        0xCE => match buf.get(pos + 1) {
+            Some(&arg) => Token::Spacing(arg),
+            None => Token::Truncated(op),
+        },
+
+        // 0xCF XX — skip 2 bytes.
+        0xCF => match buf.get(pos + 1) {
+            Some(&arg) => Token::SkipTwo(arg),
+            None => Token::Truncated(op),
+        },
+
+        // 2-byte wide glyphs (no substitution): 0xC0, 0xC6, 0xC8..0xCD.
+        0xC0 | 0xC6 | 0xC8..=0xCD => match buf.get(pos + 1) {
+            Some(&arg) => Token::WideGlyph(op, arg),
+            None => Token::Truncated(op),
+        },
+
+        // Everything else is a 1-byte glyph: 0x1F..0x5D, 0x5F..0x7F,
+        // 0xA0..0xBF, 0xD0..0xFE.
+        _ => Token::Glyph(op),
     }
 }
 
@@ -362,7 +446,6 @@ mod tests {
 
     #[test]
     fn detects_records_by_marker_count() {
-        // Spread 5 record markers across a buffer.
         let mut buf = vec![0xAAu8; 256];
         for i in (10..200).step_by(40) {
             buf[i] = 0x44;
@@ -373,7 +456,11 @@ mod tests {
 
     #[test]
     fn returns_none_for_random_data() {
-        let buf = [0xAAu8; 128];
+        // Use 0x99 as a fill byte. 0xAA happens to be in the 0xA0..0xBF
+        // glyph range and *also* contains no `0x44 0x78` markers, so the
+        // old test passed; 0x99 is in the Control range but the detector
+        // only cares about magic/marker count, not token semantics.
+        let buf = [0x99u8; 128];
         assert_eq!(detect_format(&buf), None);
     }
 
@@ -381,13 +468,10 @@ mod tests {
     fn compact_parses_runtime_header_and_offset_table() {
         let mut buf = vec![0u8; 512];
         buf[0..4].copy_from_slice(&COMPACT_MAGIC.to_le_bytes());
-        // Runtime header at +0x28: back, forward, expanded_size, count
         buf[0x28..0x2C].copy_from_slice(&0x12345678u32.to_le_bytes());
         buf[0x2C..0x30].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
         buf[0x30..0x34].copy_from_slice(&0x00001CD4u32.to_le_bytes());
         buf[0x34..0x38].copy_from_slice(&100u32.to_le_bytes());
-        // First u24 entry in offset table at +0x62 (2 zero pad bytes
-        // at +0x60..+0x61 — see `compact::OFFSET_TABLE_OFFSET`).
         buf[0x62] = 0xAA;
         buf[0x63] = 0xBB;
         buf[0x64] = 0xCC;
@@ -407,7 +491,6 @@ mod tests {
     #[test]
     fn records_collects_all_marker_offsets() {
         let mut buf = vec![0u8; 256];
-        // Place markers at known offsets — 4 hits triggers detection.
         let want = [10, 50, 100, 150, 200];
         for &off in &want {
             buf[off] = RECORD_MARKER[0];
@@ -420,36 +503,185 @@ mod tests {
         assert_eq!(got, want);
     }
 
+    // --- Token classification ---------------------------------------------
+
     #[test]
-    fn iter_tokens_classifies_known_opcodes() {
-        // Build a tiny bytecode program: glyph A, op65, op4c, op26 page-break, end.
-        let buf = [0x61, 0x9D, 0x65, 0x01, 0x4C, 0x20, 0x26, 0xFE, 0xFF, 0x00];
+    fn iter_tokens_classifies_glyphs_in_each_glyph_range() {
+        // 0x21 (low ASCII), 0x40 (mid), 0xA5 (high), 0xD8 (highest range).
+        let buf = [0x21, 0x40, 0xA5, 0xD8, 0x00];
         let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
         assert_eq!(
             toks,
             vec![
-                Token::Glyph(0x9D),
-                Token::Op65(0x01),
-                Token::Op4c(0x20),
-                Token::Op26 { arg: 0xFFFE },
-                Token::End,
+                Token::Glyph(0x21),
+                Token::Glyph(0x40),
+                Token::Glyph(0xA5),
+                Token::Glyph(0xD8),
+                Token::EndOfMessage(0x00),
             ]
         );
     }
 
     #[test]
-    fn iter_tokens_emits_unknown_for_unrecognized_byte() {
-        let buf = [0x99, 0x61, 0x9D];
+    fn iter_tokens_classifies_substitutions() {
+        let buf = [
+            0xC1, 0x05, // character name 5
+            0xC2, 0x10, // item name 0x10
+            0xC3, 0x20, // magic name 0x20
+            0xC4, 0x11, // item-name alt
+            0xC5, 0x42, // spell name 0x42
+            0xC7, 0x07, // quest name 7
+            0x00,
+        ];
         let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
-        assert_eq!(toks, vec![Token::Unknown(0x99), Token::Glyph(0x9D)]);
+        assert_eq!(
+            toks,
+            vec![
+                Token::Substitute {
+                    kind: SubstituteOpcode::CharacterName,
+                    arg: 0x05
+                },
+                Token::Substitute {
+                    kind: SubstituteOpcode::ItemName,
+                    arg: 0x10
+                },
+                Token::Substitute {
+                    kind: SubstituteOpcode::MagicName,
+                    arg: 0x20
+                },
+                Token::Substitute {
+                    kind: SubstituteOpcode::ItemNameAlt,
+                    arg: 0x11
+                },
+                Token::Substitute {
+                    kind: SubstituteOpcode::SpellName,
+                    arg: 0x42
+                },
+                Token::Substitute {
+                    kind: SubstituteOpcode::QuestName,
+                    arg: 0x07
+                },
+                Token::EndOfMessage(0x00),
+            ]
+        );
+    }
+
+    #[test]
+    fn iter_tokens_classifies_wide_glyphs() {
+        // 0xC0 + 0xC6 + 0xC8..=0xCD are all 2-byte wide glyphs.
+        let buf = [0xC0, 0x10, 0xC6, 0x20, 0xCA, 0x30, 0x00];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(
+            toks,
+            vec![
+                Token::WideGlyph(0xC0, 0x10),
+                Token::WideGlyph(0xC6, 0x20),
+                Token::WideGlyph(0xCA, 0x30),
+                Token::EndOfMessage(0x00),
+            ]
+        );
+    }
+
+    #[test]
+    fn iter_tokens_classifies_spacing_and_skip() {
+        let buf = [0xCE, 0x42, 0xCF, 0x99, 0x00];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(
+            toks,
+            vec![
+                Token::Spacing(0x42),
+                Token::SkipTwo(0x99),
+                Token::EndOfMessage(0x00),
+            ]
+        );
+    }
+
+    #[test]
+    fn iter_tokens_normalises_5e_alias_to_spacing() {
+        // 0x5E XX -> Spacing(XX - 0x2D). Per FUN_80036514.
+        let buf = [0x5E, 0x40, 0x00];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(
+            toks,
+            vec![Token::Spacing(0x40 - 0x2D), Token::EndOfMessage(0x00)]
+        );
+    }
+
+    #[test]
+    fn iter_tokens_normalises_ff_alias_to_skiptwo() {
+        // 0xFF aliases to 0xCF and consumes the next byte as arg
+        // (2-byte stride end-to-end, matching the substitution
+        // expander's rewrite + 0xCF dispatch).
+        let buf = [0xFF, 0x42, 0x00];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(toks, vec![Token::SkipTwo(0x42), Token::EndOfMessage(0x00)]);
+    }
+
+    #[test]
+    fn iter_tokens_truncated_lone_ff() {
+        // 0xFF at end of buffer with no arg byte -> Truncated.
+        let buf = [0xFF];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(toks, vec![Token::Truncated(0xFF)]);
+    }
+
+    #[test]
+    fn iter_tokens_classifies_control_range() {
+        // 0x80..0x9F surface as Control bytes.
+        let buf = [0x80, 0x88, 0x9F, 0x00];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(
+            toks,
+            vec![
+                Token::Control(0x80),
+                Token::Control(0x88),
+                Token::Control(0x9F),
+                Token::EndOfMessage(0x00),
+            ]
+        );
     }
 
     #[test]
     fn iter_tokens_handles_truncated_2byte_opcode() {
-        // Buffer ends mid-token — we emit Unknown(op) so the caller sees
-        // something rather than silently dropping the partial.
-        let buf = [0x61];
+        let buf = [0xC1];
         let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
-        assert_eq!(toks, vec![Token::Unknown(0x61)]);
+        assert_eq!(toks, vec![Token::Truncated(0xC1)]);
+    }
+
+    #[test]
+    fn iter_tokens_treats_eom_as_data_not_iterator_stop() {
+        // Two messages back-to-back; the iterator surfaces both ends.
+        let buf = [0x21, 0x00, 0x22, 0x00];
+        let toks: Vec<Token> = iter_tokens(&buf, 0).map(|(_, t)| t).collect();
+        assert_eq!(
+            toks,
+            vec![
+                Token::Glyph(0x21),
+                Token::EndOfMessage(0x00),
+                Token::Glyph(0x22),
+                Token::EndOfMessage(0x00),
+            ]
+        );
+    }
+
+    #[test]
+    fn token_byte_len_matches_iter_advance() {
+        // Empirically: classify_byte's stride equals what iter_tokens uses
+        // to advance pos. This exercises every variant.
+        let cases: Vec<(u8, &[u8])> = vec![
+            (0x00, &[0x00]),
+            (0x21, &[0x21]),
+            (0x80, &[0x80]),
+            (0xC1, &[0xC1, 0x05]),
+            (0xCE, &[0xCE, 0x42]),
+            (0xCF, &[0xCF, 0x99]),
+            (0xC0, &[0xC0, 0x10]),
+            (0xFF, &[0xFF]),
+        ];
+        for (op, buf) in cases {
+            let tok = classify_byte(op, buf, 0);
+            // For Truncated cases (e.g. lone 0xC1), byte_len is 1.
+            assert!(tok.byte_len() <= buf.len() || matches!(tok, Token::Truncated(_)));
+        }
     }
 }

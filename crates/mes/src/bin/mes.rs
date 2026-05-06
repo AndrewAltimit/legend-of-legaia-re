@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use legaia_mes::{EventStats, Interpreter, Token, extract_all_messages, iter_tokens, parse};
+use legaia_mes::{
+    EventStats, Interpreter, SubstituteOpcode, Token, extract_all_messages, iter_tokens, parse,
+};
 
 #[derive(Parser)]
 #[command(name = "mes", about = "Legaia MES (asset type 0x04) inspector")]
@@ -15,9 +17,9 @@ struct Cli {
 enum Cmd {
     /// Detect format and print the structural header / table layout.
     Info { path: PathBuf },
-    /// Greedy bytecode disassembly. For [`Format::Compact`] starts at
-    /// the bytecode offset; for `Records`, starts at byte 0 (record
-    /// content is interleaved with markers).
+    /// Greedy bytecode disassembly. For Compact, starts at the bytecode
+    /// offset; for Records, starts at byte 0 (record content is
+    /// interleaved with markers).
     Disasm {
         path: PathBuf,
         /// Override the start offset for the bytecode walk.
@@ -30,12 +32,11 @@ enum Cmd {
     /// Emit a JSON dump of the parsed structure (for tooling).
     Json { path: PathBuf },
     /// Walk the bytecode interpreter for a single message and print events.
-    /// `--index` selects the offset-table entry; default 0.
     Events {
         path: PathBuf,
         #[arg(long, default_value_t = 0)]
         index: usize,
-        /// Print as one event per line ("Glyph 0x9D"), else use the
+        /// Print as one event per line (`Glyph(0x9D)`), else use the
         /// compact `render_summary` form.
         #[arg(long, default_value_t = false)]
         verbose: bool,
@@ -127,19 +128,24 @@ fn disasm(path: &PathBuf, start: Option<usize>, limit: usize) -> Result<()> {
 
 fn render_token(t: Token) -> String {
     match t {
-        Token::End => "END".to_string(),
-        Token::Glyph(g) => format!("GLYPH 0x{:02X}", g),
-        Token::Op65(a) => format!("op65   0x{:02X}", a),
-        Token::Op4c(a) => format!("op4C   0x{:02X}", a),
-        Token::Op26 { arg } => {
-            let note = if arg == 0xFFFE {
-                "  ; possible page-break"
-            } else {
-                ""
+        Token::EndOfMessage(b) => format!("END    0x{:02X}", b),
+        Token::Glyph(g) => format!("GLYPH  0x{:02X}", g),
+        Token::WideGlyph(op, arg) => format!("WIDE   0x{:02X} 0x{:02X}", op, arg),
+        Token::Substitute { kind, arg } => {
+            let tag = match kind {
+                SubstituteOpcode::CharacterName => "char_name",
+                SubstituteOpcode::ItemName => "item_name",
+                SubstituteOpcode::MagicName => "magic_name",
+                SubstituteOpcode::ItemNameAlt => "item_name(alt)",
+                SubstituteOpcode::SpellName => "spell_name",
+                SubstituteOpcode::QuestName => "quest_name",
             };
-            format!("op26   0x{:04X}{}", arg, note)
+            format!("SUBST  {}  arg=0x{:02X}", tag, arg)
         }
-        Token::Unknown(b) => format!("?      0x{:02X}", b),
+        Token::Spacing(n) => format!("SPACE  0x{:02X}", n),
+        Token::SkipTwo(n) => format!("SKIP   0x{:02X}", n),
+        Token::Control(b) => format!("CTRL   0x{:02X}  ; page-break / wait", b),
+        Token::Truncated(op) => format!("TRUNC  0x{:02X}", op),
     }
 }
 
@@ -186,19 +192,22 @@ fn stats_all(path: &PathBuf) -> Result<()> {
     for (i, evs) in messages.iter().enumerate() {
         let s = EventStats::from_events(evs);
         totals.glyphs += s.glyphs;
-        totals.page_breaks += s.page_breaks;
-        totals.op65 += s.op65;
-        totals.op4c += s.op4c;
-        totals.op26 += s.op26;
-        totals.unknowns += s.unknowns;
+        totals.wide_glyphs += s.wide_glyphs;
+        totals.substitutes += s.substitutes;
+        totals.spacing += s.spacing;
+        totals.skip_two += s.skip_two;
+        totals.controls += s.controls;
+        totals.truncated += s.truncated;
         totals.end_of_message += s.end_of_message;
         if i < 16 {
             println!(
-                "  [{:>3}] {} glyphs, {} page-breaks, {} unknown, {} ev total",
+                "  [{:>3}] {} glyphs, {} wide, {} subst, {} ctrl, {} trunc, {} ev total",
                 i,
                 s.glyphs,
-                s.page_breaks,
-                s.unknowns,
+                s.wide_glyphs,
+                s.substitutes,
+                s.controls,
+                s.truncated,
                 evs.len(),
             );
         }
@@ -207,8 +216,14 @@ fn stats_all(path: &PathBuf) -> Result<()> {
         println!("  ... +{} more messages", messages.len() - 16);
     }
     println!(
-        "totals: {} glyphs, {} page-breaks, {} op65, {} op4c, {} op26, {} unknown",
-        totals.glyphs, totals.page_breaks, totals.op65, totals.op4c, totals.op26, totals.unknowns,
+        "totals: {} glyphs, {} wide, {} subst, {} space, {} skip, {} ctrl, {} trunc",
+        totals.glyphs,
+        totals.wide_glyphs,
+        totals.substitutes,
+        totals.spacing,
+        totals.skip_two,
+        totals.controls,
+        totals.truncated,
     );
     Ok(())
 }
