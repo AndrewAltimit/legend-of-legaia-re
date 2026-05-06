@@ -13,6 +13,7 @@ pub mod mode;
 pub mod scene;
 pub mod scene_assets;
 pub mod scene_bundle;
+pub mod scene_resources;
 pub mod world;
 
 use anyhow::{Context, Result};

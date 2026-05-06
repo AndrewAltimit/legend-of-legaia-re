@@ -75,4 +75,4 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 
 `MOV/MV*.STR` files are PSX MDEC video streams. Public decoders exist (jPSXdec, PSX-MDEC docs); the engine track delegates to those rather than re-implementing.
 
-`XA/XA*.XA` files are XA-ADPCM audio streams. The decoder in `crates/xa` is spec-correct on synthetic input but the on-disc files use a non-standard interleave; this is still under investigation.
+`XA/XA*.XA` files are XA-ADPCM audio streams in standard CD-XA Mode 2 Form 2. The decoder in `crates/xa` is spec-correct, and the [`xa demux-disc`](../../crates/xa/src/bin/xa.rs) subcommand reads raw 2352-byte sectors directly off the `.bin`, parses each `(file_no, ch_no)` subheader, and emits one WAV per channel. See [`xa.md`](xa.md) — the earlier "non-standard interleave" framing was Form-1-truncation damage, not a bespoke Legaia muxing scheme.

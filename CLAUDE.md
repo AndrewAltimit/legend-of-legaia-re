@@ -124,10 +124,11 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | — | World state, scene host, dialog panel, mode/menu/world dispatch, BGM director, save round-trip. |
+| [`crates/engine-core`](crates/engine-core/README.md) | — | World state, scene host, scene resources (runtime VRAM pre-pass), dialog panel, mode/menu/world dispatch, BGM director, save round-trip. |
 | [`crates/engine-render`](crates/engine-render/README.md) | — | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the `legaia-font` atlas. |
 | [`crates/engine-audio`](crates/engine-audio/README.md) | — | cpal-backed audio mixer + clean-room SPU + SsAPI-shape SEQ sequencer. |
-| [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect / move VMs + battle-action SM + `battle_formulas` (damage / MP / accuracy / RNG). |
+| [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect / move VMs + battle-action SM + 16-arm action validator + `battle_formulas` (damage / MP / accuracy / RNG). |
+| [`crates/engine-shell`](crates/engine-shell/) | `legaia-engine` | Top-level driver. Boots a CDNAME scene straight from `PROT.DAT` (no `tim_scan/` / `tmd_scan/` intermediates). `info --scene <name>` prints the scene-host's resolved-asset summary; `list-scenes` walks the CDNAME map. |
 | [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver. |
 | [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. Disc browser + TIM thumbnails + software TMD rasteriser running in the browser, plus per-entry MES/SEQ/VAB inspector via `current_entry_info_json`. |
 

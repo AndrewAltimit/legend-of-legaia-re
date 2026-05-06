@@ -211,6 +211,32 @@ Called from state `0x0C` for non-flee actions. Walks the 8-slot actor table comp
 
 `crates/engine-core/src/world.rs` composes this with the actor VM, move VM, and effect VM into a single `World` struct that engines drive via `World::tick`.
 
+## Action validator (`FUN_8003FB10`)
+
+The 16-arm gate the menu / battle UI runs against a candidate slot before committing the player's action. Selects which validation rule fires from the outer `param_1` arm and (for arm 6) a sub-case `param_2`. Reads HP / MP / status / item-count / stat caps from the active record (battle-actor pointer table when `_DAT_8007B83C == 0x15`, character record array otherwise) and writes a per-slot validity bit at `gp + 0x9A8`. Source: [`ghidra/scripts/funcs/8003fb10.txt`](../../ghidra/scripts/funcs/8003fb10.txt).
+
+Arms (clean-room port at [`crates/engine-vm/src/action_validator.rs`](../../crates/engine-vm/src/action_validator.rs)):
+
+| arm | meaning |
+|---|---|
+| `0x00` | Alive AND `hp < hp_max` (heal target). |
+| `0x01` | Walk party — set bit per slot that's alive-and-not-full. |
+| `0x02` | Alive AND `mp < mp_max` (restore-MP target). |
+| `0x03` | Status-flag presence. Battle: `actor[+0x16E] != 0`. |
+| `0x04` | Dead target (Revive item validator). |
+| `0x05` | Alive (any-action target). |
+| `0x06` | Stat-cap walker — sub-case picks which stat to check. |
+| `0x07` | Alive (synonym of arm 5; separate code path with no upper bound). |
+| `0x08` | Alive AND `(status & 3) != 0` ("can apply paralysis / sleep"). |
+| `0x09` / `0x0A` | Always valid; force the bitmask to the literal `0x07`. |
+| `0x0B` / `0x0C` / `0x0D` | Per-slot exact match; only valid when `slot == arm - 0x0B`. |
+| `0x80` | Out-of-battle; story flag `0x100000` clear AND system flag 5 clear. |
+| `0x81` | Out-of-battle; story flag `0x200000` clear AND system flag 6 clear. |
+| `0x82` | Out-of-battle; calls the external item-count validator (`FUN_80046898`). |
+| `0x83` | Always valid. |
+
+The retail dispatcher's `gp + 0x9A8` byte is exposed via [`ActionValidatorHost::target_valid_bits`](../../crates/engine-vm/src/action_validator.rs); engines wire it to whatever cursor / slot-grey state the menu reads.
+
 ## TODO
 
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.

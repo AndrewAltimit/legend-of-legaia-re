@@ -26,7 +26,9 @@ Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls th
 
 Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together — the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
-The asset-viewer's `--vram-extra-dir` flag is the workaround until the chain is fully traced for every scene type. Battle is fully traced; field / town / level-up rely on the workaround.
+Engines that drive a clean-room scene loop call [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder sweeps every entry's bytes in the CDNAME block, runs the TIM scanner, and uploads each parsed TIM to a software [`legaia_tim::Vram`] at its canonical `(fb_x, fb_y)` slot — the same model the PSX runtime uses when DMAing TIMs at boot. Cross-entry CLUTs resolve naturally because every TIM in the block lands in the shared VRAM before any TMD draws.
+
+The asset-viewer's `--vram-extra-dir` flag is the legacy workaround that pre-dates the bulk pre-pass; it survives for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
 
 To find which PROT entry provides a missing CLUT row, run:
 

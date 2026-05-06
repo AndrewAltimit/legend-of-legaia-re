@@ -1209,6 +1209,8 @@ dependencies = [
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
+ "legaia-tim",
+ "legaia-tmd",
  "legaia-vab",
  "log",
 ]
@@ -1225,6 +1227,18 @@ dependencies = [
  "log",
  "pollster",
  "wgpu",
+]
+
+[[package]]
+name = "legaia-engine-shell"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "env_logger",
+ "legaia-engine-core",
+ "legaia-prot",
+ "log",
 ]
 
 [[package]]
