@@ -6,6 +6,39 @@ The bytecode interpreter that drives Legaia's overworld scripting — NPC moveme
 
 The decompiled source is at `ghidra/scripts/funcs/overlay_0897_801de840.txt`. References to `func_0x80xxxxxx` are calls into `SCUS_942.54`; `FUN_801xxxxx` are sister functions inside the 0897 overlay.
 
+## On-disc form: `scene_event_scripts`
+
+The on-disc carrier for field-VM bytecode is the `scene_event_scripts` /
+`scene_scripted_asset_table` PROT-entry shape (see
+[`formats/scene-bundles.md`](../formats/scene-bundles.md)). Both share a
+`[u16 count][u16 offsets[count]]` prescript at offset 0; each offset points
+to one record's bytecode, and most records open with the four-byte
+`0xFFFF 0x0000` frame-divider sentinel.
+
+99 of 124 CDNAME scenes carry an event-script entry (~80% of the disc's
+scenes). Per-scene record counts run from 1 to 71+ records.
+
+The Rust API for walking these records lives in `legaia-asset`:
+
+```rust
+use legaia_asset::scene_event_scripts;
+let ranges = scene_event_scripts::record_ranges(buf)?;
+for (start, end) in ranges {
+    let record_bytes = &buf[start..end];
+    // record_bytes opens with the frame divider 0xFFFF 0x0000 in most cases
+}
+```
+
+`legaia-engine-core::scene::Scene::find_event_scripts()` resolves the
+correct entry within a loaded `Scene` and exposes per-record byte ranges.
+`legaia-engine-core::world::World::load_field_record()` skips the leading
+frame-divider sentinel and resets the VM cursor.
+
+The `asset-viewer field <scene>` subcommand drives this end-to-end —
+it loads a scene, finds the event-script entry, ticks the VM frame-by-frame
+against record N (default 0), and surfaces the running step-result tally
+in the HUD so missing `FieldHost` hooks are visible at a glance.
+
 ## Function signature
 
 ```c

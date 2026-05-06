@@ -148,6 +148,13 @@ Sub-ops `0x1F` / `0x20` are HSV-space ramps on a packed 24-bit RGB color stored 
 
 The fourth flag bank at `DAT_80086D70` is shared between the move VM (sub-ops `0x13` / `0x14` predicate, `0x1C` / `0x1D` set / clear) and the field VM (high-byte default routes `0x5x` set / `0x6x` clear / `0x7x` test). `engine-core::World` exposes it as a single lazily-grown `system_flags: Vec<u8>` with MSB-first bit ordering (mirroring `FUN_8003CE08`'s `0x80 >> (idx & 7)`). The field VM's `idx` encoding `((opcode_byte & 0x8F) << 8) | operand_byte` ranges over `0..=0x87FF`, which is why the bank can't be a fixed-size 256-bit array.
 
+Sub-ops `0x3A`, `0x3B`, `0x3C` close out the player-relative cluster:
+- `0x3A` writes the angle from the actor to the player (computed as `atan2(dz, dx)` quantised to PSX 12-bit angle units, 4096 = full circle) into `bytecode[state.pc + op[2] + 3]`. Engines wire `MoveHost::ext_compute_angle` to surface the player position; the world-side default reads `world.player_actor_slot`.
+- `0x3B` looks up the position of party-member `op[2]` and writes the world-XYZ triple into `bytecode[state.pc + op[3] + 4..+6]`. Pre-clears the dst slots before the lookup so a no-table host still gets the zero-sentinel guarantee. When the lookup returns `None`, the size is `4` (skip the follow-up payload). Engines populate `world.party_actor_slots: Vec<Option<u8>>` with the live party-to-actor-slot map.
+- `0x3C` writes the immediate fade colour to scratchpad globals (`ticks == 0`) or schedules a per-frame ramp (`ticks > 0`). The world records the request in `world.pending_fade: Option<FadeRequest>` so engines can drain it each frame to drive the screen overlay.
+
+**Sub-op coverage in `crates/engine-vm`: 61/61 dispatched (every entry of the `FUN_801D362C` JT at `0x801CE868`).** Some sub-ops have host-trait stubs that fall through to no-ops on the default `MoveHost` impl (the world wires the ones with natural state — `ext_compute_angle`, `ext_party_member_lookup`, `ext_fade_color`, `ext_query_flag_bank`, `ext_set_flag_bank`, `ext_clear_flag_bank`, `ext_scratchpad_*`, `ext_set_8007b9d8`). The remaining stubs (`ext_debug_world`, `ext_func56798`, `ext_midpoint_set`, `ext_func801d31b0`, `ext_emit_ot_packet`, `ext_world_struct_*`, `ext_17`, `ext_20`) carry pure rendering / opaque-PsyQ side-effects and are best overridden per engine.
+
 ### 0x30 — `KEY_BUFFER_FREE` (size 0, ends loop / falls into 0x22)
 
 If `actor[+0xA8]` was heap-allocated, calls `FUN_800583C8(actor + 0xA0, buf)`; else uses the inline buffer at `actor + 0xAC`. Clears `actor[+0x9C]`. Goto `caseD_22` epilogue.

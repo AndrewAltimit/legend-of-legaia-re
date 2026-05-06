@@ -87,6 +87,59 @@ The CSV gives the *exact* PROT entries the runtime loader requests for that scen
 3. Save state while the level-up screen is displayed (auto-shown post-battle).
 4. Run `analyze-overlay.sh ... --label level_up`.
 
+### Dialog (text-renderer overlay)
+
+The proportional dialog font's glyph bitmaps and the MES bytecode interpreter
+both live in an overlay that's only present while a dialog box is open.
+The `legaia-mes` parser can already walk MES container bytes; the missing
+piece is the renderer's overlay-resident byte→quad pipeline.
+
+1. Load a save where you can talk to an NPC (any town).
+2. Initiate dialog (Cross on an NPC).
+3. **As soon as the dialog box appears**, save state. (The overlay unloads
+   when the box closes; capturing mid-conversation is essential.)
+4. Run `scripts/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label dialog`.
+5. Run `scripts/import-overlay-named.sh dialog` so the overlay imports as
+   a named program (preserved across re-imports of other overlays).
+
+What to look for after import:
+- Strings near the overlay base — Japanese / English glyph table headers.
+- Functions that take a `MES container ptr + msg_id + (x, y)` shape — likely
+  the dialog opener `FUN_8001FD44`'s overlay callee.
+- `LoadImage`-shaped writes to VRAM via `_DAT_8007AF40`-region SPU/GPU regs
+  — that's the per-page glyph upload.
+
+This unblocks the dialog-rendering side of the engine. Once captured, the
+crate `legaia-mes` already has the bytecode walker; the renderer-side
+quads can land in `crates/engine-render` against the extracted font atlas.
+
+### Cutscene
+
+Cutscenes use XA-streamed audio + a per-cutscene mode driver in an overlay
+distinct from town/battle. The XA demuxer is in `crates/xa`; the
+game-mode driver landed in PR #9. The missing piece is the cutscene
+overlay's outer state machine that picks XA tracks + scene transitions.
+
+1. Load a save just before a known cutscene trigger (post-boss,
+   chapter-end, etc.).
+2. **Once the cutscene starts playing** (XA audio audible, fullscreen
+   playback), save state. The first 1-2 seconds work — the overlay is
+   resident as long as the cutscene is active.
+3. Run `scripts/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0" --label cutscene`.
+4. Run `scripts/import-overlay-named.sh cutscene`.
+
+What to look for after import:
+- `jal` to `_DAT_8007AF40`-region SPU regs at the XA-DMA destination
+  (mirror of the SPU port in `engine-audio`).
+- A 28-mode-style table indexed by cutscene ID — the cutscene equivalent
+  of the global game-mode table at `0x8007078C`.
+- Strings with cutscene-specific filenames (`opening.xa`, `ending.xa`,
+  per-chapter labels).
+
+Once captured, the engine-side cutscene driver in `engine-core` can
+upgrade from "stub" to "drives the XA stream against the captured
+mode table."
+
 ## Bulk import of static overlay candidates
 
 The `find-overlay` heuristic surfaces PROT entries that look like overlay code (high `addiu sp, sp, -X` density). To bulk-import the top candidates:
