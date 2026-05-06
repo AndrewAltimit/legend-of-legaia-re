@@ -85,6 +85,13 @@ After running the pipeline:
 # PROT entry browser
 ./target/release/asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT
 
+# Headless engine driver — boots a CDNAME scene straight off PROT bytes
+# (no `tim_scan/` or `tmd_scan/` filesystem intermediate). Prints what the
+# scene-host resolved: TIMs uploaded to VRAM, TMDs parsed, MES presence,
+# SEQ / VAB / event-script counts.
+./target/release/legaia-engine info --scene town01
+./target/release/legaia-engine list-scenes
+
 # Field scene runner — drives the field-VM against a real CDNAME scene's
 # event-script records, with dialog rendering wired into the same window
 ./target/release/asset-viewer field town01
@@ -179,10 +186,11 @@ legend-of-legaia-re/
 │   ├── save/                     # Per-character record (0x414B) parse + write
 │   ├── font/                     # Dialog font extraction + atlas / layout API
 │   ├── extract/                  # Top-level pipeline driver
-│   ├── engine-core/              # World, scene host, dialog panel, save round-trip
+│   ├── engine-core/              # World, scene host, scene resources (runtime VRAM pre-pass), save round-trip
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
-│   ├── engine-vm/                # Actor / field / effect / move VMs + battle SM + formulas
+│   ├── engine-vm/                # Actor / field / effect / move VMs + battle SM + action validator + formulas
+│   ├── engine-shell/             # `legaia-engine` top-level driver — boots a CDNAME scene from PROT bytes alone
 │   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
 │   └── web-viewer/               # WASM target — disc browser running in the browser
 ├── docs/                         # Topic-first technical reference (see "Documentation")

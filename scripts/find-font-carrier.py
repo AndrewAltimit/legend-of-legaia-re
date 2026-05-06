@@ -3,22 +3,136 @@
 
 Reads the raw 4bpp VRAM bytes the font extractor wrote to
 `extracted/font/dialog_font_vram_4bpp.bin` and searches every PROT entry
-for a long enough match. The font tile-page is 32 KB; a 64-byte slice
-from the middle is enough to be unique against random bytes but small
-enough to survive any minor permutations.
+for a long enough match. The font tile-page is 32 KB; most cells contain
+short non-zero spans surrounded by zeros so simple grep-style searches
+pick patterns the font shares with random TIM data.
+
+This script tries three search strategies in order:
+
+1. **Direct slice match** — original strategy. Picks 64-byte slices from
+   regions known to carry glyph data.
+2. **Glyph-row signature match** — extract the 8-byte row signatures
+   for each character cell, search every PROT entry for a long run of
+   consecutive matching rows. Survives any byte-level permutation that
+   keeps the row layout intact.
+3. **LZS-decompressed match** — for entries the static categorizer marks
+   as `LzsContainer` or `Pochi*` filler (most common font carriers in
+   the disc layout), LZS-decompress and re-run the slice search against
+   the decoded bytes. Requires the `lzs-decode` binary on `PATH` (built
+   via `cargo build -p legaia-lzs --release`).
 
 Run from the repo root:
     python3 scripts/find-font-carrier.py
 """
 from __future__ import annotations
-import os
+
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EXTRACTED = ROOT / "extracted"
 FONT_BIN = EXTRACTED / "font" / "dialog_font_vram_4bpp.bin"
 PROT_DIR = EXTRACTED / "PROT"
+
+
+def slice_probes(font_bytes: bytes) -> list[tuple[int, bytes]]:
+    """Build slice-match probes — fixed offsets, fixed length."""
+    candidates = [
+        (0x600, 64),
+        (0x1000, 64),
+        (0x2000, 64),
+        (0x4000, 64),
+    ]
+    out: list[tuple[int, bytes]] = []
+    for off, n in candidates:
+        slice_bytes = font_bytes[off : off + n]
+        if any(slice_bytes):
+            out.append((off, slice_bytes))
+    return out
+
+
+def glyph_row_probes(font_bytes: bytes) -> list[tuple[int, bytes]]:
+    """Build glyph-row signature probes.
+
+    The font is a 256x256 pixel 4bpp tile-page = 128 bytes per row of
+    pixels. Each glyph cell is 16x16 pixels → 8 bytes wide × 16 rows tall.
+    For one heavy-data row of a heavy-data glyph (say 'M' at column 13,
+    row 4) we read 16 rows × 8 bytes = 128 bytes that span the cell.
+    Any concatenation of >= 2 such cells gives a long unique signature
+    that direct-slice probes miss when the tile-page is stored row-major.
+
+    Cells are arranged as 16 cols × 14 rows, with the glyph cells
+    starting at character byte 0x20 (so cell index `c` corresponds to
+    char byte `c+0x20` in the dialog stream). We pick a row of 4 cells
+    that all carry heavy data: 'M' (0x4D), 'N' (0x4E), 'O' (0x4F),
+    'P' (0x50) — middle-of-row capital letters.
+    """
+    PAGE_BYTES_PER_ROW = 128
+    CELL_BYTES_W = 8
+    CELL_PX_H = 16
+    out: list[tuple[int, bytes]] = []
+    for first_char, count in [(0x41, 8), (0x4D, 4), (0x61, 8)]:
+        sig = bytearray()
+        for col_offset in range(count):
+            c = first_char + col_offset
+            cell_col = c & 0x0F
+            cell_row = (c >> 4) - 0x02
+            base_x = cell_col * CELL_BYTES_W
+            base_y = cell_row * CELL_PX_H
+            for r in range(CELL_PX_H):
+                row_off = (base_y + r) * PAGE_BYTES_PER_ROW + base_x
+                if row_off + CELL_BYTES_W > len(font_bytes):
+                    break
+                sig.extend(font_bytes[row_off : row_off + CELL_BYTES_W])
+        if any(sig):
+            out.append((first_char, bytes(sig)))
+    return out
+
+
+def search_buffer(buf: bytes, probes: list[tuple[int, bytes]]) -> list[tuple[int, int]]:
+    """Return list of `(probe_label, offset_in_buf)` for each probe hit."""
+    hits: list[tuple[int, int]] = []
+    for label, needle in probes:
+        idx = buf.find(needle)
+        if idx >= 0:
+            hits.append((label, idx))
+    return hits
+
+
+def lzs_decode_to(buf: bytes, work_dir: Path) -> list[bytes] | None:
+    """Try LZS-decoding `buf` via the `lzs-decode container` subcommand.
+    Returns a list of decompressed section payloads on success, None
+    otherwise (most PROT entries aren't LZS containers).
+    """
+    binary = shutil.which("lzs-decode")
+    if not binary:
+        return None
+    src = work_dir / "in.bin"
+    src.write_bytes(buf)
+    out_dir = work_dir / "sections"
+    if out_dir.exists():
+        for f in out_dir.iterdir():
+            f.unlink()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            [binary, "container", str(src), str(out_dir)],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    finally:
+        src.unlink(missing_ok=True)
+    sections = []
+    for path in sorted(out_dir.glob("*")):
+        sections.append(path.read_bytes())
+        path.unlink()
+    return sections or None
 
 
 def main() -> int:
@@ -28,42 +142,71 @@ def main() -> int:
         sys.exit(f"missing {PROT_DIR} - run `legaia-extract` first")
 
     font_bytes = FONT_BIN.read_bytes()
-    # Pick a slice that's deep enough into the font to skip the leading
-    # all-zeros region (space + control glyphs) and the all-zeros tail.
-    candidates = [
-        (0x600, 64),    # near start of letter 'A' (row 0, col 1)
-        (0x1000, 64),   # mid-page
-        (0x2000, 64),   # roughly halfway
-        (0x4000, 64),   # later page
-    ]
-    needles = []
-    for off, n in candidates:
-        slice_bytes = font_bytes[off:off + n]
-        if any(slice_bytes):
-            needles.append((off, slice_bytes))
 
-    if not needles:
-        sys.exit("font bytes are all zero - did extraction succeed?")
+    slices = slice_probes(font_bytes)
+    rows = glyph_row_probes(font_bytes)
+    print(f"slice probes: {len(slices)}, row-signature probes: {len(rows)}")
 
-    print(f"searching {len(list(PROT_DIR.glob('*.BIN')))} PROT entries with {len(needles)} probes...")
-    hits: dict[str, list[tuple[int, int]]] = {}
-    for path in sorted(PROT_DIR.glob("*.BIN")):
+    paths = sorted(PROT_DIR.glob("*.BIN"))
+    print(f"searching {len(paths)} PROT entries (raw)...")
+    raw_hits: dict[str, list[tuple[str, int]]] = {}
+    for path in paths:
         data = path.read_bytes()
-        for needle_off, needle in needles:
-            idx = data.find(needle)
-            if idx >= 0:
-                hits.setdefault(path.name, []).append((needle_off, idx))
+        hits = search_buffer(data, [(f"slice@{o:x}", n) for o, n in slices])
+        hits += search_buffer(data, [(f"rows@{o:x}", n) for o, n in rows])
+        if hits:
+            raw_hits[path.name] = hits
 
-    if not hits:
-        print("no PROT entry contains a font slice - the font lives behind LZS or in a per-frame upload that we haven't traced yet")
-        print("see docs/formats/dialog-font.md for the unblock paths")
-        return 1
+    if raw_hits:
+        print(f"\nraw hits: {len(raw_hits)} entries")
+        for name, hs in sorted(raw_hits.items()):
+            print(f"  {name}: {hs}")
+    else:
+        print("no raw hits.")
 
-    print(f"\n{len(hits)} PROT entries match at least one probe:")
-    for name, matches in sorted(hits.items()):
-        first = matches[0]
-        print(f"  {name}: {len(matches)} probe(s); first at vram_off=0x{first[0]:X} prot_off=0x{first[1]:X}")
-    return 0
+    # LZS pass — best-effort, requires lzs-decode on PATH.
+    if not shutil.which("lzs-decode"):
+        print("\nskipping LZS pass: `lzs-decode` not on PATH (build via `cargo build -p legaia-lzs --release` and add target/release to PATH)")
+        return 0 if raw_hits else 1
+
+    print("\nLZS pass on candidate entries...")
+    lzs_hits: dict[str, list[tuple[str, int, int]]] = {}
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        decoded = 0
+        for path in paths:
+            data = path.read_bytes()
+            if len(data) < 16:
+                continue
+            sections = lzs_decode_to(data, td_path)
+            if sections is None:
+                continue
+            decoded += 1
+            for sec_idx, decoded_bytes in enumerate(sections):
+                hits = search_buffer(
+                    decoded_bytes, [(f"slice@{o:x}", n) for o, n in slices]
+                )
+                hits += search_buffer(
+                    decoded_bytes, [(f"rows@{o:x}", n) for o, n in rows]
+                )
+                for label, off in hits:
+                    lzs_hits.setdefault(path.name, []).append((label, sec_idx, off))
+        print(f"LZS-decoded {decoded} entries")
+        if lzs_hits:
+            print(f"LZS hits: {len(lzs_hits)} entries")
+            for name, hs in sorted(lzs_hits.items()):
+                print(f"  {name}: {hs}")
+        else:
+            print("no LZS hits.")
+
+    if raw_hits or lzs_hits:
+        return 0
+    print(
+        "\nno match in either pass — font is likely uploaded by an overlay-resident\n"
+        "routine that copies from a buffer the static analysis hasn't classified yet.\n"
+        "See docs/formats/dialog-font.md for the trace path."
+    )
+    return 1
 
 
 if __name__ == "__main__":

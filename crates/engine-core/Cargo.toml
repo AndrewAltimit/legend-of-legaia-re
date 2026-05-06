@@ -18,5 +18,7 @@ legaia-lzs = { path = "../lzs" }
 legaia-mes = { path = "../mes" }
 legaia-prot = { path = "../prot" }
 legaia-seq = { path = "../seq" }
+legaia-tim = { path = "../tim" }
+legaia-tmd = { path = "../tmd" }
 legaia-vab = { path = "../vab" }
 legaia-save = { path = "../save" }
