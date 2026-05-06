@@ -20,6 +20,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 pub use glam;
+pub use legaia_font;
 pub use legaia_tim;
 pub use wgpu;
 
@@ -163,6 +164,26 @@ pub struct TextDraw {
 pub struct TextOverlay<'a> {
     pub atlas: &'a UploadedFontAtlas,
     pub draws: &'a [TextDraw],
+}
+
+/// Convert a [`legaia_font::Layout`] to a vector of [`TextDraw`]s anchored at
+/// `pen` with the supplied tint. Glyph atlas coordinates come from the
+/// layout; destination coordinates are pen-relative pixels with one quad per
+/// glyph. The returned draws are batchable into a single [`TextOverlay`].
+pub fn text_draws_for(
+    layout: &legaia_font::Layout,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    layout
+        .glyphs
+        .iter()
+        .map(|g| TextDraw {
+            dst: (pen.0 + g.dst_x, pen.1 + g.dst_y, g.width, g.height),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color,
+        })
+        .collect()
 }
 
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
@@ -1372,6 +1393,16 @@ impl Renderer {
         })
     }
 
+    /// Upload a [`legaia_font::Font`]'s atlas to the GPU. Convenience wrapper
+    /// around [`Self::upload_font_atlas`] that pulls dimensions and pixels
+    /// from the parsed font directly. Use this when the caller is loading
+    /// the dialog font; use the lower-level `upload_font_atlas` for custom
+    /// atlases (debug fonts, sprite glyph sheets, etc).
+    pub fn upload_font(&self, font: &legaia_font::Font) -> Result<UploadedFontAtlas> {
+        let (w, h) = font.atlas_dimensions();
+        self.upload_font_atlas(font.atlas_rgba(), w, h)
+    }
+
     /// Upload a font atlas. Used by the 2D text pipeline; one atlas can back
     /// many [`TextOverlay`] batches.
     pub fn upload_font_atlas(
@@ -2226,5 +2257,22 @@ mod tests {
         let (sx, sy) = letterbox_scale(400, 800, 100, 100);
         assert!((sx - 1.0).abs() < 1e-4, "sx={}", sx);
         assert!((sy - 0.5).abs() < 1e-4, "sy={}", sy);
+    }
+
+    #[test]
+    fn text_draws_translate_layout_to_screen_space() {
+        let font = legaia_font::synthetic_for_tests();
+        let layout = font.layout(b"Ab");
+        let pen = (10, 20);
+        let color = [1.0, 0.5, 0.25, 1.0];
+        let draws = text_draws_for(&layout, pen, color);
+        assert_eq!(draws.len(), layout.glyphs.len());
+        let g0 = layout.glyphs[0];
+        let d0 = draws[0];
+        assert_eq!(d0.dst.0, pen.0 + g0.dst_x);
+        assert_eq!(d0.dst.1, pen.1 + g0.dst_y);
+        assert_eq!(d0.dst.2, g0.width);
+        assert_eq!(d0.src, (g0.atlas_x, g0.atlas_y, g0.width, g0.height));
+        assert_eq!(d0.color, color);
     }
 }

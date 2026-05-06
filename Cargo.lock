@@ -1216,6 +1216,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam",
+ "legaia-font",
  "legaia-tim",
  "log",
  "pollster",

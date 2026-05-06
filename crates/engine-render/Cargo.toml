@@ -12,6 +12,7 @@ path = "src/lib.rs"
 anyhow.workspace = true
 bytemuck = { version = "1", features = ["derive"] }
 glam.workspace = true
+legaia-font = { path = "../font" }
 legaia-tim = { path = "../tim" }
 log = "0.4"
 pollster = "0.3"
