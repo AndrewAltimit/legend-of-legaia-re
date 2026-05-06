@@ -1,0 +1,12 @@
+[package]
+name = "legaia-save"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_save"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true

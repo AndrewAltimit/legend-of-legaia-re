@@ -115,6 +115,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/mdt`](crates/mdt/README.md) | `mdt` | Move table (Tactical Arts) parser. |
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
+| [`crates/save`](crates/save/README.md) | — | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record). |
 | [`crates/extract`](crates/extract/README.md) | `legaia-extract` | Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. |
 
 **Track 2 — engine reimplementation (clean-room Rust)**

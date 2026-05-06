@@ -1301,6 +1301,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-save"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "legaia-seq"
 version = "0.1.0"
 dependencies = [

@@ -30,11 +30,29 @@ enough to drive a real game scene.
 across environments without an emscripten install.
 
 ```bash
+# Direct invocation:
 wasm-pack build crates/web-viewer --target web
+
+# Or via the convenience script that also syncs into site/wasm/ for
+# local previewing:
+scripts/build-wasm.sh
 ```
 
 The generated `pkg/` is consumed by the static site under
-[`site/`](../../site/).
+[`site/`](../../site/). `site/wasm/` is gitignored — the build script
+regenerates it from `pkg/` on demand.
+
+## Serve locally
+
+```bash
+scripts/build-wasm.sh
+python3 -m http.server -d site 8000
+# then open http://localhost:8000/viewer.html
+```
+
+The viewer instantiates `mod.LegaiaViewer('viewer-canvas')` against the
+canvas in `site/viewer.html`. Drop a `.bin`, `.dat`, or `.tim` onto the
+page; nothing leaves the browser.
 
 ## Crate type
 
