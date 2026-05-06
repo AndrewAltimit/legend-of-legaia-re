@@ -105,15 +105,17 @@ impl<'a> DialogPanel<'a> {
             }
             PlayerState::PageBreak => self.state = PanelState::PageBreak,
             PlayerState::WaitingForInput => self.state = PanelState::PageBreak,
-            PlayerState::Control(MesEvent::Control(byte)) => {
-                if byte == 0xCF {
-                    // Field VM dialog renderer (FUN_80036888): 0xCF sets
-                    // _DAT_8007B454. The MES interpreter doesn't surface
-                    // the operand directly via the Control event, so we
-                    // can't drive `current_clut` from here yet — leaving
-                    // this stub for when the interp grows a 0xCF-with-arg
-                    // event variant.
-                }
+            PlayerState::Control(MesEvent::SkipTwo(arg)) => {
+                // `0xCF XX` in MES bytecode renders XX alone (the `0xCF`
+                // prefix is a "skip me" marker per FUN_80036888). The
+                // post-substitution color-change escape with the same
+                // first byte is a separate byte stream the renderer sees
+                // *after* MES interpretation; it isn't carried in the
+                // bytecode and so doesn't drive `current_clut` here.
+                self.page.push(PanelGlyph {
+                    byte: arg,
+                    clut: self.current_clut,
+                });
             }
             PlayerState::Control(_) => {}
             PlayerState::Done => self.state = PanelState::Done,
@@ -238,12 +240,16 @@ impl OwnedDialogPanel {
                 self.waiting_for_input = true;
                 self.state = PanelState::PageBreak;
             }
+            Some(MesEvent::SkipTwo(arg)) => self.page.push(PanelGlyph {
+                byte: arg,
+                clut: self.current_clut,
+            }),
             Some(MesEvent::EndOfMessage(_)) | None => {
                 self.done = true;
                 self.state = PanelState::Done;
             }
             Some(_) => {
-                // Spacing / Substitute / Skip / Truncated — engine-side
+                // Spacing / Substitute / Truncated — engine-side
                 // routing isn't wired yet; leave the pen alone.
             }
         }
@@ -321,6 +327,33 @@ mod tests {
         assert_eq!(panel.page_bytes(), vec![b'a', b'b', b'c']);
         assert_eq!(panel.tick(), PanelState::Done);
         assert!(panel.is_done());
+    }
+
+    /// `0xCF XX` in MES bytecode = render XX alone. Both panel variants
+    /// must surface the operand byte through the page accumulator, not
+    /// silently drop it.
+    #[test]
+    fn dialog_panel_renders_skip_two_operand() {
+        // Glyph 'a', then 0xCF 'b', then End. Expected page: ['a', 'b'].
+        let buf = vec![b'a', 0xCF, b'b', 0x00];
+        let interp = Interpreter::new_at(&buf, 0);
+        let mut player = DialogPlayer::new(interp);
+        player.set_glyphs_per_frame(1);
+        let mut panel = DialogPanel::new(player);
+        for _ in 0..3 {
+            panel.tick();
+        }
+        assert_eq!(panel.page_bytes(), vec![b'a', b'b']);
+    }
+
+    #[test]
+    fn owned_panel_renders_skip_two_operand() {
+        let buf = Arc::new(vec![b'a', 0xCF, b'b', 0x00]);
+        let mut panel = OwnedDialogPanel::new(buf, 0);
+        for _ in 0..3 {
+            panel.tick();
+        }
+        assert_eq!(panel.page_bytes(), vec![b'a', b'b']);
     }
 
     #[test]

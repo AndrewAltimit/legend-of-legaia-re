@@ -54,6 +54,14 @@
       <div class="card-title">Battle</div>
       <div class="card-body">Battle scene loader, the per-action state machine, character record layout, the per-frame stat aggregator, range / line-of-sight, and the weapon-trail builder.</div>
     </a>
+    <a class="card" href="battle-action.html">
+      <div class="card-title">Battle action FSM</div>
+      <div class="card-body">The 47-state machine inside <code>FUN_801E295C</code> &mdash; the layer between &ldquo;player picked Attack&rdquo; and &ldquo;HP has been deducted.&rdquo; Two-level dispatch: action category (party byte) plus execution phase (ctx byte).</div>
+    </a>
+    <a class="card" href="battle-formulas.html">
+      <div class="card-title">Battle formulas</div>
+      <div class="card-body">Damage / MP-cost / accuracy / RNG arithmetic. Selector dispatch in <code>FUN_800402F4</code>; spirit damage is hard-coded; MP cost is ability-bit modified; engine-vm port lives in <code>battle_formulas.rs</code>.</div>
+    </a>
     <a class="card" href="audio.html">
       <div class="card-title">Audio</div>
       <div class="card-body">Sound-driver path strings, three SCUS consumers, the SsAPI sequencer cluster (statically linked PsyQ libsnd), and the libspu DMA engine that moves bytes into SPU RAM.</div>

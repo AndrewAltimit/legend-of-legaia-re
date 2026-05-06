@@ -78,6 +78,7 @@ How the runtime engine works.
 | [`move-vm.md`](docs/subsystems/move-vm.md) | Move-table opcode VM at `FUN_80023070` (71 ops, JT `0x80010778`); op `0x2F` escapes to overlay extension. |
 | [`battle.md`](docs/subsystems/battle.md) | Battle scene loader; actor pointer table. |
 | [`battle-action.md`](docs/subsystems/battle-action.md) | Battle action state machine at `FUN_801E295C`. |
+| [`battle-formulas.md`](docs/subsystems/battle-formulas.md) | Damage / MP-cost / accuracy / RNG arithmetic kernels. Mirror lives at `engine-vm::battle_formulas`. |
 
 ### Tooling — [`docs/tooling/`](docs/tooling/)
 
@@ -116,18 +117,19 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
 | [`crates/save`](crates/save/README.md) | — | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record). |
+| [`crates/font`](crates/font/README.md) | `font-extract` | Proportional dialog font: extracts width table + 4bpp atlas from `SCUS_942.54` + a mednafen save state, exposes layout API for engine consumers. |
 | [`crates/extract`](crates/extract/README.md) | `legaia-extract` | Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. |
 
 **Track 2 — engine reimplementation (clean-room Rust)**
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | — | VFS, asset cache, frame timing. |
-| [`crates/engine-render`](crates/engine-render/README.md) | — | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader). |
+| [`crates/engine-core`](crates/engine-core/README.md) | — | World state, scene host, dialog panel, mode/menu/world dispatch, BGM director, save round-trip. |
+| [`crates/engine-render`](crates/engine-render/README.md) | — | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the `legaia-font` atlas. |
 | [`crates/engine-audio`](crates/engine-audio/README.md) | — | cpal-backed audio mixer + clean-room SPU + SsAPI-shape SEQ sequencer. |
-| [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect VM ports. |
-| [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, stage geometry, VAB playback, PROT browser, scene-bundle presets. |
-| [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. |
+| [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect / move VMs + battle-action SM + `battle_formulas` (damage / MP / accuracy / RNG). |
+| [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver. |
+| [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. Disc browser + TIM thumbnails + software TMD rasteriser running in the browser. |
 
 ### Ghidra-side scripts — [`ghidra/scripts/`](ghidra/scripts/)
 

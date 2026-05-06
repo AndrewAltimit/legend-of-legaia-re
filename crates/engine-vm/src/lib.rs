@@ -65,6 +65,7 @@
 #![forbid(unsafe_code)]
 
 pub mod battle_action;
+pub mod battle_formulas;
 pub mod effect_vm;
 pub mod field;
 pub mod field_helpers;
