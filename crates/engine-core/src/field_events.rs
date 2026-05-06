@@ -1,0 +1,279 @@
+//! Event queue emitted by the field VM through the world's `FieldHost`
+//! implementation.
+//!
+//! Most field-VM opcodes only have meaningful side-effects in the host —
+//! BGM dispatch lives in audio, dialog opens a UI overlay, money / inventory
+//! / party manipulation update game state. The retail engine called into
+//! its loader / audio / UI layers directly; in the clean-room port we route
+//! every such call through a [`FieldEvent`] pushed onto
+//! [`crate::world::World::pending_field_events`].
+//!
+//! Engines drain the queue once per frame after [`crate::world::World::tick`]
+//! returns and apply the events to their own subsystems. Tests inspect it to
+//! verify the VM emitted what they expected.
+//!
+//! Read [`docs/subsystems/script-vm.md`] for the per-opcode semantic notes.
+
+use legaia_engine_vm::field::CameraParam;
+
+/// One side-effect the field VM requested this frame. Variants mirror the
+/// `FieldHost` callbacks one-to-one — see [`legaia_engine_vm::field::FieldHost`]
+/// for the per-opcode citation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FieldEvent {
+    /// Field-VM op 0x35 (BGM control).
+    Bgm { text_id: u16, sub_op: u8 },
+    /// Field-VM op 0x39 (play SFX).
+    PlaySfx { sfx_id: u8 },
+    /// Field-VM op 0x3F (open dialog box).
+    OpenDialog {
+        text_id: u16,
+        inline: Vec<u8>,
+        world_x: u16,
+        world_z: u16,
+        depth_id: u8,
+    },
+    /// Field-VM op 0x3A (add or subtract money). Already sign-extended
+    /// from the 24-bit operand.
+    AddMoney { delta: i32 },
+    /// Field-VM op 0x3B (set inventory slot count).
+    SetItemCount { slot_byte: u8, count: u8 },
+    /// Field-VM op 0x3C (party_add).
+    PartyAdd { char_id: u8, accepted: bool },
+    /// Field-VM op 0x3D (party_remove).
+    PartyRemove { char_id: u8 },
+    /// Field-VM op 0x3E `op0 < 100` arm (field interaction trigger).
+    FieldInteract { interact_id: u8, slot: u8 },
+    /// Field-VM op 0x4F (scene register write).
+    SceneRegisterWrite {
+        slot_10: u8,
+        slot_12: u8,
+        slot_14: u8,
+    },
+    /// Field-VM op 0x4C sub-0 (set party leader).
+    SetPartyLeader { leader_id: u8 },
+    /// Field-VM op 0x45 sub-CONFIGURE (camera params).
+    CameraConfigure {
+        params: Vec<CameraParam>,
+        apply_trigger: u16,
+        mode: u8,
+    },
+    /// Field-VM op 0x45 sub-LOAD (camera payload).
+    CameraLoad { payload: Vec<u8> },
+    /// Field-VM op 0x45 sub-SAVE (snapshot camera scratch).
+    CameraSave,
+    /// Field-VM op 0x45 sub-APPLY (apply + read-back).
+    CameraApply,
+    /// Field-VM op 0x4B (multi-keyframe animation setup).
+    SetupAnimation {
+        count: u8,
+        base_id: u8,
+        frames: Vec<u8>,
+    },
+    /// Field-VM op 0x46 long-form render config (RGB + packed).
+    RenderCfgLong { b1: u8, b2: u8, b3: u8, b4: u8 },
+    /// Field-VM op 0x46 short-form render config.
+    RenderCfgShort { r: u8, g: u8, b: u8, packed: u8 },
+    /// Field-VM op 0x44 (counter / score / hit-counter update).
+    CounterUpdate { op0: u8 },
+    /// Effect-anim trigger (op cluster around 0x32 / 0x4E).
+    EffectAnimTrigger { arg: u8 },
+    /// Field-VM op 0x36 (scene fade) — the host returned this fade was
+    /// applied. `op0_word` / `op1_word` are the raw 16-bit operands so
+    /// engines can re-decode mode bits.
+    SceneFade { op0_word: u16, op1_word: u16 },
+    /// Menu-control op 0x4C sub-1.
+    MenuCtrl { op0: u8, payload: [u8; 5] },
+    /// Menu-refresh op (any sub-op that requested a reload).
+    MenuRefresh,
+    /// Field-VM op 0x23 (move_to). Includes the decoded world coords.
+    MoveTo {
+        world_x: u16,
+        world_z: u16,
+        is_player: bool,
+    },
+    /// Field-VM op 0x2C (exec_move) — the move-table consumer.
+    ExecMove { move_id: u8 },
+}
+
+impl FieldEvent {
+    /// One-line description for logging / asset-viewer overlays.
+    pub fn summary(&self) -> String {
+        match self {
+            FieldEvent::Bgm { text_id, sub_op } => {
+                format!("Bgm(id={text_id}, sub={sub_op})")
+            }
+            FieldEvent::PlaySfx { sfx_id } => format!("PlaySfx({sfx_id})"),
+            FieldEvent::OpenDialog {
+                text_id,
+                inline,
+                world_x,
+                world_z,
+                depth_id,
+            } => {
+                format!(
+                    "OpenDialog(text={text_id}, inline={}B, x={world_x}, z={world_z}, depth={depth_id})",
+                    inline.len()
+                )
+            }
+            FieldEvent::AddMoney { delta } => format!("AddMoney({delta})"),
+            FieldEvent::SetItemCount { slot_byte, count } => {
+                format!("SetItemCount(slot={slot_byte:#x}, count={count})")
+            }
+            FieldEvent::PartyAdd {
+                char_id, accepted, ..
+            } => {
+                format!("PartyAdd({char_id}, accepted={accepted})")
+            }
+            FieldEvent::PartyRemove { char_id } => format!("PartyRemove({char_id})"),
+            FieldEvent::FieldInteract { interact_id, slot } => {
+                format!("FieldInteract(id={interact_id}, slot={slot})")
+            }
+            FieldEvent::SceneRegisterWrite {
+                slot_10,
+                slot_12,
+                slot_14,
+            } => {
+                format!("SceneRegisterWrite([{slot_10:#x}, {slot_12:#x}, {slot_14:#x}])")
+            }
+            FieldEvent::SetPartyLeader { leader_id } => format!("SetPartyLeader({leader_id})"),
+            FieldEvent::CameraConfigure {
+                params,
+                apply_trigger,
+                mode,
+            } => {
+                format!(
+                    "CameraConfigure({} params, apply={apply_trigger}, mode={mode})",
+                    params.len()
+                )
+            }
+            FieldEvent::CameraLoad { payload } => {
+                format!("CameraLoad({}B)", payload.len())
+            }
+            FieldEvent::CameraSave => "CameraSave".into(),
+            FieldEvent::CameraApply => "CameraApply".into(),
+            FieldEvent::SetupAnimation {
+                count,
+                base_id,
+                frames,
+            } => {
+                format!(
+                    "SetupAnimation(count={count}, base={base_id}, frames={}B)",
+                    frames.len()
+                )
+            }
+            FieldEvent::RenderCfgLong { b1, b2, b3, b4 } => {
+                format!("RenderCfgLong({b1:#x}, {b2:#x}, {b3:#x}, {b4:#x})")
+            }
+            FieldEvent::RenderCfgShort { r, g, b, packed } => {
+                format!("RenderCfgShort(r={r}, g={g}, b={b}, packed={packed})")
+            }
+            FieldEvent::CounterUpdate { op0 } => format!("CounterUpdate({op0})"),
+            FieldEvent::EffectAnimTrigger { arg } => format!("EffectAnimTrigger({arg})"),
+            FieldEvent::SceneFade { op0_word, op1_word } => {
+                format!("SceneFade(op0={op0_word:#x}, op1={op1_word:#x})")
+            }
+            FieldEvent::MenuCtrl { op0, payload } => {
+                format!("MenuCtrl(op0={op0}, payload={:?})", payload)
+            }
+            FieldEvent::MenuRefresh => "MenuRefresh".into(),
+            FieldEvent::MoveTo {
+                world_x,
+                world_z,
+                is_player,
+            } => {
+                format!("MoveTo(x={world_x}, z={world_z}, player={is_player})")
+            }
+            FieldEvent::ExecMove { move_id } => format!("ExecMove({move_id})"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_handles_each_variant() {
+        // Just smoke-test that none of the variants panic on summary.
+        let events = vec![
+            FieldEvent::Bgm {
+                text_id: 1,
+                sub_op: 1,
+            },
+            FieldEvent::PlaySfx { sfx_id: 7 },
+            FieldEvent::OpenDialog {
+                text_id: 0x42,
+                inline: vec![1, 2, 3],
+                world_x: 10,
+                world_z: 20,
+                depth_id: 0,
+            },
+            FieldEvent::AddMoney { delta: -500 },
+            FieldEvent::SetItemCount {
+                slot_byte: 0x12,
+                count: 99,
+            },
+            FieldEvent::PartyAdd {
+                char_id: 3,
+                accepted: true,
+            },
+            FieldEvent::PartyRemove { char_id: 2 },
+            FieldEvent::FieldInteract {
+                interact_id: 4,
+                slot: 1,
+            },
+            FieldEvent::SceneRegisterWrite {
+                slot_10: 1,
+                slot_12: 2,
+                slot_14: 3,
+            },
+            FieldEvent::SetPartyLeader { leader_id: 0 },
+            FieldEvent::CameraConfigure {
+                params: vec![],
+                apply_trigger: 0,
+                mode: 0,
+            },
+            FieldEvent::CameraLoad { payload: vec![] },
+            FieldEvent::CameraSave,
+            FieldEvent::CameraApply,
+            FieldEvent::SetupAnimation {
+                count: 0,
+                base_id: 0,
+                frames: vec![],
+            },
+            FieldEvent::RenderCfgLong {
+                b1: 0,
+                b2: 0,
+                b3: 0,
+                b4: 0,
+            },
+            FieldEvent::RenderCfgShort {
+                r: 0,
+                g: 0,
+                b: 0,
+                packed: 0,
+            },
+            FieldEvent::CounterUpdate { op0: 0 },
+            FieldEvent::EffectAnimTrigger { arg: 0 },
+            FieldEvent::SceneFade {
+                op0_word: 0,
+                op1_word: 0,
+            },
+            FieldEvent::MenuCtrl {
+                op0: 0,
+                payload: [0; 5],
+            },
+            FieldEvent::MenuRefresh,
+            FieldEvent::MoveTo {
+                world_x: 0,
+                world_z: 0,
+                is_player: false,
+            },
+            FieldEvent::ExecMove { move_id: 0 },
+        ];
+        for e in events {
+            assert!(!e.summary().is_empty());
+        }
+    }
+}

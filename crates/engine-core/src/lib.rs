@@ -6,6 +6,7 @@
 //! crates talk to this layer, the render and audio crates read from it.
 
 pub mod dialog;
+pub mod field_events;
 pub mod input;
 pub mod mode;
 pub mod scene;
