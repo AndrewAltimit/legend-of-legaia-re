@@ -226,6 +226,13 @@ pub struct World {
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
 
+    /// Pending field-VM scene transition (`scene_transition(map_id)` was
+    /// called this frame). Drained by [`crate::scene::SceneHost::tick`]
+    /// — when `Some(map_id)`, the host resolves the map id to a scene
+    /// name, loads it, and reinitialises the field VM. `None` between
+    /// transitions.
+    pub pending_scene_transition: Option<u8>,
+
     /// Frame counter incremented every [`World::tick`].
     pub frame: u64,
 }
@@ -274,6 +281,7 @@ impl World {
             sound_bank_ready: true,
             party_count: 3,
             battle_end: None,
+            pending_scene_transition: None,
             frame: 0,
         }
     }
@@ -843,6 +851,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn system_flag_test(&self, idx: u16) -> bool {
         self.world.system_flag_test(idx)
     }
+    fn scene_transition(&mut self, map_id: u8) {
+        // Record the request; SceneHost::tick drains it after the field
+        // step returns so the bytecode swap doesn't invalidate the
+        // borrow we're stepping through.
+        self.world.pending_scene_transition = Some(map_id);
+    }
 }
 
 // --- battle action host ----------------------------------------------------
@@ -1133,6 +1147,34 @@ mod tests {
         let record = vec![0x37, 0x00];
         world.load_field_record(&record);
         assert_eq!(world.field_pc, 0);
+    }
+
+    /// Field VM op 0x3E with `op0 >= 100` is the scene-transition arm
+    /// (`map_id = op0 - 100`). The world's `FieldHostImpl` records the
+    /// request in `pending_scene_transition` for `SceneHost::tick` to
+    /// drain on the next frame boundary.
+    #[test]
+    fn field_scene_transition_writes_pending_map_id() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // Bytecode: opcode 0x3E, op0 = 105 (map_id 5), then 4 padding
+        // bytes (op0 + 4 trailing operand bytes per the dispatcher math).
+        let bytecode = vec![0x3E, 105, 0, 0, 0, 0];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.pending_scene_transition, Some(5));
+    }
+
+    /// `op0 < 100` is the field_interact arm — should NOT trigger a
+    /// scene transition.
+    #[test]
+    fn field_op_3e_low_op0_does_not_request_scene_transition() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let bytecode = vec![0x3E, 50, 7];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.pending_scene_transition, None);
     }
 
     #[test]
