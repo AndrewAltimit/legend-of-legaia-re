@@ -28,6 +28,14 @@ Many character meshes reference CLUT rows that live in **different PROT entries*
 
 The asset-viewer's `--vram-extra-dir` flag is the workaround until the chain is fully traced for every scene type. Battle is fully traced; field / town / level-up rely on the workaround.
 
+To find which PROT entry provides a missing CLUT row, run:
+
+```bash
+asset clut-finder <vram_x> <vram_y> --extracted-root extracted
+```
+
+This walks `extracted/tim_scan/<entry>/*.tim` and reports every TIM whose CLUT (or image, with `--clut-only` off) covers the requested VRAM cell. The output gives `(entry, tim, kind, fbx, fby, w, h)` rows so the user can pick the matching entry directory and pass it via `--vram-extra-dir`. This is the principled discovery step before adding a viewer overlay.
+
 ## Music / SFX selection (BGM lookup)
 
 Documented under the [field VM](script-vm.md) → "BGM lookup table" section. The short version: the BGM ID is a PROT-relative offset, not a literal table lookup. `FUN_800243F0` resolves `bgm_id < 2000` to the scene-local PROT slot at `_DAT_80084540 + 6 + bgm_id`, and `bgm_id >= 2000` to the global pool at `_DAT_8007BC64 + bgm_id - 2000`. The "BGM table" *is* the [CDNAME.TXT](../formats/cdname.md) per-scene block layout.
