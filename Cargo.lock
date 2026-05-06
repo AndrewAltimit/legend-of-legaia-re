@@ -1203,6 +1203,7 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-vm",
  "legaia-prot",
+ "legaia-save",
  "legaia-seq",
  "legaia-vab",
  "log",
