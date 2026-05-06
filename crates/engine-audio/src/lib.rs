@@ -42,6 +42,100 @@ pub const DEFAULT_INPUT_RATE: u32 = 22_050;
 /// Microseconds elapsed per SPU internal sample period (1/44100 s).
 const US_PER_SPU_TICK: f64 = 1_000_000.0 / SPU_INTERNAL_RATE as f64;
 
+/// Decoded XA-ADPCM stream parked in the audio output for direct cpal-side
+/// mixing. Bypasses the SPU voice mixer (mirrors retail PSX hardware: XA
+/// audio is summed with the SPU output by the SPU's CD-input path, not by
+/// any of the 24 voices).
+///
+/// One [`XaPlayback`] is active at a time; stash a fresh buffer via
+/// [`AudioOut::play_xa`] to replace it. The [`StreamResampler`] owns the
+/// playback cursor and drives sample-rate conversion to the SPU's 44.1 kHz
+/// per output sample.
+pub struct XaPlayback {
+    /// Decoded interleaved PCM. Mono = `[s0, s1, s2, ...]`; stereo =
+    /// `[l0, r0, l1, r1, ...]`.
+    pub pcm: Vec<i16>,
+    /// Source sample rate (e.g. 18900 or 37800 for PSX XA).
+    pub sample_rate: u32,
+    /// Channel layout. Stereo PCM is interleaved L/R; mono is duplicated
+    /// to both output channels at mix time.
+    pub channels: legaia_xa::Channels,
+    /// Loop the buffer when playback runs off the end. Default `false`
+    /// (one-shot).
+    pub looping: bool,
+    /// Output gain (Q1.14 fixed-point, like SPU voice volumes). `0x4000`
+    /// = unity. Multiply samples by `gain / 0x4000`.
+    pub gain: u16,
+    /// Playback cursor in source samples per channel. `0..source_frames`.
+    pub cursor: f64,
+}
+
+impl XaPlayback {
+    /// Number of source-side frames (= per-channel samples).
+    pub fn source_frames(&self) -> usize {
+        self.pcm
+            .len()
+            .checked_div(self.channels.n() as usize)
+            .unwrap_or(0)
+    }
+
+    /// `true` once the cursor has run off the end and loop is off.
+    pub fn is_done(&self) -> bool {
+        !self.looping && self.cursor >= self.source_frames() as f64
+    }
+
+    /// Sample one source frame at the current cursor and advance by one
+    /// SPU-rate output sample (i.e. `sample_rate / 44100` of a source
+    /// frame). Returns `(L, R)`. Mono is duplicated to both channels.
+    fn tick_for_spu(&mut self) -> (i16, i16) {
+        let frames = self.source_frames();
+        if frames == 0 {
+            return (0, 0);
+        }
+        if self.cursor >= frames as f64 {
+            if self.looping {
+                self.cursor = self.cursor.rem_euclid(frames as f64);
+            } else {
+                return (0, 0);
+            }
+        }
+        let stride = self.channels.n() as usize;
+        // Linear interpolate between two source samples.
+        let i0 = self.cursor as usize;
+        let i1 = (i0 + 1).min(frames.saturating_sub(1));
+        let alpha = (self.cursor - i0 as f64) as f32;
+        let (l, r) = match self.channels {
+            legaia_xa::Channels::Mono => {
+                let s0 = self.pcm[i0 * stride];
+                let s1 = self.pcm[i1 * stride];
+                let s = lerp_i16(s0, s1, alpha);
+                (s, s)
+            }
+            legaia_xa::Channels::Stereo => {
+                let l0 = self.pcm[i0 * stride];
+                let r0 = self.pcm[i0 * stride + 1];
+                let l1 = self.pcm[i1 * stride];
+                let r1 = self.pcm[i1 * stride + 1];
+                (lerp_i16(l0, l1, alpha), lerp_i16(r0, r1, alpha))
+            }
+        };
+        // Apply gain (Q1.14 fixed-point: gain / 0x4000).
+        let g = self.gain as i32;
+        let l = ((l as i32 * g) >> 14).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        let r = ((r as i32 * g) >> 14).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        // Advance one SPU-rate output sample.
+        self.cursor += self.sample_rate as f64 / SPU_INTERNAL_RATE as f64;
+        (l, r)
+    }
+}
+
+/// Saturating mix of two stereo i16 frames.
+fn mix_stereo(a: (i16, i16), b: (i16, i16)) -> (i16, i16) {
+    let l = (a.0 as i32 + b.0 as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+    let r = (a.1 as i32 + b.1 as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+    (l, r)
+}
+
 /// Output-side resampler that drains the SPU at 44.1 kHz and produces samples
 /// at the host device rate. Linear interpolation; one-pole IIR is overkill
 /// for the use case (asset-viewer playback + scene BGM) and adds latency.
@@ -50,6 +144,9 @@ struct StreamResampler {
     /// Optional active sequencer. Ticked once per SPU sample so timing is
     /// locked to the audio clock instead of frame timing.
     sequencer: Option<Sequencer>,
+    /// Optional active XA streaming voice. Mixed into the SPU output at
+    /// SPU rate (44.1 kHz) before the host-rate resample.
+    xa: Option<XaPlayback>,
     /// Cached previous sample (one frame, stereo).
     prev: (i16, i16),
     /// Cached current sample (the SPU output we'll interpolate against).
@@ -66,6 +163,7 @@ impl StreamResampler {
         Self {
             spu: Spu::new(),
             sequencer: None,
+            xa: None,
             prev: (0, 0),
             cur: (0, 0),
             phase: 0.0,
@@ -74,7 +172,8 @@ impl StreamResampler {
     }
 
     /// Pull one output frame at the device sample rate, resampling from the
-    /// SPU's 44.1 kHz with linear interpolation.
+    /// SPU's 44.1 kHz with linear interpolation. XA streams are summed
+    /// into the SPU output at SPU rate, then the whole sum is resampled.
     fn next_frame(&mut self) -> (i16, i16) {
         // Advance the SPU as many ticks as needed to push `phase` into [0,1).
         while self.phase >= 1.0 {
@@ -82,7 +181,16 @@ impl StreamResampler {
                 seq.tick_us(&mut self.spu, US_PER_SPU_TICK);
             }
             self.prev = self.cur;
-            self.cur = self.spu.tick();
+            let mut sample = self.spu.tick();
+            if let Some(xa) = self.xa.as_mut() {
+                if xa.is_done() {
+                    self.xa = None;
+                } else {
+                    let xa_sample = xa.tick_for_spu();
+                    sample = mix_stereo(sample, xa_sample);
+                }
+            }
+            self.cur = sample;
             self.phase -= 1.0;
         }
         let alpha = self.phase as f32;
@@ -259,6 +367,45 @@ impl AudioOut {
         s.spu.voices[0].key_off();
     }
 
+    /// Install a streaming XA-ADPCM voice. Replaces any active XA stream
+    /// without crossfading. The cpal callback mixes XA samples into the
+    /// SPU output at 44.1 kHz; a one-shot stream auto-detaches when the
+    /// cursor runs off the end (set `looping = true` for BGM).
+    ///
+    /// `gain` uses the same Q1.14 fixed-point as SPU voice volumes —
+    /// pass `0x4000` for unity (no attenuation).
+    pub fn play_xa(
+        &self,
+        pcm: Vec<i16>,
+        sample_rate: u32,
+        channels: legaia_xa::Channels,
+        looping: bool,
+        gain: u16,
+    ) {
+        let mut s = self.state.lock().unwrap();
+        s.xa = Some(XaPlayback {
+            pcm,
+            sample_rate,
+            channels,
+            looping,
+            gain,
+            cursor: 0.0,
+        });
+    }
+
+    /// Detach the active XA stream (if any). Subsequent frames mix only
+    /// the SPU output.
+    pub fn stop_xa(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.xa = None;
+    }
+
+    /// `true` if an XA stream is currently attached and not yet exhausted.
+    pub fn xa_active(&self) -> bool {
+        let s = self.state.lock().unwrap();
+        s.xa.as_ref().is_some_and(|x| !x.is_done())
+    }
+
     /// Install a sequencer. The cpal callback ticks it once per SPU sample
     /// (every `1 / 44100` s) for sample-accurate timing. Replacing an
     /// existing sequencer silences any active notes from the prior one.
@@ -404,5 +551,148 @@ mod tests {
         // advanced = 44100. Tick count is the integer part. We don't expose
         // a counter; just assert no panic + finite state.
         // (The strict numerical check is in the SPU's own tests.)
+    }
+
+    // --- XaPlayback -------------------------------------------------------
+
+    fn make_mono_xa(rate: u32, samples: Vec<i16>, looping: bool) -> XaPlayback {
+        XaPlayback {
+            pcm: samples,
+            sample_rate: rate,
+            channels: legaia_xa::Channels::Mono,
+            looping,
+            gain: 0x4000,
+            cursor: 0.0,
+        }
+    }
+
+    #[test]
+    fn xa_playback_done_flag_flips_at_end_of_oneshot() {
+        let mut xa = make_mono_xa(SPU_INTERNAL_RATE, vec![100i16, 200, 300, 400], false);
+        assert!(!xa.is_done());
+        // 4 samples at SPU rate -> 4 ticks to exhaust.
+        for _ in 0..4 {
+            let _ = xa.tick_for_spu();
+        }
+        assert!(xa.is_done(), "one-shot should mark done after consumption");
+    }
+
+    #[test]
+    fn xa_playback_loops_when_looping_set() {
+        let mut xa = make_mono_xa(SPU_INTERNAL_RATE, vec![100i16, 200], true);
+        for _ in 0..50 {
+            let _ = xa.tick_for_spu();
+        }
+        // Looping streams never report done.
+        assert!(!xa.is_done());
+    }
+
+    #[test]
+    fn xa_playback_mono_duplicates_to_both_channels() {
+        let mut xa = make_mono_xa(SPU_INTERNAL_RATE, vec![1234i16, 0, 0, 0], false);
+        let (l, r) = xa.tick_for_spu();
+        assert_eq!(l, 1234);
+        assert_eq!(r, 1234);
+    }
+
+    #[test]
+    fn xa_playback_stereo_passes_l_r_separately() {
+        let mut xa = XaPlayback {
+            pcm: vec![100i16, 200, 0, 0],
+            sample_rate: SPU_INTERNAL_RATE,
+            channels: legaia_xa::Channels::Stereo,
+            looping: false,
+            gain: 0x4000,
+            cursor: 0.0,
+        };
+        let (l, r) = xa.tick_for_spu();
+        assert_eq!(l, 100);
+        assert_eq!(r, 200);
+    }
+
+    #[test]
+    fn xa_playback_gain_zero_silences_output() {
+        let mut xa = XaPlayback {
+            pcm: vec![32000i16, 32000, 32000, 32000],
+            sample_rate: SPU_INTERNAL_RATE,
+            channels: legaia_xa::Channels::Mono,
+            looping: false,
+            gain: 0,
+            cursor: 0.0,
+        };
+        let (l, r) = xa.tick_for_spu();
+        assert_eq!((l, r), (0, 0));
+    }
+
+    #[test]
+    fn xa_playback_resamples_lower_source_rate_correctly() {
+        // Source at half SPU rate => one source sample lasts 2 SPU ticks.
+        let mut xa = make_mono_xa(
+            SPU_INTERNAL_RATE / 2,
+            vec![1000i16, 2000, 3000, 4000],
+            false,
+        );
+        // First tick: at cursor=0 -> sample=1000.
+        let s0 = xa.tick_for_spu();
+        // Second tick: cursor advanced by 0.5 -> lerp(1000, 2000, 0.5) = 1500.
+        let s1 = xa.tick_for_spu();
+        // Third tick: cursor=1.0 -> sample=2000.
+        let s2 = xa.tick_for_spu();
+        assert_eq!(s0.0, 1000);
+        assert_eq!(s1.0, 1500);
+        assert_eq!(s2.0, 2000);
+    }
+
+    #[test]
+    fn xa_playback_empty_buffer_is_immediately_done() {
+        let xa = make_mono_xa(SPU_INTERNAL_RATE, vec![], false);
+        assert!(xa.is_done());
+    }
+
+    #[test]
+    fn resampler_mixes_xa_into_idle_spu_output() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        r.xa = Some(make_mono_xa(SPU_INTERNAL_RATE, vec![5000i16; 100], false));
+        // Pull a few frames so the resampler's `prev`/`cur` caches both
+        // hold the XA sample (first call sets cur, subsequent calls slide
+        // prev forward). After a few frames the lerp settles on the
+        // sustained XA value.
+        for _ in 0..16 {
+            r.phase = r.phase.max(1.0);
+            let _ = r.next_frame();
+        }
+        r.phase = 1.0;
+        let (l, r_out) = r.next_frame();
+        // SPU is silent -> mixed sample is just XA, ~5000.
+        assert!((l - 5000).abs() < 50, "left should be ~5000, got {l}");
+        assert!(
+            (r_out - 5000).abs() < 50,
+            "right should be ~5000, got {r_out}"
+        );
+    }
+
+    #[test]
+    fn resampler_drops_xa_after_oneshot_drains() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        r.xa = Some(make_mono_xa(SPU_INTERNAL_RATE, vec![1000i16, 2000], false));
+        r.phase = 1.0;
+        // First two ticks consume the buffer; one more tick: xa is None
+        // and frame is silent.
+        for _ in 0..3 {
+            r.phase = r.phase.max(1.0);
+            let _ = r.next_frame();
+        }
+        assert!(r.xa.is_none(), "exhausted XA stream should detach");
+    }
+
+    #[test]
+    fn mix_stereo_saturates_at_i16_bounds() {
+        let a = (i16::MAX, i16::MIN);
+        let b = (1, -1);
+        let (l, r) = mix_stereo(a, b);
+        // i16::MAX + 1 saturates to i16::MAX.
+        assert_eq!(l, i16::MAX);
+        // i16::MIN + -1 saturates to i16::MIN.
+        assert_eq!(r, i16::MIN);
     }
 }
