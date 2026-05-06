@@ -143,6 +143,25 @@ impl Font {
         self.widths[c as usize] as u32 + INTER_GLYPH_PAD as u32
     }
 
+    /// Try to load the runtime escape table from
+    /// `<extracted>/font/dialog_font_metadata.json`. Returns `None` when
+    /// the metadata file is missing or doesn't contain an `escape_table`
+    /// field — engines that don't need substitution can ignore this.
+    pub fn load_escape_table(extracted_root: impl AsRef<Path>) -> Result<Option<EscapeTable>> {
+        let path = extracted_root
+            .as_ref()
+            .join("font")
+            .join("dialog_font_metadata.json");
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let text =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let table =
+            EscapeTable::from_json(&text).with_context(|| format!("parse {}", path.display()))?;
+        Ok(Some(table))
+    }
+
     /// Atlas top-left pixel coordinate for character `c`. Returns `None` for
     /// characters that don't have a glyph.
     pub fn glyph_origin(c: u8) -> Option<(u32, u32)> {
@@ -390,6 +409,71 @@ pub fn extracted_font_dir(root: impl AsRef<Path>) -> PathBuf {
     root.as_ref().join("font")
 }
 
+/// Runtime escape table at SCUS `0x80074050`.
+///
+/// The dialog renderer dispatches the `0xCE` (inline-escape) byte by
+/// indexing this 38-entry table with the next byte. Each entry encodes a
+/// substitution: a `string_id` referencing a runtime string, a horizontal
+/// `advance_px` (how many pixels to move the pen after the substitution),
+/// and a `y_offset` for the substitution's baseline.
+///
+/// Format on disc: 38 × 4-byte entries — `(i16 string_id, u8 advance_px,
+/// i8 y_offset)`. Loaded from
+/// `extracted/font/dialog_font_metadata.json` produced by `font-extract`.
+#[derive(Debug, Clone)]
+pub struct EscapeTable {
+    pub entries: Vec<EscapeEntry>,
+}
+
+/// One escape-table entry. See [`EscapeTable`] for the format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EscapeEntry {
+    pub string_id: i16,
+    pub advance_px: u8,
+    pub y_offset: i8,
+}
+
+impl EscapeTable {
+    /// Parse a `dialog_font_metadata.json` file's `escape_table.entries`
+    /// array.
+    pub fn from_json(json: &str) -> Result<Self> {
+        let v: serde_json::Value = serde_json::from_str(json).context("parse escape_table JSON")?;
+        let arr = v
+            .pointer("/escape_table/entries")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| anyhow::anyhow!("missing /escape_table/entries"))?;
+        let mut entries = Vec::with_capacity(arr.len());
+        for (i, e) in arr.iter().enumerate() {
+            let string_id = e
+                .get("string_id")
+                .and_then(|x| x.as_i64())
+                .ok_or_else(|| anyhow::anyhow!("entry {i}: missing string_id"))?
+                as i16;
+            let advance_px = e
+                .get("advance_px")
+                .and_then(|x| x.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("entry {i}: missing advance_px"))?
+                as u8;
+            let y_offset = e
+                .get("y_offset")
+                .and_then(|x| x.as_i64())
+                .ok_or_else(|| anyhow::anyhow!("entry {i}: missing y_offset"))?
+                as i8;
+            entries.push(EscapeEntry {
+                string_id,
+                advance_px,
+                y_offset,
+            });
+        }
+        Ok(Self { entries })
+    }
+
+    /// Look up an entry by index — `byte` is the operand of `0xCE`.
+    pub fn entry(&self, byte: u8) -> Option<&EscapeEntry> {
+        self.entries.get(byte as usize)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,5 +588,30 @@ mod tests {
         assert_eq!(layout.glyphs.len(), 2);
         // 0x05 / 0x10 don't advance the pen — B sits right after A.
         assert_eq!(layout.glyphs[1].dst_x, f.advance_of(b'A') as i32);
+    }
+
+    #[test]
+    fn escape_table_parses_real_metadata_shape() {
+        // Synthesize a metadata JSON with two entries and verify both parse.
+        let json = r#"{
+            "escape_table": {
+                "entries": [
+                    {"idx": 0, "string_id": 55, "advance_px": 16, "y_offset": -2},
+                    {"idx": 1, "string_id": 33, "advance_px": 8, "y_offset": 0}
+                ]
+            }
+        }"#;
+        let table = EscapeTable::from_json(json).expect("parse");
+        assert_eq!(table.entries.len(), 2);
+        assert_eq!(table.entry(0).unwrap().string_id, 55);
+        assert_eq!(table.entry(1).unwrap().advance_px, 8);
+        assert_eq!(table.entry(0).unwrap().y_offset, -2);
+        assert!(table.entry(2).is_none());
+    }
+
+    #[test]
+    fn escape_table_returns_error_when_missing_field() {
+        let json = r#"{"unrelated": 42}"#;
+        assert!(EscapeTable::from_json(json).is_err());
     }
 }

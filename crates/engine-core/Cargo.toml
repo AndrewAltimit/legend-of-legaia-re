@@ -14,6 +14,7 @@ log = "0.4"
 legaia-engine-vm = { path = "../engine-vm" }
 legaia-asset = { path = "../asset" }
 legaia-font = { path = "../font" }
+legaia-lzs = { path = "../lzs" }
 legaia-mes = { path = "../mes" }
 legaia-prot = { path = "../prot" }
 legaia-seq = { path = "../seq" }

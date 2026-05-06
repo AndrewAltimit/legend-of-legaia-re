@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_anm::{
-    AnmPack, PREAMBLE_SIZE, Preamble, RecordHeader, pack_bytecode_histogram, parse, peel_preamble,
-    record_bytes, top_k,
+    AnmPack, PREAMBLE_SIZE, Preamble, RecordHeader, pack_bytecode_histogram,
+    pack_bytecode_top_bigrams, parse, peel_preamble, record_bytes, top_k,
 };
 
 #[derive(Parser)]
@@ -52,6 +52,19 @@ enum Cmd {
         #[arg(long, default_value_t = 16)]
         top: usize,
     },
+    /// Build an `(byte_n, byte_{n+1})` bigram histogram across every
+    /// record's bytecode region. Bigrams concentrate when the bytecode is
+    /// `[op, operand]` paired; they spread when it's variable-length.
+    /// Useful for inferring the dispatcher's encoding shape before the
+    /// overlay extraction lands.
+    Bigrams {
+        path: PathBuf,
+        #[arg(long, default_value_t = false)]
+        with_preamble: bool,
+        /// Number of top bigrams to print (default 32).
+        #[arg(long, default_value_t = 32)]
+        top: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -75,7 +88,30 @@ fn main() -> Result<()> {
             with_preamble,
             top,
         } => histogram(&path, with_preamble, top),
+        Cmd::Bigrams {
+            path,
+            with_preamble,
+            top,
+        } => bigrams(&path, with_preamble, top),
     }
+}
+
+fn bigrams(path: &Path, with_preamble: bool, top: usize) -> Result<()> {
+    let (payload, _preamble, pack) = load(path, with_preamble)?;
+    let triples = pack_bytecode_top_bigrams(&payload, &pack, top);
+    println!("file:    {}", path.display());
+    println!("records: {}", pack.records.len());
+    println!("top {} bigrams (descending count):", triples.len());
+    let total: u32 = triples.iter().map(|(_, _, c)| c).sum();
+    for (a, b, c) in &triples {
+        let pct = if total > 0 {
+            100.0 * (*c as f64) / (total as f64)
+        } else {
+            0.0
+        };
+        println!("  0x{:02X} 0x{:02X}  {:>6}  {:>5.1}%", a, b, c, pct);
+    }
+    Ok(())
 }
 
 fn histogram(path: &Path, with_preamble: bool, top: usize) -> Result<()> {

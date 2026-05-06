@@ -18,13 +18,15 @@
 //! Engines that want a different layout — say, ECS storage — should
 //! implement the VM `Host` traits themselves; this is the default.
 
+use crate::battle_events::BattleEvent;
+use crate::field_events::FieldEvent;
 use legaia_engine_vm as vm;
 use legaia_save;
 use vm::battle_action::{
     BattleActionCtx, BattleActionHost, BattleActor, BattleEndCause, Pose, StepOutcome,
 };
 use vm::effect_vm::{EffectHost, MasterSlot, Pool, StateOutcome};
-use vm::field::{FieldCtx, FieldHost, StepResult as FieldStepResult};
+use vm::field::{CameraParam, FieldCtx, FieldHost, SceneFadeResult, StepResult as FieldStepResult};
 use vm::move_vm::{ActorState as MoveActorState, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 
@@ -242,8 +244,85 @@ pub struct World {
     /// transitions.
     pub pending_scene_transition: Option<u8>,
 
+    /// Field-VM side-effects emitted this frame. Engines drain after
+    /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
+    /// Mirror of the `FieldHost` callbacks — see [`FieldEvent`] for the
+    /// per-variant citation.
+    ///
+    /// [`FieldEvent`]: crate::field_events::FieldEvent
+    pub pending_field_events: Vec<FieldEvent>,
+
+    /// Battle action state machine side-effects emitted this frame.
+    /// Engines drain after [`World::tick`] to dispatch poses, UI elements,
+    /// damage, screen-shake, etc. See [`BattleEvent`] for the per-variant
+    /// citation.
+    ///
+    /// [`BattleEvent`]: crate::battle_events::BattleEvent
+    pub pending_battle_events: Vec<BattleEvent>,
+
+    /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
+    /// a scene starts one. Updated synchronously when the VM emits the
+    /// corresponding `Bgm` event.
+    pub current_bgm: Option<u16>,
+
+    /// Active dialog request — populated by the field-VM op 0x3F handler,
+    /// cleared by the engine after the user dismisses the box. The MES
+    /// renderer reads `text_id` + `inline`; the world-coords + depth feed
+    /// the box placement.
+    pub current_dialog: Option<DialogRequest>,
+
+    /// Last `field_interact` request. Cleared by the engine when handled
+    /// (set to `None`).
+    pub last_field_interact: Option<(u8, u8)>,
+
+    /// Active party slot for the leader (op 0x4C sub-0 writes here, plus
+    /// `party_add` populates it on the first member).
+    pub party_leader_slot: Option<u8>,
+
+    /// Running money total (gold). Modified by op 0x3A `add_money`,
+    /// clamped to `[0, 9_999_999]` per the original retail formula.
+    pub money: i32,
+
+    /// Per-slot inventory counts. Indexed by raw `slot_byte` operand of
+    /// op 0x3B (`(slot >> 4) * 0x414 + (slot & 0xF)` in retail). Engines
+    /// can re-key this to their own inventory model.
+    pub inventory: std::collections::HashMap<u8, u8>,
+
+    /// Last camera state snapshot — filled by `camera_save`, applied by
+    /// `camera_apply` / `camera_load`. Engines that draw a camera read
+    /// this between frames.
+    pub camera_state: CameraState,
+
     /// Frame counter incremented every [`World::tick`].
     pub frame: u64,
+}
+
+/// Pending dialog request for the field-VM op 0x3F handler. The engine
+/// renders + advances; clearing `World::current_dialog` signals the script
+/// to resume.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DialogRequest {
+    pub text_id: u16,
+    pub inline: Vec<u8>,
+    pub world_x: u16,
+    pub world_z: u16,
+    pub depth_id: u8,
+}
+
+/// Camera state populated by `camera_save` / `camera_load` and read by
+/// `camera_apply`. Engines render the configured camera each frame.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CameraState {
+    /// Last `CameraConfigure` params applied (param-mask + values).
+    pub params: Vec<CameraParam>,
+    /// Last apply-trigger value.
+    pub apply_trigger: u16,
+    /// Last apply-mode nibble.
+    pub mode: u8,
+    /// Snapshot bytes from `camera_save`.
+    pub saved: Vec<u8>,
+    /// Last `camera_load` payload.
+    pub loaded_payload: Vec<u8>,
 }
 
 impl Default for World {
@@ -292,8 +371,31 @@ impl World {
             battle_end: None,
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
+            pending_field_events: Vec::new(),
+            pending_battle_events: Vec::new(),
+            current_bgm: None,
+            current_dialog: None,
+            last_field_interact: None,
+            party_leader_slot: None,
+            money: 0,
+            inventory: std::collections::HashMap::new(),
+            camera_state: CameraState::default(),
             frame: 0,
         }
+    }
+
+    /// Drain emitted field-VM events. Engines call once per frame after
+    /// [`World::tick`] to dispatch BGM, dialog, money, etc. Returns events
+    /// in emission order.
+    pub fn drain_field_events(&mut self) -> Vec<FieldEvent> {
+        std::mem::take(&mut self.pending_field_events)
+    }
+
+    /// Drain emitted battle action events. Engines call once per frame
+    /// after [`World::tick`] to dispatch poses, UI elements, damage, etc.
+    /// Returns events in emission order.
+    pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
+        std::mem::take(&mut self.pending_battle_events)
     }
 
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
@@ -924,6 +1026,254 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // borrow we're stepping through.
         self.world.pending_scene_transition = Some(map_id);
     }
+
+    fn bgm(&mut self, text_id: u16, sub_op: u8) {
+        // Sub-ops 1 (start field BGM) and 9 (queue) are the cases that
+        // pin a "currently playing" id. Other sub-ops are control words
+        // (pause / stop / volume / etc.) — we still surface the event so
+        // the engine can route them, just without overwriting current_bgm.
+        if sub_op == 1 || sub_op == 9 {
+            self.world.current_bgm = Some(text_id);
+        } else if sub_op == 4 {
+            // 4 = stop.
+            self.world.current_bgm = None;
+        }
+        self.world
+            .pending_field_events
+            .push(FieldEvent::Bgm { text_id, sub_op });
+    }
+
+    fn play_sfx(&mut self, sfx_id: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::PlaySfx { sfx_id });
+    }
+
+    fn open_dialog(
+        &mut self,
+        text_id: u16,
+        inline: &[u8],
+        world_x: u16,
+        world_z: u16,
+        depth_id: u8,
+    ) {
+        let inline_vec = inline.to_vec();
+        self.world.current_dialog = Some(DialogRequest {
+            text_id,
+            inline: inline_vec.clone(),
+            world_x,
+            world_z,
+            depth_id,
+        });
+        self.world
+            .pending_field_events
+            .push(FieldEvent::OpenDialog {
+                text_id,
+                inline: inline_vec,
+                world_x,
+                world_z,
+                depth_id,
+            });
+    }
+
+    fn add_money(&mut self, delta: i32) {
+        let new_total = (self.world.money as i64 + delta as i64).clamp(0, 9_999_999) as i32;
+        self.world.money = new_total;
+        self.world
+            .pending_field_events
+            .push(FieldEvent::AddMoney { delta });
+    }
+
+    fn set_item_count(&mut self, slot_byte: u8, count: u8) {
+        if count == 0 {
+            self.world.inventory.remove(&slot_byte);
+        } else {
+            self.world.inventory.insert(slot_byte, count);
+        }
+        self.world
+            .pending_field_events
+            .push(FieldEvent::SetItemCount { slot_byte, count });
+    }
+
+    fn party_add(&mut self, char_id: u8) -> bool {
+        // The retail engine maintains a sorted insertion in
+        // `_DAT_80084598..` (cap 4) and writes the leader slot when the
+        // party transitions from empty. We mirror that with
+        // `party_actor_slots` + `party_leader_slot`.
+        let already_present = self
+            .world
+            .party_actor_slots
+            .iter()
+            .any(|s| matches!(s, Some(id) if *id == char_id));
+        let accepted = if already_present {
+            false
+        } else if self.world.party_actor_slots.len() < 4 {
+            self.world.party_actor_slots.push(Some(char_id));
+            // First member also becomes the leader (matches retail's
+            // `count == 0` arm).
+            if self.world.party_leader_slot.is_none() {
+                self.world.party_leader_slot = Some(char_id);
+            }
+            true
+        } else {
+            false
+        };
+        self.world
+            .pending_field_events
+            .push(FieldEvent::PartyAdd { char_id, accepted });
+        accepted
+    }
+
+    fn party_remove(&mut self, char_id: u8) {
+        self.world
+            .party_actor_slots
+            .retain(|s| !matches!(s, Some(id) if *id == char_id));
+        if matches!(self.world.party_leader_slot, Some(id) if id == char_id) {
+            // Promote next member or clear.
+            self.world.party_leader_slot = self.world.party_actor_slots.first().copied().flatten();
+        }
+        self.world
+            .pending_field_events
+            .push(FieldEvent::PartyRemove { char_id });
+    }
+
+    fn field_interact(&mut self, interact_id: u8, slot: u8) {
+        self.world.last_field_interact = Some((interact_id, slot));
+        self.world
+            .pending_field_events
+            .push(FieldEvent::FieldInteract { interact_id, slot });
+    }
+
+    fn render_cfg_long(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::RenderCfgLong { b1, b2, b3, b4 });
+    }
+
+    fn render_cfg_short(&mut self, r: u8, g: u8, b: u8, packed: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::RenderCfgShort { r, g, b, packed });
+    }
+
+    fn scene_register_write(&mut self, slot_10: u8, slot_12: u8, slot_14: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::SceneRegisterWrite {
+                slot_10,
+                slot_12,
+                slot_14,
+            });
+    }
+
+    fn counter_update(&mut self, op0: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::CounterUpdate { op0 });
+    }
+
+    fn setup_animation(&mut self, _ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::SetupAnimation {
+                count,
+                base_id,
+                frames: frames.to_vec(),
+            });
+    }
+
+    fn set_party_leader(&mut self, leader_id: u8) {
+        self.world.party_leader_slot = Some(leader_id);
+        self.world
+            .pending_field_events
+            .push(FieldEvent::SetPartyLeader { leader_id });
+    }
+
+    fn camera_configure(&mut self, params: &[CameraParam], apply_trigger: u16, mode: u8) {
+        self.world.camera_state.params = params.to_vec();
+        self.world.camera_state.apply_trigger = apply_trigger;
+        self.world.camera_state.mode = mode;
+        self.world
+            .pending_field_events
+            .push(FieldEvent::CameraConfigure {
+                params: params.to_vec(),
+                apply_trigger,
+                mode,
+            });
+    }
+
+    fn camera_load(&mut self, payload: &[u8]) {
+        self.world.camera_state.loaded_payload = payload.to_vec();
+        self.world
+            .pending_field_events
+            .push(FieldEvent::CameraLoad {
+                payload: payload.to_vec(),
+            });
+    }
+
+    fn camera_save(&mut self) {
+        // Snapshot what we have currently — engines that model real camera
+        // matrices can override this on a custom host wrapper. For now we
+        // write a placeholder so save/load round-trip behaves.
+        self.world.camera_state.saved = self.world.camera_state.loaded_payload.clone();
+        self.world.pending_field_events.push(FieldEvent::CameraSave);
+    }
+
+    fn camera_apply(&mut self) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::CameraApply);
+    }
+
+    fn scene_fade(&mut self, op0_word: u16, op1_word: u16) -> SceneFadeResult {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::SceneFade { op0_word, op1_word });
+        SceneFadeResult::Done
+    }
+
+    fn effect_anim_trigger(&mut self, _ctx: &mut FieldCtx, arg: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::EffectAnimTrigger { arg });
+    }
+
+    fn menu_ctrl_sub1(&mut self, op0: u8, payload: &[u8; 5]) {
+        self.world.pending_field_events.push(FieldEvent::MenuCtrl {
+            op0,
+            payload: *payload,
+        });
+    }
+
+    fn menu_refresh(&mut self) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::MenuRefresh);
+    }
+
+    fn move_to(&mut self, ctx: &mut FieldCtx, world_x: u16, world_z: u16, is_player: bool) {
+        // Player path: also propagate to the active actor slot's
+        // move_state so the renderer / collision layer sees the teleport.
+        if is_player
+            && let Some(slot) = self.world.player_actor_slot
+            && let Some(actor) = self.world.actors.get_mut(slot as usize)
+        {
+            actor.move_state.world_x = world_x as i16;
+            actor.move_state.world_z = world_z as i16;
+        }
+        let _ = ctx;
+        self.world.pending_field_events.push(FieldEvent::MoveTo {
+            world_x,
+            world_z,
+            is_player,
+        });
+    }
+
+    fn exec_move(&mut self, _ctx: &mut FieldCtx, move_id: u8) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::ExecMove { move_id });
+    }
 }
 
 // --- battle action host ----------------------------------------------------
@@ -974,12 +1324,80 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle_end = Some(cause);
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::BattleEnd { cause });
     }
     fn party_count(&self) -> u8 {
         self.world.party_count
     }
-    fn pose(&mut self, _actor_id: u8, _pose: Pose) {
-        // Engines hook pose changes; default world records nothing.
+    fn pose(&mut self, actor_id: u8, pose: Pose) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::Pose { actor_id, pose });
+    }
+    fn ui_element(&mut self, effect_id: u8, mode: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::UiElement { effect_id, mode });
+    }
+    fn camera_bounds(&mut self) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::CameraBounds);
+    }
+    fn party_setup(&mut self, actor_slot: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::PartySetup { actor_slot });
+    }
+    fn monster_setup(&mut self, actor_slot: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::MonsterSetup { actor_slot });
+    }
+    fn recompute_battle_order(&mut self) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::RecomputeBattleOrder);
+    }
+    fn load_capture_archive(&mut self, idx: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::LoadCaptureArchive { idx });
+    }
+    fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::SpellAnimTrigger {
+                party_slot,
+                spell_id,
+            });
+    }
+    fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::SpellAnimSustain { actor_id, anim_id });
+    }
+    fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::ApplyDamage {
+                icon,
+                page,
+                target_slot,
+                party_slot,
+            });
+    }
+    fn screen_shake(&mut self, magnitude: u16) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::ScreenShake { magnitude });
+    }
+    fn ramp_brightness(&mut self, target_pct: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::RampBrightness { target_pct });
     }
 }
 
@@ -1685,5 +2103,107 @@ mod tests {
             world.actors[0].move_state.pc, 1,
             "large-radius 0x39 should pass"
         );
+    }
+
+    // --- Field-event emission ---------------------------------------------
+
+    /// Op 0x35 sub-1 (start BGM) emits `FieldEvent::Bgm` and pins
+    /// `current_bgm`. Encoding: `[0x35, lo, hi, sub_op]`.
+    #[test]
+    fn field_op_35_sub1_emits_bgm_event_and_pins_current() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // text_id = 0x42 (LE), sub_op = 1 (start field BGM).
+        let bytecode = vec![0x35, 0x42, 0x00, 0x01];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::Bgm {
+                    sub_op: 1,
+                    text_id: 0x42
+                }
+            )),
+            "expected Bgm event, got {evs:?}"
+        );
+        assert_eq!(world.current_bgm, Some(0x42));
+    }
+
+    /// Op 0x3F (open dialog) populates `current_dialog` and emits an
+    /// `OpenDialog` event. Encoding: `[0x3F, lo, hi, len, ...inline, xb, zb, depth]`.
+    #[test]
+    fn field_op_3f_emits_open_dialog() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // text_id = 0xAB, len = 0, then xb / zb / depth_id (3 bytes).
+        let bytecode = vec![0x3F, 0xAB, 0x00, 0x00, 0x01, 0x02, 0x03];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(
+                |e| matches!(e, FieldEvent::OpenDialog { text_id: 0xAB, inline, .. } if inline.is_empty())
+            ),
+            "expected OpenDialog event, got {evs:?}"
+        );
+        assert_eq!(world.current_dialog.as_ref().map(|d| d.text_id), Some(0xAB));
+    }
+
+    /// Op 0x3A (add_money) clamps to `[0, 9_999_999]` and emits `AddMoney`.
+    #[test]
+    fn field_op_3a_clamps_and_emits_add_money() {
+        let mut world = World::new();
+        world.money = 100;
+        world.mode = SceneMode::Field;
+        // 0x3A op0=0xFF op1=0xFF op2=0xFF (24-bit -1) → delta = -1.
+        // The op handler reads the 3-byte payload; sign-extend to i32.
+        let bytecode = vec![0x3A, 0xFF, 0xFF, 0xFF];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert!(world.money >= 0, "money clamps to non-negative");
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(e, FieldEvent::AddMoney { .. })),
+            "expected AddMoney event, got {evs:?}"
+        );
+    }
+
+    /// Op 0x3C (party_add) appends to `party_actor_slots` and seeds the
+    /// leader on the empty-party path.
+    #[test]
+    fn field_op_3c_party_add_first_member_becomes_leader() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // 0x3C + char_id (op0).
+        let bytecode = vec![0x3C, 0x07];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.party_actor_slots, vec![Some(7)]);
+        assert_eq!(world.party_leader_slot, Some(7));
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::PartyAdd {
+                    char_id: 7,
+                    accepted: true
+                }
+            )),
+            "expected PartyAdd event, got {evs:?}"
+        );
+    }
+
+    /// Drain helper empties the queue.
+    #[test]
+    fn drain_field_events_empties_queue() {
+        let mut world = World::new();
+        world
+            .pending_field_events
+            .push(FieldEvent::PlaySfx { sfx_id: 1 });
+        let drained = world.drain_field_events();
+        assert_eq!(drained.len(), 1);
+        assert!(world.pending_field_events.is_empty());
     }
 }
