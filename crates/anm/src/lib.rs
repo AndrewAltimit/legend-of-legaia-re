@@ -351,6 +351,57 @@ pub fn top_k(hist: &[u32; 256], k: usize) -> Vec<(u8, u32)> {
     pairs
 }
 
+/// Record-bytecode bigram (`(byte_n, byte_{n+1})`) histogram. Useful for
+/// inferring the **shape** of the per-record opcode stream without the
+/// dispatcher (which is overlay-resident).
+///
+/// If the bytecode is structured as `[op, operand, op, operand, ...]`
+/// pairs, the bigram surface concentrates on a handful of `(op, *)`
+/// rows. If it's variable-length VLQ-style, the bigram is more diffuse.
+/// Either way, surfacing the top bigrams gives a reverse-engineer a
+/// strong on-ramp before they capture the dispatcher overlay.
+///
+/// Returns counts indexed by `[byte_n][byte_{n+1}]`.
+pub fn record_bytecode_bigram(record: &[u8]) -> Box<[[u32; 256]; 256]> {
+    let mut hist = Box::new([[0u32; 256]; 256]);
+    if record.len() <= RECORD_HEADER_SIZE + 1 {
+        return hist;
+    }
+    let body = &record[RECORD_HEADER_SIZE..];
+    for w in body.windows(2) {
+        hist[w[0] as usize][w[1] as usize] += 1;
+    }
+    hist
+}
+
+/// Same as [`record_bytecode_bigram`] but walks every record in `pack`,
+/// accumulating into one bigram histogram. Returns the most frequent K
+/// bigrams as `(byte_n, byte_{n+1}, count)` triples.
+pub fn pack_bytecode_top_bigrams(payload: &[u8], pack: &AnmPack, k: usize) -> Vec<(u8, u8, u32)> {
+    let mut hist = Box::new([[0u32; 256]; 256]);
+    for rec in &pack.records {
+        let bytes = record_bytes(payload, rec);
+        if bytes.len() > RECORD_HEADER_SIZE + 1 {
+            let body = &bytes[RECORD_HEADER_SIZE..];
+            for w in body.windows(2) {
+                hist[w[0] as usize][w[1] as usize] += 1;
+            }
+        }
+    }
+    let mut triples: Vec<(u8, u8, u32)> = Vec::new();
+    for a in 0..256u16 {
+        for b in 0..256u16 {
+            let c = hist[a as usize][b as usize];
+            if c > 0 {
+                triples.push((a as u8, b as u8, c));
+            }
+        }
+    }
+    triples.sort_by(|x, y| y.2.cmp(&x.2).then(x.0.cmp(&y.0)).then(x.1.cmp(&y.1)));
+    triples.truncate(k);
+    triples
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,6 +552,40 @@ mod tests {
         hist[0x42] = 1;
         let top = top_k(&hist, 100);
         assert_eq!(top, vec![(0x42, 1)]);
+    }
+
+    #[test]
+    fn record_bytecode_bigram_counts_pairs_after_header() {
+        // Build a record whose body is `[0x10, 0x20, 0x10, 0x30]`. Body
+        // bigrams: (0x10,0x20), (0x20,0x10), (0x10,0x30).
+        let mut rec = vec![0u8; RECORD_HEADER_SIZE];
+        rec.extend_from_slice(&[0x10, 0x20, 0x10, 0x30]);
+        let hist = record_bytecode_bigram(&rec);
+        assert_eq!(hist[0x10][0x20], 1);
+        assert_eq!(hist[0x20][0x10], 1);
+        assert_eq!(hist[0x10][0x30], 1);
+    }
+
+    #[test]
+    fn pack_bytecode_top_bigrams_returns_sorted_triples() {
+        let buf = synthetic(&[
+            &[0xAAu8; RECORD_HEADER_SIZE]
+                .iter()
+                .copied()
+                .chain([0x10, 0x20, 0x10, 0x20])
+                .collect::<Vec<_>>(),
+            &[0xBBu8; RECORD_HEADER_SIZE]
+                .iter()
+                .copied()
+                .chain([0x10, 0x20])
+                .collect::<Vec<_>>(),
+        ]);
+        let pack = parse(&buf).unwrap();
+        let bigrams = pack_bytecode_top_bigrams(&buf, &pack, 3);
+        assert!(bigrams.iter().any(|&(a, b, _)| a == 0x10 && b == 0x20));
+        // Top bigram should be (0x10, 0x20) with count 3 (2 in record 0,
+        // 1 in record 1).
+        assert_eq!(bigrams[0], (0x10, 0x20, 3));
     }
 
     #[test]
