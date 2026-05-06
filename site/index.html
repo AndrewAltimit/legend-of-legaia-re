@@ -66,21 +66,21 @@
       <div class="status-card-title">Static analysis</div>
       <div class="status-card-body">Function dumps committed for the bulk of the binary. Closed-loop on the citation graph at &gt;98%. All three game VMs decoded plus the battle action state machine. All major SCUS subsystems traced.</div>
     </div>
-    <div class="status-card status-partial">
+    <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 1</div>
-      <div class="status-card-body">Asset viewer with PSX VRAM emulation, textured TMD rendering, stage geometry, VAB playback, SEQ + VAB sequencer. <a href="viewer.html">In-browser version live.</a></div>
+      <div class="status-card-body">Asset viewer with PSX VRAM emulation, textured TMD rendering, stage geometry, VAB playback, SEQ + VAB sequencer, dialog typewriter, field-VM scene runner with dialog rendering, battle-scene SM driver. <a href="viewer.html">In-browser version live.</a></div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 2</div>
-      <div class="status-card-body">Runtime port. Actor VM (13 ops), Field VM (43 ops), Move VM (71 + 61 ext sub-ops), Effect VM, and the battle action state machine all ported. Composite <code>World</code> in <code>engine-core</code> wires them together. Clean-room SPU mixer + sequencer drive playback.</div>
+      <div class="status-card-body">Runtime port. Actor VM (13 ops), Field VM (43 ops), Move VM (71 + 61 ext sub-ops), Effect VM, and the battle action state machine all ported. <code>battle_formulas</code> ships damage / MP-cost / accuracy / RNG kernels. Composite <code>World</code> in <code>engine-core</code> wires them together with a scene host, dialog panel, and BGM director. Clean-room SPU mixer + sequencer drive playback.</div>
     </div>
     <div class="status-card status-partial">
       <div class="status-card-title">Engine port — Phase 3</div>
-      <div class="status-card-body">Gameplay assembly. Battle action FSM is in place; field map / dialog / menus / save-load still to wire.</div>
+      <div class="status-card-body">Gameplay assembly. Field-VM scene runner ticks real per-scene event scripts and renders dialog inline. Battle-action SM drives a working scene with party + monster slots. Menu state machine + save/load round-trip wired through <code>engine-core::world::save_party</code>. Outstanding: full damage hookup from Attack chain into <code>apply_damage</code>, end-to-end menu navigation in a real scene.</div>
     </div>
     <div class="status-card status-open">
       <div class="status-card-title">Open work</div>
-      <div class="status-card-body">Sprite engine wiring (sheet &rarr; wgpu draw calls + per-frame tween), dialog font glyph atlas extraction (needs VRAM dump), MES dialog renderer (overlay-resident dispatcher in <code>FUN_801ED710</code>), DATA_FIELD per-field layout final reverse.</div>
+      <div class="status-card-body">On-disc font carrier trace (atlas extraction works from save state, but the PROT entry that carries the bitmap on disc still isn't classified), MES dialog renderer overlay-resident dispatcher in <code>FUN_801ED710</code>, full battle damage hook from selector dispatch into the SM, DATA_FIELD per-field layout final reverse.</div>
     </div>
   </div>
 </section>

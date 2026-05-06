@@ -1619,6 +1619,16 @@ fn run_field(
             .map(|i| es.record(i).map(|s| s.to_vec()).unwrap_or_default())
             .collect(),
     });
+    // Pull the MES container if the scene has one. Cloning the SceneMes
+    // (which owns its bytes) decouples the FieldApp from `scene`'s
+    // borrow lifetime so the panel can outlive the loader's local data.
+    let scene_assets = legaia_engine_core::scene_assets::SceneAssets::build(&scene);
+    let scene_mes = scene_assets.mes.clone();
+    if scene_mes.is_some() {
+        log::info!("field scene: scene MES container present — dialog opcodes will render");
+    } else {
+        log::info!("field scene: no MES container — dialog opcodes will resolve to a placeholder");
+    }
     if let Some(es) = &event_scripts_summary {
         log::info!(
             "field scene: event-script entry PROT {} carries {} record(s)",
@@ -1672,6 +1682,9 @@ fn run_field(
         current_record: initial_record,
         cycle_records,
         vm_stats: FieldVmStats::default(),
+        scene_mes,
+        active_dialog: None,
+        prev_input_pad: 0,
     };
     event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
@@ -2202,6 +2215,17 @@ struct FieldApp {
     cycle_records: bool,
     /// Running tally of step outcomes for HUD display.
     vm_stats: FieldVmStats,
+    /// Snapshot of the scene's MES container, used to build a dialog
+    /// panel when the field VM emits an `OpenDialog` request. `None` when
+    /// the scene has no MES entry.
+    scene_mes: Option<legaia_engine_core::scene_assets::SceneMes>,
+    /// Live dialog panel — populated when the field VM hits opcode 0x3F
+    /// and cleared when the user dismisses the box. Drives the
+    /// per-frame dialog-window text under the HUD.
+    active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
+    /// Edge-trigger cache for Cross — used to advance one page per press
+    /// instead of "advance every frame Cross is held."
+    prev_input_pad: u16,
 }
 
 impl FieldApp {
@@ -2327,6 +2351,63 @@ impl FieldApp {
 
         if should_cycle && self.cycle_records {
             self.advance_to_next_record();
+        }
+
+        // After the field VM step, see if a dialog request was raised.
+        // We never overwrite an active panel mid-conversation — the panel
+        // owns the page until the user dismisses it.
+        self.maybe_open_dialog();
+        self.tick_active_dialog();
+    }
+
+    /// If `world.current_dialog` carries a pending request and no panel is
+    /// active yet, build one from the scene's MES container.
+    fn maybe_open_dialog(&mut self) {
+        if self.active_dialog.is_some() {
+            return;
+        }
+        let Some(req) = self.world.current_dialog.as_ref() else {
+            return;
+        };
+        let Some(mes) = self.scene_mes.as_ref() else {
+            // No MES → drop the request so we don't loop forever, log
+            // once with an op-summary so the gap is visible in HUD.
+            log::warn!(
+                "field VM: OpenDialog text_id={:#x} but scene has no MES container",
+                req.text_id
+            );
+            self.world.current_dialog = None;
+            return;
+        };
+        if let Some(mut panel) =
+            legaia_engine_core::dialog::OwnedDialogPanel::from_scene_mes(mes, req.text_id)
+        {
+            panel.set_glyphs_per_frame(2);
+            self.active_dialog = Some(panel);
+            log::debug!(
+                "field VM: opened dialog text_id={:#x} (depth={})",
+                req.text_id,
+                req.depth_id
+            );
+        } else {
+            log::warn!(
+                "field VM: text_id {:#x} out of MES range; clearing request",
+                req.text_id
+            );
+            self.world.current_dialog = None;
+        }
+    }
+
+    /// Tick the active dialog panel one frame. When the panel hits Done,
+    /// clear it and the world's request so the field VM can resume.
+    fn tick_active_dialog(&mut self) {
+        let Some(panel) = self.active_dialog.as_mut() else {
+            return;
+        };
+        panel.tick();
+        if panel.is_done() {
+            self.active_dialog = None;
+            self.world.current_dialog = None;
         }
     }
 
@@ -2498,7 +2579,7 @@ impl FieldApp {
             pad_str.push(' ');
         }
         let layout3 = self.font.layout_ascii(&pad_str);
-        let (_, h) = self
+        let (sw, h) = self
             .renderer
             .as_ref()
             .map(|r| r.surface_size())
@@ -2508,6 +2589,45 @@ impl FieldApp {
             (8, (h as i32) - 24),
             [0.95, 0.95, 0.6, 1.0],
         ));
+
+        // Dialog overlay — when a panel is active, lay the page glyphs out
+        // through the same atlas the rest of the HUD uses, in a 2/3-width
+        // box anchored near the lower third of the surface (matches the
+        // retail dialog window's screen position).
+        if let Some(panel) = self.active_dialog.as_ref() {
+            let bytes = panel.page_bytes();
+            let layout = self.font.layout_ascii(
+                &bytes
+                    .iter()
+                    .map(|&b| {
+                        if (0x20..=0x7E).contains(&b) {
+                            b as char
+                        } else {
+                            '?'
+                        }
+                    })
+                    .collect::<String>(),
+            );
+            // Pen position: 1/8 from left, ~70% down. Matches the
+            // single-line dialog box layout the retail field VM emits.
+            let pen_x = (sw as i32) / 8;
+            let pen_y = ((h as i32) * 7) / 10;
+            out.extend(text_draws_for(
+                &layout,
+                (pen_x, pen_y),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+            // Tiny "press X to advance" hint when paused.
+            if panel.is_waiting_for_input() {
+                let layout = self.font.layout_ascii(">> X");
+                out.extend(text_draws_for(
+                    &layout,
+                    (pen_x, pen_y + 22),
+                    [0.7, 0.85, 1.0, 1.0],
+                ));
+            }
+        }
+
         out
     }
 }
@@ -2591,11 +2711,24 @@ impl ApplicationHandler for FieldApp {
                 for _ in 0..target_frames.min(8) {
                     self.tick_field_frame();
                 }
+                // Cross edge → advance dialog page if the panel is paused.
+                let pad_now = self.input.pad();
+                let pressed_now = pad_now & !self.prev_input_pad;
+                if pressed_now & PadButton::Cross.mask() != 0
+                    && let Some(panel) = self.active_dialog.as_mut()
+                    && panel.is_waiting_for_input()
+                {
+                    panel.advance_page();
+                }
+                self.prev_input_pad = pad_now;
                 // Move the player slot 0 on D-pad input — gives the demo a
                 // visible response to keyboard / gamepad input even with no
-                // field bytecode loaded.
+                // field bytecode loaded. Dialog blocks movement so the
+                // pacing matches the retail engine's "field paused while
+                // dialog is open" behavior.
+                let dialog_open = self.active_dialog.is_some();
                 let speed = 6.0_f32;
-                if self.actor_count > 0 {
+                if !dialog_open && self.actor_count > 0 {
                     let actor = &mut self.world.actors[0];
                     if self.input.pressed(PadButton::Right) {
                         actor.move_state.world_x = (actor.move_state.world_x as f32 + speed) as i16;

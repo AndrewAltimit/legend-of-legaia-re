@@ -19,7 +19,7 @@ The committed docs under `docs/` are organised topic-first as a technical refere
 
 - **[`docs/overview.md`](docs/overview.md)** — elevator pitch + how the layers stack.
 - **[`docs/formats/`](docs/formats/overview.md)** — per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect, overlays, …).
-- **[`docs/subsystems/`](docs/subsystems/)** — how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [battle](docs/subsystems/battle.md), [engine reimplementation](docs/subsystems/engine.md).
+- **[`docs/subsystems/`](docs/subsystems/)** — how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [move VM](docs/subsystems/move-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md), [engine reimplementation](docs/subsystems/engine.md).
 - **[`docs/tooling/`](docs/tooling/)** — how to use the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md).
 - **[`docs/reference/`](docs/reference/)** — [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [TCRF region data](docs/reference/builds.md).
 
@@ -84,6 +84,22 @@ After running the pipeline:
 
 # PROT entry browser
 ./target/release/asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT
+
+# Field scene runner — drives the field-VM against a real CDNAME scene's
+# event-script records, with dialog rendering wired into the same window
+./target/release/asset-viewer field town01
+
+# Battle scene driver — boots the battle bundle, ticks the battle-action
+# state machine, shows action state + per-slot liveness in the HUD
+./target/release/asset-viewer battle-scene --queued-action 3
+
+# SEQ playback — drives the SsAPI-shape sequencer + a VAB through cpal,
+# producing live audio
+./target/release/asset-viewer seq path/to.seq path/to.vab
+
+# Standalone MES dialog viewer — typewriter-paced text rendering through
+# the extracted dialog font
+./target/release/asset-viewer dialog path/to.mes
 ```
 
 ### Static analysis (Ghidra in Docker)
@@ -142,12 +158,16 @@ legend-of-legaia-re/
 │   ├── mdt/                      # Move table (Tactical Arts) parser
 │   ├── mes/                      # MES dialog container parser
 │   ├── anm/                      # ANM animation container parser
+│   ├── seq/                      # PsyQ SEQ parser + CLI inspector
+│   ├── save/                     # Per-character record (0x414B) parse + write
+│   ├── font/                     # Dialog font extraction + atlas / layout API
 │   ├── extract/                  # Top-level pipeline driver
-│   ├── engine-core/              # VFS, asset cache, frame timing
-│   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation
-│   ├── engine-audio/             # cpal-backed audio mixer
-│   ├── engine-vm/                # Clean-room actor + field VMs
-│   └── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, PROT browser
+│   ├── engine-core/              # World, scene host, dialog panel, save round-trip
+│   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
+│   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
+│   ├── engine-vm/                # Actor / field / effect / move VMs + battle SM + formulas
+│   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
+│   └── web-viewer/               # WASM target — disc browser running in the browser
 ├── docs/                         # Topic-first technical reference (see "Documentation")
 ├── ghidra/
 │   ├── projects/                 # Ghidra project DB (gitignored)

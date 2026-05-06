@@ -1,0 +1,66 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle formulas</div>
+  <h1>Battle formulas</h1>
+  <p class="lede">Damage, MP-cost, accuracy, and RNG arithmetic kernels used by the <a href="battle-action.html">battle action state machine</a>. The central damage-application primitive is <code>FUN_800402F4</code>; the engine-side mirror lives in <code>crates/engine-vm/src/battle_formulas.rs</code>.</p>
+</header>
+
+<section class="doc-section" id="damage-primitive">
+  <h2>Damage application primitive</h2>
+  <p><code>FUN_800402F4</code> (~7,904 bytes / 1,976 instructions, dumped as <code>ghidra/scripts/funcs/800402f4.txt</code>) is a <strong>selector dispatch</strong>: <code>switch(selector) { case 0..0x83 ... }</code>. Each case is one &ldquo;damage / status / stat-modify kind.&rdquo; The function fills four local 8-pointer arrays (one per actor slot) over <code>+0x14C</code> (HP), <code>+0x14E</code>, <code>+0x150</code> (MP), <code>+0x152</code> before the selector switch.</p>
+  <p>The most common selectors:</p>
+  <ul class="bullets">
+    <li><strong>Selector 0</strong> &mdash; basic damage. Subtracts attacker stat from defender stat, capped at the per-party-slot ceiling table at <code>DAT_8007655C</code>.</li>
+    <li><strong>Selector 9</strong> &mdash; accuracy / evasion roll. <code>roll = rand() % (caster_acc + target_eva)</code>; hit when <code>target_eva &lt; roll</code>. Standard JRPG-flat-roll model.</li>
+    <li><strong>Selectors 1..7</strong> &mdash; stat-buff ramps, multiplying <code>actor_record + 0x158..+0x16A</code> by <code>6/5</code> with a <code>0xFFFF</code> clamp.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="spirit-damage">
+  <h2>Spirit damage formula</h2>
+  <p>Hard-coded per Spirit super-art: <code>damage = ((target_HP * 7) / 5) + 8</code>, capped at <code>0x120</code> (288) for the larger arts and <code>100</code> for the smaller ones. This is the one place the engine reproduces a non-obvious arithmetic path; everything else is selector-dispatch driven.</p>
+</section>
+
+<section class="doc-section" id="mp-cost">
+  <h2>MP cost &amp; ability-bit modifiers</h2>
+  <pre><code>base_mp_cost = spell_table[spell_id].mp_cost;
+if (character_record.ability_bits &amp; 0x20)        // "MP-half"
+    cost = base / 2;
+else if (character_record.ability_bits &amp; 0x10)   // "MP-quarter"
+    cost = base / 4;
+else
+    cost = base;</code></pre>
+  <p>The character record's ability bitfield is the 4-byte field at <code>+0xF4</code> (record stride <code>0x414</code>, base <code>0x80084708</code>). The engine port resolves the modifier via <code>battle_formulas::MpCostModifier::from_ability_flags</code>.</p>
+</section>
+
+<section class="doc-section" id="rng">
+  <h2>RNG primitive</h2>
+  <p><code>FUN_80056798</code> is the in-game RNG &mdash; standard PsyQ <code>rand()</code> pattern: <code>seed = seed * 1103515245 + 12345; return (seed &gt;&gt; 16) &amp; 0x7FFF</code>. Range 0..32767. The engine seeds it from the boot timer; for deterministic playback, the engine port must seed from the same source.</p>
+</section>
+
+<section class="doc-section" id="engine-mirror">
+  <h2>Engine port</h2>
+  <p><code>crates/engine-vm/src/battle_formulas.rs</code> ports the formulas above as pure functions:</p>
+  <ul class="bullets">
+    <li><code>spirit_damage(target_hp, cap)</code></li>
+    <li><code>mp_cost_after_ability_bits(base, modifier)</code></li>
+    <li><code>accuracy_roll(caster_acc, target_eva, rng_seed)</code></li>
+    <li><code>psyq_rand_step(seed)</code></li>
+    <li><code>buff_ramp(value)</code></li>
+    <li><code>damage_cap_for_party_slot(caps, slot)</code></li>
+  </ul>
+  <p>Unit tests pin the documented formulas as fixtures &mdash; a future runtime trace can add comparison cases without touching the formula bodies.</p>
+</section>
+
+<section class="doc-section" id="open">
+  <h2>What's still open</h2>
+  <ul class="bullets">
+    <li><strong>Selectors <code>0x10..=0x83</code>.</strong> Beyond the status / buff / damage cases, these handle stat-up animations, status-clear, queue-end markers, and multi-target item slots. Mostly read-only ramps that don't affect game balance.</li>
+    <li><strong>Stat-field semantics inside <code>+0x158..+0x16A</code>.</strong> The buff order in selectors 1..7 implies an ATK / DEF / MAG / SPR / AGL / LUCK ordering, but mapping each halfword precisely needs a save-state diff before / after a known buff.</li>
+    <li><strong>Ability-bit catalogue.</strong> The bitfield at <code>+0xF4</code> has the documented MP-half / MP-quarter / HP-cap / MP-cap bits plus the <code>0x10</code> / <code>0x20</code> impact-step modifiers. The full per-character map comes out of save-data inspection.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="full-reference">
+  <h2>Full reference</h2>
+  <p>The full doc with provenance citations is at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-formulas.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-formulas.md</code></a>.</p>
+</section>

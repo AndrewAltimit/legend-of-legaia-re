@@ -141,7 +141,9 @@ The dialog opener that reaches this renderer chain from the [field script VM](..
 
 ## What's still open
 
-- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font — the bitmap is reachable only from a save-state VRAM dump. Tracing the `LoadImage` (GP0 0xA0) DMA call that uploads it would identify the source PROT entry.
+- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font — the bitmap is reachable only from a save-state VRAM dump. Two unblock paths:
+  1. Trace the `LoadImage` (GP0 0xA0) DMA call that uploads the tile-page at `(896, 0)` and identify which PROT entry it pulls from. The `find_lui_writers.py` Ghidra script can locate the LUI+ADDIU pair that loads the source pointer; the destination is the GPU FIFO at `0x1F801810` so the search target is "writes to a struct that ultimately reaches `_DAT_1F801810`".
+  2. Diff a save state captured before the title screen finishes booting against one captured during a dialog — the font region transitions from zero to populated, so the disc read that fills it sits in the boot sequence somewhere between `FUN_8003E4E8` (PROT TOC loader) and the first dialog open.
 - **String IDs in the escape table.** Entries `0x00..=0x07` (advance 16, `y_offset = -2`) likely render multi-character icon strings from the same string pool that backs `FUN_8002C488`. The pool itself isn't yet decoded — its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.
 - **`0xCC` opcode.** The text-actor renderer at `FUN_80031D00` recognises a small handful of single-byte ops (`0xCC..=0xCF`) inside its glyph stream that are distinct from the dialog renderer's `0xCE/0xCF`. They're outside the dialog font's scope and tracked under the [field script VM](../subsystems/script-vm.md) docs.
 
