@@ -2146,6 +2146,7 @@ impl ApplicationHandler for BattleSceneApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_sprites: None,
                         overlay_text: Some(&overlay),
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
@@ -2649,6 +2650,7 @@ impl ApplicationHandler for FieldApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_sprites: None,
                         overlay_text: Some(&overlay),
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
@@ -2903,6 +2905,7 @@ impl ApplicationHandler for WorldApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_sprites: None,
                         overlay_text: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
