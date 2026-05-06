@@ -1,6 +1,6 @@
 # MES dialog format
 
-Container format for Legaia's dialog text. Two on-disc variants share an offset table + bytecode tail. The renderer that turns the bytecode into glyphs lives in the dialog overlay (uncaptured); `crates/mes` parses the container and walks the bytecode tokens but cannot map glyph indices to text yet.
+Container format for Legaia's dialog text. Two on-disc variants share an offset table + bytecode tail. The bytecode encoding is a stream of glyph bytes interleaved with substitution opcodes; the interpreter is statically linked into `SCUS_942.54` (it is not overlay-resident).
 
 ## Variants
 
@@ -9,51 +9,94 @@ Container format for Legaia's dialog text. Two on-disc variants share an offset 
 | Compact | First u16 = `0x0404` | Smaller; embedded inline in `data\battle\efect.dat` and similar. |
 | Records | First two bytes = `0x44 0x78` | Used by larger dialog blobs; also the form RAM-extracted from town overlays. |
 
-Both share a header → offset table → bytecode body shape. The token alphabet observed across known captures:
+Both share a header → offset table → bytecode body shape.
 
-| Token | Meaning |
+## Bytecode encoding
+
+Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#fun_8003ca38--glyph-stride-walker), [`FUN_80036044`](#fun_80036044--text-width-measurement), [`FUN_80036888`](#fun_80036888--text-renderer), [`FUN_80036514`](#fun_80036514--substitution-expander)). The same byte-classification table is used by all four; only the action per byte differs.
+
+| Byte range | Stride | Meaning |
+|---|---|---|
+| `0x00..0x1E` | 1 | End-of-message / line terminator. The walker stops here. |
+| `0x1F..0x5D` | 1 | Single-byte glyph (font tile index). |
+| `0x5E XX` | 2 | **Alias** — the substitution expander rewrites this in-place to `0xCE (XX-0x2D)`. |
+| `0x5F..0xBF` | 1 | Single-byte glyph. |
+| `0xC0 XX` | 2 | 2-byte wide glyph (no substitution). |
+| `0xC1 XX` | 2 | Substitute character name. Reads name from save record at `0x80084708 + XX*0x414`; XX = 99 means "current party leader" (`DAT_80084597`). |
+| `0xC2 XX` | 2 | Substitute item name from `PTR_DAT_8007436C[XX*3]`. |
+| `0xC3 XX` | 2 | Substitute magic name from `PTR_s_Magic_800754D0[XX*3]`. |
+| `0xC4 XX` | 2 | Substitute item name (different consumer site than `0xC2`; same `PTR_DAT_8007436C` table). |
+| `0xC5 XX` | 2 | Substitute spell name from 2D table at `DAT_80075EC4`, keyed by `(XX>>6, XX&0x3F)`. |
+| `0xC6 XX` | 2 | 2-byte wide glyph (no substitution; not in any switch case). |
+| `0xC7 XX` | 2 | Substitute terrain / quest name from `DAT_80073F24 + XX*8`. |
+| `0xC8..0xCD XX` | 2 | 2-byte wide glyph (stride only). |
+| `0xCE XX` | 2 | Spacing op. The width-measure increments the glyph counter without emitting; the renderer uses `XX` as a horizontal offset. |
+| `0xCF XX` | 2 | Skip 2 bytes (passthrough — `XX` is rendered alone, not paired with the `0xCF` prefix). |
+| `0xD0..0xFE` | 1 | Single-byte glyph. |
+| `0xFF` | 1 | **Alias** — the substitution expander rewrites this to `0xCF`. |
+
+The "is this a substitution opcode?" gate in `FUN_80036044` is the integer test `(byte + 0x40) < 8`, which catches `0xC0..0xC7`. Within that range the cases `0xC1..0xC5` and `0xC7` are explicit; `0xC0` and `0xC6` fall through to "no substitution" (still 2-byte stride).
+
+## Interpreter functions
+
+### `FUN_8003CA38` — glyph stride walker
+
+16-instruction primitive that returns the count of bytes (= glyphs) until the next terminator. The classification logic is just:
+
+```c
+int FUN_8003CA38(byte *p) {
+  int n = 0;
+  for (; *p > 0x1E; p++) {
+    if ((*p & 0xF0) == 0xC0) { p++; n++; }
+    n++;
+  }
+  return n;
+}
+```
+
+Used by the dialog window pager to compute line lengths cheaply.
+
+### `FUN_80036044` — text width measurement
+
+Walks the bytecode and returns total width. Adds the substitution dispatch on top of the stride walker — for each `0xC1..0xC5` or `0xC7` byte, it follows the substitution pointer into the corresponding name table and recursively walks that string's width too. Calls itself implicitly by re-running the same `(byte > 0x1F)` loop on the substituted string.
+
+### `FUN_80036888` — text renderer
+
+The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls [`FUN_80036514`](#fun_80036514--substitution-expander) at the start to expand substitutions into a working buffer.
+
+### `FUN_80036514` — substitution expander
+
+Reads source bytecode from `param_2` and writes expanded bytecode to `param_1`. Two input-time aliases are normalised:
+
+| Source byte | Rewritten as |
 |---|---|
-| `Glyph` | Print one glyph (the renderer maps the glyph index to a tile from the dialog font) |
-| `Op65` | Dialog-control op (parameters TBD) |
-| `Op4C` | Dialog-control op |
-| `Op26` | Branch / jump within the bytecode |
-| `End` | Terminator |
-| `Unknown` | Bytes that the parser surfaces unresolved |
+| `0x5E XX` | `0xCE (XX - 0x2D)` |
+| `0xFF` | `0xCF` |
+
+Then it walks the input and inlines `0xC1..0xC5` / `0xC7` substitutions: each substitution opcode is replaced by the bytes of the substituted name, copied character-by-character.
+
+## Dialog window pager — `FUN_801D84D0`
+
+Lives in the dialog overlay (mc4 capture). Distinct from the byte-level interpreter — this is the per-frame state machine that pages text on input. 26 outer states (`_DAT_801F2734`, range `0..0x19`) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in `_DAT_801F3540[line]` (16-line buffer at `0x801F3580`). Test `(byte & 0x7F) < 0x20` is used to detect line terminators (catches both `0x00..0x1F` and `0x80..0x9F`).
+
+The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crates/engine-vm/README.md) as the dialog-window state machine.
 
 ## Live blob example
 
-A town-overlay save state captured a live MES blob in RAM at `0x80109270` (3893 bytes). The header + bytecode structure matches both Compact and Records expectations after small variant-specific tweaks. The blob has been used to validate the Rust parser end-to-end.
+A town-overlay save state captured a live MES blob in RAM at `0x80109270` (3893 bytes). The header + bytecode structure matches both Compact and Records expectations after small variant-specific tweaks. The blob is used to validate the Rust parser end-to-end.
 
 ## CLI
 
 ```
 mes info       <PATH>             # detect variant + report header
-mes disasm     <PATH>             # walk the bytecode, print tokens
+mes disasm     <PATH>             # walk the bytecode, print decoded ops
 mes json       <PATH>             # emit machine-readable JSON
 mes events     <PATH> [--index N] # walk the interpreter for one message
 mes stats-all  <PATH>             # event-type histogram across every message
 ```
 
-## Bytecode interpreter
+## Related
 
-`crates/mes/src/interp.rs` exposes a higher-level walker on top of the token iterator: `Interpreter::new_compact(blob, buf, message_index)` seeds the program counter from the offset table, and `next_event()` / `collect_events()` emit a `MesEvent` stream:
-
-| Event | Source token | Notes |
-|---|---|---|
-| `Glyph(u8)` | `0x61 XX` | Glyph index into the dialog font tile sheet |
-| `EndOfMessage` | `0x00` | Terminal — interpreter halts unless `run_past_end` is set |
-| `PageBreak` | `0x26 FE FF` | Inferred from the recurring `21 21 26 FE FF` sequence |
-| `Op65 { arg }` | `0x65 XX` | Semantics unconfirmed |
-| `Op4c { arg }` | `0x4C XX` | Semantics unconfirmed |
-| `Op26 { arg }` | `0x26 XX YY` (arg ≠ `0xFFFE`) | Semantics unconfirmed |
-| `Unknown { opcode }` | any other byte | Re-syncs at the next byte |
-
-`Interpreter::render_summary(events)` returns a printable form with bracketed control names so reviewers can diff captures without needing the font sheet. `EventStats::from_events(events)` is a counted histogram (glyphs / page-breaks / unknowns / ...).
-
-## What's missing
-
-- The MES *renderer* (the dispatch table that maps `Op65` / `Op4c` / `Op26` arguments to engine effects — pause for input, scroll speed, pronoun substitution, choice prompts, ...) is in the dialog-only overlay we don't yet have a save state for. The interpreter above surfaces those events with their raw arg so engines can table-dispatch them once the overlay is captured.
-
-The proportional dialog font itself is now decoded — see [dialog-font.md](dialog-font.md) for the VRAM source rect, width table, and escape semantics.
-
-The dialog opener in SCUS is `FUN_8001FD44`. It sets `_DAT_1F800394 |= 0x40` (a "dialog active" lock at the global story-flag bank) and is the function the [field/event script VM](../subsystems/script-vm.md) opcode `0x3F` calls.
+- [`dialog-font.md`](dialog-font.md) — proportional dialog font in VRAM.
+- [`reference/functions.md`](../reference/functions.md) — all four interpreter functions plus `FUN_8001FD44` (dialog opener).
+- [`subsystems/script-vm.md`](../subsystems/script-vm.md) — script VM op `0x3F` calls the dialog opener.

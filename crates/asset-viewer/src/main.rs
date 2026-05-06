@@ -3716,6 +3716,13 @@ impl DialogApp {
         match player.tick() {
             legaia_mes::PlayerState::Idle => {}
             legaia_mes::PlayerState::Glyph(g) => self.page_glyphs.push(g),
+            legaia_mes::PlayerState::WideGlyph(op, arg) => {
+                // Wide glyphs are rendered as one tile; until the
+                // wide-tile font lookup is wired we push the arg byte
+                // so the visible page advances and log the pair.
+                self.page_glyphs.push(arg);
+                self.push_log(format!("[WIDE {:02X} {:02X}]", op, arg));
+            }
             legaia_mes::PlayerState::PageBreak => {
                 self.page_break = true;
                 self.push_log("[PAGE]".to_string());

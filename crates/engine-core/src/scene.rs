@@ -290,14 +290,76 @@ impl Scene {
     }
 }
 
-/// Bundles the runtime composite (`World`) with a loaded `Scene` and a frame
-/// timer. The host owns the engine-vm world (per-actor data + every VM's
-/// `Host` impl) and exposes a single `tick(dt)` that drives the active VMs.
+/// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME
+/// scene name. The retail engine reads this from a table in the field
+/// overlay we haven't fully captured; engines wire their own table.
+///
+/// Implementors return `None` when the map id has no mapped scene
+/// (the host then leaves the world in its current scene; the engine
+/// can log the unknown id).
+pub trait MapIdResolver {
+    fn resolve(&self, map_id: u8) -> Option<String>;
+}
+
+/// Empty resolver — every `scene_transition` is a no-op. Useful for tests
+/// + engines that haven't wired a real table yet.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NullMapIdResolver;
+
+impl MapIdResolver for NullMapIdResolver {
+    fn resolve(&self, _: u8) -> Option<String> {
+        None
+    }
+}
+
+/// Plain `Vec<String>`-backed resolver — index into a list of scene names
+/// by map id. Useful for hardcoded test fixtures.
+#[derive(Debug, Clone, Default)]
+pub struct VecMapIdResolver {
+    pub names: Vec<String>,
+}
+
+impl VecMapIdResolver {
+    pub fn new(names: Vec<String>) -> Self {
+        Self { names }
+    }
+}
+
+impl MapIdResolver for VecMapIdResolver {
+    fn resolve(&self, map_id: u8) -> Option<String> {
+        self.names.get(map_id as usize).cloned()
+    }
+}
+
+/// Per-tick outcome from [`SceneHost::tick`]. Engines route this back into
+/// their UI layer (e.g. log scene transitions, update HUD on battle end).
+#[derive(Debug, Clone)]
+pub enum SceneTickEvent {
+    /// World stepped normally — no scene-level events this frame.
+    Stepped,
+    /// Field VM requested a scene transition that the resolver mapped to
+    /// `name`; the host loaded it and reset the field VM.
+    SceneEntered { name: String },
+    /// `scene_transition(map_id)` was requested but the resolver returned
+    /// `None`. The host left the existing scene loaded; the engine can
+    /// log / surface the unknown id.
+    UnknownMapId { map_id: u8 },
+}
+
+/// Bundles the runtime composite (`World`) with a loaded `Scene`, a frame
+/// timer, and a [`MapIdResolver`] for field-VM scene transitions. The host
+/// owns the engine-vm world (per-actor data + every VM's `Host` impl) and
+/// exposes a single `tick()` that drives the active VMs and processes any
+/// transitions the field VM requested.
 pub struct SceneHost {
     pub index: Arc<ProtIndex>,
     pub world: crate::world::World,
     pub scene: Option<Scene>,
     pub frame_time: crate::FrameTime,
+    /// Map-id → scene-name resolver for `scene_transition(map_id)`.
+    /// Default is [`NullMapIdResolver`] so transitions are silently
+    /// dropped until the engine wires its own table.
+    pub map_resolver: Box<dyn MapIdResolver + Send + Sync>,
 }
 
 impl SceneHost {
@@ -308,6 +370,7 @@ impl SceneHost {
             world: crate::world::World::default(),
             scene: None,
             frame_time: crate::FrameTime::new(),
+            map_resolver: Box::new(NullMapIdResolver),
         }
     }
 
@@ -317,12 +380,70 @@ impl SceneHost {
         Ok(Self::new(Arc::new(p)))
     }
 
-    /// Load (or reload) the active scene. The world's `SceneMode` should
-    /// be set by the caller through `world.set_scene_mode(...)`.
+    /// Replace the map-id → scene-name resolver. Call once at startup with
+    /// the engine's preferred resolver.
+    pub fn set_map_resolver(&mut self, resolver: Box<dyn MapIdResolver + Send + Sync>) {
+        self.map_resolver = resolver;
+    }
+
+    /// Load (or reload) the active scene without entering it. The world's
+    /// `SceneMode` is left untouched. Use [`enter_field_scene`] if you want
+    /// the field VM kicked off too.
+    ///
+    /// [`enter_field_scene`]: SceneHost::enter_field_scene
     pub fn load_scene(&mut self, name: &str) -> Result<&Scene> {
         let scene = Scene::load(&self.index, name)?;
         self.scene = Some(scene);
         Ok(self.scene.as_ref().unwrap())
+    }
+
+    /// Load `name`, switch the world to [`crate::world::SceneMode::Field`],
+    /// and load the requested event-script record (default 0) into the
+    /// field-VM bytecode buffer. Returns `Err` if the scene has no event
+    /// scripts or the record index is out of range.
+    pub fn enter_field_scene(&mut self, name: &str, record_index: usize) -> Result<()> {
+        self.load_scene(name)?;
+        let record_bytes: Vec<u8> = {
+            let scene = self
+                .scene
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("scene was not loaded"))?;
+            let scripts = scene
+                .find_event_scripts()
+                .ok_or_else(|| anyhow::anyhow!("scene '{}' has no event scripts", name))?;
+            let record = scripts.record(record_index).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "record index {} out of range (scene has {} records)",
+                    record_index,
+                    scripts.len()
+                )
+            })?;
+            record.to_vec()
+        };
+        self.world.mode = crate::world::SceneMode::Field;
+        self.world.load_field_record(&record_bytes);
+        // Drain any pending transition the previous scene left behind.
+        self.world.pending_scene_transition = None;
+        Ok(())
+    }
+
+    /// One frame: tick the world and then process any pending field-VM
+    /// `scene_transition(map_id)` request. Returns the [`SceneTickEvent`]
+    /// describing what happened.
+    pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        let _ = self.world.tick();
+        if let Some(map_id) = self.world.pending_scene_transition.take() {
+            match self.map_resolver.resolve(map_id) {
+                Some(name) => {
+                    self.enter_field_scene(&name, 0)?;
+                    return Ok(SceneTickEvent::SceneEntered { name });
+                }
+                None => {
+                    return Ok(SceneTickEvent::UnknownMapId { map_id });
+                }
+            }
+        }
+        Ok(SceneTickEvent::Stepped)
     }
 
     /// Convenience: hand off a path to the SCUS `extracted/` root, get a
@@ -371,6 +492,21 @@ mod tests {
         };
         assert!(scene.find_bgm(2000).is_none());
         assert!(scene.find_bgm(3000).is_none());
+    }
+
+    #[test]
+    fn vec_map_id_resolver_indexes_into_list() {
+        let r = VecMapIdResolver::new(vec!["aaa".into(), "bbb".into(), "ccc".into()]);
+        assert_eq!(r.resolve(0).as_deref(), Some("aaa"));
+        assert_eq!(r.resolve(2).as_deref(), Some("ccc"));
+        assert_eq!(r.resolve(3), None);
+    }
+
+    #[test]
+    fn null_map_id_resolver_returns_none() {
+        let r = NullMapIdResolver;
+        assert_eq!(r.resolve(0), None);
+        assert_eq!(r.resolve(255), None);
     }
 
     /// `class_counts` reports a histogram in CDNAME order.

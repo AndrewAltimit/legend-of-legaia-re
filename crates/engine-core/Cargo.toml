@@ -16,3 +16,4 @@ legaia-asset = { path = "../asset" }
 legaia-prot = { path = "../prot" }
 legaia-seq = { path = "../seq" }
 legaia-vab = { path = "../vab" }
+legaia-save = { path = "../save" }

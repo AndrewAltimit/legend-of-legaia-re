@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_anm::{
-    AnmPack, PREAMBLE_SIZE, Preamble, RecordHeader, parse, peel_preamble, record_bytes,
+    AnmPack, PREAMBLE_SIZE, Preamble, RecordHeader, pack_bytecode_histogram, parse, peel_preamble,
+    record_bytes, top_k,
 };
 
 #[derive(Parser)]
@@ -39,6 +40,18 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         with_preamble: bool,
     },
+    /// Build a byte histogram across every record's bytecode region (the
+    /// bytes after the 8-byte common header). Surfaces likely opcode bytes
+    /// without re-deriving the count loop in every consumer. The bytecode
+    /// dispatcher is overlay-resident; this is the static-analysis stand-in.
+    Histogram {
+        path: PathBuf,
+        #[arg(long, default_value_t = false)]
+        with_preamble: bool,
+        /// Number of top byte values to print (default 16).
+        #[arg(long, default_value_t = 16)]
+        top: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -57,7 +70,36 @@ fn main() -> Result<()> {
             path,
             with_preamble,
         } => json(&path, with_preamble),
+        Cmd::Histogram {
+            path,
+            with_preamble,
+            top,
+        } => histogram(&path, with_preamble, top),
     }
+}
+
+fn histogram(path: &Path, with_preamble: bool, top: usize) -> Result<()> {
+    let (payload, _preamble, pack) = load(path, with_preamble)?;
+    let hist = pack_bytecode_histogram(&payload, &pack);
+    let total: u32 = hist.iter().sum();
+    println!("file:    {}", path.display());
+    println!("records: {}", pack.records.len());
+    println!("bytes:   {} (excludes 8-byte record headers)", total);
+    if total == 0 {
+        return Ok(());
+    }
+    let pairs = top_k(&hist, top);
+    println!("top {} bytes (descending count):", pairs.len());
+    for (b, c) in pairs {
+        let pct = 100.0 * (c as f64) / (total as f64);
+        let printable = if (0x20..=0x7E).contains(&b) {
+            format!("'{}'", b as char)
+        } else {
+            "   ".to_string()
+        };
+        println!("  0x{:02X} {}  {:>6}  {:>5.1}%", b, printable, c, pct);
+    }
+    Ok(())
 }
 
 fn load(path: &Path, with_preamble: bool) -> Result<(Vec<u8>, Option<Preamble>, AnmPack)> {

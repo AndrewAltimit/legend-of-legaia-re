@@ -19,6 +19,7 @@
 //! implement the VM `Host` traits themselves; this is the default.
 
 use legaia_engine_vm as vm;
+use legaia_save;
 use vm::battle_action::{
     BattleActionCtx, BattleActionHost, BattleActor, BattleEndCause, Pose, StepOutcome,
 };
@@ -226,6 +227,21 @@ pub struct World {
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
 
+    /// Persistent per-character roster — populated by [`World::load_party`]
+    /// and written back by [`World::save_party`]. Each record is the
+    /// 0x414-byte struct documented in `docs/subsystems/battle.md`. The
+    /// in-battle `BattleActor` slots mirror HP / MP from this; everything
+    /// else (spells, equipment, ability bits) flows through this canonical
+    /// store.
+    pub roster: legaia_save::Party,
+
+    /// Pending field-VM scene transition (`scene_transition(map_id)` was
+    /// called this frame). Drained by [`crate::scene::SceneHost::tick`]
+    /// — when `Some(map_id)`, the host resolves the map id to a scene
+    /// name, loads it, and reinitialises the field VM. `None` between
+    /// transitions.
+    pub pending_scene_transition: Option<u8>,
+
     /// Frame counter incremented every [`World::tick`].
     pub frame: u64,
 }
@@ -274,6 +290,8 @@ impl World {
             sound_bank_ready: true,
             party_count: 3,
             battle_end: None,
+            roster: legaia_save::Party::zeroed(0),
+            pending_scene_transition: None,
             frame: 0,
         }
     }
@@ -348,6 +366,63 @@ impl World {
         self.field_bytecode = record_bytes.to_vec();
         self.field_pc = pc;
         self.field_ctx = FieldCtx::default();
+    }
+
+    /// Load a `Party` (per-character roster) into the world's actor table.
+    ///
+    /// Per-character record 0 maps to actor slot 0, record 1 to slot 1, …
+    /// up to `party.len()` (capped by `MAX_ACTORS`). For each loaded slot
+    /// the world:
+    ///
+    /// - activates the actor,
+    /// - copies HP / MP from the record's [`HpMpSp`] block into the
+    ///   `BattleActor` mirrors,
+    /// - stows the full record bytes via [`World::roster`] for later
+    ///   round-trip via [`World::save_party`].
+    ///
+    /// The `legaia-save` crate's [`legaia_save::CharacterRecord::parse`] is
+    /// the lossless deserializer; this method is the runtime-side glue that
+    /// projects the persistent record into the per-VM actor state.
+    ///
+    /// [`HpMpSp`]: legaia_save::HpMpSp
+    pub fn load_party(&mut self, party: legaia_save::Party) {
+        let n = party.members.len().min(self.actors.len());
+        for (slot, rec) in party.members.iter().take(n).enumerate() {
+            let hms = rec.hp_mp_sp();
+            let a = &mut self.actors[slot];
+            a.active = true;
+            a.battle.hp = hms.hp_cur;
+            a.battle.max_hp = hms.hp_max;
+            a.battle.mp = hms.mp_cur;
+            a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
+        }
+        self.party_count = n as u8;
+        self.roster = party;
+    }
+
+    /// Capture the world's current actor state back into a `Party`. The
+    /// roster bytes are returned verbatim except for the HP / MP / max-HP
+    /// fields, which are resynced from the live `BattleActor` mirrors so
+    /// in-battle damage / heals end up in the saved record.
+    ///
+    /// Round-trip: `world.load_party(p); world.save_party() == p` modulo
+    /// the HP/MP resync (which is a no-op when no battle has run yet).
+    pub fn save_party(&mut self) -> legaia_save::Party {
+        for (slot, rec) in self
+            .roster
+            .members
+            .iter_mut()
+            .enumerate()
+            .take(self.actors.len())
+        {
+            let mut hms = rec.hp_mp_sp();
+            let a = &self.actors[slot];
+            hms.hp_cur = a.battle.hp;
+            hms.hp_max = a.battle.max_hp;
+            hms.mp_cur = a.battle.mp;
+            rec.set_hp_mp_sp(hms);
+        }
+        self.roster.clone()
     }
 
     /// Activate a slot and return a mutable reference to the actor.
@@ -843,6 +918,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn system_flag_test(&self, idx: u16) -> bool {
         self.world.system_flag_test(idx)
     }
+    fn scene_transition(&mut self, map_id: u8) {
+        // Record the request; SceneHost::tick drains it after the field
+        // step returns so the bytecode swap doesn't invalidate the
+        // borrow we're stepping through.
+        self.world.pending_scene_transition = Some(map_id);
+    }
 }
 
 // --- battle action host ----------------------------------------------------
@@ -1133,6 +1214,107 @@ mod tests {
         let record = vec![0x37, 0x00];
         world.load_field_record(&record);
         assert_eq!(world.field_pc, 0);
+    }
+
+    /// Field VM op 0x3E with `op0 >= 100` is the scene-transition arm
+    /// (`map_id = op0 - 100`). The world's `FieldHostImpl` records the
+    /// request in `pending_scene_transition` for `SceneHost::tick` to
+    /// drain on the next frame boundary.
+    #[test]
+    fn field_scene_transition_writes_pending_map_id() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // Bytecode: opcode 0x3E, op0 = 105 (map_id 5), then 4 padding
+        // bytes (op0 + 4 trailing operand bytes per the dispatcher math).
+        let bytecode = vec![0x3E, 105, 0, 0, 0, 0];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.pending_scene_transition, Some(5));
+    }
+
+    /// `op0 < 100` is the field_interact arm — should NOT trigger a
+    /// scene transition.
+    #[test]
+    fn field_op_3e_low_op0_does_not_request_scene_transition() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let bytecode = vec![0x3E, 50, 7];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.pending_scene_transition, None);
+    }
+
+    // --- Save / load round-trip ----------------------------------------
+
+    #[test]
+    fn load_party_populates_battle_actor_hp_mp() {
+        let mut party = legaia_save::Party::zeroed(3);
+        let mut hms = party.members[0].hp_mp_sp();
+        hms.hp_cur = 137;
+        hms.hp_max = 150;
+        hms.mp_cur = 42;
+        party.members[0].set_hp_mp_sp(hms);
+        let mut hms1 = party.members[1].hp_mp_sp();
+        hms1.hp_cur = 0; // dead member
+        hms1.hp_max = 100;
+        party.members[1].set_hp_mp_sp(hms1);
+
+        let mut world = World::new();
+        world.load_party(party);
+
+        assert!(world.actors[0].active);
+        assert_eq!(world.actors[0].battle.hp, 137);
+        assert_eq!(world.actors[0].battle.max_hp, 150);
+        assert_eq!(world.actors[0].battle.mp, 42);
+        assert_eq!(world.actors[0].battle.liveness, 1);
+        // Dead member: liveness flipped to 0.
+        assert_eq!(world.actors[1].battle.liveness, 0);
+        assert_eq!(world.party_count, 3);
+    }
+
+    #[test]
+    fn save_party_round_trips_after_load() {
+        let mut party = legaia_save::Party::zeroed(3);
+        let mut hms = party.members[0].hp_mp_sp();
+        hms.hp_cur = 200;
+        hms.hp_max = 250;
+        hms.mp_cur = 100;
+        party.members[0].set_hp_mp_sp(hms);
+
+        let original_bytes = party.write();
+
+        let mut world = World::new();
+        world.load_party(party);
+        let saved = world.save_party();
+
+        assert_eq!(saved.write(), original_bytes);
+    }
+
+    #[test]
+    fn save_party_picks_up_in_battle_hp_changes() {
+        let mut party = legaia_save::Party::zeroed(2);
+        let mut hms = party.members[0].hp_mp_sp();
+        hms.hp_cur = 100;
+        hms.hp_max = 100;
+        party.members[0].set_hp_mp_sp(hms);
+
+        let mut world = World::new();
+        world.load_party(party);
+        // Simulate damage during battle.
+        world.actors[0].battle.hp = 25;
+
+        let saved = world.save_party();
+        assert_eq!(saved.members[0].hp_mp_sp().hp_cur, 25);
+        // Max HP unchanged.
+        assert_eq!(saved.members[0].hp_mp_sp().hp_max, 100);
+    }
+
+    #[test]
+    fn load_party_caps_at_max_actors() {
+        let many = legaia_save::Party::zeroed(MAX_ACTORS + 10);
+        let mut world = World::new();
+        world.load_party(many);
+        assert_eq!(world.party_count, MAX_ACTORS as u8);
     }
 
     #[test]
