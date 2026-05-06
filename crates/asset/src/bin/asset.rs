@@ -198,6 +198,12 @@ enum Cmd {
         /// Print all 97 slot offsets/sizes (otherwise only first/last 8).
         #[arg(long, default_value_t = false)]
         all_slots: bool,
+        /// Group slots by size and print the buckets in size-descending
+        /// order. Slots in the same bucket are the same kind of record —
+        /// the schema is byte-identical across every field-pack instance,
+        /// so the cluster output is a static index of slot semantics.
+        #[arg(long, default_value_t = false)]
+        groups: bool,
     },
     /// Bulk-scan a directory of PROT entries for the field-pack format.
     /// Reports per-entry preamble size, table offset, and bytes-after-table.
@@ -300,7 +306,11 @@ fn main() -> Result<()> {
             cdname,
             only_hits,
         } => stage_scan_cmd(&dir, cdname.as_deref(), only_hits),
-        Cmd::FieldPack { input, all_slots } => field_pack_one(&input, all_slots),
+        Cmd::FieldPack {
+            input,
+            all_slots,
+            groups,
+        } => field_pack_one(&input, all_slots, groups),
         Cmd::FieldPackScan { dir, only_hits } => field_pack_scan(&dir, only_hits),
         Cmd::EffectBundle { input, all_slots } => effect_bundle_one(&input, all_slots),
         Cmd::EffectBundleScan { dir, only_hits } => effect_bundle_scan(&dir, only_hits),
@@ -1712,7 +1722,7 @@ fn stage_scan_cmd(dir: &Path, cdname_path: Option<&Path>, only_hits: bool) -> Re
     Ok(())
 }
 
-fn field_pack_one(input: &PathBuf, all_slots: bool) -> Result<()> {
+fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> Result<()> {
     let raw = std::fs::read(input)?;
     let Some(fp) = field_pack::detect(&raw) else {
         anyhow::bail!(
@@ -1779,6 +1789,26 @@ fn field_pack_one(input: &PathBuf, all_slots: bool) -> Result<()> {
                 i, s.offset, sz, sz
             ),
             None => println!("  [{:>2}] off=0x{:>5X}  size=  ?", i, s.offset),
+        }
+    }
+    if groups {
+        println!();
+        println!("slot size groups (slots sharing the same size = same record kind):");
+        for (size, idxs) in fp.slot_size_groups() {
+            let head: Vec<String> = idxs.iter().take(10).map(|i| i.to_string()).collect();
+            let tail = if idxs.len() > 10 {
+                format!(" … (+{} more)", idxs.len() - 10)
+            } else {
+                String::new()
+            };
+            println!(
+                "  size={:>5} (0x{:X})  count={:>3}  slots={}{}",
+                size,
+                size,
+                idxs.len(),
+                head.join(","),
+                tail
+            );
         }
     }
     Ok(())

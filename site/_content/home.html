@@ -46,7 +46,7 @@
   <div class="status-grid">
     <div class="status-card status-done">
       <div class="status-card-title">Disc + asset preservation</div>
-      <div class="status-card-body">Mode2/2352 reader, ISO9660 walker, PROT.DAT TOC math, format detectors classifying the bulk of PROT entries by class. Round-trip parsers ship for TIM, TMD, VAB, SEQ, MES (partial), ANM, MDT, LZS, plus the scene-bundle family.</div>
+      <div class="status-card-body">Mode2/2352 reader, ISO9660 walker, PROT.DAT TOC math, format detectors classifying the bulk of PROT entries by class. Round-trip parsers ship for TIM, TMD, VAB, SEQ (both u16 and u32 BE version variants), MES (partial), ANM (container + per-bone keyframe walker), MDT, LZS, plus the scene-bundle family. PSX memory-card walker round-trips Legaia save blocks via <code>save-tool</code>.</div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Static analysis</div>
@@ -62,11 +62,11 @@
     </div>
     <div class="status-card status-partial">
       <div class="status-card-title">Engine port — Phase 3</div>
-      <div class="status-card-body">Gameplay assembly. Field-VM scene runner ticks real per-scene event scripts and renders dialog inline. Battle-action SM drives a working scene with party + monster slots. Menu state machine + save/load round-trip wired through <code>engine-core::world::save_party</code>. Outstanding: full damage hookup from Attack chain into <code>apply_damage</code>, end-to-end menu navigation in a real scene.</div>
+      <div class="status-card-body">Gameplay assembly. Field-VM scene runner ticks real per-scene event scripts and renders dialog inline. Battle-action SM drives a working scene with party + monster slots. Menu state machine + save/load round-trip wired through <code>engine-core::world::save_party</code>. End-to-end chain tests cover scene → MES + SEQ + TMD resolution, real BGM playback, and effect-bundle parsing against retail data. Outstanding: full damage hookup from Attack chain into <code>apply_damage</code>, end-to-end menu navigation in a real scene.</div>
     </div>
     <div class="status-card status-open">
       <div class="status-card-title">Open work</div>
-      <div class="status-card-body">On-disc font carrier trace (atlas extraction works from save state, but the PROT entry that carries the bitmap on disc still isn't classified), MES dialog renderer overlay-resident dispatcher in <code>FUN_801ED710</code>, full battle damage hook from selector dispatch into the SM, DATA_FIELD per-field layout final reverse.</div>
+      <div class="status-card-body">On-disc dialog-font glyph bitmap trace (the proportional dialog font's bitmaps live in VRAM, sourced by an overlay-resident loader we haven't pinned), MES dialog renderer overlay-resident dispatcher in <code>FUN_801ED710</code>, full battle damage hook from selector dispatch into the SM, DATA_FIELD per-field layout final reverse, field-pack 97-slot semantics (slot-size clusters surface the structural groupings via <code>asset field-pack --groups</code>; per-slot mapping pending a per-scene consumer trace).</div>
     </div>
   </div>
 </section>

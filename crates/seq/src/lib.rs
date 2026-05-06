@@ -55,8 +55,13 @@ use serde::Serialize;
 /// SEQ file magic (`"pQES"` in source order, big-endian byte sequence).
 pub const SEQ_MAGIC: [u8; 4] = *b"pQES";
 
-/// Header length (bytes before the event stream).
+/// Header length for the standard PsyQ SEQ shape (u16 BE version).
 pub const HEADER_LEN: usize = 0x0D;
+
+/// Header length for the Legaia variant (u32 BE version — 2 extra bytes
+/// before the PPQN word). Real disc SEQ files use this shape; synthetic
+/// test fixtures use [`HEADER_LEN`].
+pub const HEADER_LEN_LEGAIA: usize = HEADER_LEN + 2;
 
 /// Decoded SEQ header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -150,8 +155,8 @@ impl Seq {
     /// Parse a complete SEQ file. Returns the header + every decoded event,
     /// stopping at the first `End-of-Track` meta (which is required).
     pub fn parse(buf: &[u8]) -> Result<Self> {
-        let header = parse_header(buf)?;
-        let events = parse_events(&buf[HEADER_LEN..])?;
+        let (header, header_len) = parse_header_with_len(buf)?;
+        let events = parse_events(&buf[header_len..])?;
         Ok(Self { header, events })
     }
 
@@ -205,8 +210,17 @@ pub struct EventSummary {
 }
 
 /// Parse just the header. Used by tooling that wants metadata without
-/// decoding the full event stream.
+/// decoding the full event stream. Accepts both the standard PsyQ SEQ
+/// shape (u16 BE version) and the Legaia variant (u32 BE version, with
+/// two extra reserved bytes before the PPQN word). Real disc SEQ files
+/// use the Legaia shape.
 pub fn parse_header(buf: &[u8]) -> Result<Header> {
+    parse_header_with_len(buf).map(|(h, _)| h)
+}
+
+/// Like [`parse_header`] but also returns the header byte length, which
+/// callers need to seek to the start of the event stream.
+pub fn parse_header_with_len(buf: &[u8]) -> Result<(Header, usize)> {
     if buf.len() < HEADER_LEN {
         bail!(
             "SEQ buffer too small: {} bytes (need >= {})",
@@ -221,18 +235,41 @@ pub fn parse_header(buf: &[u8]) -> Result<Header> {
             SEQ_MAGIC
         );
     }
+    // Detect the variant: if `u32 BE at +4..+8 == 1`, this is the Legaia
+    // shape; otherwise the standard PsyQ shape.
+    let v32 = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
+    if v32 == 1 && buf.len() >= HEADER_LEN_LEGAIA {
+        let ppqn = u16::from_be_bytes([buf[8], buf[9]]);
+        let tempo_us_per_qn = u24_be(&buf[10..13]);
+        let time_sig_num = buf[13];
+        let time_sig_denom_pow2 = buf[14];
+        return Ok((
+            Header {
+                version: 1,
+                ppqn,
+                tempo_us_per_qn,
+                time_sig_num,
+                time_sig_denom_pow2,
+            },
+            HEADER_LEN_LEGAIA,
+        ));
+    }
+    // PsyQ-doc shape — u16 version at +4..+6.
     let version = u16::from_be_bytes([buf[4], buf[5]]);
     let ppqn = u16::from_be_bytes([buf[6], buf[7]]);
     let tempo_us_per_qn = u24_be(&buf[8..11]);
     let time_sig_num = buf[0x0B];
     let time_sig_denom_pow2 = buf[0x0C];
-    Ok(Header {
-        version,
-        ppqn,
-        tempo_us_per_qn,
-        time_sig_num,
-        time_sig_denom_pow2,
-    })
+    Ok((
+        Header {
+            version,
+            ppqn,
+            tempo_us_per_qn,
+            time_sig_num,
+            time_sig_denom_pow2,
+        },
+        HEADER_LEN,
+    ))
 }
 
 fn u24_be(b: &[u8]) -> u32 {
@@ -281,8 +318,11 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
 
         let body = match status_byte {
             0xFF => {
-                // Meta event. Always cancels running status.
-                running_status = None;
+                // Meta event. PsyQ libsnd preserves running status across
+                // meta events (real Legaia SEQ data relies on this — the
+                // strict-MIDI behaviour of clearing running status here
+                // would cause a "running status with no prior" error on
+                // the byte stream immediately after a meta).
                 if pos >= stream.len() {
                     bail!("meta event truncated at +{}", pos);
                 }
@@ -387,16 +427,30 @@ fn decode_meta(kind: u8, payload: &[u8]) -> Result<MetaMessage> {
     Ok(match kind {
         0x2F => MetaMessage::EndOfTrack,
         0x51 => {
-            if payload.len() != 3 {
-                bail!("set-tempo meta wrong length: {}", payload.len());
-            }
-            MetaMessage::SetTempo {
-                us_per_qn: u24_be(payload),
+            // Standard MIDI SetTempo is exactly 3 bytes (u24 BE us/qn).
+            // Real Legaia SEQ data sometimes carries longer 0x51 payloads
+            // — likely PsyQ-specific extensions (loop markers / mark
+            // events). Surface those as `Other` rather than failing the
+            // whole-track decode.
+            if payload.len() == 3 {
+                MetaMessage::SetTempo {
+                    us_per_qn: u24_be(payload),
+                }
+            } else {
+                MetaMessage::Other {
+                    kind,
+                    data: payload.to_vec(),
+                }
             }
         }
         0x58 => {
+            // Same tolerance as 0x51 — accept the canonical 4-byte form
+            // and surface anything else as `Other`.
             if payload.len() != 4 {
-                bail!("time-signature meta wrong length: {}", payload.len());
+                return Ok(MetaMessage::Other {
+                    kind,
+                    data: payload.to_vec(),
+                });
             }
             MetaMessage::TimeSignature {
                 numerator: payload[0],
@@ -407,7 +461,10 @@ fn decode_meta(kind: u8, payload: &[u8]) -> Result<MetaMessage> {
         }
         0x59 => {
             if payload.len() != 2 {
-                bail!("key-signature meta wrong length: {}", payload.len());
+                return Ok(MetaMessage::Other {
+                    kind,
+                    data: payload.to_vec(),
+                });
             }
             MetaMessage::KeySignature {
                 sharps: payload[0] as i8,

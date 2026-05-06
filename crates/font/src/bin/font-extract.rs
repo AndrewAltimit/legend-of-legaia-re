@@ -150,8 +150,40 @@ fn main() -> Result<()> {
     )
     .context("write metadata JSON")?;
 
-    eprintln!("[ok] wrote 4 files into {}", args.out.display());
+    // Also dump the raw 4bpp VRAM bytes — needed for downstream tooling
+    // that searches PROT entries for the on-disc carrier of the font.
+    // The bytes are the literal 4bpp packed pixels (two pixels per byte,
+    // low nibble first), 32768 bytes total = 256 × 256 / 2.
+    let raw_4bpp = collect_raw_4bpp(
+        &vram,
+        FONT_VRAM_X16,
+        FONT_VRAM_Y,
+        FONT_VRAM_W16,
+        FONT_VRAM_H,
+    );
+    let raw_path = args.out.join("dialog_font_vram_4bpp.bin");
+    std::fs::write(&raw_path, &raw_4bpp)
+        .with_context(|| format!("write {}", raw_path.display()))?;
+
+    eprintln!("[ok] wrote 5 files into {}", args.out.display());
     Ok(())
+}
+
+/// Pack the live VRAM tile-page back to its on-wire 4bpp bytes (so
+/// downstream tooling can hash / search PROT for the carrier).
+fn collect_raw_4bpp(
+    vram: &[u8],
+    fb_x16: usize,
+    fb_y: usize,
+    width_16bit: usize,
+    height: usize,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(width_16bit * 2 * height);
+    for y in 0..height {
+        let row_off = (fb_y + y) * VRAM_ROW_STRIDE + fb_x16 * 2;
+        out.extend_from_slice(&vram[row_off..row_off + width_16bit * 2]);
+    }
+    out
 }
 
 // ----- SCUS parsing -----

@@ -286,6 +286,112 @@ impl LegaiaViewer {
             .unwrap_or(false)
     }
 
+    /// JSON-encoded summary of the current entry — class label, byte size,
+    /// MES record count (if any), SEQ presence (if any), VAB presence
+    /// (if any). The JS side parses this and shows it in the inspector
+    /// panel without needing N round-trips for each individual field.
+    pub fn current_entry_info_json(&self) -> String {
+        let Some(entry) = self.viewable.get(self.current) else {
+            return "{}".into();
+        };
+        let off = entry.meta.byte_offset as usize;
+        let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
+        let buf: &[u8] = if end <= self.disc.len() {
+            &self.disc[off..end]
+        } else {
+            &[]
+        };
+        let class = format!("{:?}", entry.class);
+        let mes = legaia_mes::parse(buf).ok();
+        let mes_format = mes.as_ref().map(|m| format!("{:?}", m.format));
+        let mes_records = mes.as_ref().and_then(|m| m.records.as_ref().map(Vec::len));
+        let mes_offsets = mes
+            .as_ref()
+            .and_then(|m| m.offset_table.as_ref().map(Vec::len));
+        let seq_off = buf.windows(4).position(|w| w == b"pQES");
+        let vab_off = buf.windows(4).position(|w| w == b"pBAV");
+        let tim_count = entry.tim_count;
+        let prot_idx = entry.meta.index;
+
+        // Hand-rolled JSON to keep wasm size down (no serde_json on this
+        // path — the data is fixed-shape).
+        let mut s = String::new();
+        s.push('{');
+        s.push_str(&format!(r#""prot_index":{prot_idx},"#));
+        s.push_str(&format!(r#""size_bytes":{},"#, buf.len()));
+        s.push_str(&format!(r#""class":"{class}","#));
+        s.push_str(&format!(r#""tim_count":{tim_count},"#));
+        s.push_str(&format!(r#""has_tmd":{},"#, entry.tmd_source.is_some()));
+        if let Some(off) = vab_off {
+            s.push_str(&format!(r#""vab_offset":{off},"#));
+        }
+        if let Some(off) = seq_off {
+            s.push_str(&format!(r#""seq_offset":{off},"#));
+            // Try parsing the SEQ header for the JS-visible BPM display.
+            if let Ok(hdr) = legaia_seq::parse_header(&buf[off..]) {
+                s.push_str(&format!(r#""seq_ppqn":{},"#, hdr.ppqn));
+                s.push_str(&format!(r#""seq_bpm":{:.1},"#, hdr.bpm()));
+            }
+        }
+        if let Some(fmt) = mes_format {
+            s.push_str(&format!(r#""mes_format":"{fmt}","#));
+        }
+        if let Some(n) = mes_records {
+            s.push_str(&format!(r#""mes_records":{n},"#));
+        }
+        if let Some(n) = mes_offsets {
+            s.push_str(&format!(r#""mes_offsets":{n},"#));
+        }
+        // Trim trailing comma if present.
+        if s.ends_with(',') {
+            s.pop();
+        }
+        s.push('}');
+        s
+    }
+
+    /// Resolve a MES message id to its first 64 bytes as a hex string (for
+    /// preview in the inspector panel). Returns an empty string if the
+    /// current entry isn't a MES container or `text_id` is out of range.
+    pub fn current_mes_message_hex(&self, text_id: u32) -> String {
+        let Some(entry) = self.viewable.get(self.current) else {
+            return String::new();
+        };
+        let off = entry.meta.byte_offset as usize;
+        let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
+        if end > self.disc.len() {
+            return String::new();
+        }
+        let buf = &self.disc[off..end];
+        let Ok(blob) = legaia_mes::parse(buf) else {
+            return String::new();
+        };
+        let body_off = match blob.format {
+            legaia_mes::Format::Compact => blob
+                .offset_table
+                .as_ref()
+                .and_then(|t| t.get(text_id as usize).copied())
+                .map(|v| v as usize),
+            legaia_mes::Format::Records => blob
+                .records
+                .as_ref()
+                .and_then(|r| r.get(text_id as usize))
+                .map(|r| r.offset),
+        };
+        let Some(start) = body_off else {
+            return String::new();
+        };
+        if start >= buf.len() {
+            return String::new();
+        }
+        let n = (buf.len() - start).min(64);
+        let mut s = String::with_capacity(n * 3);
+        for &b in &buf[start..start + n] {
+            s.push_str(&format!("{b:02X} "));
+        }
+        s
+    }
+
     /// Build a 1024×512 PSX VRAM from every TIM the current entry contains.
     /// Returns the raw bytes (2 MB if a CLUT block is present, but VRAM is
     /// always exactly 1 MB = 1024×512×2). Used by the WebGL2 path to upload

@@ -144,6 +144,12 @@ pub struct SceneAssets {
     /// PROT entries the scene block tags as `Class::SeqContainer` — BGM
     /// source bytes, addressable by id via the scene's [`block_range`].
     pub seq_entries: Vec<u32>,
+    /// PROT entries that carry a SEQ blob at a non-zero offset (typically
+    /// inside a `scene_vab_stream` chunk-header wrapper). Each tuple is
+    /// `(prot_idx, byte_offset_of_pqes_magic)`. Most retail scene BGM
+    /// resolves through this list rather than `seq_entries` (raw SEQ at
+    /// offset 0 is rare in the disc layout).
+    pub seq_in_stream_entries: Vec<(u32, usize)>,
     /// PROT entries with VAB headers (sound banks).
     pub vab_entries: Vec<u32>,
     /// Per-record event-script bytecode. Each entry is one record's bytes
@@ -160,6 +166,7 @@ impl SceneAssets {
         let mut tims = Vec::new();
         let mut tmds = Vec::new();
         let mut seq_entries = Vec::new();
+        let mut seq_in_stream_entries = Vec::new();
         let mut vab_entries = Vec::new();
 
         for entry in &scene.entries {
@@ -187,6 +194,15 @@ impl SceneAssets {
                 Class::SceneVabStream => vab_entries.push(entry.idx),
                 _ => {}
             }
+            // Search for pQES magic past offset 0 — most retail SEQ data
+            // lives inside `scene_vab_stream` chunk wrappers, not at the
+            // entry start. Entries already classified as `SeqContainer`
+            // are tracked separately above.
+            if entry.class != Class::SeqContainer
+                && let Some(off) = find_seq_magic(&entry.bytes)
+            {
+                seq_in_stream_entries.push((entry.idx, off));
+            }
         }
 
         let mes = pick_best_mes(scene);
@@ -212,6 +228,7 @@ impl SceneAssets {
             tmds,
             mes,
             seq_entries,
+            seq_in_stream_entries,
             vab_entries,
             event_records,
         }
@@ -227,19 +244,86 @@ impl SceneAssets {
     /// Resolve a BGM id to a SEQ-bearing PROT entry's index. Mirrors the
     /// retail [`docs/subsystems/script-vm.md`] BGM lookup: scene-local ids
     /// (`< 2000`) live at `block_start + 6 + id`; ids `>= 2000` live in the
-    /// global pool (not modeled here). Returns `None` if the resolved
-    /// entry isn't actually a SEQ bank.
+    /// global pool (not modeled here). Checks both standalone SEQ entries
+    /// and the `scene_vab_stream`-wrapped form (where SEQ data lives after
+    /// a 4-byte chunk header).
     pub fn bgm_seq_entry(&self, bgm_id: u16) -> Option<u32> {
         if bgm_id >= 2000 {
             return None;
         }
         let target = self.block_range.0 + 6 + bgm_id as u32;
-        if self.seq_entries.contains(&target) {
+        if self.seq_entries.contains(&target)
+            || self
+                .seq_in_stream_entries
+                .iter()
+                .any(|(idx, _)| *idx == target)
+        {
             Some(target)
         } else {
             None
         }
     }
+
+    /// If the resolved BGM entry is wrapped (chunk-header in front of the
+    /// SEQ data), return the byte offset where the `pQES` magic begins.
+    /// Returns `0` for raw SEQ entries, `None` if `bgm_id` doesn't resolve.
+    pub fn bgm_seq_offset(&self, bgm_id: u16) -> Option<usize> {
+        let target = self.bgm_seq_entry(bgm_id)?;
+        if self.seq_entries.contains(&target) {
+            return Some(0);
+        }
+        self.seq_in_stream_entries
+            .iter()
+            .find(|(idx, _)| *idx == target)
+            .map(|(_, off)| *off)
+    }
+}
+
+/// Search a buffer for the `pQES` magic past offset 0 (i.e. wrapped in a
+/// chunk-header container). Returns the offset of the first `p` byte, or
+/// `None` if no pQES sub-string lives past offset 0.
+///
+/// Legaia SEQ data uses a u32 BE version field (rather than the u16 BE
+/// PsyQ-doc form), so the validation reads 4 reserved/version bytes
+/// before the PPQN word — see [`legaia_seq::parse_header`] for the
+/// canonical reader.
+fn find_seq_magic(buf: &[u8]) -> Option<usize> {
+    const MAGIC: &[u8; 4] = b"pQES";
+    if buf.len() < MAGIC.len() + 1 {
+        return None;
+    }
+    // Cap the scan to a sensible budget — SEQ-wrapped entries are
+    // typically small (< 256 KB). Anything past 4 MB is almost certainly
+    // not a real wrapper.
+    let scan_end = buf.len().min(4 * 1024 * 1024);
+    for i in 1..scan_end.saturating_sub(MAGIC.len()) {
+        if &buf[i..i + MAGIC.len()] == MAGIC && validate_seq_header(&buf[i..]) {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Best-effort SEQ header validation: accepts either the u16-version PsyQ
+/// shape (synthetic test data) or the u32-version Legaia shape (every
+/// real disc SEQ examined). The two shapes differ only in whether the
+/// PPQN word lives at +6 or +8.
+fn validate_seq_header(buf: &[u8]) -> bool {
+    if buf.len() < 15 {
+        return false;
+    }
+    // u32 BE version path — the Legaia shape.
+    let v32 = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
+    let ppqn32 = u16::from_be_bytes([buf[8], buf[9]]);
+    let tempo32_nz = buf[10] != 0 || buf[11] != 0 || buf[12] != 0;
+    if v32 == 1 && ppqn32 > 0 && tempo32_nz {
+        return true;
+    }
+    // u16 BE version fallback — synthetic / standard PsyQ shape.
+    let v16 = u16::from_be_bytes([buf[4], buf[5]]);
+    let ppqn16 = u16::from_be_bytes([buf[6], buf[7]]);
+    let tempo16_nz = buf[8] != 0 || buf[9] != 0 || buf[10] != 0;
+    v16 == 1 && ppqn16 > 0 && tempo16_nz
 }
 
 fn pick_best_mes(scene: &Scene) -> Option<SceneMes> {

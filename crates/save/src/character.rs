@@ -33,7 +33,7 @@ pub const STAT_CAP: u16 = 0x3E7;
 ///
 /// Offsets verified against `FUN_80042558` (the per-frame stat aggregator
 /// that caps each value at [`STAT_CAP`]).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 pub struct HpMpSp {
     /// Current HP.
     pub hp_cur: u16,
@@ -240,6 +240,44 @@ impl CharacterRecord {
         self.raw[base..base + ACTIVE_SPELL_SLOT_STRIDE].copy_from_slice(&bytes);
         true
     }
+
+    /// Typed snapshot of every documented field — convenient for JSON
+    /// dumps. Fields not in [`Snapshot`] still pass through `write` via
+    /// the underlying [`Self::raw`] buffer.
+    pub fn snapshot(&self) -> Snapshot {
+        let spells = self.spell_list();
+        let equip = self.equipment();
+        Snapshot {
+            ability_bits: self.ability_bits().to_vec(),
+            hp_mp_sp: self.hp_mp_sp(),
+            stat_cap: self.stat_cap(),
+            spell_count: spells.count,
+            spell_ids: spells.ids.to_vec(),
+            spell_levels: spells.levels.to_vec(),
+            equipment_slots: equip.slots.to_vec(),
+        }
+    }
+}
+
+/// JSON-friendly snapshot of every documented character-record field.
+/// Round-trip is via [`CharacterRecord::write`] from the underlying
+/// raw bytes — this struct is for diagnostics, not serialisation.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Snapshot {
+    /// Active-abilities bitfield at `+0xF4`.
+    pub ability_bits: Vec<u8>,
+    /// HP / MP / SP triplet at `+0x104`.
+    pub hp_mp_sp: HpMpSp,
+    /// Stat cap at `+0x11A`.
+    pub stat_cap: u16,
+    /// Spell-list count at `+0x13C`.
+    pub spell_count: u8,
+    /// Spell IDs at `+0x13D` (length [`MAX_SPELLS`]).
+    pub spell_ids: Vec<u8>,
+    /// Spell levels at `+0x161` (length [`MAX_SPELLS`]).
+    pub spell_levels: Vec<u8>,
+    /// Equipment slots at `+0x196` (length [`EQUIPMENT_SLOT_COUNT`]).
+    pub equipment_slots: Vec<u8>,
 }
 
 // --- Party wrapper --------------------------------------------------------
