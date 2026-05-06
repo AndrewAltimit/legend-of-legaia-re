@@ -104,6 +104,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `8003CE9C` | Signed-16-bit operand decoder (sign-extended `s16` from two bytes). |
 | `8003CEB8` | 24-bit LE decoder. Reads 3 bytes as a u24. |
 | `8003CED8` | 32-bit LE decoder. Reads 4 bytes as a u32. |
+| `80032434` | Linked-list head allocator. Lazily allocates a 0x34-byte sentinel-circular doubly-linked-list head at `gp[0x148]` (via `FUN_80017888`); the `prev = next = self` + `+8 = 0xFFFF` initialiser is the empty-list sentinel. `param_1` is a kind tag, `param_2` is a 14-halfword config record copied into the head. Used by the dialog overlay's per-frame init path (`FUN_801ECD0C` case 0). |
 
 ## Input + debug subsystem
 
@@ -283,6 +284,19 @@ The MES bytecode interpreter is **statically linked into SCUS_942.54** — not o
 | `80036514` | Substitution expander. Copies from source bytecode to a working buffer, normalising the input-time aliases (`0x5E XX` → `0xCE (XX-0x2D)`, `0xFF` → `0xCF`) and inlining `0xC1..0xC5` / `0xC7` substitutions into glyph runs. |
 | `FUN_801D84D0` (dialog overlay) | Dialog window pager. 26-state machine (`_DAT_801F2734`) for per-frame paging, 16-line buffer at `_DAT_801F3540`, terminator test `(byte & 0x7F) < 0x20`. Drives the actual on-screen dialog window. |
 | `FUN_8001FD44` | Dialog opener. Sets `_DAT_1F800394 |= 0x40` (dialog-active story flag). Called from script-VM op `0x3F`. |
+
+## Dialog-overlay actor-frame helpers
+
+Per-frame substeps of `FUN_801D1344` (the actor frame handler in the dialog overlay). They split the frame into "compute screen position", "step actor physics", "emit sprite primitives", and "build collision bitmask".
+
+| Address | Role |
+|---|---|
+| `FUN_801CF754` (dialog overlay) | Camera-frame projector. Caches `_DAT_1F800020/24` from the active camera struct (`+0x14/+0x18`), then walks the linked actor list at `*param_2`, looking up each actor's tile descriptor at `_DAT_1F8003EC + slot * 0x20` and computing screen-space `(X, Y)` via the `(s8 << 7) + (s8 << 4)` packing the renderer expects. Skips actors with state bits `0x3` set. |
+| `FUN_801D0B90` (dialog overlay) | Per-character training-stat tick. Subtracts `0x20` from `_DAT_801F2274` per call; on underflow, walks every party-character record (stride `0x414` from base `0x80084200`) and bumps the `+0x44E` u16 by 8 (clamped at the `+0x44C` cap) when state flag `0x1000000` is set. The "gauge filling while standing in dialog" tick. |
+| `FUN_801D1BA0` (dialog overlay) | Vertical-step physics for the active actor. Computes `step = DAT_1F800393 * 0xC` (halved when actor flag `0x2000` is set), clamps Y delta by ground-collision via `FUN_801D1878`, and writes back to `actor[+0x16]`. Also resolves the special "frozen drop" path when `actor[+0x9E] == 0`. |
+| `FUN_801D9D30` (dialog overlay) | Camera-shake jitter. Subtracts cached camera offsets, then if `_DAT_8007B630 != 0` calls the LCG RNG (`func_0x80056798`) twice to seed new shake offsets at `DAT_801C6EA4 + 0x18/0x1C`, masked against `(1 << (0x15 - amplitude)) - 1`. |
+| `FUN_801DB510` (dialog overlay) | Actor sprite emitter. Walks the per-actor sprite-anim table at `0x801F2798/0x801F2804`, emitting GP0 primitives. Reads from the actor history-pose buffer (`+0x14/+0x18` vs `+0x1C/+0x20`) to do motion-blur trail rendering. |
+| `FUN_801DE234` (dialog overlay) | Tile-collision bitmask builder. Iterates `func_0x80017FBC(idx, x_tile, y_tile)` until it returns 0, ORing `1 << (hit[+4] & 0x1F)` into `_DAT_8007B8F4`. Used by the actor's footprint test gated on flag `0x400000`. |
 
 ## Records / stats screen
 
