@@ -1,8 +1,10 @@
 ---
-# Placeholder CI + GitHub Pages deploy for legend-of-legaia-re.
+# CI + GitHub Pages deploy for legend-of-legaia-re.
 # Modeled on faultline/.github/workflows/main-ci.yml (same self-hosted runner
 # convention). Tailored:
-#   - No WASM build step (no wasm crate yet).
+#   - WASM check is in the main `ci` job (`cargo build --target
+#     wasm32-unknown-unknown`) so PR builds catch regressions before merge.
+#     The deploy-pages job below packages the same build with `wasm-pack`.
 #   - No scenarios symlink to materialize.
 #   - cargo runs directly on the runner (no docker-compose `rust-ci` service
 #     in this repo yet; the only compose service here is `ghidra`).
@@ -47,6 +49,12 @@ jobs:
 
       - name: Build
         run: cargo build --release --workspace
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Build web-viewer for wasm32
+        run: cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer
 
   # -- Deploy GitHub Pages ----------------------------------------------------
   deploy-pages:
