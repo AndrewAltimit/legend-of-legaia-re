@@ -86,3 +86,61 @@ fn battle_world_handles_every_queued_action_id() {
         );
     }
 }
+
+/// Drives a full attack action turn and verifies that BattleEvent
+/// emissions reach the world's queue.
+///
+/// The state machine routes through Begin → PreActionWait → … →
+/// EndOfAction. Along the way the host gets called for poses, UI
+/// elements, damage, etc. We just want to confirm at least one battle
+/// event gets pushed onto pending_battle_events during a normal turn.
+#[test]
+fn battle_turn_emits_events_into_pending_queue() {
+    use legaia_engine_core::battle_events::BattleEvent;
+
+    let mut world = build_world(3);
+    let mut event_count = 0usize;
+    let mut event_kinds: Vec<&'static str> = Vec::new();
+
+    for _ in 0..500 {
+        let _ = world.tick();
+        for ev in world.drain_battle_events() {
+            event_count += 1;
+            let kind = match ev {
+                BattleEvent::Pose { .. } => "Pose",
+                BattleEvent::UiElement { .. } => "UiElement",
+                BattleEvent::CameraBounds => "CameraBounds",
+                BattleEvent::PartySetup { .. } => "PartySetup",
+                BattleEvent::MonsterSetup { .. } => "MonsterSetup",
+                BattleEvent::RecomputeBattleOrder => "RecomputeBattleOrder",
+                BattleEvent::LoadCaptureArchive { .. } => "LoadCaptureArchive",
+                BattleEvent::SpellAnimTrigger { .. } => "SpellAnimTrigger",
+                BattleEvent::SpellAnimSustain { .. } => "SpellAnimSustain",
+                BattleEvent::ApplyDamage { .. } => "ApplyDamage",
+                BattleEvent::ScreenShake { .. } => "ScreenShake",
+                BattleEvent::RampBrightness { .. } => "RampBrightness",
+                BattleEvent::BattleEnd { .. } => "BattleEnd",
+            };
+            if !event_kinds.contains(&kind) {
+                event_kinds.push(kind);
+            }
+        }
+    }
+
+    assert!(
+        event_count > 0,
+        "expected battle events to be emitted, got {event_count}"
+    );
+    eprintln!("[smoke] {event_count} events across kinds {event_kinds:?}");
+}
+
+/// Damage formula primitive sanity-check via the world-side helper.
+#[test]
+fn basic_damage_is_a_function_of_atk_minus_def() {
+    use legaia_engine_core::battle_events::basic_damage;
+    let weak = basic_damage(20, 50, 0);
+    let strong = basic_damage(200, 50, 0);
+    assert!(strong > weak);
+    // 1-damage floor.
+    assert_eq!(basic_damage(0, 999, 0), 1);
+}

@@ -18,6 +18,7 @@
 //! Engines that want a different layout — say, ECS storage — should
 //! implement the VM `Host` traits themselves; this is the default.
 
+use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
 use legaia_engine_vm as vm;
 use legaia_save;
@@ -251,6 +252,14 @@ pub struct World {
     /// [`FieldEvent`]: crate::field_events::FieldEvent
     pub pending_field_events: Vec<FieldEvent>,
 
+    /// Battle action state machine side-effects emitted this frame.
+    /// Engines drain after [`World::tick`] to dispatch poses, UI elements,
+    /// damage, screen-shake, etc. See [`BattleEvent`] for the per-variant
+    /// citation.
+    ///
+    /// [`BattleEvent`]: crate::battle_events::BattleEvent
+    pub pending_battle_events: Vec<BattleEvent>,
+
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
     /// a scene starts one. Updated synchronously when the VM emits the
     /// corresponding `Bgm` event.
@@ -363,6 +372,7 @@ impl World {
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_field_events: Vec::new(),
+            pending_battle_events: Vec::new(),
             current_bgm: None,
             current_dialog: None,
             last_field_interact: None,
@@ -379,6 +389,13 @@ impl World {
     /// in emission order.
     pub fn drain_field_events(&mut self) -> Vec<FieldEvent> {
         std::mem::take(&mut self.pending_field_events)
+    }
+
+    /// Drain emitted battle action events. Engines call once per frame
+    /// after [`World::tick`] to dispatch poses, UI elements, damage, etc.
+    /// Returns events in emission order.
+    pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
+        std::mem::take(&mut self.pending_battle_events)
     }
 
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
@@ -1307,12 +1324,80 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle_end = Some(cause);
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::BattleEnd { cause });
     }
     fn party_count(&self) -> u8 {
         self.world.party_count
     }
-    fn pose(&mut self, _actor_id: u8, _pose: Pose) {
-        // Engines hook pose changes; default world records nothing.
+    fn pose(&mut self, actor_id: u8, pose: Pose) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::Pose { actor_id, pose });
+    }
+    fn ui_element(&mut self, effect_id: u8, mode: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::UiElement { effect_id, mode });
+    }
+    fn camera_bounds(&mut self) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::CameraBounds);
+    }
+    fn party_setup(&mut self, actor_slot: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::PartySetup { actor_slot });
+    }
+    fn monster_setup(&mut self, actor_slot: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::MonsterSetup { actor_slot });
+    }
+    fn recompute_battle_order(&mut self) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::RecomputeBattleOrder);
+    }
+    fn load_capture_archive(&mut self, idx: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::LoadCaptureArchive { idx });
+    }
+    fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::SpellAnimTrigger {
+                party_slot,
+                spell_id,
+            });
+    }
+    fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::SpellAnimSustain { actor_id, anim_id });
+    }
+    fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::ApplyDamage {
+                icon,
+                page,
+                target_slot,
+                party_slot,
+            });
+    }
+    fn screen_shake(&mut self, magnitude: u16) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::ScreenShake { magnitude });
+    }
+    fn ramp_brightness(&mut self, target_pct: u8) {
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::RampBrightness { target_pct });
     }
 }
 

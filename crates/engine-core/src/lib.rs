@@ -5,6 +5,7 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies — the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
+pub mod battle_events;
 pub mod dialog;
 pub mod field_events;
 pub mod input;
