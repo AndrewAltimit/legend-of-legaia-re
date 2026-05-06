@@ -10,6 +10,7 @@ pub mod field_events;
 pub mod input;
 pub mod mode;
 pub mod scene;
+pub mod scene_bundle;
 pub mod world;
 
 use anyhow::{Context, Result};
