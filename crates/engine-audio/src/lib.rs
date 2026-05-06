@@ -393,6 +393,37 @@ impl AudioOut {
         });
     }
 
+    /// Install a streaming XA-ADPCM voice fed from a buffer of raw XA-ADPCM
+    /// sound-group bytes (128-byte aligned). Decodes the entire buffer
+    /// up-front through the new [`legaia_xa::StreamingDecoder`] before
+    /// staging it as an [`XaPlayback`]; this is behaviourally equivalent
+    /// to the all-at-once [`legaia_xa::decode`] path but exercises the
+    /// incremental decoder so future producer-thread / ring-buffer
+    /// consumers share the same surface.
+    ///
+    /// Engines streaming long XA tracks from a disc image should chunk the
+    /// sectors through [`legaia_xa::StreamingDecoder::feed`] directly and
+    /// stage decoded PCM into [`AudioOut::play_xa`] in batches (the audio
+    /// callback can't block on disc I/O).
+    pub fn play_xa_streaming(
+        &self,
+        raw_bytes: &[u8],
+        sample_rate: u32,
+        channels: legaia_xa::Channels,
+        looping: bool,
+        gain: u16,
+    ) -> Result<()> {
+        let mut decoder = legaia_xa::StreamingDecoder::new(legaia_xa::DecodeOptions {
+            channels,
+            sample_rate,
+        });
+        let mut pcm = Vec::with_capacity(raw_bytes.len() / 128 * 224);
+        decoder.feed(raw_bytes, &mut pcm)?;
+        // Drop trailing partial group bytes; XA spec is whole-group aligned.
+        self.play_xa(pcm, sample_rate, channels, looping, gain);
+        Ok(())
+    }
+
     /// Detach the active XA stream (if any). Subsequent frames mix only
     /// the SPU output.
     pub fn stop_xa(&self) {

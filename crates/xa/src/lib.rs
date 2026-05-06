@@ -272,6 +272,146 @@ fn decode_group_4bit(
     Ok(())
 }
 
+/// Incremental XA-ADPCM decoder. Holds per-channel filter state across
+/// calls so callers can feed the decoder one sound group (or a small
+/// batch) at a time as bytes arrive.
+///
+/// Use this when the source bytes don't fit comfortably in memory (long
+/// disc-resident XA tracks) or when downstream consumers want PCM
+/// produced on a pull schedule rather than a single big decode batch.
+///
+/// The all-at-once [`decode`] API is built on the same group walker;
+/// switching to [`StreamingDecoder`] is a behaviour-preserving refactor
+/// for the streaming path.
+pub struct StreamingDecoder {
+    opts: DecodeOptions,
+    state: [ChannelState; 2],
+    leftover: Vec<u8>,
+    n_groups_total: usize,
+    n_groups_skipped: usize,
+}
+
+impl StreamingDecoder {
+    pub fn new(opts: DecodeOptions) -> Self {
+        Self {
+            opts,
+            state: [ChannelState::default(); 2],
+            leftover: Vec::new(),
+            n_groups_total: 0,
+            n_groups_skipped: 0,
+        }
+    }
+
+    /// Feed `bytes` into the decoder, append decoded interleaved PCM to
+    /// `out`. Any tail bytes that don't form a complete 128-byte sound
+    /// group are buffered and consumed on the next call. Returns the
+    /// number of complete groups decoded (including silently-skipped
+    /// groups).
+    ///
+    /// Channel mode + sample rate stay fixed for the decoder lifetime —
+    /// callers that need to switch mid-stream allocate a new decoder.
+    pub fn feed(&mut self, bytes: &[u8], out: &mut Vec<i16>) -> Result<usize> {
+        let mut buf: Vec<u8> = std::mem::take(&mut self.leftover);
+        buf.extend_from_slice(bytes);
+        let mut start = 0usize;
+        let mut groups = 0usize;
+        while start + SOUND_GROUP_BYTES <= buf.len() {
+            let group = &buf[start..start + SOUND_GROUP_BYTES];
+            if group_is_valid(group) {
+                decode_group_4bit(group, self.opts.channels, &mut self.state, out)?;
+            } else {
+                // Same silent-skip behaviour as the batch decoder.
+                self.state[0] = ChannelState::default();
+                self.state[1] = ChannelState::default();
+                let n = UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT;
+                out.extend(std::iter::repeat_n(0i16, n));
+                self.n_groups_skipped += 1;
+            }
+            start += SOUND_GROUP_BYTES;
+            groups += 1;
+        }
+        // Stash partial-group tail for the next call.
+        self.leftover = buf[start..].to_vec();
+        self.n_groups_total += groups;
+        Ok(groups)
+    }
+
+    /// Number of complete groups consumed so far.
+    pub fn groups_consumed(&self) -> usize {
+        self.n_groups_total
+    }
+
+    /// Number of groups that were silently zero-filled because their
+    /// parameter bytes failed the validity check.
+    pub fn groups_skipped(&self) -> usize {
+        self.n_groups_skipped
+    }
+
+    /// Channel mode the decoder was constructed with.
+    pub fn channels(&self) -> Channels {
+        self.opts.channels
+    }
+
+    /// Output sample rate the decoder was constructed with.
+    pub fn sample_rate(&self) -> u32 {
+        self.opts.sample_rate
+    }
+
+    /// Current leftover-byte count (0..=127). Useful for diagnostics —
+    /// a healthy XA stream feeds whole groups so this is usually 0.
+    pub fn pending_bytes(&self) -> usize {
+        self.leftover.len()
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+
+    fn synth_silent_group() -> Vec<u8> {
+        // Filter 0, range 0 across all 8 sound units, plus zero sample
+        // nibbles — yields silence and validates cleanly.
+        vec![0u8; SOUND_GROUP_BYTES]
+    }
+
+    #[test]
+    fn streaming_matches_batch_for_whole_groups() {
+        let buf: Vec<u8> = (0..3).flat_map(|_| synth_silent_group()).collect();
+        let opts = DecodeOptions {
+            channels: Channels::Mono,
+            sample_rate: 18900,
+        };
+        let (batch_pcm, _) = decode(&buf, opts).unwrap();
+        let mut decoder = StreamingDecoder::new(opts);
+        let mut stream_pcm = Vec::new();
+        decoder.feed(&buf, &mut stream_pcm).unwrap();
+        assert_eq!(batch_pcm, stream_pcm);
+        assert_eq!(decoder.groups_consumed(), 3);
+        assert_eq!(decoder.pending_bytes(), 0);
+    }
+
+    #[test]
+    fn streaming_carries_partial_group_into_next_feed() {
+        let one_group = synth_silent_group();
+        let opts = DecodeOptions {
+            channels: Channels::Mono,
+            sample_rate: 18900,
+        };
+        let mut decoder = StreamingDecoder::new(opts);
+        let mut pcm = Vec::new();
+        // Feed 64 bytes — half a group, no output yet.
+        decoder.feed(&one_group[..64], &mut pcm).unwrap();
+        assert_eq!(decoder.groups_consumed(), 0);
+        assert_eq!(decoder.pending_bytes(), 64);
+        assert!(pcm.is_empty());
+        // Feed remaining 64 — completes the group.
+        decoder.feed(&one_group[64..], &mut pcm).unwrap();
+        assert_eq!(decoder.groups_consumed(), 1);
+        assert_eq!(decoder.pending_bytes(), 0);
+        assert_eq!(pcm.len(), UNITS_PER_GROUP_4BIT * SAMPLES_PER_UNIT);
+    }
+}
+
 /// Write a 16-bit PCM WAV file.
 pub fn write_wav(
     path: &std::path::Path,

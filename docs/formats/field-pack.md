@@ -30,7 +30,7 @@ A scan of `SCUS_942.54` and every captured overlay (dialog, town, battle action,
 
 That rules out a magic-checked format loader. The most likely interpretation is that field-pack is a build-time layout artefact — the schema describes the in-RAM shape that per-scene code reads at hard-coded slot offsets, and the magic is a sanity marker the disc mastering left behind (or the dev tooling stamped) rather than a runtime parser anchor.
 
-Per-slot interpretation therefore depends on locating the consumer — per-scene code in a field/town overlay that reads from the slot offsets. No such consumer has been captured yet. See [`ghidra/scripts/find_field_pack_magic.py`](../../ghidra/scripts/find_field_pack_magic.py) for the scan that established the magic isn't referenced.
+Per-slot interpretation therefore depends on locating the consumer — per-scene code in a field/town overlay that reads from the slot offsets. See [`ghidra/scripts/find_field_pack_magic.py`](../../ghidra/scripts/find_field_pack_magic.py) for the scan that established the magic isn't referenced, and [`ghidra/scripts/find_field_pack_consumers.py`](../../ghidra/scripts/find_field_pack_consumers.py) for the consumer-search complement: it walks every instruction in the active program, collects loads / stores whose immediate operand matches one of the larger schema slot offsets (small offsets like `0x60` are filtered to avoid colliding with mundane struct accesses), and groups hits by containing function. Run it once per captured overlay; clusters of hits in a single function are strong consumer candidates.
 
 ## Tooling
 

@@ -17,7 +17,8 @@
 //! [`text_draws_for`](../../legaia_engine_render/fn.text_draws_for.html)
 //! consumes the [`Self::page_glyphs`] byte stream via [`legaia_font::Font`].
 
-use legaia_mes::{DialogPlayer, MesEvent, PlayerState};
+use legaia_mes::{DialogPlayer, Interpreter, MesEvent, PlayerState};
+use std::sync::Arc;
 
 /// Page-state machine the host polls each frame. Mirrors the
 /// [`legaia_mes::PlayerState`] fan-out but folds idle / typing into a single
@@ -153,6 +154,132 @@ impl<'a> DialogPanel<'a> {
     }
 }
 
+/// Owned, self-contained dialog driver. Carries the MES bytecode bytes,
+/// the current PC, and the page accumulator without borrowing — so it can
+/// live on the World between frames without lifetime gymnastics.
+///
+/// Equivalent to [`DialogPanel`] for engines that want to mutate one piece
+/// of long-lived state instead of constructing a borrowed pair every frame.
+#[derive(Debug, Clone)]
+pub struct OwnedDialogPanel {
+    /// MES bytecode bytes for the active message. Shared via Arc so the
+    /// engine can keep it alive cheaply across the scene.
+    pub bytes: Arc<Vec<u8>>,
+    /// Current bytecode PC (offset into [`Self::bytes`]).
+    pub pc: usize,
+    /// Frame counter — one tick per [`Self::tick`].
+    pub tick_count: u64,
+    /// Glyphs emitted per frame. `0` is treated as `1`.
+    pub glyphs_per_frame: u8,
+    /// Page glyphs accumulated since the last [`Self::advance_page`].
+    pub page: Vec<PanelGlyph>,
+    /// CLUT pen color tracked through `0xCF` color escapes.
+    pub current_clut: u8,
+    state: PanelState,
+    waiting_for_input: bool,
+    done: bool,
+}
+
+impl OwnedDialogPanel {
+    /// Build a panel over `bytes` starting at `pc` (the offset returned by
+    /// [`crate::scene_assets::SceneMes::message_offset`]).
+    pub fn new(bytes: Arc<Vec<u8>>, pc: usize) -> Self {
+        Self {
+            bytes,
+            pc,
+            tick_count: 0,
+            glyphs_per_frame: 1,
+            page: Vec::new(),
+            current_clut: 0,
+            state: PanelState::Typing,
+            waiting_for_input: false,
+            done: false,
+        }
+    }
+
+    /// Convenience: build a panel from a [`crate::scene_assets::SceneMes`]
+    /// resolution. Returns `None` if `text_id` is past the offset table.
+    pub fn from_scene_mes(mes: &crate::scene_assets::SceneMes, text_id: u16) -> Option<Self> {
+        let pc = mes.message_offset(text_id)?;
+        Some(Self::new(Arc::new(mes.bytes.clone()), pc))
+    }
+
+    pub fn set_glyphs_per_frame(&mut self, n: u8) {
+        self.glyphs_per_frame = n.max(1);
+    }
+
+    /// Advance one frame and return the new state.
+    pub fn tick(&mut self) -> PanelState {
+        if self.done {
+            self.state = PanelState::Done;
+            return self.state;
+        }
+        if self.waiting_for_input {
+            self.state = PanelState::PageBreak;
+            return self.state;
+        }
+        self.tick_count += 1;
+        if !self.tick_count.is_multiple_of(self.glyphs_per_frame as u64) {
+            return self.state;
+        }
+        let mut interp = Interpreter::new_at(&self.bytes, self.pc);
+        let next = interp.next_event();
+        self.pc = interp.pc();
+        match next {
+            Some(MesEvent::Glyph(g)) => self.page.push(PanelGlyph {
+                byte: g,
+                clut: self.current_clut,
+            }),
+            Some(MesEvent::WideGlyph(_op, arg)) => self.page.push(PanelGlyph {
+                byte: arg,
+                clut: self.current_clut,
+            }),
+            Some(MesEvent::Control(_)) => {
+                self.waiting_for_input = true;
+                self.state = PanelState::PageBreak;
+            }
+            Some(MesEvent::EndOfMessage(_)) | None => {
+                self.done = true;
+                self.state = PanelState::Done;
+            }
+            Some(_) => {
+                // Spacing / Substitute / Skip / Truncated — engine-side
+                // routing isn't wired yet; leave the pen alone.
+            }
+        }
+        self.state
+    }
+
+    /// Resume from a page break. No-op when the panel isn't paused.
+    pub fn advance_page(&mut self) {
+        if self.waiting_for_input {
+            self.page.clear();
+            self.waiting_for_input = false;
+            self.state = PanelState::Typing;
+        }
+    }
+
+    pub fn page_glyphs(&self) -> &[PanelGlyph] {
+        &self.page
+    }
+
+    pub fn page_bytes(&self) -> Vec<u8> {
+        self.page.iter().map(|g| g.byte).collect()
+    }
+
+    pub fn state(&self) -> PanelState {
+        self.state
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    pub fn is_waiting_for_input(&self) -> bool {
+        self.waiting_for_input
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +307,18 @@ mod tests {
             vec![b'a', b'b', b'c'],
             "three glyphs should accumulate"
         );
+        assert_eq!(panel.tick(), PanelState::Done);
+        assert!(panel.is_done());
+    }
+
+    #[test]
+    fn owned_panel_types_three_glyphs_then_done() {
+        let buf = Arc::new(three_glyph_program());
+        let mut panel = OwnedDialogPanel::new(buf, 0);
+        for _ in 0..3 {
+            assert_eq!(panel.tick(), PanelState::Typing);
+        }
+        assert_eq!(panel.page_bytes(), vec![b'a', b'b', b'c']);
         assert_eq!(panel.tick(), PanelState::Done);
         assert!(panel.is_done());
     }
