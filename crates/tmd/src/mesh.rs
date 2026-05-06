@@ -150,6 +150,17 @@ pub struct VramMesh {
     pub uvs: Vec<[u8; 2]>,
     pub cba_tsb: Vec<[u16; 2]>,
     pub indices: Vec<u32>,
+    /// Per-vertex normals, one per entry in `positions`. Computed at
+    /// mesh-build time by accumulating face normals into per-position bins
+    /// and normalising — this gives smooth shading for connected surfaces
+    /// without needing the TMD per-prim normal-index byte offset (which is
+    /// still unreversed for Legaia's six prim modes; see
+    /// [`legaia_prims::vertex_offset_bytes`] for the parallel case).
+    ///
+    /// `[0.0, 0.0, 0.0]` is a sentinel that the renderer should fall back to
+    /// screen-space derivative normals for; this happens for degenerate or
+    /// untextured prims that don't contribute to the position bins.
+    pub normals: Vec<[f32; 3]>,
 }
 
 impl VramMesh {
@@ -240,12 +251,69 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
         }
     }
 
+    let normals = compute_smooth_normals(&positions, &indices);
     VramMesh {
         positions,
         uvs,
         cba_tsb,
         indices,
+        normals,
     }
+}
+
+/// Build per-vertex normals from triangle geometry. Triangles whose three
+/// vertices share an integer-quantized position with another triangle's
+/// vertices contribute to a per-position normal bin; the per-vertex normal
+/// is the normalised average of all face normals sharing that position.
+///
+/// Quantization uses the source TMD coordinate space (i32 of the f32
+/// position) so two prims that reference the same vertex of the underlying
+/// SVECTOR table land in the same bin. Returns the zero vector for
+/// positions in singleton-face bins (which the renderer treats as "fall
+/// back to screen-space derivatives").
+fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    use std::collections::HashMap;
+    type Key = (i32, i32, i32);
+    let key_of = |p: &[f32; 3]| -> Key { (p[0] as i32, p[1] as i32, p[2] as i32) };
+    let mut bins: HashMap<Key, [f32; 3]> = HashMap::new();
+    for tri in indices.chunks_exact(3) {
+        let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+        if a >= positions.len() || b >= positions.len() || c >= positions.len() {
+            continue;
+        }
+        let pa = positions[a];
+        let pb = positions[b];
+        let pc = positions[c];
+        let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+        let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+        let n = [
+            ab[1] * ac[2] - ab[2] * ac[1],
+            ab[2] * ac[0] - ab[0] * ac[2],
+            ab[0] * ac[1] - ab[1] * ac[0],
+        ];
+        // Triangles weight their face normal by area (length of unnormalised
+        // cross product) — this is the standard angle-independent average
+        // recommended by Max '99 ("Weights for Computing Vertex Normals from
+        // Facet Normals"). Larger faces contribute more.
+        for &idx in &[a, b, c] {
+            let bin = bins.entry(key_of(&positions[idx])).or_insert([0.0; 3]);
+            bin[0] += n[0];
+            bin[1] += n[1];
+            bin[2] += n[2];
+        }
+    }
+    positions
+        .iter()
+        .map(|p| {
+            let v = bins.get(&key_of(p)).copied().unwrap_or([0.0; 3]);
+            let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            if len > 1e-6 {
+                [v[0] / len, v[1] / len, v[2] / len]
+            } else {
+                [0.0, 0.0, 0.0]
+            }
+        })
+        .collect()
 }
 
 /// Triangulated mesh ready for GPU upload.

@@ -67,6 +67,8 @@ pub const UNITS_PER_GROUP_4BIT: usize = 8;
 pub const F0: [i32; 5] = [0, 60, 115, 98, 122];
 pub const F1: [i32; 5] = [0, 0, -52, -55, -60];
 
+pub mod demux;
+
 /// Channel mode for XA-ADPCM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channels {
@@ -165,12 +167,17 @@ pub fn decode(buf: &[u8], opts: DecodeOptions) -> Result<(Vec<i16>, DecodeReport
 }
 
 fn group_is_valid(group: &[u8]) -> bool {
-    // Bytes 8..16 must mirror bytes 0..8 (XA stores 8 SU params twice for
-    // error detection). If they don't, this isn't a real sound group.
-    if group[..8] != group[8..16] {
-        return false;
-    }
-    // All filter nibbles must be in 0..=3.
+    // Validity check: every sound-unit parameter byte (the first 8) must
+    // have a filter nibble in 0..=3.
+    //
+    // We deliberately do NOT require the standard CD-XA byte-0..8 ==
+    // bytes 8..16 redundancy mirror: Legaia's encoder writes distinct
+    // parameter values in the second 8 bytes for many sound groups
+    // (the second-half params look like a second valid parameter set,
+    // hypothesis: per-half adaptive parameters, but the standard
+    // decoder using only bytes 0..8 still produces smoother output
+    // empirically). Insisting on the mirror match would skip ~90% of
+    // Legaia's audio, leaving silence-padded output.
     for byte in group.iter().take(UNITS_PER_GROUP_4BIT) {
         let filter = (byte >> 4) & 0x0F;
         if filter > 3 {

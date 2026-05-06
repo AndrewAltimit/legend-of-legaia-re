@@ -75,14 +75,14 @@ Implemented:
   - `stage <PATH>` — render a stage-geometry PROT entry as a wireframe.
   - `vab <PATH> [--offset 0xN] [--sample N] [--rate Hz]` — play one VAG sample from a VAB bank.
   - `prot <PROT.DAT> [--cdname FILE] [--start N]` — walk every PROT entry; auto-detects via the `categorize` classifier and shows / plays the first viewable sub-asset.
+  - `dialog <PATH> [--message N]` — render a Compact MES blob through the `legaia-mes` interpreter and dialog player against the extracted dialog font. Z/Enter advance past page breaks; N/P jump messages.
 
 The PROT browser dispatch handles `tim_passthrough`, `tim_pack`, `data_field_streaming`, `scene_tmd_stream`, `scene_vab_stream`, and a VAB byte-search fallback for any class with embedded banks.
 
 Open Phase 1 milestones:
 - XA stream playback (streaming voice in `engine-audio`).
-- Multi-voice mixer (the PSX SPU runs 24 voices; current mixer plays one).
-- ADSR shaping for VAB tones.
-- Per-vertex normals from the TMD per-object normal table (currently the renderer derives normals via screen-space derivatives, which is flat-shading).
+
+Smooth shading: `legaia_tmd::mesh::tmd_to_vram_mesh` now emits a per-vertex normal stream by accumulating face normals into per-position bins (Max-weighted by triangle area) so connected geometry shades smoothly. The VRAM-mesh shader reads the normal at vertex location 3 and falls back to `dpdx`/`dpdy` only for unbinned positions. Per-prim normal indices in the TMD format itself remain unparsed; that's a separate RE task.
 
 ### Phase 2 — runtime port
 
@@ -98,13 +98,19 @@ In progress:
 - **PSX SPU mixer** — `crates/engine-audio/src/spu/`. Clean-room model of the 24-voice SPU: streaming ADPCM decoder, ADSR envelope, 512 KB SPU RAM, libspu-shaped transfer engine. `crates/engine-audio/src/vab_bind.rs` bridges parsed VAB banks (`legaia_vab::VabReport`) into the SPU via `VabBank::upload` + `play_note`. See [audio](audio.md#engine-audio-model--clean-room-spu-port).
 
 Pending Phase 2:
-- **MES renderer** — the container parser plus a bytecode interpreter (`crates/mes/src/interp.rs`) emit a `MesEvent` stream (`Glyph`, `EndOfMessage`, `PageBreak`, `Op65`, `Op4c`, `Op26`, `Unknown`). Glyph-to-character mapping still needs the dialog font tile sheet (extraction is blocked — see `docs/formats/dialog-font.md`). The bytecode dispatcher in `FUN_801ED710` (0897 town overlay) is the spec for filling in the remaining opcodes.
+- **MES renderer** — `legaia-mes::DialogPlayer` paces `MesEvent` (`Glyph`, `EndOfMessage`, `PageBreak`, `Op65`, `Op4c`, `Op26`, `Unknown`) for the renderer; the `dialog` subcommand of `asset-viewer` is the first end-to-end demo, blitting one quad per glyph through `RenderTarget::TextOnly` against the extracted dialog font. Filling in the unknown opcodes still requires the bytecode dispatcher at `FUN_801ED710` (0897 town overlay).
 - **Sprite engine** — back the actor VM's `Host` trait with real actor state. The `World` in `engine-core` provides a default scaffolding; a full sprite engine still needs the rendering wiring (sprite sheet → wgpu draw calls) plus the per-frame motion tween.
 - **Field / cutscene / menu VMs** — overlay capture pipeline ready for the ones still pending capture.
 
 ### Phase 3 — gameplay assembly
 
-Game-mode driver (28-entry table at `0x8007078C`), field map + dialog, the [battle subsystem](battle.md) including Tactical Arts and the per-actor state machine `FUN_801E295C`, menu + save / load.
+In progress:
+- **Game-mode driver** — `crates/engine-core/src/mode.rs`. Port of the 28-entry table at SCUS `0x8007078C` as a `GameMode` enum + `ModeEntry` table + `ModeDriver`. Each game mode maps to a [`SceneMode`](#world-composite) for the `World`'s tick path; engines plug per-mode behaviour through the `ModeHandler` trait (default: no-op). Boot starts in `MainInit` mirroring the retail boot path.
+
+Pending:
+- Field map + dialog (the field-VM port already runs; needs the field-loader chain wired).
+- The [battle subsystem](battle.md) including Tactical Arts and the per-actor state machine `FUN_801E295C` (state machine port landed; still needs scene loader integration).
+- Menu + save / load.
 
 ### Phase 4 — targets
 

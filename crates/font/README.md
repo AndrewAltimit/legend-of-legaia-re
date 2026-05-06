@@ -23,6 +23,26 @@ let total_width = layout.advance_x;
 
 The crate does **not** depend on a renderer — it only produces glyph rectangles in atlas coordinates and screen-relative offsets. Renderer integration lives in `legaia-engine-render`.
 
+## `font-extract` binary
+
+The crate ships a `font-extract` binary that produces the four `extracted/font/` artifacts directly from a disc-extracted `SCUS_942.54` plus a mednafen save state with the dialog font live in VRAM:
+
+```
+cargo run -p legaia-font --bin font-extract -- \
+    --scus extracted/SCUS_942.54 \
+    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mc4" \
+    --out extracted/font
+```
+
+Pipeline:
+
+1. Parse the PSX-EXE header on `SCUS_942.54` for its t_addr; read the 256-byte width table at RAM `0x80073F1C` and the 38×4-byte escape table at `0x80074050`.
+2. Open the mednafen save state, gunzip if needed, validate the `MDFNSVST` magic, find the `&GPURAM[0][0]` variable inside the `GPU` section, and slice out the 1 MB VRAM payload.
+3. Read the dialog CLUT at VRAM (96, 510) and the 4bpp font tile-page at VRAM (896, 0)..(960, 256).
+4. Decode 4bpp + CLUT to RGBA8 and write the four artifacts.
+
+Any in-game save state works; the font tile-page is byte-identical across captures.
+
 ## Clean-room status
 
 Atlas pixels and widths are derived from a Sony executable + VRAM dump and are tracked in the gitignored `extracted/` tree, never checked in. This crate ships as code only; loading the runtime artifacts is a deployment concern.

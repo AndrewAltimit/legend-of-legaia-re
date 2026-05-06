@@ -47,4 +47,16 @@ impl RawDisc {
         }
         Ok(())
     }
+
+    /// Read one raw 2352-byte sector. Use this when you need the CD-XA
+    /// subheader (bytes 16..24) and full Form 2 user data (bytes 24..2348),
+    /// which the Form 1 view at [`Self::read_sector`] truncates. The XA
+    /// audio path uses this to demux multiplexed channels.
+    pub fn read_raw_sector(&mut self, lba: u32) -> io::Result<[u8; SECTOR_SIZE]> {
+        let mut sector = [0u8; SECTOR_SIZE];
+        self.file
+            .seek(SeekFrom::Start(lba as u64 * SECTOR_SIZE as u64))?;
+        self.file.read_exact(&mut sector)?;
+        Ok(sector)
+    }
 }
