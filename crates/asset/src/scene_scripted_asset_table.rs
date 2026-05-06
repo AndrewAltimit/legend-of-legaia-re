@@ -124,6 +124,45 @@ pub fn detect(buf: &[u8]) -> Option<SceneScriptedAssetTable> {
     })
 }
 
+/// Walk the prescript offset table and produce per-record `(start, end)` byte
+/// ranges. The records run up to (but not including) the next record's start;
+/// the final record ends at the asset-table sector boundary so callers don't
+/// accidentally read into the inner asset bundle's bytes.
+///
+/// Returns `None` if the prescript is malformed.
+pub fn record_ranges(buf: &[u8]) -> Option<Vec<(usize, usize)>> {
+    let (count, last_off) = detect_prescript(buf)?;
+    // The asset table sits at the next 0x800-aligned offset past the
+    // prescript's last record offset. We clamp the final record's `end` at
+    // that boundary so callers don't see asset-table bytes inside a script
+    // record.
+    let table_off = (last_off as usize)
+        .checked_add(SECTOR_SIZE)?
+        .checked_sub(1)?
+        & !(SECTOR_SIZE - 1);
+    let final_end = table_off.min(buf.len());
+
+    let mut out = Vec::with_capacity(count as usize);
+    let table_end = 2 + (count as usize) * 2;
+    let mut offsets = Vec::with_capacity(count as usize);
+    for i in 0..(count as usize) {
+        offsets.push(read_u16_le(buf, 2 + i * 2)? as usize);
+    }
+    debug_assert_eq!(offsets[0], table_end);
+    for (i, &start) in offsets.iter().enumerate() {
+        let end = if i + 1 < offsets.len() {
+            offsets[i + 1]
+        } else {
+            final_end
+        };
+        if start > end || end > buf.len() {
+            return None;
+        }
+        out.push((start, end));
+    }
+    Some(out)
+}
+
 /// Validate the leading `[u16 count][u16 offsets[count]]` prescript shape.
 /// Returns `(count, last_offset)` on success.
 fn detect_prescript(buf: &[u8]) -> Option<(u16, u16)> {
@@ -269,5 +308,18 @@ mod tests {
     fn rejects_random_bytes() {
         let buf: Vec<u8> = (0..0x4000u32).map(|i| (i & 0xFF) as u8).collect();
         assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn record_ranges_walks_prescript_and_clamps_at_sector_boundary() {
+        let buf = synth(3, &[16, 32, 48], [1, 2, 3, 4, 5, 6, 7]);
+        let ranges = record_ranges(&buf).expect("prescript valid");
+        assert_eq!(ranges.len(), 3);
+        // Records start at `2 + 3*2 = 8`. Lengths are 16/32/48.
+        assert_eq!(ranges[0], (8, 24));
+        assert_eq!(ranges[1], (24, 56));
+        // Last range ends at the sector boundary, not the asset-table content.
+        assert_eq!(ranges[2].0, 56);
+        assert!(ranges[2].1 <= 0x800);
     }
 }

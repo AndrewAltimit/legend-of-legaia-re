@@ -31,6 +31,15 @@ use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 /// 8 + 32 spare slots for field-side NPCs / cutscene actors.
 pub const MAX_ACTORS: usize = 64;
 
+/// One queued fade request. Move-VM ext sub-op 0x3C writes either an
+/// immediate fade (`ticks == 0`) or a ramp (`ticks > 0`) — engines drain
+/// `pending_fade` each frame to drive the screen overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FadeRequest {
+    pub rgb: [u8; 3],
+    pub ticks: u16,
+}
+
 /// Scene mode the world is running. Drives which top-level VMs tick and
 /// which auxiliary state lives in the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -152,6 +161,15 @@ pub struct World {
     /// / 0x36 / 0x39 read `actors[slot].move_state.world_{x,y,z}` as the
     /// player position. `None` falls back to the origin (default impl).
     pub player_actor_slot: Option<u8>,
+    /// Party-member actor slots — `party_actor_slots[i] = Some(actor_slot)`
+    /// resolves move-VM ext sub-op 0x3B (`ext_party_member_lookup`) to the
+    /// world-coords of the actor at that slot. Default empty (the lookup
+    /// returns `None`, which forces sub-op 0x3B's "skip" path).
+    pub party_actor_slots: Vec<Option<u8>>,
+    /// Last fade colour requested by move-VM ext sub-op 0x3C — engines
+    /// drain this each frame to drive the screen fade. `None` when no
+    /// fade is pending.
+    pub pending_fade: Option<FadeRequest>,
     /// Move-VM `_DAT_8007B9D8` — globally-shared 32-bit slot written by ext
     /// sub-op 0x2F. Engines read this on whatever frame-tick they want.
     pub move_dat_8007b9d8: i32,
@@ -237,6 +255,8 @@ impl World {
             move_ramp_ratio: 0,
             map_origin_xz: (0, 0),
             player_actor_slot: None,
+            party_actor_slots: Vec::new(),
+            pending_fade: None,
             move_dat_8007b9d8: 0,
             scratchpad_targets: [0; 16],
             system_flags: Vec::new(),
@@ -305,6 +325,28 @@ impl World {
     pub fn load_field_script(&mut self, bytecode: Vec<u8>) {
         self.field_bytecode = bytecode;
         self.field_pc = 0;
+        self.field_ctx = FieldCtx::default();
+    }
+
+    /// Load one event-script record into the field VM, skipping the leading
+    /// `0xFFFF 0x0000` frame-divider sentinel when present.
+    ///
+    /// Records pulled from `scene_event_scripts` / `scene_scripted_asset_table`
+    /// containers commonly open with the 4-byte sentinel; the field VM's
+    /// dispatcher in retail consumes the sentinel as a record-start marker
+    /// rather than an opcode (the high bit + low-7-bits 0x7F would otherwise
+    /// hit the "UNFIND INDICATION" default arm). The exact dispatcher prelude
+    /// hasn't been fully traced, so this skip is heuristic — revise once
+    /// `FUN_801DE840`'s outer loop is captured.
+    pub fn load_field_record(&mut self, record_bytes: &[u8]) {
+        const FRAME_DIVIDER: [u8; 4] = [0xFF, 0xFF, 0x00, 0x00];
+        let pc = if record_bytes.starts_with(&FRAME_DIVIDER) {
+            4
+        } else {
+            0
+        };
+        self.field_bytecode = record_bytes.to_vec();
+        self.field_pc = pc;
         self.field_ctx = FieldCtx::default();
     }
 
@@ -704,6 +746,45 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         self.world.move_dat_8007b9d8 = value;
     }
 
+    // --- ext sub-op 0x3A angle-to-player ------------------------------
+
+    fn ext_compute_angle(&self, state: &MoveActorState) -> u16 {
+        // Per the original: `func_0x80019B28(actor.world_z, actor.world_x,
+        // player.world_z, player.world_x)`. Engines that don't model a
+        // player slot get angle 0 (matching the no-player default).
+        let Some(player_slot) = self.world.player_actor_slot else {
+            return 0;
+        };
+        let player = &self.world.actors[player_slot as usize].move_state;
+        // Atan2-style angle in PSX 12-bit units (4096 = full circle). The
+        // original used a libgte angle helper; we use a portable
+        // f32::atan2 then quantise. Direction convention matches the
+        // original (Z first arg, X second).
+        let dz = (player.world_z as i32 - state.world_z as i32) as f32;
+        let dx = (player.world_x as i32 - state.world_x as i32) as f32;
+        if dx == 0.0 && dz == 0.0 {
+            return 0;
+        }
+        let theta = dz.atan2(dx);
+        let units = (theta / std::f32::consts::TAU * 4096.0).round() as i32;
+        (units & 0x0FFF) as u16
+    }
+
+    // --- ext sub-op 0x3B party-member position lookup ------------------
+
+    fn ext_party_member_lookup(&self, slot: i16) -> Option<[i16; 3]> {
+        let actor_slot = *self.world.party_actor_slots.get(slot as usize)?;
+        let actor_slot = actor_slot? as usize;
+        let st = &self.world.actors[actor_slot].move_state;
+        Some([st.world_x, st.world_y, st.world_z])
+    }
+
+    // --- ext sub-op 0x3C fade colour -----------------------------------
+
+    fn ext_fade_color(&mut self, rgb: [u8; 3], ticks: u16) {
+        self.world.pending_fade = Some(FadeRequest { rgb, ticks });
+    }
+
     // `ext_dispatch` uses the default trait impl, which routes through
     // `self` — so sub-op handlers see the world-backed callbacks above.
 }
@@ -1037,6 +1118,24 @@ mod tests {
     }
 
     #[test]
+    fn load_field_record_skips_frame_divider_sentinel() {
+        let mut world = World::new();
+        // Record opens with FFFF 0000 frame divider.
+        let record = vec![0xFF, 0xFF, 0x00, 0x00, 0x37, 0x00];
+        world.load_field_record(&record);
+        assert_eq!(world.field_pc, 4, "frame divider should bump pc to 4");
+        assert_eq!(world.field_bytecode.len(), 6);
+    }
+
+    #[test]
+    fn load_field_record_without_sentinel_starts_at_zero() {
+        let mut world = World::new();
+        let record = vec![0x37, 0x00];
+        world.load_field_record(&record);
+        assert_eq!(world.field_pc, 0);
+    }
+
+    #[test]
     fn effect_pool_tick_decrements_state_byte() {
         let mut world = World::new();
         world.effect_pool.master_slots[0].child_count = 4;
@@ -1283,6 +1382,94 @@ mod tests {
         // Whatever the sub-op handler writes, world.move_dat_8007b9d8 should
         // pick up a non-zero value.
         assert_ne!(world.move_dat_8007b9d8, 0);
+    }
+
+    #[test]
+    fn ext_compute_angle_matches_quadrant_when_player_set() {
+        // Place actor at origin, player due-east; angle should be ~0 mod 4096
+        // (positive X direction = angle 0 in the dz.atan2(dx) convention).
+        let mut world = World::new();
+        world.actors[0].active = true;
+        world.actors[0].move_state.world_x = 0;
+        world.actors[0].move_state.world_z = 0;
+        world.actors[1].active = true;
+        world.actors[1].move_state.world_x = 100;
+        world.actors[1].move_state.world_z = 0;
+        world.player_actor_slot = Some(1);
+        // Drive ext sub-op 0x3A: VM writes the angle into bytecode at
+        // `state.pc + op_w(2) + 3`. With pc=0 and op_w(2)=0, dst = u16[3].
+        let bc = vec![0x002F, 0x003A, 0, 0xFFFF, 0xFFFF];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        // angle 0 (player due-east) should produce ~0 in the dst slot.
+        assert_eq!(
+            world.move_bytecode[0][3], 0,
+            "angle to due-east player should be 0"
+        );
+    }
+
+    #[test]
+    fn ext_compute_angle_returns_zero_when_no_player() {
+        // No player slot designated → ext_compute_angle returns 0.
+        let mut world = World::new();
+        world.actors[0].active = true;
+        let bc = vec![0x002F, 0x003A, 0, 0xFFFF];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(world.move_bytecode[0][3], 0);
+    }
+
+    #[test]
+    fn ext_party_member_lookup_returns_table_position() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // Party member at index 1 = world actor slot 5 with a known position.
+        world.actors[5].active = true;
+        world.actors[5].move_state.world_x = 100;
+        world.actors[5].move_state.world_y = 50;
+        world.actors[5].move_state.world_z = 200;
+        world.party_actor_slots = vec![None, Some(5), None];
+        // Sub-op 0x3B: dst = pc + op_w(3) + 4. We use op_w(2)=1 (party slot 1)
+        // and op_w(3)=0 so dst = u16[4..7].
+        let bc = vec![
+            0x002F, 0x003B, 0x0001, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA, 0xAAAA,
+        ];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(world.move_bytecode[0][4], 100u16);
+        assert_eq!(world.move_bytecode[0][5], 50u16);
+        assert_eq!(world.move_bytecode[0][6], 200u16);
+    }
+
+    #[test]
+    fn ext_party_member_lookup_skips_when_none() {
+        // No party table entry → 0x3B returns size-4 (skip), pre-clears dst.
+        let mut world = World::new();
+        world.actors[0].active = true;
+        let bc = vec![0x002F, 0x003B, 0x0000, 0x0000, 0xAAAA, 0xAAAA, 0xAAAA];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        // Dst slots pre-cleared even when lookup returns None.
+        assert_eq!(world.move_bytecode[0][4], 0);
+        assert_eq!(world.move_bytecode[0][5], 0);
+        assert_eq!(world.move_bytecode[0][6], 0);
+    }
+
+    #[test]
+    fn ext_fade_color_records_pending_request() {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        // Sub-op 0x3C: r=0xAB, g=0xCD, b=0xEF, ticks=4 (ramp).
+        let bc = vec![0x002F, 0x003C, 0x00AB, 0x00CD, 0x00EF, 0x0004];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(
+            world.pending_fade,
+            Some(FadeRequest {
+                rgb: [0xAB, 0xCD, 0xEF],
+                ticks: 4
+            })
+        );
     }
 
     #[test]

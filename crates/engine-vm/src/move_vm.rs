@@ -1402,17 +1402,48 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x3A — angle to player → operand slot at param_2 + op_w(2)*2 + 6.
+        // 0x3A — angle to player. Original:
+        //   sVar9 = *(short*)(param_2 + 4);
+        //   uVar6 = func_0x80019B28(actor.z, actor.x, player.z, player.x);
+        //   *(short*)(param_2 + sVar9*2 + 6) = uVar6;
+        //
+        // Self-modifying write: the dst index is `op_w(2) + 3` in u16 units
+        // off the current pc. We write through `move_bytecode_write_u16`
+        // (deferred + flushed by the host) so the write survives to the
+        // engine's bytecode buffer.
         0x3A => {
-            let _ = host.ext_compute_angle(state);
+            let angle = host.ext_compute_angle(state);
+            let dst = state.pc as usize + op_w(2) as usize + 3;
+            host.move_bytecode_write_u16(dst, angle);
             MoveExtResult::default_arm()
         }
 
-        // 0x3B — party-member position lookup → operand slot. op_w(3) = slot.
+        // 0x3B — party-member position lookup. Original:
+        //   puVar15 = (short*)(param_2 + op_w(3)*2 + 8);
+        //   *puVar15 = puVar15[1] = puVar15[2] = 0;
+        //   func_0x8003D064(_DAT_8007B898 + 0x22, &local, ...);
+        //   actor = func_0x8003C83C(local + op_w(2) + 1);
+        //   if (actor) { puVar15[0..2] = actor.world; default_arm; }
+        //   else { iVar16 = 4; goto skip; }
+        //
+        // dst slot = `op_w(3) + 4` in u16 units off pc. Pre-clear the 3
+        // slots before the lookup so a host that returns `None` still has
+        // the zero-pre-clear behavior the original guarantees.
         0x3B => {
-            let slot = op_w(3) as i16;
-            let _ = host.ext_party_member_lookup(slot);
-            MoveExtResult::default_arm()
+            let dst = state.pc as usize + op_w(3) as usize + 4;
+            host.move_bytecode_write_u16(dst, 0);
+            host.move_bytecode_write_u16(dst + 1, 0);
+            host.move_bytecode_write_u16(dst + 2, 0);
+            let slot = op_w(2) as i16;
+            match host.ext_party_member_lookup(slot) {
+                Some([x, y, z]) => {
+                    host.move_bytecode_write_u16(dst, x as u16);
+                    host.move_bytecode_write_u16(dst + 1, y as u16);
+                    host.move_bytecode_write_u16(dst + 2, z as u16);
+                    MoveExtResult::default_arm()
+                }
+                None => MoveExtResult::with_size(4),
+            }
         }
 
         // 0x3C — fade colour. op_w(2,3,4) = r/g/b (low bytes), op_w(5)=ticks.

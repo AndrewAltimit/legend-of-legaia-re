@@ -187,12 +187,13 @@ enum Cmd {
     /// Boot a CDNAME scene as a playable field-mode demo: opens a window,
     /// uploads the scene's TMDs as actors, wires keyboard / gamepad input
     /// through `engine-core::input`, and overlays HUD text rendered via the
-    /// extracted dialog font. The field VM ticks each frame against
-    /// whatever bytecode is loaded (none by default — overlay-resident
-    /// scripts aren't statically extractable yet, so the VM no-ops).
-    ///
-    /// First milestone toward the "playable demo" path: proves the engine
-    /// layers (input + scene + render + text) compose end-to-end.
+    /// extracted dialog font. When the scene carries an event-script PROT
+    /// entry (`SceneEventScripts` or `SceneScriptedAssetTable`), the field
+    /// VM is wired to drive its records — the HUD shows VM PC, last
+    /// StepResult, and a running tally of opcode types observed
+    /// (Advance / Yield / Halt / Pending / Unknown) so missing FieldHost
+    /// hooks surface immediately. Scenes with no event-script entry fall
+    /// back to camera spin + manual input.
     Field {
         /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
         scene: String,
@@ -205,6 +206,16 @@ enum Cmd {
         /// + tim_scan/ + font/.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+        /// Initial event-script record to load. Most scenes have one
+        /// "scene-enter" record at index 0; later indices typically hold
+        /// per-NPC dialogue, pickup, and trigger scripts.
+        #[arg(long, default_value_t = 0)]
+        record: usize,
+        /// When the active record reaches Halt or Unknown, automatically
+        /// advance to the next record. Defaults on so a single session
+        /// exercises every record in order.
+        #[arg(long, default_value_t = true)]
+        cycle_records: bool,
     },
     /// Render a MES dialog blob: walks the bytecode interpreter
     /// (`legaia_mes::Interpreter`) through `DialogPlayer`, accumulates
@@ -226,6 +237,23 @@ enum Cmd {
         /// (one glyph per frame); higher values slow the page reveal.
         #[arg(long, default_value_t = 2)]
         glyphs_per_frame: u8,
+    },
+    /// Boot a battle scene driven by the engine-vm battle-action state
+    /// machine. Loads the canonical battle bundle (PROT 865-890), spawns
+    /// 3 party + 5 monster actor slots, and ticks `World::tick` each frame
+    /// in `SceneMode::Battle`. HUD shows the current `ActionState`,
+    /// queued action, per-slot liveness, and any `BattleEndCause` the SM
+    /// emits. Cycles through canned actions on input so the loop is
+    /// visible end-to-end.
+    BattleScene {
+        /// `extracted/` root containing PROT.DAT + CDNAME.TXT + tmd_scan/
+        /// + tim_scan/.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Initial queued action ID (0=Tactical Arts, 1=Item, 2=Magic,
+        /// 3=Attack, 4=Spirit, 5=Run). Default 3 (Attack).
+        #[arg(long, default_value_t = 3)]
+        queued_action: u8,
     },
     /// Run the engine-core `World` composite over a CDNAME scene with N
     /// actors backed by TMDs from the scene's tmd_scan dir, rendered via
@@ -1528,8 +1556,14 @@ fn pad_button_label(b: PadButton) -> &'static str {
     }
 }
 
-fn run_field(scene_name: &str, max_actors: usize, extracted_root: &Path) -> Result<()> {
-    use legaia_engine_core::scene::ProtIndex;
+fn run_field(
+    scene_name: &str,
+    max_actors: usize,
+    extracted_root: &Path,
+    initial_record: usize,
+    cycle_records: bool,
+) -> Result<()> {
+    use legaia_engine_core::scene::{ProtIndex, Scene};
     use legaia_engine_core::world::{SceneMode, World};
 
     if max_actors == 0 {
@@ -1554,13 +1588,9 @@ fn run_field(scene_name: &str, max_actors: usize, extracted_root: &Path) -> Resu
     })?;
     let index = ProtIndex::open_extracted(extracted_root)
         .with_context(|| format!("open ProtIndex at {}", extracted_root.display()))?;
-    let (start, end) = index.block_range(scene_name).ok_or_else(|| {
-        anyhow::anyhow!(
-            "scene '{}' not found in CDNAME map at {}",
-            scene_name,
-            cdname_path.display()
-        )
-    })?;
+    let scene =
+        Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
+    let (start, end) = (scene.start, scene.end);
     log::info!(
         "scene '{}' covers PROT [{}..{}) ({} entries)",
         scene_name,
@@ -1595,6 +1625,39 @@ fn run_field(scene_name: &str, max_actors: usize, extracted_root: &Path) -> Resu
         actor.move_state.world_z = z;
     }
 
+    // Pre-extract event-script record bytes so the FieldApp can switch
+    // records during playback without holding the Scene's borrow.
+    let event_scripts_summary = scene.find_event_scripts().map(|es| EventScriptSet {
+        entry_idx: es.entry_idx,
+        records: (0..es.len())
+            .map(|i| es.record(i).map(|s| s.to_vec()).unwrap_or_default())
+            .collect(),
+    });
+    if let Some(es) = &event_scripts_summary {
+        log::info!(
+            "field scene: event-script entry PROT {} carries {} record(s)",
+            es.entry_idx,
+            es.records.len()
+        );
+        if let Some(first) = es.records.get(initial_record) {
+            world.load_field_record(first);
+            log::info!(
+                "field VM: loaded record {} ({} bytes), pc={}",
+                initial_record,
+                first.len(),
+                world.field_pc
+            );
+        } else {
+            log::warn!(
+                "field VM: record {} out of range (have {}); VM will idle",
+                initial_record,
+                es.records.len()
+            );
+        }
+    } else {
+        log::info!("field scene: no event-script entry; field VM idles");
+    }
+
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = FieldApp {
@@ -1619,9 +1682,523 @@ fn run_field(scene_name: &str, max_actors: usize, extracted_root: &Path) -> Resu
         last_dt_ms: 16,
         started_at: Instant::now(),
         last_tick: Instant::now(),
+        event_scripts: event_scripts_summary,
+        current_record: initial_record,
+        cycle_records,
+        vm_stats: FieldVmStats::default(),
     };
     event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
+}
+
+/// Boot a battle scene driven by the engine-vm battle-action state machine.
+///
+/// Loads battle bundle TMDs, builds a `World` in `SceneMode::Battle` with
+/// 3 party + 5 monster slots, queues the supplied action ID, and ticks
+/// the world per frame. HUD shows: current `ActionState` (decoded into
+/// the human-readable variant name), queued action, per-slot liveness,
+/// and any battle-end cause emitted by the SM.
+///
+/// Inputs:
+///  - Triangle: cycle queued_action through 0..=5 (Tactical / Item /
+///    Magic / Attack / Spirit / Run).
+///  - Cross: re-trigger the SM by writing `ActionState::Begin` into the
+///    ctx (useful when the SM lands in a Stay-forever state).
+///  - Esc: quit.
+fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
+    use legaia_engine_core::world::{SceneMode, World};
+
+    let prot_path = extracted_root.join("PROT.DAT");
+    if !prot_path.exists() {
+        anyhow::bail!("missing {} (run legaia-extract first)", prot_path.display());
+    }
+    let font = Font::load_from_extracted(extracted_root).with_context(|| {
+        format!(
+            "load extracted font under {} (run legaia-extract first?)",
+            extracted_root.display()
+        )
+    })?;
+    let bundle_dirs = Bundle::Battle.dirs(extracted_root);
+    let bundle_dirs_ref: Vec<&Path> = bundle_dirs.iter().map(|p| p.as_path()).collect();
+    let (vram, tim_count) = build_vram_from_dirs(&bundle_dirs_ref);
+    log::info!(
+        "battle bundle: {} TIM(s) across {} dir(s)",
+        tim_count,
+        bundle_dirs.len()
+    );
+    // Pull TMDs from the same bundle dirs the field viewer pulls from a
+    // scene; cap at the 8-slot battle actor table.
+    let mut tmd_paths: Vec<PathBuf> = Vec::new();
+    for dir in &bundle_dirs {
+        let entries = std::fs::read_dir(dir).ok();
+        if let Some(entries) = entries {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().is_some_and(|x| x == "tmd") {
+                    tmd_paths.push(p);
+                    if tmd_paths.len() >= 8 {
+                        break;
+                    }
+                }
+            }
+        }
+        if tmd_paths.len() >= 8 {
+            break;
+        }
+    }
+    let actor_count = tmd_paths.len();
+    log::info!("battle scene: {actor_count} actor TMDs loaded from battle bundle");
+
+    let mut world = World {
+        mode: SceneMode::Battle,
+        party_count: 3,
+        ..World::default()
+    };
+    // Spawn 3 party at -X, 5 monsters at +X. Mark all alive.
+    let radius = 600.0_f32;
+    for i in 0..3.min(actor_count) {
+        let z = ((i as f32) - 1.0) * radius * 0.6;
+        let actor = world.spawn_actor(i);
+        actor.move_state.world_x = -(radius as i16);
+        actor.move_state.world_y = 0;
+        actor.move_state.world_z = z as i16;
+        actor.battle.liveness = 1;
+    }
+    for i in 3..actor_count {
+        let z = ((i as f32) - 5.0) * radius * 0.4;
+        let actor = world.spawn_actor(i);
+        actor.move_state.world_x = radius as i16;
+        actor.move_state.world_y = 0;
+        actor.move_state.world_z = z as i16;
+        actor.battle.liveness = 1;
+    }
+    // Queue the requested action and seed the SM at Begin.
+    world.battle_ctx.queued_action = queued_action;
+    world.battle_ctx.action_state = legaia_engine_vm::battle_action::ActionState::Begin.as_byte();
+
+    let event_loop = EventLoop::new().context("create event loop")?;
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = BattleSceneApp {
+        title: format!("Battle scene — {actor_count} actors, queued_action={queued_action}"),
+        actor_count,
+        window: None,
+        renderer: None,
+        font,
+        font_atlas: None,
+        vram_cpu: Some(vram),
+        uploaded_vram: None,
+        tmd_paths,
+        meshes: Vec::new(),
+        world,
+        scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
+        input: InputState::new(),
+        last_dt_ms: 16,
+        started_at: Instant::now(),
+        last_tick: Instant::now(),
+        battle_stats: BattleSmStats::default(),
+        prev_input_pad: 0,
+    };
+    event_loop.run_app(&mut app).context("event loop")?;
+    Ok(())
+}
+
+/// Per-frame battle-action StepOutcome counts + last cause for HUD.
+#[derive(Default, Clone)]
+struct BattleSmStats {
+    stay: u64,
+    transition: u64,
+    complete: u64,
+    unknown: u64,
+    last_state_byte: u8,
+    last_to_state_byte: u8,
+    last_complete_cause: Option<legaia_engine_vm::battle_action::BattleEndCause>,
+}
+
+/// Battle-mode viewer state. Shape mirrors `FieldApp` minus the per-record
+/// cycle bookkeeping (battles are a single state machine, not a record
+/// sequence).
+struct BattleSceneApp {
+    title: String,
+    actor_count: usize,
+    window: Option<Arc<Window>>,
+    renderer: Option<Renderer>,
+    font: Font,
+    font_atlas: Option<UploadedFontAtlas>,
+    vram_cpu: Option<Vram>,
+    uploaded_vram: Option<UploadedVram>,
+    tmd_paths: Vec<PathBuf>,
+    meshes: Vec<WorldActorMesh>,
+    world: legaia_engine_core::world::World,
+    scene_aabb: ([f32; 3], [f32; 3]),
+    input: InputState,
+    last_dt_ms: u32,
+    started_at: Instant,
+    last_tick: Instant,
+    battle_stats: BattleSmStats,
+    /// Pad-mask snapshot from the previous tick — used for edge-trigger
+    /// detection on Triangle / Cross.
+    prev_input_pad: u16,
+}
+
+impl BattleSceneApp {
+    fn upload_assets(&mut self) {
+        let Some(r) = &self.renderer else {
+            return;
+        };
+        for path in &self.tmd_paths {
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("skip TMD {}: read error: {e}", path.display());
+                    continue;
+                }
+            };
+            let tmd = match legaia_tmd::parse(&bytes) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::warn!("skip TMD {}: parse error: {e}", path.display());
+                    continue;
+                }
+            };
+            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes);
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            let aabb = mesh_aabb(&vmesh.positions);
+            match r.upload_vram_mesh(
+                &vmesh.positions,
+                &vmesh.uvs,
+                &vmesh.cba_tsb,
+                &vmesh.normals,
+                &vmesh.indices,
+            ) {
+                Ok(mesh) => self.meshes.push(WorldActorMesh {
+                    mesh,
+                    aabb_lo: aabb.0,
+                    aabb_hi: aabb.1,
+                }),
+                Err(e) => log::warn!("skip TMD {}: upload error: {e}", path.display()),
+            }
+            if self.meshes.len() >= self.actor_count {
+                break;
+            }
+        }
+        if let Some(vram_cpu) = self.vram_cpu.take() {
+            match r.upload_vram(&vram_cpu) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("VRAM upload failed: {e:#}"),
+            }
+        }
+        let (aw, ah) = self.font.atlas_dimensions();
+        match r.upload_font_atlas(self.font.atlas_rgba(), aw, ah) {
+            Ok(a) => self.font_atlas = Some(a),
+            Err(e) => log::error!("font atlas upload failed: {e:#}"),
+        }
+    }
+
+    fn tick_battle_frame(&mut self) {
+        use legaia_engine_vm::battle_action::StepOutcome;
+        let outcome = self.world.tick();
+        match outcome {
+            Some(StepOutcome::Stay) => {
+                self.battle_stats.stay += 1;
+            }
+            Some(StepOutcome::Transition { from, to }) => {
+                self.battle_stats.transition += 1;
+                self.battle_stats.last_state_byte = from;
+                self.battle_stats.last_to_state_byte = to;
+            }
+            Some(StepOutcome::BattleComplete) => {
+                self.battle_stats.complete += 1;
+                self.battle_stats.last_complete_cause = self.world.battle_end;
+            }
+            Some(StepOutcome::UnknownState { state }) => {
+                self.battle_stats.unknown += 1;
+                self.battle_stats.last_state_byte = state;
+            }
+            None => {}
+        }
+    }
+
+    /// Edge-trigger handler: on Triangle press cycle queued_action; on
+    /// Cross press re-seed the SM at Begin so we can watch it run again.
+    fn handle_edges(&mut self) {
+        let pad = self.input.pad();
+        let pressed_now = pad & !self.prev_input_pad;
+        if pressed_now & PadButton::Triangle.mask() != 0 {
+            let next = (self.world.battle_ctx.queued_action + 1) % 6;
+            self.world.battle_ctx.queued_action = next;
+            log::info!("queued_action -> {next}");
+        }
+        if pressed_now & PadButton::Cross.mask() != 0 {
+            self.world.battle_ctx.action_state =
+                legaia_engine_vm::battle_action::ActionState::Begin.as_byte();
+            log::info!("re-seeding SM at ActionState::Begin");
+        }
+        self.prev_input_pad = pad;
+    }
+
+    fn camera_mvp(&self, aspect: f32) -> Mat4 {
+        let (lo, hi) = self.scene_aabb;
+        let center = Vec3::new(
+            0.5 * (lo[0] + hi[0]),
+            0.5 * (lo[1] + hi[1]),
+            0.5 * (lo[2] + hi[2]),
+        );
+        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        let radius = (0.5 * extent.length()).max(1.0);
+        let distance = radius / (30f32.to_radians().tan()) * 1.6;
+        let angle = self.started_at.elapsed().as_secs_f32() * 0.15;
+        let eye = center
+            + Vec3::new(
+                distance * angle.cos(),
+                -distance * 0.45,
+                distance * angle.sin(),
+            );
+        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+        let near = (distance * 0.05).max(0.1);
+        let far = distance * 4.0 + 1000.0;
+        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+        proj * view
+    }
+
+    fn actor_model(&self, slot: usize) -> Mat4 {
+        let a = &self.world.actors[slot];
+        let pos = Vec3::new(
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        );
+        Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
+    fn build_hud(&self) -> Vec<TextDraw> {
+        if self.font_atlas.is_none() {
+            return Vec::new();
+        }
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut out = Vec::new();
+        let white = [1.0, 1.0, 1.0, 1.0];
+        let dim = [0.7, 0.85, 1.0, 1.0];
+        let warn = [1.0, 0.6, 0.4, 1.0];
+
+        let line1 = format!("battle  actors {}", self.actor_count);
+        out.extend(text_draws_for(
+            &self.font.layout_ascii(&line1),
+            (8, 8),
+            white,
+        ));
+        let fps = 1000u32.checked_div(self.last_dt_ms).unwrap_or(0);
+        let line2 = format!(
+            "frame {}   {:>3} fps   t {:.1}s",
+            self.world.frame,
+            fps,
+            self.started_at.elapsed().as_secs_f32()
+        );
+        out.extend(text_draws_for(
+            &self.font.layout_ascii(&line2),
+            (8, 26),
+            dim,
+        ));
+
+        let state_byte = self.world.battle_ctx.action_state;
+        let state_name = ActionState::from_byte(state_byte)
+            .map(|s| format!("{s:?}"))
+            .unwrap_or_else(|| format!("Unknown(0x{state_byte:02X})"));
+        let line3 = format!(
+            "state {} (0x{:02X})  queued {}",
+            state_name, state_byte, self.world.battle_ctx.queued_action
+        );
+        out.extend(text_draws_for(
+            &self.font.layout_ascii(&line3),
+            (8, 44),
+            white,
+        ));
+
+        let line4 = format!(
+            "stay {}  transition {}  complete {}  unknown {}",
+            self.battle_stats.stay,
+            self.battle_stats.transition,
+            self.battle_stats.complete,
+            self.battle_stats.unknown,
+        );
+        let color = if self.battle_stats.unknown > 0 {
+            warn
+        } else {
+            dim
+        };
+        out.extend(text_draws_for(
+            &self.font.layout_ascii(&line4),
+            (8, 62),
+            color,
+        ));
+
+        let mut alive = String::with_capacity(40);
+        alive.push_str("alive ");
+        for i in 0..self.actor_count.min(8) {
+            alive.push_str(&format!(
+                "{}{} ",
+                if i < 3 { 'P' } else { 'M' },
+                self.world.actors[i].battle.liveness
+            ));
+        }
+        out.extend(text_draws_for(
+            &self.font.layout_ascii(&alive),
+            (8, 80),
+            dim,
+        ));
+
+        if let Some(cause) = self.battle_stats.last_complete_cause {
+            let line = format!("battle complete: {cause:?}");
+            out.extend(text_draws_for(
+                &self.font.layout_ascii(&line),
+                (8, 98),
+                warn,
+            ));
+        }
+
+        out
+    }
+}
+
+impl ApplicationHandler for BattleSceneApp {
+    fn resumed(&mut self, evl: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let attrs = WindowAttributes::default()
+            .with_title(&self.title)
+            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
+        let window = match evl.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                log::error!("create_window: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        let size = window.inner_size();
+        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Renderer::new: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        self.window = Some(window);
+        self.renderer = Some(renderer);
+        self.upload_assets();
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
+    }
+
+    fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => evl.exit(),
+            WindowEvent::Resized(size) => {
+                if let Some(r) = self.renderer.as_mut() {
+                    r.resize(size.width, size.height);
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(code),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
+                    evl.exit();
+                    return;
+                }
+                if let Some(button) = keymap_pad(code) {
+                    let mut mask = self.input.pad();
+                    if state == ElementState::Pressed {
+                        mask |= button.mask();
+                    } else {
+                        mask &= !button.mask();
+                    }
+                    self.input.set_pad(mask);
+                }
+            }
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = now
+                    .duration_since(self.last_tick)
+                    .min(std::time::Duration::from_secs(1));
+                self.last_dt_ms = dt.as_millis().min(1000) as u32;
+                self.last_tick = now;
+                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
+                self.handle_edges();
+                for _ in 0..target_frames.min(8) {
+                    self.tick_battle_frame();
+                }
+                if let (Some(r), Some(vram), Some(atlas)) = (
+                    &self.renderer,
+                    self.uploaded_vram.as_ref(),
+                    self.font_atlas.as_ref(),
+                ) {
+                    let (w, h) = r.surface_size();
+                    let aspect = w as f32 / h.max(1) as f32;
+                    let cam = self.camera_mvp(aspect);
+                    let draws: Vec<SceneDraw<'_>> = self
+                        .meshes
+                        .iter()
+                        .enumerate()
+                        .map(|(slot, m)| SceneDraw {
+                            mesh: &m.mesh,
+                            mvp: cam * self.actor_model(slot),
+                        })
+                        .collect();
+                    let hud = self.build_hud();
+                    let overlay = TextOverlay { atlas, draws: &hud };
+                    let scene = RenderScene {
+                        vram,
+                        draws: &draws,
+                        overlay_lines: None,
+                        overlay_text: Some(&overlay),
+                    };
+                    if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
+                        log::error!("render error: {e:#}");
+                    }
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Pre-flattened event-script bundle held by the field viewer.
+///
+/// Holding the original `EventScripts<'_>` would require borrowing into
+/// the `Scene` for the lifetime of the event loop — easier to copy each
+/// record's bytes once at startup. Records are tens-to-hundreds of bytes
+/// each so the duplication cost is trivial.
+struct EventScriptSet {
+    entry_idx: u32,
+    records: Vec<Vec<u8>>,
+}
+
+/// Running tally of field-VM step outcomes plus the most recent activity.
+#[derive(Default, Clone)]
+struct FieldVmStats {
+    advance: u64,
+    yield_: u64,
+    halt: u64,
+    pending: u64,
+    unknown: u64,
+    last_pending_op: Option<u8>,
+    last_unknown_op: Option<u8>,
+    last_pc_before: usize,
+    last_pc_after: usize,
 }
 
 /// Field-mode viewer state. Owned by the winit event loop.
@@ -1646,6 +2223,16 @@ struct FieldApp {
     last_dt_ms: u32,
     started_at: Instant,
     last_tick: Instant,
+    /// Pre-extracted event-script records (one per `EventScripts::record`).
+    /// `None` when the scene carries no event-script entry.
+    event_scripts: Option<EventScriptSet>,
+    /// Active record index inside `event_scripts.records`.
+    current_record: usize,
+    /// When the active record halts or hits Unknown, advance to the next
+    /// record and reload it into the field VM.
+    cycle_records: bool,
+    /// Running tally of step outcomes for HUD display.
+    vm_stats: FieldVmStats,
 }
 
 impl FieldApp {
@@ -1729,6 +2316,73 @@ impl FieldApp {
         }
     }
 
+    /// Per-frame world tick that captures the field-VM `StepResult` for HUD
+    /// display + auto-advances records when configured.
+    ///
+    /// Mirrors `World::tick`'s mode dispatch but breaks out the field-VM
+    /// step so the viewer can observe the result. Effect-pool + per-actor
+    /// move-VM ticks still run unconditionally so the rest of the world
+    /// behaves identically to `World::tick`.
+    fn tick_field_frame(&mut self) {
+        use legaia_engine_vm::field::StepResult as FieldStepResult;
+
+        self.world.frame += 1;
+        self.world.tick_effects();
+        self.world.tick_move_vms();
+
+        let pc_before = self.world.field_pc;
+        let result = self.world.step_field();
+        let pc_after = self.world.field_pc;
+
+        self.vm_stats.last_pc_before = pc_before;
+        self.vm_stats.last_pc_after = pc_after;
+
+        let mut should_cycle = false;
+        match result {
+            Some(FieldStepResult::Advance { .. }) => self.vm_stats.advance += 1,
+            Some(FieldStepResult::Yield { .. }) => self.vm_stats.yield_ += 1,
+            Some(FieldStepResult::Halt { .. }) => {
+                self.vm_stats.halt += 1;
+                should_cycle = true;
+            }
+            Some(FieldStepResult::Pending { opcode, .. }) => {
+                self.vm_stats.pending += 1;
+                self.vm_stats.last_pending_op = Some(opcode);
+            }
+            Some(FieldStepResult::Unknown { opcode, .. }) => {
+                self.vm_stats.unknown += 1;
+                self.vm_stats.last_unknown_op = Some(opcode);
+                should_cycle = true;
+            }
+            None => {}
+        }
+
+        if should_cycle && self.cycle_records {
+            self.advance_to_next_record();
+        }
+    }
+
+    /// Move to the next event-script record and reload it into the field VM.
+    /// Wraps around to record 0 at the end so a single session keeps cycling.
+    fn advance_to_next_record(&mut self) {
+        let Some(es) = &self.event_scripts else {
+            return;
+        };
+        if es.records.is_empty() {
+            return;
+        }
+        let next = (self.current_record + 1) % es.records.len();
+        self.current_record = next;
+        if let Some(bytes) = es.records.get(next) {
+            self.world.load_field_record(bytes);
+            log::debug!(
+                "field VM: cycled to record {} ({} bytes)",
+                next,
+                bytes.len()
+            );
+        }
+    }
+
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
         let (lo, hi) = self.scene_aabb;
         let center = Vec3::new(
@@ -1794,6 +2448,57 @@ impl FieldApp {
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
+
+        // Field-VM diagnostic block — only meaningful when an event-script
+        // entry was loaded. Shows record cursor, PC, and a histogram of
+        // step outcomes so missing FieldHost hooks are visible at a glance.
+        if let Some(es) = &self.event_scripts {
+            let line3 = format!(
+                "fieldVM rec {}/{}  pc {} -> {}  bc {}b",
+                self.current_record + 1,
+                es.records.len(),
+                self.vm_stats.last_pc_before,
+                self.vm_stats.last_pc_after,
+                self.world.field_bytecode.len(),
+            );
+            let layout3 = self.font.layout_ascii(&line3);
+            out.extend(text_draws_for(&layout3, (8, 44), dim));
+
+            let line4 = format!(
+                "adv {}  yld {}  halt {}  pending {}  unknown {}",
+                self.vm_stats.advance,
+                self.vm_stats.yield_,
+                self.vm_stats.halt,
+                self.vm_stats.pending,
+                self.vm_stats.unknown,
+            );
+            let warn = if self.vm_stats.pending > 0 || self.vm_stats.unknown > 0 {
+                [1.0, 0.6, 0.4, 1.0]
+            } else {
+                dim
+            };
+            let layout4 = self.font.layout_ascii(&line4);
+            out.extend(text_draws_for(&layout4, (8, 62), warn));
+
+            let last_pending = self
+                .vm_stats
+                .last_pending_op
+                .map(|op| format!("0x{op:02X}"))
+                .unwrap_or_else(|| "-".into());
+            let last_unknown = self
+                .vm_stats
+                .last_unknown_op
+                .map(|op| format!("0x{op:02X}"))
+                .unwrap_or_else(|| "-".into());
+            let line5 = format!(
+                "last-pending {}  last-unknown {}  cycle {}",
+                last_pending,
+                last_unknown,
+                if self.cycle_records { "on" } else { "off" }
+            );
+            let layout5 = self.font.layout_ascii(&line5);
+            out.extend(text_draws_for(&layout5, (8, 80), dim));
+        }
 
         // Pad state — show one cell per logical button.
         let buttons = [
@@ -1916,7 +2621,7 @@ impl ApplicationHandler for FieldApp {
                 self.last_tick = now;
                 let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
                 for _ in 0..target_frames.min(8) {
-                    self.world.tick();
+                    self.tick_field_frame();
                 }
                 // Move the player slot 0 on D-pad input — gives the demo a
                 // visible response to keyboard / gamepad input even with no
@@ -2254,13 +2959,23 @@ fn main() -> Result<()> {
         return run_world(&scene, max_actors, &extracted_root, with_move_vm);
     }
 
+    if let Cmd::BattleScene {
+        extracted_root,
+        queued_action,
+    } = args.cmd
+    {
+        return run_battle_scene(&extracted_root, queued_action);
+    }
+
     if let Cmd::Field {
         scene,
         max_actors,
         extracted_root,
+        record,
+        cycle_records,
     } = args.cmd
     {
-        return run_field(&scene, max_actors, &extracted_root);
+        return run_field(&scene, max_actors, &extracted_root, record, cycle_records);
     }
 
     if let Cmd::Dialog {
@@ -2543,6 +3258,9 @@ fn main() -> Result<()> {
         Cmd::World { .. } => unreachable!("Cmd::World handled by the early-return path above"),
         Cmd::Field { .. } => unreachable!("Cmd::Field handled by the early-return path above"),
         Cmd::Dialog { .. } => unreachable!("Cmd::Dialog handled by the early-return path above"),
+        Cmd::BattleScene { .. } => {
+            unreachable!("Cmd::BattleScene handled by the early-return path above")
+        }
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
