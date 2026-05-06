@@ -141,7 +141,7 @@ The dialog opener that reaches this renderer chain from the [field script VM](..
 
 ## What's still open
 
-- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font — the bitmap is reachable only from a save-state VRAM dump. Two unblock paths:
+- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font — the bitmap is reachable only from a save-state VRAM dump. The font extractor now writes `dialog_font_vram_4bpp.bin` (the raw 32 KB tile-page bytes) alongside the PNG, and `scripts/find-font-carrier.py` searches every PROT entry for matching slices. Direct byte-level matching across the corpus returns no hit — the font is either compressed (LZS) before its disc-side resting place, or per-frame uploaded by an overlay-resident routine that pulls from a buffer the static analysis hasn't classified yet. Two unblock paths:
   1. Trace the `LoadImage` (GP0 0xA0) DMA call that uploads the tile-page at `(896, 0)` and identify which PROT entry it pulls from. The `find_lui_writers.py` Ghidra script can locate the LUI+ADDIU pair that loads the source pointer; the destination is the GPU FIFO at `0x1F801810` so the search target is "writes to a struct that ultimately reaches `_DAT_1F801810`".
   2. Diff a save state captured before the title screen finishes booting against one captured during a dialog — the font region transitions from zero to populated, so the disc read that fills it sits in the boot sequence somewhere between `FUN_8003E4E8` (PROT TOC loader) and the first dialog open.
 - **String IDs in the escape table.** Entries `0x00..=0x07` (advance 16, `y_offset = -2`) likely render multi-character icon strings from the same string pool that backs `FUN_8002C488`. The pool itself isn't yet decoded — its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.
@@ -157,6 +157,7 @@ The dialog opener that reaches this renderer chain from the [field script VM](..
 | `dialog_font_atlas.png` | Per-glyph atlas, 14×15 cells laid out in 16 columns × 14 rows (224 glyphs total) |
 | `dialog_font_metadata.json` | Width table + escape table + VRAM source rect, in machine-readable form |
 | `dialog_font_widths.csv` | Just the width table as CSV |
+| `dialog_font_vram_4bpp.bin` | Raw 32 KB 4bpp VRAM bytes (downstream tooling can hash + search PROT for the carrier) |
 
 The extractor reads the SCUS executable for the static tables, and a mednafen save state's `&GPURAM[0][0]` section for the live VRAM bytes. The font region is byte-stable across all captured save states (with cosmetic differences only in cells touched by transient UI elements that share the tile-page).
 

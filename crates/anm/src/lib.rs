@@ -43,14 +43,30 @@
 //! u16 a       // varies (e.g. 0x0A, 0x06, 0x02)
 //! u16 b       // varies (e.g. 0x1E, 0x14, 0x28) — likely frame count
 //! u16 marker1 // = 0x080C in every record observed
-//! u16 marker2 // = 0x0002 in every record observed
-//! ...payload bytes (frame/keyframe data, format not yet decoded)...
+//! u16 marker2 // = 0x0002 (or 0x0004) — sub-format selector
 //! ```
 //!
-//! The interpretation of the per-record body is *not* in this crate yet —
-//! it lives in the per-actor animation tick, which is overlay-resident
-//! and not fully captured. This crate stops at locating record byte
-//! ranges and exposing the common header.
+//! For records consumed via animation opcode `0x06` (the bulk of retail
+//! ANM data), the body after the header is a per-bone **keyframe table**,
+//! not opcode bytecode. The per-frame interpreter is the canonical actor
+//! tick `FUN_80021DF4` in `SCUS_942.54` (block at `0x80022ec4..0x80023040`),
+//! which walks the table indexed by a bone count sourced from the actor's
+//! mesh context. Layout:
+//!
+//! ```text
+//! +0..+8                     header (a, b, marker1, marker2)
+//! +8..+(8 + 8*N)             per-bone OUTPUT slots — written by the tick
+//!                             (8 bytes per bone: packed pos+rot deltas)
+//! +(8 + 8*N)..+(8 + 32*N)    per-bone KEYFRAME data — read by the tick
+//!                             (24 bytes per bone = 12 little-endian i16
+//!                              shorts: src_pos.xyz, dst_pos.xyz,
+//!                              src_rot.xyz, dst_rot.xyz)
+//! ```
+//!
+//! The tick reads the 12 shorts, multiplies the `(dst - src)` deltas by
+//! `actor[+0x22]` (the per-actor interpolation factor — driven from the
+//! field-VM frame counter), and writes the resulting 8 packed bytes back
+//! into the OUTPUT slots. See [`KeyframeReader`] for the typed accessor.
 //!
 //! ## How records are consumed at runtime
 //!
@@ -296,6 +312,159 @@ impl RecordHeader {
 /// Borrow a single record's bytes from the payload.
 pub fn record_bytes<'a>(payload: &'a [u8], rec: &RecordRange) -> &'a [u8] {
     &payload[rec.offset..rec.offset + rec.size]
+}
+
+/// Per-bone keyframe entry — the 24-byte block the actor tick reads for
+/// each bone. Twelve `i16` shorts: source pose (pos.xyz + rot.xyz) plus
+/// target pose. The runtime computes `(dst - src) * factor` to drive the
+/// interpolation between the two poses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BoneKeyframe {
+    pub src_pos: [i16; 3],
+    pub dst_pos: [i16; 3],
+    pub src_rot: [i16; 3],
+    pub dst_rot: [i16; 3],
+}
+
+impl BoneKeyframe {
+    /// Size of one keyframe entry in bytes.
+    pub const SIZE: usize = 24;
+
+    /// Parse one keyframe entry from a 24-byte slice.
+    pub fn from_bytes(buf: &[u8]) -> Result<Self> {
+        if buf.len() < Self::SIZE {
+            bail!(
+                "buffer too small for bone keyframe: {} < {}",
+                buf.len(),
+                Self::SIZE
+            );
+        }
+        let read = |off: usize| i16::from_le_bytes([buf[off], buf[off + 1]]);
+        Ok(Self {
+            src_pos: [read(0), read(2), read(4)],
+            dst_pos: [read(6), read(8), read(10)],
+            src_rot: [read(12), read(14), read(16)],
+            dst_rot: [read(18), read(20), read(22)],
+        })
+    }
+
+    /// Linear interpolation between source and target pose using a
+    /// `factor` in `[0, 256)` (the actor tick uses this convention; the
+    /// math is `src + ((dst - src) * factor) / 256`). Returns
+    /// `(pos, rot)` as two `[i16; 3]` triples.
+    pub fn interpolate(&self, factor_u8: u8) -> ([i16; 3], [i16; 3]) {
+        let lerp = |s: i16, d: i16| -> i16 {
+            let delta = d as i32 - s as i32;
+            let scaled = (delta * factor_u8 as i32) >> 8;
+            (s as i32 + scaled).clamp(i16::MIN as i32, i16::MAX as i32) as i16
+        };
+        let pos = [
+            lerp(self.src_pos[0], self.dst_pos[0]),
+            lerp(self.src_pos[1], self.dst_pos[1]),
+            lerp(self.src_pos[2], self.dst_pos[2]),
+        ];
+        let rot = [
+            lerp(self.src_rot[0], self.dst_rot[0]),
+            lerp(self.src_rot[1], self.dst_rot[1]),
+            lerp(self.src_rot[2], self.dst_rot[2]),
+        ];
+        (pos, rot)
+    }
+}
+
+/// Walks the per-bone keyframe table inside an animation opcode-`6`
+/// record body. The bone count is sourced from the actor's mesh context
+/// at runtime; pass it explicitly here.
+///
+/// Layout:
+///
+/// ```text
+/// header[8] | output[8 * N] | keyframes[24 * N]
+/// ```
+///
+/// where `N = bone_count`. The keyframe table starts at `8 + 8 * N` and
+/// must end within the record. `KeyframeReader::parse` validates that.
+pub struct KeyframeReader<'a> {
+    /// Backing record bytes (full record including header).
+    record: &'a [u8],
+    /// Bone count — supplied by the caller (the actor tick reads this
+    /// from the mesh context).
+    bone_count: usize,
+    /// Byte offset where the keyframe table begins.
+    keyframe_table_offset: usize,
+}
+
+impl<'a> KeyframeReader<'a> {
+    /// Validate the record can host a keyframe table for `bone_count`
+    /// bones and return a reader. Errors if the record is too small.
+    pub fn parse(record: &'a [u8], bone_count: usize) -> Result<Self> {
+        if record.len() < RECORD_HEADER_SIZE {
+            bail!("record too small for header");
+        }
+        let kf_offset = RECORD_HEADER_SIZE + 8 * bone_count;
+        let kf_end = kf_offset
+            .checked_add(BoneKeyframe::SIZE * bone_count)
+            .ok_or_else(|| anyhow::anyhow!("keyframe table size overflows"))?;
+        if kf_end > record.len() {
+            bail!(
+                "record ({} bytes) too small for keyframe table at +0x{:X} for {} bones (need {} bytes)",
+                record.len(),
+                kf_offset,
+                bone_count,
+                kf_end
+            );
+        }
+        Ok(Self {
+            record,
+            bone_count,
+            keyframe_table_offset: kf_offset,
+        })
+    }
+
+    /// Number of bones the keyframe table covers.
+    pub fn bone_count(&self) -> usize {
+        self.bone_count
+    }
+
+    /// Borrow the per-bone keyframe entry. Returns `None` if `bone` is
+    /// out of range.
+    pub fn keyframe(&self, bone: usize) -> Option<BoneKeyframe> {
+        if bone >= self.bone_count {
+            return None;
+        }
+        let off = self.keyframe_table_offset + bone * BoneKeyframe::SIZE;
+        BoneKeyframe::from_bytes(&self.record[off..off + BoneKeyframe::SIZE]).ok()
+    }
+
+    /// Iterate every per-bone keyframe entry in order. Yields `bone_count`
+    /// items; entries that fail to parse (shouldn't happen post-`parse`)
+    /// are silently skipped.
+    pub fn iter(&self) -> impl Iterator<Item = BoneKeyframe> + '_ {
+        (0..self.bone_count).filter_map(move |i| self.keyframe(i))
+    }
+
+    /// Heuristic: a record's body length is consistent with a keyframe
+    /// table when `record_len == 8 + 32 * bone_count` exactly. Useful to
+    /// reject misclassified records before we hand them to the tick.
+    pub fn fits_exactly(record_len: usize, bone_count: usize) -> bool {
+        record_len == RECORD_HEADER_SIZE + 32 * bone_count
+    }
+
+    /// Search the plausible bone-count range that makes the record fit
+    /// exactly. Returns the count or `None` if no count satisfies the
+    /// equation. Useful when classifying records without a mesh context
+    /// (the runtime always knows `N`, but offline tooling doesn't).
+    pub fn infer_bone_count(record_len: usize) -> Option<usize> {
+        if record_len < RECORD_HEADER_SIZE {
+            return None;
+        }
+        let body = record_len - RECORD_HEADER_SIZE;
+        if body.is_multiple_of(32) {
+            Some(body / 32)
+        } else {
+            None
+        }
+    }
 }
 
 /// Frequency of each byte value in a record's bytecode region (i.e. the
@@ -586,6 +755,86 @@ mod tests {
         // Top bigram should be (0x10, 0x20) with count 3 (2 in record 0,
         // 1 in record 1).
         assert_eq!(bigrams[0], (0x10, 0x20, 3));
+    }
+
+    #[test]
+    fn bone_keyframe_parses_24_bytes() {
+        let mut buf = vec![0u8; BoneKeyframe::SIZE];
+        // src_pos = (1, 2, 3); dst_pos = (10, 20, 30)
+        buf[0..2].copy_from_slice(&1i16.to_le_bytes());
+        buf[2..4].copy_from_slice(&2i16.to_le_bytes());
+        buf[4..6].copy_from_slice(&3i16.to_le_bytes());
+        buf[6..8].copy_from_slice(&10i16.to_le_bytes());
+        buf[8..10].copy_from_slice(&20i16.to_le_bytes());
+        buf[10..12].copy_from_slice(&30i16.to_le_bytes());
+        // src_rot = (0, 0, 0); dst_rot = (1024, -1024, 0)
+        buf[18..20].copy_from_slice(&1024i16.to_le_bytes());
+        buf[20..22].copy_from_slice(&(-1024i16).to_le_bytes());
+        let kf = BoneKeyframe::from_bytes(&buf).unwrap();
+        assert_eq!(kf.src_pos, [1, 2, 3]);
+        assert_eq!(kf.dst_pos, [10, 20, 30]);
+        assert_eq!(kf.dst_rot, [1024, -1024, 0]);
+    }
+
+    #[test]
+    fn bone_keyframe_lerp_at_endpoints() {
+        let kf = BoneKeyframe {
+            src_pos: [10, 20, 30],
+            dst_pos: [110, 220, 330],
+            src_rot: [0, 0, 0],
+            dst_rot: [256, -256, 0],
+        };
+        let (p0, r0) = kf.interpolate(0);
+        assert_eq!(p0, [10, 20, 30]);
+        assert_eq!(r0, [0, 0, 0]);
+        let (p256, _) = kf.interpolate(255);
+        // At factor=255, we get src + delta*(255/256), one short of full.
+        assert!(p256[0] >= 109 && p256[0] <= 110);
+    }
+
+    #[test]
+    fn keyframe_reader_walks_n_bones() {
+        // Build a record with 2 bones: 8-byte header + 16 OUTPUT bytes
+        // + 48 keyframe bytes = 72 bytes total.
+        let mut record = vec![0u8; RECORD_HEADER_SIZE + 8 * 2 + BoneKeyframe::SIZE * 2];
+        record[4..6].copy_from_slice(&RECORD_MARKER_1.to_le_bytes());
+        // Bone 0 keyframe at offset 8 + 16 = 24
+        let off0 = 24;
+        record[off0..off0 + 2].copy_from_slice(&100i16.to_le_bytes()); // src_pos.x
+        record[off0 + 6..off0 + 8].copy_from_slice(&200i16.to_le_bytes()); // dst_pos.x
+        // Bone 1 keyframe at offset 24 + 24 = 48
+        let off1 = 48;
+        record[off1..off1 + 2].copy_from_slice(&300i16.to_le_bytes());
+
+        let reader = KeyframeReader::parse(&record, 2).unwrap();
+        assert_eq!(reader.bone_count(), 2);
+        let kf0 = reader.keyframe(0).unwrap();
+        assert_eq!(kf0.src_pos[0], 100);
+        assert_eq!(kf0.dst_pos[0], 200);
+        let kf1 = reader.keyframe(1).unwrap();
+        assert_eq!(kf1.src_pos[0], 300);
+        assert!(reader.keyframe(2).is_none());
+        assert_eq!(reader.iter().count(), 2);
+    }
+
+    #[test]
+    fn keyframe_reader_rejects_undersized_record() {
+        let record = vec![0u8; 32]; // way too small for 4 bones
+        assert!(KeyframeReader::parse(&record, 4).is_err());
+    }
+
+    #[test]
+    fn fits_exactly_validates_size_relation() {
+        assert!(KeyframeReader::fits_exactly(8 + 32 * 5, 5));
+        assert!(!KeyframeReader::fits_exactly(8 + 32 * 5 + 1, 5));
+    }
+
+    #[test]
+    fn infer_bone_count_round_trips() {
+        assert_eq!(KeyframeReader::infer_bone_count(8 + 32 * 7), Some(7));
+        assert_eq!(KeyframeReader::infer_bone_count(8), Some(0));
+        assert_eq!(KeyframeReader::infer_bone_count(8 + 33), None);
+        assert_eq!(KeyframeReader::infer_bone_count(2), None);
     }
 
     #[test]

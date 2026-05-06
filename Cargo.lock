@@ -1189,6 +1189,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cpal",
+ "legaia-prot",
  "legaia-seq",
  "legaia-vab",
  "legaia-xa",
@@ -1310,6 +1311,9 @@ name = "legaia-save"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1361,9 +1365,12 @@ dependencies = [
  "js-sys",
  "legaia-asset",
  "legaia-lzs",
+ "legaia-mes",
  "legaia-prot",
+ "legaia-seq",
  "legaia-tim",
  "legaia-tmd",
+ "legaia-vab",
  "wasm-bindgen",
  "web-sys",
 ]

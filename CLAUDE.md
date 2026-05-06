@@ -116,7 +116,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/mdt`](crates/mdt/README.md) | `mdt` | Move table (Tactical Arts) parser. |
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
-| [`crates/save`](crates/save/README.md) | — | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record). |
+| [`crates/save`](crates/save/README.md) | `save-tool` | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus PSX memory-card walker. |
 | [`crates/font`](crates/font/README.md) | `font-extract` | Proportional dialog font: extracts width table + 4bpp atlas from `SCUS_942.54` + a mednafen save state, exposes layout API for engine consumers. |
 | [`crates/extract`](crates/extract/README.md) | `legaia-extract` | Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. |
 
@@ -129,7 +129,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/engine-audio`](crates/engine-audio/README.md) | — | cpal-backed audio mixer + clean-room SPU + SsAPI-shape SEQ sequencer. |
 | [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect / move VMs + battle-action SM + `battle_formulas` (damage / MP / accuracy / RNG). |
 | [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver. |
-| [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. Disc browser + TIM thumbnails + software TMD rasteriser running in the browser. |
+| [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. Disc browser + TIM thumbnails + software TMD rasteriser running in the browser, plus per-entry MES/SEQ/VAB inspector via `current_entry_info_json`. |
 
 ### Ghidra-side scripts — [`ghidra/scripts/`](ghidra/scripts/)
 
@@ -160,12 +160,16 @@ Two integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` poin
 
 - `crates/iso/tests/disc_pipeline.rs` — disc walk, file count, key file SHA-256s.
 - `crates/extract/tests/validation_suite.rs` — full pipeline, PROT entry count, sub-asset totals, TIM round-trip.
+- `crates/engine-core/tests/scene_chain_e2e.rs` — every CDNAME scene's MES + SEQ + TMD assets resolve through `SceneHost`; validates `bgm_seq_bytes` slices through the chunk-header wrapper for `scene_vab_stream` entries.
+- `crates/engine-core/tests/battle_real_data_chain.rs` — locate the retail effect bundle and drive the battle SM against it.
+- `crates/engine-audio/tests/real_bgm_chain.rs` — pull a real `music_01` SEQ + VAB pair through the sequencer and SPU mixer.
+- `crates/save/tests/real_card_roundtrip.rs` — walk a real PSX memory card (mednafen `.mcr`) and verify the save-block layout. Looks at `~/.mednafen/sav/`; doesn't gate on `LEGAIA_DISC_BIN`.
 
 ```bash
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace
 ```
 
-Without the env var, both tests **skip and pass** — that's intentional, so CI works without redistributing Sony data. Don't change that gating.
+Without the env var, every disc-gated test **skips and passes** — that's intentional, so CI works without redistributing Sony data. Don't change that gating.
 
 ## Conventions
 
@@ -182,6 +186,8 @@ These bite repeatedly across subsystems. Skim before chasing a "why is X broken 
 - **MIPS LUI+ADDIU pairs are not auto-resolved by Ghidra's reference manager.** Direct xref queries return zero hits even when the address is heavily used. Use `ghidra/scripts/find_lui_writers.py` (edit `LO`/`HI` to your target range). Details: [`docs/tooling/ghidra.md`](docs/tooling/ghidra.md).
 - **CDNAME labels can mislead.** `vab_01` doesn't contain VAB headers (real banks live in `battle_data` / `level_up`); `move_program_no` doesn't match the consumer-expected layout. Verify with the loader-call constant or the file's magic bytes. Details: [`docs/formats/cdname.md`](docs/formats/cdname.md).
 - **LZS "decompresses without error" is not a validity signal.** The 4 KB ring buffer initialises to zeros, so most random inputs decode to plausible-looking output. Always magic-check the *decoded* bytes. Details: [`docs/formats/lzs.md`](docs/formats/lzs.md).
+- **Legaia SEQ has a u32 BE version field**, not the u16 BE shape from PsyQ docs. Real game data is `pQES + u32 BE version + u16 BE ppqn + ...`; `legaia_seq::parse_header` accepts both shapes. Meta events in real game data also preserve running status (a strict-MIDI `running_status = None` on `0xFF` would break the next event), and meta `0x51` can carry non-3-byte payloads. Details: [`docs/formats/seq.md`](docs/formats/seq.md).
+- **SEQ data in `scene_vab_stream` entries lives at non-zero offsets.** Most retail BGM is wrapped: `[u32 chunk_header][VAB][chunk1_header][SEQ]`. Use `SceneAssets::seq_in_stream_entries` and `bgm_seq_offset` to slice past the wrapper. The `scene_chain_e2e` test exercises this end-to-end.
 - **Three pack formats coexist.** `asset::pack` (DATA_FIELD chunks), `prot::timpack` (standalone PROT entries), and field-pack / effect-bundle (Legaia-specific magic-prefixed bundles). Don't apply the wrong header math. See the four format pages linked under "Pack formats" above.
 - **Legaia TMDs are a custom variant.** Magic `0x80000002`, custom 8-byte group header, per-mode descriptor table at `DAT_8007326c`. Details: [`docs/formats/tmd.md`](docs/formats/tmd.md).
 - **Ghidra promotes intra-function labels to fake `FUN_xxxxxxxx` calls.** When you see `iVar = FUN_801xxxxx(); return iVar;` in a giant dispatcher's C decomp, cross-check `grep -n "0x<addr>" overlay_<dump>.txt` — if the address appears as a `j` target inside that same function's disassembly, it's a label, not a call. Each such "label-call" is really `addiu s8, s8, N; j epilogue` (the standard PC-delta exit idiom). Catalogued for FUN_801de840 in [`docs/subsystems/script-vm.md`](docs/subsystems/script-vm.md#intra-function-label-catalogue) — applies to the dispatcher pattern in any large MIPS function, not just the field VM.

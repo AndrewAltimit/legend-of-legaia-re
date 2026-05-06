@@ -105,6 +105,49 @@ impl FieldPack {
     pub fn assets_range(&self) -> (usize, usize) {
         (self.assets_start, self.file_size)
     }
+
+    /// Group the schema slots by size and return the buckets in size-descending
+    /// order. Each bucket lists the slot indices that share the same size.
+    /// The last slot (`size = None`) is excluded.
+    ///
+    /// The retail field-pack schema is byte-identical across every instance
+    /// (see module docs), so the cluster output is a static tabular index of
+    /// the slot semantics: slots in the same bucket are *the same kind* of
+    /// record.
+    pub fn slot_size_groups(&self) -> Vec<(u32, Vec<usize>)> {
+        let mut by_size: std::collections::BTreeMap<u32, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (i, slot) in self.slots.iter().enumerate() {
+            if let Some(sz) = slot.size {
+                by_size.entry(sz).or_default().push(i);
+            }
+        }
+        let mut groups: Vec<(u32, Vec<usize>)> = by_size.into_iter().collect();
+        groups.sort_by_key(|(sz, idxs)| (std::cmp::Reverse(idxs.len()), std::cmp::Reverse(*sz)));
+        groups
+    }
+
+    /// Borrow the bytes of slot `i` from `buf` *if* this field-pack has the
+    /// schema-indexed buffer concatenated to the asset region (i.e.
+    /// `preamble_size == 0`). For entries where the preamble holds the
+    /// schema-indexed buffer, the runtime indirection is more complex and
+    /// this helper returns `None`.
+    ///
+    /// Reads `buf[assets_start + slot[i].offset .. assets_start + slot[i].offset + slot[i].size]`
+    /// when in bounds; falls back to `None` for the last slot (size unknown).
+    pub fn slot_bytes_in_assets<'a>(&self, buf: &'a [u8], i: usize) -> Option<&'a [u8]> {
+        if self.magic_offset != 0 {
+            return None;
+        }
+        let slot = self.slots.get(i)?;
+        let size = slot.size? as usize;
+        let off = self.assets_start.checked_add(slot.offset as usize)?;
+        let end = off.checked_add(size)?;
+        if end > buf.len() {
+            return None;
+        }
+        Some(&buf[off..end])
+    }
 }
 
 /// Look for a fieldpack in `buf`. Returns the first match, scanning forward.
@@ -255,5 +298,27 @@ mod tests {
         let fp = detect(&buf).unwrap();
         let total: u32 = fp.slots.iter().filter_map(|s| s.size).sum();
         assert_eq!(total, SCHEMA_LAST - SCHEMA_FIRST);
+    }
+
+    #[test]
+    fn slot_size_groups_partitions_slots_by_size() {
+        let buf = synthetic(0);
+        let fp = detect(&buf).unwrap();
+        let groups = fp.slot_size_groups();
+        // The synthetic schema is built with a constant step, so all but
+        // the last slot should share one size, with the residual in a
+        // separate bucket. Verify every (size != None) slot ended up in
+        // some bucket.
+        let total_grouped: usize = groups.iter().map(|(_, v)| v.len()).sum();
+        let with_size = fp.slots.iter().filter(|s| s.size.is_some()).count();
+        assert_eq!(total_grouped, with_size);
+    }
+
+    #[test]
+    fn slot_bytes_in_assets_returns_none_when_preamble_present() {
+        let buf = synthetic(1024);
+        let fp = detect(&buf).unwrap();
+        // magic_offset is 1024, so this helper is only valid when 0.
+        assert!(fp.slot_bytes_in_assets(&buf, 0).is_none());
     }
 }

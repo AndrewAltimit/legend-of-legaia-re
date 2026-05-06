@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_anm::{
-    AnmPack, PREAMBLE_SIZE, Preamble, RecordHeader, pack_bytecode_histogram,
+    AnmPack, KeyframeReader, PREAMBLE_SIZE, Preamble, RecordHeader, pack_bytecode_histogram,
     pack_bytecode_top_bigrams, parse, peel_preamble, record_bytes, top_k,
 };
 
@@ -65,6 +65,21 @@ enum Cmd {
         #[arg(long, default_value_t = 32)]
         top: usize,
     },
+    /// Inspect a record as an animation-opcode-6 keyframe table. Without
+    /// `--bones`, infer the bone count from the record size (must satisfy
+    /// `size == 8 + 32*N`); with `--bones`, parse against the given count.
+    /// Reports per-bone source / target poses + interpolation deltas.
+    Keyframes {
+        path: PathBuf,
+        /// Record index to inspect (default 0).
+        #[arg(long, default_value_t = 0)]
+        record: usize,
+        /// Override the bone count rather than inferring from record size.
+        #[arg(long)]
+        bones: Option<usize>,
+        #[arg(long, default_value_t = false)]
+        with_preamble: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -93,7 +108,77 @@ fn main() -> Result<()> {
             with_preamble,
             top,
         } => bigrams(&path, with_preamble, top),
+        Cmd::Keyframes {
+            path,
+            record,
+            bones,
+            with_preamble,
+        } => keyframes(&path, record, bones, with_preamble),
     }
+}
+
+fn keyframes(path: &Path, record: usize, bones: Option<usize>, with_preamble: bool) -> Result<()> {
+    let (payload, _preamble, pack) = load(path, with_preamble)?;
+    let r = pack.records.get(record).ok_or_else(|| {
+        anyhow::anyhow!("record index {} out of range (0..{})", record, pack.count)
+    })?;
+    let bytes = record_bytes(&payload, r);
+    let bone_count = match bones {
+        Some(n) => n,
+        None => KeyframeReader::infer_bone_count(bytes.len()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "record size {} doesn't fit `8 + 32*N` — pass --bones to override",
+                bytes.len()
+            )
+        })?,
+    };
+    let reader = KeyframeReader::parse(bytes, bone_count)?;
+    let header = RecordHeader::from_bytes(bytes)?;
+    println!("file:    {}", path.display());
+    println!("record:  {} ({} bytes)", record, bytes.len());
+    println!(
+        "header:  a=0x{:04X} b=0x{:04X} marker=0x{:04X} flag=0x{:04X}{}",
+        header.a,
+        header.b,
+        header.marker_1,
+        header.flag,
+        if header.marker_ok {
+            ""
+        } else {
+            " (BAD MARKER)"
+        }
+    );
+    println!(
+        "bones:   {} (source: {})",
+        bone_count,
+        if bones.is_some() {
+            "explicit"
+        } else {
+            "inferred"
+        }
+    );
+    println!(
+        "bone | src_pos                 dst_pos                 src_rot                 dst_rot"
+    );
+    for (i, kf) in reader.iter().enumerate() {
+        println!(
+            "{:>4} | ({:>6}, {:>6}, {:>6}) ({:>6}, {:>6}, {:>6}) ({:>6}, {:>6}, {:>6}) ({:>6}, {:>6}, {:>6})",
+            i,
+            kf.src_pos[0],
+            kf.src_pos[1],
+            kf.src_pos[2],
+            kf.dst_pos[0],
+            kf.dst_pos[1],
+            kf.dst_pos[2],
+            kf.src_rot[0],
+            kf.src_rot[1],
+            kf.src_rot[2],
+            kf.dst_rot[0],
+            kf.dst_rot[1],
+            kf.dst_rot[2]
+        );
+    }
+    Ok(())
 }
 
 fn bigrams(path: &Path, with_preamble: bool, top: usize) -> Result<()> {

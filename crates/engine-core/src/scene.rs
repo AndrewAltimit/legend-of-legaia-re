@@ -459,7 +459,17 @@ impl SceneHost {
             return Ok(None);
         };
         let bytes = self.index.entry_bytes(entry_idx)?;
-        Ok(Some(bytes))
+        let offset = assets.bgm_seq_offset(bgm_id).unwrap_or(0);
+        if offset == 0 {
+            Ok(Some(bytes))
+        } else if offset < bytes.len() {
+            // Slice past the chunk-header wrapper so the returned bytes
+            // start at the `pQES` magic. Allocates a fresh Arc — the
+            // caller usually parses once and caches the resulting Seq.
+            Ok(Some(Arc::new(bytes[offset..].to_vec())))
+        } else {
+            Ok(None)
+        }
     }
 
     /// First VAB-bearing entry in the scene, ready for parsing as a sound

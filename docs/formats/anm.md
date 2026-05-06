@@ -5,43 +5,84 @@ Asset type `0x06` from the [asset-type dispatcher](asset-type.md). Implementatio
 ## Layout
 
 ```
-u16 count
-u16 byte_offsets[count]    // each is a byte offset into the buffer
+u32 count
+u32 byte_offsets[count]    // each is a byte offset into the buffer
 records[]                  // per-record bodies; offsets[i+1] - offsets[i] = record size
 ```
 
-Each record begins with a 16-bit marker byte that's been observed to consistently equal `0x080C` — this is the gate for the per-record bytecode interpreter that lives in an overlay (i.e., the overlay that drives the animation timeline; not yet captured).
+Each record begins with an 8-byte header:
 
-## What's parsed today
+```
+u16 a              // varies (3..14 observed) — likely record kind / opcode
+u16 b              // varies (0..40 observed) — likely frame count
+u16 marker_1       // = 0x080C in every record observed
+u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)
+```
 
-- Container shape (count + offsets + record boundaries) — confirmed across captured RAM blobs.
-- Per-record bytecode — partial; only the leading marker is reliably interpreted. Per-record op bodies are overlay-resident.
+## Per-record body — animation opcode 6
 
-## Per-record bytecode dispatcher
+For records consumed via animation opcode `0x06` (the bulk of retail ANM
+data), the body after the header is a per-bone **keyframe table**, not
+opcode bytecode. The per-frame interpreter is the canonical actor tick
+`FUN_80021DF4` in `SCUS_942.54` (block at `0x80022ec4..0x80023040`),
+which walks the table indexed by a bone count sourced from the actor's
+mesh context. Layout:
 
-`FUN_80024CFC` (`play_anm_by_id(id, actor, ?)` in SCUS) is the public entry point — but it doesn't *interpret* the bytecode. It just:
+```
++0..+8                      header (a, b, marker_1, marker_2)
++8..+(8 + 8*N)              per-bone OUTPUT slots — written by the tick
+                             (8 bytes per bone: packed pos+rot deltas)
++(8 + 8*N)..+(8 + 32*N)     per-bone KEYFRAME data — read by the tick
+                             (24 bytes per bone = 12 little-endian i16
+                              shorts: src_pos.xyz, dst_pos.xyz,
+                              src_rot.xyz, dst_rot.xyz)
+```
+
+Total record size for opcode-6 records is `8 + 32*N` bytes for `N` bones.
+The tick reads the 12 shorts, multiplies the `(dst - src)` deltas by
+`actor[+0x22]` (the per-actor interpolation factor — driven from the
+field-VM frame counter), and writes the resulting 8 packed bytes back
+into the OUTPUT slots.
+
+`crates/anm` exposes the typed accessor `KeyframeReader` for this layout.
+The bone count is supplied by the caller (the actor's mesh context owns
+it at runtime); offline tooling can use `KeyframeReader::infer_bone_count`
+to recover it from the record size when it fits the equation exactly.
+
+## Public entry point — `play_anm_by_id`
+
+`FUN_80024CFC` (`play_anm_by_id(id, actor, ?)` in SCUS) is the writer
+that primes an actor for animation playback:
 
 1. Calls `FUN_80020DE0` (actor allocator).
 2. Reads the per-record offset from the ANM payload at `_DAT_8007B7C8 + (id*4) + 4`.
-3. Stores `(anm_base + record_offset)` in `actor[+0x4C]` (the per-actor "anm pc" slot).
+3. Stores `(anm_base + record_offset)` in `actor[+0x4C]` (the per-actor anim record pointer).
 4. Writes `0xB` to `actor[+0x56]` (animation state byte) and `100` to `actor[+0x68]` (frame counter).
 
-The actual per-frame interpretation runs in the per-frame actor tick — that dispatcher is overlay-resident and not yet traced. Until then `crates/anm` ships `record_bytecode_histogram` / `pack_bytecode_histogram` for byte-frequency surveys (run via `anm histogram <PATH>` to spot likely opcode bytes without the dispatcher).
-
-### Walker-candidate scan
-
-[`ghidra/scripts/find_anm_tick_walker.py`](../../ghidra/scripts/find_anm_tick_walker.py) walks every function in a program and reports which ones load from at least two of `+0x4C` (anm_pc), `+0x56` (anm_state), `+0x68` (anm_timer). Functions that hit all three are the strongest walker candidates. Results across the captured corpus:
-
-| Program | Hits-3 candidates |
-|---|---|
-| `SCUS_942.54` | `FUN_80021DF4` (per-frame actor tick), `FUN_80023070` (move VM), `FUN_80024CFC` (the writer), `FUN_80020DE0`, `FUN_800204F8`, `FUN_8001ADA4`, `FUN_8003A1E4`, `FUN_80047430`, `FUN_8004998C` |
-| `overlay_0897_xxx_dat.bin` | `FUN_801C8D00`, `FUN_801C8FDC` (small standalone walkers, not inlined into the field VM) |
-| `overlay_0897.bin.0` | `FUN_801D7518`, `FUN_801D77F4`, `FUN_801DE840` (field VM reads the slot for actor lookups) |
-| `overlay_dialog_mc4.bin` | same trio as 0897 (dialog overlay shares the actor frame chain) |
-| `overlay_menu.bin` | `FUN_801D33D8` |
-
-`FUN_80021DF4` is the canonical per-frame actor tick (already documented as the move-VM driver). Memory + scan together suggest the ANM bytecode interpreter is reached via the move VM's per-actor dispatch — opcode `0x05` in [move-vm.md](../subsystems/move-vm.md) sets `actor[+0x56]` to the value `0x0B` that `FUN_80024CFC` also writes, suggesting ANM playback is just one of several "animation source" modes the move VM multiplexes. The `0x801C8D00` / `0x801C8FDC` pair in the 0897 town overlay are smaller and more likely candidates for the per-record walker proper.
+The actor tick `FUN_80021DF4` then reads `actor[+0x4C]` whenever
+`actor[+0x5A]` is `2` or `6` and runs the keyframe interpolation pass
+described above. Other animation opcodes (set in `actor[+0x5A]`) gate
+different per-record body layouts; only opcode `6` is fully traced today.
 
 ## Connection to other systems
 
-The [field/event script VM](../subsystems/script-vm.md) opcode `0x34` sub-op 3 plays a 3D animation by indexing into an ANM container and handing the entry to `func_0x800252EC`. That sibling path likely walks the same `actor[+0x4C]` slot via the same per-frame ANM tick.
+The [field/event script VM](../subsystems/script-vm.md) opcode `0x34`
+sub-op 3 plays a 3D animation by indexing into an ANM container and
+handing the entry to `func_0x800252EC`. That sibling path lands the same
+`actor[+0x4C]` slot the actor tick consumes.
+
+## Allocator preamble
+
+When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd
+buffer at `_DAT_8007B7C8` carries a 16-byte allocator preamble before
+the payload:
+
+```
++0x00  back_ptr        (RAM ptr — usually base - 0xC or similar)
++0x04  forward_ptr     (RAM ptr to next allocation)
++0x08  forward_ptr_2   (RAM ptr — sometimes 0)
++0x0C  expanded_size   (u32 — payload byte length)
++0x10  -- payload starts here --
+```
+
+`crates/anm::peel_preamble` strips it; the on-disc form has no preamble.

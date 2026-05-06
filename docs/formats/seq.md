@@ -10,7 +10,11 @@ event encoding). This page describes byte order, the meaning of every
 header field, and how Sony's SsAPI sequencer consumes the event stream
 — **no Sony bytes appear here**.
 
-## Header (13 bytes)
+## Header
+
+Two header shapes coexist in the wild:
+
+### Standard PsyQ shape (13 bytes)
 
 ```text
 +0x00  u8[4]   magic   "pQES"  (0x70 0x51 0x45 0x53)
@@ -21,6 +25,26 @@ header field, and how Sony's SsAPI sequencer consumes the event stream
 +0x0C  u8      time-sig denom   power of 2 (2 means /4, 3 means /8)
 +0x0D  ...     event stream
 ```
+
+### Legaia variant (15 bytes)
+
+Every retail Legaia SEQ examined uses a **u32 BE version** field rather
+than the u16 BE PsyQ-doc form, with two reserved zero bytes between the
+magic and the version word. The remaining fields shift by two bytes:
+
+```text
++0x00  u8[4]   magic   "pQES"
++0x04  u32 BE  version          (always 1 in retail)
++0x08  u16 BE  resolution       PPQN
++0x0A  u24 BE  initial tempo    microseconds per quarter note
++0x0D  u8      time-sig num
++0x0E  u8      time-sig denom   power of 2
++0x0F  ...     event stream
+```
+
+`crates/seq::parse_header` accepts both shapes — it probes
+`u32 BE at +4..+8 == 1` and dispatches accordingly. `HEADER_LEN` is the
+standard length; `HEADER_LEN_LEGAIA` is the variant length.
 
 `version` is verified by the SsAPI loader (`FUN_80062410` in SCUS, see
 [`subsystems/audio.md`](../subsystems/audio.md)). Files with `version != 1`

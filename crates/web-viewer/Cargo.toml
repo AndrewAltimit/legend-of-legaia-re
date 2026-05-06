@@ -13,6 +13,9 @@ legaia-prot = { path = "../prot" }
 legaia-asset = { path = "../asset" }
 legaia-lzs = { path = "../lzs" }
 legaia-tmd = { path = "../tmd" }
+legaia-mes = { path = "../mes" }
+legaia-seq = { path = "../seq" }
+legaia-vab = { path = "../vab" }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"

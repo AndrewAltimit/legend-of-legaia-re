@@ -100,6 +100,19 @@ After running the pipeline:
 # Standalone MES dialog viewer — typewriter-paced text rendering through
 # the extracted dialog font
 ./target/release/asset-viewer dialog path/to.mes
+
+# ANM keyframe inspector — per-record header + per-bone keyframe table
+./target/release/anm keyframes path/to.anm --record 0
+
+# Field-pack slot clusters — group the 97 schema slots by size to surface
+# semantic record kinds (5 × 0x2088 = the scene's TIM blobs, 21 × 0x218 =
+# the NPC-slot array, etc.)
+./target/release/asset field-pack extracted/PROT/0005_town01.BIN --groups
+
+# PSX memory-card reader — list active save blocks, parse a character
+# record, JSON-dump a five-slot party
+./target/release/save-tool dir ~/.mednafen/sav/Legend*.0.mcr
+./target/release/save-tool roundtrip /path/to/character.bin
 ```
 
 ### Static analysis (Ghidra in Docker)
@@ -132,12 +145,16 @@ The pipeline decompresses the gzipped save state, slices out the overlay window,
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --release
 ```
 
-Two integration tests touch a real disc:
+Several integration tests touch a real disc / extracted directory:
 
 - `crates/iso/tests/disc_pipeline.rs` — disc walk, file count, key file SHA-256s.
 - `crates/extract/tests/validation_suite.rs` — full pipeline assertions.
+- `crates/engine-core/tests/scene_chain_e2e.rs` — load every CDNAME scene, walk MES + SEQ + TMD assets, validate the BGM resolver against the per-scene `block_start + 6 + id` math.
+- `crates/engine-core/tests/battle_real_data_chain.rs` — locate the retail effect bundle and drive the battle SM against it.
+- `crates/engine-audio/tests/real_bgm_chain.rs` — pull a real `music_01` SEQ + VAB pair through the sequencer and SPU mixer.
+- `crates/save/tests/real_card_roundtrip.rs` — walk a real PSX memory-card image (mednafen `.mcr`) and verify the save-block layout.
 
-If `LEGAIA_DISC_BIN` is unset, both skip and pass — that's intentional, so CI works without redistributing Sony data.
+If `LEGAIA_DISC_BIN` is unset, every disc-gated test skips and passes — that's intentional, so CI works without redistributing Sony data.
 
 ## Repository layout
 
