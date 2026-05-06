@@ -28,6 +28,20 @@ Each record begins with a 16-bit marker byte that's been observed to consistentl
 
 The actual per-frame interpretation runs in the per-frame actor tick — that dispatcher is overlay-resident and not yet traced. Until then `crates/anm` ships `record_bytecode_histogram` / `pack_bytecode_histogram` for byte-frequency surveys (run via `anm histogram <PATH>` to spot likely opcode bytes without the dispatcher).
 
+### Walker-candidate scan
+
+[`ghidra/scripts/find_anm_tick_walker.py`](../../ghidra/scripts/find_anm_tick_walker.py) walks every function in a program and reports which ones load from at least two of `+0x4C` (anm_pc), `+0x56` (anm_state), `+0x68` (anm_timer). Functions that hit all three are the strongest walker candidates. Results across the captured corpus:
+
+| Program | Hits-3 candidates |
+|---|---|
+| `SCUS_942.54` | `FUN_80021DF4` (per-frame actor tick), `FUN_80023070` (move VM), `FUN_80024CFC` (the writer), `FUN_80020DE0`, `FUN_800204F8`, `FUN_8001ADA4`, `FUN_8003A1E4`, `FUN_80047430`, `FUN_8004998C` |
+| `overlay_0897_xxx_dat.bin` | `FUN_801C8D00`, `FUN_801C8FDC` (small standalone walkers, not inlined into the field VM) |
+| `overlay_0897.bin.0` | `FUN_801D7518`, `FUN_801D77F4`, `FUN_801DE840` (field VM reads the slot for actor lookups) |
+| `overlay_dialog_mc4.bin` | same trio as 0897 (dialog overlay shares the actor frame chain) |
+| `overlay_menu.bin` | `FUN_801D33D8` |
+
+`FUN_80021DF4` is the canonical per-frame actor tick (already documented as the move-VM driver). Memory + scan together suggest the ANM bytecode interpreter is reached via the move VM's per-actor dispatch — opcode `0x05` in [move-vm.md](../subsystems/move-vm.md) sets `actor[+0x56]` to the value `0x0B` that `FUN_80024CFC` also writes, suggesting ANM playback is just one of several "animation source" modes the move VM multiplexes. The `0x801C8D00` / `0x801C8FDC` pair in the 0897 town overlay are smaller and more likely candidates for the per-record walker proper.
+
 ## Connection to other systems
 
 The [field/event script VM](../subsystems/script-vm.md) opcode `0x34` sub-op 3 plays a 3D animation by indexing into an ANM container and handing the entry to `func_0x800252EC`. That sibling path likely walks the same `actor[+0x4C]` slot via the same per-frame ANM tick.

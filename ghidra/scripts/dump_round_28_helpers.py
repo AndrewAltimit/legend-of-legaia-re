@@ -26,6 +26,11 @@ TARGETS = [
     "801d9d30",  # cited from overlay_dialog_801d1344
     "801db510",  # cited from overlay_dialog_801d1344
     "801de234",  # cited from overlay_dialog_801d1344
+    # ANM tick walker candidates (anm offsets +0x4C / +0x56 / +0x68 read).
+    "80047430",  # SCUS - reads all three actor anm offsets
+    "801c8d00",  # 0897 town overlay - reads all three
+    "801c8fdc",  # 0897 town overlay - reads all three
+    "801d33d8",  # menu overlay - reads all three
 ]
 
 OUT_DIR = "/scripts/funcs"
