@@ -141,6 +141,27 @@ enum Cmd {
         #[arg(short, long)]
         out: Option<PathBuf>,
     },
+    /// Walk `tim_scan/<entry>/*.tim` under `extracted/` and report every
+    /// TIM that places its CLUT or image at the requested VRAM cell. Used
+    /// to discover which PROT entry provides a missing CLUT row that a
+    /// character mesh references — the runtime asset chain is partially
+    /// undocumented (see `project_clut_scattering.md`), and this is the
+    /// principled discovery step before adding the TIM dir to the viewer's
+    /// `--vram-extra-dir` set.
+    ClutFinder {
+        /// `extracted/` root (must contain `tim_scan/`).
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// VRAM X coordinate (in 16-bit framebuffer units, 0..1024).
+        x: u16,
+        /// VRAM Y coordinate (0..512).
+        y: u16,
+        /// When set, only report TIMs whose CLUT covers the cell. Default
+        /// reports BOTH CLUT and image cell hits, since a character mesh
+        /// might reference either.
+        #[arg(long, default_value_t = false)]
+        clut_only: bool,
+    },
     /// Inspect a stage-geometry PROT entry: detect the records table,
     /// pick the vertex pool side, print the first/last few records resolved
     /// to vertex indices, and a sample of the vertex pool.
@@ -262,6 +283,12 @@ fn main() -> Result<()> {
             only_hits,
             out,
         } => tmd_scan_cmd(&dir, cdname.as_deref(), only_hits, out.as_deref()),
+        Cmd::ClutFinder {
+            extracted_root,
+            x,
+            y,
+            clut_only,
+        } => clut_finder_cmd(&extracted_root, x, y, clut_only),
         Cmd::Stage {
             input,
             head,
@@ -1488,6 +1515,107 @@ fn write_stage_obj(
         let c = idx[2] + 1;
         let d = idx[3] + 1;
         writeln!(f, "l {} {} {} {} {}", a, b, c, d, a)?;
+    }
+    Ok(())
+}
+
+/// `asset clut-finder` — walk `extracted/tim_scan/<entry>/*.tim` and report
+/// every TIM whose CLUT or image rect covers the requested VRAM cell.
+///
+/// Used to discover which PROT entry provides a specific CLUT row that a
+/// character mesh references — see `project_clut_scattering.md`.
+fn clut_finder_cmd(extracted_root: &Path, x: u16, y: u16, clut_only: bool) -> Result<()> {
+    let tim_scan_root = extracted_root.join("tim_scan");
+    if !tim_scan_root.is_dir() {
+        anyhow::bail!(
+            "no tim_scan/ under {} (run `asset tim-scan` first?)",
+            extracted_root.display()
+        );
+    }
+    let mut hits: Vec<(String, String, &'static str, u16, u16, u16, u16)> = Vec::new();
+
+    let mut subdirs: Vec<PathBuf> = std::fs::read_dir(&tim_scan_root)?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .collect();
+    subdirs.sort();
+
+    for sub in &subdirs {
+        let entry_name = sub
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let mut tims: Vec<PathBuf> = std::fs::read_dir(sub)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.is_file()
+                    && p.extension()
+                        .map(|e| e == "tim" || e == "TIM")
+                        .unwrap_or(false)
+            })
+            .collect();
+        tims.sort();
+        for tim_path in &tims {
+            let bytes = match std::fs::read(tim_path) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let tim = match legaia_tim::parse(&bytes) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let tim_name = tim_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("?")
+                .to_string();
+            if let Some(c) = &tim.clut {
+                let inside = x >= c.fb_x && x < c.fb_x + c.w && y >= c.fb_y && y < c.fb_y + c.h;
+                if inside {
+                    hits.push((
+                        entry_name.clone(),
+                        tim_name.clone(),
+                        "clut",
+                        c.fb_x,
+                        c.fb_y,
+                        c.w,
+                        c.h,
+                    ));
+                }
+            }
+            if !clut_only {
+                let img = &tim.image;
+                let inside = x >= img.fb_x
+                    && x < img.fb_x + img.fb_w
+                    && y >= img.fb_y
+                    && y < img.fb_y + img.h;
+                if inside {
+                    hits.push((
+                        entry_name.clone(),
+                        tim_name,
+                        "image",
+                        img.fb_x,
+                        img.fb_y,
+                        img.fb_w,
+                        img.h,
+                    ));
+                }
+            }
+        }
+    }
+    println!(
+        "VRAM cell ({x}, {y}): {} match(es) across {} entries",
+        hits.len(),
+        subdirs.len()
+    );
+    println!(
+        "{:<28}  {:<24}  {:<6}  {:>4} {:>4} {:>4} {:>4}",
+        "entry", "tim", "kind", "fbx", "fby", "w", "h"
+    );
+    println!("{}", "-".repeat(80));
+    for (entry, tim, kind, fx, fy, w, h) in &hits {
+        println!("{entry:<28}  {tim:<24}  {kind:<6}  {fx:>4} {fy:>4} {w:>4} {h:>4}");
     }
     Ok(())
 }

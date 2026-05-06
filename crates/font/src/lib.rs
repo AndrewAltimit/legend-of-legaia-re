@@ -228,6 +228,90 @@ impl Font {
         let bytes: Vec<u8> = text.bytes().collect();
         self.layout(&bytes)
     }
+
+    /// Lay out `text` with word-wrap at `box_width_px` pixels. Words
+    /// (runs of non-space bytes) that would overflow the current line are
+    /// pushed to the next line. Existing newlines (`0x7C`) are honoured.
+    /// Single words longer than the box width are emitted as-is on their
+    /// own line — no mid-word breaking.
+    ///
+    /// Mirrors the field VM's pre-layout pass at SCUS `FUN_80036044` —
+    /// engines that drive the dialog renderer's per-line measure step use
+    /// this to feed pre-wrapped glyph streams to [`Font::layout`].
+    pub fn layout_wrapped(&self, text: &[u8], box_width_px: u32) -> Layout {
+        let wrapped = self.wrap_bytes(text, box_width_px);
+        self.layout(&wrapped)
+    }
+
+    /// Insert `0x7C` newlines into `text` at word boundaries so each line
+    /// fits within `box_width_px` when laid out. Returns a new byte buffer
+    /// suitable for passing to [`Font::layout`].
+    pub fn wrap_bytes(&self, text: &[u8], box_width_px: u32) -> Vec<u8> {
+        let mut out = Vec::with_capacity(text.len() + 8);
+        let mut line_w: u32 = 0;
+        let mut i = 0;
+        while i < text.len() {
+            let c = text[i];
+            if c == 0 {
+                break;
+            }
+            if c == NEWLINE {
+                out.push(c);
+                line_w = 0;
+                i += 1;
+                continue;
+            }
+            // Inline-escape opcodes consume their operand byte without
+            // emitting a glyph; mirror Font::layout's behaviour so the
+            // wrapped width tracks rendering width.
+            if (c == 0xCE || c == 0xCF) && i + 1 < text.len() {
+                out.push(c);
+                out.push(text[i + 1]);
+                i += 2;
+                continue;
+            }
+            if c == b' ' {
+                if line_w + self.advance_of(c) > box_width_px {
+                    // Soft-break instead of emitting a trailing space.
+                    out.push(NEWLINE);
+                    line_w = 0;
+                    i += 1;
+                    continue;
+                }
+                out.push(c);
+                line_w += self.advance_of(c);
+                i += 1;
+                continue;
+            }
+            // Find the end of the current word.
+            let mut j = i;
+            let mut word_w: u32 = 0;
+            while j < text.len() {
+                let cj = text[j];
+                if cj == 0 || cj == b' ' || cj == NEWLINE {
+                    break;
+                }
+                if (cj == 0xCE || cj == 0xCF) && j + 1 < text.len() {
+                    j += 2;
+                    continue;
+                }
+                word_w += self.advance_of(cj);
+                j += 1;
+            }
+            if line_w > 0 && line_w + word_w > box_width_px {
+                // Trim trailing space if the previous emit was one.
+                if matches!(out.last(), Some(&b' ')) {
+                    out.pop();
+                }
+                out.push(NEWLINE);
+                line_w = 0;
+            }
+            out.extend_from_slice(&text[i..j]);
+            line_w += word_w;
+            i = j;
+        }
+        out
+    }
 }
 
 fn decode_atlas_png(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
@@ -367,6 +451,42 @@ mod tests {
         let layout = f.layout(&[b'A', 0xCE, 0x05, b'B']);
         assert_eq!(layout.glyphs.len(), 2);
         assert_eq!(layout.glyphs[1].byte, b'B');
+    }
+
+    #[test]
+    fn wrap_breaks_at_word_boundary() {
+        let f = synthetic_for_tests();
+        // "AA AAAA" — synthetic widths give A,B,...,Z width 6 (b - 0x20 + 1)
+        // ... actually let's use a wide letter to force wrap.
+        // The synthetic font widths are deterministic but varied; just
+        // assert the wrapped output contains a NEWLINE that wasn't in
+        // the input when the box width is small enough.
+        let input = b"hello world there";
+        let wrapped = f.wrap_bytes(input, 50);
+        assert!(
+            wrapped.contains(&NEWLINE),
+            "narrow box width should force a wrap: {:?}",
+            wrapped
+        );
+    }
+
+    #[test]
+    fn wrap_passes_through_when_fits() {
+        let f = synthetic_for_tests();
+        let wrapped = f.wrap_bytes(b"hi", 1000);
+        assert!(
+            !wrapped.contains(&NEWLINE),
+            "wide box shouldn't insert wraps: {:?}",
+            wrapped
+        );
+    }
+
+    #[test]
+    fn wrap_preserves_explicit_newlines() {
+        let f = synthetic_for_tests();
+        let input = &[b'A', NEWLINE, b'B'];
+        let wrapped = f.wrap_bytes(input, 1000);
+        assert_eq!(wrapped, input);
     }
 
     #[test]

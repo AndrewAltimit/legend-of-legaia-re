@@ -21,7 +21,9 @@
 //! in [`ModeParam`]. The Sony function pointers are NOT used; engine
 //! integrations supply Rust closures that drive the [`super::world::World`].
 
+use crate::input::InputState;
 use crate::world::{SceneMode, World};
+use legaia_engine_vm::Position as ActorVmPosition;
 
 /// One row of the retail mode table. Engine-mapping shape: same fields as
 /// the on-disc layout, minus the function pointer (replaced by an enum
@@ -356,8 +358,8 @@ pub enum HandlerResult {
 /// `ModeDriver::tick` calls these in order: it consults the current
 /// mode, calls the matching handler, applies the result.
 pub trait ModeHandler {
-    fn run(&mut self, mode: GameMode, world: &mut World) -> HandlerResult {
-        let _ = (mode, world);
+    fn run(&mut self, mode: GameMode, world: &mut World, input: &InputState) -> HandlerResult {
+        let _ = (mode, world, input);
         HandlerResult::Continue
     }
 }
@@ -367,6 +369,79 @@ pub trait ModeHandler {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoopHandler;
 impl ModeHandler for NoopHandler {}
+
+/// Reference [`ModeHandler`] that drives the title-screen path end-to-end
+/// without any GPU / scene-asset dependencies. Useful as a smoke test for
+/// the World + ModeDriver wiring and as an example for engines integrating
+/// real scene loaders.
+///
+/// Behaviour:
+///
+/// - `MainInit`: spawn `actor_count` actors in the world via the actor VM
+///   `SpawnAt` opcode, with positions arranged on a horizontal line. Returns
+///   `Done` so the driver advances to the table's next mode.
+/// - `MainMode`: ticks the world (positions advance via the move VM). When
+///   the host signals `Cross` (just-pressed), returns `GoTo(MapdispInit)` —
+///   the canonical "select party" → "enter map" transition. Otherwise
+///   `Continue`.
+/// - Other modes: no-op `Continue`.
+///
+/// This is the smallest concrete demonstration that the World + ModeDriver
+/// stack ticks per-frame, advances actor state, and reacts to input.
+#[derive(Debug, Clone, Copy)]
+pub struct TitleHandler {
+    pub actor_count: u8,
+    initialised: bool,
+}
+
+impl TitleHandler {
+    pub fn new(actor_count: u8) -> Self {
+        Self {
+            actor_count,
+            initialised: false,
+        }
+    }
+}
+
+impl ModeHandler for TitleHandler {
+    fn run(&mut self, mode: GameMode, world: &mut World, input: &InputState) -> HandlerResult {
+        use crate::input::PadButton;
+        match mode {
+            GameMode::MainInit => {
+                if !self.initialised {
+                    // Set per-actor default positions before spawning so
+                    // the actor VM SpawnDefault path lands them on a row.
+                    for i in 0..self.actor_count {
+                        let slot = i as usize;
+                        if slot >= world.actors.len() {
+                            break;
+                        }
+                        world.actors[slot].default_pos =
+                            ActorVmPosition::new(32 + (slot as i16) * 24, 64);
+                    }
+                    // Synthesize bytecode: SpawnDefault for each actor, then End.
+                    let mut bytecode = Vec::with_capacity((self.actor_count as usize + 1) * 4);
+                    for i in 0..self.actor_count {
+                        // 4-byte instruction: opcode=0x01 (SpawnDefault), operand_b=actor_id, w=0
+                        bytecode.extend_from_slice(&[0x01, i, 0x00, 0x00]);
+                    }
+                    bytecode.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // End
+                    let _ = world.run_actor_bytecode(&bytecode);
+                    self.initialised = true;
+                }
+                HandlerResult::Done
+            }
+            GameMode::MainMode => {
+                if input.just_pressed(PadButton::Cross) {
+                    HandlerResult::GoTo(GameMode::MapdispInit)
+                } else {
+                    HandlerResult::Continue
+                }
+            }
+            _ => HandlerResult::Continue,
+        }
+    }
+}
 
 /// The mode driver. Owns the current-mode register (the engine equivalent
 /// of `gp[0x524]`) and a frame counter for diagnostics.
@@ -414,11 +489,16 @@ impl ModeDriver {
     /// game mode, call the host's [`ModeHandler::run`], apply the result.
     /// Returns the handler's result so engines that want to act on
     /// transitions can observe them.
-    pub fn tick<H: ModeHandler>(&mut self, host: &mut H, world: &mut World) -> HandlerResult {
+    pub fn tick<H: ModeHandler>(
+        &mut self,
+        host: &mut H,
+        world: &mut World,
+        input: &InputState,
+    ) -> HandlerResult {
         // Keep the World's scene-mode in sync each frame. Cheap and
         // idempotent — the World's tick path keys off it.
         world.mode = self.current.scene_mode();
-        let r = host.run(self.current, world);
+        let r = host.run(self.current, world, input);
         // Always tick the World after the handler, so a Continue runs the
         // VMs for this mode every frame. Init modes that flip to the run
         // mode via Done get one final World tick before transitioning.
@@ -495,8 +575,9 @@ mod tests {
         let mut d = ModeDriver::new(GameMode::MapdispMode);
         let mut h = NoopHandler;
         let mut w = World::default();
+        let input = InputState::new();
         for _ in 0..3 {
-            assert_eq!(d.tick(&mut h, &mut w), HandlerResult::Continue);
+            assert_eq!(d.tick(&mut h, &mut w, &input), HandlerResult::Continue);
         }
         assert_eq!(d.current(), GameMode::MapdispMode);
         assert_eq!(d.frames, 3);
@@ -510,7 +591,7 @@ mod tests {
             ticked: bool,
         }
         impl ModeHandler for DoneOnce {
-            fn run(&mut self, _: GameMode, _: &mut World) -> HandlerResult {
+            fn run(&mut self, _: GameMode, _: &mut World, _: &InputState) -> HandlerResult {
                 if self.ticked {
                     HandlerResult::Continue
                 } else {
@@ -523,7 +604,8 @@ mod tests {
         let mut d = ModeDriver::new(GameMode::MainMode);
         let mut h = DoneOnce { ticked: false };
         let mut w = World::default();
-        d.tick(&mut h, &mut w);
+        let input = InputState::new();
+        d.tick(&mut h, &mut w, &input);
         assert_eq!(d.current(), GameMode::ConfigInit);
         assert_eq!(d.frames_in_mode, 0);
     }
@@ -533,14 +615,15 @@ mod tests {
         // ConfigInit has next=None — Done should leave the mode unchanged.
         struct AlwaysDone;
         impl ModeHandler for AlwaysDone {
-            fn run(&mut self, _: GameMode, _: &mut World) -> HandlerResult {
+            fn run(&mut self, _: GameMode, _: &mut World, _: &InputState) -> HandlerResult {
                 HandlerResult::Done
             }
         }
         let mut d = ModeDriver::new(GameMode::ConfigInit);
         let mut h = AlwaysDone;
         let mut w = World::default();
-        d.tick(&mut h, &mut w);
+        let input = InputState::new();
+        d.tick(&mut h, &mut w, &input);
         assert_eq!(d.current(), GameMode::ConfigInit);
     }
 
@@ -548,15 +631,51 @@ mod tests {
     fn handler_goto_jumps_directly() {
         struct GoToBattle;
         impl ModeHandler for GoToBattle {
-            fn run(&mut self, _: GameMode, _: &mut World) -> HandlerResult {
+            fn run(&mut self, _: GameMode, _: &mut World, _: &InputState) -> HandlerResult {
                 HandlerResult::GoTo(GameMode::BattleInit)
             }
         }
         let mut d = ModeDriver::new(GameMode::MapdispMode);
         let mut h = GoToBattle;
         let mut w = World::default();
-        d.tick(&mut h, &mut w);
+        let input = InputState::new();
+        d.tick(&mut h, &mut w, &input);
         assert_eq!(d.current(), GameMode::BattleInit);
+    }
+
+    #[test]
+    fn title_handler_spawns_actors_then_advances() {
+        let mut d = ModeDriver::new(GameMode::MainInit);
+        let mut h = TitleHandler::new(4);
+        let mut w = World::default();
+        let input = InputState::new();
+        // First tick: MainInit spawns actors and reports Done — driver
+        // advances to MainInit's next entry (which is None per the table,
+        // so we stay in MainInit). The actors should still be live.
+        let r = d.tick(&mut h, &mut w, &input);
+        assert_eq!(r, HandlerResult::Done);
+        // 4 actors spawned at the staggered positions.
+        assert!(w.actors[0].active);
+        assert!(w.actors[3].active);
+        assert!(!w.actors[4].active);
+        assert_eq!(w.actors[1].move_state.world_x, 32 + 24);
+    }
+
+    #[test]
+    fn title_handler_main_mode_transitions_on_cross() {
+        let mut d = ModeDriver::new(GameMode::MainMode);
+        let mut h = TitleHandler::new(0);
+        let mut w = World::default();
+        let mut input = InputState::new();
+        // No press: stays.
+        let r = d.tick(&mut h, &mut w, &input);
+        assert_eq!(r, HandlerResult::Continue);
+        assert_eq!(d.current(), GameMode::MainMode);
+        // Cross press: transitions to MapdispInit.
+        input.set_pad(crate::input::PadButton::Cross.mask());
+        let r = d.tick(&mut h, &mut w, &input);
+        assert_eq!(r, HandlerResult::GoTo(GameMode::MapdispInit));
+        assert_eq!(d.current(), GameMode::MapdispInit);
     }
 
     #[test]

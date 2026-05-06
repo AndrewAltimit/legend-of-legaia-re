@@ -36,6 +36,7 @@ use legaia_engine_render::{
     UploadedVramMesh,
     glam::{Mat4, Vec3},
     legaia_tim::Vram,
+    text_draws_for,
 };
 use legaia_font::Font;
 use legaia_prot::{archive::Archive, cdname};
@@ -1491,21 +1492,6 @@ fn parse_prot_dir_index(name: &str) -> Option<u32> {
     lead.parse().ok()
 }
 
-/// Convert a laid-out string into [`TextDraw`]s anchored at `(pen_x, pen_y)`
-/// with the supplied tint. Glyph atlas coordinates come from the layout;
-/// destination coordinates are pen-relative pixels with one quad per glyph.
-fn text_draws_for(layout: &legaia_font::Layout, pen: (i32, i32), color: [f32; 4]) -> Vec<TextDraw> {
-    layout
-        .glyphs
-        .iter()
-        .map(|g| TextDraw {
-            dst: (pen.0 + g.dst_x, pen.1 + g.dst_y, g.width, g.height),
-            src: (g.atlas_x, g.atlas_y, g.width, g.height),
-            color,
-        })
-        .collect()
-}
-
 /// Map winit physical keys to PSX pad button bits. Keyboard mapping mirrors
 /// the conventional emulator default:
 ///
@@ -1889,8 +1875,7 @@ impl BattleSceneApp {
                 Err(e) => log::error!("VRAM upload failed: {e:#}"),
             }
         }
-        let (aw, ah) = self.font.atlas_dimensions();
-        match r.upload_font_atlas(self.font.atlas_rgba(), aw, ah) {
+        match r.upload_font(&self.font) {
             Ok(a) => self.font_atlas = Some(a),
             Err(e) => log::error!("font atlas upload failed: {e:#}"),
         }
@@ -2161,6 +2146,7 @@ impl ApplicationHandler for BattleSceneApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_sprites: None,
                         overlay_text: Some(&overlay),
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
@@ -2286,8 +2272,7 @@ impl FieldApp {
                 Err(e) => log::error!("VRAM upload failed: {e:#}"),
             }
         }
-        let (aw, ah) = self.font.atlas_dimensions();
-        match r.upload_font_atlas(self.font.atlas_rgba(), aw, ah) {
+        match r.upload_font(&self.font) {
             Ok(a) => self.font_atlas = Some(a),
             Err(e) => log::error!("font atlas upload failed: {e:#}"),
         }
@@ -2665,6 +2650,7 @@ impl ApplicationHandler for FieldApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_sprites: None,
                         overlay_text: Some(&overlay),
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
@@ -2919,6 +2905,7 @@ impl ApplicationHandler for WorldApp {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
+                        overlay_sprites: None,
                         overlay_text: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
@@ -3847,8 +3834,7 @@ impl DialogApp {
         let Some(r) = &self.renderer else {
             return;
         };
-        let (aw, ah) = self.font.atlas_dimensions();
-        match r.upload_font_atlas(self.font.atlas_rgba(), aw, ah) {
+        match r.upload_font(&self.font) {
             Ok(a) => self.font_atlas = Some(a),
             Err(e) => log::error!("font atlas upload failed: {e:#}"),
         }

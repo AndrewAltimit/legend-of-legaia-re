@@ -20,6 +20,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 pub use glam;
+pub use legaia_font;
 pub use legaia_tim;
 pub use wgpu;
 
@@ -165,6 +166,72 @@ pub struct TextOverlay<'a> {
     pub draws: &'a [TextDraw],
 }
 
+/// Sprite types are semantic aliases of the text-quad types — both are
+/// just textured quads sampled with nearest-neighbour filtering and alpha
+/// blending. Sharing the GPU pipeline keeps engine-render small; the
+/// distinct names keep call-sites readable.
+pub type SpriteDraw = TextDraw;
+pub type UploadedSpriteAtlas = UploadedFontAtlas;
+pub type SpriteOverlay<'a> = TextOverlay<'a>;
+
+/// One sprite request emitted by the World→sprite-batch glue. Holds the
+/// renderer-agnostic shape of "draw glyph from this atlas page at this
+/// world pixel position" so engine-core (which doesn't link wgpu) can
+/// produce them and engine-render can consume them.
+///
+/// Engines that want richer per-sprite state (subpixel offset, rotation,
+/// scale) should branch off this type — it's intentionally minimal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpriteRequest {
+    /// Top-left of the sprite in world / screen pixels.
+    pub world_x: i32,
+    pub world_y: i32,
+    /// Atlas source rect: `(x, y, w, h)` in atlas pixels.
+    pub atlas_src: (u32, u32, u32, u32),
+    /// RGBA tint multiplied with the sampled atlas texel.
+    pub color: [f32; 4],
+}
+
+/// Convert sprite requests to [`SpriteDraw`]s, applying a screen-space
+/// `anchor` translation. The output `dst` width/height match the atlas
+/// source rect 1:1 (no scaling — engines that want PSX-native 240px
+/// vertical scaling should pre-scale `world_y` before calling this).
+pub fn sprite_draws_for(requests: &[SpriteRequest], anchor: (i32, i32)) -> Vec<SpriteDraw> {
+    requests
+        .iter()
+        .map(|r| SpriteDraw {
+            dst: (
+                anchor.0 + r.world_x,
+                anchor.1 + r.world_y,
+                r.atlas_src.2,
+                r.atlas_src.3,
+            ),
+            src: r.atlas_src,
+            color: r.color,
+        })
+        .collect()
+}
+
+/// Convert a [`legaia_font::Layout`] to a vector of [`TextDraw`]s anchored at
+/// `pen` with the supplied tint. Glyph atlas coordinates come from the
+/// layout; destination coordinates are pen-relative pixels with one quad per
+/// glyph. The returned draws are batchable into a single [`TextOverlay`].
+pub fn text_draws_for(
+    layout: &legaia_font::Layout,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    layout
+        .glyphs
+        .iter()
+        .map(|g| TextDraw {
+            dst: (pen.0 + g.dst_x, pen.1 + g.dst_y, g.width, g.height),
+            src: (g.atlas_x, g.atlas_y, g.width, g.height),
+            color,
+        })
+        .collect()
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -240,6 +307,9 @@ pub struct Scene<'a> {
     pub vram: &'a UploadedVram,
     pub draws: &'a [SceneDraw<'a>],
     pub overlay_lines: Option<(&'a UploadedLines, Mat4)>,
+    /// 2D sprite batch drawn after the 3D meshes and lines, before
+    /// [`Self::overlay_text`]. Used by the actor sprite pipeline.
+    pub overlay_sprites: Option<&'a SpriteOverlay<'a>>,
     pub overlay_text: Option<&'a TextOverlay<'a>>,
 }
 
@@ -302,6 +372,11 @@ pub struct Renderer {
     /// per `TextDraw` is 4 vertices and 6 indices.
     text_vertex_capacity: std::cell::Cell<u32>,
     text_index_capacity: std::cell::Cell<u32>,
+    /// Per-overlay quad ranges from the most recent staging call —
+    /// `[(base_quad, count), ...]` in the same order overlays were passed.
+    /// Drained by the in-pass draw to issue one `draw_indexed` per overlay
+    /// with the matching atlas bound.
+    scene_quad_ranges: std::cell::RefCell<Vec<(u32, u32)>>,
     /// Depth target — recreated on resize.
     depth_view: wgpu::TextureView,
 }
@@ -1084,6 +1159,7 @@ impl Renderer {
             text_ibuf: std::cell::RefCell::new(text_ibuf),
             text_vertex_capacity: std::cell::Cell::new(initial_text_quads * 4),
             text_index_capacity: std::cell::Cell::new(initial_text_quads * 6),
+            scene_quad_ranges: std::cell::RefCell::new(Vec::new()),
             depth_view,
         })
     }
@@ -1372,6 +1448,27 @@ impl Renderer {
         })
     }
 
+    /// Upload a [`legaia_font::Font`]'s atlas to the GPU. Convenience wrapper
+    /// around [`Self::upload_font_atlas`] that pulls dimensions and pixels
+    /// from the parsed font directly. Use this when the caller is loading
+    /// the dialog font; use the lower-level `upload_font_atlas` for custom
+    /// atlases (debug fonts, sprite glyph sheets, etc).
+    pub fn upload_font(&self, font: &legaia_font::Font) -> Result<UploadedFontAtlas> {
+        let (w, h) = font.atlas_dimensions();
+        self.upload_font_atlas(font.atlas_rgba(), w, h)
+    }
+
+    /// Upload a sprite atlas. Alias of [`Self::upload_font_atlas`] — sprites
+    /// and font glyphs share the textured-quad pipeline (see [`SpriteDraw`]).
+    pub fn upload_sprite_atlas(
+        &self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<UploadedSpriteAtlas> {
+        self.upload_font_atlas(rgba, width, height)
+    }
+
     /// Upload a font atlas. Used by the 2D text pipeline; one atlas can back
     /// many [`TextOverlay`] batches.
     pub fn upload_font_atlas(
@@ -1539,12 +1636,25 @@ impl Renderer {
             }
             RenderTarget::Scene(scene) => {
                 self.stage_scene_uniforms(scene);
-                if let Some(text) = scene.overlay_text {
-                    self.stage_text_overlay(text);
+                let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(2);
+                if let Some(s) = scene.overlay_sprites {
+                    overlays.push(s);
+                }
+                if let Some(t) = scene.overlay_text {
+                    overlays.push(t);
+                }
+                if !overlays.is_empty() {
+                    self.scene_quad_ranges
+                        .borrow_mut()
+                        .clone_from(&self.stage_quad_overlays(&overlays));
+                } else {
+                    self.scene_quad_ranges.borrow_mut().clear();
                 }
             }
             RenderTarget::TextOnly(overlay) => {
-                self.stage_text_overlay(overlay);
+                self.scene_quad_ranges
+                    .borrow_mut()
+                    .clone_from(&self.stage_quad_overlays(&[overlay]));
             }
             RenderTarget::Clear => {}
         }
@@ -1666,8 +1776,38 @@ impl Renderer {
                         rp.set_index_buffer(lines.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                         rp.draw_indexed(0..lines.index_count, 0, 0..1);
                     }
-                    if let Some(text) = scene.overlay_text
-                        && let Some(quads) = text_quad_count(text)
+                    let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(2);
+                    if let Some(s) = scene.overlay_sprites {
+                        overlays.push(s);
+                    }
+                    if let Some(t) = scene.overlay_text {
+                        overlays.push(t);
+                    }
+                    if !overlays.is_empty() {
+                        let ranges = self.scene_quad_ranges.borrow();
+                        if !ranges.iter().all(|(_, n)| *n == 0) {
+                            rp.set_pipeline(&self.text_pipeline);
+                            let vbuf_borrow = self.text_vbuf.borrow();
+                            let ibuf_borrow = self.text_ibuf.borrow();
+                            rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
+                            rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
+                            for (overlay, (base_quad, count)) in overlays.iter().zip(ranges.iter())
+                            {
+                                if *count == 0 {
+                                    continue;
+                                }
+                                rp.set_bind_group(0, &overlay.atlas.bind_group, &[]);
+                                let start = base_quad * 6;
+                                let end = (base_quad + count) * 6;
+                                rp.draw_indexed(start..end, 0, 0..1);
+                            }
+                        }
+                    }
+                }
+                RenderTarget::TextOnly(text) => {
+                    let ranges = self.scene_quad_ranges.borrow();
+                    if let Some(&(base_quad, count)) = ranges.first()
+                        && count > 0
                     {
                         rp.set_pipeline(&self.text_pipeline);
                         rp.set_bind_group(0, &text.atlas.bind_group, &[]);
@@ -1675,18 +1815,9 @@ impl Renderer {
                         let ibuf_borrow = self.text_ibuf.borrow();
                         rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
                         rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
-                        rp.draw_indexed(0..(quads * 6), 0, 0..1);
-                    }
-                }
-                RenderTarget::TextOnly(text) => {
-                    if let Some(quads) = text_quad_count(text) {
-                        rp.set_pipeline(&self.text_pipeline);
-                        rp.set_bind_group(0, &text.atlas.bind_group, &[]);
-                        let vbuf_borrow = self.text_vbuf.borrow();
-                        let ibuf_borrow = self.text_ibuf.borrow();
-                        rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
-                        rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
-                        rp.draw_indexed(0..(quads * 6), 0, 0..1);
+                        let start = base_quad * 6;
+                        let end = (base_quad + count) * 6;
+                        rp.draw_indexed(start..end, 0, 0..1);
                     }
                 }
             }
@@ -1776,19 +1907,33 @@ struct TextVertex {
 }
 
 impl Renderer {
-    /// Build the per-frame text vertex/index buffers from `overlay`. Pixel
-    /// coords are converted to NDC using the current surface size; atlas
-    /// pixel coords are converted to `[0, 1]` UVs using the atlas size.
-    fn stage_text_overlay(&self, overlay: &TextOverlay<'_>) {
-        let Some(quads) = text_quad_count(overlay) else {
-            return;
-        };
-        let needed_v = quads * 4;
-        let needed_i = quads * 6;
+    /// Build the per-frame text vertex/index buffers from one or more 2D
+    /// quad overlays (sprite batches and text batches share the same
+    /// pipeline; the only per-batch difference is the bound atlas). Quads
+    /// are concatenated in input order; the returned `[(base_quad, count)]`
+    /// pairs let the render pass issue one `draw_indexed` per overlay with
+    /// the matching atlas bind group.
+    ///
+    /// Pixel coords are converted to NDC using the current surface size;
+    /// atlas pixel coords are converted to `[0, 1]` UVs using each
+    /// overlay's atlas size.
+    fn stage_quad_overlays(&self, overlays: &[&TextOverlay<'_>]) -> Vec<(u32, u32)> {
+        let mut total_quads: u32 = 0;
+        let mut ranges: Vec<(u32, u32)> = Vec::with_capacity(overlays.len());
+        for o in overlays {
+            let n = text_quad_count(o).unwrap_or(0);
+            ranges.push((total_quads, n));
+            total_quads = total_quads.saturating_add(n);
+        }
+        if total_quads == 0 {
+            return ranges;
+        }
+        let needed_v = total_quads * 4;
+        let needed_i = total_quads * 6;
         if needed_v > self.text_vertex_capacity.get() {
             let cap = needed_v.next_power_of_two().max(needed_v);
             *self.text_vbuf.borrow_mut() = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("text vertex buffer (resized)"),
+                label: Some("quad2d vertex buffer (resized)"),
                 size: (cap as u64) * 32,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -1798,7 +1943,7 @@ impl Renderer {
         if needed_i > self.text_index_capacity.get() {
             let cap = needed_i.next_power_of_two().max(needed_i);
             *self.text_ibuf.borrow_mut() = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("text index buffer (resized)"),
+                label: Some("quad2d index buffer (resized)"),
                 size: (cap as u64) * 4,
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -1808,45 +1953,49 @@ impl Renderer {
 
         let surf_w = self.config.width.max(1) as f32;
         let surf_h = self.config.height.max(1) as f32;
-        let atlas_w = overlay.atlas.width.max(1) as f32;
-        let atlas_h = overlay.atlas.height.max(1) as f32;
 
         let mut verts: Vec<TextVertex> = Vec::with_capacity(needed_v as usize);
         let mut idxs: Vec<u32> = Vec::with_capacity(needed_i as usize);
-        for (i, draw) in overlay.draws.iter().enumerate() {
-            let (dx, dy, dw, dh) = draw.dst;
-            let (sx, sy, sw, sh) = draw.src;
-            let nx0 = (dx as f32 / surf_w) * 2.0 - 1.0;
-            let ny0 = 1.0 - (dy as f32 / surf_h) * 2.0;
-            let nx1 = ((dx + dw as i32) as f32 / surf_w) * 2.0 - 1.0;
-            let ny1 = 1.0 - ((dy + dh as i32) as f32 / surf_h) * 2.0;
-            let u0 = sx as f32 / atlas_w;
-            let v0 = sy as f32 / atlas_h;
-            let u1 = (sx + sw) as f32 / atlas_w;
-            let v1 = (sy + sh) as f32 / atlas_h;
-            let color = draw.color;
-            let base = (i as u32) * 4;
-            verts.push(TextVertex {
-                pos: [nx0, ny0],
-                uv: [u0, v0],
-                color,
-            });
-            verts.push(TextVertex {
-                pos: [nx1, ny0],
-                uv: [u1, v0],
-                color,
-            });
-            verts.push(TextVertex {
-                pos: [nx0, ny1],
-                uv: [u0, v1],
-                color,
-            });
-            verts.push(TextVertex {
-                pos: [nx1, ny1],
-                uv: [u1, v1],
-                color,
-            });
-            idxs.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+        let mut quad_idx: u32 = 0;
+        for overlay in overlays {
+            let atlas_w = overlay.atlas.width.max(1) as f32;
+            let atlas_h = overlay.atlas.height.max(1) as f32;
+            for draw in overlay.draws {
+                let (dx, dy, dw, dh) = draw.dst;
+                let (sx, sy, sw, sh) = draw.src;
+                let nx0 = (dx as f32 / surf_w) * 2.0 - 1.0;
+                let ny0 = 1.0 - (dy as f32 / surf_h) * 2.0;
+                let nx1 = ((dx + dw as i32) as f32 / surf_w) * 2.0 - 1.0;
+                let ny1 = 1.0 - ((dy + dh as i32) as f32 / surf_h) * 2.0;
+                let u0 = sx as f32 / atlas_w;
+                let v0 = sy as f32 / atlas_h;
+                let u1 = (sx + sw) as f32 / atlas_w;
+                let v1 = (sy + sh) as f32 / atlas_h;
+                let color = draw.color;
+                let base = quad_idx * 4;
+                verts.push(TextVertex {
+                    pos: [nx0, ny0],
+                    uv: [u0, v0],
+                    color,
+                });
+                verts.push(TextVertex {
+                    pos: [nx1, ny0],
+                    uv: [u1, v0],
+                    color,
+                });
+                verts.push(TextVertex {
+                    pos: [nx0, ny1],
+                    uv: [u0, v1],
+                    color,
+                });
+                verts.push(TextVertex {
+                    pos: [nx1, ny1],
+                    uv: [u1, v1],
+                    color,
+                });
+                idxs.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+                quad_idx += 1;
+            }
         }
         let vbuf_borrow = self.text_vbuf.borrow();
         let ibuf_borrow = self.text_ibuf.borrow();
@@ -1854,6 +2003,7 @@ impl Renderer {
             .write_buffer(&vbuf_borrow, 0, bytemuck::cast_slice(&verts));
         self.queue
             .write_buffer(&ibuf_borrow, 0, bytemuck::cast_slice(&idxs));
+        ranges
     }
 }
 
@@ -2226,5 +2376,46 @@ mod tests {
         let (sx, sy) = letterbox_scale(400, 800, 100, 100);
         assert!((sx - 1.0).abs() < 1e-4, "sx={}", sx);
         assert!((sy - 0.5).abs() < 1e-4, "sy={}", sy);
+    }
+
+    #[test]
+    fn sprite_draws_translate_world_positions_with_anchor() {
+        let reqs = vec![
+            SpriteRequest {
+                world_x: 5,
+                world_y: 7,
+                atlas_src: (16, 0, 14, 15),
+                color: [1.0, 1.0, 1.0, 1.0],
+            },
+            SpriteRequest {
+                world_x: 0,
+                world_y: 0,
+                atlas_src: (0, 16, 14, 15),
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+        ];
+        let draws = sprite_draws_for(&reqs, (100, 200));
+        assert_eq!(draws.len(), 2);
+        assert_eq!(draws[0].dst, (105, 207, 14, 15));
+        assert_eq!(draws[0].src, (16, 0, 14, 15));
+        assert_eq!(draws[1].dst, (100, 200, 14, 15));
+        assert_eq!(draws[1].color, [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn text_draws_translate_layout_to_screen_space() {
+        let font = legaia_font::synthetic_for_tests();
+        let layout = font.layout(b"Ab");
+        let pen = (10, 20);
+        let color = [1.0, 0.5, 0.25, 1.0];
+        let draws = text_draws_for(&layout, pen, color);
+        assert_eq!(draws.len(), layout.glyphs.len());
+        let g0 = layout.glyphs[0];
+        let d0 = draws[0];
+        assert_eq!(d0.dst.0, pen.0 + g0.dst_x);
+        assert_eq!(d0.dst.1, pen.1 + g0.dst_y);
+        assert_eq!(d0.dst.2, g0.width);
+        assert_eq!(d0.src, (g0.atlas_x, g0.atlas_y, g0.width, g0.height));
+        assert_eq!(d0.color, color);
     }
 }
