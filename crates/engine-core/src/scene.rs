@@ -152,6 +152,44 @@ impl SceneEntry {
     }
 }
 
+/// Per-scene event-script container — the field-VM bytecode bundle for a
+/// scene, with each record's `(start, end)` byte range pre-walked. Returned
+/// by [`Scene::find_event_scripts`].
+///
+/// Frame-divider note: many records open with the four-byte sentinel
+/// `0xFFFF 0x0000` (the field VM's "frame divider"). [`record`] returns the
+/// raw record bytes as-is; the VM-side helper
+/// [`crate::world::World::load_field_record`] is responsible for skipping
+/// the sentinel before dispatch.
+#[derive(Debug)]
+pub struct EventScripts<'a> {
+    /// PROT index of the entry the records came from.
+    pub entry_idx: u32,
+    /// Backing bytes; record ranges index into this slice.
+    pub bytes: &'a [u8],
+    /// `(start, end)` byte ranges, one per record.
+    pub record_ranges: Vec<(usize, usize)>,
+}
+
+impl<'a> EventScripts<'a> {
+    /// Number of records in the prescript.
+    pub fn len(&self) -> usize {
+        self.record_ranges.len()
+    }
+
+    /// `true` if no records are present (caller should treat as "no field
+    /// scripts" rather than panic).
+    pub fn is_empty(&self) -> bool {
+        self.record_ranges.is_empty()
+    }
+
+    /// Borrow record `i` as a slice. Returns `None` for out-of-range indices.
+    pub fn record(&self, i: usize) -> Option<&'a [u8]> {
+        let (s, e) = *self.record_ranges.get(i)?;
+        self.bytes.get(s..e)
+    }
+}
+
 /// A scene = the per-CDNAME-block bundle of PROT entries that the runtime
 /// loads together. Mirrors the per-scene shape `FUN_8001f7c0` consumes.
 pub struct Scene {
@@ -208,6 +246,38 @@ impl Scene {
     /// every TMD / VAB in a scene without rerunning the classifier.
     pub fn entries_of(&self, class: Class) -> impl Iterator<Item = &SceneEntry> {
         self.entries.iter().filter(move |e| e.class == class)
+    }
+
+    /// Find the per-scene event-scripts container — either a standalone
+    /// `SceneEventScripts` entry or the prescript prefix of a
+    /// `SceneScriptedAssetTable` entry. The records inside are the field-VM
+    /// (`FUN_801DE840`) per-event bytecode the scene runs on entry.
+    ///
+    /// Returns the first match in CDNAME order; most scenes carry exactly one
+    /// such entry. Returns `None` if the scene has no event scripts (some
+    /// title / cutscene-only scenes are pure asset bundles).
+    pub fn find_event_scripts(&self) -> Option<EventScripts<'_>> {
+        for entry in &self.entries {
+            let ranges = match entry.class {
+                Class::SceneEventScripts => {
+                    legaia_asset::scene_event_scripts::record_ranges(&entry.bytes)
+                }
+                Class::SceneScriptedAssetTable => {
+                    legaia_asset::scene_scripted_asset_table::record_ranges(&entry.bytes)
+                }
+                _ => None,
+            };
+            if let Some(ranges) = ranges
+                && !ranges.is_empty()
+            {
+                return Some(EventScripts {
+                    entry_idx: entry.idx,
+                    bytes: &entry.bytes,
+                    record_ranges: ranges,
+                });
+            }
+        }
+        None
     }
 
     /// Count of entries by class — tiny diagnostic for "what's in this scene".

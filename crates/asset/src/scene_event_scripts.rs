@@ -117,6 +117,31 @@ pub fn detect(buf: &[u8]) -> Option<SceneEventScripts> {
     })
 }
 
+/// Walk the offset table and produce per-record `(start, end)` byte ranges
+/// in the buffer. Returns `None` when the prescript itself is malformed (same
+/// gate as [`detect`] minus the frame-opener-rate check, since callers may
+/// want ranges even on borderline-rate files).
+///
+/// `end` is the next record's `start`, or `buf.len()` for the final record.
+/// Use the returned slice with `&buf[start..end]` to extract one script.
+pub fn record_ranges(buf: &[u8]) -> Option<Vec<(usize, usize)>> {
+    let offsets = detect_prescript(buf)?;
+    let mut out = Vec::with_capacity(offsets.len());
+    for (i, &off) in offsets.iter().enumerate() {
+        let start = off as usize;
+        let end = if i + 1 < offsets.len() {
+            offsets[i + 1] as usize
+        } else {
+            buf.len()
+        };
+        if start > end || end > buf.len() {
+            return None;
+        }
+        out.push((start, end));
+    }
+    Some(out)
+}
+
 /// Validate the leading `[u16 count][u16 offsets[count]]` prescript shape.
 /// Returns the offsets vector on success.
 fn detect_prescript(buf: &[u8]) -> Option<Vec<u16>> {
@@ -238,5 +263,25 @@ mod tests {
     fn rejects_random_bytes() {
         let buf: Vec<u8> = (0..0x1000u32).map(|i| (i & 0xFF) as u8).collect();
         assert!(detect(&buf).is_none());
+    }
+
+    #[test]
+    fn record_ranges_walks_every_record() {
+        let buf = synth(4, 4);
+        let ranges = record_ranges(&buf).expect("prescript valid");
+        assert_eq!(ranges.len(), 4);
+        // Records are 8 bytes each; first starts at table_end = 2 + 4*2 = 10.
+        assert_eq!(ranges[0], (10, 18));
+        assert_eq!(ranges[1], (18, 26));
+        assert_eq!(ranges[2], (26, 34));
+        // Last record extends to buffer end.
+        assert_eq!(ranges[3].0, 34);
+        assert_eq!(ranges[3].1, buf.len());
+    }
+
+    #[test]
+    fn record_ranges_returns_none_on_malformed_prescript() {
+        let buf: Vec<u8> = (0..0x1000u32).map(|i| (i & 0xFF) as u8).collect();
+        assert!(record_ranges(&buf).is_none());
     }
 }
