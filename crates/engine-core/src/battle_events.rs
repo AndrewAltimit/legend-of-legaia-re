@@ -58,6 +58,11 @@ pub enum BattleEvent {
     /// `BattleActionHost::battle_end` — battle is ending; engines unload
     /// the battle overlay.
     BattleEnd { cause: BattleEndCause },
+    /// `World::notify_art_used` — a character's Tactical Art use count
+    /// crossed the learn threshold for the first time. Engines display a
+    /// HUD banner; the art is already marked learned in
+    /// `World::tactical_arts` when this fires.
+    TacticalArtLearned { char_id: u8, art_id: u8 },
 }
 
 impl BattleEvent {
@@ -95,6 +100,9 @@ impl BattleEvent {
             BattleEvent::ScreenShake { magnitude } => format!("ScreenShake({magnitude})"),
             BattleEvent::RampBrightness { target_pct } => format!("RampBrightness({target_pct}%)"),
             BattleEvent::BattleEnd { cause } => format!("BattleEnd({cause:?})"),
+            BattleEvent::TacticalArtLearned { char_id, art_id } => {
+                format!("TacticalArtLearned(char={char_id}, art={art_id})")
+            }
         }
     }
 }
@@ -182,6 +190,10 @@ mod tests {
             BattleEvent::RampBrightness { target_pct: 0 },
             BattleEvent::BattleEnd {
                 cause: BattleEndCause::PartyWipe,
+            },
+            BattleEvent::TacticalArtLearned {
+                char_id: 0,
+                art_id: 1,
             },
         ];
         for e in events {

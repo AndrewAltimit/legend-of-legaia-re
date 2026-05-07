@@ -7,6 +7,7 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -17,6 +18,7 @@ use legaia_iso::{
     region,
 };
 use legaia_prot::{archive::Archive, cdname};
+use rayon::prelude::*;
 
 #[derive(Parser)]
 #[command(
@@ -209,26 +211,36 @@ fn step_prot_extract(
 
 fn step_categorize(dir: &Path, out: &Path) -> Result<CategorizeSummary> {
     use legaia_asset::categorize::classify;
-    let mut n_files = 0usize;
+
+    // Collect .BIN paths first so we can hand them to rayon.
+    let paths: Vec<PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.ends_with(".BIN"))
+                    .unwrap_or(false)
+        })
+        .collect();
+
+    // Classify in parallel; skip entries that fail to read or parse.
+    let results: Vec<(String, serde_json::Value)> = paths
+        .par_iter()
+        .filter_map(|path| {
+            let name = path.file_name()?.to_str()?.to_string();
+            let buf = std::fs::read(path).ok()?;
+            let report = classify(&buf);
+            let val = serde_json::to_value(&report).ok()?;
+            Some((name, val))
+        })
+        .collect();
+
+    let n_files = results.len();
     let mut per_file = serde_json::Map::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-        if !name.ends_with(".BIN") {
-            continue;
-        }
-        let buf = std::fs::read(&path)?;
-        let report = classify(&buf);
-        per_file.insert(name, serde_json::to_value(&report)?);
-        n_files += 1;
+    for (name, val) in results {
+        per_file.insert(name, val);
     }
     let summary = serde_json::json!({
         "scan_root": dir.display().to_string(),
@@ -244,48 +256,60 @@ struct CategorizeSummary {
 }
 
 fn step_streaming_extract(prot_dir: &Path, out: &Path, verbose: bool) -> Result<usize> {
-    let mut hits = 0usize;
-    for entry in std::fs::read_dir(prot_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) if n.ends_with(".BIN") => n.to_string(),
-            _ => continue,
-        };
-        let buf = match std::fs::read(&path) {
+    // Collect candidate .BIN paths up front.
+    let paths: Vec<(PathBuf, String)> = std::fs::read_dir(prot_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter_map(|p| {
+            let name = p.file_name()?.to_str()?.to_string();
+            if p.is_file() && name.ends_with(".BIN") {
+                Some((p, name))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Ensure output root exists before spawning threads.
+    std::fs::create_dir_all(out)?;
+
+    let hits = AtomicUsize::new(0);
+
+    paths.par_iter().for_each(|(path, name)| {
+        let buf = match std::fs::read(path) {
             Ok(b) => b,
-            Err(_) => continue,
+            Err(_) => return,
         };
         let report = match parse_streaming(&buf, 4096) {
             Ok(r) => r,
-            Err(_) => continue,
+            Err(_) => return,
         };
         if !(report.terminated
             && report.all_known_types
             && report.all_magic_ok
             && report.chunks.len() >= 2)
         {
-            continue;
+            return;
         }
-        // Real streaming hit — extract sub-assets.
-        let stem = name.trim_end_matches(".BIN").to_string();
-        let dest = out.join(&stem);
-        std::fs::create_dir_all(&dest)?;
+
+        let stem = name.trim_end_matches(".BIN");
+        let dest = out.join(stem);
+        if std::fs::create_dir_all(&dest).is_err() {
+            return;
+        }
+
         for (i, chunk) in report.chunks.iter().enumerate() {
             let t = AssetType::from_byte(chunk.type_byte);
             let chunk_dir = dest.join(format!("chunk{:02}_{}", i, t.name()));
-            std::fs::create_dir_all(&chunk_dir)?;
+            if std::fs::create_dir_all(&chunk_dir).is_err() {
+                continue;
+            }
             let data_start = chunk.header_offset + 4;
             let data_end = data_start + chunk.size as usize;
             if data_end > buf.len() {
                 continue;
             }
             let chunk_data = &buf[data_start..data_end];
-            // TIM_LIST and TMD use the inner pack format; everything else
-            // gets written as a single blob.
             match t {
                 AssetType::TimList | AssetType::Tmd | AssetType::Tmd2 => {
                     if let Ok(items) = pack::extract_pack(chunk_data) {
@@ -294,72 +318,79 @@ fn step_streaming_extract(prot_dir: &Path, out: &Path, verbose: bool) -> Result<
                                 AssetType::TimList => "tim",
                                 _ => "tmd",
                             };
-                            std::fs::write(chunk_dir.join(format!("{:04}.{}", j, ext)), item)?;
+                            let _ =
+                                std::fs::write(chunk_dir.join(format!("{:04}.{}", j, ext)), item);
                         }
                     } else {
-                        // fall back to single blob
-                        std::fs::write(chunk_dir.join("blob.bin"), chunk_data)?;
+                        let _ = std::fs::write(chunk_dir.join("blob.bin"), chunk_data);
                     }
                 }
                 _ => {
-                    std::fs::write(chunk_dir.join("blob.bin"), chunk_data)?;
+                    let _ = std::fs::write(chunk_dir.join("blob.bin"), chunk_data);
                 }
             }
         }
-        // Also dump the trailer (post-terminator bytes) for downstream analysis.
+
         if report.bytes_consumed < buf.len() {
-            std::fs::write(dest.join("_trailer.bin"), &buf[report.bytes_consumed..])?;
+            let _ = std::fs::write(dest.join("_trailer.bin"), &buf[report.bytes_consumed..]);
         }
         if verbose {
             println!("    [stream] {} → {} chunks", name, report.chunks.len());
         }
-        hits += 1;
-    }
-    Ok(hits)
+        hits.fetch_add(1, Ordering::Relaxed);
+    });
+
+    Ok(hits.load(Ordering::Relaxed))
 }
 
 fn step_tim_to_png(stream_dir: &Path, verbose: bool) -> Result<usize> {
     if !stream_dir.exists() {
         return Ok(0);
     }
-    let mut count = 0usize;
-    for entry in walk(stream_dir)? {
-        if entry
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.eq_ignore_ascii_case("tim"))
-            != Some(true)
-        {
-            continue;
-        }
-        let buf = match std::fs::read(&entry) {
+
+    // Collect .tim files first; filtering is cheap and sequential.
+    let tim_files: Vec<PathBuf> = walk(stream_dir)?
+        .into_iter()
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|s| s.eq_ignore_ascii_case("tim"))
+        })
+        .collect();
+
+    let count = AtomicUsize::new(0);
+
+    // Decode + write PNGs in parallel. Each entry writes to its own path.
+    tim_files.par_iter().for_each(|entry| {
+        let buf = match std::fs::read(entry) {
             Ok(b) => b,
-            Err(_) => continue,
+            Err(_) => return,
         };
         let tim = match legaia_tim::parse(&buf) {
             Ok(t) => t,
-            Err(_) => continue,
+            Err(_) => return,
         };
-        // Use CLUT 0 for the default rendering; users can re-run the
-        // standalone `tim` binary with --all-cluts for the full set.
+        // CLUT 0 for default rendering; --all-cluts via the standalone `tim`
+        // binary covers the full palette set.
         let rgba = match legaia_tim::decode_rgba8(&tim, 0) {
             Ok(r) => r,
-            Err(_) => continue,
+            Err(_) => return,
         };
-        let png_path = entry.with_extension("png");
         let w = tim.pixel_width();
         let h = tim.pixel_height();
         if w == 0 || h == 0 {
-            continue;
+            return;
         }
+        let png_path = entry.with_extension("png");
         if legaia_tim::write_png(&png_path, w, h, &rgba).is_ok() {
             if verbose {
                 println!("    [png] {}", png_path.display());
             }
-            count += 1;
+            count.fetch_add(1, Ordering::Relaxed);
         }
-    }
-    Ok(count)
+    });
+
+    Ok(count.load(Ordering::Relaxed))
 }
 
 fn walk(root: &Path) -> Result<Vec<PathBuf>> {

@@ -20,6 +20,7 @@
 
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
+use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 pub use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_vm as vm;
 use legaia_save;
@@ -377,6 +378,20 @@ pub struct World {
     /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
     /// after `World::tick` to react to halts / pending opcodes.
     pub move_outcomes: Vec<(u8, vm::move_vm::ActorTickOutcome)>,
+
+    /// Per-character Tactical Arts use-counter tracker. Engines call
+    /// [`World::notify_art_used`] from the battle side-effects handler when
+    /// a Tactical Arts strike lands; the tracker emits
+    /// [`BattleEvent::TacticalArtLearned`] and sets
+    /// [`World::current_art_banner`] on first learn.
+    pub tactical_arts: TacticalArtsTracker,
+
+    /// Active "art learned" HUD banner. Set by [`World::notify_art_used`]
+    /// when a new art crosses the learn threshold; its `frames_remaining`
+    /// counter is decremented by [`World::tick`] until it reaches zero.
+    /// `None` when no banner is active. Engines render this as a dialog-
+    /// font overlay above the battle HUD.
+    pub current_art_banner: Option<ArtLearnedBanner>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -465,6 +480,8 @@ impl World {
             camera_state: CameraState::default(),
             frame: 0,
             move_outcomes: Vec::new(),
+            tactical_arts: TacticalArtsTracker::new(),
+            current_art_banner: None,
         }
     }
 
@@ -480,6 +497,32 @@ impl World {
     /// Returns events in emission order.
     pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
         std::mem::take(&mut self.pending_battle_events)
+    }
+
+    /// Record one use of `art_id` by `char_id` (roster index).
+    ///
+    /// Delegates to [`TacticalArtsTracker::notify_art_used`]. When the use
+    /// count first crosses the learn threshold, this method:
+    ///
+    /// 1. Pushes [`BattleEvent::TacticalArtLearned`] onto
+    ///    [`Self::pending_battle_events`].
+    /// 2. Sets [`Self::current_art_banner`] with a 2-second display window
+    ///    so the engine's HUD overlay can show "Learned Art #N!".
+    ///
+    /// Subsequent calls for the same `(char_id, art_id)` pair are no-ops.
+    pub fn notify_art_used(&mut self, char_id: u8, art_id: u8) {
+        if let Some(ev) = self.tactical_arts.notify_art_used(char_id, art_id) {
+            let text = format!("Learned {}!", ev.name);
+            self.current_art_banner = Some(ArtLearnedBanner {
+                text,
+                frames_remaining: ArtLearnedBanner::DEFAULT_FRAMES,
+            });
+            self.pending_battle_events
+                .push(BattleEvent::TacticalArtLearned {
+                    char_id: ev.char_id,
+                    art_id: ev.art_id,
+                });
+        }
     }
 
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
@@ -738,6 +781,14 @@ impl World {
         self.tick_effects();
         self.tick_move_vms();
         self.tick_actors();
+        // Tick art-learned banner countdown — clear when it reaches zero.
+        if let Some(banner) = &mut self.current_art_banner {
+            if banner.frames_remaining > 0 {
+                banner.frames_remaining -= 1;
+            } else {
+                self.current_art_banner = None;
+            }
+        }
         match self.mode {
             SceneMode::Battle => Some(self.step_battle()),
             SceneMode::Field | SceneMode::Cutscene => {
@@ -2680,5 +2731,57 @@ mod tests {
         // no pool spawn. try_spawn_effect is not called for mode==1.
         // Directly confirm pool stays empty if we don't call try_spawn_effect.
         assert_eq!(world.effect_pool.active_count(), 0);
+    }
+
+    // --- Tactical Arts ---
+
+    #[test]
+    fn notify_art_used_emits_event_and_sets_banner() {
+        let mut world = World::default();
+        world.tactical_arts.set_threshold(1);
+        world.notify_art_used(0, 3);
+        let evs = world.drain_battle_events();
+        assert_eq!(evs.len(), 1);
+        assert_eq!(
+            evs[0],
+            BattleEvent::TacticalArtLearned {
+                char_id: 0,
+                art_id: 3
+            }
+        );
+        let banner = world.current_art_banner.as_ref().expect("banner set");
+        assert!(banner.text.contains("Art #3"));
+        assert_eq!(
+            banner.frames_remaining,
+            crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES
+        );
+    }
+
+    #[test]
+    fn notify_art_used_no_event_before_threshold() {
+        let mut world = World::default();
+        world.tactical_arts.set_threshold(5);
+        for _ in 0..4 {
+            world.notify_art_used(0, 1);
+        }
+        assert!(world.drain_battle_events().is_empty());
+        assert!(world.current_art_banner.is_none());
+    }
+
+    #[test]
+    fn banner_countdown_clears_after_frames() {
+        let mut world = World::default();
+        world.tactical_arts.set_threshold(1);
+        world.notify_art_used(0, 0);
+        // Banner starts at DEFAULT_FRAMES.
+        assert!(world.current_art_banner.is_some());
+        // Tick DEFAULT_FRAMES times; banner should reach 0 and clear.
+        for _ in 0..=crate::tactical_arts::ArtLearnedBanner::DEFAULT_FRAMES {
+            world.tick();
+        }
+        assert!(
+            world.current_art_banner.is_none(),
+            "banner should have cleared"
+        );
     }
 }
