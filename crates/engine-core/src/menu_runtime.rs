@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use legaia_engine_vm::menu::{MenuCtx, MenuHost, MenuInput, MenuState, open, step};
-use legaia_save::Party;
+use legaia_save::{EquipmentSlots, Party, SpellList};
 
 use crate::world::World;
 
@@ -67,6 +67,10 @@ pub struct MenuRuntime {
     /// Number of save slots the picker offers (default 3 — one per save
     /// file in the `slot_NN.bin` shape).
     pub slot_count: u8,
+    /// Index into `World::roster.members` for the active character
+    /// sub-screen (StatusEquipment / StatusMagic / StatusTacticalArts).
+    /// Updated by `commit(StatusCharacter, slot)`.
+    pub selected_char: usize,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -84,6 +88,7 @@ impl MenuRuntime {
             ctx: MenuCtx::default(),
             save_dir: save_dir.into(),
             slot_count: 3,
+            selected_char: 0,
             pending: None,
         }
     }
@@ -106,6 +111,7 @@ impl MenuRuntime {
             world,
             slot_count: self.slot_count,
             pending: &mut self.pending,
+            selected_char: &mut self.selected_char,
         };
         step(&mut host, &mut self.ctx, input);
 
@@ -175,6 +181,42 @@ impl MenuRuntime {
         Ok(block)
     }
 
+    /// Spell list for the currently selected character, or `None` if
+    /// `selected_char` is out of bounds.  Engines call this to populate
+    /// the `StatusMagic` screen rows.
+    pub fn spell_view(&self, world: &World) -> Option<SpellList> {
+        world
+            .roster
+            .members
+            .get(self.selected_char)
+            .map(|r| r.spell_list())
+    }
+
+    /// Equipment slots for the currently selected character, or `None` if
+    /// `selected_char` is out of bounds.  Engines call this to populate
+    /// the `StatusEquipment` screen rows.
+    pub fn equipment_view(&self, world: &World) -> Option<EquipmentSlots> {
+        world
+            .roster
+            .members
+            .get(self.selected_char)
+            .map(|r| r.equipment())
+    }
+
+    /// Sorted `(item_id, count)` pairs from the world's global inventory,
+    /// ascending by item ID, filtering out zero-count entries.  Engines
+    /// call this to populate the `StatusInventory` screen rows.
+    pub fn inventory_items(world: &World) -> Vec<(u8, u8)> {
+        let mut items: Vec<(u8, u8)> = world
+            .inventory
+            .iter()
+            .filter(|(_, c)| **c > 0)
+            .map(|(id, c)| (*id, *c))
+            .collect();
+        items.sort_by_key(|&(id, _)| id);
+        items
+    }
+
     /// Engine-friendly label per active state — drives a HUD banner so the
     /// player sees *something* before the per-screen layouts ship.
     pub fn current_label(&self) -> &'static str {
@@ -217,15 +259,26 @@ struct MenuRuntimeHost<'a> {
     world: &'a mut World,
     slot_count: u8,
     pending: &'a mut Option<PendingOp>,
+    selected_char: &'a mut usize,
 }
 
 impl<'a> MenuHost for MenuRuntimeHost<'a> {
     fn screen_item_count(&self, state: MenuState) -> u8 {
         match state {
             MenuState::StatusTop => 8, // Character / Equip / Items / Magic / Arts / Config / Save / Load
+            MenuState::StatusCharacter => {
+                self.world.roster.members.len().min(u8::MAX as usize) as u8
+            }
+            MenuState::StatusEquipment => 8,
             MenuState::SavePickSlot | MenuState::LoadSlot => self.slot_count.max(1),
             MenuState::ShopBuy | MenuState::ShopSell => 8,
-            MenuState::StatusInventory => 16,
+            MenuState::StatusInventory => self
+                .world
+                .inventory
+                .values()
+                .filter(|c| **c > 0)
+                .count()
+                .min(16) as u8,
             MenuState::StatusMagic | MenuState::StatusTacticalArts => 8,
             _ => 1,
         }
@@ -239,9 +292,38 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             MenuState::LoadSlot => {
                 *self.pending = Some(PendingOp::Load { slot });
             }
+            MenuState::StatusCharacter => {
+                *self.selected_char = slot as usize;
+            }
+            MenuState::StatusEquipment => {
+                let idx = *self.selected_char;
+                if let Some(record) = self.world.roster.members.get_mut(idx) {
+                    let mut equip = record.equipment();
+                    if (slot as usize) < equip.slots.len() {
+                        equip.slots[slot as usize] = 0;
+                        record.set_equipment(equip);
+                    }
+                }
+            }
+            MenuState::StatusInventory => {
+                let mut items: Vec<(u8, u8)> = self
+                    .world
+                    .inventory
+                    .iter()
+                    .filter(|(_, c)| **c > 0)
+                    .map(|(id, c)| (*id, *c))
+                    .collect();
+                items.sort_by_key(|&(id, _)| id);
+                if let Some(&(item_id, count)) = items.get(slot as usize) {
+                    if count > 1 {
+                        self.world.inventory.insert(item_id, count - 1);
+                    } else {
+                        self.world.inventory.remove(&item_id);
+                    }
+                }
+            }
             _ => {}
         }
-        let _ = self.world;
     }
 }
 
@@ -269,7 +351,7 @@ pub fn load_world_from_path(world: &mut World, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_save::CharacterRecord;
+    use legaia_save::{CharacterRecord, EquipmentSlots, SpellList};
 
     fn world_with_party(n: usize) -> World {
         let members = (0..n).map(|_| CharacterRecord::zeroed()).collect();
@@ -313,6 +395,190 @@ mod tests {
         let runtime = MenuRuntime::new("/tmp/legaia-test-save");
         let p = runtime.slot_path(7);
         assert!(p.to_string_lossy().ends_with("slot_07.bin"));
+    }
+
+    #[test]
+    fn status_character_commit_sets_selected_char() {
+        let mut world = world_with_party(3);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.ctx.state = MenuState::StatusCharacter.as_byte();
+        runtime.ctx.cursor = 2;
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(runtime.selected_char, 2);
+    }
+
+    #[test]
+    fn equipment_commit_unequips_slot() {
+        let mut world = world_with_party(1);
+        let equip = EquipmentSlots {
+            slots: [1, 2, 3, 4, 5, 6, 7, 8],
+        };
+        world.roster.members[0].set_equipment(equip);
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.selected_char = 0;
+        runtime.ctx.state = MenuState::StatusEquipment.as_byte();
+        runtime.ctx.cursor = 2;
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+
+        let updated = world.roster.members[0].equipment();
+        assert_eq!(updated.slots[2], 0, "slot 2 unequipped");
+        assert_eq!(updated.slots[0], 1, "other slots unchanged");
+        assert_eq!(updated.slots[7], 8, "other slots unchanged");
+    }
+
+    #[test]
+    fn equipment_commit_out_of_bounds_char_is_noop() {
+        let mut world = world_with_party(1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.selected_char = 99; // no such char
+        runtime.ctx.state = MenuState::StatusEquipment.as_byte();
+        runtime.ctx.cursor = 0;
+        // Should not panic.
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    #[test]
+    fn inventory_commit_decrements_item_count() {
+        let mut world = World::default();
+        world.inventory.insert(5, 3);
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.ctx.state = MenuState::StatusInventory.as_byte();
+        runtime.ctx.cursor = 0;
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(world.inventory.get(&5), Some(&2));
+    }
+
+    #[test]
+    fn inventory_commit_removes_last_item() {
+        let mut world = World::default();
+        world.inventory.insert(10, 1);
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.ctx.state = MenuState::StatusInventory.as_byte();
+        runtime.ctx.cursor = 0;
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+
+        assert!(!world.inventory.contains_key(&10));
+    }
+
+    #[test]
+    fn inventory_commit_empty_inventory_is_noop() {
+        let mut world = World::default();
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.ctx.state = MenuState::StatusInventory.as_byte();
+        runtime.ctx.cursor = 0;
+        // Should not panic on empty inventory.
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                cross: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    #[test]
+    fn spell_view_returns_selected_char_spells() {
+        let mut world = world_with_party(2);
+        let mut list = SpellList {
+            count: 2,
+            ..SpellList::default()
+        };
+        list.ids[0] = 7;
+        list.ids[1] = 14;
+        world.roster.members[1].set_spell_list(list);
+
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.selected_char = 1;
+
+        let view = runtime.spell_view(&world).expect("char 1 exists");
+        assert_eq!(view.count, 2);
+        assert_eq!(view.ids[0], 7);
+        assert_eq!(view.ids[1], 14);
+    }
+
+    #[test]
+    fn spell_view_out_of_bounds_returns_none() {
+        let world = world_with_party(1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.selected_char = 5;
+        assert!(runtime.spell_view(&world).is_none());
+    }
+
+    #[test]
+    fn equipment_view_returns_selected_char_equipment() {
+        let mut world = world_with_party(2);
+        let equip = EquipmentSlots {
+            slots: [9, 8, 7, 6, 5, 4, 3, 2],
+        };
+        world.roster.members[0].set_equipment(equip);
+
+        let runtime = MenuRuntime::new("/tmp/legaia-test");
+        let view = runtime.equipment_view(&world).expect("char 0 exists");
+        assert_eq!(view.slots, [9, 8, 7, 6, 5, 4, 3, 2]);
+    }
+
+    #[test]
+    fn inventory_items_sorted_by_id_filters_zeros() {
+        let mut world = World::default();
+        world.inventory.insert(30, 5);
+        world.inventory.insert(2, 1);
+        world.inventory.insert(15, 3);
+
+        let items = MenuRuntime::inventory_items(&world);
+        assert_eq!(items, vec![(2, 1), (15, 3), (30, 5)]);
+    }
+
+    #[test]
+    fn screen_item_count_for_character_clamps_cursor_to_party_size() {
+        let mut world = world_with_party(2);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.ctx.state = MenuState::StatusCharacter.as_byte();
+        runtime.ctx.cursor = 0;
+        // Down 3 times with 2 members: 0 -> 1 -> 0 -> 1
+        for _ in 0..3 {
+            runtime.tick(
+                &mut world,
+                MenuInput {
+                    down: true,
+                    ..Default::default()
+                },
+            );
+        }
+        assert_eq!(runtime.ctx.cursor, 1);
     }
 
     #[test]
