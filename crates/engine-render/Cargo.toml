@@ -17,3 +17,4 @@ legaia-tim = { path = "../tim" }
 log = "0.4"
 pollster = "0.3"
 wgpu = "26"
+winit = "0.30"

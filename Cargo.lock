@@ -1237,6 +1237,7 @@ dependencies = [
  "log",
  "pollster",
  "wgpu",
+ "winit",
 ]
 
 [[package]]

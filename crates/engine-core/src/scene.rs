@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use legaia_asset::categorize::{Class, classify};
+use legaia_prot::Region;
 use legaia_prot::archive::{Archive, Entry};
 use legaia_prot::cdname;
 
@@ -41,6 +42,9 @@ pub struct ProtIndex {
     entry_cache: Mutex<HashMap<u32, Arc<Vec<u8>>>>,
     /// Lazy classification cache. Populated on first `class_of` call.
     class_cache: Mutex<HashMap<u32, Class>>,
+    /// Retail region this index was opened against. Metadata only — the TOC
+    /// formula and CDNAME layout are identical across regions.
+    pub region: Region,
 }
 
 impl ProtIndex {
@@ -66,6 +70,7 @@ impl ProtIndex {
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
+            region: Region::Na,
         })
     }
 
@@ -82,7 +87,14 @@ impl ProtIndex {
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
+            region: Region::Na,
         })
+    }
+
+    /// Set the region for this index (builder pattern — non-breaking).
+    pub fn with_region(mut self, region: Region) -> Self {
+        self.region = region;
+        self
     }
 
     /// Total PROT entry count (typically 1232 in retail).

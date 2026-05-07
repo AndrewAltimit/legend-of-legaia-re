@@ -19,6 +19,8 @@ use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+pub mod window;
+
 pub use glam;
 pub use legaia_font;
 pub use legaia_tim;

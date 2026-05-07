@@ -11,8 +11,7 @@
 //!   Z = Cross, Esc = quit.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -21,8 +20,9 @@ use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
 use legaia_engine_render::{
-    RenderTarget, Renderer, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay,
-    UploadedFontAtlas, UploadedVram, UploadedVramMesh, text_draws_for,
+    RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
+    UploadedVram, UploadedVramMesh, text_draws_for,
+    window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::{BootConfig, BootSession};
 use legaia_font::Font;
@@ -31,7 +31,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowAttributes, WindowId};
+use winit::window::WindowId;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -447,8 +447,7 @@ struct PlayWindowApp {
     /// Pre-built scene resources (VRAM + TMDs). Consumed by `upload_assets`
     /// when the renderer is first attached; `None` after that.
     scene_res: Option<SceneResources>,
-    window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    win: EngineWindow,
     font_atlas: Option<UploadedFontAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
@@ -460,12 +459,6 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
-    started_at: Instant,
-    last_tick: Instant,
-    /// Fixed-timestep accumulator. Incremented by wall-clock dt each
-    /// `RedrawRequested`; drained in 1/60 s chunks to drive game ticks.
-    /// Decouples render rate (driven by VSync) from game-tick rate (60 Hz).
-    accumulator: f64,
 }
 
 impl PlayWindowApp {
@@ -474,7 +467,7 @@ impl PlayWindowApp {
             return;
         };
         let (vram_opt, font_opt, meshes, tmd_data, lo, hi) = {
-            let Some(r) = self.renderer.as_ref() else {
+            let Some(r) = self.win.renderer.as_ref() else {
                 self.scene_res = Some(res);
                 return;
             };
@@ -543,27 +536,14 @@ impl PlayWindowApp {
     }
 
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
-        let (lo, hi) = self.scene_aabb;
-        let center = Vec3::new(
-            0.5 * (lo[0] + hi[0]),
-            0.5 * (lo[1] + hi[1]),
-            0.5 * (lo[2] + hi[2]),
-        );
-        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-        let radius = (0.5 * extent.length()).max(1.0);
-        let distance = radius / 30f32.to_radians().tan() * 1.6;
-        let angle = self.started_at.elapsed().as_secs_f32() * 0.25;
-        let eye = center
-            + Vec3::new(
-                distance * angle.cos(),
-                -distance * 0.4,
-                distance * angle.sin(),
-            );
-        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-        let near = (distance * 0.05).max(0.1);
-        let far = distance * 4.0 + 1000.0;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
-        proj * view
+        orbit_camera_mvp(
+            self.scene_aabb.0,
+            self.scene_aabb.1,
+            0.25,
+            0.4,
+            self.win.elapsed_secs(),
+            aspect,
+        )
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
@@ -605,7 +585,7 @@ impl PlayWindowApp {
         };
         let line2 = format!(
             "t {:.1}s  {}  arrows=dpad Z=X",
-            self.started_at.elapsed().as_secs_f32(),
+            self.win.elapsed_secs(),
             audio_str
         );
         let layout2 = self.font.layout_ascii(&line2);
@@ -616,45 +596,17 @@ impl PlayWindowApp {
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if !self.win.open(evl, "legaia-engine") {
             return;
         }
-        let attrs = WindowAttributes::default()
-            .with_title("legaia-engine")
-            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
-        let window = match evl.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                log::error!("create_window: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        let size = window.inner_size();
-        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("Renderer::new: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        self.window = Some(window);
-        self.renderer = Some(renderer);
         self.upload_assets();
-        if let Some(w) = &self.window {
-            w.request_redraw();
-        }
+        self.win.request_redraw();
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => evl.exit(),
-            WindowEvent::Resized(size) => {
-                if let Some(r) = self.renderer.as_mut() {
-                    r.resize(size.width, size.height);
-                }
-            }
+            WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -678,28 +630,17 @@ impl ApplicationHandler for PlayWindowApp {
                 }
             }
             WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                // Cap dt at 100 ms to avoid a spiral of death after a
-                // pause/debugger break.
-                let dt = now
-                    .duration_since(self.last_tick)
-                    .min(Duration::from_millis(100))
-                    .as_secs_f64();
-                self.last_tick = now;
-                self.accumulator += dt;
-                const TICK_DT: f64 = 1.0 / 60.0;
+                let dt = self.win.advance_tick(100);
                 // Drain up to 4 ticks per render frame so we never spiral
                 // but can still catch up from minor vsync jitter.
-                let mut ticked = 0u32;
-                while self.accumulator >= TICK_DT && ticked < 4 {
-                    self.accumulator -= TICK_DT;
+                let ticks = self.win.drain_ticks(dt, 4);
+                for _ in 0..ticks {
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
-                    ticked += 1;
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
-                    &self.renderer,
+                    self.win.renderer.as_ref(),
                     self.uploaded_vram.as_ref(),
                     self.font_atlas.as_ref(),
                 ) {
@@ -767,9 +708,7 @@ impl ApplicationHandler for PlayWindowApp {
                         log::error!("render: {e:#}");
                     }
                 }
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.win.request_redraw();
             }
             _ => {}
         }
@@ -830,8 +769,7 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
         session,
         font,
         scene_res: Some(scene_res),
-        window: None,
-        renderer: None,
+        win: EngineWindow::new(),
         font_atlas: None,
         uploaded_vram: None,
         meshes: Vec::new(),
@@ -839,9 +777,6 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
-        started_at: Instant::now(),
-        last_tick: Instant::now(),
-        accumulator: 0.0,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

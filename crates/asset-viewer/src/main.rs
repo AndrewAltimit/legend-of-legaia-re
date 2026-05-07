@@ -37,6 +37,7 @@ use legaia_engine_render::{
     glam::{Mat4, Vec3},
     legaia_tim::Vram,
     text_draws_for,
+    window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_font::Font;
 use legaia_prot::{archive::Archive, cdname};
@@ -1404,8 +1405,7 @@ fn run_world(
             "World — scene '{}' [{} actor(s), tim_count={}]",
             scene_name, actor_count, tim_count
         ),
-        window: None,
-        renderer: None,
+        win: EngineWindow::new(),
         vram_cpu: Some(vram),
         uploaded_vram: None,
         tmd_paths,
@@ -1414,8 +1414,6 @@ fn run_world(
         actor_count,
         with_move_vm,
         scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
-        started_at: Instant::now(),
-        last_tick: Instant::now(),
     };
     event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
@@ -1664,8 +1662,7 @@ fn run_field(
         scene_name: scene_name.to_string(),
         scene_range: (start, end),
         actor_count,
-        window: None,
-        renderer: None,
+        win: EngineWindow::new(),
         font,
         font_atlas: None,
         vram_cpu: Some(vram),
@@ -1676,8 +1673,6 @@ fn run_field(
         scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
         input: InputState::new(),
         last_dt_ms: 16,
-        started_at: Instant::now(),
-        last_tick: Instant::now(),
         event_scripts: event_scripts_summary,
         current_record: initial_record,
         cycle_records,
@@ -1763,8 +1758,7 @@ fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
     let mut app = BattleSceneApp {
         title: format!("Battle scene — {actor_count} actors, queued_action={queued_action}"),
         actor_count,
-        window: None,
-        renderer: None,
+        win: EngineWindow::new(),
         font,
         font_atlas: None,
         vram_cpu: Some(vram),
@@ -1775,8 +1769,6 @@ fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
         scene_aabb: ([-radius, -200.0, -radius], [radius, 600.0, radius]),
         input: InputState::new(),
         last_dt_ms: 16,
-        started_at: Instant::now(),
-        last_tick: Instant::now(),
         battle_stats: BattleSmStats::default(),
         prev_input_pad: 0,
     };
@@ -1802,8 +1794,7 @@ struct BattleSmStats {
 struct BattleSceneApp {
     title: String,
     actor_count: usize,
-    window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    win: EngineWindow,
     font: Font,
     font_atlas: Option<UploadedFontAtlas>,
     vram_cpu: Option<Vram>,
@@ -1814,8 +1805,6 @@ struct BattleSceneApp {
     scene_aabb: ([f32; 3], [f32; 3]),
     input: InputState,
     last_dt_ms: u32,
-    started_at: Instant,
-    last_tick: Instant,
     battle_stats: BattleSmStats,
     /// Pad-mask snapshot from the previous tick — used for edge-trigger
     /// detection on Triangle / Cross.
@@ -1824,7 +1813,7 @@ struct BattleSceneApp {
 
 impl BattleSceneApp {
     fn upload_assets(&mut self) {
-        let Some(r) = &self.renderer else {
+        let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
         for path in &self.tmd_paths {
@@ -1920,27 +1909,14 @@ impl BattleSceneApp {
     }
 
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
-        let (lo, hi) = self.scene_aabb;
-        let center = Vec3::new(
-            0.5 * (lo[0] + hi[0]),
-            0.5 * (lo[1] + hi[1]),
-            0.5 * (lo[2] + hi[2]),
-        );
-        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-        let radius = (0.5 * extent.length()).max(1.0);
-        let distance = radius / (30f32.to_radians().tan()) * 1.6;
-        let angle = self.started_at.elapsed().as_secs_f32() * 0.15;
-        let eye = center
-            + Vec3::new(
-                distance * angle.cos(),
-                -distance * 0.45,
-                distance * angle.sin(),
-            );
-        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-        let near = (distance * 0.05).max(0.1);
-        let far = distance * 4.0 + 1000.0;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
-        proj * view
+        orbit_camera_mvp(
+            self.scene_aabb.0,
+            self.scene_aabb.1,
+            0.15,
+            0.45,
+            self.win.elapsed_secs(),
+            aspect,
+        )
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
@@ -1975,7 +1951,7 @@ impl BattleSceneApp {
             "frame {}   {:>3} fps   t {:.1}s",
             self.world.frame,
             fps,
-            self.started_at.elapsed().as_secs_f32()
+            self.win.elapsed_secs()
         );
         out.extend(text_draws_for(
             &self.font.layout_ascii(&line2),
@@ -2045,45 +2021,17 @@ impl BattleSceneApp {
 
 impl ApplicationHandler for BattleSceneApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if !self.win.open(evl, &self.title) {
             return;
         }
-        let attrs = WindowAttributes::default()
-            .with_title(&self.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
-        let window = match evl.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                log::error!("create_window: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        let size = window.inner_size();
-        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("Renderer::new: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        self.window = Some(window);
-        self.renderer = Some(renderer);
         self.upload_assets();
-        if let Some(w) = &self.window {
-            w.request_redraw();
-        }
+        self.win.request_redraw();
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => evl.exit(),
-            WindowEvent::Resized(size) => {
-                if let Some(r) = self.renderer.as_mut() {
-                    r.resize(size.width, size.height);
-                }
-            }
+            WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -2108,19 +2056,15 @@ impl ApplicationHandler for BattleSceneApp {
                 }
             }
             WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                let dt = now
-                    .duration_since(self.last_tick)
-                    .min(std::time::Duration::from_secs(1));
+                let dt = self.win.advance_tick(1000);
                 self.last_dt_ms = dt.as_millis().min(1000) as u32;
-                self.last_tick = now;
-                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
+                let target_frames = EngineWindow::frames_for(dt, 8);
                 self.handle_edges();
-                for _ in 0..target_frames.min(8) {
+                for _ in 0..target_frames {
                     self.tick_battle_frame();
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
-                    &self.renderer,
+                    self.win.renderer.as_ref(),
                     self.uploaded_vram.as_ref(),
                     self.font_atlas.as_ref(),
                 ) {
@@ -2149,9 +2093,7 @@ impl ApplicationHandler for BattleSceneApp {
                         log::error!("render error: {e:#}");
                     }
                 }
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.win.request_redraw();
             }
             _ => {}
         }
@@ -2189,8 +2131,7 @@ struct FieldApp {
     scene_name: String,
     scene_range: (u32, u32),
     actor_count: usize,
-    window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    win: EngineWindow,
     font: Font,
     font_atlas: Option<UploadedFontAtlas>,
     vram_cpu: Option<Vram>,
@@ -2203,8 +2144,6 @@ struct FieldApp {
     input: InputState,
     /// Last per-frame delta in ms, smoothed for the FPS HUD readout.
     last_dt_ms: u32,
-    started_at: Instant,
-    last_tick: Instant,
     /// Pre-extracted event-script records (one per `EventScripts::record`).
     /// `None` when the scene carries no event-script entry.
     event_scripts: Option<EventScriptSet>,
@@ -2232,7 +2171,7 @@ impl FieldApp {
     /// Upload TMDs as actor meshes plus the shared VRAM and font atlas.
     /// Must be called once a renderer is attached.
     fn upload_assets(&mut self) {
-        let Some(r) = &self.renderer else {
+        let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
         for path in &self.tmd_paths {
@@ -2433,27 +2372,14 @@ impl FieldApp {
     }
 
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
-        let (lo, hi) = self.scene_aabb;
-        let center = Vec3::new(
-            0.5 * (lo[0] + hi[0]),
-            0.5 * (lo[1] + hi[1]),
-            0.5 * (lo[2] + hi[2]),
-        );
-        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-        let radius = (0.5 * extent.length()).max(1.0);
-        let distance = radius / (30f32.to_radians().tan()) * 1.6;
-        let angle = self.started_at.elapsed().as_secs_f32() * 0.25;
-        let eye = center
-            + Vec3::new(
-                distance * angle.cos(),
-                -distance * 0.4,
-                distance * angle.sin(),
-            );
-        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-        let near = (distance * 0.05).max(0.1);
-        let far = distance * 4.0 + 1000.0;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
-        proj * view
+        orbit_camera_mvp(
+            self.scene_aabb.0,
+            self.scene_aabb.1,
+            0.25,
+            0.4,
+            self.win.elapsed_secs(),
+            aspect,
+        )
     }
 
     fn actor_model(&self, slot: usize) -> Mat4 {
@@ -2463,8 +2389,7 @@ impl FieldApp {
             a.move_state.world_y as f32,
             a.move_state.world_z as f32,
         );
-        let spin = self.started_at.elapsed().as_secs_f32() * 0.6
-            + (slot as f32) * std::f32::consts::FRAC_PI_2;
+        let spin = self.win.elapsed_secs() * 0.6 + (slot as f32) * std::f32::consts::FRAC_PI_2;
         Mat4::from_translation(pos)
             * Mat4::from_rotation_y(spin)
             * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
@@ -2493,7 +2418,7 @@ impl FieldApp {
             "frame {}   {:>3} fps   t {:.1}s",
             self.world.frame,
             fps,
-            self.started_at.elapsed().as_secs_f32()
+            self.win.elapsed_secs()
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
@@ -2580,8 +2505,8 @@ impl FieldApp {
         }
         let layout3 = self.font.layout_ascii(&pad_str);
         let (sw, h) = self
-            .renderer
-            .as_ref()
+            .win
+            .renderer()
             .map(|r| r.surface_size())
             .unwrap_or((960, 720));
         out.extend(text_draws_for(
@@ -2634,45 +2559,17 @@ impl FieldApp {
 
 impl ApplicationHandler for FieldApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if !self.win.open(evl, &self.title) {
             return;
         }
-        let attrs = WindowAttributes::default()
-            .with_title(&self.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
-        let window = match evl.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                log::error!("create_window: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        let size = window.inner_size();
-        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("Renderer::new: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        self.window = Some(window);
-        self.renderer = Some(renderer);
         self.upload_assets();
-        if let Some(w) = &self.window {
-            w.request_redraw();
-        }
+        self.win.request_redraw();
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => evl.exit(),
-            WindowEvent::Resized(size) => {
-                if let Some(r) = self.renderer.as_mut() {
-                    r.resize(size.width, size.height);
-                }
-            }
+            WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -2701,14 +2598,10 @@ impl ApplicationHandler for FieldApp {
                 }
             }
             WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                let dt = now
-                    .duration_since(self.last_tick)
-                    .min(std::time::Duration::from_secs(1));
+                let dt = self.win.advance_tick(1000);
                 self.last_dt_ms = dt.as_millis().min(1000) as u32;
-                self.last_tick = now;
-                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
-                for _ in 0..target_frames.min(8) {
+                let target_frames = EngineWindow::frames_for(dt, 8);
+                for _ in 0..target_frames {
                     self.tick_field_frame();
                 }
                 // Cross edge → advance dialog page if the panel is paused.
@@ -2744,7 +2637,7 @@ impl ApplicationHandler for FieldApp {
                     }
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
-                    &self.renderer,
+                    self.win.renderer.as_ref(),
                     self.uploaded_vram.as_ref(),
                     self.font_atlas.as_ref(),
                 ) {
@@ -2773,9 +2666,7 @@ impl ApplicationHandler for FieldApp {
                         log::error!("render error: {e:#}");
                     }
                 }
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.win.request_redraw();
             }
             _ => {}
         }
@@ -2785,8 +2676,7 @@ impl ApplicationHandler for FieldApp {
 /// Multi-actor world viewer state. Owned by the winit event loop.
 struct WorldApp {
     title: String,
-    window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    win: EngineWindow,
     vram_cpu: Option<Vram>,
     uploaded_vram: Option<UploadedVram>,
     tmd_paths: Vec<PathBuf>,
@@ -2796,13 +2686,11 @@ struct WorldApp {
     with_move_vm: bool,
     /// Synthetic AABB enclosing every spawn point — drives the camera.
     scene_aabb: ([f32; 3], [f32; 3]),
-    started_at: Instant,
-    last_tick: Instant,
 }
 
 impl WorldApp {
     fn upload_meshes(&mut self) {
-        let Some(r) = &self.renderer else {
+        let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
         for path in &self.tmd_paths {
@@ -2883,27 +2771,14 @@ impl WorldApp {
 
     /// Compute the camera MVP for this frame. Orbits the scene center.
     fn camera_mvp(&self, aspect: f32) -> Mat4 {
-        let (lo, hi) = self.scene_aabb;
-        let center = Vec3::new(
-            0.5 * (lo[0] + hi[0]),
-            0.5 * (lo[1] + hi[1]),
-            0.5 * (lo[2] + hi[2]),
-        );
-        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-        let radius = (0.5 * extent.length()).max(1.0);
-        let distance = radius / (30f32.to_radians().tan()) * 1.6;
-        let angle = self.started_at.elapsed().as_secs_f32() * 0.25;
-        let eye = center
-            + Vec3::new(
-                distance * angle.cos(),
-                -distance * 0.4,
-                distance * angle.sin(),
-            );
-        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-        let near = (distance * 0.05).max(0.1);
-        let far = distance * 4.0 + 1000.0;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
-        proj * view
+        orbit_camera_mvp(
+            self.scene_aabb.0,
+            self.scene_aabb.1,
+            0.25,
+            0.4,
+            self.win.elapsed_secs(),
+            aspect,
+        )
     }
 
     /// Per-actor model matrix. PSX has Y-down geometry — flip Y in the
@@ -2916,8 +2791,7 @@ impl WorldApp {
             a.move_state.world_z as f32,
         );
         // Slight per-actor spin so individual meshes are visibly animated.
-        let spin = self.started_at.elapsed().as_secs_f32() * 0.6
-            + (slot as f32) * std::f32::consts::FRAC_PI_2;
+        let spin = self.win.elapsed_secs() * 0.6 + (slot as f32) * std::f32::consts::FRAC_PI_2;
         Mat4::from_translation(pos)
             * Mat4::from_rotation_y(spin)
             * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
@@ -2926,45 +2800,17 @@ impl WorldApp {
 
 impl ApplicationHandler for WorldApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if !self.win.open(evl, &self.title) {
             return;
         }
-        let attrs = WindowAttributes::default()
-            .with_title(&self.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
-        let window = match evl.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                log::error!("create_window: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        let size = window.inner_size();
-        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("Renderer::new: {e:#}");
-                evl.exit();
-                return;
-            }
-        };
-        self.window = Some(window);
-        self.renderer = Some(renderer);
         self.upload_meshes();
-        if let Some(w) = &self.window {
-            w.request_redraw();
-        }
+        self.win.request_redraw();
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => evl.exit(),
-            WindowEvent::Resized(size) => {
-                if let Some(r) = self.renderer.as_mut() {
-                    r.resize(size.width, size.height);
-                }
-            }
+            WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -2975,16 +2821,9 @@ impl ApplicationHandler for WorldApp {
                 ..
             } => evl.exit(),
             WindowEvent::RedrawRequested => {
-                // Tick the world at the actual elapsed dt, capped to one
-                // second so a paused window doesn't fast-forward thousands
-                // of frames on resume.
-                let now = Instant::now();
-                let dt = now
-                    .duration_since(self.last_tick)
-                    .min(std::time::Duration::from_secs(1));
-                self.last_tick = now;
-                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
-                for _ in 0..target_frames.min(8) {
+                let dt = self.win.advance_tick(1000);
+                let target_frames = EngineWindow::frames_for(dt, 8);
+                for _ in 0..target_frames {
                     self.world.tick();
                 }
                 // Analytic motion for the demo: gently orbit each actor's
@@ -2992,7 +2831,7 @@ impl ApplicationHandler for WorldApp {
                 // positions through the move bytecode instead, so only
                 // animate analytically when the VM isn't.
                 if !self.with_move_vm {
-                    let t = self.started_at.elapsed().as_secs_f32();
+                    let t = self.win.elapsed_secs();
                     for slot in 0..self.actor_count {
                         let actor = &mut self.world.actors[slot];
                         let theta = (slot as f32) * std::f32::consts::TAU
@@ -3004,7 +2843,9 @@ impl ApplicationHandler for WorldApp {
                         actor.move_state.world_y = (60.0 * (t + slot as f32).sin()) as i16;
                     }
                 }
-                if let (Some(r), Some(vram)) = (&self.renderer, self.uploaded_vram.as_ref()) {
+                if let (Some(r), Some(vram)) =
+                    (self.win.renderer.as_ref(), self.uploaded_vram.as_ref())
+                {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
                     let cam = self.camera_mvp(aspect);
@@ -3028,9 +2869,7 @@ impl ApplicationHandler for WorldApp {
                         log::error!("render error: {e:#}");
                     }
                 }
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.win.request_redraw();
             }
             _ => {}
         }
