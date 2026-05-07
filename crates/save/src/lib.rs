@@ -42,6 +42,7 @@
 
 pub mod card;
 pub mod character;
+pub mod ext;
 
 pub use card::{
     BLOCK_SIZE, CARD_MAGIC, CARD_SIZE, DIR_FRAMES, DirEntry, SAVE_BLOCK_MAGIC, SaveBlock,
@@ -51,3 +52,4 @@ pub use character::{
     ABILITY_BITS_LEN, CHARACTER_RECORD_SIZE, CharacterRecord, EquipmentSlots, HpMpSp, MAX_SPELLS,
     Party, SpellList,
 };
+pub use ext::{SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SaveExt, SaveFile};

@@ -23,5 +23,6 @@ legaia-vab = { path = "../vab" }
 legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
 legaia-font = { path = "../font" }
+legaia-mdec = { path = "../mdec" }
 glam.workspace = true
 winit = "0.30"

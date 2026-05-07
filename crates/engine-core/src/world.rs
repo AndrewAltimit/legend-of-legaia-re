@@ -654,6 +654,44 @@ impl World {
         self.roster.clone()
     }
 
+    /// Capture the complete engine state (party + globals) into a [`legaia_save::SaveFile`].
+    ///
+    /// Pairs with [`World::load_full`]. Use this instead of [`World::save_party`] when
+    /// you need `story_flags`, `money`, and `inventory` to survive a save/load cycle.
+    pub fn save_full(&mut self) -> legaia_save::SaveFile {
+        let party = self.save_party();
+        let mut inventory: Vec<(u8, u8)> = self
+            .inventory
+            .iter()
+            .map(|(&id, &count)| (id, count))
+            .collect();
+        inventory.sort_by_key(|&(id, _)| id);
+        legaia_save::SaveFile {
+            party,
+            ext: legaia_save::SaveExt {
+                story_flags: self.story_flags,
+                money: self.money,
+                inventory,
+            },
+        }
+    }
+
+    /// Restore engine state from a [`legaia_save::SaveFile`] produced by [`World::save_full`].
+    ///
+    /// Party records are applied through [`World::load_party`]; globals overwrite the
+    /// current `story_flags`, `money`, and `inventory`.
+    pub fn load_full(&mut self, sf: legaia_save::SaveFile) {
+        self.load_party(sf.party);
+        self.story_flags = sf.ext.story_flags;
+        self.money = sf.ext.money;
+        self.inventory.clear();
+        for (id, count) in sf.ext.inventory {
+            if count > 0 {
+                self.inventory.insert(id, count);
+            }
+        }
+    }
+
     /// Activate a slot and return a mutable reference to the actor.
     pub fn spawn_actor(&mut self, slot: usize) -> &mut Actor {
         let a = &mut self.actors[slot];
@@ -2151,6 +2189,53 @@ mod tests {
         let mut world = World::new();
         world.load_party(many);
         assert_eq!(world.party_count, MAX_ACTORS as u8);
+    }
+
+    #[test]
+    fn save_full_round_trips_globals() {
+        let mut world = World::new();
+        world.load_party(legaia_save::Party::zeroed(2));
+        world.story_flags = 0xCAFE_F00D;
+        world.money = 54321;
+        world.inventory.insert(3, 9);
+        world.inventory.insert(77, 1);
+
+        let sf = world.save_full();
+        assert_eq!(sf.ext.story_flags, 0xCAFE_F00D);
+        assert_eq!(sf.ext.money, 54321);
+        // inventory is sorted by item_id
+        assert_eq!(sf.ext.inventory, vec![(3, 9), (77, 1)]);
+
+        let bytes = sf.write();
+        let parsed = legaia_save::SaveFile::parse(&bytes).unwrap();
+
+        let mut world2 = World::new();
+        world2.load_full(parsed);
+        assert_eq!(world2.story_flags, 0xCAFE_F00D);
+        assert_eq!(world2.money, 54321);
+        assert_eq!(world2.inventory.get(&3), Some(&9));
+        assert_eq!(world2.inventory.get(&77), Some(&1));
+        assert_eq!(world2.party_count, 2);
+    }
+
+    #[test]
+    fn load_full_clears_old_inventory() {
+        let mut world = World::new();
+        world.inventory.insert(1, 10);
+        world.inventory.insert(2, 20);
+
+        let sf = legaia_save::SaveFile {
+            party: legaia_save::Party::zeroed(1),
+            ext: legaia_save::SaveExt {
+                story_flags: 1,
+                money: 0,
+                inventory: vec![(5, 3)],
+            },
+        };
+        world.load_full(sf);
+        assert!(!world.inventory.contains_key(&1));
+        assert!(!world.inventory.contains_key(&2));
+        assert_eq!(world.inventory.get(&5), Some(&3));
     }
 
     #[test]

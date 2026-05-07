@@ -141,25 +141,33 @@ impl MenuRuntime {
         self.save_dir.join(format!("slot_{slot:02}.{SAVE_EXT}"))
     }
 
-    /// Serialise the world's party to slot `slot` on disk.
+    /// Serialise the world's party and global state to slot `slot` on disk.
+    ///
+    /// Writes an `LGSF v1` file that includes `story_flags`, `money`, and
+    /// `inventory` alongside the party records — use [`MenuRuntime::load_from_slot`]
+    /// to restore. Old slot files (party-only format) are still loadable.
     pub fn save_to_slot(&self, world: &mut World, slot: u8) -> Result<PathBuf> {
         std::fs::create_dir_all(&self.save_dir)
             .with_context(|| format!("create save dir {}", self.save_dir.display()))?;
         let path = self.slot_path(slot);
-        let bytes = world.save_party().write();
+        let bytes = world.save_full().write();
         std::fs::write(&path, &bytes)
             .with_context(|| format!("write save slot {} to {}", slot, path.display()))?;
         Ok(path)
     }
 
-    /// Load slot `slot` from disk into the world's roster.
+    /// Load slot `slot` from disk into the world's roster and global state.
+    ///
+    /// Accepts both `LGSF v1` (full save with globals) and the legacy party-only
+    /// format written by older builds. In the legacy case `story_flags`, `money`,
+    /// and `inventory` are left at their current values.
     pub fn load_from_slot(&self, world: &mut World, slot: u8) -> Result<PathBuf> {
         let path = self.slot_path(slot);
         let bytes = std::fs::read(&path)
             .with_context(|| format!("read save slot {} from {}", slot, path.display()))?;
-        let party = Party::parse(&bytes)
+        let sf = legaia_save::SaveFile::parse(&bytes)
             .with_context(|| format!("parse save slot {} ({} bytes)", slot, bytes.len()))?;
-        world.load_party(party);
+        world.load_full(sf);
         Ok(path)
     }
 

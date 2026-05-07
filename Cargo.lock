@@ -1271,6 +1271,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-render",
  "legaia-font",
+ "legaia-mdec",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
@@ -1326,6 +1327,14 @@ dependencies = [
 
 [[package]]
 name = "legaia-lzs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+]
+
+[[package]]
+name = "legaia-mdec"
 version = "0.1.0"
 dependencies = [
  "anyhow",

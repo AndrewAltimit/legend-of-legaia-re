@@ -122,6 +122,24 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         no_audio: bool,
     },
+    /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
+    /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
+    /// video frames are rendered fullscreen at ~15 FPS (one frame per tick).
+    ///
+    /// Accepts raw STR data files written by `legaia-extract` or extracted
+    /// directly from Mode 2 Form 1 CD sectors.  The Legaia-specific mapping
+    /// from PROT entry to STR data is not yet traced; supply a raw file path.
+    PlayStr {
+        /// Path to a raw STR file (2048-byte sectors, no subheaders).
+        #[arg()]
+        str_file: PathBuf,
+        /// Window width.
+        #[arg(long, default_value_t = 640)]
+        width: u32,
+        /// Window height.
+        #[arg(long, default_value_t = 480)]
+        height: u32,
+    },
     /// Show or update the keyboard-to-pad-button input mapping.
     Config {
         #[command(subcommand)]
@@ -178,6 +196,11 @@ fn main() -> Result<()> {
             party_size,
         } => cmd_save(&extracted_root, &save_dir, slot, party_size),
         Cmd::Load { save_dir, slot } => cmd_load(&save_dir, slot),
+        Cmd::PlayStr {
+            str_file,
+            width,
+            height,
+        } => cmd_play_str(&str_file, width, height),
         Cmd::Config { cmd } => cmd_config(cmd),
     }
 }
@@ -343,9 +366,20 @@ fn cmd_save(
     let mut world = World::default();
     let members = (0..party_size).map(|_| CharacterRecord::zeroed()).collect();
     world.load_party(Party { members });
+    world.story_flags = 0;
+    world.money = 0;
     let runtime = MenuRuntime::new(save_dir.to_path_buf());
     let path = runtime.save_to_slot(&mut world, slot)?;
-    println!("saved slot {} to {}", slot, path.display());
+    let sf = world.save_full();
+    println!(
+        "saved slot {} to {} (party={}, story_flags={:#010X}, money={}, inventory={})",
+        slot,
+        path.display(),
+        sf.party.members.len(),
+        sf.ext.story_flags,
+        sf.ext.money,
+        sf.ext.inventory.len()
+    );
     Ok(())
 }
 
@@ -357,9 +391,13 @@ fn cmd_load(save_dir: &std::path::Path, slot: u8) -> Result<()> {
     let mut world = World::default();
     let path = runtime.load_from_slot(&mut world, slot)?;
     println!(
-        "loaded slot {} from {} ({} actors active)",
+        "loaded slot {} from {} (party={}, story_flags={:#010X}, money={}, inventory={}, actors={})",
         slot,
         path.display(),
+        world.roster.members.len(),
+        world.story_flags,
+        world.money,
+        world.inventory.len(),
         world.actors.iter().filter(|a| a.active).count()
     );
     Ok(())
@@ -782,4 +820,109 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
+}
+
+// ── STR video player ────────────────────────────────────────────────────────
+
+fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()> {
+    use legaia_mdec::{MdecDecoder, VideoFrame, str_sector::StrFrameAssembler};
+
+    let data = std::fs::read(str_file).with_context(|| format!("read {}", str_file.display()))?;
+    if data.len() % 2048 != 0 {
+        log::warn!(
+            "play-str: file size {} is not a multiple of 2048",
+            data.len()
+        );
+    }
+    let n_sectors = data.len() / 2048;
+
+    // Pre-decode all frames into RGBA buffers.
+    let mut asm = StrFrameAssembler::new();
+    let mut frames: Vec<VideoFrame> = Vec::new();
+    for i in 0..n_sectors {
+        let sector = &data[i * 2048..(i + 1) * 2048];
+        if let Some((hdr, bs)) = asm.push_sector(sector)? {
+            let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
+            match dec.decode_frame(&bs) {
+                Ok(rgba) => frames.push(VideoFrame {
+                    rgba,
+                    width: hdr.width as u32,
+                    height: hdr.height as u32,
+                    frame_number: hdr.frame_number as u32,
+                }),
+                Err(e) => log::warn!("frame {}: decode error: {e}", hdr.frame_number),
+            }
+        }
+    }
+    if frames.is_empty() {
+        anyhow::bail!("no video frames found in {}", str_file.display());
+    }
+    println!(
+        "play-str: {} frames, {}×{}",
+        frames.len(),
+        frames[0].width,
+        frames[0].height
+    );
+
+    let mut app = StrPlayerApp {
+        win: EngineWindow::new(),
+        frames,
+        frame_idx: 0,
+        uploaded: None,
+    };
+    let event_loop = EventLoop::new().context("create event loop")?;
+    event_loop.run_app(&mut app).context("event loop")?;
+    Ok(())
+}
+
+struct StrPlayerApp {
+    win: EngineWindow,
+    frames: Vec<legaia_mdec::VideoFrame>,
+    frame_idx: usize,
+    uploaded: Option<legaia_engine_render::UploadedTexture>,
+}
+
+impl ApplicationHandler for StrPlayerApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.win.open(event_loop, "legaia-engine play-str");
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        ..
+                    },
+                ..
+            } => event_loop.exit(),
+            WindowEvent::Resized(size) => {
+                self.win.handle_resize(size.width, size.height);
+            }
+            WindowEvent::RedrawRequested => {
+                if let Some(renderer) = self.win.renderer() {
+                    if self.frame_idx < self.frames.len() {
+                        let f = &self.frames[self.frame_idx];
+                        match renderer.upload_texture(&f.rgba, f.width, f.height) {
+                            Ok(tex) => {
+                                self.uploaded = Some(tex);
+                            }
+                            Err(e) => log::warn!("upload: {e}"),
+                        }
+                        self.frame_idx += 1;
+                    }
+                    if let Some(tex) = &self.uploaded {
+                        let _ = renderer.render(RenderTarget::Texture(tex));
+                    } else {
+                        let _ = renderer.render(RenderTarget::Clear);
+                    }
+                }
+                self.win.request_redraw();
+            }
+            _ => {}
+        }
+    }
 }
