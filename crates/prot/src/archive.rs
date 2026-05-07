@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use anyhow::{Result, bail};
@@ -23,8 +22,11 @@ pub struct Entry {
     pub size_bytes: u64,
 }
 
+trait ReadSeek: Read + Seek + Send {}
+impl<T: Read + Seek + Send> ReadSeek for T {}
+
 pub struct Archive {
-    file: File,
+    reader: Box<dyn ReadSeek>,
     file_len: u64,
     pub header: Header,
     pub toc: Vec<u32>,
@@ -33,17 +35,27 @@ pub struct Archive {
 
 impl Archive {
     pub fn open(path: &Path) -> Result<Self> {
-        let mut file = File::open(path)?;
+        use std::fs::File;
+        let file = File::open(path)?;
         let file_len = file.metadata()?.len();
+        Self::from_reader(Box::new(file), file_len)
+    }
 
-        let header = detect_header(&mut file, file_len)?;
+    /// Parse an in-memory PROT.DAT image (WASM-safe; no filesystem access).
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
+        let file_len = bytes.len() as u64;
+        Self::from_reader(Box::new(Cursor::new(bytes)), file_len)
+    }
+
+    fn from_reader(mut reader: Box<dyn ReadSeek>, file_len: u64) -> Result<Self> {
+        let header = detect_header(reader.as_mut(), file_len)?;
 
         let toc_start = header.header_offset + 0x08;
         let toc_end = header.header_offset + (header.header_sectors as u64) * (SECTOR as u64);
         let toc_bytes = (toc_end - toc_start) as usize;
         let mut buf = vec![0u8; toc_bytes];
-        file.seek(SeekFrom::Start(toc_start))?;
-        file.read_exact(&mut buf)?;
+        reader.seek(SeekFrom::Start(toc_start))?;
+        reader.read_exact(&mut buf)?;
         let toc: Vec<u32> = buf
             .chunks_exact(4)
             .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
@@ -85,7 +97,7 @@ impl Archive {
         }
 
         Ok(Self {
-            file,
+            reader,
             file_len,
             header,
             toc,
@@ -100,20 +112,20 @@ impl Archive {
     pub fn read_entry(&mut self, entry: &Entry, out: &mut Vec<u8>) -> Result<()> {
         out.clear();
         out.resize(entry.size_bytes as usize, 0);
-        self.file.seek(SeekFrom::Start(entry.byte_offset))?;
-        self.file.read_exact(out)?;
+        self.reader.seek(SeekFrom::Start(entry.byte_offset))?;
+        self.reader.read_exact(out)?;
         Ok(())
     }
 }
 
-fn detect_header(file: &mut File, len: u64) -> Result<Header> {
+fn detect_header(reader: &mut dyn ReadSeek, len: u64) -> Result<Header> {
     for &off in &[0x000u64, 0x800u64] {
         if off + 12 > len {
             continue;
         }
-        file.seek(SeekFrom::Start(off))?;
+        reader.seek(SeekFrom::Start(off))?;
         let mut buf = [0u8; 12];
-        file.read_exact(&mut buf)?;
+        reader.read_exact(&mut buf)?;
         let file_num_minus_1 = i32::from_le_bytes(buf[4..8].try_into().unwrap());
         let header_sectors = i32::from_le_bytes(buf[8..12].try_into().unwrap());
         if file_num_minus_1 <= 0 || header_sectors <= 0 {

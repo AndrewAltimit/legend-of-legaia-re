@@ -7,6 +7,11 @@ pub type IndexMap = BTreeMap<u32, String>;
 
 pub fn parse(path: &Path) -> Result<IndexMap> {
     let text = std::fs::read_to_string(path)?;
+    parse_str(&text)
+}
+
+/// Parse a CDNAME map from a string slice (useful for in-memory / WASM usage).
+pub fn parse_str(text: &str) -> Result<IndexMap> {
     let mut out = IndexMap::new();
     for line in text.lines() {
         let line = line.trim();

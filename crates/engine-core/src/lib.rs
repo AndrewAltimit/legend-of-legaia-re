@@ -85,6 +85,54 @@ impl Vfs for DirVfs {
     }
 }
 
+/// In-memory Vfs backed by a `HashMap`. Useful for tests and WASM targets
+/// where no real filesystem is available.
+pub struct MemoryVfs {
+    files: std::collections::HashMap<String, Vec<u8>>,
+}
+
+impl MemoryVfs {
+    pub fn new() -> Self {
+        Self {
+            files: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, name: impl Into<String>, bytes: Vec<u8>) {
+        self.files.insert(name.into(), bytes);
+    }
+}
+
+impl Default for MemoryVfs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Vfs for MemoryVfs {
+    fn read(&self, name: &str) -> Result<Vec<u8>> {
+        self.files
+            .get(name)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("MemoryVfs: '{}' not found", name))
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        let mut out: Vec<String> = self
+            .files
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
+    fn exists(&self, name: &str) -> bool {
+        self.files.contains_key(name)
+    }
+}
+
 /// Trivial bytes cache keyed by Vfs name.
 ///
 /// Lives behind a Mutex so it can be shared across loader threads later. The

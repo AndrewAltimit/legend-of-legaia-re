@@ -69,6 +69,22 @@ impl ProtIndex {
         })
     }
 
+    /// Build an index from raw in-memory PROT.DAT bytes. WASM-safe — no
+    /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
+    /// available as a string; omit to skip scene-name resolution.
+    pub fn from_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
+        let archive = Archive::from_bytes(prot_bytes).context("parse in-memory PROT.DAT")?;
+        let entries = archive.entries.clone();
+        let cdname = cdname_text.map(cdname::parse_str).transpose()?;
+        Ok(Self {
+            archive: Mutex::new(archive),
+            entries,
+            cdname,
+            entry_cache: Mutex::new(HashMap::new()),
+            class_cache: Mutex::new(HashMap::new()),
+        })
+    }
+
     /// Total PROT entry count (typically 1232 in retail).
     pub fn entry_count(&self) -> usize {
         self.entries.len()
@@ -414,6 +430,14 @@ impl SceneHost {
     /// Open the host directly from an extracted directory.
     pub fn open_extracted(extracted_root: impl AsRef<Path>) -> Result<Self> {
         let p = ProtIndex::open_extracted(extracted_root.as_ref())?;
+        Ok(Self::new(Arc::new(p)))
+    }
+
+    /// Build a host from raw in-memory PROT.DAT bytes. WASM-safe — no
+    /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
+    /// available; omit to skip scene-name resolution.
+    pub fn from_prot_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
+        let p = ProtIndex::from_bytes(prot_bytes, cdname_text)?;
         Ok(Self::new(Arc::new(p)))
     }
 
