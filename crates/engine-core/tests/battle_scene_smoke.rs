@@ -121,6 +121,7 @@ fn battle_turn_emits_events_into_pending_queue() {
                 BattleEvent::RampBrightness { .. } => "RampBrightness",
                 BattleEvent::BattleEnd { .. } => "BattleEnd",
                 BattleEvent::TacticalArtLearned { .. } => "TacticalArtLearned",
+                BattleEvent::LevelUp { .. } => "LevelUp",
             };
             if !event_kinds.contains(&kind) {
                 event_kinds.push(kind);

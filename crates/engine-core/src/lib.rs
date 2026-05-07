@@ -9,13 +9,16 @@ pub mod battle_events;
 pub mod camera;
 pub mod dialog;
 pub mod field_events;
+pub mod inn;
 pub mod input;
+pub mod levelup;
 pub mod menu_runtime;
 pub mod mode;
 pub mod scene;
 pub mod scene_assets;
 pub mod scene_bundle;
 pub mod scene_resources;
+pub mod shop;
 pub mod tactical_arts;
 pub mod world;
 

@@ -63,6 +63,15 @@ pub enum BattleEvent {
     /// HUD banner; the art is already marked learned in
     /// `World::tactical_arts` when this fires.
     TacticalArtLearned { char_id: u8, art_id: u8 },
+    /// `World::apply_battle_xp` — a character's XP crossed a level threshold.
+    /// HP/MP maxima have already been bumped in the roster record and the live
+    /// `BattleActor` mirror when this fires.
+    LevelUp {
+        char_id: u8,
+        new_level: u8,
+        hp_gained: u16,
+        mp_gained: u16,
+    },
 }
 
 impl BattleEvent {
@@ -102,6 +111,14 @@ impl BattleEvent {
             BattleEvent::BattleEnd { cause } => format!("BattleEnd({cause:?})"),
             BattleEvent::TacticalArtLearned { char_id, art_id } => {
                 format!("TacticalArtLearned(char={char_id}, art={art_id})")
+            }
+            BattleEvent::LevelUp {
+                char_id,
+                new_level,
+                hp_gained,
+                mp_gained,
+            } => {
+                format!("LevelUp(char={char_id}, lv={new_level}, +{hp_gained}hp, +{mp_gained}mp)")
             }
         }
     }
@@ -194,6 +211,12 @@ mod tests {
             BattleEvent::TacticalArtLearned {
                 char_id: 0,
                 art_id: 1,
+            },
+            BattleEvent::LevelUp {
+                char_id: 0,
+                new_level: 2,
+                hp_gained: 10,
+                mp_gained: 5,
             },
         ];
         for e in events {

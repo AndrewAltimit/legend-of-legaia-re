@@ -20,6 +20,7 @@
 
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
+use crate::levelup::{LevelUpResult, LevelUpTracker};
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 pub use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_vm as vm;
@@ -392,6 +393,11 @@ pub struct World {
     /// `None` when no banner is active. Engines render this as a dialog-
     /// font overlay above the battle HUD.
     pub current_art_banner: Option<ArtLearnedBanner>,
+
+    /// Per-party XP accumulator and level state. Engines call
+    /// [`World::apply_battle_xp`] after a `BattleEndCause::MonsterWipe` to
+    /// distribute XP and check for level-ups.
+    pub level_up_tracker: LevelUpTracker,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -482,6 +488,7 @@ impl World {
             move_outcomes: Vec::new(),
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
+            level_up_tracker: LevelUpTracker::new(),
         }
     }
 
@@ -497,6 +504,44 @@ impl World {
     /// Returns events in emission order.
     pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
         std::mem::take(&mut self.pending_battle_events)
+    }
+
+    /// Distribute `xp_reward` to every active party member after a
+    /// `BattleEndCause::MonsterWipe`. For each member that crosses a level
+    /// threshold, bumps the roster record's HP/MP maxima, resyncs the live
+    /// `BattleActor` mirror, pushes a [`BattleEvent::LevelUp`], and appends
+    /// a [`LevelUpResult`] to the returned vec.
+    ///
+    /// Engines call this once per battle win with the monster group's total
+    /// XP reward. The XP amount is the same for every party member (Legaia's
+    /// retail formula; per-character splitting can be layered on top once the
+    /// overlay is captured).
+    pub fn apply_battle_xp(&mut self, xp_reward: u32) -> Vec<LevelUpResult> {
+        let party_count = self.party_count as usize;
+        let mut results = Vec::new();
+        for char_id in 0..party_count as u8 {
+            let Some(result) = self.level_up_tracker.grant_xp(char_id, xp_reward) else {
+                continue;
+            };
+            let slot = char_id as usize;
+            if let Some(rec) = self.roster.members.get_mut(slot) {
+                LevelUpTracker::apply_to_record(&result, rec);
+            }
+            let new_hms = self.roster.members.get(slot).map(|r| r.hp_mp_sp());
+            if let (Some(actor), Some(hms)) = (self.actors.get_mut(slot), new_hms) {
+                actor.battle.max_hp = hms.hp_max;
+                actor.battle.hp = hms.hp_cur;
+                actor.battle.mp = hms.mp_cur;
+            }
+            self.pending_battle_events.push(BattleEvent::LevelUp {
+                char_id,
+                new_level: result.new_level,
+                hp_gained: result.hp_gained,
+                mp_gained: result.mp_gained,
+            });
+            results.push(result);
+        }
+        results
     }
 
     /// Record one use of `art_id` by `char_id` (roster index).

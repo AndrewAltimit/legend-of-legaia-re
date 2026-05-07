@@ -20,6 +20,8 @@ use anyhow::{Context, Result};
 use legaia_engine_vm::menu::{MenuCtx, MenuHost, MenuInput, MenuState, open, step};
 use legaia_save::{EquipmentSlots, Party, SpellList};
 
+use crate::inn::InnSession;
+use crate::shop::ShopSession;
 use crate::world::World;
 
 /// File extension the runtime uses for save slots. PSX memory-card `.mcr`
@@ -71,6 +73,12 @@ pub struct MenuRuntime {
     /// sub-screen (StatusEquipment / StatusMagic / StatusTacticalArts).
     /// Updated by `commit(StatusCharacter, slot)`.
     pub selected_char: usize,
+    /// Active shop session. Set via [`MenuRuntime::open_shop`] before
+    /// entering `ShopBuy`; cleared on `ShopExit` commit.
+    pub shop_session: Option<ShopSession>,
+    /// Active inn session. Set via [`MenuRuntime::open_inn`] before
+    /// entering `InnConfirm`; cleared after the player confirms or cancels.
+    pub inn_session: Option<InnSession>,
     /// Pending operation flagged by the host hooks; consumed inside
     /// [`MenuRuntime::tick`].
     pending: Option<PendingOp>,
@@ -89,8 +97,22 @@ impl MenuRuntime {
             save_dir: save_dir.into(),
             slot_count: 3,
             selected_char: 0,
+            shop_session: None,
+            inn_session: None,
             pending: None,
         }
+    }
+
+    /// Install a shop session and prepare for `ShopBuy` entry. Engines call
+    /// this when the field VM triggers a shop transition.
+    pub fn open_shop(&mut self, session: ShopSession) {
+        self.shop_session = Some(session);
+    }
+
+    /// Install an inn session and prepare for `InnConfirm` entry. `cost` is
+    /// the gold required for a rest at this inn.
+    pub fn open_inn(&mut self, cost: u32) {
+        self.inn_session = Some(InnSession::new(cost));
     }
 
     /// Open the menu (entry-point — typically called when the field VM
@@ -112,6 +134,8 @@ impl MenuRuntime {
             slot_count: self.slot_count,
             pending: &mut self.pending,
             selected_char: &mut self.selected_char,
+            shop_session: &mut self.shop_session,
+            inn_session: &mut self.inn_session,
         };
         step(&mut host, &mut self.ctx, input);
 
@@ -268,6 +292,8 @@ struct MenuRuntimeHost<'a> {
     slot_count: u8,
     pending: &'a mut Option<PendingOp>,
     selected_char: &'a mut usize,
+    shop_session: &'a mut Option<ShopSession>,
+    inn_session: &'a mut Option<InnSession>,
 }
 
 impl<'a> MenuHost for MenuRuntimeHost<'a> {
@@ -279,7 +305,20 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             }
             MenuState::StatusEquipment => 8,
             MenuState::SavePickSlot | MenuState::LoadSlot => self.slot_count.max(1),
-            MenuState::ShopBuy | MenuState::ShopSell => 8,
+            MenuState::ShopBuy => self
+                .shop_session
+                .as_ref()
+                .map(|s| s.buy_item_count().max(1))
+                .unwrap_or(8),
+            MenuState::ShopSell => self
+                .world
+                .inventory
+                .values()
+                .filter(|c| **c > 0)
+                .count()
+                .min(u8::MAX as usize) as u8,
+            MenuState::ShopQuantity => 9, // quantities 1..=9 (cursor + 1)
+            MenuState::ShopConfirm | MenuState::InnConfirm => 2, // slot 0 = yes, 1 = no/cancel
             MenuState::StatusInventory => self
                 .world
                 .inventory
@@ -329,6 +368,99 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                         self.world.inventory.remove(&item_id);
                     }
                 }
+            }
+            // --- Shop states ---
+            MenuState::ShopBuy => {
+                if let Some(session) = self.shop_session.as_mut() {
+                    session.select_buy_item(slot as usize);
+                }
+            }
+            MenuState::ShopSell => {
+                let sell_items: Vec<(u8, u8)> = {
+                    let mut v: Vec<(u8, u8)> = self
+                        .world
+                        .inventory
+                        .iter()
+                        .filter(|(_, c)| **c > 0)
+                        .map(|(id, c)| (*id, *c))
+                        .collect();
+                    v.sort_by_key(|&(id, _)| id);
+                    v
+                };
+                if let Some(session) = self.shop_session.as_mut() {
+                    session.select_sell_item(slot as usize, &sell_items);
+                }
+            }
+            MenuState::ShopQuantity => {
+                if let Some(session) = self.shop_session.as_mut() {
+                    session.set_quantity(slot);
+                }
+            }
+            // slot 0 = confirm; slot 1 = cancel (falls through to _ => {})
+            MenuState::ShopConfirm if slot == 0 => {
+                if let Some(session) = self.shop_session.as_ref() {
+                    if session.pending_is_buying {
+                        if let Some((item_id, qty, delta)) = session.try_buy(self.world.money) {
+                            self.world.money = (self.world.money + delta).clamp(0, 9_999_999);
+                            let count = self.world.inventory.entry(item_id).or_insert(0);
+                            *count = count.saturating_add(qty);
+                        }
+                    } else if let Some(item_id) = session.pending_item_id {
+                        let held = self.world.inventory.get(&item_id).copied().unwrap_or(0);
+                        if let Some((item_id, qty, delta)) = session.try_sell(held) {
+                            self.world.money = (self.world.money + delta).clamp(0, 9_999_999);
+                            let entry = self.world.inventory.entry(item_id).or_insert(0);
+                            *entry = entry.saturating_sub(qty);
+                            if *entry == 0 {
+                                self.world.inventory.remove(&item_id);
+                            }
+                        }
+                    }
+                }
+            }
+            MenuState::ShopExit => {
+                *self.shop_session = None;
+            }
+            // --- Inn states ---
+            MenuState::InnConfirm => {
+                if slot == 0 {
+                    // slot 0 = yes; slot 1 = no
+                    let can = self
+                        .inn_session
+                        .as_ref()
+                        .is_some_and(|s| s.can_afford(self.world.money));
+                    if can {
+                        let cost = self.inn_session.as_ref().unwrap().cost as i32;
+                        self.world.money -= cost;
+                        // Restore HP/MP for all active party members.
+                        let party_count = self.world.party_count as usize;
+                        for i in 0..party_count {
+                            let max_hp = self
+                                .world
+                                .actors
+                                .get(i)
+                                .map(|a| a.battle.max_hp)
+                                .unwrap_or(0);
+                            let mp_max = self
+                                .world
+                                .roster
+                                .members
+                                .get(i)
+                                .map(|r| r.hp_mp_sp().mp_max)
+                                .unwrap_or(0);
+                            if let Some(actor) = self.world.actors.get_mut(i)
+                                && actor.active
+                            {
+                                actor.battle.hp = max_hp;
+                                actor.battle.mp = mp_max;
+                            }
+                        }
+                        // Sync restored values back to roster records.
+                        self.world.save_party();
+                    }
+                }
+                // Clear session regardless of yes/no.
+                *self.inn_session = None;
             }
             _ => {}
         }
