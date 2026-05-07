@@ -71,6 +71,29 @@ sub-op 3 plays a 3D animation by indexing into an ANM container and
 handing the entry to `func_0x800252EC`. That sibling path lands the same
 `actor[+0x4C]` slot the actor tick consumes.
 
+## Non-keyframe records
+
+Records whose body size is not a multiple of 32 don't fit the opcode-6
+keyframe layout. Two structural sub-classes:
+
+| Body | Sub-class | Notes |
+|---|---|---|
+| 0 bytes | Empty / stub | Placeholder slot; the actor tick skips it |
+| Not a multiple of 32 | Irregular body | Opcode-specific layout; interpreter unknown |
+
+Use `anm scan-non-keyframe 'extracted/PROT/*.BIN' --histogram` to surface
+these across the corpus. The subcommand silently skips non-ANM files (safe
+to glob), and `--histogram` prints the top-8 byte distribution per record
+to help fingerprint the layout.
+
+The per-frame interpreter for non-opcode-6 records is **overlay-resident**.
+`FUN_80024CFC` only primes the actor (`actor[+0x4C]` = record pointer,
+`actor[+0x56] = 0xB`); the actual opcode dispatch lives in whichever
+overlay is resident when `FUN_80021DF4` (actor tick) reads
+`actor[+0x5A]` and branches on the opcode byte. Capture an overlay where
+ANM scripts run (field overlay or battle overlay) and grep for reads of
+`actor[+0x4C]` to locate the non-opcode-6 interpreter.
+
 ## Allocator preamble
 
 When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd

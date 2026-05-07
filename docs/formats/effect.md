@@ -77,18 +77,19 @@ Each **pack0 entry** is a frame-batch animation record:
 Each **pack1 entry** is an effect-ID script:
 
 ```
-+0   u8  instruction_count   ← N
-+1   u8  flags               (bit 0 = X-mirror, bit 1 = Y-mirror)
-+2   u8  ?
-+3   u8  ?
-+4   [N × 14-byte instructions]
-   each instruction:
-    +0  u8   pack0_anim_index
-    +2  u16  base angle (sub-frames)
-    +4  u16  ?
-    +6  u16  randomization range (signed mod range)
-    +8..+13  velocity / lifetime deltas
++0   u8   child_count         ← N — number of child sprites to spawn
++1   u8   flags               (bit 0 = use random child distribution)
++2   u16  spread              ← half-range modulo for random child position (signed 8.8 fixed)
++4   [N × 14-byte child sprite descriptors]
+   each descriptor (retail offsets from the per-frame walker):
+    +0x00  u16  sprite_id     ← indexes pack0; copied to master slot on spawn
+    +0x02  i16  width         ← half-width of random X distribution (8.8 fixed)
+    +0x04  u16  anim_flags    ← animation / shading flags read by the per-frame walker
+    +0x06  i16  depth         ← half-width of random Z distribution (8.8 fixed)
+    +0x08  u8[6] tail         ← animation curves / sound-id / timing (per-frame walker only)
 ```
+
+The retail random-distribution loop (`FUN_801E0088` pass 1) reads only `+0x02` (width) and `+0x06` (depth) per child — those two govern where a child sprite spawns relative to the effect origin. `anim_flags` and `tail` are consumed later by the per-frame walker when advancing a live child slot's animation state.
 
 A live `0873_befect_data` sample carries 14 entries in pack0 and 33 entries in pack1. Inline sprite atlas entries (between `buffer+8` and pack0) decode as `(u16 u, u16 v, u16 page_descriptor, u8 clut, u8 ?)` — standard PSX sprite UV packets.
 

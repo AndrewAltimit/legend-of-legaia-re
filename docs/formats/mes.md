@@ -11,6 +11,39 @@ Container format for Legaia's dialog text. Two on-disc variants share an offset 
 
 Both share a header → offset table → bytecode body shape.
 
+### Compact variant — fixed header layout
+
+```
++0x00   u32 LE = 0x00000404       ; magic
++0x04   ...                        ; unused padding (0x24 bytes)
++0x28   u32  back_ptr             ; runtime pointer (patched on load)
++0x2C   u32  forward_ptr          ; runtime pointer
++0x30   u32  expanded_size        ; byte count of the expanded blob
++0x34   u32  count                ; number of messages in the offset table
++0x38   i16[8]                    ; per-line metrics array (16 bytes)
++0x48   ...                        ; additional header fields (16 bytes)
++0x58   u16  ?                    ; pre-table header word
++0x5A   u32  ?                    ; pre-table header dword
++0x5E   u16  ?                    ; pre-table header word
++0x60   u16  ?                    ; pre-table header word
++0x62   u24 LE [N]                ; offset table — 3 bytes per entry, up to 0x56 entries
+...
++0xC8   bytecode region starts here
+```
+
+`count` gives the number of messages; the offset table spans `0x62..0xC8`
+(maximal extent = 0x56 u24 entries = 86 messages at this point in the structure).
+Each offset is a byte offset from `0xC8` to the start of that message's bytecode.
+
+### Records variant
+
+The Records format has no fixed header. The parser identifies record boundaries
+by scanning for recurring `0x44 0x78` marker pairs (at least 4 hits required).
+Each marker starts a variable-stride record; the inter-record contents are
+the bytecode and any embedded header fields. Full per-record structure is not
+yet reversed — capture a town or field overlay to observe how the runtime
+parses this variant.
+
 ## Bytecode encoding
 
 Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#fun_8003ca38--glyph-stride-walker), [`FUN_80036044`](#fun_80036044--text-width-measurement), [`FUN_80036888`](#fun_80036888--text-renderer), [`FUN_80036514`](#fun_80036514--substitution-expander)). The same byte-classification table is used by all four; only the action per byte differs.
