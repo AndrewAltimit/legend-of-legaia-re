@@ -51,11 +51,67 @@ Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic — they produce t
 
 A future `sound` crate (sequencer playback for `.spk` sequences and the `.dpk / .MAP / .PCH` family) would depend on `vab`. A future battle / menu module belongs inside `engine-vm` next to the actor + field VMs rather than as a separate crate.
 
+## Runtime architecture
+
+The diagram below traces data-flow from the top-level binary through crate boundaries at runtime.  Arrows show the direction data or control flows; edge labels on the `World` → VM arrows name the Rust trait `World` implements to drive each VM.
+
+```mermaid
+graph LR
+    BIN["legaia-engine"]
+
+    subgraph shell ["engine-shell"]
+        BS["BootSession"]
+        BGM["AudioBgmDirector"]
+    end
+
+    subgraph core ["engine-core"]
+        MD["ModeDriver"]
+        SH["SceneHost"]
+        W["World"]
+        SR["SceneResources"]
+    end
+
+    subgraph vm ["engine-vm"]
+        AVM["Actor VM · 13 ops"]
+        FVM["Field VM · 43 ops"]
+        MVM["Move VM · 71+61 ops"]
+        MotVM["Motion VM"]
+        EVM["Effect VM"]
+        BSM["Battle Action SM"]
+    end
+
+    subgraph ren ["engine-render"]
+        REN["Renderer · wgpu + PSX VRAM"]
+    end
+
+    subgraph au ["engine-audio"]
+        SEQ["SsAPI Sequencer"]
+        SPU["SPU Mixer · cpal"]
+    end
+
+    BIN --> BS
+    BS --> MD
+    BS --> BGM
+    MD -->|drives| SH
+    SH --> W
+    SH --> SR
+    W -->|ActorVmHost| AVM
+    W -->|FieldVmHost| FVM
+    W -->|MoveVmHost| MVM
+    W -->|MotionVmHost| MotVM
+    W -->|EffectVmHost| EVM
+    W -->|BattleActionHost| BSM
+    SR -->|per-frame upload| REN
+    BGM -->|sequences| SEQ
+    SEQ -->|samples| SPU
+```
+
 ## Architectural principles
 
 - **Asset crates stay engine-agnostic.** `crates/tim`, `crates/tmd`, etc. don't depend on wgpu / SDL3 / cpal.
 - **Mockable I/O for tests.** The disc read path is abstracted via `crates/iso::RawDisc`; the same pattern extends to file-system extraction so tests can run without a disc.
 - **Deterministic gameplay.** RNG seeded from a known value; physics tick on a fixed timestep. Required for any future TAS / verification work.
+- **Fixed-timestep game tick, uncapped render.** The windowed engine uses `wgpu::PresentMode::AutoVsync`; the render rate is driven by the display refresh. A `f64` accumulator in the event-loop handler converts wall-clock delta-time into an integer number of 1/60 s game ticks (capped at 4 per render frame to absorb minor VSync jitter without a runaway spiral). This separation means the game logic advances at a stable 60 Hz independent of the display refresh rate, and render frames can interpolate ahead-of-tick state in the future without changing the tick interface.
 - **No "fix the bug" temptation.** If the original game has quirky damage rounding or oddly-timed cutscenes, replicate them. Behavioural fidelity is in scope; QoL is not.
 - **Behaviour tests against runtime traces.** Long-term, capture inputs + RNG + frame outputs from the original game, replay through the engine, diff. The asset-viewer phase landed enough infrastructure to make this possible later.
 

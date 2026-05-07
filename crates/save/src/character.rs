@@ -286,7 +286,7 @@ pub struct Snapshot {
 /// computed from a base address (`0x80084708 + n * 0x414` in retail, but
 /// the typed crate doesn't bake that in; engines hold the records however
 /// they like).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Party {
     /// Members in slot order. Stride between two adjacent members'
     /// underlying buffers is exactly [`CHARACTER_RECORD_SIZE`].

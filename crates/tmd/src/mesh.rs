@@ -261,6 +261,93 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
     }
 }
 
+/// Like [`tmd_to_vram_mesh`] but applies per-object (per-bone) pose offsets
+/// before emitting vertices. Each element of `bone_offsets` is a `(pos, rot)`
+/// pair sourced from [`legaia_anm::PoseFrame::bone_outputs`] for the
+/// corresponding TMD object index. Only the translation (`pos`) is applied;
+/// rotation requires full GTE-matrix math and is deferred.
+///
+/// If `bone_offsets` is shorter than the TMD's object count, the remaining
+/// objects are rendered at their default positions (no pose applied).
+pub fn tmd_to_vram_mesh_posed(
+    tmd: &Tmd,
+    buf: &[u8],
+    bone_offsets: &[([i16; 3], [i16; 3])],
+) -> VramMesh {
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut cba_tsb = Vec::new();
+    let mut indices = Vec::new();
+
+    for (o_idx, o) in tmd.objects.iter().enumerate() {
+        let bone_pos: [f32; 3] = bone_offsets
+            .get(o_idx)
+            .map(|(p, _r)| [p[0] as f32, p[1] as f32, p[2] as f32])
+            .unwrap_or([0.0; 3]);
+
+        let object_vert_count = o.header.n_vert;
+        let groups = match legaia_prims::iter_groups(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        ) {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
+
+        for g in &groups {
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                if prim.uvs.is_empty() {
+                    continue;
+                }
+                let ct = [prim.cba, prim.tsb];
+                let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = positions.len() as u32;
+                    positions.push([
+                        v.x as f32 + bone_pos[0],
+                        v.y as f32 + bone_pos[1],
+                        v.z as f32 + bone_pos[2],
+                    ]);
+                    let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
+                    uvs.push([u8v, v8v]);
+                    cba_tsb.push(ct);
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        let i3 = push_vert(raw_idx[3], 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let normals = compute_smooth_normals(&positions, &indices);
+    VramMesh {
+        positions,
+        uvs,
+        cba_tsb,
+        indices,
+        normals,
+    }
+}
+
 /// Build per-vertex normals from triangle geometry. Triangles whose three
 /// vertices share an integer-quantized position with another triangle's
 /// vertices contribute to a per-position normal bin; the per-vertex normal
@@ -545,5 +632,73 @@ mod tests {
         let mesh = tmd_to_mesh(&tmd, &buf);
         assert_eq!(mesh.vertex_count(), 0);
         assert_eq!(mesh.triangle_count(), 0);
+    }
+
+    #[test]
+    fn posed_mesh_applies_translation_per_bone() {
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+
+        // Shift object 0 by (+100, +200, +300).
+        let offset: [i16; 3] = [100, 200, 300];
+        let no_rot: [i16; 3] = [0, 0, 0];
+        let bone_offsets = [(offset, no_rot)];
+
+        let unposed = tmd_to_vram_mesh(&tmd, &buf);
+        let posed = tmd_to_vram_mesh_posed(&tmd, &buf, &bone_offsets);
+
+        assert_eq!(
+            unposed.positions.len(),
+            posed.positions.len(),
+            "vertex count should match between posed and unposed"
+        );
+
+        for (u, p) in unposed.positions.iter().zip(posed.positions.iter()) {
+            assert!(
+                (p[0] - u[0] - 100.0).abs() < 0.5,
+                "x should shift by 100: unposed={}, posed={}",
+                u[0],
+                p[0]
+            );
+            assert!(
+                (p[1] - u[1] - 200.0).abs() < 0.5,
+                "y should shift by 200: unposed={}, posed={}",
+                u[1],
+                p[1]
+            );
+            assert!(
+                (p[2] - u[2] - 300.0).abs() < 0.5,
+                "z should shift by 300: unposed={}, posed={}",
+                u[2],
+                p[2]
+            );
+        }
+    }
+
+    #[test]
+    fn posed_mesh_zero_offset_matches_unposed() {
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+        let bone_offsets = [([0i16; 3], [0i16; 3])];
+
+        let unposed = tmd_to_vram_mesh(&tmd, &buf);
+        let posed = tmd_to_vram_mesh_posed(&tmd, &buf, &bone_offsets);
+
+        for (u, p) in unposed.positions.iter().zip(posed.positions.iter()) {
+            assert_eq!(u, p, "zero offset should not move vertices");
+        }
+    }
+
+    #[test]
+    fn posed_mesh_empty_offsets_matches_unposed() {
+        let buf = synth_pyramid_tmd();
+        let tmd = parse(&buf).unwrap();
+
+        let unposed = tmd_to_vram_mesh(&tmd, &buf);
+        let posed = tmd_to_vram_mesh_posed(&tmd, &buf, &[]);
+
+        for (u, p) in unposed.positions.iter().zip(posed.positions.iter()) {
+            assert_eq!(u, p, "empty offsets should not move vertices");
+        }
     }
 }

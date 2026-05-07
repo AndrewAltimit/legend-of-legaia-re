@@ -1,0 +1,123 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; cutscene</div>
+  <h1>Cutscene (STR mode)</h1>
+  <p class="lede">Pre-rendered cutscene playback combines PSX STR video (MDEC hardware decoder) with multiplexed XA-ADPCM audio from the <code>XA*.XA</code> files on disc. The engine drives it through game modes 26 and 27 (<code>StrInit</code> / <code>StrMode</code>), which map to <code>SceneMode::Cutscene</code> in the clean-room port.</p>
+</header>
+
+<section class="doc-section" id="modes">
+  <h2>Game modes</h2>
+  <table>
+    <thead><tr><th>Index</th><th>Name</th><th>param</th><th>next</th></tr></thead>
+    <tbody>
+      <tr><td>26</td><td><code>STR</code> (<code>StrInit</code>)</td><td><code>0x80A</code></td><td>&mdash;</td></tr>
+      <tr><td>27</td><td><code>STR MODE</code> (<code>StrMode</code>)</td><td><code>0x000</code></td><td><code>ConfigInit</code></td></tr>
+    </tbody>
+  </table>
+  <p><code>StrInit</code> bootstraps the cutscene: opens the STR stream, initialises the MDEC decoder, starts the XA channel. <code>StrMode</code> runs the per-frame loop: reads the next batch of sectors, decodes a frame, blits it full-screen, and advances the audio position. When the stream ends, the mode chain transitions to <code>ConfigInit</code> (index 1).</p>
+  <p>The retail handler is overlay-resident (cutscene overlay, not yet captured).</p>
+</section>
+
+<section class="doc-section" id="str-sector">
+  <h2>STR sector format</h2>
+  <p>STR video is carried in 2048-byte Mode 2 Form 1 sectors. Each sector's user-data area starts with a 20-byte header, followed by 2028 bytes of compressed bitstream payload:</p>
+  <pre><code>Offset  Bytes  Field
+0x000   2      magic            &mdash; 0x0160 = video sector; any other value = non-video, skip silently
+0x002   2      chunk_number     &mdash; 0-indexed position of this sector within the frame
+0x004   2      chunks_per_frame &mdash; total sectors needed to complete this frame
+0x006   2      frame_number     &mdash; sequential, 0-based, wraps at 0xFFFF
+0x008   4      bs_data_size     &mdash; total bitstream bytes across all chunks for this frame
+0x00C   2      width            &mdash; frame width in pixels (multiple of 16)
+0x00E   2      height           &mdash; frame height in pixels (multiple of 16)
+0x010   2      bs_version       &mdash; 2 (BS v2 only in Legaia)
+0x012   2      quantize_scale   &mdash; per-frame quantization scale, 0..63
+0x014   2028   bs_data          &mdash; compressed bitstream payload chunk</code></pre>
+  <p><code>StrFrameAssembler</code> accumulates sector payloads in arrival order. When <code>chunk_number + 1 == chunks_per_frame</code>, the full bitstream is returned truncated to <code>bs_data_size</code>. Non-video sectors are skipped silently.</p>
+  <p>Implementation: <code>crates/mdec/src/str_sector.rs</code></p>
+</section>
+
+<section class="doc-section" id="mdec">
+  <h2>MDEC decoder</h2>
+  <p><code>MdecDecoder::decode_frame(bs)</code> converts a complete BS v2 bitstream into an RGBA8 pixel buffer. Clean-room port; reference: PSX-SPX &sect;MDEC Decompression.</p>
+
+  <h3>1. Bitstream header</h3>
+  <p>4 bytes before the macroblock data: <code>u16 n_words</code> (number of 32-bit words) + <code>u16 qs</code> (per-frame quantization scale, 0&ndash;63).</p>
+
+  <h3>2. VLC decoding</h3>
+  <p>Each 8&times;8 block decodes its DC coefficient first, then AC coefficients until an EOB token.</p>
+  <ul class="bullets">
+    <li><strong>DC coefficient</strong> &mdash; luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). Delta-coded per component (Cr / Cb / Y0&ndash;Y3 each have independent running state).</li>
+    <li><strong>AC coefficients</strong> &mdash; MPEG-1 Table B.14 (run/level pairs). Escape sequences carry a 6-bit run + 8-bit signed level. EOB code (<code>run == 64</code>) ends the block.</li>
+  </ul>
+  <p>After VLC, coefficients are in JPEG zigzag scan order.</p>
+
+  <h3>3. Dequantize</h3>
+  <pre><code>coef[i] = clamp( (coef[i] * qs * Q_MAT[i] + 4) / 8, -2048, 2047 )</code></pre>
+  <p><code>Q_MAT</code> is the standard PSX quantization matrix. The DC position always gets <code>qs = 2</code> applied independently.</p>
+
+  <h3>4. 8&times;8 IDCT</h3>
+  <p>Two-pass separable 2D IDCT using a precomputed cosine table <code>IDCT_C[k][n]</code> (pre-scaled by 2048). Row IDCT followed by column IDCT; output clamped to <code>[-128, 127]</code>.</p>
+
+  <h3>5. Macroblock layout</h3>
+  <p>Macroblocks are 16&times;16 pixels. Each macroblock decodes 6 &times; 8&times;8 blocks: <strong>Cr, Cb, Y0 (top-left), Y1 (top-right), Y2 (bottom-left), Y3 (bottom-right)</strong>.</p>
+
+  <h3>6. 4:2:0 upsampling + BT.601 colour conversion</h3>
+  <p>Each Cb/Cr sample covers a 2&times;2 luma region. Chroma values are center-biased (nominal ~128, subtracted before the matrix).</p>
+  <pre><code>R = Y + ((91881 * Cr) &gt;&gt; 16)
+G = Y - ((22554 * Cb + 46802 * Cr) &gt;&gt; 16)
+B = Y + ((116130 * Cb) &gt;&gt; 16)
+A = 255</code></pre>
+  <p>Output is a <code>width &times; height</code> RGBA8 buffer in row-major order.</p>
+  <p>Implementation: <code>crates/mdec/src/lib.rs</code> (<code>MdecDecoder</code>, VLC tables, <code>IDCT_C</code>, <code>Q_MAT</code>).</p>
+</section>
+
+<section class="doc-section" id="xa">
+  <h2>XA audio</h2>
+  <p>XA-ADPCM audio is carried on Mode 2 Form 2 sectors with <code>submode &amp; 0x24 == 0x24</code>. The demuxer splits them by <code>(file_no, ch_no)</code> into per-channel streams. Each 128-byte sound group holds 8 sound units of 28 4-bit ADPCM samples; stereo interleaves as SU0 = L, SU1 = R.</p>
+  <p>See <code>docs/formats/xa.md</code> for the full sector layout, coding-info bit definitions, and filter coefficients.</p>
+  <p class="hint">The mapping from cutscene name to expected <code>(file_no, ch_no)</code> channel pair is overlay-resident (in the not-yet-captured cutscene overlay). Until that's reversed, WAV &rarr; cutscene assignment is manual.</p>
+</section>
+
+<section class="doc-section" id="playback">
+  <h2>Playback loop (<code>play-str</code>)</h2>
+  <p><code>legaia-engine play-str &lt;file&gt;</code> demonstrates end-to-end decoding:</p>
+  <ol>
+    <li>Read the raw file in 2048-byte sectors.</li>
+    <li>Feed each sector to <code>StrFrameAssembler::push_sector()</code>.</li>
+    <li>On complete frame: <code>MdecDecoder::new(w, h).decode_frame(&amp;bs)</code> &rarr; RGBA8 buffer.</li>
+    <li>Pre-decode all frames, then enter the winit event loop.</li>
+    <li>On <code>RedrawRequested</code>: upload the next frame as a GPU texture and render fullscreen.</li>
+  </ol>
+  <pre><code># Report frame inventory
+mdec scan-str cutscene.str
+
+# Decode all frames to PPM images
+mdec decode-str cutscene.str --out-dir frames/
+
+# Play in a window
+legaia-engine play-str cutscene.str</code></pre>
+</section>
+
+<section class="doc-section" id="open">
+  <h2>Open items</h2>
+  <ul class="bullets">
+    <li><strong>Cutscene overlay capture.</strong> The retail <code>StrInit</code> / <code>StrMode</code> handlers are in a dedicated overlay. Save state during any pre-rendered cutscene and run <code>scripts/analyze-overlay.sh</code>; import as <code>overlay_cutscene</code> in Ghidra. Unblocks: XA channel map, PROT-to-STR entry table, <code>legaia-engine play --scene cutsceneN</code>.</li>
+    <li><strong>XA channel map.</strong> <code>(file_no, ch_no)</code> &rarr; cutscene-name association is inside the cutscene overlay.</li>
+    <li><strong>PROT-scene routing.</strong> Direct <code>play-str &lt;file&gt;</code> works; routing <code>play --scene cutsceneN</code> through the CDNAME entry is pending the STR-entry trace.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="provenance">
+  <h2>Provenance</h2>
+  <table>
+    <thead><tr><th>Subject</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>STR sector header layout</td><td><code>crates/mdec/src/str_sector.rs</code>; PSX-SPX &sect;STR Video Files</td></tr>
+      <tr><td>BS v2 VLC tables (DC/AC)</td><td><code>crates/mdec/src/lib.rs</code>; PSX-SPX Tables B.12&ndash;B.14</td></tr>
+      <tr><td>IDCT + dequantize formula</td><td><code>crates/mdec/src/lib.rs</code>; PSX-SPX &sect;MDEC</td></tr>
+      <tr><td>BT.601 coefficients</td><td><code>crates/mdec/src/lib.rs</code></td></tr>
+      <tr><td>XA sector layout + demux</td><td><code>crates/xa/src/demux.rs</code></td></tr>
+      <tr><td>Game modes 26 / 27</td><td><code>crates/engine-core/src/mode.rs</code></td></tr>
+      <tr><td><code>play-str</code> frame loop</td><td><code>crates/engine-shell/src/bin/legaia-engine.rs</code></td></tr>
+    </tbody>
+  </table>
+</section>

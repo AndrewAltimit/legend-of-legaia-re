@@ -73,6 +73,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/battle-formulas.html","Battle formulas",            "subsystems/battle-formulas", "subsystems/battle-formulas.html"),
     ("subsystems/audio.html",      "Audio",                         "subsystems/audio",           "subsystems/audio.html"),
     ("subsystems/renderer.html",   "Renderer",                      "subsystems/renderer",        "subsystems/renderer.html"),
+    ("subsystems/cutscene.html",   "Cutscene (STR mode)",           "subsystems/cutscene",        "subsystems/cutscene.html"),
     ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
     ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),

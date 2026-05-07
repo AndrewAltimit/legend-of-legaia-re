@@ -52,6 +52,50 @@ use serde::Serialize;
 /// Magic word that immediately precedes the 97-entry schema table.
 pub const MAGIC: u32 = 0x0105_9B84;
 
+/// Structural interpretation of a field-pack schema slot, derived from its
+/// byte size.  The size-to-kind mapping is based on the cluster analysis in
+/// `docs/formats/field-pack.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum SlotKind {
+    /// Single-byte flag / type marker (size 1, always slot 0).
+    TypeFlag,
+    /// Large texture blob, consistent with a TIM page (size `0x2088`).
+    /// Five slots: 1, 2, 3, 30, 41.
+    TimPage,
+    /// NPC slot record — part of a 21-entry tabular array (size `0x218`).
+    /// Slots 5–25.
+    NpcRecord,
+    /// Dialog-trigger or event-region record (size `0x110`).
+    EventTrigger,
+    /// Collision-box-sized record (size `0x90`).
+    CollisionBox,
+    /// Compact record (size `0x210`).
+    CompactRecord,
+    /// Medium record (size `0x410` or `0x1010` — two count buckets).
+    MediumRecord,
+    /// Any other single-occurrence record with a known size.
+    SingleRecord,
+    /// Last slot in the schema; size cannot be computed from the schema alone.
+    LastSlot,
+}
+
+impl SlotKind {
+    /// Classify a slot by its byte size (or `None` for the last slot).
+    pub fn from_size(size: Option<u32>) -> Self {
+        match size {
+            None => SlotKind::LastSlot,
+            Some(1) => SlotKind::TypeFlag,
+            Some(0x2088) => SlotKind::TimPage,
+            Some(0x218) => SlotKind::NpcRecord,
+            Some(0x110) => SlotKind::EventTrigger,
+            Some(0x90) => SlotKind::CollisionBox,
+            Some(0x210) => SlotKind::CompactRecord,
+            Some(0x410) | Some(0x1010) => SlotKind::MediumRecord,
+            Some(_) => SlotKind::SingleRecord,
+        }
+    }
+}
+
 /// Number of u32 entries in the schema table.
 pub const RECORD_COUNT: usize = 97;
 
@@ -147,6 +191,30 @@ impl FieldPack {
             return None;
         }
         Some(&buf[off..end])
+    }
+
+    /// Return the [`SlotKind`] for slot `i`, derived from the slot's byte
+    /// size.  Returns `None` if `i` is out of range.
+    pub fn slot_kind(&self, i: usize) -> Option<SlotKind> {
+        Some(SlotKind::from_size(self.slots.get(i)?.size))
+    }
+
+    /// Iterate over all 97 schema slots, yielding `(SlotKind, &[u8])` pairs.
+    ///
+    /// The byte slice is populated only when `magic_offset == 0` (i.e. the
+    /// schema-indexed data sits directly in the asset region, as in entry
+    /// `0005_town01`).  For all other entries the preamble holds the
+    /// schema-indexed buffer via a runtime-reconstructed indirection that is
+    /// not yet traced; those slots yield an empty slice.
+    pub fn iter_slots<'a>(
+        &'a self,
+        buf: &'a [u8],
+    ) -> impl Iterator<Item = (SlotKind, &'a [u8])> + 'a {
+        self.slots.iter().enumerate().map(move |(i, slot)| {
+            let kind = SlotKind::from_size(slot.size);
+            let bytes = self.slot_bytes_in_assets(buf, i).unwrap_or(&[]);
+            (kind, bytes)
+        })
     }
 }
 
@@ -320,5 +388,53 @@ mod tests {
         let fp = detect(&buf).unwrap();
         // magic_offset is 1024, so this helper is only valid when 0.
         assert!(fp.slot_bytes_in_assets(&buf, 0).is_none());
+    }
+
+    #[test]
+    fn slot_kind_from_size_classifies_known_sizes() {
+        assert_eq!(SlotKind::from_size(Some(1)), SlotKind::TypeFlag);
+        assert_eq!(SlotKind::from_size(Some(0x2088)), SlotKind::TimPage);
+        assert_eq!(SlotKind::from_size(Some(0x218)), SlotKind::NpcRecord);
+        assert_eq!(SlotKind::from_size(Some(0x110)), SlotKind::EventTrigger);
+        assert_eq!(SlotKind::from_size(Some(0x90)), SlotKind::CollisionBox);
+        assert_eq!(SlotKind::from_size(Some(0x210)), SlotKind::CompactRecord);
+        assert_eq!(SlotKind::from_size(Some(0x410)), SlotKind::MediumRecord);
+        assert_eq!(SlotKind::from_size(Some(0x1010)), SlotKind::MediumRecord);
+        assert_eq!(SlotKind::from_size(Some(0x810)), SlotKind::SingleRecord);
+        assert_eq!(SlotKind::from_size(None), SlotKind::LastSlot);
+    }
+
+    #[test]
+    fn slot_kind_method_returns_none_out_of_range() {
+        let buf = synthetic(0);
+        let fp = detect(&buf).unwrap();
+        assert!(fp.slot_kind(RECORD_COUNT).is_none());
+        assert!(fp.slot_kind(0).is_some());
+    }
+
+    #[test]
+    fn iter_slots_yields_record_count_items() {
+        let buf = synthetic(0);
+        let fp = detect(&buf).unwrap();
+        let slots: Vec<_> = fp.iter_slots(&buf).collect();
+        assert_eq!(slots.len(), RECORD_COUNT);
+    }
+
+    #[test]
+    fn iter_slots_last_is_last_slot_kind() {
+        let buf = synthetic(0);
+        let fp = detect(&buf).unwrap();
+        let last = fp.iter_slots(&buf).last().unwrap();
+        assert_eq!(last.0, SlotKind::LastSlot);
+    }
+
+    #[test]
+    fn iter_slots_bytes_empty_when_preamble_present() {
+        let buf = synthetic(1024);
+        let fp = detect(&buf).unwrap();
+        // All bytes should be empty since magic_offset != 0.
+        for (_kind, bytes) in fp.iter_slots(&buf) {
+            assert!(bytes.is_empty());
+        }
     }
 }

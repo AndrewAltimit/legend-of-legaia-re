@@ -36,9 +36,9 @@
 //! | 0x47 | 80037ba8    | MoveTowardTarget | step actor XZ toward `(tx, tz)`          |
 //! |      |             | (default arm)    | terminate with `done=true`               |
 //!
-//! Opcodes `0x38` (RotateToAngle) and `0x4C` (FaceTarget) are documented at
-//! the byte level but their angle math (12-bit fixed-point quadrant logic)
-//! is not yet ported — the VM treats them as `done=true` for now.
+//! Opcodes `0x38` (RotateToAngle) and `0x4C` (FaceTarget) implement 12-bit
+//! fixed-point yaw with shortest-path quadrant logic. See the `step`
+//! implementation and the `ANGLE_TABLE` constant for details.
 //!
 //! ## Clean-room boundary
 //!
@@ -97,8 +97,7 @@ pub enum MotionOp {
     /// pursue / camera-follow scripts.
     MoveTowardTarget = 0x47,
     /// `0x4C` — face the target (yaw rotates to bearing). Sub-modes
-    /// 0x85 / 0x8E / 0x8F gate which component is rotated. Not yet
-    /// implemented — treated as immediate done.
+    /// 0x85 / 0x8E / 0x8F gate which component is rotated.
     FaceTarget = 0x4C,
 }
 
@@ -124,9 +123,26 @@ pub enum StepResult {
     /// Script reached a terminal opcode (default arm or 0x43 NoOp explicit
     /// done flag); engines clear the bytecode cursor.
     Done,
-    /// Opcode that the port hasn't fully modeled yet; engine should treat
-    /// this as Done and log the byte for follow-up.
-    Pending { op: u8 },
+}
+
+/// 16-entry angle lookup table at retail `DAT_80073f04`. Each entry is a
+/// 12-bit yaw value (0x000..0xFFF = 0°..360°), evenly spaced at 22.5°
+/// increments. Common angles used by NPC patrol scripts and camera paths.
+const ANGLE_TABLE: [u16; 16] = [
+    0x000, 0x100, 0x200, 0x300, 0x400, 0x500, 0x600, 0x700, 0x800, 0x900, 0xA00, 0xB00, 0xC00,
+    0xD00, 0xE00, 0xF00,
+];
+
+/// Convert a 2D displacement `(dx, dz)` to a 12-bit fixed-point yaw
+/// (0x000..0xFFF, clockwise, 0x000 = +Z). Retail calls `FUN_80019b28`.
+fn bearing_to_yaw(dx: i32, dz: i32) -> u16 {
+    if dx == 0 && dz == 0 {
+        return 0;
+    }
+    let radians = (dx as f32).atan2(dz as f32);
+    let raw = (radians * (0x1000 as f32) / (2.0 * std::f32::consts::PI)).round() as i32;
+    // Normalize to 12-bit [0, 0x1000).
+    ((raw % 0x1000 + 0x1000) % 0x1000) as u16
 }
 
 /// One per-frame step over the script. Reads the opcode at `state.pc`,
@@ -199,10 +215,101 @@ pub fn step(state: &mut MotionState, target: MotionTarget, bytecode: &[u8]) -> S
                 StepResult::Yield
             }
         }
-        MotionOp::RotateToAngle | MotionOp::FaceTarget => {
-            // 12-bit angle math not ported in this pass. Document via Pending.
-            state.pc = body_off as u16;
-            StepResult::Pending { op: op_byte }
+        MotionOp::RotateToAngle => {
+            if body_off + 2 > bytecode.len() {
+                return StepResult::Done;
+            }
+            let body0 = bytecode[body_off];
+            let body1 = bytecode[body_off + 1];
+            let total_budget = (body1 & 0x7f) as u16;
+            let remaining = total_budget.saturating_sub(state.op_accum);
+            if remaining <= state.speed {
+                let angle_idx = (body0 & 0x0f) as usize;
+                state.yaw = ANGLE_TABLE[angle_idx];
+                state.op_accum = 0;
+                state.pc = (body_off + 2) as u16;
+                StepResult::Done
+            } else {
+                state.op_accum += state.speed;
+                let angle_idx = (body0 & 0x0f) as usize;
+                let target_yaw = ANGLE_TABLE[angle_idx] as i32;
+                let current_yaw = (state.yaw & 0x0fff) as i32;
+                let mut clockwise = body1 & 0x80 != 0;
+                if body0 & 0x80 != 0 {
+                    let mut delta = target_yaw - current_yaw;
+                    if target_yaw < current_yaw {
+                        delta += 0x1000;
+                    }
+                    clockwise = delta > 0x800;
+                }
+                let delta = if clockwise {
+                    let mut d = current_yaw - target_yaw;
+                    if current_yaw < target_yaw {
+                        d += 0x1000;
+                    }
+                    d & 0x0fff
+                } else {
+                    let mut d = target_yaw - current_yaw;
+                    if target_yaw < current_yaw {
+                        d += 0x1000;
+                    }
+                    d & 0x0fff
+                } as u16;
+                let step = (delta * state.speed) / remaining.max(1);
+                if clockwise {
+                    state.yaw = state.yaw.wrapping_sub(step) & 0x0FFF;
+                } else {
+                    state.yaw = state.yaw.wrapping_add(step) & 0x0FFF;
+                }
+                StepResult::Yield
+            }
+        }
+        MotionOp::FaceTarget => {
+            if body_off + 4 > bytecode.len() {
+                return StepResult::Done;
+            }
+            let body0 = bytecode[body_off];
+            let body1 = bytecode[body_off + 1];
+            let body2 = bytecode[body_off + 2];
+            let _body3 = bytecode[body_off + 3];
+            if body0 != 0x85 && body0 != 0x8e && body0 != 0x8f {
+                state.pc = (body_off + 4) as u16;
+                return StepResult::Done;
+            }
+            let total_budget = (body1 as u16) | ((body2 as u16) << 8);
+            let remaining = total_budget.saturating_sub(state.op_accum);
+            let dx = target.x as i32 - state.world_x as i32;
+            let dz = target.z as i32 - state.world_z as i32;
+            let target_yaw = bearing_to_yaw(dx, dz);
+            if remaining <= state.speed {
+                state.yaw = target_yaw;
+                state.op_accum = 0;
+                state.pc = (body_off + 4) as u16;
+                StepResult::Done
+            } else {
+                state.op_accum += state.speed;
+                let current_yaw = (state.yaw & 0x0fff) as i32;
+                let tgt = target_yaw as i32;
+                let ccw_dist = if tgt >= current_yaw {
+                    tgt - current_yaw
+                } else {
+                    tgt + 0x1000 - current_yaw
+                } & 0x0fff;
+                let cw_dist = if current_yaw >= tgt {
+                    current_yaw - tgt
+                } else {
+                    current_yaw + 0x1000 - tgt
+                } & 0x0fff;
+                let clockwise = cw_dist < ccw_dist || body0 == 0x8f;
+                let delta = if clockwise { cw_dist } else { ccw_dist } as u16;
+                let step = (delta * state.speed) / remaining.max(1);
+                if clockwise {
+                    state.yaw = state.yaw.wrapping_sub(step) & 0x0FFF;
+                } else {
+                    state.yaw = state.yaw.wrapping_add(step) & 0x0FFF;
+                }
+                StepResult::Yield
+            }
         }
     }
 }
@@ -289,13 +396,100 @@ mod tests {
     }
 
     #[test]
-    fn step_face_target_reports_pending() {
+    fn step_rotate_to_angle_ccw() {
+        let mut s = MotionState {
+            yaw: 0x000,
+            speed: 4,
+            op_accum: 0,
+            pc: 0,
+            ..Default::default()
+        };
+        // body0 = 0x04 (index 4 = 0x400 = 90°), body1 = 0x10 (budget=16)
+        let bc = [0x38, 0x04, 0x10];
+        // Total delta = 0x400, budget = 16, speed = 4
+        // First step: moves 0x400 * 4 / 16 = 0x100
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        assert_eq!(s.yaw, 0x0100);
+        assert_eq!(s.op_accum, 4);
+        // Second step: moves another 0x100
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        assert_eq!(s.yaw, 0x0200);
+        // Third
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        assert_eq!(s.yaw, 0x0300);
+        // Fourth: remaining=0, snap to target and Done
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Done);
+        assert_eq!(s.yaw, 0x0400);
+        assert_eq!(s.op_accum, 0);
+        assert_eq!(s.pc, 3);
+    }
+
+    #[test]
+    fn step_rotate_to_angle_shortest_path_ccw() {
+        let mut s = MotionState {
+            yaw: 0x000,
+            speed: 8,
+            op_accum: 0,
+            pc: 0,
+            ..Default::default()
+        };
+        // target = 0x800, delta = 0x800 (ccw = cw, equal => ccw chosen).
+        let bc = [0x38, 0x88, 0x10];
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        assert_eq!(s.yaw, 0x0400);
+    }
+
+    #[test]
+    fn step_rotate_to_angle_shortest_path_cw() {
+        let mut s = MotionState {
+            yaw: 0x000,
+            speed: 16,
+            op_accum: 0,
+            pc: 0,
+            ..Default::default()
+        };
+        // body0 = 0x8E: auto-dir bit set, angle index = 0x0E = 14 → target = 0xE00.
+        // delta = 0xE00, which is > 0x800 => clockwise.
+        // CW delta = 0x000 - 0xE00, wrap => 0x200.
+        // budget=32 (body1=0x20), speed=16 → remaining=32 > 16: Yield.
+        // step = 0x200 * 16 / 32 = 0x100; yaw = 0x000 - 0x100 (12-bit mask) = 0xF00.
+        let bc = [0x38, 0x8E, 0x20];
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Yield);
+        assert_eq!(s.yaw, 0x0F00);
+    }
+
+    #[test]
+    fn step_face_target_computes_bearing() {
+        let mut s = MotionState {
+            world_x: 0,
+            world_z: 0,
+            yaw: 0,
+            speed: 100,
+            op_accum: 0,
+            pc: 0,
+            ..Default::default()
+        };
+        // 0x4C, body0=0x85, body1=0x10, body2=0x00, body3=0xF8
+        // target at (100, 0, 0) → atan2(dx=100, dz=0) = π/2 = 0x400
+        let bc = [0x4C, 0x85, 0x10, 0x00, 0xF8];
+        let t = MotionTarget {
+            x: 100,
+            y: 0,
+            z: 0,
+            id: 0,
+        };
+        let r = step(&mut s, t, &bc);
+        // With high speed and small budget, should complete in one step
+        assert_eq!(r, StepResult::Done);
+        assert_eq!(s.yaw, 0x0400);
+    }
+
+    #[test]
+    fn step_face_target_invalid_submode_is_done() {
         let mut s = st(0, 0, 1);
-        let bc = [0x4C];
-        assert!(matches!(
-            step(&mut s, tgt(0, 0, 0), &bc),
-            StepResult::Pending { op: 0x4C }
-        ));
+        let bc = [0x4C, 0x00, 0x01, 0x00, 0xF8];
+        assert_eq!(step(&mut s, tgt(0, 0, 0), &bc), StepResult::Done);
+        assert_eq!(s.pc, 5);
     }
 
     #[test]

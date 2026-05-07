@@ -2,6 +2,19 @@
 
 External research from TCRF (`https://tcrf.net/Legend_of_Legaia`), GameHacking.org, and GameFAQs save-state guides — distilled into the technical bits useful for cross-region testing and runtime validation.
 
+## Region enum
+
+`legaia_prot::Region` captures the three retail regions. `ProtIndex` carries this as metadata — the TOC formula and CDNAME layout are region-agnostic.
+
+| `Region` variant | Product codes | Notes |
+|---|---|---|
+| `Region::Na` | `SCUS-94254` | NA retail; anchor build for this project. Default. |
+| `Region::Jp` | `SCPS-10059`, `SCPS-91246` | JP retail + "PlayStation The Best" reissue. RAM addresses shifted by `+0x1B90` relative to NA. |
+| `Region::Eu` | `SCES-01752`, `SCES-01944–47` | EU EN + FR/DE/IT/ES localisations. Same binary layout as NA; MES tables swapped. |
+
+`Region::from_product_code(code)` maps a disc ID prefix to the right variant.  
+`Region::translate_addr(na_addr)` applies the per-region shift to an NA-anchor address.
+
 ## Developer attribution
 
 - **Prokion** (also styled "Procyon" — appears in Japanese as ぷろきおん) is the primary studio.

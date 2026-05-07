@@ -15,7 +15,7 @@
 //! when the scene changes.
 
 use anyhow::Result;
-use legaia_asset::{tim_scan, tmd_scan};
+use legaia_asset::{anm_detect, tim_scan, tmd_scan};
 use legaia_tim::Vram;
 
 use crate::scene::Scene;
@@ -38,6 +38,34 @@ pub struct ResolvedTmd {
     pub byte_len: usize,
     /// Parsed TMD ready for primitive walking + render upload.
     pub tmd: legaia_tmd::Tmd,
+    /// Raw bytes of the TMD slice (same buffer passed to [`legaia_tmd::parse`]).
+    /// Required by [`legaia_tmd::mesh::tmd_to_vram_mesh`] for primitive data reads.
+    pub raw: Vec<u8>,
+}
+
+/// One ANM pack found in the scene's CDNAME block.
+#[derive(Clone)]
+pub struct ResolvedAnm {
+    /// PROT entry index this ANM pack came from.
+    pub entry_idx: u32,
+    /// Byte offset of the ANM payload within the entry.
+    pub offset: usize,
+    /// Byte length of the ANM payload.
+    pub byte_len: usize,
+    /// Parsed ANM pack (count + record ranges).
+    pub pack: legaia_anm::AnmPack,
+    /// Raw payload bytes (no preamble). Index into this with
+    /// `pack.records[i].offset .. pack.records[i].offset + pack.records[i].size`
+    /// to get the record bytes for `AnimPlayer::new`.
+    pub payload: Vec<u8>,
+}
+
+impl ResolvedAnm {
+    /// Slice the record bytes for record `idx`. Returns `None` if out of range.
+    pub fn record_bytes(&self, idx: usize) -> Option<&[u8]> {
+        let rec = self.pack.records.get(idx)?;
+        self.payload.get(rec.offset..rec.offset + rec.size)
+    }
 }
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
@@ -62,6 +90,9 @@ pub struct SceneResources {
     /// Parsed TMDs — every TMD the scanner found across the scene's entries.
     /// The order is CDNAME-entry order, then byte-offset within each entry.
     pub tmds: Vec<ResolvedTmd>,
+    /// Parsed ANM packs — every ANM container found across the scene's entries.
+    /// The order is CDNAME-entry order, then byte-offset within each entry.
+    pub anm_packs: Vec<ResolvedAnm>,
 }
 
 impl SceneResources {
@@ -79,6 +110,7 @@ impl SceneResources {
         let mut tim_count = 0usize;
         let mut tim_parse_failures = 0usize;
         let mut tmds = Vec::new();
+        let mut anm_packs = Vec::new();
 
         for entry in &scene.entries {
             let bytes: &[u8] = &entry.bytes;
@@ -93,13 +125,28 @@ impl SceneResources {
                 }
             }
             for hit in tmd_scan::scan_buffer(bytes) {
-                let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
-                if let Ok(tmd) = legaia_tmd::parse(payload) {
+                let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
+                if let Ok(tmd) = legaia_tmd::parse(&payload) {
                     tmds.push(ResolvedTmd {
                         entry_idx: entry.idx,
                         offset: hit.offset,
                         byte_len: hit.byte_len,
                         tmd,
+                        raw: payload,
+                    });
+                }
+            }
+            // ANM containers are a different magic than TIM/TMD; detect from
+            // the entry start (they're full-entry assets, not embedded).
+            if let Some(det) = anm_detect::detect(bytes) {
+                let payload = bytes[..det.size].to_vec();
+                if let Ok(pack) = legaia_anm::parse(&payload) {
+                    anm_packs.push(ResolvedAnm {
+                        entry_idx: entry.idx,
+                        offset: 0,
+                        byte_len: det.size,
+                        pack,
+                        payload,
                     });
                 }
             }
@@ -110,6 +157,7 @@ impl SceneResources {
             tim_count,
             tim_parse_failures,
             tmds,
+            anm_packs,
         })
     }
 

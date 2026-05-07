@@ -104,6 +104,24 @@
   flex: 1;
 }
 .viewer-info b { color: var(--accent); font-weight: 500; }
+
+.engine-panel { display: flex; flex-direction: column; gap: 0.75rem; }
+.engine-row {
+  display: flex; gap: 0.75rem; align-items: center;
+  flex-wrap: wrap; font-family: var(--font-mono); font-size: 0.85rem;
+}
+.engine-row label { color: var(--text-muted); white-space: nowrap; }
+.engine-row input[type="text"] {
+  background: var(--bg-code); color: var(--text);
+  border: 1px solid var(--border); padding: 0.25rem 0.5rem;
+  font-family: var(--font-mono); font-size: 0.85rem; width: 12rem;
+}
+.engine-state {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem; font-family: var(--font-mono); font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.engine-state b { color: var(--accent); font-weight: 500; }
 </style>-->
 
 <header class="page-header">
@@ -586,6 +604,148 @@
       status.textContent = `Couldn't load: ${err.message || err}.`;
       console.warn(err);
     }
+  });
+})();
+</script>
+
+<section class="doc-section">
+  <h2>Run engine</h2>
+  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your extracted <code>PROT.DAT</code> and optionally <code>CDNAME.TXT</code> — the scene lookup by name (e.g. <code>town01</code>) requires the CDNAME map. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
+  <p class="hint">Extract <code>PROT.DAT</code> with <code>./target/release/disc-extract</code>, or use <code>./target/release/prot-extract</code> if you already have the ISO9660 files.</p>
+
+  <div class="engine-panel" id="engine-panel">
+    <div class="engine-row">
+      <label for="engine-prot-file"><strong>PROT.DAT:</strong></label>
+      <input type="file" id="engine-prot-file" accept=".dat,.bin"
+             style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
+      <label for="engine-cdname-file"><strong>CDNAME.TXT</strong> (optional):</label>
+      <input type="file" id="engine-cdname-file" accept=".txt"
+             style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
+      <button id="engine-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
+    </div>
+    <div class="viewer-status" id="engine-status">No disc loaded.</div>
+
+    <div class="engine-row" id="engine-scene-row" style="display: none;">
+      <label for="engine-scene-input"><strong>Scene:</strong></label>
+      <input type="text" id="engine-scene-input" placeholder="e.g. town01">
+      <button id="engine-scene-btn" style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.4rem 0.75rem; font-family: var(--font-mono); font-size: 0.85rem; cursor: pointer;">Enter scene</button>
+    </div>
+
+    <div class="engine-row" id="engine-tick-row" style="display: none;">
+      <button id="engine-autotick-btn" style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.4rem 0.75rem; font-family: var(--font-mono); font-size: 0.85rem; cursor: pointer;">Start auto-tick</button>
+      <button id="engine-tick-btn"     style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.4rem 0.75rem; font-family: var(--font-mono); font-size: 0.85rem; cursor: pointer;">Tick once</button>
+    </div>
+
+    <div class="engine-state" id="engine-state" style="display: none;">
+      <b>Frame:</b> <span id="engine-frame">0</span> &nbsp;&nbsp;
+      <b>Mode:</b> <span id="engine-mode">—</span> &nbsp;&nbsp;
+      <b>Actors:</b> <span id="engine-actors">0</span> &nbsp;&nbsp;
+      <b>Menu:</b> <span id="engine-menu">closed</span>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  let runtime = null;
+  let wasmMod = null;
+  let autoTicking = false;
+  let rafId = null;
+
+  const engStatus  = document.getElementById('engine-status');
+  const loadBtn    = document.getElementById('engine-load-btn');
+  const sceneRow   = document.getElementById('engine-scene-row');
+  const tickRow    = document.getElementById('engine-tick-row');
+  const stateEl    = document.getElementById('engine-state');
+  const frameEl    = document.getElementById('engine-frame');
+  const modeEl     = document.getElementById('engine-mode');
+  const actorsEl   = document.getElementById('engine-actors');
+  const menuEl     = document.getElementById('engine-menu');
+  const autoBtn    = document.getElementById('engine-autotick-btn');
+  const tickBtn    = document.getElementById('engine-tick-btn');
+
+  if (!loadBtn) return;
+
+  function updateState() {
+    if (!runtime) return;
+    frameEl.textContent  = runtime.frame();
+    modeEl.textContent   = runtime.scene_mode();
+    actorsEl.textContent = runtime.active_actor_count();
+    menuEl.textContent   = runtime.menu_is_open() ? runtime.menu_label() : 'closed';
+  }
+
+  function stopAutoTick() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    autoTicking = false;
+    autoBtn.textContent = 'Start auto-tick';
+  }
+
+  function startAutoTick() {
+    autoTicking = true;
+    autoBtn.textContent = 'Stop auto-tick';
+    const loop = () => {
+      if (!autoTicking || !runtime) return;
+      runtime.tick();
+      updateState();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+  }
+
+  loadBtn.addEventListener('click', async () => {
+    const protFile   = document.getElementById('engine-prot-file').files[0];
+    const cdnameFile = document.getElementById('engine-cdname-file').files[0];
+    if (!protFile) { engStatus.textContent = 'Select a PROT.DAT file first.'; return; }
+
+    stopAutoTick();
+    engStatus.textContent = 'Loading WASM module…';
+    loadBtn.disabled = true;
+    try {
+      if (!wasmMod) {
+        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        await wasmMod.default();
+      }
+      const protBytes  = new Uint8Array(await protFile.arrayBuffer());
+      const cdnameText = cdnameFile ? await cdnameFile.text() : '';
+
+      runtime = new wasmMod.LegaiaRuntime();
+      engStatus.textContent = 'Parsing PROT.DAT…';
+      const count = runtime.load_disc(protBytes, cdnameText);
+      engStatus.textContent = `Loaded ${count} PROT entries.`
+        + (cdnameText ? '' : ' (no CDNAME — enter_scene requires a scene name from the CDNAME map)');
+      sceneRow.style.display = 'flex';
+      tickRow.style.display  = 'flex';
+      stateEl.style.display  = 'block';
+      updateState();
+    } catch (err) {
+      engStatus.textContent = `Error: ${err.message || err}`;
+      console.warn(err);
+    }
+    loadBtn.disabled = false;
+  });
+
+  document.getElementById('engine-scene-btn').addEventListener('click', () => {
+    if (!runtime) return;
+    const name = document.getElementById('engine-scene-input').value.trim();
+    if (!name) return;
+    try {
+      runtime.enter_scene(name);
+      engStatus.textContent = `Entered scene "${name}".`;
+      updateState();
+    } catch (err) {
+      engStatus.textContent = `enter_scene failed: ${err.message || err}`;
+    }
+  });
+
+  tickBtn.addEventListener('click', () => {
+    if (!runtime) return;
+    runtime.tick();
+    updateState();
+  });
+
+  autoBtn.addEventListener('click', () => {
+    if (autoTicking) stopAutoTick();
+    else startAutoTick();
   });
 })();
 </script>

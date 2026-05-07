@@ -1,6 +1,6 @@
 # legend-of-legaia-re
 
-Reverse engineering for the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254): Ghidra-traced format documentation, Rust extractors for every asset on the disc, and a clean-room engine reimplementation targeting wgpu/SDL3 with optional WASM.
+Reverse engineering for the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254): Ghidra-traced format documentation, Rust extractors for every asset on the disc, and a clean-room engine reimplementation targeting wgpu with optional WASM.
 
 Two coordinated tracks under one Cargo workspace:
 
@@ -19,7 +19,7 @@ The committed docs under `docs/` are organised topic-first as a technical refere
 
 - **[`docs/overview.md`](docs/overview.md)** — elevator pitch + how the layers stack.
 - **[`docs/formats/`](docs/formats/overview.md)** — per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect, overlays, …).
-- **[`docs/subsystems/`](docs/subsystems/)** — how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [move VM](docs/subsystems/move-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md), [engine reimplementation](docs/subsystems/engine.md).
+- **[`docs/subsystems/`](docs/subsystems/)** — how the engine works: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md), [script VM](docs/subsystems/script-vm.md), [actor VM](docs/subsystems/actor-vm.md), [effect VM](docs/subsystems/effect-vm.md), [move VM](docs/subsystems/move-vm.md), [motion VM](docs/subsystems/motion-vm.md), [renderer](docs/subsystems/renderer.md), [audio](docs/subsystems/audio.md), [cutscene](docs/subsystems/cutscene.md), [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md), [engine reimplementation](docs/subsystems/engine.md).
 - **[`docs/tooling/`](docs/tooling/)** — how to use the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md).
 - **[`docs/reference/`](docs/reference/)** — [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [TCRF region data](docs/reference/builds.md).
 
@@ -97,6 +97,17 @@ After running the pipeline:
 # logs scene transitions. Headless smoke check that the boot-loop wiring
 # (engine-shell::BootSession) actually moves state forward.
 ./target/release/legaia-engine play --scene town01 --frames 600 --no-audio
+
+# Open a windowed wgpu session rendering scene TMDs + HUD; accepts keyboard
+# input; exits cleanly on window close. 60 Hz fixed tick, uncapped render.
+./target/release/legaia-engine play-window --scene town01
+
+# Decode a raw PSX STR file (MDEC video) and play it back in a window with
+# synced XA audio.
+./target/release/legaia-engine play-str /path/to/cutscene.str
+
+# Edit input key bindings (persisted to TOML via engine-core::input::Mapping)
+./target/release/legaia-engine config set --binding cross=Z
 
 # Save / load the world's empty default party to a slot file. Engines
 # drive the same flow at runtime through `engine-core::menu_runtime`.
@@ -197,6 +208,7 @@ legend-of-legaia-re/
 │   ├── save/                     # Per-character record (0x414B) parse + write
 │   ├── font/                     # Dialog font extraction + atlas / layout API
 │   ├── extract/                  # Top-level pipeline driver
+│   ├── mdec/                     # PSX MDEC clean-room decoder (BS v2 bitstream → RGBA8); STR sector assembler
 │   ├── engine-core/              # World, scene host, scene resources (VRAM pre-pass), camera, menu runtime, save round-trip
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer

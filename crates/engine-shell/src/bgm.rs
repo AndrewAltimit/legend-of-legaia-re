@@ -101,7 +101,14 @@ impl AudioBgmDirector {
         if let Some(loop_to) = self.loop_to {
             sequencer.set_loop_to(loop_to);
         }
-        self.audio.attach_sequencer(sequencer);
+        // Cross-fade over ~30 frames (0.5 s at 60 Hz = 22050 SPU samples)
+        // if another sequencer is already playing; otherwise attach directly.
+        const CROSSFADE_SAMPLES: u32 = 22_050;
+        if self.audio.sequencer_progress().is_some() && !self.paused {
+            self.audio.crossfade_to(sequencer, CROSSFADE_SAMPLES);
+        } else {
+            self.audio.attach_sequencer(sequencer);
+        }
         self.paused = false;
         self.last_started = Some(bgm_id);
         Ok(())
@@ -129,18 +136,13 @@ impl BgmDirector for AudioBgmDirector {
     }
 
     fn pause(&mut self) {
-        // `attach_sequencer` overwrites; without a "freeze sequencer"
-        // primitive on AudioOut, the cleanest pause is to detach + remember
-        // the playhead. We cheat: set a flag the engine reads via
-        // `is_playing` and let the cpal callback continue (silence emerges
-        // because we don't add a "skip-tick" gate to the SPU). Engines
-        // calling `pause` should additionally lower master_vol; a follow-up
-        // can extend AudioOut with `set_sequencer_paused`.
         self.paused = true;
+        self.audio.set_sequencer_paused(true);
     }
 
     fn resume(&mut self) {
         self.paused = false;
+        self.audio.set_sequencer_paused(false);
     }
 
     fn stop(&mut self) {

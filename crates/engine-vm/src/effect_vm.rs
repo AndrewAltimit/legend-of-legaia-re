@@ -313,6 +313,30 @@ impl Pool {
         Some(slot)
     }
 
+    /// Count of currently active master slots (slots where `child_count > 0`).
+    /// Useful in tests and integration checks to verify effects are spawning.
+    pub fn active_count(&self) -> usize {
+        self.master_slots
+            .iter()
+            .filter(|m| m.child_count > 0)
+            .count()
+    }
+
+    /// Look up `ui_id` in `catalog` and spawn the effect at `world_pos` /
+    /// `angle`. Returns `None` if the id is out of range or the pool is full.
+    /// Mirrors the retail `FUN_801D8DE8(ui_id, mode)` → `FUN_801DFDF8` path.
+    pub fn spawn_by_ui_id<H: EffectHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        ui_id: u8,
+        world_pos: [i16; 3],
+        angle: u16,
+        catalog: &EffectCatalog,
+    ) -> Option<usize> {
+        let (script, children) = catalog.entry(ui_id)?;
+        self.spawn(host, ui_id, world_pos, angle, script, children)
+    }
+
     /// Port of `FUN_801E0088` (skeleton) — per-frame walker.
     ///
     /// The retail walker iterates 32 master slots; for each active one it:
@@ -433,6 +457,131 @@ pub trait EffectHost {
     /// haven't wired the renderer yet.
     fn advance_state(&mut self, _slot: usize, _master: &mut MasterSlot) -> StateOutcome {
         StateOutcome::Terminate
+    }
+}
+
+/// Script catalog loaded from the on-disc effect bundle's pack1 data.
+/// Each entry holds one `EffectScript` (header + body) and the matching
+/// per-child descriptor slice, indexed by effect id.
+///
+/// Built by calling [`EffectCatalog::from_pack1_bytes`] on the raw pack1
+/// slice from PROT 873 (`efect.dat`). An empty catalog is safe — all
+/// `spawn_by_ui_id` calls simply return `None`.
+#[derive(Debug, Clone, Default)]
+pub struct EffectCatalog {
+    entries: Vec<(EffectScript, Vec<ChildSprite>)>,
+}
+
+impl EffectCatalog {
+    /// Construct from pre-parsed `(script, children)` pairs. Index 0 = effect
+    /// id 0, index 1 = effect id 1, etc.
+    pub fn new(entries: Vec<(EffectScript, Vec<ChildSprite>)>) -> Self {
+        Self { entries }
+    }
+
+    /// Number of effect scripts in the catalog.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Look up `effect_id`. Returns `None` when the id is out of range.
+    pub fn entry(&self, effect_id: u8) -> Option<(&EffectScript, &[ChildSprite])> {
+        let (s, c) = self.entries.get(effect_id as usize)?;
+        Some((s, c.as_slice()))
+    }
+
+    /// Parse from a raw pack1 byte slice. The pack1 format mirrors
+    /// `asset::pack`: `u32 count`, `u32 word_offsets[count]`, then entries.
+    /// Each entry begins with the 4-byte `EffectScript` header followed by
+    /// `child_count × 14` bytes of `ChildSprite` descriptors and then the
+    /// remainder as the script body.
+    ///
+    /// Returns an empty catalog on any parse failure so callers never need
+    /// to handle an error — a missing effect just doesn't spawn.
+    pub fn from_pack1_bytes(data: &[u8]) -> Self {
+        match Self::try_parse(data) {
+            Some(entries) => Self { entries },
+            None => Self::default(),
+        }
+    }
+
+    fn try_parse(data: &[u8]) -> Option<Vec<(EffectScript, Vec<ChildSprite>)>> {
+        if data.len() < 4 {
+            return None;
+        }
+        let count = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+        if count == 0 || count > 256 {
+            return None;
+        }
+        let table_end = 4 + count * 4;
+        if table_end > data.len() {
+            return None;
+        }
+
+        let mut byte_offsets: Vec<usize> = Vec::with_capacity(count + 1);
+        for i in 0..count {
+            let w = u32::from_le_bytes(data[4 + i * 4..8 + i * 4].try_into().unwrap()) as usize;
+            let byte_off = w.checked_mul(4)?;
+            if byte_off > data.len() {
+                return None;
+            }
+            byte_offsets.push(byte_off);
+        }
+        // Offsets must be monotonically non-decreasing.
+        for w in byte_offsets.windows(2) {
+            if w[0] > w[1] {
+                return None;
+            }
+        }
+        byte_offsets.push(data.len()); // sentinel for last entry's end
+
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            let s = byte_offsets[i];
+            let e = byte_offsets[i + 1];
+            if s > data.len() || e > data.len() || e < s {
+                return None;
+            }
+            let entry = &data[s..e];
+            if entry.len() < 4 {
+                return None;
+            }
+            let child_count = entry[0] as usize;
+            let flags = entry[1];
+            let spread = u16::from_le_bytes([entry[2], entry[3]]);
+            let children_bytes = child_count.checked_mul(14)?;
+            let header_end = 4usize.checked_add(children_bytes)?;
+
+            let mut children = Vec::with_capacity(child_count);
+            if header_end <= entry.len() {
+                for c in 0..child_count {
+                    let cb = &entry[4 + c * 14..4 + (c + 1) * 14];
+                    children.push(ChildSprite {
+                        sprite_id: u16::from_le_bytes([cb[0], cb[1]]),
+                        width: i16::from_le_bytes([cb[2], cb[3]]),
+                        anim_flags: u16::from_le_bytes([cb[4], cb[5]]),
+                        depth: i16::from_le_bytes([cb[6], cb[7]]),
+                        tail: [cb[8], cb[9], cb[10], cb[11], cb[12], cb[13]],
+                    });
+                }
+            }
+            let body_start = header_end.min(entry.len());
+            let body = entry[body_start..].to_vec();
+            out.push((
+                EffectScript {
+                    child_count: child_count as u8,
+                    flags,
+                    spread,
+                    body,
+                },
+                children,
+            ));
+        }
+        Some(out)
     }
 }
 
@@ -815,6 +964,88 @@ mod tests {
         host.advance_outcomes = vec![StateOutcome::Continue];
         pool.tick(&mut host);
         assert_eq!(host.events, vec![HostEvent::AdvanceState(0)]);
+    }
+
+    #[test]
+    fn active_count_zero_on_fresh_pool() {
+        let pool = Pool::new();
+        assert_eq!(pool.active_count(), 0);
+    }
+
+    #[test]
+    fn active_count_increments_after_spawn_with_children() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+        let script = EffectScript {
+            child_count: 3,
+            flags: 0,
+            spread: 0,
+            body: vec![],
+        };
+        pool.spawn(&mut host, 1, [0, 0, 0], 0, &script, &[])
+            .unwrap();
+        assert_eq!(pool.active_count(), 1);
+        // A second slot
+        pool.spawn(&mut host, 2, [0, 0, 0], 0, &script, &[])
+            .unwrap();
+        assert_eq!(pool.active_count(), 2);
+    }
+
+    #[test]
+    fn spawn_by_ui_id_fills_slot_from_catalog() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+        let script = EffectScript {
+            child_count: 2,
+            flags: 0,
+            spread: 0,
+            body: vec![],
+        };
+        let catalog = EffectCatalog::new(vec![(script, vec![])]);
+        assert_eq!(pool.active_count(), 0);
+        let slot = pool.spawn_by_ui_id(&mut host, 0, [10, 20, 30], 0x100, &catalog);
+        assert_eq!(slot, Some(0));
+        assert_eq!(pool.active_count(), 1);
+        assert_eq!(pool.master_slots[0].child_count, 2);
+        assert_eq!(pool.master_slots[0].angle, 0x100);
+    }
+
+    #[test]
+    fn spawn_by_ui_id_out_of_range_returns_none() {
+        let mut pool = Pool::new();
+        let mut host = RecHost::default();
+        let catalog = EffectCatalog::default();
+        assert!(
+            pool.spawn_by_ui_id(&mut host, 5, [0, 0, 0], 0, &catalog)
+                .is_none()
+        );
+        assert_eq!(pool.active_count(), 0);
+    }
+
+    #[test]
+    fn catalog_from_pack1_bytes_parses_single_script() {
+        // Pack1 with 1 entry:
+        // count=1 at [0..4], word_offset[0]=2 at [4..8] (byte 8)
+        // entry at [8..14]: child_count=0, flags=0, spread=8 LE, body=[0xAA, 0xBB]
+        let mut data = Vec::new();
+        data.extend_from_slice(&1u32.to_le_bytes()); // count=1
+        data.extend_from_slice(&2u32.to_le_bytes()); // offset[0] = word 2 = byte 8
+        data.extend_from_slice(&[0u8, 0, 8, 0, 0xAA, 0xBB]); // entry
+        let catalog = EffectCatalog::from_pack1_bytes(&data);
+        assert_eq!(catalog.len(), 1);
+        let (script, children) = catalog.entry(0).unwrap();
+        assert_eq!(script.child_count, 0);
+        assert_eq!(script.spread, 8);
+        assert_eq!(script.body, vec![0xAA, 0xBB]);
+        assert!(children.is_empty());
+    }
+
+    #[test]
+    fn catalog_from_pack1_bytes_empty_on_bad_data() {
+        // Implausible count → empty catalog.
+        let data = 0xFFFF_FFFFu32.to_le_bytes();
+        let catalog = EffectCatalog::from_pack1_bytes(&data);
+        assert!(catalog.is_empty());
     }
 
     /// `is_summon_effect` short-circuits BEFORE consuming a master slot.

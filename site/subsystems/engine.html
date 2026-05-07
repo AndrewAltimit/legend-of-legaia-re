@@ -100,40 +100,40 @@ asset-viewer &rarr; engine-*, all parser crates</code></pre>
   <h2>Phase 2 &mdash; runtime port</h2>
   <p>Port the script VM, field-loader chain, and effect VM. Handler-by-handler translation: dump each opcode handler from Ghidra, hand-port to Rust, unit-test against captured runtime traces. Aim for behavioural fidelity per opcode, not byte-exactness of the VM internals.</p>
 
-  <h3>In progress</h3>
+  <h3>Implemented</h3>
   <ul class="bullets">
-    <li><strong><a href="actor-vm.html">Actor VM</a></strong> &mdash; <code>crates/engine-vm/src/lib.rs</code>. 13 opcodes, full unit-test coverage. Drives the title screen sprite cluster.</li>
+    <li><strong><a href="actor-vm.html">Actor VM</a></strong> &mdash; <code>crates/engine-vm/src/lib.rs</code>. All 13 opcodes ported, full unit-test coverage. Drives the title screen sprite cluster.</li>
     <li><strong><a href="script-vm.html">Field VM</a></strong> &mdash; <code>crates/engine-vm/src/field.rs</code>. All 43 explicit opcodes of <code>FUN_801DE840</code> are ported with a <code>FieldHost</code> trait abstracting every SCUS callback. Cross-context dispatch (extended-bit prefix), YIELD caller-propagation, <code>Op49State</code> tristate (with the inline-MES walker for sub-0), the <code>0x4C</code> outer-nibble dispatcher, the <code>0x38</code> halt-acquire path, and the <code>0x5x/0x6x/0x7x</code> default-route fourth-flag-bank dispatchers are all wired.</li>
     <li><strong><a href="move-vm.html">Move VM</a></strong> &mdash; <code>crates/engine-vm/src/move_vm.rs</code>. All 71 main opcodes (<code>0x00..0x46</code>) of <code>FUN_80023070</code> ported, plus the <code>0x2F</code> extension dispatcher (61 sub-opcodes via <code>FUN_801D362C</code>). Per-frame entry is <code>actor_tick</code>, mirroring the gate at <code>FUN_80021DF4 + 0x80022B94</code>.</li>
-    <li><strong><a href="effect-vm.html">Effect VM</a></strong> &mdash; <code>crates/engine-vm/src/effect_vm.rs</code>. Slot pool (32 master + 128 child slots), <code>Pool::init</code> / <code>Pool::spawn</code> / <code>Pool::tick</code> ports of <code>FUN_801DE914</code> / <code>FUN_801DFDF8</code> / <code>FUN_801E0088</code>, and an <code>EffectHost::advance_state</code> hook for the per-state transitions.</li>
-    <li><strong><a href="battle-action.html">Battle action state machine</a></strong> &mdash; <code>crates/engine-vm/src/battle_action.rs</code>. Port of <code>FUN_801E295C</code> (16&nbsp;KB, the largest function in the battle overlay) as a per-frame edge-triggered state machine across 47 explicit states in 7 bands.</li>
-    <li><strong>Composite world / actor system</strong> &mdash; <code>crates/engine-core/src/world.rs</code>. A <code>World</code> struct owning the actor table, battle ctx, effect pool, field-VM ctx + bytecode + PC, per-actor move-VM bytecode buffers, and RNG state. <code>World::tick</code> runs the effect pool, then per-actor move-VM ticks, then the mode-specific top-level VM (battle-action in <code>Battle</code>, field-VM step in <code>Field</code> / <code>Cutscene</code>).</li>
-    <li><strong>Clean-room SPU mixer</strong> &mdash; <code>crates/engine-audio/src/spu/</code>. 24-voice SPU model with streaming ADPCM, ADSR, 512&nbsp;KB SPU RAM, libspu-shaped transfer engine. <code>VabBank</code> bridges parsed VAB banks into SPU RAM through the allocator; <code>Sequencer</code> drains SEQ events from the cpal callback. See <a href="audio.html">audio</a>.</li>
-  </ul>
-
-  <h3>Pending Phase 2</h3>
-  <ul class="bullets">
-    <li><strong>MES renderer</strong> &mdash; the container parser plus a bytecode interpreter (<code>crates/mes/src/interp.rs</code>) emit a <code>MesEvent</code> stream (<code>Glyph</code>, <code>EndOfMessage</code>, <code>PageBreak</code>, <code>Op65</code>, <code>Op4c</code>, <code>Op26</code>, <code>Unknown</code>). Glyph-to-character mapping still needs the dialog font tile sheet (extraction is blocked &mdash; see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dialog-font.md" target="_blank" rel="noopener">dialog-font.md</a>). The opcode dispatcher in <code>FUN_801ED710</code> (0897 town overlay) is the spec for filling in the remaining ops.</li>
-    <li><strong>Sprite engine</strong> &mdash; back the actor VM's <code>Host</code> trait with rendering + tween wiring. The <code>World</code> in <code>engine-core</code> provides the scaffolding; a full sprite engine still needs the sprite-sheet &rarr; wgpu draw-call path plus the per-frame motion tween.</li>
-    <li><strong>Field / cutscene / menu VMs</strong> &mdash; overlay capture pipeline ready for the ones still pending capture.</li>
+    <li><strong><a href="motion-vm.html">Motion VM</a></strong> &mdash; <code>crates/engine-vm/src/motion_vm.rs</code>. All 6 opcodes ported including the 12-bit fixed-point angle-math opcodes <code>0x38</code> <code>RotateToAngle</code> and <code>0x4C</code> <code>FaceTarget</code>.</li>
+    <li><strong><a href="effect-vm.html">Effect VM</a></strong> &mdash; <code>crates/engine-vm/src/effect_vm.rs</code>. Slot pool (32 master + 128 child slots), <code>Pool::init</code> / <code>Pool::spawn</code> / <code>Pool::tick</code> ports of <code>FUN_801DE914</code> / <code>FUN_801DFDF8</code> / <code>FUN_801E0088</code>, <code>Pool::spawn_by_ui_id</code> + <code>EffectCatalog</code> for UI-element routing.</li>
+    <li><strong><a href="battle-action.html">Battle action state machine</a></strong> &mdash; <code>crates/engine-vm/src/battle_action.rs</code>. Port of <code>FUN_801E295C</code> (16&nbsp;KB, the largest function in the battle overlay) as a per-frame edge-triggered state machine across 47 explicit states in 7 bands. Attack chain fires <code>apply_damage</code> at the swing-apex byte.</li>
+    <li><strong>Composite world / actor system</strong> &mdash; <code>crates/engine-core/src/world.rs</code>. <code>World</code> owns the actor table, battle ctx, effect pool, field-VM ctx, per-actor move-VM buffers, shop/inn/level-up session state, tactical-arts tracker, and ANM <code>AnimPlayer</code> instances. <code>World::tick</code> drives all of them in order per frame.</li>
+    <li><strong>Clean-room SPU mixer</strong> &mdash; <code>crates/engine-audio/src/spu/</code>. 24-voice SPU model with streaming ADPCM, ADSR, 512&nbsp;KB SPU RAM, libspu-shaped transfer engine. BGM cross-fade (30-frame volume ramp) and sequencer pause gating. WASM path uses <code>WebAudioOut</code> (<code>ScriptProcessorNode</code>). See <a href="audio.html">audio</a>.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="phase3-4">
-  <h2>Phases 3 &amp; 4</h2>
-  <table>
-    <thead><tr><th>Phase</th><th>Scope</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><strong>Phase 3 &mdash; gameplay assembly</strong></td>
-        <td>Game-mode driver (28-entry table at <code>0x8007078C</code>), field map + dialog, the <a href="battle.html">battle subsystem</a> including Tactical Arts and the per-actor state machine <code>FUN_801E295C</code>, menu + save / load.</td>
-      </tr>
-      <tr>
-        <td><strong>Phase 4 &mdash; targets</strong></td>
-        <td>Native (winit + wgpu via Vulkan / Metal / DX12), WASM browser target. Mobile / console targets are deferred.</td>
-      </tr>
-    </tbody>
-  </table>
+<section class="doc-section" id="phase3">
+  <h2>Phase 3 &mdash; gameplay assembly</h2>
+  <p>All major gameplay systems are wired into <code>engine-core::World</code> and driven from <code>engine-shell::BootSession</code>.</p>
+  <ul class="bullets">
+    <li><strong>Shop / Inn / Level-up</strong> &mdash; <code>ShopSession</code>, <code>InnSession</code>, <code>LevelUpTracker</code> in <code>engine-core</code>. <code>MenuRuntime</code> routes buy/sell/quantity/confirm/exit through session state; HP/MP restore wired on inn commit; XP distribution fires <code>BattleEvent::LevelUp</code> per character per level.</li>
+    <li><strong>Tactical Arts learning UI</strong> &mdash; <code>TacticalArtsTracker</code> tracks per-char / per-art use counts; <code>ArtLearnedBanner</code> counts down in <code>World::tick</code>; <code>BattleEvent::TacticalArtLearned</code> fires when the threshold is crossed.</li>
+    <li><strong>Menu sub-screens</strong> &mdash; <code>MenuRuntime</code> handles <code>StatusCharacter</code> / <code>StatusEquipment</code> / <code>StatusInventory</code> with cursor input, data-view methods, and commit side-effects (unequip slot, decrement inventory item).</li>
+    <li><strong>Save / load</strong> &mdash; <code>LGSF v1</code> self-describing binary (magic + story_flags + money + inventory pairs + party records); <code>World::save_full</code> / <code>load_full</code>; memory-card writeback via <code>legaia_save::card::write_block</code>.</li>
+    <li><strong>BGM + audio</strong> &mdash; <code>AudioBgmDirector</code> cross-fades between tracks over 30 frames; sequencer pause gating; <code>input::Mapping</code> persists key bindings to TOML.</li>
+    <li><strong>Windowed engine binary</strong> &mdash; <code>legaia-engine play-window</code> opens 960&times;720 via winit; <code>play-str</code> plays back PSX STR + XA in a window; <code>config set --binding</code> edits key maps.</li>
+    <li><strong>WASM disc-bytes Vfs</strong> &mdash; <code>MemoryVfs</code>, <code>Archive::from_bytes</code>, <code>SceneHost::from_prot_bytes</code>, and <code>LegaiaRuntime::load_disc</code> / <code>enter_scene</code> / <code>disc_loaded</code> drive the in-browser engine from uploaded disc bytes. The viewer &ldquo;Run engine&rdquo; tab wires it in JS.</li>
+    <li><strong>Region support</strong> &mdash; <code>legaia_prot::Region</code> enum (NA / EU / JP); <code>ProtIndex::with_region()</code>; documented in <code>docs/reference/builds.md</code>.</li>
+  </ul>
+
+  <h3>Open Phase 3 items</h3>
+  <ul class="bullets">
+    <li>Shop / inn / level-up <strong>render layout</strong> pending the five uncaptured gameplay overlays (world map, save screen, shop, cutscene, level-up).</li>
+    <li>Scene-init ANM binding per-actor (blocked on tracing the <code>0x8007C018</code> pointer-table registration order).</li>
+    <li><code>legaia-engine play --scene cutsceneN</code> PROT-scene routing (direct <code>play-str &lt;file&gt;</code> works; scene-entry routing pending STR-entry trace).</li>
+    <li>Exact XP / stat-gain tables from the level-up overlay (current placeholder: 100&times;n&sup2; curve).</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="provenance">

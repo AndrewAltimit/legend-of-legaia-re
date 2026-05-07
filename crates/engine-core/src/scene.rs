@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use legaia_asset::categorize::{Class, classify};
+use legaia_prot::Region;
 use legaia_prot::archive::{Archive, Entry};
 use legaia_prot::cdname;
 
@@ -41,6 +42,9 @@ pub struct ProtIndex {
     entry_cache: Mutex<HashMap<u32, Arc<Vec<u8>>>>,
     /// Lazy classification cache. Populated on first `class_of` call.
     class_cache: Mutex<HashMap<u32, Class>>,
+    /// Retail region this index was opened against. Metadata only — the TOC
+    /// formula and CDNAME layout are identical across regions.
+    pub region: Region,
 }
 
 impl ProtIndex {
@@ -66,7 +70,31 @@ impl ProtIndex {
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
+            region: Region::Na,
         })
+    }
+
+    /// Build an index from raw in-memory PROT.DAT bytes. WASM-safe — no
+    /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
+    /// available as a string; omit to skip scene-name resolution.
+    pub fn from_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
+        let archive = Archive::from_bytes(prot_bytes).context("parse in-memory PROT.DAT")?;
+        let entries = archive.entries.clone();
+        let cdname = cdname_text.map(cdname::parse_str).transpose()?;
+        Ok(Self {
+            archive: Mutex::new(archive),
+            entries,
+            cdname,
+            entry_cache: Mutex::new(HashMap::new()),
+            class_cache: Mutex::new(HashMap::new()),
+            region: Region::Na,
+        })
+    }
+
+    /// Set the region for this index (builder pattern — non-breaking).
+    pub fn with_region(mut self, region: Region) -> Self {
+        self.region = region;
+        self
     }
 
     /// Total PROT entry count (typically 1232 in retail).
@@ -125,6 +153,19 @@ impl ProtIndex {
     pub fn scene_for_index(&self, idx: u32) -> Option<&str> {
         let map = self.cdname.as_ref()?;
         cdname::block_for(map, idx)
+    }
+
+    /// All CDNAME block names in ascending PROT-entry-index order. Each
+    /// unique block-start label appears exactly once. Returns an empty vec
+    /// if no CDNAME map was loaded.
+    ///
+    /// Used by [`DefaultMapIdResolver`] to build the map-id → scene-name
+    /// table at startup.
+    pub fn cdname_scene_names(&self) -> Vec<String> {
+        match &self.cdname {
+            Some(map) => map.values().cloned().collect(),
+            None => Vec::new(),
+        }
     }
 }
 
@@ -331,6 +372,45 @@ impl MapIdResolver for VecMapIdResolver {
     }
 }
 
+/// CDNAME-derived map-id resolver. Builds the map-id → scene-name table
+/// from the PROT archive's CDNAME index at startup, using ascending
+/// PROT-entry-index order as the sequential map-id.
+///
+/// Map-id 0 maps to the first CDNAME block name (lowest PROT index),
+/// map-id 1 to the second, and so on. This matches the most likely retail
+/// table ordering (sequential CDNAME block labels loaded in TOC order)
+/// pending a full `FUN_8001f7c0` trace.
+///
+/// Suitable for use in [`BootSession::open`] as the default resolver.
+#[derive(Debug, Clone, Default)]
+pub struct DefaultMapIdResolver {
+    inner: VecMapIdResolver,
+}
+
+impl DefaultMapIdResolver {
+    /// Build from a `ProtIndex` — calls [`ProtIndex::cdname_scene_names`]
+    /// and wraps the resulting ordered list.
+    pub fn from_index(index: &ProtIndex) -> Self {
+        Self {
+            inner: VecMapIdResolver::new(index.cdname_scene_names()),
+        }
+    }
+
+    /// Construct directly from a name list. Useful for tests that can't
+    /// open a real ProtIndex.
+    pub fn new(names: Vec<String>) -> Self {
+        Self {
+            inner: VecMapIdResolver::new(names),
+        }
+    }
+}
+
+impl MapIdResolver for DefaultMapIdResolver {
+    fn resolve(&self, map_id: u8) -> Option<String> {
+        self.inner.resolve(map_id)
+    }
+}
+
 /// Per-tick outcome from [`SceneHost::tick`]. Engines route this back into
 /// their UI layer (e.g. log scene transitions, update HUD on battle end).
 #[derive(Debug, Clone)]
@@ -414,6 +494,14 @@ impl SceneHost {
     /// Open the host directly from an extracted directory.
     pub fn open_extracted(extracted_root: impl AsRef<Path>) -> Result<Self> {
         let p = ProtIndex::open_extracted(extracted_root.as_ref())?;
+        Ok(Self::new(Arc::new(p)))
+    }
+
+    /// Build a host from raw in-memory PROT.DAT bytes. WASM-safe — no
+    /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
+    /// available; omit to skip scene-name resolution.
+    pub fn from_prot_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
+        let p = ProtIndex::from_bytes(prot_bytes, cdname_text)?;
         Ok(Self::new(Arc::new(p)))
     }
 
@@ -614,6 +702,16 @@ impl SceneHost {
         Ok(SceneTickEvent::Stepped)
     }
 
+    /// Replace the effect-script catalog used by the effect VM pool.
+    ///
+    /// Call once after loading PROT 873 (`efect.dat`) and parsing its
+    /// pack1 slice via [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
+    /// An empty catalog is safe — `BattleHostImpl::ui_element` will simply
+    /// not spawn any pool entries until a real catalog is wired.
+    pub fn set_effect_catalog(&mut self, catalog: legaia_engine_vm::effect_vm::EffectCatalog) {
+        self.world.effect_catalog = catalog;
+    }
+
     /// Convenience: hand off a path to the SCUS `extracted/` root, get a
     /// host with no scene loaded yet.
     pub fn from_extracted_root(root: impl Into<PathBuf>) -> Result<Self> {
@@ -624,6 +722,21 @@ impl SceneHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_map_id_resolver_resolves_by_position() {
+        let r = DefaultMapIdResolver::new(vec!["town01".into(), "cave01".into(), "world01".into()]);
+        assert_eq!(r.resolve(0), Some("town01".into()));
+        assert_eq!(r.resolve(1), Some("cave01".into()));
+        assert_eq!(r.resolve(2), Some("world01".into()));
+        assert_eq!(r.resolve(3), None);
+    }
+
+    #[test]
+    fn default_map_id_resolver_empty_returns_none() {
+        let r = DefaultMapIdResolver::default();
+        assert_eq!(r.resolve(0), None);
+    }
 
     /// Smoke test: BGM index math matches the documented retail resolver.
     /// `block_start + 6 + bgm_id` for ids < 2000.

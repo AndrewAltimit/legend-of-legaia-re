@@ -1,0 +1,17 @@
+[package]
+name = "legaia-mdec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_mdec"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mdec"
+path = "src/bin/mdec.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true

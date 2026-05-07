@@ -25,6 +25,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub mod sequencer;
 pub mod spu;
 pub mod vab_bind;
+#[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+mod webaudio;
 
 pub use sequencer::Sequencer;
 pub use spu::Spu;
@@ -33,6 +35,8 @@ pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
 pub use spu::ram::{SpuAllocator, SpuRam, TransferDirection};
 pub use spu::voice::{PITCH_UNITY, SPU_INTERNAL_RATE, Voice};
 pub use vab_bind::{UploadedVag, VabBank};
+#[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+pub use webaudio::WebAudioOut;
 
 /// Default sample rate to assume for queued buffers when the caller
 /// doesn't specify one. PSX VAG samples in Legaia run at this rate
@@ -144,6 +148,21 @@ struct StreamResampler {
     /// Optional active sequencer. Ticked once per SPU sample so timing is
     /// locked to the audio clock instead of frame timing.
     sequencer: Option<Sequencer>,
+    /// When `true` the sequencer is not ticked; SPU voices keep playing
+    /// so in-progress notes decay naturally. Set via
+    /// [`AudioOut::set_sequencer_paused`].
+    sequencer_paused: bool,
+    /// Optional pending sequencer to install once the current fade-out
+    /// reaches zero. `None` when no crossfade is in progress.
+    pending_seq: Option<Sequencer>,
+    /// Master-fade multiplier applied to the full SPU output (0.0 = silent,
+    /// 1.0 = full volume). Drives BGM cross-fades; doesn't affect XA.
+    master_fade: f32,
+    /// Target for `master_fade`. When `master_fade == fade_target` the
+    /// fade engine idles.
+    fade_target: f32,
+    /// Absolute change in `master_fade` per SPU sample. Zero when idle.
+    fade_step: f32,
     /// Optional active XA streaming voice. Mixed into the SPU output at
     /// SPU rate (44.1 kHz) before the host-rate resample.
     xa: Option<XaPlayback>,
@@ -163,6 +182,11 @@ impl StreamResampler {
         Self {
             spu: Spu::new(),
             sequencer: None,
+            sequencer_paused: false,
+            pending_seq: None,
+            master_fade: 1.0,
+            fade_target: 1.0,
+            fade_step: 0.0,
             xa: None,
             prev: (0, 0),
             cur: (0, 0),
@@ -174,14 +198,30 @@ impl StreamResampler {
     /// Pull one output frame at the device sample rate, resampling from the
     /// SPU's 44.1 kHz with linear interpolation. XA streams are summed
     /// into the SPU output at SPU rate, then the whole sum is resampled.
+    /// The `master_fade` multiplier is applied to the SPU contribution only
+    /// (not XA) so BGM cross-fades don't interrupt ambient / dialogue audio.
     fn next_frame(&mut self) -> (i16, i16) {
         // Advance the SPU as many ticks as needed to push `phase` into [0,1).
         while self.phase >= 1.0 {
-            if let Some(seq) = &mut self.sequencer {
+            // Advance fade one step per SPU tick.
+            self.advance_fade();
+            // Tick sequencer unless paused.
+            if !self.sequencer_paused
+                && let Some(seq) = self.sequencer.as_mut()
+            {
                 seq.tick_us(&mut self.spu, US_PER_SPU_TICK);
             }
             self.prev = self.cur;
-            let mut sample = self.spu.tick();
+            // Mix SPU output with master-fade applied.
+            let spu_sample = self.spu.tick();
+            let fv = self.master_fade;
+            let spu_faded = if fv >= 1.0 {
+                spu_sample
+            } else {
+                apply_fade(spu_sample, fv)
+            };
+            let mut sample = spu_faded;
+            // XA is mixed in after the fade — not subject to BGM crossfade.
             if let Some(xa) = self.xa.as_mut() {
                 if xa.is_done() {
                     self.xa = None;
@@ -199,6 +239,49 @@ impl StreamResampler {
         self.phase += self.step;
         (l, r)
     }
+
+    /// Advance `master_fade` one SPU sample toward `fade_target`. When the
+    /// fade-out reaches zero and a `pending_seq` is waiting, swaps it in and
+    /// starts the fade-in.
+    fn advance_fade(&mut self) {
+        if self.fade_step == 0.0 {
+            return;
+        }
+        if self.master_fade < self.fade_target {
+            self.master_fade = (self.master_fade + self.fade_step).min(self.fade_target);
+        } else if self.master_fade > self.fade_target {
+            self.master_fade = (self.master_fade - self.fade_step).max(self.fade_target);
+        }
+        // Reached target
+        if (self.master_fade - self.fade_target).abs() < 1e-6 {
+            self.master_fade = self.fade_target;
+            if self.master_fade == 0.0 {
+                // Fade-out done: swap in pending sequencer if present.
+                if let Some(mut old) = self.sequencer.take() {
+                    old.stop(&mut self.spu);
+                }
+                if let Some(seq) = self.pending_seq.take() {
+                    self.sequencer = Some(seq);
+                    // Fade back in at the same rate.
+                    self.fade_target = 1.0;
+                    // fade_step stays the same (symmetric fade-in).
+                } else {
+                    // No pending — just idled at silence; release.
+                    self.fade_step = 0.0;
+                }
+            } else {
+                // Fade-in (or any other ramp) complete.
+                self.fade_step = 0.0;
+            }
+        }
+    }
+}
+
+/// Multiply a stereo i16 sample pair by a 0.0..=1.0 gain.
+fn apply_fade(s: (i16, i16), fade: f32) -> (i16, i16) {
+    let l = (s.0 as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+    let r = (s.1 as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+    (l, r)
 }
 
 fn lerp_i16(a: i16, b: i16, t: f32) -> i16 {
@@ -437,23 +520,71 @@ impl AudioOut {
         s.xa.as_ref().is_some_and(|x| !x.is_done())
     }
 
-    /// Install a sequencer. The cpal callback ticks it once per SPU sample
-    /// (every `1 / 44100` s) for sample-accurate timing. Replacing an
-    /// existing sequencer silences any active notes from the prior one.
+    /// Install a sequencer immediately. The cpal callback ticks it once per
+    /// SPU sample (every `1 / 44100` s) for sample-accurate timing.
+    /// Replacing an existing sequencer silences any active notes from the
+    /// prior one (use [`Self::crossfade_to`] for a smooth transition).
     pub fn attach_sequencer(&self, seq: Sequencer) {
         let mut s = self.state.lock().unwrap();
         if let Some(mut prev) = s.sequencer.take() {
             prev.stop(&mut s.spu);
         }
+        // Cancel any in-progress crossfade.
+        s.pending_seq = None;
+        s.master_fade = 1.0;
+        s.fade_target = 1.0;
+        s.fade_step = 0.0;
         s.sequencer = Some(seq);
     }
 
     /// Detach the active sequencer (if any) and key-off whatever it had
-    /// running.
+    /// running. Cancels any in-progress crossfade.
     pub fn detach_sequencer(&self) {
         let mut s = self.state.lock().unwrap();
         if let Some(mut seq) = s.sequencer.take() {
             seq.stop(&mut s.spu);
+        }
+        s.pending_seq = None;
+        s.master_fade = 1.0;
+        s.fade_target = 1.0;
+        s.fade_step = 0.0;
+    }
+
+    /// Gate the sequencer tick without detaching it. When `paused` is
+    /// `true` the sequencer clock stops (SPU voices already sounding will
+    /// continue to decay via their ADSR envelopes). Call with `false` to
+    /// resume from where the sequencer left off.
+    pub fn set_sequencer_paused(&self, paused: bool) {
+        self.state.lock().unwrap().sequencer_paused = paused;
+    }
+
+    /// Cross-fade from the currently-playing sequencer to `new_seq` over
+    /// `fade_samples` SPU-rate samples (44 100 Hz). The existing sequencer
+    /// fades out, then `new_seq` is swapped in and fades back up to full
+    /// volume, all inside the audio callback without glitching.
+    ///
+    /// If no sequencer is currently playing, `new_seq` is installed
+    /// immediately at full volume (same as [`Self::attach_sequencer`]).
+    ///
+    /// `fade_samples = 0` attaches immediately (same as
+    /// [`Self::attach_sequencer`]).
+    pub fn crossfade_to(&self, new_seq: Sequencer, fade_samples: u32) {
+        let mut s = self.state.lock().unwrap();
+        if fade_samples == 0 || s.sequencer.is_none() {
+            // No current sequencer or immediate switch requested.
+            if let Some(mut prev) = s.sequencer.take() {
+                prev.stop(&mut s.spu);
+            }
+            s.pending_seq = None;
+            s.master_fade = 1.0;
+            s.fade_target = 1.0;
+            s.fade_step = 0.0;
+            s.sequencer = Some(new_seq);
+        } else {
+            // Queue new_seq and start fading out.
+            s.pending_seq = Some(new_seq);
+            s.fade_target = 0.0;
+            s.fade_step = 1.0 / fade_samples.max(1) as f32;
         }
     }
 
@@ -714,6 +845,78 @@ mod tests {
             let _ = r.next_frame();
         }
         assert!(r.xa.is_none(), "exhausted XA stream should detach");
+    }
+
+    // --- fade engine ---
+
+    #[test]
+    fn apply_fade_at_zero_silences() {
+        assert_eq!(apply_fade((1000, -2000), 0.0), (0, 0));
+    }
+
+    #[test]
+    fn apply_fade_at_unity_is_passthrough() {
+        let s = (1234i16, -5678i16);
+        assert_eq!(apply_fade(s, 1.0), s);
+    }
+
+    #[test]
+    fn resampler_advance_fade_fades_out_over_samples() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        // Start a fade-out over 10 SPU ticks.
+        r.master_fade = 1.0;
+        r.fade_target = 0.0;
+        r.fade_step = 1.0 / 10.0;
+        for _ in 0..10 {
+            r.advance_fade();
+        }
+        assert!(
+            r.master_fade < 1e-5,
+            "fade should reach 0 after 10 steps, got {}",
+            r.master_fade
+        );
+        assert_eq!(r.fade_step, 0.0, "step should idle after target reached");
+    }
+
+    #[test]
+    fn resampler_pending_seq_swapped_at_zero() {
+        let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
+        // Manually load a pending sequencer and drive the fade to 0.
+        r.master_fade = 0.1;
+        r.fade_target = 0.0;
+        r.fade_step = 0.1;
+        // Construct a no-op sequencer (no samples).
+        let seq = Sequencer::new(
+            legaia_seq::Seq::parse(&{
+                // Legaia-format SEQ: magic(4) + version=1 u32 BE(4) + ppqn u16 BE(2)
+                // + tempo u24 BE(3) + time_sig_num(1) + time_sig_denom_pow2(1) = 15 B header
+                // then delta(1) + EOT meta(3) = 4 B event stream. Total 19 B.
+                let mut v = b"pQES".to_vec();
+                v.extend_from_slice(&1u32.to_be_bytes()); // version
+                v.extend_from_slice(&24u16.to_be_bytes()); // ppqn
+                v.extend_from_slice(&[0x07, 0xA1, 0x20]); // tempo = 500 000 µs/qn
+                v.push(4); // time_sig_num
+                v.push(2); // time_sig_denom_pow2
+                v.push(0x00); // delta = 0
+                v.extend_from_slice(&[0xFF, 0x2F, 0x00]); // End of Track
+                v
+            })
+            .expect("minimal seq"),
+            VabBank {
+                master_vol: 127,
+                samples: vec![],
+                programs: vec![],
+            },
+        );
+        r.pending_seq = Some(seq);
+        r.advance_fade(); // one step: 0.1 - 0.1 = 0 → swap
+        assert!(
+            r.sequencer.is_some(),
+            "pending seq should be installed after fade-out"
+        );
+        assert!(r.pending_seq.is_none());
+        // Fade should now be going back up.
+        assert_eq!(r.fade_target, 1.0);
     }
 
     #[test]
