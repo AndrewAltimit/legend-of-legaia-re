@@ -71,6 +71,7 @@ pub mod effect_vm;
 pub mod field;
 pub mod field_helpers;
 pub mod menu;
+pub mod motion_vm;
 pub mod move_vm;
 
 /// Width of one bytecode instruction in bytes.

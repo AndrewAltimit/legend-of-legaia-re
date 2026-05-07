@@ -14,4 +14,8 @@ clap.workspace = true
 log = "0.4"
 env_logger = "0.11"
 legaia-engine-core = { path = "../engine-core" }
+legaia-engine-audio = { path = "../engine-audio" }
 legaia-prot = { path = "../prot" }
+legaia-save = { path = "../save" }
+legaia-seq = { path = "../seq" }
+legaia-vab = { path = "../vab" }

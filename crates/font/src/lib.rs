@@ -124,6 +124,68 @@ impl Font {
         })
     }
 
+    /// Build a placeholder font with no Sony bytes — every glyph cell is a
+    /// solid white rect, every printable char has a fixed advance. Useful
+    /// for engines that don't have the extracted atlas yet (e.g. CI smoke
+    /// runs, or end-users who haven't run `font-extract`); HUD text renders
+    /// as visible white blocks instead of crashing.
+    ///
+    /// Engines should prefer [`Font::load_from_extracted`] when the atlas
+    /// is available — the placeholder is purely a fallback.
+    pub fn placeholder() -> Self {
+        let atlas_w = COLS * GLYPH_W;
+        let atlas_h = ROWS * GLYPH_H;
+        let mut atlas_rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+        // Paint each printable glyph cell as a solid white rect with a
+        // 1-pixel border so the cells visually separate. Bytes below
+        // `FIRST_CHAR` get a transparent cell.
+        for c in FIRST_CHAR..=0xFFu8 {
+            let Some((ox, oy)) = Self::glyph_origin(c) else {
+                continue;
+            };
+            for dy in 0..GLYPH_H {
+                for dx in 0..GLYPH_W {
+                    // 1-pixel border — leave the perimeter of the cell
+                    // alpha=255, white, and the interior solid white too.
+                    let x = ox + dx;
+                    let y = oy + dy;
+                    let off = ((y * atlas_w + x) * 4) as usize;
+                    atlas_rgba[off] = 255;
+                    atlas_rgba[off + 1] = 255;
+                    atlas_rgba[off + 2] = 255;
+                    atlas_rgba[off + 3] = 255;
+                }
+            }
+        }
+        // Fixed-width 8 px advance for every printable char.
+        let mut widths = [0u8; 256];
+        for w in widths.iter_mut().take(256).skip(FIRST_CHAR as usize) {
+            *w = 8;
+        }
+        Self {
+            widths,
+            atlas_rgba,
+            atlas_w,
+            atlas_h,
+        }
+    }
+
+    /// Try to load from `extracted/`, falling back to a placeholder font
+    /// when the artifacts aren't present. Logs a warning so the player
+    /// knows text will render as white blocks.
+    pub fn load_or_placeholder(root: impl AsRef<Path>) -> Self {
+        match Self::load_from_extracted(root) {
+            Ok(f) => f,
+            Err(e) => {
+                log::warn!(
+                    "dialog font not loaded ({:#}); falling back to placeholder",
+                    e
+                );
+                Self::placeholder()
+            }
+        }
+    }
+
     /// Atlas dimensions (pixels).
     pub fn atlas_dimensions(&self) -> (u32, u32) {
         (self.atlas_w, self.atlas_h)
@@ -471,6 +533,29 @@ impl EscapeTable {
     /// Look up an entry by index — `byte` is the operand of `0xCE`.
     pub fn entry(&self, byte: u8) -> Option<&EscapeEntry> {
         self.entries.get(byte as usize)
+    }
+}
+
+#[cfg(test)]
+mod placeholder_tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_has_expected_dimensions() {
+        let f = Font::placeholder();
+        let (w, h) = f.atlas_dimensions();
+        assert_eq!(w, COLS * GLYPH_W);
+        assert_eq!(h, ROWS * GLYPH_H);
+    }
+
+    #[test]
+    fn placeholder_widths_are_fixed_8_for_printables() {
+        let f = Font::placeholder();
+        for c in FIRST_CHAR..=0x7E {
+            assert!(f.advance_of(c) >= 8, "advance for 0x{c:02x} should be >= 8");
+        }
+        // Non-printable still 0.
+        assert_eq!(f.advance_of(0x05), 0);
     }
 }
 

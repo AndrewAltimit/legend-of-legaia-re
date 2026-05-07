@@ -89,6 +89,9 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+pub mod player;
+pub use player::{AnimPlayer, PoseFrame};
+
 /// Size of the optional 16-byte allocator preamble that wraps a RAM-loaded
 /// ANM buffer. Not present in on-disc ANM blobs.
 pub const PREAMBLE_SIZE: usize = 0x10;
