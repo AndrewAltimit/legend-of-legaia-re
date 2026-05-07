@@ -51,6 +51,61 @@ Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic — they produce t
 
 A future `sound` crate (sequencer playback for `.spk` sequences and the `.dpk / .MAP / .PCH` family) would depend on `vab`. A future battle / menu module belongs inside `engine-vm` next to the actor + field VMs rather than as a separate crate.
 
+## Runtime architecture
+
+The diagram below traces data-flow from the top-level binary through crate boundaries at runtime.  Arrows show the direction data or control flows; edge labels on the `World` → VM arrows name the Rust trait `World` implements to drive each VM.
+
+```mermaid
+graph LR
+    BIN["legaia-engine"]
+
+    subgraph shell ["engine-shell"]
+        BS["BootSession"]
+        BGM["AudioBgmDirector"]
+    end
+
+    subgraph core ["engine-core"]
+        MD["ModeDriver"]
+        SH["SceneHost"]
+        W["World"]
+        SR["SceneResources"]
+    end
+
+    subgraph vm ["engine-vm"]
+        AVM["Actor VM · 13 ops"]
+        FVM["Field VM · 43 ops"]
+        MVM["Move VM · 71+61 ops"]
+        MotVM["Motion VM"]
+        EVM["Effect VM"]
+        BSM["Battle Action SM"]
+    end
+
+    subgraph ren ["engine-render"]
+        REN["Renderer · wgpu + PSX VRAM"]
+    end
+
+    subgraph au ["engine-audio"]
+        SEQ["SsAPI Sequencer"]
+        SPU["SPU Mixer · cpal"]
+    end
+
+    BIN --> BS
+    BS --> MD
+    BS --> BGM
+    MD -->|drives| SH
+    SH --> W
+    SH --> SR
+    W -->|ActorVmHost| AVM
+    W -->|FieldVmHost| FVM
+    W -->|MoveVmHost| MVM
+    W -->|MotionVmHost| MotVM
+    W -->|EffectVmHost| EVM
+    W -->|BattleActionHost| BSM
+    SR -->|per-frame upload| REN
+    BGM -->|sequences| SEQ
+    SEQ -->|samples| SPU
+```
+
 ## Architectural principles
 
 - **Asset crates stay engine-agnostic.** `crates/tim`, `crates/tmd`, etc. don't depend on wgpu / SDL3 / cpal.
