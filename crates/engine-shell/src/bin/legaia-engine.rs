@@ -5,24 +5,34 @@
 //!
 //! - `info` — headless one-line summary of a scene's resolved asset chain.
 //! - `list-scenes` — every CDNAME scene name with its PROT range.
-//! - `play` — open a scene as a real running engine: ticks the World,
-//!   advances the camera against the configured follow target, drains the
-//!   field-VM event queue into the audio BGM director. No window in this
-//!   binary (use `asset-viewer field` for the windowed demo); `play` runs
-//!   the engine for `--frames` frames or until interrupted, useful as a
-//!   smoke check that boot wiring + audio + scene transitions actually
-//!   work end-to-end.
+//! - `play` — headless engine tick: world + camera + audio, no window.
+//! - `play-window` — windowed engine: opens a wgpu surface, renders scene
+//!   TMDs against the software PSX VRAM each frame. Input: arrows = D-pad,
+//!   Z = Cross, Esc = quit.
 
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use glam::{Mat4, Vec3};
+use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_render::{
+    RenderTarget, Renderer, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, text_draws_for,
+};
 use legaia_engine_shell::{BootConfig, BootSession};
+use legaia_font::Font;
 use legaia_prot::cdname;
+use winit::application::ApplicationHandler;
+use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -100,6 +110,19 @@ enum Cmd {
         #[arg(long, default_value_t = 16)]
         frame_ms: u64,
     },
+    /// Open a window, boot a scene, and run the engine with rendering.
+    /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
+    PlayWindow {
+        /// Starting scene name. Default: `town01`.
+        #[arg(long, default_value = "town01")]
+        scene: String,
+        /// Extracted-root directory.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Disable audio output.
+        #[arg(long, default_value_t = false)]
+        no_audio: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -118,6 +141,11 @@ fn main() -> Result<()> {
             no_audio,
             frame_ms,
         } => cmd_play(&scene, &extracted_root, frames, !no_audio, frame_ms),
+        Cmd::PlayWindow {
+            scene,
+            extracted_root,
+            no_audio,
+        } => cmd_play_window(&scene, &extracted_root, !no_audio),
         Cmd::Save {
             extracted_root,
             save_dir,
@@ -338,5 +366,348 @@ fn cmd_list_scenes(extracted_root: &std::path::Path) -> Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// play-window
+// ---------------------------------------------------------------------------
+
+/// Windowed engine runner state. Owned by the winit event loop.
+struct PlayWindowApp {
+    session: BootSession,
+    font: Font,
+    /// Pre-built scene resources (VRAM + TMDs). Consumed by `upload_assets`
+    /// when the renderer is first attached; `None` after that.
+    scene_res: Option<SceneResources>,
+    window: Option<Arc<Window>>,
+    renderer: Option<Renderer>,
+    font_atlas: Option<UploadedFontAtlas>,
+    uploaded_vram: Option<UploadedVram>,
+    meshes: Vec<UploadedVramMesh>,
+    scene_aabb: ([f32; 3], [f32; 3]),
+    /// Current held-button bitmask (PSX pad encoding). Updated per key event.
+    pad: u16,
+    started_at: Instant,
+    last_tick: Instant,
+}
+
+impl PlayWindowApp {
+    fn upload_assets(&mut self) {
+        let Some(res) = self.scene_res.take() else {
+            return;
+        };
+        let (vram_opt, font_opt, meshes, lo, hi) = {
+            let Some(r) = self.renderer.as_ref() else {
+                self.scene_res = Some(res);
+                return;
+            };
+            let vram = r
+                .upload_vram(&res.vram)
+                .map_err(|e| log::error!("VRAM upload: {e:#}"))
+                .ok();
+            let font = r
+                .upload_font(&self.font)
+                .map_err(|e| log::error!("font upload: {e:#}"))
+                .ok();
+            let mut meshes = Vec::new();
+            let mut lo = [f32::INFINITY; 3];
+            let mut hi = [f32::NEG_INFINITY; 3];
+            for rtmd in &res.tmds {
+                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
+                if vmesh.indices.is_empty() {
+                    continue;
+                }
+                let (mlo, mhi) = vmesh.aabb();
+                for ax in 0..3 {
+                    if mlo[ax] < lo[ax] {
+                        lo[ax] = mlo[ax];
+                    }
+                    if mhi[ax] > hi[ax] {
+                        hi[ax] = mhi[ax];
+                    }
+                }
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => meshes.push(m),
+                    Err(e) => log::warn!("TMD upload skipped: {e:#}"),
+                }
+            }
+            (vram, font, meshes, lo, hi)
+        };
+        if let Some(v) = vram_opt {
+            self.uploaded_vram = Some(v);
+        }
+        if let Some(a) = font_opt {
+            self.font_atlas = Some(a);
+        }
+        self.meshes = meshes;
+        if lo[0].is_finite() {
+            self.scene_aabb = (lo, hi);
+        }
+        log::info!(
+            "play-window: {} meshes uploaded, VRAM {}",
+            self.meshes.len(),
+            if self.uploaded_vram.is_some() {
+                "ready"
+            } else {
+                "failed"
+            }
+        );
+    }
+
+    fn camera_mvp(&self, aspect: f32) -> Mat4 {
+        let (lo, hi) = self.scene_aabb;
+        let center = Vec3::new(
+            0.5 * (lo[0] + hi[0]),
+            0.5 * (lo[1] + hi[1]),
+            0.5 * (lo[2] + hi[2]),
+        );
+        let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        let radius = (0.5 * extent.length()).max(1.0);
+        let distance = radius / 30f32.to_radians().tan() * 1.6;
+        let angle = self.started_at.elapsed().as_secs_f32() * 0.25;
+        let eye = center
+            + Vec3::new(
+                distance * angle.cos(),
+                -distance * 0.4,
+                distance * angle.sin(),
+            );
+        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+        let near = (distance * 0.05).max(0.1);
+        let far = distance * 4.0 + 1000.0;
+        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+        proj * view
+    }
+
+    fn actor_model(&self, slot: usize) -> Mat4 {
+        let a = &self.session.host.world.actors[slot];
+        let pos = Vec3::new(
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        );
+        Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
+    fn build_hud(&self, _w: u32, _h: u32) -> Vec<TextDraw> {
+        let Some(atlas) = &self.font_atlas else {
+            return Vec::new();
+        };
+        let _ = atlas;
+        let white = [1.0f32, 1.0, 1.0, 1.0];
+        let dim = [0.7f32, 0.85, 1.0, 1.0];
+        let scene_name = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .map(|s| s.name.as_str())
+            .unwrap_or("(none)");
+        let line1 = format!(
+            "scene {}  frame {}  meshes {}",
+            scene_name,
+            self.session.host.world.frame,
+            self.meshes.len()
+        );
+        let layout1 = self.font.layout_ascii(&line1);
+        let mut out = text_draws_for(&layout1, (8, 8), white);
+        let audio_str = if self.session.audio.is_some() {
+            "audio on"
+        } else {
+            "no audio"
+        };
+        let line2 = format!(
+            "t {:.1}s  {}  arrows=dpad Z=X",
+            self.started_at.elapsed().as_secs_f32(),
+            audio_str
+        );
+        let layout2 = self.font.layout_ascii(&line2);
+        out.extend(text_draws_for(&layout2, (8, 26), dim));
+        out
+    }
+}
+
+impl ApplicationHandler for PlayWindowApp {
+    fn resumed(&mut self, evl: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let attrs = WindowAttributes::default()
+            .with_title("legaia-engine")
+            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
+        let window = match evl.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                log::error!("create_window: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        let size = window.inner_size();
+        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Renderer::new: {e:#}");
+                evl.exit();
+                return;
+            }
+        };
+        self.window = Some(window);
+        self.renderer = Some(renderer);
+        self.upload_assets();
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
+    }
+
+    fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => evl.exit(),
+            WindowEvent::Resized(size) => {
+                if let Some(r) = self.renderer.as_mut() {
+                    r.resize(size.width, size.height);
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(code),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
+                    evl.exit();
+                    return;
+                }
+                if let Some(button) = keymap_pad(code) {
+                    if state == ElementState::Pressed {
+                        self.pad |= button.mask();
+                    } else {
+                        self.pad &= !button.mask();
+                    }
+                }
+            }
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = now
+                    .duration_since(self.last_tick)
+                    .min(Duration::from_millis(100));
+                self.last_tick = now;
+                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
+                for _ in 0..target_frames.min(4) {
+                    if let Err(e) = self.session.tick() {
+                        log::error!("session tick: {e:#}");
+                    }
+                }
+                if let (Some(r), Some(vram), Some(atlas)) = (
+                    &self.renderer,
+                    self.uploaded_vram.as_ref(),
+                    self.font_atlas.as_ref(),
+                ) {
+                    let (w, h) = r.surface_size();
+                    let aspect = w as f32 / h.max(1) as f32;
+                    let cam = self.camera_mvp(aspect);
+                    let draws: Vec<SceneDraw<'_>> = self
+                        .meshes
+                        .iter()
+                        .enumerate()
+                        .map(|(slot, m)| SceneDraw {
+                            mesh: m,
+                            mvp: cam * self.actor_model(slot),
+                        })
+                        .collect();
+                    let hud = self.build_hud(w, h);
+                    let overlay = TextOverlay { atlas, draws: &hud };
+                    let scene = RenderScene {
+                        vram,
+                        draws: &draws,
+                        overlay_lines: None,
+                        overlay_sprites: None,
+                        overlay_text: Some(&overlay),
+                    };
+                    if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
+                        log::error!("render: {e:#}");
+                    }
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Map winit physical keys to PSX pad buttons. Arrows = D-pad,
+/// Z/X/A/S = Cross/Square/Triangle/Circle, Enter = Start, RShift = Select.
+fn keymap_pad(code: KeyCode) -> Option<PadButton> {
+    Some(match code {
+        KeyCode::ArrowUp => PadButton::Up,
+        KeyCode::ArrowDown => PadButton::Down,
+        KeyCode::ArrowLeft => PadButton::Left,
+        KeyCode::ArrowRight => PadButton::Right,
+        KeyCode::KeyZ => PadButton::Cross,
+        KeyCode::KeyX => PadButton::Square,
+        KeyCode::KeyA => PadButton::Triangle,
+        KeyCode::KeyS => PadButton::Circle,
+        KeyCode::Enter => PadButton::Start,
+        KeyCode::ShiftRight => PadButton::Select,
+        KeyCode::KeyQ => PadButton::L1,
+        KeyCode::KeyW => PadButton::R1,
+        KeyCode::Digit1 => PadButton::L2,
+        KeyCode::Digit2 => PadButton::R2,
+        _ => return None,
+    })
+}
+
+fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Result<()> {
+    let cfg = BootConfig {
+        scene: scene.to_string(),
+        enable_audio,
+    };
+    let session = BootSession::open(extracted_root, &cfg)?;
+
+    let scene_res = {
+        let s = session
+            .host
+            .scene
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no scene loaded after BootSession::open"))?;
+        SceneResources::build(s)?
+    };
+    log::info!(
+        "play-window: scene '{}', {} TMDs, {} TIMs",
+        scene,
+        scene_res.tmds.len(),
+        scene_res.tim_count
+    );
+
+    let font = Font::load_or_placeholder(extracted_root);
+
+    let mut app = PlayWindowApp {
+        session,
+        font,
+        scene_res: Some(scene_res),
+        window: None,
+        renderer: None,
+        font_atlas: None,
+        uploaded_vram: None,
+        meshes: Vec::new(),
+        scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
+        pad: 0,
+        started_at: Instant::now(),
+        last_tick: Instant::now(),
+    };
+
+    let event_loop = EventLoop::new().context("create event loop")?;
+    event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
 }

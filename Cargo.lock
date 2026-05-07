@@ -1243,13 +1243,19 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
+ "glam",
  "legaia-engine-audio",
  "legaia-engine-core",
+ "legaia-engine-render",
+ "legaia-font",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
+ "legaia-tim",
+ "legaia-tmd",
  "legaia-vab",
  "log",
+ "winit",
 ]
 
 [[package]]

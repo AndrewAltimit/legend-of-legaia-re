@@ -38,6 +38,9 @@ pub struct ResolvedTmd {
     pub byte_len: usize,
     /// Parsed TMD ready for primitive walking + render upload.
     pub tmd: legaia_tmd::Tmd,
+    /// Raw bytes of the TMD slice (same buffer passed to [`legaia_tmd::parse`]).
+    /// Required by [`legaia_tmd::mesh::tmd_to_vram_mesh`] for primitive data reads.
+    pub raw: Vec<u8>,
 }
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
@@ -93,13 +96,14 @@ impl SceneResources {
                 }
             }
             for hit in tmd_scan::scan_buffer(bytes) {
-                let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
-                if let Ok(tmd) = legaia_tmd::parse(payload) {
+                let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
+                if let Ok(tmd) = legaia_tmd::parse(&payload) {
                     tmds.push(ResolvedTmd {
                         entry_idx: entry.idx,
                         offset: hit.offset,
                         byte_len: hit.byte_len,
                         tmd,
+                        raw: payload,
                     });
                 }
             }
