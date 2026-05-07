@@ -74,7 +74,7 @@
     </div>
     <div class="status-card status-open">
       <div class="status-card-title">Open work</div>
-      <div class="status-card-body">Per-record ANM bytecode bytes for the residual non-keyframe-table records (the keyframe-table path is ported via <code>AnimPlayer</code>; bytecode-style records still need an overlay capture). Five gameplay overlays still uncaptured: world map, save / load screen, shop, cutscene, level-up (PROT 891). Final reverse of the per-scene DATA_FIELD slot semantics inside <code>field-pack</code> containers (97-slot schema understood structurally, per-slot meaning pending a per-scene consumer trace). Camera angle / face-target opcodes (motion-VM <code>0x38</code> / <code>0x4C</code>) ported as <code>StepResult::Pending</code> placeholders pending the 12-bit fixed-point math.</div>
+      <div class="status-card-body">Per-record ANM bytecode for the residual non-keyframe-table records (the keyframe-table path is ported via <code>AnimPlayer</code>; bytecode-style records still need an overlay capture). Five gameplay overlays still uncaptured: world map, save / load screen, shop, cutscene, level-up (PROT 891) &mdash; capturing these unblocks exact shop/inn/level-up UI layout and XP table. Final reverse of the per-scene DATA_FIELD slot semantics inside <code>field-pack</code> containers (97-slot schema understood structurally; per-slot meaning pending a per-scene consumer trace). Scene-init ANM binding per-actor (blocked on tracing the <code>0x8007C018</code> pointer-table registration order). PROT-scene routing for <code>legaia-engine play --scene cutsceneN</code> (direct STR file playback via <code>play-str</code> works; scene-entry routing pending STR-entry trace).</div>
     </div>
   </div>
 </section>

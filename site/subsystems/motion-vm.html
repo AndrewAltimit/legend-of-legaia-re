@@ -33,11 +33,11 @@
     <thead><tr><th>byte</th><th>retail addr</th><th>name</th><th>semantics</th></tr></thead>
     <tbody>
       <tr><td><code>0x37</code></td><td><code>80037894</code></td><td>TranslateY</td><td>accumulate Y axis by per-frame speed</td></tr>
-      <tr><td><code>0x38</code></td><td><code>80037de0</code></td><td>RotateToAngle</td><td>yaw rotates toward absolute angle (12-bit fixed-point math; not yet ported &mdash; treated as <code>Pending</code>)</td></tr>
+      <tr><td><code>0x38</code></td><td><code>80037de0</code></td><td>RotateToAngle</td><td>yaw rotates toward absolute angle; 12-bit fixed-point math, shortest-path CCW/CW select (body0 &amp; 0x80), explicit direction override (body1 &amp; 0x80), proportional interpolation step, 16-entry <code>ANGLE_TABLE</code> at <code>DAT_80073f04</code></td></tr>
       <tr><td><code>0x41</code></td><td><code>80037894</code></td><td>TranslateX</td><td>accumulate X axis by per-frame speed</td></tr>
       <tr><td><code>0x43</code></td><td><code>80037f5c</code></td><td>NoOp</td><td>tick budget consumed, no actor mutation</td></tr>
       <tr><td><code>0x47</code></td><td><code>80037ba8</code></td><td>MoveTowardTarget</td><td>step actor XZ toward <code>(tx, tz)</code></td></tr>
-      <tr><td><code>0x4C</code></td><td><code>80037de0</code></td><td>FaceTarget</td><td>yaw rotates to bearing; sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated. Not yet ported.</td></tr>
+      <tr><td><code>0x4C</code></td><td><code>80037de0</code></td><td>FaceTarget</td><td>yaw rotates to bearing computed via <code>atan2(dx, dz)</code> (<code>bearing_to_yaw</code>); sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated</td></tr>
       <tr><td>(default)</td><td>&mdash;</td><td>Done</td><td>terminate</td></tr>
     </tbody>
   </table>
@@ -45,7 +45,7 @@
 
 <section class="doc-section" id="port">
   <h2>Clean-room port</h2>
-  <p><code>legaia_engine_vm::motion_vm</code> in <code>crates/engine-vm/src/motion_vm.rs</code> is the clean-room port. Implemented opcodes: <code>0x37</code> <code>TranslateY</code>, <code>0x41</code> <code>TranslateX</code>, <code>0x43</code> <code>NoOp</code>, <code>0x47</code> <code>MoveTowardTarget</code>. <code>0x38</code> and <code>0x4C</code> are documented but not yet ported &mdash; the VM reports <code>StepResult::Pending { op }</code> so engines can route them to a fallback.</p>
+  <p><code>legaia_engine_vm::motion_vm</code> in <code>crates/engine-vm/src/motion_vm.rs</code> is the clean-room port. All opcodes are ported: <code>0x37</code> <code>TranslateY</code>, <code>0x38</code> <code>RotateToAngle</code>, <code>0x41</code> <code>TranslateX</code>, <code>0x43</code> <code>NoOp</code>, <code>0x47</code> <code>MoveTowardTarget</code>, <code>0x4C</code> <code>FaceTarget</code>. The angle-math opcodes use the 12-bit fixed-point shortest-path quadrant logic from <code>FUN_8003774C</code> lines 690+.</p>
 </section>
 
 <section class="doc-section" id="camera">
