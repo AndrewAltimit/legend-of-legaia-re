@@ -6,6 +6,50 @@
 
 use legaia_anm::{AnimPlayer, RECORD_HEADER_SIZE};
 use legaia_engine_core::world::{SceneMode, World};
+use legaia_tmd::mesh::tmd_to_vram_mesh_posed;
+
+/// Minimal valid Legaia TMD with one object, 5 vertices, 4 FT3 triangles.
+fn synth_pyramid_tmd() -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.extend_from_slice(&1u32.to_le_bytes());
+    let prim_top: u32 = 28;
+    let prim_size: u32 = 8 + (4 + 1) * 20 + 4;
+    let vert_top: u32 = prim_top + prim_size;
+    buf.extend_from_slice(&vert_top.to_le_bytes());
+    buf.extend_from_slice(&5u32.to_le_bytes());
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.extend_from_slice(&prim_top.to_le_bytes());
+    buf.extend_from_slice(&4u32.to_le_bytes());
+    buf.extend_from_slice(&0i32.to_le_bytes());
+    buf.extend_from_slice(&4u16.to_le_bytes());
+    buf.extend_from_slice(&0x0020u16.to_le_bytes());
+    buf.extend_from_slice(&[7, 5, 1, 0x27]);
+    for (a, b, c) in [(4u16, 0u16, 1u16), (4, 1, 2), (4, 2, 3), (4, 3, 0)] {
+        let mut prim = vec![0u8; 20];
+        prim[14..16].copy_from_slice(&(a * 8).to_le_bytes());
+        prim[16..18].copy_from_slice(&(b * 8).to_le_bytes());
+        prim[18..20].copy_from_slice(&(c * 8).to_le_bytes());
+        buf.extend_from_slice(&prim);
+    }
+    buf.extend_from_slice(&[0u8; 20]);
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    for (x, y, z) in [
+        (64i16, 85i16, 0i16),
+        (0, 85, -64),
+        (-64, 85, 0),
+        (0, 85, 64),
+        (0, -170, 0),
+    ] {
+        buf.extend_from_slice(&x.to_le_bytes());
+        buf.extend_from_slice(&y.to_le_bytes());
+        buf.extend_from_slice(&z.to_le_bytes());
+        buf.extend_from_slice(&0i16.to_le_bytes());
+    }
+    buf
+}
 
 /// Build a minimal valid ANM record for `bone_count` bones. The
 /// `src_pos` is all-zero; `dst_pos` is `(10, 20, 30)` for bone 0 to give
@@ -145,4 +189,48 @@ fn bone_output_is_nonzero_at_midpoint_factor() {
         pos[0] > 0,
         "interpolated pos[0] should be non-zero at midpoint factor"
     );
+}
+
+#[test]
+fn posed_mesh_differs_across_bone_offsets() {
+    let buf = synth_pyramid_tmd();
+    let tmd = legaia_tmd::parse(&buf).unwrap();
+
+    let mesh_zero = tmd_to_vram_mesh_posed(&tmd, &buf, &[([0i16; 3], [0i16; 3])]);
+    let mesh_moved = tmd_to_vram_mesh_posed(&tmd, &buf, &[([50, 100, 150], [0i16; 3])]);
+
+    assert_eq!(
+        mesh_zero.positions.len(),
+        mesh_moved.positions.len(),
+        "vertex count must be stable across bone offsets"
+    );
+    assert!(!mesh_zero.positions.is_empty());
+    assert!(
+        mesh_zero
+            .positions
+            .iter()
+            .zip(mesh_moved.positions.iter())
+            .any(|(p0, p1)| p0 != p1),
+        "vertex positions must differ when bone offset changes"
+    );
+}
+
+#[test]
+fn animation_player_pose_frame_drives_posed_mesh() {
+    let buf = synth_pyramid_tmd();
+    let tmd = legaia_tmd::parse(&buf).unwrap();
+
+    // dst_pos[0]=10 for bone 0; at full factor the mesh shifts along x.
+    let record = synth_anm_record(1);
+    let mut world = World::new();
+    world.actors[0].activate();
+    world.set_actor_tmd_binding(0, 0);
+    world.set_actor_animation(0, AnimPlayer::new(record, 1).unwrap());
+
+    world.tick();
+    let pose = world.actors[0].pose_frame.as_ref().unwrap();
+
+    let mesh = tmd_to_vram_mesh_posed(&tmd, &buf, &pose.bone_outputs);
+    assert!(!mesh.positions.is_empty(), "posed mesh must have vertices");
+    assert_eq!(world.actors[0].tmd_binding, Some(0));
 }

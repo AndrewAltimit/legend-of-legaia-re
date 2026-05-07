@@ -385,6 +385,9 @@ struct PlayWindowApp {
     font_atlas: Option<UploadedFontAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
+    /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
+    /// re-pose animated actor meshes each frame via `tmd_to_vram_mesh_posed`.
+    scene_tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
@@ -397,7 +400,7 @@ impl PlayWindowApp {
         let Some(res) = self.scene_res.take() else {
             return;
         };
-        let (vram_opt, font_opt, meshes, lo, hi) = {
+        let (vram_opt, font_opt, meshes, tmd_data, lo, hi) = {
             let Some(r) = self.renderer.as_ref() else {
                 self.scene_res = Some(res);
                 return;
@@ -411,6 +414,7 @@ impl PlayWindowApp {
                 .map_err(|e| log::error!("font upload: {e:#}"))
                 .ok();
             let mut meshes = Vec::new();
+            let mut tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)> = Vec::new();
             let mut lo = [f32::INFINITY; 3];
             let mut hi = [f32::NEG_INFINITY; 3];
             for rtmd in &res.tmds {
@@ -434,11 +438,14 @@ impl PlayWindowApp {
                     &vmesh.normals,
                     &vmesh.indices,
                 ) {
-                    Ok(m) => meshes.push(m),
+                    Ok(m) => {
+                        tmd_data.push((rtmd.tmd.clone(), rtmd.raw.clone()));
+                        meshes.push(m);
+                    }
                     Err(e) => log::warn!("TMD upload skipped: {e:#}"),
                 }
             }
-            (vram, font, meshes, lo, hi)
+            (vram, font, meshes, tmd_data, lo, hi)
         };
         if let Some(v) = vram_opt {
             self.uploaded_vram = Some(v);
@@ -447,6 +454,7 @@ impl PlayWindowApp {
             self.font_atlas = Some(a);
         }
         self.meshes = meshes;
+        self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
             self.scene_aabb = (lo, hi);
         }
@@ -615,13 +623,52 @@ impl ApplicationHandler for PlayWindowApp {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
                     let cam = self.camera_mvp(aspect);
+                    // For each active actor with a tmd_binding and a current
+                    // pose_frame, regenerate and re-upload the posed mesh.
+                    // posed_overrides[i] replaces meshes[i] when present.
+                    let mut posed_overrides: Vec<Option<UploadedVramMesh>> =
+                        (0..self.scene_tmd_data.len()).map(|_| None).collect();
+                    for actor in &self.session.host.world.actors {
+                        if !actor.active {
+                            continue;
+                        }
+                        let (Some(tmd_idx), Some(pose)) = (actor.tmd_binding, &actor.pose_frame)
+                        else {
+                            continue;
+                        };
+                        let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
+                            continue;
+                        };
+                        let vmesh =
+                            legaia_tmd::mesh::tmd_to_vram_mesh_posed(tmd, raw, &pose.bone_outputs);
+                        if vmesh.indices.is_empty() {
+                            continue;
+                        }
+                        match r.upload_vram_mesh(
+                            &vmesh.positions,
+                            &vmesh.uvs,
+                            &vmesh.cba_tsb,
+                            &vmesh.normals,
+                            &vmesh.indices,
+                        ) {
+                            Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                            Err(e) => log::warn!("posed mesh upload: {e:#}"),
+                        }
+                    }
+
                     let draws: Vec<SceneDraw<'_>> = self
                         .meshes
                         .iter()
                         .enumerate()
-                        .map(|(slot, m)| SceneDraw {
-                            mesh: m,
-                            mvp: cam * self.actor_model(slot),
+                        .map(|(i, static_m)| {
+                            let mesh = posed_overrides
+                                .get(i)
+                                .and_then(|o| o.as_ref())
+                                .unwrap_or(static_m);
+                            SceneDraw {
+                                mesh,
+                                mvp: cam * self.actor_model(i),
+                            }
                         })
                         .collect();
                     let hud = self.build_hud(w, h);
@@ -701,6 +748,7 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
         font_atlas: None,
         uploaded_vram: None,
         meshes: Vec::new(),
+        scene_tmd_data: Vec::new(),
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         started_at: Instant::now(),
