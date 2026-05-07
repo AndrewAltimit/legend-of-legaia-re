@@ -11,6 +11,8 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 log = "0.4"
+serde.workspace = true
+toml = "0.8"
 legaia-engine-vm = { path = "../engine-vm" }
 legaia-asset = { path = "../asset" }
 legaia-font = { path = "../font" }

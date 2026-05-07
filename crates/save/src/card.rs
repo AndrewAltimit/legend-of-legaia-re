@@ -205,6 +205,108 @@ pub fn read_block(buf: &[u8], block: u8) -> Option<&[u8]> {
     Some(&buf[off..end])
 }
 
+/// Write `save_data` into a free block chain on a PSX memory-card image.
+///
+/// Finds enough free blocks (state `0xA0`) starting from the lowest-indexed
+/// available slot. Each block is `BLOCK_SIZE` (8 KB); the usable payload
+/// per block is `BLOCK_SIZE - 2` (the first 2 bytes are the `SC` magic).
+/// Multi-block chains are written with the `FIRST → MID* → LAST` state
+/// encoding and `next_block` chain pointers; single-block saves use
+/// `FIRST_BLOCK` with `next_block = 0xFFFF`.
+///
+/// Directory frames are rewritten with XOR checksums (XOR of bytes
+/// `0x00..0x7E`, stored at `0x7F`). Returns the first block index written.
+///
+/// # Errors
+///
+/// Fails if the buffer is too small, no `MC` magic is present, or there
+/// are not enough free blocks to hold `save_data`.
+pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) -> Result<u8> {
+    if card_buf.len() < CARD_SIZE {
+        bail!(
+            "card buffer too small: {} bytes (need {})",
+            card_buf.len(),
+            CARD_SIZE
+        );
+    }
+    if card_buf[..2] != CARD_MAGIC {
+        bail!(
+            "missing MC magic at offset 0: {:02X?}",
+            &card_buf[..2.min(card_buf.len())]
+        );
+    }
+
+    const DATA_PER_BLOCK: usize = BLOCK_SIZE - 2;
+    let n_needed = if save_data.is_empty() {
+        1
+    } else {
+        save_data.len().div_ceil(DATA_PER_BLOCK)
+    };
+
+    let dir = walk_directory(card_buf)?;
+    let free: Vec<u8> = dir
+        .iter()
+        .filter(|e| e.state == state::FREE)
+        .map(|e| e.block)
+        .take(n_needed)
+        .collect();
+
+    if free.len() < n_needed {
+        bail!(
+            "not enough free blocks: need {n_needed}, found {} free",
+            free.len()
+        );
+    }
+
+    let total_size = save_data.len() as u32;
+    let mut pc = [0u8; 20];
+    {
+        let src = product_code.as_bytes();
+        let n = src.len().min(20);
+        pc[..n].copy_from_slice(&src[..n]);
+    }
+
+    for (idx, &blk) in free.iter().enumerate() {
+        let blk_state = if idx == 0 {
+            state::FIRST_BLOCK
+        } else if idx + 1 == n_needed {
+            state::LAST_BLOCK
+        } else {
+            state::MID_BLOCK
+        };
+        let next: u16 = if idx + 1 < n_needed {
+            free[idx + 1] as u16
+        } else {
+            0xFFFF
+        };
+
+        // Rewrite directory frame
+        let frame_off = DIR_FRAME_SIZE * blk as usize;
+        let frame = &mut card_buf[frame_off..frame_off + DIR_FRAME_SIZE];
+        frame.fill(0);
+        frame[..4].copy_from_slice(&blk_state.to_le_bytes());
+        if idx == 0 {
+            frame[4..8].copy_from_slice(&total_size.to_le_bytes());
+        }
+        frame[8..10].copy_from_slice(&next.to_le_bytes());
+        frame[10..30].copy_from_slice(&pc);
+        let checksum = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+        frame[0x7F] = checksum;
+
+        // Write block: SC magic + payload chunk
+        let chunk_start = idx * DATA_PER_BLOCK;
+        let chunk_end = (chunk_start + DATA_PER_BLOCK).min(save_data.len());
+        let block_off = BLOCK_SIZE * blk as usize;
+        card_buf[block_off..block_off + 2].copy_from_slice(&SAVE_BLOCK_MAGIC);
+        if chunk_start < save_data.len() {
+            let chunk = &save_data[chunk_start..chunk_end];
+            card_buf[block_off + 2..block_off + 2 + chunk.len()].copy_from_slice(chunk);
+        }
+    }
+
+    Ok(free[0])
+}
+
 fn bytes_to_ascii(b: &[u8]) -> String {
     b.iter()
         .take_while(|&&c| c != 0)
@@ -278,5 +380,71 @@ mod tests {
         assert_eq!(dir.len(), DIR_FRAMES);
         assert_eq!(dir[0].state, state::FIRST_BLOCK);
         assert_eq!(dir[0].block, 1);
+    }
+
+    fn free_card() -> Vec<u8> {
+        let mut buf = vec![0u8; CARD_SIZE];
+        buf[..2].copy_from_slice(&CARD_MAGIC);
+        // Mark all blocks free.
+        for i in 1..=DIR_FRAMES {
+            let frame_off = DIR_FRAME_SIZE * i;
+            buf[frame_off..frame_off + 4].copy_from_slice(&state::FREE.to_le_bytes());
+            let checksum = buf[frame_off..frame_off + 0x7F]
+                .iter()
+                .fold(0u8, |acc, &b| acc ^ b);
+            buf[frame_off + 0x7F] = checksum;
+        }
+        buf
+    }
+
+    #[test]
+    fn write_block_single_block() {
+        let mut card = free_card();
+        let payload = b"Hello Legaia save!";
+        let block = write_block(&mut card, payload, "BASCUS-94254TEST").unwrap();
+        assert_eq!(block, 1, "first free block should be 1");
+
+        // Directory frame 1: state = FIRST_BLOCK, next = 0xFFFF.
+        let frame_off = DIR_FRAME_SIZE;
+        let blk_state = u32::from_le_bytes(card[frame_off..frame_off + 4].try_into().unwrap());
+        assert_eq!(blk_state, state::FIRST_BLOCK);
+        let next = u16::from_le_bytes(card[frame_off + 8..frame_off + 10].try_into().unwrap());
+        assert_eq!(next, 0xFFFF);
+
+        // Block 1 data: SC magic + payload.
+        let blk_off = BLOCK_SIZE;
+        assert_eq!(&card[blk_off..blk_off + 2], &SAVE_BLOCK_MAGIC);
+        assert_eq!(&card[blk_off + 2..blk_off + 2 + payload.len()], payload);
+    }
+
+    #[test]
+    fn write_block_checksum_is_correct() {
+        let mut card = free_card();
+        write_block(&mut card, b"checksum test payload", "BASCUS-94254TEST").unwrap();
+        let frame_off = DIR_FRAME_SIZE;
+        let expected = card[frame_off..frame_off + 0x7F]
+            .iter()
+            .fold(0u8, |acc, &b| acc ^ b);
+        assert_eq!(card[frame_off + 0x7F], expected, "XOR checksum mismatch");
+    }
+
+    #[test]
+    fn write_block_product_code_stored() {
+        let mut card = free_card();
+        write_block(&mut card, b"data", "BASCUS-94254LEGAIA").unwrap();
+        let frame_off = DIR_FRAME_SIZE;
+        let pc_bytes = &card[frame_off + 10..frame_off + 30];
+        assert!(pc_bytes.starts_with(b"BASCUS-94254LEGAIA"));
+    }
+
+    #[test]
+    fn write_block_rejects_full_card() {
+        let mut card = synth_card_with_one_save();
+        // Fill remaining blocks with state FIRST_BLOCK so none are free.
+        for i in 2..=DIR_FRAMES {
+            let frame_off = DIR_FRAME_SIZE * i;
+            card[frame_off..frame_off + 4].copy_from_slice(&state::FIRST_BLOCK.to_le_bytes());
+        }
+        assert!(write_block(&mut card, b"data", "BASCUS-94254TEST").is_err());
     }
 }

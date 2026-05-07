@@ -9,7 +9,12 @@
 //! engine-agnostic. The `asset-viewer` crate builds the keyboard / gamepad
 //! mapping on top of [`PadButton`] and [`InputState`].
 
+use std::collections::HashMap;
+use std::path::Path;
 use std::time::{Duration, Instant};
+
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 /// Bit positions for the 16 pad buttons. Values match the PSX hardware
 /// layout (0x0001 = Select … 0x8000 = Square) so engine-side code can
@@ -40,6 +45,52 @@ impl PadButton {
     /// works in raw u16 land.
     pub fn mask(self) -> u16 {
         self as u16
+    }
+
+    /// Human-readable name used in TOML config files and CLI output.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Select => "Select",
+            Self::L3 => "L3",
+            Self::R3 => "R3",
+            Self::Start => "Start",
+            Self::Up => "Up",
+            Self::Right => "Right",
+            Self::Down => "Down",
+            Self::Left => "Left",
+            Self::L2 => "L2",
+            Self::R2 => "R2",
+            Self::L1 => "L1",
+            Self::R1 => "R1",
+            Self::Triangle => "Triangle",
+            Self::Circle => "Circle",
+            Self::Cross => "Cross",
+            Self::Square => "Square",
+        }
+    }
+
+    /// Parse a button from its [`Self::name`] string. Returns `None` for
+    /// unknown names. Case-sensitive.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "Select" => Some(Self::Select),
+            "L3" => Some(Self::L3),
+            "R3" => Some(Self::R3),
+            "Start" => Some(Self::Start),
+            "Up" => Some(Self::Up),
+            "Right" => Some(Self::Right),
+            "Down" => Some(Self::Down),
+            "Left" => Some(Self::Left),
+            "L2" => Some(Self::L2),
+            "R2" => Some(Self::R2),
+            "L1" => Some(Self::L1),
+            "R1" => Some(Self::R1),
+            "Triangle" => Some(Self::Triangle),
+            "Circle" => Some(Self::Circle),
+            "Cross" => Some(Self::Cross),
+            "Square" => Some(Self::Square),
+            _ => None,
+        }
     }
 }
 
@@ -215,6 +266,84 @@ impl<'a> FieldActions<'a> {
     }
 }
 
+/// Persistent keyboard-to-pad-button binding table. Serialises to and from
+/// TOML so the player can override the default layout from a config file.
+///
+/// Keys are user-friendly keyboard names (e.g. `"Z"`, `"Up"`, `"Enter"`,
+/// `"RShift"`); values are [`PadButton`] names (e.g. `"Cross"`, `"Start"`).
+/// The set of recognized key names is determined by the host shell (e.g.
+/// `legaia-engine`) which translates winit `KeyCode` values to these strings.
+///
+/// # Default layout
+///
+/// ```text
+/// Up / Down / Left / Right  → D-pad directions
+/// Z / X / A / S             → Cross / Square / Triangle / Circle
+/// Q / W                     → L1 / R1
+/// 1 / 2                     → L2 / R2
+/// Enter                     → Start
+/// RShift                    → Select
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Mapping {
+    /// `key_name → button_name`.
+    pub bindings: HashMap<String, String>,
+}
+
+impl Default for Mapping {
+    fn default() -> Self {
+        let mut b = HashMap::new();
+        for (key, btn) in [
+            ("Up", "Up"),
+            ("Down", "Down"),
+            ("Left", "Left"),
+            ("Right", "Right"),
+            ("Z", "Cross"),
+            ("X", "Square"),
+            ("A", "Triangle"),
+            ("S", "Circle"),
+            ("Q", "L1"),
+            ("W", "R1"),
+            ("1", "L2"),
+            ("2", "R2"),
+            ("Enter", "Start"),
+            ("RShift", "Select"),
+        ] {
+            b.insert(key.to_string(), btn.to_string());
+        }
+        Self { bindings: b }
+    }
+}
+
+impl Mapping {
+    /// Look up which [`PadButton`] `key_name` is bound to, if any.
+    pub fn pad_button_for_key(&self, key_name: &str) -> Option<PadButton> {
+        let btn_name = self.bindings.get(key_name)?;
+        PadButton::from_name(btn_name)
+    }
+
+    /// Load from a TOML file, falling back to [`Default`] if the file is
+    /// absent or unparseable.
+    pub fn load_or_default(path: &Path) -> Self {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Self::default();
+        };
+        toml::from_str(&text).unwrap_or_default()
+    }
+
+    /// Persist to a TOML file. Creates parent directories as needed.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = toml::to_string(self)?;
+        std::fs::write(path, text)?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +399,42 @@ mod tests {
         let a = FieldActions::new(&s);
         assert_eq!(a.move_x(), -80);
         assert_eq!(a.move_y(), 60);
+    }
+
+    #[test]
+    fn pad_button_round_trips_name() {
+        for btn in [
+            PadButton::Cross,
+            PadButton::Circle,
+            PadButton::Start,
+            PadButton::L1,
+            PadButton::R2,
+        ] {
+            assert_eq!(PadButton::from_name(btn.name()), Some(btn));
+        }
+    }
+
+    #[test]
+    fn mapping_default_z_is_cross() {
+        let m = Mapping::default();
+        assert_eq!(m.pad_button_for_key("Z"), Some(PadButton::Cross));
+        assert_eq!(m.pad_button_for_key("Up"), Some(PadButton::Up));
+        assert_eq!(m.pad_button_for_key("Enter"), Some(PadButton::Start));
+    }
+
+    #[test]
+    fn mapping_unknown_key_returns_none() {
+        let m = Mapping::default();
+        assert_eq!(m.pad_button_for_key("F13"), None);
+    }
+
+    #[test]
+    fn mapping_toml_round_trip() {
+        let m = Mapping::default();
+        let text = toml::to_string(&m).expect("serialize");
+        let m2: Mapping = toml::from_str(&text).expect("deserialize");
+        assert_eq!(m2.pad_button_for_key("Z"), Some(PadButton::Cross));
+        assert_eq!(m2.bindings.len(), m.bindings.len());
     }
 
     #[test]

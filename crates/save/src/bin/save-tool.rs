@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_save::{
     BLOCK_SIZE, CHARACTER_RECORD_SIZE, CharacterRecord, Party, parse_card, read_block,
-    walk_directory,
+    walk_directory, write_block,
 };
 
 #[derive(Parser)]
@@ -59,6 +59,20 @@ enum Cmd {
         #[arg(long, default_value_t = 5)]
         count: usize,
     },
+    /// Write a raw payload into a free block chain on a PSX memory-card
+    /// image (.mcr). Modifies the card in place and prints the block index
+    /// of the first block written.
+    Write {
+        /// Path to the PSX memory-card image (.mcr) to write into.
+        #[arg(long)]
+        card: PathBuf,
+        /// Raw payload file (e.g. a party `.bin` from `save-tool party`).
+        #[arg(long)]
+        payload: PathBuf,
+        /// Product code to stamp in the directory frame (max 20 chars).
+        #[arg(long, default_value = "BASCUS-94254LEGAIA")]
+        product: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -81,6 +95,11 @@ fn main() -> Result<()> {
             offset,
             count,
         } => party(&path, block, offset, count),
+        Cmd::Write {
+            card,
+            payload,
+            product,
+        } => write_cmd(&card, &payload, &product),
     }
 }
 
@@ -198,6 +217,23 @@ fn party(path: &PathBuf, block: Option<u8>, offset: usize, count: usize) -> Resu
     let party = Party::parse(&bytes[..need])?;
     let snapshots: Vec<_> = party.members.iter().map(|r| r.snapshot()).collect();
     println!("{}", serde_json::to_string_pretty(&snapshots)?);
+    Ok(())
+}
+
+fn write_cmd(card_path: &PathBuf, payload_path: &PathBuf, product: &str) -> Result<()> {
+    let payload = std::fs::read(payload_path)
+        .with_context(|| format!("read payload {}", payload_path.display()))?;
+    let mut card =
+        std::fs::read(card_path).with_context(|| format!("read card {}", card_path.display()))?;
+    let block = write_block(&mut card, &payload, product)?;
+    std::fs::write(card_path, &card)
+        .with_context(|| format!("write card {}", card_path.display()))?;
+    println!(
+        "wrote {} bytes to block {} of {}",
+        payload.len(),
+        block,
+        card_path.display()
+    );
     Ok(())
 }
 

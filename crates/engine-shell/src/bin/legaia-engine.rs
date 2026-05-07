@@ -17,7 +17,6 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use glam::{Mat4, Vec3};
-use legaia_engine_core::input::PadButton;
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
@@ -123,6 +122,32 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         no_audio: bool,
     },
+    /// Show or update the keyboard-to-pad-button input mapping.
+    Config {
+        #[command(subcommand)]
+        cmd: ConfigCmd,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ConfigCmd {
+    /// Print the current input mapping to stdout.
+    Show {
+        /// Path to the TOML config file (default: `legaia-input.toml`).
+        #[arg(long, default_value = "legaia-input.toml")]
+        config_file: PathBuf,
+    },
+    /// Set a single key binding. KEY is the user-friendly key name (e.g.
+    /// `Z`, `Up`, `Enter`, `RShift`); BUTTON is the PSX pad button name
+    /// (e.g. `Cross`, `Circle`, `Start`, `L1`).
+    Set {
+        /// Binding in KEY=BUTTON form, e.g. `--binding Z=Cross`.
+        #[arg(long)]
+        binding: String,
+        /// Path to the TOML config file (default: `legaia-input.toml`).
+        #[arg(long, default_value = "legaia-input.toml")]
+        config_file: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -153,6 +178,7 @@ fn main() -> Result<()> {
             party_size,
         } => cmd_save(&extracted_root, &save_dir, slot, party_size),
         Cmd::Load { save_dir, slot } => cmd_load(&save_dir, slot),
+        Cmd::Config { cmd } => cmd_config(cmd),
     }
 }
 
@@ -370,6 +396,47 @@ fn cmd_list_scenes(extracted_root: &std::path::Path) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// config
+// ---------------------------------------------------------------------------
+
+fn cmd_config(cmd: ConfigCmd) -> Result<()> {
+    use legaia_engine_core::input::Mapping;
+    match cmd {
+        ConfigCmd::Show { config_file } => {
+            let mapping = Mapping::load_or_default(&config_file);
+            let mut pairs: Vec<_> = mapping.bindings.iter().collect();
+            pairs.sort_by_key(|(k, _)| k.as_str());
+            println!("input mapping ({})", config_file.display());
+            for (key, btn) in &pairs {
+                println!("  {key:<12} → {btn}");
+            }
+        }
+        ConfigCmd::Set {
+            binding,
+            config_file,
+        } => {
+            let Some((key, btn)) = binding.split_once('=') else {
+                anyhow::bail!("--binding must be KEY=BUTTON (e.g. Z=Cross)");
+            };
+            let key = key.trim().to_string();
+            let btn = btn.trim().to_string();
+            // Validate that the button name is known.
+            if legaia_engine_core::input::PadButton::from_name(&btn).is_none() {
+                anyhow::bail!(
+                    "unknown pad button '{}'; valid names: Select L3 R3 Start Up Right Down Left L2 R2 L1 R1 Triangle Circle Cross Square",
+                    btn
+                );
+            }
+            let mut mapping = Mapping::load_or_default(&config_file);
+            mapping.bindings.insert(key.clone(), btn.clone());
+            mapping.save(&config_file)?;
+            println!("binding saved: {key} → {btn} ({})", config_file.display());
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // play-window
 // ---------------------------------------------------------------------------
 
@@ -391,8 +458,14 @@ struct PlayWindowApp {
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
+    /// Input binding loaded from file (or default).
+    mapping: legaia_engine_core::input::Mapping,
     started_at: Instant,
     last_tick: Instant,
+    /// Fixed-timestep accumulator. Incremented by wall-clock dt each
+    /// `RedrawRequested`; drained in 1/60 s chunks to drive game ticks.
+    /// Decouples render rate (driven by VSync) from game-tick rate (60 Hz).
+    accumulator: f64,
 }
 
 impl PlayWindowApp {
@@ -595,7 +668,8 @@ impl ApplicationHandler for PlayWindowApp {
                     evl.exit();
                     return;
                 }
-                if let Some(button) = keymap_pad(code) {
+                let key_name = keycode_to_name(code);
+                if let Some(button) = self.mapping.pad_button_for_key(key_name) {
                     if state == ElementState::Pressed {
                         self.pad |= button.mask();
                     } else {
@@ -605,15 +679,24 @@ impl ApplicationHandler for PlayWindowApp {
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
+                // Cap dt at 100 ms to avoid a spiral of death after a
+                // pause/debugger break.
                 let dt = now
                     .duration_since(self.last_tick)
-                    .min(Duration::from_millis(100));
+                    .min(Duration::from_millis(100))
+                    .as_secs_f64();
                 self.last_tick = now;
-                let target_frames = (dt.as_secs_f32() * 60.0).round() as u32;
-                for _ in 0..target_frames.min(4) {
+                self.accumulator += dt;
+                const TICK_DT: f64 = 1.0 / 60.0;
+                // Drain up to 4 ticks per render frame so we never spiral
+                // but can still catch up from minor vsync jitter.
+                let mut ticked = 0u32;
+                while self.accumulator >= TICK_DT && ticked < 4 {
+                    self.accumulator -= TICK_DT;
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
+                    ticked += 1;
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     &self.renderer,
@@ -693,26 +776,27 @@ impl ApplicationHandler for PlayWindowApp {
     }
 }
 
-/// Map winit physical keys to PSX pad buttons. Arrows = D-pad,
-/// Z/X/A/S = Cross/Square/Triangle/Circle, Enter = Start, RShift = Select.
-fn keymap_pad(code: KeyCode) -> Option<PadButton> {
-    Some(match code {
-        KeyCode::ArrowUp => PadButton::Up,
-        KeyCode::ArrowDown => PadButton::Down,
-        KeyCode::ArrowLeft => PadButton::Left,
-        KeyCode::ArrowRight => PadButton::Right,
-        KeyCode::KeyZ => PadButton::Cross,
-        KeyCode::KeyX => PadButton::Square,
-        KeyCode::KeyA => PadButton::Triangle,
-        KeyCode::KeyS => PadButton::Circle,
-        KeyCode::Enter => PadButton::Start,
-        KeyCode::ShiftRight => PadButton::Select,
-        KeyCode::KeyQ => PadButton::L1,
-        KeyCode::KeyW => PadButton::R1,
-        KeyCode::Digit1 => PadButton::L2,
-        KeyCode::Digit2 => PadButton::R2,
-        _ => return None,
-    })
+/// Map a winit `KeyCode` to the user-friendly key name used in
+/// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside
+/// the default set.
+fn keycode_to_name(code: KeyCode) -> &'static str {
+    match code {
+        KeyCode::ArrowUp => "Up",
+        KeyCode::ArrowDown => "Down",
+        KeyCode::ArrowLeft => "Left",
+        KeyCode::ArrowRight => "Right",
+        KeyCode::KeyZ => "Z",
+        KeyCode::KeyX => "X",
+        KeyCode::KeyA => "A",
+        KeyCode::KeyS => "S",
+        KeyCode::KeyQ => "Q",
+        KeyCode::KeyW => "W",
+        KeyCode::Enter => "Enter",
+        KeyCode::ShiftRight => "RShift",
+        KeyCode::Digit1 => "1",
+        KeyCode::Digit2 => "2",
+        _ => "",
+    }
 }
 
 fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Result<()> {
@@ -739,6 +823,9 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
 
     let font = Font::load_or_placeholder(extracted_root);
 
+    let mapping = legaia_engine_core::input::Mapping::load_or_default(&std::path::PathBuf::from(
+        "legaia-input.toml",
+    ));
     let mut app = PlayWindowApp {
         session,
         font,
@@ -751,8 +838,10 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
         scene_tmd_data: Vec::new(),
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
+        mapping,
         started_at: Instant::now(),
         last_tick: Instant::now(),
+        accumulator: 0.0,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

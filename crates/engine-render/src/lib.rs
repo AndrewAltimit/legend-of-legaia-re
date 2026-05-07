@@ -434,7 +434,7 @@ impl Renderer {
             format,
             width: width.max(1),
             height: height.max(1),
-            present_mode: caps.present_modes[0],
+            present_mode: wgpu::PresentMode::AutoVsync,
             desired_maximum_frame_latency: 2,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],

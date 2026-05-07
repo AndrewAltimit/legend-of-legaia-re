@@ -157,6 +157,24 @@ impl MenuRuntime {
         Ok(path)
     }
 
+    /// Write the world's party into a free block chain on a PSX memory-card
+    /// image at `card_path`. Reads the existing card, appends the save in the
+    /// first free block(s), and writes it back in place. Returns the first
+    /// block index written.
+    ///
+    /// This is a convenience on top of [`legaia_save::write_block`]; it does
+    /// not update the engine's slot-file directory. Use `save_to_slot` for
+    /// the flat `.bin` save path the menu runtime normally drives.
+    pub fn save_to_card(&self, world: &mut World, card_path: &std::path::Path) -> Result<u8> {
+        let mut card = std::fs::read(card_path)
+            .with_context(|| format!("read card {}", card_path.display()))?;
+        let bytes = world.save_party().write();
+        let block = legaia_save::write_block(&mut card, &bytes, "BASCUS-94254LEGAIA")?;
+        std::fs::write(card_path, &card)
+            .with_context(|| format!("write card {}", card_path.display()))?;
+        Ok(block)
+    }
+
     /// Engine-friendly label per active state — drives a HUD banner so the
     /// player sees *something* before the per-screen layouts ship.
     pub fn current_label(&self) -> &'static str {
