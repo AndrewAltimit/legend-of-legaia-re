@@ -21,7 +21,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, SceneTickEvent};
 
 use crate::bgm::AudioBgmDirector;
 
@@ -73,6 +73,9 @@ impl BootSession {
     pub fn open(extracted_root: &Path, cfg: &BootConfig) -> Result<Self> {
         let mut host = SceneHost::open_extracted(extracted_root)
             .with_context(|| format!("open extracted dir {}", extracted_root.display()))?;
+        // Wire the CDNAME-derived map-id resolver so field-VM scene
+        // transitions resolve to the right CDNAME label.
+        host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
         host.load_scene(&cfg.scene)
             .with_context(|| format!("load scene '{}'", cfg.scene))?;
 
