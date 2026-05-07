@@ -977,20 +977,26 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     // Walk the per-actor strike-script byte stream. On terminator (`-1` = `0xFF`),
-    // transition to recovery; otherwise stage next anim and OR in advance-done.
+    // transition to recovery; otherwise stage next anim and fire damage.
     let slot = ctx.active_actor;
     let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
     if next_byte == 0xFF {
         if let Some(actor) = host.actor_mut(slot) {
             actor.strike_index = 0;
+            actor.flag_bits.clear(ActorFlags::ADVANCE_DONE);
         }
         return transition(ctx, ActionState::AttackRecovery);
     }
+    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = next_byte;
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
         actor.strike_index = actor.strike_index.saturating_add(1);
     }
+    // Fire swing-apex damage for this strike. The retail engine calls
+    // FUN_801eed1c (the HP-deduction kernel) at the corresponding point in
+    // the attack chain dispatch block (overlay_0898_801e295c ~0x801e3620+).
+    host.apply_damage(next_byte, 0, target, slot);
     stay(ctx)
 }
 
@@ -2149,18 +2155,20 @@ mod tests {
         host.actors[1].params[1] = 0x12;
         host.actors[1].params[2] = 0xFF;
 
-        // First step: queue 0x10.
+        // First step: queue 0x10 and fire damage.
         assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
         assert_eq!(host.actors[1].queued_anim, 0x10);
         assert_eq!(host.actors[1].strike_index, 1);
         assert!(host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
+        assert!(host.take().contains(&Event::ApplyDamage(0x10, 0, 0, 1)));
 
-        // Second step: queue 0x12.
+        // Second step: queue 0x12 and fire damage.
         assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
         assert_eq!(host.actors[1].queued_anim, 0x12);
         assert_eq!(host.actors[1].strike_index, 2);
+        assert!(host.take().contains(&Event::ApplyDamage(0x12, 0, 0, 1)));
 
-        // Third step: terminator → recovery.
+        // Third step: terminator → recovery; SM clears ADVANCE_DONE.
         let out = step(&mut host, &mut ctx);
         assert!(matches!(
             out,
@@ -2169,8 +2177,8 @@ mod tests {
                 ..
             } if to == ActionState::AttackRecovery.as_byte()
         ));
-        // strike_index resets to 0 on terminator (state machine convention).
         assert_eq!(host.actors[1].strike_index, 0);
+        assert!(!host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
     }
 
     #[test]
@@ -2472,12 +2480,13 @@ mod tests {
         // AttackChain: walk one anim then terminator.
         host.actors[1].params[0] = 0x10;
         host.actors[1].params[1] = 0xFF;
-        step(&mut host, &mut ctx); // queue 0x10
-        step(&mut host, &mut ctx); // terminator → AttackRecovery
+        step(&mut host, &mut ctx); // queue 0x10, fires apply_damage
+        assert!(host.take().contains(&Event::ApplyDamage(0x10, 0, 0, 1)));
+        step(&mut host, &mut ctx); // terminator → AttackRecovery, SM clears ADVANCE_DONE
         assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
+        assert!(!host.actors[1].flag_bits.has(ActorFlags::ADVANCE_DONE));
 
-        // AttackRecovery (advance_done not set) → AttackReturn.
-        host.actors[1].flag_bits.clear(ActorFlags::ADVANCE_DONE);
+        // AttackRecovery (advance_done cleared by SM) → AttackReturn.
         step(&mut host, &mut ctx);
         assert_eq!(ctx.action_state, ActionState::AttackReturn.as_byte());
 
