@@ -22,3 +22,6 @@ legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
 legaia-vab = { path = "../vab" }
 legaia-save = { path = "../save" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -92,6 +92,17 @@ After running the pipeline:
 ./target/release/legaia-engine info --scene town01
 ./target/release/legaia-engine list-scenes
 
+# Run the engine for N frames against a scene — ticks the World, drives
+# the camera, drains BGM events into the audio director (if available),
+# logs scene transitions. Headless smoke check that the boot-loop wiring
+# (engine-shell::BootSession) actually moves state forward.
+./target/release/legaia-engine play --scene town01 --frames 600 --no-audio
+
+# Save / load the world's empty default party to a slot file. Engines
+# drive the same flow at runtime through `engine-core::menu_runtime`.
+./target/release/legaia-engine save --slot 0 --save-dir saves
+./target/release/legaia-engine load --slot 0 --save-dir saves
+
 # Field scene runner — drives the field-VM against a real CDNAME scene's
 # event-script records, with dialog rendering wired into the same window
 ./target/release/asset-viewer field town01
@@ -186,11 +197,11 @@ legend-of-legaia-re/
 │   ├── save/                     # Per-character record (0x414B) parse + write
 │   ├── font/                     # Dialog font extraction + atlas / layout API
 │   ├── extract/                  # Top-level pipeline driver
-│   ├── engine-core/              # World, scene host, scene resources (runtime VRAM pre-pass), save round-trip
+│   ├── engine-core/              # World, scene host, scene resources (VRAM pre-pass), camera, menu runtime, save round-trip
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
-│   ├── engine-vm/                # Actor / field / effect / move VMs + battle SM + action validator + formulas
-│   ├── engine-shell/             # `legaia-engine` top-level driver — boots a CDNAME scene from PROT bytes alone
+│   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM + action validator + formulas
+│   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector adapter
 │   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
 │   └── web-viewer/               # WASM target — disc browser running in the browser
 ├── docs/                         # Topic-first technical reference (see "Documentation")

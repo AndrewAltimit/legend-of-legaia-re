@@ -66,6 +66,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/script-vm.html",  "Field / event script VM",       "subsystems/script-vm",       "subsystems/script-vm.html"),
     ("subsystems/actor-vm.html",   "Actor / sprite VM",             "subsystems/actor-vm",        "subsystems/actor-vm.html"),
     ("subsystems/move-vm.html",    "Move-table VM",                 "subsystems/move-vm",         "subsystems/move-vm.html"),
+    ("subsystems/motion-vm.html",  "Motion VM (camera / NPC)",      "subsystems/motion-vm",       "subsystems/motion-vm.html"),
     ("subsystems/effect-vm.html",  "Effect VM",                     "subsystems/effect-vm",       "subsystems/effect-vm.html"),
     ("subsystems/battle.html",     "Battle",                        "subsystems/battle",          "subsystems/battle.html"),
     ("subsystems/battle-action.html","Battle action state machine", "subsystems/battle-action",   "subsystems/battle-action.html"),

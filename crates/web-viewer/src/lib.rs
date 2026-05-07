@@ -6,6 +6,7 @@
 //! list of viewable entries instead of every raw entry.
 
 pub mod disc;
+pub mod runtime;
 pub mod tmd3d;
 
 use disc::{EntryMeta, extract_prot_dat, parse_prot_toc};

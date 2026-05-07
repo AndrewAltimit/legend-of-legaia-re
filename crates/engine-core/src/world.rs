@@ -34,6 +34,12 @@ use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 /// 8 + 32 spare slots for field-side NPCs / cutscene actors.
 pub const MAX_ACTORS: usize = 64;
 
+/// Per-frame opcode cap for the move VM. Retail has no explicit cap (relies
+/// on opcodes naturally yielding via `WAIT_SET` / `HALT`); for a software
+/// port we set a generous defensive cap so a buggy script can't hang the
+/// engine. 4096 is well above the largest real Tactical-Arts move script.
+pub const MOVE_VM_BUDGET: usize = 4096;
+
 /// One queued fade request. Move-VM ext sub-op 0x3C writes either an
 /// immediate fade (`ticks == 0`) or a ramp (`ticks > 0`) — engines drain
 /// `pending_fade` each frame to drive the screen overlay.
@@ -343,6 +349,11 @@ pub struct World {
 
     /// Frame counter incremented every [`World::tick`].
     pub frame: u64,
+
+    /// Per-actor move-VM outcomes from the most recent [`World::tick_move_vms`]
+    /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
+    /// after `World::tick` to react to halts / pending opcodes.
+    pub move_outcomes: Vec<(u8, vm::move_vm::ActorTickOutcome)>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -429,6 +440,7 @@ impl World {
             inventory: std::collections::HashMap::new(),
             camera_state: CameraState::default(),
             frame: 0,
+            move_outcomes: Vec::new(),
         }
     }
 
@@ -696,10 +708,22 @@ impl World {
         }
     }
 
-    /// Per-actor move-VM tick. Calls `step` once per active actor that has
-    /// bytecode loaded. The retail equivalent runs in `FUN_80021DF4`
-    /// (per-frame actor tick) and yields when `wait_timer >= 0`.
-    pub fn tick_move_vms(&mut self) {
+    /// Per-actor move-VM tick — clean port of `FUN_80021DF4` (lines
+    /// `80022B94..80022BBC`).
+    ///
+    /// Two-phase: (1) pre-tick decrement the per-actor `wait_timer` by the
+    /// global frame-time `delta`, (2) run the move VM through
+    /// [`vm::move_vm::actor_tick`], which gates on the resulting timer and
+    /// inspects the HALT flag after the call. Outcomes are recorded in
+    /// [`World::move_outcomes`] so engines that want to react to per-actor
+    /// halts / waits can read them after the world ticks.
+    ///
+    /// `delta` mirrors the retail product `_DAT_1f800393 * _DAT_1f80037D`
+    /// (per-frame anim-speed scalars). Engines pass their own per-frame
+    /// scalar; the default world tick uses `1` so a Wait of N consumes N
+    /// frames.
+    pub fn tick_move_vms_with_delta(&mut self, delta: u16) {
+        self.move_outcomes.clear();
         for slot in 0..self.actors.len() {
             if !self.actors[slot].active {
                 continue;
@@ -708,13 +732,51 @@ impl World {
             if bc.is_empty() {
                 continue;
             }
-            // Decrement wait timer; if non-negative, skip.
-            if self.actors[slot].move_state.wait_timer > 0 {
-                self.actors[slot].move_state.wait_timer -= 1;
-                continue;
-            }
-            let _ = self.step_move_vm(slot, &bc);
+            // Pre-tick: decrement wait timer (retail does this unconditionally
+            // before the gate).
+            vm::move_vm::decrement_wait_timer(&mut self.actors[slot].move_state, delta);
+            let outcome = self.actor_tick_at(slot, &bc, MOVE_VM_BUDGET);
+            self.move_outcomes.push((slot as u8, outcome));
         }
+    }
+
+    /// Backwards-compatible wrapper using `delta = 1`.
+    pub fn tick_move_vms(&mut self) {
+        self.tick_move_vms_with_delta(1);
+    }
+
+    /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`
+    /// with the supplied opcode `budget`. Returns the typed outcome —
+    /// engines route `Halted` to their halt-handler, `EndOfBuffer` to "clear
+    /// the move", `Pending` to a debug log.
+    pub fn actor_tick_at(
+        &mut self,
+        slot: usize,
+        bytecode: &[u16],
+        budget: usize,
+    ) -> vm::move_vm::ActorTickOutcome {
+        let mut host = MoveVmHostImpl {
+            world: self,
+            current_slot: Some(slot),
+            deferred_writes: std::collections::BTreeMap::new(),
+        };
+        let actor_state = unsafe {
+            // SAFETY: same disjoint-field justification as `step_move_vm`.
+            &mut *(&mut host.world.actors[slot].move_state as *mut MoveActorState)
+        };
+        let outcome = vm::move_vm::actor_tick(&mut host, actor_state, bytecode, budget);
+        let writes = std::mem::take(&mut host.deferred_writes);
+        if !writes.is_empty()
+            && let Some(buf) = self.move_bytecode.get_mut(slot)
+        {
+            for (off, value) in writes {
+                if off >= buf.len() {
+                    buf.resize(off + 1, 0);
+                }
+                buf[off] = value;
+            }
+        }
+        outcome
     }
 
     /// Place the world into [`SceneMode::Battle`] and populate the actor
@@ -2430,5 +2492,54 @@ mod tests {
         let drained = world.drain_field_events();
         assert_eq!(drained.len(), 1);
         assert!(world.pending_field_events.is_empty());
+    }
+
+    /// `tick_move_vms` records per-actor outcomes via `actor_tick`. A
+    /// HALT-loaded script (op `0x08` = HALT, encoded as `0x0008` in u16)
+    /// should yield `Halted`.
+    #[test]
+    fn tick_move_vms_records_halt_outcome() {
+        let mut world = World::new();
+        world.spawn_actor(0);
+        world.actors[0].move_state.wait_timer = -1;
+        // Move-VM HALT opcode is `0x08`.
+        world.set_move_bytecode(0, Some(vec![0x0008]));
+        world.tick_move_vms();
+        assert!(
+            world
+                .move_outcomes
+                .iter()
+                .any(|(s, o)| *s == 0 && matches!(o, vm::move_vm::ActorTickOutcome::Halted)),
+            "expected actor 0 to halt, got {:?}",
+            world.move_outcomes
+        );
+    }
+
+    /// Wait gate: actor with `wait_timer >= 0` reports Waiting and the VM
+    /// is not entered. Decrement happens before the gate.
+    #[test]
+    fn tick_move_vms_with_delta_decrements_then_gates() {
+        let mut world = World::new();
+        world.spawn_actor(0);
+        world.actors[0].move_state.wait_timer = 3;
+        // Bytecode that would change state if VM ran (op 0x08 HALT).
+        world.set_move_bytecode(0, Some(vec![0x0008]));
+        world.tick_move_vms_with_delta(1);
+        // After delta=1: wait_timer = 2, still >= 0 -> Waiting.
+        assert_eq!(world.actors[0].move_state.wait_timer, 2);
+        assert!(matches!(
+            world.move_outcomes[0],
+            (0, vm::move_vm::ActorTickOutcome::Waiting)
+        ));
+        // After three more ticks (delta=1 each): wait_timer goes 1, 0, -1.
+        // Only when wait_timer is strictly negative does the VM run.
+        world.tick_move_vms_with_delta(1);
+        world.tick_move_vms_with_delta(1);
+        world.tick_move_vms_with_delta(1);
+        // The last tick should have entered the VM and Halted.
+        assert!(matches!(
+            world.move_outcomes[0],
+            (0, vm::move_vm::ActorTickOutcome::Halted)
+        ));
     }
 }
