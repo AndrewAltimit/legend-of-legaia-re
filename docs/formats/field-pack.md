@@ -69,4 +69,23 @@ asset field-pack <PATH> --groups       # cluster slots by size (semantic index)
 asset field-pack-scan <DIR>            # find every field-pack in a PROT dir
 ```
 
+### Rust API
+
+`legaia_asset::field_pack::FieldPack` exposes typed accessors:
+
+```rust
+// Classify a slot by index.
+let kind: Option<SlotKind> = fp.slot_kind(i);
+
+// Iterate all 97 slots with structural classification + bytes.
+// Bytes are non-empty only when magic_offset == 0 (entry 0005_town01).
+for (kind, bytes) in fp.iter_slots(buf) {
+    // kind: SlotKind::{TypeFlag, TimPage, NpcRecord, EventTrigger,
+    //                   CollisionBox, CompactRecord, MediumRecord,
+    //                   SingleRecord, LastSlot}
+}
+```
+
+`SlotKind` is derived from the slot's byte size and covers the major structural clusters identified in the size table above.  Per-slot interpretation beyond size-clustering is deferred pending a consumer trace (see "Why the magic isn't load-bearing" above).
+
 The detector is reliable for classification today; per-slot interpretation is bracketed by the cluster table above and pending a per-scene consumer trace for the final mapping.

@@ -4,7 +4,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use legaia_anm::{
     AnmPack, KeyframeReader, PREAMBLE_SIZE, Preamble, RecordHeader, pack_bytecode_histogram,
-    pack_bytecode_top_bigrams, parse, peel_preamble, record_bytes, top_k,
+    pack_bytecode_top_bigrams, parse, peel_preamble, record_bytecode_histogram, record_bytes,
+    top_k,
 };
 
 #[derive(Parser)]
@@ -80,6 +81,23 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         with_preamble: bool,
     },
+    /// Scan one or more ANM files and list every record whose size is NOT
+    /// consistent with the `8 + 32*N` keyframe-table layout. These are
+    /// records whose per-frame bytecode interpreter is distinct from the
+    /// keyframe tick at `FUN_80021DF4` — candidates for the overlay-resident
+    /// dispatcher at `actor[+0x4C]`.
+    ///
+    /// Files that fail to parse as ANM are silently skipped, so you can
+    /// safely pass entire PROT directories (most entries are not ANM).
+    ScanNonKeyframe {
+        /// One or more files to scan.
+        paths: Vec<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        with_preamble: bool,
+        /// Also print the top-8 byte histogram for each non-keyframe record.
+        #[arg(long, default_value_t = false)]
+        histogram: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -114,6 +132,11 @@ fn main() -> Result<()> {
             bones,
             with_preamble,
         } => keyframes(&path, record, bones, with_preamble),
+        Cmd::ScanNonKeyframe {
+            paths,
+            with_preamble,
+            histogram,
+        } => scan_non_keyframe(&paths, with_preamble, histogram),
     }
 }
 
@@ -320,5 +343,94 @@ fn json(path: &Path, with_preamble: bool) -> Result<()> {
         pack: &pack,
     };
     println!("{}", serde_json::to_string_pretty(&out)?);
+    Ok(())
+}
+
+fn scan_non_keyframe(paths: &[PathBuf], with_preamble: bool, show_histogram: bool) -> Result<()> {
+    let mut files_scanned: usize = 0;
+    let mut files_with_hits: usize = 0;
+    let mut total_non_kf: usize = 0;
+
+    for path in paths {
+        let (payload, _preamble, pack) = match load(path, with_preamble) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        files_scanned += 1;
+
+        let non_kf: Vec<usize> = pack
+            .records
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| {
+                if KeyframeReader::infer_bone_count(r.size).is_none() {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if non_kf.is_empty() {
+            continue;
+        }
+
+        files_with_hits += 1;
+        total_non_kf += non_kf.len();
+        println!(
+            "{} ({} records, {} non-keyframe)",
+            path.display(),
+            pack.records.len(),
+            non_kf.len()
+        );
+        for i in &non_kf {
+            let r = &pack.records[*i];
+            let bytes = record_bytes(&payload, r);
+            let hdr = RecordHeader::from_bytes(bytes).ok();
+            let reason = if bytes.len() < 8 {
+                "too small for header".to_string()
+            } else {
+                let body = bytes.len() - 8;
+                if body == 0 {
+                    "empty body".to_string()
+                } else {
+                    format!("body {} bytes — not a multiple of 32", body)
+                }
+            };
+            match hdr {
+                Some(h) => println!(
+                    "  [{:>3}] off=0x{:05X} size={:>5}  a=0x{:04X} b=0x{:04X} flag=0x{:04X} marker={}  -> {}",
+                    r.index,
+                    r.offset,
+                    r.size,
+                    h.a,
+                    h.b,
+                    h.flag,
+                    if h.marker_ok { "ok " } else { "BAD" },
+                    reason
+                ),
+                None => println!(
+                    "  [{:>3}] off=0x{:05X} size={:>5}  (header unreadable)  -> {}",
+                    r.index, r.offset, r.size, reason
+                ),
+            }
+            if show_histogram && bytes.len() > 8 {
+                let hist = record_bytecode_histogram(bytes);
+                let pairs = top_k(&hist, 8);
+                if !pairs.is_empty() {
+                    let vals: Vec<String> = pairs
+                        .iter()
+                        .map(|(b, c)| format!("0x{:02X}:{}", b, c))
+                        .collect();
+                    println!("         top bytes: {}", vals.join("  "));
+                }
+            }
+        }
+    }
+
+    println!(
+        "\nSummary: {} non-keyframe record(s) in {} file(s) ({} ANM file(s) scanned)",
+        total_non_kf, files_with_hits, files_scanned
+    );
     Ok(())
 }
