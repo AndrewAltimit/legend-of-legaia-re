@@ -20,6 +20,7 @@
 
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
+pub use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_vm as vm;
 use legaia_save;
 use vm::battle_action::{
@@ -154,6 +155,21 @@ pub struct Actor {
     /// batch through [`World::collect_sprite_requests`]. When `None`, the
     /// actor is invisible (or rendered as a 3D mesh through the TMD path).
     pub sprite_frame: Option<SpriteFrame>,
+
+    /// Active keyframe animation player. `None` means no animation is
+    /// playing. Set via [`World::set_actor_animation`].
+    pub active_animation: Option<AnimPlayer>,
+
+    /// Last per-bone pose produced by `active_animation.tick()`. `None`
+    /// until the first frame after an animation is assigned. Renderers
+    /// consume this via `tmd_to_vram_mesh_posed` to deform the actor's
+    /// mesh each frame.
+    pub pose_frame: Option<PoseFrame>,
+
+    /// Index into `SceneResources::tmds` for this actor's bound mesh.
+    /// `None` means no TMD is bound — the actor has no visible 3D model.
+    /// Set via [`World::set_actor_tmd_binding`].
+    pub tmd_binding: Option<usize>,
 }
 
 impl Actor {
@@ -698,6 +714,7 @@ impl World {
         self.frame += 1;
         self.tick_effects();
         self.tick_move_vms();
+        self.tick_actors();
         match self.mode {
             SceneMode::Battle => Some(self.step_battle()),
             SceneMode::Field | SceneMode::Cutscene => {
@@ -743,6 +760,40 @@ impl World {
     /// Backwards-compatible wrapper using `delta = 1`.
     pub fn tick_move_vms(&mut self) {
         self.tick_move_vms_with_delta(1);
+    }
+
+    /// Advance all active actor animations one frame. Mirrors the
+    /// keyframe-table block in `FUN_80021DF4` (`0x80022ec4..0x80023040`)
+    /// that walks `actor[+0x4C]` (anim pointer) when `actor[+0x22]`
+    /// (factor) is non-zero. Called by [`World::tick`] after the move-VM
+    /// pass.
+    pub fn tick_actors(&mut self) {
+        for actor in &mut self.actors {
+            if !actor.active {
+                continue;
+            }
+            if let Some(player) = &mut actor.active_animation {
+                actor.pose_frame = Some(player.tick());
+            }
+        }
+    }
+
+    /// Bind an animation player to actor `slot`. Replaces any existing
+    /// player and resets the playhead. No-ops for out-of-range slots.
+    pub fn set_actor_animation(&mut self, slot: usize, player: AnimPlayer) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.active_animation = Some(player);
+            actor.pose_frame = None;
+        }
+    }
+
+    /// Bind actor `slot` to TMD index `tmd_idx` in `SceneResources::tmds`.
+    /// Renderers use this binding to look up the right mesh when applying
+    /// the actor's `pose_frame`. No-ops for out-of-range slots.
+    pub fn set_actor_tmd_binding(&mut self, slot: usize, tmd_idx: usize) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.tmd_binding = Some(tmd_idx);
+        }
     }
 
     /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`

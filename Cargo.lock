@@ -1207,6 +1207,7 @@ name = "legaia-engine-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "legaia-anm",
  "legaia-asset",
  "legaia-engine-vm",
  "legaia-font",
