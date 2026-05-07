@@ -9,8 +9,12 @@
 #   - cargo runs directly on the runner (no docker-compose `rust-ci` service
 #     in this repo yet; the only compose service here is `ghidra`).
 #   - Validation suite is gated on LEGAIA_DISC_BIN, which is intentionally
-#     not provided in CI: this repo ships no game data. The gated tests
-#     print a skip notice and pass.
+#     not provided in the main `ci` job: this repo ships no game data. The
+#     gated tests print a skip notice and pass.
+#   - A separate `disc-test` job runs the full disc-gated suite. It fires
+#     on: (a) manual workflow_dispatch, or (b) a PR that has the `disc-test`
+#     label added. Set the `LEGAIA_DISC_BIN` repository variable (Settings >
+#     Variables > Actions) to the disc image path on the self-hosted runner.
 
 name: Main CI
 
@@ -19,6 +23,8 @@ on:
     branches: [main]
     tags:
       - 'v*'
+  pull_request:
+    types: [labeled]
   workflow_dispatch:
 
 concurrency:
@@ -31,6 +37,9 @@ jobs:
     name: Legaia CI
     runs-on: self-hosted
     timeout-minutes: 30
+    # Don't run the full CI on PR label events — that trigger is reserved for
+    # the disc-test job below. CI still runs on push-to-main and workflow_dispatch.
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,11 +65,50 @@ jobs:
       - name: Build web-viewer for wasm32
         run: cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer
 
+  # -- Disc-Gated Test Suite --------------------------------------------------
+  disc-test:
+    name: Disc-Gated Tests
+    runs-on: self-hosted
+    timeout-minutes: 60
+    # Runs on:
+    #   (a) manual workflow_dispatch (any branch), OR
+    #   (b) a pull_request where the `disc-test` label was just added.
+    # Requires the `LEGAIA_DISC_BIN` repository variable to be set to the
+    # disc image path on the self-hosted runner (Settings > Variables > Actions).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'disc-test'))
+    env:
+      LEGAIA_DISC_BIN: ${{ vars.LEGAIA_DISC_BIN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Verify disc image exists
+        run: |
+          if [ -z "$LEGAIA_DISC_BIN" ]; then
+            echo "ERROR: LEGAIA_DISC_BIN repository variable is not set."
+            echo "Configure it under Settings > Variables > Actions on GitHub."
+            exit 1
+          fi
+          if [ ! -f "$LEGAIA_DISC_BIN" ]; then
+            echo "ERROR: disc image not found at '$LEGAIA_DISC_BIN'"
+            exit 1
+          fi
+          echo "Disc image present: $LEGAIA_DISC_BIN"
+
+      - name: Run disc-gated test suite
+        run: cargo test --workspace --release
+
   # -- Deploy GitHub Pages ----------------------------------------------------
   deploy-pages:
     name: Deploy GitHub Pages
     needs: [ci]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
@@ -103,7 +151,7 @@ jobs:
   # -- CI Summary -------------------------------------------------------------
   notify:
     name: CI Summary
-    needs: [ci, deploy-pages]
+    needs: [ci, deploy-pages, disc-test]
     if: always()
     runs-on: self-hosted
     steps:
@@ -118,8 +166,9 @@ jobs:
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| GitHub Pages | ${{ needs.deploy-pages.result == 'success' && 'pass' || needs.deploy-pages.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Disc Tests | ${{ needs.disc-test.result == 'success' && 'pass' || needs.disc-test.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ needs.ci.result }}" == "failure" ]]; then
+          if [[ "${{ needs.ci.result }}" == "failure" || "${{ needs.disc-test.result }}" == "failure" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
             exit 1

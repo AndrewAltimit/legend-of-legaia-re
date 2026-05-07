@@ -25,6 +25,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub mod sequencer;
 pub mod spu;
 pub mod vab_bind;
+#[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+mod webaudio;
 
 pub use sequencer::Sequencer;
 pub use spu::Spu;
@@ -33,6 +35,8 @@ pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
 pub use spu::ram::{SpuAllocator, SpuRam, TransferDirection};
 pub use spu::voice::{PITCH_UNITY, SPU_INTERNAL_RATE, Voice};
 pub use vab_bind::{UploadedVag, VabBank};
+#[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
+pub use webaudio::WebAudioOut;
 
 /// Default sample rate to assume for queued buffers when the caller
 /// doesn't specify one. PSX VAG samples in Legaia run at this rate

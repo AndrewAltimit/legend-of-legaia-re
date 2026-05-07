@@ -1219,6 +1219,8 @@ dependencies = [
  "legaia-vab",
  "legaia-xa",
  "log",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -1429,6 +1431,7 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "legaia-asset",
+ "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-vm",
  "legaia-lzs",

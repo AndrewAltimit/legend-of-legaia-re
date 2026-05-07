@@ -17,6 +17,8 @@
 //! filesystem access). `enter_scene(name)` then boots a named scene and
 //! starts ticking the field-VM through `SceneHost::tick`.
 
+#[cfg(target_arch = "wasm32")]
+use legaia_engine_audio::WebAudioOut;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene::SceneHost;
 use legaia_engine_core::world::{SceneMode, World};
@@ -31,6 +33,8 @@ pub struct LegaiaRuntime {
     world: World,
     menu: MenuRuntime,
     scene_host: Option<SceneHost>,
+    #[cfg(target_arch = "wasm32")]
+    audio_out: Option<WebAudioOut>,
 }
 
 #[wasm_bindgen]
@@ -45,6 +49,8 @@ impl LegaiaRuntime {
             world,
             menu,
             scene_host: None,
+            #[cfg(target_arch = "wasm32")]
+            audio_out: None,
         }
     }
 
@@ -80,14 +86,27 @@ impl LegaiaRuntime {
         Ok(())
     }
 
-    /// Attempt to initialise the audio backend. Returns `true` if audio is
-    /// available. In this WASM build the WebAudio backend is not implemented,
-    /// so this always returns `false`. Wire up a full `web_sys::AudioContext`
-    /// path here once §4.11 is tackled.
-    pub fn audio_init(&self) -> bool {
-        web_sys::console::log_1(
-            &"audio_init: WebAudio backend not implemented in this build".into(),
-        );
+    /// Attempt to initialise the WebAudio backend. Must be called from a
+    /// user-gesture handler (browser autoplay policy). Returns `true` if
+    /// audio started successfully, `false` otherwise (e.g. blocked by the
+    /// browser before any interaction or on a platform without WebAudio).
+    ///
+    /// Idempotent — calling a second time replaces the existing backend.
+    pub fn audio_init(&mut self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            match WebAudioOut::new() {
+                Ok(out) => {
+                    self.audio_out = Some(out);
+                    return true;
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("audio_init: {e}").into());
+                    return false;
+                }
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         false
     }
 
