@@ -1,0 +1,16 @@
+{
+  "name": "legaia-web-viewer",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT OR Unlicense",
+  "files": [
+    "legaia_web_viewer_bg.wasm",
+    "legaia_web_viewer.js",
+    "legaia_web_viewer.d.ts"
+  ],
+  "main": "legaia_web_viewer.js",
+  "types": "legaia_web_viewer.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
