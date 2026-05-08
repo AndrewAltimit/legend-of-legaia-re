@@ -27,7 +27,9 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 /// Source of asset bytes.
 ///
@@ -175,29 +177,50 @@ impl Default for AssetCache {
 
 /// Wall-clock + delta accumulator. Used by the frame loop to drive
 /// fixed-timestep gameplay updates while letting render run uncapped.
+///
+/// On `wasm32-unknown-unknown` `std::time::Instant` is not implemented, so
+/// this type becomes a zero-size stub — callers (JS `requestAnimationFrame`
+/// loop) supply their own delta timing.
 pub struct FrameTime {
+    #[cfg(not(target_arch = "wasm32"))]
     started_at: Instant,
+    #[cfg(not(target_arch = "wasm32"))]
     last_frame: Instant,
 }
 
 impl FrameTime {
     pub fn new() -> Self {
-        let now = Instant::now();
-        Self {
-            started_at: now,
-            last_frame: now,
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let now = Instant::now();
+            Self {
+                started_at: now,
+                last_frame: now,
+            }
         }
+        #[cfg(target_arch = "wasm32")]
+        Self {}
     }
 
     pub fn tick(&mut self) -> Duration {
-        let now = Instant::now();
-        let dt = now - self.last_frame;
-        self.last_frame = now;
-        dt
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let now = Instant::now();
+            let dt = now - self.last_frame;
+            self.last_frame = now;
+            dt
+        }
+        #[cfg(target_arch = "wasm32")]
+        Duration::ZERO
     }
 
     pub fn elapsed(&self) -> Duration {
-        Instant::now() - self.started_at
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Instant::now() - self.started_at
+        }
+        #[cfg(target_arch = "wasm32")]
+        Duration::ZERO
     }
 }
 
