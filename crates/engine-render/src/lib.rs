@@ -274,7 +274,7 @@ pub fn shop_draws_for<'a>(
     // Constants confirmed from overlay_shop_save FUN_801d5de0.
     const LINE_H: i32 = 14;
     const CURSOR_X: i32 = 0;
-    const LABEL_X: i32 = 20;  // retail 0x14
+    const LABEL_X: i32 = 20; // retail 0x14
     const PRICE_X: i32 = 112; // retail 0x70, left edge of 6-digit price field
 
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
@@ -314,7 +314,13 @@ pub fn shop_draws_for<'a>(
         if let Some(price) = row.price {
             let price_str = format!("{price}G");
             let price_layout = font.layout_ascii(&price_str);
-            let price_fg = if !can_afford { dim } else if selected { gold_col } else { dim };
+            let price_fg = if !can_afford {
+                dim
+            } else if selected {
+                gold_col
+            } else {
+                dim
+            };
             out.extend(text_draws_for(
                 &price_layout,
                 (pen.0 + PRICE_X, row_y),

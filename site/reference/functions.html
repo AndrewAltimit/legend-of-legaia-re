@@ -67,6 +67,8 @@
         <li><code>FUN_801D388C</code> — battle animation dispatcher; switch on animation_type (0..0x31+)</li>
         <li><code>FUN_801D5854</code> — battle actor pose driver; GTE transform per pose_id (~30 call sites from the action SM)</li>
         <li><code>FUN_801D8DE8</code> — UI element ID mapper (3 KB, 75 callers)</li>
+        <li><code>FUN_801DA6B4</code> — battle actor display-state controller; opacity + pose flags for alive actors</li>
+        <li><code>FUN_801DB81C</code> — next-valid-target scan; <code>actor[+0x14C] != 0</code> &amp; no death/stone</li>
         <li><code>FUN_801ED710</code> — records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
         <li><code>FUN_800520F0</code> — battle scene loader</li>
         <li><code>FUN_8004E2F0</code> — battle range / line-of-sight</li>
@@ -74,7 +76,18 @@
         <li><code>FUN_80042558</code> — per-frame stat aggregator</li>
         <li><code>FUN_8003FB10</code> — action validator</li>
         <li><code>FUN_800431D0</code> — ability bitmask read</li>
-        <li><code>0x801C9370</code> — 8-actor pointer table</li>
+        <li><code>0x801C9370</code> — 8-actor pointer table (party 0&ndash;2, monsters 3&ndash;7); actor HP at <code>+0x14C</code></li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>Menu overlay</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_801DD35C</code> — top-level menu dispatcher (12 KB, 134 outgoing)</li>
+        <li><code>FUN_801D33D8</code> — submenu rendering loop</li>
+        <li><code>FUN_801E1C1C</code> — shared menu-element renderer</li>
+        <li><code>FUN_801CF650</code> — equipment stat aggregator; reads 5 slots at char <code>+0x196</code>, sums into <code>DAT_801EF08C&ndash;09C</code></li>
+        <li><code>FUN_801DD0C0</code> — item category / slot validity check</li>
       </ul>
     </div>
 

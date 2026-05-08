@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; level-up</div>
   <h1>Level-Up</h1>
-  <p class="lede">Post-battle XP distribution, per-level stat gains, and banner display. Driven by <code>engine-core::levelup::LevelUpTracker</code>. The XP threshold table is from <code>SCUS_942.54</code> at <code>0x8007123C</code> (98 u16 increments). Per-character HP/MP growth curves are in the level-up overlay DATA segment (pending full capture).</p>
+  <p class="lede">Post-battle XP distribution, per-level stat gains, and banner display. Driven by <code>engine-core::levelup::LevelUpTracker</code>. The XP threshold table is from <code>SCUS_942.54</code> at <code>0x8007123C</code> (98 u16 increments). Stat growth comes from per-Seru structs loaded at runtime, not from a static table in the overlay.</p>
 </header>
 
 <section class="doc-section" id="xp-table">
@@ -19,6 +19,23 @@
       <tr><td>99</td><td>61444</td></tr>
     </tbody>
   </table>
+</section>
+
+<section class="doc-section" id="stat-gains">
+  <h2>Stat gains</h2>
+  <p>Retail HP/MP growth does not come from a per-character per-level table in the overlay binary. Stat increments are sourced from <strong>per-Seru structs</strong> loaded from PROT entries at runtime. When a Seru gains a level the Seru struct field at <code>+0x74</code> (HP grant) and sibling fields are applied to the battle actor&rsquo;s stat block. The battle actor base lives at <code>DAT_801C9370[slot]</code> (8 slots: party 0&ndash;2, monsters 3&ndash;7); current HP is at <code>+0x14C</code>.</p>
+  <p>The level-up overlay data section (<code>overlay_magic_level_up_full.bin</code>, full 256&nbsp;KB <code>0x801C0000&ndash;0x801FFFFF</code>) was dumped. It contains UI display indices and animation tables, not stat increment arrays. Key data addresses:</p>
+  <table>
+    <thead><tr><th>Address</th><th>Content</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801F4B8C</code></td><td>4-byte display row-ID table for magic slots</td></tr>
+      <tr><td><code>0x801F4B98</code></td><td>Magic-type name strings (Spirit / Defense / Meta / Terra / Ozma)</td></tr>
+      <tr><td><code>0x801F4C28+</code></td><td>Battle-result text strings (win / annihilated / escaped / &hellip;)</td></tr>
+      <tr><td><code>0x801F5CF8</code>, <code>0x801F5D90</code></td><td>Binary animation tables for particle spawner <code>FUN_80050ED4</code></td></tr>
+      <tr><td><code>0x801F6000+</code></td><td>Live animation state globals (zero at rest)</td></tr>
+    </tbody>
+  </table>
+  <p><code>StatGain::default()</code> uses placeholder flat rates (+10 HP / +5 MP per level for all characters). Different characters (Vahn, Noa, Gala) have distinct curves in retail, derived from their respective Seru rosters. Override via <code>LevelUpTracker::with_stat_gains([StatGain; 4])</code>.</p>
 </section>
 
 <section class="doc-section" id="flow">
@@ -40,15 +57,11 @@
   <p><code>level_up_draws_for(banner, world)</code> in <code>engine-render</code> returns two text draw calls: a yellow &ldquo;LEVEL UP! (char N &rarr; Lv M)&rdquo; line and a green &ldquo;HP +X  MP +Y&rdquo; line. Wired into <code>PlayWindowApp::build_text_overlay</code> at anchor <code>(8, 60)</code>.</p>
 </section>
 
-<section class="doc-section" id="stat-gains">
-  <h2>Stat gains</h2>
-  <p>Per-level HP/MP increments for each character are in the level-up overlay DATA segment and are not extractable from function dumps alone. <code>StatGain::default()</code> uses placeholder flat rates (+10 HP / +5 MP per level for all characters). Different characters (Vahn, Noa, Gala) have distinct curves in retail. Override via <code>LevelUpTracker::with_stat_gains([StatGain; 4])</code>.</p>
-</section>
-
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>
-    <li><strong>Per-character stat curves.</strong> Pending a full binary dump of the stat-distribution sub-screen (mednafen save state at the mid-stat-distribution screen; see §3.1 of the PRD).</li>
+    <li><strong>Per-Seru stat grants.</strong> The HP-grant field is at Seru struct <code>+0x74</code>; remaining grant fields (MP, STR, DEF, INT, LUCK) need tracing. Extraction requires a live Seru struct capture during a PROT entry load.</li>
+    <li><strong>Battle actor field map <code>+0x14C&ndash;+0x176</code>.</strong> Current HP at <code>+0x14C</code>, max HP at <code>+0x14E</code>; <code>+0x150/152/154/156</code> semantics not fully traced.</li>
     <li><strong>XP share formula.</strong> Retail may divide the monster XP pool by active party size before the per-character check. The current port grants the full <code>xp_reward</code> to each member independently.</li>
     <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters. Only HP/MP are tracked in the current port.</li>
   </ul>
@@ -56,5 +69,5 @@
 
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Complete table and provenance at <code>docs/subsystems/level-up.md</code>. XP table source: <code>ghidra/scripts/funcs/</code> scan of <code>SCUS_942.54 0x8007123C</code>. Source: <code>crates/engine-core/src/levelup.rs</code>.</p>
+  <p>Complete table and provenance at <code>docs/subsystems/level-up.md</code>. XP table source: <code>ghidra/scripts/funcs/</code> scan of <code>SCUS_942.54 0x8007123C</code>. Data section dump: <code>ghidra/scripts/dump_levelup_data_section.py</code>. Source: <code>crates/engine-core/src/levelup.rs</code>.</p>
 </section>

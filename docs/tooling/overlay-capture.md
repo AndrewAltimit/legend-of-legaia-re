@@ -19,11 +19,11 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 | Title screen | ✓ (loaded at boot, in SCUS-range) | — (in SCUS address range) | Actor / sprite VM (`FUN_801D6628`) |
 | Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`) |
 | Field overlay — battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Same 0897 code as above; captured during battle-intro 3D camera spin (battle overlay not yet loaded) |
-| Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) |
-| Options / config / all pause-menus (`0896`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; all overworld pause menus share this overlay |
+| Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
+| Options / config / all pause-menus (`0896`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650`); all 129 functions dumped |
 | Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped |
 | Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped |
-| Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` | XP / stat gain UI; 78 functions dumped |
+| Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
 | World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); 20 functions dumped |
 | Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | XA driver + cutscene mode table; 128 functions each |
 | Fishing / dev menu (`0971`) | ✓ partial | `overlay_0971_xxx_dat.bin` | Fishing minigame + dev/test menu strings |
@@ -34,7 +34,26 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 
 1. **Mini-games** — Card Battle (Baka Game), Inova card-sort minigame, and the fishing minigame `0971` extended code. Each loads its own overlay slot; none has been fully dumped.
 2. **World map top/walk variants** — `overlay_world_map_top.bin` and `overlay_world_map_walk.bin` are imported but have no inventory CSV and no function dumps yet. Run `inventory_overlay.py` then a dump script targeting the top functions in each.
-3. **Per-character stat growth table** — lives in the level-up overlay data section (not code). Extract the binary data segment from `overlay_magic_level_up.bin` to pin the HP/MP/STR/DEF per-level growth arrays.
+
+### Level-up overlay data section (resolved)
+
+The mc3 save state was re-extracted at the full 256 KB window
+(`0x801C0000–0x801FFFFF`) and imported as `overlay_magic_level_up_full.bin`.
+The data section (`ghidra/scripts/dump_levelup_data_section.py`) was dumped
+in ten 4 KB blocks. Key findings:
+
+| Address | Content |
+|---|---|
+| `0x801F4B8C` | 4-byte display row-ID array for magic slots |
+| `0x801F4B98` | Magic-type name strings (Spirit / Defense / Meta / Terra / Ozma) |
+| `0x801F4C28+` | Battle-result text strings (win / wipe / escape / …) |
+| `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner |
+| `0x801F6000+` | Live animation state globals (zero at rest) |
+
+Per-character HP/MP/STR/DEF growth does not come from a static table in the
+overlay. Stat increments are sourced from per-Seru structs loaded from PROT
+entries at runtime (HP grant at Seru `+0x74`). See
+[`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 
 ## Capturing with PCSX-Redux
 

@@ -35,15 +35,32 @@ Total XP to reach level N (from level 1):
 
 ## Stat gains
 
-Per-level HP / MP increments are in the level-up overlay's DATA segment —
-not in `SCUS_942.54` code and therefore not extractable from function dumps
-alone. The mc4 capture covers the post-battle animation overlay; a full dump of
-the stat-distribution screen (mid-stat-distribution mednafen save) is needed
-to pin the per-character growth curves.
+Retail HP / MP growth does not come from a per-character per-level table in
+the overlay binary. Stat increments are sourced from **per-Seru structs** loaded
+from PROT entries at runtime: when a Seru gains a level, the Seru struct field
+at `+0x74` (HP grant) and sibling fields are applied to the battle actor's stat
+block. The battle actor base lives at `DAT_801C9370[slot]` (8 slots: party 0..2,
+monsters 3..7); its current HP sits at `+0x14C`.
+
+The level-up overlay data section (`overlay_magic_level_up_full.bin`,
+`0x801C0000–0x801FFFFF`, full 256 KB) contains:
+
+| Address | Content |
+|---|---|
+| `0x801F4B8C` | 4-byte display row-ID table for magic slots (indices 12–17) |
+| `0x801F4B98` | Magic-type name strings: Spirit / Defense / Meta / Terra / Ozma |
+| `0x801F4C28+` | Battle-result text strings (win / annihilated / escaped / …) |
+| `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner `FUN_80050ED4` |
+| `0x801F6000+` | Live animation state globals (runtime values; zero at rest) |
+
+No static HP/MP/STR/DEF increment table was found in the overlay. To extract
+per-Seru stat grants, dump the Seru struct data from a live PROT entry load
+(see [`formats/field-pack.md`](../formats/field-pack.md) for the Seru data
+container and the Seru struct layout investigation).
 
 `StatGain::default()` uses placeholder flat rates: +10 HP / +5 MP per level
 for all characters. Different characters (Vahn, Noa, Gala) have distinct curves
-in retail.
+in retail (derived from their respective Seru rosters).
 
 The tracker supports per-slot overrides via `with_stat_gains([StatGain; 4])`.
 
@@ -115,10 +132,15 @@ Wired into `PlayWindowApp::build_text_overlay` at anchor `(8, 60)` in
 
 ## Open items
 
-- **Per-character stat curves.** Vahn / Noa / Gala have distinct HP/MP growth
-  rates in retail. Locating those values requires a full binary dump of the
-  stat-distribution sub-screen from the level-up overlay (pending mednafen
-  save state at the mid-stat-distribution screen; see §3.1 of the PRD).
+- **Per-Seru stat grants.** Vahn / Noa / Gala have distinct HP/MP growth via
+  their Seru rosters. The per-Seru HP-grant field is at `+0x74` in the Seru
+  struct; remaining grant fields (MP, STR, DEF, INT, LUCK) are at sibling
+  offsets not yet traced. Extraction requires a live capture of the Seru struct
+  data during a level-up save state.
+- **Battle actor struct fields `+0x14C`–`+0x176`.** The battle actor (pointed
+  to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
+  additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
+  has not been traced from the stat aggregator.
 - **XP share formula.** Retail may divide the monster XP pool by active party
   size before calling the per-character threshold check. The current port grants
   the full `xp_reward` to each party member independently.
