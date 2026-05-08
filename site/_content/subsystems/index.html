@@ -54,6 +54,14 @@
       <div class="card-title">Effect VM</div>
       <div class="card-body">Battle-spawn effects (spell casts, hit sparks, item-use animations). A per-slot state machine living in the battle overlay, fed by a 32-master / 128-child slot pool.</div>
     </a>
+    <a class="card" href="world-map.html">
+      <div class="card-title">World map</div>
+      <div class="card-body">Overworld traversal mode. Controller <code>FUN_801E76D4</code> handles the debug top-view toggle, top-view camera scroll/azimuth/zoom, and normal-walk per-frame update. Entity tick SM (<code>FUN_801DA51C</code>, 5 states) drives encounter and location-entry sequences.</div>
+    </a>
+    <a class="card" href="save-screen.html">
+      <div class="card-title">Save screen</div>
+      <div class="card-body">Save-slot selection and write flow. Lives in the menu overlay (not a separate overlay). Outer dispatcher <code>FUN_801DC6B4</code>: 9-state machine, entry-context pointer table at <code>0x801E4F40</code>, slot-select via actor VM, save-block existence scan at <code>DAT_80084140</code>.</div>
+    </a>
     <a class="card" href="cutscene.html">
       <div class="card-title">Cutscene (STR mode)</div>
       <div class="card-body">PSX STR video decode + XA audio playback. Game modes 26/27 (<code>StrInit</code> / <code>StrMode</code>). MDEC decoder: VLC &rarr; IDCT &rarr; BT.601 YCbCr&rarr;RGBA. Clean-room port in <code>crates/mdec</code>.</div>
