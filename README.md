@@ -213,7 +213,7 @@ legend-of-legaia-re/
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
 │   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM + action validator + formulas
-│   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector; play-window renders shop + inn overlay
+│   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector; play-window renders shop + inn + level-up overlays
 │   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
 │   └── web-viewer/               # WASM target — disc browser running in the browser
 ├── docs/                         # Topic-first technical reference (see "Documentation")
