@@ -245,20 +245,24 @@ pub struct ShopRow<'a> {
 
 /// Build [`TextDraw`]s for a 2-D shop / confirmation panel.
 ///
-/// Renders the following layout anchored at `pen`:
+/// Layout traced from `FUN_801d5de0` in `overlay_shop_save.bin`:
 /// ```text
 /// [title]
-/// > row0 label       1234G
-///   row1 label        567G
+/// > item name              1500G
+///   item name               200G   ← unaffordable rows are dimmed
 ///   …
 /// Gold: 9999G
 /// ```
-/// The cursor `>` marks the row at `cursor`. `gold` is the player's current
-/// gold; pass `None` to suppress the gold line (e.g. for in-battle prompts).
+/// Column offsets relative to `pen`:
+/// - cursor `>`: x + 0 (`CURSOR_X`)
+/// - item name: x + 20 (`LABEL_X`, retail `0x14`)
+/// - price (left-aligned): x + 112 (`PRICE_X`, retail `0x70`)
+/// - line height: 14 px (`LINE_H`, retail `0x0E`)
 ///
-/// All coordinates are in the same pixel space as the surface passed to the
-/// renderer. A natural anchor for a PSX-style 320×240 surface is around
-/// `(8, 140)`.
+/// Rows where `gold < price` are rendered dim; selected row has a
+/// gold-coloured price. `gold = None` suppresses the gold footer line.
+///
+/// A natural anchor for a PSX-style 320×240 surface is `(8, 140)`.
 pub fn shop_draws_for<'a>(
     font: &legaia_font::Font,
     title: &str,
@@ -267,10 +271,11 @@ pub fn shop_draws_for<'a>(
     gold: Option<i32>,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    const LINE_H: i32 = 16;
+    // Constants confirmed from overlay_shop_save FUN_801d5de0.
+    const LINE_H: i32 = 14;
     const CURSOR_X: i32 = 0;
-    const LABEL_X: i32 = 12;
-    const PRICE_RIGHT: i32 = 200; // right edge for price column
+    const LABEL_X: i32 = 20;  // retail 0x14
+    const PRICE_X: i32 = 112; // retail 0x70, left edge of 6-digit price field
 
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
@@ -286,7 +291,13 @@ pub fn shop_draws_for<'a>(
     for (i, row) in rows.iter().enumerate() {
         let row_y = pen.1 + LINE_H + i as i32 * LINE_H;
         let selected = i == cursor;
-        let fg = if selected { white } else { dim };
+
+        // Retail dims rows the player cannot afford (gold < price).
+        let can_afford = match (gold, row.price) {
+            (Some(g), Some(p)) => g >= p as i32,
+            _ => true,
+        };
+        let fg = if !can_afford || !selected { dim } else { white };
 
         if selected {
             let cur_layout = font.layout_ascii(">");
@@ -303,17 +314,16 @@ pub fn shop_draws_for<'a>(
         if let Some(price) = row.price {
             let price_str = format!("{price}G");
             let price_layout = font.layout_ascii(&price_str);
-            let price_w = price_layout
-                .glyphs
-                .last()
-                .map_or(0, |g| g.dst_x + g.width as i32);
-            let price_x = pen.0 + PRICE_RIGHT - price_w;
-            let price_fg = if selected { gold_col } else { dim };
-            out.extend(text_draws_for(&price_layout, (price_x, row_y), price_fg));
+            let price_fg = if !can_afford { dim } else if selected { gold_col } else { dim };
+            out.extend(text_draws_for(
+                &price_layout,
+                (pen.0 + PRICE_X, row_y),
+                price_fg,
+            ));
         }
     }
 
-    // Gold line
+    // Gold footer (retail FUN_801d0148: gold icon at panel_x, amount at x+40).
     if let Some(g) = gold {
         let gold_y = pen.1 + LINE_H + rows.len() as i32 * LINE_H + 4;
         let gold_str = format!("Gold: {g}G");

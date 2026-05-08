@@ -5,10 +5,9 @@ town shop. The shop UI lives inside the **menu overlay** — the same 129-functi
 binary that hosts the save screen, inn, and status screens. No separate shop
 overlay exists.
 
-Exact per-scene item lists, prices, and the full buy-menu render layout are
-pending a complete trace of `overlay_shop_save` (the menu overlay). The
-clean-room port (`engine-core::shop`) supplies the session state machine;
-once the overlay is traced the item tables can be wired in.
+Per-scene item lists and prices are encoded in the menu overlay DATA segment
+(see [Open items](#open-items) below). The buy-list render layout is traced from
+`FUN_801d5de0` in `overlay_shop_save.bin`.
 
 ## Flow overview
 
@@ -70,28 +69,45 @@ Key methods:
 - `try_buy(world_money) -> Option<(item_id, qty, gold_delta)>` — validates affordability; `gold_delta` is negative
 - `try_sell(held_count) -> Option<(item_id, qty, gold_delta)>` — clamps to held quantity; `gold_delta` is positive
 
-## Engine-render overlay
+## Buy-list render layout
 
-`engine-render::shop_draws_for(session, cursor, world)` returns a list of
-`DrawCall` values for the current shop state. The cost prompt and Yes/No cursor
-are rendered in `legaia-engine play-window` whenever `MenuState::ShopConfirm`
-is active.
+Traced from `FUN_801d5de0` (`overlay_shop_save.bin`). The buy list iterates up
+to 8 visible rows (scroll managed by `_DAT_8007bb98` / `_DAT_8007bb90`), each
+row rendered at a fixed vertical stride:
 
-The full 4-column buy-menu layout (item name, item icon, quantity, price) and
-the sell-mode item list mirror the retail overlay; exact pixel offsets are
-pending the overlay trace.
+| Element | X offset (px) | Y stride (px) | Notes |
+|---|---|---|---|
+| Cursor `>` | +0 | — | Drawn only on the selected row |
+| Item name | +20 (`0x14`) | +14 (`0x0E`) per row | `func_0x80036888` |
+| Price | +112 (`0x70`) | same row | `func_0x80034b78`, 6-digit field |
+| Gold footer | +0 | below last row | `func_0x80034b78`, 8-digit field |
+
+Row colour logic (retail `_DAT_8007b454` palette index):
+- **White** — normal affordable item.
+- **Dim** — item is unaffordable (`price > gold`) or held count exceeds 98.
+- **Blue** — item has an "equipped-comparison" flag set.
+
+The quantity-selector sub-screen (`FUN_801d5510`) uses the same 14 px line
+height, showing "Have N [item]" + "How many will you buy?" + a quantity×price
+line at y+34 (`0x22`) from the panel top.
+
+The sell-item detail panel (`FUN_801d5ae8`) shows item name, type description,
+and sell price (buy price ÷ 2) at y+43 (`0x2b`) with an icon at x+84.
+
+`engine-render::shop_draws_for` implements the above layout using these
+confirmed constants. The cost prompt and Yes/No cursor are rendered in
+`legaia-engine play-window` whenever `MenuState::ShopConfirm` is active.
 
 ## Open items
 
 - **Per-scene item tables.** The retail shop stocks are encoded in the menu
-  overlay's DATA segment (function-pointer table at `0x801E4F40`, dispatched
-  by `FUN_801DC6B4`). Locating the per-shop item list requires tracing from
-  the sub-screen that handles `ShopBuy` entry through its scene-specific data
-  reference.
-- **Render layout.** The 4-column buy-menu and sell-list render are pending
-  the overlay binary capture (`overlay_shop_save`; see §3.1 of the PRD).
-- **Quantity cap.** Retail may enforce a per-item inventory cap; the current
-  port allows unlimited stacking.
+  overlay's DATA segment at `0x801E4518` (8-byte strides, 0x60 bytes per
+  scene; dispatched by `FUN_801DC6B4`). Locating the per-shop item list
+  requires tracing the scene-index → DATA offset mapping.
+- **Quantity cap.** Retail enforces a max held count of 98 per item before
+  dimming additional buy attempts; the current port allows unlimited stacking.
+- **Mode-select panel.** The Buy / Sell / Quit selector (`FUN_801d4868`) uses
+  x+20 for text, 14 px line height — same constants as the item list.
 
 ## Relationship to `legaia_save`
 
