@@ -16,14 +16,15 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use glam::{Mat4, Vec3};
+use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
-    RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
-    UploadedVram, UploadedVramMesh, text_draws_for,
+    RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::{BootConfig, BootSession};
@@ -505,6 +506,9 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
+    /// Menu runtime — drives shop / inn / status screens. Ticked per frame
+    /// when `is_open()`; renders shop overlay via `shop_draws_for`.
+    menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
     /// World-map camera controller. `Some` when `--world-map` was passed;
     /// ticked each frame alongside the session.
     world_map_ctrl: Option<WorldMapController>,
@@ -675,6 +679,74 @@ impl PlayWindowApp {
             let layout3 = self.font.layout_ascii(&line3);
             out.extend(text_draws_for(&layout3, (8, 44), white));
         }
+        // Shop overlay: rendered at the bottom of the screen when the menu
+        // runtime is in any shop or confirmation state.
+        if self.menu_runtime.is_open() {
+            let label = self.menu_runtime.current_label();
+            if let Some(shop) = &self.menu_runtime.shop_session {
+                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
+                let cursor = self.menu_runtime.cursor() as usize;
+                let gold = self.session.host.world.money;
+                let (title, rows, show_gold) = match state {
+                    Some(MenuState::ShopBuy) => {
+                        let rows: Vec<ShopRow<'_>> = shop
+                            .inventory
+                            .items
+                            .iter()
+                            .map(|item| ShopRow {
+                                label: "Item",
+                                price: Some(item.price),
+                            })
+                            .collect();
+                        (label, rows, Some(gold))
+                    }
+                    Some(MenuState::ShopSell) => {
+                        let inv_items = MenuRuntime::inventory_items(&self.session.host.world);
+                        let rows: Vec<ShopRow<'_>> = inv_items
+                            .iter()
+                            .map(|(_id, _qty)| ShopRow {
+                                label: "Item",
+                                price: None,
+                            })
+                            .collect();
+                        (label, rows, Some(gold))
+                    }
+                    Some(MenuState::ShopQuantity) => {
+                        let rows: Vec<ShopRow<'_>> = (1u32..=9)
+                            .map(|_| ShopRow {
+                                label: "qty",
+                                price: None,
+                            })
+                            .collect();
+                        (label, rows, None)
+                    }
+                    Some(MenuState::ShopConfirm) | Some(MenuState::InnConfirm) => {
+                        let rows = vec![
+                            ShopRow {
+                                label: "Yes",
+                                price: None,
+                            },
+                            ShopRow {
+                                label: "No",
+                                price: None,
+                            },
+                        ];
+                        (label, rows, Some(gold))
+                    }
+                    _ => (label, Vec::new(), None),
+                };
+                if !rows.is_empty() {
+                    let shop_draws =
+                        shop_draws_for(&self.font, title, &rows, cursor, show_gold, (8, 140));
+                    out.extend(shop_draws);
+                }
+            } else if self.menu_runtime.is_open() {
+                // Non-shop menu: show current mode label
+                let menu_label = format!("[{}]", label);
+                let ml_layout = self.font.layout_ascii(&menu_label);
+                out.extend(text_draws_for(&ml_layout, (8, 140), white));
+            }
+        }
         out
     }
 }
@@ -722,6 +794,20 @@ impl ApplicationHandler for PlayWindowApp {
                 for _ in 0..ticks {
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
+                    }
+                    if self.menu_runtime.is_open() {
+                        let p = self.pad;
+                        let input = MenuInput {
+                            cross: p & 0x4000 != 0,
+                            circle: p & 0x2000 != 0,
+                            triangle: p & 0x1000 != 0,
+                            square: p & 0x8000 != 0,
+                            up: p & 0x0010 != 0,
+                            down: p & 0x0040 != 0,
+                            left: p & 0x0080 != 0,
+                            right: p & 0x0020 != 0,
+                        };
+                        self.menu_runtime.tick(&mut self.session.host.world, input);
                     }
                     if let Some(ctrl) = &mut self.world_map_ctrl {
                         let newly_pressed = self.pad & !self.prev_pad;
@@ -880,6 +966,7 @@ fn cmd_play_window(
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
+        menu_runtime: MenuRuntime::new(std::path::PathBuf::from(".")),
         world_map_ctrl,
         prev_pad: 0,
     };

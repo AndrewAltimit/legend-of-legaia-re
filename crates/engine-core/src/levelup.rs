@@ -7,15 +7,17 @@
 //!
 //! ## Placeholder values
 //!
-//! [`placeholder_xp_table`] and [`StatGain::default`] are geometric
-//! approximations. Replace with values traced from the level-up overlay
-//! (`overlay_magic_level_up` Ghidra program, `FUN_801D0748` region) once confirmed:
+//! [`placeholder_xp_table`] is a geometric approximation (`100 × n²`). The
+//! actual XP thresholds are stored in the DATA segment of the
+//! `overlay_magic_level_up.bin` binary (not in any function code) and cannot
+//! be extracted from Ghidra function dumps alone. Capturing a full overlay
+//! binary dump and locating the table at a known static address is required to
+//! replace this.
 //!
-//! ```text
-//! # Once the level-up overlay (mc4 full) is dumped:
-//! tracker.xp_table = actual_xp_table_from_overlay;
-//! tracker.stat_gain = StatGain { hp: per_char_hp_gain, mp: per_char_mp_gain };
-//! ```
+//! Per-slot [`StatGain`] values in [`LevelUpTracker::stat_gains`] are also
+//! placeholder flat rates. Different party members (Vahn / Noa / Gala) have
+//! different HP / MP growth curves in the retail game; those values live in the
+//! same overlay DATA segment alongside the XP table.
 
 use legaia_save::CharacterRecord;
 
@@ -24,8 +26,11 @@ pub const MAX_PARTY: usize = 4;
 /// Maximum character level.
 pub const MAX_LEVEL: u8 = 99;
 
-/// HP and MP gained per level-up. Per-character tables are unknown until the
-/// level-up overlay is captured; this flat rate is a placeholder.
+/// HP and MP gained per level-up for one party slot.
+///
+/// The retail game assigns different growth rates to each party member
+/// (Vahn / Noa / Gala). The per-slot values live in the overlay DATA segment
+/// and remain placeholder until a full binary dump is captured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatGain {
     pub hp: u16,
@@ -34,7 +39,7 @@ pub struct StatGain {
 
 impl Default for StatGain {
     fn default() -> Self {
-        // Placeholder: 10 HP / 5 MP per level. Replace from overlay dump.
+        // Placeholder: 10 HP / 5 MP per level for all slots.
         Self { hp: 10, mp: 5 }
     }
 }
@@ -77,8 +82,9 @@ pub struct LevelUpTracker {
     /// Cumulative XP thresholds: `xp_table[current_level - 1]` = XP to reach
     /// `current_level + 1`. Length should be `MAX_LEVEL - 1`.
     pub xp_table: Vec<u32>,
-    /// HP / MP increments applied per level gained.
-    pub stat_gain: StatGain,
+    /// HP / MP increments applied per level gained, indexed by party slot.
+    /// Allows different growth rates per character (Vahn / Noa / Gala).
+    pub stat_gains: [StatGain; MAX_PARTY],
 }
 
 impl Default for LevelUpTracker {
@@ -87,7 +93,7 @@ impl Default for LevelUpTracker {
             xp: [0; MAX_PARTY],
             level: [1; MAX_PARTY],
             xp_table: placeholder_xp_table(),
-            stat_gain: StatGain::default(),
+            stat_gains: [StatGain::default(); MAX_PARTY],
         }
     }
 }
@@ -103,9 +109,15 @@ impl LevelUpTracker {
         self
     }
 
-    /// Replace the stat gain (e.g. per-character data once captured).
+    /// Apply the same stat gain to every party slot.
     pub fn with_stat_gain(mut self, gain: StatGain) -> Self {
-        self.stat_gain = gain;
+        self.stat_gains = [gain; MAX_PARTY];
+        self
+    }
+
+    /// Apply per-slot stat gains (e.g. different growth for each character).
+    pub fn with_stat_gains(mut self, gains: [StatGain; MAX_PARTY]) -> Self {
+        self.stat_gains = gains;
         self
     }
 
@@ -148,13 +160,14 @@ impl LevelUpTracker {
 
         self.level[slot] = new_level;
         let levels_gained = (new_level - old_level) as u16;
+        let gain = self.stat_gains[slot];
         Some(LevelUpResult {
             char_id,
             old_level,
             new_level,
             xp_gained: xp,
-            hp_gained: self.stat_gain.hp * levels_gained,
-            mp_gained: self.stat_gain.mp * levels_gained,
+            hp_gained: gain.hp * levels_gained,
+            mp_gained: gain.mp * levels_gained,
         })
     }
 
@@ -280,5 +293,25 @@ mod tests {
         let r = t.grant_xp(0, 100).expect("level up");
         assert_eq!(r.hp_gained, 20);
         assert_eq!(r.mp_gained, 15);
+    }
+
+    #[test]
+    fn per_slot_stat_gains_independent() {
+        // Slot 0: high HP growth, slot 1: high MP growth
+        let gains = [
+            StatGain { hp: 30, mp: 5 },
+            StatGain { hp: 10, mp: 20 },
+            StatGain::default(),
+            StatGain::default(),
+        ];
+        let mut t = LevelUpTracker::new().with_stat_gains(gains);
+
+        let r0 = t.grant_xp(0, 100).expect("slot 0 levels up");
+        assert_eq!(r0.hp_gained, 30);
+        assert_eq!(r0.mp_gained, 5);
+
+        let r1 = t.grant_xp(1, 100).expect("slot 1 levels up");
+        assert_eq!(r1.hp_gained, 10);
+        assert_eq!(r1.mp_gained, 20);
     }
 }
