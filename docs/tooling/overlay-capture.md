@@ -2,7 +2,7 @@
 
 Most of Legaia's gameplay code doesn't live in `SCUS_942.54` — it lives in RAM-loaded overlays at `0x801C0000+` that the runtime pages in per-mode (title, town/field, battle, options menu, world map, cutscene). Capturing these requires dumping live RAM from a running emulator.
 
-PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path; both give equivalent overlay dumps.
+PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path. Duckstation `.sav` save states are supported via `scripts/extract-duckstation-overlay.py` (zstd-compressed; same anchor-string approach, 256 KB slice). All three give equivalent overlay dumps.
 
 ## What's in the overlay window
 
@@ -26,13 +26,8 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 | Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
 | World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement) |
 | Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | XA driver + cutscene mode table; 128 functions each |
-| Fishing / dev menu (`0971`) | ✓ partial | `overlay_0971_xxx_dat.bin` | Fishing minigame + dev/test menu strings |
-| Dance minigame / field reuse (`0978`) | ✓ partial | `overlay_0978_other_game.bin` | Disco King + field-loader stubs |
-| Mini-games (Card Battle, Inova game) | ✗ | — | Per-game UI + scoring |
-
-### Overlays still to capture
-
-1. **Mini-games** — Card Battle (Baka Game), Inova card-sort minigame, and the fishing minigame `0971` extended code. Each loads its own overlay slot; none has been fully dumped.
+| Minigame hub — fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | All five are variants of the same overlay binary (101–154 shared prologues). `overlay_debug_menu.bin` is the superset (189 functions). Fishing: `FUN_801D63B0` (main entry, 1036 bytes, 28 callers). Slot machine: `FUN_801D2CC0` (reel dispatcher, 1036 bytes). Baka Fighter: `FUN_801D5ED0` (round dispatcher, 1072 bytes, 49 callers). Dance: `FUN_801D2F38` (step-input handler, 960 bytes, 18 callers). Debug menu adds FOG/MAP/TMD readouts and minigame selector. All functions dumped. |
+| Muscle Dome / Baka card battle | ✓ | `overlay_muscle_dome.bin` | Completely distinct from the minigame-hub family (only 17 shared prologues). `FUN_801D8DE8` (round dispatcher, 3028 bytes, 77 callers), `FUN_801D5854` (game SM, 6500 bytes, 47 callers), `FUN_801D388C` (card resolution, 7820 bytes, 39 callers). 148 functions dumped. |
 
 ### Level-up overlay data section (resolved)
 
@@ -95,6 +90,33 @@ What it does:
 4. Writes a CSV to `/tmp/overlay_loads_<label>.csv` and prints a summary.
 
 The CSV gives the *exact* PROT entries the runtime loader requests for that scene — replaces the iterative `--vram-extra-dir` guesswork in the asset viewer.
+
+## Capturing with Duckstation
+
+Duckstation `.sav` save-state files use `DUCCS` magic followed by a zstd-compressed binary stream. The `scripts/extract-duckstation-overlay.py` script decompresses the stream with the system `zstd` binary and locates main RAM using the same anchor-string approach as `extract-mednafen-overlay.py`. The default slice is `0x801C0000–0x80200000` (256 KB).
+
+```bash
+scripts/extract-duckstation-overlay.py SCUS-94254_1.sav --out /tmp/legaia_overlay_fishing.bin
+scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing
+```
+
+The `import-overlay-named.sh` step imports as `overlay_fishing.bin` in the Ghidra project (base `0x801C0000`, MIPS LE) and runs auto-analysis. Run `inventory_overlay.py` afterwards to get the function list, then write a `dump_<label>_overlay.py` for the functions of interest.
+
+### Minigame hub overlay (six variants from Duckstation saves)
+
+Seven Duckstation saves cover the minigame overlays. Saves 1–4 and 6 are all variants of the same overlay binary:
+
+| Save | Scene | Label | Unique prologues |
+|---|---|---|---|
+| 1 | Fishing minigame | `overlay_fishing.bin` | 2 (vs debug_menu) |
+| 2 | Slot machine (Wild Card) | `overlay_slot_machine.bin` | 17 (vs fishing) |
+| 3 | Baka Fighter (fist fight) | `overlay_baka_fighter.bin` | 34 (vs fishing) |
+| 4 | Disco King (dance) | `overlay_dance.bin` | 32 (vs fishing) |
+| 5 | Muscle Dome / Baka card battle | `overlay_muscle_dome.bin` | distinct family |
+| 6 | Dev/debug menu | `overlay_debug_menu.bin` | 12 (superset of fishing) |
+| 7 | Baka card battle (alt state) | — | same code as save 5 |
+
+Saves 5 and 7 share identical code at the first prologue positions (100% match on first 32 KB of code); save 7 is not imported separately.
 
 ## Capture protocol per overlay
 
