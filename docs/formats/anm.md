@@ -88,11 +88,25 @@ to help fingerprint the layout.
 
 The per-frame interpreter for non-opcode-6 records is **overlay-resident**.
 `FUN_80024CFC` only primes the actor (`actor[+0x4C]` = record pointer,
-`actor[+0x56] = 0xB`); the actual opcode dispatch lives in whichever
-overlay is resident when `FUN_80021DF4` (actor tick) reads
-`actor[+0x5A]` and branches on the opcode byte. Capture an overlay where
-ANM scripts run (field overlay or battle overlay) and grep for reads of
-`actor[+0x4C]` to locate the non-opcode-6 interpreter.
+`actor[+0x56] = 0xB`); a handler in the town overlay (`FUN_801DE840`,
+overlay 0897) reads `actor[+0x4C]` at `801e260c` via a sub-dispatch table
+at `0x801CEF88` (routes by `opcode & 0xF`, 16 entries):
+
+1. Guard: reads `actor[+0x5C]`; skips the whole handler if ≤ 0.
+2. Calls `FUN_800204f8` (`a0 = actor`) — actor advance / move tick.
+3. Loads `s6 = actor[+0x4C]` — the ANM record pointer.
+4. Calls `FUN_80056798` (BIOS vector `0xa0/0x2F`) while advancing the
+   field VM PC by 2 in the delay slot.
+5. The 40-byte body at `801e2630..801e2670` uses `s6` and the return value
+   to complete the frame-selection logic; this segment is in the overlay dump
+   but not extracted in the current function-coverage pass.
+
+This path is gated on `actor[+0x5C]` and is distinct from the opcode-6
+keyframe path in `FUN_80021DF4` (which gates on `actor[+0x5A] == 6`).
+
+See `ghidra/scripts/funcs/overlay_0897_801de840.txt` line ~3389 for the
+disassembly. The full handler body requires a targeted dump of
+`0x801e2630..0x801e2670` within `overlay_0897.bin`.
 
 ## Allocator preamble
 
