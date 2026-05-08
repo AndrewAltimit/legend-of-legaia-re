@@ -754,14 +754,55 @@ impl World {
 
     /// Ensure the slot at `id` is initialized with the supplied default
     /// position and active. Idempotent.
+    ///
+    /// Preserves `tmd_binding` and `active_animation` across the reset so
+    /// that `init_scene_animations` bindings survive the first field-VM
+    /// actor-spawn opcode.
     pub fn ensure_actor(&mut self, id: u8, default_pos: ActorVmPosition) -> &mut Actor {
         let a = &mut self.actors[id as usize];
         if !a.active {
+            let tmd_binding = a.tmd_binding;
+            let active_animation = a.active_animation.take();
             *a = Actor::new();
+            a.tmd_binding = tmd_binding;
+            a.active_animation = active_animation;
             a.active = true;
         }
         a.default_pos = default_pos;
         a
+    }
+
+    /// Pre-bind every actor slot to its scene resources before the field VM
+    /// spawns actors. Wires:
+    ///
+    /// - `actor.tmd_binding = slot_idx` (direct 1:1 ordering: the retail
+    ///   `FUN_8001E890` loop registers TMDs in pack offset-table order —
+    ///   actor K → TMD slot K).
+    /// - `actor.active_animation` seeded from ANM record 0 (idle) when an
+    ///   ANM pack is present for that slot.
+    ///
+    /// Because `ensure_actor` preserves these fields across resets, the
+    /// bindings survive the first field-VM actor-spawn opcode.
+    pub fn init_scene_animations(&mut self, resources: &crate::scene_resources::SceneResources) {
+        for (i, actor) in self.actors.iter_mut().enumerate() {
+            if i < resources.tmds.len() {
+                actor.tmd_binding = Some(i);
+            }
+            if actor.active_animation.is_none()
+                && let Some(anm) = resources.anm_pack_for_actor(i)
+                && let Some(rec_bytes) = anm.record_bytes(0)
+            {
+                let bone_count = resources
+                    .tmds
+                    .get(i)
+                    .map(|t| t.tmd.objects.len())
+                    .unwrap_or(1)
+                    .max(1);
+                if let Ok(player) = AnimPlayer::new(rec_bytes.to_vec(), bone_count) {
+                    actor.active_animation = Some(player);
+                }
+            }
+        }
     }
 
     /// Run the actor VM bytecode against this world.

@@ -487,6 +487,11 @@ pub struct SceneHost {
     /// every time [`SceneHost::load_scene`] or [`SceneHost::enter_field_scene`]
     /// runs. `None` until the first scene loads.
     pub assets: Option<crate::scene_assets::SceneAssets>,
+    /// Runtime resource snapshot built by [`SceneHost::enter_field_scene`] —
+    /// holds the populated PSX VRAM, parsed TMD pool, and parsed ANM packs.
+    /// `None` until the first `enter_field_scene` call. Use for rendering
+    /// and for driving `World::init_scene_animations`.
+    pub resources: Option<crate::scene_resources::SceneResources>,
     pub frame_time: crate::FrameTime,
     /// Map-id → scene-name resolver for `scene_transition(map_id)`.
     /// Default is [`NullMapIdResolver`] so transitions are silently
@@ -502,6 +507,7 @@ impl SceneHost {
             world: crate::world::World::default(),
             scene: None,
             assets: None,
+            resources: None,
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
         }
@@ -694,6 +700,14 @@ impl SceneHost {
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
+        // Pre-bind actor ↔ TMD/ANM resources so they survive the first
+        // field-VM actor-spawn opcode (see `World::init_scene_animations`).
+        if let Some(scene) = self.scene.as_ref()
+            && let Ok(res) = crate::scene_resources::SceneResources::build(scene)
+        {
+            self.world.init_scene_animations(&res);
+            self.resources = Some(res);
+        }
         // Drain any pending transition the previous scene left behind.
         self.world.pending_scene_transition = None;
         Ok(())
