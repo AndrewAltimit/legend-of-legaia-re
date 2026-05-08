@@ -41,6 +41,7 @@ pub struct LegaiaRuntime {
 impl LegaiaRuntime {
     #[wasm_bindgen(constructor)]
     pub fn new() -> LegaiaRuntime {
+        console_error_panic_hook::set_once();
         let mut world = World::default();
         world.spawn_actor(0).default_pos = legaia_engine_vm::Position::new(0, 0);
         world.mode = SceneMode::Title;
@@ -70,23 +71,50 @@ impl LegaiaRuntime {
     pub fn load_disc(&mut self, raw_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
         use crate::disc::{extract_cdname_txt, extract_prot_dat, is_mode2_2352_disc};
 
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&format!("load_disc: {} bytes", raw_bytes.len()).into());
+
         let (prot_bytes, auto_cdname) = if is_mode2_2352_disc(&raw_bytes) {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(
+                &"load_disc: detected Mode2/2352 disc; extracting PROT.DAT".into(),
+            );
             let prot = extract_prot_dat(&raw_bytes)
                 .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;
             let cdname = extract_cdname_txt(&raw_bytes);
             (prot, cdname)
         } else {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::log_1(&"load_disc: treating input as raw PROT.DAT".into());
             (raw_bytes, None)
         };
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(
+            &format!(
+                "load_disc: PROT bytes = {}; building SceneHost",
+                prot_bytes.len()
+            )
+            .into(),
+        );
 
         let cdname_resolved = if !cdname_text.is_empty() {
             Some(cdname_text.as_str())
         } else {
             auto_cdname.as_deref()
         };
-
         let host = SceneHost::from_prot_bytes(prot_bytes, cdname_resolved)
             .map_err(|e| JsValue::from_str(&format!("load_disc: {e}")))?;
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(
+            &format!(
+                "load_disc: SceneHost OK, {} entries",
+                host.index.entry_count()
+            )
+            .into(),
+        );
+
         let count = host.index.entry_count() as u32;
         self.scene_host = Some(host);
         Ok(count)
