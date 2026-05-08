@@ -284,8 +284,8 @@ enum Cmd {
 }
 
 /// Known scene-loader bundles, derived from static analysis of asset
-/// loaders in SCUS_942.54 (see `docs/REVERSING.md` and the dump of
-/// `FUN_800520f0` for the battle path).
+/// loaders in SCUS_942.54 (see `ghidra/scripts/funcs/800520f0.txt` for
+/// the battle path).
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Bundle {
     /// Battle / level_up / monster_se assets. Mirrors what `FUN_800520f0`

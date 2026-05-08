@@ -18,7 +18,7 @@ Usage:
                                                   [--end   0x801F0000]
                                                   [--scus  PATH]
 
-Background: BACKLOG 5.6.1 (overlay-RAM dump), docs/REVERSING.md.
+See docs/tooling/overlay-capture.md for the full capture pipeline.
 """
 
 import argparse

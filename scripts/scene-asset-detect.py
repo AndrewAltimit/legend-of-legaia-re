@@ -17,7 +17,7 @@ Output (default text):
   - per-CDNAME-block grouping (which named clusters dominate)
 
 The output drives the field-loader six-file-per-scene investigation
-(PRD §4.1 row 2).
+described in docs/subsystems/asset-loader.md.
 """
 
 import argparse

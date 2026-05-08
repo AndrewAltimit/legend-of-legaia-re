@@ -8,8 +8,8 @@
 //! ## Placeholder values
 //!
 //! [`placeholder_xp_table`] and [`StatGain::default`] are geometric
-//! approximations. Replace with values from the level-up overlay dump (§3.1
-//! in the future-work PRD) once that overlay is captured:
+//! approximations. Replace with values traced from the level-up overlay
+//! (`overlay_magic_level_up` Ghidra program, `FUN_801D0748` region) once confirmed:
 //!
 //! ```text
 //! # Once the level-up overlay (mc4 full) is dumped:

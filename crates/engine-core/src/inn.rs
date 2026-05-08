@@ -6,9 +6,8 @@
 //! their current maximums via the world's live `BattleActor` mirrors.
 //!
 //! **Placeholder note**: inn costs are supplied by the engine at `open_inn`
-//! time. Actual per-scene costs come from the save-screen / inn overlays
-//! (§3.1 in the future-work PRD); once those are captured the engine can
-//! populate `cost` from decoded data.
+//! time. Actual per-scene costs are encoded in the inn overlay; once traced
+//! from `overlay_shop_save` the engine can populate `cost` from decoded data.
 
 /// Mutable session state for an open inn interaction.
 #[derive(Debug, Clone)]

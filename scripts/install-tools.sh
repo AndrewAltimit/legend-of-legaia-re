@@ -23,8 +23,8 @@
 # Usage:
 #   bash scripts/install-tools.sh
 #
-# After this completes, see docs/REVERSING.md "PCSX-Redux setup" for the
-# capture protocol that feeds into BACKLOG 5.6.1 (overlay-RAM dump).
+# After this completes, see docs/tooling/overlay-capture.md for the
+# overlay capture pipeline.
 
 set -euo pipefail
 
@@ -131,7 +131,7 @@ Next steps:
   6. Import the dump into Ghidra:
        ghidra/scripts/import_overlay.sh /tmp/legaia_overlay_<TS>.bin
 
-Full protocol: docs/REVERSING.md section "PCSX-Redux setup".
+Full protocol: docs/tooling/overlay-capture.md
 ============================================================
 EOF
 
@@ -142,7 +142,7 @@ else
 PCSX-Redux upstream does NOT ship an AppImage for $ARCH, so we
 installed Mednafen instead (apt: mednafen). It boots PSX discs
 and exposes a memory viewer + freeze states sufficient for the
-overlay-capture goal in BACKLOG 5.6.1.
+overlay-capture goal described in docs/tooling/overlay-capture.md.
 
 Next steps with Mednafen:
   1. Launch:  mednafen
@@ -170,7 +170,7 @@ support on arm64:
   make BUILD=Release \$NPROC
   ./pcsx-redux
 
-Full protocol: docs/REVERSING.md section "PCSX-Redux setup".
+Full protocol: docs/tooling/overlay-capture.md
 ============================================================
 EOF
 fi

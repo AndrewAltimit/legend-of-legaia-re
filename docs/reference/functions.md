@@ -46,6 +46,8 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `80056658` | `TestEvent` BIOS thunk — `jr 0xB0` with `t1=0x0B`. Polls a kernel event handle. |
 | `8006B844` | `WaitEvent` BIOS thunk — `jr 0xB0` with `t1=0x0A`. Blocks on a kernel event handle. |
 | `80056698` / `800566A8` / `800566B8` / `800566C8` / `800566D8` / `800566E8` / `800566F8` / `80056708` / `80056718` | Byte-identical `li t2,0xB0; jr t2` BIOS B-vector thunks emitted by the linker once per caller. The selected B-routine is determined by `$t1` set up by the caller, not by the thunk. Same pattern at `8006EE14` / `8006EE24` / `8006EE34` (B0-vector cluster cited from menu/text helpers). |
+| `8006D7A4` | BIOS C0 thunk — `li t2,0xC0; jr t2; li t1,0x3`. Dispatches to C0 vector 0x03 (`ChangeThreadSubFunction`). Called from `FUN_8006D2AC` (audio subsystem init). |
+| `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | SPU voice-state init sequence. `FUN_8006EF18` calls all three in order. `_EF68` = B0 0x4C (`InitCd`-adjacent). `_F088` = B0 0x57 then swaps 5 dwords between `DAT_8006F058..F06C` (static table) and `iVar1 + 0x9C8` (SPU voice block) + `FlushCache`. `_F118` = B0 0x56 + symmetric swap at `iVar1 + 0x18 / -0xE80`. |
 | `800567B8` / `80056B18` | `printf`-class formatter (handles `%d %x %o %s %f`); writes into a static buffer. |
 | `80057024` | `memmove` — overlap-safe direction-aware copy. |
 | `8005ACAC` | `memset`. |
@@ -63,6 +65,7 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8005B7C0` | `SetRotMatrix`-shaped — `setCopControlWord(2, 0xD800, x)`. |
 | `8005B7CC` | `SetTransMatrix`-shaped — `setCopControlWord(2, 0xE000, x)`. |
 | `8005BA1C` | GTE square-root / normalize — `mtc2 0xF000 / mfc2 0xF800`. |
+| `8005BA68` | GTE 3-point transform helper. Loads 3 vertex pairs into COP2 registers, calls `copFunction(2, 0x280030)` (RTPT), reads back SXY0/1/2 and OTZ. Cited from the cutscene/world-map sprite batcher (`FUN_801CFC40`). |
 | `8005BB48` | `InitGeom` — saves return addr to `_DAT_8007BDF0`, `EnterCriticalSection`, copies exception-handler table from `DAT_8005BBB0`, `FlushCache`. |
 | `8005AF0C` | `isqrt`-style normalise — uses `FUN_8005BA1C` (GTE normalize) then dispatches to `FUN_8005ADB8` with shift correction. |
 | `8005ADB8` | Fixed-point bit-rotation / arc helper — consumed by `FUN_8005AF0C`. 85-instr ladder of conditional shifts. |
@@ -96,6 +99,8 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 |---|---|
 | `80017888` | Malloc — the general-purpose allocator. |
 | `8003C5F0` | Generic ramp scheduler. 64-slot pool at `0x801C66A0` (stride 0x20). Used for sound + render-bank ramps. |
+| `8003D038` | Animation index filter. Writes `DAT_80073F1C = param` when `(&DAT_801C6470)[param * 4] != -0x74`; silently skips invalid entries. Called from the cutscene/world-map sprite batcher (`FUN_801CFC40`) with actor`+0x50` (anim-index field). |
+| `8001FA34` | Sprite-list consumer. Decrements the u16 count at `*param_1` and returns `*(short *)(param_2 + 2*(count-1))`; returns -1 on underflow. Pops the "current" entry index from a compact sprite-list header. Cited from the cutscene sprite emitter (`FUN_801D629C`). |
 | `8003C83C` | Script-context resolver. Special-cases `id == 0xF8` (returns cached pointer) and `id == 0xFB` (system channel). |
 | `80036044` | Text-width measure for inline dialog/UI strings. Walks a byte stream: `>= 0x1F` = glyph (count 1); `0xC0..0xC7` = escape (substitutes from inventory / magic / item-name tables — `0xC1` = item-name @ `0x80084549 + idx*0x414`, `0xC2` = `PTR_DAT_8007436C[idx*3]`, `0xC3` = magic name @ `PTR_s_Magic_800754D0`, `0xC7` = `DAT_80073F24 + idx*8`); `0xCE` = newline (line++); `0xCF` = end-of-row. Returns total glyph count. |
 | `8003CC98` | Single-line text render-and-measure. `FUN_80036044(buf)` for length + `FUN_80036888(buf, palette, 0, x, y)` to draw, returns the length. |

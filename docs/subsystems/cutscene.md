@@ -17,7 +17,8 @@ reads the next batch of sectors, decodes a frame, blits it full-screen, and adva
 position. When the stream ends, the mode chain transitions to `ConfigInit` (index 1).
 
 Both modes share `SceneMode::Cutscene` and see the same world state. The retail handler is
-overlay-resident (the cutscene overlay, not yet captured; see §3.1 of the work PRD).
+overlay-resident (captured as `overlay_cutscene_dialogue.bin` and `overlay_cutscene_mapview.bin`
+in the Ghidra project; 256 and 128 functions respectively).
 
 ## STR sector format
 

@@ -9,9 +9,8 @@ Scans every dump under `ghidra/scripts/funcs/*.txt`, extracts every cited
   - per-helper incoming-reference count (helpers cited from many places
     are higher-leverage to dump first)
 
-Closes the loop on PRD §4.2 acceptance criterion: "every function reachable
-in retail gameplay from the boot path has either a Ghidra dump or a
-documented stub finding".
+Goal: every function reachable in retail gameplay from the boot path has
+either a Ghidra dump file or a documented stub finding.
 
 Usage:
     python3 scripts/function-coverage.py              # text report
