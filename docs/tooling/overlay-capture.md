@@ -14,31 +14,27 @@ The base address depends on which overlay; battle and town both load at `0x801CE
 
 The dump count column reflects committed function dumps under [`ghidra/scripts/funcs/`](../../ghidra/scripts/funcs/) at the time of writing — see `overlay_<label>_<addr>.txt` per overlay.
 
-| Overlay | Captured? | Where it lives | Subsystems |
+| Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|
-| Title screen | ✓ (loaded at boot, in SCUS-range) | `0x801C0000+` | Actor / sprite VM (`FUN_801D6628`) |
-| Town / field / dialog / inventory (`0897`) | ✓ | PROT entry `0897_xxx_dat`, RAM base `0x801CE818` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`) |
-| Battle | ✓ | PROT entry `0898_xxx_dat`, RAM base `0x801CE818` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) |
-| Battle action | ✓ (separate capture) | re-uses battle window | Action SM full coverage including `FUN_801E295C` outer dispatch + sub-states |
-| Options / config menu (`0896`) | ✓ | PROT entry `0896` (= 0897 + 36 KB prefix) | In-game options UI |
-| Fishing / dev menu (`0971`) | ✓ partial (top-6 dumped) | PROT entry `0971_xxx_dat` | Fishing minigame + dev/test menu strings |
-| Dance minigame / field reuse (`0978`) | ✓ partial (top-8 dumped) | PROT entry `0978_other_game` | Disco King + field-loader stubs |
-| Status / inventory menu | ✓ | overlay re-uses `0897` window; mc5 capture | Per-character status panel, equipment swap, item-use validator gate (cf. `crate::engine_vm::action_validator`) |
-| Dialog (proportional font + MES renderer) | ✓ partial (21 dumps) | overlay loaded only while text is on screen | MES bytecode interpreter, glyph-bitmap upload |
-| Level-up (PROT 891) | ✗ — overlay window not yet captured | post-battle screen | XP / stat gain UI; ramp-to-cap interaction with `action_validator` arm 6 |
-| Shop / merchant | ✗ | town overlay variant — re-loads after `FUN_8003F2B8` clears | Item buy / sell, gold ledger |
-| World map | ✗ | overlay loaded on world-map entry | Per-tile destination lookup, party-trail animation |
-| Save / load screen | ✗ | overlay loaded on memory-card menu | PSX memory-card I/O wrapper, slot UI |
-| Cutscene | ✗ | overlay loaded once XA stream starts | XA driver + per-cutscene mode table |
-| Mini-games (Card Battle, Inova game) | ✗ | each loads its own overlay slot | Per-game UI + scoring |
+| Title screen | ✓ (loaded at boot, in SCUS-range) | — (in SCUS address range) | Actor / sprite VM (`FUN_801D6628`) |
+| Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`) |
+| Field overlay — battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Same 0897 code as above; captured during battle-intro 3D camera spin (battle overlay not yet loaded) |
+| Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) |
+| Options / config / all pause-menus (`0896`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; all overworld pause menus share this overlay |
+| Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped |
+| Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped |
+| Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` | XP / stat gain UI; 78 functions dumped |
+| World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); 20 functions dumped |
+| Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | XA driver + cutscene mode table; 128 functions each |
+| Fishing / dev menu (`0971`) | ✓ partial | `overlay_0971_xxx_dat.bin` | Fishing minigame + dev/test menu strings |
+| Dance minigame / field reuse (`0978`) | ✓ partial | `overlay_0978_other_game.bin` | Disco King + field-loader stubs |
+| Mini-games (Card Battle, Inova game) | ✗ | — | Per-game UI + scoring |
 
-### Overlays still to capture (priority for engine completeness)
+### Overlays still to capture
 
-1. **World map** — gates field-mode entry from the global travel map. Without this, the engine can boot a single field scene but not navigate between them. Capture procedure: load any post-prologue save, walk to the world map, save state, run `scripts/analyze-overlay.sh ... --label world_map`.
-2. **Save / load screen** — gates persistence. The `legaia-save` crate parses the on-card record, but the runtime UI that reads + writes to the card is overlay-resident. Capture: open the in-game save menu, save state, label `save_screen`.
-3. **Shop** — a frequently-loaded gameplay overlay; needed for any "buy a healing item, then validate via action_validator arm 6" flow. Capture: enter any town's shop, talk to merchant, save state mid-buy, label `shop`.
-4. **Cutscene** — XA streaming + scene transitions. The XA demuxer + audio mixer already work; the missing piece is the per-cutscene mode driver. Capture procedure documented under [Cutscene](#cutscene) below.
-5. **Level-up** (PROT 891) — currently classified as `MipsOverlay` by the categorizer but not imported. Capture: enter a battle that levels at least one character, save state on the level-up screen, label `level_up`.
+1. **Mini-games** — Card Battle (Baka Game), Inova card-sort minigame, and the fishing minigame `0971` extended code. Each loads its own overlay slot; none has been fully dumped.
+2. **World map top/walk variants** — `overlay_world_map_top.bin` and `overlay_world_map_walk.bin` are imported but have no inventory CSV and no function dumps yet. Run `inventory_overlay.py` then a dump script targeting the top functions in each.
+3. **Per-character stat growth table** — lives in the level-up overlay data section (not code). Extract the binary data segment from `overlay_magic_level_up.bin` to pin the HP/MP/STR/DEF per-level growth arrays.
 
 ## Capturing with PCSX-Redux
 
