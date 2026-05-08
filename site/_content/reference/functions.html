@@ -49,7 +49,11 @@
       <h3>Battle</h3>
       <ul class="fnref-list">
         <li><code>FUN_801E295C</code> — battle action state machine (16 KB)</li>
-        <li><code>FUN_801D0748</code> — battle main dispatcher</li>
+        <li><code>FUN_801D0748</code> — battle / level-up main tick; sub-states 0x1E/0x32/0x6E/0xFE</li>
+        <li><code>FUN_801D388C</code> — battle animation dispatcher; switch on animation_type (0..0x31+)</li>
+        <li><code>FUN_801D5854</code> — battle actor pose driver; GTE transform per pose_id (~30 call sites from the action SM)</li>
+        <li><code>FUN_801D8DE8</code> — UI element ID mapper (3 KB, 75 callers)</li>
+        <li><code>FUN_801ED710</code> — records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
         <li><code>FUN_800520F0</code> — battle scene loader</li>
         <li><code>FUN_8004E2F0</code> — battle range / line-of-sight</li>
         <li><code>FUN_80054CB0</code> — monster init</li>
@@ -94,5 +98,5 @@
   <h2>Full reference</h2>
   <p>Every function above (and ~50 more) is described in detail with provenance citations in the markdown doc:</p>
   <p><a class="cta" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md" target="_blank" rel="noopener">docs/reference/functions.md →</a></p>
-  <p>Per-function dumps (Ghidra disassembly + decompile) live under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> in the repo. There are 1310+ of these; coverage of the citation graph is at 98.5%.</p>
+  <p>Per-function dumps (Ghidra disassembly + decompile) live under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> in the repo (gitignored — Sony-derived). Overlay-specific dumps are prefixed <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code>.</p>
 </section>
