@@ -82,6 +82,7 @@ How the runtime engine works.
 | [`battle-action.md`](docs/subsystems/battle-action.md) | Battle action state machine at `FUN_801E295C`. |
 | [`battle-formulas.md`](docs/subsystems/battle-formulas.md) | Damage / MP-cost / accuracy / RNG arithmetic kernels. Mirror lives at `engine-vm::battle_formulas`. |
 | [`world-map.md`](docs/subsystems/world-map.md) | World map controller (`FUN_801E76D4`); top-view debug toggle; camera scroll globals; developer menu renderer (`FUN_801EAD98`). |
+| [`save-screen.md`](docs/subsystems/save-screen.md) | Save-slot select + write flow (`FUN_801DC6B4`); lives in menu overlay; entry-context pointer table; save-block existence scan at `DAT_80084140`. |
 
 ### Tooling — [`docs/tooling/`](docs/tooling/)
 
@@ -128,10 +129,10 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | — | World state, scene host, scene resources (runtime VRAM pre-pass), dialog panel, mode/menu/world dispatch, BGM director, **camera controller**, **menu runtime + disk save/load**, `save_full`/`load_full` (LGSF v1 round-trip: party + story flags + money + inventory), **shop/inn/level-up/tactical-arts session state**, `input::Mapping` (TOML key-binding persistence), `DefaultMapIdResolver`, `EffectCatalog`, `MemoryVfs` (WASM in-memory Vfs). |
+| [`crates/engine-core`](crates/engine-core/README.md) | — | World state, scene host, scene resources (runtime VRAM pre-pass), dialog panel, mode/menu/world dispatch, BGM director, **camera controller**, **menu runtime + disk save/load**, `save_full`/`load_full` (LGSF v1 round-trip: party + story flags + money + inventory), **shop/inn/level-up/tactical-arts session state**, `input::Mapping` (TOML key-binding persistence), `DefaultMapIdResolver`, `EffectCatalog`, `MemoryVfs` (WASM in-memory Vfs), **`WorldMapController`** (camera scroll/azimuth/zoom + top-view debug toggle, `SceneMode::WorldMap`). |
 | [`crates/engine-render`](crates/engine-render/README.md) | — | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the `legaia-font` atlas. |
 | [`crates/engine-audio`](crates/engine-audio/README.md) | — | cpal-backed audio mixer + clean-room SPU + SsAPI-shape SEQ sequencer; BGM cross-fade + volume ramp; `audio-webaudio` feature adds `WebAudioOut` (`ScriptProcessorNode`-based) for WASM targets. |
-| [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect / move / **motion** VMs + battle-action SM + 16-arm action validator + `battle_formulas` (damage / MP / accuracy / RNG). |
+| [`crates/engine-vm`](crates/engine-vm/README.md) | — | Actor / field / effect / move / **motion** VMs + battle-action SM + 16-arm action validator + `battle_formulas` (damage / MP / accuracy / RNG) + **world-map entity SM** (`FUN_801DA51C`, 5-state encounter/interact port). |
 | [`crates/engine-shell`](crates/engine-shell/) | `legaia-engine` | Top-level driver + `BootSession` + `AudioBgmDirector`. Boots a CDNAME scene straight from `PROT.DAT`. `info` / `list-scenes` for inspection; `play` ticks the engine for N frames; `play-window` opens a 960×720 wgpu window with keyboard input; `save` / `load` exercise the runtime save flow; `play-str` decodes a raw PSX STR file (MDEC video) into a windowed player; `config set --binding` edits `input::Mapping`. |
 | [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver. |
 | [`crates/web-viewer`](crates/web-viewer/README.md) | — | WASM target. Disc browser + TIM thumbnails + software TMD rasteriser running in the browser, plus per-entry MES/SEQ/VAB inspector via `current_entry_info_json`. |

@@ -19,6 +19,8 @@ use glam::{Mat4, Vec3};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
     UploadedVram, UploadedVramMesh, text_draws_for,
@@ -121,6 +123,11 @@ enum Cmd {
         /// Disable audio output.
         #[arg(long, default_value_t = false)]
         no_audio: bool,
+        /// Enable world-map mode: installs a WorldMapController and shows
+        /// the top-view camera globals in the HUD. Arrow keys scroll the
+        /// top-view camera; Q/W adjust azimuth; A/S adjust zoom.
+        #[arg(long, default_value_t = false)]
+        world_map: bool,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -188,7 +195,8 @@ fn main() -> Result<()> {
             scene,
             extracted_root,
             no_audio,
-        } => cmd_play_window(&scene, &extracted_root, !no_audio),
+            world_map,
+        } => cmd_play_window(&scene, &extracted_root, !no_audio, world_map),
         Cmd::Save {
             extracted_root,
             save_dir,
@@ -497,6 +505,12 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
+    /// World-map camera controller. `Some` when `--world-map` was passed;
+    /// ticked each frame alongside the session.
+    world_map_ctrl: Option<WorldMapController>,
+    /// Pad state from the previous frame — used to compute newly-pressed bits
+    /// for the world-map toggle combo.
+    prev_pad: u16,
 }
 
 impl PlayWindowApp {
@@ -628,6 +642,19 @@ impl PlayWindowApp {
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
+        if let Some(ctrl) = &self.world_map_ctrl {
+            let mode_str = if ctrl.is_top_view() {
+                "top-view"
+            } else {
+                "walk"
+            };
+            let line3 = format!(
+                "world-map {} | cam ({},{}) az {} zoom {}",
+                mode_str, ctrl.camera_x, ctrl.camera_z, ctrl.azimuth, ctrl.zoom
+            );
+            let layout3 = self.font.layout_ascii(&line3);
+            out.extend(text_draws_for(&layout3, (8, 44), white));
+        }
         out
     }
 }
@@ -676,6 +703,11 @@ impl ApplicationHandler for PlayWindowApp {
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
+                    if let Some(ctrl) = &mut self.world_map_ctrl {
+                        let newly_pressed = self.pad & !self.prev_pad;
+                        ctrl.tick(self.pad, newly_pressed);
+                    }
+                    self.prev_pad = self.pad;
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     self.win.renderer.as_ref(),
@@ -776,12 +808,20 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
     }
 }
 
-fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Result<()> {
+fn cmd_play_window(
+    scene: &str,
+    extracted_root: &Path,
+    enable_audio: bool,
+    world_map: bool,
+) -> Result<()> {
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio,
     };
-    let session = BootSession::open(extracted_root, &cfg)?;
+    let mut session = BootSession::open(extracted_root, &cfg)?;
+    if world_map {
+        session.host.world.mode = SceneMode::WorldMap;
+    }
 
     let scene_res = {
         let s = session
@@ -803,6 +843,11 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
     let mapping = legaia_engine_core::input::Mapping::load_or_default(&std::path::PathBuf::from(
         "legaia-input.toml",
     ));
+    let world_map_ctrl = if world_map {
+        Some(WorldMapController::new())
+    } else {
+        None
+    };
     let mut app = PlayWindowApp {
         session,
         font,
@@ -815,6 +860,8 @@ fn cmd_play_window(scene: &str, extracted_root: &Path, enable_audio: bool) -> Re
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
+        world_map_ctrl,
+        prev_pad: 0,
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

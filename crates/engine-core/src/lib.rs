@@ -21,6 +21,7 @@ pub mod scene_resources;
 pub mod shop;
 pub mod tactical_arts;
 pub mod world;
+pub mod world_map;
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;

@@ -164,6 +164,18 @@ TARGETS = [
     "801e6984",  # ~432B
     "801d6058",  # 1 callee (~580B, world_map_top)
 
+    # Remaining world_map overlay functions not yet dumped (2026-05-08)
+    "801d5780",  # world_map overlay ~368B
+    "801d5a68",  # world_map overlay ~120B
+    "801d841c",  # world_map overlay (undumped)
+    "801da7f0",  # world_map entity state handler (near FUN_801DA51C)
+    "801e5834",  # world_map overlay (undumped)
+    "801e58a8",  # world_map overlay (undumped)
+    "801e5a08",  # world_map overlay (undumped)
+    "801e662c",  # world_map overlay (undumped)
+    "801e71d0",  # world_map overlay (undumped)
+    "801e733c",  # world_map overlay (undumped)
+
     # Missing helpers surfaced by world_map dumps (coverage tracker 2026-05-08)
     "80017714",  # cited by 801edf00
     "80039b7c",  # cited by 801da51c (world map entity tick)

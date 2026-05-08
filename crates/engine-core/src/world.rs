@@ -22,6 +22,7 @@ use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
 use crate::levelup::{LevelUpResult, LevelUpTracker};
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
+use crate::world_map::WorldMapController;
 pub use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_vm as vm;
 use legaia_save;
@@ -65,6 +66,8 @@ pub enum SceneMode {
     Battle,
     /// Cutscene mode — actor VM runs but no field/battle dispatch.
     Cutscene,
+    /// World-map mode — `WorldMapController` drives camera and entity ticks.
+    WorldMap,
 }
 
 /// One sprite frame on a sprite sheet. Equivalent in shape to
@@ -398,6 +401,10 @@ pub struct World {
     /// [`World::apply_battle_xp`] after a `BattleEndCause::MonsterWipe` to
     /// distribute XP and check for level-ups.
     pub level_up_tracker: LevelUpTracker,
+
+    /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
+    /// `None` otherwise.
+    pub world_map_ctrl: Option<WorldMapController>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -489,6 +496,7 @@ impl World {
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),
+            world_map_ctrl: None,
         }
     }
 
@@ -878,7 +886,7 @@ impl World {
                 self.step_field();
                 None
             }
-            SceneMode::Title => None,
+            SceneMode::Title | SceneMode::WorldMap => None,
         }
     }
 
