@@ -196,7 +196,7 @@ legend-of-legaia-re/
 │   ├── iso/                      # PSX disc reader + ISO9660 walker
 │   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
 │   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c)
-│   ├── asset/                    # Asset dispatcher, streaming, scene-bundle detectors
+│   ├── asset/                    # Asset dispatcher, streaming, scene-bundle + format detectors, per-entry categorize classifier
 │   ├── tim/                      # PSX TIM parser + PNG exporter
 │   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
 │   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
@@ -213,7 +213,7 @@ legend-of-legaia-re/
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + clean-room SPU + SEQ sequencer
 │   ├── engine-vm/                # Actor / field / effect / move / motion VMs + battle SM + action validator + formulas
-│   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector adapter
+│   ├── engine-shell/             # `legaia-engine` top-level driver + BootSession + AudioBgmDirector; play-window renders shop + inn overlay
 │   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, dialog, field, battle, PROT
 │   └── web-viewer/               # WASM target — disc browser running in the browser
 ├── docs/                         # Topic-first technical reference (see "Documentation")
