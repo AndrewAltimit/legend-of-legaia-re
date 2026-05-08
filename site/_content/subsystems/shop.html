@@ -1,0 +1,55 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; shop</div>
+  <h1>Shop</h1>
+  <p class="lede">Buy / sell / quantity / confirm flow for town shops. Lives inside the <strong>menu overlay</strong> (same 129-function binary as the save screen, inn, and status screens). Clean-room session state: <code>engine-core::shop::ShopSession</code>. Exact per-scene item lists and prices are pending a full trace of <code>overlay_shop_save</code>.</p>
+</header>
+
+<section class="doc-section" id="flow">
+  <h2>Flow</h2>
+  <p>The retail engine enters the shop from the field-VM shop-trigger opcode. The menu overlay dispatches on a sub-screen ID (pointer table at <code>0x801E4F40</code>). The five phases are:</p>
+  <table>
+    <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Buy list</td><td><code>ShopBuy</code></td><td>Shows available items + prices. Cursor selects an item.</td></tr>
+      <tr><td>Sell list</td><td><code>ShopSell</code></td><td>Shows player inventory. Cursor selects an item to sell.</td></tr>
+      <tr><td>Quantity</td><td><code>ShopQuantity</code></td><td>Numeric selector 1..9. Confirms how many to buy/sell.</td></tr>
+      <tr><td>Confirm</td><td><code>ShopConfirm</code></td><td>Yes / No prompt. Yes commits the transaction.</td></tr>
+      <tr><td>Exit</td><td><code>ShopExit</code></td><td>Clears session, returns to field.</td></tr>
+    </tbody>
+  </table>
+  <p>On <code>ShopConfirm</code> slot 0 (Yes): <code>try_buy</code> deducts gold and credits inventory; <code>try_sell</code> credits gold and decrements inventory. Sell price is <code>max(buy_price / 2, 1)</code>; items not in the shop's buy list sell for 1 gold.</p>
+</section>
+
+<section class="doc-section" id="session">
+  <h2>ShopSession</h2>
+  <p><code>ShopSession</code> holds the cursor and pending-transaction state for one open shop visit. Installed on <code>MenuRuntime</code> by <code>open_shop(ShopSession)</code> before menu entry.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>inventory</code></td><td><code>ShopInventory</code></td><td>Items the shop offers for purchase</td></tr>
+      <tr><td><code>pending_item_id</code></td><td><code>Option&lt;u8&gt;</code></td><td>Item selected at current sub-flow cursor</td></tr>
+      <tr><td><code>pending_quantity</code></td><td><code>u8</code></td><td>Quantity from <code>ShopQuantity</code> step</td></tr>
+      <tr><td><code>pending_is_buying</code></td><td><code>bool</code></td><td><code>true</code> = buy, <code>false</code> = sell</td></tr>
+    </tbody>
+  </table>
+  <p>Key methods: <code>select_buy_item(cursor)</code>, <code>select_sell_item(cursor, items)</code>, <code>set_quantity(slot)</code> (quantity = slot + 1), <code>try_buy(world_money)</code>, <code>try_sell(held_count)</code>.</p>
+</section>
+
+<section class="doc-section" id="render">
+  <h2>Render overlay</h2>
+  <p><code>engine-render::shop_draws_for(session, cursor, world)</code> returns draw calls for the current shop state. The cost prompt and Yes/No cursor render in <code>legaia-engine play-window</code> when <code>MenuState::ShopConfirm</code> is active. The full 4-column buy-menu layout (item name, icon, quantity, price) and sell-mode item list are pending the overlay trace.</p>
+</section>
+
+<section class="doc-section" id="open-items">
+  <h2>Open items</h2>
+  <ul>
+    <li><strong>Per-scene item tables.</strong> Retail shop stocks are in the menu overlay DATA segment (dispatched by <code>FUN_801DC6B4</code>). Locating per-shop item lists requires tracing the <code>ShopBuy</code> entry sub-screen through its scene-specific data reference.</li>
+    <li><strong>Render layout.</strong> Exact pixel offsets for the 4-column buy-menu and sell-list pending <code>overlay_shop_save</code> capture (see §3.1 of the PRD).</li>
+    <li><strong>Quantity cap.</strong> Retail may enforce a per-item inventory cap; the current port allows unlimited stacking.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="full-reference">
+  <h2>Full reference</h2>
+  <p>Complete flow tables and provenance at <code>docs/subsystems/shop.md</code>. Source: <code>crates/engine-core/src/shop.rs</code>.</p>
+</section>

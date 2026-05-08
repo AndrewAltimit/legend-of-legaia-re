@@ -62,6 +62,18 @@
       <div class="card-title">Save screen</div>
       <div class="card-body">Save-slot selection and write flow. Lives in the menu overlay (not a separate overlay). Outer dispatcher <code>FUN_801DC6B4</code>: 9-state machine, entry-context pointer table at <code>0x801E4F40</code>, slot-select via actor VM, save-block existence scan at <code>DAT_80084140</code>.</div>
     </a>
+    <a class="card" href="shop.html">
+      <div class="card-title">Shop</div>
+      <div class="card-body">Buy / sell / quantity / confirm flow. Lives in the menu overlay. <code>ShopSession</code> tracks pending item, quantity, and buy/sell direction. Sell price = half buy price (min 1). Per-scene item tables pending overlay trace.</div>
+    </a>
+    <a class="card" href="inn.html">
+      <div class="card-title">Inn</div>
+      <div class="card-body">HP / MP restore flow. <code>InnSession { cost }</code> gates the stay on affordability, then restores all active party members to full HP/MP. Per-scene costs pending overlay trace.</div>
+    </a>
+    <a class="card" href="level-up.html">
+      <div class="card-title">Level-up</div>
+      <div class="card-body">Post-battle XP distribution and stat gain. XP table from <code>SCUS_942.54 0x8007123C</code> (98 u16 increments, L1&rarr;2 = 50). <code>LevelUpBanner</code> renders for 180 frames via <code>level_up_draws_for()</code>. Per-character HP/MP growth curves pending level-up overlay capture.</div>
+    </a>
     <a class="card" href="cutscene.html">
       <div class="card-title">Cutscene (STR mode)</div>
       <div class="card-body">PSX STR video decode + XA audio playback. Game modes 26/27 (<code>StrInit</code> / <code>StrMode</code>). MDEC decoder: VLC &rarr; IDCT &rarr; BT.601 YCbCr&rarr;RGBA. Clean-room port in <code>crates/mdec</code>.</div>

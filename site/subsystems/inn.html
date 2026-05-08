@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inn — legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; inn</div>
+  <h1>Inn</h1>
+  <p class="lede">HP / MP restore flow at in-game inns. Lives inside the <strong>menu overlay</strong> (same 129-function binary as shop, save screen, and status screens). Clean-room session state: <code>engine-core::inn::InnSession</code>. Per-scene costs are pending a full trace of <code>overlay_shop_save</code>.</p>
+</header>
+
+<section class="doc-section" id="flow">
+  <h2>Flow</h2>
+  <p>The retail engine enters the inn from the field-VM shop-trigger opcode (same entry point as the shop, different sub-screen ID). Two phases:</p>
+  <table>
+    <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>Cost prompt</td><td><code>InnConfirm</code></td><td>Shows cost for one stay and a Yes / No cursor.</td></tr>
+      <tr><td>Commit</td><td>&mdash;</td><td>Deducts gold; restores all active party members&rsquo; HP and MP to their current maxima.</td></tr>
+    </tbody>
+  </table>
+  <p>On commit: <code>InnSession::can_afford(world_money)</code> gates the transaction. If affordable, gold is deducted (<code>World::money -= cost</code>) and every active roster member gets <code>hp_cur = hp_max</code>, <code>mp_cur = mp_max</code>. <code>save_party()</code> is called to sync the roster records.</p>
+</section>
+
+<section class="doc-section" id="session">
+  <h2>InnSession</h2>
+  <p><code>InnSession { cost: u32 }</code> is installed on <code>MenuRuntime</code> by <code>open_inn(cost)</code> before the menu VM enters <code>InnConfirm</code>. <code>can_afford(world_money: i32) -&gt; bool</code> checks <code>world_money &ge; cost</code>.</p>
+</section>
+
+<section class="doc-section" id="open-items">
+  <h2>Open items</h2>
+  <ul>
+    <li><strong>Per-scene costs.</strong> Retail inn prices are in the menu overlay DATA segment. Locating them requires tracing the <code>InnConfirm</code> entry sub-screen. Pending <code>overlay_shop_save</code> capture (see §3.1 of the PRD).</li>
+    <li><strong>Render layout.</strong> Cost prompt pixel offsets and layout pending overlay trace.</li>
+    <li><strong>Party filtering.</strong> Retail may only restore active-roster members (not reserve bench). The current port iterates all <code>World::roster.members</code> without a slot-active gate.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="full-reference">
+  <h2>Full reference</h2>
+  <p>Complete flow and provenance at <code>docs/subsystems/inn.md</code>. Source: <code>crates/engine-core/src/inn.rs</code>.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'subsystems/inn' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>
