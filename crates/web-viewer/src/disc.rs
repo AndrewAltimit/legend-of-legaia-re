@@ -121,9 +121,9 @@ pub fn is_mode2_2352_disc(disc: &[u8]) -> bool {
     }
 }
 
-/// Walk a Mode2/2352 disc image, find the file named `PROT.DAT` in the root
-/// directory, and return its bytes (sector-stripped, file-size-truncated).
-pub fn extract_prot_dat(disc: &[u8]) -> Option<Vec<u8>> {
+/// Walk a Mode2/2352 disc image, find a named file in the root directory,
+/// and return its bytes (sector-stripped, file-size-truncated).
+fn extract_root_file(disc: &[u8], name: &str) -> Option<Vec<u8>> {
     if !is_mode2_2352_disc(disc) {
         return None;
     }
@@ -133,7 +133,7 @@ pub fn extract_prot_dat(disc: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     for e in list_directory(disc, &root)? {
-        if !e.is_dir && e.name.eq_ignore_ascii_case("PROT.DAT") {
+        if !e.is_dir && e.name.eq_ignore_ascii_case(name) {
             let sector_count = e.size.div_ceil(RAW_USER_DATA_SIZE as u32);
             let mut bytes = read_user_data(disc, e.lba, sector_count)?;
             bytes.truncate(e.size as usize);
@@ -141,6 +141,20 @@ pub fn extract_prot_dat(disc: &[u8]) -> Option<Vec<u8>> {
         }
     }
     None
+}
+
+/// Walk a Mode2/2352 disc image, find the file named `PROT.DAT` in the root
+/// directory, and return its bytes (sector-stripped, file-size-truncated).
+pub fn extract_prot_dat(disc: &[u8]) -> Option<Vec<u8>> {
+    extract_root_file(disc, "PROT.DAT")
+}
+
+/// Walk a Mode2/2352 disc image, find `CDNAME.TXT` in the root directory,
+/// and return its text content. Returns `None` if the disc is not a valid
+/// Mode2/2352 image or the file is absent or not valid UTF-8.
+pub fn extract_cdname_txt(disc: &[u8]) -> Option<String> {
+    let bytes = extract_root_file(disc, "CDNAME.TXT")?;
+    String::from_utf8(bytes).ok()
 }
 
 /// Parse the PROT.DAT TOC and return a vector of entry locations within `buf`.

@@ -169,6 +169,15 @@ impl SceneResources {
             .iter()
             .find(|t| t.entry_idx == entry_idx && t.offset == offset)
     }
+
+    /// Look up the ANM pack for actor slot `actor_idx`. Returns `None` if the
+    /// scene has fewer ANM packs than the requested slot index.
+    ///
+    /// Ordering follows CDNAME entry order — the same ordering `FUN_8001E890`
+    /// uses to register TMDs into `0x8007C018` (actor K → slot K).
+    pub fn anm_pack_for_actor(&self, actor_idx: usize) -> Option<&ResolvedAnm> {
+        self.anm_packs.get(actor_idx)
+    }
 }
 
 #[cfg(test)]

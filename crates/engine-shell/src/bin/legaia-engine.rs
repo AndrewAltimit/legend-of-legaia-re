@@ -19,7 +19,7 @@ use glam::{Mat4, Vec3};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
-use legaia_engine_core::world::SceneMode;
+use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
@@ -575,6 +575,26 @@ impl PlayWindowApp {
         self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
             self.scene_aabb = (lo, hi);
+        }
+        // Bind each uploaded mesh slot to the matching actor and wire up the
+        // idle animation (record 0) when the scene carries an ANM pack for
+        // that actor. Registration order: actor K → TMD slot K, mirroring
+        // the retail `0x8007C018` table written by `FUN_8001E890`.
+        let world = &mut self.session.host.world;
+        for i in 0..self.scene_tmd_data.len() {
+            world.set_actor_tmd_binding(i, i);
+            if let Some(pack) = res.anm_pack_for_actor(i)
+                && let Some(record_bytes) = pack.record_bytes(0)
+            {
+                let bone_count = self.scene_tmd_data[i].0.objects.len();
+                match AnimPlayer::new(record_bytes.to_vec(), bone_count) {
+                    Ok(player) => {
+                        world.set_actor_animation(i, player);
+                        log::info!("play-window: actor {i} animated ({bone_count} bones)");
+                    }
+                    Err(e) => log::warn!("play-window: actor {i} ANM init failed: {e:#}"),
+                }
+            }
         }
         log::info!(
             "play-window: {} meshes uploaded, VRAM {}",

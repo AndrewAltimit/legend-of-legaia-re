@@ -54,17 +54,38 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Load a disc image from raw in-memory bytes. `prot_bytes` is the full
-    /// contents of `PROT.DAT`; `cdname_text` is the full text of `CDNAME.TXT`
-    /// (pass an empty string to skip scene-name resolution). Returns the number
-    /// of PROT entries parsed, or throws a JS error on parse failure.
-    pub fn load_disc(&mut self, prot_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
-        let cdname = if cdname_text.is_empty() {
-            None
+    /// Load a disc image from raw in-memory bytes.
+    ///
+    /// `raw_bytes` may be either:
+    /// - A Mode2/2352 full disc image (`.bin`): PROT.DAT and CDNAME.TXT are
+    ///   extracted automatically via ISO9660 walk.
+    /// - The raw contents of `PROT.DAT` directly.
+    ///
+    /// `cdname_text` overrides any CDNAME.TXT found on the disc. Pass an empty
+    /// string to use the disc's own CDNAME.TXT (full disc) or skip scene-name
+    /// resolution (PROT.DAT-only path without a CDNAME).
+    ///
+    /// Returns the number of PROT entries parsed, or throws a JS error on
+    /// parse failure.
+    pub fn load_disc(&mut self, raw_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
+        use crate::disc::{extract_cdname_txt, extract_prot_dat, is_mode2_2352_disc};
+
+        let (prot_bytes, auto_cdname) = if is_mode2_2352_disc(&raw_bytes) {
+            let prot = extract_prot_dat(&raw_bytes)
+                .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;
+            let cdname = extract_cdname_txt(&raw_bytes);
+            (prot, cdname)
         } else {
-            Some(cdname_text.as_str())
+            (raw_bytes, None)
         };
-        let host = SceneHost::from_prot_bytes(prot_bytes, cdname)
+
+        let cdname_resolved = if !cdname_text.is_empty() {
+            Some(cdname_text.as_str())
+        } else {
+            auto_cdname.as_deref()
+        };
+
+        let host = SceneHost::from_prot_bytes(prot_bytes, cdname_resolved)
             .map_err(|e| JsValue::from_str(&format!("load_disc: {e}")))?;
         let count = host.index.entry_count() as u32;
         self.scene_host = Some(host);
@@ -98,11 +119,11 @@ impl LegaiaRuntime {
             match WebAudioOut::new() {
                 Ok(out) => {
                     self.audio_out = Some(out);
-                    return true;
+                    true
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("audio_init: {e}").into());
-                    return false;
+                    false
                 }
             }
         }
