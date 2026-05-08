@@ -231,6 +231,16 @@ impl<'a> EventScripts<'a> {
     }
 }
 
+/// Return `true` if a CDNAME scene label is an in-engine cutscene scene
+/// (prefixed with `op` or `ed`, which use the dialogue actor overlay).
+///
+/// In-engine cutscenes are distinct from FMV (`MOV/MV*.STR`): they run
+/// the dialogue-actor overlay and are not backed by STR video files.
+/// Use `play-str` for FMV; use `play --scene` for these scenes.
+pub fn is_cutscene_label(label: &str) -> bool {
+    label.starts_with("op") || label.starts_with("ed")
+}
+
 /// A scene = the per-CDNAME-block bundle of PROT entries that the runtime
 /// loads together. Mirrors the per-scene shape `FUN_8001f7c0` consumes.
 pub struct Scene {
@@ -319,6 +329,12 @@ impl Scene {
             }
         }
         None
+    }
+
+    /// Whether this scene's CDNAME label identifies it as an in-engine cutscene
+    /// (dialogue-actor-overlay driven, not FMV). Use `play-str` for FMV.
+    pub fn is_cutscene_scene(&self) -> bool {
+        is_cutscene_label(&self.name)
     }
 
     /// Count of entries by class — tiny diagnostic for "what's in this scene".

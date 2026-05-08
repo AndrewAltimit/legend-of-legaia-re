@@ -21,7 +21,8 @@
 use std::path::PathBuf;
 
 use legaia_save::{
-    CharacterRecord, EquipmentSlots, HpMpSp, SAVE_BLOCK_MAGIC, SpellList, parse_card, read_block,
+    CHARACTER_RECORD_SIZE, CharacterRecord, EquipmentSlots, HpMpSp, SAVE_BLOCK_MAGIC, SpellList,
+    parse_card, read_block,
 };
 
 fn locate_card() -> Option<PathBuf> {
@@ -81,6 +82,31 @@ fn real_psx_memory_card_decodes_legaia_save_block() {
     eprintln!(
         "[real-card] block 1 SC magic OK; block size = {}",
         block.len()
+    );
+}
+
+#[test]
+fn retail_sc_block_character_records_extract() {
+    let Some(card_path) = locate_card() else {
+        eprintln!("[skip] no Legaia memory-card image at ~/.mednafen/sav/");
+        return;
+    };
+    let bytes = std::fs::read(&card_path).expect("read memory card");
+    let saves = legaia_save::parse_card(&bytes).expect("parse card");
+    if saves.is_empty() {
+        eprintln!("[skip] no active save blocks");
+        return;
+    }
+    let block = legaia_save::read_block(&bytes, saves[0].block).expect("read block");
+    let records = legaia_save::card::read_retail_char_records(block, 4).expect("extract records");
+    assert!(!records.is_empty(), "expected at least 1 character record");
+    // Each record should be exactly 0x414 bytes.
+    for (i, rec) in records.iter().enumerate() {
+        assert_eq!(rec.len(), CHARACTER_RECORD_SIZE, "record {} wrong size", i);
+    }
+    eprintln!(
+        "[real-card] extracted {} character records from retail save",
+        records.len()
     );
 }
 

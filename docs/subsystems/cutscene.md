@@ -157,6 +157,10 @@ legaia-engine play-str cutscene.str
   overlay.
 - **8-bit ADPCM.** `coding_info` bit detection is implemented; the decoder emits silence for
   8-bit groups. No 8-bit audio has been observed in the corpus so far.
+- **CDNAME scene label patterns.** In-engine cutscene scenes are prefixed with `op` (opening) or
+  `ed` (ending) and use the dialogue actor overlay; they are distinct from FMV (`MOV/MV*.STR`).
+  See `is_cutscene_label()` in `engine-core/src/scene.rs`. The mapping from `op*`/`ed*` CDNAME
+  labels to specific `MV*.STR` files is overlay-resident (blocked on cutscene overlay capture).
 
 ## Provenance
 

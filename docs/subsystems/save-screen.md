@@ -158,3 +158,38 @@ and `inventory` within the retail save block are in `FUN_801DBD94` (sub-screen
 money (`_DAT_8008459C`), slot count, and save-block existence scan. A full trace
 of the global-state bytes (story flags, inventory) requires following
 `func_0x80042310` and the staging buffer beyond the per-character record.
+
+## Retail SC block layout
+
+Verified by analyzing a real mednafen memory-card save at
+`~/.mednafen/sav/Legend of Legaia (USA).*.0.mcr`:
+
+| Offset in SC block | Size | Field |
+|---|---|---|
+| `0x0000` | 2 | `SC` magic |
+| `0x0002` | 1 | icon flags (`0x11` = 1 frame, 16-color) |
+| `0x0004` | 92 | save title (Shift-JIS, null-padded) |
+| `0x0060` | 32 | 16-color icon palette (16 × u16 LE BGR5) |
+| `0x0080` | 128 | icon pixels (16×16 @ 4bpp) |
+| `0x0100` | 256 | (duplicate icon frame or padding) |
+| `0x0200` | 0x66F | display/global header (see below) |
+| `0x086F` | 0x414 × N | character records (Vahn, Noa, Gala, Terra…) |
+
+**Display header** (`0x0200..0x086E`):
+
+| Offset | Size | Field |
+|---|---|---|
+| `+0x000` | 8 | Current location name (ASCII, null-padded), e.g. `Rim Elm` |
+| `+0x054` | 12 | Primary character display name (for save-select screen) |
+| `+0x208` | 8 | CDNAME label of most-recently-visited scene (e.g. `town0b`) |
+| `+0x218` | 8 | CDNAME label of previous scene (e.g. `town01`) |
+| `+0x???` | 4 | Story flags (`_DAT_1F800394` scratchpad value) — offset not yet pinned |
+| `+0x???` | ~512 | Inventory slot array — offset not yet pinned |
+
+**Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each, name at record+0x000.
+Minimum 4 records observed: Vahn, Noa, Gala, Terra. Empty slots have all-zero bytes;
+`read_retail_char_records` stops at first all-zero record.
+
+`legaia_save::card::read_retail_char_records(sc_block, max_records)` implements extraction.
+Constants: `RETAIL_GAME_DATA_OFFSET` (0x200), `RETAIL_CHAR_RECORD_HEADER_SIZE` (0x66F),
+`RETAIL_CHAR_RECORD_STRIDE` (0x414). All re-exported from the `legaia_save` crate root.

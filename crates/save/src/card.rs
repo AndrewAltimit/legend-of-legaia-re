@@ -307,6 +307,62 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
     Ok(free[0])
 }
 
+/// Byte offset from the start of an SC save block to where game data begins.
+///
+/// Verified by locating the "Vahn", "Noa", "Gala" names in an actual Legaia
+/// retail mednafen `.mcr` save at `~/.mednafen/sav/Legend of Legaia (USA).*.0.mcr`.
+/// Block layout: SC magic at +0, icon palette at +0x60, icon pixels at +0x80;
+/// game-data region begins at +0x200.
+pub const RETAIL_GAME_DATA_OFFSET: usize = 0x200;
+
+/// Byte offset from the game data start to the first character record.
+///
+/// The display / global header occupies `0x000..0x66E`; character records begin
+/// at `0x66F`. Known header fields: location name at `+0x000`, primary character
+/// display name at `+0x054`, most-recently-visited CDNAME label at `+0x208`,
+/// previous scene CDNAME label at `+0x218`. Verified against a real Legaia save.
+pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x66F;
+
+/// Stride between character records in the retail save format (matches
+/// `CHARACTER_RECORD_SIZE` = 0x414 used in `crates/save/src/character.rs`).
+///
+/// Confirmed by observing Vahn at `game+0x66F`, Noa at `game+0xA83`,
+/// Gala at `game+0xE97`, Terra at `game+0x12AB` — all at 0x414-byte intervals.
+pub const RETAIL_CHAR_RECORD_STRIDE: usize = 0x414;
+
+/// Extract raw character record bytes from a retail SC save block.
+///
+/// `sc_block` is the full 8192-byte save block starting with the `SC` magic.
+/// Returns at most `max_records` records. Stops early at the first all-zero
+/// record (unused / empty slot). Returns `None` if the block is too small to
+/// hold even the header region.
+///
+/// Each returned `Vec<u8>` is exactly `RETAIL_CHAR_RECORD_STRIDE` (0x414) bytes
+/// and can be parsed by `legaia_save::CharacterRecord::parse`.
+///
+/// # Example
+///
+/// ```
+/// # use legaia_save::card::{read_retail_char_records, RETAIL_GAME_DATA_OFFSET};
+/// let sc_block = vec![0u8; 8192];
+/// // An all-zero block yields zero records (first slot is empty).
+/// assert!(read_retail_char_records(&sc_block, 4).map_or(true, |v| v.is_empty()));
+/// ```
+pub fn read_retail_char_records(sc_block: &[u8], max_records: usize) -> Option<Vec<Vec<u8>>> {
+    let game_data = sc_block.get(RETAIL_GAME_DATA_OFFSET..)?;
+    let records_start = game_data.get(RETAIL_CHAR_RECORD_HEADER_SIZE..)?;
+    let mut out = Vec::new();
+    for i in 0..max_records {
+        let offset = i * RETAIL_CHAR_RECORD_STRIDE;
+        let record = records_start.get(offset..offset + RETAIL_CHAR_RECORD_STRIDE)?;
+        if record.iter().all(|&b| b == 0) {
+            break; // stop at first empty slot
+        }
+        out.push(record.to_vec());
+    }
+    Some(out)
+}
+
 fn bytes_to_ascii(b: &[u8]) -> String {
     b.iter()
         .take_while(|&&c| c != 0)

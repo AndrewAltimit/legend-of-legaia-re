@@ -92,6 +92,11 @@ enum Cmd {
     /// Drives the field VM, camera, BGM director, and per-actor move VMs;
     /// logs scene transitions and the per-frame BGM events. No window —
     /// for that, use `asset-viewer field <scene>`.
+    ///
+    /// When `--str-file` is provided the STR video is pre-decoded headlessly
+    /// (frame count logged) before scene ticking begins. The scene label
+    /// patterns that identify in-engine cutscenes (as opposed to FMV) are
+    /// described by `engine_core::scene::is_cutscene_label`.
     Play {
         /// Starting scene name. Default: `town01`.
         #[arg(long, default_value = "town01")]
@@ -111,9 +116,18 @@ enum Cmd {
         /// realtime feel; set to `0` for "as fast as possible" smoke runs.
         #[arg(long, default_value_t = 16)]
         frame_ms: u64,
+        /// Optional path to a raw PSX STR file. When provided, the video is
+        /// pre-decoded headlessly and the frame count is printed before scene
+        /// ticking begins. Use for `op*`/`ed*` scenes paired with FMV files.
+        #[arg(long)]
+        str_file: Option<PathBuf>,
     },
     /// Open a window, boot a scene, and run the engine with rendering.
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
+    ///
+    /// When `--str-file` is provided the STR video plays first in a windowed
+    /// player (same as `play-str`). After the video window closes the scene
+    /// window opens and runs normally.
     PlayWindow {
         /// Starting scene name. Default: `town01`.
         #[arg(long, default_value = "town01")]
@@ -129,6 +143,11 @@ enum Cmd {
         /// top-view camera; Q/W adjust azimuth; A/S adjust zoom.
         #[arg(long, default_value_t = false)]
         world_map: bool,
+        /// Optional path to a raw PSX STR file. When provided, the STR video
+        /// plays in a window first (phase 1); the scene window opens after
+        /// the video window closes (phase 2).
+        #[arg(long)]
+        str_file: Option<PathBuf>,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -191,13 +210,28 @@ fn main() -> Result<()> {
             frames,
             no_audio,
             frame_ms,
-        } => cmd_play(&scene, &extracted_root, frames, !no_audio, frame_ms),
+            str_file,
+        } => cmd_play(
+            &scene,
+            &extracted_root,
+            frames,
+            !no_audio,
+            frame_ms,
+            str_file.as_deref(),
+        ),
         Cmd::PlayWindow {
             scene,
             extracted_root,
             no_audio,
             world_map,
-        } => cmd_play_window(&scene, &extracted_root, !no_audio, world_map),
+            str_file,
+        } => cmd_play_window(
+            &scene,
+            &extracted_root,
+            !no_audio,
+            world_map,
+            str_file.as_deref(),
+        ),
         Cmd::Save {
             extracted_root,
             save_dir,
@@ -269,7 +303,35 @@ fn cmd_play(
     frames: u64,
     enable_audio: bool,
     frame_ms: u64,
+    str_file: Option<&Path>,
 ) -> Result<()> {
+    // If a STR file was supplied, pre-decode it headlessly and log the frame
+    // count. This is phase 1 for `op*`/`ed*` in-engine cutscene scenes where
+    // an FMV precedes the dialogue-overlay scene proper. The scene ticking
+    // (phase 2) runs unconditionally after this block.
+    if let Some(str_path) = str_file {
+        use legaia_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
+        let data = std::fs::read(str_path)
+            .with_context(|| format!("read STR file {}", str_path.display()))?;
+        let n_sectors = data.len() / 2048;
+        let mut asm = StrFrameAssembler::new();
+        let mut decoded = 0usize;
+        for i in 0..n_sectors {
+            let sector = &data[i * 2048..(i + 1) * 2048];
+            if let Some((hdr, bs)) = asm.push_sector(sector)? {
+                let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
+                if dec.decode_frame(&bs).is_ok() {
+                    decoded += 1;
+                }
+            }
+        }
+        println!(
+            "play: pre-decoded {} STR frames from {}",
+            decoded,
+            str_path.display()
+        );
+    }
+
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio,
@@ -919,7 +981,14 @@ fn cmd_play_window(
     extracted_root: &Path,
     enable_audio: bool,
     world_map: bool,
+    str_file: Option<&Path>,
 ) -> Result<()> {
+    // Phase 1: if a STR file is provided, play the video in a window first.
+    // The user closes (or ESC) the STR window, then the scene window opens.
+    if let Some(str_path) = str_file {
+        cmd_play_str(str_path, 640, 480)?;
+    }
+
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio,
