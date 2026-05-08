@@ -324,6 +324,38 @@ pub fn shop_draws_for<'a>(
     out
 }
 
+/// Build [`TextDraw`]s for a level-up banner overlay.
+///
+/// Renders two lines anchored at `pen`:
+/// ```text
+/// LEVEL UP!  (char_id, new_level)
+/// HP +hp_gained  MP +mp_gained
+/// ```
+/// Designed for a PSX-style 320×240 surface; a typical anchor is around
+/// `(8, 60)` to appear near the top of the screen after battle.
+pub fn level_up_draws_for(
+    font: &legaia_font::Font,
+    char_id: u8,
+    new_level: u8,
+    hp_gained: u16,
+    mp_gained: u16,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let yellow: [f32; 4] = [1.0, 0.9, 0.2, 1.0];
+    let green: [f32; 4] = [0.4, 1.0, 0.4, 1.0];
+
+    let line1 = format!("LEVEL UP! (char {} -> Lv {})", char_id + 1, new_level);
+    let line2 = format!("HP +{}  MP +{}", hp_gained, mp_gained);
+
+    let layout1 = font.layout_ascii(&line1);
+    let layout2 = font.layout_ascii(&line2);
+
+    let mut out = text_draws_for(&layout1, pen, yellow);
+    out.extend(text_draws_for(&layout2, (pen.0, pen.1 + LINE_H), green));
+    out
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -2562,5 +2594,25 @@ mod tests {
         // cursor=1 → no crash
         let draws = shop_draws_for(&font, "[SELL]", &rows, 1, Some(100), (0, 0));
         assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn level_up_draws_for_produces_two_line_draws() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = level_up_draws_for(&font, 0, 5, 10, 5, (8, 60));
+        // Two non-empty lines — at minimum the title line must produce glyphs.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn level_up_draws_for_second_line_below_first() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = level_up_draws_for(&font, 0, 2, 10, 5, (8, 60));
+        // At least two distinct Y positions (line 1 at 60, line 2 at 76).
+        let y_vals: std::collections::HashSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+        assert!(
+            y_vals.len() >= 2,
+            "expected draws at two distinct y positions"
+        );
     }
 }

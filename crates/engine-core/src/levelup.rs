@@ -23,6 +23,26 @@ use legaia_save::CharacterRecord;
 
 /// Maximum party size tracked by this module.
 pub const MAX_PARTY: usize = 4;
+
+/// HUD banner shown after a level-up.
+///
+/// Engines draw this via the dialog font overlay. `frames_remaining` counts
+/// down each [`crate::world::World::tick`]; when it reaches zero the banner
+/// is cleared by the world.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelUpBanner {
+    pub char_id: u8,
+    pub new_level: u8,
+    pub hp_gained: u16,
+    pub mp_gained: u16,
+    /// Remaining display frames. Decremented by the world tick.
+    pub frames_remaining: u16,
+}
+
+impl LevelUpBanner {
+    /// Default display duration: 180 frames (3 s at 60 Hz).
+    pub const DEFAULT_FRAMES: u16 = 180;
+}
 /// Maximum character level.
 pub const MAX_LEVEL: u8 = 99;
 

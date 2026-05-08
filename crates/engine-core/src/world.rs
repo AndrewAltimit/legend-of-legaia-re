@@ -20,7 +20,7 @@
 
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
-use crate::levelup::{LevelUpResult, LevelUpTracker};
+use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 use crate::world_map::WorldMapController;
 pub use legaia_anm::{AnimPlayer, PoseFrame};
@@ -402,6 +402,12 @@ pub struct World {
     /// distribute XP and check for level-ups.
     pub level_up_tracker: LevelUpTracker,
 
+    /// Active level-up HUD banner. Set by [`World::apply_battle_xp`] for the
+    /// last character that leveled up; `frames_remaining` is decremented by
+    /// [`World::tick`] until it reaches zero. `None` when no banner is active.
+    /// Engines render this as a dialog-font overlay after battle.
+    pub current_level_up_banner: Option<LevelUpBanner>,
+
     /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
@@ -496,6 +502,7 @@ impl World {
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),
+            current_level_up_banner: None,
             world_map_ctrl: None,
         }
     }
@@ -546,6 +553,13 @@ impl World {
                 new_level: result.new_level,
                 hp_gained: result.hp_gained,
                 mp_gained: result.mp_gained,
+            });
+            self.current_level_up_banner = Some(LevelUpBanner {
+                char_id,
+                new_level: result.new_level,
+                hp_gained: result.hp_gained,
+                mp_gained: result.mp_gained,
+                frames_remaining: LevelUpBanner::DEFAULT_FRAMES,
             });
             results.push(result);
         }
@@ -919,6 +933,14 @@ impl World {
                 banner.frames_remaining -= 1;
             } else {
                 self.current_art_banner = None;
+            }
+        }
+        // Tick level-up banner countdown.
+        if let Some(banner) = &mut self.current_level_up_banner {
+            if banner.frames_remaining > 0 {
+                banner.frames_remaining -= 1;
+            } else {
+                self.current_level_up_banner = None;
             }
         }
         match self.mode {
@@ -2962,5 +2984,56 @@ mod tests {
             world.current_art_banner.is_none(),
             "banner should have cleared"
         );
+    }
+
+    // --- Level-up banner ---
+
+    #[test]
+    fn apply_battle_xp_sets_level_up_banner() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        // Threshold for level 2 in placeholder table is 100 XP.
+        world.apply_battle_xp(100);
+        let banner = world
+            .current_level_up_banner
+            .as_ref()
+            .expect("level-up banner should be set");
+        assert_eq!(banner.char_id, 0);
+        assert_eq!(banner.new_level, 2);
+        assert_eq!(banner.hp_gained, 10); // default StatGain
+        assert_eq!(banner.mp_gained, 5);
+        assert_eq!(
+            banner.frames_remaining,
+            crate::levelup::LevelUpBanner::DEFAULT_FRAMES
+        );
+    }
+
+    #[test]
+    fn level_up_banner_countdown_clears() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.apply_battle_xp(100);
+        assert!(world.current_level_up_banner.is_some());
+        for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
+            world.tick();
+        }
+        assert!(
+            world.current_level_up_banner.is_none(),
+            "level-up banner should have cleared"
+        );
+    }
+
+    #[test]
+    fn no_level_up_banner_when_xp_insufficient() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.apply_battle_xp(50); // below threshold of 100
+        assert!(world.current_level_up_banner.is_none());
     }
 }

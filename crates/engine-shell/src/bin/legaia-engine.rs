@@ -24,7 +24,8 @@ use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
-    UploadedFontAtlas, UploadedVram, UploadedVramMesh, shop_draws_for, text_draws_for,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, level_up_draws_for, shop_draws_for,
+    text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::{BootConfig, BootSession};
@@ -846,6 +847,18 @@ impl PlayWindowApp {
                 let ml_layout = self.font.layout_ascii(&menu_label);
                 out.extend(text_draws_for(&ml_layout, (8, 140), white));
             }
+        }
+        // Level-up banner: rendered near the top when active after a battle win.
+        if let Some(banner) = &self.session.host.world.current_level_up_banner {
+            let draws = level_up_draws_for(
+                &self.font,
+                banner.char_id,
+                banner.new_level,
+                banner.hp_gained,
+                banner.mp_gained,
+                (8, 60),
+            );
+            out.extend(draws);
         }
         out
     }

@@ -393,9 +393,15 @@ impl MapIdResolver for VecMapIdResolver {
 /// PROT-entry-index order as the sequential map-id.
 ///
 /// Map-id 0 maps to the first CDNAME block name (lowest PROT index),
-/// map-id 1 to the second, and so on. This matches the most likely retail
-/// table ordering (sequential CDNAME block labels loaded in TOC order)
-/// pending a full `FUN_8001f7c0` trace.
+/// map-id 1 to the second, and so on.
+///
+/// **Ordering note (from `FUN_8001f7c0` trace):** The field-VM WARP opcode
+/// (`0x3E`, `op0 >= 100`) only supports map_ids 0–6. Each maps to a code
+/// overlay at PROT `0x4d + map_id` (+ 2 for map_id >= 6); the scene name is
+/// pre-set in `DAT_80084548` by a pre-WARP handler not yet fully traced.
+/// The sequential CDNAME ordering here is an approximation; the exact
+/// retail map_id → scene-name table lives in an uncaptured overlay.
+/// See `docs/subsystems/asset-loader.md` → "WARP opcode → scene transition flow".
 ///
 /// Suitable for use in [`BootSession::open`] as the default resolver.
 #[derive(Debug, Clone, Default)]
