@@ -131,6 +131,68 @@ TARGETS = [
     "80024e80",  # sibling of FUN_80024cfc
     "8001fc00",  # SCUS asset loader called from overlay with type=6
     "8001e54c",  # second SCUS function called with type=6
+
+    # World map overlay - new functions from captures mc4/mc7/mc8 (2026-05-08)
+    "801cfc40",  # world_map_top: first code entry; 5 callers (top-view dispatch?)
+    "801cf8ac",  # 3 callers (small helper ~328B)
+    "801da51c",  # 3 callees (~724B)
+    "801eca08",  # 3 callees (~772B)
+    "801ee90c",  # 2 callees (~1100B)
+    "801ef014",  # 2 callees (~668B)
+    "801dbe9c",  # 3 callees, world_map_top only (~544B)
+    "801ee5d4",  # 1 callee (~824B)
+    "801eed58",  # 1 callee (~700B)
+    "801dba20",  # 2 callers (~512B)
+    "801d5e20",  # 1 caller (~568B)
+    "801da390",  # 1 caller (~396B)
+    "801e4794",  # largest new fn ~1220B
+    "801e6b34",  # ~1084B
+    "801e4d8c",  # ~968B
+    "801e5338",  # ~804B
+    "801d2ebc",  # ~756B
+    "801e6f70",  # ~608B
+    "801ed308",  # 1 callee (~648B)
+    "801ee094",  # 1 callee (~660B)
+    "801ee328",  # 1 callee (~684B)
+    "801ed590",  # 3 callees (~384B)
+    "801edf00",  # 2 callees (~404B)
+    "801d2298",  # 2 callees (~364B)
+    "801d5c08",  # 1 callee (~344B)
+    "801d5d60",  # 2 callees (~192B)
+    "801e6400",  # ~556B
+    "801e6778",  # ~524B
+    "801e6984",  # ~432B
+    "801d6058",  # 1 callee (~580B, world_map_top)
+
+    # Remaining world_map overlay functions not yet dumped (2026-05-08)
+    "801d5780",  # world_map overlay ~368B
+    "801d5a68",  # world_map overlay ~120B
+    "801d841c",  # world_map overlay (undumped)
+    "801da7f0",  # world_map entity state handler (near FUN_801DA51C)
+    "801e5834",  # world_map overlay (undumped)
+    "801e58a8",  # world_map overlay (undumped)
+    "801e5a08",  # world_map overlay (undumped)
+    "801e662c",  # world_map overlay (undumped)
+    "801e71d0",  # world_map overlay (undumped)
+    "801e733c",  # world_map overlay (undumped)
+
+    # Missing helpers surfaced by world_map dumps (coverage tracker 2026-05-08)
+    "80017714",  # cited by 801edf00
+    "80039b7c",  # cited by 801da51c (world map entity tick)
+    "8003d038",  # cited by 801cfc40 (world_map_top sprite batcher)
+    "801d84b4",  # cited by 801ed590 (overlay address)
+    "8002035c",  # cited by 80017714
+    "80038050",  # cited by 80039b7c
+    "80056608",  # cited by 80017714
+    "80056628",  # cited by 80017714
+    "8005fe7c",  # cited by 80017714
+    "80062164",  # cited by 80017714
+    "8006ca04",  # cited by 80017714
+    "8003d038",  # cited by 801cfc40 (world_map_top)
+    "80056648",  # cited by 8002035c
+    "8005fdb8",  # cited by 80062164
+    "8006d2ac",  # cited by 8006ca04
+    "8006ef18",  # cited by 8002035c
 ]
 
 OUT_DIR = "/scripts/funcs"

@@ -1,0 +1,65 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; world map</div>
+  <h1>World Map</h1>
+  <p class="lede">The overworld traversal mode. Two overlay variants share a code window at <code>0x801C0000..0x801EFFFF</code>: the normal walk view and a debug top-down camera. The main controller is <code>FUN_801E76D4</code> (9320 bytes); the per-entity tick is <code>FUN_801DA51C</code> (260 bytes). Sources: <code>overlay_world_map.bin</code> (mc4/mc7) and <code>overlay_world_map_top.bin</code> (mc8) mednafen captures.</p>
+</header>
+
+<section class="doc-section" id="overlays">
+  <h2>Overlay structure</h2>
+  <p>Both variants load into the same address window. The top-view variant starts its first prologue ~0x1400 bytes earlier in the window to fit extra sprite-rendering code.</p>
+  <table>
+    <thead><tr><th>Variant</th><th>First prologue</th><th>Loaded when</th></tr></thead>
+    <tbody>
+      <tr><td>Normal walk (<code>overlay_world_map</code>)</td><td><code>0x801CFC40</code></td><td>Standard world-map mode</td></tr>
+      <tr><td>Top-view debug (<code>overlay_world_map_top</code>)</td><td><code>0x801CE850</code></td><td>Debug toggle combo (see below)</td></tr>
+    </tbody>
+  </table>
+  <p>Both variants share the core field VM (<code>FUN_801DE840</code>), the move-VM overlay extension (<code>FUN_801D362C</code>), and all rendering helpers. The view-mode toggle flag is at <code>DAT_801F2B94</code> (outside the 192 KB extraction window; not in the binary dump).</p>
+</section>
+
+<section class="doc-section" id="controller">
+  <h2>World map controller — <code>FUN_801E76D4</code></h2>
+  <p>Entry: <code>(ctx_ptr)</code>. Three top-level paths based on <code>DAT_801F2B94</code>:</p>
+  <ul class="bullets">
+    <li><strong>Debug top-view toggle</strong> &mdash; fires when <code>_DAT_8007B98C != 0</code> (debug flag) AND pad mask <code>_DAT_8007B850 == 0x4A</code> AND held mask <code>_DAT_8007B874 == 0x40</code>. On trigger: <code>DAT_801F2B94 ^= 1</code>, captures current actor camera position into <code>_DAT_801F35A8/AA/AC</code>, clears <code>ctx[+0x54]</code> and <code>ctx[+0x50]</code>, calls <code>FUN_80035C10</code>.</li>
+    <li><strong>Top-view camera controls</strong> (<code>DAT_801F2B94 != 0</code>) &mdash; D-pad adjusts scroll globals; L/R buttons adjust azimuth and zoom:
+      <ul>
+        <li>Left/Right &rarr; <code>_DAT_80089120 &plusmn;= 8</code> (X scroll)</li>
+        <li>Up/Down &rarr; <code>_DAT_80089118 &plusmn;= 8</code> (Z scroll)</li>
+        <li>Circle/Square &rarr; <code>_DAT_8007B794 &plusmn;= 0x14</code> (azimuth)</li>
+        <li>R1/L1 &rarr; <code>_DAT_8007B6F4 &plusmn;= 4</code> (zoom/height)</li>
+      </ul>
+    </li>
+    <li><strong>Normal-walk path</strong> (<code>DAT_801F2B94 == 0</code>) &mdash; standard per-frame world-map update: field VM tick, actor step, camera follow via the motion VM.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="entity-sm">
+  <h2>World map entity tick — <code>FUN_801DA51C</code></h2>
+  <p>Entry: <code>(entity_ptr)</code>. A 5-state dispatcher on <code>entity[+0x8A]</code> (jump table at <code>0x801CEC28</code>). Called once per world-map entity per frame by the entity pool tick loop.</p>
+  <ul class="bullets">
+    <li><strong>State 0 (Idle)</strong> &mdash; when <code>_DAT_80083808 == 0</code>: calls <code>FUN_800243F0</code> (BGM/asset resolver) to look up the scene associated with the entity's location; checks <code>_DAT_8007BB38</code> pad buttons for entity interaction.</li>
+    <li><strong>States 1&ndash;4</strong> &mdash; Activating, Transitioning, and Terminal states for encounter and location-entry sequences.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="debug-menu">
+  <h2>Debug menu renderer — <code>FUN_801EAD98</code></h2>
+  <p>Entry: <code>(ctx_ptr, x, y, scroll_idx, max_visible)</code>. Renders a vertically scrolling menu list for the world map developer menu. String table at <code>0x801CF344</code>; at least 24 entries (bounds check <code>local_40 &gt; 0x17</code>). Known entries: <code>MAP_CHANGE</code>, <code>CARD_OPTION</code> (both show as <code>CLOSED</code> when <code>_DAT_8007B868 != 0</code>), <code>PLAYER_STATUS</code>, <code>CAMERA</code>, <code>ENCOUNT</code>, <code>OTHER_SETTINGS</code>, <code>BGM_CALL</code>, <code>DEBUG</code>.</p>
+  <p>Called by <code>FUN_801ECA08</code> when the debug panel is active (<code>ctx[+0x54]</code> mod-6 dispatch, cases 1 or 3).</p>
+</section>
+
+<section class="doc-section" id="engine-port">
+  <h2>Engine port</h2>
+  <p>Two modules in the clean-room port cover this subsystem:</p>
+  <ul class="bullets">
+    <li><strong><code>engine-vm::world_map</code></strong> &mdash; clean-room port of <code>FUN_801DA51C</code>: <code>EntityState</code> enum (Idle / Activating / Transitioning / Terminal), <code>WorldMapEntityHost</code> trait (callbacks for BGM resolution and pad input), <code>step(host, entity) -&gt; StepResult</code>. 10 unit tests.</li>
+    <li><strong><code>engine-core::world_map::WorldMapController</code></strong> &mdash; models the camera globals (<code>scroll_x</code>, <code>scroll_z</code>, <code>azimuth</code>, <code>zoom</code>) and the <code>top_view</code> debug toggle flag; exposes <code>tick(pad_input)</code> matching <code>FUN_801E76D4</code>'s control logic. Attached to <code>World</code> as <code>world_map_ctrl: Option&lt;WorldMapController&gt;</code> and ticked when <code>SceneMode::WorldMap</code> is active.</li>
+  </ul>
+  <p>The <code>legaia-engine play-window --world-map</code> flag activates <code>WorldMap</code> mode and shows camera state (scroll, azimuth, zoom) in the HUD overlay.</p>
+</section>
+
+<section class="doc-section" id="full-reference">
+  <h2>Full reference</h2>
+  <p>The complete function-level reference with Ghidra provenance lives at <code>docs/subsystems/world-map.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_dialog_801e76d4.txt</code>, <code>overlay_dialog_801ead98.txt</code>, and <code>801cfc40.txt</code>.</p>
+</section>

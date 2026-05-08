@@ -38,7 +38,7 @@
     </a>
     <a class="card" href="subsystems/index.html">
       <div class="card-title">Subsystems</div>
-      <div class="card-body">How the engine works under the hood — boot path, asset loader, three script VMs, renderer, audio, battle. Each subsystem gets its own page.</div>
+      <div class="card-body">How the engine works under the hood — boot path, asset loader, four bytecode VMs, renderer, audio, battle. Each subsystem gets its own page.</div>
     </a>
     <a class="card" href="formats/index.html">
       <div class="card-title">Formats</div>
@@ -54,7 +54,7 @@
 <section class="doc-section" id="status">
   <h2>Where we are</h2>
   <p class="lede" style="font-size: 1.05rem;">
-    The disc is fully readable. Every major subsystem is traced and documented. All three core game VMs are ported, plus the battle action state machine and effect pool. The combat-stat machinery is decoded. The asset preservation track ships round-trip parsers for every documented format.
+    The disc is fully readable. Every major subsystem is traced and documented. All four core game VMs are ported, plus the battle action state machine and effect pool. The combat-stat machinery is decoded. The asset preservation track ships round-trip parsers for every documented format.
   </p>
 
   <div class="status-grid">
@@ -64,7 +64,7 @@
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Static analysis</div>
-      <div class="status-card-body">Function dumps committed for the bulk of the binary. Closed-loop on the citation graph at &gt;98%. All three game VMs decoded plus the battle action state machine. All major SCUS subsystems traced.</div>
+      <div class="status-card-body">Function dumps committed for the bulk of the binary. Closed-loop on the citation graph at &gt;98%. All four game VMs decoded plus the battle action state machine. All major SCUS subsystems traced.</div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 1</div>
@@ -76,7 +76,7 @@
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 3</div>
-      <div class="status-card-body">Gameplay assembly. Field-VM scene runner ticks real per-scene event scripts and renders dialog inline. Battle-action SM drives a working scene with party + monster slots end-to-end (synthetic battle resolves to <code>BattleEndCause</code> via the formula damage path). Menu state machine + disk-backed save / load wired through <code>engine-core::menu_runtime::MenuRuntime</code> with per-slot files. The 16-arm action validator (<code>FUN_8003FB10</code>) is ported as <code>engine-vm::action_validator</code> — every UI / item-cap / status / capture-flag arm covered. The third motion VM (<code>FUN_8003774C</code>) is ported as <code>engine-vm::motion_vm</code> and feeds a runtime <code>Camera</code> in <code>engine-core</code> that follows the active actor. ANM playback driver (<code>legaia_anm::AnimPlayer</code>) drives per-bone keyframe interpolation each frame.</div>
+      <div class="status-card-body">Gameplay assembly. Field-VM scene runner ticks real per-scene event scripts and renders dialog inline. Battle-action SM drives a working scene with party + monster slots end-to-end (synthetic battle resolves to <code>BattleEndCause</code> via the formula damage path). Menu state machine + disk-backed save / load wired through <code>engine-core::menu_runtime::MenuRuntime</code> with per-slot files. The 16-arm action validator (<code>FUN_8003FB10</code>) is ported as <code>engine-vm::action_validator</code> — every UI / item-cap / status / capture-flag arm covered. The motion VM (<code>FUN_8003774C</code>) is ported as <code>engine-vm::motion_vm</code> and feeds a runtime <code>Camera</code> in <code>engine-core</code> that follows the active actor. ANM playback driver (<code>legaia_anm::AnimPlayer</code>) drives per-bone keyframe interpolation each frame.</div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Top-level shell</div>
@@ -88,7 +88,7 @@
     </div>
     <div class="status-card status-open">
       <div class="status-card-title">Open work</div>
-      <div class="status-card-body">Per-record ANM bytecode for the residual non-keyframe-table records (the keyframe-table path is ported via <code>AnimPlayer</code>; bytecode-style records still need an overlay capture). Five gameplay overlays still uncaptured: world map, save / load screen, shop, cutscene, level-up (PROT 891) &mdash; capturing these unblocks exact shop/inn/level-up UI layout and XP table. Final reverse of the per-scene DATA_FIELD slot semantics inside <code>field-pack</code> containers (97-slot schema understood structurally; per-slot meaning pending a per-scene consumer trace). Scene-init ANM binding per-actor (blocked on tracing the <code>0x8007C018</code> pointer-table registration order). PROT-scene routing for <code>legaia-engine play --scene cutsceneN</code> (direct STR file playback via <code>play-str</code> works; scene-entry routing pending STR-entry trace).</div>
+      <div class="status-card-body">Per-record ANM bytecode for the residual non-keyframe-table records (the keyframe-table path is ported via <code>AnimPlayer</code>; bytecode-style records still need an overlay capture). Three gameplay overlays still uncaptured: shop/inn, cutscene, and level-up (PROT 891) &mdash; capturing these unblocks exact shop/inn/level-up UI layout and XP table. World map and save-screen overlays are captured and documented. The save write path (sub-screen ID <code>0x1E</code> at <code>0x801E4FB8</code>) still needs a dump to pin the exact story-flags + inventory offsets in the retail block. Final reverse of the per-scene DATA_FIELD slot semantics inside <code>field-pack</code> containers (97-slot schema understood structurally; per-slot meaning pending a per-scene consumer trace). Scene-init ANM binding per-actor (blocked on tracing the <code>0x8007C018</code> pointer-table registration order). PROT-scene routing for <code>legaia-engine play --scene cutsceneN</code> (direct STR file playback via <code>play-str</code> works; scene-entry routing pending STR-entry trace).</div>
     </div>
   </div>
 </section>

@@ -89,8 +89,8 @@
 </section>
 
 <section class="doc-section">
-  <h2>Three VMs, three layers</h2>
-  <p>Legaia's runtime is driven by three independent bytecode VMs that talk to one shared actor model. Click each card to read the dedicated subsystem page.</p>
+  <h2>The four bytecode VMs</h2>
+  <p>Legaia's runtime is driven by four independent bytecode VMs that talk to one shared actor model. Click each card to read the dedicated subsystem page.</p>
 
   <div class="vm-grid">
     <a class="vm-card" href="subsystems/actor-vm.html">
@@ -112,11 +112,22 @@
         <dt>Where</dt>       <dd>SCUS_942.54 + town overlay</dd>
         <dt>Opcodes</dt>     <dd>71 + 61 sub-ops</dd>
         <dt>Operands</dt>    <dd>u16 stream</dd>
-        <dt>Status</dt>      <dd class="status-partial">Documented, port in progress</dd>
+        <dt>Status</dt>      <dd class="status-done">Fully ported</dd>
+      </dl>
+    </a>
+    <a class="vm-card" href="subsystems/motion-vm.html">
+      <div class="vm-card-num">VM 3</div>
+      <div class="vm-card-title">Motion VM</div>
+      <dl>
+        <dt>Driver</dt>      <dd><code>FUN_8003774C</code></dd>
+        <dt>Where</dt>       <dd>SCUS_942.54</dd>
+        <dt>Opcodes</dt>     <dd>6</dd>
+        <dt>Operands</dt>    <dd>byte stream</dd>
+        <dt>Status</dt>      <dd class="status-partial">Partially ported (4/6)</dd>
       </dl>
     </a>
     <a class="vm-card" href="subsystems/script-vm.html">
-      <div class="vm-card-num">VM 3</div>
+      <div class="vm-card-num">VM 4</div>
       <div class="vm-card-title">Field / event script VM</div>
       <dl>
         <dt>Driver</dt>      <dd><code>FUN_801DE840</code></dd>
@@ -128,5 +139,5 @@
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>.</p>
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>. The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths; the engine's <code>Camera</code> ticks it via <code>Camera::tick_script</code>.</p>
 </section>
