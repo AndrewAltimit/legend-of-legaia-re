@@ -184,7 +184,17 @@ Verified by analyzing a real mednafen memory-card save at
 | `+0x208` | 8 | CDNAME label of most-recently-visited scene (e.g. `town0b`) |
 | `+0x218` | 8 | CDNAME label of previous scene (e.g. `town01`) |
 | `+0x???` | 4 | Story flags (`_DAT_1F800394` scratchpad value) — offset not yet pinned |
-| `+0x???` | ~512 | Inventory slot array — offset not yet pinned |
+| `+0x???` | ~512 | Inventory slot array (`DAT_80085958`, 2-byte `(item_id, count)` entries) — offset not yet pinned |
+
+**Investigation status (§4.16).** The display header contains structured non-zero data beyond the
+four pinned fields above. The in-game money global (`_DAT_8008459C`) is displayed by
+`FUN_801DCF84` (called from the save-slot screen); its display path is `func_0x80034b78` (number
+formatter). The inventory in RAM lives at `DAT_80085958` as 2-byte `(item_id, count)` entries
+(confirmed by `FUN_80042310` decrement and `FUN_800421D4` increment); the serialisation path into
+the staging buffer (`DAT_801EF0C8`) has not been found in the available function dumps. Pinning
+both offsets requires either: (a) an advanced-game MCR save so non-zero values appear at known
+positions, or (b) tracing the full write chain for `_DAT_8008459C` and `DAT_80085958` through
+`FUN_801D9C14` (sub-screen `0x14`) and its callers.
 
 **Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each, name at record+0x000.
 Minimum 4 records observed: Vahn, Noa, Gala, Terra. Empty slots have all-zero bytes;

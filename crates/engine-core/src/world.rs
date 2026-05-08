@@ -2994,8 +2994,8 @@ mod tests {
             party_count: 1,
             ..World::default()
         };
-        // Threshold for level 2 in placeholder table is 100 XP.
-        world.apply_battle_xp(100);
+        // Retail table: 50 XP to reach level 2 (SCUS 0x8007123C entry[0]).
+        world.apply_battle_xp(50);
         let banner = world
             .current_level_up_banner
             .as_ref()
@@ -3016,7 +3016,7 @@ mod tests {
             party_count: 1,
             ..World::default()
         };
-        world.apply_battle_xp(100);
+        world.apply_battle_xp(50); // retail table: exactly L2 threshold
         assert!(world.current_level_up_banner.is_some());
         for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
             world.tick();
@@ -3033,7 +3033,7 @@ mod tests {
             party_count: 1,
             ..World::default()
         };
-        world.apply_battle_xp(50); // below threshold of 100
+        world.apply_battle_xp(49); // retail table: 49 < 50 (L2 threshold)
         assert!(world.current_level_up_banner.is_none());
     }
 }

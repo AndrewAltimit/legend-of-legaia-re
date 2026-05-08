@@ -16,9 +16,12 @@ XA-ADPCM audio from the `XA*.XA` files on disc. The engine drives it through gam
 reads the next batch of sectors, decodes a frame, blits it full-screen, and advances the audio
 position. When the stream ends, the mode chain transitions to `ConfigInit` (index 1).
 
-Both modes share `SceneMode::Cutscene` and see the same world state. The retail handler is
-overlay-resident (captured as `overlay_cutscene_dialogue.bin` and `overlay_cutscene_mapview.bin`
-in the Ghidra project; 256 and 128 functions respectively).
+Both modes share `SceneMode::Cutscene` and see the same world state. The retail STR/MDEC FMV
+handler lives in a dedicated overlay (game modes 26/27) that has not yet been captured. Two
+script-cutscene captures (`overlay_cutscene_dialogue.bin`, `overlay_cutscene_mapview.bin`) exist in
+the Ghidra project; these cover the actor-scripted dialogue sequences (op*/ed* CDNAME labels) and
+share the town field-VM overlay binary, not the FMV decoder. Capture pipeline:
+`ghidra/scripts/dump_str_fmv_overlay.py` (instructions inside the script).
 
 ## STR sector format
 
@@ -149,18 +152,20 @@ legaia-engine play-str cutscene.str
 
 ## Open items
 
-- **Cutscene overlay capture.** The retail `StrInit` / `StrMode` handlers are in a dedicated
-  overlay at `0x801C0000+`. Save state during any pre-rendered cutscene and run
-  `scripts/analyze-overlay.sh` to extract; then import into Ghidra as `overlay_cutscene`.
+- **STR/MDEC FMV overlay capture.** The retail `StrInit` / `StrMode` handlers are in a dedicated
+  overlay distinct from the dialogue overlay. Save state during a pre-rendered FMV video (opening
+  or ending movie) and run `scripts/analyze-overlay.sh --label str_fmv`; then run
+  `ghidra/scripts/dump_str_fmv_overlay.py` after import.
   Unblocks: XA channel mapping, PROT-to-STR entry table, `play --scene cutsceneN`.
-- **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the cutscene
-  overlay.
+- **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the STR/MDEC
+  overlay (not the dialogue overlay). Until reversed, WAV→cutscene assignment is manual.
 - **8-bit ADPCM.** `coding_info` bit detection is implemented; the decoder emits silence for
   8-bit groups. No 8-bit audio has been observed in the corpus so far.
-- **CDNAME scene label patterns.** In-engine cutscene scenes are prefixed with `op` (opening) or
-  `ed` (ending) and use the dialogue actor overlay; they are distinct from FMV (`MOV/MV*.STR`).
-  See `is_cutscene_label()` in `engine-core/src/scene.rs`. The mapping from `op*`/`ed*` CDNAME
-  labels to specific `MV*.STR` files is overlay-resident (blocked on cutscene overlay capture).
+- **CDNAME scene label patterns.** In-engine cutscene scenes prefixed with `op`/`ed` use the town
+  field-VM overlay (same binary as `overlay_cutscene_dialogue.bin`) via actor scripting; they are
+  distinct from FMV (`MOV/MV*.STR`). See `is_cutscene_label()` in `engine-core/src/scene.rs`. The
+  mapping from `op*`/`ed*` CDNAME labels to `MV*.STR` files is overlay-resident (blocked on
+  STR/MDEC overlay capture).
 
 ## Provenance
 
