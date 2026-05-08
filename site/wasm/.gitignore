@@ -1,0 +1,8 @@
+# Ignore wasm-pack noise but track the artifacts the site loads.
+*
+!.gitignore
+!legaia_web_viewer.js
+!legaia_web_viewer.d.ts
+!legaia_web_viewer_bg.wasm
+!legaia_web_viewer_bg.wasm.d.ts
+!package.json
