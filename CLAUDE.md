@@ -81,6 +81,7 @@ How the runtime engine works.
 | [`battle.md`](docs/subsystems/battle.md) | Battle scene loader; actor pointer table. |
 | [`battle-action.md`](docs/subsystems/battle-action.md) | Battle action state machine at `FUN_801E295C`. |
 | [`battle-formulas.md`](docs/subsystems/battle-formulas.md) | Damage / MP-cost / accuracy / RNG arithmetic kernels. Mirror lives at `engine-vm::battle_formulas`. |
+| [`world-map.md`](docs/subsystems/world-map.md) | World map controller (`FUN_801E76D4`); top-view debug toggle; camera scroll globals; developer menu renderer (`FUN_801EAD98`). |
 
 ### Tooling — [`docs/tooling/`](docs/tooling/)
 
