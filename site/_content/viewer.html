@@ -610,15 +610,15 @@
 
 <section class="doc-section">
   <h2>Run engine</h2>
-  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your extracted <code>PROT.DAT</code> and optionally <code>CDNAME.TXT</code> — the scene lookup by name (e.g. <code>town01</code>) requires the CDNAME map. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
-  <p class="hint">Extract <code>PROT.DAT</code> with <code>./target/release/disc-extract</code>, or use <code>./target/release/prot-extract</code> if you already have the ISO9660 files.</p>
+  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) — <code>PROT.DAT</code> and <code>CDNAME.TXT</code> are extracted automatically via ISO9660 walk. You can also drop a raw <code>PROT.DAT</code> with an optional <code>CDNAME.TXT</code>. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
+  <p class="hint">The same disc image you use in the asset browser above works here. For PROT.DAT-only access without a disc, also supply <code>CDNAME.TXT</code> (extracted by <code>./target/release/prot-extract</code>) to enable scene lookup by name.</p>
 
   <div class="engine-panel" id="engine-panel">
     <div class="engine-row">
-      <label for="engine-prot-file"><strong>PROT.DAT:</strong></label>
-      <input type="file" id="engine-prot-file" accept=".dat,.bin"
+      <label for="engine-prot-file"><strong>Disc image (.bin) or PROT.DAT:</strong></label>
+      <input type="file" id="engine-prot-file" accept=".bin,.dat"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
-      <label for="engine-cdname-file"><strong>CDNAME.TXT</strong> (optional):</label>
+      <label for="engine-cdname-file"><strong>CDNAME.TXT</strong> <span style="font-weight:normal">(optional — auto-extracted from disc)</span>:</label>
       <input type="file" id="engine-cdname-file" accept=".txt"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
       <button id="engine-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
@@ -693,9 +693,9 @@
   }
 
   loadBtn.addEventListener('click', async () => {
-    const protFile   = document.getElementById('engine-prot-file').files[0];
+    const discFile   = document.getElementById('engine-prot-file').files[0];
     const cdnameFile = document.getElementById('engine-cdname-file').files[0];
-    if (!protFile) { engStatus.textContent = 'Select a PROT.DAT file first.'; return; }
+    if (!discFile) { engStatus.textContent = 'Select a disc image or PROT.DAT file first.'; return; }
 
     stopAutoTick();
     engStatus.textContent = 'Loading WASM module…';
@@ -705,14 +705,24 @@
         wasmMod = await import('./wasm/legaia_web_viewer.js');
         await wasmMod.default();
       }
-      const protBytes  = new Uint8Array(await protFile.arrayBuffer());
+      const rawBytes   = new Uint8Array(await discFile.arrayBuffer());
       const cdnameText = cdnameFile ? await cdnameFile.text() : '';
 
+      // Detect disc image by size: full Mode2/2352 disc is ~600 MB; PROT.DAT is ~25 MB.
+      const isDisc = rawBytes.length > 50 * 1024 * 1024;
+      const parseLabel = isDisc ? 'Walking ISO9660 and parsing PROT.DAT…' : 'Parsing PROT.DAT…';
+      engStatus.textContent = parseLabel;
+
       runtime = new wasmMod.LegaiaRuntime();
-      engStatus.textContent = 'Parsing PROT.DAT…';
-      const count = runtime.load_disc(protBytes, cdnameText);
-      engStatus.textContent = `Loaded ${count} PROT entries.`
-        + (cdnameText ? '' : ' (no CDNAME — enter_scene requires a scene name from the CDNAME map)');
+      const count = runtime.load_disc(rawBytes, cdnameText);
+
+      let msg = isDisc
+        ? `Loaded ${count} PROT entries from disc image (CDNAME auto-extracted).`
+        : `Loaded ${count} PROT entries from PROT.DAT.`;
+      if (!isDisc && !cdnameText) {
+        msg += ' No CDNAME — scene lookup by name requires CDNAME.TXT.';
+      }
+      engStatus.textContent = msg;
       sceneRow.style.display = 'flex';
       tickRow.style.display  = 'flex';
       stateEl.style.display  = 'block';

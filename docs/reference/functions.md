@@ -173,6 +173,23 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `801E0088` | Effect-bundle per-frame walker (battle overlay). |
 | `801F17F8` | `summon.dat` / `readef.dat` streaming loader (battle overlay). |
 
+### Ra-Seru capture overlay (mc9)
+
+All 78 functions dumped as `overlay_magic_capture_<addr>.txt`. Loaded during the
+Ra-Seru capture mechanic (Gimard and other Ra-Serus). Shares actor struct layout
+with the regular battle overlay (`_DAT_8007BD24` context pointer, `+0x1DE`
+sub-state, `+0x07` action-type).
+
+| Address | Role |
+|---|---|
+| `801D0748` | Capture outer dispatcher (11 KB, 26 outgoing). Same sub-state structure as the battle outer dispatcher; sub-states `0x1E`/`0x32`/`0x6E`/`0xFE` update camera yaw. `overlay_magic_capture_801d0748.txt`. |
+| `801D388C` | Capture animation dispatcher (7.8 KB, 39 callers). Same interface as the battle overlay's `FUN_801D388C`. `overlay_magic_capture_801d388c.txt`. |
+| `801D5854` | Capture actor pose driver (6.5 KB, 47 callers). Same interface as the battle overlay's `FUN_801D5854`. `overlay_magic_capture_801d5854.txt`. |
+| `801D8DE8` | Hottest capture utility (3 KB, 75 callers). JT dispatcher; only callee is `FUN_801DB7B0` (the generic 4-byte JT helper). `overlay_magic_capture_801d8de8.txt`. |
+| `801E295C` | **Capture battle state machine** (16.4 KB, 19 outgoing). Outer switch on `_DAT_8007BD24[7]` cases `0xB`/`0xC` (capture-specific action types). Inner switch on `actor[+0x1DE]`. Distinct from `overlay_battle_action_801e295c.txt` despite sharing the same entry address. `overlay_magic_capture_801e295c.txt`. |
+| `801EC3E4` | Large capture helper (10 KB, 0 incoming — top-level from game-mode dispatch). Calls `FUN_801E91E8`. `overlay_magic_capture_801ec3e4.txt`. |
+| `801E9FD4` | Capture sub-system (8.5 KB, 1 incoming). Calls `FUN_801EC0DC`. `overlay_magic_capture_801e9fd4.txt`. |
+
 ## Script VMs
 
 | Address | Role |

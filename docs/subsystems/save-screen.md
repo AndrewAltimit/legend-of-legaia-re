@@ -95,27 +95,66 @@ absent table yields error SFX (`func_0x80035bd0(0x23)`).
 
 ## Sub-screen function pointer table
 
-`FUN_801DC6B4` case 2 dispatches via `0x801E4F40[DAT_801E46A4]`. Known entries:
+`FUN_801DC6B4` case 2 dispatches via `0x801E4F40[DAT_801E46A4]`. Full table
+read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 
-| ID | Address | Function |
+| ID | Function | Role |
 |---|---|---|
-| `0x1` | `0x801E4F44` | `FUN_801DAEF4` — slot selector |
-| `0x2` | `0x801E4F48` | save entry (from menu) |
-| `0x4` | `0x801E4F50` | post-save return path |
-| `0x19` | — | load-from-slot path |
-| `0x1B` | — | card-full / error screen |
-| `0x1E` | — | actual write sub-screen (story_flags + inventory write path — not yet dumped) |
+| `0x00` | `FUN_801DD12C` | (unknown) |
+| `0x01` | `FUN_801D6B20` | `FUN_801DAEF4` slot selector path |
+| `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
+| `0x03` | `FUN_801D6D38` | (unknown) |
+| `0x04` | `FUN_801DD1B8` | post-save return path |
+| `0x05` | `FUN_801D7C00` | (unknown) |
+| `0x06` | `FUN_801D7E50` | (unknown) |
+| `0x07` | `FUN_801D8734` | (unknown) |
+| `0x08` | `FUN_801DD26C` | (unknown) |
+| `0x09` | `FUN_801D7FF8` | (unknown) |
+| `0x0A` | `FUN_801D8308` | (unknown) |
+| `0x0B` | `FUN_801D8A58` | (unknown) |
+| `0x0C` | `FUN_801D8B90` | (unknown) |
+| `0x0D` | `FUN_801D8D94` | (unknown) |
+| `0x0E` | `FUN_801D8F10` | (unknown) |
+| `0x0F` | `FUN_801D9110` | (unknown) |
+| `0x10` | `FUN_801D9280` | (unknown) |
+| `0x11` | `FUN_801D9594` | (unknown) |
+| `0x12` | `FUN_801D98F0` | (unknown) |
+| `0x13` | `FUN_801D99F0` | (unknown) |
+| `0x14` | `FUN_801D9C14` | per-character record serialisation (0x414 bytes, `char_id` stride) |
+| `0x15` | `FUN_801DA2A0` | (unknown) |
+| `0x16` | `FUN_801DD310` | (unknown) |
+| `0x17` | `FUN_801DD330` | (unknown) |
+| `0x18` | `FUN_801DAE24` | (unknown) |
+| `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
+| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress — advances to `0x1E` on confirm |
+| `0x1B` | `FUN_801DB21C` | card-full / error screen |
+| `0x1C` | `FUN_801DB380` | (unknown) |
+| `0x1D` | `FUN_801DB7F4` | (unknown) |
+| `0x1E` | `FUN_801DBC5C` | write-step confirmation spinner — advances to `0x1F` on slot confirm |
+| `0x1F` | `FUN_801DBD94` | write-step quantity select / save serialisation |
+| `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
 
-The write sub-screen at ID `0x1E` is the entry point for locating the
-story-flags and inventory persistence path in the save format (§4.16 in the
-future-work tracker). The function address resolves to `0x801E4F40 + 0x78 =
-0x801E4FB8` (pointer table value at that slot — needs menu-overlay binary read
-to confirm).
+The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
+section (`0x85826B82` etc.) and are not function pointers.
+
+### Save data serialisation (`FUN_801D9C14`, sub-screen `0x14`)
+
+Copies the per-character save record (stride `0x414` bytes) to a staging buffer
+at `DAT_801EF0C8` using `char_id * 0x414 + 0x80084A9E` (character record base).
+8 bytes are copied first, then the full record in `do { ... } while (iVar16 < 8)`
+chunks. Calls `FUN_801CF650` (memory-card write primitive) as a setup step at
+`DAT_801e46ac == 0`. The exact offsets for `story_flags` and `inventory` within
+the save block — i.e., what follows the per-character records — are in
+`FUN_801DBD94` (sub-screen `0x1F`); see dump at
+`ghidra/scripts/funcs/overlay_menu_801dbd94.txt`.
 
 ## Relationship to `legaia_save`
 
 The memory-card write calls through `_DAT_8007B44C` (PSX LibC card handle set
 from `DAT_801C6EA0`). The in-engine LGSF format (`legaia_save::SaveFile` with
 `SaveExt`) is the clean-room counterpart. The exact offsets for `story_flags`
-and `inventory` within the retail save block require a dump of the ID `0x1E`
-sub-screen function; until then the LGSF format uses its own offset scheme.
+and `inventory` within the retail save block are in `FUN_801DBD94` (sub-screen
+`0x1F`); the dump at `ghidra/scripts/funcs/overlay_menu_801dbd94.txt` shows
+money (`_DAT_8008459C`), slot count, and save-block existence scan. A full trace
+of the global-state bytes (story flags, inventory) requires following
+`func_0x80042310` and the staging buffer beyond the per-character record.
