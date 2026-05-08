@@ -75,6 +75,22 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
   <p>The pipeline decompresses the gzipped save state, slices the <code>0x801C0000-0x801F0000</code> window (or <code>0x80200000</code> for extended overlays), re-imports it into Ghidra as <code>overlay.bin</code>, and emits a CSV of every <code>jal</code> to a known SCUS asset loader with the const-tracked <code>$a0</code> argument.</p>
   <p>Hex args = PROT indices; cross-reference <code>extracted/CDNAME.TXT</code> to identify which scene asset bundle the overlay loads. That's how the actor VM was found and how scene asset bundles get traced.</p>
 
+  <h3>Captured overlays</h3>
+  <table class="data-table">
+    <thead><tr><th>Overlay</th><th>Named program(s)</th><th>Key functions</th></tr></thead>
+    <tbody>
+      <tr><td>Town / field / dialog</td><td><code>overlay_dialog_typing.bin</code></td><td>Field/event VM (<code>FUN_801DE840</code>), MES renderer (<code>FUN_801ED710</code>), MAIN INIT (<code>FUN_801D6704</code>)</td></tr>
+      <tr><td>Field — battle-start transition</td><td><code>overlay_field_battle_intro.bin</code></td><td>Partial 0897 image; 13 functions unique to this capture including <code>FUN_801D081C</code>, <code>FUN_801D0370</code></td></tr>
+      <tr><td>Battle / battle-action</td><td><code>overlay_battle_action.bin</code></td><td>Per-actor SM (<code>FUN_801E295C</code>), battle main dispatcher (<code>FUN_801D0748</code>); all 78 functions dumped</td></tr>
+      <tr><td>Options / pause menus</td><td><code>overlay_menu.bin</code></td><td>Items / magic / equipment / status; all 129 functions dumped</td></tr>
+      <tr><td>Save / load screen</td><td><code>overlay_save_ui_select.bin</code> / <code>overlay_save_ui_saving.bin</code></td><td>Save SM (<code>FUN_801DC6B4</code>), render loop (<code>FUN_801DD35C</code>); top-20 dumped per program</td></tr>
+      <tr><td>Shop / merchant</td><td><code>overlay_shop_save.bin</code></td><td>Item buy / sell, gold ledger; 130 functions dumped</td></tr>
+      <tr><td>Level-up</td><td><code>overlay_magic_level_up.bin</code></td><td>XP / stat gain UI; 78 functions dumped</td></tr>
+      <tr><td>World map</td><td><code>overlay_world_map.bin</code> / <code>overlay_world_map_top.bin</code> / <code>overlay_world_map_walk.bin</code></td><td>Map controller (<code>FUN_801E76D4</code>), dev menu (<code>FUN_801EAD98</code>); top-20 dumped per program</td></tr>
+      <tr><td>Cutscene / dialogue</td><td><code>overlay_cutscene_dialogue.bin</code> / <code>overlay_cutscene_mapview.bin</code></td><td>XA driver + cutscene mode table</td></tr>
+    </tbody>
+  </table>
+
   <p class="hint">For preserving multiple overlay imports across runs (e.g. menu vs battle_action vs town), use <code>import-overlay-named.sh</code> instead of <code>analyze-overlay.sh</code> — the named version produces <code>overlay_&lt;label&gt;.bin</code> rather than overwriting <code>overlay.bin</code>.</p>
 
   <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/overlay-capture.md" target="_blank" rel="noopener">Full overlay capture reference →</a></p>

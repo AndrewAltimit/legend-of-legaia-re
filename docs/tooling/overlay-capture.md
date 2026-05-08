@@ -17,14 +17,14 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 | Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|
 | Title screen | ✓ (loaded at boot, in SCUS-range) | — (in SCUS address range) | Actor / sprite VM (`FUN_801D6628`) |
-| Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`) |
-| Field overlay — battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Same 0897 code as above; captured during battle-intro 3D camera spin (battle overlay not yet loaded) |
+| Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` (= walk) / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`); top-20 dumped per program |
+| Field overlay — battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (`FUN_801D081C`, `FUN_801D0370`, `FUN_801CFDA0`, `FUN_801D11D0`, and 9 more) |
 | Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
 | Options / config / all pause-menus (`0896`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650`); all 129 functions dumped |
-| Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped |
+| Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped; top-20 per program dumped; select and saving layouts are identical |
 | Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped |
 | Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
-| World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); 20 functions dumped |
+| World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement) |
 | Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | XA driver + cutscene mode table; 128 functions each |
 | Fishing / dev menu (`0971`) | ✓ partial | `overlay_0971_xxx_dat.bin` | Fishing minigame + dev/test menu strings |
 | Dance minigame / field reuse (`0978`) | ✓ partial | `overlay_0978_other_game.bin` | Disco King + field-loader stubs |
@@ -33,7 +33,6 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 ### Overlays still to capture
 
 1. **Mini-games** — Card Battle (Baka Game), Inova card-sort minigame, and the fishing minigame `0971` extended code. Each loads its own overlay slot; none has been fully dumped.
-2. **World map top/walk variants** — `overlay_world_map_top.bin` and `overlay_world_map_walk.bin` are imported but have no inventory CSV and no function dumps yet. Run `inventory_overlay.py` then a dump script targeting the top functions in each.
 
 ### Level-up overlay data section (resolved)
 
