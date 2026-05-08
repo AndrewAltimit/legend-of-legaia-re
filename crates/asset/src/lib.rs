@@ -33,6 +33,7 @@ pub mod stage_geom;
 pub mod tim_scan;
 pub mod tmd_scan;
 pub mod tmd_size_prefix;
+pub mod vab_multi_bank;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssetType {

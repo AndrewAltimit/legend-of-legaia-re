@@ -124,6 +124,23 @@ pub enum Class {
     /// scenes reserve N asset slots but only fill some, leaving the rest as
     /// dev-fill. Distinct from data: post-prefix bytes are scratch / leftover.
     PochiFiller,
+    /// Multi-bank VAB archive — `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
+    /// with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
+    /// cluster's multi-bank sound archive (206 VABp entries).
+    /// See [`crate::vab_multi_bank`].
+    VabMultiBank,
+    /// Monster / actor SPU sound bank — `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
+    /// All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).
+    /// Sourced from `h:\mpack\monster.snd` loaded by `FUN_8003E104` at battle start.
+    MonsterSoundBank,
+    /// File with >= 2 sectors (512 bytes) of leading zeros followed by a
+    /// high-entropy body (>= 7.0 bits/byte). Characteristic of cutscene / XA
+    /// audio files where the leading sector(s) are zeroed out on disc.
+    ZeroSectorHighEntropy,
+    /// Mid-entropy data blob with >= 18 % printable ASCII content.
+    /// Covers overlay string tables, text data dumps, and mixed game data
+    /// where the format is not yet identified but readable text is present.
+    OverlayDataBlob,
     /// High entropy (>= 7.5 bits/byte). Likely already-compressed or encrypted.
     UnknownHighEntropy,
     /// Low entropy (< 4 bits/byte). Tabular data, sparse vectors, padding.
@@ -160,6 +177,10 @@ impl Class {
             Class::MipsOverlay => "mips_overlay",
             Class::OverlayPtrTable => "overlay_ptr_table",
             Class::PochiFiller => "pochi_filler",
+            Class::VabMultiBank => "vab_multi_bank",
+            Class::MonsterSoundBank => "monster_sound_bank",
+            Class::ZeroSectorHighEntropy => "zero_sector_high_entropy",
+            Class::OverlayDataBlob => "overlay_data_blob",
             Class::UnknownHighEntropy => "unknown_high_entropy",
             Class::UnknownLowEntropy => "unknown_low_entropy",
             Class::UnknownOther => "unknown_other",
@@ -535,6 +556,57 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
+    // Multi-bank VAB archive — `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
+    // with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
+    // cluster (206 VABp entries). Runs after scene_vab_stream so the more
+    // common streaming wrapper claims its entries first.
+    if crate::vab_multi_bank::detect(buf).is_some() {
+        return mk(
+            Class::VabMultiBank,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Monster / actor SPU sound bank: `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
+    // All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).
+    if first_u32 == Some(2) && buf.len() >= 4 + 256 * 2 {
+        let all_high = (0..256usize).all(|i| {
+            let p = 4 + i * 2;
+            let v = u16::from_le_bytes([buf[p], buf[p + 1]]);
+            v >= 0x8000
+        });
+        if all_high {
+            return mk(
+                Class::MonsterSoundBank,
+                size,
+                head,
+                first_u32,
+                entropy_bits,
+                leading_zeros,
+                zero_fraction,
+            );
+        }
+    }
+
+    // Large zero-padded header (>= 2 sectors of zeros) with high-entropy body.
+    // Typical of cutscene/XA audio files where the leading sector(s) are zeroed.
+    if leading_zeros >= 512 && entropy_bits >= 7.0 {
+        return mk(
+            Class::ZeroSectorHighEntropy,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
     // Standalone TIM-pack heuristic (`byte[3]==0x01 && byte[2]<0x10`).
     if legaia_prot::timpack::is_tim_pack(buf) {
         return mk(
@@ -586,9 +658,9 @@ pub fn classify(buf: &[u8]) -> FileReport {
     }
 
     // Mostly-zeros placeholder. Run after structural detectors so a sparse
-    // stage-geometry / streaming entry isn't shadowed. The 0.95 threshold
+    // stage-geometry / streaming entry isn't shadowed. The 0.75 threshold
     // catches near-empty PROT slots without sweeping in real (sparse) tables.
-    if zero_fraction >= 0.95 {
+    if zero_fraction >= 0.75 {
         return mk(
             Class::MostlyZeros,
             size,
@@ -598,6 +670,28 @@ pub fn classify(buf: &[u8]) -> FileReport {
             leading_zeros,
             zero_fraction,
         );
+    }
+
+    // Mid-entropy data blob with significant printable ASCII content.
+    // Covers overlay string tables, text data dumps, and mixed game data where
+    // the format is not yet identified but readable text content is present.
+    if entropy_bits < 7.0 {
+        let visible: f32 = buf
+            .iter()
+            .filter(|&&b| (0x20..=0x7E).contains(&b) || matches!(b, 9 | 10 | 13))
+            .count() as f32
+            / size as f32;
+        if visible >= 0.18 {
+            return mk(
+                Class::OverlayDataBlob,
+                size,
+                head,
+                first_u32,
+                entropy_bits,
+                leading_zeros,
+                zero_fraction,
+            );
+        }
     }
 
     // Statistical fallback.
@@ -724,17 +818,17 @@ mod tests {
         }
         let r = classify(&buf);
         assert_eq!(r.class, Class::MostlyZeros);
-        assert!(r.zero_fraction >= 0.95);
+        assert!(r.zero_fraction >= 0.75);
     }
 
     #[test]
-    fn does_not_classify_75pct_zeros_as_mostly_zeros() {
-        // Sparse-but-real tables (75-95% zeros) must stay in low_entropy
-        // so they get reverse-engineered, not buried as placeholders.
+    fn does_not_classify_50pct_zeros_as_mostly_zeros() {
+        // Sparse-but-real tables (< 75% zeros) must stay below the
+        // mostly_zeros threshold so they get reverse-engineered.
         let mut buf = vec![0u8; 1024];
-        // 256 non-zero bytes scattered = 75% zeros.
-        for i in 0..256 {
-            buf[i * 4] = 0xAA;
+        // 512 non-zero bytes scattered = 50% zeros — below 75% threshold.
+        for i in 0..512 {
+            buf[i * 2] = 0xAA;
         }
         let r = classify(&buf);
         assert_ne!(r.class, Class::MostlyZeros);
@@ -794,16 +888,17 @@ mod tests {
 
     #[test]
     fn low_entropy_repetitive() {
-        // 4096-byte buffer at 90% zeros (below the 95% MostlyZeros gate)
+        // 4096-byte buffer at ~50% zeros (below the 75% MostlyZeros gate)
         // with a 4-symbol alphabet — low entropy but real content.
         let mut buf = vec![0u8; 4096];
-        for i in 0..400 {
-            buf[i * 10] = (i % 3 + 1) as u8;
+        // Alternate 0x00 / (1,2,3 cycling) every other byte → 50% zeros.
+        for i in 0..2048 {
+            buf[i * 2] = (i % 3 + 1) as u8;
         }
         let r = classify(&buf);
         assert!(r.entropy_bits < 4.0, "entropy was {}", r.entropy_bits);
         assert!(
-            r.zero_fraction < 0.95,
+            r.zero_fraction < 0.75,
             "zero_fraction was {}",
             r.zero_fraction
         );

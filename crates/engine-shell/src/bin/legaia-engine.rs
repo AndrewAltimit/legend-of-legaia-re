@@ -741,8 +741,8 @@ impl PlayWindowApp {
             let layout3 = self.font.layout_ascii(&line3);
             out.extend(text_draws_for(&layout3, (8, 44), white));
         }
-        // Shop overlay: rendered at the bottom of the screen when the menu
-        // runtime is in any shop or confirmation state.
+        // Shop / inn overlay: rendered at the bottom of the screen when the menu
+        // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {
             let label = self.menu_runtime.current_label();
             if let Some(shop) = &self.menu_runtime.shop_session {
@@ -782,7 +782,7 @@ impl PlayWindowApp {
                             .collect();
                         (label, rows, None)
                     }
-                    Some(MenuState::ShopConfirm) | Some(MenuState::InnConfirm) => {
+                    Some(MenuState::ShopConfirm) => {
                         let rows = vec![
                             ShopRow {
                                 label: "Yes",
@@ -802,8 +802,46 @@ impl PlayWindowApp {
                         shop_draws_for(&self.font, title, &rows, cursor, show_gold, (8, 140));
                     out.extend(shop_draws);
                 }
-            } else if self.menu_runtime.is_open() {
-                // Non-shop menu: show current mode label
+            } else if self.menu_runtime.inn_session.is_some() {
+                // Inn overlay: cost prompt with Yes / No cursor.
+                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
+                let cursor = self.menu_runtime.cursor() as usize;
+                let cost = self
+                    .menu_runtime
+                    .inn_session
+                    .as_ref()
+                    .map(|s| s.cost)
+                    .unwrap_or(0);
+                let gold = self.session.host.world.money;
+                match state {
+                    Some(MenuState::InnConfirm) => {
+                        let title = format!("INN  Rest for {}G?", cost);
+                        let rows = vec![
+                            ShopRow {
+                                label: "Yes",
+                                price: None,
+                            },
+                            ShopRow {
+                                label: "No",
+                                price: None,
+                            },
+                        ];
+                        let inn_draws =
+                            shop_draws_for(&self.font, &title, &rows, cursor, Some(gold), (8, 140));
+                        out.extend(inn_draws);
+                    }
+                    Some(MenuState::InnSleep) => {
+                        let layout = self.font.layout_ascii("Resting...");
+                        out.extend(text_draws_for(&layout, (8, 140), white));
+                    }
+                    _ => {
+                        let menu_label = format!("[{}]", label);
+                        let ml_layout = self.font.layout_ascii(&menu_label);
+                        out.extend(text_draws_for(&ml_layout, (8, 140), white));
+                    }
+                }
+            } else {
+                // Non-shop, non-inn menu: show current mode label.
                 let menu_label = format!("[{}]", label);
                 let ml_layout = self.font.layout_ascii(&menu_label);
                 out.extend(text_draws_for(&ml_layout, (8, 140), white));
