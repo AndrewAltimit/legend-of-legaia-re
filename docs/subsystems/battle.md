@@ -207,3 +207,59 @@ Typed catalogue of inventory items the battle / field menu consults. Each entry 
 `apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver — engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
 
 Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
+
+
+## Battle round lifecycle
+
+`BattleRound::begin(&mut world, &[Option<StatRecord>; 8], &EquipmentTable, &StatusModifiers)` resets every party AP gauge, recomputes per-slot `BattleStats` through `compute_battle_stats`, and writes the resolved attack / UDF / LDF back into `World::battle_attack` / `battle_defense_split` so the strike resolver picks them up. `BattleRound::end(&mut world)` ticks every actor's status, folds Burned / Poisoned tick damage into `BattleActor::hp`, and returns the count of actors that died from tick damage this round.
+
+The returned `BattleRound` carries per-slot `action_blocked` / `magic_blocked` arrays the action validator filters command input against (Asleep / Stunned / Petrified actors lose action; Silenced / Petrified actors lose Magic).
+
+Implementation: [`crates/engine-core::battle_round`](../../crates/engine-core/src/battle_round.rs).
+
+## Battle command runner
+
+Sits between the player-input layer and the action state machine. One `BattleRunner` per battle session; engines feed it raw player commands per turn and call `tick_action` to drive the per-frame action SM.
+
+`begin_round` delegates to `BattleRound::begin` for AP refresh + stat recompute, `push_command` / `push_chained_art` gate input against `ApGauge` and surface a typed `OutOfAp` error, `pop_command` / `pop_chained_art` refund the cost cleanly, `commit_turn` runs the queue through `resolve_action_queue` (Miracle / Super expansion) and stashes the resolved per-slot `ActionQueue`s. `end_round` drives `BattleRound::end` for tick-damage drainage.
+
+Per-slot buffers + chained-art lists let the player switch between party members mid-turn without losing state. The runner is the **input → queue** half of the battle pipeline; the SM tick itself runs through the existing `step_battle` loop.
+
+Implementation: [`crates/engine-core::battle_runner`](../../crates/engine-core/src/battle_runner.rs).
+
+## Battle HUD model
+
+Renderer-agnostic UI state for the in-battle screen. Holds per-slot HP / MP / AP / status-icon state plus a queue of damage popups and battle-event log lines. `engine-render::battle_hud_draws_for` turns one of these into a `Vec<TextDraw>` for the GPU pipeline; engines that render via a different path (web / terminal) read the same struct directly.
+
+The HUD is fed by `World` events:
+
+- `BattleEvent::ApplyArtStrike` → `push_damage` / `push_heal` (per-strike popup with a fade timer).
+- `StatusEvent::TickDamage` / `Cleared` → `sync_status` (replaces the slot's icon list from the `StatusEffectTracker`).
+- `BattleRound::begin` / `end` → `sync_slot` (refreshes HP / MP / AP per round).
+
+Damage popups carry a 60-frame default lifetime and an `alpha()` helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column).
+
+Implementation: [`crates/engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs).
+
+## SFX bank + scheduler
+
+Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay scripts emit) to per-cue `SfxEntry` descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward `ScheduledCue`-like requests through `SfxScheduler` which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.
+
+| Cue ID | Meaning |
+|---|---|
+| `0x1A` | Generic SFX trigger ("play sound" hit cue). |
+| `0x4C` | Hit-effect visual (no sound on its own). |
+| `0x80..=0xFE` | Reserved per-character / per-art SFX IDs. |
+
+`SfxBank::play_one_shot` delegates to the existing `VabBank::play_note` for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call.
+
+Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
+
+## Inventory item-use session
+
+State machine that drives the "open inventory → pick item → pick target → use it" flow shared between the field menu and the battle command menu. Engines own a single `InventoryUseSession` for the lifetime of the inventory screen; per-frame they push input events and drain `InventoryUseEvent`s.
+
+Filters items by `InventoryContext` (battle vs field — `usable_in_battle` / `usable_in_field` from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved `ItemOutcome` into the engine's world state via `World::use_item`.
+
+Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-core/src/inventory_use.rs).
+

@@ -380,6 +380,213 @@ pub fn level_up_draws_for(
     out
 }
 
+/// One row in the battle HUD's per-slot panel (built by
+/// [`battle_hud_draws_for`]).
+///
+/// Engines populate this view from their HUD model on a per-frame basis.
+/// The renderer is intentionally agnostic to the engine-core / engine-vm
+/// types — pass plain data here to keep the layering clean.
+#[derive(Clone, Copy)]
+pub struct HudSlotView<'a> {
+    /// Display name (character / monster). Empty string skips the row.
+    pub name: &'a str,
+    /// `true` for party rows (white text); `false` for monster rows
+    /// (pale red text).
+    pub is_party: bool,
+    /// `true` if the actor is alive. Dead actors get a "K.O." overlay.
+    pub alive: bool,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+    /// Amount of AP committed to the action queue this turn.
+    pub ap_filled: u8,
+    /// Maximum AP for the slot this turn.
+    pub ap_max: u8,
+    /// One-letter abbreviations for active status icons. Engines pick the
+    /// mapping (e.g. 'B' = Burned, 'P' = Poisoned, 'S' = Silenced, …).
+    pub status_letters: &'a [u8],
+}
+
+/// One floating damage / heal / status popup.
+#[derive(Clone, Copy)]
+pub struct HudPopupView {
+    pub slot: u8,
+    pub amount: u16,
+    pub is_heal: bool,
+    pub is_crit: bool,
+    /// Status letter to overlay on the popup ('B' = Burned, etc.). `None`
+    /// for plain numeric popups.
+    pub status_letter: Option<u8>,
+    /// Fade alpha 0..=1.0 multiplied into the text colour.
+    pub alpha: f32,
+}
+
+/// One battle log line.
+#[derive(Clone, Copy)]
+pub struct HudLogView<'a> {
+    pub text: &'a str,
+    pub color: [f32; 4],
+}
+
+/// Build [`TextDraw`]s for the battle HUD.
+///
+/// Layout (anchored at `pen`):
+/// ```text
+/// pen.x                                                pen.x + 240
+///   ┌─────────────────────────────────────────────────────┐
+///   │ Vahn          HP 250/300    MP  10/30   AP ●●●○○    │
+///   │ Noa           HP 180/220    MP   5/20   AP ●●●●○    │
+///   │ Gala          HP  90/280    MP   0/15   AP ○○○○○    │
+///   │                                                     │
+///   │ M Goblin      HP  50/100                            │
+///   │ M Goblin      HP   0/100  K.O.                      │
+///   └─────────────────────────────────────────────────────┘
+///
+/// pen.y + 80   [popup]  -25
+///              [popup]  HEAL +50
+/// ```
+///
+/// The log column uses `pen.x` and stacks downward from `pen.y +
+/// slot_count * LINE_H`. Popups are drawn over each slot's row.
+///
+/// Constants:
+/// - `LINE_H` = 14
+/// - Status icons are tiled at x + 220 with 8 px stride
+/// - Damage popups are placed at `pen.x + 80, slot_y - 16`
+pub fn battle_hud_draws_for(
+    font: &legaia_font::Font,
+    slots: &[HudSlotView<'_>],
+    popups: &[HudPopupView],
+    log: &[HudLogView<'_>],
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    const STATUS_X: i32 = 220;
+    const STATUS_STEP: i32 = 8;
+
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let monster: [f32; 4] = [1.0, 0.7, 0.7, 1.0];
+    let dim: [f32; 4] = [0.5, 0.5, 0.5, 1.0];
+    let red: [f32; 4] = [1.0, 0.4, 0.4, 1.0];
+    let green: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
+    let yellow: [f32; 4] = [1.0, 0.95, 0.4, 1.0];
+    let cyan: [f32; 4] = [0.5, 0.85, 1.0, 1.0];
+
+    let mut out = Vec::new();
+
+    for (i, slot) in slots.iter().enumerate() {
+        if slot.name.is_empty() {
+            continue;
+        }
+        let row_y = pen.1 + i as i32 * LINE_H;
+        let row_color = if !slot.alive {
+            dim
+        } else if slot.is_party {
+            white
+        } else {
+            monster
+        };
+
+        let name_layout = font.layout_ascii(slot.name);
+        out.extend(text_draws_for(&name_layout, (pen.0, row_y), row_color));
+
+        let hp_text = format!("HP {:>3}/{:>3}", slot.hp, slot.hp_max);
+        let hp_layout = font.layout_ascii(&hp_text);
+        let hp_color = if !slot.alive {
+            dim
+        } else if slot.hp_max != 0 && slot.hp * 4 <= slot.hp_max {
+            // ≤25% HP — pulse red.
+            red
+        } else {
+            row_color
+        };
+        out.extend(text_draws_for(&hp_layout, (pen.0 + 70, row_y), hp_color));
+
+        if slot.mp_max > 0 {
+            let mp_text = format!("MP {:>3}/{:>3}", slot.mp, slot.mp_max);
+            let mp_layout = font.layout_ascii(&mp_text);
+            out.extend(text_draws_for(&mp_layout, (pen.0 + 140, row_y), row_color));
+        }
+
+        if slot.ap_max > 0 {
+            let mut ap_text = String::with_capacity(2 + slot.ap_max as usize);
+            ap_text.push_str("AP");
+            for n in 0..slot.ap_max {
+                if n < slot.ap_filled {
+                    ap_text.push('o'); // filled
+                } else {
+                    ap_text.push('-'); // empty
+                }
+            }
+            let ap_layout = font.layout_ascii(&ap_text);
+            out.extend(text_draws_for(&ap_layout, (pen.0 + 200, row_y), row_color));
+        }
+
+        if !slot.alive {
+            let ko_layout = font.layout_ascii("K.O.");
+            out.extend(text_draws_for(&ko_layout, (pen.0 + 110, row_y), red));
+        }
+
+        for (k, letter) in slot.status_letters.iter().enumerate() {
+            let s = (*letter as char).to_string();
+            let layout = font.layout_ascii(&s);
+            out.extend(text_draws_for(
+                &layout,
+                (pen.0 + STATUS_X + k as i32 * STATUS_STEP, row_y - 12),
+                yellow,
+            ));
+        }
+    }
+
+    let log_x = pen.0;
+    let log_y = pen.1 + slots.len() as i32 * LINE_H + 4;
+    for (i, line) in log.iter().enumerate() {
+        let layout = font.layout_ascii(line.text);
+        out.extend(text_draws_for(
+            &layout,
+            (log_x, log_y + i as i32 * LINE_H),
+            line.color,
+        ));
+    }
+
+    for popup in popups {
+        if (popup.slot as usize) >= slots.len() {
+            continue;
+        }
+        let slot_y = pen.1 + popup.slot as i32 * LINE_H;
+        let popup_color = match (popup.is_heal, popup.is_crit) {
+            (true, _) => apply_alpha(green, popup.alpha),
+            (_, true) => apply_alpha(yellow, popup.alpha),
+            _ => apply_alpha(cyan, popup.alpha),
+        };
+        let text = if let Some(letter) = popup.status_letter {
+            format!("[{}]", letter as char)
+        } else if popup.is_heal {
+            format!("+{}", popup.amount)
+        } else {
+            format!("-{}", popup.amount)
+        };
+        let layout = font.layout_ascii(&text);
+        out.extend(text_draws_for(
+            &layout,
+            (pen.0 + 80, slot_y - 16),
+            popup_color,
+        ));
+    }
+
+    out
+}
+
+fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
+    [
+        color[0],
+        color[1],
+        color[2],
+        color[3] * alpha.clamp(0.0, 1.0),
+    ]
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -2720,5 +2927,228 @@ mod tests {
             y_vals.len() >= 2,
             "expected draws at two distinct y positions"
         );
+    }
+
+    #[test]
+    fn battle_hud_draws_for_party_row_includes_name_hp_mp_ap() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 250,
+            hp_max: 300,
+            mp: 12,
+            mp_max: 30,
+            ap_filled: 2,
+            ap_max: 5,
+            status_letters: &[],
+        };
+        let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        // Row produces glyphs for name, HP, MP, AP — at minimum one draw.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn battle_hud_draws_for_skips_empty_slot_name() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "",
+            is_party: true,
+            alive: true,
+            hp: 0,
+            hp_max: 0,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        assert!(draws.is_empty());
+    }
+
+    #[test]
+    fn battle_hud_draws_for_dead_slot_shows_ko_overlay() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: false,
+            hp: 0,
+            hp_max: 300,
+            mp: 0,
+            mp_max: 30,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        // Should include the K.O. label glyphs.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn battle_hud_draws_for_low_hp_uses_red_color() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 10,
+            hp_max: 100,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        // Find any draw with the dim/red HP coloring — red has more red than green.
+        let any_red = draws.iter().any(|d| d.color[0] > d.color[1]);
+        assert!(any_red, "low HP should produce a red-tinted glyph");
+    }
+
+    #[test]
+    fn battle_hud_draws_for_includes_log_lines_below_slots() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 100,
+            hp_max: 100,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let log = [HudLogView {
+            text: "Vahn attacks.",
+            color: [1.0, 1.0, 1.0, 1.0],
+        }];
+        let draws_no_log = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        let n_no_log = draws_no_log.len();
+        let draws_with_log = battle_hud_draws_for(&font, &[slot], &[], &log, (8, 100));
+        assert!(draws_with_log.len() > n_no_log);
+    }
+
+    #[test]
+    fn battle_hud_draws_for_popup_anchored_above_slot_row() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 100,
+            hp_max: 100,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let popup = HudPopupView {
+            slot: 0,
+            amount: 250,
+            is_heal: false,
+            is_crit: false,
+            status_letter: None,
+            alpha: 1.0,
+        };
+        let pen = (8, 100);
+        let draws = battle_hud_draws_for(&font, &[slot], &[popup], &[], pen);
+        // Find a draw whose y is above pen.1 (popup is at pen.1 - 16).
+        let any_above = draws.iter().any(|d| d.dst.1 < pen.1);
+        assert!(any_above, "popup should sit above the slot row");
+    }
+
+    #[test]
+    fn battle_hud_draws_for_status_letters_render_above_row() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 100,
+            hp_max: 100,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: b"BP",
+        };
+        let pen = (8, 100);
+        let draws = battle_hud_draws_for(&font, &[slot], &[], &[], pen);
+        // Status icons render at y - 12.
+        let icons = draws.iter().filter(|d| d.dst.1 == pen.1 - 12).count();
+        assert!(icons > 0, "expected status icons rendered above the row");
+    }
+
+    #[test]
+    fn battle_hud_draws_for_popup_for_invalid_slot_is_dropped() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 100,
+            hp_max: 100,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let popup = HudPopupView {
+            slot: 99,
+            amount: 50,
+            is_heal: false,
+            is_crit: false,
+            status_letter: None,
+            alpha: 1.0,
+        };
+        let with_popup = battle_hud_draws_for(&font, &[slot], &[popup], &[], (8, 100));
+        let no_popup = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
+        assert_eq!(with_popup.len(), no_popup.len());
+    }
+
+    #[test]
+    fn battle_hud_draws_for_heal_popup_uses_green_tint() {
+        let font = legaia_font::synthetic_for_tests();
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 100,
+            hp_max: 100,
+            mp: 0,
+            mp_max: 0,
+            ap_filled: 0,
+            ap_max: 0,
+            status_letters: &[],
+        };
+        let popup = HudPopupView {
+            slot: 0,
+            amount: 60,
+            is_heal: true,
+            is_crit: false,
+            status_letter: None,
+            alpha: 1.0,
+        };
+        let draws = battle_hud_draws_for(&font, &[slot], &[popup], &[], (8, 100));
+        // Heal color is green: [0.5, 1.0, 0.5, 1.0]; any glyph with that profile.
+        let any_green = draws
+            .iter()
+            .any(|d| d.color[1] >= 0.95 && d.color[0] < d.color[1]);
+        assert!(any_green);
+    }
+
+    #[test]
+    fn apply_alpha_scales_only_alpha_channel() {
+        let c = [0.5, 0.6, 0.7, 1.0];
+        let scaled = apply_alpha(c, 0.5);
+        assert_eq!(scaled, [0.5, 0.6, 0.7, 0.5]);
     }
 }

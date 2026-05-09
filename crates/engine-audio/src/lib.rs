@@ -23,12 +23,14 @@ use anyhow::{Context, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 pub mod sequencer;
+pub mod sfx;
 pub mod spu;
 pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
 
 pub use sequencer::Sequencer;
+pub use sfx::{PendingCue, SfxBank, SfxEntry, SfxFireBatch, SfxScheduler};
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};

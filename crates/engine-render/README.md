@@ -57,10 +57,34 @@ live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu
 math, but the module is the single citation point for retail-correct
 fixed-point arithmetic when re-targeting captured GTE traces.
 
+## GTE Phase 6 — register-transfer + memory ops
+
+Beyond the cop2 instruction set the [`gte`](src/gte.rs) module now ships
+the four MIPS register-transfer ops (`MFC2` / `MTC2` / `CFC2` / `CTC2`)
+and the two memory ops (`LWC2` / `SWC2`) so engines can replay a captured
+GTE trace without re-deriving the cop2 register layout. `read_data` /
+`write_data` map the 32 cop2 data registers (V0..V2 packed pairs, RGBC,
+OTZ, IR0..IR3, SXY-FIFO push slot `SXYP`, SZ-FIFO entries, RGB-FIFO
+entries, MAC0..MAC3, packed `IRGB` / `ORGB`, `LZCS` / `LZCR`) to typed
+register fields; `read_ctrl` / `write_ctrl` handle the 32 control
+registers. LWC2 / SWC2 thread through a `Cop2Mem` trait — `VecMem`
+backs replay against captured RAM snapshots; `NullMem` is the default
+for tests that don't exercise memory.
+
+## Battle HUD pipeline
+
+`battle_hud_draws_for(font, slots, popups, log, pen)` produces a
+`Vec<TextDraw>` for the in-battle HUD. The view types `HudSlotView` /
+`HudPopupView` / `HudLogView` keep the renderer agnostic to engine-core /
+engine-vm types (matches the existing `ShopRow` / `level_up_draws_for`
+pattern). HP rows pulse red when ≤25%; status icons render at row_y - 12
+with 8 px stride; popups sit at slot_y - 16 (heal = green, crit =
+yellow, plain damage = cyan); fade alpha multiplies into the text
+colour's alpha channel.
+
 ## Future phases
 
-Bit-exact GTE emulation (re-using the `gte` module's accumulator shape),
-batched draws, and reverse-engineered TSB / CBA per-mode descriptor
+Batched draws and reverse-engineered TSB / CBA per-mode descriptor
 overrides are deferred.
 
 ## See also
