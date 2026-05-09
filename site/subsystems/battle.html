@@ -334,6 +334,51 @@ Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
   <p>The session filters items by <code>InventoryContext</code> (battle vs field &mdash; <code>usable_in_battle</code> / <code>usable_in_field</code> from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved <code>ItemOutcome</code> into the engine's world state via <code>World::use_item</code>. Implementation: <code>crates/engine-core/src/inventory_use.rs</code>.</p>
 </section>
 
+<section class="doc-section" id="battle-session">
+  <h2>Battle session orchestrator</h2>
+  <p><code>BattleSession</code> composes the runner, round, HUD, and status tracker into a single phase-driven SM. Engines drive a battle frame as <code>session.tick(world, input)</code>; the session forwards admissible inputs to the runner, drains world events into the HUD, and runs the post-round bookkeeping (status tick, death check, wipe detection).</p>
+  <pre class="code-block">Idle &rarr; RoundIntro &rarr; CommandInput &rarr; Resolve
+                                            &darr;
+                                       RoundOutro &rarr; (Victory|Defeat|Escaped) terminal
+                                            |
+                                            &rarr; loop back to RoundIntro</pre>
+  <ul>
+    <li><strong>RoundIntro</strong> &mdash; encounter banner; auto-advances after <code>intro_frames</code> (default 60) or on Cross.</li>
+    <li><strong>CommandInput</strong> &mdash; D-pad queues <code>Command</code> bytes on the active party slot's buffer; Square presses Spirit; Triangle cycles slots; Start commits.</li>
+    <li><strong>Resolve</strong> &mdash; runner is <code>Committed</code>; the action SM consumes the resolved queue. The session drains <code>World::pending_battle_events</code> into HUD popups + log + emitted <code>SessionEvent</code>s.</li>
+    <li><strong>RoundOutro</strong> &mdash; runs <code>BattleRound::end</code> for tick damage, re-syncs HUD, checks party / monster wipe and routes to a terminal phase or loops to RoundIntro.</li>
+  </ul>
+  <p>The orchestrator is renderer-agnostic. Engines render <code>session.hud</code> via <code>engine-render::battle_hud_draws_for</code> &mdash; the HUD's <code>slot_views</code> / <code>popup_views</code> / <code>log_views</code> helpers produce plain-data rows that engines feed into the renderer's <code>HudSlotView::from_plain</code> constructor.</p>
+  <p>Implementation: <code>crates/engine-core/src/battle_session.rs</code>. Smoke-tested via the new <code>legaia-engine battle</code> subcommand.</p>
+</section>
+
+<section class="doc-section" id="spells">
+  <h2>Spell catalog &amp; cast resolver</h2>
+  <p>Mirrors the shape of the existing item catalog: typed <code>SpellDef</code> entries keyed by spell id, plus a pure <code>cast_spell(def, target_slot, &amp;SpellSnapshot) -&gt; SpellOutcome</code> resolver. The catalog's <code>vanilla()</code> constructor pre-populates ~17 entries covering the canonical retail families:</p>
+  <ul>
+    <li><strong>Healing</strong> &mdash; Heal (60), Heal All (60 each), Mega Heal (200), Refresh (CureAll), Vital (Revive 50%).</li>
+    <li><strong>Offensive elemental</strong> &mdash; Flame, Burning Heat, Aqua, Thunder Bolt, Wind, Ice, Crash. Damage formula: <code>caster_mag * base_power / 8 - target_mdef</code>, multiplied 1.5x against an element the target's <code>ElementMask</code> declares as a weakness, floor-clamped at 1.</li>
+    <li><strong>Buff / debuff</strong> &mdash; Power Up / Defense Up / Speed Up apply a <code>Buff</code> outcome with positive magnitude; Power Down emits a negative-magnitude debuff. Engines fold these into per-actor stat overlays for <code>turns</code> turns.</li>
+    <li><strong>Capture &amp; escape</strong> &mdash; Reseal returns a <code>CaptureRoll</code> outcome (engines roll the actual capture against monster HP) and Warp returns <code>Escape</code>.</li>
+  </ul>
+  <p>The resolver's failure modes are typed: <code>NotEnoughMp</code> when the gauge can't cover the cost, <code>DeadTarget</code> when an offensive spell hits a corpse, <code>NoChange</code> when a heal targets full HP or revive targets an alive actor.</p>
+  <p>Implementation: <code>crates/engine-core/src/spells.rs</code>. <code>SpellCatalog::mp_cost</code> + <code>is_capture</code> mirror the existing <code>BattleActionHost</code> hooks so engines can install the catalog as the canonical source.</p>
+</section>
+
+<section class="doc-section" id="equip-session">
+  <h2>Equipment session</h2>
+  <p>State machine for the field menu's Equip screen and the shop-buy-then-equip flow. Drives the player from "browse character &rarr; pick slot &rarr; pick item &rarr; confirm swap" to a final <code>EquipOutcome</code>; on commit the session writes the new equip id into the character's <code>StatRecord</code> and re-runs <code>compute_battle_stats</code> so the world's resolved attack / UDF / LDF stays in sync.</p>
+  <pre class="code-block">SlotPicker(cursor) &rarr; ItemPicker(slot, cursor) &rarr; Confirm(slot, item, Yes/No)
+                                                         |
+                                                         &rarr; Done(Committed | Cancelled)</pre>
+  <ul>
+    <li><strong>SlotPicker</strong> &mdash; Up/Down cycles the 8 equipment slots; Cross opens the item picker; Circle exits with <code>Cancelled</code>.</li>
+    <li><strong>ItemPicker</strong> &mdash; filtered to items targeting the active slot; engines that wire real per-item slot data from disc override <code>items_for_slot</code>. Cursor moves emit <code>CursorMoved { state: ItemPicker, &hellip; }</code>; Cross enters Confirm; Circle bounces back.</li>
+    <li><strong>Confirm</strong> &mdash; Yes/No prompt with a stat preview (<code>preview_stats</code> reflects what the post-swap stats would be). Cross-Yes commits; Cross-No or Circle returns to ItemPicker.</li>
+  </ul>
+  <p>Commit is atomic: the new item id is written, the old item id (if any) is restored to inventory, and <code>compute_battle_stats</code> recomputes the resolved row through the equipment + active-status + status-modifiers pipeline. Implementation: <code>crates/engine-core/src/equip_session.rs</code>; smoke-tested via <code>legaia-engine equip</code>.</p>
+</section>
+
 </main>
 </div>
 <script src="../js/layout.js"></script>

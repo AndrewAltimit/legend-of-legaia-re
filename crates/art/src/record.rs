@@ -16,8 +16,9 @@ use crate::power::PowerByte;
 use crate::queue::{ActionConstant, Command};
 
 /// Status effect an art can apply to the target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum EnemyEffect {
+    #[default]
     None,
     Burned,
     Shocked,

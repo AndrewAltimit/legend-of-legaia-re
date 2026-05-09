@@ -20,6 +20,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 pub mod gte;
+pub mod gte_trace;
 pub mod window;
 
 pub use glam;
@@ -427,6 +428,43 @@ pub struct HudPopupView {
 pub struct HudLogView<'a> {
     pub text: &'a str,
     pub color: [f32; 4],
+}
+
+impl<'a> HudSlotView<'a> {
+    /// Build a slot view from a plain-data row. The argument shape mirrors
+    /// `legaia_engine_core::battle_hud::SlotView`; engines drive this from
+    /// `BattleHud::slot_views()` without re-implementing the field copy.
+    ///
+    /// `name` and `status_letters` borrow from the caller; ownership stays
+    /// in the engine-core view buffer.
+    pub fn from_plain(meta: HudSlotMeta, name: &'a str, status_letters: &'a [u8]) -> Self {
+        Self {
+            name,
+            is_party: meta.is_party,
+            alive: meta.alive,
+            hp: meta.hp,
+            hp_max: meta.hp_max,
+            mp: meta.mp,
+            mp_max: meta.mp_max,
+            ap_filled: meta.ap_filled,
+            ap_max: meta.ap_max,
+            status_letters,
+        }
+    }
+}
+
+/// Numeric fields of [`HudSlotView`] grouped into a payload struct so the
+/// public constructor stays under clippy's argument-count threshold.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HudSlotMeta {
+    pub is_party: bool,
+    pub alive: bool,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+    pub ap_filled: u8,
+    pub ap_max: u8,
 }
 
 /// Build [`TextDraw`]s for the battle HUD.
