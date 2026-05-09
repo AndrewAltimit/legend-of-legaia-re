@@ -451,6 +451,12 @@ pub struct World {
     /// catalog set by [`World::set_item_catalog`]); empty by default so
     /// the field VM doesn't trigger item effects in non-battle scenes.
     pub item_catalog: crate::items::ItemCatalog,
+
+    /// Per-actor character max MP. The retail `BattleActor` holds only
+    /// the running `mp` value (not the cap); the cap lives on the
+    /// character record at `+0x140`. Engines populate this from the
+    /// character record at battle init.
+    pub character_max_mp: Vec<u16>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -550,6 +556,7 @@ impl World {
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
+            character_max_mp: Vec::new(),
         }
     }
 
@@ -633,6 +640,90 @@ impl World {
     /// boot time (typically from the vanilla catalog).
     pub fn set_item_catalog(&mut self, catalog: crate::items::ItemCatalog) {
         self.item_catalog = catalog;
+    }
+
+    /// Use an item from the catalog against a target slot. Wraps the
+    /// `items::apply_effect` resolution and folds the outcome back into
+    /// world state (HP/MP deltas, status cure, revive HP). Returns the
+    /// resolved [`crate::items::ItemOutcome`] so the engine can drive
+    /// dialog / SFX / visual cues.
+    ///
+    /// Returns [`crate::items::ItemOutcome::NoEffect`] when:
+    ///   - the item id is not in the catalog,
+    ///   - or the target slot is out of range.
+    ///
+    /// HP / MP changes are clamped to the actor's max values. Cure /
+    /// CureAll outcomes also clear the corresponding entries from the
+    /// `StatusEffectTracker`.
+    pub fn use_item(&mut self, item_id: u8, target_slot: u8) -> crate::items::ItemOutcome {
+        let entry = match self.item_catalog.get(item_id) {
+            Some(e) => *e,
+            None => return crate::items::ItemOutcome::NoEffect,
+        };
+        let idx = target_slot as usize;
+        // BattleActor holds `mp` but not `max_mp`; engines that wire the
+        // character record into the actor populate it via a sibling field.
+        // For the snapshot we use the character_max_mp accessor (defaults
+        // to `mp` itself when not separately tracked, which gives a
+        // conservative "MP already capped" reading).
+        let snapshot = match self.actors.get(idx) {
+            Some(a) => crate::items::TargetSnapshot {
+                hp: a.battle.hp,
+                hp_max: a.battle.max_hp,
+                mp: a.battle.mp,
+                mp_max: self
+                    .character_max_mp
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(a.battle.mp),
+                is_dead: a.battle.hp == 0 && a.battle.max_hp > 0,
+            },
+            None => return crate::items::ItemOutcome::NoEffect,
+        };
+        let outcome = crate::items::apply_effect(entry.effect, &snapshot);
+        match outcome {
+            crate::items::ItemOutcome::HealedHp { amount } => {
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.hp = a.battle.hp.saturating_add(amount).min(a.battle.max_hp);
+                }
+            }
+            crate::items::ItemOutcome::HealedMp { amount } => {
+                if let Some(a) = self.actors.get_mut(idx) {
+                    let cap = self.character_max_mp.get(idx).copied().unwrap_or(u16::MAX);
+                    a.battle.mp = a.battle.mp.saturating_add(amount).min(cap);
+                }
+            }
+            crate::items::ItemOutcome::Cured { kind } => {
+                self.status_effects.cure(target_slot, kind);
+            }
+            crate::items::ItemOutcome::CuredAll => {
+                self.status_effects.cure_all(target_slot);
+            }
+            crate::items::ItemOutcome::Revived { hp_after } => {
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.hp = hp_after.min(a.battle.max_hp);
+                }
+            }
+            crate::items::ItemOutcome::SpiritGained { amount } if idx < self.ap_gauges.len() => {
+                // Refund AP into the active actor's gauge if it's a party slot.
+                self.ap_gauges[idx].refund(amount);
+            }
+            _ => {}
+        }
+        outcome
+    }
+
+    /// Set per-slot character max MP (mirrors `char_record[+0x140]`
+    /// from the save record). Engines call this once per scene init —
+    /// usually from `set_character_record_for_slot`. Unset slots default
+    /// to `0`, which makes [`Self::use_item`] treat MP healing as a
+    /// no-op for that slot.
+    pub fn set_character_max_mp(&mut self, slot: u8, mp_max: u16) {
+        let i = slot as usize;
+        if i >= self.character_max_mp.len() {
+            self.character_max_mp.resize(i + 1, 0);
+        }
+        self.character_max_mp[i] = mp_max;
     }
 
     /// Reset every party-member's AP gauge for a new turn. Refills to
@@ -3381,6 +3472,82 @@ mod tests {
         let r = world.fold_battle_event(&BattleEvent::CameraBounds);
         assert_eq!(r, None);
         assert_eq!(world.actors[0].battle.hp, 100);
+    }
+
+    #[test]
+    fn use_item_heals_hp_clamped_to_max() {
+        let mut world = World::new();
+        world.party_count = 1;
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 50;
+        world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+        // Item id 1 is the small heal in the vanilla catalog.
+        let outcome = world.use_item(1, 0);
+        assert!(matches!(
+            outcome,
+            crate::items::ItemOutcome::HealedHp { .. }
+        ));
+        // HP raised but clamped at max.
+        assert!(world.actors[0].battle.hp > 50);
+        assert!(world.actors[0].battle.hp <= 200);
+    }
+
+    #[test]
+    fn use_item_heal_all_fills_to_max() {
+        let mut world = World::new();
+        world.party_count = 1;
+        world.actors[0].battle.max_hp = 300;
+        world.actors[0].battle.hp = 100;
+        world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+        // Find the HealAll entry (id 4 in the vanilla catalog — Healing Globe).
+        let outcome = world.use_item(4, 0);
+        assert!(matches!(
+            outcome,
+            crate::items::ItemOutcome::HealedHp { .. }
+        ));
+        assert_eq!(world.actors[0].battle.hp, 300);
+    }
+
+    #[test]
+    fn use_item_unknown_id_returns_no_effect() {
+        let mut world = World::new();
+        world.party_count = 1;
+        world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+        let outcome = world.use_item(99, 0);
+        assert!(matches!(outcome, crate::items::ItemOutcome::NoEffect));
+    }
+
+    #[test]
+    fn use_item_revive_writes_hp_after() {
+        let mut world = World::new();
+        world.party_count = 1;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.hp = 0; // dead
+        world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+        // Resurrection Leaf is id 0x0C (50% revive).
+        let outcome = world.use_item(0x0C, 0);
+        assert!(matches!(outcome, crate::items::ItemOutcome::Revived { .. }));
+        // 50% of 400 = 200.
+        assert_eq!(world.actors[0].battle.hp, 200);
+    }
+
+    #[test]
+    fn use_item_cure_clears_status() {
+        use legaia_art::record::EnemyEffect;
+        let mut world = World::new();
+        world.party_count = 1;
+        world.actors[0].battle.max_hp = 100;
+        world.actors[0].battle.hp = 50;
+        // Apply a Burned status, then cure it via CureAll.
+        world
+            .status_effects
+            .apply_from_enemy_effect(0, EnemyEffect::Burned);
+        assert!(world.status_effects.is_afflicted(0));
+        world.set_item_catalog(crate::items::ItemCatalog::vanilla());
+        // Antidote Flower is id 0x09 (CureAll).
+        let outcome = world.use_item(0x09, 0);
+        assert!(matches!(outcome, crate::items::ItemOutcome::CuredAll));
+        assert!(!world.status_effects.is_afflicted(0));
     }
 
     #[test]

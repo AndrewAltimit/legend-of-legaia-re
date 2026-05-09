@@ -8,6 +8,7 @@
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod battle_events;
+pub mod battle_round;
 pub mod battle_stats;
 pub mod camera;
 pub mod dialog;

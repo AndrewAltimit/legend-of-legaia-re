@@ -606,6 +606,78 @@ pub struct Gte {
     /// RFC / GFC / BFC — far-color (q3.12). Distance-fade target colour
     /// blended by DPCS / DCPL / DPCT.
     pub far_color: GteVec3,
+
+    /// Accumulated cop2 cycle count since `reset_cycles` (or
+    /// construction). Each instruction adds its [`CopOp::cycles`] entry.
+    /// Engines that pace MIPS execution against cop2 stalls read this
+    /// after each batch of ops.
+    pub cycles: u64,
+}
+
+/// PSX cop2 instruction set — symbolic identifiers used by the cycle
+/// counter and any disassembly tooling. Matches the public hardware
+/// instruction list (Nocash PSX spec).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopOp {
+    Rtps,
+    Nclip,
+    Op,
+    Dpcs,
+    Intpl,
+    Mvmva,
+    Ncds,
+    Cdp,
+    Ncdt,
+    Nccs,
+    Cc,
+    Ncs,
+    Nct,
+    Sqr,
+    Dcpl,
+    Dpct,
+    Avsz3,
+    Avsz4,
+    Rtpt,
+    Gpf,
+    Gpl,
+    Ncct,
+}
+
+impl CopOp {
+    /// Cycle count consumed by this cop2 operation on the retail GTE
+    /// (Nocash PSX hardware reference). Engines that pace MIPS execution
+    /// against cop2 stalls accumulate these per emitted op.
+    ///
+    /// These are the un-pipelined cycle counts — actual pipeline overlap
+    /// with neighbouring MIPS instructions can hide some of the latency,
+    /// but the worst-case ceiling is what callers usually need for budget
+    /// math.
+    pub const fn cycles(self) -> u32 {
+        match self {
+            CopOp::Rtps => 15,
+            CopOp::Nclip => 8,
+            CopOp::Op => 6,
+            CopOp::Dpcs => 8,
+            CopOp::Intpl => 8,
+            CopOp::Mvmva => 8,
+            CopOp::Ncds => 19,
+            CopOp::Cdp => 13,
+            CopOp::Ncdt => 44,
+            CopOp::Nccs => 17,
+            CopOp::Cc => 11,
+            CopOp::Ncs => 14,
+            CopOp::Nct => 30,
+            CopOp::Sqr => 5,
+            CopOp::Dcpl => 8,
+            CopOp::Dpct => 17,
+            CopOp::Avsz3 => 5,
+            CopOp::Avsz4 => 6,
+            CopOp::Rtpt => 23,
+            CopOp::Gpf => 5,
+            CopOp::Gpl => 5,
+            CopOp::Ncct => 39,
+        }
+    }
 }
 
 /// FLAG-register saturation bits the GTE sets after each instruction.
@@ -690,7 +762,19 @@ impl Gte {
             light_color: GteMat3::IDENTITY,
             back_color: GteVec3::default(),
             far_color: GteVec3::default(),
+            cycles: 0,
         }
+    }
+
+    /// Reset the cycle accumulator. Engines pacing MIPS execution against
+    /// cop2 stalls call this at the start of each frame / batch.
+    pub fn reset_cycles(&mut self) {
+        self.cycles = 0;
+    }
+
+    /// Bump the cycle accumulator by `op`'s cycle count.
+    pub fn charge(&mut self, op: CopOp) {
+        self.cycles = self.cycles.saturating_add(op.cycles() as u64);
     }
 
     /// Mirror of [`Camera::for_viewport`] — set up the projection matrices
@@ -705,6 +789,13 @@ impl Gte {
     /// to mirror the hardware's per-instruction FLAG semantics.
     pub fn clear_flag(&mut self) {
         self.flag = 0;
+    }
+
+    /// Start of every cop2 op: clear FLAG and bump the cycle accumulator.
+    /// Internal helper — every public instruction calls this first.
+    fn begin_op(&mut self, op: CopOp) {
+        self.clear_flag();
+        self.charge(op);
     }
 
     /// Saturate `v` to i16 and update the IR-saturation FLAG bit.
@@ -757,7 +848,7 @@ impl Gte {
     /// vector and IR1/IR2/IR3 to its saturated short form. Returns the
     /// projected ScreenXY.
     pub fn rtps(&mut self) -> ScreenXY {
-        self.clear_flag();
+        self.begin_op(CopOp::Rtps);
         self.rtps_inner(self.v[0])
     }
 
@@ -765,7 +856,7 @@ impl Gte {
     /// V0, V1, V2 in order. The SXY FIFO ends up with the three projected
     /// vertices in oldest-first order (SXY0 = V0's projection, SXY2 = V2's).
     pub fn rtpt(&mut self) -> [ScreenXY; 3] {
-        self.clear_flag();
+        self.begin_op(CopOp::Rtpt);
         let v = self.v;
         let s0 = self.rtps_inner(v[0]);
         let s1 = self.rtps_inner(v[1]);
@@ -812,7 +903,7 @@ impl Gte {
     /// `NCLIP` — signed area of the triangle SXY0/SXY1/SXY2. Writes MAC0.
     /// Returns the same value the FLAG and MAC0 reflect.
     pub fn nclip(&mut self) -> i64 {
-        self.clear_flag();
+        self.begin_op(CopOp::Nclip);
         let v = nclip(self.sxy_fifo[0], self.sxy_fifo[1], self.sxy_fifo[2]);
         // MAC0 saturation is at i32 bounds; track overflow via FLAG.
         self.mac0 = if v > i32::MAX as i64 {
@@ -831,7 +922,7 @@ impl Gte {
     /// Writes MAC0 to the un-shifted product so callers can recover the
     /// full-precision intermediate.
     pub fn avsz3(&mut self) -> u16 {
-        self.clear_flag();
+        self.begin_op(CopOp::Avsz3);
         let sum = self.sz_fifo[1] as i64 + self.sz_fifo[2] as i64 + self.sz_fifo[3] as i64;
         let scaled = sum * self.zsf3 as i64;
         self.mac0 = scaled.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
@@ -851,7 +942,7 @@ impl Gte {
 
     /// `AVSZ4` — write OTZ ← `((SZ0 + SZ1 + SZ2 + SZ3) * ZSF4) >> ROT_FRAC_BITS`.
     pub fn avsz4(&mut self) -> u16 {
-        self.clear_flag();
+        self.begin_op(CopOp::Avsz4);
         let sum = self.sz_fifo[0] as i64
             + self.sz_fifo[1] as i64
             + self.sz_fifo[2] as i64
@@ -898,7 +989,22 @@ impl Gte {
         shift_frac: bool,
         lm: bool,
     ) {
-        self.clear_flag();
+        self.begin_op(CopOp::Mvmva);
+        self.mvmva_inner(mat, vec, trans, shift_frac, lm);
+    }
+
+    /// Internal MVMVA without cycle / FLAG bookkeeping. Used by lighting
+    /// helpers that have already charged their parent op (NCDS / CDP / CC
+    /// etc.) and don't want to double-count cycles for the inner
+    /// matrix-vector pass.
+    fn mvmva_inner(
+        &mut self,
+        mat: &GteMat3,
+        vec: GteVec3,
+        trans: GteVec3,
+        shift_frac: bool,
+        lm: bool,
+    ) {
         let row = |r: usize| -> i64 {
             (mat.m[r][0] as i64) * (vec.x as i64)
                 + (mat.m[r][1] as i64) * (vec.y as i64)
@@ -994,12 +1100,12 @@ impl Gte {
     /// bias. Stores intermediate per-component intensity in MAC1/2/3.
     fn light_pass(&mut self, normal: GteVec3) {
         // L * normal (q3.12 * q3.12 -> q6.24, shifted back to q3.12).
-        self.mvmva(&self.light.clone(), normal, GteVec3::default(), true, true);
+        self.mvmva_inner(&self.light.clone(), normal, GteVec3::default(), true, true);
         let intensity = GteVec3::new(self.ir1, self.ir2, self.ir3);
         // light_color * intensity + back_color
         // back_color is q3.12, apply through MVMVA's translation argument.
         let bc = self.back_color;
-        self.mvmva(&self.light_color.clone(), intensity, bc, true, true);
+        self.mvmva_inner(&self.light_color.clone(), intensity, bc, true, true);
     }
 
     /// `NCDS` — normal colour depth (single vertex). Computes per-vertex
@@ -1007,14 +1113,14 @@ impl Gte {
     /// blend, modulated by the input RGBC. Pushes the result onto the
     /// RGB FIFO.
     pub fn ncds(&mut self) -> [u8; 4] {
-        self.clear_flag();
+        self.begin_op(CopOp::Ncds);
         self.ncds_inner(self.v[0])
     }
 
     /// `NCDT` — normal colour depth, triple. Applies NCDS to V0/V1/V2 in
     /// order; the RGB FIFO ends up with the three shaded colours.
     pub fn ncdt(&mut self) -> [[u8; 4]; 3] {
-        self.clear_flag();
+        self.begin_op(CopOp::Ncdt);
         let v = self.v;
         let r0 = self.ncds_inner(v[0]);
         let r1 = self.ncds_inner(v[1]);
@@ -1053,7 +1159,7 @@ impl Gte {
     /// behaviour as NCDS but starting from the existing RGBC instead of
     /// running a light pass. Pushes the result onto the RGB FIFO.
     pub fn dcpl(&mut self) -> [u8; 4] {
-        self.clear_flag();
+        self.begin_op(CopOp::Dcpl);
         let fc = self.far_color;
         let blend = |fc_n: i32, ir_n: i32, ir0: i32| -> i32 {
             let delta = (fc_n - ir_n) as i64;
@@ -1076,7 +1182,7 @@ impl Gte {
     /// using IR0 — no IR multiplication. Pushes the result onto the
     /// RGB FIFO.
     pub fn dpcs(&mut self) -> [u8; 4] {
-        self.clear_flag();
+        self.begin_op(CopOp::Dpcs);
         let r_in = (self.rgbc[0] as i64) << 4;
         let g_in = (self.rgbc[1] as i64) << 4;
         let b_in = (self.rgbc[2] as i64) << 4;
@@ -1099,7 +1205,7 @@ impl Gte {
     /// in the FIFO. The retail engine uses this to fade the output of a
     /// previous lighting pass toward the far-color.
     pub fn dpct(&mut self) -> [[u8; 4]; 3] {
-        self.clear_flag();
+        self.begin_op(CopOp::Dpct);
         let mut out = [[0u8; 4]; 3];
         for (i, slot) in out.iter_mut().enumerate() {
             let saved_rgbc = self.rgbc;
@@ -1115,7 +1221,7 @@ impl Gte {
     /// Used by DCPL internally; exposed for engines that want the bare
     /// blend.
     pub fn intpl(&mut self) {
-        self.clear_flag();
+        self.begin_op(CopOp::Intpl);
         let blend = |fc_n: i32, ir_n: i32, ir0: i32| -> i64 {
             let delta = (fc_n - ir_n) as i64;
             let scaled = (delta * ir0 as i64) >> ROT_FRAC_BITS;
@@ -1133,7 +1239,7 @@ impl Gte {
     /// then re-saturates IR. Used by some lighting passes that want the
     /// dot of a vector with itself.
     pub fn sqr(&mut self, shift_frac: bool) {
-        self.clear_flag();
+        self.begin_op(CopOp::Sqr);
         let s = |a: i32| -> i64 { (a as i64) * (a as i64) };
         let raw = [s(self.ir1), s(self.ir2), s(self.ir3)];
         let macs: [i64; 3] = if shift_frac {
@@ -1163,7 +1269,7 @@ impl Gte {
     ///   - mac2 = D3 * IR1 - D1 * IR3
     ///   - mac3 = D1 * IR2 - D2 * IR1
     pub fn op(&mut self, shift_frac: bool) {
-        self.clear_flag();
+        self.begin_op(CopOp::Op);
         let d1 = self.rot.m[0][0] as i64;
         let d2 = self.rot.m[1][1] as i64;
         let d3 = self.rot.m[2][2] as i64;
@@ -1196,7 +1302,7 @@ impl Gte {
     /// Used for "fixed alpha" blends — engine-shell composes this with
     /// DPCS to fade UI panels.
     pub fn gpf(&mut self, shift_frac: bool) {
-        self.clear_flag();
+        self.begin_op(CopOp::Gpf);
         let ir0 = self.ir0 as i64;
         let raw = [
             (self.ir1 as i64) * ir0,
@@ -1220,10 +1326,127 @@ impl Gte {
         self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
     }
 
+    /// `NCS` — normal-color (single, no shading, no depth blend). Runs the
+    /// light pass against V0 and pushes the resulting `(R, G, B, code)` onto
+    /// the RGB FIFO without depth-cueing. Used for fully-lit primitives that
+    /// shouldn't fade with distance.
+    pub fn ncs(&mut self) -> [u8; 4] {
+        self.begin_op(CopOp::Ncs);
+        self.ncs_inner(self.v[0])
+    }
+
+    /// `NCT` — normal-color (triple). Apply NCS to V0/V1/V2 in order.
+    pub fn nct(&mut self) -> [[u8; 4]; 3] {
+        self.begin_op(CopOp::Nct);
+        let v = self.v;
+        let r0 = self.ncs_inner(v[0]);
+        let r1 = self.ncs_inner(v[1]);
+        let r2 = self.ncs_inner(v[2]);
+        [r0, r1, r2]
+    }
+
+    fn ncs_inner(&mut self, normal: GteVec3) -> [u8; 4] {
+        self.light_pass(normal);
+        // Modulate by RGBC. (IR_n * RGBC_n) >> 4 fits the GTE's 12.4 layout.
+        let modulate = |ir: i32, mat: u8| -> i64 { (ir as i64 * mat as i64) >> 4 };
+        let r = self.saturate_rgb_u8(modulate(self.ir1, self.rgbc[0]), flag_bits::IR1_SATURATED);
+        let g = self.saturate_rgb_u8(modulate(self.ir2, self.rgbc[1]), flag_bits::IR2_SATURATED);
+        let b = self.saturate_rgb_u8(modulate(self.ir3, self.rgbc[2]), flag_bits::IR3_SATURATED);
+        let out = [r, g, b, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
+    /// `NCCS` — normal-color color (single, no depth fade). Runs the light
+    /// pass like NCS but threads the result through the light-color matrix
+    /// once more (which `light_pass` already does), giving a per-vertex
+    /// material × light × color modulated RGB.
+    ///
+    /// In hardware NCCS additionally modulates by the input RGBC after the
+    /// second light-color pass — the practical effect for the engine is the
+    /// same RGB stream as NCS but pre-multiplied by the light-color matrix
+    /// during `light_pass`. Surfaces this as a distinct entry point so
+    /// engines can branch on the captured opcode byte.
+    pub fn nccs(&mut self) -> [u8; 4] {
+        self.begin_op(CopOp::Nccs);
+        self.nccs_inner(self.v[0])
+    }
+
+    /// `NCCT` — normal-color color (triple). Apply NCCS to V0/V1/V2.
+    pub fn ncct(&mut self) -> [[u8; 4]; 3] {
+        self.begin_op(CopOp::Ncct);
+        let v = self.v;
+        let r0 = self.nccs_inner(v[0]);
+        let r1 = self.nccs_inner(v[1]);
+        let r2 = self.nccs_inner(v[2]);
+        [r0, r1, r2]
+    }
+
+    fn nccs_inner(&mut self, normal: GteVec3) -> [u8; 4] {
+        self.light_pass(normal);
+        // Second light-color pass: re-modulate by light_color matrix.
+        let intensity = GteVec3::new(self.ir1, self.ir2, self.ir3);
+        let bc = self.back_color;
+        self.mvmva_inner(&self.light_color.clone(), intensity, bc, true, true);
+        let modulate = |ir: i32, mat: u8| -> i64 { (ir as i64 * mat as i64) >> 4 };
+        let r = self.saturate_rgb_u8(modulate(self.ir1, self.rgbc[0]), flag_bits::IR1_SATURATED);
+        let g = self.saturate_rgb_u8(modulate(self.ir2, self.rgbc[1]), flag_bits::IR2_SATURATED);
+        let b = self.saturate_rgb_u8(modulate(self.ir3, self.rgbc[2]), flag_bits::IR3_SATURATED);
+        let out = [r, g, b, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
+    /// `CDP` — color depth-cued (no normal pass). Skips the light pass —
+    /// uses the existing IR1/2/3 as the per-component intensity — but runs
+    /// the depth-fade blend toward far_color and the RGBC modulation.
+    /// Engines call this after a custom IR setup when they want the
+    /// distance fade without re-running the light matrix.
+    pub fn cdp(&mut self) -> [u8; 4] {
+        self.begin_op(CopOp::Cdp);
+        let intensity = GteVec3::new(self.ir1, self.ir2, self.ir3);
+        let bc = self.back_color;
+        self.mvmva_inner(&self.light_color.clone(), intensity, bc, true, true);
+        let fc = self.far_color;
+        let blend = |fc_n: i32, ir_n: i32, ir0: i32| -> i32 {
+            let delta = (fc_n - ir_n) as i64;
+            let scaled = (delta * ir0 as i64) >> ROT_FRAC_BITS;
+            (ir_n as i64 + scaled).clamp(i16::MIN as i64, i16::MAX as i64) as i32
+        };
+        let r_blended = blend(fc.x, self.ir1, self.ir0);
+        let g_blended = blend(fc.y, self.ir2, self.ir0);
+        let b_blended = blend(fc.z, self.ir3, self.ir0);
+        let modulate = |ir: i32, mat: u8| -> i64 { (ir as i64 * mat as i64) >> 4 };
+        let r = self.saturate_rgb_u8(modulate(r_blended, self.rgbc[0]), flag_bits::IR1_SATURATED);
+        let g = self.saturate_rgb_u8(modulate(g_blended, self.rgbc[1]), flag_bits::IR2_SATURATED);
+        let b = self.saturate_rgb_u8(modulate(b_blended, self.rgbc[2]), flag_bits::IR3_SATURATED);
+        let out = [r, g, b, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
+    /// `CC` — color color (no normal, no depth). Just modulates RGBC by
+    /// the existing IR1/2/3 through the light-color matrix. Used by some
+    /// 2D effects that want the colour modulation primitive without the
+    /// rest of the lighting pipeline.
+    pub fn cc(&mut self) -> [u8; 4] {
+        self.begin_op(CopOp::Cc);
+        let intensity = GteVec3::new(self.ir1, self.ir2, self.ir3);
+        let bc = self.back_color;
+        self.mvmva_inner(&self.light_color.clone(), intensity, bc, true, true);
+        let modulate = |ir: i32, mat: u8| -> i64 { (ir as i64 * mat as i64) >> 4 };
+        let r = self.saturate_rgb_u8(modulate(self.ir1, self.rgbc[0]), flag_bits::IR1_SATURATED);
+        let g = self.saturate_rgb_u8(modulate(self.ir2, self.rgbc[1]), flag_bits::IR2_SATURATED);
+        let b = self.saturate_rgb_u8(modulate(self.ir3, self.rgbc[2]), flag_bits::IR3_SATURATED);
+        let out = [r, g, b, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
     /// `GPL` — general-purpose load: `MAC += IR * IR0`. Accumulating
     /// counterpart to GPF — used to chain blend operations.
     pub fn gpl(&mut self, shift_frac: bool) {
-        self.clear_flag();
+        self.begin_op(CopOp::Gpl);
         let ir0 = self.ir0 as i64;
         let raw = [
             (self.ir1 as i64) * ir0,
@@ -1965,6 +2188,160 @@ mod tests {
         let _ = g.dpcs();
         assert_eq!(g.rgb_fifo[2], [0x50, 0x60, 0x70, 0x80]);
         assert_eq!(g.rgb_fifo[1], [0x10, 0x20, 0x30, 0x40]);
+    }
+
+    #[test]
+    fn copop_cycle_counts_match_hardware_table() {
+        // Spot-check the canonical Nocash entries.
+        assert_eq!(CopOp::Rtps.cycles(), 15);
+        assert_eq!(CopOp::Rtpt.cycles(), 23);
+        assert_eq!(CopOp::Nclip.cycles(), 8);
+        assert_eq!(CopOp::Avsz3.cycles(), 5);
+        assert_eq!(CopOp::Avsz4.cycles(), 6);
+        assert_eq!(CopOp::Mvmva.cycles(), 8);
+        assert_eq!(CopOp::Ncds.cycles(), 19);
+        assert_eq!(CopOp::Ncdt.cycles(), 44);
+        assert_eq!(CopOp::Nccs.cycles(), 17);
+        assert_eq!(CopOp::Ncct.cycles(), 39);
+        assert_eq!(CopOp::Cc.cycles(), 11);
+        assert_eq!(CopOp::Cdp.cycles(), 13);
+        assert_eq!(CopOp::Ncs.cycles(), 14);
+        assert_eq!(CopOp::Nct.cycles(), 30);
+        assert_eq!(CopOp::Sqr.cycles(), 5);
+        assert_eq!(CopOp::Op.cycles(), 6);
+        assert_eq!(CopOp::Gpf.cycles(), 5);
+        assert_eq!(CopOp::Gpl.cycles(), 5);
+        assert_eq!(CopOp::Dcpl.cycles(), 8);
+        assert_eq!(CopOp::Dpcs.cycles(), 8);
+        assert_eq!(CopOp::Dpct.cycles(), 17);
+        assert_eq!(CopOp::Intpl.cycles(), 8);
+    }
+
+    #[test]
+    fn cycle_accumulator_charges_per_op() {
+        let mut g = Gte::new();
+        assert_eq!(g.cycles, 0);
+        let _ = g.rtps();
+        assert_eq!(g.cycles, CopOp::Rtps.cycles() as u64);
+        let _ = g.rtpt();
+        assert_eq!(
+            g.cycles,
+            (CopOp::Rtps.cycles() + CopOp::Rtpt.cycles()) as u64
+        );
+        g.reset_cycles();
+        assert_eq!(g.cycles, 0);
+    }
+
+    #[test]
+    fn cycle_accumulator_works_for_lighting_ops() {
+        let mut g = Gte::new();
+        g.rgbc = [0x80, 0x80, 0x80, 0];
+        g.v[0] = GteVec3::new(0, 0, 0);
+        let _ = g.ncds();
+        assert_eq!(g.cycles, CopOp::Ncds.cycles() as u64);
+        let _ = g.cdp();
+        assert_eq!(
+            g.cycles,
+            (CopOp::Ncds.cycles() + CopOp::Cdp.cycles()) as u64
+        );
+    }
+
+    #[test]
+    fn ncs_pushes_modulated_rgb() {
+        let mut g = Gte::new();
+        g.rgbc = [0xFF, 0x80, 0x40, 0x12];
+        g.light = GteMat3::IDENTITY;
+        g.light_color = GteMat3::IDENTITY;
+        g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
+        let out = g.ncs();
+        // Code byte should round-trip through the alpha channel.
+        assert_eq!(out[3], 0x12);
+        // RGB FIFO advanced.
+        assert_eq!(g.rgb_fifo[2], out);
+    }
+
+    #[test]
+    fn nct_runs_three_pass_lighting() {
+        let mut g = Gte::new();
+        g.rgbc = [0x80, 0x80, 0x80, 0];
+        g.light = GteMat3::IDENTITY;
+        g.light_color = GteMat3::IDENTITY;
+        g.v[0] = GteVec3::new(ROT_ONE, 0, 0);
+        g.v[1] = GteVec3::new(0, ROT_ONE, 0);
+        g.v[2] = GteVec3::new(0, 0, ROT_ONE);
+        let outs = g.nct();
+        assert_eq!(outs.len(), 3);
+        // Three different normals → three different RGB outputs.
+        assert!(outs[0] != outs[1] || outs[1] != outs[2]);
+    }
+
+    #[test]
+    fn nccs_runs_double_light_pass_relative_to_ncs() {
+        // light_color matrix that scales by 0.5 per channel — the second
+        // pass in NCCS should darken the result vs NCS.
+        let mut lc = GteMat3::IDENTITY;
+        lc.m[0][0] = (ROT_ONE / 2) as i16;
+        lc.m[1][1] = (ROT_ONE / 2) as i16;
+        lc.m[2][2] = (ROT_ONE / 2) as i16;
+
+        // NCS reference run.
+        let mut g = Gte::new();
+        g.rgbc = [0xFF, 0xFF, 0xFF, 0];
+        g.light = GteMat3::IDENTITY;
+        g.light_color = lc;
+        g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
+        let ncs_rgb = g.ncs();
+
+        // NCCS — same inputs.
+        let mut g2 = Gte::new();
+        g2.rgbc = g.rgbc;
+        g2.light = g.light;
+        g2.light_color = g.light_color;
+        g2.v[0] = g.v[0];
+        let nccs_rgb = g2.nccs();
+        assert!(nccs_rgb[0] <= ncs_rgb[0]);
+        assert!(nccs_rgb[1] <= ncs_rgb[1]);
+        assert!(nccs_rgb[2] <= ncs_rgb[2]);
+    }
+
+    #[test]
+    fn cdp_pushes_rgb_with_code_byte_preserved() {
+        let mut g = Gte::new();
+        g.rgbc = [0xFF, 0xFF, 0xFF, 0x42];
+        g.ir1 = 0;
+        g.ir2 = 0;
+        g.ir3 = 0;
+        g.light_color = GteMat3::IDENTITY;
+        g.far_color = GteVec3::new(0x100, 0x200, 0x300);
+        g.ir0 = ROT_ONE; // full blend toward far_color
+        let _ = g.cdp();
+        // RGB FIFO advanced and code byte preserved.
+        assert_eq!(g.rgb_fifo[2][3], 0x42);
+    }
+
+    #[test]
+    fn cc_does_not_blend_against_far_color() {
+        // CC should NOT touch far_color. Set IR very low so the post-modulate
+        // result is well below saturation, then run CC with a large
+        // far_color. If the implementation accidentally blended toward
+        // far_color, the result would saturate to 0xFF; if it doesn't,
+        // the modulated value stays small.
+        let mut g = Gte::new();
+        g.rgbc = [0x40, 0x40, 0x40, 0x12];
+        g.ir1 = 0x10;
+        g.ir2 = 0x10;
+        g.ir3 = 0x10;
+        g.light_color = GteMat3::IDENTITY;
+        g.far_color = GteVec3::new(0xFFFF, 0xFFFF, 0xFFFF);
+        g.ir0 = ROT_ONE;
+        let out = g.cc();
+        assert_eq!(out[3], 0x12);
+        // Without far-color blending, the result should be small.
+        assert!(
+            out[0] < 0x80,
+            "cc unexpectedly blended toward far_color (got {})",
+            out[0]
+        );
     }
 
     #[test]

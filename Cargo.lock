@@ -1300,6 +1300,7 @@ dependencies = [
 name = "legaia-engine-vm"
 version = "0.1.0"
 dependencies = [
+ "legaia-anm",
  "legaia-art",
 ]
 
