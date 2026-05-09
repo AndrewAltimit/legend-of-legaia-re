@@ -103,7 +103,7 @@ enum Cmd {
         /// For each matching entry the output shows `<scene>+<slot>` where
         /// `slot` is the zero-based offset within the scene block. Entries
         /// that don't fall inside any named block show `<raw_idx>` instead.
-        /// Used for §3.2.3 Unknown cluster cross-reference.
+        /// Used to cross-reference unknown clusters against scene names.
         #[arg(long)]
         cdname: Option<PathBuf>,
     },

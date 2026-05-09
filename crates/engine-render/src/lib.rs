@@ -19,6 +19,7 @@ use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+pub mod gte;
 pub mod window;
 
 pub use glam;
@@ -42,6 +43,13 @@ struct MeshUniforms {
     /// Direction the light is *coming from*, in world space, normalized.
     /// Stored as vec4 for std140 padding.
     light_dir: [f32; 4],
+    /// PSX-faithful rendering knobs:
+    /// - `[0]` viewport width in pixels (used for the sub-pixel snap)
+    /// - `[1]` viewport height in pixels
+    /// - `[2]` `1.0` to snap clip-space x/y to integer pixels (PSX-style
+    ///   "vertex jitter"); `0.0` for smooth modern subpixel positions
+    /// - `[3]` reserved (padding to vec4 std140)
+    psx_params: [f32; 4],
 }
 
 pub struct UploadedTexture {
@@ -519,6 +527,12 @@ pub struct Renderer {
     scene_quad_ranges: std::cell::RefCell<Vec<(u32, u32)>>,
     /// Depth target — recreated on resize.
     depth_view: wgpu::TextureView,
+    /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
+    /// affine (linear-in-screen-space) UV interpolation instead of
+    /// perspective-correct, and snaps clip-space x/y to integer pixel
+    /// positions to reproduce the GTE's per-vertex sub-pixel-truncation
+    /// "vertex jitter." Default `false` for clean smooth rendering.
+    psx_mode: std::cell::Cell<bool>,
 }
 
 impl Renderer {
@@ -704,6 +718,7 @@ impl Renderer {
             contents: bytemuck::cast_slice(&[MeshUniforms {
                 mvp: Mat4::IDENTITY.to_cols_array_2d(),
                 light_dir: [0.4, -0.8, 0.4, 0.0],
+                psx_params: [width as f32, height as f32, 0.0, 0.0],
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -1301,7 +1316,23 @@ impl Renderer {
             text_index_capacity: std::cell::Cell::new(initial_text_quads * 6),
             scene_quad_ranges: std::cell::RefCell::new(Vec::new()),
             depth_view,
+            psx_mode: std::cell::Cell::new(false),
         })
+    }
+
+    /// Toggle PSX-style affine UV interpolation + sub-pixel vertex snap on
+    /// the VRAM-mesh pipeline. With `psx_mode = true` the pipeline mimics
+    /// the retail GTE: UVs interpolate linearly in screen space (no
+    /// perspective correction → the characteristic surface-warp on slanted
+    /// surfaces), and clip-space X/Y are snapped to integer pixels (the
+    /// GTE's per-vertex jitter). Default `false` (smooth modern rendering).
+    pub fn set_psx_mode(&self, enable: bool) {
+        self.psx_mode.set(enable);
+    }
+
+    /// Read current PSX-mode flag.
+    pub fn psx_mode(&self) -> bool {
+        self.psx_mode.get()
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -1764,6 +1795,7 @@ impl Renderer {
             | RenderTarget::TexturedMesh { mvp, .. }
             | RenderTarget::VramMesh { mvp, .. }
             | RenderTarget::Lines { mvp, .. } => {
+                let snap = if self.psx_mode.get() { 1.0f32 } else { 0.0 };
                 self.queue.write_buffer(
                     &self.mesh_uniforms_buf,
                     0,
@@ -1771,6 +1803,12 @@ impl Renderer {
                         mvp: mvp.to_cols_array_2d(),
                         // Light coming from upper-back-left in world space.
                         light_dir: normalize3([0.4, -0.8, 0.4]),
+                        psx_params: [
+                            self.config.width as f32,
+                            self.config.height as f32,
+                            snap,
+                            0.0,
+                        ],
                     }]),
                 );
             }
@@ -2006,10 +2044,18 @@ impl Renderer {
         // the queue a single contiguous range.
         let total = needed * stride;
         let mut bytes = vec![0u8; total];
+        let snap = if self.psx_mode.get() { 1.0f32 } else { 0.0 };
+        let psx_params = [
+            self.config.width as f32,
+            self.config.height as f32,
+            snap,
+            0.0,
+        ];
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
                 light_dir: normalize3([0.4, -0.8, 0.4]),
+                psx_params,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();
@@ -2233,6 +2279,8 @@ const MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
+    // (viewport_w, viewport_h, snap_enable, _pad)
+    psx_params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -2276,6 +2324,8 @@ const TEXTURED_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
+    // (viewport_w, viewport_h, snap_enable, _pad)
+    psx_params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -2329,6 +2379,8 @@ const VRAM_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
+    // (viewport_w, viewport_h, snap_enable, _pad)
+    psx_params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -2336,10 +2388,38 @@ struct MeshUniforms {
 struct VsOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
-    @location(1) @interpolate(flat) uv: vec2<u32>,
+    // PSX hardware does affine (linear-in-screen-space) UV interpolation,
+    // not perspective-correct. WGSL's `@interpolate(linear)` gives exactly
+    // that. The float UV is converted to integer texel coordinates in the
+    // fragment shader.
+    @location(1) @interpolate(linear) uv_affine: vec2<f32>,
     @location(2) @interpolate(flat) cba_tsb: vec2<u32>,
     @location(3) normal: vec3<f32>,
 };
+
+// Snap a clip-space x/y to the nearest integer pixel of a viewport sized
+// (vp_w, vp_h). Returns the snapped clip position with z/w preserved. This
+// is the GTE-style "vertex jitter" that gives PSX rendering its
+// characteristic shimmer on slow-moving geometry.
+fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
+    if vp_w <= 0.0 || vp_h <= 0.0 {
+        return clip;
+    }
+    // NDC after perspective divide.
+    let ndc_x = clip.x / clip.w;
+    let ndc_y = clip.y / clip.w;
+    // Pixel coords (NDC -> [0, vp]).
+    let px = (ndc_x * 0.5 + 0.5) * vp_w;
+    let py = (ndc_y * 0.5 + 0.5) * vp_h;
+    // Snap to nearest integer pixel.
+    let snapped_x = floor(px + 0.5);
+    let snapped_y = floor(py + 0.5);
+    // Back to NDC.
+    let nx = (snapped_x / vp_w) * 2.0 - 1.0;
+    let ny = (snapped_y / vp_h) * 2.0 - 1.0;
+    // Re-multiply by w to rebuild clip space.
+    return vec4<f32>(nx * clip.w, ny * clip.w, clip.z, clip.w);
+}
 
 @vertex
 fn vs_main(
@@ -2349,9 +2429,13 @@ fn vs_main(
     @location(3) normal_in: vec3<f32>,
 ) -> VsOut {
     var out: VsOut;
-    out.clip_pos = u.mvp * vec4<f32>(position, 1.0);
+    var clip = u.mvp * vec4<f32>(position, 1.0);
+    if u.psx_params.z >= 0.5 {
+        clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
+    }
+    out.clip_pos = clip;
     out.world_pos = position;
-    out.uv = vec2<u32>(uv_in.x, uv_in.y);
+    out.uv_affine = vec2<f32>(f32(uv_in.x), f32(uv_in.y));
     out.cba_tsb = cba_tsb_in;
     out.normal = normal_in;
     return out;
@@ -2373,8 +2457,12 @@ fn bgr555_to_rgba(c: u32) -> vec4<f32> {
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    let u_pix = in.uv.x & 0xFFu;
-    let v_pix = in.uv.y & 0xFFu;
+    // Convert linearly-interpolated affine UV float -> integer texel.
+    // Truncate (PSX behaviour: GP0 G3 commands transmit signed 8-bit UV
+    // bytes; the rasterizer takes the integer part of the interpolated
+    // position).
+    let u_pix = u32(max(in.uv_affine.x, 0.0)) & 0xFFu;
+    let v_pix = u32(max(in.uv_affine.y, 0.0)) & 0xFFu;
 
     let tpage_x = (tsb & 0xFu) * 64u;
     let tpage_y = ((tsb >> 4u) & 1u) * 256u;
@@ -2445,6 +2533,8 @@ const LINES_SHADER_SRC: &str = r#"
 struct MeshUniforms {
     mvp: mat4x4<f32>,
     light_dir: vec4<f32>,
+    // (viewport_w, viewport_h, snap_enable, _pad)
+    psx_params: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

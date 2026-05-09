@@ -246,6 +246,8 @@ Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolve
 
 Both passes are clean-room ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
 
+When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.
+
 ## TODO
 
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.

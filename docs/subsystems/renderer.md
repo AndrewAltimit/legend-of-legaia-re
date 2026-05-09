@@ -35,6 +35,17 @@ The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` fro
 
 CLUT data scatters across PROT entries — many character meshes reference CLUT rows that live in *different* PROT entries from their TMD source. The viewer's `--vram-extra-dir` is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field / town / level-up still rely on the workaround.
 
+## PSX-faithful rendering knobs
+
+`Renderer::set_psx_mode(true)` enables two retail-faithful rasterisation modes on the VRAM-mesh pipeline:
+
+- **Affine UV interpolation.** Per-vertex UVs interpolate linearly in screen space (no perspective-correct division). This reproduces the texture warping you see on retail surfaces with steep depth gradients — the GP0(0x24)-class triangle commands transmit only `(u, v)` per vertex, the rasteriser does not divide by `1/w`. WGSL `@interpolate(linear)` gives the same behaviour.
+- **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are snapped to integer pixel positions inside the vertex shader (NDC → pixel grid → NDC round-trip). Reproduces the GTE's per-vertex sub-pixel-truncation jitter that gives PSX rendering its characteristic shimmer on slowly-moving geometry.
+
+Texture page (`tsb`) and CLUT base address (`cba`) remain `@interpolate(flat)` — they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
+
+A small fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. Production rendering still uses f32 wgpu math; the module exists as a citation point for downstream code (effect spawners, hit-detection, animation re-targeting) that needs to interpret captured GTE traces.
+
 ## Stage geometry detector (legacy, signal only)
 
 A "12-byte fixed prefix `00 F0 84 7F 01 F0 1F 00 00 F1 00 00` repeated at 20-byte stride" detector lives at `crates/asset/src/stage_geom.rs`. It's not real stage geometry — it's the standard primitive-group header for Legaia TMD primitive group data when `((flags >> 1) - 8) >> 1 == K` (where K is the group type that uses 20-byte stride).

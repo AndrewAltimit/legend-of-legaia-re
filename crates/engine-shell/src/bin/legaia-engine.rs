@@ -81,6 +81,10 @@ enum Cmd {
     Save {
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
+        /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
         #[arg(long, default_value_t = 0)]
@@ -113,6 +117,10 @@ enum Cmd {
         /// Extracted-root directory.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
+        /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
         /// Number of engine frames to run before exiting. `0` runs
         /// indefinitely.
         #[arg(long, default_value_t = 600)]
@@ -144,6 +152,10 @@ enum Cmd {
         /// Extracted-root directory.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
+        /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
         /// Disable audio output.
         #[arg(long, default_value_t = false)]
         no_audio: bool,
@@ -220,6 +232,7 @@ fn main() -> Result<()> {
         Cmd::Play {
             scene,
             extracted_root,
+            disc,
             frames,
             no_audio,
             frame_ms,
@@ -227,6 +240,7 @@ fn main() -> Result<()> {
         } => cmd_play(
             &scene,
             &extracted_root,
+            disc.as_deref(),
             frames,
             !no_audio,
             frame_ms,
@@ -235,22 +249,31 @@ fn main() -> Result<()> {
         Cmd::PlayWindow {
             scene,
             extracted_root,
+            disc,
             no_audio,
             world_map,
             str_file,
         } => cmd_play_window(
             &scene,
             &extracted_root,
+            disc.as_deref(),
             !no_audio,
             world_map,
             str_file.as_deref(),
         ),
         Cmd::Save {
             extracted_root,
+            disc,
             save_dir,
             slot,
             party_size,
-        } => cmd_save(&extracted_root, &save_dir, slot, party_size),
+        } => cmd_save(
+            &extracted_root,
+            disc.as_deref(),
+            &save_dir,
+            slot,
+            party_size,
+        ),
         Cmd::Load { save_dir, slot } => cmd_load(&save_dir, slot),
         Cmd::PlayStr {
             str_file,
@@ -304,6 +327,7 @@ fn cmd_info(
 fn cmd_play(
     scene: &str,
     extracted_root: &std::path::Path,
+    disc: Option<&std::path::Path>,
     frames: u64,
     enable_audio: bool,
     frame_ms: u64,
@@ -340,7 +364,10 @@ fn cmd_play(
         scene: scene.to_string(),
         enable_audio,
     };
-    let mut session = BootSession::open(extracted_root, &cfg)?;
+    let mut session = match disc {
+        Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
+        None => BootSession::open(extracted_root, &cfg)?,
+    };
     println!(
         "play: scene='{}' frames={} audio={} (entries={}, MES={}, VAB={}, SEQ={})",
         scene,
@@ -429,6 +456,7 @@ fn cmd_play(
 
 fn cmd_save(
     extracted_root: &std::path::Path,
+    disc: Option<&std::path::Path>,
     save_dir: &std::path::Path,
     slot: u8,
     party_size: usize,
@@ -437,7 +465,7 @@ fn cmd_save(
     use legaia_engine_core::world::World;
     use legaia_save::{CharacterRecord, Party};
 
-    let _ = extracted_root;
+    let _ = (extracted_root, disc);
     let mut world = World::default();
     let members = (0..party_size).map(|_| CharacterRecord::zeroed()).collect();
     world.load_party(Party { members });
@@ -1079,6 +1107,7 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
 fn cmd_play_window(
     scene: &str,
     extracted_root: &Path,
+    disc: Option<&Path>,
     enable_audio: bool,
     world_map: bool,
     str_file: Option<&Path>,
@@ -1093,7 +1122,10 @@ fn cmd_play_window(
         scene: scene.to_string(),
         enable_audio,
     };
-    let mut session = BootSession::open(extracted_root, &cfg)?;
+    let mut session = match disc {
+        Some(disc_path) => BootSession::open_disc(disc_path, &cfg)?,
+        None => BootSession::open(extracted_root, &cfg)?,
+    };
     if world_map {
         session.host.world.mode = SceneMode::WorldMap;
     }

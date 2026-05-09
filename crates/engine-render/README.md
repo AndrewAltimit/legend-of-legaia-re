@@ -35,11 +35,33 @@ correctly in one draw, instead of needing per-page sub-meshes.
 - `glam` 0.30 — math.
 - `legaia-tim` for `Vram`.
 
+## PSX-style rendering
+
+The VRAM-mesh pipeline supports PSX-faithful rasterisation via
+`Renderer::set_psx_mode(true)`:
+
+- **Affine UV interpolation.** UVs interpolate linearly in screen space
+  (no perspective-correct division) — this reproduces the warping you
+  see on retail PSX surfaces with steep depth gradients. UV is
+  `@interpolate(linear)` in WGSL.
+- **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x`/`y` are
+  snapped to the nearest integer pixel before rasterisation, giving the
+  GTE's characteristic per-vertex shimmer on slow-moving geometry.
+- **TSB / CBA flat shading per primitive.** Texture page and CLUT base
+  remain `@interpolate(flat)` so each triangle samples from the same
+  page and palette, matching `GP0(0x24)` semantics.
+
+Toggle is global — apply once per frame before submitting draws.
+Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
+live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu
+math, but the module is the single citation point for retail-correct
+fixed-point arithmetic when re-targeting captured GTE traces.
+
 ## Future phases
 
-PSX-style affine texturing (matching the GTE's per-vertex projection
-quirks), sub-pixel jitter, full GTE emulation, and batched draws are
-all phase-2.
+Bit-exact GTE emulation (re-using the `gte` module's accumulator shape),
+batched draws, and reverse-engineered TSB / CBA per-mode descriptor
+overrides are deferred.
 
 ## See also
 

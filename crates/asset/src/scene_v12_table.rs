@@ -43,7 +43,7 @@
 //! (1) / `field_pack` (1 misclass — `0002_gameover_data.BIN`). Coverage moves
 //! from 532 / 1232 (43.2 %) to 629 / 1232 (51.1 %).
 //!
-//! See `docs/FORMATS.md` § 18 for the byte-level spec.
+//! See `docs/formats/scene-bundles.md` for the byte-level spec.
 
 use serde::Serialize;
 
