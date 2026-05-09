@@ -7,9 +7,9 @@
 //! module is conservative: it walks sub-entries by name and parses what's
 //! present, returning `None` for entries the build doesn't expose.
 //!
-//! For the BLOCKED PRD items the most useful accessor is `cpu_pc` — given
-//! a save state taken right after a function-call boundary, the PC pinpoints
-//! the function we want to dump from Ghidra.
+//! For overlay-resident reverse-engineering work the most useful accessor is
+//! `cpu_pc` — given a save state taken right after a function-call boundary,
+//! the PC pinpoints the function we want to dump from Ghidra.
 
 use crate::container::SaveState;
 

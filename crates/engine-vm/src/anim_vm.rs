@@ -9,12 +9,20 @@
 //! per-actor tick at `FUN_80021DF4` (also in `SCUS_942.54`, 4732 bytes,
 //! 1183 instructions). The tick reads `actor[+0x5A]` as the dispatch
 //! byte and ladders through opcodes `0x01..=0x07` (see
-//! [`DispatchByte`]). For the dominant case (opcode `0x06`, keyframe
-//! interpolation) the per-bone math is fully traced and ported to
-//! [`legaia_anm::AnimPlayer`]. The other opcodes — `0x01`, `0x02`,
-//! `0x03`, `0x04`, `0x05`, `0x07` — share the dispatch but each handler
-//! is its own block in `FUN_80021DF4` and is opaque to the runtime
-//! until that handler is fully reverse-engineered.
+//! [`DispatchByte`]).
+//!
+//! The dispatch byte selects a layered set of side-effects:
+//!
+//! - The **keyframe pose decoder** for opcode `0x06` is ported in
+//!   [`legaia_anm::AnimPlayer`] — that's the per-bone interpolation that
+//!   writes the renderer-consumed pose buffer at `actor[+0x4C]`.
+//! - The **per-actor physics tick** that wraps the keyframe decoder is
+//!   ported in [`crate::actor_tick`]. It models the position / velocity /
+//!   acceleration math for every dispatch byte (`0x01..=0x07`), the
+//!   positional SFX emitter (`0x05`), and the per-arm render submissions
+//!   (line draws for `0x04`, scene-graph triangle for `0x07`). Audio
+//!   cues and render submissions surface via
+//!   [`actor_tick::TickEvent`](crate::actor_tick::TickEvent).
 //!
 //! For the bulk of retail ANM data — records the runtime calls "opcode 6"
 //! — the per-record body is a per-bone keyframe table, and the
@@ -22,11 +30,13 @@
 //! algorithm is already ported in [`legaia_anm::AnimPlayer`].
 //!
 //! For everything else — records with header `a` field other than `0x06`
-//! or `0x0A` — the per-record interpreter is opaque. The scaffold below
-//! lets engines wire the runtime they need *now* without waiting for the
-//! overlay capture: the dispatcher's `Host` trait exposes a single hook
-//! the eventual port will fill in (`on_opaque_record`), and the
-//! keyframe-driven case is fully handled by delegating to `AnimPlayer`.
+//! or `0x0A` — the per-record body shape is opaque. The scaffold below
+//! lets engines wire the runtime they need *now*: the dispatcher's `Host`
+//! trait exposes a single hook (`on_opaque_record`) for record-level
+//! side-effects (sprite swaps, voice cues), and the keyframe-driven case
+//! is fully handled by delegating to `AnimPlayer`. Per-actor physics —
+//! the part that's the same for every record kind — is in
+//! [`crate::actor_tick`].
 //!
 //! ## What this scaffold provides
 //!
@@ -133,9 +143,29 @@ impl DispatchByte {
     /// `true` when this runtime can drive the dispatch natively
     /// (currently only [`Keyframe`]).
     ///
+    /// The other six dispatch bytes drive per-actor physics state — see
+    /// [`crate::actor_tick`] for the dispatch-byte-aware physics tick.
+    /// `handled_natively` only reports whether [`AnimPlayer`] (the keyframe
+    /// pose decoder) can drive this dispatch byte; it does **not** mean the
+    /// physics arms aren't ported.
+    ///
     /// [`Keyframe`]: DispatchByte::Keyframe
+    /// [`AnimPlayer`]: legaia_anm::AnimPlayer
     pub fn handled_natively(self) -> bool {
         matches!(self, DispatchByte::Keyframe)
+    }
+
+    /// Human-readable name suitable for logs and disassembly traces.
+    pub fn name(self) -> &'static str {
+        match self {
+            DispatchByte::Snap => "Snap",
+            DispatchByte::KeyframeAlt => "KeyframeAlt",
+            DispatchByte::Path => "Path",
+            DispatchByte::Damp => "Damp",
+            DispatchByte::PathAlt => "PathAlt",
+            DispatchByte::Keyframe => "Keyframe",
+            DispatchByte::Spline => "Spline",
+        }
     }
 }
 

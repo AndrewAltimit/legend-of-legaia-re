@@ -47,9 +47,10 @@ pub struct Scenario {
     pub label: String,
     /// Human-readable description.
     pub description: String,
-    /// PRD section(s) this scenario informs (free-text, e.g. `["§2.1", "§5.3"]`).
+    /// Topics this scenario informs (free-text labels — e.g.
+    /// `["scene_bundle preamble", "navmesh"]`).
     #[serde(default)]
-    pub addresses_prd: Vec<String>,
+    pub topics: Vec<String>,
     /// Recommended overlay slice (PSX virtual addresses).
     #[serde(default)]
     pub overlay_slice: Option<OverlaySlice>,
@@ -142,7 +143,7 @@ filename_pattern = "test.{slot}"
 slot = 0
 label = "title"
 description = "title screen"
-addresses_prd = ["§2.4"]
+topics = ["move-table boot path"]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -168,7 +169,7 @@ diff_against = [2, 3]
         assert_eq!(m.scenarios.len(), 2);
         let title = m.by_slot(0).unwrap();
         assert_eq!(title.label, "title");
-        assert_eq!(title.addresses_prd, vec!["§2.4"]);
+        assert_eq!(title.topics, vec!["move-table boot path"]);
         let slice = title.overlay_slice.as_ref().unwrap();
         assert_eq!(slice.start, 0x801C0000);
         assert_eq!(slice.end, 0x80200000);

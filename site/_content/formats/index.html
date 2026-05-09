@@ -74,7 +74,7 @@
     </a>
     <a class="card" id="anm" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/anm.md" target="_blank" rel="noopener">
       <div class="card-title">ANM animation</div>
-      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. The per-actor anim tick is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (4732 bytes) — it dispatches off <code>actor[+0x5A]</code> with seven opcodes (<code>0x01..=0x07</code>); the keyframe path (<code>0x06</code>) is fully ported to <code>legaia_anm::AnimPlayer</code>, the rest are typed in <code>engine_vm::DispatchByte</code> with handler addresses documented in <code>actor-vm.md</code>.</div>
+      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. The per-actor anim tick is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (4732 bytes) — best modelled as a layered pipeline rather than a per-opcode jump table. The keyframe pose decoder (dispatch byte <code>0x06</code>) is ported to <code>legaia_anm::AnimPlayer</code>; the per-arm physics (position / velocity / acceleration math, the positional SFX emitter for <code>0x05</code>, path interpolation for <code>0x03</code>, render submissions for <code>0x04</code> / <code>0x07</code>) is ported in <code>engine_vm::actor_tick</code>. See actor-vm.html for the full per-arm breakdown.</div>
     </a>
     <a class="card" id="mdt" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mdt.md" target="_blank" rel="noopener">
       <div class="card-title">MDT — move tables</div>
