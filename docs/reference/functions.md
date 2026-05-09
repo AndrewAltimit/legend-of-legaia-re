@@ -46,6 +46,8 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `80056658` | `TestEvent` BIOS thunk — `jr 0xB0` with `t1=0x0B`. Polls a kernel event handle. |
 | `8006B844` | `WaitEvent` BIOS thunk — `jr 0xB0` with `t1=0x0A`. Blocks on a kernel event handle. |
 | `80056698` / `800566A8` / `800566B8` / `800566C8` / `800566D8` / `800566E8` / `800566F8` / `80056708` / `80056718` | Byte-identical `li t2,0xB0; jr t2` BIOS B-vector thunks emitted by the linker once per caller. The selected B-routine is determined by `$t1` set up by the caller, not by the thunk. Same pattern at `8006EE14` / `8006EE24` / `8006EE34` (B0-vector cluster cited from menu/text helpers). |
+| `8006D7A4` | BIOS C0 thunk — `li t2,0xC0; jr t2; li t1,0x3`. Dispatches to C0 vector 0x03 (`ChangeThreadSubFunction`). Called from `FUN_8006D2AC` (audio subsystem init). |
+| `8006EF18` (caller) + `8006EF68` / `8006F088` / `8006F118` (trio) | SPU voice-state init sequence. `FUN_8006EF18` calls all three in order. `_EF68` = B0 0x4C (`InitCd`-adjacent). `_F088` = B0 0x57 then swaps 5 dwords between `DAT_8006F058..F06C` (static table) and `iVar1 + 0x9C8` (SPU voice block) + `FlushCache`. `_F118` = B0 0x56 + symmetric swap at `iVar1 + 0x18 / -0xE80`. |
 | `800567B8` / `80056B18` | `printf`-class formatter (handles `%d %x %o %s %f`); writes into a static buffer. |
 | `80057024` | `memmove` — overlap-safe direction-aware copy. |
 | `8005ACAC` | `memset`. |
@@ -63,6 +65,7 @@ Statically-linked PsyQ glue. Trivial to stub in a clean-room port.
 | `8005B7C0` | `SetRotMatrix`-shaped — `setCopControlWord(2, 0xD800, x)`. |
 | `8005B7CC` | `SetTransMatrix`-shaped — `setCopControlWord(2, 0xE000, x)`. |
 | `8005BA1C` | GTE square-root / normalize — `mtc2 0xF000 / mfc2 0xF800`. |
+| `8005BA68` | GTE 3-point transform helper. Loads 3 vertex pairs into COP2 registers, calls `copFunction(2, 0x280030)` (RTPT), reads back SXY0/1/2 and OTZ. Cited from the cutscene/world-map sprite batcher (`FUN_801CFC40`). |
 | `8005BB48` | `InitGeom` — saves return addr to `_DAT_8007BDF0`, `EnterCriticalSection`, copies exception-handler table from `DAT_8005BBB0`, `FlushCache`. |
 | `8005AF0C` | `isqrt`-style normalise — uses `FUN_8005BA1C` (GTE normalize) then dispatches to `FUN_8005ADB8` with shift correction. |
 | `8005ADB8` | Fixed-point bit-rotation / arc helper — consumed by `FUN_8005AF0C`. 85-instr ladder of conditional shifts. |
@@ -96,6 +99,8 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 |---|---|
 | `80017888` | Malloc — the general-purpose allocator. |
 | `8003C5F0` | Generic ramp scheduler. 64-slot pool at `0x801C66A0` (stride 0x20). Used for sound + render-bank ramps. |
+| `8003D038` | Animation index filter. Writes `DAT_80073F1C = param` when `(&DAT_801C6470)[param * 4] != -0x74`; silently skips invalid entries. Called from the cutscene/world-map sprite batcher (`FUN_801CFC40`) with actor`+0x50` (anim-index field). |
+| `8001FA34` | Sprite-list consumer. Decrements the u16 count at `*param_1` and returns `*(short *)(param_2 + 2*(count-1))`; returns -1 on underflow. Pops the "current" entry index from a compact sprite-list header. Cited from the cutscene sprite emitter (`FUN_801D629C`). |
 | `8003C83C` | Script-context resolver. Special-cases `id == 0xF8` (returns cached pointer) and `id == 0xFB` (system channel). |
 | `80036044` | Text-width measure for inline dialog/UI strings. Walks a byte stream: `>= 0x1F` = glyph (count 1); `0xC0..0xC7` = escape (substitutes from inventory / magic / item-name tables — `0xC1` = item-name @ `0x80084549 + idx*0x414`, `0xC2` = `PTR_DAT_8007436C[idx*3]`, `0xC3` = magic name @ `PTR_s_Magic_800754D0`, `0xC7` = `DAT_80073F24 + idx*8`); `0xCE` = newline (line++); `0xCF` = end-of-row. Returns total glyph count. |
 | `8003CC98` | Single-line text render-and-measure. `FUN_80036044(buf)` for length + `FUN_80036888(buf, palette, 0, x, y)` to draw, returns the length. |
@@ -167,6 +172,10 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `801D388C` | Battle actor animation dispatcher (battle overlay). 7.8 KB / 39 callers. `(animation_type, param_2)`. Switch on `animation_type` (0..0x31+): cases 0/2 call `FUN_801DB318` and fall through; case 3 clears `actor[0x1E7]` and `actor[0x1DE]` for all 3 party slots; cases 5/7 compute `_DAT_80076D3A = func_0x80035F04(actor[0x1BC])` (animation-look-up into per-actor anim descriptor). Increments the battle frame counter at `_DAT_8007BD24[0x6B2]`. Actor pointers read from `DAT_801C9370/74/78`. Captured as `overlay_magic_level_up_801d388c.txt`. |
 | `801D5854` | Battle actor pose driver (battle overlay). 6.5 KB / 47 callers. `(actor_slot, pose_id)`. Switch on `pose_id` (0..9+); pose 0 sets up a GTE transform from `actor[0x46]` (height), `actor[0x34/36/38]` (XYZ), scaled by `0x8F0 - actor[0x46]` and `DAT_8007BD10[slot]`-derived table entry. Pose 1 calls `func_0x80019B28` for angle-to-screen projection targeting `actor[0x1DD]`'s slot. Poses update `_DAT_8007BD24[0x87C]` via pad accumulator and clamp `_DAT_8007BD24[0x26E/270]` at 200. The `~30` call sites from `FUN_801E295C` match the action-SM's per-swing animation triggers. Captured as `overlay_magic_level_up_801d5854.txt`. |
 | `801D8DE8` | Hottest battle utility (battle overlay). 3 KB / 77 incoming refs. |
+| `801DA6B4` | Battle actor display-state controller (battle overlay). 204 bytes / 9 callers. `(visible)`. Walks battle actors 3..6 (`DAT_801C937C` array); for alive actors (`+0x14C != 0`): `visible=0` sets `actor[+0x21C] = 200` (opacity) and `actor[4] = 0x401004` (pose flags) for non-focused actors, `actor[+0x21C] = 5` for the focused one; `visible=1` clears `actor[+0x21C]` and `actor[+0x0C]`. `overlay_battle_action_801da6b4.txt`. |
+| `801DB81C` | Next-valid-target scan (battle overlay). 152 bytes / 10 callers. Returns the next party slot after `_DAT_8007BD24[0x13]` whose battle actor has `+0x14C != 0` (alive) and `+0x16E & 0xF84 == 0` (no death/stone/silence). Used in level-up and action-select to advance the character cursor. `overlay_battle_action_801db81c.txt`. |
+| `801DB8F4` | Actor status-flag write (battle overlay). 208 bytes / 6 callers. `overlay_battle_action_801db8f4.txt`. |
+| `801DBDDC` | Battle timer ramp helper (battle overlay). 232 bytes / 4 callers. `overlay_battle_action_801dbddc.txt`. |
 | `801E295C` | **Battle action state machine** — `ctx[7]` dispatch, `+0x1DE` sub-state. 16 KB / 4099 instructions / 155 outgoing calls (the largest function in the battle overlay). Outer switch on `_DAT_8007BD24[7]` (the action-state cursor; 47 cases across bands `0x14`/`0x28`/`0x32`/`0x3C`/`0x46`/`0x50`/`0x5A`/`0x64`/`0x68`/`0x6E`); inner switch on `actor[+0x1DE]` (action category 0..5 = Martial-arts / Item / Magic / Attack / Spirit / Run). Reads battle actor pointers via `(&DAT_801C9370)[ctx[0x13]]`; ramps frame-timer at `ctx[+0x6D8]`; queues animations via `actor[+0x1DA]` and waits on `actor[+0x1D9]` to converge. Battle-end signalled via `DAT_8007BD71 = 0xFE`. Cross-refs: `FUN_8004E2F0` (range/LOS, called from `0x14`/`0x16`/`0x19`), `FUN_80042558` ability bitmask (read indirectly via character record at `0x80084708 + (party_id-1)*0x414`), effect spawn via `FUN_801D8DE8` → `FUN_801DBF9C` → `FUN_801DFDF8`, pose driver `FUN_801D5854(actor, pose_id)` (~30 call sites). See [`subsystems/battle-action.md`](../subsystems/battle-action.md). Captured from the mc8 (action-menu-open) save state as `overlay_battle_action_801e295c.txt`. |
 | `801DE914` | Effect-bundle init / pack-fixup (battle overlay). |
 | `801DFDF8` | Effect-bundle public spawn API (battle overlay): `(byte effect_id, short* world_pos, ushort angle)`. |
@@ -208,6 +217,8 @@ sub-state, `+0x07` action-type).
 | `801DD35C` | Top-level menu dispatcher (menu overlay). 12 KB / 3026 instructions / 134 outgoing calls. Sets text-actor depth slot `_DAT_8007B454 = 7` and `DAT_80073F20 = 0x10`; reads active-submenu index from `_DAT_8007BAB4`. Loaded only when the in-game item / magic / equip menu is open — captured via the mc5 save state as `overlay_menu_801dd35c.txt`. |
 | `801D33D8` | Submenu rendering loop (menu overlay). 5.3 KB / 107 outgoing calls. |
 | `801E1C1C` | Shared menu-element renderer (menu overlay). 4.5 KB / 8 incoming refs. |
+| `801CF650` | Equipment stat aggregator (menu overlay). 272 bytes / 10 callers. `(char_slot)`. Walks the 5 equipment bytes at char record `+0x196`; for each non-zero slot looks up the item entry at stride `0xc` from `0x8007433C` (item table); if `entry[0] == 1` (equippable type), reads a stat-bonus row at `entry[1] * 8` from `0x8007EF68` and accumulates into `DAT_801EF08C/090/094/098/09C` (STR/INT/DEF/LUCK/…). Called by menu subscreen equipment-stat display. `overlay_menu_801cf650.txt`. |
+| `801DD0C0` | Item category / slot validity check (menu overlay). 108 bytes / 2 callers. `(slot_id, item_type, flag) -> u32`. Walks the category table at `DAT_801E4B88` (byte pairs: type, bitmask); returns `0` if item_type not found or bitmask bit `(slot_id + flag*4)` is clear, else `1000`. `overlay_menu_801dd0c0.txt`. |
 
 ## Renderer
 

@@ -1,7 +1,7 @@
 //! Actor / sprite script VM, ported clean-room from `FUN_801D6628`.
 //!
 //! `FUN_801D6628` lives in the title-screen / field overlay loaded into the
-//! `0x801C0000+` window at runtime (see `docs/REVERSING.md` Epic 5.6.1). It is
+//! `0x801C0000+` window at runtime (see `docs/tooling/overlay-capture.md`). It is
 //! the first script VM identified in retail Legaia. It is small (612 bytes,
 //! 13 opcodes, 68 callers) and well-bounded — the smallest target we have for
 //! a runtime-faithful port.

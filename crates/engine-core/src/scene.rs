@@ -231,6 +231,16 @@ impl<'a> EventScripts<'a> {
     }
 }
 
+/// Return `true` if a CDNAME scene label is an in-engine cutscene scene
+/// (prefixed with `op` or `ed`, which use the dialogue actor overlay).
+///
+/// In-engine cutscenes are distinct from FMV (`MOV/MV*.STR`): they run
+/// the dialogue-actor overlay and are not backed by STR video files.
+/// Use `play-str` for FMV; use `play --scene` for these scenes.
+pub fn is_cutscene_label(label: &str) -> bool {
+    label.starts_with("op") || label.starts_with("ed")
+}
+
 /// A scene = the per-CDNAME-block bundle of PROT entries that the runtime
 /// loads together. Mirrors the per-scene shape `FUN_8001f7c0` consumes.
 pub struct Scene {
@@ -321,6 +331,12 @@ impl Scene {
         None
     }
 
+    /// Whether this scene's CDNAME label identifies it as an in-engine cutscene
+    /// (dialogue-actor-overlay driven, not FMV). Use `play-str` for FMV.
+    pub fn is_cutscene_scene(&self) -> bool {
+        is_cutscene_label(&self.name)
+    }
+
     /// Count of entries by class — tiny diagnostic for "what's in this scene".
     pub fn class_counts(&self) -> HashMap<Class, usize> {
         let mut out = HashMap::new();
@@ -377,9 +393,15 @@ impl MapIdResolver for VecMapIdResolver {
 /// PROT-entry-index order as the sequential map-id.
 ///
 /// Map-id 0 maps to the first CDNAME block name (lowest PROT index),
-/// map-id 1 to the second, and so on. This matches the most likely retail
-/// table ordering (sequential CDNAME block labels loaded in TOC order)
-/// pending a full `FUN_8001f7c0` trace.
+/// map-id 1 to the second, and so on.
+///
+/// **Ordering note (from `FUN_8001f7c0` trace):** The field-VM WARP opcode
+/// (`0x3E`, `op0 >= 100`) only supports map_ids 0–6. Each maps to a code
+/// overlay at PROT `0x4d + map_id` (+ 2 for map_id >= 6); the scene name is
+/// pre-set in `DAT_80084548` by a pre-WARP handler not yet fully traced.
+/// The sequential CDNAME ordering here is an approximation; the exact
+/// retail map_id → scene-name table lives in an uncaptured overlay.
+/// See `docs/subsystems/asset-loader.md` → "WARP opcode → scene transition flow".
 ///
 /// Suitable for use in [`BootSession::open`] as the default resolver.
 #[derive(Debug, Clone, Default)]
@@ -471,6 +493,11 @@ pub struct SceneHost {
     /// every time [`SceneHost::load_scene`] or [`SceneHost::enter_field_scene`]
     /// runs. `None` until the first scene loads.
     pub assets: Option<crate::scene_assets::SceneAssets>,
+    /// Runtime resource snapshot built by [`SceneHost::enter_field_scene`] —
+    /// holds the populated PSX VRAM, parsed TMD pool, and parsed ANM packs.
+    /// `None` until the first `enter_field_scene` call. Use for rendering
+    /// and for driving `World::init_scene_animations`.
+    pub resources: Option<crate::scene_resources::SceneResources>,
     pub frame_time: crate::FrameTime,
     /// Map-id → scene-name resolver for `scene_transition(map_id)`.
     /// Default is [`NullMapIdResolver`] so transitions are silently
@@ -486,6 +513,7 @@ impl SceneHost {
             world: crate::world::World::default(),
             scene: None,
             assets: None,
+            resources: None,
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
         }
@@ -678,6 +706,14 @@ impl SceneHost {
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
+        // Pre-bind actor ↔ TMD/ANM resources so they survive the first
+        // field-VM actor-spawn opcode (see `World::init_scene_animations`).
+        if let Some(scene) = self.scene.as_ref()
+            && let Ok(res) = crate::scene_resources::SceneResources::build(scene)
+        {
+            self.world.init_scene_animations(&res);
+            self.resources = Some(res);
+        }
         // Drain any pending transition the previous scene left behind.
         self.world.pending_scene_transition = None;
         Ok(())

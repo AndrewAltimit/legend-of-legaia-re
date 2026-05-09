@@ -2,7 +2,7 @@
 
 Most of Legaia's gameplay code doesn't live in `SCUS_942.54` — it lives in RAM-loaded overlays at `0x801C0000+` that the runtime pages in per-mode (title, town/field, battle, options menu, world map, cutscene). Capturing these requires dumping live RAM from a running emulator.
 
-PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path; both give equivalent overlay dumps.
+PCSX-Redux is the recommended emulator (open-source, built-in debugger, Lua scripting). Mednafen is also supported via the gzipped save-state extraction path. Duckstation `.sav` save states are supported via `scripts/extract-duckstation-overlay.py` (zstd-compressed; same anchor-string approach, 256 KB slice). All three give equivalent overlay dumps.
 
 ## What's in the overlay window
 
@@ -14,31 +14,40 @@ The base address depends on which overlay; battle and town both load at `0x801CE
 
 The dump count column reflects committed function dumps under [`ghidra/scripts/funcs/`](../../ghidra/scripts/funcs/) at the time of writing — see `overlay_<label>_<addr>.txt` per overlay.
 
-| Overlay | Captured? | Where it lives | Subsystems |
+| Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|
-| Title screen | ✓ (loaded at boot, in SCUS-range) | `0x801C0000+` | Actor / sprite VM (`FUN_801D6628`) |
-| Town / field / dialog / inventory (`0897`) | ✓ | PROT entry `0897_xxx_dat`, RAM base `0x801CE818` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`) |
-| Battle | ✓ | PROT entry `0898_xxx_dat`, RAM base `0x801CE818` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) |
-| Battle action | ✓ (separate capture) | re-uses battle window | Action SM full coverage including `FUN_801E295C` outer dispatch + sub-states |
-| Options / config menu (`0896`) | ✓ | PROT entry `0896` (= 0897 + 36 KB prefix) | In-game options UI |
-| Fishing / dev menu (`0971`) | ✓ partial (top-6 dumped) | PROT entry `0971_xxx_dat` | Fishing minigame + dev/test menu strings |
-| Dance minigame / field reuse (`0978`) | ✓ partial (top-8 dumped) | PROT entry `0978_other_game` | Disco King + field-loader stubs |
-| Status / inventory menu | ✓ | overlay re-uses `0897` window; mc5 capture | Per-character status panel, equipment swap, item-use validator gate (cf. `crate::engine_vm::action_validator`) |
-| Dialog (proportional font + MES renderer) | ✓ partial (21 dumps) | overlay loaded only while text is on screen | MES bytecode interpreter, glyph-bitmap upload |
-| Level-up (PROT 891) | ✗ — overlay window not yet captured | post-battle screen | XP / stat gain UI; ramp-to-cap interaction with `action_validator` arm 6 |
-| Shop / merchant | ✗ | town overlay variant — re-loads after `FUN_8003F2B8` clears | Item buy / sell, gold ledger |
-| World map | ✗ | overlay loaded on world-map entry | Per-tile destination lookup, party-trail animation |
-| Save / load screen | ✗ | overlay loaded on memory-card menu | PSX memory-card I/O wrapper, slot UI |
-| Cutscene | ✗ | overlay loaded once XA stream starts | XA driver + per-cutscene mode table |
-| Mini-games (Card Battle, Inova game) | ✗ | each loads its own overlay slot | Per-game UI + scoring |
+| Title screen | ✓ (loaded at boot, in SCUS-range) | — (in SCUS address range) | Actor / sprite VM (`FUN_801D6628`) |
+| Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` (= walk) / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`); top-20 dumped per program |
+| Field overlay — battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (`FUN_801D081C`, `FUN_801D0370`, `FUN_801CFDA0`, `FUN_801D11D0`, and 9 more) |
+| Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
+| Options / config / all pause-menus (`0896`) | ✓ | `overlay_menu.bin` | Items / magic / equipment / status / options UI; equipment stat aggregator (`FUN_801CF650`); all 129 functions dumped |
+| Save / load screen | ✓ | `overlay_save_ui_select.bin` / `overlay_save_ui_saving.bin` | Save-screen SM (`FUN_801DC6B4`); 33 sub-state handlers at `PTR_FUN_801E4F40` dumped; top-20 per program dumped; select and saving layouts are identical |
+| Shop / merchant | ✓ | `overlay_shop_save.bin` | Item buy / sell, gold ledger; 130 functions dumped |
+| Level-up (`0891`) | ✓ | `overlay_magic_level_up.bin` / `overlay_magic_level_up_full.bin` | XP / stat gain UI; 78 functions dumped; full 256 KB re-capture for data section analysis |
+| World map | ✓ | `overlay_world_map.bin` / `overlay_world_map_top.bin` / `overlay_world_map_walk.bin` | World map controller (`FUN_801E76D4`), dev menu renderer (`FUN_801EAD98`); top-20 dumped per program; `world_map_top` lacks `FUN_801DE840` and `FUN_801EAD98` (top-view capture, no movement) |
+| Cutscene / dialogue | ✓ | `overlay_cutscene_dialogue.bin` / `overlay_cutscene_mapview.bin` | XA driver + cutscene mode table; 128 functions each |
+| Minigame hub — fishing, slot, Baka Fighter, dance, debug menu | ✓ | `overlay_fishing.bin` / `overlay_slot_machine.bin` / `overlay_baka_fighter.bin` / `overlay_dance.bin` / `overlay_debug_menu.bin` | All five are variants of the same overlay binary (101–154 shared prologues). `overlay_debug_menu.bin` is the superset (189 functions). Fishing: `FUN_801D63B0` (main entry, 1036 bytes, 28 callers). Slot machine: `FUN_801D2CC0` (reel dispatcher, 1036 bytes). Baka Fighter: `FUN_801D5ED0` (round dispatcher, 1072 bytes, 49 callers). Dance: `FUN_801D2F38` (step-input handler, 960 bytes, 18 callers). Debug menu adds FOG/MAP/TMD readouts and minigame selector. All functions dumped. |
+| Muscle Dome / Baka card battle | ✓ | `overlay_muscle_dome.bin` | Completely distinct from the minigame-hub family (only 17 shared prologues). `FUN_801D8DE8` (round dispatcher, 3028 bytes, 77 callers), `FUN_801D5854` (game SM, 6500 bytes, 47 callers), `FUN_801D388C` (card resolution, 7820 bytes, 39 callers). 148 functions dumped. |
 
-### Overlays still to capture (priority for engine completeness)
+### Level-up overlay data section (resolved)
 
-1. **World map** — gates field-mode entry from the global travel map. Without this, the engine can boot a single field scene but not navigate between them. Capture procedure: load any post-prologue save, walk to the world map, save state, run `scripts/analyze-overlay.sh ... --label world_map`.
-2. **Save / load screen** — gates persistence. The `legaia-save` crate parses the on-card record, but the runtime UI that reads + writes to the card is overlay-resident. Capture: open the in-game save menu, save state, label `save_screen`.
-3. **Shop** — a frequently-loaded gameplay overlay; needed for any "buy a healing item, then validate via action_validator arm 6" flow. Capture: enter any town's shop, talk to merchant, save state mid-buy, label `shop`.
-4. **Cutscene** — XA streaming + scene transitions. The XA demuxer + audio mixer already work; the missing piece is the per-cutscene mode driver. Capture procedure documented under [Cutscene](#cutscene) below.
-5. **Level-up** (PROT 891) — currently classified as `MipsOverlay` by the categorizer but not imported. Capture: enter a battle that levels at least one character, save state on the level-up screen, label `level_up`.
+The mc3 save state was re-extracted at the full 256 KB window
+(`0x801C0000–0x801FFFFF`) and imported as `overlay_magic_level_up_full.bin`.
+The data section (`ghidra/scripts/dump_levelup_data_section.py`) was dumped
+in ten 4 KB blocks. Key findings:
+
+| Address | Content |
+|---|---|
+| `0x801F4B8C` | 4-byte display row-ID array for magic slots |
+| `0x801F4B98` | Magic-type name strings (Spirit / Defense / Meta / Terra / Ozma) |
+| `0x801F4C28+` | Battle-result text strings (win / wipe / escape / …) |
+| `0x801F5CF8`, `0x801F5D90` | Binary animation tables passed to particle spawner |
+| `0x801F6000+` | Live animation state globals (zero at rest) |
+
+Per-character HP/MP/STR/DEF growth does not come from a static table in the
+overlay. Stat increments are sourced from per-Seru structs loaded from PROT
+entries at runtime (HP grant at Seru `+0x74`). See
+[`subsystems/level-up.md`](../subsystems/level-up.md#stat-gains).
 
 ## Capturing with PCSX-Redux
 
@@ -81,6 +90,33 @@ What it does:
 4. Writes a CSV to `/tmp/overlay_loads_<label>.csv` and prints a summary.
 
 The CSV gives the *exact* PROT entries the runtime loader requests for that scene — replaces the iterative `--vram-extra-dir` guesswork in the asset viewer.
+
+## Capturing with Duckstation
+
+Duckstation `.sav` save-state files use `DUCCS` magic followed by a zstd-compressed binary stream. The `scripts/extract-duckstation-overlay.py` script decompresses the stream with the system `zstd` binary and locates main RAM using the same anchor-string approach as `extract-mednafen-overlay.py`. The default slice is `0x801C0000–0x80200000` (256 KB).
+
+```bash
+scripts/extract-duckstation-overlay.py SCUS-94254_1.sav --out /tmp/legaia_overlay_fishing.bin
+scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing
+```
+
+The `import-overlay-named.sh` step imports as `overlay_fishing.bin` in the Ghidra project (base `0x801C0000`, MIPS LE) and runs auto-analysis. Run `inventory_overlay.py` afterwards to get the function list, then write a `dump_<label>_overlay.py` for the functions of interest.
+
+### Minigame hub overlay (six variants from Duckstation saves)
+
+Seven Duckstation saves cover the minigame overlays. Saves 1–4 and 6 are all variants of the same overlay binary:
+
+| Save | Scene | Label | Unique prologues |
+|---|---|---|---|
+| 1 | Fishing minigame | `overlay_fishing.bin` | 2 (vs debug_menu) |
+| 2 | Slot machine (Wild Card) | `overlay_slot_machine.bin` | 17 (vs fishing) |
+| 3 | Baka Fighter (fist fight) | `overlay_baka_fighter.bin` | 34 (vs fishing) |
+| 4 | Disco King (dance) | `overlay_dance.bin` | 32 (vs fishing) |
+| 5 | Muscle Dome / Baka card battle | `overlay_muscle_dome.bin` | distinct family |
+| 6 | Dev/debug menu | `overlay_debug_menu.bin` | 12 (superset of fishing) |
+| 7 | Baka card battle (alt state) | — | same code as save 5 |
+
+Saves 5 and 7 share identical code at the first prologue positions (100% match on first 32 KB of code); save 7 is not imported separately.
 
 ## Capture protocol per overlay
 

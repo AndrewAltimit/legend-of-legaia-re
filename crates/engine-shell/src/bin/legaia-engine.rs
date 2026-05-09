@@ -16,14 +16,16 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use glam::{Mat4, Vec3};
+use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
 use legaia_engine_core::scene_resources::SceneResources;
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
-    RenderTarget, Scene as RenderScene, SceneDraw, TextDraw, TextOverlay, UploadedFontAtlas,
-    UploadedVram, UploadedVramMesh, text_draws_for,
+    RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, level_up_draws_for, shop_draws_for,
+    text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::{BootConfig, BootSession};
@@ -91,6 +93,11 @@ enum Cmd {
     /// Drives the field VM, camera, BGM director, and per-actor move VMs;
     /// logs scene transitions and the per-frame BGM events. No window —
     /// for that, use `asset-viewer field <scene>`.
+    ///
+    /// When `--str-file` is provided the STR video is pre-decoded headlessly
+    /// (frame count logged) before scene ticking begins. The scene label
+    /// patterns that identify in-engine cutscenes (as opposed to FMV) are
+    /// described by `engine_core::scene::is_cutscene_label`.
     Play {
         /// Starting scene name. Default: `town01`.
         #[arg(long, default_value = "town01")]
@@ -110,9 +117,18 @@ enum Cmd {
         /// realtime feel; set to `0` for "as fast as possible" smoke runs.
         #[arg(long, default_value_t = 16)]
         frame_ms: u64,
+        /// Optional path to a raw PSX STR file. When provided, the video is
+        /// pre-decoded headlessly and the frame count is printed before scene
+        /// ticking begins. Use for `op*`/`ed*` scenes paired with FMV files.
+        #[arg(long)]
+        str_file: Option<PathBuf>,
     },
     /// Open a window, boot a scene, and run the engine with rendering.
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
+    ///
+    /// When `--str-file` is provided the STR video plays first in a windowed
+    /// player (same as `play-str`). After the video window closes the scene
+    /// window opens and runs normally.
     PlayWindow {
         /// Starting scene name. Default: `town01`.
         #[arg(long, default_value = "town01")]
@@ -128,6 +144,11 @@ enum Cmd {
         /// top-view camera; Q/W adjust azimuth; A/S adjust zoom.
         #[arg(long, default_value_t = false)]
         world_map: bool,
+        /// Optional path to a raw PSX STR file. When provided, the STR video
+        /// plays in a window first (phase 1); the scene window opens after
+        /// the video window closes (phase 2).
+        #[arg(long)]
+        str_file: Option<PathBuf>,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -190,13 +211,28 @@ fn main() -> Result<()> {
             frames,
             no_audio,
             frame_ms,
-        } => cmd_play(&scene, &extracted_root, frames, !no_audio, frame_ms),
+            str_file,
+        } => cmd_play(
+            &scene,
+            &extracted_root,
+            frames,
+            !no_audio,
+            frame_ms,
+            str_file.as_deref(),
+        ),
         Cmd::PlayWindow {
             scene,
             extracted_root,
             no_audio,
             world_map,
-        } => cmd_play_window(&scene, &extracted_root, !no_audio, world_map),
+            str_file,
+        } => cmd_play_window(
+            &scene,
+            &extracted_root,
+            !no_audio,
+            world_map,
+            str_file.as_deref(),
+        ),
         Cmd::Save {
             extracted_root,
             save_dir,
@@ -268,7 +304,35 @@ fn cmd_play(
     frames: u64,
     enable_audio: bool,
     frame_ms: u64,
+    str_file: Option<&Path>,
 ) -> Result<()> {
+    // If a STR file was supplied, pre-decode it headlessly and log the frame
+    // count. This is phase 1 for `op*`/`ed*` in-engine cutscene scenes where
+    // an FMV precedes the dialogue-overlay scene proper. The scene ticking
+    // (phase 2) runs unconditionally after this block.
+    if let Some(str_path) = str_file {
+        use legaia_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
+        let data = std::fs::read(str_path)
+            .with_context(|| format!("read STR file {}", str_path.display()))?;
+        let n_sectors = data.len() / 2048;
+        let mut asm = StrFrameAssembler::new();
+        let mut decoded = 0usize;
+        for i in 0..n_sectors {
+            let sector = &data[i * 2048..(i + 1) * 2048];
+            if let Some((hdr, bs)) = asm.push_sector(sector)? {
+                let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
+                if dec.decode_frame(&bs).is_ok() {
+                    decoded += 1;
+                }
+            }
+        }
+        println!(
+            "play: pre-decoded {} STR frames from {}",
+            decoded,
+            str_path.display()
+        );
+    }
+
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio,
@@ -505,6 +569,9 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
+    /// Menu runtime — drives shop / inn / status screens. Ticked per frame
+    /// when `is_open()`; renders shop overlay via `shop_draws_for`.
+    menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
     /// World-map camera controller. `Some` when `--world-map` was passed;
     /// ticked each frame alongside the session.
     world_map_ctrl: Option<WorldMapController>,
@@ -675,6 +742,124 @@ impl PlayWindowApp {
             let layout3 = self.font.layout_ascii(&line3);
             out.extend(text_draws_for(&layout3, (8, 44), white));
         }
+        // Shop / inn overlay: rendered at the bottom of the screen when the menu
+        // runtime is in any shop, inn, or confirmation state.
+        if self.menu_runtime.is_open() {
+            let label = self.menu_runtime.current_label();
+            if let Some(shop) = &self.menu_runtime.shop_session {
+                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
+                let cursor = self.menu_runtime.cursor() as usize;
+                let gold = self.session.host.world.money;
+                let (title, rows, show_gold) = match state {
+                    Some(MenuState::ShopBuy) => {
+                        let rows: Vec<ShopRow<'_>> = shop
+                            .inventory
+                            .items
+                            .iter()
+                            .map(|item| ShopRow {
+                                label: "Item",
+                                price: Some(item.price),
+                            })
+                            .collect();
+                        (label, rows, Some(gold))
+                    }
+                    Some(MenuState::ShopSell) => {
+                        let inv_items = MenuRuntime::inventory_items(&self.session.host.world);
+                        let rows: Vec<ShopRow<'_>> = inv_items
+                            .iter()
+                            .map(|(_id, _qty)| ShopRow {
+                                label: "Item",
+                                price: None,
+                            })
+                            .collect();
+                        (label, rows, Some(gold))
+                    }
+                    Some(MenuState::ShopQuantity) => {
+                        let rows: Vec<ShopRow<'_>> = (1u32..=9)
+                            .map(|_| ShopRow {
+                                label: "qty",
+                                price: None,
+                            })
+                            .collect();
+                        (label, rows, None)
+                    }
+                    Some(MenuState::ShopConfirm) => {
+                        let rows = vec![
+                            ShopRow {
+                                label: "Yes",
+                                price: None,
+                            },
+                            ShopRow {
+                                label: "No",
+                                price: None,
+                            },
+                        ];
+                        (label, rows, Some(gold))
+                    }
+                    _ => (label, Vec::new(), None),
+                };
+                if !rows.is_empty() {
+                    let shop_draws =
+                        shop_draws_for(&self.font, title, &rows, cursor, show_gold, (8, 140));
+                    out.extend(shop_draws);
+                }
+            } else if self.menu_runtime.inn_session.is_some() {
+                // Inn overlay: cost prompt with Yes / No cursor.
+                let state = MenuState::from_byte(self.menu_runtime.ctx_state());
+                let cursor = self.menu_runtime.cursor() as usize;
+                let cost = self
+                    .menu_runtime
+                    .inn_session
+                    .as_ref()
+                    .map(|s| s.cost)
+                    .unwrap_or(0);
+                let gold = self.session.host.world.money;
+                match state {
+                    Some(MenuState::InnConfirm) => {
+                        let title = format!("INN  Rest for {}G?", cost);
+                        let rows = vec![
+                            ShopRow {
+                                label: "Yes",
+                                price: None,
+                            },
+                            ShopRow {
+                                label: "No",
+                                price: None,
+                            },
+                        ];
+                        let inn_draws =
+                            shop_draws_for(&self.font, &title, &rows, cursor, Some(gold), (8, 140));
+                        out.extend(inn_draws);
+                    }
+                    Some(MenuState::InnSleep) => {
+                        let layout = self.font.layout_ascii("Resting...");
+                        out.extend(text_draws_for(&layout, (8, 140), white));
+                    }
+                    _ => {
+                        let menu_label = format!("[{}]", label);
+                        let ml_layout = self.font.layout_ascii(&menu_label);
+                        out.extend(text_draws_for(&ml_layout, (8, 140), white));
+                    }
+                }
+            } else {
+                // Non-shop, non-inn menu: show current mode label.
+                let menu_label = format!("[{}]", label);
+                let ml_layout = self.font.layout_ascii(&menu_label);
+                out.extend(text_draws_for(&ml_layout, (8, 140), white));
+            }
+        }
+        // Level-up banner: rendered near the top when active after a battle win.
+        if let Some(banner) = &self.session.host.world.current_level_up_banner {
+            let draws = level_up_draws_for(
+                &self.font,
+                banner.char_id,
+                banner.new_level,
+                banner.hp_gained,
+                banner.mp_gained,
+                (8, 60),
+            );
+            out.extend(draws);
+        }
         out
     }
 }
@@ -722,6 +907,20 @@ impl ApplicationHandler for PlayWindowApp {
                 for _ in 0..ticks {
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
+                    }
+                    if self.menu_runtime.is_open() {
+                        let p = self.pad;
+                        let input = MenuInput {
+                            cross: p & 0x4000 != 0,
+                            circle: p & 0x2000 != 0,
+                            triangle: p & 0x1000 != 0,
+                            square: p & 0x8000 != 0,
+                            up: p & 0x0010 != 0,
+                            down: p & 0x0040 != 0,
+                            left: p & 0x0080 != 0,
+                            right: p & 0x0020 != 0,
+                        };
+                        self.menu_runtime.tick(&mut self.session.host.world, input);
                     }
                     if let Some(ctrl) = &mut self.world_map_ctrl {
                         let newly_pressed = self.pad & !self.prev_pad;
@@ -833,7 +1032,14 @@ fn cmd_play_window(
     extracted_root: &Path,
     enable_audio: bool,
     world_map: bool,
+    str_file: Option<&Path>,
 ) -> Result<()> {
+    // Phase 1: if a STR file is provided, play the video in a window first.
+    // The user closes (or ESC) the STR window, then the scene window opens.
+    if let Some(str_path) = str_file {
+        cmd_play_str(str_path, 640, 480)?;
+    }
+
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio,
@@ -880,6 +1086,7 @@ fn cmd_play_window(
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
+        menu_runtime: MenuRuntime::new(std::path::PathBuf::from(".")),
         world_map_ctrl,
         prev_pad: 0,
     };

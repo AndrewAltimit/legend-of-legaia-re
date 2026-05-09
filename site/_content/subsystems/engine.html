@@ -103,7 +103,7 @@ asset-viewer &rarr; engine-*, all parser crates</code></pre>
   <h2>Phase 3 &mdash; gameplay assembly</h2>
   <p>All major gameplay systems are wired into <code>engine-core::World</code> and driven from <code>engine-shell::BootSession</code>.</p>
   <ul class="bullets">
-    <li><strong>Shop / Inn / Level-up</strong> &mdash; <code>ShopSession</code>, <code>InnSession</code>, <code>LevelUpTracker</code> in <code>engine-core</code>. <code>MenuRuntime</code> routes buy/sell/quantity/confirm/exit through session state; HP/MP restore wired on inn commit; XP distribution fires <code>BattleEvent::LevelUp</code> per character per level.</li>
+    <li><strong>Shop / Inn / Level-up</strong> &mdash; <code>ShopSession</code>, <code>InnSession</code>, <code>LevelUpTracker</code> in <code>engine-core</code>. <code>MenuRuntime</code> routes buy/sell/quantity/confirm/exit through session state; HP/MP restore wired on inn commit; XP distribution fires <code>BattleEvent::LevelUp</code> per character per level. <code>LevelUpBanner</code> (180-frame countdown, same shape as <code>ArtLearnedBanner</code>) set by <code>apply_battle_xp</code>, ticked by <code>World::tick</code>. <code>level_up_draws_for()</code> in <code>engine-render</code> produces a two-line yellow/green overlay (title + HP/MP gains); wired into <code>play-window</code> HUD at anchor <code>(8, 60)</code>. Exact XP and per-level stat tables remain placeholder until full level-up overlay capture.</li>
     <li><strong>Tactical Arts learning UI</strong> &mdash; <code>TacticalArtsTracker</code> tracks per-char / per-art use counts; <code>ArtLearnedBanner</code> counts down in <code>World::tick</code>; <code>BattleEvent::TacticalArtLearned</code> fires when the threshold is crossed.</li>
     <li><strong>Menu sub-screens</strong> &mdash; <code>MenuRuntime</code> handles <code>StatusCharacter</code> / <code>StatusEquipment</code> / <code>StatusInventory</code> with cursor input, data-view methods, and commit side-effects (unequip slot, decrement inventory item).</li>
     <li><strong>Save / load</strong> &mdash; <code>LGSF v1</code> self-describing binary (magic + story_flags + money + inventory pairs + party records); <code>World::save_full</code> / <code>load_full</code>; memory-card writeback via <code>legaia_save::card::write_block</code>.</li>
@@ -115,10 +115,11 @@ asset-viewer &rarr; engine-*, all parser crates</code></pre>
 
   <h3>Open Phase 3 items</h3>
   <ul class="bullets">
-    <li>Shop / inn / level-up <strong>render layout</strong> pending the five uncaptured gameplay overlays (world map, save screen, shop, cutscene, level-up).</li>
+    <li>Shop / inn <strong>exact item-price data</strong> pending shop overlay capture (§3.1); current prices are synthetic placeholders.</li>
+    <li>Exact XP / stat-gain tables from the level-up overlay (current placeholder: 100&times;n&sup2; curve); banner render layer is wired, only the tables need the capture.</li>
     <li>Scene-init ANM binding per-actor (blocked on tracing the <code>0x8007C018</code> pointer-table registration order).</li>
     <li><code>legaia-engine play --scene cutsceneN</code> PROT-scene routing (direct <code>play-str &lt;file&gt;</code> works; scene-entry routing pending STR-entry trace).</li>
-    <li>Exact XP / stat-gain tables from the level-up overlay (current placeholder: 100&times;n&sup2; curve).</li>
+    <li>Exact field-VM WARP map_id &rarr; scene-name table (7 destinations; pre-WARP handler that sets <code>DAT_80084548</code> not yet traced; <code>DefaultMapIdResolver</code> uses CDNAME sequential order as approximation).</li>
   </ul>
 </section>
 

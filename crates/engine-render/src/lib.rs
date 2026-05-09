@@ -234,6 +234,144 @@ pub fn text_draws_for(
         .collect()
 }
 
+/// One row in a shop or confirmation panel drawn by [`shop_draws_for`].
+pub struct ShopRow<'a> {
+    /// Display name for this row (item name, "Yes", "No", quantity digit, …).
+    pub label: &'a str,
+    /// Optional right-aligned price or value in gold. `None` for confirm /
+    /// quantity rows where no price is shown.
+    pub price: Option<u32>,
+}
+
+/// Build [`TextDraw`]s for a 2-D shop / confirmation panel.
+///
+/// Layout traced from `FUN_801d5de0` in `overlay_shop_save.bin`:
+/// ```text
+/// [title]
+/// > item name              1500G
+///   item name               200G   ← unaffordable rows are dimmed
+///   …
+/// Gold: 9999G
+/// ```
+/// Column offsets relative to `pen`:
+/// - cursor `>`: x + 0 (`CURSOR_X`)
+/// - item name: x + 20 (`LABEL_X`, retail `0x14`)
+/// - price (left-aligned): x + 112 (`PRICE_X`, retail `0x70`)
+/// - line height: 14 px (`LINE_H`, retail `0x0E`)
+///
+/// Rows where `gold < price` are rendered dim; selected row has a
+/// gold-coloured price. `gold = None` suppresses the gold footer line.
+///
+/// A natural anchor for a PSX-style 320×240 surface is `(8, 140)`.
+pub fn shop_draws_for<'a>(
+    font: &legaia_font::Font,
+    title: &str,
+    rows: &[ShopRow<'a>],
+    cursor: usize,
+    gold: Option<i32>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    // Constants confirmed from overlay_shop_save FUN_801d5de0.
+    const LINE_H: i32 = 14;
+    const CURSOR_X: i32 = 0;
+    const LABEL_X: i32 = 20; // retail 0x14
+    const PRICE_X: i32 = 112; // retail 0x70, left edge of 6-digit price field
+
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+    let gold_col: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+
+    let mut out = Vec::new();
+
+    // Title line
+    let title_layout = font.layout_ascii(title);
+    out.extend(text_draws_for(&title_layout, pen, white));
+
+    // Item rows
+    for (i, row) in rows.iter().enumerate() {
+        let row_y = pen.1 + LINE_H + i as i32 * LINE_H;
+        let selected = i == cursor;
+
+        // Retail dims rows the player cannot afford (gold < price).
+        let can_afford = match (gold, row.price) {
+            (Some(g), Some(p)) => g >= p as i32,
+            _ => true,
+        };
+        let fg = if !can_afford || !selected { dim } else { white };
+
+        if selected {
+            let cur_layout = font.layout_ascii(">");
+            out.extend(text_draws_for(
+                &cur_layout,
+                (pen.0 + CURSOR_X, row_y),
+                white,
+            ));
+        }
+
+        let label_layout = font.layout_ascii(row.label);
+        out.extend(text_draws_for(&label_layout, (pen.0 + LABEL_X, row_y), fg));
+
+        if let Some(price) = row.price {
+            let price_str = format!("{price}G");
+            let price_layout = font.layout_ascii(&price_str);
+            let price_fg = if !can_afford {
+                dim
+            } else if selected {
+                gold_col
+            } else {
+                dim
+            };
+            out.extend(text_draws_for(
+                &price_layout,
+                (pen.0 + PRICE_X, row_y),
+                price_fg,
+            ));
+        }
+    }
+
+    // Gold footer (retail FUN_801d0148: gold icon at panel_x, amount at x+40).
+    if let Some(g) = gold {
+        let gold_y = pen.1 + LINE_H + rows.len() as i32 * LINE_H + 4;
+        let gold_str = format!("Gold: {g}G");
+        let gold_layout = font.layout_ascii(&gold_str);
+        out.extend(text_draws_for(&gold_layout, (pen.0, gold_y), gold_col));
+    }
+
+    out
+}
+
+/// Build [`TextDraw`]s for a level-up banner overlay.
+///
+/// Renders two lines anchored at `pen`:
+/// ```text
+/// LEVEL UP!  (char_id, new_level)
+/// HP +hp_gained  MP +mp_gained
+/// ```
+/// Designed for a PSX-style 320×240 surface; a typical anchor is around
+/// `(8, 60)` to appear near the top of the screen after battle.
+pub fn level_up_draws_for(
+    font: &legaia_font::Font,
+    char_id: u8,
+    new_level: u8,
+    hp_gained: u16,
+    mp_gained: u16,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let yellow: [f32; 4] = [1.0, 0.9, 0.2, 1.0];
+    let green: [f32; 4] = [0.4, 1.0, 0.4, 1.0];
+
+    let line1 = format!("LEVEL UP! (char {} -> Lv {})", char_id + 1, new_level);
+    let line2 = format!("HP +{}  MP +{}", hp_gained, mp_gained);
+
+    let layout1 = font.layout_ascii(&line1);
+    let layout2 = font.layout_ascii(&line2);
+
+    let mut out = text_draws_for(&layout1, pen, yellow);
+    out.extend(text_draws_for(&layout2, (pen.0, pen.1 + LINE_H), green));
+    out
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -2419,5 +2557,78 @@ mod tests {
         assert_eq!(d0.dst.2, g0.width);
         assert_eq!(d0.src, (g0.atlas_x, g0.atlas_y, g0.width, g0.height));
         assert_eq!(d0.color, color);
+    }
+
+    #[test]
+    fn shop_draws_for_buy_mode_produces_draws() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            ShopRow {
+                label: "Healing Leaf",
+                price: Some(50),
+            },
+            ShopRow {
+                label: "Healing Fruit",
+                price: Some(100),
+            },
+        ];
+        let draws = shop_draws_for(&font, "[BUY]", &rows, 0, Some(1500), (8, 140));
+        // Title + 2 rows (label + price each, cursor on row 0) + gold line
+        assert!(!draws.is_empty(), "expected non-empty draw list");
+    }
+
+    #[test]
+    fn shop_draws_for_confirm_mode_no_gold() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            ShopRow {
+                label: "Yes",
+                price: None,
+            },
+            ShopRow {
+                label: "No",
+                price: None,
+            },
+        ];
+        let draws = shop_draws_for(&font, "[CONFIRM?]", &rows, 0, None, (8, 140));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn shop_draws_for_cursor_on_second_row() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            ShopRow {
+                label: "Item A",
+                price: Some(10),
+            },
+            ShopRow {
+                label: "Item B",
+                price: Some(20),
+            },
+        ];
+        // cursor=1 → no crash
+        let draws = shop_draws_for(&font, "[SELL]", &rows, 1, Some(100), (0, 0));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn level_up_draws_for_produces_two_line_draws() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = level_up_draws_for(&font, 0, 5, 10, 5, (8, 60));
+        // Two non-empty lines — at minimum the title line must produce glyphs.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn level_up_draws_for_second_line_below_first() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = level_up_draws_for(&font, 0, 2, 10, 5, (8, 60));
+        // At least two distinct Y positions (line 1 at 60, line 2 at 76).
+        let y_vals: std::collections::HashSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+        assert!(
+            y_vals.len() >= 2,
+            "expected draws at two distinct y positions"
+        );
     }
 }

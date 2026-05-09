@@ -58,9 +58,9 @@ const MIN_PRESCRIPT_COUNT: u16 = 3;
 const FRAME_OPENER: u32 = 0x0000_FFFF;
 
 /// Required minimum fraction of records that open with [`FRAME_OPENER`].
-/// Real scene-event-script bundles hit 50–92 %; this threshold separates
+/// Real scene-event-script bundles hit 45–92 %; this threshold separates
 /// them cleanly from the few coincidence-prescript files (`< 14 %`).
-const FRAME_OPENER_RATE_MIN: f32 = 0.50;
+const FRAME_OPENER_RATE_MIN: f32 = 0.45;
 
 /// Detection result.
 #[derive(Debug, Clone, Serialize)]
@@ -216,13 +216,14 @@ mod tests {
     #[test]
     fn detects_at_50_pct_threshold() {
         let buf = synth(10, 5);
-        let r = detect(&buf).expect("50% should still detect");
+        let r = detect(&buf).expect("50% should still detect (above 45% threshold)");
         assert_eq!(r.frame_opener_count, 5);
         assert!((r.frame_opener_rate - 0.5).abs() < 1e-6);
     }
 
     #[test]
-    fn rejects_below_50_pct() {
+    fn rejects_below_45_pct() {
+        // 4/10 = 40% is below the 45% threshold
         let buf = synth(10, 4);
         assert!(detect(&buf).is_none());
     }

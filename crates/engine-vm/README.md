@@ -49,7 +49,7 @@ y =  operand_w       & 0xFF
 
 ## `field_vm` — `FUN_801DE840` (the field/event script VM)
 
-Per-scene event script VM (long-sought "Epic 4.3"). Switch dispatch at
+Per-scene event script VM (traced from `FUN_801DE840`). Switch dispatch at
 `0x801E00F4`; ~17.5 KB, the largest function in the corpus. All 43
 opcodes ported. Default-route opcodes (`0x5x` / `0x6x` / `0x7x`) are
 SET / CLEAR / TEST against a 256-bit bitfield at `DAT_80086D70` and

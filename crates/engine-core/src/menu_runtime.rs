@@ -17,7 +17,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use legaia_engine_vm::menu::{MenuCtx, MenuHost, MenuInput, MenuState, open, step};
+use legaia_engine_vm::menu::{MenuCtx, MenuHost, open, step};
+pub use legaia_engine_vm::menu::{MenuInput, MenuState};
 use legaia_save::{EquipmentSlots, Party, SpellList};
 
 use crate::inn::InnSession;
@@ -124,6 +125,16 @@ impl MenuRuntime {
     /// `true` while the menu is active (ctx state != Closed).
     pub fn is_open(&self) -> bool {
         self.ctx.state != MenuState::Closed.as_byte()
+    }
+
+    /// Raw state byte of the underlying [`MenuCtx`].
+    pub fn ctx_state(&self) -> u8 {
+        self.ctx.state
+    }
+
+    /// Cursor position within the current screen.
+    pub fn cursor(&self) -> u8 {
+        self.ctx.cursor
     }
 
     /// Per-frame tick. Drives the menu VM; on `SavePickSlot` / `LoadSlot`

@@ -56,6 +56,32 @@
   <p>Per-scene reference resolution is partial &mdash; many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain shape is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher", but the precise indexing scheme is still under investigation for non-battle scenes.</p>
 </section>
 
+<section class="doc-section" id="warp-flow">
+  <h2>WARP opcode &rarr; scene transition flow</h2>
+  <dl class="kv">
+    <dt>Field-VM opcode</dt><dd><code>0x3E</code> with <code>op0 &ge; 100</code></dd>
+    <dt>Scene handler</dt><dd><code>FUN_80025980</code></dd>
+  </dl>
+
+  <p>When the field VM executes opcode <code>0x3E</code> with <code>op0 &ge; 100</code>, it stores <code>map_id = op0 - 100</code> in <code>DAT_8007ba34</code> and switches game mode to <code>0xe</code> (SCENE_TRANSITION). The mode handler <code>FUN_80025980</code> then loads a <strong>code overlay</strong> at PROT index <code>map_id + 0x4d</code> (or <code>map_id + 0x4f</code> when <code>map_id &ge; 6</code>).</p>
+
+  <p>Only <strong>7 distinct WARP destinations</strong> exist (map_ids 0&ndash;6), each loading a scene-type overlay at PROT 0x4D&ndash;0x55 whose entry function resides at an overlay-resident address (<code>0x801CF070</code>, <code>0x801CE8A0</code>, etc.).</p>
+
+  <p>The <strong>scene name</strong> (stored at <code>DAT_80084548</code>, max 8 chars) is pre-set before <code>FUN_80025980</code> executes. The overlay entry function reads this buffer and passes it to <code>FUN_8001F7C0</code> and <code>FUN_80020118</code>. The mechanism that writes the scene name before the WARP fires is in a pre-transition handler not yet fully traced.</p>
+
+  <table>
+    <thead><tr><th>Global</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>DAT_80084548</code></td><td>Scene name string (pre-set before WARP fires)</td></tr>
+      <tr><td><code>DAT_80084540</code></td><td>Current scene PROT base index (short)</td></tr>
+      <tr><td><code>DAT_8007b768</code></td><td>Pending destination PROT index; <code>0xffff</code> = none</td></tr>
+      <tr><td><code>DAT_8007ba34</code></td><td>Pending warp map_id (0&ndash;6); read by <code>FUN_80025980</code></td></tr>
+    </tbody>
+  </table>
+
+  <p class="hint">The <code>DefaultMapIdResolver</code> in <code>engine-core::scene</code> uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations and the scene name is determined by a pre-WARP state-machine path still to be captured.</p>
+</section>
+
 <section class="doc-section" id="descriptor-walker">
   <h2>Asset descriptor walker</h2>
   <dl class="kv">

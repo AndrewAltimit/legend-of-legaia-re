@@ -20,7 +20,7 @@
 
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
-use crate::levelup::{LevelUpResult, LevelUpTracker};
+use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 use crate::world_map::WorldMapController;
 pub use legaia_anm::{AnimPlayer, PoseFrame};
@@ -402,6 +402,12 @@ pub struct World {
     /// distribute XP and check for level-ups.
     pub level_up_tracker: LevelUpTracker,
 
+    /// Active level-up HUD banner. Set by [`World::apply_battle_xp`] for the
+    /// last character that leveled up; `frames_remaining` is decremented by
+    /// [`World::tick`] until it reaches zero. `None` when no banner is active.
+    /// Engines render this as a dialog-font overlay after battle.
+    pub current_level_up_banner: Option<LevelUpBanner>,
+
     /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
@@ -496,6 +502,7 @@ impl World {
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),
+            current_level_up_banner: None,
             world_map_ctrl: None,
         }
     }
@@ -546,6 +553,13 @@ impl World {
                 new_level: result.new_level,
                 hp_gained: result.hp_gained,
                 mp_gained: result.mp_gained,
+            });
+            self.current_level_up_banner = Some(LevelUpBanner {
+                char_id,
+                new_level: result.new_level,
+                hp_gained: result.hp_gained,
+                mp_gained: result.mp_gained,
+                frames_remaining: LevelUpBanner::DEFAULT_FRAMES,
             });
             results.push(result);
         }
@@ -754,14 +768,55 @@ impl World {
 
     /// Ensure the slot at `id` is initialized with the supplied default
     /// position and active. Idempotent.
+    ///
+    /// Preserves `tmd_binding` and `active_animation` across the reset so
+    /// that `init_scene_animations` bindings survive the first field-VM
+    /// actor-spawn opcode.
     pub fn ensure_actor(&mut self, id: u8, default_pos: ActorVmPosition) -> &mut Actor {
         let a = &mut self.actors[id as usize];
         if !a.active {
+            let tmd_binding = a.tmd_binding;
+            let active_animation = a.active_animation.take();
             *a = Actor::new();
+            a.tmd_binding = tmd_binding;
+            a.active_animation = active_animation;
             a.active = true;
         }
         a.default_pos = default_pos;
         a
+    }
+
+    /// Pre-bind every actor slot to its scene resources before the field VM
+    /// spawns actors. Wires:
+    ///
+    /// - `actor.tmd_binding = slot_idx` (direct 1:1 ordering: the retail
+    ///   `FUN_8001E890` loop registers TMDs in pack offset-table order —
+    ///   actor K → TMD slot K).
+    /// - `actor.active_animation` seeded from ANM record 0 (idle) when an
+    ///   ANM pack is present for that slot.
+    ///
+    /// Because `ensure_actor` preserves these fields across resets, the
+    /// bindings survive the first field-VM actor-spawn opcode.
+    pub fn init_scene_animations(&mut self, resources: &crate::scene_resources::SceneResources) {
+        for (i, actor) in self.actors.iter_mut().enumerate() {
+            if i < resources.tmds.len() {
+                actor.tmd_binding = Some(i);
+            }
+            if actor.active_animation.is_none()
+                && let Some(anm) = resources.anm_pack_for_actor(i)
+                && let Some(rec_bytes) = anm.record_bytes(0)
+            {
+                let bone_count = resources
+                    .tmds
+                    .get(i)
+                    .map(|t| t.tmd.objects.len())
+                    .unwrap_or(1)
+                    .max(1);
+                if let Ok(player) = AnimPlayer::new(rec_bytes.to_vec(), bone_count) {
+                    actor.active_animation = Some(player);
+                }
+            }
+        }
     }
 
     /// Run the actor VM bytecode against this world.
@@ -878,6 +933,14 @@ impl World {
                 banner.frames_remaining -= 1;
             } else {
                 self.current_art_banner = None;
+            }
+        }
+        // Tick level-up banner countdown.
+        if let Some(banner) = &mut self.current_level_up_banner {
+            if banner.frames_remaining > 0 {
+                banner.frames_remaining -= 1;
+            } else {
+                self.current_level_up_banner = None;
             }
         }
         match self.mode {
@@ -2921,5 +2984,56 @@ mod tests {
             world.current_art_banner.is_none(),
             "banner should have cleared"
         );
+    }
+
+    // --- Level-up banner ---
+
+    #[test]
+    fn apply_battle_xp_sets_level_up_banner() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        // Retail table: 50 XP to reach level 2 (SCUS 0x8007123C entry[0]).
+        world.apply_battle_xp(50);
+        let banner = world
+            .current_level_up_banner
+            .as_ref()
+            .expect("level-up banner should be set");
+        assert_eq!(banner.char_id, 0);
+        assert_eq!(banner.new_level, 2);
+        assert_eq!(banner.hp_gained, 10); // default StatGain
+        assert_eq!(banner.mp_gained, 5);
+        assert_eq!(
+            banner.frames_remaining,
+            crate::levelup::LevelUpBanner::DEFAULT_FRAMES
+        );
+    }
+
+    #[test]
+    fn level_up_banner_countdown_clears() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.apply_battle_xp(50); // retail table: exactly L2 threshold
+        assert!(world.current_level_up_banner.is_some());
+        for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
+            world.tick();
+        }
+        assert!(
+            world.current_level_up_banner.is_none(),
+            "level-up banner should have cleared"
+        );
+    }
+
+    #[test]
+    fn no_level_up_banner_when_xp_insufficient() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.apply_battle_xp(49); // retail table: 49 < 50 (L2 threshold)
+        assert!(world.current_level_up_banner.is_none());
     }
 }

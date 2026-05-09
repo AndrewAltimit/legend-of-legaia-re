@@ -308,7 +308,7 @@ fn validation_suite_full_pipeline() {
         "total sub-asset count from streaming hits drifted"
     );
 
-    // ---- 4b. LZS container scan (Epic 2.1: verification at scale)
+    // ---- 4b. LZS container scan (verification at scale)
     let mut lzs_strict_hits = 0usize;
     for entry in &entries {
         archive

@@ -92,6 +92,20 @@ enum Cmd {
         /// Print up to N example file names per class.
         #[arg(long, default_value_t = 5)]
         examples: usize,
+        /// Only list entries matching this class name (e.g. `unknown_other`,
+        /// `unknown_high_entropy`). The JSON output is also filtered. Useful
+        /// for sweeping Unknown* clusters without wading through the full
+        /// report. Names are the `snake_case` strings from `Class::name()`.
+        #[arg(long)]
+        filter_class: Option<String>,
+        /// CDNAME.TXT path. When given, the per-file listing and a slot-
+        /// histogram table are cross-referenced with CDNAME scene blocks.
+        /// For each matching entry the output shows `<scene>+<slot>` where
+        /// `slot` is the zero-based offset within the scene block. Entries
+        /// that don't fall inside any named block show `<raw_idx>` instead.
+        /// Used for §3.2.3 Unknown cluster cross-reference.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
     },
     /// Hunt for the 0x801C0000-overlay file. For each PROT entry, scan the
     /// raw bytes AND the result of LZS-decoding (at several plausible output
@@ -325,7 +339,16 @@ fn main() -> Result<()> {
             out,
             top_signatures,
             examples,
-        } => categorize_dir(&dir, out.as_ref(), top_signatures, examples),
+            filter_class,
+            cdname,
+        } => categorize_dir(
+            &dir,
+            out.as_ref(),
+            top_signatures,
+            examples,
+            filter_class.as_deref(),
+            cdname.as_deref(),
+        ),
         Cmd::FindOverlay {
             dir,
             top,
@@ -829,12 +852,16 @@ fn categorize_dir(
     out: Option<&PathBuf>,
     top_signatures: usize,
     examples: usize,
+    filter_class: Option<&str>,
+    cdname_path: Option<&Path>,
 ) -> Result<()> {
     use std::collections::BTreeMap;
 
     #[derive(serde::Serialize)]
     struct PerFile<'a> {
         path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cdname_slot: Option<String>,
         #[serde(flatten)]
         report: &'a categorize::FileReport,
     }
@@ -855,13 +882,46 @@ fn categorize_dir(
     }
 
     #[derive(serde::Serialize)]
+    struct SlotHistogramRow {
+        slot: u32,
+        count: usize,
+        scene_examples: Vec<String>,
+    }
+
+    #[derive(serde::Serialize)]
     struct Report<'a> {
         scan_root: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        filter_class: Option<&'a str>,
         n_files: usize,
         per_file: Vec<PerFile<'a>>,
         by_class: Vec<ClassBucket<'a>>,
         top_signatures: Vec<SignatureBucket>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        slot_histogram: Vec<SlotHistogramRow>,
     }
+
+    // Load CDNAME map if requested.
+    let cdname_map = cdname_path
+        .map(cdname::parse)
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("CDNAME parse error: {e}"))?;
+
+    // Helper: PROT entry index from a filename like `0042_scene.BIN`.
+    let entry_index_from_name =
+        |name: &str| -> Option<u32> { name.split('_').next()?.parse::<u32>().ok() };
+
+    // Helper: resolve a PROT entry index to `scene+slot` or `raw_N`.
+    let slot_label = |idx: u32| -> String {
+        if let Some(ref map) = cdname_map
+            && let Some(scene) = cdname::block_for(map, idx)
+        {
+            // Find the scene start index to compute the slot offset.
+            let start = map.range(..=idx).next_back().map(|(k, _)| *k).unwrap_or(0);
+            return format!("{}+{}", scene, idx - start);
+        }
+        format!("raw_{}", idx)
+    };
 
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -871,6 +931,7 @@ fn categorize_dir(
 
     let mut reports: Vec<categorize::FileReport> = Vec::with_capacity(paths.len());
     let mut names: Vec<String> = Vec::with_capacity(paths.len());
+    let mut slot_labels: Vec<Option<String>> = Vec::with_capacity(paths.len());
 
     for p in &paths {
         let buf = match std::fs::read(p) {
@@ -880,17 +941,23 @@ fn categorize_dir(
                 continue;
             }
         };
+        let name = p
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| p.display().to_string());
         reports.push(categorize::classify(&buf));
-        names.push(
-            p.file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| p.display().to_string()),
-        );
+        let lbl = if cdname_map.is_some() {
+            entry_index_from_name(&name).map(&slot_label)
+        } else {
+            None
+        };
+        slot_labels.push(lbl);
+        names.push(name);
     }
 
     let n_files = reports.len();
 
-    // Group by class.
+    // Group by class (unfiltered, for the summary table).
     let mut by_class: BTreeMap<&'static str, (usize, usize, Vec<&String>)> = BTreeMap::new();
     for (i, r) in reports.iter().enumerate() {
         let entry = by_class.entry(r.class.name()).or_insert((0, 0, Vec::new()));
@@ -901,9 +968,47 @@ fn categorize_dir(
         }
     }
 
-    // Group by first-u32 signature.
+    // Slot histogram (only for filtered class when --cdname is given).
+    let mut slot_hist: BTreeMap<u32, (usize, Vec<String>)> = BTreeMap::new();
+    if cdname_map.is_some() {
+        for (i, r) in reports.iter().enumerate() {
+            let matches_filter = filter_class.map(|f| r.class.name() == f).unwrap_or(true);
+            if !matches_filter {
+                continue;
+            }
+            if let Some(idx) = entry_index_from_name(&names[i]) {
+                // slot offset within the scene block
+                let slot_offset = if let Some(ref map) = cdname_map {
+                    let start = map.range(..=idx).next_back().map(|(k, _)| *k).unwrap_or(0);
+                    idx - start
+                } else {
+                    idx
+                };
+                let entry = slot_hist.entry(slot_offset).or_insert((0, Vec::new()));
+                entry.0 += 1;
+                if entry.1.len() < 3 {
+                    entry.1.push(names[i].clone());
+                }
+            }
+        }
+    }
+    let mut slot_histogram: Vec<SlotHistogramRow> = slot_hist
+        .into_iter()
+        .map(|(slot, (count, ex))| SlotHistogramRow {
+            slot,
+            count,
+            scene_examples: ex,
+        })
+        .collect();
+    slot_histogram.sort_by(|a, b| b.count.cmp(&a.count).then(a.slot.cmp(&b.slot)));
+
+    // Group by first-u32 signature (filtered).
     let mut by_sig: BTreeMap<u32, (usize, Vec<String>)> = BTreeMap::new();
     for (i, r) in reports.iter().enumerate() {
+        let matches_filter = filter_class.map(|f| r.class.name() == f).unwrap_or(true);
+        if !matches_filter {
+            continue;
+        }
         let Some(sig) = r.first_u32 else { continue };
         let entry = by_sig.entry(sig).or_insert((0, Vec::new()));
         entry.0 += 1;
@@ -936,8 +1041,11 @@ fn categorize_dir(
         })
         .collect();
 
-    // Console summary.
-    println!("=== categorize: {} files ===", n_files);
+    // Console summary (unfiltered class table).
+    let filter_note = filter_class
+        .map(|f| format!(" (filter: {f})"))
+        .unwrap_or_default();
+    println!("=== categorize: {} files{} ===", n_files, filter_note);
     println!();
     println!(
         "{:>5}  {:>9}  class                      examples",
@@ -946,6 +1054,11 @@ fn categorize_dir(
     let mut sorted_classes: Vec<_> = by_class.iter().collect();
     sorted_classes.sort_by_key(|b| std::cmp::Reverse(b.1.0));
     for (name, (count, total, ex)) in &sorted_classes {
+        let marker = if filter_class == Some(name) {
+            " <--"
+        } else {
+            ""
+        };
         let mb = (*total as f64) / (1024.0 * 1024.0);
         let ex_str = ex
             .iter()
@@ -953,9 +1066,50 @@ fn categorize_dir(
             .map(|s| s.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        println!("{:>5}  {:>9.2}  {:<26} {}", count, mb, name, ex_str);
+        println!(
+            "{:>5}  {:>9.2}  {:<26} {}{}",
+            count, mb, name, ex_str, marker
+        );
     }
     println!();
+
+    // Per-file listing for the filtered class (when filter_class is given).
+    if let Some(fc) = filter_class {
+        println!("=== entries matching class '{}' ===", fc);
+        let mut printed = 0usize;
+        for (i, r) in reports.iter().enumerate() {
+            if r.class.name() != fc {
+                continue;
+            }
+            let lbl = slot_labels[i].as_deref().unwrap_or("");
+            let lbl_col = if lbl.is_empty() {
+                String::new()
+            } else {
+                format!("  [{}]", lbl)
+            };
+            println!(
+                "  {:>9}B  h={:.2}  head={}{}  {}",
+                r.size, r.entropy_bits, r.head, lbl_col, names[i]
+            );
+            printed += 1;
+        }
+        println!("  ({} entries)", printed);
+        println!();
+    }
+
+    if !slot_histogram.is_empty() {
+        println!(
+            "=== slot histogram (class '{}') ===",
+            filter_class.unwrap_or("all")
+        );
+        println!("{:>5}  {:>5}  scene examples", "slot", "count");
+        for row in &slot_histogram {
+            let ex = row.scene_examples.join(", ");
+            println!("{:>5}  {:>5}  {}", row.slot, row.count, ex);
+        }
+        println!();
+    }
+
     println!("=== top {} first-u32 signatures ===", sigs.len());
     println!("{:>5}  {:<12}  examples", "n", "signature");
     for sb in &sigs {
@@ -972,18 +1126,23 @@ fn categorize_dir(
     let per_file: Vec<PerFile> = reports
         .iter()
         .zip(names.iter())
-        .map(|(r, name)| PerFile {
+        .zip(slot_labels.iter())
+        .filter(|((r, _), _)| filter_class.map(|f| r.class.name() == f).unwrap_or(true))
+        .map(|((r, name), lbl)| PerFile {
             path: name.clone(),
+            cdname_slot: lbl.clone(),
             report: r,
         })
         .collect();
 
     let report = Report {
         scan_root: dir.display().to_string(),
+        filter_class,
         n_files,
         per_file,
         by_class: class_buckets,
         top_signatures: sigs,
+        slot_histogram,
     };
 
     let out_path: PathBuf = out.cloned().unwrap_or_else(|| dir.join("categorize.json"));

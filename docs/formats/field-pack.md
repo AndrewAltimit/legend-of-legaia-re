@@ -60,6 +60,33 @@ That rules out a magic-checked format loader. The most likely interpretation is 
 
 Per-slot interpretation therefore depends on locating the consumer — per-scene code in a field/town overlay that reads from the slot offsets. See [`ghidra/scripts/find_field_pack_magic.py`](../../ghidra/scripts/find_field_pack_magic.py) for the scan that established the magic isn't referenced, and [`ghidra/scripts/find_field_pack_consumers.py`](../../ghidra/scripts/find_field_pack_consumers.py) for the consumer-search complement.
 
+## Scene-transition consumer
+
+The confirmed scene-transition caller of `FUN_8001f7c0` (scene asset loader)
+is `FUN_801D6704` (overlay 0897, `801d6ae8`):
+
+```
+; a0 = _DAT_1f8003ec (DMA read buffer)
+; a1 = 0x80084548   (scene name table)
+; a2 = _DAT_80084540 (current scene pointer, from s4-8)
+; a3 = 0
+jal   0x8001f7c0
+_clear a3
+```
+
+After the load, `FUN_801D6704` at `801d6b0c` calls `FUN_80020224`
+(descriptor-pair walker), which iterates the asset descriptor table at
+`_DAT_8007B85C` and dispatches each entry through `FUN_8001F05C` (asset
+type dispatcher).
+
+The 97-slot field-pack data is consumed at **static offsets** — there is no
+slot-iteration loop in the captured code. The byte-identical schema confirms
+it: the consumer treats the buffer as a fixed in-RAM layout template and
+reads NPC/event/collision slots by hard-coded index, not by walking the
+offset table. Per-NPC and per-event slot handlers are called indirectly
+through the descriptor table; their specific entry points require capturing
+a full scene-init execution trace (not yet available in the overlay dumps).
+
 ## Tooling
 
 ```bash

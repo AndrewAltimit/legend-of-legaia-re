@@ -88,7 +88,7 @@
     </a>
     <a class="card" id="anm" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/anm.md" target="_blank" rel="noopener">
       <div class="card-title">ANM animation</div>
-      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Per-record bytecode is overlay-resident.</div>
+      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Per-record bytecode is overlay-resident; the non-opcode-6 handler is at <code>801e260c</code> in <code>FUN_801DE840</code> (overlay 0897), dispatched via sub-table at <code>0x801CEF88</code>.</div>
     </a>
     <a class="card" id="mdt" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mdt.md" target="_blank" rel="noopener">
       <div class="card-title">MDT — move tables</div>
@@ -114,7 +114,7 @@
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-pack.md" target="_blank" rel="noopener">
       <div class="card-title">Field-pack format</div>
-      <div class="card-body">Magic <code>0x01059B84</code>. 124 PROT entries share a 97-entry schema preceding packed TIMs/TMDs.</div>
+      <div class="card-body">Magic <code>0x01059B84</code>. 4 PROT entries share a byte-identical 97-entry static schema. Consumer is <code>FUN_801D6704</code> (overlay 0897, <code>801d6ae8</code>) which calls the scene loader then dispatches through <code>FUN_80020224</code>; slots are read at hard-coded offsets, not iterated.</div>
     </a>
   </div>
 </section>

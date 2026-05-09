@@ -3,8 +3,8 @@
 //! Monitors per-art usage counts; emits a `TacticalArtLearned` event the
 //! first time a character's use count for an art crosses the configured
 //! threshold. The threshold approximates the retail per-art learning
-//! condition; once the real formula is traced from the save-screen overlay
-//! (§3.1) it can be replaced.
+//! condition; once the real formula is traced from the level-up / battle overlay
+//! it can be replaced.
 //!
 //! Art names come from the game's MES dialog containers — the tracker stores
 //! them as a caller-supplied `HashMap<u8, String>`. Without disc data the

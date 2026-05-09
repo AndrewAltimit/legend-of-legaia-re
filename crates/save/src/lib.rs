@@ -45,8 +45,9 @@ pub mod character;
 pub mod ext;
 
 pub use card::{
-    BLOCK_SIZE, CARD_MAGIC, CARD_SIZE, DIR_FRAMES, DirEntry, SAVE_BLOCK_MAGIC, SaveBlock,
-    parse_card, read_block, walk_directory, write_block,
+    BLOCK_SIZE, CARD_MAGIC, CARD_SIZE, DIR_FRAMES, DirEntry, RETAIL_CHAR_RECORD_HEADER_SIZE,
+    RETAIL_CHAR_RECORD_STRIDE, RETAIL_GAME_DATA_OFFSET, SAVE_BLOCK_MAGIC, SaveBlock, parse_card,
+    read_block, read_retail_char_records, walk_directory, write_block,
 };
 pub use character::{
     ABILITY_BITS_LEN, CHARACTER_RECORD_SIZE, CharacterRecord, EquipmentSlots, HpMpSp, MAX_SPELLS,

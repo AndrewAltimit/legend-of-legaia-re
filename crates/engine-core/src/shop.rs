@@ -7,9 +7,9 @@
 //! [`ShopSession::try_buy`] and [`ShopSession::try_sell`].
 //!
 //! **Placeholder note**: item prices and shop inventories are supplied by the
-//! engine at `open_shop` time. The actual per-scene shop layouts are defined
-//! by the shop overlay (§3.1 in the future-work PRD); once that overlay is
-//! captured the engine can populate `ShopInventory` from the decoded data.
+//! engine at `open_shop` time. The actual per-scene shop layouts are encoded
+//! in the shop overlay (`overlay_shop_save`); trace the data tables to
+//! populate `ShopInventory` from decoded disc data.
 
 /// One item a shop stocks.
 #[derive(Debug, Clone, PartialEq, Eq)]
