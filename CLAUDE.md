@@ -53,6 +53,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`mes.md`](docs/formats/mes.md) | MES dialog containers (Compact + Records variants). |
 | [`anm.md`](docs/formats/anm.md) | ANM animation pack. |
 | [`mdt.md`](docs/formats/mdt.md) | Move table (Tactical Arts). |
+| [`art-data.md`](docs/formats/art-data.md) | Art records: per-character ActionConstants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
 | [`scene-bundles.md`](docs/formats/scene-bundles.md) | Scene-asset bundle layout per game mode. |
 | [`pochi.md`](docs/formats/pochi.md) | "Pochi-fill" placeholder slots — reserved-but-unused dev fillers. |
 | [`mips-overlay.md`](docs/formats/mips-overlay.md) | Per-PROT MIPS-code-likelihood detection. |
@@ -118,6 +119,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/vab`](crates/vab/README.md) | `vab` | VAB sound bank extractor + SPU-ADPCM decoder. |
 | [`crates/seq`](crates/seq/README.md) | `seq` | PsyQ SEQ parser + CLI inspector. |
 | [`crates/mdt`](crates/mdt/README.md) | `mdt` | Move table (Tactical Arts) parser. |
+| [`crates/art`](crates/art/README.md) | `art` | Tactical Arts data: ActionConstants, per-character art tables, Miracle/Super Art trigger matchers, art-record parser. |
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
 | [`crates/save`](crates/save/README.md) | `save-tool` | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus PSX memory-card walker; `SaveExt` / `SaveFile` (`LGSF v1`) for full engine save round-trips (party + story flags + money + inventory). |

@@ -59,6 +59,10 @@ enum Cmd {
         /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
+        /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
     },
     /// List every distinct scene name the CDNAME map exposes, with the
     /// PROT entry range each one covers.
@@ -66,6 +70,10 @@ enum Cmd {
         /// Extracted-root directory containing `CDNAME.TXT`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
+        /// Alternative source: read CDNAME.TXT directly from a `.bin`
+        /// disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
     },
     /// Save the current world's empty/default party to a slot file.
     /// Useful as a smoke test for the disk save path; engines drive this
@@ -203,8 +211,12 @@ fn main() -> Result<()> {
         Cmd::Info {
             scene,
             extracted_root,
-        } => cmd_info(&scene, &extracted_root),
-        Cmd::ListScenes { extracted_root } => cmd_list_scenes(&extracted_root),
+            disc,
+        } => cmd_info(&scene, &extracted_root, disc.as_deref()),
+        Cmd::ListScenes {
+            extracted_root,
+            disc,
+        } => cmd_list_scenes(&extracted_root, disc.as_deref()),
         Cmd::Play {
             scene,
             extracted_root,
@@ -249,21 +261,12 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_info(scene_name: &str, extracted_root: &std::path::Path) -> Result<()> {
-    let prot = extracted_root.join("PROT.DAT");
-    let cdname_path = extracted_root.join("CDNAME.TXT");
-    if !prot.exists() {
-        anyhow::bail!("missing {} (run `legaia-extract` first)", prot.display());
-    }
-    if !cdname_path.exists() {
-        anyhow::bail!(
-            "missing {} (run `legaia-extract` first)",
-            cdname_path.display()
-        );
-    }
-
-    let index = ProtIndex::open_extracted(extracted_root)
-        .with_context(|| format!("open ProtIndex at {}", extracted_root.display()))?;
+fn cmd_info(
+    scene_name: &str,
+    extracted_root: &std::path::Path,
+    disc: Option<&std::path::Path>,
+) -> Result<()> {
+    let index = open_index_from_args(extracted_root, disc)?;
     let scene =
         Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
     let assets = SceneAssets::build(&scene);
@@ -475,16 +478,27 @@ fn cmd_load(save_dir: &std::path::Path, slot: u8) -> Result<()> {
     Ok(())
 }
 
-fn cmd_list_scenes(extracted_root: &std::path::Path) -> Result<()> {
-    let cdname_path = extracted_root.join("CDNAME.TXT");
-    if !cdname_path.exists() {
-        anyhow::bail!(
-            "missing {} (run `legaia-extract` first)",
-            cdname_path.display()
-        );
-    }
-    let map =
-        cdname::parse(&cdname_path).with_context(|| format!("parse {}", cdname_path.display()))?;
+fn cmd_list_scenes(extracted_root: &std::path::Path, disc: Option<&std::path::Path>) -> Result<()> {
+    let map: cdname::IndexMap = if let Some(disc_path) = disc {
+        // Pull CDNAME.TXT bytes out of the disc image once.
+        use legaia_engine_core::{DiscVfs, Vfs};
+        let vfs = DiscVfs::open(disc_path)?;
+        let bytes = vfs
+            .read("cdname.txt")
+            .or_else(|_| vfs.read("data/cdname.txt"))
+            .context("CDNAME.TXT not present in disc image")?;
+        let text = String::from_utf8(bytes).context("CDNAME.TXT is not valid UTF-8")?;
+        cdname::parse_str(&text)?
+    } else {
+        let cdname_path = extracted_root.join("CDNAME.TXT");
+        if !cdname_path.exists() {
+            anyhow::bail!(
+                "missing {} (run `legaia-extract` first or pass --disc PATH)",
+                cdname_path.display()
+            );
+        }
+        cdname::parse(&cdname_path).with_context(|| format!("parse {}", cdname_path.display()))?
+    };
 
     let mut names: Vec<String> = map.values().cloned().collect();
     names.sort();
@@ -503,6 +517,41 @@ fn cmd_list_scenes(extracted_root: &std::path::Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Open a `ProtIndex` from either an extracted directory (default) or a
+/// disc image (when `--disc` was provided). Used by subcommands that
+/// accept either source.
+fn open_index_from_args(
+    extracted_root: &std::path::Path,
+    disc: Option<&std::path::Path>,
+) -> Result<ProtIndex> {
+    if let Some(disc_path) = disc {
+        use legaia_engine_core::{DiscVfs, Vfs};
+        let vfs = DiscVfs::open(disc_path)
+            .with_context(|| format!("open disc image {}", disc_path.display()))?;
+        let prot_bytes = vfs
+            .read("prot.dat")
+            .context("PROT.DAT not present in disc image")?;
+        let cdname_text = vfs
+            .read("cdname.txt")
+            .or_else(|_| vfs.read("data/cdname.txt"))
+            .ok()
+            .map(|b| String::from_utf8(b).context("CDNAME.TXT is not valid UTF-8"))
+            .transpose()?;
+        ProtIndex::from_bytes(prot_bytes, cdname_text.as_deref())
+            .with_context(|| format!("build ProtIndex from {}", disc_path.display()))
+    } else {
+        let prot = extracted_root.join("PROT.DAT");
+        if !prot.exists() {
+            anyhow::bail!(
+                "missing {} (run `legaia-extract` first or pass --disc PATH)",
+                prot.display()
+            );
+        }
+        ProtIndex::open_extracted(extracted_root)
+            .with_context(|| format!("open ProtIndex at {}", extracted_root.display()))
+    }
 }
 
 // ---------------------------------------------------------------------------

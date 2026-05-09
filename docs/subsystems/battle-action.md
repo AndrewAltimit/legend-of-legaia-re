@@ -237,6 +237,15 @@ Arms (clean-room port at [`crates/engine-vm/src/action_validator.rs`](../../crat
 
 The retail dispatcher's `gp + 0x9A8` byte is exposed via [`ActionValidatorHost::target_valid_bits`](../../crates/engine-vm/src/action_validator.rs); engines wire it to whatever cursor / slot-grey state the menu reads.
 
+## Action queue and Tactical Arts trigger ordering
+
+Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolves the player's command-input sequence into a flat **action queue** of [`ActionConstant`](../formats/art-data.md#action-constants) bytes. The queue is built incrementally from directional inputs and accumulated arts; once the player commits, the runtime applies two trigger passes in order:
+
+1. **Miracle Art match** — if the input command sequence equals the character's Miracle Art command string, the entire queue is replaced with the Miracle Art's replacement string (`L`/`R`/`D`/`U` × 4 → `SpecialStarter` → `art1, art2, ...`). The first 4 directional bytes carry the on-disc MSB-set quirk and are masked to `0x0C..=0x0F`.
+2. **Super Art find/replace at tail** — for each chained art the runtime walks all the character's Super Art `find` patterns and replaces the matched tail with a `replace` tail ending in the Super Art's finisher action constant. Triggers require: the last art of `find` is the last action in the queue, and all participating arts paid AP.
+
+Both passes are clean-room ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
+
 ## TODO
 
 - The `0x07` and a handful of intermediate values (`0x21..0x27`, `0x39..0x3B`, `0x41..0x45`, `0x49..0x4F`, `0x53..0x59`, `0x5B..0x63`, `0x6C..0x6D`, `0x72..0xFC`) have no case bodies. Confirm they are reserved padding versus reachable-via-other-overlay.

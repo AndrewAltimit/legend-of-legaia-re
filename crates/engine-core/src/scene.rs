@@ -525,6 +525,34 @@ impl SceneHost {
         Ok(Self::new(Arc::new(p)))
     }
 
+    /// Open the host directly from a `.bin` disc image. The disc is walked
+    /// once to extract `PROT.DAT` and `CDNAME.TXT` from the ISO9660 tree;
+    /// the extracted bytes are then handed to [`ProtIndex::from_bytes`].
+    ///
+    /// This is the user-facing path: ship the engine, the user supplies a
+    /// disc image, no extraction step needed. Native targets only — WASM
+    /// uses `from_prot_bytes` with the bytes supplied via JS.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn open_disc(disc_bin: impl AsRef<Path>) -> Result<Self> {
+        use crate::Vfs;
+        let vfs = crate::DiscVfs::open(disc_bin.as_ref())?;
+        let prot_bytes = vfs
+            .read("prot.dat")
+            .with_context(|| "PROT.DAT not present in disc image")?;
+        // CDNAME.TXT may live at either DATA/CDNAME.TXT or top-level. The
+        // ISO walker stores the path verbatim.
+        let cdname_bytes = vfs
+            .read("cdname.txt")
+            .or_else(|_| vfs.read("data/cdname.txt"))
+            .ok();
+        let cdname_text = match cdname_bytes {
+            Some(b) => Some(String::from_utf8(b).context("CDNAME.TXT is not valid UTF-8")?),
+            None => None,
+        };
+        let p = ProtIndex::from_bytes(prot_bytes, cdname_text.as_deref())?;
+        Ok(Self::new(Arc::new(p)))
+    }
+
     /// Build a host from raw in-memory PROT.DAT bytes. WASM-safe — no
     /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
     /// available; omit to skip scene-name resolution.

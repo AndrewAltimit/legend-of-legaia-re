@@ -176,6 +176,19 @@ Sits between the SsApi seq layer and the libspu register primitives. This is the
 | `FUN_8006A158` | `SsSpuMalloc` core | 712-byte block allocator. Walks the `_DAT_8007AFA4` block table, returns the start of the first free run of size `>= request`, marks header word `0x40000000` end-of-table where appropriate. Called from `FUN_80068D94` (SEP loader). |
 | `FUN_8006A420` | `SpuFree` compactor | 776-byte coalescer. Iterates the block table, merges adjacent free entries (high-bit `0x80000000` set), shifts entries down to fill gaps. Called from `FUN_8006A728` (`SpuFree`). |
 
+### Reverb model (engine-audio)
+
+The retail SPU implements reverb as a comb-filter + allpass network with a configurable work buffer at the bottom of SPU RAM. The 9 standard libspu modes (`Room` / `StudioA-C` / `Hall` / `Space` / `Echo` / `Delay` / `Pipe`) plus `Off` set parameter triples the SPU's reverb registers consume.
+
+The `engine-audio` clean-room port models reverb perceptually rather than at the register level: a per-channel circular delay buffer with a single feedback tap and a wet/dry mix. Each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) maps to a `(delay_samples, feedback_q14, wet_q14)` triple tuned by ear against retail recordings.
+
+Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`. Spirit Arts and echo-flagged sound effects opt in; everything else stays dry.
+
+Trade-offs:
+- Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`.
+- The retail `SpuSetReverbModeParam` (`FUN_8006B1B4`, 30-attribute commit) is *stored* but not interpreted — the perceptual presets win.
+- Pitch-of-reverb-tail relative to retail is approximate. Goal is "Spirit Arts have an echo," not bit-exact reproduction.
+
 ### SsApi seq-management layer (above libspu)
 
 | Function | Role |

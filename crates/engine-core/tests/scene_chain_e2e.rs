@@ -46,13 +46,19 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
     let mut scenes_with_mes = 0usize;
     let mut scenes_with_seq = 0usize;
     let mut scenes_with_tmd = 0usize;
+    let mut scenes_with_vab = 0usize;
     let mut total_mes_messages = 0usize;
     let mut total_seq_entries = 0usize;
     let mut total_tmds = 0usize;
+    let mut total_vab_entries = 0usize;
     let mut tmd_obj_count = 0u32;
     let mut seq_magic_ok = 0usize;
     let mut seq_magic_bad = 0usize;
+    let mut vab_magic_ok = 0usize;
+    let mut vab_parse_ok = 0usize;
+    let mut vab_parse_bad = 0usize;
     let mut sample_mes_text: Option<(String, u16, usize)> = None;
+    let mut sample_vab: Option<(String, u32, usize)> = None;
 
     for scene_name in &scene_names {
         if host.load_scene(scene_name).is_err() {
@@ -102,14 +108,64 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
                 tmd_obj_count += tmd.n_obj;
             }
         }
+
+        // VAB pass: every `scene_vab_stream` entry must carry the `VABp`
+        // magic and parse via `legaia_vab::parse` past the chunk header.
+        // This catches regressions in the chunk-header offset math used
+        // by `SceneAssets::build` and the BGM resolver.
+        if !assets.vab_entries.is_empty() {
+            scenes_with_vab += 1;
+            total_vab_entries += assets.vab_entries.len();
+            // Probe the first 2 entries per scene to keep walltime
+            // bounded — coverage across hundreds of scenes is ample.
+            for &vab_idx in assets.vab_entries.iter().take(2) {
+                let bytes = host.index.entry_bytes(vab_idx).expect("read VAB entry");
+                // `scene_vab_stream` shape is `[u32 chunk0 type=0,size=N][VABp at +4]`.
+                // The classifier already filtered for VABp magic at offset 4,
+                // so we'd expect those bytes to start the VAB header.
+                let off = 4usize;
+                if bytes.len() >= off + 4 && &bytes[off..off + 4] == b"VABp" {
+                    vab_magic_ok += 1;
+                    match legaia_vab::parse(&bytes, off) {
+                        Ok(rep) => {
+                            vab_parse_ok += 1;
+                            if sample_vab.is_none() {
+                                sample_vab =
+                                    Some((scene_name.clone(), vab_idx, rep.programs.len()));
+                            }
+                        }
+                        Err(_) => vab_parse_bad += 1,
+                    }
+                } else {
+                    // Probe at offset 0 as a fallback for non-streaming
+                    // VABs (vab_01-cluster entries that aren't wrapped).
+                    if bytes.len() >= 4 && &bytes[..4] == b"VABp" {
+                        vab_magic_ok += 1;
+                        match legaia_vab::parse(&bytes, 0) {
+                            Ok(rep) => {
+                                vab_parse_ok += 1;
+                                if sample_vab.is_none() {
+                                    sample_vab =
+                                        Some((scene_name.clone(), vab_idx, rep.programs.len()));
+                                }
+                            }
+                            Err(_) => vab_parse_bad += 1,
+                        }
+                    } else {
+                        vab_parse_bad += 1;
+                    }
+                }
+            }
+        }
     }
 
     eprintln!(
-        "[chain] scenes={} mes={} seq={} tmd={}",
+        "[chain] scenes={} mes={} seq={} tmd={} vab={}",
         scene_names.len(),
         scenes_with_mes,
         scenes_with_seq,
-        scenes_with_tmd
+        scenes_with_tmd,
+        scenes_with_vab
     );
     eprintln!(
         "[chain] total_mes_messages={} total_seq={} (magic-ok={}, magic-bad={}) total_tmds={} total_objs={}",
@@ -120,10 +176,20 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
         total_tmds,
         tmd_obj_count
     );
+    eprintln!(
+        "[chain] total_vab_entries={} (magic-ok={}, parse-ok={}, parse-bad={})",
+        total_vab_entries, vab_magic_ok, vab_parse_ok, vab_parse_bad
+    );
     if let Some((scene, id, len)) = &sample_mes_text {
         eprintln!(
             "[chain] sample MES: scene='{}' text_id={} bytes={}",
             scene, id, len
+        );
+    }
+    if let Some((scene, idx, programs)) = &sample_vab {
+        eprintln!(
+            "[chain] sample VAB: scene='{}' entry={} programs={}",
+            scene, idx, programs
         );
     }
 
@@ -148,6 +214,21 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
     assert_eq!(
         seq_magic_bad, 0,
         "{seq_magic_bad} SEQ entries failed the pQES magic check"
+    );
+
+    // VAB coverage: at least some scenes carry a VAB; every probe parsed.
+    assert!(scenes_with_vab > 0, "no VAB-bearing scenes detected");
+    assert!(
+        vab_magic_ok > 0,
+        "no VAB entries surfaced the VABp magic via SceneAssets::vab_entries"
+    );
+    assert_eq!(
+        vab_parse_bad, 0,
+        "{vab_parse_bad} VAB entries failed legaia_vab::parse — chunk-header offset math regressed?"
+    );
+    assert!(
+        sample_vab.is_some(),
+        "no VAB program list resolved to a non-empty programs vector"
     );
 }
 

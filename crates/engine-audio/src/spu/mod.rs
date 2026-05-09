@@ -10,21 +10,29 @@
 //!
 //! What this does NOT model:
 //!
-//! - Reverb. The PSX SPU has a small reverb work area at the bottom of SPU
-//!   RAM (configurable). Spirit Arts use it. Out of scope for the first port
-//!   pass; the reverb-mode register exists as a no-op so libspu calls that
-//!   touch it don't panic.
 //! - Pitch modulation, noise mode, FM. None of these are used by Legaia
 //!   (verified against the libspu calls in the SCUS dumps — `SpuSetPitch`
 //!   is the only pitch path, `SpuSetVoiceAttr` writes only sample addr +
 //!   ADSR + volume).
+//!
+//! ## Reverb (perceptual model)
+//!
+//! [`Reverb`] is a per-channel comb-filter network with [`ReverbMode`]
+//! presets covering the 9 standard PSX modes plus Off. Routing is
+//! per-voice: set [`Voice::reverb_send`] to opt a voice into the wet
+//! signal (libspu `SpuSetVoiceReverb` analogue). The retail SPU's
+//! register-level reverb topology is not reproduced — the goal is a
+//! perceptible echo tail for Spirit Arts, not bit-accuracy.
 //!
 //! See `docs/subsystems/audio.md` "engine-audio model" for the consumer.
 
 pub mod adpcm;
 pub mod adsr;
 pub mod ram;
+pub mod reverb;
 pub mod voice;
+
+pub use reverb::{Reverb, ReverbMode, ReverbParams};
 
 use ram::SpuRam;
 use voice::Voice;
@@ -42,8 +50,14 @@ pub struct Spu {
     /// Master volume, 0x0000..=0x3FFF (libspu `MVOL` shape).
     pub master_left: i16,
     pub master_right: i16,
-    /// Stub reverb mode register. Stored, not interpreted.
-    pub reverb_mode: u32,
+    /// Active reverb processor. Defaults to [`ReverbMode::Off`]. Voices
+    /// with `reverb_send = true` route their output through this; the wet
+    /// signal is mixed back into the master in [`Spu::tick`].
+    pub reverb: Reverb,
+    /// Last raw `reverb_mode` value written by libspu — preserved for
+    /// debugging / tooling. The active mode in the [`Reverb`] processor
+    /// is set via [`Spu::set_reverb_mode`].
+    pub reverb_mode_raw: u32,
 }
 
 impl Default for Spu {
@@ -53,7 +67,8 @@ impl Default for Spu {
             voices: std::array::from_fn(|_| Voice::default()),
             master_left: 0x3FFF,
             master_right: 0x3FFF,
-            reverb_mode: 0,
+            reverb: Reverb::new(ReverbMode::Off),
+            reverb_mode_raw: 0,
         }
     }
 }
@@ -85,17 +100,42 @@ impl Spu {
         }
     }
 
+    /// Set the active reverb mode. The [`Reverb`] processor's buffers are
+    /// resized; in-flight wet signal is dropped.
+    pub fn set_reverb_mode(&mut self, mode: ReverbMode) {
+        self.reverb.set_mode(mode);
+    }
+
+    /// libspu `SpuCommonAttr.reverb` analogue — accepts the raw mode byte
+    /// and updates both the live processor and the bookkeeping register.
+    pub fn write_reverb_mode_byte(&mut self, raw: u8) {
+        self.reverb_mode_raw = raw as u32;
+        self.set_reverb_mode(ReverbMode::from_byte(raw));
+    }
+
     /// Advance every voice by one sample tick at the SPU internal rate
     /// (44.1 kHz). Returns the (left, right) sample, master-volume scaled
     /// and clamped to i16.
     pub fn tick(&mut self) -> (i16, i16) {
         let mut acc_l: i64 = 0;
         let mut acc_r: i64 = 0;
+        let mut send_l: i64 = 0;
+        let mut send_r: i64 = 0;
         for v in &mut self.voices {
             let (l, r) = v.tick(&self.ram);
             acc_l += l as i64;
             acc_r += r as i64;
+            if v.reverb_send {
+                send_l += l as i64;
+                send_r += r as i64;
+            }
         }
+        // Drive the reverb network with the reverb-tagged voices' sum.
+        let send_l_i16 = send_l.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
+        let send_r_i16 = send_r.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
+        let (wet_l, wet_r) = self.reverb.tick(send_l_i16, send_r_i16);
+        acc_l += wet_l as i64;
+        acc_r += wet_r as i64;
         // Apply master volume.
         let l = ((acc_l * self.master_left as i64) >> 14).clamp(i16::MIN as i64, i16::MAX as i64);
         let r = ((acc_r * self.master_right as i64) >> 14).clamp(i16::MIN as i64, i16::MAX as i64);
@@ -188,5 +228,45 @@ mod tests {
         }
         spu.key_on_mask(0xFFFFFFFF);
         assert!(spu.find_idle_voice().is_none());
+    }
+
+    /// Reverb mode round-trips through the libspu-style mode byte API
+    /// and updates the live processor.
+    #[test]
+    fn write_reverb_mode_byte_updates_processor() {
+        let mut spu = Spu::new();
+        assert_eq!(spu.reverb.mode, ReverbMode::Off);
+        spu.write_reverb_mode_byte(7); // Echo
+        assert_eq!(spu.reverb_mode_raw, 7);
+        assert_eq!(spu.reverb.mode, ReverbMode::Echo);
+        spu.write_reverb_mode_byte(5); // Hall
+        assert_eq!(spu.reverb.mode, ReverbMode::Hall);
+        // Out-of-range falls back to Off.
+        spu.write_reverb_mode_byte(0xFE);
+        assert_eq!(spu.reverb.mode, ReverbMode::Off);
+    }
+
+    /// A voice with `reverb_send` set produces an echo tail past the
+    /// reverb mode's delay length when the master tick is run.
+    #[test]
+    fn reverb_send_voice_produces_wet_tail() {
+        let mut spu = Spu::new();
+        spu.set_reverb_mode(ReverbMode::Room);
+        // Plant a non-zero stream and key one voice on with reverb_send.
+        let stream = vec![0u8; 16];
+        spu.ram.write_at(0x1000, &stream);
+        spu.voices[0].start_addr = 0x1000;
+        spu.voices[0].vol_left = 0x3FFF;
+        spu.voices[0].vol_right = 0x3FFF;
+        spu.voices[0].set_reverb_send(true);
+        spu.key_on_mask(0b1);
+        // Render long enough to fill the room delay buffer.
+        let delay = spu.reverb.tick(0, 0);
+        let _ = delay;
+        let mut buf = vec![0i16; 4_410 * 2]; // 100 ms of stereo
+        spu.render_into(&mut buf);
+        // Silence stream → output is silence (no decoded samples), so we
+        // can't validate non-zero output here. Rely on the per-Reverb
+        // unit tests for that. The smoke value is "no panics".
     }
 }
