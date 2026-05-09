@@ -117,6 +117,7 @@ fn battle_turn_emits_events_into_pending_queue() {
                 BattleEvent::SpellAnimTrigger { .. } => "SpellAnimTrigger",
                 BattleEvent::SpellAnimSustain { .. } => "SpellAnimSustain",
                 BattleEvent::ApplyDamage { .. } => "ApplyDamage",
+                BattleEvent::ApplyArtStrike { .. } => "ApplyArtStrike",
                 BattleEvent::ScreenShake { .. } => "ScreenShake",
                 BattleEvent::RampBrightness { .. } => "RampBrightness",
                 BattleEvent::BattleEnd { .. } => "BattleEnd",

@@ -44,7 +44,9 @@ CLUT data scatters across PROT entries — many character meshes reference CLUT 
 
 Texture page (`tsb`) and CLUT base address (`cba`) remain `@interpolate(flat)` — they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
 
-A small fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. Production rendering still uses f32 wgpu math; the module exists as a citation point for downstream code (effect spawners, hit-detection, animation re-targeting) that needs to interpret captured GTE traces.
+A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. The module also exposes the GTE's higher-level primitives — a `Camera` bundle that runs `RTPT` (rotate-translate-perspective) end-to-end with PSX-correct saturation on behind-camera vertices, `nclip` for back-face rejection, `avsz3` / `avsz4` for OT-bucket selection, and a small CPU rasterizer scaffold (`raster::rasterize_triangle`, top-left fill rule, integer-pixel bounding-box iterator) downstream tooling uses to validate captured traces. Production rendering still uses f32 wgpu math; this module is the single citation point for code (effect spawners, hit-detection, animation re-targeting, offline regression checks) that needs to reproduce per-vertex GTE behaviour.
+
+The per-mode descriptor table from `DAT_8007326C` is also exposed as a typed lookup at `crates/tmd/src/descriptor.rs`: `Descriptor::for_flags(flags)` returns the resolved `PacketShape` (one of `F3` / `FT3` / `G3` / `GT3` / `F4` / `FT4` / `G4` / `GT4`) and the per-prim vertex-index offset. Same on-disc bytes as the older `legaia_prims::vertex_offset_bytes` free function, exposed as typed fields so consumers can branch on shading mode (flat vs gouraud) and texture presence without re-deriving the bit math.
 
 ## Stage geometry detector (legacy, signal only)
 

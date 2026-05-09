@@ -109,6 +109,46 @@ pub fn damage_cap_for_party_slot(caps: &[u16; 6], party_slot: u8) -> u16 {
     caps[idx]
 }
 
+/// Art-strike damage. One per-strike call into the HP-deduction kernel
+/// (`FUN_801EED1C` in the battle overlay, dispatched from
+/// `BattleActionHost::apply_art_strike`).
+///
+/// Formula:
+///
+/// ```text
+/// raw      = attack × power_multiplier / power_divisor
+/// damage   = max(min_floor, raw.saturating_sub(defense))
+/// ```
+///
+/// `power_divisor` is the fixed-point base for the multiplier table.
+/// The retail engine appears to use `divisor = 16`, giving multipliers in
+/// `12..=28` the fractional range `0.75..=1.75` against the target defense.
+/// `min_floor` is the in-game minimum-damage floor (1 in vanilla — the
+/// retail engine never deals zero damage on a successful strike unless the
+/// target is invulnerable).
+///
+/// Saturating arithmetic is used end-to-end so absurd inputs (e.g.
+/// captured trace replay where a stat overflowed) don't panic.
+pub fn art_strike_damage(
+    attack: u16,
+    defense: u16,
+    power_multiplier: u8,
+    power_divisor: u8,
+    min_floor: u16,
+) -> u16 {
+    if power_divisor == 0 {
+        return min_floor;
+    }
+    let raw = (attack as u32 * power_multiplier as u32) / power_divisor as u32;
+    let after_def = raw.saturating_sub(defense as u32);
+    after_def.max(min_floor as u32).min(0xFFFF) as u16
+}
+
+/// Convenience wrapper using the documented `divisor = 16, min_floor = 1`.
+pub fn art_strike_damage_default(attack: u16, defense: u16, power_multiplier: u8) -> u16 {
+    art_strike_damage(attack, defense, power_multiplier, 16, 1)
+}
+
 /// Standard "stat-up by 20%" ramp from selectors 1..7.
 ///
 /// Mirrors the retail check `value * (6/5)` if `value * 6/5 < 0xFFFF`,
@@ -224,6 +264,43 @@ mod tests {
         // Over → clamp at 0xFFFF.
         assert_eq!(buff_ramp(60_000), 0xFFFF);
         assert_eq!(buff_ramp(0xFFFF), 0xFFFF);
+    }
+
+    #[test]
+    fn art_strike_damage_basic_arithmetic() {
+        // attack=64, def=10, mult=16, div=16 → 64 - 10 = 54.
+        assert_eq!(art_strike_damage(64, 10, 16, 16, 1), 54);
+        // attack=64, def=10, mult=12 → (64 * 12) / 16 = 48; 48 - 10 = 38.
+        assert_eq!(art_strike_damage(64, 10, 12, 16, 1), 38);
+        // attack=64, def=10, mult=28 → (64 * 28)/16 = 112; 112-10 = 102.
+        assert_eq!(art_strike_damage(64, 10, 28, 16, 1), 102);
+    }
+
+    #[test]
+    fn art_strike_damage_floor_when_def_exceeds_attack() {
+        // High defense should clamp to floor, not underflow.
+        assert_eq!(art_strike_damage(10, 100, 16, 16, 1), 1);
+        // Custom floor.
+        assert_eq!(art_strike_damage(10, 100, 16, 16, 5), 5);
+    }
+
+    #[test]
+    fn art_strike_damage_zero_divisor_returns_floor() {
+        assert_eq!(art_strike_damage(64, 10, 16, 0, 1), 1);
+    }
+
+    #[test]
+    fn art_strike_damage_saturates_at_u16_max() {
+        // attack=0xFFFF, mult=28, div=1 -> raw overflows u16 -> clamps.
+        assert_eq!(art_strike_damage(0xFFFF, 0, 28, 1, 1), 0xFFFF);
+    }
+
+    #[test]
+    fn art_strike_damage_default_uses_div_16_floor_1() {
+        assert_eq!(
+            art_strike_damage_default(64, 10, 16),
+            art_strike_damage(64, 10, 16, 16, 1)
+        );
     }
 
     #[test]
