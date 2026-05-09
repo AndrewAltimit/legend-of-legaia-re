@@ -1,0 +1,259 @@
+# Mednafen scenario manifest.
+#
+# Maps each `.mc{0..9}` save state to a labelled scenario with overlay
+# slices, watchpoint regions, and downstream artefact paths. Consumed by
+# `mednafen-state` (see `crates/mednafen`) and the shell helpers under
+# `scripts/mednafen/`.
+#
+# See `docs/tooling/mednafen-automation.md` for the workflow.
+
+[defaults]
+# Filename pattern for the user's mednafen saves. {slot} is replaced with
+# the slot index (0..9). The hash is mednafen's per-rom identifier — adjust
+# if you're using a different US dump.
+filename_pattern = "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{slot}"
+# Default mcs/ directory. Override at runtime via `LEGAIA_MEDNAFEN_DIR`.
+# (Left unset here so the manifest is portable.)
+
+# ----------------------------------------------------------------------
+# mc0 — Drake Castle (mid-game checkpoint, no transition in flight)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 0
+label = "drake_castle"
+description = "Drake Castle (steady-state field with full party)"
+addresses_prd = ["§2.4 (move table boot-time table)"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# Watchpoint hint: confirms that the move-table base pointer is populated
+# in steady state. Diff against a fresh-boot state to find what writes
+# the field-VM dispatch base.
+[[scenarios.watchpoints]]
+label = "move_table_base"
+start = 0x8007B888
+end = 0x8007B89C
+hint = "FUN_800204F8 reads from this; populated by boot loader"
+
+[[scenarios.watchpoints]]
+label = "move_table_base_alt"
+start = 0x8007B840
+end = 0x8007B844
+hint = "MOVE2 base pointer (alt move table)"
+
+# ----------------------------------------------------------------------
+# mc1, mc2, mc3 — three progressive captures of "loading into a new area"
+# These are the §2.1 scene_bundle preamble→slot mapping unblock path.
+# Diff mc1↔mc2 to see what got written during the start of the load;
+# mc2↔mc3 to see what happened in the second half.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 1
+label = "area_load_early"
+description = "Loading into a new area — early frame"
+addresses_prd = ["§2.1 scene_bundle preamble→slot mapping", "§5.3 navmesh"]
+diff_against = [2, 3]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084580
+hint = "Scene-local BGM/sound block layout (FUN_800243F0); pool[+0..+0x40]"
+
+[[scenarios.watchpoints]]
+label = "vram_upload_target"
+start = 0x801CE800
+end = 0x801CE900
+hint = "Overlay base region — track which overlay loaded between snapshots"
+
+[[scenarios.watchpoints]]
+label = "actor_pool_field"
+start = 0x801C9370
+end = 0x801C9400
+hint = "Battle actor pointer table at FUN_800520F0; also reused by field"
+
+[[scenarios]]
+slot = 2
+label = "area_load_mid"
+description = "Loading into a new area — mid frame"
+addresses_prd = ["§2.1 scene_bundle preamble→slot mapping"]
+diff_against = [1, 3]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084580
+hint = "Should be more populated than mc1 — diff to see the post-init writes"
+
+[[scenarios]]
+slot = 3
+label = "area_load_late"
+description = "Loading into a new area — late frame (almost done)"
+addresses_prd = ["§2.1 scene_bundle preamble→slot mapping", "§5.3 navmesh"]
+diff_against = [1, 2]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084580
+hint = "Steady-state BGM pool; diff vs mc1 reveals everything scene-init wrote"
+
+[[scenarios.watchpoints]]
+label = "navmesh_candidate"
+start = 0x80100000
+end = 0x80120000
+hint = "Suspected per-scene navmesh window; diff mc1→mc3 to see scene-data writes"
+
+# ----------------------------------------------------------------------
+# mc4 — Loading into a battle (scene transition into battle SM)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 4
+label = "battle_intro"
+description = "Loading into a battle (scene-fade into action menu)"
+addresses_prd = ["§2.2 ANM bytecode", "§3.6 battle stat aggregator"]
+diff_against = [5, 6]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "battle_actor_pool"
+start = 0x801C9370
+end = 0x801C9400
+hint = "8-slot battle actor pointer table; populated by FUN_80054CB0 monster init"
+
+[[scenarios.watchpoints]]
+label = "ability_bitmask"
+start = 0x80074358
+end = 0x80074360
+hint = "Global ability bitmask written by FUN_80042558 stat aggregator"
+
+# ----------------------------------------------------------------------
+# mc5 — Viewing learned arts in battle (Tactical Arts UI open)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 5
+label = "battle_arts_view"
+description = "Viewing learned arts in battle (TA submenu open)"
+addresses_prd = ["§1 Arts system", "§2.2 ANM bytecode"]
+diff_against = [4, 6]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "selected_art_ptr"
+start = 0x8007BAC8
+end = 0x8007BAD0
+hint = "BGM-id slot, but the broader 0x8007BA00..BB00 region carries menu cursor state"
+
+[[scenarios.watchpoints]]
+label = "art_record_window"
+start = 0x80160E00
+end = 0x80161000
+hint = "Vahn art records start at 0x80160EFC; diff to see TA-cursor writes"
+
+# ----------------------------------------------------------------------
+# mc6 — Performing a somersault on an enemy (animation playing)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 6
+label = "battle_anim_strike"
+description = "Performing a somersault on an enemy (active animation)"
+addresses_prd = ["§2.2 ANM bytecode interpreter"]
+diff_against = [4, 5]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "actor_anim_state"
+start = 0x801C9370
+end = 0x801C9500
+hint = "Actor pointer table + per-actor anim PC at +0x4C; diff vs mc5 reveals which actor is playing what"
+
+[[scenarios.watchpoints]]
+label = "anim_dispatch_callback"
+start = 0x801C9400
+end = 0x801C9700
+hint = "Per-actor +0x4C carries the anim dispatch fn pointer; diff mc4→mc6 to find it"
+
+# ----------------------------------------------------------------------
+# mc7 — Status menu (pause-menu overlay)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 7
+label = "status_menu"
+description = "Status menu open"
+addresses_prd = ["§4.9 menu sub-screens"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "menu_state_globals"
+start = 0x801F0200
+end = 0x801F0220
+hint = "_DAT_801f0204 menu state field; +0x10 carries close-hold counter"
+
+# ----------------------------------------------------------------------
+# mc8 — Options menu (config overlay)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 8
+label = "options_menu"
+description = "Options/config menu open"
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "menu_state_globals"
+start = 0x801F0200
+end = 0x801F0220
+hint = "Same menu hub as mc7 — diff to find which submenu cursor moved"
+
+# ----------------------------------------------------------------------
+# mc9 — Load screen (save-slot select / load UI)
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 9
+label = "load_screen"
+description = "Save/load screen with slot list visible"
+addresses_prd = ["§4.16 save-screen sub-states"]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "save_screen_substate"
+start = 0x801E4F40
+end = 0x801E4FC0
+hint = "FUN_801DC6B4 sub-state pointer table; PTR_FUN_801E4F40 + sub*4"
+
+[[scenarios.watchpoints]]
+label = "save_block_scan"
+start = 0x80084100
+end = 0x80084200
+hint = "DAT_80084140 save-block existence scan window"

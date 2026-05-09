@@ -92,6 +92,7 @@ How the runtime engine works.
 | [`extraction.md`](docs/tooling/extraction.md) | Per-stage CLIs (`disc-extract`, `prot-extract`, `lzs-decode`, `legaia-extract`, …). |
 | [`ghidra.md`](docs/tooling/ghidra.md) | Compose-exec invocation, the LUI+ADDIU workaround, full script catalogue. |
 | [`overlay-capture.md`](docs/tooling/overlay-capture.md) | Mednafen save-state slicing; one-shot pipeline. |
+| [`mednafen-automation.md`](docs/tooling/mednafen-automation.md) | Save-state diff / bisect / scenario manifest; watchpoint-equivalent observation across `.mc{0..9}` snapshots. |
 
 ### Reference — [`docs/reference/`](docs/reference/)
 
@@ -126,6 +127,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/font`](crates/font/README.md) | `font-extract` | Proportional dialog font: extracts width table + 4bpp atlas from `SCUS_942.54` + a mednafen save state, exposes layout API for engine consumers. |
 | [`crates/extract`](crates/extract/README.md) | `legaia-extract` | Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. |
 | [`crates/mdec`](crates/mdec/README.md) | `mdec` | PSX MDEC clean-room decoder (BS v2 bitstream → RGBA8 pixels): VLC tables, 8-point IDCT, YCbCr→RGB, `StrFrameAssembler` for multi-sector STR video frames. |
+| [`crates/mednafen`](crates/mednafen/README.md) | `mednafen-state` | Mednafen save-state parser (`MDFNSVST` gzip + targeted-scan section indexer) + watchpoint-equivalent automation toolkit: pairwise main-RAM diff with PSX-virtual-address regions, sequence bisection for write-transition detection, declarative scenario manifest at [`scripts/mednafen/scenarios.toml`](scripts/mednafen/scenarios.toml). |
 
 **Track 2 — engine reimplementation (clean-room Rust)**
 

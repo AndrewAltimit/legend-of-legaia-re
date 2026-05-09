@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · tooling</div>
   <h1>Tooling</h1>
-  <p class="lede">Extraction CLIs, the headless Ghidra workflow, and the runtime overlay capture pipeline.</p>
+  <p class="lede">Extraction CLIs, the headless Ghidra workflow, runtime overlay capture, and the mednafen save-state automation toolkit.</p>
 </header>
 
 <section class="doc-section">
@@ -78,4 +78,50 @@ scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing</code></
   <p class="hint">For preserving multiple overlay imports across runs, use <code>import-overlay-named.sh</code> — it produces <code>overlay_&lt;label&gt;.bin</code> rather than overwriting <code>overlay.bin</code>.</p>
 
   <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/overlay-capture.md" target="_blank" rel="noopener">Full overlay capture reference →</a></p>
+</section>
+
+<section class="doc-section">
+  <h2>Mednafen automation</h2>
+  <p>A scriptable substitute for mednafen's interactive memory-watchpoint debugger. The toolkit treats each <code>.mc{0..9}</code> save state as a frozen RAM snapshot, then uses pairwise diffs and targeted bisection to surface where the runtime wrote between snapshots — the watchpoint-equivalent answer without needing a live emulator session.</p>
+
+  <h3>The crate</h3>
+  <p><code>crates/mednafen</code> ships:</p>
+  <ul>
+    <li><strong>MDFNSVST parser</strong> — gzip wrapper + targeted-scan section indexer. Resolves <code>MAIN.MainRAM.data8</code> as 2 MiB of PSX main RAM and indexes the <code>GPU</code> / <code>SPU</code> / <code>CDC</code> / <code>MDEC</code> / <code>DMA</code> / <code>TIMER</code> sections.</li>
+    <li><strong>Diff engine</strong> — coalesces per-byte changes into PSX-virtual-address regions; emits sortable JSON for downstream tools.</li>
+    <li><strong>Bisect helper</strong> — walks an ordered snapshot list and reports which adjacent pair brackets a write to a target address.</li>
+    <li><strong>Scenario manifest</strong> — declarative <code>scripts/mednafen/scenarios.toml</code> mapping each save slot to a labelled scenario with overlay slices and watchpoint regions.</li>
+  </ul>
+
+  <h3>The CLI</h3>
+<pre><code># Inspect one save's section table
+target/release/mednafen-state info "$HOME/.mednafen/mcs/...mc0"
+
+# Slice an overlay window (replaces extract-mednafen-overlay.py)
+target/release/mednafen-state extract SAVE \
+    --start 0x801C0000 --end 0x80200000 --out /tmp/overlay.bin
+
+# Diff two saves in the overlay window
+target/release/mednafen-state diff mc1.mc mc2.mc \
+    --start 0x801C0000 --end 0x80200000 --top 8
+
+# Bisect a sequence of saves for a transition
+target/release/mednafen-state bisect --addr 0x8007B888 mc0 mc1 mc2 mc3
+
+# Run all watchpoints for a scenario against its sister states
+target/release/mednafen-state watch area_load_early</code></pre>
+
+  <h3>The scenarios</h3>
+  <p>Ten labelled scenarios cover the gameplay states most useful for blocked decompilation work:</p>
+  <ul>
+    <li><strong>mc0 drake_castle</strong> — steady-state field with full party (move-table base pointer)</li>
+    <li><strong>mc1/mc2/mc3 area_load_{early,mid,late}</strong> — three progressive captures of a scene-load transition (scene_bundle preamble→slot mapping, navmesh candidate)</li>
+    <li><strong>mc4/mc5/mc6 battle_{intro,arts_view,anim_strike}</strong> — battle progression (ANM bytecode interpreter, art-strike chain)</li>
+    <li><strong>mc7 status_menu / mc8 options_menu / mc9 load_screen</strong> — menu sub-screens</li>
+  </ul>
+
+  <h3>Why scripted snapshots?</h3>
+  <p>Mednafen's TUI debugger has memory breakpoints but no scriptable interface — every interaction is keyboard-driven inside the running window. Save-state diffs answer the same question (<em>"between this point and that point, what addresses got written?"</em>) without needing the live debugger. Cluster the changed bytes into contiguous regions and you have a ranked list of structures to look up writers for in Ghidra.</p>
+
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/mednafen-automation.md" target="_blank" rel="noopener">Full mednafen-automation reference →</a></p>
 </section>

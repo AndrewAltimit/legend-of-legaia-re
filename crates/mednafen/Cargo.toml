@@ -1,0 +1,21 @@
+[package]
+name = "legaia-mednafen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_mednafen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mednafen-state"
+path = "src/bin/mednafen-state.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+flate2.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+toml = "0.8"
