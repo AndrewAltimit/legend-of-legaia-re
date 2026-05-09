@@ -28,9 +28,40 @@ The per-frame interpretation in `FUN_800204F8` clamps `actor[0x68]` (current pla
 
 ## CDNAME mismatch
 
-The CDNAME-named `0972` / `0973` `move_program_no.BIN` files are flat 128-byte stride record arrays — they **don't** match the runtime buffer layout above. `mdt classify` flags this. The actual on-disc source of `MOVE` / `MOVE2` is a different PROT entry whose runtime PROT-index is held in `_DAT_80084540`; pinning that down requires a memory-write watchpoint on `_DAT_8007B888`.
+The CDNAME-named `0972` / `0973` `move_program_no.BIN` files are flat 128-byte stride record arrays — they **don't** match the runtime buffer layout above. `mdt classify` flags this.
 
 `crates/mdt` parses both layouts and surfaces a verdict (`OffsetTableLayout` / `FlatRecordTable` / `Unknown`).
+
+## On-disc source — per-scene `scene_asset_table` slot 4
+
+The MOVE base pointer (`_DAT_8007B888`) is **populated per scene** during area transitions, not from a single boot-time PROT entry. Every per-scene CDNAME block's second PROT entry (the slot-1 entry classified as `scene_asset_table`) carries an `Asset(0x05) = Move` descriptor — that descriptor's payload is the runtime MOVE table for that scene.
+
+```text
+PROT entry at scene_block + 1            ← class = scene_asset_table
+  u32 count = 7
+  u32 meta1
+  7 × (u32 type_size, u32 data_offset)   ← descriptor[4].type_byte == 0x05 (Move)
+  ...payload...
+```
+
+Examples (verified by mednafen save-state diff against `_DAT_8007B888`):
+
+| Scene block | Slot-1 PROT entry | Move size | Notes |
+|---|---|---|---|
+| `dolk` (60) | `0061_dolk.BIN` | `0xE370` (58224) | Loaded as `MOVE` at `0x800E412C` in `mc0` (Drake Castle save). |
+| `suimon` (77) | `0078_suimon.BIN` | `0x09A0` (2464) | Loaded as `MOVE` at `0x801355D0` in `mc2`/`mc3`. |
+| `map01` (85) | `0086_map01.BIN` | `0x7E30` (32304) | Loaded as `MOVE` at `0x8011A624` in `mc1` plus all menu/battle saves. |
+
+The `meta1` u32 in the scene_asset_table header is the per-scene meta value the loader carries forward; the `data_offset` for descriptor[4] (and the other six) references positions inside a runtime-allocated decompression buffer rather than a file-relative byte offset, so the on-disc payload is decoded into a working buffer before the per-asset slicing runs.
+
+`scene_asset_table::move_descriptor` exposes the slot lookup as a typed accessor:
+
+```rust
+let s = legaia_asset::scene_asset_table::detect(&prot_bytes)?;
+let move_descriptor = s.move_descriptor()?; // type_byte = 0x05
+```
+
+The `MOVE2` (`_DAT_8007B840`) base is zero across every observed save state, suggesting it's only populated by a small number of scenes that need an alternate move table; the analogous "Move2" descriptor type in [`scene_scripted_asset_table`](../formats/scene-bundles.md) hasn't been observed in the corpus yet.
 
 ## CLI
 

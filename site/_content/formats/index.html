@@ -74,11 +74,11 @@
     </a>
     <a class="card" id="anm" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/anm.md" target="_blank" rel="noopener">
       <div class="card-title">ANM animation</div>
-      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Per-record bytecode is overlay-resident; the non-opcode-6 handler is at <code>801e260c</code> in <code>FUN_801DE840</code> (overlay 0897), dispatched via sub-table at <code>0x801CEF88</code>.</div>
+      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. The per-actor anim tick is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (4732 bytes) — it dispatches off <code>actor[+0x5A]</code> with seven opcodes (<code>0x01..=0x07</code>); the keyframe path (<code>0x06</code>) is fully ported to <code>legaia_anm::AnimPlayer</code>, the rest are typed in <code>engine_vm::DispatchByte</code> with handler addresses documented in <code>actor-vm.md</code>.</div>
     </a>
     <a class="card" id="mdt" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mdt.md" target="_blank" rel="noopener">
       <div class="card-title">MDT — move tables</div>
-      <div class="card-body">Tactical Arts move records. Both possible layouts parse cleanly; the consumer (<code>FUN_800204F8</code>) is reversed but file/CDNAME mapping is open.</div>
+      <div class="card-body">Tactical Arts move records. Both layouts parse cleanly; the consumer is <code>FUN_800204F8</code>. The runtime <code>MOVE</code> base (<code>_DAT_8007B888</code>) is sourced per-scene from descriptor[4] (type 0x05 = Move) of every CDNAME block's slot-1 PROT entry (a <code>scene_asset_table</code>) — not from a single boot-time PROT entry.</div>
     </a>
     <a class="card" id="art-data" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/art-data.md" target="_blank" rel="noopener">
       <div class="card-title">Art data — Tactical Arts records</div>
@@ -105,6 +105,10 @@
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-pack.md" target="_blank" rel="noopener">
       <div class="card-title">Field-pack format</div>
       <div class="card-body">Magic <code>0x01059B84</code>. 4 PROT entries share a byte-identical 97-entry static schema. Consumer is <code>FUN_801D6704</code> (overlay 0897, <code>801d6ae8</code>) which calls the scene loader then dispatches through <code>FUN_80020224</code>; slots are read at hard-coded offsets, not iterated.</div>
+    </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/navmesh.md" target="_blank" rel="noopener">
+      <div class="card-title">Navmesh / region table</div>
+      <div class="card-body">24-byte stride record table loaded into RAM at <code>0x80108EA4..0x801095xx</code>. Per-record id + sub-id + 6-i16 coordinate fields + 4-byte ASCII tag + two u16 sub-fields. First few records carry shared template tags (<code>(((</code>, <code>333T</code>, <code>ZZZ</code>); per-scene records follow. Inferred from a mednafen-state diff against the configured <code>navmesh_candidate</code> window; consumer not yet pinned.</div>
     </a>
   </div>
 </section>

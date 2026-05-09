@@ -1,15 +1,20 @@
-//! Per-actor animation runtime — scaffold for the overlay-resident
-//! `actor[+0x4C]` per-record bytecode dispatcher.
+//! Per-actor animation runtime — wraps the actor-tick anim dispatch.
 //!
 //! ## Background
 //!
 //! `FUN_80024CFC` in `SCUS_942.54` is the only static-binary entry point
 //! that touches an animation record. It stows the per-record byte pointer
 //! in `actor[+0x4C]`, sets `actor[+0x56] = 0xB` and `actor[+0x68] = 100`,
-//! and returns. The thing that actually consumes those fields and walks
-//! the record is a **per-frame actor tick** that lives in the field
-//! overlay loaded into `0x801C0000+` at runtime — it has not been captured
-//! yet (see `docs/subsystems/actor-vm.md`).
+//! and returns. The thing that actually consumes those fields is the
+//! per-actor tick at `FUN_80021DF4` (also in `SCUS_942.54`, 4732 bytes,
+//! 1183 instructions). The tick reads `actor[+0x5A]` as the dispatch
+//! byte and ladders through opcodes `0x01..=0x07` (see
+//! [`DispatchByte`]). For the dominant case (opcode `0x06`, keyframe
+//! interpolation) the per-bone math is fully traced and ported to
+//! [`legaia_anm::AnimPlayer`]. The other opcodes — `0x01`, `0x02`,
+//! `0x03`, `0x04`, `0x05`, `0x07` — share the dispatch but each handler
+//! is its own block in `FUN_80021DF4` and is opaque to the runtime
+//! until that handler is fully reverse-engineered.
 //!
 //! For the bulk of retail ANM data — records the runtime calls "opcode 6"
 //! — the per-record body is a per-bone keyframe table, and the
@@ -48,6 +53,91 @@ use legaia_anm::{AnimPlayer, PoseFrame, RecordHeader};
 /// observed in the field overlay (`actor[+0x*]` table at
 /// `0x801E473C`, 16-byte stride, ≤ 32 entries used).
 pub const MAX_ACTOR_SLOTS: usize = 32;
+
+/// Field offset of the per-record byte pointer on a retail actor record
+/// (`actor[+0x4C]`). `FUN_80024CFC` in `SCUS_942.54` writes this when a
+/// new animation is registered; the per-frame tick reads it.
+pub const ACTOR_RECORD_PTR_OFFSET: usize = 0x4C;
+
+/// Field offset of the dispatch byte on a retail actor record
+/// (`actor[+0x5A]`, read as a `u16` by `FUN_80021DF4`).
+pub const ACTOR_DISPATCH_BYTE_OFFSET: usize = 0x5A;
+
+/// Field offset of the per-actor frame counter (`actor[+0x68]`,
+/// initialised to 100 by `FUN_80024CFC`).
+pub const ACTOR_FRAME_COUNTER_OFFSET: usize = 0x68;
+
+/// Per-actor anim-driver dispatch byte (`actor[+0x5A]`). The actor tick
+/// at `FUN_80021DF4` ladders through these. Only [`Keyframe`] is fully
+/// understood and implemented in this crate; the rest are opaque (the
+/// per-handler bodies in `FUN_80021DF4` are ~1100 instructions each
+/// and have not yet been ported).
+///
+/// Values are observed from a static read of the SCUS dispatcher (see
+/// the comparison ladder at `0x80021E78..0x80022F04` in
+/// `ghidra/scripts/funcs/80021df4.txt`).
+///
+/// [`Keyframe`]: DispatchByte::Keyframe
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchByte {
+    /// `0x01` — pose-snap branch. Specific behaviour TBD.
+    Snap,
+    /// `0x02` — shares the keyframe interpolation block with `0x06`
+    /// in `FUN_80021DF4`.
+    KeyframeAlt,
+    /// `0x03` — small handler at `0x800226DC`. Shares state-write logic
+    /// with `0x05`.
+    Path,
+    /// `0x04` — handler at `0x80022CBC..0x80022EE4`.
+    Damp,
+    /// `0x05` — handler at `0x800228B0..0x80022B80`. Reads geometry
+    /// from `actor[+0x80]` and writes pose state.
+    PathAlt,
+    /// `0x06` — keyframe interpolation. Per-bone math at
+    /// `0x80021EA0..0x80021FA4` and the long block continuing through
+    /// `0x80022FXX`. Fully ported in [`legaia_anm::AnimPlayer`].
+    Keyframe,
+    /// `0x07` — handler at `0x80022C24..0x80022CC0`.
+    Spline,
+}
+
+impl DispatchByte {
+    /// Map an `actor[+0x5A]` value to a typed dispatch byte. Returns
+    /// `None` for values outside the observed `0x01..=0x07` range.
+    pub fn from_byte(b: u16) -> Option<Self> {
+        Some(match b {
+            0x01 => DispatchByte::Snap,
+            0x02 => DispatchByte::KeyframeAlt,
+            0x03 => DispatchByte::Path,
+            0x04 => DispatchByte::Damp,
+            0x05 => DispatchByte::PathAlt,
+            0x06 => DispatchByte::Keyframe,
+            0x07 => DispatchByte::Spline,
+            _ => return None,
+        })
+    }
+
+    /// Round-trip back to the raw byte the tick compares against.
+    pub fn as_byte(self) -> u16 {
+        match self {
+            DispatchByte::Snap => 0x01,
+            DispatchByte::KeyframeAlt => 0x02,
+            DispatchByte::Path => 0x03,
+            DispatchByte::Damp => 0x04,
+            DispatchByte::PathAlt => 0x05,
+            DispatchByte::Keyframe => 0x06,
+            DispatchByte::Spline => 0x07,
+        }
+    }
+
+    /// `true` when this runtime can drive the dispatch natively
+    /// (currently only [`Keyframe`]).
+    ///
+    /// [`Keyframe`]: DispatchByte::Keyframe
+    pub fn handled_natively(self) -> bool {
+        matches!(self, DispatchByte::Keyframe)
+    }
+}
 
 /// Coarse classification of the per-record body, derived from the
 /// header `a` field (first u16 of the 8-byte common header).
@@ -432,6 +522,42 @@ mod tests {
         buf[4..6].copy_from_slice(&0x080Cu16.to_le_bytes());
         buf[6..8].copy_from_slice(&0x0002u16.to_le_bytes());
         buf
+    }
+
+    #[test]
+    fn dispatch_byte_round_trips_full_observed_range() {
+        for b in 1u16..=7 {
+            let d = DispatchByte::from_byte(b).expect("0x01..=0x07 must round-trip");
+            assert_eq!(d.as_byte(), b);
+        }
+    }
+
+    #[test]
+    fn dispatch_byte_rejects_out_of_range() {
+        assert!(DispatchByte::from_byte(0x00).is_none());
+        assert!(DispatchByte::from_byte(0x08).is_none());
+        assert!(DispatchByte::from_byte(0xFF).is_none());
+    }
+
+    #[test]
+    fn dispatch_byte_handled_natively_only_for_keyframe() {
+        assert!(DispatchByte::Keyframe.handled_natively());
+        assert!(!DispatchByte::Snap.handled_natively());
+        assert!(!DispatchByte::KeyframeAlt.handled_natively());
+        assert!(!DispatchByte::Path.handled_natively());
+        assert!(!DispatchByte::Damp.handled_natively());
+        assert!(!DispatchByte::PathAlt.handled_natively());
+        assert!(!DispatchByte::Spline.handled_natively());
+    }
+
+    #[test]
+    fn actor_field_offsets_match_documented_layout() {
+        // Sanity: these are read by both this crate and the docs;
+        // bumping them here without bumping the docs would silently
+        // diverge.
+        assert_eq!(ACTOR_RECORD_PTR_OFFSET, 0x4C);
+        assert_eq!(ACTOR_DISPATCH_BYTE_OFFSET, 0x5A);
+        assert_eq!(ACTOR_FRAME_COUNTER_OFFSET, 0x68);
     }
 
     #[test]

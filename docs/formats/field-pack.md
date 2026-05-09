@@ -87,6 +87,10 @@ offset table. Per-NPC and per-event slot handlers are called indirectly
 through the descriptor table; their specific entry points require capturing
 a full scene-init execution trace (not yet available in the overlay dumps).
 
+## Mednafen-state diff observations
+
+Diffing the area-load saves (`mc1` vs `mc3`) over the engine RAM range `0x801C0000..0x80200000` (using the toolkit's `mednafen-state diff`) lights up a 9 KB region at `0x801F69D8..0x801F8F02` that toggles between two different MIPS-code overlays — different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (`addiu sp,sp,-N`, `sw s1,N(sp)`, `lui s1,0x801F`, `ori s1,s1,...`), confirming the slot is an MIPS overlay rather than a data buffer. The field-pack consumer (per-slot reader) is one of the candidates for what lives there; pinning down which routine in the overlay reads which schema slot still requires a writer-search pass through the captured overlay programs.
+
 ## Tooling
 
 ```bash
