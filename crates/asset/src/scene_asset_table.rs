@@ -58,7 +58,7 @@
 //! "named"; the strict 7-asset detector simply gives them a more accurate
 //! semantic class).
 //!
-//! See `docs/FORMATS.md` § 19 for the full byte-level spec.
+//! See `docs/formats/scene-bundles.md` for the full byte-level spec.
 
 use serde::Serialize;
 

@@ -54,6 +54,15 @@ impl Default for BootConfig {
     }
 }
 
+/// Source of PROT.DAT + CDNAME.TXT bytes for a [`BootSession::open*`]
+/// call. Internal — public construction is via the typed entry points
+/// [`BootSession::open`] and [`BootSession::open_disc`].
+enum SceneSource<'a> {
+    Extracted(&'a Path),
+    #[cfg(not(target_arch = "wasm32"))]
+    Disc(&'a Path),
+}
+
 /// Per-frame session bundle. The binary owns one of these and calls
 /// [`tick`](Self::tick) every frame.
 pub struct BootSession {
@@ -71,8 +80,25 @@ impl BootSession {
     /// the directory isn't an extracted PROT or the scene name isn't in
     /// CDNAME.TXT.
     pub fn open(extracted_root: &Path, cfg: &BootConfig) -> Result<Self> {
-        let mut host = SceneHost::open_extracted(extracted_root)
-            .with_context(|| format!("open extracted dir {}", extracted_root.display()))?;
+        Self::open_with_source(SceneSource::Extracted(extracted_root), cfg)
+    }
+
+    /// Open the engine straight from a `.bin` disc image. The disc is walked
+    /// once to extract `PROT.DAT` and `CDNAME.TXT`; no on-disk extraction
+    /// step is required. Native targets only.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn open_disc(disc_bin: &Path, cfg: &BootConfig) -> Result<Self> {
+        Self::open_with_source(SceneSource::Disc(disc_bin), cfg)
+    }
+
+    fn open_with_source(source: SceneSource<'_>, cfg: &BootConfig) -> Result<Self> {
+        let mut host = match source {
+            SceneSource::Extracted(root) => SceneHost::open_extracted(root)
+                .with_context(|| format!("open extracted dir {}", root.display()))?,
+            #[cfg(not(target_arch = "wasm32"))]
+            SceneSource::Disc(path) => SceneHost::open_disc(path)
+                .with_context(|| format!("open disc image {}", path.display()))?,
+        };
         // Wire the CDNAME-derived map-id resolver so field-VM scene
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));

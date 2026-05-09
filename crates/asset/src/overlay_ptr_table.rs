@@ -71,7 +71,7 @@
 //! the load address is determined (the first pointer's high bits give a
 //! strong hint — most cluster around `0x801F6Axx`).
 //!
-//! See `docs/FORMATS.md` § 21 for the spec.
+//! See `docs/formats/overlay-ptr-table.md` for the spec.
 
 use serde::Serialize;
 

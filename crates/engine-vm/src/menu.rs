@@ -194,6 +194,18 @@ pub trait MenuHost {
     /// most states). Default: no-op — the VM still transitions to
     /// [`MenuState::Closing`] regardless.
     fn cancel(&mut self) {}
+
+    /// Number of frames the [`MenuState::Closing`] hold runs before the
+    /// VM transitions to [`MenuState::Deactivate`]. The retail dispatcher
+    /// at `_DAT_801f0204 = 0` is an immediate set; the menu render layer
+    /// drives a separate per-frame fade buffer (alpha ramp on the panel
+    /// background) and the SM here represents that fade as a hold timer.
+    /// Default `16` matches the 0x10-frame fade that engine-render uses
+    /// for `MenuState::Closing` panel alpha; engines that drive their own
+    /// fade override this.
+    fn close_hold_frames(&self) -> u16 {
+        16
+    }
 }
 
 /// One frame of menu execution. Reads `ctx.state`, applies `input`,
@@ -218,9 +230,12 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
             ctx.state = MenuState::StatusTop.as_byte();
             ctx.frame = 0;
         }
-        // Closing: hold for `0x10` frames as a placeholder for the
-        // close-fade animation, then transition to `Deactivate`.
-        Some(MenuState::Closing) if ctx.frame >= 0x10 => {
+        // Closing: hold for `host.close_hold_frames()` ticks while the
+        // render layer fades out the panel, then transition to
+        // `Deactivate`. The retail dispatcher's `_DAT_801f0204 = 0` is
+        // immediate; the visible fade lives in the panel renderer, which
+        // we model here as an SM hold.
+        Some(MenuState::Closing) if ctx.frame >= host.close_hold_frames() => {
             ctx.state = MenuState::Deactivate.as_byte();
             ctx.frame = 0;
         }
@@ -382,6 +397,36 @@ mod tests {
         // One more tick — closes.
         step(&mut h, &mut ctx, MenuInput::default());
         assert_eq!(ctx.state, MenuState::Closed.as_byte());
+    }
+
+    #[test]
+    fn host_close_hold_frames_overrides_default() {
+        // Host overriding `close_hold_frames()` shortens the Closing → Deactivate
+        // hold accordingly. Verifies the hook is consulted, not just the default.
+        struct FastClose;
+        impl MenuHost for FastClose {
+            fn close_hold_frames(&self) -> u16 {
+                4
+            }
+        }
+        let mut ctx = MenuCtx {
+            state: MenuState::StatusTop.as_byte(),
+            ..Default::default()
+        };
+        let mut h = FastClose;
+        step(
+            &mut h,
+            &mut ctx,
+            MenuInput {
+                triangle: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(ctx.state, MenuState::Closing.as_byte());
+        for _ in 0..4 {
+            step(&mut h, &mut ctx, MenuInput::default());
+        }
+        assert_eq!(ctx.state, MenuState::Deactivate.as_byte());
     }
 
     #[test]

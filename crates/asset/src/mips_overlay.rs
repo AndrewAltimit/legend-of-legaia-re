@@ -56,7 +56,7 @@
 //! but each blob loads at a specific offset within that range — likely
 //! reverse-engineerable from the PROT entry's reference in the asset chain).
 //!
-//! See `docs/FORMATS.md` § 20 for the spec.
+//! See `docs/formats/mips-overlay.md` for the spec.
 
 use serde::Serialize;
 

@@ -404,6 +404,16 @@ pub struct BattleActor {
     pub sub_route: u8,
     /// `+0x1E7` — queued anim staged for spirit / item paths.
     pub queued_anim_b: u8,
+    /// Chosen Tactical Art for this turn. When `Some`, the strike-band
+    /// states call `BattleActionHost::art_record(character, action)` to
+    /// fetch power bytes / hit timings / status effect. `None` falls
+    /// back to generic-attack defaults. Set by the engine when the
+    /// command queue resolves to an art (via `resolve_action_queue`).
+    pub chosen_art: Option<legaia_art::ActionConstant>,
+    /// Which playable character occupies this slot. Used as the lookup
+    /// key into the per-character art tables. Defaults to Vahn — engines
+    /// must set this for the correct slot before the strike runs.
+    pub character: legaia_art::Character,
 }
 
 impl BattleActor {
@@ -517,6 +527,45 @@ pub enum StepOutcome {
     UnknownState { state: u8 },
 }
 
+/// Per-strike values resolved from the active actor's chosen Tactical Art.
+///
+/// Built by [`ActionState::AttackChain`] when the actor has `chosen_art`
+/// set and [`BattleActionHost::art_record`] returns a record. Surfaces the
+/// power byte, dmg_timing, status effect, and hit cue for the current
+/// strike (1-indexed via `actor.strike_index`).
+///
+/// `power` is `None` when the strike index runs past the recorded power
+/// bytes (e.g. an extra anim frame at the end of the chain) — engines
+/// should treat that as "this anim plays but does no damage."
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArtStrikeInfo {
+    /// 0-indexed strike position within the art's power list.
+    pub strike_index: u8,
+    /// Animation byte read from the actor's strike-script (`params[strike_index]`).
+    pub anim_byte: u8,
+    /// Source / target party slots. `actor_slot` is the party / monster
+    /// slot that owns the strike; `target_slot` is the resolved
+    /// `actor.active_target` value.
+    pub actor_slot: u8,
+    pub target_slot: u8,
+    /// The character whose art table we looked up.
+    pub character: legaia_art::Character,
+    /// Action constant identifying the active art.
+    pub art: legaia_art::ActionConstant,
+    /// Decoded power byte for this hit, if the art's power vec includes
+    /// the current strike index.
+    pub power: Option<legaia_art::PowerByte>,
+    /// Animation-frame timing for this hit, if `dmg_timing` covers the
+    /// current strike index. Engines use this to schedule the HP-deduction
+    /// at the correct frame within the anim.
+    pub dmg_timing: Option<u8>,
+    /// Enemy status effect the art applies on hit (if any).
+    pub enemy_effect: legaia_art::EnemyEffect,
+    /// Hit cue (sound / visual) for this strike, if the art's hit-cue list
+    /// covers the current strike index.
+    pub hit_cue: Option<legaia_art::HitCue>,
+}
+
 /// Cause classification for `BattleEnd`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleEndCause {
@@ -610,6 +659,21 @@ pub trait BattleActionHost {
     /// Equivalent of `func_0x800402F4(icon, page, target_slot, party_slot)` —
     /// damage application primitive. Default no-op.
     fn apply_damage(&mut self, _icon: u8, _page: u8, _target_slot: u8, _party_slot: u8) {}
+
+    /// Apply one Tactical-Art strike with the power-byte / hit-timing values
+    /// pulled from the active art record.
+    ///
+    /// Called by [`ActionState::AttackChain`] in place of [`apply_damage`]
+    /// when the active actor's `chosen_art` is set and `art_record` returns
+    /// a record. `info` carries the per-strike values the SM read from the
+    /// art's `power` + `dmg_timing` + `enemy_effect` + `hit_cues`. Engines
+    /// translate these into HP deduction + status effect + sound/visual
+    /// cues — the SM only resolves the values, it does not apply them.
+    ///
+    /// Default no-op. Engines that don't override fall through to
+    /// [`apply_damage`] as well (the SM still calls that for backward
+    /// compatibility), so a host that hasn't wired arts yet keeps working.
+    fn apply_art_strike(&mut self, _info: ArtStrikeInfo) {}
 
     /// Returns `true` if the spell at `spell_id` is a capture-class spell
     /// (first byte of its table entry is `'c'`). Drives the
@@ -1060,7 +1124,10 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
         }
         return transition(ctx, ActionState::AttackRecovery);
     }
-    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
+    let (target, strike_index_pre, character, chosen_art) = host
+        .actor(slot)
+        .map(|a| (a.active_target, a.strike_index, a.character, a.chosen_art))
+        .unwrap_or((0, 0, legaia_art::Character::default(), None));
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = next_byte;
         actor.flag_bits.set(ActorFlags::ADVANCE_DONE);
@@ -1069,6 +1136,33 @@ fn attack_chain<H: BattleActionHost + ?Sized>(
     // Fire swing-apex damage for this strike. The retail engine calls
     // FUN_801eed1c (the HP-deduction kernel) at the corresponding point in
     // the attack chain dispatch block (overlay_0898_801e295c ~0x801e3620+).
+    //
+    // When the actor has a `chosen_art` set and the host returns an
+    // [`legaia_art::ArtRecord`] for it, also dispatch
+    // [`BattleActionHost::apply_art_strike`] with the per-strike
+    // power/timing/effect/hit-cue values. Generic-attack callers ignore
+    // this hook (default no-op); callers wired up to art data drive HP
+    // deduction, status application, and SFX timing from it.
+    if let Some(art) = chosen_art {
+        let info = host.art_record(character, art).map(|rec| {
+            let idx = strike_index_pre as usize;
+            ArtStrikeInfo {
+                strike_index: strike_index_pre,
+                anim_byte: next_byte,
+                actor_slot: slot,
+                target_slot: target,
+                character,
+                art,
+                power: rec.power.get(idx).copied(),
+                dmg_timing: rec.dmg_timing.get(idx).copied(),
+                enemy_effect: rec.enemy_effect,
+                hit_cue: rec.hit_cues.get(idx).copied(),
+            }
+        });
+        if let Some(info) = info {
+            host.apply_art_strike(info);
+        }
+    }
     host.apply_damage(next_byte, 0, target, slot);
     stay(ctx)
 }
@@ -1860,6 +1954,7 @@ mod tests {
         SpellAnim(u8, u8),
         SpellSustain(u8, u8),
         ApplyDamage(u8, u8, u8, u8),
+        ApplyArtStrike(ArtStrikeInfo),
         ScreenShake(u16),
         Brightness(u8),
         BattleEnd(BattleEndCause),
@@ -1881,6 +1976,9 @@ mod tests {
         rng_pos: RefCell<usize>,
         party_count: u8,
         slot_count: u8,
+        /// Pre-staged art records returned by `art_record(character, action)`
+        /// — keyed by `(character_byte, action_byte)`.
+        art_records: std::collections::HashMap<(u8, u8), legaia_art::ArtRecord>,
     }
 
     impl RecHost {
@@ -1954,6 +2052,17 @@ mod tests {
         fn apply_damage(&mut self, a: u8, b: u8, c: u8, d: u8) {
             self.record(Event::ApplyDamage(a, b, c, d));
         }
+        fn apply_art_strike(&mut self, info: ArtStrikeInfo) {
+            self.record(Event::ApplyArtStrike(info));
+        }
+        fn art_record(
+            &self,
+            character: legaia_art::Character,
+            action: legaia_art::ActionConstant,
+        ) -> Option<&legaia_art::ArtRecord> {
+            self.art_records
+                .get(&(character_byte(character), action.as_byte()))
+        }
         fn is_capture_spell(&self, id: u8) -> bool {
             self.capture_spells.contains(&id)
         }
@@ -1980,6 +2089,17 @@ mod tests {
         }
         fn slot_count(&self) -> u8 {
             self.slot_count
+        }
+    }
+
+    /// Cheap byte encoding for tests. `Character` is a 3-variant enum with
+    /// no public byte-mapping accessor — this mirrors the `0/1/2` ordering
+    /// of `Character::all()`.
+    fn character_byte(c: legaia_art::Character) -> u8 {
+        match c {
+            legaia_art::Character::Vahn => 0,
+            legaia_art::Character::Noa => 1,
+            legaia_art::Character::Gala => 2,
         }
     }
 
@@ -2822,13 +2942,195 @@ mod tests {
     #[test]
     fn art_record_default_returns_none() {
         // Default `BattleActionHost::art_record` returns `None`. Verify
-        // the recording host inherits the default since it doesn't
-        // override.
+        // the recording host returns `None` when no art records are
+        // staged via `art_records`.
         use legaia_art::{ActionConstant, Character};
         let host = RecHost::default();
         assert!(
             host.art_record(Character::Vahn, ActionConstant::Art1B)
                 .is_none()
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Battle SM strike-band reads from art_record.
+    // ---------------------------------------------------------------
+
+    fn dmg_byte(target: legaia_art::PowerTarget, multiplier: u8) -> legaia_art::PowerByte {
+        legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+            target,
+            multiplier,
+            alt_range: false,
+        })
+    }
+
+    fn synthetic_art_record(
+        action: legaia_art::ActionConstant,
+        power: Vec<legaia_art::PowerByte>,
+        dmg_timing: Vec<u8>,
+    ) -> legaia_art::ArtRecord {
+        legaia_art::ArtRecord {
+            action,
+            commands: vec![],
+            anim_index: 0,
+            anim_extra: vec![],
+            name: None,
+            power,
+            dmg_timing,
+            effect_cues: [legaia_art::EffectCue::default(); 2],
+            hit_cues: vec![legaia_art::HitCue::from_word(0x0010_001A)],
+            identifier: 0,
+            anim_speed: 0x10,
+            enemy_effect: legaia_art::EnemyEffect::Burned,
+            repeat_frames: legaia_art::RepeatFrames::default(),
+            background: 0,
+            runtime_address: None,
+        }
+    }
+
+    #[test]
+    fn attack_chain_dispatches_apply_art_strike_when_art_chosen() {
+        // Setup: party slot 0 (Vahn) has chosen Art1B (Vahn's Craze).
+        // Strike script in `params` has anim bytes [0x10, 0x11, 0xFF].
+        // The art has 2 power bytes + 2 dmg_timings; the strike chain
+        // should fire `apply_art_strike` for both bytes (with the second
+        // having a None power if we only stage 1).
+        use legaia_art::{ActionConstant, Character, PowerTarget};
+
+        let mut host = RecHost::with_n_actors(3);
+        host.actors[0].character = Character::Vahn;
+        host.actors[0].chosen_art = Some(ActionConstant::Art1B);
+        host.actors[0].active_target = 1;
+        host.actors[0].params[0] = 0x10;
+        host.actors[0].params[1] = 0x11;
+        host.actors[0].params[2] = 0xFF;
+        host.art_records.insert(
+            (
+                character_byte(Character::Vahn),
+                ActionConstant::Art1B.as_byte(),
+            ),
+            synthetic_art_record(
+                ActionConstant::Art1B,
+                vec![
+                    dmg_byte(PowerTarget::Udf, 18),
+                    dmg_byte(PowerTarget::Ldf, 22),
+                ],
+                vec![0x08, 0x14],
+            ),
+        );
+
+        let mut ctx = BattleActionCtx::new();
+        ctx.action_state = ActionState::AttackChain.as_byte();
+        ctx.active_actor = 0;
+
+        // Tick 1: consumes params[0] = 0x10 → fires both apply_art_strike
+        // and apply_damage.
+        step(&mut host, &mut ctx);
+        // Tick 2: params[1] = 0x11 → fires for second strike.
+        step(&mut host, &mut ctx);
+        // Tick 3: params[2] = 0xFF terminator → transitions to AttackRecovery.
+        step(&mut host, &mut ctx);
+
+        let events = host.take();
+        let strikes: Vec<&ArtStrikeInfo> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::ApplyArtStrike(info) => Some(info),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strikes.len(), 2, "two art strikes should fire");
+        let s0 = strikes[0];
+        assert_eq!(s0.strike_index, 0);
+        assert_eq!(s0.anim_byte, 0x10);
+        assert_eq!(s0.actor_slot, 0);
+        assert_eq!(s0.target_slot, 1);
+        assert_eq!(s0.character, Character::Vahn);
+        assert_eq!(s0.art, ActionConstant::Art1B);
+        assert_eq!(s0.dmg_timing, Some(0x08));
+        assert_eq!(s0.enemy_effect, legaia_art::EnemyEffect::Burned);
+        assert!(matches!(
+            s0.power,
+            Some(legaia_art::PowerByte::Damage(legaia_art::ArtPower {
+                multiplier: 18,
+                ..
+            }))
+        ));
+        assert!(s0.hit_cue.is_some());
+
+        let s1 = strikes[1];
+        assert_eq!(s1.strike_index, 1);
+        assert_eq!(s1.anim_byte, 0x11);
+        assert_eq!(s1.dmg_timing, Some(0x14));
+        // 2nd strike has no hit_cue staged at index 1 (only one in the
+        // synthetic record), so this is None.
+        assert!(s1.hit_cue.is_none());
+        // apply_damage still fires alongside apply_art_strike for
+        // backward compatibility.
+        let damages: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::ApplyDamage(..) => Some(()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(damages.len(), 2, "apply_damage still fires per strike");
+    }
+
+    #[test]
+    fn attack_chain_skips_apply_art_strike_when_no_art_chosen() {
+        // Default actor has chosen_art = None — the strike chain must
+        // fire only apply_damage, not apply_art_strike.
+        let mut host = RecHost::with_n_actors(3);
+        host.actors[0].params[0] = 0x10;
+        host.actors[0].params[1] = 0xFF;
+
+        let mut ctx = BattleActionCtx::new();
+        ctx.action_state = ActionState::AttackChain.as_byte();
+        ctx.active_actor = 0;
+
+        step(&mut host, &mut ctx);
+        step(&mut host, &mut ctx);
+
+        let events = host.take();
+        let strikes = events
+            .iter()
+            .filter(|e| matches!(e, Event::ApplyArtStrike(_)))
+            .count();
+        let damages = events
+            .iter()
+            .filter(|e| matches!(e, Event::ApplyDamage(..)))
+            .count();
+        assert_eq!(strikes, 0);
+        assert_eq!(damages, 1);
+    }
+
+    #[test]
+    fn attack_chain_no_art_strike_when_record_missing() {
+        // chosen_art = Some but the host returns None for art_record.
+        // The SM must fall through to plain apply_damage.
+        use legaia_art::ActionConstant;
+        let mut host = RecHost::with_n_actors(3);
+        host.actors[0].chosen_art = Some(ActionConstant::Art1B);
+        host.actors[0].params[0] = 0x10;
+        host.actors[0].params[1] = 0xFF;
+        // No insert into art_records → host returns None.
+
+        let mut ctx = BattleActionCtx::new();
+        ctx.action_state = ActionState::AttackChain.as_byte();
+        ctx.active_actor = 0;
+
+        step(&mut host, &mut ctx);
+        let events = host.take();
+        assert!(
+            events
+                .iter()
+                .all(|e| !matches!(e, Event::ApplyArtStrike(_))),
+            "no art strike should fire when art_record returns None"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, Event::ApplyDamage(..))),
+            "apply_damage should still fire as fallback"
         );
     }
 }

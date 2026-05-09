@@ -1,7 +1,7 @@
 //! Field / event script VM, ported clean-room from `FUN_801DE840`.
 //!
 //! `FUN_801DE840` lives in PROT entry `0897_xxx_dat` (the town/field overlay,
-//! see `docs/SCRIPT_VM.md`). It drives Legaia's overworld scripting — NPC
+//! see `docs/subsystems/script-vm.md`). It drives Legaia's overworld scripting — NPC
 //! movement, dialog triggers, cutscene sequencing, story flag manipulation.
 //! 17.5 KB, 357 outgoing calls — the largest function in the corpus.
 //!
@@ -45,7 +45,7 @@
 //!
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation at `ghidra/scripts/funcs/overlay_0897_801de840.txt` and the
-//! reference at `docs/SCRIPT_VM.md` are the *spec*, not source. The
+//! reference at `docs/subsystems/script-vm.md` are the *spec*, not source. The
 //! [`FieldHost`] trait abstracts every call the original made into SCUS — its
 //! implementation lives in the engine layer.
 //!
@@ -55,7 +55,7 @@
 
 /// Per-script execution context. One instance per running script.
 ///
-/// Field naming follows the byte-offset convention from `docs/SCRIPT_VM.md`
+/// Field naming follows the byte-offset convention from `docs/subsystems/script-vm.md`
 /// to keep the link to the decompilation explicit. Each public field is a
 /// distinct piece of state surfaced by at least one opcode handler.
 #[derive(Debug, Clone, Default)]
@@ -415,9 +415,10 @@ pub trait FieldHost {
     /// the scene is busy and the script must hold (PC stays).
     ///
     /// `op0_word` encodes the mode (high bit + sub-op nibble); `op1_word`
-    /// carries the fade target / duration. See `docs/SCRIPT_VM.md` § 0x36
-    /// for the sub-case table — the original branches based on `op0_word`'s
-    /// `0xFFFF` sentinel, the `0x8000` flag bit, and the low-15 sub-op.
+    /// carries the fade target / duration. See `docs/subsystems/script-vm.md`
+    /// (opcode 0x36) for the sub-case table — the original branches based on
+    /// `op0_word`'s `0xFFFF` sentinel, the `0x8000` flag bit, and the low-15
+    /// sub-op.
     fn scene_fade(&mut self, op0_word: u16, op1_word: u16) -> SceneFadeResult {
         let _ = (op0_word, op1_word);
         SceneFadeResult::Done
@@ -4935,8 +4936,8 @@ pub fn step<H: FieldHost>(
                 // ctx; on success, return absolute resume PC via the s16
                 // operand at +3 (sub-0/1) or +7 (sub-A/B). On failure (the
                 // host's predicate returns false), advance PC by the standard
-                // amount (5 or 9). See `docs/SCRIPT_VM.md` § "0x43 sub-0/1/A/B
-                // halt-acquire dispatcher".
+                // amount (5 or 9). See `docs/subsystems/script-vm.md`
+                // (opcode 0x43, halt-acquire dispatcher).
                 0 | 1 | 0xA | 0xB => {
                     let wide = sub_op == 0xA || sub_op == 0xB;
                     let needed = if wide { 8 } else { 4 };

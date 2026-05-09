@@ -186,7 +186,7 @@ Verified by analyzing a real mednafen memory-card save at
 | `+0x???` | 4 | Story flags (`_DAT_1F800394` scratchpad value) — offset not yet pinned |
 | `+0x???` | ~512 | Inventory slot array (`DAT_80085958`, 2-byte `(item_id, count)` entries) — offset not yet pinned |
 
-**Investigation status (§4.16).** The display header contains structured non-zero data beyond the
+**Investigation status.** The display header contains structured non-zero data beyond the
 four pinned fields above. The in-game money global (`_DAT_8008459C`) is displayed by
 `FUN_801DCF84` (called from the save-slot screen); its display path is `func_0x80034b78` (number
 formatter). The inventory in RAM lives at `DAT_80085958` as 2-byte `(item_id, count)` entries

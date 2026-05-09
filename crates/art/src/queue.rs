@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 /// Only the three player-controllable Tactical Arts users have decoded
 /// tables. Other party members (Songi, Noa-as-Kanon, etc.) share encodings
 /// in some places but require additional capture work.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Character {
+    #[default]
     Vahn,
     Noa,
     Gala,

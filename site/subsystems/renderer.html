@@ -67,6 +67,17 @@
   <p>CLUT data scatters across PROT entries &mdash; many character meshes reference CLUT rows that live in <em>different</em> PROT entries from their TMD source. The viewer's <code>--vram-extra-dir</code> is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field, town, and level-up still rely on the workaround. See <a href="asset-loader.html">Asset loader &rarr; "CLUT-data scattering"</a>.</p>
 </section>
 
+<section class="doc-section" id="psx-mode">
+  <h2>PSX-faithful rendering knobs</h2>
+  <p><code>Renderer::set_psx_mode(true)</code> enables two retail-faithful rasterisation modes on the VRAM-mesh pipeline:</p>
+  <ul>
+    <li><strong>Affine UV interpolation.</strong> Per-vertex UVs interpolate linearly in screen space (no perspective-correct division). This reproduces the texture warping you see on retail surfaces with steep depth gradients &mdash; <code>GP0(0x24)</code>-class triangle commands transmit only <code>(u, v)</code> per vertex, the rasteriser does not divide by <code>1/w</code>. WGSL <code>@interpolate(linear)</code> gives the same behaviour.</li>
+    <li><strong>Sub-pixel vertex snap ("vertex jitter").</strong> Clip-space <code>x</code> / <code>y</code> are snapped to integer pixel positions inside the vertex shader (NDC &rarr; pixel grid &rarr; NDC round-trip). Reproduces the GTE's per-vertex sub-pixel-truncation jitter that gives PSX rendering its characteristic shimmer on slow-moving geometry.</li>
+  </ul>
+  <p>Texture page (<code>tsb</code>) and CLUT base address (<code>cba</code>) remain <code>@interpolate(flat)</code> &mdash; they are per-primitive in retail because <code>GP0(0x24)</code> sets them once per draw call, not per vertex.</p>
+  <p>A small fixed-point GTE math module at <code>crates/engine-render/src/gte.rs</code> mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. Production rendering still uses f32 wgpu math; the module is the single citation point for downstream code (effect spawners, hit-detection, animation re-targeting) that needs to interpret captured GTE traces.</p>
+</section>
+
 <section class="doc-section" id="stage-geom">
   <h2>Stage geometry detector (legacy, signal only)</h2>
   <p>A "12-byte fixed prefix <code>00 F0 84 7F 01 F0 1F 00 00 F1 00 00</code> repeated at 20-byte stride" detector lives at <code>crates/asset/src/stage_geom.rs</code>. It's <strong>not</strong> real stage geometry &mdash; it's the standard primitive-group header for Legaia TMD primitive group data when <code>((flags &gt;&gt; 1) - 8) &gt;&gt; 1 == K</code> (where K is the group type that uses 20-byte stride).</p>

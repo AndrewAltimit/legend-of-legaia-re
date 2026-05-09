@@ -54,6 +54,7 @@
   </ol>
   <p>Both passes are clean-room ports in <code>legaia_art::MiracleMatcher</code> / <code>legaia_art::SuperMatcher</code>. The engine-vm <code>BattleActionHost</code> exposes an <code>art_record(char_id, art_id)</code> callback so the SM can fetch the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/art-data.md" target="_blank" rel="noopener">art record</a> for power-byte resolution, hit timing, and status-effect application during the <code>0x14..0x20</code> Attack chain.</p>
   <p>The reusable helper is <code>legaia_engine_vm::battle_action::resolve_action_queue(character, command_input, chained_arts)</code> &mdash; runs Miracle then Super to fixpoint. Returns an <code>ActionQueue</code> ready to feed into <code>ctx.queued_action</code>.</p>
+  <p>When the active actor's <code>chosen_art</code> is set and <code>art_record</code> returns a record, <code>attack_chain</code> (state <code>0x1A</code>) calls a second host hook <code>apply_art_strike(ArtStrikeInfo)</code> alongside the existing <code>apply_damage</code>. <code>ArtStrikeInfo</code> carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct.</p>
 </section>
 
 <section class="doc-section" id="full-reference">

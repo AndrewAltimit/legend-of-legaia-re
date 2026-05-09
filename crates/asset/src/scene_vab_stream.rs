@@ -30,7 +30,7 @@
 //! entries** in the post-TOC-fix corpus are this format — by far the largest
 //! single bucket reduction since `scene_tmd_stream`.
 //!
-//! See `docs/FORMATS.md` § 17 for the full byte-level spec.
+//! See `docs/formats/scene-bundles.md` for the full byte-level spec.
 
 use serde::Serialize;
 

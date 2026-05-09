@@ -63,8 +63,8 @@
 //!   record table. This is the structure 0972/0973 actually have.
 //! - [`classify`] - runs both interpretations and reports which one fits.
 //!
-//! See `docs/FORMATS.md` and `docs/COVERAGE.md` for the broader context. Until
-//! a runtime watchpoint trace pins down the actual file layout, this crate is
+//! See `docs/formats/mdt.md` for the broader context. Until a runtime
+//! watchpoint trace pins down the actual file layout, this crate is
 //! intentionally a "what we know" parser, not a final decoder.
 
 use anyhow::Result;

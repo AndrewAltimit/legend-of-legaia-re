@@ -44,7 +44,7 @@ Installed on `MenuRuntime` by `open_inn(cost)` before menu entry.
 - **Per-scene costs.** The retail cost for each inn is encoded in the menu
   overlay's DATA segment. Locating those values requires tracing the sub-screen
   that handles `InnConfirm` entry. Pending overlay binary capture
-  (`overlay_shop_save`; see §3.1 of the PRD).
+  (`overlay_shop_save`).
 - **Render layout.** The cost prompt UI (cost amount + Yes/No cursor) mirrors
   the retail overlay; exact pixel offsets are pending the capture.
 - **Party filtering.** The retail engine may only restore party members who are

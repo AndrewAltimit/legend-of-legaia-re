@@ -16,7 +16,7 @@
 use legaia_lzs::decompress_container;
 use legaia_tmd as tmd;
 
-/// Legaia TMD identifier — see `FORMATS.md` § "Legaia TMD" and `FUN_80026b4c`.
+/// Legaia TMD identifier — see `docs/formats/tmd.md` and `FUN_80026b4c`.
 const LEGAIA_TMD_MAGIC: u32 = 0x80000002;
 
 /// One TMD found inside a source buffer.
