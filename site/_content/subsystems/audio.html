@@ -194,8 +194,9 @@
   <table>
     <thead><tr><th>Module</th><th>Maps to</th></tr></thead>
     <tbody>
-      <tr><td><code>spu::Spu</code></td><td>The 24-voice mixer (one <code>Voice</code> per slot) + master volume + a stub reverb-mode register.</td></tr>
-      <tr><td><code>spu::voice::Voice</code></td><td>Per-voice state: sample address, loop point, pitch, ADSR, L/R volume &mdash; the libspu <code>SpuSetVoiceAttr</code> surface.</td></tr>
+      <tr><td><code>spu::Spu</code></td><td>The 24-voice mixer (one <code>Voice</code> per slot) + master volume + a live <code>Reverb</code> processor (see below).</td></tr>
+      <tr><td><code>spu::voice::Voice</code></td><td>Per-voice state: sample address, loop point, pitch, ADSR, L/R volume, reverb-send flag &mdash; the libspu <code>SpuSetVoiceAttr</code> + <code>SpuSetVoiceReverb</code> surface.</td></tr>
+      <tr><td><code>spu::reverb</code></td><td>Perceptual reverb: <code>ReverbMode</code> enum (Off / Room / StudioA-C / Hall / Space / Echo / Delay / Pipe), per-channel circular delay buffer, libspu-style mode-byte API (<code>Spu::write_reverb_mode_byte</code>).</td></tr>
       <tr><td><code>spu::adsr</code></td><td>The 5-phase ADSR envelope (Attack &ndash; Decay &ndash; Sustain &ndash; Release &ndash; Off) with linear / exponential / increase / decrease modes per the standard PSX formula.</td></tr>
       <tr><td><code>spu::adpcm</code></td><td>Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block <code>prev1</code>/<code>prev2</code> history.</td></tr>
       <tr><td><code>spu::ram</code></td><td>512 KB SPU RAM model + libspu-shaped transfer engine (<code>SpuRam::set_direction</code> / <code>write</code> / <code>read</code> + <code>SpuAllocator</code> for <code>SsSpuMalloc</code> / <code>SpuFree</code>).</td></tr>
@@ -205,10 +206,17 @@
   </table>
   <p>What this <strong>does not</strong> model (out of scope for the first port pass):</p>
   <ul class="bullets">
-    <li><strong>Reverb.</strong> The reverb register is stored, never interpreted. Spirit Arts use it; needs work before those play correctly.</li>
     <li><strong>Pitch modulation, noise, FM.</strong> None used by Legaia (verified against the libspu calls in the SCUS dumps &mdash; <code>SpuSetPitch</code> is the only pitch path).</li>
     <li><strong>Asynchronous DMA timing.</strong> The transfer engine here is synchronous (queue + drain collapsed) &mdash; fine because the playback layer reads SPU RAM directly during voice ticks. The model preserves the <em>API shape</em> (<code>set_transfer_start_units_8</code> / <code>set_direction</code> / <code>write</code>) so the libspu callers map cleanly.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="reverb-model">
+  <h2>Reverb model (engine-audio)</h2>
+  <p>The retail SPU implements reverb as a comb-filter + allpass network with a configurable work buffer at the bottom of SPU RAM. The 9 standard libspu modes (<code>Room</code> / <code>StudioA-C</code> / <code>Hall</code> / <code>Space</code> / <code>Echo</code> / <code>Delay</code> / <code>Pipe</code>) plus <code>Off</code> set parameter triples the SPU's reverb registers consume.</p>
+  <p>The <code>engine-audio</code> clean-room port models reverb perceptually rather than at the register level: a per-channel circular delay buffer with a single feedback tap and a wet/dry mix. Each <code>ReverbMode</code> maps to a <code>(delay_samples, feedback_q14, wet_q14)</code> triple tuned by ear against retail recordings.</p>
+  <p>Per-voice routing is opt-in: <code>Voice::reverb_send = true</code> (libspu <code>SpuSetVoiceReverb</code> analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in <code>Spu::tick</code>. Spirit Arts and echo-flagged sound effects opt in; everything else stays dry.</p>
+  <p>Trade-offs: mode selection via <code>Spu::write_reverb_mode_byte(raw)</code> matches the libspu byte API (1=Room, 2=StudioA, &hellip;, 9=Pipe). Out-of-range bytes fall back to <code>Off</code>. The retail <code>SpuSetReverbModeParam</code> (<code>FUN_8006B1B4</code>, 30-attribute commit) is <em>stored</em> but not interpreted &mdash; the perceptual presets win. Goal is "Spirit Arts have an echo," not bit-exact reproduction.</p>
 </section>
 
 <section class="doc-section" id="engine-sequencer">

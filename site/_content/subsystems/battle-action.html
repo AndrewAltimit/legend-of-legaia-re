@@ -31,6 +31,17 @@
   <p><code>crates/engine-core/src/world.rs</code> composes this with the actor VM, move VM, and effect VM into a single <code>World</code> struct that engines drive via <code>World::tick</code>.</p>
 </section>
 
+<section class="doc-section" id="arts-trigger">
+  <h2>Action queue and Tactical Arts trigger ordering</h2>
+  <p>Before <code>FUN_801E295C</code> reaches the inner-state machinery, the battle code resolves the player's command-input sequence into a flat <strong>action queue</strong> of <code>ActionConstant</code> bytes. The queue is built incrementally from directional inputs and accumulated arts; once the player commits, the runtime applies two trigger passes in order:</p>
+  <ol class="bullets">
+    <li><strong>Miracle Art match.</strong> If the input command sequence equals the character's Miracle Art command string (<code>R D L U L U R D L</code> for Vahn's Craze, etc.), the entire queue is replaced with the Miracle Art's replacement string (<code>L</code>/<code>R</code>/<code>D</code>/<code>U</code> &times; 4 &rarr; <code>SpecialStarter</code> &rarr; <code>art1, art2, &hellip;</code>). The first 4 directional bytes carry the on-disc MSB-set quirk and are masked to <code>0x0C..=0x0F</code>.</li>
+    <li><strong>Super Art find/replace at tail.</strong> For each chained art the runtime walks all the character's Super Art <code>find</code> patterns and replaces the matched tail with a <code>replace</code> tail ending in the Super Art's finisher action constant. Triggers require: the last art of <code>find</code> is the last action in the queue, and all participating arts paid AP.</li>
+  </ol>
+  <p>Both passes are clean-room ports in <code>legaia_art::MiracleMatcher</code> / <code>legaia_art::SuperMatcher</code>. The engine-vm <code>BattleActionHost</code> exposes an <code>art_record(char_id, art_id)</code> callback so the SM can fetch the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/art-data.md" target="_blank" rel="noopener">art record</a> for power-byte resolution, hit timing, and status-effect application during the <code>0x14..0x20</code> Attack chain.</p>
+  <p>The reusable helper is <code>legaia_engine_vm::battle_action::resolve_action_queue(character, command_input, chained_arts)</code> &mdash; runs Miracle then Super to fixpoint. Returns an <code>ActionQueue</code> ready to feed into <code>ctx.queued_action</code>.</p>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
   <p>The full per-state table (every <code>ctx[7]</code> case body, what it runs, and which state it transitions to next) lives at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action.md</code></a> in the repo. That doc cites <code>ghidra/scripts/funcs/overlay_battle_action_801e295c.txt</code> at the line level.</p>
