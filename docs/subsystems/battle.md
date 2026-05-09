@@ -263,3 +263,67 @@ Filters items by `InventoryContext` (battle vs field — `usable_in_battle` / `u
 
 Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-core/src/inventory_use.rs).
 
+
+## Encounter system
+
+Per-scene random-encounter trigger. Engines own one `EncounterSession` per active field scene; the field-step path calls `on_step(rng_word)` each step the player moves. The session brackets the transition with five phases:
+
+| Phase | Drives |
+|---|---|
+| `Idle` | Steady state. Steps roll against the table; safe zones suppress. |
+| `Transition` | Roll succeeded; `transition_frames` (default 32) of camera-shake / fade-out. |
+| `Triggered` | Engine drains the resolved `EncounterRoll` and loads the battle scene. |
+| `Battling` | Battle is running; tracker is suspended. |
+| `Grace` | Post-battle "no immediate re-encounter" window (`grace_frames`, default 30). |
+
+`EncounterTable` holds the per-scene rows + 1/256 trigger rate + safe-zone rectangles. `EncounterTracker::add_rate_bias` lets accessory effects (Goblin Foot = -32, Encounter Up = +32) tune the effective rate per-roll.
+
+Implementation: [`crates/engine-core::encounter`](../../crates/engine-core/src/encounter.rs).
+
+## Battle target picker
+
+Drives the post-action target cursor. Parameterised on a `TargetKind` enum constraining valid targets:
+
+| TargetKind | Allowed targets |
+|---|---|
+| `SingleEnemy` | One alive monster slot. |
+| `SingleAlly` | One alive party slot, **excluding** the actor. |
+| `SingleAllyOrSelf` | Any alive party slot, including the actor. |
+| `DeadAlly` | One fallen party slot (Revive / Resurrection). |
+| `AnyAlly` | Any party slot, alive or dead. |
+| `AllEnemies` / `AllAllies` | Sweep target — auto-confirm. |
+| `Self_` | The actor itself — auto-confirm. |
+
+Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`crates/engine-core::target_picker`](../../crates/engine-core/src/target_picker.rs).
+
+## Equipment catalog
+
+Vanilla equipment table covering the early-game roster. Each entry is an `EquipmentEntry` carrying id + name + slot + character restriction + `ItemModifier` + buy/sell prices. `to_modifier_table()` resolves to the `EquipmentTable` the battle stat aggregator (`compute_battle_stats`) reads.
+
+Slots match the retail `equip[8]` byte array at character record `+0x196`:
+
+| Slot | Index | Examples |
+|---|---|---|
+| Weapon | 0 | Vahn-only swords, Noa-only knuckles, Gala-only quarterstaves |
+| Helmet | 1 | Cloth Cap → Mythril Helm |
+| Body Armor | 2 | Cloth Robe → Plate Mail |
+| Hand Guard | 3 | Cloth Wrap → Iron Gauntlets |
+| Boots | 4 | Cloth Shoes → Wind Boots (ability bit 12) |
+| Ring 1/2 | 5/6 | Power / Defense / Speed / Hit Rings |
+| Accessory | 7 | Goblin Foot (encounter rate down) / Wisdom Ring (MP cost) / Lucky Charm (bonus EXP) |
+
+Implementation: [`crates/engine-core::equipment`](../../crates/engine-core/src/equipment.rs).
+
+## Seru capture + spell learning
+
+Per-character per-Seru capture-point accumulator. Each captured Seru contributes points toward a per-character spell-learn threshold (default 100); once crossed, the spell is added to the character's learned list.
+
+`SeruDef::learnable_mask` is a 3-bit per-character mask (bit 0 = Vahn, bit 1 = Noa, bit 2 = Gala) so single-character Seru can teach only their bearer. `record_capture` is the pure resolver; `SeruCaptureSession` drives the post-capture banner sequence (`Capturing → Announcing[i] → Done`) for engines to render.
+
+Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/src/seru_learning.rs).
+
+## Tactical Arts chain editor
+
+Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks back to `BattleRunner::push_chained_art` at battle start.
+
+Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine-core/src/tactical_arts_editor.rs).

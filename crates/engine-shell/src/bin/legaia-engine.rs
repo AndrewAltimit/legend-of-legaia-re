@@ -252,6 +252,84 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         verbose: bool,
     },
+    /// Drive a synthetic title screen → main-menu pick session.
+    /// Reports per-tick events as the scripted input drives the SM.
+    Title {
+        /// Pre-seeded input sequence, one character per tick. `s` = start,
+        /// `c` = cross, `o` = circle, `U`/`D` = up/down. All other chars
+        /// advance one tick with no input.
+        #[arg(long, default_value = "ssDc")]
+        script: String,
+        /// Treat the session as having no save data (Continue disabled).
+        #[arg(long, default_value_t = false)]
+        no_save: bool,
+        /// Frames to spend in the fade-in phase before accepting input.
+        #[arg(long, default_value_t = 4)]
+        fade_frames: u16,
+    },
+    /// Drive a synthetic save-select session.
+    SaveSelect {
+        /// Mode: `load` (pick a non-empty slot) or `save` (pick any slot).
+        #[arg(long, default_value = "load")]
+        mode: String,
+        /// Comma-separated slot presence mask (1 = present, 0 = empty).
+        #[arg(long, default_value = "1,0,1")]
+        slots: String,
+        /// Pre-seeded input sequence (same letters as `Title`).
+        #[arg(long, default_value = "cc")]
+        script: String,
+    },
+    /// Roll a synthetic encounter session against a small table for `steps`
+    /// steps. Reports the first triggered encounter (if any).
+    Encounter {
+        /// Trigger rate in 1/256 (default 64 ≈ 25%).
+        #[arg(long, default_value_t = 64)]
+        rate: u8,
+        /// Number of steps to roll.
+        #[arg(long, default_value_t = 100)]
+        steps: u32,
+        /// RNG seed (deterministic).
+        #[arg(long, default_value_t = 0xDEAD_BEEF)]
+        seed: u32,
+    },
+    /// Drive a synthetic battle target picker. Reports cursor moves +
+    /// the resulting outcome.
+    TargetPick {
+        /// Target kind: one of `enemy`, `ally`, `ally-or-self`,
+        /// `dead-ally`, `any-ally`, `all-enemies`, `all-allies`, `self`.
+        #[arg(long, default_value = "enemy")]
+        kind: String,
+        /// Active actor slot (0..=2).
+        #[arg(long, default_value_t = 0)]
+        actor: u8,
+        /// Pre-seeded input sequence.
+        #[arg(long, default_value = "RRc")]
+        script: String,
+    },
+    /// Drive a synthetic Tactical Arts chain editor session.
+    ChainEditor {
+        /// Character slot (0..=2).
+        #[arg(long, default_value_t = 0)]
+        char_slot: u8,
+        /// Pre-seeded input sequence (`L`/`R`/`U`/`D` push directions;
+        /// `c` = cross, `o` = circle, `t` = triangle, `n` = name-next).
+        #[arg(long, default_value = "cLLLcc")]
+        script: String,
+    },
+    /// Run the full Seru capture flow against the vanilla registry: roll
+    /// `count` captures of a given Seru and report the resulting learn
+    /// events.
+    SeruCapture {
+        /// Seru id to capture (default 1 = Spark).
+        #[arg(long, default_value_t = 1)]
+        seru: u16,
+        /// Number of captures to roll.
+        #[arg(long, default_value_t = 4)]
+        count: u32,
+        /// Comma-separated party slots (default `0,1,2`).
+        #[arg(long, default_value = "0,1,2")]
+        party: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -353,6 +431,24 @@ fn main() -> Result<()> {
         } => cmd_inventory(item, party_size, &script),
         Cmd::Equip { slot, item } => cmd_equip(slot, item),
         Cmd::GteReplay { trace, verbose } => cmd_gte_replay(&trace, verbose),
+        Cmd::Title {
+            script,
+            no_save,
+            fade_frames,
+        } => cmd_title(&script, no_save, fade_frames),
+        Cmd::SaveSelect {
+            mode,
+            slots,
+            script,
+        } => cmd_save_select(&mode, &slots, &script),
+        Cmd::Encounter { rate, steps, seed } => cmd_encounter(rate, steps, seed),
+        Cmd::TargetPick {
+            kind,
+            actor,
+            script,
+        } => cmd_target_pick(&kind, actor, &script),
+        Cmd::ChainEditor { char_slot, script } => cmd_chain_editor(char_slot, &script),
+        Cmd::SeruCapture { seru, count, party } => cmd_seru_capture(seru, count, &party),
     }
 }
 
@@ -1688,4 +1784,323 @@ fn cmd_gte_replay(trace_path: &Path, verbose: bool) -> Result<()> {
         }
     }
     anyhow::bail!("trace replay produced mismatches");
+}
+
+/// Map an input letter to a [`legaia_engine_core::title::TitleInput`] mask.
+fn title_input_for(c: char) -> legaia_engine_core::title::TitleInput {
+    use legaia_engine_core::title::TitleInput;
+    let mut i = TitleInput::default();
+    match c {
+        's' => i.start = true,
+        'c' => i.cross = true,
+        'o' => i.circle = true,
+        'U' => i.up = true,
+        'D' => i.down = true,
+        _ => {}
+    }
+    i
+}
+
+fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result<()> {
+    use legaia_engine_core::title::{TitleEvent, TitleSession};
+    let mut s = if no_save {
+        TitleSession::without_save_data()
+    } else {
+        TitleSession::new()
+    };
+    s.fade_in_frames = fade_frames;
+    s.skip_fade_in();
+    println!("title: starting (no_save={no_save})");
+    for (i, ch) in script.chars().enumerate() {
+        if s.is_done() {
+            break;
+        }
+        let evs = s.tick(title_input_for(ch));
+        for e in evs {
+            match e {
+                TitleEvent::CursorMoved { row } => println!("  tick {i}: cursor → {row}"),
+                TitleEvent::StartPressed => println!("  tick {i}: start pressed"),
+                TitleEvent::MenuConfirmed { row } => println!("  tick {i}: confirmed row {row}"),
+                TitleEvent::NewGameSelected => println!("  tick {i}: NewGame"),
+                TitleEvent::ContinueSelected => println!("  tick {i}: Continue"),
+                TitleEvent::OptionsSelected => println!("  tick {i}: Options"),
+                TitleEvent::FadeInDone => println!("  tick {i}: fade-in done"),
+            }
+        }
+    }
+    println!("title: outcome = {:?}", s.outcome());
+    Ok(())
+}
+
+fn select_input_for(c: char) -> legaia_engine_core::save_select::SelectInput {
+    use legaia_engine_core::save_select::SelectInput;
+    let mut i = SelectInput::default();
+    match c {
+        'c' => i.cross = true,
+        'o' => i.circle = true,
+        't' => i.triangle = true,
+        'U' => i.up = true,
+        'D' => i.down = true,
+        'L' => i.left = true,
+        'R' => i.right = true,
+        _ => {}
+    }
+    i
+}
+
+fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<()> {
+    use legaia_engine_core::save_select::{
+        SaveSelectMode, SaveSelectSession, SelectEvent, SlotSnapshot,
+    };
+    let mode = match mode.to_ascii_lowercase().as_str() {
+        "load" => SaveSelectMode::Load,
+        "save" => SaveSelectMode::Save,
+        other => anyhow::bail!("unknown save-select mode: {other}"),
+    };
+    let snapshots: Vec<SlotSnapshot> = slots
+        .split(',')
+        .enumerate()
+        .map(|(i, p)| {
+            let present = p.trim() == "1";
+            if present {
+                SlotSnapshot {
+                    slot: i as u8,
+                    present: true,
+                    label: format!("Slot {i}: Vahn  Lv 5"),
+                    play_time_seconds: 1234,
+                    party_lv: 5,
+                    location: "Town01".into(),
+                    money: 100,
+                }
+            } else {
+                SlotSnapshot::empty(i as u8)
+            }
+        })
+        .collect();
+    let mut s = SaveSelectSession::new(mode, snapshots);
+    println!(
+        "save-select: mode={:?}, {} slot(s)",
+        s.mode(),
+        s.slots().len()
+    );
+    for (i, ch) in script.chars().enumerate() {
+        if s.is_done() {
+            break;
+        }
+        let evs = s.tick(select_input_for(ch));
+        for e in evs {
+            match e {
+                SelectEvent::CursorMoved { slot } => {
+                    println!("  tick {i}: cursor → slot {slot}")
+                }
+                SelectEvent::EnteredConfirm { slot, kind } => {
+                    println!("  tick {i}: entered {:?} confirm on slot {slot}", kind)
+                }
+                SelectEvent::Confirmed { slot, kind } => {
+                    println!("  tick {i}: confirmed {:?} on slot {slot}", kind)
+                }
+                SelectEvent::ConfirmCancelled { slot, kind } => {
+                    println!("  tick {i}: cancelled {:?} on slot {slot}", kind)
+                }
+                SelectEvent::InvalidConfirm => println!("  tick {i}: invalid confirm"),
+                SelectEvent::Cancelled => println!("  tick {i}: cancelled"),
+            }
+        }
+    }
+    println!("save-select: outcome = {:?}", s.outcome());
+    Ok(())
+}
+
+fn cmd_encounter(rate: u8, steps: u32, seed: u32) -> Result<()> {
+    use legaia_engine_core::encounter::{
+        EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
+    };
+    let mut table = EncounterTable::new("test_scene");
+    table.set_trigger_rate(rate);
+    table.push(EncounterEntry::new(1, 50));
+    table.push(EncounterEntry::new(2, 30));
+    table.push(EncounterEntry::new(3, 20));
+    let mut session = EncounterSession::new(EncounterTracker::new(table));
+    let mut rng = seed;
+    let mut hit_step = None;
+    for step in 0..steps {
+        // xorshift32
+        rng ^= rng << 13;
+        rng ^= rng >> 17;
+        rng ^= rng << 5;
+        if session.on_step(rng) {
+            hit_step = Some(step);
+            break;
+        }
+    }
+    if let Some(s) = hit_step {
+        // Drain through transition.
+        for _ in 0..session.transition_frames + 1 {
+            session.tick_frame();
+        }
+        if let Some(roll) = session.drain_triggered() {
+            println!(
+                "encounter: triggered at step {s} → formation {} (roll q8={})",
+                roll.formation_id, roll.roll_q8
+            );
+        } else {
+            println!("encounter: triggered at step {s} but transition lost");
+        }
+    } else {
+        println!("encounter: no trigger after {steps} step(s)");
+    }
+    println!(
+        "encounter: total_steps={} steps_since_last={}",
+        session.tracker().total_steps(),
+        session.tracker().steps_since_last_battle()
+    );
+    Ok(())
+}
+
+fn picker_input_for(c: char) -> legaia_engine_core::target_picker::PickerInput {
+    use legaia_engine_core::target_picker::PickerInput;
+    let mut i = PickerInput::default();
+    match c {
+        'c' => i.cross = true,
+        'o' => i.circle = true,
+        'L' => i.left = true,
+        'R' => i.right = true,
+        'U' => i.up = true,
+        'D' => i.down = true,
+        _ => {}
+    }
+    i
+}
+
+fn cmd_target_pick(kind: &str, actor: u8, script: &str) -> Result<()> {
+    use legaia_engine_core::target_picker::{
+        PickerEvent, SlotState, TargetKind, TargetPickerSession,
+    };
+    let kind = match kind.to_ascii_lowercase().as_str() {
+        "enemy" => TargetKind::SingleEnemy,
+        "ally" => TargetKind::SingleAlly,
+        "ally-or-self" => TargetKind::SingleAllyOrSelf,
+        "dead-ally" => TargetKind::DeadAlly,
+        "any-ally" => TargetKind::AnyAlly,
+        "all-enemies" => TargetKind::AllEnemies,
+        "all-allies" => TargetKind::AllAllies,
+        "self" => TargetKind::Self_,
+        other => anyhow::bail!("unknown target kind: {other}"),
+    };
+    let party = [SlotState::alive(true, true); 3];
+    let monsters = [SlotState::alive(true, true); 5];
+    let mut s = TargetPickerSession::new(kind, actor, party, monsters);
+    println!("target-pick: kind={:?} actor={actor}", s.kind());
+    for ch in script.chars() {
+        if s.is_done() {
+            break;
+        }
+        s.input(picker_input_for(ch));
+        for e in s.drain_events() {
+            match e {
+                PickerEvent::CursorMoved { row, slot } => {
+                    println!("  cursor → {:?} slot {slot}", row)
+                }
+                PickerEvent::RowSwitched { row, slot } => {
+                    println!("  row switched → {:?} slot {slot}", row)
+                }
+                PickerEvent::Confirmed { row, slot } => {
+                    println!("  confirmed {:?} slot {slot}", row)
+                }
+                PickerEvent::SweepConfirmed { row } => {
+                    println!("  sweep confirmed {:?}", row)
+                }
+                PickerEvent::Cancelled => println!("  cancelled"),
+                PickerEvent::InvalidConfirm => println!("  invalid confirm"),
+            }
+        }
+    }
+    println!("target-pick: outcome = {:?}", s.outcome());
+    Ok(())
+}
+
+fn editor_input_for(c: char) -> legaia_engine_core::tactical_arts_editor::EditInput {
+    use legaia_engine_core::tactical_arts_editor::EditInput;
+    let mut i = EditInput::default();
+    match c {
+        'L' => i.left = true,
+        'R' => i.right = true,
+        'U' => i.up = true,
+        'D' => i.down = true,
+        'c' => i.cross = true,
+        'o' => i.circle = true,
+        't' => i.triangle = true,
+        'n' => i.name_next = true,
+        _ => {}
+    }
+    i
+}
+
+fn cmd_chain_editor(char_slot: u8, script: &str) -> Result<()> {
+    use legaia_engine_core::tactical_arts_editor::{ChainEditor, ChainLibrary, EditEvent};
+    let lib = ChainLibrary::new();
+    let mut ed = ChainEditor::new(char_slot, &lib);
+    println!("chain-editor: char_slot={char_slot}");
+    for ch in script.chars() {
+        if ed.is_done() {
+            break;
+        }
+        for e in ed.tick(editor_input_for(ch)) {
+            match e {
+                EditEvent::BrowseCursorMoved { row } => println!("  cursor → row {row}"),
+                EditEvent::EnteredEdit { editing_slot } => {
+                    println!("  entered edit slot={:?}", editing_slot)
+                }
+                EditEvent::SequenceAppended { command, len } => {
+                    println!("  appended {:?} (len={len})", command)
+                }
+                EditEvent::SequencePopped { len } => println!("  popped (len={len})"),
+                EditEvent::InvalidCommit { len } => println!("  invalid commit at len {len}"),
+                EditEvent::EnteredNaming => println!("  entered naming"),
+                EditEvent::Saved { slot } => println!("  saved slot {slot}"),
+                EditEvent::Replaced { slot } => println!("  replaced slot {slot}"),
+                EditEvent::Deleted { slot } => println!("  deleted slot {slot}"),
+                EditEvent::Cancelled => println!("  cancelled"),
+            }
+        }
+    }
+    println!("chain-editor: outcome = {:?}", ed.outcome());
+    Ok(())
+}
+
+fn cmd_seru_capture(seru: u16, count: u32, party: &str) -> Result<()> {
+    use legaia_engine_core::seru_learning::{SeruCaptureLog, SeruRegistry, record_capture};
+    let registry = SeruRegistry::vanilla();
+    let party: Vec<u8> = party
+        .split(',')
+        .filter_map(|s| s.trim().parse::<u8>().ok())
+        .collect();
+    let mut log = SeruCaptureLog::new();
+    println!("seru-capture: seru={seru} count={count} party={:?}", party);
+    for i in 0..count {
+        let out = record_capture(&registry, &mut log, seru, &party);
+        if !out.accepted {
+            println!("  capture {i}: rejected (unknown seru)");
+            return Ok(());
+        }
+        if !out.learns.is_empty() {
+            for ev in &out.learns {
+                println!(
+                    "  capture {i}: char {} learned spell {:#04x} from seru {}",
+                    ev.char_slot, ev.spell_id, ev.seru_id
+                );
+            }
+        }
+    }
+    println!(
+        "seru-capture: final per-char totals: {:?}",
+        party
+            .iter()
+            .map(|c| (*c, log.total_points(*c)))
+            .collect::<Vec<_>>()
+    );
+    for c in &party {
+        println!("  char {c} learned spells: {:?}", log.learned_spells(*c));
+    }
+    Ok(())
 }

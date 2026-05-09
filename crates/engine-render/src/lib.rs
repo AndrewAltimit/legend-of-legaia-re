@@ -349,6 +349,145 @@ pub fn shop_draws_for<'a>(
     out
 }
 
+/// One row of plain text for the dialog presenter. Engines populate
+/// this from their `DialogPanel::page_glyphs` view; the renderer wraps
+/// them into `TextDraw`s without re-implementing the layout pass.
+#[derive(Debug, Clone, Copy)]
+pub struct DialogGlyphView {
+    /// ASCII / latin glyph byte. Wide-glyph references are pre-folded
+    /// to the operand byte (matches `DialogPanel`'s emit path).
+    pub byte: u8,
+    /// CLUT additive index (0..15). Engines pass `0` for the default
+    /// pen; non-zero values come from inline `0xCF` color escapes.
+    pub clut: u8,
+}
+
+/// Layout used by [`dialog_box_draws_for`]. Engines pass this once per
+/// frame; the function recomputes the text wrap on the fly so engines
+/// that care about retail-correct line breaks can substitute their own
+/// layout pre-pass.
+#[derive(Debug, Clone, Copy)]
+pub struct DialogBoxLayout {
+    /// Top-left of the panel in surface pixels.
+    pub origin: (i32, i32),
+    /// Width / height of the panel rectangle in pixels.
+    pub size: (u32, u32),
+    /// Internal margin between panel edge and text.
+    pub padding: (i32, i32),
+    /// Per-line vertical advance.
+    pub line_h: i32,
+    /// Maximum text columns per line (in glyphs). When a glyph would
+    /// overflow this width, the renderer wraps to the next line.
+    pub cols: u16,
+}
+
+impl Default for DialogBoxLayout {
+    /// Retail layout traced from the dialog overlay (`FUN_801D84D0`):
+    /// origin (8, 168), size (304, 56), padding (8, 8), line_h 14,
+    /// cols 36 (matches the proportional dialog font's average advance
+    /// at 304 px wide). Engines that don't render at 320×240 should
+    /// override these.
+    fn default() -> Self {
+        Self {
+            origin: (8, 168),
+            size: (304, 56),
+            padding: (8, 8),
+            line_h: 14,
+            cols: 36,
+        }
+    }
+}
+
+/// Resolve a dialog CLUT additive index to an RGBA tint. The retail
+/// dialog renderer uses a small palette indexed at `_DAT_8007B454`;
+/// we approximate the most common entries.
+pub fn dialog_clut_color(clut: u8) -> [f32; 4] {
+    match clut {
+        0 => [1.0, 1.0, 1.0, 1.0],    // default white
+        1 => [1.0, 0.85, 0.2, 1.0],   // gold (NPC names)
+        2 => [0.5, 1.0, 0.5, 1.0],    // green (heal)
+        3 => [1.0, 0.4, 0.4, 1.0],    // red (warning)
+        4 => [0.4, 0.6, 1.0, 1.0],    // blue (lore)
+        _ => [0.85, 0.85, 0.85, 1.0], // dim fallback
+    }
+}
+
+/// Build [`TextDraw`]s for an open dialog box.
+///
+/// Layout: panel rectangle drawn first (engines render the rectangle
+/// outside the text path; we don't emit it here since it's a quad, not
+/// a glyph), then text wrapped onto sequential lines inside the
+/// padded interior. Engines that want a "page break" cursor can layer
+/// their own caret quad on top.
+///
+/// Wrapping: a simple left-to-right, glyph-width-driven greedy wrap.
+/// Newline byte (`'\n'`) starts a new line. Spaces are kept literal.
+/// Glyph layout uses [`legaia_font::Font::layout_ascii`] per glyph so
+/// the proportional dialog font's advance values are honoured.
+pub fn dialog_box_draws_for(
+    font: &legaia_font::Font,
+    glyphs: &[DialogGlyphView],
+    layout: &DialogBoxLayout,
+) -> Vec<TextDraw> {
+    let interior_x = layout.origin.0 + layout.padding.0;
+    let interior_y = layout.origin.1 + layout.padding.1;
+    let max_x = layout.origin.0 + layout.size.0 as i32 - layout.padding.0;
+    let max_y = layout.origin.1 + layout.size.1 as i32 - layout.padding.1;
+    let mut pen_x = interior_x;
+    let mut pen_y = interior_y;
+    let mut out = Vec::with_capacity(glyphs.len());
+    for g in glyphs {
+        if g.byte == b'\n' {
+            pen_x = interior_x;
+            pen_y += layout.line_h;
+            continue;
+        }
+        // Layout a single-byte string and look at the resulting glyph
+        // width — that's the proportional advance.
+        let s = [g.byte];
+        let one = font.layout_ascii(std::str::from_utf8(&s).unwrap_or(" "));
+        let advance = one
+            .glyphs
+            .first()
+            .map(|gl| gl.width as i32 + 1)
+            .unwrap_or(8);
+        if pen_x + advance > max_x {
+            pen_x = interior_x;
+            pen_y += layout.line_h;
+        }
+        if pen_y + layout.line_h > max_y {
+            // Out of vertical room — drop the rest of this page.
+            break;
+        }
+        if let Some(gl) = one.glyphs.first() {
+            out.push(TextDraw {
+                dst: (pen_x + gl.dst_x, pen_y + gl.dst_y, gl.width, gl.height),
+                src: (gl.atlas_x, gl.atlas_y, gl.width, gl.height),
+                color: dialog_clut_color(g.clut),
+            });
+        }
+        pen_x += advance;
+    }
+    out
+}
+
+/// Convenience wrapper: convert engine-core's `DialogPanel::page_glyphs`
+/// shape (named `(byte, clut)` pairs) directly to [`TextDraw`]s.
+///
+/// Engines that import [`legaia_engine_core::dialog::PanelGlyph`] should
+/// prefer this wrapper to skip the manual `DialogGlyphView` mapping.
+pub fn dialog_panel_draws_for(
+    font: &legaia_font::Font,
+    panel_glyphs: &[(u8, u8)],
+    layout: &DialogBoxLayout,
+) -> Vec<TextDraw> {
+    let views: Vec<DialogGlyphView> = panel_glyphs
+        .iter()
+        .map(|&(byte, clut)| DialogGlyphView { byte, clut })
+        .collect();
+    dialog_box_draws_for(font, &views, layout)
+}
+
 /// Build [`TextDraw`]s for a level-up banner overlay.
 ///
 /// Renders two lines anchored at `pen`:
@@ -2875,6 +3014,107 @@ mod tests {
         assert_eq!(draws[0].src, (16, 0, 14, 15));
         assert_eq!(draws[1].dst, (100, 200, 14, 15));
         assert_eq!(draws[1].color, [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn dialog_clut_color_distinct_palette() {
+        let white = dialog_clut_color(0);
+        let gold = dialog_clut_color(1);
+        let red = dialog_clut_color(3);
+        assert_eq!(white[0], 1.0);
+        assert!(gold[0] > 0.9 && gold[2] < 0.5);
+        assert!(red[0] > 0.9 && red[1] < 0.5);
+        // Out-of-range index falls through to dim.
+        let oob = dialog_clut_color(99);
+        assert!(oob[0] < 0.9);
+    }
+
+    #[test]
+    fn dialog_box_default_layout_origin() {
+        let l = DialogBoxLayout::default();
+        assert_eq!(l.origin, (8, 168));
+        assert_eq!(l.line_h, 14);
+    }
+
+    #[test]
+    fn dialog_box_draws_emits_one_quad_per_glyph() {
+        let font = legaia_font::synthetic_for_tests();
+        let glyphs = vec![
+            DialogGlyphView {
+                byte: b'a',
+                clut: 0,
+            },
+            DialogGlyphView {
+                byte: b'b',
+                clut: 0,
+            },
+            DialogGlyphView {
+                byte: b'c',
+                clut: 1,
+            },
+        ];
+        let layout = DialogBoxLayout::default();
+        let draws = dialog_box_draws_for(&font, &glyphs, &layout);
+        assert_eq!(draws.len(), 3);
+        // Third glyph uses gold tint.
+        assert!(draws[2].color[2] < 0.5);
+    }
+
+    #[test]
+    fn dialog_box_draws_handle_newline() {
+        let font = legaia_font::synthetic_for_tests();
+        let glyphs = vec![
+            DialogGlyphView {
+                byte: b'a',
+                clut: 0,
+            },
+            DialogGlyphView {
+                byte: b'\n',
+                clut: 0,
+            },
+            DialogGlyphView {
+                byte: b'b',
+                clut: 0,
+            },
+        ];
+        let layout = DialogBoxLayout::default();
+        let draws = dialog_box_draws_for(&font, &glyphs, &layout);
+        // Two glyph quads (newline isn't drawn).
+        assert_eq!(draws.len(), 2);
+        // Second glyph y > first glyph y by at least line_h.
+        assert!(draws[1].dst.1 - draws[0].dst.1 >= layout.line_h - 4);
+    }
+
+    #[test]
+    fn dialog_box_draws_wrap_when_too_wide() {
+        let font = legaia_font::synthetic_for_tests();
+        // Tiny panel that fits maybe 2-3 glyphs per row.
+        let layout = DialogBoxLayout {
+            origin: (0, 0),
+            size: (40, 60),
+            padding: (2, 2),
+            line_h: 14,
+            cols: 4,
+        };
+        let glyphs: Vec<_> = (0..12)
+            .map(|_| DialogGlyphView {
+                byte: b'a',
+                clut: 0,
+            })
+            .collect();
+        let draws = dialog_box_draws_for(&font, &glyphs, &layout);
+        // Expect more than one row and the y coordinates to vary.
+        let rows: std::collections::HashSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+        assert!(rows.len() >= 2);
+    }
+
+    #[test]
+    fn dialog_panel_draws_for_wrapper() {
+        let font = legaia_font::synthetic_for_tests();
+        let panel: Vec<(u8, u8)> = vec![(b'a', 0), (b'b', 1)];
+        let layout = DialogBoxLayout::default();
+        let draws = dialog_panel_draws_for(&font, &panel, &layout);
+        assert_eq!(draws.len(), 2);
     }
 
     #[test]

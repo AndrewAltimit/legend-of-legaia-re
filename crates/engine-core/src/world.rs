@@ -1002,6 +1002,7 @@ impl World {
                 money: self.money,
                 inventory,
             },
+            ext_v2: legaia_save::SaveExtV2::default(),
         }
     }
 
@@ -2628,6 +2629,7 @@ mod tests {
                 money: 0,
                 inventory: vec![(5, 3)],
             },
+            ext_v2: legaia_save::SaveExtV2::default(),
         };
         world.load_full(sf);
         assert!(!world.inventory.contains_key(&1));
