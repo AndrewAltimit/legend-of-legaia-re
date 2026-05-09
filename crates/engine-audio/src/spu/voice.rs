@@ -45,6 +45,11 @@ pub struct Voice {
     pub adsr_cfg: AdsrConfig,
     /// ADSR runtime state.
     pub adsr: AdsrState,
+    /// Per-voice reverb routing flag. When `true` this voice's pre-master
+    /// output is summed into the SPU's reverb send bus. libspu calls this
+    /// `SpuSetVoiceReverb`. Defaults to `false` — engines opt voices in
+    /// when starting a Spirit Art / echo-flagged sound effect.
+    pub reverb_send: bool,
 
     // --- runtime state --------------------------------------------------
     /// Absolute address of the *current* ADPCM block in SPU RAM.
@@ -71,6 +76,7 @@ impl Default for Voice {
             vol_right: 0x3FFF,
             adsr_cfg: AdsrConfig::default(),
             adsr: AdsrState::default(),
+            reverb_send: false,
             cur_block_addr: 0,
             sample_idx: 0,
             sample_frac: 0,
@@ -86,6 +92,12 @@ impl Voice {
     /// `SpuSetVoiceLoopStartAddr`.
     pub fn set_loop_addr(&mut self, addr: u32) {
         self.loop_addr = Some(addr);
+    }
+
+    /// Toggle the per-voice reverb send flag (libspu `SpuSetVoiceReverb`
+    /// analogue).
+    pub fn set_reverb_send(&mut self, on: bool) {
+        self.reverb_send = on;
     }
 
     /// Trigger a key-on: rewind to start, decode the first block, kick the

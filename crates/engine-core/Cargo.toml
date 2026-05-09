@@ -16,6 +16,7 @@ toml = "0.8"
 legaia-engine-vm = { path = "../engine-vm" }
 legaia-asset = { path = "../asset" }
 legaia-font = { path = "../font" }
+legaia-iso = { path = "../iso" }
 legaia-lzs = { path = "../lzs" }
 legaia-mes = { path = "../mes" }
 legaia-prot = { path = "../prot" }
@@ -24,6 +25,7 @@ legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
 legaia-vab = { path = "../vab" }
 legaia-anm = { path = "../anm" }
+legaia-art = { path = "../art" }
 legaia-save = { path = "../save" }
 
 [dev-dependencies]

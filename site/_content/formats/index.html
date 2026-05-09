@@ -80,6 +80,10 @@
       <div class="card-title">MDT — move tables</div>
       <div class="card-body">Tactical Arts move records. Both possible layouts parse cleanly; the consumer (<code>FUN_800204F8</code>) is reversed but file/CDNAME mapping is open.</div>
     </a>
+    <a class="card" id="art-data" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/art-data.md" target="_blank" rel="noopener">
+      <div class="card-title">Art data — Tactical Arts records</div>
+      <div class="card-body">Per-character art records (Vahn <code>0x80160EFC</code> / Noa <code>0x80176998</code> / Gala <code>0x8018BA54</code>; PROT entry <code>0x05C4</code>). 40-field schema: command sequence, action constant, power bytes (UDF / LDF + alt-range with floater/short misses), hit timing, special / hit effect cues, status effects, repeat-frame replay. Action Constants 0x00–0x32, Miracle / Super Art trigger tables. <code>crates/art</code>.</div>
+    </a>
   </div>
 </section>
 

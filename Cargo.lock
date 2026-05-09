@@ -1171,6 +1171,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-art"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "legaia-asset"
 version = "0.1.0"
 dependencies = [
@@ -1229,9 +1239,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-anm",
+ "legaia-art",
  "legaia-asset",
  "legaia-engine-vm",
  "legaia-font",
+ "legaia-iso",
  "legaia-lzs",
  "legaia-mes",
  "legaia-prot",
@@ -1287,6 +1299,9 @@ dependencies = [
 [[package]]
 name = "legaia-engine-vm"
 version = "0.1.0"
+dependencies = [
+ "legaia-art",
+]
 
 [[package]]
 name = "legaia-extract"

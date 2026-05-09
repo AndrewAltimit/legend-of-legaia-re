@@ -35,6 +35,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Dialog font](dialog-font.md) | Proportional Latin font for dialog/menu text. Width table at `0x80073F1C`, escape table at `0x80074050`, glyph bitmaps in VRAM at `(896, 0)`. |
 | [ANM animation](anm.md) | `(u16 count, u16 offsets[count], records)` layout. Asset type `0x06`. |
 | [MDT move table](mdt.md) | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
+| [Art data](art-data.md) | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
 
 ## Streaming + scene containers
 
