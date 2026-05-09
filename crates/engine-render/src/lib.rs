@@ -764,6 +764,197 @@ fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
     ]
 }
 
+/// Build [`TextDraw`]s for the title screen.
+///
+/// Phase argument controls which UI is rendered:
+/// - `phase` = 0: fade-in (no text — engines fade the screen to black);
+/// - `phase` = 1: "Press START" prompt (centered roughly mid-screen);
+/// - `phase` = 2: main menu (New Game / Continue / Options stacked).
+///
+/// `cursor` is ignored for phases 0/1 and selects the highlighted row
+/// (0..=2) in phase 2. `continue_enabled = false` dims the Continue row.
+/// `blink_on` toggles the prompt visibility on phase 1 every blink_period
+/// frames; engines drive this from the title session's blink phase.
+///
+/// A natural anchor for a 320×240 surface is `pen = (96, 100)` — the
+/// renderer offsets each line from this top-left.
+pub fn title_draws_for(
+    font: &legaia_font::Font,
+    phase: u8,
+    cursor: u8,
+    continue_enabled: bool,
+    blink_on: bool,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.45, 0.45, 0.45, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+
+    let mut out = Vec::new();
+
+    match phase {
+        0 => {}
+        1 if blink_on => {
+            let l = font.layout_ascii("PRESS START");
+            out.extend(text_draws_for(&l, pen, white));
+        }
+        1 => {}
+        2 => {
+            let rows = ["NEW GAME", "CONTINUE", "OPTIONS"];
+            for (i, label) in rows.iter().enumerate() {
+                let row_y = pen.1 + i as i32 * LINE_H;
+                let selected = i as u8 == cursor;
+                let row_disabled = i == 1 && !continue_enabled;
+                let color = if row_disabled {
+                    dim
+                } else if selected {
+                    gold
+                } else {
+                    white
+                };
+                if selected {
+                    let cur = font.layout_ascii(">");
+                    out.extend(text_draws_for(&cur, (pen.0 - 14, row_y), color));
+                }
+                let l = font.layout_ascii(label);
+                out.extend(text_draws_for(&l, (pen.0, row_y), color));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// One slot row passed into [`save_select_draws_for`]. Plain-data view
+/// so the renderer doesn't depend on `engine-core::save_select`.
+pub struct SaveSelectRow<'a> {
+    pub label: &'a str,
+    pub present: bool,
+    pub party_lv: u8,
+    pub play_time_seconds: u32,
+    pub money: u32,
+    pub location: &'a str,
+}
+
+/// Build [`TextDraw`]s for the save-select panel.
+///
+/// Layout (anchored at `pen`):
+/// ```text
+/// SAVE                                ← title (or LOAD)
+/// > Slot 1                Lv 12
+///   01:23:45               4500G
+///   ...
+///   Slot 2                <empty>
+/// ```
+///
+/// `cursor` selects the highlighted row. When `confirm_kind` is `Some`,
+/// a Yes/No prompt is rendered below the slot list with the highlighted
+/// option determined by `confirm_cursor` (0 = Yes, 1 = No).
+pub fn save_select_draws_for(
+    font: &legaia_font::Font,
+    title: &str,
+    rows: &[SaveSelectRow<'_>],
+    cursor: usize,
+    confirm: Option<(&str, u8)>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    const ROW_BLOCK: i32 = LINE_H * 2; // each slot takes 2 lines
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+
+    let mut out = Vec::new();
+
+    let title_l = font.layout_ascii(title);
+    out.extend(text_draws_for(&title_l, pen, white));
+
+    for (i, row) in rows.iter().enumerate() {
+        let row_y = pen.1 + LINE_H + i as i32 * ROW_BLOCK;
+        let selected = i == cursor;
+        let color = if !row.present {
+            dim
+        } else if selected {
+            gold
+        } else {
+            white
+        };
+        if selected {
+            let cur = font.layout_ascii(">");
+            out.extend(text_draws_for(&cur, (pen.0, row_y), color));
+        }
+
+        let label_l = font.layout_ascii(row.label);
+        out.extend(text_draws_for(&label_l, (pen.0 + 14, row_y), color));
+
+        if row.present {
+            let lv = format!("Lv {}", row.party_lv);
+            let lv_l = font.layout_ascii(&lv);
+            out.extend(text_draws_for(&lv_l, (pen.0 + 160, row_y), color));
+
+            let secs = row.play_time_seconds;
+            let h = secs / 3600;
+            let m = (secs % 3600) / 60;
+            let s = secs % 60;
+            let time_str = format!("{h:02}:{m:02}:{s:02}");
+            let t_l = font.layout_ascii(&time_str);
+            out.extend(text_draws_for(&t_l, (pen.0 + 14, row_y + LINE_H), dim));
+
+            let g_str = format!("{}G", row.money);
+            let g_l = font.layout_ascii(&g_str);
+            out.extend(text_draws_for(&g_l, (pen.0 + 160, row_y + LINE_H), dim));
+        } else {
+            let empty_l = font.layout_ascii("<empty>");
+            out.extend(text_draws_for(&empty_l, (pen.0 + 160, row_y), dim));
+        }
+    }
+
+    if let Some((prompt, c_cursor)) = confirm {
+        let confirm_y = pen.1 + LINE_H + rows.len() as i32 * ROW_BLOCK + LINE_H;
+        let p_l = font.layout_ascii(prompt);
+        out.extend(text_draws_for(&p_l, (pen.0, confirm_y), white));
+        for (i, opt) in ["Yes", "No"].iter().enumerate() {
+            let x = pen.0 + 80 + i as i32 * 50;
+            let color = if i as u8 == c_cursor { gold } else { white };
+            if i as u8 == c_cursor {
+                let cur = font.layout_ascii(">");
+                out.extend(text_draws_for(&cur, (x - 10, confirm_y + LINE_H), color));
+            }
+            let l = font.layout_ascii(opt);
+            out.extend(text_draws_for(&l, (x, confirm_y + LINE_H), color));
+        }
+    }
+
+    out
+}
+
+/// Build [`TextDraw`]s for the encounter transition banner.
+///
+/// Drawn during [`crate::EncounterPhase::Transition`] (where the engine
+/// type is `legaia_engine_core::encounter::EncounterPhase`). Renders a
+/// large centered "ENCOUNTER!" line plus the formation label below.
+/// Engines fade the surface independently — this just produces the
+/// glyph draws.
+pub fn encounter_banner_draws_for(
+    font: &legaia_font::Font,
+    formation_label: &str,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let yellow: [f32; 4] = [1.0, 0.9, 0.3, 1.0];
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+    let mut out = Vec::new();
+    let head = font.layout_ascii("ENCOUNTER!");
+    out.extend(text_draws_for(&head, pen, yellow));
+    if !formation_label.is_empty() {
+        let body = font.layout_ascii(formation_label);
+        out.extend(text_draws_for(&body, (pen.0, pen.1 + LINE_H), white));
+    }
+    out
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -3428,5 +3619,100 @@ mod tests {
         let c = [0.5, 0.6, 0.7, 1.0];
         let scaled = apply_alpha(c, 0.5);
         assert_eq!(scaled, [0.5, 0.6, 0.7, 0.5]);
+    }
+
+    #[test]
+    fn title_phase_2_renders_three_rows() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = title_draws_for(&font, 2, 0, true, true, (96, 100));
+        // At least three rows (NEW GAME / CONTINUE / OPTIONS) plus a cursor.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn title_phase_1_blink_off_is_empty() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = title_draws_for(&font, 1, 0, true, false, (96, 100));
+        // blink off → no glyphs.
+        assert!(draws.is_empty());
+    }
+
+    #[test]
+    fn title_continue_dimmed_when_disabled() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = title_draws_for(&font, 2, 0, false, true, (96, 100));
+        // dim color is [0.45,0.45,0.45]; gold is [1.0,0.85,0.3]; white is [1,1,1].
+        let any_dim = draws.iter().any(|d| d.color[0] < 0.5 && d.color[3] >= 0.99);
+        assert!(any_dim);
+    }
+
+    #[test]
+    fn save_select_renders_with_present_and_empty_rows() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            SaveSelectRow {
+                label: "Slot 1",
+                present: true,
+                party_lv: 12,
+                play_time_seconds: 3 * 3600 + 5 * 60 + 7,
+                money: 4500,
+                location: "Town01",
+            },
+            SaveSelectRow {
+                label: "Slot 2",
+                present: false,
+                party_lv: 0,
+                play_time_seconds: 0,
+                money: 0,
+                location: "",
+            },
+        ];
+        let draws = save_select_draws_for(&font, "LOAD", &rows, 0, None, (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn save_select_with_confirm_prompt() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [SaveSelectRow {
+            label: "Slot 1",
+            present: true,
+            party_lv: 1,
+            play_time_seconds: 0,
+            money: 0,
+            location: "T",
+        }];
+        let draws = save_select_draws_for(
+            &font,
+            "LOAD",
+            &rows,
+            0,
+            Some(("Load this slot?", 0)),
+            (16, 32),
+        );
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn encounter_banner_renders_label() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = encounter_banner_draws_for(&font, "Goblin x2", (100, 80));
+        // ENCOUNTER! header in yellow plus body in white = at least 2 distinct colors.
+        let any_yellow = draws.iter().any(|d| d.color[2] < 0.5 && d.color[0] > 0.9);
+        let any_white = draws
+            .iter()
+            .any(|d| d.color[0] >= 0.99 && d.color[1] >= 0.99);
+        assert!(any_yellow);
+        assert!(any_white);
+    }
+
+    #[test]
+    fn encounter_banner_empty_label_only_header() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = encounter_banner_draws_for(&font, "", (100, 80));
+        let any_white = draws
+            .iter()
+            .any(|d| d.color[0] >= 0.99 && d.color[1] >= 0.99);
+        assert!(!any_white); // no body line.
     }
 }

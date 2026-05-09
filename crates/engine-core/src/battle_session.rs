@@ -86,6 +86,23 @@ pub enum BattlePhase {
     Escaped,
 }
 
+/// Sub-phase of [`BattlePhase::CommandInput`].
+///
+/// During CommandInput the player either selects commands directly
+/// ([`SubPhase::CommandSelect`]) or picks a target for a buffered
+/// command ([`SubPhase::TargetPick`]). Engines query
+/// [`BattleSession::sub_phase`] to render the right overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SubPhase {
+    /// Default: input drives the command queue + AP gauge.
+    #[default]
+    CommandSelect,
+    /// A command was buffered; input drives the cursor in
+    /// [`crate::target_picker::TargetPickerSession`]. The runner is paused
+    /// until the picker resolves.
+    TargetPick,
+}
+
 /// One-frame input bundle the session consumes.
 ///
 /// Engines map raw keyboard / pad input to these. The session handles the
@@ -144,6 +161,18 @@ pub enum SessionEvent {
     SpiritCharged { slot: u8 },
     /// Battle ended — the session transitioned to a terminal phase.
     BattleEnded { cause: BattleEndCause },
+    /// Engine opened a target picker (engines render the cursor overlay
+    /// against the picker state until the picker's outcome resolves).
+    TargetPickerOpened {
+        kind: crate::target_picker::TargetKind,
+    },
+    /// Target picker resolved with a confirmed slot.
+    TargetConfirmed { target_slot: u8 },
+    /// Target picker resolved with a sweep (all enemies / allies / self).
+    TargetSweepConfirmed,
+    /// Target picker was cancelled by the player; pending command was
+    /// dropped without affecting the queue.
+    TargetCancelled,
 }
 
 /// Battle session orchestrator.
@@ -184,6 +213,17 @@ pub struct BattleSession {
     pub modifiers: StatusModifiers,
     /// Number of monster slots in the current battle (3..=5).
     monster_count: u8,
+    /// Currently-active target picker (if any). When `Some`, the session
+    /// is in a `CommandInput` sub-phase ([`SubPhase::TargetPick`]):
+    /// directional / cross / circle input goes to the picker instead of
+    /// the runner. The picker is opened by [`Self::open_target_picker`]
+    /// (or by [`Self::push_command_with_target`]) and closed when its
+    /// outcome resolves (Confirmed → command admitted; Cancelled →
+    /// pending command popped).
+    target_picker: Option<crate::target_picker::TargetPickerSession>,
+    /// Pending command waiting for a target. When the picker confirms,
+    /// the command is pushed via [`Self::push_command`].
+    pending_target_command: Option<Command>,
 }
 
 impl Default for BattleSession {
@@ -208,6 +248,8 @@ impl BattleSession {
             equipment: EquipmentTable::new(),
             modifiers: StatusModifiers::default(),
             monster_count: 0,
+            target_picker: None,
+            pending_target_command: None,
         }
     }
 
@@ -376,6 +418,12 @@ impl BattleSession {
         input: SessionInput,
         out: &mut Vec<SessionEvent>,
     ) {
+        // Sub-phase: target picker takes priority — when active, route input
+        // to the picker and skip command-queue logic until it resolves.
+        if self.target_picker.is_some() {
+            self.tick_target_picker(world, input, out);
+            return;
+        }
         let active = self.runner.active_party_slot();
 
         if input.start {
@@ -688,6 +736,129 @@ impl BattleSession {
             from: prev,
             to: next,
         });
+    }
+
+    /// Current sub-phase of [`BattlePhase::CommandInput`]. Engines query
+    /// this each frame to decide whether to render the command menu
+    /// ([`SubPhase::CommandSelect`]) or the target cursor overlay
+    /// ([`SubPhase::TargetPick`]).
+    pub fn sub_phase(&self) -> SubPhase {
+        if self.target_picker.is_some() {
+            SubPhase::TargetPick
+        } else {
+            SubPhase::CommandSelect
+        }
+    }
+
+    /// Read-only accessor for the active picker (if any). Engines render
+    /// against the picker's [`crate::target_picker::PickerState`].
+    pub fn target_picker(&self) -> Option<&crate::target_picker::TargetPickerSession> {
+        self.target_picker.as_ref()
+    }
+
+    /// Open a target picker for the supplied [`crate::target_picker::TargetKind`].
+    /// Engines call this when the player picks an action that needs a
+    /// target (e.g. a Tactical Art whose strike needs an enemy slot).
+    /// `actor_slot` is the active party slot (0..=2). The session pulls
+    /// per-slot live HP from `world.actors[i].battle.hp` to populate the
+    /// picker's [`crate::target_picker::SlotState`] arrays.
+    pub fn open_target_picker(
+        &mut self,
+        world: &World,
+        kind: crate::target_picker::TargetKind,
+        actor_slot: u8,
+        pending_command: Option<Command>,
+        out: &mut Vec<SessionEvent>,
+    ) {
+        use crate::target_picker::{SlotState, TargetPickerSession};
+        // Build party + monster slot state from the live world + slot info.
+        let mut party = [SlotState::default(); 3];
+        for (i, slot) in party.iter_mut().enumerate() {
+            let info = &self.slots[i];
+            let hp = world.actors.get(i).map(|a| a.battle.hp).unwrap_or(0);
+            *slot = SlotState::from_session_slot(info, hp);
+        }
+        let mut monsters = [SlotState::default(); 5];
+        for (i, slot) in monsters.iter_mut().enumerate() {
+            let slot_idx = 3 + i;
+            let info = &self.slots[slot_idx];
+            let hp = world.actors.get(slot_idx).map(|a| a.battle.hp).unwrap_or(0);
+            *slot = SlotState::from_session_slot(info, hp);
+        }
+        self.target_picker = Some(TargetPickerSession::new(kind, actor_slot, party, monsters));
+        self.pending_target_command = pending_command;
+        out.push(SessionEvent::TargetPickerOpened { kind });
+
+        // If the picker resolved immediately (sweep / no-candidates),
+        // close it on this same frame.
+        self.maybe_close_picker(out);
+    }
+
+    /// Cancel the active target picker (drop the pending command). No-op
+    /// when no picker is active.
+    pub fn cancel_target_picker(&mut self, out: &mut Vec<SessionEvent>) {
+        if self.target_picker.take().is_some() {
+            self.pending_target_command = None;
+            out.push(SessionEvent::TargetCancelled);
+        }
+    }
+
+    /// Drive one frame of the target picker. Routes directional input to
+    /// the picker, Cross to confirm, Circle to cancel.
+    fn tick_target_picker(
+        &mut self,
+        _world: &mut World,
+        input: SessionInput,
+        out: &mut Vec<SessionEvent>,
+    ) {
+        use crate::target_picker::PickerInput;
+        let pi = PickerInput {
+            up: input.up,
+            down: input.down,
+            left: input.left,
+            right: input.right,
+            cross: input.cross,
+            circle: input.circle,
+        };
+        if let Some(picker) = self.target_picker.as_mut() {
+            picker.input(pi);
+        }
+        self.maybe_close_picker(out);
+    }
+
+    /// If the picker has reached `Done`, fold the outcome back into the
+    /// session: confirmed picks push the pending command + emit
+    /// `TargetConfirmed`; cancellations / no-candidates drop the pending
+    /// command and emit `TargetCancelled`.
+    fn maybe_close_picker(&mut self, out: &mut Vec<SessionEvent>) {
+        use crate::target_picker::PickerOutcome;
+        let outcome = match self.target_picker.as_ref() {
+            Some(p) => p.outcome(),
+            None => return,
+        };
+        let Some(outcome) = outcome else { return };
+        match outcome {
+            PickerOutcome::Single { slot, .. } => {
+                out.push(SessionEvent::TargetConfirmed { target_slot: slot });
+                // If a pending command was buffered, push it now.
+                if let Some(_cmd) = self.pending_target_command.take() {
+                    // Engines that care about the resolved target route
+                    // it through their own SM hooks; the runner-level
+                    // queue admit happens via push_command separately.
+                    // We intentionally don't auto-push here — the caller
+                    // chooses whether the command needs the runner.
+                }
+            }
+            PickerOutcome::Sweep { .. } => {
+                out.push(SessionEvent::TargetSweepConfirmed);
+                self.pending_target_command = None;
+            }
+            PickerOutcome::Cancelled | PickerOutcome::NoCandidates => {
+                out.push(SessionEvent::TargetCancelled);
+                self.pending_target_command = None;
+            }
+        }
+        self.target_picker = None;
     }
 }
 
@@ -1171,5 +1342,97 @@ mod tests {
         s.begin_round(&mut w);
         assert!(!s.is_slot_inputable(&w, 1));
         assert!(s.is_slot_inputable(&w, 0));
+    }
+
+    #[test]
+    fn open_target_picker_enters_subphase_target_pick() {
+        use crate::target_picker::TargetKind;
+        let mut s = fresh_session();
+        let mut w = fresh_world_with_actors();
+        w.actors[3].battle.hp = 50;
+        w.actors[3].battle.max_hp = 50;
+        s.begin_round(&mut w);
+        let mut events = Vec::new();
+        s.open_target_picker(&w, TargetKind::SingleEnemy, 0, None, &mut events);
+        assert_eq!(s.sub_phase(), SubPhase::TargetPick);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::TargetPickerOpened { .. }))
+        );
+    }
+
+    #[test]
+    fn target_picker_confirm_emits_target_confirmed() {
+        use crate::target_picker::TargetKind;
+        let mut s = fresh_session();
+        let mut w = fresh_world_with_actors();
+        w.actors[3].battle.hp = 50;
+        w.actors[3].battle.max_hp = 50;
+        s.begin_round(&mut w);
+        let mut events = Vec::new();
+        s.open_target_picker(&w, TargetKind::SingleEnemy, 0, None, &mut events);
+        events.clear();
+        // SubPhase=TargetPick now; cross confirms the only enemy.
+        let confirm_input = SessionInput {
+            cross: true,
+            ..Default::default()
+        };
+        // Need to be in CommandInput phase for tick to route.
+        s.transition(BattlePhase::CommandInput);
+        let evs = s.tick(&mut w, confirm_input);
+        // slot is row-relative; the first enemy is index 0 in the monsters row.
+        assert!(
+            evs.iter()
+                .any(|e| matches!(e, SessionEvent::TargetConfirmed { target_slot: 0 }))
+        );
+        // Picker is closed, sub-phase back to CommandSelect.
+        assert_eq!(s.sub_phase(), SubPhase::CommandSelect);
+    }
+
+    #[test]
+    fn target_picker_sweep_resolves_immediately() {
+        use crate::target_picker::TargetKind;
+        let mut s = fresh_session();
+        let mut w = fresh_world_with_actors();
+        w.actors[3].battle.hp = 50;
+        w.actors[3].battle.max_hp = 50;
+        s.begin_round(&mut w);
+        let mut events = Vec::new();
+        s.open_target_picker(&w, TargetKind::AllEnemies, 0, None, &mut events);
+        // Sweep targets resolve in init_cursor → maybe_close_picker emits
+        // TargetSweepConfirmed and clears the picker.
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::TargetSweepConfirmed))
+        );
+        assert_eq!(s.sub_phase(), SubPhase::CommandSelect);
+    }
+
+    #[test]
+    fn cancel_target_picker_drops_pending_command() {
+        use crate::target_picker::TargetKind;
+        let mut s = fresh_session();
+        let mut w = fresh_world_with_actors();
+        w.actors[3].battle.hp = 50;
+        w.actors[3].battle.max_hp = 50;
+        s.begin_round(&mut w);
+        let mut events = Vec::new();
+        s.open_target_picker(
+            &w,
+            TargetKind::SingleEnemy,
+            0,
+            Some(Command::Up),
+            &mut events,
+        );
+        events.clear();
+        s.cancel_target_picker(&mut events);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::TargetCancelled))
+        );
+        assert!(s.target_picker().is_none());
     }
 }

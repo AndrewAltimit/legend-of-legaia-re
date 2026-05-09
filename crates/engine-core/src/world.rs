@@ -457,6 +457,48 @@ pub struct World {
     /// character record at `+0x140`. Engines populate this from the
     /// character record at battle init.
     pub character_max_mp: Vec<u16>,
+
+    /// Active encounter session — bracketed transition + grace machine for
+    /// step-driven random battles. `Some` when an encounter table is
+    /// installed; `None` in scenes where encounters are disabled
+    /// (towns / cutscenes / world-map). Engines call
+    /// [`World::on_field_step`] from the field-step path (player walks one
+    /// tile) to advance the tracker; the resulting [`crate::encounter::EncounterPhase`]
+    /// drives the camera-shake / fade / battle-load chain.
+    pub encounter: Option<crate::encounter::EncounterSession>,
+
+    /// Per-character v2 save extension data. Mirrors `SaveExtV2` shape;
+    /// engines populate from in-memory state at save time and consume on
+    /// load. Index 0..=2 = main characters; entries beyond are story
+    /// guests. Each entry holds learned-arts mask, learned spells, seru
+    /// captures, and per-character active chain quick-slots.
+    pub per_char_ext: Vec<(u8, legaia_save::CharSaveExt)>,
+
+    /// Cross-character saved-chain library. Engines populate from a
+    /// [`crate::tactical_arts_editor::ChainLibrary`] at save time and
+    /// hydrate one back into the editor on load.
+    pub saved_chains: Vec<legaia_save::SavedChainRecord>,
+
+    /// Per-character Seru capture log — drives the post-battle "spell
+    /// learned!" banner and the in-menu spell list. Pure data; saved
+    /// through [`legaia_save::SaveExtV2::per_char`].
+    pub seru_log: crate::seru_learning::SeruCaptureLog,
+
+    /// Total game time in wall-clock seconds since the world was
+    /// instantiated or loaded. Engines tick this independently of
+    /// `frame` (which can pause-skip during dialogs / cutscenes).
+    /// Persisted in [`legaia_save::SaveExtV2::play_time_seconds`].
+    pub play_time_seconds: u32,
+
+    /// Optional formation table — engines install this at boot via
+    /// [`World::set_formation_table`] so triggered encounters can resolve
+    /// their `formation_id` into concrete monster slot definitions.
+    pub formation_table: crate::monster_catalog::FormationTable,
+
+    /// Optional monster catalog — paired with `formation_table`. Engines
+    /// look up [`crate::monster_catalog::MonsterDef`] by id when
+    /// initialising the [`crate::battle_session::BattleSession`].
+    pub monster_catalog: crate::monster_catalog::MonsterCatalog,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -557,6 +599,13 @@ impl World {
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
             character_max_mp: Vec::new(),
+            encounter: None,
+            per_char_ext: Vec::new(),
+            saved_chains: Vec::new(),
+            seru_log: crate::seru_learning::SeruCaptureLog::new(),
+            play_time_seconds: 0,
+            formation_table: crate::monster_catalog::FormationTable::new(),
+            monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
         }
     }
 
@@ -995,6 +1044,30 @@ impl World {
             .map(|(&id, &count)| (id, count))
             .collect();
         inventory.sort_by_key(|&(id, _)| id);
+
+        // Build per-character extension records from live world state.
+        let active_party: Vec<u8> = (0..party.members.len() as u8).collect();
+        let mut per_char: Vec<(u8, legaia_save::CharSaveExt)> = Vec::new();
+        for slot in 0..party.members.len() as u8 {
+            let mut ce = legaia_save::CharSaveExt::default();
+            // Learned arts: derive from TacticalArtsTracker — bit i is
+            // set when art id i has crossed the learn threshold.
+            for art_id in 0..32u8 {
+                if self.tactical_arts.is_learned(slot, art_id) {
+                    ce.learned_arts_mask |= 1u32 << art_id;
+                }
+            }
+            // Spells: the per-character learned spell list from the seru log.
+            ce.spells = self.seru_log.learned_spells(slot).to_vec();
+            // Seru captures: walk the ext mirror — fall back to empty for
+            // characters that haven't captured anything yet.
+            if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
+                ce.seru_captures = src.seru_captures.clone();
+                ce.active_chains = src.active_chains;
+            }
+            per_char.push((slot, ce));
+        }
+
         legaia_save::SaveFile {
             party,
             ext: legaia_save::SaveExt {
@@ -1002,7 +1075,12 @@ impl World {
                 money: self.money,
                 inventory,
             },
-            ext_v2: legaia_save::SaveExtV2::default(),
+            ext_v2: legaia_save::SaveExtV2 {
+                play_time_seconds: self.play_time_seconds,
+                active_party,
+                per_char,
+                saved_chains: self.saved_chains.clone(),
+            },
         }
     }
 
@@ -1018,6 +1096,31 @@ impl World {
         for (id, count) in sf.ext.inventory {
             if count > 0 {
                 self.inventory.insert(id, count);
+            }
+        }
+        // V2 ext block — repopulate engine-side trackers.
+        self.play_time_seconds = sf.ext_v2.play_time_seconds;
+        self.saved_chains = sf.ext_v2.saved_chains.clone();
+        self.per_char_ext = sf.ext_v2.per_char.clone();
+        // Reset trackers so reloads don't accumulate stale state.
+        self.tactical_arts = TacticalArtsTracker::new();
+        self.seru_log = crate::seru_learning::SeruCaptureLog::new();
+        for (slot, ce) in &sf.ext_v2.per_char {
+            // Re-mark learned arts so the tracker doesn't re-fire the
+            // "first time learned" event for arts the save already has.
+            for art_id in 0..32u8 {
+                if ce.learned_arts_mask & (1u32 << art_id) != 0 {
+                    self.tactical_arts.mark_known(*slot, art_id);
+                }
+            }
+            // Re-seed the seru log's learned-spells list. We synthesise
+            // a placeholder seru_id for each spell since the save layer
+            // only persists the spell ids — engines can rebuild the
+            // capture-points totals from the saved seru_captures pairs.
+            for &spell_id in &ce.spells {
+                // seru_id is unknown without the registry; use spell_id
+                // as a surrogate key (preserves uniqueness within a slot).
+                self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
             }
         }
     }
@@ -1161,6 +1264,76 @@ impl World {
         let pool = unsafe { &mut *pool_ptr };
         let catalog = unsafe { &*catalog_ptr };
         let _ = pool.spawn_by_ui_id(&mut host, ui_id, world_pos, angle, catalog);
+    }
+
+    /// Install an [`crate::encounter::EncounterSession`] for the current
+    /// scene. Engines call this on scene-enter once the per-scene encounter
+    /// table is known. `None` disables encounters for the active scene.
+    pub fn set_encounter_session(&mut self, session: Option<crate::encounter::EncounterSession>) {
+        self.encounter = session;
+    }
+
+    /// Install a formation + monster catalog pair. Boot wires this once;
+    /// engines read it at battle-load time.
+    pub fn set_formation_table(
+        &mut self,
+        table: crate::monster_catalog::FormationTable,
+        catalog: crate::monster_catalog::MonsterCatalog,
+    ) {
+        self.formation_table = table;
+        self.monster_catalog = catalog;
+    }
+
+    /// Field-step trigger. Engines call this once per "the player walked
+    /// one map cell" (typically when the player actor's grid coord moves)
+    /// to advance the encounter tracker. Returns `true` if a battle
+    /// transition was triggered this step.
+    ///
+    /// The method is a no-op when no [`crate::encounter::EncounterSession`]
+    /// is installed, when the session is not in `Idle`, or when the world
+    /// is not in [`SceneMode::Field`].
+    pub fn on_field_step(&mut self) -> bool {
+        if !matches!(self.mode, SceneMode::Field) {
+            return false;
+        }
+        let rng = self.next_rng();
+        match self.encounter.as_mut() {
+            Some(session) => session.on_step(rng),
+            None => false,
+        }
+    }
+
+    /// Per-frame tick of the encounter session timers. Drives the
+    /// `Transition` and `Grace` countdowns.
+    pub fn tick_encounter(&mut self) {
+        if let Some(session) = self.encounter.as_mut() {
+            session.tick_frame();
+        }
+    }
+
+    /// Return the resolved [`crate::monster_catalog::FormationDef`] for the
+    /// currently-triggered encounter, if any. Engines call this after the
+    /// session reports `Triggered` to drain the roll and resolve into a
+    /// concrete monster set; the session advances to `Battling` as a
+    /// side-effect.
+    pub fn drain_encounter_formation(&mut self) -> Option<crate::encounter::EncounterRoll> {
+        self.encounter.as_mut().and_then(|s| s.drain_triggered())
+    }
+
+    /// Mark that the active battle finished. Engines call this from the
+    /// post-battle resolution path so the session enters its grace window
+    /// (suppresses encounters for `grace_frames` frames).
+    pub fn end_encounter_battle(&mut self) {
+        if let Some(session) = self.encounter.as_mut() {
+            session.end_battle();
+        }
+    }
+
+    /// Advance the wall-clock play-time counter by `delta_seconds`. Engines
+    /// drive this from the frame loop's wall-clock delta. Mirrors the
+    /// retail "play time" field shown on the save screen.
+    pub fn advance_play_time(&mut self, delta_seconds: u32) {
+        self.play_time_seconds = self.play_time_seconds.saturating_add(delta_seconds);
     }
 
     /// Increment the deterministic LCG and return the new value.

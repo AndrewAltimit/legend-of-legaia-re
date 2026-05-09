@@ -169,6 +169,15 @@ enum Cmd {
         /// the video window closes (phase 2).
         #[arg(long)]
         str_file: Option<PathBuf>,
+        /// Open the boot UI flow before entering the scene: title screen
+        /// → save-select on Continue → field/encounter/battle on
+        /// New Game. The default (`false`) behaviour is the legacy
+        /// "jump straight to the scene" path.
+        #[arg(long, default_value_t = false)]
+        boot_ui: bool,
+        /// Save directory used by `--boot-ui` for the save-select pass.
+        #[arg(long, default_value = "saves")]
+        save_dir: PathBuf,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -390,6 +399,8 @@ fn main() -> Result<()> {
             no_audio,
             world_map,
             str_file,
+            boot_ui,
+            save_dir,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -397,6 +408,8 @@ fn main() -> Result<()> {
             !no_audio,
             world_map,
             str_file.as_deref(),
+            boot_ui,
+            &save_dir,
         ),
         Cmd::Save {
             extracted_root,
@@ -829,11 +842,209 @@ struct PlayWindowApp {
     /// the target's `BattleActor::hp` via `World::fold_battle_event`). The
     /// log is empty until a battle SM actually fires.
     battle_event_log: std::collections::VecDeque<String>,
+    /// Boot-UI state. `BootUiState::Inactive` means the legacy
+    /// "go straight to the scene" path; `Title` / `SaveSelect` route
+    /// player input through the boot sessions until the player picks
+    /// New Game / Continue and the scene becomes interactive.
+    boot_ui: BootUiState,
+    /// Save directory the save-select session reads / writes against.
+    save_dir: std::path::PathBuf,
+}
+
+/// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
+/// supplied to play-window. The default `Inactive` variant is what
+/// every other path uses (no boot UI).
+enum BootUiState {
+    /// No boot UI — engine ticks the scene normally.
+    Inactive,
+    /// Title screen is active. Pad input drives the
+    /// [`legaia_engine_core::title::TitleSession`].
+    Title(legaia_engine_core::title::TitleSession),
+    /// Save-select panel is active.
+    SaveSelect(legaia_engine_core::save_select::SaveSelectSession),
+}
+
+impl BootUiState {
+    fn is_active(&self) -> bool {
+        !matches!(self, BootUiState::Inactive)
+    }
 }
 
 impl PlayWindowApp {
     /// Maximum number of battle-event log lines kept in the HUD ring.
     const BATTLE_EVENT_LOG_CAP: usize = 6;
+
+    /// Tick the boot-UI state machine (when active) using the latest
+    /// pad bitmask. Returns `true` if the boot UI is still active and
+    /// the scene tick should be skipped this frame.
+    fn tick_boot_ui(&mut self) -> bool {
+        // Build edge-triggered "newly pressed" mask so menu navigation
+        // doesn't auto-repeat on held keys.
+        let pressed = self.pad & !self.prev_pad;
+        let cross = pressed & 0x4000 != 0;
+        let circle = pressed & 0x2000 != 0;
+        let triangle = pressed & 0x1000 != 0;
+        let start = pressed & 0x0008 != 0;
+        let up = pressed & 0x0010 != 0;
+        let down = pressed & 0x0040 != 0;
+        let left = pressed & 0x0080 != 0;
+        let right = pressed & 0x0020 != 0;
+
+        match &mut self.boot_ui {
+            BootUiState::Inactive => false,
+            BootUiState::Title(session) => {
+                use legaia_engine_core::title::{TitleEvent, TitleInput, TitleOutcome};
+                let input = TitleInput {
+                    up,
+                    down,
+                    cross,
+                    start,
+                    circle,
+                };
+                let events = session.tick(input);
+                for ev in &events {
+                    match ev {
+                        TitleEvent::NewGameSelected => {
+                            log::info!("title: New Game");
+                        }
+                        TitleEvent::ContinueSelected => {
+                            log::info!("title: Continue");
+                        }
+                        TitleEvent::OptionsSelected => {
+                            log::info!("title: Options (not yet wired)");
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(outcome) = session.outcome() {
+                    match outcome {
+                        TitleOutcome::NewGame => {
+                            // Drop straight into the scene.
+                            self.boot_ui = BootUiState::Inactive;
+                        }
+                        TitleOutcome::Continue => {
+                            // Open the save-select panel against `save_dir`.
+                            let snapshots = scan_save_dir(&self.save_dir);
+                            self.boot_ui = BootUiState::SaveSelect(
+                                legaia_engine_core::save_select::SaveSelectSession::new(
+                                    legaia_engine_core::save_select::SaveSelectMode::Load,
+                                    snapshots,
+                                ),
+                            );
+                        }
+                        TitleOutcome::Options => {
+                            // Not yet wired — fall through to the scene.
+                            self.boot_ui = BootUiState::Inactive;
+                        }
+                    }
+                }
+                true
+            }
+            BootUiState::SaveSelect(session) => {
+                use legaia_engine_core::save_select::{SelectInput, SelectOutcome};
+                let input = SelectInput {
+                    up,
+                    down,
+                    left,
+                    right,
+                    cross,
+                    circle,
+                    triangle,
+                };
+                let _ = session.tick(input);
+                if let Some(outcome) = session.outcome() {
+                    match outcome {
+                        SelectOutcome::Loaded(slot) => {
+                            // Hydrate the world from the slot file.
+                            let runtime = legaia_engine_core::menu_runtime::MenuRuntime::new(
+                                self.save_dir.clone(),
+                            );
+                            match runtime.load_from_slot(&mut self.session.host.world, slot) {
+                                Ok(p) => log::info!("loaded slot {} from {}", slot, p.display()),
+                                Err(e) => log::warn!("load slot {slot} failed: {e:#}"),
+                            }
+                            self.boot_ui = BootUiState::Inactive;
+                        }
+                        SelectOutcome::Cancelled => {
+                            // Back to title.
+                            self.boot_ui =
+                                BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                        }
+                        SelectOutcome::Saved(_) | SelectOutcome::Deleted(_) => {
+                            // Save-select in Load mode shouldn't emit these,
+                            // but degrade gracefully.
+                            self.boot_ui = BootUiState::Inactive;
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    /// Build text draws for the active boot UI (when applicable).
+    fn boot_ui_draws(&self) -> Vec<TextDraw> {
+        match &self.boot_ui {
+            BootUiState::Inactive => Vec::new(),
+            BootUiState::Title(s) => {
+                use legaia_engine_core::title::TitlePhase;
+                let (phase_id, cursor) = match s.phase() {
+                    TitlePhase::FadeIn { .. } => (0, 0),
+                    TitlePhase::PressStart { .. } => (1, 0),
+                    TitlePhase::MainMenu { cursor } => (2, cursor),
+                    TitlePhase::Done(_) => return Vec::new(),
+                };
+                let blink_on = match s.phase() {
+                    TitlePhase::PressStart { blink_phase } => blink_phase < s.blink_period / 2,
+                    _ => true,
+                };
+                legaia_engine_render::title_draws_for(
+                    &self.font,
+                    phase_id,
+                    cursor,
+                    s.continue_enabled,
+                    blink_on,
+                    (96, 100),
+                )
+            }
+            BootUiState::SaveSelect(s) => {
+                use legaia_engine_core::save_select::SelectPhase;
+                let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
+                    .slots()
+                    .iter()
+                    .map(|snap| legaia_engine_render::SaveSelectRow {
+                        label: &snap.label,
+                        present: snap.present,
+                        party_lv: snap.party_lv,
+                        play_time_seconds: snap.play_time_seconds,
+                        money: snap.money,
+                        location: &snap.location,
+                    })
+                    .collect();
+                let (cursor, confirm) = match s.phase() {
+                    SelectPhase::Browsing { cursor } => (cursor as usize, None),
+                    SelectPhase::ConfirmLoad { slot, cursor } => {
+                        (slot as usize, Some(("Load this slot?", cursor)))
+                    }
+                    SelectPhase::ConfirmOverwrite { slot, cursor } => {
+                        (slot as usize, Some(("Overwrite slot?", cursor)))
+                    }
+                    SelectPhase::ConfirmDelete { slot, cursor } => {
+                        (slot as usize, Some(("Delete slot?", cursor)))
+                    }
+                    SelectPhase::Done(_) => return Vec::new(),
+                };
+                legaia_engine_render::save_select_draws_for(
+                    &self.font,
+                    "LOAD",
+                    &rows,
+                    cursor,
+                    confirm,
+                    (16, 32),
+                )
+            }
+        }
+    }
 
     /// Drain world battle events, fold each into HP / status state, and
     /// append a one-line summary to the HUD ring. Called once per simulation
@@ -973,6 +1184,11 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let _ = atlas;
+        // Boot UI is fullscreen — when active, suppress every other HUD layer
+        // and just render the active panel (title screen / save-select).
+        if self.boot_ui.is_active() {
+            return self.boot_ui_draws();
+        }
         let white = [1.0f32, 1.0, 1.0, 1.0];
         let dim = [0.7f32, 0.85, 1.0, 1.0];
         let scene_name = self
@@ -1191,6 +1407,14 @@ impl ApplicationHandler for PlayWindowApp {
                 // but can still catch up from minor vsync jitter.
                 let ticks = self.win.drain_ticks(dt, 4);
                 for _ in 0..ticks {
+                    // When the boot UI is active, route input there and skip
+                    // the scene tick — the player hasn't entered the world
+                    // yet (or has paused into save-select).
+                    if self.boot_ui.is_active() {
+                        let _ = self.tick_boot_ui();
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
@@ -1317,6 +1541,7 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_play_window(
     scene: &str,
     extracted_root: &Path,
@@ -1324,6 +1549,8 @@ fn cmd_play_window(
     enable_audio: bool,
     world_map: bool,
     str_file: Option<&Path>,
+    boot_ui: bool,
+    save_dir: &Path,
 ) -> Result<()> {
     // Phase 1: if a STR file is provided, play the video in a window first.
     // The user closes (or ESC) the STR window, then the scene window opens.
@@ -1341,6 +1568,28 @@ fn cmd_play_window(
     };
     if world_map {
         session.host.world.mode = SceneMode::WorldMap;
+    }
+
+    // Wire vanilla encounter + monster tables so triggered encounters can
+    // resolve to a concrete monster set. Engines that load real disc-side
+    // tables override this via `World::set_formation_table` later.
+    {
+        let world = &mut session.host.world;
+        world.set_formation_table(
+            legaia_engine_core::monster_catalog::vanilla_formation_table(),
+            legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
+        );
+        // Default early-game encounter table — the scene-loader path will
+        // replace this when real disc data lands. Still useful for the
+        // default `town01` boot so the encounter trigger fires on step.
+        let table = legaia_engine_core::monster_catalog::default_early_encounter_table(scene);
+        if matches!(world.mode, SceneMode::Field) {
+            world.set_encounter_session(Some(
+                legaia_engine_core::encounter::EncounterSession::new(
+                    legaia_engine_core::encounter::EncounterTracker::new(table),
+                ),
+            ));
+        }
     }
 
     let scene_res = {
@@ -1368,6 +1617,17 @@ fn cmd_play_window(
     } else {
         None
     };
+    let initial_boot_ui = if boot_ui {
+        let snapshots = scan_save_dir(save_dir);
+        let any_present = snapshots.iter().any(|s| s.present);
+        if any_present {
+            BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+        } else {
+            BootUiState::Title(legaia_engine_core::title::TitleSession::without_save_data())
+        }
+    } else {
+        BootUiState::Inactive
+    };
     let mut app = PlayWindowApp {
         session,
         font,
@@ -1380,15 +1640,64 @@ fn cmd_play_window(
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
-        menu_runtime: MenuRuntime::new(std::path::PathBuf::from(".")),
+        menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
         world_map_ctrl,
         prev_pad: 0,
         battle_event_log: std::collections::VecDeque::new(),
+        boot_ui: initial_boot_ui,
+        save_dir: save_dir.to_path_buf(),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
     Ok(())
+}
+
+/// Walk `save_dir` and build per-slot `SlotSnapshot` entries from any
+/// LGSF v1 / v2 files found there. Empty slots produce
+/// `SlotSnapshot::empty(slot)`. Up to 8 slots are scanned (the retail
+/// PSX memory card supports 15 blocks; engines wishing to scan more can
+/// drive their own scanner and feed the result into `SaveSelectSession`).
+fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+    use legaia_engine_core::save_select::SlotSnapshot;
+    let mut out = Vec::with_capacity(3);
+    for slot in 0..3u8 {
+        let path = save_dir.join(format!("slot_{slot}.lgsf"));
+        let snap = match std::fs::read(&path).ok().and_then(|b| {
+            legaia_save::SaveFile::parse(&b)
+                .ok()
+                .map(|sf| (b.len(), sf))
+        }) {
+            Some((_, sf)) => {
+                // CharacterRecord doesn't expose `level()` yet — use the
+                // active-party leader's HP/MP cap as a coarse stand-in
+                // for display. Engines that reverse-engineer the level
+                // byte will replace this.
+                let lv = sf
+                    .party
+                    .members
+                    .first()
+                    .map(|r| {
+                        let hms = r.hp_mp_sp();
+                        // Approximate level = max(1, hp_max / 20).
+                        (hms.hp_max / 20).clamp(1, 99) as u8
+                    })
+                    .unwrap_or(1);
+                SlotSnapshot {
+                    slot,
+                    present: true,
+                    label: format!("Slot {slot}"),
+                    play_time_seconds: sf.ext_v2.play_time_seconds,
+                    party_lv: lv,
+                    location: String::from("Field"),
+                    money: sf.ext.money.max(0) as u32,
+                }
+            }
+            None => SlotSnapshot::empty(slot),
+        };
+        out.push(snap);
+    }
+    out
 }
 
 // ── STR video player ────────────────────────────────────────────────────────

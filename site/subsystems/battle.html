@@ -349,7 +349,17 @@ Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
     <li><strong>RoundOutro</strong> &mdash; runs <code>BattleRound::end</code> for tick damage, re-syncs HUD, checks party / monster wipe and routes to a terminal phase or loops to RoundIntro.</li>
   </ul>
   <p>The orchestrator is renderer-agnostic. Engines render <code>session.hud</code> via <code>engine-render::battle_hud_draws_for</code> &mdash; the HUD's <code>slot_views</code> / <code>popup_views</code> / <code>log_views</code> helpers produce plain-data rows that engines feed into the renderer's <code>HudSlotView::from_plain</code> constructor.</p>
+  <h3>CommandInput sub-phase: target picker</h3>
+  <p>During <code>CommandInput</code> the session has two sub-phases: <code>SubPhase::CommandSelect</code> (input drives the command queue) and <code>SubPhase::TargetPick</code> (input drives a <code>TargetPickerSession</code> cursor). Engines call <code>BattleSession::open_target_picker(world, kind, actor_slot, pending_command, &amp;mut events)</code> when the player picks an action that needs a target; the session builds the picker's <code>SlotState</code> arrays from live <code>BattleActor::hp</code> values and forwards subsequent input to the picker until it resolves. Resolution surfaces as typed <code>SessionEvent</code> outcomes: <code>TargetConfirmed { target_slot }</code>, <code>TargetSweepConfirmed</code>, or <code>TargetCancelled</code>; sweep targets (<code>AllEnemies</code> / <code>AllAllies</code> / <code>Self_</code>) resolve immediately during <code>open_target_picker</code>. <code>cancel_target_picker</code> provides an explicit drop path for the buffered command.</p>
   <p>Implementation: <code>crates/engine-core/src/battle_session.rs</code>. Smoke-tested via the new <code>legaia-engine battle</code> subcommand.</p>
+</section>
+
+<section class="doc-section" id="monster-catalog">
+  <h2>Monster catalog &amp; formation tables</h2>
+  <p>Engine-side representation of the per-formation monster set the encounter-system trigger resolves into. <code>MonsterDef</code> carries id + name + HP / MP / ATK / UDF / LDF / accuracy / evasion / EXP yield / gold drop / optional drop-item id + drop-rate; <code>MonsterCatalog</code> is the id-keyed lookup. <code>FormationDef</code> holds 1..=4 <code>FormationSlot</code> entries (monster_id + level_offset) plus an optional display label; <code>FormationTable</code> is the formation-id-keyed lookup.</p>
+  <p>Vanilla constructors ship the early-game roster: ~20 monster entries spanning Goblin / Wolf / Bandit / Slime / Skeleton / Killer Bee / Lizard Man / Mole / Spike Mole / Stone Golem / Goblin King / Drake Wyrm and 14 formations covering single, pair, triple, and boss variants. <code>default_early_encounter_table(scene)</code> is a convenience constructor that produces a goblin-majority weighted table for outskirts-style scenes.</p>
+  <p>Engines install the table at boot via <code>World::set_formation_table(table, catalog)</code>; the encounter session's <code>EncounterRoll</code> carries the resolved <code>formation_id</code> which the engine looks up against the table to materialise concrete monster slot definitions for the battle scene loader.</p>
+  <p>Implementation: <code>crates/engine-core/src/monster_catalog.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="spells">

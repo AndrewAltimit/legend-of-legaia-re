@@ -136,7 +136,32 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
 | `+0xF4..0x100` | "Active abilities" 16-byte block — OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
 | `+0x104..0x110` | HP / MP / SP triplets (cur, max stored as separate u16s). |
+| `+0x10E` | u8 — written on level-up (delta `+8` for Vahn slot in the captured pre→post pair). Likely max-HP byte component or stat-derived rank. |
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
+| `+0x11C..+0x122` | Six adjacent stat bytes (paired) — incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
+| `+0x130` | u8 — incremented by `+1` on level-up (rank-style counter, e.g. number of times leveled). |
+| `+0x161..+0x184` | u8 spell-level array (one byte per spell id; stride matches spell list). Magic-rank up writes here (delta `+1` per learned spell). |
+
+**Level-up captured deltas (Vahn, mc8 → mc9).** Diff captured via `mednafen-state` shows the per-character side-effects of a single character-level event:
+
+| Offset | Width | mc8 → mc9 | Interpretation |
+|---|---|---|---|
+| `+0x00` | u8 | `0x4F` → `0x73` (79 → 115) | Possibly raw level byte / per-character XP-derived counter. |
+| `+0x04..+0x06` | u16 LE | `0x016D` → `0x02DA` (365 → 730) | XP word delta (+365). Matches the published level-up XP curves. |
+| `+0x10E` | u8 | `0x3A` → `0x42` (+8) | Max-HP / vitality byte. |
+| `+0x11C..+0x122` | 6× u8 | `67/1C/13/10/16/0B` → `6B/20/15/12/1A/0F` | Per-stat increments (`+4 +4 +2 +2 +4 +4`). |
+| `+0x130` | u8 | `0x02` → `0x03` | Rank counter. |
+
+Noa and Gala records are byte-identical between mc8 and mc9 — the level-up event in this capture pair is for Vahn alone.
+
+**Magic-rank up captured deltas (Vahn, mc7 → mc8).** Diff over the same record range surfaces a strict subset of the level-up footprint, focused on the spell-level table:
+
+| Offset | Width | mc7 → mc8 | Interpretation |
+|---|---|---|---|
+| `+0x08` | u8 | `0x30` → `0x3C` (+12) | Flag word — specific bit TBD. |
+| `+0x9C` | u8 | `0x09` → `0x0A` (+1) | Magic-rank mirror. |
+| `+0x10A` | u8 | `0x1B` → `0x11` (-10) | TBD (transient battle state, possibly post-strike). |
+| `+0x161` | u8 | `0x02` → `0x03` (+1) | Spell-level byte (`+0x161..+0x184` array). Confirms magic-rank up writes here. |
 
 ## Battle main dispatcher (`FUN_801D0748`)
 
