@@ -60,7 +60,7 @@
 
 <section class="doc-section" id="anm-connection">
   <h2>Connection to ANM</h2>
-  <p>The "trigger animation" opcode hands off an <a href="../formats/index.html">ANM container</a> ID to the animation runner. The container's record body (the per-record bytecode) is overlay-resident &mdash; likely in the same overlay as the actor VM &mdash; so <code>crates/anm</code> parses the container shape but the per-record interpreter still has to be reversed.</p>
+  <p>The "trigger animation" opcode hands off an <a href="../formats/index.html">ANM container</a> ID to the animation runner. <code>crates/anm</code> parses the container header + per-bone keyframe tables, and <code>legaia_anm::AnimPlayer</code> drives per-frame keyframe interpolation against the actor's bone count (<code>tick()</code> returns a <code>PoseFrame</code> the engine uploads as a posed mesh). The per-record bytecode that controls in-stream events (spawn-effect-on-frame-N, change-anim-mid-stream, …) is overlay-resident &mdash; likely in the same overlay as the actor VM &mdash; and is the one piece still pending overlay capture.</p>
 </section>
 
 </main>

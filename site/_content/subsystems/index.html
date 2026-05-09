@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
-  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries &mdash; about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand: title screen, town, battle, menu. The two highest-level scripting VMs (the field/event VM and the effect VM) live in those overlays.</p>
+  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries &mdash; about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand: title screen, town, battle, menu. Two of the runtime VMs (the field/event VM and the effect VM) live in those overlays.</p>
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
 </section>
 
@@ -25,8 +25,8 @@
 </section>
 
 <section class="doc-section" id="vms">
-  <h2>The four script VMs</h2>
-  <p>Legaia's runtime is driven by four independent bytecode VMs that all talk to one shared actor model. They serve different layers and were almost certainly written by different members of the dev team.</p>
+  <h2>The five runtime VMs</h2>
+  <p>Legaia's runtime is driven by five independent VMs that all talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine &mdash; different shape, same architectural role. They serve different layers of the engine and were almost certainly written by different members of the dev team.</p>
   <div class="card-grid">
     <a class="card" href="actor-vm.html">
       <div class="card-title">Actor / sprite VM</div>
@@ -34,15 +34,19 @@
     </a>
     <a class="card" href="move-vm.html">
       <div class="card-title">Move-table VM</div>
-      <div class="card-body">Per-actor animation, motion, and state. 71 opcodes in the main exe plus 61 sub-opcodes in the town overlay extension. Drives Tactical Arts.</div>
+      <div class="card-body">Per-actor animation, motion, and state. 71 opcodes in the main exe plus 61 sub-opcodes in the town overlay extension. Drives Tactical Arts. <span class="status-done">Fully ported.</span></div>
     </a>
     <a class="card" href="motion-vm.html">
       <div class="card-title">Motion VM</div>
-      <div class="card-body">Per-actor pursue / patrol / face-target VM at <code>FUN_8003774C</code>. Drives NPC pathing + camera follow + "face the speaker" dialog poses.</div>
+      <div class="card-body">Per-actor pursue / patrol / face-target VM at <code>FUN_8003774C</code>. Drives NPC pathing + camera follow + "face the speaker" dialog poses. <span class="status-done">Fully ported.</span></div>
     </a>
     <a class="card" href="script-vm.html">
       <div class="card-title">Field / event script VM</div>
       <div class="card-body">The big one: NPC movement, dialog triggers, cutscene sequencing, story flags. 43 opcodes plus a default-route fourth flag bank. <span class="status-done">Fully ported.</span></div>
+    </a>
+    <a class="card" href="effect-vm.html">
+      <div class="card-title">Effect VM</div>
+      <div class="card-body">Per-slot state machine driving battle effect spawns (spell casts, hit sparks, item-use anims). 32 master / 128 child slot pool fed by the effect-script bundle. <span class="status-done">Fully ported.</span></div>
     </a>
   </div>
 </section>
@@ -50,10 +54,6 @@
 <section class="doc-section" id="domain">
   <h2>Per-domain runtime</h2>
   <div class="card-grid">
-    <a class="card" href="effect-vm.html">
-      <div class="card-title">Effect VM</div>
-      <div class="card-body">Battle-spawn effects (spell casts, hit sparks, item-use animations). A per-slot state machine living in the battle overlay, fed by a 32-master / 128-child slot pool.</div>
-    </a>
     <a class="card" href="world-map.html">
       <div class="card-title">World map</div>
       <div class="card-body">Overworld traversal mode. Controller <code>FUN_801E76D4</code> handles the debug top-view toggle, top-view camera scroll/azimuth/zoom, and normal-walk per-frame update. Entity tick SM (<code>FUN_801DA51C</code>, 5 states) drives encounter and location-entry sequences.</div>

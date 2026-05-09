@@ -40,7 +40,7 @@
 <section class="doc-section" id="status">
   <h2>Where we are</h2>
   <p class="lede" style="font-size: 1.05rem;">
-    The disc is fully readable. Every major subsystem is traced and documented. All four core game VMs are ported, plus the battle action state machine and effect pool. The combat-stat machinery is decoded. The asset preservation track ships round-trip parsers for every documented format.
+    The disc is fully readable. Every major subsystem is traced and documented. All five runtime VMs are ported (actor, move-table, motion, field/event, effect) plus the battle action state machine. The combat-stat machinery is decoded. The asset preservation track ships round-trip parsers for every documented format.
   </p>
 
   <div class="status-grid">
@@ -50,7 +50,7 @@
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Static analysis</div>
-      <div class="status-card-body">Function dumps committed for the bulk of the binary. Citation graph is closed-loop (all helper references in docs are backed by dumps). All four game VMs decoded plus the battle action state machine. All major SCUS subsystems traced.</div>
+      <div class="status-card-body">Function dumps committed for the bulk of the binary. Citation graph is closed-loop (all helper references in docs are backed by dumps). All five runtime VMs decoded plus the battle action state machine. All major SCUS subsystems traced.</div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 1</div>
@@ -58,7 +58,7 @@
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 2</div>
-      <div class="status-card-body">Runtime port. Actor VM (13 ops), Field VM (43 ops), Move VM (71 + 61 ext sub-ops), Effect VM, and the battle action state machine all ported. <code>battle_formulas</code> ships damage / MP-cost / accuracy / RNG kernels. Composite <code>World</code> in <code>engine-core</code> wires them together with a scene host, dialog panel, and BGM director. Clean-room SPU mixer + sequencer drive playback.</div>
+      <div class="status-card-body">Runtime port. Actor VM (13 ops), Field VM (43 ops), Move VM (71 + 61 ext sub-ops), Motion VM (per-actor pursue / patrol / face-target at <code>FUN_8003774C</code>), Effect VM (battle effect pool), and the battle action state machine all ported. <code>battle_formulas</code> ships damage / MP-cost / accuracy / RNG kernels. Composite <code>World</code> in <code>engine-core</code> wires them together with a scene host, dialog panel, and BGM director. Clean-room SPU mixer + sequencer drive playback.</div>
     </div>
     <div class="status-card status-done">
       <div class="status-card-title">Engine port — Phase 3</div>

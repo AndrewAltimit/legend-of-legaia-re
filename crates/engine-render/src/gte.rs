@@ -519,6 +519,430 @@ pub mod raster {
     }
 }
 
+/// PSX cop2 (GTE) register-state emulator.
+///
+/// The shape mirrors the hardware: the GTE has 32 data registers and 32
+/// control registers. Data registers hold the working accumulators (MAC0,
+/// MAC1, MAC2, MAC3), the truncated/rounded short results (IR0, IR1, IR2,
+/// IR3), the screen XY FIFO (SXY0/SXY1/SXY2/SXYP), the screen Z FIFO
+/// (SZ0/SZ1/SZ2/SZ3), the RGB FIFO (RGB0/RGB1/RGB2), per-vertex inputs
+/// (V0/V1/V2), the average-Z output (OTZ), and the saturation flag (FLAG).
+/// Control registers hold the rotation matrix (RT11..RT33), the translation
+/// vector (TRX/TRY/TRZ), the projection focal length (H), the screen offset
+/// (OFX/OFY), and the average-Z scaling factors (ZSF3/ZSF4).
+///
+/// This isn't a cycle-accurate emulator — it doesn't model the per-stage
+/// pipeline latency or the exact MAC/IR overflow flag bits the hardware
+/// produces — but the high-level instruction shape, register file, and
+/// saturation behaviour all match the PSX GTE manual. Used by the engine
+/// for offline regression checks against captured GTE traces and as the
+/// substrate for downstream tooling that wants opcode-level visibility
+/// without re-deriving the math.
+///
+/// Source for the register layout: PSX hardware reference (cop2). The
+/// engine's existing [`Camera::transform`] is a higher-level wrapper around
+/// the same arithmetic — both produce identical results for the RTPT path.
+#[derive(Debug, Clone)]
+pub struct Gte {
+    // ----- Data registers -----
+    /// V0/V1/V2 — three input vertices for batch ops (RTPT, NCDT, COLOR).
+    pub v: [GteVec3; 3],
+    /// RGBC — the input colour (R/G/B/CODE bytes).
+    pub rgbc: [u8; 4],
+    /// OTZ — average-Z output (0..=0xFFFF).
+    pub otz: u16,
+    /// IR0 — scalar accumulator (sign-extended i16).
+    pub ir0: i32,
+    /// IR1/IR2/IR3 — truncated MAC1/MAC2/MAC3 (i16 saturating).
+    pub ir1: i32,
+    pub ir2: i32,
+    pub ir3: i32,
+    /// SXY0/SXY1/SXY2 — screen-XY FIFO (3 entries, oldest at index 0).
+    pub sxy_fifo: [ScreenXY; 3],
+    /// SZ0/SZ1/SZ2/SZ3 — screen-Z FIFO (4 entries, oldest at index 0).
+    pub sz_fifo: [u16; 4],
+    /// RGB0/RGB1/RGB2 — output RGB FIFO (3 entries).
+    pub rgb_fifo: [[u8; 4]; 3],
+    /// MAC0 — 32-bit scalar accumulator.
+    pub mac0: i32,
+    /// MAC1/MAC2/MAC3 — wide vector accumulator (per-component, i64-widened).
+    pub mac1: i64,
+    pub mac2: i64,
+    pub mac3: i64,
+    /// FLAG — saturation flag bits accumulated across the last instruction.
+    /// Each bit corresponds to a clamp / overflow event; bit 31 is the
+    /// "any error" sticky bit.
+    pub flag: u32,
+
+    // ----- Control registers -----
+    /// RT11..RT33 — rotation matrix (q3.12).
+    pub rot: GteMat3,
+    /// TRX/TRY/TRZ — translation vector (q19.12).
+    pub trans: GteVec3,
+    /// H — projection focal length (q.0).
+    pub h: i32,
+    /// OFX — screen-X offset (q16.16; we store the integer pixel value).
+    pub ofx: i32,
+    /// OFY — screen-Y offset (q16.16).
+    pub ofy: i32,
+    /// ZSF3 — average-Z scale factor for AVSZ3.
+    pub zsf3: i32,
+    /// ZSF4 — average-Z scale factor for AVSZ4.
+    pub zsf4: i32,
+    /// DQA — depth-cue interpolation slope.
+    pub dqa: i32,
+    /// DQB — depth-cue interpolation intercept.
+    pub dqb: i32,
+}
+
+/// FLAG-register saturation bits the GTE sets after each instruction.
+///
+/// The hardware puts these at specific bit positions in cop2cr31; this
+/// module follows the same layout so a captured FLAG dump can be compared
+/// directly. `BIT_ERROR_FLAG` is the sticky "any clamp happened" bit.
+pub mod flag_bits {
+    /// MAC1 overflowed (positive).
+    pub const MAC1_OVERFLOW_POS: u32 = 1 << 30;
+    /// MAC2 overflowed (positive).
+    pub const MAC2_OVERFLOW_POS: u32 = 1 << 29;
+    /// MAC3 overflowed (positive).
+    pub const MAC3_OVERFLOW_POS: u32 = 1 << 28;
+    /// MAC1 overflowed (negative).
+    pub const MAC1_OVERFLOW_NEG: u32 = 1 << 27;
+    /// MAC2 overflowed (negative).
+    pub const MAC2_OVERFLOW_NEG: u32 = 1 << 26;
+    /// MAC3 overflowed (negative).
+    pub const MAC3_OVERFLOW_NEG: u32 = 1 << 25;
+    /// IR1 saturated to i16.
+    pub const IR1_SATURATED: u32 = 1 << 24;
+    /// IR2 saturated to i16.
+    pub const IR2_SATURATED: u32 = 1 << 23;
+    /// IR3 saturated to i16.
+    pub const IR3_SATURATED: u32 = 1 << 22;
+    /// SX2 saturated to ±0x400 (the GTE clamps SXY2 more tightly than
+    /// the i16-wide internal representation; engines that need bit-exact
+    /// SX/SY clamping can mask against this bit).
+    pub const SX2_SATURATED: u32 = 1 << 14;
+    /// SY2 saturated.
+    pub const SY2_SATURATED: u32 = 1 << 13;
+    /// SZ3 / OTZ saturated.
+    pub const SZ3_OTZ_SATURATED: u32 = 1 << 18;
+    /// MAC0 overflowed positive.
+    pub const MAC0_OVERFLOW_POS: u32 = 1 << 16;
+    /// MAC0 overflowed negative.
+    pub const MAC0_OVERFLOW_NEG: u32 = 1 << 15;
+    /// IR0 saturated.
+    pub const IR0_SATURATED: u32 = 1 << 12;
+    /// Sticky "any error happened" bit (set when any of the above set).
+    pub const ANY_ERROR: u32 = 1 << 31;
+}
+
+impl Default for Gte {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Gte {
+    /// Construct a GTE with all registers zeroed and the rotation matrix
+    /// at identity. Caller writes RT/TR/H/OFX/OFY through the field accessors
+    /// before issuing instructions.
+    pub fn new() -> Self {
+        Self {
+            v: [GteVec3::default(); 3],
+            rgbc: [0; 4],
+            otz: 0,
+            ir0: 0,
+            ir1: 0,
+            ir2: 0,
+            ir3: 0,
+            sxy_fifo: [ScreenXY::default(); 3],
+            sz_fifo: [0; 4],
+            rgb_fifo: [[0; 4]; 3],
+            mac0: 0,
+            mac1: 0,
+            mac2: 0,
+            mac3: 0,
+            flag: 0,
+            rot: GteMat3::IDENTITY,
+            trans: GteVec3::default(),
+            h: DEFAULT_H,
+            ofx: 0,
+            ofy: 0,
+            zsf3: ROT_ONE,
+            zsf4: ROT_ONE,
+            dqa: 0,
+            dqb: 0,
+        }
+    }
+
+    /// Mirror of [`Camera::for_viewport`] — set up the projection matrices
+    /// for a centred 320×240-style viewport.
+    pub fn set_viewport(&mut self, width: i32, height: i32) {
+        self.ofx = width / 2;
+        self.ofy = height / 2;
+        self.h = DEFAULT_H;
+    }
+
+    /// Reset only the FLAG register. Call before each instruction sequence
+    /// to mirror the hardware's per-instruction FLAG semantics.
+    pub fn clear_flag(&mut self) {
+        self.flag = 0;
+    }
+
+    /// Saturate `v` to i16 and update the IR-saturation FLAG bit.
+    fn saturate_ir(&mut self, v: i64, sat_bit: u32) -> i32 {
+        if v > i16::MAX as i64 {
+            self.flag |= sat_bit | flag_bits::ANY_ERROR;
+            i16::MAX as i32
+        } else if v < i16::MIN as i64 {
+            self.flag |= sat_bit | flag_bits::ANY_ERROR;
+            i16::MIN as i32
+        } else {
+            v as i32
+        }
+    }
+
+    /// Push an SXY entry, advancing the FIFO. SXY0 ← SXY1 ← SXY2 ← new.
+    fn push_sxy(&mut self, xy: ScreenXY) {
+        let saturated = xy.saturate_sxy();
+        if saturated.x != xy.x {
+            self.flag |= flag_bits::SX2_SATURATED | flag_bits::ANY_ERROR;
+        }
+        if saturated.y != xy.y {
+            self.flag |= flag_bits::SY2_SATURATED | flag_bits::ANY_ERROR;
+        }
+        self.sxy_fifo[0] = self.sxy_fifo[1];
+        self.sxy_fifo[1] = self.sxy_fifo[2];
+        self.sxy_fifo[2] = saturated;
+    }
+
+    /// Push an SZ entry, advancing the FIFO. SZ0 ← SZ1 ← SZ2 ← SZ3 ← new.
+    fn push_sz(&mut self, z: i64) {
+        let clamped = if z > u16::MAX as i64 {
+            self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
+            u16::MAX
+        } else if z < 0 {
+            self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
+            0
+        } else {
+            z as u16
+        };
+        self.sz_fifo[0] = self.sz_fifo[1];
+        self.sz_fifo[1] = self.sz_fifo[2];
+        self.sz_fifo[2] = self.sz_fifo[3];
+        self.sz_fifo[3] = clamped;
+    }
+
+    /// `RTPS` (Rotate-Translate-Perspective, single vertex): transform `V0`
+    /// using the current RT/TR/H/OFX/OFY and push the result onto the SXY
+    /// and SZ FIFOs. Sets MAC1/MAC2/MAC3 to the post-rotation view-space
+    /// vector and IR1/IR2/IR3 to its saturated short form. Returns the
+    /// projected ScreenXY.
+    pub fn rtps(&mut self) -> ScreenXY {
+        self.clear_flag();
+        self.rtps_inner(self.v[0])
+    }
+
+    /// `RTPT` (Rotate-Translate-Perspective, three vertices): apply RTPS to
+    /// V0, V1, V2 in order. The SXY FIFO ends up with the three projected
+    /// vertices in oldest-first order (SXY0 = V0's projection, SXY2 = V2's).
+    pub fn rtpt(&mut self) -> [ScreenXY; 3] {
+        self.clear_flag();
+        let v = self.v;
+        let s0 = self.rtps_inner(v[0]);
+        let s1 = self.rtps_inner(v[1]);
+        let s2 = self.rtps_inner(v[2]);
+        [s0, s1, s2]
+    }
+
+    fn rtps_inner(&mut self, vertex: GteVec3) -> ScreenXY {
+        // view = rot * v + trans
+        let view = rot_trans(&self.rot, vertex, self.trans);
+        // Update MAC1/2/3 with the view-space components (i64-widened).
+        self.mac1 = view.x as i64;
+        self.mac2 = view.y as i64;
+        self.mac3 = view.z as i64;
+        // IR1/2/3 ← saturated MAC1/2/3 to i16.
+        self.ir1 = self.saturate_ir(self.mac1, flag_bits::IR1_SATURATED);
+        self.ir2 = self.saturate_ir(self.mac2, flag_bits::IR2_SATURATED);
+        self.ir3 = self.saturate_ir(self.mac3, flag_bits::IR3_SATURATED);
+
+        // Perspective divide. SX = (H * MAC1) / MAC3 + OFX.
+        let (sx, sy) = if view.z <= 0 {
+            self.flag |= flag_bits::MAC3_OVERFLOW_NEG | flag_bits::ANY_ERROR;
+            (saturate_behind(view.x), saturate_behind(view.y))
+        } else {
+            let z = view.z as i64;
+            let sx_full = (self.h as i64 * view.x as i64) / z;
+            let sy_full = (self.h as i64 * view.y as i64) / z;
+            let sx = (sx_full + self.ofx as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            let sy = (sy_full + self.ofy as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+            (sx, sy)
+        };
+        // Push SXY and SZ; the FIFOs handle their own saturation flags.
+        let xy = ScreenXY::new(sx, sy);
+        self.push_sxy(xy);
+        // SZ FIFO stores view-space Z scaled by 1/4096 (q19.12 → integer
+        // bucket). Hardware divides by 4096 before storing; we mirror that
+        // and then clamp to u16.
+        let sz_in = (view.z as i64) >> ROT_FRAC_BITS;
+        self.push_sz(sz_in);
+        // Output SXY is the saturated form already in the FIFO.
+        self.sxy_fifo[2]
+    }
+
+    /// `NCLIP` — signed area of the triangle SXY0/SXY1/SXY2. Writes MAC0.
+    /// Returns the same value the FLAG and MAC0 reflect.
+    pub fn nclip(&mut self) -> i64 {
+        self.clear_flag();
+        let v = nclip(self.sxy_fifo[0], self.sxy_fifo[1], self.sxy_fifo[2]);
+        // MAC0 saturation is at i32 bounds; track overflow via FLAG.
+        self.mac0 = if v > i32::MAX as i64 {
+            self.flag |= flag_bits::MAC0_OVERFLOW_POS | flag_bits::ANY_ERROR;
+            i32::MAX
+        } else if v < i32::MIN as i64 {
+            self.flag |= flag_bits::MAC0_OVERFLOW_NEG | flag_bits::ANY_ERROR;
+            i32::MIN
+        } else {
+            v as i32
+        };
+        v
+    }
+
+    /// `AVSZ3` — write OTZ ← `((SZ1 + SZ2 + SZ3) * ZSF3) >> ROT_FRAC_BITS`.
+    /// Writes MAC0 to the un-shifted product so callers can recover the
+    /// full-precision intermediate.
+    pub fn avsz3(&mut self) -> u16 {
+        self.clear_flag();
+        let sum = self.sz_fifo[1] as i64 + self.sz_fifo[2] as i64 + self.sz_fifo[3] as i64;
+        let scaled = sum * self.zsf3 as i64;
+        self.mac0 = scaled.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let shifted = scaled >> ROT_FRAC_BITS;
+        let otz = if shifted > u16::MAX as i64 {
+            self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
+            u16::MAX
+        } else if shifted < 0 {
+            self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
+            0
+        } else {
+            shifted as u16
+        };
+        self.otz = otz;
+        otz
+    }
+
+    /// `AVSZ4` — write OTZ ← `((SZ0 + SZ1 + SZ2 + SZ3) * ZSF4) >> ROT_FRAC_BITS`.
+    pub fn avsz4(&mut self) -> u16 {
+        self.clear_flag();
+        let sum = self.sz_fifo[0] as i64
+            + self.sz_fifo[1] as i64
+            + self.sz_fifo[2] as i64
+            + self.sz_fifo[3] as i64;
+        let scaled = sum * self.zsf4 as i64;
+        self.mac0 = scaled.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let shifted = scaled >> ROT_FRAC_BITS;
+        let otz = if shifted > u16::MAX as i64 {
+            self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
+            u16::MAX
+        } else if shifted < 0 {
+            self.flag |= flag_bits::SZ3_OTZ_SATURATED | flag_bits::ANY_ERROR;
+            0
+        } else {
+            shifted as u16
+        };
+        self.otz = otz;
+        otz
+    }
+
+    /// `MVMVA` — generic matrix-vector multiply with selectable matrix
+    /// (rotation / light / color), vector source (V0/V1/V2/IR), and
+    /// translation source (TR / BK / FC / none). This is the most flexible
+    /// GTE primitive — engines wire it for lighting passes and arbitrary
+    /// affine transforms.
+    ///
+    /// Args:
+    /// - `mat`: the 3×3 matrix to multiply by.
+    /// - `vec`: the 3-vector input.
+    /// - `trans`: the optional translation to add (pass `GteVec3::default()`
+    ///   for no translation).
+    /// - `shift_frac`: `true` to right-shift the result by `ROT_FRAC_BITS`
+    ///   (matches GTE's `SF` flag); `false` to keep full-precision MAC.
+    /// - `lm`: `true` to clamp IR1/IR2/IR3 to `[0, 0x7FFF]` instead of the
+    ///   default `[-0x8000, 0x7FFF]` (matches GTE's `LM` flag, used for
+    ///   colour interpolation).
+    ///
+    /// Result lives in MAC1/MAC2/MAC3 and IR1/IR2/IR3 after the call.
+    pub fn mvmva(
+        &mut self,
+        mat: &GteMat3,
+        vec: GteVec3,
+        trans: GteVec3,
+        shift_frac: bool,
+        lm: bool,
+    ) {
+        self.clear_flag();
+        let row = |r: usize| -> i64 {
+            (mat.m[r][0] as i64) * (vec.x as i64)
+                + (mat.m[r][1] as i64) * (vec.y as i64)
+                + (mat.m[r][2] as i64) * (vec.z as i64)
+        };
+        let raw = [
+            row(0) + (trans.x as i64) * (ROT_ONE as i64),
+            row(1) + (trans.y as i64) * (ROT_ONE as i64),
+            row(2) + (trans.z as i64) * (ROT_ONE as i64),
+        ];
+        let macs: [i64; 3] = if shift_frac {
+            [
+                raw[0] >> ROT_FRAC_BITS,
+                raw[1] >> ROT_FRAC_BITS,
+                raw[2] >> ROT_FRAC_BITS,
+            ]
+        } else {
+            raw
+        };
+        self.mac1 = macs[0];
+        self.mac2 = macs[1];
+        self.mac3 = macs[2];
+
+        // IR1/2/3 saturation. `lm` clamps the lower bound to 0.
+        let lo = if lm { 0 } else { i16::MIN as i64 };
+        let sat = |v: i64, bit: u32, flag: &mut u32| -> i32 {
+            if v > i16::MAX as i64 {
+                *flag |= bit | flag_bits::ANY_ERROR;
+                i16::MAX as i32
+            } else if v < lo {
+                *flag |= bit | flag_bits::ANY_ERROR;
+                lo as i32
+            } else {
+                v as i32
+            }
+        };
+        self.ir1 = sat(macs[0], flag_bits::IR1_SATURATED, &mut self.flag);
+        self.ir2 = sat(macs[1], flag_bits::IR2_SATURATED, &mut self.flag);
+        self.ir3 = sat(macs[2], flag_bits::IR3_SATURATED, &mut self.flag);
+    }
+
+    /// Convenience: project the current SXY FIFO contents into a vertex
+    /// triangle using [`raster::rasterize_triangle`]. Iterates only the
+    /// inside pixels, calling `emit(px, py, w)` per pixel.
+    pub fn rasterize_sxy_triangle(
+        &self,
+        viewport_w: i32,
+        viewport_h: i32,
+        emit: impl FnMut(i32, i32, (i64, i64, i64)),
+    ) {
+        raster::rasterize_triangle(
+            self.sxy_fifo[0],
+            self.sxy_fifo[1],
+            self.sxy_fifo[2],
+            viewport_w,
+            viewport_h,
+            emit,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -791,6 +1215,228 @@ mod tests {
             !raster::contains(a, b, c, 20, 20),
             "(20,20) outside triangle"
         );
+    }
+
+    // ----- Gte register-state emulator tests -----
+
+    #[test]
+    fn gte_default_state_is_identity_with_no_translation() {
+        let g = Gte::new();
+        assert_eq!(g.rot, GteMat3::IDENTITY);
+        assert_eq!(g.trans, GteVec3::default());
+        assert_eq!(g.h, DEFAULT_H);
+        assert_eq!(g.flag, 0);
+        assert_eq!(g.zsf3, ROT_ONE);
+        assert_eq!(g.zsf4, ROT_ONE);
+    }
+
+    #[test]
+    fn gte_rtps_pushes_one_sxy_per_call() {
+        let mut g = Gte::new();
+        g.set_viewport(320, 240);
+        g.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+        g.v[0] = GteVec3::new(0, 0, 0);
+        let xy = g.rtps();
+        assert_eq!(xy.x, 160);
+        assert_eq!(xy.y, 120);
+        // SXY FIFO: latest in slot 2, slot 1 = previous (default), slot 0 = older.
+        assert_eq!(g.sxy_fifo[2], xy);
+    }
+
+    #[test]
+    fn gte_rtpt_pushes_three_vertices_in_fifo_order() {
+        let mut g = Gte::new();
+        g.set_viewport(320, 240);
+        g.trans = GteVec3::new(0, 0, ROT_ONE * 1024);
+        g.v[0] = GteVec3::new(0, 0, 0);
+        // V1 to the right.
+        g.v[1] = GteVec3::from_f32_q12(100.0, 0.0, 0.0);
+        // V2 up.
+        g.v[2] = GteVec3::from_f32_q12(0.0, -100.0, 0.0);
+        let [s0, s1, s2] = g.rtpt();
+        // After 3 RTPS calls, FIFO holds [s0, s1, s2] in order.
+        assert_eq!(g.sxy_fifo[0], s0);
+        assert_eq!(g.sxy_fifo[1], s1);
+        assert_eq!(g.sxy_fifo[2], s2);
+        assert_eq!(s0.x, 160);
+        assert_eq!(s0.y, 120);
+        assert!(s1.x > 160, "V1 right of center: {}", s1.x);
+        assert!(s2.y < 120, "V2 above center: {}", s2.y);
+    }
+
+    #[test]
+    fn gte_rtps_sets_mac_and_ir_registers() {
+        let mut g = Gte::new();
+        g.set_viewport(320, 240);
+        g.trans = GteVec3::new(10, 20, ROT_ONE * 100);
+        g.v[0] = GteVec3::new(0, 0, 0);
+        let _ = g.rtps();
+        // MAC = post-rotation view (rot=identity, so view = trans).
+        assert_eq!(g.mac1, 10);
+        assert_eq!(g.mac2, 20);
+        assert_eq!(g.mac3, ROT_ONE as i64 * 100);
+        // IR1 / IR2 fit in i16 (10, 20).
+        assert_eq!(g.ir1, 10);
+        assert_eq!(g.ir2, 20);
+        // IR3 saturates to i16::MAX (mac3 = 409_600 > 32767).
+        assert_eq!(g.ir3, i16::MAX as i32);
+        assert_ne!(g.flag & flag_bits::IR3_SATURATED, 0);
+        assert_ne!(g.flag & flag_bits::ANY_ERROR, 0);
+    }
+
+    #[test]
+    fn gte_rtps_behind_camera_sets_mac3_overflow_neg_flag() {
+        let mut g = Gte::new();
+        g.set_viewport(320, 240);
+        // No translation; vertex with view.z = 0 ⇒ behind-camera path.
+        g.v[0] = GteVec3::new(0, 0, 0);
+        g.rtps();
+        assert_ne!(g.flag & flag_bits::MAC3_OVERFLOW_NEG, 0);
+    }
+
+    #[test]
+    fn gte_nclip_writes_mac0_and_returns_signed_area() {
+        let mut g = Gte::new();
+        // Manually populate SXY FIFO.
+        g.sxy_fifo = [
+            ScreenXY::new(0, 0),
+            ScreenXY::new(10, 0),
+            ScreenXY::new(0, 10),
+        ];
+        let r = g.nclip();
+        assert_eq!(r, 100);
+        assert_eq!(g.mac0, 100);
+    }
+
+    #[test]
+    fn gte_avsz3_writes_otz_and_mac0() {
+        let mut g = Gte::new();
+        g.zsf3 = ROT_ONE; // sum-bucket scale (default)
+        g.sz_fifo = [0, 100, 200, 300];
+        let otz = g.avsz3();
+        // (100 + 200 + 300) = 600. With zsf3=4096 ⇒ 600*4096 = 2_457_600.
+        // OTZ = 2_457_600 >> 12 = 600. MAC0 = 2_457_600.
+        assert_eq!(otz, 600);
+        assert_eq!(g.otz, 600);
+        assert_eq!(g.mac0, 2_457_600);
+    }
+
+    #[test]
+    fn gte_avsz4_uses_all_four_sz_entries() {
+        let mut g = Gte::new();
+        g.zsf4 = ROT_ONE;
+        g.sz_fifo = [50, 100, 150, 200];
+        let otz = g.avsz4();
+        assert_eq!(otz, 500);
+    }
+
+    #[test]
+    fn gte_otz_saturates_high_to_u16_max() {
+        let mut g = Gte::new();
+        g.zsf3 = ROT_ONE;
+        // 3 * 0xFFFF = 196_605, * 4096 = 805_273_600, >> 12 = 196_605.
+        // 196_605 > 65_535 ⇒ clamp + flag.
+        g.sz_fifo = [0, u16::MAX, u16::MAX, u16::MAX];
+        let otz = g.avsz3();
+        assert_eq!(otz, u16::MAX);
+        assert_ne!(g.flag & flag_bits::SZ3_OTZ_SATURATED, 0);
+    }
+
+    #[test]
+    fn gte_mvmva_with_identity_passes_vector_through() {
+        let mut g = Gte::new();
+        g.mvmva(
+            &GteMat3::IDENTITY,
+            GteVec3::new(100, 200, 300),
+            GteVec3::default(),
+            true, // shift by ROT_FRAC_BITS
+            false,
+        );
+        // identity (q3.12) * (100, 200, 300) gives (100*4096, 200*4096,
+        // 300*4096) before the shift; shifted by 12 returns the original
+        // vector. IR1/2/3 then take the same values (within i16 range).
+        assert_eq!(g.mac1, 100);
+        assert_eq!(g.mac2, 200);
+        assert_eq!(g.mac3, 300);
+        assert_eq!(g.ir1, 100);
+        assert_eq!(g.ir2, 200);
+        assert_eq!(g.ir3, 300);
+    }
+
+    #[test]
+    fn gte_mvmva_no_shift_keeps_full_precision() {
+        let mut g = Gte::new();
+        g.mvmva(
+            &GteMat3::IDENTITY,
+            GteVec3::new(100, 200, 300),
+            GteVec3::default(),
+            false,
+            false,
+        );
+        // identity * v = q12 view. Without shift MAC keeps the full
+        // q12 product (each element scaled by ROT_ONE).
+        assert_eq!(g.mac1, 100 * ROT_ONE as i64);
+        assert_eq!(g.mac2, 200 * ROT_ONE as i64);
+        assert_eq!(g.mac3, 300 * ROT_ONE as i64);
+        // IR clamps to i16::MAX.
+        assert_eq!(g.ir1, i16::MAX as i32);
+        assert_ne!(g.flag & flag_bits::IR1_SATURATED, 0);
+    }
+
+    #[test]
+    fn gte_mvmva_lm_clamps_to_zero_minimum() {
+        let mut g = Gte::new();
+        // Negative input + LM=true ⇒ IR clamps to 0, FLAG sets sat bit.
+        g.mvmva(
+            &GteMat3::IDENTITY,
+            GteVec3::new(-50, -100, -200),
+            GteVec3::default(),
+            true,
+            true, // LM
+        );
+        assert_eq!(g.ir1, 0);
+        assert_eq!(g.ir2, 0);
+        assert_eq!(g.ir3, 0);
+        assert_ne!(g.flag & flag_bits::IR1_SATURATED, 0);
+    }
+
+    #[test]
+    fn gte_clear_flag_resets() {
+        let mut g = Gte::new();
+        g.flag = 0xFFFF_FFFF;
+        g.clear_flag();
+        assert_eq!(g.flag, 0);
+    }
+
+    #[test]
+    fn gte_rtpt_matches_camera_transform() {
+        // Verify the register-state RTPT produces the same SXY as the
+        // higher-level Camera::transform shim.
+        let mut g = Gte::new();
+        g.set_viewport(320, 240);
+        g.trans = GteVec3::new(0, 0, ROT_ONE * 512);
+        g.rot = GteMat3::rot_y(0.3);
+        let v = [
+            GteVec3::from_f32_q12(50.0, 0.0, 0.0),
+            GteVec3::from_f32_q12(-50.0, 0.0, 0.0),
+            GteVec3::from_f32_q12(0.0, 50.0, 0.0),
+        ];
+        g.v = v;
+        let [s0, s1, s2] = g.rtpt();
+
+        let cam = Camera {
+            rot: g.rot,
+            trans: g.trans,
+            h: g.h,
+            ofx: g.ofx,
+            ofy: g.ofy,
+        };
+        let p0 = cam.transform(v[0]).screen_xy.saturate_sxy();
+        let p1 = cam.transform(v[1]).screen_xy.saturate_sxy();
+        let p2 = cam.transform(v[2]).screen_xy.saturate_sxy();
+        assert_eq!(s0, p0);
+        assert_eq!(s1, p1);
+        assert_eq!(s2, p2);
     }
 
     #[test]

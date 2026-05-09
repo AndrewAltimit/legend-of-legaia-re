@@ -156,6 +156,11 @@ pub struct Actor {
     /// flash it has. We just record the actor id for inspection.
     pub last_effect: u32,
 
+    /// Most recent status effect inflicted by an art strike (Burned /
+    /// Shocked / …). Engines clear this when they've folded it into their
+    /// status-bar UI; defaults to `None`.
+    pub pending_status: Option<legaia_art::record::EnemyEffect>,
+
     /// Optional sprite frame for this actor. Drives the per-frame sprite
     /// batch through [`World::collect_sprite_requests`]. When `None`, the
     /// actor is invisible (or rendered as a 3D mesh through the TMD path).
@@ -537,6 +542,37 @@ impl World {
     /// Returns events in emission order.
     pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
         std::mem::take(&mut self.pending_battle_events)
+    }
+
+    /// Apply the gameplay-state side of a single battle event — currently
+    /// `ApplyArtStrike` (subtracts the resolved damage from the target's
+    /// `BattleActor::hp`, clamping at zero, and records the enemy effect on
+    /// the target's `pending_status`). Engines that want both the visual
+    /// dispatch and the gameplay-state update call this for each event
+    /// drained from [`Self::drain_battle_events`].
+    ///
+    /// Returns `Some((target_slot, hp_after))` for events that changed HP,
+    /// `None` otherwise — useful for HUD popups that want the post-hit HP.
+    pub fn fold_battle_event(&mut self, event: &BattleEvent) -> Option<(u8, u16)> {
+        match event {
+            BattleEvent::ApplyArtStrike {
+                target_slot,
+                outcome,
+                ..
+            } => {
+                if let Some(target) = self.actors.get_mut(*target_slot as usize) {
+                    if let Some(dmg) = outcome.damage {
+                        target.battle.hp = target.battle.hp.saturating_sub(dmg);
+                    }
+                    if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
+                        target.pending_status = Some(outcome.enemy_effect);
+                    }
+                    return Some((*target_slot, target.battle.hp));
+                }
+                None
+            }
+            _ => None,
+        }
     }
 
     /// Set the per-slot weapon attack used by Tactical-Art strike damage
@@ -3216,5 +3252,103 @@ mod tests {
         }
         assert_eq!(udf_dmg, Some(107));
         assert_eq!(ldf_dmg, Some(62));
+    }
+
+    #[test]
+    fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
+        use legaia_art::power::{PowerByte, PowerTarget};
+        use legaia_art::queue::{ActionConstant, Character};
+        use legaia_art::record::EnemyEffect;
+        use legaia_engine_vm::battle_action::ArtStrikeInfo;
+
+        let mut world = World::new();
+        world.party_count = 4;
+        for slot in 0..4 {
+            world.actors[slot].active = true;
+            world.actors[slot].battle.hp = 200;
+            world.actors[slot].battle.max_hp = 200;
+        }
+        world.set_battle_attack(0, 64);
+        world.set_battle_defense(3, 5);
+
+        let info = ArtStrikeInfo {
+            strike_index: 0,
+            anim_byte: 0x10,
+            actor_slot: 0,
+            target_slot: 3,
+            character: Character::Vahn,
+            art: ActionConstant::Art1B,
+            power: Some(PowerByte::from_byte(0x1A)), // UDF × 28
+            dmg_timing: Some(0x10),
+            enemy_effect: EnemyEffect::Burned,
+            hit_cue: None,
+        };
+        let mut host = BattleHostImpl { world: &mut world };
+        host.apply_art_strike(info);
+        let events = world.drain_battle_events();
+        assert_eq!(events.len(), 1);
+        for e in &events {
+            let r = world.fold_battle_event(e);
+            // 64 * 28 / 16 - 5 = 107 damage. Target slot 3 starts at 200,
+            // ends at 93.
+            assert_eq!(r, Some((3, 93)));
+        }
+        assert_eq!(world.actors[3].battle.hp, 93);
+        // Burned status was folded into pending_status.
+        assert_eq!(
+            world.actors[3].pending_status,
+            Some(legaia_art::record::EnemyEffect::Burned)
+        );
+        // PowerTarget enum is needed only to satisfy the import linter
+        // when the assertions don't otherwise reference it.
+        let _ = PowerTarget::Udf;
+    }
+
+    #[test]
+    fn fold_battle_event_other_variants_dont_modify_state() {
+        let mut world = World::new();
+        world.party_count = 1;
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 100;
+        let r = world.fold_battle_event(&BattleEvent::CameraBounds);
+        assert_eq!(r, None);
+        assert_eq!(world.actors[0].battle.hp, 100);
+    }
+
+    #[test]
+    fn fold_battle_event_clamps_to_zero_hp() {
+        use legaia_art::power::PowerByte;
+        use legaia_art::queue::{ActionConstant, Character};
+        use legaia_art::record::EnemyEffect;
+        use legaia_engine_vm::battle_action::ArtStrikeInfo;
+
+        let mut world = World::new();
+        world.party_count = 4;
+        world.actors[3].active = true;
+        world.actors[3].battle.hp = 30;
+        world.actors[3].battle.max_hp = 30;
+        world.set_battle_attack(0, 64);
+        world.set_battle_defense(3, 0);
+
+        let info = ArtStrikeInfo {
+            strike_index: 0,
+            anim_byte: 0x10,
+            actor_slot: 0,
+            target_slot: 3,
+            character: Character::Vahn,
+            art: ActionConstant::Art1B,
+            power: Some(PowerByte::from_byte(0x1A)), // huge damage vs 30 HP
+            dmg_timing: None,
+            enemy_effect: EnemyEffect::None,
+            hit_cue: None,
+        };
+        let mut host = BattleHostImpl { world: &mut world };
+        host.apply_art_strike(info);
+        let events = world.drain_battle_events();
+        for e in &events {
+            world.fold_battle_event(e);
+        }
+        // saturating_sub clamps to 0 instead of wrapping.
+        assert_eq!(world.actors[3].battle.hp, 0);
     }
 }
