@@ -26,6 +26,7 @@ pub mod items;
 pub mod levelup;
 pub mod menu_runtime;
 pub mod mode;
+pub mod monster_catalog;
 pub mod save_select;
 pub mod scene;
 pub mod scene_assets;

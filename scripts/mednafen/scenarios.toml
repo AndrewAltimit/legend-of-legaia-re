@@ -197,63 +197,108 @@ end = 0x801C9700
 hint = "Per-actor +0x4C carries the anim dispatch fn pointer; diff mc4→mc6 to find it"
 
 # ----------------------------------------------------------------------
-# mc7 — Status menu (pause-menu overlay)
+# mc7 — Pre-event: goblin about to steal an item (battle in progress).
+#
+# Loading mc7 and waiting ~5-10 seconds (no input) plays out: a goblin
+# steal animation → magic-rank level-up event (mc8) → character level-up
+# event (mc9). This triplet is intended for stat-growth + magic-rank
+# work (PRD §2.3 / §4.16).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 7
-label = "status_menu"
-description = "Status menu open"
-topics = ["menu sub-screens"]
+label = "pre_steal"
+description = "Battle frame: goblin about to steal an item from the party"
+topics = ["status effects", "item theft", "stat growth"]
+diff_against = [8, 9]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "menu_state_globals"
-start = 0x801F0200
-end = 0x801F0220
-hint = "_DAT_801f0204 menu state field; +0x10 carries close-hold counter"
+label = "battle_actor_pool"
+start = 0x801C9370
+end = 0x801C9500
+hint = "Battle actor pointer table; per-actor HP/MP at +0x14C"
+
+[[scenarios.watchpoints]]
+label = "inventory_table"
+start = 0x80120000
+end = 0x80140000
+hint = "Inventory store; theft writes here. Diff mc7↔mc8 to surface the inventory cell."
+
+[[scenarios.watchpoints]]
+label = "story_flags_word"
+start = 0x1F800390
+end = 0x1F8003A0
+hint = "_DAT_1F800394 story flags. Diff to surface in-battle status writes."
 
 # ----------------------------------------------------------------------
-# mc8 — Options menu (config overlay)
+# mc8 — Magic level-up event firing
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
-label = "options_menu"
-description = "Options/config menu open"
+label = "magic_level_up"
+description = "Magic-rank level-up banner active"
+topics = ["spell rank-up", "stat growth"]
+diff_against = [7, 9]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "menu_state_globals"
-start = 0x801F0200
-end = 0x801F0220
-hint = "Same menu hub as mc7 — diff to find which submenu cursor moved"
+label = "char_record_vahn"
+start = 0x80084708
+end = 0x80084B1C
+hint = "Vahn's character record (stride 0x414). Spell list at +0x13C; spell levels at +0x161."
+
+[[scenarios.watchpoints]]
+label = "char_record_noa"
+start = 0x80084B1C
+end = 0x80084F30
+hint = "Noa's character record (stride 0x414)."
+
+[[scenarios.watchpoints]]
+label = "char_record_gala"
+start = 0x80084F30
+end = 0x80085344
+hint = "Gala's character record (stride 0x414)."
 
 # ----------------------------------------------------------------------
-# mc9 — Load screen (save-slot select / load UI)
+# mc9 — Character level-up event firing (after mc8)
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 9
-label = "load_screen"
-description = "Save/load screen with slot list visible"
-topics = ["save-screen sub-states"]
+label = "char_level_up"
+description = "Character level-up banner active (after magic-rank up)"
+topics = ["stat growth", "level-up curve"]
+diff_against = [7, 8]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "save_screen_substate"
-start = 0x801E4F40
-end = 0x801E4FC0
-hint = "FUN_801DC6B4 sub-state pointer table; PTR_FUN_801E4F40 + sub*4"
+label = "char_record_vahn"
+start = 0x80084708
+end = 0x80084B1C
+hint = "Vahn's character record. HP/MP at +0x104; stat cap at +0x11A."
 
 [[scenarios.watchpoints]]
-label = "save_block_scan"
-start = 0x80084100
-end = 0x80084200
-hint = "DAT_80084140 save-block existence scan window"
+label = "char_record_noa"
+start = 0x80084B1C
+end = 0x80084F30
+hint = "Noa's character record (stride 0x414)."
+
+[[scenarios.watchpoints]]
+label = "char_record_gala"
+start = 0x80084F30
+end = 0x80085344
+hint = "Gala's character record (stride 0x414)."
+
+[[scenarios.watchpoints]]
+label = "stat_growth_lookup_window"
+start = 0x80120000
+end = 0x80140000
+hint = "Per-Seru stat-grant lookup. Diff mc7→mc9 to surface per-character growth values."
