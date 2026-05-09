@@ -655,6 +655,34 @@ struct PlayWindowApp {
     /// Pad state from the previous frame — used to compute newly-pressed bits
     /// for the world-map toggle combo.
     prev_pad: u16,
+    /// Rolling battle-event log surfaced in the HUD. Each tick drains
+    /// `World::pending_battle_events` and folds the most recent N entries
+    /// into this ring buffer (`ApplyArtStrike` events also get applied to
+    /// the target's `BattleActor::hp` via `World::fold_battle_event`). The
+    /// log is empty until a battle SM actually fires.
+    battle_event_log: std::collections::VecDeque<String>,
+}
+
+impl PlayWindowApp {
+    /// Maximum number of battle-event log lines kept in the HUD ring.
+    const BATTLE_EVENT_LOG_CAP: usize = 6;
+
+    /// Drain world battle events, fold each into HP / status state, and
+    /// append a one-line summary to the HUD ring. Called once per simulation
+    /// tick from the redraw handler.
+    fn drain_and_log_battle_events(&mut self) {
+        let events = self.session.host.world.drain_battle_events();
+        for ev in events {
+            // Apply the gameplay-state side (currently only `ApplyArtStrike`
+            // mutates HP / status; other events are visual-only here).
+            self.session.host.world.fold_battle_event(&ev);
+            // Surface in the HUD ring.
+            if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
+                self.battle_event_log.pop_front();
+            }
+            self.battle_event_log.push_back(ev.summary());
+        }
+    }
 }
 
 impl PlayWindowApp {
@@ -925,6 +953,19 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&ml_layout, (8, 140), white));
             }
         }
+        // Battle-event log: rendered along the right edge when non-empty.
+        // Most recent at the bottom of the column.
+        if !self.battle_event_log.is_empty() {
+            let log_color = [1.0f32, 0.95, 0.7, 1.0];
+            let line_height = 14;
+            let bottom_y = 280;
+            let n = self.battle_event_log.len();
+            for (i, line) in self.battle_event_log.iter().enumerate() {
+                let layout = self.font.layout_ascii(line);
+                let y = bottom_y - ((n - 1 - i) as i32) * line_height;
+                out.extend(text_draws_for(&layout, (220, y), log_color));
+            }
+        }
         // Level-up banner: rendered near the top when active after a battle win.
         if let Some(banner) = &self.session.host.world.current_level_up_banner {
             let draws = level_up_draws_for(
@@ -1004,6 +1045,10 @@ impl ApplicationHandler for PlayWindowApp {
                         ctrl.tick(self.pad, newly_pressed);
                     }
                     self.prev_pad = self.pad;
+                    // Drain whatever battle events the SM fired this tick,
+                    // fold their gameplay-state side into the world (HP /
+                    // status), and ring them into the HUD log.
+                    self.drain_and_log_battle_events();
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     self.win.renderer.as_ref(),
@@ -1170,6 +1215,7 @@ fn cmd_play_window(
         menu_runtime: MenuRuntime::new(std::path::PathBuf::from(".")),
         world_map_ctrl,
         prev_pad: 0,
+        battle_event_log: std::collections::VecDeque::new(),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;

@@ -15,21 +15,24 @@
   <p>Opcode <code>0x2F</code> is the <strong>overlay-extension escape</strong>. It calls into a separate dispatcher inside the town overlay, which has its own 61-entry jump table. So the actual opcode count is "71 + 61 sub-ops accessible through opcode 0x2F". The town-overlay sub-handlers are scene-specific, which is why they live in the overlay rather than in the always-resident exe.</p>
 </section>
 
-<section class="doc-section" id="three-vms">
-  <h2>The three-VM picture</h2>
+<section class="doc-section" id="vm-family">
+  <h2>The runtime VM family</h2>
   <table>
     <thead><tr><th>VM</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operand width</th></tr></thead>
     <tbody>
       <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>Title-screen overlay (0971)</td><td>13</td><td>byte stream</td></tr>
-      <tr><td><strong>Move VM</strong></td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 (<code>0x00..0x46</code>)</td><td>u16 stream</td></tr>
+      <tr><td><strong>Move VM</strong></td><td><code>FUN_80023070</code></td><td><code>SCUS_942.54</code></td><td>71 (<code>0x00..0x46</code>) + 61 sub-ops via <code>0x2F</code></td><td>u16 stream</td></tr>
+      <tr><td><a href="motion-vm.html">Motion VM</a></td><td><code>FUN_8003774C</code></td><td><code>SCUS_942.54</code></td><td>per-actor pursue / patrol / face-target</td><td>byte stream w/ high-bit target</td></tr>
       <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>Town overlay (0897)</td><td>43 (<code>0x21..0x4F</code> with gaps) + <code>0x5x/6x/7x</code> default-route</td><td>byte stream</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td>per-slot state walker</td><td>Battle overlay</td><td>per-slot SM (no opcode table)</td><td>inline state tokens</td></tr>
     </tbody>
   </table>
-  <p>The three are wired:</p>
+  <p>How the move VM wires to the others:</p>
   <ul class="bullets">
     <li>Field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code>, which finds the move record for <code>move_id</code> and stages it into the actor at <code>actor[+0x48]</code> (buffer base) / <code>actor[+0x70]</code> (PC).</li>
     <li>Actor tick (<code>FUN_80021DF4</code>, per frame) and actor spawn (<code>FUN_80021B04</code>, one-shot) both call <code>FUN_80023070(actor)</code> to step the move buffer.</li>
     <li>Move-VM opcode <code>0x2F</code> calls <code>FUN_801D362C(actor, opcode_ptr)</code> for scene-specific extension opcodes that live in the town overlay.</li>
+    <li>The motion VM runs alongside but doesn't share opcodes &mdash; it consumes a separate per-actor "motion buffer" through the <code>0xF8</code>/<code>0xFB</code> system-channel idiom.</li>
   </ul>
 </section>
 

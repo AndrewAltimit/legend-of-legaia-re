@@ -23,7 +23,8 @@ use anyhow::{Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_art::{
     ActionConstant, ActionQueue, Character, Command, MIRACLE_ARTS, MiracleMatcher, SUPER_ARTS,
-    SuperMatcher, art_name, learned_art_action,
+    SuperMatcher, art_anim_max_slot, art_anim_name, art_name, learned_art_action,
+    learned_art_max_slot,
 };
 
 #[derive(Parser, Debug)]
@@ -122,17 +123,33 @@ fn cmd_tables(character: Option<CharArg>) -> Result<()> {
     };
     for c in chars {
         println!("=== {} ===", c.name());
-        for slot in 0..50u8 {
-            let Some(action) = learned_art_action(c, slot) else {
-                break;
-            };
-            let name = art_name(c, action).unwrap_or("?");
-            println!(
-                "  slot {:>2}  action 0x{:02X}  {}",
-                slot,
-                action.as_byte(),
-                name
-            );
+        println!("  Learned Art Constant slots:");
+        for slot in 0..=learned_art_max_slot(c) {
+            match learned_art_action(c, slot) {
+                Some(action) => {
+                    let name = art_name(c, action).unwrap_or("?");
+                    println!(
+                        "    slot 0x{:02X}  action 0x{:02X}  {}",
+                        slot,
+                        action.as_byte(),
+                        name
+                    );
+                }
+                None => {
+                    println!("    slot 0x{:02X}  (hole)", slot);
+                }
+            }
+        }
+        println!("  Art Anim Data slots:");
+        for anim in 0..=art_anim_max_slot(c) {
+            match art_anim_name(c, anim) {
+                Some(name) => {
+                    println!("    anim 0x{:02X}  {}", anim, name);
+                }
+                None => {
+                    println!("    anim 0x{:02X}  (hole)", anim);
+                }
+            }
         }
     }
     Ok(())

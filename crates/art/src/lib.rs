@@ -48,7 +48,10 @@ pub use power::{ArtPower, PowerByte, PowerTarget};
 pub use queue::{ActionConstant, ActionQueue, Character, Command};
 pub use record::{ArtRecord, EffectCue, EnemyEffect, HitCue, RepeatFrames};
 pub use super_art::{SUPER_ARTS, SuperArt, SuperMatcher};
-pub use tables::{art_name, is_art, learned_art_action};
+pub use tables::{
+    art_anim_max_slot, art_anim_name, art_name, is_art, learned_art_action, learned_art_count,
+    learned_art_max_slot,
+};
 
 #[cfg(test)]
 mod integration_tests {
