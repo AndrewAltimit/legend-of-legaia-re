@@ -223,7 +223,7 @@ filename_pattern = "Legend of Legaia (USA).<HASH>.mc{slot}"
 slot = 1
 label = "area_load_early"
 description = "Loading into a new area — early frame"
-addresses_prd = ["§2.1 scene_bundle preamble→slot mapping"]
+topics = ["scene-bundle preamble"]
 diff_against = [2, 3]
 
 [scenarios.overlay_slice]

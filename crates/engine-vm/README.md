@@ -70,6 +70,26 @@ machines that aren't pure data-driven.
 (skip when wait_timer ≥ 0, run VM, check HALT flag). Op `0x2F` escapes
 into the overlay-resident `FUN_801D362C` extension VM, not yet ported.
 
+## `actor_tick` — `FUN_80021DF4`
+
+Per-actor physics tick — the `FUN_8002519C`-driven per-frame loop calls
+this on every active actor. The dispatch byte at `actor[+0x5A]` selects
+which subset of side-effects fires:
+
+| Stage | Runs for | Behaviour |
+|---|---|---|
+| Common pre-update | every byte | Drain timer at `+0x54`, advance rotation accumulator at `+0x22`. |
+| Keyframe accel | `0x02` / `0x06` | Fold `+0xC0..+0xCA` into shake envelopes at `+0xB4..+0xC8`. |
+| Positional SFX emitter | `0x05` | Distance-based pan / volume engine; ramp interpolation between target / source pairs over `+0xBC` frames; `key-on` / `vol-update` / `release` SsAPI calls surface as `TickEvent::Sfx*`. |
+| Path interpolation | `0x03` | Three-axis velocity into `+0x90..+0x94`, zoom envelope advance, path state machine at `+0x9C`. |
+| Default movement | every byte except `0x05` | Velocity / accel into `motion_x..motion_z`, trig-LUT-driven world rotation, shake / focal envelopes. |
+| Common late-update | every byte | Cap envelopes, optional move-VM kick, render submissions for `0x04` / `0x07`, keyframe pose write for `0x06`. |
+
+`ActorPhysics` mirrors the retail actor record's tick-relevant fields
+(`+0x10` through `+0xD0`, with offset annotations on every field).
+Cross-cutting effects surface as `TickEvent` entries; engines drain
+them into their own audio mixer / scene graph / move-VM driver.
+
 ## `status_effects`
 
 Per-actor status-effect tracker. `StatusKind` covers the eight retail

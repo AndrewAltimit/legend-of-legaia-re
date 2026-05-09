@@ -131,7 +131,7 @@ fn scenarios_manifest_resolves_every_save() {
 
 #[test]
 fn watchpoint_diff_for_battle_anim_strike_runs_clean() {
-    // mc6 (somersault) has the actor anim-state writes that target §2.2.
+    // mc6 (somersault) has the actor anim-state writes we want to surface.
     // This exercises the watch flow end-to-end against real data.
     let (Some(p4), Some(p6)) = (save_for(4), save_for(6)) else {
         eprintln!("{}", skip_msg(4));

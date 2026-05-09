@@ -454,12 +454,15 @@ fn cmd_scenarios(manifest_path: &Path) -> Result<()> {
     let manifest = ScenarioManifest::from_path(manifest_path)?;
     println!("[scenarios] {}", manifest_path.display());
     for s in &manifest.scenarios {
-        let prd = if s.addresses_prd.is_empty() {
+        let topics = if s.topics.is_empty() {
             String::new()
         } else {
-            format!(" [{}]", s.addresses_prd.join(", "))
+            format!(" [{}]", s.topics.join(", "))
         };
-        println!("  mc{}  {:<28}  {}{}", s.slot, s.label, s.description, prd);
+        println!(
+            "  mc{}  {:<28}  {}{}",
+            s.slot, s.label, s.description, topics
+        );
         if !s.diff_against.is_empty() {
             print!("       diff_against = [");
             for (i, n) in s.diff_against.iter().enumerate() {

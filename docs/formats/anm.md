@@ -103,8 +103,17 @@ per-opcode handler block. Observed values:
 
 The `crates/engine-vm` `DispatchByte` enum exposes those values as a typed
 dispatch — `DispatchByte::from_byte(actor[+0x5A])` and
-`DispatchByte::handled_natively()` for the cases the runtime can drive
-without further reverse-engineering work (currently only `Keyframe`).
+`DispatchByte::handled_natively()` for the cases the keyframe pose decoder
+can drive on its own (currently only `Keyframe`).
+
+The per-arm physics tick (the part that *isn't* per-record bytecode — i.e.
+position / velocity / acceleration math, the SFX emitter at dispatch `0x05`,
+and the per-arm render submissions for `0x04` and `0x07`) is fully ported in
+[`crates/engine-vm/src/actor_tick.rs`](../../crates/engine-vm/src/actor_tick.rs).
+Cross-cutting effects surface via `TickEvent` so engines can fold them into
+their own audio mixer / scene graph / move-VM driver. See
+[the actor-VM doc](../subsystems/actor-vm.md#per-arm-physics-tick) for the
+per-arm breakdown.
 
 The per-frame interpreter for non-opcode-6 records is **partially
 overlay-resident**.
