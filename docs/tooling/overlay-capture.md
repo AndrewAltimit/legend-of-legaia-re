@@ -75,6 +75,12 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 
 ## Capturing with mednafen (one-shot pipeline)
 
+> For the broader save-state automation toolkit — diffing two saves to
+> see what was written between them, bisecting a sequence of saves to
+> find a transition, and the declarative scenario manifest that names
+> each `mc{0..9}` slot — see
+> [`mednafen-automation.md`](mednafen-automation.md).
+
 The `scripts/analyze-overlay.sh` helper turns a gzipped mednafen save state into a labelled overlay program with an asset-load CSV in one step:
 
 ```bash

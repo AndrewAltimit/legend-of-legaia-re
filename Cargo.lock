@@ -1370,6 +1370,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-mednafen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flate2",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "legaia-mes"
 version = "0.1.0"
 dependencies = [
