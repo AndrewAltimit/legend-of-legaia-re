@@ -159,3 +159,51 @@ These are pure rendering helpers — no gameplay state changes. Engine reimpl ca
 Battle reads inventory through the same page-banked structure the field VM's op `0x3B` `SET_ITEM_COUNT` writes: 16 entries × 16-bit per page × 0x414-byte stride. The page index is the high nibble of the slot byte; the entry index is the low nibble.
 
 The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 0x80085918)` — adjacent to the fourth-flag-bank bitfield at `DAT_80086D70` (see [field VM](script-vm.md) → "fourth flag bank"). The field VM's op `0x4C` sub-3 sub-2 zeros the entire region.
+
+## Status effects
+
+Per-actor status conditions inflicted by enemy attacks or art `enemy_effect` bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around `+0x130`; the layout is per-flag and not captured in any single overlay dump.
+
+| Kind | Source byte | Default duration | Per-turn effect |
+|---|---|---|---|
+| Burned | `1` | 4 turns | `max_hp / 16` HP tick damage |
+| Shocked | `2` | 3 turns | 50% chance to skip turn |
+| Poisoned | `3` (Other) | 6 turns | `current_hp / 8` tick damage |
+| Asleep | `4` | 3 turns | Skip until hit |
+| Confused | `5` | 3 turns | Random target |
+| Silenced | `6` | 4 turns | Block Magic actions |
+| Stunned | `7` | 1 turn | Skip one turn |
+| Petrified | `8` | until cured | Skip turn entirely |
+
+Implementation: [`crates/engine-vm::status_effects`](../../crates/engine-vm/src/status_effects.rs). The per-tick `StatusEvent` stream feeds back into the engine's HUD pipeline; engines call `World::tick_status_effects` once per round and consume `StatusEffectTracker::drain_events()` for log lines.
+
+## AP / Spirit gauge
+
+Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's `+0xC9` (`current_ap`) and `+0xCA` (`bonus_ap`) bytes. Pressing the Spirit button during command input adds `+5` AP exactly once per turn.
+
+The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 5 AP, …, 60+ → 10 AP capped).
+
+| Action constant range | AP cost | Notes |
+|---|---|---|
+| `0x00` Nothing | 0 | placeholder |
+| `0x01..=0x05` | 0 | system actions (Item / Magic / Attack / Spirit / Escape) |
+| `0x0C..=0x0F` | 0 | direction bytes (free) |
+| `0x19` Regular Art Starter | 1 | |
+| `0x1A` Special Art Starter | 1 | |
+| `0x1B..=0x32` | 1 | per-character art body |
+
+Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
+
+## Battle stat aggregator
+
+Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Burned reduces ATK by ~12.5%, Confused halves accuracy, Asleep / Stunned / Petrified zero evasion and block actions, Silenced / Petrified block Magic).
+
+Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free — engines call it once per turn-start.
+
+## Item catalog
+
+Typed catalogue of inventory items the battle / field menu consults. Each entry has an `ItemEffect` describing the side-effect (Heal / Cure / Revive / Stat-up / Spirit-up / Capture / Escape / Damage / KeyItem). The vanilla catalog ships 19 entries covering every category.
+
+`apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver — engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
+
+Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).

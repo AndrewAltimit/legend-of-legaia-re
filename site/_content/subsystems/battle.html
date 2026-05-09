@@ -202,3 +202,53 @@
   <p>Battle reads inventory through the same page-banked structure the field VM's op <code>0x3B SET_ITEM_COUNT</code> writes: 16 entries &times; 16-bit per page &times; <code>0x414</code>-byte stride. The page index is the high nibble of the slot byte; the entry index is the low nibble.</p>
   <p>The page-banked inventory state lives in the 512-byte region at <code>[0x80085718 .. 0x80085918)</code> &mdash; adjacent to the fourth-flag-bank bitfield at <code>DAT_80086D70</code> (see <a href="script-vm.html">field VM &rarr; "fourth flag bank"</a>). The field VM's op <code>0x4C</code> sub-3 sub-2 zeros the entire region.</p>
 </section>
+
+<section class="doc-section" id="status-effects">
+  <h2>Status effects</h2>
+  <p>Per-actor status conditions inflicted by enemy attacks or art <code>enemy_effect</code> bytes. The retail engine stores per-status timers and tick-damage values in the battle-actor struct around <code>+0x130</code>; the layout is per-flag and not captured in any single overlay dump.</p>
+  <table>
+    <thead><tr><th>Kind</th><th>Source byte</th><th>Default duration</th><th>Per-turn effect</th></tr></thead>
+    <tbody>
+      <tr><td>Burned</td><td><code>1</code></td><td>4 turns</td><td><code>max_hp / 16</code> HP tick damage</td></tr>
+      <tr><td>Shocked</td><td><code>2</code></td><td>3 turns</td><td>50% chance to skip turn</td></tr>
+      <tr><td>Poisoned</td><td><code>3</code> (Other)</td><td>6 turns</td><td><code>current_hp / 8</code> tick damage</td></tr>
+      <tr><td>Asleep</td><td><code>4</code></td><td>3 turns</td><td>Skip until hit</td></tr>
+      <tr><td>Confused</td><td><code>5</code></td><td>3 turns</td><td>Random target</td></tr>
+      <tr><td>Silenced</td><td><code>6</code></td><td>4 turns</td><td>Block Magic actions</td></tr>
+      <tr><td>Stunned</td><td><code>7</code></td><td>1 turn</td><td>Skip one turn</td></tr>
+      <tr><td>Petrified</td><td><code>8</code></td><td>until cured</td><td>Skip turn entirely</td></tr>
+    </tbody>
+  </table>
+  <p>Implementation: <code>crates/engine-vm/src/status_effects.rs</code>. The per-tick <code>StatusEvent</code> stream feeds back into the engine's HUD pipeline; engines call <code>World::tick_status_effects</code> once per round and consume <code>StatusEffectTracker::drain_events()</code> for log lines.</p>
+</section>
+
+<section class="doc-section" id="ap-gauge">
+  <h2>AP / Spirit gauge</h2>
+  <p>Each character has a per-turn AP budget that limits how many art commands they can chain. The retail engine reads this from the character record's <code>+0xC9</code> (<code>current_ap</code>) and <code>+0xCA</code> (<code>bonus_ap</code>) bytes. Pressing the Spirit button during command input adds <code>+5</code> AP exactly once per turn.</p>
+  <p>The base AP grows by 1 each 10-level milestone (level 1..9 &rarr; 4 AP, 10..19 &rarr; 5 AP, &hellip;, 60+ &rarr; 10 AP capped).</p>
+  <table>
+    <thead><tr><th>Action constant range</th><th>AP cost</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x00</code> Nothing</td><td>0</td><td>placeholder</td></tr>
+      <tr><td><code>0x01..=0x05</code></td><td>0</td><td>system actions (Item / Magic / Attack / Spirit / Escape)</td></tr>
+      <tr><td><code>0x0C..=0x0F</code></td><td>0</td><td>direction bytes (free)</td></tr>
+      <tr><td><code>0x19</code> Regular Art Starter</td><td>1</td><td></td></tr>
+      <tr><td><code>0x1A</code> Special Art Starter</td><td>1</td><td></td></tr>
+      <tr><td><code>0x1B..=0x32</code></td><td>1</td><td>per-character art body</td></tr>
+    </tbody>
+  </table>
+  <p>Implementation: <code>crates/engine-core/src/ap_gauge.rs</code>. The <code>World</code> carries a <code>[ApGauge; 3]</code> (one per party slot); engines call <code>World::reset_party_ap</code> at turn start.</p>
+</section>
+
+<section class="doc-section" id="battle-stats">
+  <h2>Battle stat aggregator</h2>
+  <p>Clean-room port of <code>FUN_80042558</code>. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4&times;u32 mask, then folds in status-effect modifiers (Burned reduces ATK by ~12.5%, Confused halves accuracy, Asleep / Stunned / Petrified zero evasion and block actions, Silenced / Petrified block Magic).</p>
+  <p>Implementation: <code>crates/engine-core/src/battle_stats.rs</code>. The pure function <code>compute_battle_stats(record, table, statuses, modifiers) -&gt; BattleStats</code> is deterministic and side-effect-free &mdash; engines call it once per turn-start.</p>
+</section>
+
+<section class="doc-section" id="items">
+  <h2>Item catalog</h2>
+  <p>Typed catalogue of inventory items the battle / field menu consults. Each entry has an <code>ItemEffect</code> describing the side-effect (Heal / Cure / Revive / Stat-up / Spirit-up / Capture / Escape / Damage / KeyItem). The vanilla catalog ships 19 entries covering every category.</p>
+  <p><code>apply_effect(effect, &amp;TargetSnapshot) -&gt; ItemOutcome</code> is the pure resolver &mdash; engines fold each <code>ItemOutcome</code> into world state through whatever runtime path they have for HP / status / AP / inventory.</p>
+  <p>Implementation: <code>crates/engine-core/src/items.rs</code>.</p>
+</section>

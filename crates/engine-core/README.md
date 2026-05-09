@@ -51,6 +51,22 @@ struct. `World::tick` runs:
 Engines that want a different storage layout (ECS, custom parallelism)
 implement the per-VM `Host` traits themselves; `World` is the default.
 
+### Battle helpers
+
+- `art_strike` — translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
+  (HP delta, status, scheduled SFX cues) the world drains into its
+  battle event queue.
+- `ap_gauge` — per-character Action-Point gauge driving Tactical Arts
+  command input. Charges +5 on Spirit-press, refills per turn.
+- `battle_stats` — equipment-aware stat aggregator (clean-room port of
+  `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
+  status-effect modifiers (Burned -ATK, Confused halves accuracy,
+  Asleep / Stunned / Petrified zero evasion, Silenced / Petrified
+  block Magic).
+- `items` — typed inventory item-effect catalog. `apply_effect`
+  resolves an `ItemEffect` against a `TargetSnapshot` to produce an
+  `ItemOutcome` engines fold into world state.
+
 ## See also
 
 - [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) — the
