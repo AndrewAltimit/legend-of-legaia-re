@@ -53,4 +53,7 @@ pub use character::{
     ABILITY_BITS_LEN, CHARACTER_RECORD_SIZE, CharacterRecord, EquipmentSlots, HpMpSp, MAX_SPELLS,
     Party, SpellList,
 };
-pub use ext::{SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SaveExt, SaveFile};
+pub use ext::{
+    CharSaveExt, SAVE_FILE_EXT_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SAVE_FILE_VERSION_V1,
+    SaveExt, SaveExtV2, SaveFile, SavedChainRecord,
+};

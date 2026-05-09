@@ -163,10 +163,21 @@ Pending Phase 2:
 In progress:
 - **Game-mode driver** — `crates/engine-core/src/mode.rs`. Port of the 28-entry table at SCUS `0x8007078C` as a `GameMode` enum + `ModeEntry` table + `ModeDriver`. Each game mode maps to a [`SceneMode`](#world-composite) for the `World`'s tick path; engines plug per-mode behaviour through the `ModeHandler` trait (default: no-op). Boot starts in `MainInit` mirroring the retail boot path.
 
+Top-level shell loop (closed loop title → save-select → field/encounter → battle → save):
+- **Title screen** (`engine-core::title::TitleSession`) — `FadeIn → PressStart → MainMenu → Done` with no-save fallback.
+- **Save-select** (`engine-core::save_select::SaveSelectSession`) — slot-list browse with Load / Save / Delete confirms.
+- **Encounter system** (`engine-core::encounter`) — per-scene table + step-driven random battle trigger + 5-phase transition SM.
+- **Battle target picker** (`engine-core::target_picker`) — post-action target cursor parameterised on a `TargetKind` enum.
+- **Equipment catalog** (`engine-core::equipment`) — vanilla 30-entry table covering weapons / armor / accessories with character restrictions.
+- **Seru capture + spell learning** (`engine-core::seru_learning`) — per-character per-Seru point accumulator with banner session.
+- **Tactical Arts chain editor** (`engine-core::tactical_arts_editor`) — menu-side compose + name + save flow with per-character library.
+- **LGSF v2 save format** (`crates/save/src/ext.rs`) — backward-compatible v1 prelude + extension block carrying play-time, active-party, per-character ext (learned arts mask, spell list, Seru captures, active chains), and saved-chain library.
+- **Dialog renderer pipeline** (`engine-render::dialog_box_draws_for`) — turns the dialog panel's typed glyph stream into `TextDraw`s with CLUT-aware tinting + greedy width-based wrap.
+
 Pending:
 - Field map + dialog (the field-VM port already runs; needs the field-loader chain wired).
 - The [battle subsystem](battle.md) including Tactical Arts and the per-actor state machine `FUN_801E295C` (state machine port landed; still needs scene loader integration).
-- Menu + save / load.
+- Menu + save / load (LGSF v2 round-trips via `SaveFile::write` / `parse`; engine-side population of the v2 fields from the live `World` state still pending).
 
 ### Phase 4 — targets
 
