@@ -431,6 +431,26 @@ pub struct World {
     /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
+
+    /// Per-actor status-effect tracker (Burned / Shocked / Poisoned /
+    /// Asleep / Confused / Silenced / Stunned / Petrified). Populated by
+    /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
+    /// `enemy_effect` is non-`None`; ticked per turn by engines that
+    /// drive a battle round. See [`legaia_engine_vm::status_effects`].
+    pub status_effects: vm::status_effects::StatusEffectTracker,
+
+    /// Per-character AP gauge — drives Tactical-Arts command input.
+    /// Index 0..=2 maps to party slots; engines call
+    /// [`crate::ap_gauge::ApGauge::reset_for_turn`] at turn start and
+    /// [`crate::ap_gauge::ApGauge::charge_spirit`] when the player
+    /// presses Spirit during command input.
+    pub ap_gauges: [crate::ap_gauge::ApGauge; 3],
+
+    /// Item catalog used by item-action resolution. Populated at battle
+    /// init from [`crate::items::ItemCatalog::vanilla`] (or a custom
+    /// catalog set by [`World::set_item_catalog`]); empty by default so
+    /// the field VM doesn't trigger item effects in non-battle scenes.
+    pub item_catalog: crate::items::ItemCatalog,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -527,6 +547,9 @@ impl World {
             level_up_tracker: LevelUpTracker::new(),
             current_level_up_banner: None,
             world_map_ctrl: None,
+            status_effects: vm::status_effects::StatusEffectTracker::new(),
+            ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
+            item_catalog: crate::items::ItemCatalog::default(),
         }
     }
 
@@ -563,15 +586,60 @@ impl World {
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
+                        // Damage clears Asleep on the target (matches retail —
+                        // the enemy wakes when hit).
+                        self.status_effects.on_damaged(*target_slot);
                     }
                     if outcome.enemy_effect != legaia_art::record::EnemyEffect::None {
                         target.pending_status = Some(outcome.enemy_effect);
+                        // Push the status into the tracker so it
+                        // subsequently ticks per-turn.
+                        self.status_effects
+                            .apply_from_enemy_effect(*target_slot, outcome.enemy_effect);
                     }
                     return Some((*target_slot, target.battle.hp));
                 }
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Step every actor's status effects forward one turn — folds the
+    /// tick-damage into `BattleActor::hp` and emits per-status events.
+    /// Called by engines once per battle round.
+    pub fn tick_status_effects(&mut self) {
+        let actor_count = self.actors.len();
+        for slot in 0..actor_count as u8 {
+            let (cur, max) = self
+                .actors
+                .get(slot as usize)
+                .map(|a| (a.battle.hp, a.battle.max_hp))
+                .unwrap_or((0, 0));
+            if max == 0 {
+                continue;
+            }
+            let dmg = self.status_effects.tick_actor(slot, cur, max);
+            if dmg > 0
+                && let Some(actor) = self.actors.get_mut(slot as usize)
+            {
+                actor.battle.hp = actor.battle.hp.saturating_sub(dmg);
+            }
+        }
+    }
+
+    /// Set the item catalog the battle / field menu consults for item
+    /// actions. Replaces any prior catalog. Engines populate this at
+    /// boot time (typically from the vanilla catalog).
+    pub fn set_item_catalog(&mut self, catalog: crate::items::ItemCatalog) {
+        self.item_catalog = catalog;
+    }
+
+    /// Reset every party-member's AP gauge for a new turn. Refills to
+    /// `base_ap`, clears the Spirit-charged flag.
+    pub fn reset_party_ap(&mut self) {
+        for g in self.ap_gauges.iter_mut() {
+            g.reset_for_turn();
         }
     }
 
@@ -3350,5 +3418,74 @@ mod tests {
         }
         // saturating_sub clamps to 0 instead of wrapping.
         assert_eq!(world.actors[3].battle.hp, 0);
+    }
+
+    #[test]
+    fn fold_battle_event_pushes_status_into_tracker() {
+        use legaia_art::power::PowerByte;
+        use legaia_art::queue::{ActionConstant, Character};
+        use legaia_art::record::EnemyEffect;
+        use legaia_engine_vm::battle_action::ArtStrikeInfo;
+        use legaia_engine_vm::status_effects::StatusKind;
+
+        let mut world = World::new();
+        world.party_count = 4;
+        world.actors[3].active = true;
+        world.actors[3].battle.hp = 100;
+        world.actors[3].battle.max_hp = 100;
+        world.set_battle_attack(0, 64);
+        world.set_battle_defense(3, 10);
+        let info = ArtStrikeInfo {
+            strike_index: 0,
+            anim_byte: 0x10,
+            actor_slot: 0,
+            target_slot: 3,
+            character: Character::Vahn,
+            art: ActionConstant::Art1B,
+            power: Some(PowerByte::from_byte(0x1A)),
+            dmg_timing: None,
+            enemy_effect: EnemyEffect::Burned,
+            hit_cue: None,
+        };
+        let mut host = BattleHostImpl { world: &mut world };
+        host.apply_art_strike(info);
+        let events = world.drain_battle_events();
+        for e in &events {
+            world.fold_battle_event(e);
+        }
+        assert!(world.status_effects.has(3, StatusKind::Burned));
+    }
+
+    #[test]
+    fn tick_status_effects_drains_hp() {
+        use legaia_engine_vm::status_effects::StatusKind;
+        let mut world = World::new();
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.max_hp = 160;
+        world.status_effects.apply(0, StatusKind::Burned);
+        world.tick_status_effects();
+        assert_eq!(world.actors[0].battle.hp, 90);
+    }
+
+    #[test]
+    fn reset_party_ap_refills_all_three_gauges() {
+        let mut world = World::new();
+        for g in world.ap_gauges.iter_mut() {
+            g.try_spend(3);
+        }
+        world.reset_party_ap();
+        for g in world.ap_gauges.iter() {
+            assert_eq!(g.current_ap, g.base_ap);
+            assert!(!g.spirit_charged);
+        }
+    }
+
+    #[test]
+    fn item_catalog_setter_replaces() {
+        use crate::items::ItemCatalog;
+        let mut world = World::new();
+        assert!(world.item_catalog.is_empty());
+        world.set_item_catalog(ItemCatalog::vanilla());
+        assert!(!world.item_catalog.is_empty());
     }
 }

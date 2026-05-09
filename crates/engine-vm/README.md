@@ -70,6 +70,30 @@ machines that aren't pure data-driven.
 (skip when wait_timer ≥ 0, run VM, check HALT flag). Op `0x2F` escapes
 into the overlay-resident `FUN_801D362C` extension VM, not yet ported.
 
+## `status_effects`
+
+Per-actor status-effect tracker. `StatusKind` covers the eight retail
+condition kinds (Burned / Shocked / Poisoned / Asleep / Confused /
+Silenced / Stunned / Petrified). The tracker maintains per-instance
+turn counters, drains queued `StatusEvent`s into the engine's HUD
+pipeline, and bridges from art-record `EnemyEffect` bytes through
+`StatusKind::from_enemy_effect`. Damage-over-time formulas (Burned =
+`max_hp / 16`, Poisoned = `current_hp / 8`) live alongside.
+
+## `battle_formulas`
+
+Damage / MP-cost / accuracy / RNG arithmetic kernels.
+`art_strike_damage(attack, defense, multiplier, divisor, floor)`
+applies the per-strike Tactical Art damage formula; `accuracy_roll`
+and `mp_cost_after_ability_bits` mirror the retail bit-test selectors
+in `FUN_800402F4`.
+
+## `action_validator`
+
+16-arm action validator (`FUN_8003fb10`) — clean-room port of the
+per-slot "target valid" predicate the menu / UI consults before
+committing a player choice.
+
 ## See also
 
 - [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md)

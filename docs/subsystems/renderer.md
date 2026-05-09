@@ -46,6 +46,28 @@ Texture page (`tsb`) and CLUT base address (`cba`) remain `@interpolate(flat)` �
 
 A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. The module also exposes the GTE's higher-level primitives — a `Camera` bundle that runs `RTPT` (rotate-translate-perspective) end-to-end with PSX-correct saturation on behind-camera vertices, `nclip` for back-face rejection, `avsz3` / `avsz4` for OT-bucket selection, and a small CPU rasterizer scaffold (`raster::rasterize_triangle`, top-left fill rule, integer-pixel bounding-box iterator) downstream tooling uses to validate captured traces. Production rendering still uses f32 wgpu math; this module is the single citation point for code (effect spawners, hit-detection, animation re-targeting, offline regression checks) that needs to reproduce per-vertex GTE behaviour.
 
+### GTE register-state emulator
+
+`Gte` is a register-level cop2 emulator next to the math module, mirroring the PSX hardware register file: V0..V2 input vectors, MAC0..MAC3 wide accumulators (i64), IR0..IR3 saturating shorts, the SXY (3-deep) / SZ (4-deep) / RGB (3-deep) FIFOs, OTZ, and the FLAG sticky-saturation register with hardware-matching bit positions exposed via `gte::flag_bits` (engines comparing against captured FLAG dumps mask the same bits). Control registers cover the rotation matrix, translation, focal length `H`, screen offset `OFX/OFY`, the average-Z scale factors `ZSF3` / `ZSF4`, the depth-cue interpolation slope/intercept `DQA` / `DQB`, the light source matrix `L`, the light color matrix, and the `back_color` / `far_color` triplets used by the depth-cue pipeline.
+
+Instructions covered:
+
+| Mnemonic | Purpose |
+|---|---|
+| `RTPS` / `RTPT` | Rotate-translate-perspective (single / triple vertex). |
+| `NCLIP` | Signed area of the SXY-FIFO triangle (back-face cull). |
+| `AVSZ3` / `AVSZ4` | OT-bucket selection from the SZ FIFO. |
+| `MVMVA` | Generic matrix × vector + translation, with shift-frac and lower-clamp flags. |
+| `NCDS` / `NCDT` | Normal-color depth shading (single / triple vertex). |
+| `DCPL` | Depth-cued primary-color blend. |
+| `DPCS` / `DPCT` | Depth-cued color blend (single / triple). |
+| `INTPL` | Far-color interpolation primitive (used internally by DCPL / DPCS). |
+| `SQR` | Squares IR1..IR3 in place. |
+| `OP` | Cross product of the rotation-matrix diagonal with IR. |
+| `GPF` / `GPL` | General-purpose IR×IR0 multiply / accumulate (alpha-blend kernel). |
+
+Each instruction sets MAC1..MAC3 / IR1..IR3 / FLAG with the same saturation semantics the hardware uses; the `Camera::transform` shim and the cop2 `RTPT` produce identical SXY output (cross-validated by the `gte_rtpt_matches_camera_transform` test).
+
 The per-mode descriptor table from `DAT_8007326C` is also exposed as a typed lookup at `crates/tmd/src/descriptor.rs`: `Descriptor::for_flags(flags)` returns the resolved `PacketShape` (one of `F3` / `FT3` / `G3` / `GT3` / `F4` / `FT4` / `G4` / `GT4`) and the per-prim vertex-index offset. Same on-disc bytes as the older `legaia_prims::vertex_offset_bytes` free function, exposed as typed fields so consumers can branch on shading mode (flat vs gouraud) and texture presence without re-deriving the bit math.
 
 ## Stage geometry detector (legacy, signal only)

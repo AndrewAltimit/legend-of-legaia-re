@@ -593,6 +593,19 @@ pub struct Gte {
     pub dqa: i32,
     /// DQB — depth-cue interpolation intercept.
     pub dqb: i32,
+    /// L11..L33 — light source matrix (q3.12). Used by NCDS / NCDT
+    /// (normal-color triple) to compute per-vertex light intensity from
+    /// the surface normal.
+    pub light: GteMat3,
+    /// LR1..LB3 — light color matrix (q3.12). Maps light intensity to
+    /// the actor's RGB material colour.
+    pub light_color: GteMat3,
+    /// RBK / GBK / BBK — back-color (q3.12). Ambient bias added before
+    /// modulating by RGBC.
+    pub back_color: GteVec3,
+    /// RFC / GFC / BFC — far-color (q3.12). Distance-fade target colour
+    /// blended by DPCS / DCPL / DPCT.
+    pub far_color: GteVec3,
 }
 
 /// FLAG-register saturation bits the GTE sets after each instruction.
@@ -673,6 +686,10 @@ impl Gte {
             zsf4: ROT_ONE,
             dqa: 0,
             dqb: 0,
+            light: GteMat3::IDENTITY,
+            light_color: GteMat3::IDENTITY,
+            back_color: GteVec3::default(),
+            far_color: GteVec3::default(),
         }
     }
 
@@ -940,6 +957,294 @@ impl Gte {
             viewport_h,
             emit,
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Lighting / colour ops.
+    //
+    // These are the cop2 "depth cue" / "normal colour" instructions used by
+    // shaded TMD primitives. They consume a normal vector (V0..V2 for the
+    // triple variants) and write per-vertex RGB into the RGB FIFO.
+    // ---------------------------------------------------------------------
+
+    /// Push an RGB FIFO entry. RGB0 ← RGB1 ← RGB2 ← new.
+    fn push_rgb(&mut self, rgb: [u8; 4]) {
+        self.rgb_fifo[0] = self.rgb_fifo[1];
+        self.rgb_fifo[1] = self.rgb_fifo[2];
+        self.rgb_fifo[2] = rgb;
+    }
+
+    /// Saturate a 24-bit signed RGB component to `[0, 255]`. Mirrors the
+    /// GTE colour-clamp that fires when MAC1/MAC2/MAC3 are written into
+    /// the RGB FIFO.
+    fn saturate_rgb_u8(&mut self, v: i64, sat_bit: u32) -> u8 {
+        if v < 0 {
+            self.flag |= sat_bit | flag_bits::ANY_ERROR;
+            0
+        } else if v > 0xFF {
+            self.flag |= sat_bit | flag_bits::ANY_ERROR;
+            0xFF
+        } else {
+            v as u8
+        }
+    }
+
+    /// Common helper: multiply the light matrix against a vertex normal,
+    /// clamp to IR, then run through the light-color matrix + back-color
+    /// bias. Stores intermediate per-component intensity in MAC1/2/3.
+    fn light_pass(&mut self, normal: GteVec3) {
+        // L * normal (q3.12 * q3.12 -> q6.24, shifted back to q3.12).
+        self.mvmva(&self.light.clone(), normal, GteVec3::default(), true, true);
+        let intensity = GteVec3::new(self.ir1, self.ir2, self.ir3);
+        // light_color * intensity + back_color
+        // back_color is q3.12, apply through MVMVA's translation argument.
+        let bc = self.back_color;
+        self.mvmva(&self.light_color.clone(), intensity, bc, true, true);
+    }
+
+    /// `NCDS` — normal colour depth (single vertex). Computes per-vertex
+    /// shaded RGB using the light matrix + light-color matrix + far-color
+    /// blend, modulated by the input RGBC. Pushes the result onto the
+    /// RGB FIFO.
+    pub fn ncds(&mut self) -> [u8; 4] {
+        self.clear_flag();
+        self.ncds_inner(self.v[0])
+    }
+
+    /// `NCDT` — normal colour depth, triple. Applies NCDS to V0/V1/V2 in
+    /// order; the RGB FIFO ends up with the three shaded colours.
+    pub fn ncdt(&mut self) -> [[u8; 4]; 3] {
+        self.clear_flag();
+        let v = self.v;
+        let r0 = self.ncds_inner(v[0]);
+        let r1 = self.ncds_inner(v[1]);
+        let r2 = self.ncds_inner(v[2]);
+        [r0, r1, r2]
+    }
+
+    fn ncds_inner(&mut self, normal: GteVec3) -> [u8; 4] {
+        self.light_pass(normal);
+        // After light_pass IR1/IR2/IR3 are the diffuse colour. Blend
+        // toward far_color by IR0 (depth fade): IR_n += (FC_n - IR_n) * IR0 / 4096.
+        let fc = self.far_color;
+        let blend = |fc_n: i32, ir_n: i32, ir0: i32| -> i32 {
+            let delta = (fc_n - ir_n) as i64;
+            let scaled = (delta * ir0 as i64) >> ROT_FRAC_BITS;
+            (ir_n as i64 + scaled).clamp(i16::MIN as i64, i16::MAX as i64) as i32
+        };
+        let r_blended = blend(fc.x, self.ir1, self.ir0);
+        let g_blended = blend(fc.y, self.ir2, self.ir0);
+        let b_blended = blend(fc.z, self.ir3, self.ir0);
+        // Modulate by RGBC. (IR_n * RGBC_n) >> 4 fits the GTE's 12.4 layout.
+        let modulate = |ir: i32, mat: u8| -> i64 { (ir as i64 * mat as i64) >> 4 };
+        let r = modulate(r_blended, self.rgbc[0]);
+        let g = modulate(g_blended, self.rgbc[1]);
+        let b = modulate(b_blended, self.rgbc[2]);
+        let r_u8 = self.saturate_rgb_u8(r, flag_bits::IR1_SATURATED);
+        let g_u8 = self.saturate_rgb_u8(g, flag_bits::IR2_SATURATED);
+        let b_u8 = self.saturate_rgb_u8(b, flag_bits::IR3_SATURATED);
+        let out = [r_u8, g_u8, b_u8, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
+    /// `DCPL` — depth-cued primary color. Modulates the input RGBC with
+    /// IR1/2/3 then blends toward far_color by IR0 — same depth-fade
+    /// behaviour as NCDS but starting from the existing RGBC instead of
+    /// running a light pass. Pushes the result onto the RGB FIFO.
+    pub fn dcpl(&mut self) -> [u8; 4] {
+        self.clear_flag();
+        let fc = self.far_color;
+        let blend = |fc_n: i32, ir_n: i32, ir0: i32| -> i32 {
+            let delta = (fc_n - ir_n) as i64;
+            let scaled = (delta * ir0 as i64) >> ROT_FRAC_BITS;
+            (ir_n as i64 + scaled).clamp(i16::MIN as i64, i16::MAX as i64) as i32
+        };
+        let r = blend(fc.x, self.ir1, self.ir0);
+        let g = blend(fc.y, self.ir2, self.ir0);
+        let b = blend(fc.z, self.ir3, self.ir0);
+        let modulate = |ir: i32, mat: u8| -> i64 { (ir as i64 * mat as i64) >> 4 };
+        let rr = self.saturate_rgb_u8(modulate(r, self.rgbc[0]), flag_bits::IR1_SATURATED);
+        let gg = self.saturate_rgb_u8(modulate(g, self.rgbc[1]), flag_bits::IR2_SATURATED);
+        let bb = self.saturate_rgb_u8(modulate(b, self.rgbc[2]), flag_bits::IR3_SATURATED);
+        let out = [rr, gg, bb, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
+    /// `DPCS` — depth-cued color, single. Blend RGBC toward far_color
+    /// using IR0 — no IR multiplication. Pushes the result onto the
+    /// RGB FIFO.
+    pub fn dpcs(&mut self) -> [u8; 4] {
+        self.clear_flag();
+        let r_in = (self.rgbc[0] as i64) << 4;
+        let g_in = (self.rgbc[1] as i64) << 4;
+        let b_in = (self.rgbc[2] as i64) << 4;
+        let blend = |fc_n: i64, in_n: i64, ir0: i64| -> i64 {
+            let scaled = ((fc_n - in_n) * ir0) >> ROT_FRAC_BITS;
+            in_n + scaled
+        };
+        let r = blend((self.far_color.x as i64) << 4, r_in, self.ir0 as i64) >> 4;
+        let g = blend((self.far_color.y as i64) << 4, g_in, self.ir0 as i64) >> 4;
+        let b = blend((self.far_color.z as i64) << 4, b_in, self.ir0 as i64) >> 4;
+        let rr = self.saturate_rgb_u8(r, flag_bits::IR1_SATURATED);
+        let gg = self.saturate_rgb_u8(g, flag_bits::IR2_SATURATED);
+        let bb = self.saturate_rgb_u8(b, flag_bits::IR3_SATURATED);
+        let out = [rr, gg, bb, self.rgbc[3]];
+        self.push_rgb(out);
+        out
+    }
+
+    /// `DPCT` — depth-cued color, triple. Apply DPCS to RGB0/RGB1/RGB2
+    /// in the FIFO. The retail engine uses this to fade the output of a
+    /// previous lighting pass toward the far-color.
+    pub fn dpct(&mut self) -> [[u8; 4]; 3] {
+        self.clear_flag();
+        let mut out = [[0u8; 4]; 3];
+        for (i, slot) in out.iter_mut().enumerate() {
+            let saved_rgbc = self.rgbc;
+            self.rgbc = self.rgb_fifo[i];
+            *slot = self.dpcs();
+            self.rgbc = saved_rgbc;
+        }
+        out
+    }
+
+    /// `INTPL` — interpolate vector (V0 toward FC by IR0). Writes
+    /// MAC1/MAC2/MAC3 = `IR1 + ((FC - IR) * IR0 >> 12)`; saturates IR1/2/3.
+    /// Used by DCPL internally; exposed for engines that want the bare
+    /// blend.
+    pub fn intpl(&mut self) {
+        self.clear_flag();
+        let blend = |fc_n: i32, ir_n: i32, ir0: i32| -> i64 {
+            let delta = (fc_n - ir_n) as i64;
+            let scaled = (delta * ir0 as i64) >> ROT_FRAC_BITS;
+            ir_n as i64 + scaled
+        };
+        self.mac1 = blend(self.far_color.x, self.ir1, self.ir0);
+        self.mac2 = blend(self.far_color.y, self.ir2, self.ir0);
+        self.mac3 = blend(self.far_color.z, self.ir3, self.ir0);
+        self.ir1 = self.saturate_ir(self.mac1, flag_bits::IR1_SATURATED);
+        self.ir2 = self.saturate_ir(self.mac2, flag_bits::IR2_SATURATED);
+        self.ir3 = self.saturate_ir(self.mac3, flag_bits::IR3_SATURATED);
+    }
+
+    /// `SQR` — squares IR1/IR2/IR3 in place. Writes MAC1..MAC3 = IR^2,
+    /// then re-saturates IR. Used by some lighting passes that want the
+    /// dot of a vector with itself.
+    pub fn sqr(&mut self, shift_frac: bool) {
+        self.clear_flag();
+        let s = |a: i32| -> i64 { (a as i64) * (a as i64) };
+        let raw = [s(self.ir1), s(self.ir2), s(self.ir3)];
+        let macs: [i64; 3] = if shift_frac {
+            [
+                raw[0] >> ROT_FRAC_BITS,
+                raw[1] >> ROT_FRAC_BITS,
+                raw[2] >> ROT_FRAC_BITS,
+            ]
+        } else {
+            raw
+        };
+        self.mac1 = macs[0];
+        self.mac2 = macs[1];
+        self.mac3 = macs[2];
+        self.ir1 = self.saturate_ir(macs[0], flag_bits::IR1_SATURATED);
+        self.ir2 = self.saturate_ir(macs[1], flag_bits::IR2_SATURATED);
+        self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
+    }
+
+    /// `OP` — outer product. Computes the cross product of `[D1, D2, D3]`
+    /// (where `D1..D3` are the diagonal entries of the rotation matrix
+    /// in retail GTE) and IR1/IR2/IR3, returning the result in MAC and
+    /// IR registers.
+    ///
+    /// Cross product: `mac = D × IR` =
+    ///   - mac1 = D2 * IR3 - D3 * IR2
+    ///   - mac2 = D3 * IR1 - D1 * IR3
+    ///   - mac3 = D1 * IR2 - D2 * IR1
+    pub fn op(&mut self, shift_frac: bool) {
+        self.clear_flag();
+        let d1 = self.rot.m[0][0] as i64;
+        let d2 = self.rot.m[1][1] as i64;
+        let d3 = self.rot.m[2][2] as i64;
+        let ir1 = self.ir1 as i64;
+        let ir2 = self.ir2 as i64;
+        let ir3 = self.ir3 as i64;
+        let raw = [
+            d2 * ir3 - d3 * ir2,
+            d3 * ir1 - d1 * ir3,
+            d1 * ir2 - d2 * ir1,
+        ];
+        let macs: [i64; 3] = if shift_frac {
+            [
+                raw[0] >> ROT_FRAC_BITS,
+                raw[1] >> ROT_FRAC_BITS,
+                raw[2] >> ROT_FRAC_BITS,
+            ]
+        } else {
+            raw
+        };
+        self.mac1 = macs[0];
+        self.mac2 = macs[1];
+        self.mac3 = macs[2];
+        self.ir1 = self.saturate_ir(macs[0], flag_bits::IR1_SATURATED);
+        self.ir2 = self.saturate_ir(macs[1], flag_bits::IR2_SATURATED);
+        self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
+    }
+
+    /// `GPF` — general-purpose fixed-point multiply: `MAC = IR * IR0`.
+    /// Used for "fixed alpha" blends — engine-shell composes this with
+    /// DPCS to fade UI panels.
+    pub fn gpf(&mut self, shift_frac: bool) {
+        self.clear_flag();
+        let ir0 = self.ir0 as i64;
+        let raw = [
+            (self.ir1 as i64) * ir0,
+            (self.ir2 as i64) * ir0,
+            (self.ir3 as i64) * ir0,
+        ];
+        let macs: [i64; 3] = if shift_frac {
+            [
+                raw[0] >> ROT_FRAC_BITS,
+                raw[1] >> ROT_FRAC_BITS,
+                raw[2] >> ROT_FRAC_BITS,
+            ]
+        } else {
+            raw
+        };
+        self.mac1 = macs[0];
+        self.mac2 = macs[1];
+        self.mac3 = macs[2];
+        self.ir1 = self.saturate_ir(macs[0], flag_bits::IR1_SATURATED);
+        self.ir2 = self.saturate_ir(macs[1], flag_bits::IR2_SATURATED);
+        self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
+    }
+
+    /// `GPL` — general-purpose load: `MAC += IR * IR0`. Accumulating
+    /// counterpart to GPF — used to chain blend operations.
+    pub fn gpl(&mut self, shift_frac: bool) {
+        self.clear_flag();
+        let ir0 = self.ir0 as i64;
+        let raw = [
+            (self.ir1 as i64) * ir0,
+            (self.ir2 as i64) * ir0,
+            (self.ir3 as i64) * ir0,
+        ];
+        let increments: [i64; 3] = if shift_frac {
+            [
+                raw[0] >> ROT_FRAC_BITS,
+                raw[1] >> ROT_FRAC_BITS,
+                raw[2] >> ROT_FRAC_BITS,
+            ]
+        } else {
+            raw
+        };
+        self.mac1 = self.mac1.saturating_add(increments[0]);
+        self.mac2 = self.mac2.saturating_add(increments[1]);
+        self.mac3 = self.mac3.saturating_add(increments[2]);
+        self.ir1 = self.saturate_ir(self.mac1, flag_bits::IR1_SATURATED);
+        self.ir2 = self.saturate_ir(self.mac2, flag_bits::IR2_SATURATED);
+        self.ir3 = self.saturate_ir(self.mac3, flag_bits::IR3_SATURATED);
     }
 }
 
@@ -1451,5 +1756,233 @@ mod tests {
         // Triangle area = 50 px²; rasterizer hits ~50 inside pixels.
         // Allow a small fudge for top-left fill-rule edge inclusion.
         assert!((30..=60).contains(&count), "got {count} pixels");
+    }
+
+    // ---------------------------------------------------------------------
+    // Lighting / colour ops (NCDS / NCDT / DCPL / DPCS / DPCT / INTPL /
+    // SQR / OP / GPF / GPL).
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn rgb_fifo_starts_empty() {
+        let g = Gte::new();
+        for entry in g.rgb_fifo {
+            assert_eq!(entry, [0; 4]);
+        }
+    }
+
+    #[test]
+    fn ncds_pushes_rgb_fifo_entry() {
+        let mut g = Gte::new();
+        g.rgbc = [0xFF, 0xFF, 0xFF, 0x00];
+        g.ir0 = 0; // disable far-color blend so we get pure light pass.
+        // Configure light so a unit normal becomes a small intensity.
+        g.light = GteMat3::IDENTITY;
+        g.light_color = GteMat3::IDENTITY;
+        g.v[0] = GteVec3::new(ROT_ONE, 0, 0);
+        let _ = g.ncds();
+        // The newest RGB should be in slot 2.
+        let r = g.rgb_fifo[2];
+        // alpha (CODE byte) preserved
+        assert_eq!(r[3], 0x00);
+    }
+
+    #[test]
+    fn ncdt_writes_three_fifo_entries() {
+        let mut g = Gte::new();
+        g.rgbc = [0x80, 0x80, 0x80, 0x10];
+        g.ir0 = 0;
+        g.light = GteMat3::IDENTITY;
+        g.light_color = GteMat3::IDENTITY;
+        g.v[0] = GteVec3::new(ROT_ONE, 0, 0);
+        g.v[1] = GteVec3::new(0, ROT_ONE, 0);
+        g.v[2] = GteVec3::new(0, 0, ROT_ONE);
+        let _ = g.ncdt();
+        // Each FIFO entry should preserve the alpha byte.
+        for entry in g.rgb_fifo {
+            assert_eq!(entry[3], 0x10);
+        }
+    }
+
+    #[test]
+    fn dcpl_modulates_rgbc_through_ir() {
+        let mut g = Gte::new();
+        g.rgbc = [0xFF, 0x00, 0x00, 0x00];
+        g.ir1 = 0x10;
+        g.ir2 = 0x10;
+        g.ir3 = 0x10;
+        g.ir0 = 0; // no far-color blend
+        let out = g.dcpl();
+        // R = (IR1 * 0xFF) >> 4 = (16 * 255) >> 4 = 255; G/B = 0
+        assert_eq!(out[0], 0xFF);
+        assert_eq!(out[1], 0);
+        assert_eq!(out[2], 0);
+    }
+
+    #[test]
+    fn dpcs_blends_rgbc_toward_far_color_at_ir0_max() {
+        let mut g = Gte::new();
+        g.rgbc = [0x00, 0x00, 0x00, 0x00];
+        // Far color full white in q3.12.
+        g.far_color = GteVec3::new(0xFF, 0xFF, 0xFF);
+        // IR0 at full-blend. Conventional GTE max for IR0 is 4096 (1.0 in q12).
+        g.ir0 = ROT_ONE;
+        let out = g.dpcs();
+        // Full blend toward far_color should deliver close to (255, 255, 255).
+        // Allow ±1 for rounding.
+        assert!(out[0] >= 254);
+        assert!(out[1] >= 254);
+        assert!(out[2] >= 254);
+    }
+
+    #[test]
+    fn dpcs_zero_blend_preserves_rgbc() {
+        let mut g = Gte::new();
+        g.rgbc = [0x80, 0x40, 0x20, 0x10];
+        g.far_color = GteVec3::new(0xFF, 0xFF, 0xFF);
+        g.ir0 = 0; // no blend
+        let out = g.dpcs();
+        assert_eq!(out[0], 0x80);
+        assert_eq!(out[1], 0x40);
+        assert_eq!(out[2], 0x20);
+        assert_eq!(out[3], 0x10);
+    }
+
+    #[test]
+    fn intpl_writes_macs_from_ir_and_far_color() {
+        let mut g = Gte::new();
+        g.ir1 = 100;
+        g.ir2 = 200;
+        g.ir3 = 50;
+        g.far_color = GteVec3::new(500, 100, -50);
+        g.ir0 = ROT_ONE; // full blend
+        g.intpl();
+        // MAC1 = IR1 + ((FC.x - IR1) * IR0 / 4096) = 100 + (400 * 1) = 500
+        assert_eq!(g.mac1, 500);
+        assert_eq!(g.mac2, 100);
+        assert_eq!(g.mac3, -50);
+        assert_eq!(g.ir1, 500);
+        assert_eq!(g.ir2, 100);
+        assert_eq!(g.ir3, -50);
+    }
+
+    #[test]
+    fn intpl_zero_blend_is_noop() {
+        let mut g = Gte::new();
+        g.ir1 = 100;
+        g.ir2 = 200;
+        g.ir3 = 50;
+        g.far_color = GteVec3::new(500, 100, -50);
+        g.ir0 = 0;
+        g.intpl();
+        assert_eq!(g.mac1, 100);
+        assert_eq!(g.mac2, 200);
+        assert_eq!(g.mac3, 50);
+    }
+
+    #[test]
+    fn sqr_squares_ir_and_writes_macs() {
+        let mut g = Gte::new();
+        g.ir1 = 30;
+        g.ir2 = -40;
+        g.ir3 = 50;
+        g.sqr(false);
+        assert_eq!(g.mac1, 900);
+        assert_eq!(g.mac2, 1600);
+        assert_eq!(g.mac3, 2500);
+    }
+
+    #[test]
+    fn op_cross_product_with_unit_diagonal() {
+        let mut g = Gte::new();
+        // D = (1,1,1) in q3.12; IR = (a, b, c).
+        g.rot = GteMat3::IDENTITY;
+        g.ir1 = 100;
+        g.ir2 = 200;
+        g.ir3 = 300;
+        // Pre-shift so we don't have to undo q12 scaling for the unit test.
+        g.op(true);
+        // mac1 = D2 * IR3 - D3 * IR2 = 4096 * 300 - 4096 * 200 = 4096 * 100
+        // After shift_frac: mac1 = 100, mac2 = D3*IR1 - D1*IR3 = 100-300 = -200,
+        // mac3 = D1*IR2 - D2*IR1 = 200 - 100 = 100.
+        assert_eq!(g.mac1, 100);
+        assert_eq!(g.mac2, -200);
+        assert_eq!(g.mac3, 100);
+    }
+
+    #[test]
+    fn gpf_multiplies_ir_by_ir0_and_writes_mac() {
+        let mut g = Gte::new();
+        g.ir0 = 2;
+        g.ir1 = 5;
+        g.ir2 = 10;
+        g.ir3 = 15;
+        g.gpf(false);
+        assert_eq!(g.mac1, 10);
+        assert_eq!(g.mac2, 20);
+        assert_eq!(g.mac3, 30);
+    }
+
+    #[test]
+    fn gpl_accumulates_ir_times_ir0() {
+        let mut g = Gte::new();
+        g.mac1 = 100;
+        g.mac2 = 200;
+        g.mac3 = 300;
+        g.ir0 = 3;
+        g.ir1 = 4;
+        g.ir2 = 5;
+        g.ir3 = 6;
+        g.gpl(false);
+        assert_eq!(g.mac1, 100 + 12);
+        assert_eq!(g.mac2, 200 + 15);
+        assert_eq!(g.mac3, 300 + 18);
+    }
+
+    #[test]
+    fn intpl_chains_into_dpcs_pipeline() {
+        // INTPL writes MAC/IR; DPCS reads IR0 + RGBC + FC. Verify the
+        // composition makes sense.
+        let mut g = Gte::new();
+        g.ir1 = 100;
+        g.ir2 = 100;
+        g.ir3 = 100;
+        g.far_color = GteVec3::new(200, 200, 200);
+        g.ir0 = ROT_ONE / 2; // half blend
+        g.intpl();
+        assert_eq!(g.ir1, 150); // 100 + 50%*100
+    }
+
+    #[test]
+    fn rgb_fifo_advances_oldest_first() {
+        let mut g = Gte::new();
+        g.rgbc = [0x10, 0x20, 0x30, 0x40];
+        g.far_color = GteVec3::default();
+        g.ir0 = 0;
+        let _ = g.dpcs();
+        assert_eq!(g.rgb_fifo[2], [0x10, 0x20, 0x30, 0x40]);
+        g.rgbc = [0x50, 0x60, 0x70, 0x80];
+        let _ = g.dpcs();
+        assert_eq!(g.rgb_fifo[2], [0x50, 0x60, 0x70, 0x80]);
+        assert_eq!(g.rgb_fifo[1], [0x10, 0x20, 0x30, 0x40]);
+    }
+
+    #[test]
+    fn ncds_saturates_overflow_to_ff() {
+        let mut g = Gte::new();
+        // Drive a big intensity through to force saturation.
+        g.rgbc = [0xFF, 0xFF, 0xFF, 0x00];
+        // Light matrix that amplifies aggressively.
+        let mut amp = GteMat3::IDENTITY;
+        amp.m[0][0] = i16::MAX; // 32767 — large q3.12 -> after >>12 stays positive.
+        amp.m[1][1] = i16::MAX;
+        amp.m[2][2] = i16::MAX;
+        g.light = amp;
+        g.light_color = amp;
+        g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
+        g.ir0 = 0;
+        let out = g.ncds();
+        assert_eq!(out, [0xFF, 0xFF, 0xFF, 0x00]);
+        assert!(g.flag & flag_bits::ANY_ERROR != 0);
     }
 }
