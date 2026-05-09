@@ -285,6 +285,55 @@
   <p>Implementation: <code>crates/engine-vm/src/anim_vm.rs</code>.</p>
 </section>
 
+<section class="doc-section" id="battle-runner">
+  <h2>Battle command runner</h2>
+  <p>Sits between the player-input layer and the action state machine plus the <code>BattleRound</code> orchestrator. One <code>BattleRunner</code> per battle session; engines feed it raw player commands per turn and call its lifecycle methods to bracket each round.</p>
+  <ul>
+    <li><strong>Per-turn input &rarr; action queue.</strong> Commands are accumulated until the player commits the turn; <code>commit_turn</code> runs the queue through <code>resolve_action_queue</code> so Miracle / Super expansion happens on the engine side, before the SM sees a single byte.</li>
+    <li><strong>AP gating.</strong> <code>push_command</code> consults the active party member's <code>ApGauge</code> before admitting the next byte &mdash; failure surfaces a typed <code>OutOfAp</code> error. <code>pop_command</code> / <code>pop_chained_art</code> refund the cost cleanly.</li>
+    <li><strong>Turn lifecycle.</strong> Engines call <code>begin_round</code> at turn start (delegates to <code>BattleRound::begin</code> for AP reset + stat recompute) and <code>end_round</code> at turn end (delegates to <code>BattleRound::end</code> for tick damage drainage).</li>
+    <li><strong>Per-slot buffers.</strong> Each party slot has its own command buffer + chained-art list; switching <code>active_party_slot</code> preserves the inactive slots' state for cross-character chaining.</li>
+  </ul>
+  <p>The runner is the <strong>input &rarr; queue</strong> half of the battle pipeline; the SM tick itself runs through the existing <code>step_battle</code> loop. Implementation: <code>crates/engine-core/src/battle_runner.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="battle-hud">
+  <h2>Battle HUD model</h2>
+  <p>Renderer-agnostic UI state for the in-battle screen. Holds per-slot HP / MP / AP / status-icon state plus a queue of damage popups and battle-event log lines. <code>engine-render</code>'s <code>battle_hud_draws_for</code> turns one of these into a <code>Vec&lt;TextDraw&gt;</code> for the GPU pipeline; engines that render via a different path (web / terminal) read the same struct directly.</p>
+  <p>The HUD is fed by <code>World</code> events:</p>
+  <ul>
+    <li><code>BattleEvent::ApplyArtStrike</code> &rarr; <code>push_damage</code> / <code>push_heal</code> (per-strike popup with a fade timer; <code>frames_remaining</code> ticks down each frame).</li>
+    <li><code>StatusEvent::TickDamage</code> / <code>Cleared</code> &rarr; <code>sync_status</code> (replaces the slot's icon list from the <code>StatusEffectTracker</code>).</li>
+    <li><code>BattleRound::begin</code> / <code>end</code> &rarr; <code>sync_slot</code> (refreshes HP / MP / AP per round).</li>
+  </ul>
+  <p>Damage popups carry a 60-frame default lifetime and an <code>alpha()</code> helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column) and the renderer maps <code>LogAccent</code> variants to colours: white = neutral, blue = party, red = monster, yellow = highlight (crit / level up / status applied), green = heal / cure.</p>
+  <p>Implementation: <code>crates/engine-core/src/battle_hud.rs</code>; renderer side: <code>battle_hud_draws_for</code> + <code>HudSlotView</code> / <code>HudPopupView</code> / <code>HudLogView</code> in <code>engine-render</code>.</p>
+</section>
+
+<section class="doc-section" id="sfx">
+  <h2>SFX bank + scheduler</h2>
+  <p>Maps battle / field cue IDs (the <code>kind</code> byte the art-record <code>HitCue</code> / overlay scripts emit) to per-cue <code>SfxEntry</code> descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward <code>ScheduledCue</code>-like requests through <code>SfxScheduler</code> which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.</p>
+  <ul>
+    <li>Cue <code>0x1A</code> &mdash; generic "play sound" hit cue; the catalog typically maps this to per-strike weapon impact tones.</li>
+    <li>Cue <code>0x4C</code> &mdash; hit-effect visual (no sound on its own; engines that fold the visual into a synced sound use this slot).</li>
+    <li>Cues <code>0x80..=0xFE</code> &mdash; reserved per-character or per-art SFX IDs (the retail engine indexes from the per-actor <code>+0x9C0</code> table).</li>
+  </ul>
+  <p><code>SfxBank::play_one_shot</code> delegates to the existing <code>VabBank::play_note</code> for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an <code>SfxFireBatch</code> per <code>tick_frame</code> call so engines can dispatch through the same <code>VabBank</code> they already wired for the BGM sequencer.</p>
+  <p>Implementation: <code>crates/engine-audio/src/sfx.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="inventory-use">
+  <h2>Inventory item-use session</h2>
+  <p>State machine that drives the "open inventory &rarr; pick item &rarr; pick target &rarr; use it" flow shared between the field menu and the battle command menu. Engines own a single <code>InventoryUseSession</code> for the lifetime of the inventory screen; per-frame they push input events and drain <code>InventoryUseEvent</code>s to forward into render / sound / world side-effects.</p>
+  <pre class="code-block">Browsing(item_cursor)
+   &darr; Confirm        &uarr; Cancel
+TargetSelect(target_cursor)
+   &darr; Confirm        &uarr; Cancel
+Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
+                       the next inventory open</pre>
+  <p>The session filters items by <code>InventoryContext</code> (battle vs field &mdash; <code>usable_in_battle</code> / <code>usable_in_field</code> from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved <code>ItemOutcome</code> into the engine's world state via <code>World::use_item</code>. Implementation: <code>crates/engine-core/src/inventory_use.rs</code>.</p>
+</section>
+
 </main>
 </div>
 <script src="../js/layout.js"></script>

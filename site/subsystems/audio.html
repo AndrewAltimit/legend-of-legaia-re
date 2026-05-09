@@ -250,6 +250,21 @@
   <p>Voice allocation is round-robin over the 24 SPU voices, with the sequencer tracking <code>(channel, key) &rarr; voice</code> so the matching key-off can shut down the right slot. Tempo events from the SEQ override the running tempo at the event's absolute tick (matching libsnd's mid-stream <code>0xFF 0x51</code>). PitchBend / Aftertouch are accepted by the parser and ignored by the playback path until the engine wires per-voice modulation.</p>
 </section>
 
+<section class="doc-section" id="sfx-bank">
+  <h2>Engine-audio model &mdash; SFX bank + scheduler</h2>
+  <p>Maps battle / field cue IDs (the <code>kind</code> byte the art-record <code>HitCue</code> / overlay scripts emit) to per-cue <code>SfxEntry</code> descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward <code>ScheduledCue</code>-like requests through <code>SfxScheduler</code> which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.</p>
+  <table>
+    <thead><tr><th>Cue ID</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x1A</code></td><td>Generic SFX trigger ("play sound" hit cue). Catalog typically maps to per-strike weapon impact tones.</td></tr>
+      <tr><td><code>0x4C</code></td><td>Hit-effect visual (no sound on its own; engines that fold the visual into a synced sound use this slot).</td></tr>
+      <tr><td><code>0x80..=0xFE</code></td><td>Reserved per-character / per-art SFX IDs. Indexed from the per-actor <code>+0x9C0</code> table at retail.</td></tr>
+    </tbody>
+  </table>
+  <p><code>SfxBank::play_one_shot</code> delegates to the existing <code>VabBank::play_note</code> for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an <code>SfxFireBatch</code> per <code>tick_frame</code> call so engines can dispatch through the same <code>VabBank</code> they already wired for the BGM sequencer. A <code>PendingCue</code> with <code>frames_remaining = 0</code> fires on the next tick, so a cue queued mid-frame doesn't fire immediately and gives the host a chance to clear render state first &mdash; matching the retail timing where a <code>HitCue::timing_frames = 1</code> cue plays one frame after the strike begins.</p>
+  <p>Implementation: <code>crates/engine-audio/src/sfx.rs</code>.</p>
+</section>
+
 <section class="doc-section" id="xa">
   <h2>XA-ADPCM (in-progress)</h2>
   <p><code>crates/xa</code> decodes the format spec correctly on synthetic inputs. The on-disc <code>.XA</code> files use a non-standard interleave &mdash; ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.</p>

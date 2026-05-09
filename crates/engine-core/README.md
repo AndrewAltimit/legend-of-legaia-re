@@ -66,6 +66,26 @@ implement the per-VM `Host` traits themselves; `World` is the default.
 - `items` — typed inventory item-effect catalog. `apply_effect`
   resolves an `ItemEffect` against a `TargetSnapshot` to produce an
   `ItemOutcome` engines fold into world state.
+- `battle_round` — per-round orchestrator. `BattleRound::begin` resets
+  AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
+  the world. `BattleRound::end` ticks status, drains tick damage,
+  returns death count.
+- `battle_runner` — `BattleRunner` sits between player input and the
+  action SM. `begin_round` / `commit_turn` / `end_round` bracket each
+  turn; `push_command` / `push_chained_art` gate input against
+  `ApGauge`; `commit_turn` resolves the queue through
+  `resolve_action_queue` (Miracle / Super expansion). Per-slot buffers
+  preserve state across `active_party_slot` switches.
+- `battle_hud` — renderer-agnostic UI model. Holds per-slot HP / MP /
+  AP / status icons, a queue of `DamagePopup`s with fade timers, and a
+  ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
+  (popups), `StatusEvent` (icons), and `BattleRound::begin` / `end`
+  (slot panels). `engine-render::battle_hud_draws_for` turns it into
+  `TextDraw`s.
+- `inventory_use` — `InventoryUseSession` state machine for the field
+  + battle inventory flow. Filters items by `InventoryContext`,
+  validates target compatibility (Revive vs alive), folds `ItemOutcome`
+  through `World::use_item`.
 
 ## See also
 

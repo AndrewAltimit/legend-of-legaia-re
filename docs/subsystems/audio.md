@@ -261,6 +261,20 @@ What this **does not** model (out of scope for the first port pass):
 - Pitch modulation, noise, FM. None of these are used by Legaia (verified against the libspu calls in the SCUS dumps — `SpuSetPitch` is the only pitch path).
 - Asynchronous DMA timing. The transfer engine here is synchronous (the queue + drain are collapsed) — fine because the playback layer reads SPU RAM directly during voice ticks. The real hardware is asynchronous via the transfer engine described above; the model preserves the *API shape* (`set_transfer_start_units_8` / `set_direction` / `write`) so the libspu callers map cleanly.
 
+## SFX bank + scheduler
+
+Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay scripts emit) to per-cue `SfxEntry` descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward `ScheduledCue`-like requests through `SfxScheduler` which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.
+
+| Cue ID | Meaning |
+|---|---|
+| `0x1A` | Generic SFX trigger ("play sound" hit cue). Catalog typically maps to per-strike weapon impact tones. |
+| `0x4C` | Hit-effect visual (no sound on its own; engines that fold the visual into a synced sound use this slot). |
+| `0x80..=0xFE` | Reserved per-character / per-art SFX IDs. Indexed from the per-actor `+0x9C0` table at retail. |
+
+`SfxBank::play_one_shot` delegates to the existing `VabBank::play_note` for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an `SfxFireBatch` per `tick_frame` call so engines can dispatch through the same `VabBank` they already wired for the BGM sequencer. A `PendingCue` with `frames_remaining = 0` fires on the next tick, so a cue queued mid-frame doesn't fire immediately and gives the host a chance to clear render state first — matching the retail timing where a `HitCue::timing_frames = 1` cue plays one frame after the strike begins.
+
+Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.rs).
+
 ## XA-ADPCM (in-progress)
 
 `crates/xa` decodes the format spec correctly on synthetic inputs. The on-disc `.XA` files use a non-standard interleave — ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.
