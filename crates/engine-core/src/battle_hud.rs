@@ -113,6 +113,36 @@ impl BattleSlotHud {
         self.status_icons.sort_by_key(|k| status_kind_sort_key(*k));
         self.status_icons.dedup();
     }
+
+    /// Per-slot status icon strip, encoded as one-byte ASCII letters.
+    /// Engines pass this to the renderer's `HudSlotView::status_letters`
+    /// without an extra allocation step.
+    ///
+    /// Letter encoding (first character of the kind name):
+    ///   `B` Burned, `S` Shocked, `P` Poisoned, `A` Asleep, `C` Confused,
+    ///   `s` Silenced (lowercase to disambiguate from Shocked), `T` Stunned,
+    ///   `X` Petrified.
+    pub fn status_letters(&self) -> Vec<u8> {
+        self.status_icons
+            .iter()
+            .map(|k| status_kind_letter(*k))
+            .collect()
+    }
+}
+
+/// Single-letter ASCII abbreviation for a [`StatusKind`]. Engines render
+/// these as glyph overlays on the HUD slot row.
+pub fn status_kind_letter(kind: StatusKind) -> u8 {
+    match kind {
+        StatusKind::Burned => b'B',
+        StatusKind::Shocked => b'S',
+        StatusKind::Poisoned => b'P',
+        StatusKind::Asleep => b'A',
+        StatusKind::Confused => b'C',
+        StatusKind::Silenced => b's',
+        StatusKind::Stunned => b'T',
+        StatusKind::Petrified => b'X',
+    }
 }
 
 fn status_kind_sort_key(k: StatusKind) -> u8 {
@@ -377,6 +407,104 @@ impl BattleHud {
             .enumerate()
             .filter_map(|(i, s)| if s.active { Some((i as u8, s)) } else { None })
     }
+
+    /// Build a sequence of plain [`SlotView`]s suitable for handing to
+    /// `engine-render::battle_hud_draws_for`. Owned data — engines that
+    /// want zero-copy can iterate `iter_active()` and build their own
+    /// view structs.
+    pub fn slot_views(&self) -> Vec<SlotView> {
+        self.iter_active()
+            .map(|(slot_idx, s)| SlotView {
+                slot: slot_idx,
+                name: s.name.clone(),
+                is_party: s.is_party,
+                alive: s.alive,
+                hp: s.hp,
+                hp_max: s.hp_max,
+                mp: s.mp,
+                mp_max: s.mp_max,
+                ap_filled: s.ap_filled,
+                ap_max: s.ap_max,
+                status_letters: s.status_letters(),
+            })
+            .collect()
+    }
+
+    /// Plain view for popups, without renderer types.
+    pub fn popup_views(&self) -> Vec<PopupView> {
+        self.popups
+            .iter()
+            .map(|p| PopupView {
+                slot: p.slot,
+                amount: p.amount,
+                is_heal: p.is_heal,
+                is_crit: p.is_crit,
+                status_letter: p.status.map(status_kind_letter),
+                alpha: p.alpha(),
+            })
+            .collect()
+    }
+
+    /// Plain view for log lines, without renderer types. Each entry's
+    /// `color_rgba` is filled from a shared palette so engines don't have
+    /// to re-derive it.
+    pub fn log_views(&self) -> Vec<LogView> {
+        self.log
+            .iter()
+            .map(|l| LogView {
+                text: l.text.clone(),
+                color_rgba: log_accent_color(l.accent),
+            })
+            .collect()
+    }
+}
+
+/// Plain HUD slot view — owned strings + bytes, no renderer types.
+/// Engines convert into `legaia_engine_render::HudSlotView` trivially:
+/// the field shapes match by name.
+#[derive(Debug, Clone)]
+pub struct SlotView {
+    pub slot: u8,
+    pub name: String,
+    pub is_party: bool,
+    pub alive: bool,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+    pub ap_filled: u8,
+    pub ap_max: u8,
+    pub status_letters: Vec<u8>,
+}
+
+/// Plain popup view.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PopupView {
+    pub slot: u8,
+    pub amount: u16,
+    pub is_heal: bool,
+    pub is_crit: bool,
+    pub status_letter: Option<u8>,
+    pub alpha: f32,
+}
+
+/// Plain log view with the resolved colour pre-baked.
+#[derive(Debug, Clone)]
+pub struct LogView {
+    pub text: String,
+    pub color_rgba: [f32; 4],
+}
+
+/// Standard colour for each [`LogAccent`]. Engines that want a custom
+/// palette can override per-line.
+pub fn log_accent_color(accent: LogAccent) -> [f32; 4] {
+    match accent {
+        LogAccent::Neutral => [1.0, 1.0, 1.0, 1.0],
+        LogAccent::Party => [0.7, 0.85, 1.0, 1.0],
+        LogAccent::Monster => [1.0, 0.7, 0.7, 1.0],
+        LogAccent::Highlight => [1.0, 0.95, 0.4, 1.0],
+        LogAccent::Heal => [0.5, 1.0, 0.5, 1.0],
+    }
 }
 
 #[cfg(test)]
@@ -638,5 +766,108 @@ mod tests {
     fn slot_hud_ap_fraction_zero_when_max_zero() {
         let s = BattleSlotHud::new();
         assert_eq!(s.ap_fraction(), 0.0);
+    }
+
+    #[test]
+    fn status_kind_letter_uses_first_char_with_silenced_lowercase() {
+        assert_eq!(status_kind_letter(StatusKind::Burned), b'B');
+        assert_eq!(status_kind_letter(StatusKind::Shocked), b'S');
+        assert_eq!(status_kind_letter(StatusKind::Silenced), b's');
+        assert_eq!(status_kind_letter(StatusKind::Petrified), b'X');
+    }
+
+    #[test]
+    fn slot_hud_status_letters_returns_one_byte_per_icon() {
+        let mut s = BattleSlotHud::new();
+        s.set_status_icons([StatusKind::Burned, StatusKind::Asleep]);
+        let letters = s.status_letters();
+        assert_eq!(letters, vec![b'B', b'A']);
+    }
+
+    #[test]
+    fn slot_views_filters_inactive_slots() {
+        let mut hud = BattleHud::new();
+        hud.sync_slot(
+            0,
+            SlotSyncInfo {
+                name: "Vahn",
+                is_party: true,
+                alive: true,
+                hp: 100,
+                hp_max: 100,
+                mp: 30,
+                mp_max: 30,
+                ap: None,
+            },
+        );
+        // Slot 1 untouched — should not appear.
+        let views = hud.slot_views();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].slot, 0);
+        assert_eq!(views[0].name, "Vahn");
+    }
+
+    #[test]
+    fn slot_views_carries_status_letters() {
+        let mut hud = BattleHud::new();
+        hud.sync_slot(
+            0,
+            SlotSyncInfo {
+                name: "Vahn",
+                is_party: true,
+                alive: true,
+                hp: 100,
+                hp_max: 100,
+                mp: 30,
+                mp_max: 30,
+                ap: None,
+            },
+        );
+        hud.slots[0].set_status_icons([StatusKind::Burned, StatusKind::Confused]);
+        let views = hud.slot_views();
+        assert_eq!(views[0].status_letters, vec![b'B', b'C']);
+    }
+
+    #[test]
+    fn popup_views_emits_one_per_popup() {
+        let mut hud = BattleHud::new();
+        hud.push_damage(0, 50);
+        hud.push_heal(1, 25);
+        let views = hud.popup_views();
+        assert_eq!(views.len(), 2);
+        assert_eq!(views[0].slot, 0);
+        assert_eq!(views[0].amount, 50);
+        assert!(!views[0].is_heal);
+        assert_eq!(views[1].slot, 1);
+        assert!(views[1].is_heal);
+    }
+
+    #[test]
+    fn popup_views_carries_status_letter_when_set() {
+        let mut hud = BattleHud::new();
+        hud.push_status(2, StatusKind::Petrified);
+        let views = hud.popup_views();
+        assert_eq!(views[0].status_letter, Some(b'X'));
+    }
+
+    #[test]
+    fn log_accent_color_distinct_per_variant() {
+        assert_ne!(
+            log_accent_color(LogAccent::Neutral),
+            log_accent_color(LogAccent::Party)
+        );
+        assert_ne!(
+            log_accent_color(LogAccent::Highlight),
+            log_accent_color(LogAccent::Heal)
+        );
+    }
+
+    #[test]
+    fn log_views_resolves_color_from_accent() {
+        let mut hud = BattleHud::new();
+        hud.push_log("hi", LogAccent::Heal);
+        let views = hud.log_views();
+        assert_eq!(views[0].text, "hi");
+        assert_eq!(views[0].color_rgba, log_accent_color(LogAccent::Heal));
     }
 }

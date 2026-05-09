@@ -1269,6 +1269,8 @@ dependencies = [
  "legaia-tim",
  "log",
  "pollster",
+ "serde",
+ "serde_json",
  "wgpu",
  "winit",
 ]
@@ -1281,6 +1283,7 @@ dependencies = [
  "clap",
  "env_logger",
  "glam",
+ "legaia-art",
  "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-render",

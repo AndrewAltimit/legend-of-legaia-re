@@ -30,7 +30,7 @@ use legaia_engine_vm::battle_formulas::art_strike_damage_default;
 
 /// Concrete side-effects an [`ArtStrikeInfo`] produces. Plain data —
 /// engines fold each field into their runtime in whatever order they like.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ArtStrikeOutcome {
     /// HP delta to deduct from the target. `None` when the strike's power
     /// byte was outside the damage encoding range (the art's power vec

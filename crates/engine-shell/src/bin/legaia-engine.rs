@@ -193,6 +193,65 @@ enum Cmd {
         #[command(subcommand)]
         cmd: ConfigCmd,
     },
+    /// Drive a synthetic battle round end-to-end: party of 3 vs N
+    /// monsters, headless ticking through `BattleSession` phases.
+    /// Reports per-phase events for inspection.
+    Battle {
+        /// Number of monster slots (1..=5). Each is initialised with HP
+        /// equal to `--monster-hp`.
+        #[arg(long, default_value_t = 1)]
+        monsters: u8,
+        /// Per-monster initial HP.
+        #[arg(long, default_value_t = 50)]
+        monster_hp: u16,
+        /// Maximum number of session ticks to run before exiting.
+        #[arg(long, default_value_t = 256)]
+        max_ticks: u64,
+        /// Pre-seeded turn script — comma-separated key letters fed once
+        /// per tick during the CommandInput phase. Each character maps
+        /// to one input bit:
+        ///   `R/L/U/D` direction; `c` cross; `o` circle; `t` triangle;
+        ///   `s` square (Spirit); `S` start (commit). All other chars
+        ///   advance one tick with no input. Default empty.
+        #[arg(long, default_value = "")]
+        script: String,
+    },
+    /// Drive an inventory-use session against a synthetic World. Prints
+    /// the cursor moves + commit outcome.
+    Inventory {
+        /// Item id used by the synthetic session (default 0x01 = Healing Leaf).
+        #[arg(long, default_value_t = 0x01)]
+        item: u8,
+        /// Number of party members.
+        #[arg(long, default_value_t = 3)]
+        party_size: u8,
+        /// Pre-seeded input sequence (same letters as `Battle`).
+        #[arg(long, default_value = "cc")]
+        script: String,
+    },
+    /// Drive an equip session for a synthetic character. Reports state
+    /// transitions + the final committed equipment row.
+    Equip {
+        /// Slot to edit (0..=7).
+        #[arg(long, default_value_t = 0)]
+        slot: u8,
+        /// Item id to equip into `slot` (must be present in the synthetic
+        /// inventory).
+        #[arg(long, default_value_t = 0x05)]
+        item: u8,
+    },
+    /// Replay a recorded GTE (cop2) trace file against a fresh emulator
+    /// and report per-step register divergences. Useful for validating
+    /// the emulator against captured retail RAM dumps.
+    GteReplay {
+        /// JSON trace path written by `engine-render::gte_trace::Cop2Trace`.
+        #[arg(long)]
+        trace: PathBuf,
+        /// Print mismatch detail even when the trace replays cleanly
+        /// (default off — silence is success).
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -281,6 +340,19 @@ fn main() -> Result<()> {
             height,
         } => cmd_play_str(&str_file, width, height),
         Cmd::Config { cmd } => cmd_config(cmd),
+        Cmd::Battle {
+            monsters,
+            monster_hp,
+            max_ticks,
+            script,
+        } => cmd_battle(monsters, monster_hp, max_ticks, &script),
+        Cmd::Inventory {
+            item,
+            party_size,
+            script,
+        } => cmd_inventory(item, party_size, &script),
+        Cmd::Equip { slot, item } => cmd_equip(slot, item),
+        Cmd::GteReplay { trace, verbose } => cmd_gte_replay(&trace, verbose),
     }
 }
 
@@ -1326,4 +1398,294 @@ impl ApplicationHandler for StrPlayerApp {
             _ => {}
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Battle / Inventory / Equip / GteReplay subcommands
+// ---------------------------------------------------------------------
+
+/// Drive a synthetic [`BattleSession`] end-to-end. Reports per-frame
+/// session events and the final phase. Intended as a smoke test for the
+/// orchestrator wiring; engines that want a full UI use `play-window`
+/// (which can host a `BattleSession` via the renderer's HUD draws).
+fn cmd_battle(monsters: u8, monster_hp: u16, max_ticks: u64, script: &str) -> Result<()> {
+    use legaia_art::Character;
+    use legaia_engine_core::ap_gauge::ApGauge;
+    use legaia_engine_core::battle_session::{
+        BattlePhase, BattleSession, SessionInput, SessionSlotInfo,
+    };
+    use legaia_engine_core::battle_stats::StatRecord;
+    use legaia_engine_core::world::{Actor, World};
+
+    let mut session = BattleSession::new();
+    session.set_party([Character::Vahn, Character::Noa, Character::Gala]);
+    let names = ["Vahn", "Noa", "Gala"];
+    for (i, name) in names.iter().enumerate() {
+        session.set_slot_info(
+            i as u8,
+            SessionSlotInfo {
+                name: (*name).into(),
+                is_party: true,
+                record: Some(StatRecord {
+                    base_attack: 50,
+                    base_udf: 30,
+                    base_ldf: 25,
+                    base_accuracy: 80,
+                    base_evasion: 20,
+                    ..Default::default()
+                }),
+                mp_max: 30,
+            },
+        );
+    }
+    let monster_count = monsters.min(5);
+    for i in 0..monster_count {
+        session.set_slot_info(
+            3 + i,
+            SessionSlotInfo {
+                name: format!("Mon{i}"),
+                is_party: false,
+                record: Some(StatRecord {
+                    base_attack: 30,
+                    base_udf: 20,
+                    base_ldf: 15,
+                    base_accuracy: 70,
+                    base_evasion: 10,
+                    ..Default::default()
+                }),
+                mp_max: 0,
+            },
+        );
+    }
+    session.set_monster_count(monster_count);
+
+    let mut world = World::new();
+    while world.actors.len() < 8 {
+        world.actors.push(Actor::default());
+    }
+    for i in 0..3 {
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+        world.actors[i].battle.mp = 30;
+        world.ap_gauges[i] = ApGauge::with_base(8);
+    }
+    for i in 0..monster_count as usize {
+        world.actors[3 + i].battle.hp = monster_hp;
+        world.actors[3 + i].battle.max_hp = monster_hp;
+    }
+
+    session.begin_round(&mut world);
+    println!(
+        "battle: party=3 monsters={} phase={:?}",
+        monster_count,
+        session.phase()
+    );
+
+    let mut script_iter = script.chars();
+    let mut total_events = 0usize;
+    for tick in 0..max_ticks {
+        let mut input = SessionInput::default();
+        if let Some(c) = script_iter.next() {
+            apply_script_char(c, &mut input);
+        }
+        let events = session.tick(&mut world, input);
+        if !events.is_empty() {
+            total_events += events.len();
+            for ev in &events {
+                println!("[t{tick}] {ev:?}");
+            }
+        }
+        if session.is_done() {
+            println!("battle ended at tick {tick}: {:?}", session.phase());
+            break;
+        }
+        if matches!(session.phase(), BattlePhase::Idle) {
+            break;
+        }
+    }
+    println!(
+        "battle: total_events={} final_phase={:?} hud_active_slots={}",
+        total_events,
+        session.phase(),
+        session.hud.active_slots()
+    );
+    Ok(())
+}
+
+fn apply_script_char(c: char, input: &mut legaia_engine_core::battle_session::SessionInput) {
+    use legaia_engine_core::battle_session::SessionInput as SI;
+    let _: &SI = input;
+    match c {
+        'R' => input.right = true,
+        'L' => input.left = true,
+        'U' => input.up = true,
+        'D' => input.down = true,
+        'c' => input.cross = true,
+        'o' => input.circle = true,
+        't' => input.triangle = true,
+        's' => input.square = true,
+        'S' => input.start = true,
+        _ => {}
+    }
+}
+
+/// Drive a synthetic [`InventoryUseSession`] against a small world.
+/// Reports cursor moves + the final outcome.
+fn cmd_inventory(item: u8, party_size: u8, script: &str) -> Result<()> {
+    use legaia_engine_core::inventory_use::{
+        InventoryContext, InventoryUseInput, InventoryUseSession, TargetRow,
+    };
+    use legaia_engine_core::items::ItemCatalog;
+
+    let catalog = ItemCatalog::vanilla();
+    if catalog.get(item).is_none() {
+        anyhow::bail!(
+            "item id 0x{item:02X} not in vanilla catalog — pick from 0x10..0x41 or extend the catalog"
+        );
+    }
+    let mut targets: Vec<TargetRow> = Vec::new();
+    for i in 0..party_size {
+        targets.push(TargetRow::new(i, format!("Slot{i}")).with_stats(50, 100, 10, 30));
+    }
+
+    let mut session =
+        InventoryUseSession::new(catalog, vec![item], targets, InventoryContext::Field);
+    println!("inventory: item=0x{item:02X} party_size={party_size}");
+    for (idx, c) in script.chars().enumerate() {
+        let input = match c {
+            'U' => InventoryUseInput::Up,
+            'D' => InventoryUseInput::Down,
+            'c' => InventoryUseInput::Confirm,
+            'o' => InventoryUseInput::Cancel,
+            _ => continue,
+        };
+        session.input(input);
+        let evs = session.drain_events();
+        for ev in &evs {
+            println!("[s{idx}={c}] {ev:?}");
+        }
+        if session.is_done() {
+            break;
+        }
+    }
+    println!("inventory: state={:?}", session.state);
+    Ok(())
+}
+
+/// Run an equip session that confirms `item` into `slot`. Useful as a
+/// smoke test for the SM and the BattleStats recompute path.
+fn cmd_equip(slot: u8, item: u8) -> Result<()> {
+    use legaia_engine_core::battle_stats::{
+        EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
+    };
+    use legaia_engine_core::equip_session::{EquipInput, EquipOutcome, EquipSession};
+    use std::collections::HashMap;
+
+    let record = StatRecord {
+        base_attack: 50,
+        base_udf: 30,
+        base_ldf: 25,
+        base_accuracy: 80,
+        base_evasion: 20,
+        equip: [0; 8],
+    };
+    let mut inv = HashMap::new();
+    // Re-encode the item id so its implied slot matches the requested
+    // slot — the synthetic test catalog uses `id >> 5` as the slot bits.
+    let encoded_id = (slot << 5) | (item & 0x1F);
+    inv.insert(encoded_id, 1);
+    let mut eq = EquipmentTable::new();
+    eq.set(
+        encoded_id,
+        ItemModifier {
+            atk: 10,
+            ..Default::default()
+        },
+    );
+    let mut session = EquipSession::new(record, inv, eq, StatusModifiers::default(), Vec::new());
+
+    println!("equip: requested slot={slot} item=0x{item:02X} (encoded 0x{encoded_id:02X})");
+
+    // Drive: down `slot` times to reach the slot, cross to enter picker,
+    // cross to confirm item, cross to commit.
+    let mut step_count = 0;
+    for _ in 0..slot {
+        session.input(EquipInput {
+            down: true,
+            ..Default::default()
+        });
+        step_count += 1;
+    }
+    session.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    step_count += 1;
+    session.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    step_count += 1;
+    session.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    step_count += 1;
+
+    println!(
+        "equip: drove {step_count} inputs; outcome={:?}",
+        session.outcome()
+    );
+    if let Some(EquipOutcome::Committed {
+        added,
+        slot: out_slot,
+        removed,
+    }) = session.outcome()
+    {
+        println!("equip: committed slot={out_slot} added=0x{added:02X} removed=0x{removed:02X}");
+        println!(
+            "equip: post-commit ATK={} (record.equip[{}]=0x{:02X})",
+            session.preview_stats.atk,
+            out_slot,
+            session.record().equip[out_slot as usize]
+        );
+    }
+    Ok(())
+}
+
+/// Load a JSON Cop2Trace and replay it through a fresh emulator. Reports
+/// any per-step register divergence; exits 0 on clean replay.
+fn cmd_gte_replay(trace_path: &Path, verbose: bool) -> Result<()> {
+    use legaia_engine_render::gte_trace::Cop2Trace;
+    let bytes = std::fs::read(trace_path)
+        .with_context(|| format!("read trace file {}", trace_path.display()))?;
+    let json = std::str::from_utf8(&bytes).context("trace file is not valid UTF-8")?;
+    let trace = Cop2Trace::read_json(json).context("parse trace JSON")?;
+    println!(
+        "gte-replay: loaded {} steps (label={})",
+        trace.len(),
+        trace.label.as_deref().unwrap_or("<none>")
+    );
+    let mismatches = trace.replay();
+    if mismatches.is_empty() {
+        println!("gte-replay: clean — every step replayed bit-exact");
+        if verbose {
+            println!("gte-replay: trace label = {:?}", trace.label);
+        }
+        return Ok(());
+    }
+    eprintln!(
+        "gte-replay: {} step(s) diverged from the recorded snapshot",
+        mismatches.len()
+    );
+    for m in &mismatches {
+        eprintln!("  step {} ({}):", m.step, m.op);
+        for f in &m.fields {
+            eprintln!(
+                "    {} expected={} actual={}",
+                f.field, f.expected, f.actual
+            );
+        }
+    }
+    anyhow::bail!("trace replay produced mismatches");
 }
