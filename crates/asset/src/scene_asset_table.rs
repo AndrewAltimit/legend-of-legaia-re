@@ -92,6 +92,26 @@ pub struct SceneAssetTable {
     pub descriptors: [DescriptorRecord; 7],
 }
 
+impl SceneAssetTable {
+    /// First descriptor whose `type_byte` is the `Move` asset type (`0x05`),
+    /// or `None` if this table doesn't carry a move-table slot.
+    ///
+    /// In every observed scene with a `scene_asset_table` shape, the Move
+    /// descriptor is at index 4. Each per-scene CDNAME block's
+    /// `slot+1` PROT entry sources that scene's per-area `move.mdt` —
+    /// this is what populates `_DAT_8007B888` (the move-table base
+    /// pointer read by `FUN_800204F8`) when the scene loads.
+    pub fn move_descriptor(&self) -> Option<&DescriptorRecord> {
+        self.descriptors.iter().find(|d| d.type_byte == 0x05)
+    }
+
+    /// Same as [`move_descriptor`](Self::move_descriptor) but returns the
+    /// descriptor's index in the table.
+    pub fn move_descriptor_index(&self) -> Option<usize> {
+        self.descriptors.iter().position(|d| d.type_byte == 0x05)
+    }
+}
+
 /// One descriptor pair from the table.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct DescriptorRecord {
@@ -183,6 +203,26 @@ mod tests {
         }
         buf.resize(total_size.max(buf.len()), 0);
         buf
+    }
+
+    #[test]
+    fn move_descriptor_finds_index_4_for_canonical_layout() {
+        let buf = synth([1, 2, 3, 4, 5, 6, 7], 0x10000);
+        let s = detect(&buf).expect("should detect");
+        let d = s
+            .move_descriptor()
+            .expect("Move slot is present at index 4");
+        assert_eq!(d.type_byte, 0x05);
+        assert_eq!(s.move_descriptor_index(), Some(4));
+    }
+
+    #[test]
+    fn move_descriptor_handles_skip_move_variant() {
+        // Tuple `(1, 2, 3, 4, 6, 7, 0x14)` skips Move.
+        let buf = synth([1, 2, 3, 4, 6, 7, 0x14], 0x10000);
+        let s = detect(&buf).expect("should detect");
+        assert!(s.move_descriptor().is_none());
+        assert!(s.move_descriptor_index().is_none());
     }
 
     #[test]

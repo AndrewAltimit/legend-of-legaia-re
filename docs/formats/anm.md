@@ -86,7 +86,28 @@ these across the corpus. The subcommand silently skips non-ANM files (safe
 to glob), and `--histogram` prints the top-8 byte distribution per record
 to help fingerprint the layout.
 
-The per-frame interpreter for non-opcode-6 records is **overlay-resident**.
+## Dispatch byte at `actor[+0x5A]`
+
+`FUN_80021DF4` ladders through `actor[+0x5A]` (`u16`) and routes to a
+per-opcode handler block. Observed values:
+
+| `actor[+0x5A]` | Handler block in `FUN_80021DF4` | Status |
+|---|---|---|
+| `0x01` | (TBD) | Snap variant — pose-snap only |
+| `0x02` | shares with `0x06` at `0x80021E90..` | Per-bone keyframe-style |
+| `0x03` | `0x800226DC..` | Path / state-write variant |
+| `0x04` | `0x80022CBC..0x80022EE4` | Damp / spring-decay variant |
+| `0x05` | `0x800228B0..0x80022B80` | Path-alt — reads geometry from `actor[+0x80]` |
+| `0x06` | `0x80021EA0..0x80021FA4` | Keyframe interpolation — fully traced + ported |
+| `0x07` | `0x80022C24..0x80022CC0` | Spline / curve-driven variant |
+
+The `crates/engine-vm` `DispatchByte` enum exposes those values as a typed
+dispatch — `DispatchByte::from_byte(actor[+0x5A])` and
+`DispatchByte::handled_natively()` for the cases the runtime can drive
+without further reverse-engineering work (currently only `Keyframe`).
+
+The per-frame interpreter for non-opcode-6 records is **partially
+overlay-resident**.
 `FUN_80024CFC` only primes the actor (`actor[+0x4C]` = record pointer,
 `actor[+0x56] = 0xB`); a handler in the town overlay (`FUN_801DE840`,
 overlay 0897) reads `actor[+0x4C]` at `801e260c` via a sub-dispatch table

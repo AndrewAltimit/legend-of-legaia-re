@@ -123,5 +123,12 @@ target/release/mednafen-state watch area_load_early</code></pre>
   <h3>Why scripted snapshots?</h3>
   <p>Mednafen's TUI debugger has memory breakpoints but no scriptable interface — every interaction is keyboard-driven inside the running window. Save-state diffs answer the same question (<em>"between this point and that point, what addresses got written?"</em>) without needing the live debugger. Cluster the changed bytes into contiguous regions and you have a ranked list of structures to look up writers for in Ghidra.</p>
 
+  <h3>Findings unlocked by the toolkit</h3>
+  <ul>
+    <li><strong>MOVE-table source pinned</strong> — tracing <code>_DAT_8007B888</code> across the 10 saves shows three distinct values (one per scene); the per-scene CDNAME block's slot-1 PROT entry (a <code>scene_asset_table</code>) carries descriptor[4] = <code>Move</code> at sizes that match each scene's runtime base. <code>MOVE2</code> (<code>_DAT_8007B840</code>) is zero across every save — populated only by scenes with an alternate move table.</li>
+    <li><strong>Anim dispatcher located in SCUS</strong> — diffing the actor pool between battle-intro idle (<code>mc4</code>) and active somersault (<code>mc6</code>) over <code>0x801C9594..0x801C9F7F</code> reveals 0x60-byte slots whose <code>+0x00</code> is the anim PC pointer (<code>actor[+0x4C]</code> mirror) and whose dispatch byte (<code>actor[+0x5A]</code>) flips between values 0x04 (idle) and 0x06 (playing). The dispatcher is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (already dumped) — seven opcodes, the keyframe path is fully ported.</li>
+    <li><strong>Navmesh / region table located</strong> — diffing the navmesh candidate window (<code>0x80100000..0x80120000</code>) between <code>mc1</code> and <code>mc3</code> isolates a 24-byte stride record table at <code>0x80108EA4..0x801095xx</code> with sequential record ids, six i16 coordinate fields, a 4-byte ASCII tag, and per-scene records following a leading shared bank.</li>
+  </ul>
+
   <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/mednafen-automation.md" target="_blank" rel="noopener">Full mednafen-automation reference →</a></p>
 </section>
