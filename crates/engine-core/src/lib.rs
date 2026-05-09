@@ -5,6 +5,7 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies — the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
+pub mod art_strike;
 pub mod battle_events;
 pub mod camera;
 pub mod dialog;

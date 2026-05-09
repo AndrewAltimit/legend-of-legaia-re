@@ -298,6 +298,21 @@ pub struct World {
     pub capture_spells: std::collections::HashSet<u8>,
     pub character_ability_bits: [u32; 8],
     pub range_table: std::collections::HashMap<(u8, u8), u16>,
+    /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
+    /// compute Tactical-Art damage. Engines populate from the active
+    /// character record's weapon power. Default zero — un-populated slots
+    /// produce floor-clamped damage (`= 1`).
+    pub battle_attack: [u16; 8],
+    /// Per-slot defense facing the strike. The retail engine selects UDF
+    /// or LDF based on the strike's `power_target`; this single field is a
+    /// minimum-viable substitute that engines wishing to model both can
+    /// override via [`World::set_battle_defense_for_target`].
+    pub battle_defense: [u16; 8],
+    /// Optional UDF / LDF defense override per slot. When set, the
+    /// art-strike applier uses the matching half for the strike's target
+    /// class instead of [`Self::battle_defense`]. Engines that don't
+    /// distinguish UDF / LDF can leave this `None`.
+    pub battle_defense_split: [Option<(u16, u16)>; 8],
 
     /// "Previous action cleared" gate — toggled by the engine when an
     /// animation transition completes.
@@ -482,6 +497,9 @@ impl World {
             capture_spells: Default::default(),
             character_ability_bits: [0; 8],
             range_table: Default::default(),
+            battle_attack: [0; 8],
+            battle_defense: [0; 8],
+            battle_defense_split: [None; 8],
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,
@@ -519,6 +537,55 @@ impl World {
     /// Returns events in emission order.
     pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
         std::mem::take(&mut self.pending_battle_events)
+    }
+
+    /// Set the per-slot weapon attack used by Tactical-Art strike damage
+    /// resolution. Engines call this when a character equips / unequips a
+    /// weapon, or once at battle init from the active stat record.
+    pub fn set_battle_attack(&mut self, slot: u8, atk: u16) {
+        if let Some(s) = self.battle_attack.get_mut(slot as usize) {
+            *s = atk;
+        }
+    }
+
+    /// Set the per-slot generic defense — used when no UDF / LDF split is
+    /// configured for the slot.
+    pub fn set_battle_defense(&mut self, slot: u8, def: u16) {
+        if let Some(s) = self.battle_defense.get_mut(slot as usize) {
+            *s = def;
+        }
+    }
+
+    /// Set per-slot UDF / LDF defense override. Replaces any prior value.
+    /// Pass `None` to revert to [`Self::set_battle_defense`].
+    pub fn set_battle_defense_split(&mut self, slot: u8, udf_ldf: Option<(u16, u16)>) {
+        if let Some(s) = self.battle_defense_split.get_mut(slot as usize) {
+            *s = udf_ldf;
+        }
+    }
+
+    /// Resolve the defense value to use against a single Tactical-Art
+    /// strike. Used by the world's `BattleActionHost::apply_art_strike`
+    /// impl. Public so engines can call the same lookup directly when
+    /// they want to apply art strikes outside the SM (e.g. for testing).
+    pub fn resolve_battle_defense(
+        &self,
+        target_slot: u8,
+        info: &legaia_engine_vm::battle_action::ArtStrikeInfo,
+    ) -> u16 {
+        let idx = target_slot as usize;
+        // If we have a UDF / LDF split for the slot, pick the half that
+        // matches the strike's power target. Otherwise fall back to the
+        // single defense value.
+        if let Some(Some((udf, ldf))) = self.battle_defense_split.get(idx)
+            && let Some(legaia_art::power::PowerByte::Damage(p)) = info.power
+        {
+            return match p.target {
+                legaia_art::power::PowerTarget::Udf => *udf,
+                legaia_art::power::PowerTarget::Ldf => *ldf,
+            };
+        }
+        self.battle_defense.get(idx).copied().unwrap_or(0)
     }
 
     /// Distribute `xp_reward` to every active party member after a
@@ -1874,6 +1941,25 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 party_slot,
             });
     }
+    fn apply_art_strike(&mut self, info: legaia_engine_vm::battle_action::ArtStrikeInfo) {
+        // Resolve per-slot weapon attack and the defense the art targets.
+        let attack = self
+            .world
+            .battle_attack
+            .get(info.actor_slot as usize)
+            .copied()
+            .unwrap_or(0);
+        let defense = self.world.resolve_battle_defense(info.target_slot, &info);
+        let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
+        self.world
+            .pending_battle_events
+            .push(BattleEvent::ApplyArtStrike {
+                actor_slot: info.actor_slot,
+                target_slot: info.target_slot,
+                strike_index: info.strike_index,
+                outcome,
+            });
+    }
     fn screen_shake(&mut self, magnitude: u16) {
         self.world
             .pending_battle_events
@@ -3035,5 +3121,100 @@ mod tests {
         };
         world.apply_battle_xp(49); // retail table: 49 < 50 (L2 threshold)
         assert!(world.current_level_up_banner.is_none());
+    }
+
+    #[test]
+    fn art_strike_applier_pushes_apply_art_strike_event() {
+        // Drive `BattleHostImpl::apply_art_strike` from a synthetic
+        // ArtStrikeInfo and assert the world's pending_battle_events grows
+        // by one ApplyArtStrike with the resolved damage.
+        use legaia_art::Character;
+        use legaia_art::power::PowerByte;
+        use legaia_art::queue::ActionConstant;
+        use legaia_art::record::EnemyEffect;
+        use legaia_engine_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
+
+        let mut world = World::new();
+        world.set_battle_attack(0, 64);
+        world.set_battle_defense(3, 10);
+        let info = ArtStrikeInfo {
+            strike_index: 0,
+            anim_byte: 0x10,
+            actor_slot: 0,
+            target_slot: 3,
+            character: Character::Vahn,
+            art: ActionConstant::Art1B,
+            power: Some(PowerByte::from_byte(0x1A)), // UDF × 28
+            dmg_timing: Some(0x10),
+            enemy_effect: EnemyEffect::Burned,
+            hit_cue: None,
+        };
+        let mut host = BattleHostImpl { world: &mut world };
+        host.apply_art_strike(info);
+
+        assert_eq!(world.pending_battle_events.len(), 1);
+        match &world.pending_battle_events[0] {
+            BattleEvent::ApplyArtStrike {
+                actor_slot,
+                target_slot,
+                strike_index,
+                outcome,
+            } => {
+                assert_eq!(*actor_slot, 0);
+                assert_eq!(*target_slot, 3);
+                assert_eq!(*strike_index, 0);
+                assert_eq!(outcome.damage, Some(102));
+                assert_eq!(outcome.enemy_effect, EnemyEffect::Burned);
+            }
+            other => panic!("unexpected event: {:?}", other.summary()),
+        }
+    }
+
+    #[test]
+    fn art_strike_split_defense_picks_udf_or_ldf() {
+        // With a (UDF=5, LDF=50) split on slot 3, a UDF-targeted strike
+        // hits 5 def → high damage; LDF-targeted hits 50 def → low.
+        use legaia_art::Character;
+        use legaia_art::power::PowerByte;
+        use legaia_art::queue::ActionConstant;
+        use legaia_art::record::EnemyEffect;
+        use legaia_engine_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
+
+        let mut world = World::new();
+        world.set_battle_attack(0, 64);
+        world.set_battle_defense_split(3, Some((5, 50)));
+
+        let mk = |power: PowerByte| ArtStrikeInfo {
+            strike_index: 0,
+            anim_byte: 0x10,
+            actor_slot: 0,
+            target_slot: 3,
+            character: Character::Vahn,
+            art: ActionConstant::Art1B,
+            power: Some(power),
+            dmg_timing: Some(0x10),
+            enemy_effect: EnemyEffect::None,
+            hit_cue: None,
+        };
+        // 0x1A = UDF × 28 → (64 * 28)/16 - 5 = 112 - 5 = 107.
+        let mut host = BattleHostImpl { world: &mut world };
+        host.apply_art_strike(mk(PowerByte::from_byte(0x1A)));
+        // 0x1F = LDF × 28 → (64 * 28)/16 - 50 = 112 - 50 = 62.
+        host.apply_art_strike(mk(PowerByte::from_byte(0x1F)));
+        let events = world.drain_battle_events();
+        let mut udf_dmg = None;
+        let mut ldf_dmg = None;
+        for e in events {
+            if let BattleEvent::ApplyArtStrike { outcome, .. } = e
+                && let Some(t) = outcome.power_target
+            {
+                match t {
+                    legaia_art::power::PowerTarget::Udf => udf_dmg = outcome.damage,
+                    legaia_art::power::PowerTarget::Ldf => ldf_dmg = outcome.damage,
+                }
+            }
+        }
+        assert_eq!(udf_dmg, Some(107));
+        assert_eq!(ldf_dmg, Some(62));
     }
 }

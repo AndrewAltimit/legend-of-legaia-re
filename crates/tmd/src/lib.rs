@@ -61,6 +61,7 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+pub mod descriptor;
 pub mod legaia_prim_probe;
 pub mod legaia_prims;
 pub mod mesh;

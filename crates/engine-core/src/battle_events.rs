@@ -8,6 +8,7 @@
 //! [`BattleEvent`] queue on the world; engines drain after
 //! [`crate::world::World::tick`] each frame.
 
+use crate::art_strike::ArtStrikeOutcome;
 use legaia_engine_vm::battle_action::{BattleEndCause, Pose};
 
 /// One side-effect the battle action state machine requested this frame.
@@ -49,6 +50,18 @@ pub enum BattleEvent {
         page: u8,
         target_slot: u8,
         party_slot: u8,
+    },
+    /// `BattleActionHost::apply_art_strike` — Tactical-Art strike outcome.
+    /// The state machine resolved the per-strike values from the active
+    /// art record; the world's host impl converted them into the concrete
+    /// HP delta + status flag + SFX schedule via
+    /// [`crate::art_strike::apply_art_strike`]. Engines fold the outcome
+    /// into HP / status / SFX through whatever runtime path they have.
+    ApplyArtStrike {
+        actor_slot: u8,
+        target_slot: u8,
+        strike_index: u8,
+        outcome: ArtStrikeOutcome,
     },
     /// `BattleActionHost::screen_shake` — kick the camera.
     ScreenShake { magnitude: u16 },
@@ -104,6 +117,20 @@ impl BattleEvent {
             } => {
                 format!(
                     "ApplyDamage(icon={icon}, page={page}, target={target_slot}, party={party_slot})"
+                )
+            }
+            BattleEvent::ApplyArtStrike {
+                actor_slot,
+                target_slot,
+                strike_index,
+                outcome,
+            } => {
+                let dmg = outcome
+                    .damage
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "-".into());
+                format!(
+                    "ApplyArtStrike(actor={actor_slot}, target={target_slot}, strike={strike_index}, dmg={dmg})"
                 )
             }
             BattleEvent::ScreenShake { magnitude } => format!("ScreenShake({magnitude})"),
@@ -217,6 +244,18 @@ mod tests {
                 new_level: 2,
                 hp_gained: 10,
                 mp_gained: 5,
+            },
+            BattleEvent::ApplyArtStrike {
+                actor_slot: 0,
+                target_slot: 3,
+                strike_index: 1,
+                outcome: ArtStrikeOutcome {
+                    damage: Some(102),
+                    enemy_effect: legaia_art::record::EnemyEffect::Burned,
+                    cues: Vec::new(),
+                    alt_range: false,
+                    power_target: Some(legaia_art::power::PowerTarget::Udf),
+                },
             },
         ];
         for e in events {
