@@ -301,4 +301,4 @@ hint = "Gala's character record (stride 0x414)."
 label = "stat_growth_lookup_window"
 start = 0x80120000
 end = 0x80140000
-hint = "Per-Seru stat-grant lookup. Diff mc7→mc9 to surface per-character growth values."
+hint = "Per-Seru stat-grant lookup. Diff mc7->mc9 to surface per-character growth values. Captured Vahn deltas exposed via engine_core::levelup::observations::vahn_mc8_to_mc9."

@@ -321,6 +321,50 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`crates/engine-core::target_picker`](../../crates/engine-core/src/target_picker.rs).
 
+`BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the wiring API engines drive when a command needs a target. The session charges AP up-front, opens the picker, and stashes the command in `pending_target_command`. When the picker resolves, `maybe_close_picker_with_world` writes the resolved slot to `BattleActor::active_target` (the field the action SM reads at strike time via `host.actor(actor_slot).active_target`) and admits the buffered command into the runner queue without re-charging AP. Sweep targets write a `0xFF` sentinel; cancellation drops the command without admitting it. Engines that already have a `&World` borrow at picker-open time use [`open_target_picker`]; engines that need the same active-target write at open-time (sweep / self) call [`open_target_picker_mut`].
+
+## Captured stat-growth observations
+
+The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../tooling/mednafen-automation.md)) over `mc7..mc9` pins the per-byte footprint of a magic-rank-up + character-level-up event for Vahn (party slot 0). The observed deltas inside Vahn's character record at `0x80084708` (stride `0x414`):
+
+| Event | Offset | Before → After | Interpretation |
+|---|---|---|---|
+| mc7 → mc8 (magic-rank up) | `+0x08` | `0x30 → 0x3C` | flag word low byte (+12) |
+| mc7 → mc8 | `+0x9C` | `0x09 → 0x0A` | magic-rank counter (+1) |
+| mc7 → mc8 | `+0x10A` | `0x1B → 0x11` | low byte of `mp_max` (cast cost spent) |
+| mc7 → mc8 | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |
+| mc8 → mc9 (level-up, 4-level jump) | `+0x00` | `0x4F → 0x73` | unconfirmed (jump +0x24 doesn't match a single-level granularity) |
+| mc8 → mc9 | `+0x04..+0x06` | `0x016D → 0x02DA` | u16 LE XP delta (+365) |
+| mc8 → mc9 | `+0x10E` | `0x3A → 0x42` | low byte of `sp_max` (Spirit, +8) |
+| mc8 → mc9 | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
+| mc8 → mc9 | `+0x130` | `0x02 → 0x03` | rank counter (+1) |
+
+The retail per-Seru per-level lookup table that drives these increments is not in `SCUS_942.54`; the writer lives in the level-up overlay (already captured) and the table base is referenced through a pointer at `Seru struct +0x74`. A writer-search across the captured overlay is the next step toward a true per-character `StatGrowthCurve::PerLevel` vector.
+
+Engines populate one captured observation at a time via:
+
+```rust
+let obs = legaia_engine_core::levelup::observations::vahn_mc8_to_mc9();
+let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
+```
+
+`LevelUpObservation::to_curve` produces a `StatGrowthCurve::PerLevel` vector that emits the per-level *average* inside the observed range and falls back to `StatGain::default` outside it. Implementation: [`crates/engine-core::levelup`](../../crates/engine-core/src/levelup.rs).
+
+## CDNAME → MV STR cutscene routing
+
+`engine_core::scene::cutscene_str_for(scene_label) -> Option<&'static str>` resolves an `op*` / `edteien` CDNAME label to its paired `MOV/MVn.STR` filename. The disc carries 6 STR files (`MV1.STR..MV6.STR`); the heuristic mapping is:
+
+| CDNAME | STR file | Scene context |
+|---|---|---|
+| `opdeene` | `MOV/MV1.STR` | Drake Castle opening |
+| `opstati` | `MOV/MV2.STR` | Statue scene |
+| `opkorout` | `MOV/MV3.STR` | Korout opening |
+| `opurud` | `MOV/MV4.STR` | Urud opening |
+| `opmap01` | `MOV/MV5.STR` | World map opening |
+| `edteien` | `MOV/MV6.STR` | Garden ending FMV |
+
+`cutscene_label_for_str(filename)` is the inverse (case-insensitive on the basename so `mv1.str` and `MOV/MV1.STR` both round-trip). The remaining `ed*` scenes (`edbylon`, `edbalden`, `edlast`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`) are dialogue-actor-overlay driven and have no FMV. The exact retail mapping table lives in the cutscene overlay (not yet captured) — when it lands, the lookup function should be updated to consult the captured map. The `legaia-engine play` and `play-window` subcommands auto-resolve the STR file when the user passes `--scene <op*|edteien>` and the extracted root contains the matching MV file.
+
 ## Equipment catalog
 
 Vanilla equipment table covering the early-game roster. Each entry is an `EquipmentEntry` carrying id + name + slot + character restriction + `ItemModifier` + buy/sell prices. `to_modifier_table()` resolves to the `EquipmentTable` the battle stat aggregator (`compute_battle_stats`) reads.

@@ -330,7 +330,9 @@ pub fn default_early_encounter_table(
 ) -> crate::encounter::EncounterTable {
     use crate::encounter::{EncounterEntry, EncounterTable};
     let mut t = EncounterTable::new(scene_label);
-    t.set_trigger_rate(8); // ~3% per step
+    // Retail "outskirts of Rim Elm" is approximately 1 in 50-60 steps;
+    // 5/256 ≈ 1 in 51, which matches without being annoying.
+    t.set_trigger_rate(5);
     t.push(EncounterEntry::new(1, 50)); // Goblin (common)
     t.push(EncounterEntry::new(3, 30)); // Slime
     t.push(EncounterEntry::new(2, 15)); // Wolf

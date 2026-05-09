@@ -200,6 +200,26 @@ impl BattleRunner {
         Ok(())
     }
 
+    /// Push a command onto an explicit slot's buffer **without** charging
+    /// AP. Engines call this when AP has already been deducted at an
+    /// earlier point (e.g. [`crate::battle_session::BattleSession::push_command_with_target`]
+    /// charges up-front, then admits the buffered command after the
+    /// target picker resolves).
+    ///
+    /// `slot` must be 0..=2; the call ignores `active_party_slot` so
+    /// engines can buffer commands for non-active slots if they have
+    /// per-slot input streams.
+    pub fn push_no_ap(&mut self, slot: u8, cmd: Command) -> Result<(), BattleRunnerError> {
+        if !matches!(self.state, BattleRunnerState::AcceptingCommands) {
+            return Err(BattleRunnerError::NotAcceptingInput);
+        }
+        if slot >= 3 {
+            return Err(BattleRunnerError::InvalidParty);
+        }
+        self.command_buffers[slot as usize].push(cmd);
+        Ok(())
+    }
+
     /// Pop the most recent command from the active slot's buffer and
     /// refund its AP cost via [`ApGauge::refund`]. Returns the popped
     /// command if any.
