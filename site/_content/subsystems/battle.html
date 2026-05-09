@@ -249,6 +249,24 @@
 <section class="doc-section" id="items">
   <h2>Item catalog</h2>
   <p>Typed catalogue of inventory items the battle / field menu consults. Each entry has an <code>ItemEffect</code> describing the side-effect (Heal / Cure / Revive / Stat-up / Spirit-up / Capture / Escape / Damage / KeyItem). The vanilla catalog ships 19 entries covering every category.</p>
-  <p><code>apply_effect(effect, &amp;TargetSnapshot) -&gt; ItemOutcome</code> is the pure resolver &mdash; engines fold each <code>ItemOutcome</code> into world state through whatever runtime path they have for HP / status / AP / inventory.</p>
-  <p>Implementation: <code>crates/engine-core/src/items.rs</code>.</p>
+  <p><code>apply_effect(effect, &amp;TargetSnapshot) -&gt; ItemOutcome</code> is the pure resolver. <code>World::use_item(item_id, target_slot)</code> wraps that resolver and folds the outcome back into world state &mdash; HP / MP gains capped at the actor's max values, <code>StatusEffectTracker::cure</code> / <code>cure_all</code> clears status, <code>ApGauge::refund</code> handles Spirit-restore items.</p>
+  <p>Implementation: <code>crates/engine-core/src/items.rs</code>; world wiring at <code>World::use_item</code> + <code>World::set_character_max_mp</code>.</p>
+</section>
+
+<section class="doc-section" id="round">
+  <h2>Battle round lifecycle</h2>
+  <p>Per-round bookkeeping that ties the pure-code subsystems above into a single <code>BattleRound</code> orchestrator:</p>
+  <ul>
+    <li><code>BattleRound::begin(&amp;mut world, &amp;[StatRecord; 8], &amp;EquipmentTable, &amp;StatusModifiers)</code> resets every party AP gauge, recomputes per-slot <code>BattleStats</code> through <code>compute_battle_stats</code>, and writes the resolved attack / UDF / LDF back into <code>World::battle_attack</code> / <code>battle_defense_split</code> so the strike resolver picks them up.</li>
+    <li><code>BattleRound::end(&amp;mut world)</code> ticks every actor's status, folds Burned / Poisoned tick damage into <code>BattleActor::hp</code>, and returns the count of actors that died from tick damage this round.</li>
+    <li>The returned <code>BattleRound</code> carries per-slot <code>action_blocked</code> / <code>magic_blocked</code> arrays the action validator filters command input against (Asleep / Stunned / Petrified actors lose action; Silenced / Petrified actors lose Magic).</li>
+  </ul>
+  <p>Implementation: <code>crates/engine-core/src/battle_round.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="anim-runtime">
+  <h2>Per-actor animation runtime</h2>
+  <p>Centralised per-actor animation orchestration that wraps <code>legaia_anm::AnimPlayer</code> for the keyframe-driven case (the bulk of retail ANM data) and surfaces a <code>Host::on_opaque_record</code> hook for the kinds whose interpreter is overlay-resident. <code>AnimRuntime::with_slots(N)</code> manages a fixed pool indexed by actor id; <code>play(actor, record, bone_count)</code> classifies the record by header byte and routes into either the keyframe path or the opaque path with the same <code>actor[+0x68] = 100</code> initial counter the retail dispatcher uses.</p>
+  <p>Per tick the runtime emits an <code>AnimEvent</code> stream (<code>PoseUpdated</code> / <code>OpaqueTick</code> / <code>Finished</code> / <code>Replaced</code>) so engines drive renderer / SFX side effects without polling per-actor state. When the overlay capture for the <code>actor[+0x4C]</code> dispatcher lands, the only change required is filling the <code>Host::on_opaque_record</code> body with the real per-kind dispatch.</p>
+  <p>Implementation: <code>crates/engine-vm/src/anim_vm.rs</code>.</p>
 </section>
