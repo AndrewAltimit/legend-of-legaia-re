@@ -57,12 +57,13 @@
   <p>After <code>BattleEndCause::MonsterWipe</code>:</p>
   <ol>
     <li>Engine calls <code>World::apply_battle_xp(xp_reward)</code>.</li>
-    <li><code>apply_battle_xp</code> calls <code>LevelUpTracker::grant_xp(char_id, share)</code> for each active party member.</li>
-    <li><code>grant_xp</code> accumulates XP and checks the retail threshold table. Multi-level jumps collapse into one <code>LevelUpResult</code> with summed HP/MP gains.</li>
-    <li><code>LevelUpTracker::apply_to_record(result, record)</code> bumps <code>hp_max</code> + <code>mp_max</code> and restores <code>hp_cur</code> = <code>hp_max</code>, <code>mp_cur</code> = <code>mp_max</code>.</li>
+    <li><code>apply_battle_xp</code> enumerates surviving party members (slots whose <code>BattleActor::hp &gt; 0</code>) and divides <code>xp_reward</code> equally among them (integer divide, remainder dropped). Dead members receive zero XP.</li>
+    <li>For each surviving slot, calls <code>LevelUpTracker::grant_xp(char_id, share)</code>; <code>grant_xp</code> accumulates XP and checks the retail threshold table. Multi-level jumps collapse into one <code>LevelUpResult</code> with summed HP/MP gains.</li>
+    <li><code>LevelUpTracker::apply_to_record(result, record)</code> bumps <code>hp_max</code> + <code>mp_max</code>, restores <code>hp_cur</code> = <code>hp_max</code>, <code>mp_cur</code> = <code>mp_max</code>, and writes <code>result.new_level</code> back to the record's <code>+0x100</code> byte via <code>CharacterRecord::set_level</code>.</li>
     <li><code>BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }</code> is pushed to <code>World::battle_events</code>.</li>
     <li><code>World::current_level_up_banner</code> is set for the last character who levelled up.</li>
   </ol>
+  <p><strong>Hydration on load.</strong> <code>World::load_full</code> syncs <code>LevelUpTracker::level[]</code> from each loaded character record's <code>+0x100</code> byte. Without this, a reloaded party would keep the tracker's default <code>1</code> per slot even when the saved records hold the party at level 30; the next XP grant would then roll the party back to level 1 + N.</p>
 </section>
 
 <section class="doc-section" id="banner">
@@ -137,7 +138,7 @@
     <li><strong>Per-Seru stat grants.</strong> <em>Status:</em> writer-search across the captured <code>magic_level_up</code> overlay returned <strong>negative</strong> for code-side <code>sb</code>/<code>sh</code> writes targeting the documented record offsets (<code>+0x10E</code>, <code>+0x11C..+0x12C</code>, <code>+0x130</code>, <code>+0x161</code>). A follow-up grep for any read at <code>+0x74(reg)</code> across the same overlay surfaces five hits - but each one reads a 32-bit battle-state flag the SCUS-side handler <code>FUN_800480D8</code> writes with the constant <code>0x80808080</code> (<code>lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)</code>), not a stat-grant pointer. The "Seru struct +0x74 pointer dereference" hypothesis is <strong>not supported</strong> by the current capture set; cross-character delta search across PROT.DAT also fails to surface the table. The grant table likely lives in a still-uncaptured overlay (battle-data init or the Seru-equip path) or is encoded inline in a Seru PROT entry. Engine-side scaffold at <code>engine_core::seru_stats</code> still installs a flat curve summed across the equipped Seru - replace with <code>StatGrowthCurve::PerLevel</code> when the table is pinned.</li>
     <li><strong><code>+0x120</code> stat-cap accessor renaming.</strong> Captures pin the per-stat cap constant 100 at <code>+0x120</code> (u16 LE). The existing <code>CharacterRecord::stat_cap</code> reads <code>+0x11A</code>, which is a live stat slot. Tracked separately.</li>
     <li><strong>Battle actor field map <code>+0x14C&ndash;+0x176</code>.</strong> Current HP at <code>+0x14C</code>, max HP at <code>+0x14E</code>; <code>+0x150/152/154/156</code> semantics not fully traced.</li>
-    <li><strong>XP share formula.</strong> Retail may divide the monster XP pool by active party size before the per-character check. The current port grants the full <code>xp_reward</code> to each member independently.</li>
+    <li><strong>Pin the retail XP divisor.</strong> The current port splits the monster XP pool equally among surviving party members (integer divide, remainder dropped; dead members get zero). A LUI+ADDIU sweep across <code>SCUS_942.54</code> and every captured overlay does not surface a static reader for the XP table at <code>0x8007123C</code>, so the reader lives in an uncaptured overlay slice or uses a runtime-computed index. Re-verify the divisor + dead-member exclusion when the gap closes; helpers <code>ghidra/scripts/find_xp_table_readers.py</code> + <code>find_xp_table_all_overlays.py</code> stay around for the re-scan.</li>
     <li><strong>Overlay display.</strong> Retail shows per-stat increments (STR, INT, VIT, &hellip;) with animated counters. Only HP/MP are tracked in the current port.</li>
   </ul>
 </section>

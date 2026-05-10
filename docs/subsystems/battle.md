@@ -252,6 +252,54 @@ Per-slot buffers + chained-art lists let the player switch between party members
 
 Implementation: [`crates/engine-core::battle_runner`](../../crates/engine-core/src/battle_runner.rs).
 
+## BattleSession Resolve driver
+
+`BattleSession` owns the action SM during the `Resolve` phase. After
+`commit_turn` succeeds, the session builds a `ResolveDriver` queue
+containing one entry per party slot whose resolved action queue is
+non-empty, in slot order (`0 → 1 → 2`). Slot routing:
+
+| Resolved queue contains | Action category byte |
+|---|---|
+| At least one `ActionConstant::RegularStarter` | `TacticalArts (0)` |
+| Otherwise (directional commands only) | `Attack (3)` |
+
+Each `BattleSession::tick` during `Resolve`:
+
+1. Drains `World::pending_battle_events` into HUD popups + session events.
+2. If the head-of-queue attacker hasn't been armed yet, sets
+   `world.battle_ctx.{active_actor, queued_action, action_state}` and
+   the attacker's `BattleActor::{action_category, active_target}` to
+   point at the first alive monster slot.
+3. Calls `world.tick()` exactly once.
+4. Clears `ActorFlags::ADVANCE_DONE` on `AttackRecovery` (the render-side
+   "recovery anim finished" edge the session simulates inline since it
+   doesn't render).
+5. On `Transition { from: AttackChain, to: AttackRecovery }`, applies a
+   clean-room formula strike against the attacker's `active_target`:
+   reads `atk` + `udf` + `acc` + `eva` off `BattleRound::stats`, rolls
+   accuracy via `accuracy_roll`, folds variance via `psyq_rand_step`,
+   writes the result back through `BattleActor::hp` and emits
+   `SessionEvent::HpChanged`.
+6. On `EndOfAction`, pops the head of the queue and re-arms next frame.
+
+When the queue drains (no more attackers) or `StepOutcome::BattleComplete`
+fires, the session drops the driver and transitions to `RoundOutro`
+(queue-drained path) or relies on the routed `BattleEnd` event to land
+the terminal phase (`Victory` / `Defeat`). Engines that prefer to drive
+`world.tick()` themselves can skip `commit_turn` from the session and
+fall through the legacy "observe events only" Resolve path.
+
+The deterministic RNG seed used for the accuracy + variance rolls is
+exposed as `BattleSession::rng_seed` (configurable via
+`with_rng_seed(seed)` before `begin_round`).
+
+End-to-end coverage:
+[`crates/engine-core/tests/end_to_end_gameplay_loop.rs::battle_session_drives_action_sm_to_monster_wipe`](../../crates/engine-core/tests/end_to_end_gameplay_loop.rs)
+exercises the full pipeline — encounter trigger → BattleSession setup →
+`push_command` per slot → commit via `SessionInput { start: true, .. }` →
+Resolve → `BattlePhase::Victory`.
+
 ## Battle HUD model
 
 Renderer-agnostic UI state for the in-battle screen. Holds per-slot HP / MP / AP / status-icon state plus a queue of damage popups and battle-event log lines. `engine-render::battle_hud_draws_for` turns one of these into a `Vec<TextDraw>` for the GPU pipeline; engines that render via a different path (web / terminal) read the same struct directly.
@@ -471,9 +519,10 @@ Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine
 
 `World::apply_battle_loot(formation, catalog) -> BattleRewards` is the post-victory composite that turns a defeated formation into the runtime side-effects:
 
-- Sums each `MonsterDef::exp` and distributes the total via `World::apply_battle_xp` (per-character level-up checks against `LevelUpTracker::xp_table`).
+- Sums each `MonsterDef::exp` and distributes the total via `World::apply_battle_xp`, which splits the pool equally among the surviving party members (integer divide, remainder dropped; dead members get zero) and runs per-character level-up checks against `LevelUpTracker::xp_table`.
 - Sums each `MonsterDef::gold` and adds it to `World::money` (saturating).
-- Returns `BattleRewards { xp, gold, level_ups: Vec<LevelUpResult> }` for the engine to surface as the post-battle banner ("got N XP, M gold, level up!").
+- For each defeated monster with a non-`None` `drop_item` and `drop_rate_q8 > 0`, pulls one byte from `World::next_rng` and compares against `drop_rate_q8 / 256`. On hit, the item id is appended to `BattleRewards::drops` and incremented in `World::inventory`.
+- Returns `BattleRewards { xp, gold, level_ups, drops }` for the engine to surface as the post-battle banner ("got N XP, M gold, level up, found Healing Leaf!").
 
 Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: [`crates/engine-core::world::World::apply_battle_loot`](../../crates/engine-core/src/world.rs).
 
@@ -481,11 +530,21 @@ Monster ids missing from the catalog contribute zero (silently skipped) so a par
 
 `crates/engine-core/tests/end_to_end_gameplay_loop.rs` stitches every gameplay-side subsystem into one cycle:
 
-1. **Boot** — load an `LGSF v2` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`.
+1. **Boot** — load an `LGSF v2` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`. `load_full` hydrates the `LevelUpTracker` per-slot level from each record's `+0x100` byte so reloads don't roll the tracker back to L1.
 2. **Field walk** — switch to `SceneMode::Field`, install an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.
 3. **Encounter** — drain the formation roll, populate monster slots 3..N from the `MonsterCatalog`, flip mode to `SceneMode::Battle`.
 4. **Battle SM** — drive `World::tick` while applying clean-room formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.
-5. **Rewards** — call `World::apply_battle_loot` to credit XP / gold and trigger per-character level-ups; assert at least one party slot crossed a threshold.
+5. **Rewards** — call `World::apply_battle_loot` to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.
 6. **Save round-trip** — `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
 
-The synthetic variant runs in CI. The disc-gated variant (`real_psx_memory_card_save_drives_full_loop`) boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card; skips otherwise.
+The crate ships four test variants:
+
+| Test | Purpose |
+|---|---|
+| `synthetic_party_completes_full_gameplay_loop` | The default CI cycle; hand-spins the action SM with `apply_strike`. |
+| `battle_session_phase_transitions_during_loop` | Smoke around the BattleSession side; verifies the session reaches `CommandInput`. |
+| `battle_session_drives_action_sm_to_monster_wipe` | Drives the same loop through `BattleSession::tick` instead of `world.tick` — `push_command` → `SessionInput { start: true }` → Resolve → `BattlePhase::Victory`. The session owns the action SM during `Resolve`. |
+| `real_battle_data_encounter_drives_loop` | Disc-gated: scans an early `PROT.DAT` entry for a valid `EncounterRecord` byte pattern, installs it via `World::install_encounter_from_record`, and runs the battle through to `MonsterWipe`. Closes the synthetic-formation leak in the field → battle handoff. |
+| `real_psx_memory_card_save_drives_full_loop` | Disc-gated: boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card. |
+
+Disc-gated variants skip silently when `extracted/PROT.DAT` / the mednafen card is missing.

@@ -76,6 +76,14 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   `ApGauge`; `commit_turn` resolves the queue through
   `resolve_action_queue` (Miracle / Super expansion). Per-slot buffers
   preserve state across `active_party_slot` switches.
+- `battle_session` - `BattleSession` composes the runner + round + HUD
+  into a single state machine. Owns the action SM during the `Resolve`
+  phase: on `commit_turn` it builds a per-slot `ResolveDriver` queue,
+  arms `world.battle_ctx`, calls `world.tick` once per `BattleSession::tick`,
+  applies clean-room formula damage on `AttackChain → AttackRecovery`
+  transitions, and advances to the next attacker on `EndOfAction`. The
+  `Resolve → RoundOutro → Victory / Defeat` transition observes the
+  routed `BattleEnd` event. See `docs/subsystems/battle.md#battlesession-resolve-driver`.
 - `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`

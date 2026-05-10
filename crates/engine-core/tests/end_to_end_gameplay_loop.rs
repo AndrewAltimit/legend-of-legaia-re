@@ -30,14 +30,15 @@
 //! The synthetic version runs in CI. The disc-gated variant unlocks when
 //! a Legaia memory card is present at the mednafen default path.
 
-use legaia_art::Character;
+use legaia_art::{Character, Command};
 use legaia_engine_core::battle_session::{
-    BattlePhase, BattleSession, SessionInput, SessionSlotInfo,
+    BattlePhase, BattleSession, SessionEvent, SessionInput, SessionSlotInfo,
 };
 use legaia_engine_core::battle_stats::StatRecord;
 use legaia_engine_core::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
+use legaia_engine_core::encounter_record::{EncounterRecord, FORMATION_SLOTS};
 use legaia_engine_core::levelup::{StatGain, StatGrowthCurve};
 use legaia_engine_core::monster_catalog::{
     FormationDef, MonsterCatalog, vanilla_formation_table, vanilla_monster_catalog,
@@ -90,7 +91,7 @@ fn synthetic_party() -> Party {
             sp_cur: sp_max,
             sp_max,
         });
-        rec.raw[0x100] = level; // current level (per project memory: +0x00 level lives at +0x100)
+        rec.set_level(level);
         rec.set_cumulative_xp(xp as u16);
         rec.set_stat_cap(0x3E7);
     }
@@ -135,11 +136,16 @@ fn deterministic_level_up_tracker() -> legaia_engine_core::levelup::LevelUpTrack
 
 /// Boost a synthetic monster catalog so each formation hands out enough
 /// XP to guarantee a level-up under [`deterministic_level_up_tracker`].
+///
+/// Per-member XP after the retail-shape split is `total / alive`. With a
+/// 3-character party that's ~one-third of the per-monster reward, so the
+/// floor here (`150`) keeps per-slot crediting comfortably above the
+/// `level * 10` threshold the deterministic tracker installs.
 fn boosted_catalog() -> MonsterCatalog {
     let mut cat = vanilla_monster_catalog();
     for def in cat.by_id.values_mut() {
-        if def.exp < 50 {
-            def.exp = 50;
+        if def.exp < 150 {
+            def.exp = 150;
         }
         if def.gold == 0 {
             def.gold = 4;
@@ -291,12 +297,13 @@ fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
     }
     world.load_full(starting_save.clone());
     world.set_formation_table(vanilla_formation_table(), boosted_catalog());
+    // Replace the tracker with the deterministic test fixture, then
+    // re-hydrate per-slot levels from the loaded records (load_full's
+    // hydration only touches the active tracker, which we just swapped).
     world.level_up_tracker = deterministic_level_up_tracker();
-    // Sync each tracker slot's level to the loaded record level.
     for (i, rec) in starting_save.party.members.iter().enumerate() {
         if i < world.level_up_tracker.level.len() {
-            let lvl = rec.raw[0x100].max(1);
-            world.level_up_tracker.level[i] = lvl;
+            world.level_up_tracker.level[i] = rec.level().max(1);
         }
     }
 
@@ -430,7 +437,8 @@ fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
         assert_eq!(post.hp_max, live.hp_max, "slot {slot} HP_max round-trip");
         assert_eq!(post.mp_max, live.mp_max, "slot {slot} MP_max round-trip");
         assert_eq!(
-            rec.raw[0x100], world.roster.members[slot].raw[0x100],
+            rec.level(),
+            world.roster.members[slot].level(),
             "slot {slot} level round-trip"
         );
     }
@@ -535,6 +543,339 @@ fn battle_session_phase_transitions_during_loop() {
     );
 
     // End cleanly so the encounter session enters grace.
+    world.end_encounter_battle();
+}
+
+/// Wire the loop end-to-end through [`BattleSession`] instead of
+/// hand-spinning the action SM. The session's `Resolve` phase owns the
+/// action SM (one `world.tick()` per frame), so a single `bs.tick()` per
+/// iteration advances both the menu phase machine and the underlying
+/// SM. The test commits via `bs.tick(SessionInput { start: true, .. })`
+/// rather than mutating `world.battle_ctx` directly — the only thing the
+/// real shell will do differently is route player input into
+/// `push_command` / `push_command_with_target`.
+#[test]
+fn battle_session_drives_action_sm_to_monster_wipe() {
+    let mut world = World::new();
+    while world.actors.len() < 8 {
+        world.actors.push(Actor::default());
+    }
+    world.load_full(synthetic_save_file());
+    world.set_formation_table(vanilla_formation_table(), boosted_catalog());
+    world.level_up_tracker = deterministic_level_up_tracker();
+    for (i, rec) in synthetic_party().members.iter().enumerate() {
+        if i < world.level_up_tracker.level.len() {
+            world.level_up_tracker.level[i] = rec.level().max(1);
+        }
+    }
+
+    // Trigger an encounter through the same field-step path as the
+    // synthetic loop. The session takes over from this point.
+    world.mode = SceneMode::Field;
+    let mut table = EncounterTable::new("session_e2e");
+    table.set_trigger_rate(255);
+    table.push(EncounterEntry::new(1, 100));
+    let mut enc = EncounterSession::new(EncounterTracker::new(table));
+    enc.transition_frames = 0;
+    enc.grace_frames = 0;
+    world.set_encounter_session(Some(enc));
+    assert!(world.on_field_step());
+    world.tick_encounter();
+    let roll = world.drain_encounter_formation().expect("triggered");
+    let formation = world
+        .formation_table
+        .formation(roll.formation_id)
+        .expect("vanilla formation")
+        .clone();
+
+    world.mode = SceneMode::Battle;
+    world.party_count = 3;
+
+    // Spawn party actors at non-zero HP so the SM treats them as alive.
+    for i in 0..3 {
+        let actor = world.spawn_actor(i);
+        actor.battle.liveness = 1;
+        let live = actor.battle.max_hp.max(100);
+        actor.battle.max_hp = live;
+        actor.battle.hp = live;
+        actor.battle.action_category = 3;
+    }
+
+    let mut bs = BattleSession::new()
+        .with_phase_durations(1, 1) // skip intro/outro splash
+        .with_rng_seed(0xC0FF_EE13);
+    bs.set_party([Character::Vahn, Character::Noa, Character::Gala]);
+    let stat = StatRecord {
+        base_attack: 80,
+        base_udf: 30,
+        base_ldf: 25,
+        base_accuracy: 95,
+        base_evasion: 5,
+        ..Default::default()
+    };
+    for (i, name) in ["Vahn", "Noa", "Gala"].iter().enumerate() {
+        bs.set_slot_info(
+            i as u8,
+            SessionSlotInfo {
+                name: (*name).into(),
+                is_party: true,
+                record: Some(stat),
+                mp_max: 30,
+            },
+        );
+    }
+    let catalog = world.monster_catalog.clone();
+    for (i, slot) in formation.slots.iter().take(5).enumerate() {
+        let def = catalog.get(slot.monster_id).expect("monster def");
+        let actor_idx = 3 + i;
+        let actor = world.spawn_actor(actor_idx);
+        actor.battle.liveness = 1;
+        actor.battle.hp = def.hp;
+        actor.battle.max_hp = def.hp;
+        actor.battle.action_category = 3;
+        bs.set_slot_info(
+            actor_idx as u8,
+            SessionSlotInfo {
+                name: def.name.clone(),
+                is_party: false,
+                record: Some(StatRecord {
+                    base_attack: def.attack,
+                    base_udf: def.udf,
+                    base_ldf: def.ldf,
+                    base_accuracy: def.accuracy as u16,
+                    base_evasion: def.evasion as u16,
+                    ..Default::default()
+                }),
+                mp_max: 0,
+            },
+        );
+    }
+    bs.set_monster_count(formation.slots.len() as u8);
+
+    bs.begin_round(&mut world);
+
+    // Tick until CommandInput — the intro splash takes intro_frames + 1.
+    let mut frames = 0u32;
+    while !matches!(bs.phase(), BattlePhase::CommandInput) && frames < 600 {
+        let _ = bs.tick(&mut world, SessionInput::default());
+        frames += 1;
+    }
+    assert_eq!(bs.phase(), BattlePhase::CommandInput);
+
+    // Buffer one directional command per party slot, then commit. The
+    // session enters Resolve and drives the action SM from there.
+    for slot in 0u8..3 {
+        let _ = bs.runner.set_active_party_slot(slot);
+        assert!(
+            bs.push_command(&mut world, Command::Right),
+            "AP should cover one Right command for slot {slot}"
+        );
+    }
+    let commit_events = bs.tick(
+        &mut world,
+        SessionInput {
+            start: true,
+            ..SessionInput::default()
+        },
+    );
+    assert!(
+        commit_events
+            .iter()
+            .any(|e| matches!(e, SessionEvent::TurnCommitted)),
+        "commit tick should fire TurnCommitted"
+    );
+    assert_eq!(bs.phase(), BattlePhase::Resolve);
+
+    // Drive Resolve → terminal. Each `bs.tick` advances `world.tick`
+    // once for the head-of-queue attacker; the session pops to the next
+    // attacker on EndOfAction. Cap at 200K frames so a regression can't
+    // hang the test.
+    let mut ended = false;
+    for _ in 0..200_000u32 {
+        let events = bs.tick(&mut world, SessionInput::default());
+        if events
+            .iter()
+            .any(|e| matches!(e, SessionEvent::BattleEnded { .. }))
+        {
+            ended = true;
+            break;
+        }
+        if matches!(
+            bs.phase(),
+            BattlePhase::Victory | BattlePhase::Defeat | BattlePhase::Escaped
+        ) {
+            ended = true;
+            break;
+        }
+    }
+    assert!(ended, "session should land in a terminal phase");
+    assert!(
+        matches!(bs.phase(), BattlePhase::Victory),
+        "session-driven battle should resolve to Victory (got {:?})",
+        bs.phase()
+    );
+    let alive_monsters = (3..3 + formation.slots.len())
+        .filter(|i| world.actors.get(*i).is_some_and(|a| a.battle.hp > 0))
+        .count();
+    assert_eq!(alive_monsters, 0, "all monsters should be dead");
+
+    // Apply the post-battle loot the same way the real shell will and
+    // verify the split landed XP on at least one alive slot.
+    let _ = world.save_party();
+    let rewards = world.apply_battle_loot(&formation, &catalog);
+    assert!(rewards.xp > 0);
+    assert!(world.money > 0);
+    world.end_encounter_battle();
+}
+
+/// Locate the extracted `PROT.DAT` (gitignored) so we can scan a real
+/// `battle_data` entry for candidate encounter records. Walks the same
+/// `extracted/` paths the disc-gated `validation_suite.rs` test uses.
+fn extracted_prot_path() -> Option<std::path::PathBuf> {
+    for p in ["extracted/PROT.DAT", "../../extracted/PROT.DAT"] {
+        let pb = std::path::PathBuf::from(p);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+    None
+}
+
+/// Disc-gated: parse an encounter record off a real `battle_data` PROT
+/// entry, install it through [`World::install_encounter_from_record`],
+/// then drive the encounter session into a battle and resolve it. This
+/// closes the synthetic data leak in the field → battle handoff —
+/// every byte of the formation came from the disc, not a clean-room
+/// catalog.
+///
+/// Skips when `extracted/PROT.DAT` is missing (CI without disc data).
+///
+/// The on-disc carrier of encounter records is still open (see
+/// [`docs/formats/encounter.md`](../../../docs/formats/encounter.md)),
+/// so we use a structural sweep: walk the first ~64 KB of an early
+/// PROT entry one byte at a time, parse a candidate record at each
+/// offset, accept the first record whose `count` is 1..=4 and whose
+/// monster ids are all in the catalog's id range. That's the same
+/// validity gate the reader at `0x801DA620..0x801DA678` would apply.
+#[test]
+fn real_battle_data_encounter_drives_loop() {
+    let Some(prot_path) = extracted_prot_path() else {
+        eprintln!("[skip] no extracted/PROT.DAT");
+        return;
+    };
+    let mut archive = match legaia_prot::archive::Archive::open(&prot_path) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("[skip] could not open PROT.DAT: {e}");
+            return;
+        }
+    };
+    let mut catalog = vanilla_monster_catalog();
+    // Boost the catalog so a single split + XP grant still crosses a
+    // level threshold under `deterministic_level_up_tracker`.
+    for def in catalog.by_id.values_mut() {
+        if def.exp < 150 {
+            def.exp = 150;
+        }
+        if def.gold == 0 {
+            def.gold = 4;
+        }
+    }
+
+    // Sweep early PROT entries (the battle_data cluster starts well
+    // under entry 100). Cap at 200 entries and 64 KB per entry so the
+    // disc-gated cost is bounded.
+    let max_entry_bytes = 64 * 1024usize;
+    let mut found: Option<(usize, EncounterRecord)> = None;
+    let entries = archive.entries.clone();
+    'outer: for (idx, entry) in entries.iter().enumerate().take(200) {
+        let mut bytes = Vec::new();
+        if archive.read_entry(entry, &mut bytes).is_err() {
+            continue;
+        }
+        let limit = bytes.len().min(max_entry_bytes);
+        // Each candidate record is at least 4 + count bytes wide; we
+        // step by 4 to stay aligned with the retail record stride.
+        let mut off = 0usize;
+        while off + 4 + FORMATION_SLOTS <= limit {
+            let slice = &bytes[off..off + 4 + FORMATION_SLOTS];
+            if let Some(rec) = EncounterRecord::parse(slice)
+                && rec.count >= 1
+                && rec.count as usize <= FORMATION_SLOTS
+                && rec
+                    .active_ids()
+                    .all(|id| id > 0 && catalog.get(id as u16).is_some())
+            {
+                found = Some((idx, rec));
+                break 'outer;
+            }
+            off += 4;
+        }
+    }
+
+    let Some((entry_idx, record)) = found else {
+        eprintln!(
+            "[skip] no candidate encounter record found in first 200 PROT entries (catalog has {} monsters)",
+            catalog.len()
+        );
+        return;
+    };
+    eprintln!(
+        "[real-encounter] PROT entry {} carries record count={} ids={:?}",
+        entry_idx,
+        record.count,
+        record.active_ids().map(|i| i as u16).collect::<Vec<_>>()
+    );
+
+    // Boot a synthetic save and install the record through the same
+    // code path the field-VM op handler would.
+    let mut world = World::new();
+    while world.actors.len() < 8 {
+        world.actors.push(Actor::default());
+    }
+    world.load_full(synthetic_save_file());
+    let formation_table = vanilla_formation_table();
+    world.set_formation_table(formation_table, catalog.clone());
+    world.level_up_tracker = deterministic_level_up_tracker();
+    for (i, rec) in synthetic_party().members.iter().enumerate() {
+        if i < world.level_up_tracker.level.len() {
+            world.level_up_tracker.level[i] = rec.level().max(1);
+        }
+    }
+    world.mode = SceneMode::Field;
+    let formation_id = world
+        .install_encounter_from_record(&format!("prot_entry_{entry_idx}"), &record)
+        .expect("non-empty record should install");
+    if let Some(session) = world.encounter.as_mut() {
+        session.transition_frames = 0;
+        session.grace_frames = 0;
+    }
+
+    // Drive the field → battle handoff exactly like the synthetic
+    // loop. The retail step roll fires immediately because
+    // install_encounter_from_record set the table's trigger rate to
+    // 255.
+    assert!(world.on_field_step());
+    world.tick_encounter();
+    let roll = world
+        .drain_encounter_formation()
+        .expect("disc-derived formation should yield a roll");
+    assert_eq!(roll.formation_id, formation_id);
+    let formation = world
+        .formation_table
+        .formation(roll.formation_id)
+        .expect("synthesized formation registered")
+        .clone();
+
+    enter_battle(&mut world, &formation, &catalog);
+    let strikes = drive_battle_to_victory(&mut world).expect("battle resolves");
+    assert!(strikes > 0);
+    assert_eq!(world.battle_end, Some(BattleEndCause::MonsterWipe));
+
+    let _ = world.save_party();
+    let rewards = world.apply_battle_loot(&formation, &catalog);
+    assert!(rewards.xp > 0);
+    assert!(world.money > 0);
     world.end_encounter_battle();
 }
 

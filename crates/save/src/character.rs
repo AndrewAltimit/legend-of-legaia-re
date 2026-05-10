@@ -396,6 +396,23 @@ impl CharacterRecord {
         self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
     }
 
+    /// Character level byte at `+0x100` (u8).
+    ///
+    /// Pinned by the captured per-character level-up triplets (Noa mc4-7,
+    /// Gala mc7-9): the engine writes this byte from the live `BattleActor`
+    /// mirror's level field as part of the post-battle settle pass, and the
+    /// `GameShark Level 99` cheat sets the same byte to `0x63`.
+    pub fn level(&self) -> u8 {
+        self.raw[0x100]
+    }
+
+    /// Replace the character-level byte. Engines call this after
+    /// granting XP and resolving a level-up to keep the save record in
+    /// sync with the live tracker.
+    pub fn set_level(&mut self, level: u8) {
+        self.raw[0x100] = level;
+    }
+
     /// "Magic Rank" / level field at `+0x130` (u8).
     ///
     /// Captured Noa + Gala level-up triplets show this byte ticking
