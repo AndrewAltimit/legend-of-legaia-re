@@ -221,6 +221,11 @@ fn magic_rank_up_diff_pins_spell_level_offset() {
 fn watchpoint_diff_for_battle_anim_strike_runs_clean() {
     // mc6 (somersault) has the actor anim-state writes we want to surface.
     // This exercises the watch flow end-to-end against real data.
+    //
+    // Slot semantics: with the new save corpus, mc4 is the pre-fire-book
+    // command-menu save (also a battle, in `dolk`), so the diff still
+    // crosses an animation-state boundary just within a different battle
+    // than before. The assertion is unchanged — at least one region.
     let (Some(p4), Some(p6)) = (save_for(4), save_for(6)) else {
         eprintln!("{}", skip_msg(4));
         return;
@@ -234,13 +239,137 @@ fn watchpoint_diff_for_battle_anim_strike_runs_clean() {
         merge_gap: 4,
         min_bytes_changed: 1,
     };
-    let d = diff_ram(r4, r6, "battle_intro", "battle_anim_strike", &opts);
-    // The actor-pointer table at 0x801C9370+ should show writes between
-    // an idle action-menu state and an active animation. We don't assert
-    // a specific count (depends on which monsters are in the encounter),
-    // but require at least one region.
+    let d = diff_ram(r4, r6, "pre_fire_book", "battle_anim_strike", &opts);
     assert!(
         !d.regions.is_empty(),
-        "actor-pool region should differ between idle and active anim"
+        "actor-pool region should differ between two battle anim states"
     );
+}
+
+#[test]
+fn encounter_trigger_diff_loads_battle_overlay() {
+    // mc1 (pre-encounter, walking `map01`) → mc2 (battle just initiated,
+    // same `map01` scene). Pins the encounter-trigger battle-overlay
+    // residency window.
+    let (Some(p1), Some(p2)) = (save_for(1), save_for(2)) else {
+        eprintln!("{}", skip_msg(1));
+        return;
+    };
+    let s1 = SaveState::from_path(&p1).unwrap();
+    let s2 = SaveState::from_path(&p2).unwrap();
+    let r1 = s1.main_ram().unwrap();
+    let r2 = s2.main_ram().unwrap();
+
+    use legaia_engine_core::capture_observations::encounter_trigger::*;
+
+    // Inside the documented overlay residency window, a single broad
+    // region of changes should account for ~133 KB.
+    let (lo, hi) = OVERLAY_WINDOW;
+    let opts = DiffOptions {
+        window: (lo, hi),
+        merge_gap: 256,
+        min_bytes_changed: 64,
+    };
+    let d = diff_ram(r1, r2, "pre_encounter", "post_encounter", &opts);
+    assert!(
+        d.total_bytes_changed >= OVERLAY_BYTES_CHANGED_REF * 8 / 10,
+        "expected ~{}B in overlay window, got {}",
+        OVERLAY_BYTES_CHANGED_REF,
+        d.total_bytes_changed
+    );
+    assert!(
+        d.regions
+            .iter()
+            .any(|r| { r.start_addr <= 0x801CE808 + 0x100 && r.end_addr >= 0x801F3000 }),
+        "expected one large region spanning the overlay window: {:?}",
+        d.regions
+            .iter()
+            .map(|r| (r.start_addr, r.end_addr))
+            .collect::<Vec<_>>()
+    );
+
+    // Inside the actor-pool window, populated slots should show ~500 B
+    // of writes.
+    let (alo, ahi) = ACTOR_POOL_WINDOW;
+    let aopts = DiffOptions {
+        window: (alo, ahi),
+        merge_gap: 4,
+        min_bytes_changed: 1,
+    };
+    let ad = diff_ram(r1, r2, "pre_encounter", "post_encounter", &aopts);
+    assert!(
+        ad.total_bytes_changed >= ACTOR_POOL_BYTES_CHANGED_REF / 2,
+        "expected actor-pool window to populate, got {}B",
+        ad.total_bytes_changed
+    );
+
+    // The active scene name must be unchanged (encounter triggers IN
+    // the same scene; the battle is layered on top).
+    let scene_name_off = (SCENE_NAME_TABLE_ADDR - 0x80000000) as usize;
+    assert_eq!(
+        &r1[scene_name_off..scene_name_off + 0x20],
+        &r2[scene_name_off..scene_name_off + 0x20],
+        "scene-name table at {:#x} must not change across encounter trigger",
+        SCENE_NAME_TABLE_ADDR
+    );
+}
+
+#[test]
+fn fire_book_use_diff_pins_vahn_record_write() {
+    // mc4 (battle command menu parked on Fire Book I) → mc5 (Fire Book I
+    // just used on Vahn). Pins the per-character record write footprint.
+    let (Some(p4), Some(p5)) = (save_for(4), save_for(5)) else {
+        eprintln!("{}", skip_msg(4));
+        return;
+    };
+    let s4 = SaveState::from_path(&p4).unwrap();
+    let s5 = SaveState::from_path(&p5).unwrap();
+    let r4 = s4.main_ram().unwrap();
+    let r5 = s5.main_ram().unwrap();
+
+    use legaia_engine_core::capture_observations::vahn_fire_book_use::*;
+
+    // Window the diff to Vahn's full record; assert exactly one region
+    // at the documented offset.
+    let opts = DiffOptions {
+        window: (VAHN_RECORD_BASE, VAHN_RECORD_BASE + 0x414),
+        merge_gap: 0,
+        min_bytes_changed: 1,
+    };
+    let d = diff_ram(r4, r5, "pre_fire_book", "post_fire_book", &opts);
+    assert_eq!(
+        d.regions.len(),
+        1,
+        "fire-book event should produce exactly 1 record-internal region; got {:?}",
+        d.regions
+            .iter()
+            .map(|r| (r.start_addr, r.bytes_changed))
+            .collect::<Vec<_>>()
+    );
+    let r = &d.regions[0];
+    assert_eq!(r.start_addr, changed_addr());
+    assert_eq!(r.bytes_changed, CHANGED_LEN);
+
+    // Confirm the actual bytes match the constants.
+    let off = (changed_addr() - 0x80000000u32) as usize;
+    assert_eq!(&r4[off..off + CHANGED_LEN], &BEFORE);
+    assert_eq!(&r5[off..off + CHANGED_LEN], &AFTER);
+}
+
+#[test]
+fn town01_save_documents_active_scene_label() {
+    // mc0 is now a town-resident state (CDNAME `town0c`, scene index 0x15).
+    // Confirm the scene-name table reads accordingly so future diffs that
+    // depend on town residency anchor against this save.
+    let Some(p0) = save_for(0) else {
+        eprintln!("{}", skip_msg(0));
+        return;
+    };
+    let s = SaveState::from_path(&p0).unwrap();
+    let r = s.main_ram().unwrap();
+    let off = (0x80084540u32 - 0x80000000u32) as usize;
+    let scene_index = u32::from_le_bytes(r[off..off + 4].try_into().unwrap());
+    assert_eq!(scene_index, 0x15, "mc0 active-scene index should be town0c");
+    let name = &r[off + 0x08..off + 0x10];
+    assert_eq!(&name[..6], b"town0c", "mc0 scene label should be town0c");
 }

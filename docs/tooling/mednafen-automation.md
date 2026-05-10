@@ -31,22 +31,37 @@ in Ghidra.
 The user's `~/.mednafen/mcs/` directory holds 10 save states for the
 retail US disc, each captured at a specific gameplay moment:
 
-| Slot | Label              | Description                                  |
-|------|--------------------|----------------------------------------------|
-| mc0  | drake_castle       | Drake Castle (steady-state field with party) |
-| mc1  | area_load_early    | Loading into a new area — early frame        |
-| mc2  | area_load_mid      | Loading into a new area — mid frame          |
-| mc3  | area_load_late     | Loading into a new area — late frame         |
-| mc4  | battle_intro       | Loading into a battle (action menu)          |
-| mc5  | battle_arts_view   | Viewing learned arts in battle               |
-| mc6  | battle_anim_strike | Performing a somersault on an enemy          |
-| mc7  | status_menu        | Status menu open                             |
-| mc8  | options_menu       | Options/config menu open                     |
-| mc9  | load_screen        | Save/load screen visible                     |
+| Slot | Label                | Description                                                       |
+|------|----------------------|-------------------------------------------------------------------|
+| mc0  | town_rim_elm         | Rim Elm (CDNAME `town0c`, scene index `0x15`) — town residency    |
+| mc1  | pre_encounter        | Walking the field (`map01`), one step before encounter trigger    |
+| mc2  | post_encounter       | Battle just initiated (encounter triggered from `map01`)          |
+| mc3  | battle_drake_castle  | Battle in Drake Castle (`dolk`, scene index `0x3C`)               |
+| mc4  | pre_fire_book        | Battle command menu, about to use Fire Book I on Vahn (`dolk`)    |
+| mc5  | post_fire_book       | Battle, Fire Book I just used on Vahn — Hyper Art learned         |
+| mc6  | battle_anim_strike   | Performing a somersault on an enemy (active animation)            |
+| mc7  | pre_steal            | Battle frame: goblin about to steal an item from the party        |
+| mc8  | magic_level_up       | Magic-rank level-up banner active                                 |
+| mc9  | char_level_up        | Character level-up banner active (after magic-rank up)            |
 
-The progressive triplets (`mc1`/`mc2`/`mc3` for area-load,
-`mc4`/`mc5`/`mc6` for battle) are deliberately bracketed so pairwise
-diffs surface the writes done by each phase of the action.
+Pairwise pairings of interest:
+
+- **mc1 ↔ mc2** — encounter trigger. The 133 KB battle overlay loads
+  into `0x801CE808..0x801F3818`; the actor pointer table at
+  `0x801C9370+` populates with stride `0x60`; the active scene index at
+  `0x80084540` does NOT change. Codified in
+  `engine_core::capture_observations::encounter_trigger`.
+- **mc4 ↔ mc5** — Fire Book I usage on Vahn. Inside Vahn's character
+  record (`0x80084708 + 0x414`) exactly one 3-byte cluster differs
+  (`+0x185..+0x188`: `01 0C 00 → 02 03 0C`). Pattern is a length-prefixed
+  list growing by one entry. Codified in
+  `engine_core::capture_observations::vahn_fire_book_use`.
+- **mc7 ↔ mc8 ↔ mc9** — stat-growth + magic-rank-up triplet. Loading mc7
+  and waiting ~5-10 s plays out the steal animation, then mc8's
+  magic-rank up fires, then mc9's character level-up fires. Pinned in
+  `engine_core::levelup::observations::vahn_mc8_to_mc9`.
+- **mc0 ↔ mc1** — town-vs-field RAM-layout reference. mc0 is the only
+  town-resident state in the corpus.
 
 Slot → label → watchpoint mapping is declared in
 [`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml)
@@ -221,9 +236,9 @@ filename_pattern = "Legend of Legaia (USA).<HASH>.mc{slot}"
 
 [[scenarios]]
 slot = 1
-label = "area_load_early"
-description = "Loading into a new area — early frame"
-topics = ["scene-bundle preamble"]
+label = "pre_encounter"
+description = "Walking the field, one step before an encounter triggers (`map01`)"
+topics = ["encounter table base", "field state", "navmesh"]
 diff_against = [2, 3]
 
 [scenarios.overlay_slice]
@@ -231,10 +246,10 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084580
-hint = "FUN_800243F0 BGM/sound block layout; pool[+0..+0x40]"
+label = "battle_overlay_window"
+start = 0x801CE808
+end = 0x801F3818
+hint = "133 KB battle overlay. Loaded between mc1 (field) and mc2 (battle)."
 ```
 
 `mednafen-state watch <label>` runs the scenario's watchpoints against

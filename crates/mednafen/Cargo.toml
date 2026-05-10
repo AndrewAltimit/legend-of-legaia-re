@@ -19,3 +19,6 @@ flate2.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 toml = "0.8"
+
+[dev-dependencies]
+legaia-engine-core = { path = "../engine-core" }

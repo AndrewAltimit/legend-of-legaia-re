@@ -128,10 +128,12 @@ target/release/mednafen-state watch area_load_early</code></pre>
   <h3>The scenarios</h3>
   <p>Ten labelled scenarios cover the gameplay states most useful for blocked decompilation work:</p>
   <ul>
-    <li><strong>mc0 drake_castle</strong> — steady-state field with full party (move-table base pointer)</li>
-    <li><strong>mc1/mc2/mc3 area_load_{early,mid,late}</strong> — three progressive captures of a scene-load transition (scene_bundle preamble→slot mapping, navmesh candidate)</li>
-    <li><strong>mc4/mc5/mc6 battle_{intro,arts_view,anim_strike}</strong> — battle progression (ANM bytecode interpreter, art-strike chain)</li>
-    <li><strong>mc7 status_menu / mc8 options_menu / mc9 load_screen</strong> — menu sub-screens</li>
+    <li><strong>mc0 town_rim_elm</strong> — Rim Elm (CDNAME <code>town0c</code>) — the corpus's only town-resident state, anchors town-vs-field RAM-layout diffs</li>
+    <li><strong>mc1 pre_encounter / mc2 post_encounter</strong> — same field scene (<code>map01</code>), one save before and one after an encounter triggers; pins the 133 KB battle-overlay residency window at <code>0x801CE808..0x801F3818</code></li>
+    <li><strong>mc3 battle_drake_castle</strong> — battle in <code>dolk</code>, also the move-table boot-path scene</li>
+    <li><strong>mc4 pre_fire_book / mc5 post_fire_book</strong> — battle command menu before vs. after using Fire Book I on Vahn; pins exactly one 3-byte cluster at character-record <code>+0x185..+0x188</code></li>
+    <li><strong>mc6 battle_anim_strike</strong> — performing a somersault on an enemy (active animation)</li>
+    <li><strong>mc7 pre_steal / mc8 magic_level_up / mc9 char_level_up</strong> — battle stat-growth + magic-rank-up triplet (loading <code>mc7</code> and waiting plays out into <code>mc8</code> then <code>mc9</code>)</li>
   </ul>
 
   <h3>Why scripted snapshots?</h3>
@@ -142,6 +144,8 @@ target/release/mednafen-state watch area_load_early</code></pre>
     <li><strong>MOVE-table source pinned</strong> — tracing <code>_DAT_8007B888</code> across the 10 saves shows three distinct values (one per scene); the per-scene CDNAME block's slot-1 PROT entry (a <code>scene_asset_table</code>) carries descriptor[4] = <code>Move</code> at sizes that match each scene's runtime base. <code>MOVE2</code> (<code>_DAT_8007B840</code>) is zero across every save — populated only by scenes with an alternate move table.</li>
     <li><strong>Anim dispatcher located in SCUS</strong> — diffing the actor pool between battle-intro idle (<code>mc4</code>) and active somersault (<code>mc6</code>) over <code>0x801C9594..0x801C9F7F</code> reveals 0x60-byte slots whose <code>+0x00</code> is the anim PC pointer (<code>actor[+0x4C]</code> mirror) and whose dispatch byte (<code>actor[+0x5A]</code>) flips between values 0x04 (idle) and 0x06 (playing). The dispatcher is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (already dumped) — seven opcodes, the keyframe path is fully ported.</li>
     <li><strong>Navmesh / region table located</strong> — diffing the navmesh candidate window (<code>0x80100000..0x80120000</code>) between <code>mc1</code> and <code>mc3</code> isolates a 24-byte stride record table at <code>0x80108EA4..0x801095xx</code> with sequential record ids, six i16 coordinate fields, a 4-byte ASCII tag, and per-scene records following a leading shared bank.</li>
+    <li><strong>Encounter-trigger overlay residency pinned</strong> — diffing <code>mc1</code> (walking <code>map01</code>, one step before the encounter) against <code>mc2</code> (battle just initiated, same scene) over the engine RAM range surfaces a single 133 KB region at <code>0x801CE808..0x801F3818</code> that is the battle overlay loaded on encounter trigger. The active scene-name table at <code>0x80084540</code> does not change &mdash; battle is layered on top of the field scene, not swapped for it. Codified in <code>engine_core::capture_observations::encounter_trigger</code>.</li>
+    <li><strong>Fire Book I write footprint pinned</strong> — diffing <code>mc4</code> (command menu parked on Fire Book I) against <code>mc5</code> (Fire Book I just used on Vahn) over Vahn's full character record (<code>0x80084708..+0x414</code>) surfaces <em>exactly one</em> 3-byte region at <code>+0x185..+0x188</code>: the byte sequence <code>01 0C 00</code> rewrites to <code>02 03 0C</code>. Pattern matches a length-prefixed list growing by one entry. Codified in <code>engine_core::capture_observations::vahn_fire_book_use</code>; precise interpretation pending a reader-search of the captured battle-action overlay.</li>
   </ul>
 
   <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/mednafen-automation.md" target="_blank" rel="noopener">Full mednafen-automation reference →</a></p>
