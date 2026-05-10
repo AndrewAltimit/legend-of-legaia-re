@@ -127,7 +127,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/art`](crates/art/README.md) | `art` | Tactical Arts data: ActionConstants, per-character art tables, Miracle/Super Art trigger matchers, art-record parser. |
 | [`crates/mes`](crates/mes/README.md) | `mes` | MES dialog container parser (Compact + Records). |
 | [`crates/anm`](crates/anm/README.md) | `anm` | ANM animation container parser. |
-| [`crates/save`](crates/save/README.md) | `save-tool` | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus PSX memory-card walker; `SaveExt` / `SaveFile` (`LGSF v1`) for full engine save round-trips (party + story flags + money + inventory). |
+| [`crates/save`](crates/save/README.md) | `save-tool` | Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus PSX memory-card walker; `Party::from_retail_sc_block` lifts a real SC block into a typed [`Party`]; `SaveExt` / `SaveFile` (`LGSF v2`) for full engine save round-trips (party + story flags + money + inventory + per-character ext + saved chains). |
 | [`crates/font`](crates/font/README.md) | `font-extract` | Proportional dialog font: extracts width table + 4bpp atlas from `SCUS_942.54` + a mednafen save state, exposes layout API for engine consumers. |
 | [`crates/extract`](crates/extract/README.md) | `legaia-extract` | Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. |
 | [`crates/mdec`](crates/mdec/README.md) | `mdec` | PSX MDEC clean-room decoder (BS v2 bitstream → RGBA8 pixels): VLC tables, 8-point IDCT, YCbCr→RGB, `StrFrameAssembler` for multi-sector STR video frames. |
@@ -138,7 +138,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | - | World state, scene host, scene resources (runtime VRAM pre-pass), dialog panel, mode/menu/world dispatch, BGM director, **camera controller**, **menu runtime + disk save/load**, `save_full`/`load_full` (LGSF v1 round-trip: party + story flags + money + inventory), **shop/inn/level-up/tactical-arts session state**, `input::Mapping` (TOML key-binding persistence), `DefaultMapIdResolver`, `EffectCatalog`, `MemoryVfs` (WASM in-memory Vfs), **`WorldMapController`** (camera scroll/azimuth/zoom + top-view debug toggle, `SceneMode::WorldMap`). |
+| [`crates/engine-core`](crates/engine-core/README.md) | - | World state, scene host, scene resources (runtime VRAM pre-pass), dialog panel, mode/menu/world dispatch, BGM director, **camera controller**, **menu runtime + disk save/load**, `save_full`/`load_full` (LGSF v2 round-trip: party + story flags + money + inventory + per-char ext + saved chains), **shop/inn/level-up/tactical-arts session state**, **`apply_battle_loot`** (formation → XP + gold + level-ups), `input::Mapping` (TOML key-binding persistence), `DefaultMapIdResolver`, `EffectCatalog`, `MemoryVfs` (WASM in-memory Vfs), **`WorldMapController`** (camera scroll/azimuth/zoom + top-view debug toggle, `SceneMode::WorldMap`). |
 | [`crates/engine-render`](crates/engine-render/README.md) | - | winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the `legaia-font` atlas. |
 | [`crates/engine-audio`](crates/engine-audio/README.md) | - | cpal-backed audio mixer + clean-room SPU + SsAPI-shape SEQ sequencer; BGM cross-fade + volume ramp; `audio-webaudio` feature adds `WebAudioOut` (`ScriptProcessorNode`-based) for WASM targets. |
 | [`crates/engine-vm`](crates/engine-vm/README.md) | - | Actor / field / effect / move / **motion** VMs + battle-action SM + 16-arm action validator + `battle_formulas` (damage / MP / accuracy / RNG) + **world-map entity SM** (`FUN_801DA51C`, 5-state encounter/interact port). |
@@ -179,6 +179,7 @@ Two integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` poin
 - `crates/engine-core/tests/battle_real_data_chain.rs` - locate the retail effect bundle and drive the battle SM against it.
 - `crates/engine-audio/tests/real_bgm_chain.rs` - pull a real `music_01` SEQ + VAB pair through the sequencer and SPU mixer.
 - `crates/save/tests/real_card_roundtrip.rs` - walk a real PSX memory card (mednafen `.mcr`) and verify the save-block layout. Looks at `~/.mednafen/sav/`; doesn't gate on `LEGAIA_DISC_BIN`.
+- `crates/engine-core/tests/end_to_end_gameplay_loop.rs` - drives the full minimum-viable gameplay loop: boot save → install encounter session → drive battle action SM to MonsterWipe → apply XP / gold / level-up → round-trip through `SaveFile`. Has a synthetic variant that always runs in CI plus a `real_psx_memory_card_save_drives_full_loop` variant that boots the loop from a real Legaia memory-card save block (skips when `~/.mednafen/sav/` has no Legaia card).
 
 ```bash
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace

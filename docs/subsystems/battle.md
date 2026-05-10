@@ -466,3 +466,26 @@ Implementation: [`crates/engine-core::seru_learning`](../../crates/engine-core/s
 Menu-side state machine for composing + saving Tactical Arts command chains. `ChainLibrary` holds up to 8 saved chains per character (3..=7-byte length range, matching retail). `ChainEditor` runs a 4-phase SM: `Browsing { cursor } → Editing { working } → Naming { working, name } → Done`. Engines feed picks back to `BattleRunner::push_chained_art` at battle start.
 
 Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine-core/src/tactical_arts_editor.rs).
+
+## Battle rewards composite
+
+`World::apply_battle_loot(formation, catalog) -> BattleRewards` is the post-victory composite that turns a defeated formation into the runtime side-effects:
+
+- Sums each `MonsterDef::exp` and distributes the total via `World::apply_battle_xp` (per-character level-up checks against `LevelUpTracker::xp_table`).
+- Sums each `MonsterDef::gold` and adds it to `World::money` (saturating).
+- Returns `BattleRewards { xp, gold, level_ups: Vec<LevelUpResult> }` for the engine to surface as the post-battle banner ("got N XP, M gold, level up!").
+
+Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: [`crates/engine-core::world::World::apply_battle_loot`](../../crates/engine-core/src/world.rs).
+
+## End-to-end gameplay loop integration test
+
+`crates/engine-core/tests/end_to_end_gameplay_loop.rs` stitches every gameplay-side subsystem into one cycle:
+
+1. **Boot** — load an `LGSF v2` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`.
+2. **Field walk** — switch to `SceneMode::Field`, install an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.
+3. **Encounter** — drain the formation roll, populate monster slots 3..N from the `MonsterCatalog`, flip mode to `SceneMode::Battle`.
+4. **Battle SM** — drive `World::tick` while applying clean-room formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.
+5. **Rewards** — call `World::apply_battle_loot` to credit XP / gold and trigger per-character level-ups; assert at least one party slot crossed a threshold.
+6. **Save round-trip** — `world.save_full().write() → SaveFile::parse() → load_full()` into a fresh `World`; assert HP/MP, level, money, story flags, and inventory survived intact.
+
+The synthetic variant runs in CI. The disc-gated variant (`real_psx_memory_card_save_drives_full_loop`) boots the same loop from a real Legaia memory-card save block via `Party::from_retail_sc_block` when `~/.mednafen/sav/` holds a Legaia card; skips otherwise.

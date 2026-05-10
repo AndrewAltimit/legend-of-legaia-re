@@ -527,6 +527,19 @@ pub struct DialogRequest {
     pub depth_id: u8,
 }
 
+/// Aggregated post-battle rewards returned by [`World::apply_battle_loot`].
+///
+/// Engines surface this as the post-battle banner ("got X XP, Y gold, level
+/// up!"). The XP / gold totals reflect what was actually credited (monster
+/// ids missing from the catalog don't contribute), and `level_ups` carries
+/// the per-character results from [`World::apply_battle_xp`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BattleRewards {
+    pub xp: u32,
+    pub gold: u32,
+    pub level_ups: Vec<LevelUpResult>,
+}
+
 /// Camera state populated by `camera_save` / `camera_load` and read by
 /// `camera_apply`. Engines render the configured camera each frame.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -899,6 +912,42 @@ impl World {
             results.push(result);
         }
         results
+    }
+
+    /// Sum the per-monster `exp` and `gold` for every slot in `formation`,
+    /// distribute the XP via [`World::apply_battle_xp`], and add the gold
+    /// to [`World::money`]. Returns the aggregated [`BattleRewards`] so
+    /// engines can surface the post-battle banner ("got N XP, M gold,
+    /// learned spell X").
+    ///
+    /// Monsters whose ids aren't in `catalog` contribute zero - the call
+    /// silently skips them rather than failing, so a partially-populated
+    /// catalog still drives a battle-end transition.
+    pub fn apply_battle_loot(
+        &mut self,
+        formation: &crate::monster_catalog::FormationDef,
+        catalog: &crate::monster_catalog::MonsterCatalog,
+    ) -> BattleRewards {
+        let mut xp_total: u32 = 0;
+        let mut gold_total: u32 = 0;
+        for slot in &formation.slots {
+            if let Some(def) = catalog.get(slot.monster_id) {
+                xp_total = xp_total.saturating_add(def.exp as u32);
+                gold_total = gold_total.saturating_add(def.gold as u32);
+            }
+        }
+        let level_ups = if xp_total > 0 {
+            self.apply_battle_xp(xp_total)
+        } else {
+            Vec::new()
+        };
+        let new_money = (self.money as i64).saturating_add(gold_total as i64);
+        self.money = new_money.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        BattleRewards {
+            xp: xp_total,
+            gold: gold_total,
+            level_ups,
+        }
     }
 
     /// Record one use of `art_id` by `char_id` (roster index).

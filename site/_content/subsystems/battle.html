@@ -306,3 +306,28 @@
   <h2>The engine port</h2>
   <p>The clean-room engine ports the battle stack as a layered set of pure-data sessions and orchestrators (<code>BattleSession</code> / <code>BattleRunner</code> / <code>BattleRound</code> / <code>BattleHud</code>, the <code>compute_battle_stats</code> aggregator, the item / spell / equipment / monster / formation catalogs, and the <code>StatusEffectTracker</code> / <code>ApGauge</code> models). The full crate-by-crate breakdown lives on the <a href="engine.html#phase3">engine reimplementation</a> page; see the Phase 3 section for the catalogue.</p>
 </section>
+
+<section class="doc-section" id="battle-rewards">
+  <h2>Battle rewards composite</h2>
+  <p><code>World::apply_battle_loot(formation, catalog) -&gt; BattleRewards</code> is the post-victory composite that turns a defeated formation into the runtime side-effects:</p>
+  <ul>
+    <li>Sums each <code>MonsterDef::exp</code> and distributes the total via <code>World::apply_battle_xp</code> (per-character level-up checks against <code>LevelUpTracker::xp_table</code>).</li>
+    <li>Sums each <code>MonsterDef::gold</code> and adds it to <code>World::money</code> (saturating).</li>
+    <li>Returns <code>BattleRewards { xp, gold, level_ups: Vec&lt;LevelUpResult&gt; }</code> for the engine to surface as the post-battle banner ("got N XP, M gold, level up!").</li>
+  </ul>
+  <p>Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: <code>crates/engine-core::world::World::apply_battle_loot</code>.</p>
+</section>
+
+<section class="doc-section" id="end-to-end-loop">
+  <h2>End-to-end gameplay loop integration test</h2>
+  <p><code>crates/engine-core/tests/end_to_end_gameplay_loop.rs</code> stitches every gameplay-side subsystem into one cycle:</p>
+  <ol>
+    <li><strong>Boot</strong> &mdash; load an <code>LGSF v2</code> <code>SaveFile</code> (party + story flags + money + inventory) into a fresh <code>World</code> via <code>load_full</code>.</li>
+    <li><strong>Field walk</strong> &mdash; switch to <code>SceneMode::Field</code>, install an <code>EncounterSession</code> keyed to <code>vanilla_formation_table</code> at saturated trigger rate, step until <code>EncounterPhase::Triggered</code>.</li>
+    <li><strong>Encounter</strong> &mdash; drain the formation roll, populate monster slots 3..N from the <code>MonsterCatalog</code>, flip mode to <code>SceneMode::Battle</code>.</li>
+    <li><strong>Battle SM</strong> &mdash; drive <code>World::tick</code> while applying clean-room formula damage on every <code>AttackChain &rarr; AttackRecovery</code> transition until the action SM resolves to <code>BattleEndCause::MonsterWipe</code>.</li>
+    <li><strong>Rewards</strong> &mdash; call <code>World::apply_battle_loot</code> to credit XP / gold and trigger per-character level-ups; assert at least one party slot crossed a threshold.</li>
+    <li><strong>Save round-trip</strong> &mdash; <code>world.save_full().write() &rarr; SaveFile::parse() &rarr; load_full()</code> into a fresh <code>World</code>; assert HP/MP, level, money, story flags, and inventory survived intact.</li>
+  </ol>
+  <p>The synthetic variant runs in CI. The disc-gated variant (<code>real_psx_memory_card_save_drives_full_loop</code>) boots the same loop from a real Legaia memory-card save block via <code>Party::from_retail_sc_block</code> when <code>~/.mednafen/sav/</code> holds a Legaia card; skips otherwise.</p>
+</section>
