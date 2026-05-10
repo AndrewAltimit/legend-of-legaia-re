@@ -109,7 +109,8 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/pochi.html",         "Pochi-filler placeholders",     "formats/pochi",              "formats/pochi.html"),
     ("formats/mips-overlay.html",  "MIPS overlay code",             "formats/mips-overlay",       "formats/mips-overlay.html"),
     ("formats/overlay-ptr-table.html","Overlay pointer-table code", "formats/overlay-ptr-table",  "formats/overlay-ptr-table.html"),
-    ("formats/navmesh.html",       "Navmesh / region table",        "formats/navmesh",            "formats/navmesh.html"),
+    ("formats/navmesh.html",       "Per-scene primitive scratch buffer", "formats/navmesh",       "formats/navmesh.html"),
+    ("formats/encounter.html",     "Encounter record",              "formats/encounter",          "formats/encounter.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
     # Per-tooling pages (mirrored from docs/tooling/)
     ("tooling/extraction.html",    "Extraction CLIs",               "tooling/extraction",         "tooling/extraction.html"),

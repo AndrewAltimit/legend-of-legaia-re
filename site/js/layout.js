@@ -84,7 +84,8 @@ const NAV = [
       { href: 'formats/pochi.html',                  text: 'Pochi-filler',             key: 'formats/pochi' },
       { href: 'formats/mips-overlay.html',           text: 'MIPS overlay code',        key: 'formats/mips-overlay' },
       { href: 'formats/overlay-ptr-table.html',      text: 'Overlay ptr-table code',   key: 'formats/overlay-ptr-table' },
-      { href: 'formats/navmesh.html',                text: 'Navmesh / region table',   key: 'formats/navmesh' },
+      { href: 'formats/navmesh.html',                text: 'Per-scene scratch buffer', key: 'formats/navmesh' },
+      { href: 'formats/encounter.html',              text: 'Encounter record',         key: 'formats/encounter' },
     ],
   },
   {

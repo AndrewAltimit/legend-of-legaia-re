@@ -45,7 +45,8 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Scene bundles](scene-bundles.md) | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) - the dominant per-scene asset shapes |
 | [Effect bundles](effect.md) | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [Field-pack format](field-pack.md) | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
-| [Navmesh / region table](navmesh.md) | 24-byte stride record table loaded at `0x80108EA4..0x801095xx` - per-scene NPC region / event-trigger / nav-region records (inferred) |
+| [Per-scene primitive scratch buffer](navmesh.md) | Documented negative finding — `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
+| [Encounter record](encounter.md) | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Pointer installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
 
 ## Runtime overlay carriers
 

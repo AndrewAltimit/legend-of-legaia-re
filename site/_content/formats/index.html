@@ -128,8 +128,12 @@
       <div class="card-body">Magic <code>0x02018B0C</code> (efect.dat). 2-pack wrapper: 14 sprite-anim entries + 33 effect scripts indexed by effect ID.</div>
     </a>
     <a class="card" href="navmesh.html">
-      <div class="card-title">Navmesh / region table</div>
-      <div class="card-body">24-byte stride record table loaded into RAM at <code>0x80108EA4..0x801095xx</code>. Per-record id + sub-id + 6-i16 coordinate fields + 4-byte ASCII tag + two u16 sub-fields.</div>
+      <div class="card-title">Per-scene primitive scratch buffer</div>
+      <div class="card-body">Negative-finding entry. The 1700-byte cluster at <code>0x80108EA4..0x80109550</code> that earlier readings called "navmesh" is actually a per-scene scratch buffer the renderer fills with assembled GPU primitive data on scene entry. No RAM cell anywhere holds a pointer into the window.</div>
+    </a>
+    <a class="card" href="encounter.html">
+      <div class="card-title">Encounter record</div>
+      <div class="card-body">On-disc encounter record installed at <code>actor[+0x94]</code> by the script-VM and read by <code>FUN_801DA51C</code>. Layout: <code>[3 reserved][count: u8][monster_ids: u8[count]]</code>. Reader copies the ids into the global formation cell at <code>0x8007BD0C</code>.</div>
     </a>
   </div>
 </section>

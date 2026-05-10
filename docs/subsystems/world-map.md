@@ -95,6 +95,37 @@ entity's location. Handles pad-button checks against `_DAT_8007BB38` for
 entity interaction. Called once per world-map entity per frame by the entity
 pool tick loop.
 
+#### Encounter-record installation
+
+The body at `0x801DA620..0x801DA678` populates the global encounter formation
+cell from a per-encounter record pointed at by `entity[+0x94]`:
+
+1. Clear the 4-slot formation array at `0x8007BD0C..0x8007BD0F` (slots 3, 2,
+   1, then 0 — slot 0 is cleared in the delay slot of `JAL 0x801DE190`).
+2. Read `monster_count = entity[+0x94][+0x3]`.
+3. Copy `entity[+0x94][+0x4 .. +0x4 + monster_count]` into the formation
+   cell, byte-for-byte.
+
+The encounter-record format consumed here is documented in
+[`formats/encounter.md`](../formats/encounter.md). The 4-byte formation cell
+at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
+adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
+between PROT entries `0x367` and `0x36D`.
+
+The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
+script VM dispatcher (`FUN_801DE840`); see
+[`subsystems/script-vm.md`](script-vm.md) and the op-handler family at
+`0x801DEEDC` / `0x801DEF08` / `0x801DEFA0` / `0x801DF038` / `0x801DF3FC` /
+`0x801E1C38` / `0x801E1F44` / `0x801E21C0`. Each handler is a different
+"trigger encounter on actor X" op; they all share the clause:
+
+```mips
+sw   <record_ptr>, 0x94(<actor>)
+sh   $zero,         0x54(<actor>)
+ori  $tmp, $tmp, 0x400      ; raise "encounter armed" flag in actor[+0x10]
+sw   $tmp,         0x10(<actor>)
+```
+
 ## Globals used
 
 | Address | Role |

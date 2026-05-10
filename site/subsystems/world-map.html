@@ -57,6 +57,22 @@
   </ul>
 </section>
 
+<section class="doc-section" id="encounter-installation">
+  <h2>Encounter-record installation</h2>
+  <p>The body at <code>0x801DA620..0x801DA678</code> populates the global encounter formation cell from a per-encounter record pointed at by <code>entity[+0x94]</code>:</p>
+  <ol>
+    <li>Clear the 4-slot formation array at <code>0x8007BD0C..0x8007BD0F</code> (slots 3, 2, 1, then 0 — slot 0 is cleared in the delay slot of <code>JAL 0x801DE190</code>).</li>
+    <li>Read <code>monster_count = entity[+0x94][+0x3]</code>.</li>
+    <li>Copy <code>entity[+0x94][+0x4 .. +0x4 + monster_count]</code> into the formation cell, byte-for-byte.</li>
+  </ol>
+  <p>The encounter-record format consumed here is documented on the <a href="../formats/encounter.html">encounter record page</a>. The 4-byte formation cell at <code>0x8007BD0C</code> is the input to the battle-scene loader (<code>FUN_800520F0</code>); the adjacent byte at <code>0x8007BD11</code> is a battle-data PROT-id selector that picks between PROT entries <code>0x367</code> and <code>0x36D</code>.</p>
+  <p>The pointer at <code>entity[+0x94]</code> is set by field-VM op handlers inside the script-VM dispatcher (<code>FUN_801DE840</code>); see the <a href="script-vm.html">script-VM page</a> and the op-handler family at <code>0x801DEEDC</code> / <code>0x801DEF08</code> / <code>0x801DEFA0</code> / <code>0x801DF038</code> / <code>0x801DF3FC</code> / <code>0x801E1C38</code> / <code>0x801E1F44</code> / <code>0x801E21C0</code>. Each handler is a different "trigger encounter on actor X" op; they all share the clause:</p>
+<pre><code>sw   &lt;record_ptr&gt;, 0x94(&lt;actor&gt;)
+sh   $zero,         0x54(&lt;actor&gt;)
+ori  $tmp, $tmp, 0x400      ; raise "encounter armed" flag in actor[+0x10]
+sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
+</section>
+
 <section class="doc-section" id="debug-menu">
   <h2>Debug menu renderer - <code>FUN_801EAD98</code></h2>
   <p>Entry: <code>(ctx_ptr, x, y, scroll_idx, max_visible)</code>. Renders a vertically scrolling menu list for the world map developer menu. String table at <code>0x801CF344</code>; at least 24 entries (bounds check <code>local_40 &gt; 0x17</code>). Known entries: <code>MAP_CHANGE</code>, <code>CARD_OPTION</code> (both show as <code>CLOSED</code> when <code>_DAT_8007B868 != 0</code>), <code>PLAYER_STATUS</code>, <code>CAMERA</code>, <code>ENCOUNT</code>, <code>OTHER_SETTINGS</code>, <code>BGM_CALL</code>, <code>DEBUG</code>.</p>
