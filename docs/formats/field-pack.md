@@ -89,7 +89,11 @@ a full scene-init execution trace (not yet available in the overlay dumps).
 
 ## Mednafen-state diff observations
 
-Diffing the area-load saves (`mc1` vs `mc3`) over the engine RAM range `0x801C0000..0x80200000` (using the toolkit's `mednafen-state diff`) lights up a 9 KB region at `0x801F69D8..0x801F8F02` that toggles between two different MIPS-code overlays — different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (`addiu sp,sp,-N`, `sw s1,N(sp)`, `lui s1,0x801F`, `ori s1,s1,...`), confirming the slot is an MIPS overlay rather than a data buffer. The field-pack consumer (per-slot reader) is one of the candidates for what lives there; pinning down which routine in the overlay reads which schema slot still requires a writer-search pass through the captured overlay programs.
+A prior diff over the engine RAM range `0x801C0000..0x80200000` lit up a 9 KB region at `0x801F69D8..0x801F8F02` that toggled between two different MIPS-code overlays — different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (`addiu sp,sp,-N`, `sw s1,N(sp)`, `lui s1,0x801F`, `ori s1,s1,...`), confirming the slot is an MIPS overlay rather than a data buffer. The field-pack consumer (per-slot reader) is one of the candidates for what lives there; pinning down which routine in the overlay reads which schema slot still requires a writer-search pass through the captured overlay programs.
+
+### Town residency reference
+
+The mednafen save corpus now includes one town-resident state (`mc0`, CDNAME label `town0c`, scene index `0x15` — the first town save in the corpus). Cross-scene RAM diffs against any field save (e.g. `mc1` = `map01`) surface the per-town overlay payload + scene-bundle pool layout for `town0c` specifically. **`town0c` is NOT one of the four PROT entries that match the field-pack magic** (those live in the `town01` block: `0002_gameover_data`, `0003_town01`, `0004_town01`, `0005_town01`). Pinning the field-pack preamble → slot mapping needs an additional save inside the `town01` block specifically; `town0c` serves as a generic "town residency" reference but does not carry the field-pack data on its own. See [`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml) and the [`town01_save_documents_active_scene_label`] disc-gated test for the recorded scene index + label.
 
 ## Tooling
 

@@ -71,6 +71,20 @@
   <p><code>level_up_draws_for(banner, world)</code> in <code>engine-render</code> returns two text draw calls: a yellow &ldquo;LEVEL UP! (char N &rarr; Lv M)&rdquo; line and a green &ldquo;HP +X  MP +Y&rdquo; line. Wired into <code>PlayWindowApp::build_text_overlay</code> at anchor <code>(8, 60)</code>.</p>
 </section>
 
+<section class="doc-section" id="fire-book-write-footprint">
+  <h2>Fire Book I &mdash; captured write footprint</h2>
+  <p>The <code>mc4</code> (battle command menu parked on Fire Book I) <code>&rarr;</code> <code>mc5</code> (Fire Book I just used on Vahn) save pair pins the per-character record write footprint of an in-battle Fire Book usage. The <code>mednafen-state diff</code> over Vahn's character record (<code>0x80084708..+0x414</code>) surfaces <strong>exactly one</strong> 3-byte region at <code>+0x185..+0x188</code>:</p>
+  <table class="data-table">
+    <thead><tr><th>Offset</th><th>Pre-event (mc4)</th><th>Post-event (mc5)</th><th>Read</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x185</code></td><td><code>0x01</code></td><td><code>0x02</code></td><td>length-prefix byte (+1)</td></tr>
+      <tr><td><code>+0x186</code></td><td><code>0x0C</code></td><td><code>0x03</code></td><td>first list entry &mdash; new entry inserted at front</td></tr>
+      <tr><td><code>+0x187</code></td><td><code>0x00</code></td><td><code>0x0C</code></td><td>second list entry &mdash; pre-event entry shifted right</td></tr>
+    </tbody>
+  </table>
+  <p>The byte values do not match retail learned-art constants (those occupy <code>0x1B..=0x32</code>). Two consistent interpretations remain: (1) the cluster is a transient command-history buffer the item-use animation populated, with the actual learn write living outside the character record (e.g. global story-flag word at <code>_DAT_1F800394</code>); (2) the cluster is a per-character recent-action buffer the runtime pre-fills before the Fire Book animation. A reader-search through the captured battle-action overlay disambiguates. Until then the field is treated as <strong>pinned but uninterpreted</strong> &mdash; codified in <code>engine_core::capture_observations::vahn_fire_book_use</code>; disc-gated test <code>fire_book_use_diff_pins_vahn_record_write</code> in <code>crates/mednafen/tests/real_saves.rs</code>.</p>
+</section>
+
 <section class="doc-section" id="open-items">
   <h2>Open items</h2>
   <ul>

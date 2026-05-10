@@ -359,6 +359,20 @@ Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
   <p>The remaining <code>ed*</code> scenes (<code>edbylon</code>, <code>edbalden</code>, <code>edlast</code>, <code>edretoin</code>, <code>edkorout</code>, <code>edbubu</code>, <code>eddoman</code>, <code>edson</code>, <code>edstati3</code>) are dialogue-actor-overlay driven and have no FMV. <code>cutscene_label_for_str(filename)</code> is the inverse (case-insensitive on basename). The exact retail mapping table lives in the cutscene overlay; once captured, the lookup function should consult the captured map. The <code>legaia-engine play</code> and <code>play-window</code> subcommands auto-resolve the STR file when the user passes <code>--scene &lt;op*|edteien&gt;</code> and the extracted root contains the matching MV file.</p>
 </section>
 
+<section class="doc-section" id="encounter-trigger-runtime">
+  <h2>Encounter trigger &mdash; runtime memory layout</h2>
+  <p>The <code>mc1</code> (pre-encounter, walking <code>map01</code>) <code>&rarr;</code> <code>mc2</code> (battle just initiated, same <code>map01</code> scene) save pair pins the runtime memory layout of an encounter trigger. The <code>mednafen-state diff</code> over <code>0x801C0000..0x80200000</code> surfaces:</p>
+  <table class="data-table">
+    <thead><tr><th>Range</th><th>Bytes changed</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801CE808..0x801F3818</code></td><td>~133 KB</td><td>Battle overlay loaded into RAM (single contiguous region)</td></tr>
+      <tr><td><code>0x801C9370..0x801C9900</code></td><td>~200&ndash;500 B</td><td>8-slot battle actor pointer table; stride <code>0x60</code> per slot</td></tr>
+      <tr><td><code>0x80083000..0x80084000</code></td><td>~600 B</td><td>Scene-bundle / sound-pool: encounter formation + BGM resolution</td></tr>
+    </tbody>
+  </table>
+  <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between mc1 and mc2 &mdash; the battle is layered on top of the field scene rather than swapping it out. Codified in <code>crates/engine-core::capture_observations::encounter_trigger</code>; a disc-gated test in <code>crates/mednafen/tests/real_saves.rs</code> (<code>encounter_trigger_diff_loads_battle_overlay</code>) exercises the real save bytes.</p>
+</section>
+
 <section class="doc-section" id="captured-stat-growth">
   <h2>Captured stat-growth observations</h2>
   <p>The <code>mednafen-state diff</code> toolkit over <code>mc7..mc9</code> pins the per-byte footprint of a magic-rank-up + character-level-up event for Vahn (party slot 0). The deltas inside Vahn's character record at <code>0x80084708</code> (stride <code>0x414</code>):</p>

@@ -132,6 +132,27 @@ Wired into `PlayWindowApp::build_text_overlay` at anchor `(8, 60)` in
 | `mp_gained` | `u16` | MP max increase (for display) |
 | `frames_remaining` | `u16` | Counts down from 180; cleared when zero |
 
+## Fire Book I — captured write footprint
+
+The user's `mc4` (battle command menu parked on Fire Book I) → `mc5` (Fire Book I just used on Vahn) save pair pins the per-character record write footprint of an in-battle Fire Book usage. The `mednafen-state diff` over Vahn's character record (`0x80084708..+0x414`) surfaces **exactly one 3-byte region** at `+0x185..+0x188`:
+
+| Offset | Pre-event (mc4) | Post-event (mc5) | Read |
+|---|---|---|---|
+| `+0x185` | `0x01` | `0x02` | length-prefix byte (+1) |
+| `+0x186` | `0x0C` | `0x03` | first list entry — new entry inserted at front |
+| `+0x187` | `0x00` | `0x0C` | second list entry — pre-event entry shifted right |
+
+Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry was inserted at position 0; the existing entry at position 0 moved to position 1.
+
+The byte values do **not** match retail learned-art constants (those occupy `0x1B..=0x32`; see `legaia_art::tables`). `0x03` is the action constant for `Attack`; `0x0C` for direction `Left`. Two consistent interpretations remain:
+
+1. The 3-byte cluster is a transient command-history buffer that the item-use animation populated, unrelated to the permanent Hyper-Art unlock flag — meaning the actual learn write lives outside Vahn's character record (e.g. a global story-flag word at `_DAT_1F800394` or a mask field elsewhere in main RAM).
+2. The cluster is a per-character recent-action buffer the runtime pre-fills before the Fire Book animation plays, with the new entry encoded under a different scheme than the retail Learned Art Constant table.
+
+A reader-search through the captured battle-action overlay (`overlay_battle_action_*.txt`) for `LUI` + `ORI` pairs targeting `0x80084708 + 0x185` (or stride `+0x414` adjacent slots) would disambiguate. Until then, the field is treated as **pinned but uninterpreted** — codified in `engine_core::capture_observations::vahn_fire_book_use` as the `BEFORE` / `AFTER` byte triples plus the absolute address.
+
+A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair.
+
 ## Open items
 
 - **Per-Seru stat grants.** Vahn / Noa / Gala have distinct HP/MP growth via
