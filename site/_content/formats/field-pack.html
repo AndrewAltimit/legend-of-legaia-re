@@ -247,6 +247,29 @@ _clear a3</code></pre>
   <p>A direct preamble-byte → runtime-RAM-cell mapping requires capturing the loader <strong>during</strong> a scene transition (a frame between "scene change requested" and "field-pack region populated"). The current single-save snapshot is post-load, so only the FINAL runtime layout is observable, not the disc-byte-to-RAM-cell projection.</p>
 </section>
 
+<section class="doc-section" id="loader-order-of-operations">
+  <h2>Loader order-of-operations</h2>
+  <p>A save captured mid-transition between <code>town01</code> (intro Rim Elm) and <code>town0c</code> (Rim Elm normal entry) pins the loader's order-of-operations. The mid-transition snapshot has these properties simultaneously:</p>
+  <ul class="bullets">
+    <li>The scene-bundle pool at <code>0x80084540</code> already carries the <strong>destination</strong> scene name (<code>town0c</code>) - both pool slots <code>+0x08</code> and <code>+0x18</code> flip together.</li>
+    <li><code>_DAT_8007B8D0</code> still reads the <strong>previous</strong> scene's value (<code>0x8014BD30</code>, town01's <code>efect.dat</code> base).</li>
+    <li>The destination scene's field-pack region at the canonical town0c base (<code>0x800A25F0..0x800B4DF0</code>) is partially populated.</li>
+    <li>The previous scene's field-pack region at <code>0x80139530</code> is zeroed.</li>
+    <li>The static asset descriptor table at <code>0x8015CBD0</code> is bit-identical between the pre- and mid-transition snapshots (4 KB SHA-256 match).</li>
+  </ul>
+  <p>That sequencing pins the loader as: <strong>(1)</strong> write new scene name into the bundle pool, <strong>(2)</strong> zero the previous field-pack region, <strong>(3)</strong> populate the destination region at its canonical base, <strong>(4)</strong> flip <code>_DAT_8007B8D0</code> last. Mid-transition, the engine can detect a scene swap is in flight by checking that the pool slot's CDNAME label disagrees with the field-pack base implied by <code>_DAT_8007B8D0</code>.</p>
+  <p>The detector and constants live in <code>legaia_engine_core::capture_observations::field_pack_intra_transition</code>:</p>
+<pre><code>use legaia_engine_core::capture_observations::field_pack_intra_transition;
+
+if let Some((label, stale_base)) =
+    field_pack_intra_transition::detect_mid_transition(main_ram)
+{
+    eprintln!(
+        "scene transition in flight: pool says {label}, base still reads 0x{stale_base:08X}"
+    );
+}</code></pre>
+</section>
+
 <section class="doc-section" id="mednafen-state-diff-observations">
   <h2>Mednafen-state diff observations</h2>
   <p>A prior diff over the engine RAM range <code>0x801C0000..0x80200000</code> lit up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer.</p>

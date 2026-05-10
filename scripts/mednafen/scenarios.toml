@@ -26,7 +26,7 @@ slot = 0
 label = "town0c_rim_elm_genesis_tree"
 description = "Rim Elm next to the Genesis Tree (CDNAME `town0c`, scene 0x15)"
 topics = ["town overlay", "scene_bundle", "town residency reference"]
-diff_against = [1, 3]
+diff_against = [2, 3]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -58,11 +58,15 @@ hint = "_DAT_8007B8D0 = scene-asset load destination + 0x12800. mc0 reads `f0 4d
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 1
-label = "town0c_rim_elm_cave"
-description = "Rim Elm cave with save point (CDNAME `town0c`, scene 0x15)"
-topics = ["sub-area diff", "town overlay residency"]
-diff_against = [0, 3]
+label = "fmv_playback_str_cutscene"
+description = "FMV playback in progress (cutscene / MDEC overlay residency)"
+topics = ["FMV", "cutscene overlay", "STR file table", "MDEC"]
+diff_against = [0, 2]
 
+# Capture the cutscene overlay window. The compact STR-file table sits at
+# 0x801CAE40 (24-byte stride, 6 entries: MV1.STR..MV6.STR); the ISO9660-
+# shape directory copies sit at 0x801CCA80 (56-byte stride). Path strings
+# at 0x801CE810; mid-game FMV-trigger field-scene labels at 0x801CE8AC.
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
@@ -71,7 +75,25 @@ end = 0x80200000
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene: index 0x15 (town0c). Same scene as mc0 / mc3; differences here are sub-area transitions only."
+hint = "Empty during FMV - the cutscene overlay tears the field scene down before STR playback begins."
+
+[[scenarios.watchpoints]]
+label = "fmv_compact_table"
+start = 0x801CAE40
+end = 0x801CAEC8
+hint = "6-entry compact STR-file table. Each entry = 24 bytes: name[12] + reserved u32 + BCD MSF + size. Parsed by `legaia_asset::str_fmv_table::parse_entries`."
+
+[[scenarios.watchpoints]]
+label = "fmv_iso9660_directory_copies"
+start = 0x801CCA80
+end = 0x801CCBE0
+hint = "ISO9660-shape directory record copies. 56 bytes per entry; publisher tag 'USA' at +0x17 of each."
+
+[[scenarios.watchpoints]]
+label = "fmv_mid_game_scene_labels"
+start = 0x801CE8AC
+end = 0x801CE8E0
+hint = "CDNAME labels for mid-game FMV-bearing field scenes: town0b, map01, chitei2, map02, jou, uru2, town0e."
 
 # ----------------------------------------------------------------------
 # mc2 - Rim Elm intro (CDNAME `town01`, scene 0x03) — the field-pack
@@ -89,7 +111,7 @@ slot = 2
 label = "town01_intro_rim_elm"
 description = "Rim Elm intro (CDNAME `town01`, scene 0x03) - field-pack scene"
 topics = ["field-pack RAM layout", "scene asset loader", "town01 block"]
-diff_against = [0, 1]
+diff_against = [0, 3]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -126,15 +148,22 @@ end = 0x80139530
 hint = "Heap-resident scene asset pool. mc2 vs mc0 surfaces ~400 KB of differences here - sibling buffers (TIM atlases, primitive scratch, descriptor-driven data) the loader fills before / alongside the field-pack region."
 
 # ----------------------------------------------------------------------
-# mc3 - Rim Elm shop (CDNAME `town0c`, scene 0x15). Third town0c
-# sub-area save in the corpus.
+# mc3 - Rim Elm normal entry mid-load (CDNAME `town0c`, scene 0x15)
+# captured BETWEEN scene-name flip and field-pack-base flip. The
+# scene-bundle pool already says `town0c` but `_DAT_8007B8D0` still
+# points to the previous scene's efect.dat base. Diff vs mc2 captures
+# the loader's order-of-operations:
+#   (1) write new scene name into the bundle pool
+#   (2) populate the new field-pack region at the destination base
+#   (3) flip the global base pointer last
+# Pinned in `engine_core::capture_observations::field_pack_intra_transition`.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 3
-label = "town0c_rim_elm_shop"
-description = "Rim Elm shop (CDNAME `town0c`, scene 0x15)"
-topics = ["sub-area diff", "shop entry context"]
-diff_against = [0, 1]
+label = "town0c_rim_elm_normal_pre_load"
+description = "Rim Elm normal entry mid-transition (CDNAME `town0c`, scene 0x15)"
+topics = ["intra-transition", "field-pack loader order-of-ops", "town0c"]
+diff_against = [0, 2]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -143,8 +172,26 @@ end = 0x80200000
 [[scenarios.watchpoints]]
 label = "scene_bundle_pool"
 start = 0x80084540
-end = 0x80084560
-hint = "Active scene: index 0x15 (town0c). Same scene as mc0 / mc1; differences here are sub-area transitions only."
+end = 0x80084580
+hint = "Active scene: town0c (CDNAME at +0x08, +0x18); scene_id 0x55 at +0x00. mc3 has town0c here even though `_DAT_8007B8D0` still reads the OLD town01 base - the loader flips the name first, then populates new RAM, then swaps the global pointer."
+
+[[scenarios.watchpoints]]
+label = "field_pack_ram_base_pointer_stale"
+start = 0x8007B8D0
+end = 0x8007B8D4
+hint = "Bit-identical to mc2's `30 bd 14 80` => 0x8014BD30 (old town01 base). The loader has not yet written the new town0c value (would be `f0 4d 0b 80` => 0x800B4DF0). This is the intra-transition signature."
+
+[[scenarios.watchpoints]]
+label = "next_field_pack_region_partial"
+start = 0x800A25F0
+end = 0x800B4DF0
+hint = "New town0c field-pack region (matches mc0's pinned base). In mc3 this region is partially populated even though the global base pointer hasn't flipped yet."
+
+[[scenarios.watchpoints]]
+label = "previous_field_pack_region_zeroed"
+start = 0x80139530
+end = 0x8013A000
+hint = "Old town01 field-pack region. In mc3 this is zeroed - the loader clears the previous region before populating the new one."
 
 # ----------------------------------------------------------------------
 # mc4 - The spring between Rim Elm and Drake Castle (CDNAME `izumi`,

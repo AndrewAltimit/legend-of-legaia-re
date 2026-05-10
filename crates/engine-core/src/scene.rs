@@ -301,6 +301,24 @@ pub const FMV_CUTSCENE_SCENES: [(&str, &str); 6] = [
     ("edteien", "MOV/MV6.STR"),
 ];
 
+/// Field scenes the FMV cutscene overlay knows about by name (it carries
+/// their CDNAME labels in its data section). These are mid-game scenes
+/// with FMV trigger points - distinct from the `op*` opening / `ed*`
+/// ending scenes covered by [`FMV_CUTSCENE_SCENES`]. The exact MV file
+/// each plays isn't pinned by the heuristic; the field-VM script for
+/// each scene calls a "play STR" op with the MV index.
+pub const FMV_TRIGGER_FIELD_SCENES: [&str; 7] = [
+    "town0b", "map01", "chitei2", "map02", "jou", "uru2", "town0e",
+];
+
+/// Return `true` if a CDNAME label is a field scene the FMV overlay
+/// knows about (i.e. carries a mid-game FMV trigger). Distinct from
+/// [`is_cutscene_label`] (which covers the `op*` / `ed*` engine cutscene
+/// scenes).
+pub fn is_fmv_trigger_field_scene(label: &str) -> bool {
+    FMV_TRIGGER_FIELD_SCENES.contains(&label)
+}
+
 /// Engine-override CDNAME→MV cutscene map.
 ///
 /// The retail table lives in the FMV-cutscene overlay (game modes 26/27,
@@ -993,6 +1011,20 @@ mod tests {
         assert_eq!(cutscene_str_for("town01"), None);
         assert_eq!(cutscene_str_for("battle_data"), None);
         assert_eq!(cutscene_str_for(""), None);
+    }
+
+    #[test]
+    fn fmv_trigger_field_scenes_are_distinct_from_op_ed_cutscenes() {
+        for label in FMV_TRIGGER_FIELD_SCENES {
+            assert!(is_fmv_trigger_field_scene(label));
+            // None of these are op*/ed* engine cutscenes.
+            assert!(!is_cutscene_label(label));
+            // None map through the heuristic to a specific MV file - the
+            // mapping is in the field-VM script for each scene, not here.
+            assert_eq!(cutscene_str_for(label), None);
+        }
+        assert!(!is_fmv_trigger_field_scene("opdeene"));
+        assert!(!is_fmv_trigger_field_scene("battle_data"));
     }
 
     #[test]

@@ -117,12 +117,39 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
   <p>The map layers on top of the heuristic: explicit entries win, missing keys fall through to <code>cutscene_str_for</code>. API: <code>CutsceneMap::from_toml_path</code> / <code>from_toml_str</code> / <code>to_toml_string</code>. The retail mapping table itself still requires the STR/MDEC overlay capture; the TOML interface lets engines distribute the recovered map once that lands without a code change.</p>
 </section>
 
+<section class="doc-section" id="fmv-overlay-residency">
+  <h2>STR/MDEC FMV overlay residency</h2>
+  <p>The retail <code>StrInit</code> / <code>StrMode</code> handlers live in a dedicated overlay distinct from the dialogue overlay. The overlay loads at <code>0x801C0000+</code> and occupies roughly <code>0x801CAD90..0x801F1200</code> (~156 KB of mixed code + data + sparse zero-padding) when an FMV is active.</p>
+  <p>Pinned data structures inside the residency window (captured from a save state during FMV playback):</p>
+  <table class="param-table">
+    <thead><tr><th>Address</th><th>Size</th><th>Stride</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x801CAE40</code></td><td>144 B</td><td>24 B &times; 6</td><td>Compact MV-file table: <code>MV1.STR;1</code> .. <code>MV6.STR;1</code></td></tr>
+      <tr><td><code>0x801CCA80</code></td><td>336 B</td><td>56 B &times; 6</td><td>ISO9660-shape directory record copies of the same six files</td></tr>
+      <tr><td><code>0x801CE810</code></td><td>~150 B</td><td>variable</td><td>Path-string table (<code>\DATA\MOV.STR;1</code>, <code>\DATA\MOV15.STR;1</code>, <code>\MOV\MV1A.STR;1</code>, <code>\MOV\MV6..MV1.STR;1</code>)</td></tr>
+      <tr><td><code>0x801CE8AC</code></td><td>~50 B</td><td>variable</td><td>CDNAME labels for mid-game FMV-bearing field scenes</td></tr>
+    </tbody>
+  </table>
+  <h3>Compact MV-file table layout</h3>
+  <p>Each entry in the compact table at <code>0x801CAE40</code> is 24 bytes:</p>
+<pre><code>+0x00 char[12]  filename (libcd-shaped, e.g. "MV1.STR;1\0")
++0x0C u32       reserved (zero across the captured corpus)
++0x10 u32       BCD MSF (byte 0=BCD minute, 1=BCD second, 2=BCD frame, 3=zero)
++0x14 u32       file size in bytes (LE)</code></pre>
+  <p>See the <a href="../formats/str-fmv-table.html">STR FMV table format page</a> for the parser API and per-entry MSF/LBA/size table.</p>
+  <h3>Mid-game FMV-bearing field scenes</h3>
+  <p>The FMV overlay's data section carries the CDNAME labels of seven field scenes - distinct from the <code>op*</code> / <code>ed*</code> engine cutscene scenes:</p>
+<pre><code>town0b  map01  chitei2  map02  jou  uru2  town0e</code></pre>
+  <p>These scenes have FMV trigger points in their field-VM scripts. The exact <code>MV*.STR</code> each plays is encoded in the per-scene script (the field-VM op invokes the FMV player with the MV index); the heuristic in <code>cutscene_str_for</code> covers the <code>op*</code> / <code>ed*</code> scenes in CDNAME order, and <code>FMV_TRIGGER_FIELD_SCENES</code> (sibling constant) lists the mid-game scenes whose specific MV index isn't pinned.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open items</h2>
   <ul class="bullets">
-    <li><strong>Cutscene overlay capture.</strong> The retail <code>StrInit</code> / <code>StrMode</code> handlers are in a dedicated overlay. Save state during any pre-rendered cutscene and run <code>scripts/analyze-overlay.sh</code>; import as <code>overlay_cutscene</code> in Ghidra. Unblocks: XA channel map, PROT-to-STR entry table, <code>legaia-engine play --scene cutsceneN</code>.</li>
-    <li><strong>XA channel map.</strong> <code>(file_no, ch_no)</code> &rarr; cutscene-name association is inside the cutscene overlay.</li>
-    <li><strong>PROT-scene routing.</strong> Direct <code>play-str &lt;file&gt;</code> works; routing <code>play --scene cutsceneN</code> through the CDNAME entry is pending the STR-entry trace.</li>
+    <li><strong>MV-index per mid-game FMV-bearing scene.</strong> The seven mid-game field scenes above are confirmed FMV-bearing (the FMV overlay knows their CDNAME labels), but the exact <code>MV*.STR</code> each plays requires reading the field-VM script for the scene. Once the per-scene FMV-trigger op is decoded, this maps directly into the <code>CutsceneMap</code> TOML.</li>
+    <li><strong>Function-by-function overlay decompilation.</strong> <code>ghidra/scripts/dump_str_fmv_overlay.py</code> ships a starter <code>TARGETS</code> list seeded from the SP-prologue scan over the captured slice. After import, an inventory pass + xref re-rank yields the final entry-point set.</li>
+    <li><strong>XA channel map.</strong> <code>(file_no, ch_no)</code> &rarr; cutscene-name association is inside the STR/MDEC overlay. The MV-file table doesn't carry XA channel info directly; the channel selector is presumably driven by <code>\DATA\MOV.STR;1</code> (which appears to be a multi-channel container distinct from the per-cutscene <code>\MOV\MVn.STR;1</code> files).</li>
+    <li><strong>MOV15.STR + MV1A.STR.</strong> Two extra path strings appear alongside the six numbered MVs. These are dev / debug branches: <code>MOV15</code> is the 15-FPS test file, and <code>MV1A</code> is an alternate / cut version of MV1. Neither ships in the released disc layout.</li>
   </ul>
 </section>
 

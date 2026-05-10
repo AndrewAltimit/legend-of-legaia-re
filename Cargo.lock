@@ -1379,6 +1379,7 @@ dependencies = [
  "anyhow",
  "clap",
  "flate2",
+ "legaia-asset",
  "legaia-engine-core",
  "serde",
  "serde_json",

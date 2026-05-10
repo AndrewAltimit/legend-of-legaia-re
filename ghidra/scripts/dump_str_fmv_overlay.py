@@ -36,10 +36,36 @@ import os
 from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
-# Populate this list after running inventory_overlay.py on the str_fmv program.
-# Prioritise by incoming xref count (largest = primary dispatcher / entry point).
+# Function entry-point candidates surfaced from the captured `mc1` FMV-overlay
+# slice (`/tmp/legaia_overlay_str_fmv.bin`, 0x801C0000..0x80200000). Identified
+# by the MIPS SP-prologue pattern `addiu sp, sp, -N`. Re-rank by incoming xref
+# count after the inventory pass; the list below is a starting batch.
 TARGETS = [
-    # Placeholder - replace with real addresses from inventory CSV after capture.
+    # Bracket the compact MV-file table consumer cluster (table at 0x801CAE40).
+    "0x801CEA3C",
+    "0x801CF098",
+    "0x801CF574",
+    "0x801CF740",
+    "0x801CF988",
+    "0x801CFA14",
+    "0x801CFAD4",
+    "0x801CFB94",
+    "0x801CFC18",
+    "0x801CFCDC",
+    "0x801CFD84",
+    "0x801CFE00",
+    # Smaller leaf / helper entries (post-1KB padding boundary).
+    "0x801CFE20",
+    "0x801CFE5C",
+    "0x801CFE98",
+    "0x801CFEBC",
+    "0x801CFEE0",
+    "0x801CFFDC",
+    "0x801D0070",
+    "0x801D0100",
+    "0x801D0198",
+    "0x801D0248",
+    "0x801D0378",
 ]
 
 OUT_DIR = "/scripts/funcs"

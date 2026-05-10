@@ -149,6 +149,10 @@
       <div class="card-title">Encounter record</div>
       <div class="card-body">On-disc encounter record installed at <code>actor[+0x94]</code> by the script-VM and read by <code>FUN_801DA51C</code>. Layout: <code>[3 reserved][count: u8][monster_ids: u8[count]]</code>. Reader copies the ids into the global formation cell at <code>0x8007BD0C</code>.</div>
     </a>
+    <a class="card" href="str-fmv-table.html">
+      <div class="card-title">STR FMV table</div>
+      <div class="card-body">In-RAM compact table the cutscene / MDEC overlay uses to look up MV*.STR files. Six 24-byte entries at <code>0x801CAE40</code>: filename + libcd BCD MSF + size. Pinned via mc1 capture during FMV playback.</div>
+    </a>
   </div>
 </section>
 

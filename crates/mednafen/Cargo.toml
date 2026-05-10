@@ -21,4 +21,5 @@ serde_json.workspace = true
 toml = "0.8"
 
 [dev-dependencies]
+legaia-asset = { path = "../asset" }
 legaia-engine-core = { path = "../engine-core" }
