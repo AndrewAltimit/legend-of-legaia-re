@@ -25,7 +25,7 @@
 //! }
 //! ```
 //!
-//! The session is renderer-agnostic — engines render `session.hud` via
+//! The session is renderer-agnostic - engines render `session.hud` via
 //! [`legaia_engine_render::battle_hud_draws_for`].
 
 use crate::battle_hud::{BattleHud, LogAccent, SlotSyncInfo};
@@ -118,16 +118,16 @@ pub struct SessionInput {
     pub left: bool,
     /// D-pad right; in CommandInput, queues `Command::Right`.
     pub right: bool,
-    /// Cross — confirm / advance phase.
+    /// Cross - confirm / advance phase.
     pub cross: bool,
-    /// Circle — cancel / pop the last command from the buffer.
+    /// Circle - cancel / pop the last command from the buffer.
     pub circle: bool,
-    /// Triangle — advance to the next party slot's command-input phase
+    /// Triangle - advance to the next party slot's command-input phase
     /// without committing yet.
     pub triangle: bool,
-    /// Square — Spirit press (`ApGauge::charge_spirit`).
+    /// Square - Spirit press (`ApGauge::charge_spirit`).
     pub square: bool,
-    /// Start — commit the current turn (transitions to `Resolve`).
+    /// Start - commit the current turn (transitions to `Resolve`).
     pub start: bool,
 }
 
@@ -144,7 +144,7 @@ pub enum SessionEvent {
     CommandPushed { slot: u8, command: Command },
     /// The most recent command was popped (Circle pressed in CommandInput).
     CommandPopped { slot: u8, command: Command },
-    /// Turn committed — every party slot's queue has been resolved through
+    /// Turn committed - every party slot's queue has been resolved through
     /// `resolve_action_queue` and stashed on the runner.
     TurnCommitted,
     /// HP delta was applied to a slot's `BattleActor::hp`. The amount is
@@ -159,7 +159,7 @@ pub enum SessionEvent {
     StatusApplied { slot: u8, kind: StatusKind },
     /// The Spirit gauge for the active party slot received the +5 bonus.
     SpiritCharged { slot: u8 },
-    /// Battle ended — the session transitioned to a terminal phase.
+    /// Battle ended - the session transitioned to a terminal phase.
     BattleEnded { cause: BattleEndCause },
     /// Engine opened a target picker (engines render the cursor overlay
     /// against the picker state until the picker's outcome resolves).
@@ -203,10 +203,10 @@ pub struct BattleSession {
     /// Per-slot session-level metadata (name, party flag, MP cap, stat
     /// record). Synced to the HUD on `begin_round`.
     slots: [SessionSlotInfo; 8],
-    /// Per-slot stat-record snapshot — matches `slots[i].record` but keyed
+    /// Per-slot stat-record snapshot - matches `slots[i].record` but keyed
     /// for `BattleRound::begin`'s array shape.
     per_slot_records: [Option<StatRecord>; 8],
-    /// Equipment table — engines populate before `begin_round` so the
+    /// Equipment table - engines populate before `begin_round` so the
     /// stat-aggregator can sum per-item modifiers.
     pub equipment: EquipmentTable,
     /// Status modifiers (Burned -ATK, Confused -accuracy, etc.).
@@ -361,7 +361,7 @@ impl BattleSession {
         let mut out = Vec::new();
         self.phase_frames = self.phase_frames.saturating_add(1);
 
-        // Drive the phase SM first — auto-advance might happen even when
+        // Drive the phase SM first - auto-advance might happen even when
         // the player provides no input.
         match self.phase {
             BattlePhase::Idle
@@ -401,14 +401,14 @@ impl BattleSession {
                 }
             }
         }
-        // Tick HUD popups after the phase logic — popups queued this frame
+        // Tick HUD popups after the phase logic - popups queued this frame
         // get one full frame of visibility before fade.
         self.hud.tick();
         out
     }
 
     /// Per-CommandInput tick. Direction presses queue commands, Cross
-    /// confirms (currently a no-op stub for the menu cursor model — engines
+    /// confirms (currently a no-op stub for the menu cursor model - engines
     /// wire their own art/spell pickers and call [`Self::push_command`] /
     /// [`Self::push_chained_art`]), Circle pops, Square charges Spirit,
     /// Triangle advances slots, Start commits.
@@ -418,7 +418,7 @@ impl BattleSession {
         input: SessionInput,
         out: &mut Vec<SessionEvent>,
     ) {
-        // Sub-phase: target picker takes priority — when active, route input
+        // Sub-phase: target picker takes priority - when active, route input
         // to the picker and skip command-queue logic until it resolves.
         if self.target_picker.is_some() {
             self.tick_target_picker(world, input, out);
@@ -447,7 +447,7 @@ impl BattleSession {
             return;
         }
         if input.square {
-            // Spirit press — adds +5 AP to the active party slot's gauge,
+            // Spirit press - adds +5 AP to the active party slot's gauge,
             // idempotent within a turn (the gauge tracks the spirit-pressed
             // bit internally).
             if let Some(gauge) = world.ap_gauges.get_mut(active as usize)
@@ -712,7 +712,7 @@ impl BattleSession {
         self.transition_emit(next, out);
     }
 
-    /// Manually transition to the `Escaped` terminal phase — engines call
+    /// Manually transition to the `Escaped` terminal phase - engines call
     /// this when the player picks "Escape" from the menu and the dice come
     /// up favourable. The retail SM doesn't surface a typed cause for this
     /// path; engines drive it from their own escape-roll resolver.
@@ -804,7 +804,7 @@ impl BattleSession {
         self.maybe_close_picker(out);
     }
 
-    /// Mutable-world variant of `open_target_picker` — used by
+    /// Mutable-world variant of `open_target_picker` - used by
     /// [`Self::push_command_with_target`]. The same as `open_target_picker`
     /// except the caller hands a mutable world borrow so immediate-resolve
     /// kinds (sweep / self / no-candidates) write the resolved target
@@ -881,7 +881,7 @@ impl BattleSession {
     /// session has full world access on a tick frame). When called from
     /// `open_target_picker` (engines call this with `&World`, not `&mut`),
     /// the world ref is `None` and the picker writes are deferred to the
-    /// next tick — the SessionEvent is still emitted so engines that
+    /// next tick - the SessionEvent is still emitted so engines that
     /// need the resolved target can act on it.
     fn maybe_close_picker_with_world(
         &mut self,
@@ -915,7 +915,7 @@ impl BattleSession {
             }
             PickerOutcome::Cancelled | PickerOutcome::NoCandidates => {
                 out.push(SessionEvent::TargetCancelled);
-                // Drop the buffered command — the player aborted, so we
+                // Drop the buffered command - the player aborted, so we
                 // do NOT push it.
                 self.pending_target_command = None;
             }
@@ -931,7 +931,7 @@ impl BattleSession {
     }
 
     /// Write `target_slot` into the active party slot's `active_target`
-    /// field if `world` is available. No-op when `world` is `None` —
+    /// field if `world` is available. No-op when `world` is `None` -
     /// engines that care can read the resolved slot from the
     /// `TargetConfirmed` event and write themselves.
     fn write_active_target(&self, world: Option<&mut World>, actor_slot: u8, target_slot: u8) {
@@ -949,7 +949,7 @@ impl BattleSession {
         let Some(cmd) = self.pending_target_command.take() else {
             return;
         };
-        // Push without paying AP again — the caller of
+        // Push without paying AP again - the caller of
         // `push_command_with_target` already paid AP when buffering the
         // command. Bypass `BattleRunner::push_command` (which charges AP)
         // and write to the buffer directly via the public API.
@@ -998,7 +998,7 @@ impl BattleSession {
         world.ap_gauges[actor_slot as usize] = ap;
         let mut sink: Vec<SessionEvent> = Vec::new();
         self.open_target_picker_mut(world, kind, actor_slot, Some(cmd), &mut sink);
-        // Drop sink — engines that want the events use `tick`.
+        // Drop sink - engines that want the events use `tick`.
         true
     }
 }
@@ -1572,7 +1572,7 @@ mod tests {
             &mut events,
         );
         events.clear();
-        // Cross confirms the only enemy — through tick so we get the
+        // Cross confirms the only enemy - through tick so we get the
         // active-target write side effect.
         let evs = s.tick(
             &mut w,

@@ -23,7 +23,7 @@
 //!
 //! ## Source
 //!
-//! PSX-SPX §MDEC — "STR Movie Files", plus cross-reference with the
+//! PSX-SPX §MDEC - "STR Movie Files", plus cross-reference with the
 //! Mednafen and PCSX-Redux implementations (clean-room: only the protocol
 //! spec, not source bytes, was used).
 

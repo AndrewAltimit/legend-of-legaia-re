@@ -6,7 +6,7 @@
 //! condition; once the real formula is traced from the level-up / battle overlay
 //! it can be replaced.
 //!
-//! Art names come from the game's MES dialog containers — the tracker stores
+//! Art names come from the game's MES dialog containers - the tracker stores
 //! them as a caller-supplied `HashMap<u8, String>`. Without disc data the
 //! fallback is `"Art #N"`.
 

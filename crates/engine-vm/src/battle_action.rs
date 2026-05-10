@@ -1,5 +1,5 @@
 //! Battle action state machine, ported clean-room from `FUN_801E295C` (battle
-//! overlay `0898`). Drives the per-actor execution of a chosen battle action —
+//! overlay `0898`). Drives the per-actor execution of a chosen battle action -
 //! the layer between "the player picked Attack" and "the actor's body has
 //! finished swinging the sword and HP has been deducted."
 //!
@@ -13,10 +13,10 @@
 //!
 //! ## Three nested keys
 //!
-//! 1. **Action category** — `actor.action_category` (was `actor[+0x1DE]`):
+//! 1. **Action category** - `actor.action_category` (was `actor[+0x1DE]`):
 //!    0=Tactical Arts, 1=Item, 2=Magic, 3=Attack, 4=Spirit, 5=Run/Defend.
-//! 2. **Execution phase** — `ctx.action_state` (was `ctx[7]`).
-//! 3. **Per-actor sub-state** — `actor.flag_bits` and the per-action parameter
+//! 2. **Execution phase** - `ctx.action_state` (was `ctx[7]`).
+//! 3. **Per-actor sub-state** - `actor.flag_bits` and the per-action parameter
 //!    byte stream `actor.params[..]`.
 //!
 //! ## Clean-room boundary
@@ -37,7 +37,7 @@ pub const ACTOR_SLOTS: usize = 8;
 /// (`actor[+0x1DF..+0x1F2]`).
 pub const ACTION_PARAM_BYTES: usize = 0x14;
 
-/// Action category — the actor's `+0x1DE` byte.
+/// Action category - the actor's `+0x1DE` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ActionCategory {
@@ -56,7 +56,7 @@ pub enum ActionCategory {
     /// Run / Defend.
     Run = 5,
     /// Item-target re-route (state `0x28` reseats `actor.active_target` to
-    /// `ctx.item_target_b`). Not a true category — it's an intermediate
+    /// `ctx.item_target_b`). Not a true category - it's an intermediate
     /// signal that the item-arm of the magic flow uses.
     ItemRetargetB = 8,
     /// Item-target re-route (state `0x28` reseats `actor.active_target` to
@@ -96,118 +96,118 @@ impl ActionCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ActionState {
-    /// Action begin — resets ctx counters, copies queued action.
+    /// Action begin - resets ctx counters, copies queued action.
     Begin = 0x00,
     /// Pre-action wait (FUN_8003F2B8 gate).
     PreActionWait = 0x0A,
     /// Action queued from menu (holds while `ctx.menu_open != 0`).
     QueuedFromMenu = 0x0B,
-    /// Action seed — reads action category, dispatches into appropriate band.
+    /// Action seed - reads action category, dispatches into appropriate band.
     ActionSeed = 0x0C,
 
-    /// Attack — face target.
+    /// Attack - face target.
     AttackFace = 0x14,
-    /// Attack — windup.
+    /// Attack - windup.
     AttackWindup = 0x15,
-    /// Attack — advance toward target.
+    /// Attack - advance toward target.
     AttackAdvance = 0x16,
-    /// Attack — close-range.
+    /// Attack - close-range.
     AttackCloseRange = 0x17,
-    /// Attack — strike.
+    /// Attack - strike.
     AttackStrike = 0x18,
-    /// Attack — short-step (party slot < 3 only).
+    /// Attack - short-step (party slot < 3 only).
     AttackShortStep = 0x19,
-    /// Attack chain — strike loop.
+    /// Attack chain - strike loop.
     AttackChain = 0x1E,
-    /// Attack — recovery wait.
+    /// Attack - recovery wait.
     AttackRecovery = 0x1F,
-    /// Attack — return.
+    /// Attack - return.
     AttackReturn = 0x20,
 
-    /// Magic / Item — cast begin.
+    /// Magic / Item - cast begin.
     MagicCastBegin = 0x28,
-    /// Magic — pre-cast wait.
+    /// Magic - pre-cast wait.
     MagicPreCastWait = 0x29,
-    /// Magic — animation chain.
+    /// Magic - animation chain.
     MagicAnimChain = 0x2A,
-    /// Magic — sustained anim.
+    /// Magic - sustained anim.
     MagicSustain = 0x2B,
-    /// Magic — hit-frame loop.
+    /// Magic - hit-frame loop.
     MagicHitLoop = 0x2C,
-    /// Magic — recovery.
+    /// Magic - recovery.
     MagicRecovery = 0x2D,
-    /// Magic — exit.
+    /// Magic - exit.
     MagicExit = 0x2E,
 
-    /// Summon — invoke.
+    /// Summon - invoke.
     SummonInvoke = 0x32,
-    /// Summon — fade in.
+    /// Summon - fade in.
     SummonFadeIn = 0x33,
-    /// Summon — actor freeze.
+    /// Summon - actor freeze.
     SummonActorFreeze = 0x34,
-    /// Summon — sustain.
+    /// Summon - sustain.
     SummonSustain = 0x35,
-    /// Summon — return-from-fade.
+    /// Summon - return-from-fade.
     SummonReturn = 0x36,
-    /// Summon — verify all alive.
+    /// Summon - verify all alive.
     SummonVerifyAlive = 0x37,
-    /// Summon — done.
+    /// Summon - done.
     SummonDone = 0x38,
 
-    /// Spirit / Item — pre-arm.
+    /// Spirit / Item - pre-arm.
     SpiritPreArm = 0x3C,
-    /// Spirit — wait.
+    /// Spirit - wait.
     SpiritWait = 0x3D,
-    /// Spirit — fire.
+    /// Spirit - fire.
     SpiritFire = 0x3E,
-    /// Spirit — wait & fire damage.
+    /// Spirit - wait & fire damage.
     SpiritFireDamage = 0x3F,
-    /// Spirit — post-damage.
+    /// Spirit - post-damage.
     SpiritPostDamage = 0x40,
 
-    /// Spirit super-arts — entry variant.
+    /// Spirit super-arts - entry variant.
     SpiritArtsEntry = 0x46,
-    /// Spirit-arts — sustain.
+    /// Spirit-arts - sustain.
     SpiritArtsSustain = 0x47,
-    /// Spirit-arts — flush.
+    /// Spirit-arts - flush.
     SpiritArtsFlush = 0x48,
 
-    /// Done — cleanup phase. Universal "action concluded, clean up" arm.
+    /// Done - cleanup phase. Universal "action concluded, clean up" arm.
     DoneCleanup = 0x50,
-    /// Done — fade-down.
+    /// Done - fade-down.
     DoneFadeDown = 0x51,
-    /// Done — multi-cast continuation.
+    /// Done - multi-cast continuation.
     DoneMultiCast = 0x52,
     /// End-of-action gate.
     EndOfAction = 0x5A,
 
-    /// Run — flee anim begin.
+    /// Run - flee anim begin.
     RunBegin = 0x64,
-    /// Run — wait.
+    /// Run - wait.
     RunWait = 0x65,
-    /// Run — failed (battle continues).
+    /// Run - failed (battle continues).
     RunFailed = 0x66,
-    /// Capture — start.
+    /// Capture - start.
     CaptureStart = 0x68,
-    /// Capture — wait.
+    /// Capture - wait.
     CaptureWait = 0x69,
-    /// Capture — sustain.
+    /// Capture - sustain.
     CaptureSustain = 0x6A,
-    /// Capture — end.
+    /// Capture - end.
     CaptureEnd = 0x6B,
 
     /// Magic-capture branch.
     MagicCaptureBranch = 0x6E,
-    /// Magic-capture — fade.
+    /// Magic-capture - fade.
     MagicCaptureFade = 0x6F,
-    /// Magic-capture — phase 2.
+    /// Magic-capture - phase 2.
     MagicCapturePhase2 = 0x70,
-    /// Magic-capture — finalize.
+    /// Magic-capture - finalize.
     MagicCaptureFinalize = 0x71,
 
     /// Idle hold (battle paused?).
     IdleHold = 0xFD,
-    /// Battle complete — terminal.
+    /// Battle complete - terminal.
     BattleComplete = 0xFF,
 }
 
@@ -332,77 +332,77 @@ impl ActorFlags {
 ///
 /// Field naming uses the byte-offset convention from `docs/subsystems/battle-action.md`
 /// to keep the link to the decompilation explicit. Engines free to back this
-/// with whatever data structure makes sense — the state machine mutates this
+/// with whatever data structure makes sense - the state machine mutates this
 /// struct directly and dispatches side effects through [`BattleActionHost`].
 #[derive(Debug, Clone, Default)]
 pub struct BattleActor {
-    /// `+0x14C` — liveness flag (non-zero = alive). Read by every state's
+    /// `+0x14C` - liveness flag (non-zero = alive). Read by every state's
     /// "is target valid" check.
     pub liveness: u16,
-    /// `+0x150` — current MP (subtracted by Magic / Spirit cast costs).
+    /// `+0x150` - current MP (subtracted by Magic / Spirit cast costs).
     pub mp: u16,
-    /// `+0x16E` — per-actor flag bank. Bit `0x4` = "non-targetable", bits
+    /// `+0x16E` - per-actor flag bank. Bit `0x4` = "non-targetable", bits
     /// `0x380` = AI-controlled, `0x404` = AI + non-targetable. Read at state
     /// `ActionSeed` to decide between party-setup and monster-setup hooks.
     pub field_flags: u16,
-    /// `+0x172` / `+0x174` — HP / max-HP (or current / max).
+    /// `+0x172` / `+0x174` - HP / max-HP (or current / max).
     pub hp: u16,
     pub max_hp: u16,
-    /// `+0x178` — last-action MP cost (used to display `-N MP` on screen).
+    /// `+0x178` - last-action MP cost (used to display `-N MP` on screen).
     pub last_mp_cost: u16,
-    /// `+0x1A` — party-action queue counter. Incremented by `Begin`,
+    /// `+0x1A` - party-action queue counter. Incremented by `Begin`,
     /// counter-attack swap, run advance, end-of-action.
     pub action_queue_counter: u8,
-    /// `+0x21D` — impact-step magnitude — multiplied into the per-frame X/Z
+    /// `+0x21D` - impact-step magnitude - multiplied into the per-frame X/Z
     /// drift during attacks.
     pub impact_step: u8,
-    /// `+0x224` — action recoil magnitude — written by `DoneCleanup`.
+    /// `+0x224` - action recoil magnitude - written by `DoneCleanup`.
     pub action_recoil: u8,
-    /// `+0x225` — capture state byte — `2` while captured.
+    /// `+0x225` - capture state byte - `2` while captured.
     pub capture_state: u8,
-    /// `+0x21B` — hit-count bound (script-defined; loop exits at
+    /// `+0x21B` - hit-count bound (script-defined; loop exits at
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,
-    /// `+0x21C` — per-actor render flag — `0xFF` while hidden by summon
+    /// `+0x21C` - per-actor render flag - `0xFF` while hidden by summon
     /// fade, `0x02` while captured, `0` otherwise.
     pub render_flag: u8,
-    /// `+0x46` — facing angle (i12 in `0xFFF` range; written from bearing
+    /// `+0x46` - facing angle (i12 in `0xFFF` range; written from bearing
     /// checks).
     pub facing_angle: u16,
-    /// `+0x1D9` — current anim ID (read-only here; written by the animation
+    /// `+0x1D9` - current anim ID (read-only here; written by the animation
     /// system).
     pub current_anim: u8,
-    /// `+0x1DA` — queued next anim ID. The state machine writes this; the
+    /// `+0x1DA` - queued next anim ID. The state machine writes this; the
     /// animation system reads `current_anim` toward `queued_anim`.
     pub queued_anim: u8,
-    /// `+0x1DC` — per-actor flag bits. See [`ActorFlags`].
+    /// `+0x1DC` - per-actor flag bits. See [`ActorFlags`].
     pub flag_bits: ActorFlags,
-    /// `+0x1DD` — active-target slot index (used by Magic / Item to retarget
+    /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
     /// mid-chain).
     pub active_target: u8,
-    /// `+0x1DE` — action category. See [`ActionCategory`].
+    /// `+0x1DE` - action category. See [`ActionCategory`].
     pub action_category: u8,
-    /// `+0x1DF..+0x1F2` — per-action parameter byte stream (item ID / spell
+    /// `+0x1DF..+0x1F2` - per-action parameter byte stream (item ID / spell
     /// ID / strike-anim list, terminated by `0xFF`). Read sequentially via
     /// `params[strike_index]`. Pre-sized to [`ACTION_PARAM_BYTES`].
     pub params: [u8; ACTION_PARAM_BYTES],
-    /// `+0x15` — per-strike index used to walk `params` during attack-chain
+    /// `+0x15` - per-strike index used to walk `params` during attack-chain
     /// and magic-anim-chain. Each strike bumps it.
     pub strike_index: u8,
-    /// `+0x16` — combo bit (cleared by `AttackShortStep` when in range).
+    /// `+0x16` - combo bit (cleared by `AttackShortStep` when in range).
     pub combo_bit: u8,
-    /// `+0x1F5` — anim-cue flag (read at state `SummonFadeIn` for fade-in
+    /// `+0x1F5` - anim-cue flag (read at state `SummonFadeIn` for fade-in
     /// trigger).
     pub anim_cue: u8,
-    /// `+0x1F9` — "spirit shield" flag — gates spirit-arts variant path.
+    /// `+0x1F9` - "spirit shield" flag - gates spirit-arts variant path.
     pub spirit_shield: u8,
-    /// `+0x1FA` — spell-cast iteration counter.
+    /// `+0x1FA` - spell-cast iteration counter.
     pub spell_iter: u8,
-    /// `+0x18` — UI element id (transient — written by `ActionSeed`).
+    /// `+0x18` - UI element id (transient - written by `ActionSeed`).
     pub ui_element_id: u8,
-    /// `+0x1E0` — sub-routing byte. `9` routes Magic to summon path.
+    /// `+0x1E0` - sub-routing byte. `9` routes Magic to summon path.
     pub sub_route: u8,
-    /// `+0x1E7` — queued anim staged for spirit / item paths.
+    /// `+0x1E7` - queued anim staged for spirit / item paths.
     pub queued_anim_b: u8,
     /// Chosen Tactical Art for this turn. When `Some`, the strike-band
     /// states call `BattleActionHost::art_record(character, action)` to
@@ -411,7 +411,7 @@ pub struct BattleActor {
     /// command queue resolves to an art (via `resolve_action_queue`).
     pub chosen_art: Option<legaia_art::ActionConstant>,
     /// Which playable character occupies this slot. Used as the lookup
-    /// key into the per-character art tables. Defaults to Vahn — engines
+    /// key into the per-character art tables. Defaults to Vahn - engines
     /// must set this for the correct slot before the strike runs.
     pub character: legaia_art::Character,
 }
@@ -437,57 +437,57 @@ impl BattleActor {
 /// struct is much larger and managed by the rest of the battle overlay.
 #[derive(Debug, Clone, Default)]
 pub struct BattleActionCtx {
-    /// `[7]` — execution phase / action-state cursor. The outer `switch
+    /// `[7]` - execution phase / action-state cursor. The outer `switch
     /// (ctx[7])`. Stored as raw byte so unmapped values round-trip.
     pub action_state: u8,
-    /// `[+0x13]` — active actor slot index (drives the
+    /// `[+0x13]` - active actor slot index (drives the
     /// `(&DAT_801C9370)[ctx[0x13]]` lookup). Range `0..=7`.
     pub active_actor: u8,
-    /// `[+0x274]` — queued action (copied to `actor.field_1A` at `Begin`).
+    /// `[+0x274]` - queued action (copied to `actor.field_1A` at `Begin`).
     pub queued_action: u8,
-    /// `[+0x276]` — menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
+    /// `[+0x276]` - menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
     /// transition). Non-zero while a menu is still drawing.
     pub menu_open: u8,
-    /// `[+0x277]` — summon-frame index written at `SummonInvoke`.
+    /// `[+0x277]` - summon-frame index written at `SummonInvoke`.
     pub summon_frame_idx: u8,
-    /// `[+0x278]` / `[+0x279]` — summon staging counters.
+    /// `[+0x278]` / `[+0x279]` - summon staging counters.
     pub summon_staging_a: u8,
     pub summon_staging_b: u8,
-    /// `[+0x287]` / `[+0x288]` — counter-attack trigger flags read at
+    /// `[+0x287]` / `[+0x288]` - counter-attack trigger flags read at
     /// `AttackReturn`.
     pub counter_attack_a: u8,
     pub counter_attack_b: u8,
-    /// `[+0x290]` — cleared at `Begin` (purpose unknown beyond reset).
+    /// `[+0x290]` - cleared at `Begin` (purpose unknown beyond reset).
     pub clear_at_begin: u8,
-    /// `[+0x269]` — multi-cast queue gate read at `DoneFadeDown`. Non-zero
+    /// `[+0x269]` - multi-cast queue gate read at `DoneFadeDown`. Non-zero
     /// routes to `DoneMultiCast`; zero routes to `EndOfAction`.
     pub multi_cast_gate: u8,
-    /// `[+0x249]` — exit gate read at `MagicExit`.
+    /// `[+0x249]` - exit gate read at `MagicExit`.
     pub magic_exit_gate: u8,
-    /// `[+0x24A]` — item-target byte A (read at `MagicCastBegin` for
+    /// `[+0x24A]` - item-target byte A (read at `MagicCastBegin` for
     /// `ItemRetargetA`).
     pub item_target_a: u8,
-    /// `[+0x24B]` — item-target byte B (read at `MagicCastBegin` for
+    /// `[+0x24B]` - item-target byte B (read at `MagicCastBegin` for
     /// `ItemRetargetB`).
     pub item_target_b: u8,
-    /// `[+0x24C]` — hit counter incremented by the spell hit-loop. The loop
+    /// `[+0x24C]` - hit counter incremented by the spell hit-loop. The loop
     /// exits when `>= actor.hit_count_bound`.
     pub hit_counter: u8,
-    /// `[+0x24D]` — recovery gate read at `MagicRecovery`.
+    /// `[+0x24D]` - recovery gate read at `MagicRecovery`.
     pub magic_recovery_gate: u8,
-    /// `[+0x6D6]` — per-action ramp target (the state machine's "PC offset"
-    /// cursor for the action body — separate from `action_state`).
+    /// `[+0x6D6]` - per-action ramp target (the state machine's "PC offset"
+    /// cursor for the action body - separate from `action_state`).
     pub ramp_target: u16,
-    /// `[+0x6D8]` — frame countdown timer (signed; decremented by frame dt
+    /// `[+0x6D8]` - frame countdown timer (signed; decremented by frame dt
     /// every state that needs to wait).
     pub frame_timer: i16,
-    /// `[+0x6DA]` — combo / sub-timer (separate from `frame_timer`).
+    /// `[+0x6DA]` - combo / sub-timer (separate from `frame_timer`).
     pub combo_timer: i16,
-    /// `[+0x6DC]` — damage-target value used by spirit-arts ramps.
+    /// `[+0x6DC]` - damage-target value used by spirit-arts ramps.
     pub damage_target: i16,
-    /// `[+0x6DE]` — HP-bar target (paired with `damage_target`).
+    /// `[+0x6DE]` - HP-bar target (paired with `damage_target`).
     pub hp_bar_target: i16,
-    /// `[+0x6E6 + i*2]` — per-actor facing offsets (one per slot 0..7).
+    /// `[+0x6E6 + i*2]` - per-actor facing offsets (one per slot 0..7).
     pub per_actor_facing: [u16; ACTOR_SLOTS],
 }
 
@@ -515,7 +515,7 @@ impl BattleActionCtx {
 /// Battle-end and terminal states surface via [`StepOutcome::BattleComplete`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepOutcome {
-    /// Stayed in the current state — condition not yet met.
+    /// Stayed in the current state - condition not yet met.
     Stay,
     /// Transitioned from `from` to `to`.
     Transition { from: u8, to: u8 },
@@ -535,7 +535,7 @@ pub enum StepOutcome {
 /// strike (1-indexed via `actor.strike_index`).
 ///
 /// `power` is `None` when the strike index runs past the recorded power
-/// bytes (e.g. an extra anim frame at the end of the chain) — engines
+/// bytes (e.g. an extra anim frame at the end of the chain) - engines
 /// should treat that as "this anim plays but does no damage."
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArtStrikeInfo {
@@ -579,48 +579,48 @@ pub enum BattleEndCause {
 ///
 /// All methods have default impls so a minimal host (no rendering / no
 /// effects) compiles. Each method documents which retail function it stands
-/// in for. The host owns the full actor table — the state machine asks for
+/// in for. The host owns the full actor table - the state machine asks for
 /// pointers via [`BattleActionHost::actor`] / [`BattleActionHost::actor_mut`]
 /// and treats the returned `&mut BattleActor` as `(&DAT_801C9370)[idx]`.
 pub trait BattleActionHost {
-    /// Equivalent of `(&DAT_801C9370)[slot]` — read-only access to the actor
+    /// Equivalent of `(&DAT_801C9370)[slot]` - read-only access to the actor
     /// pointed at by the table slot. Returning `None` aborts the step (the
     /// retail dispatcher silently exits when the active actor pointer is
     /// null).
     fn actor(&self, slot: u8) -> Option<&BattleActor>;
 
-    /// Equivalent of `(&DAT_801C9370)[slot]` — mutable access. Same null
+    /// Equivalent of `(&DAT_801C9370)[slot]` - mutable access. Same null
     /// semantics as [`BattleActionHost::actor`].
     fn actor_mut(&mut self, slot: u8) -> Option<&mut BattleActor>;
 
-    /// Equivalent of `FUN_801D5854(actor_id, pose_id)` — per-actor pose
+    /// Equivalent of `FUN_801D5854(actor_id, pose_id)` - per-actor pose
     /// driver. Default no-op.
     fn pose(&mut self, _actor_id: u8, _pose: Pose) {}
 
-    /// Equivalent of `FUN_801D8DE8(effect_id, mode)` — battle UI element
+    /// Equivalent of `FUN_801D8DE8(effect_id, mode)` - battle UI element
     /// scheduler. `mode == 0` spawns / resets; `mode == 1` terminates /
     /// unloads. Default no-op.
     fn ui_element(&mut self, _effect_id: u8, _mode: u8) {}
 
-    /// Equivalent of `FUN_8004E2F0(actor, target)` — battle range / LOS
+    /// Equivalent of `FUN_8004E2F0(actor, target)` - battle range / LOS
     /// check. Returns 0 = "in range," non-zero = distance metric. Default
-    /// returns 0 (always in range — useful for unit tests).
+    /// returns 0 (always in range - useful for unit tests).
     fn range_check(&self, _actor_slot: u8, _target_slot: u8) -> u16 {
         0
     }
 
-    /// Equivalent of `FUN_801EFE44` — battle camera bounds. Walks the 8-slot
+    /// Equivalent of `FUN_801EFE44` - battle camera bounds. Walks the 8-slot
     /// table for min/max. Default no-op.
     fn camera_bounds(&mut self) {}
 
-    /// Equivalent of `FUN_801EED1C` — party setup hook (called for actors
+    /// Equivalent of `FUN_801EED1C` - party setup hook (called for actors
     /// with slot < 3). Default no-op.
     fn party_setup(&mut self, _actor_slot: u8) {}
 
-    /// Equivalent of `FUN_801E7320` — monster-AI setup hook. Default no-op.
+    /// Equivalent of `FUN_801E7320` - monster-AI setup hook. Default no-op.
     fn monster_setup(&mut self, _actor_slot: u8) {}
 
-    /// Equivalent of `FUN_801DABA4` — recompute battle ordering. Default
+    /// Equivalent of `FUN_801DABA4` - recompute battle ordering. Default
     /// no-op.
     fn recompute_battle_order(&mut self) {}
 
@@ -630,33 +630,33 @@ pub trait BattleActionHost {
         0
     }
 
-    /// Equivalent of `func_0x8003F2B8(1)` — "pause until previous animation
+    /// Equivalent of `func_0x8003F2B8(1)` - "pause until previous animation
     /// cleared" gate. Returns `true` when the previous action has fully
-    /// drained. Default returns `true` (always cleared — useful for tests
+    /// drained. Default returns `true` (always cleared - useful for tests
     /// that fast-forward through transitions).
     fn previous_action_cleared(&self, _arg: u8) -> bool {
         true
     }
 
-    /// Equivalent of `func_0x8003DE7C(1)` — sound-bank-ready gate. Default
+    /// Equivalent of `func_0x8003DE7C(1)` - sound-bank-ready gate. Default
     /// returns `true`.
     fn sound_bank_ready(&self, _arg: u8) -> bool {
         true
     }
 
-    /// Equivalent of `func_0x8003EAE4(0, idx)` — load capture archive.
+    /// Equivalent of `func_0x8003EAE4(0, idx)` - load capture archive.
     /// Default no-op.
     fn load_capture_archive(&mut self, _idx: u8) {}
 
-    /// Equivalent of `FUN_801DBF9C(party_slot, spell_id)` — spell-anim
+    /// Equivalent of `FUN_801DBF9C(party_slot, spell_id)` - spell-anim
     /// trigger. Default no-op.
     fn spell_anim_trigger(&mut self, _party_slot: u8, _spell_id: u8) {}
 
-    /// Equivalent of `FUN_801DC0A0(actor_id, anim_id)` — sustained spell
+    /// Equivalent of `FUN_801DC0A0(actor_id, anim_id)` - sustained spell
     /// animation. Default no-op.
     fn spell_anim_sustain(&mut self, _actor_id: u8, _anim_id: u8) {}
 
-    /// Equivalent of `func_0x800402F4(icon, page, target_slot, party_slot)` —
+    /// Equivalent of `func_0x800402F4(icon, page, target_slot, party_slot)` -
     /// damage application primitive. Default no-op.
     fn apply_damage(&mut self, _icon: u8, _page: u8, _target_slot: u8, _party_slot: u8) {}
 
@@ -668,7 +668,7 @@ pub trait BattleActionHost {
     /// a record. `info` carries the per-strike values the SM read from the
     /// art's `power` + `dmg_timing` + `enemy_effect` + `hit_cues`. Engines
     /// translate these into HP deduction + status effect + sound/visual
-    /// cues — the SM only resolves the values, it does not apply them.
+    /// cues - the SM only resolves the values, it does not apply them.
     ///
     /// Default no-op. Engines that don't override fall through to
     /// [`apply_damage`] as well (the SM still calls that for backward
@@ -695,12 +695,12 @@ pub trait BattleActionHost {
         0
     }
 
-    /// Equivalent of the screen-shake driver — sets the global `_DAT_800840BC`
+    /// Equivalent of the screen-shake driver - sets the global `_DAT_800840BC`
     /// to `0x500` (small kick). Default no-op.
     fn screen_shake(&mut self, _magnitude: u16) {}
 
     /// Equivalent of the brightness ramp at states `SummonSustain` /
-    /// `MagicCaptureFade` — clamps `_DAT_8007B910` toward a target.
+    /// `MagicCaptureFade` - clamps `_DAT_8007B910` toward a target.
     /// Default no-op.
     fn ramp_brightness(&mut self, _target_pct: u8) {}
 
@@ -710,19 +710,19 @@ pub trait BattleActionHost {
     fn battle_end(&mut self, _cause: BattleEndCause) {}
 
     /// Frame delta-time tick used by `frame_timer` decrement. Retail reads
-    /// `DAT_1F800393` (the per-frame dt byte). Default returns 1 — one tick
+    /// `DAT_1F800393` (the per-frame dt byte). Default returns 1 - one tick
     /// per step.
     fn frame_dt(&self) -> i16 {
         1
     }
 
-    /// Iteration helper — number of party slots in the table (slots `0..3`
+    /// Iteration helper - number of party slots in the table (slots `0..3`
     /// are party). Default is 3. Engines override if the layout differs.
     fn party_count(&self) -> u8 {
         3
     }
 
-    /// Iteration helper — total slot count (default `8`).
+    /// Iteration helper - total slot count (default `8`).
     fn slot_count(&self) -> u8 {
         ACTOR_SLOTS as u8
     }
@@ -732,7 +732,7 @@ pub trait BattleActionHost {
     /// bytes, hit timing, repeat-frame data, and the status effect to
     /// apply on hit.
     ///
-    /// Default returns `None` — pure-host tests don't need art data, and
+    /// Default returns `None` - pure-host tests don't need art data, and
     /// the SM falls back to attack-chain default damage when an art record
     /// is unavailable.
     fn art_record(
@@ -755,9 +755,9 @@ pub trait BattleActionHost {
 /// Order of operations (matches retail):
 /// 1. Translate raw commands to directional [`ActionConstant`]s and append
 ///    starter/art constants per the chained art selection.
-/// 2. **Miracle Art match** — full-queue replacement if the command
+/// 2. **Miracle Art match** - full-queue replacement if the command
 ///    sequence is the character's Miracle Art string.
-/// 3. **Super Art find/replace at tail** — runs to fixpoint to allow
+/// 3. **Super Art find/replace at tail** - runs to fixpoint to allow
 ///    nested triggers (none exist in retail tables, but the API handles
 ///    them).
 ///
@@ -785,11 +785,11 @@ pub fn resolve_action_queue(
         queue.push(*art);
     }
 
-    // Step 2: Miracle Art replacement — if the input commands match a
+    // Step 2: Miracle Art replacement - if the input commands match a
     // Miracle Art exactly, the entire queue is replaced.
     let miracle = MiracleMatcher::with_default_table();
     if miracle.try_trigger(character, command_input, &mut queue) {
-        // Miracle Arts swallow all chained input — return immediately
+        // Miracle Arts swallow all chained input - return immediately
         // since Super Art expansion is not applied on top.
         return queue;
     }
@@ -971,11 +971,11 @@ fn action_seed<H: BattleActionHost + ?Sized>(
     // Dispatch into the appropriate band.
     let next = match category {
         ActionCategory::TacticalArts => {
-            // Skip — UI input chain handles the chain.
+            // Skip - UI input chain handles the chain.
             ActionState::DoneCleanup
         }
         ActionCategory::Item => {
-            // Item route — a runtime check on the param byte chooses between
+            // Item route - a runtime check on the param byte chooses between
             // 0x3C and 0x28; default to 0x3C (the more common path).
             ActionState::SpiritPreArm
         }
@@ -1357,7 +1357,7 @@ fn magic_recovery<H: BattleActionHost + ?Sized>(
     }
     let slot = ctx.active_actor;
     if let Some(actor) = host.actor_mut(slot) {
-        // Clear actor[+0x176] — modeled as resetting hit_count_bound + a
+        // Clear actor[+0x176] - modeled as resetting hit_count_bound + a
         // dummy field. Engines that need finer modeling can override the
         // host trait.
         actor.hit_count_bound = 0;
@@ -1453,7 +1453,7 @@ fn summon_sustain<H: BattleActionHost + ?Sized>(
     if !tick_frame_timer(host, ctx) {
         let slot = ctx.active_actor;
         let param0 = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
-        // Ramp brightness — 75% for spells < 0x99, else 50%.
+        // Ramp brightness - 75% for spells < 0x99, else 50%.
         let pct = if param0 < 0x99 { 75 } else { 50 };
         host.ramp_brightness(pct);
         return stay(ctx);
@@ -1895,7 +1895,7 @@ fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Idle);
-    // Ensure all 8 slots are settled — alive with non-zero "+0x4" or non-`8`
+    // Ensure all 8 slots are settled - alive with non-zero "+0x4" or non-`8`
     // current_anim. We model as: every alive actor has current_anim != 8.
     let total = host.slot_count();
     let stable = (0..total).all(|s| {
@@ -1977,7 +1977,7 @@ mod tests {
         party_count: u8,
         slot_count: u8,
         /// Pre-staged art records returned by `art_record(character, action)`
-        /// — keyed by `(character_byte, action_byte)`.
+        /// - keyed by `(character_byte, action_byte)`.
         art_records: std::collections::HashMap<(u8, u8), legaia_art::ArtRecord>,
     }
 
@@ -2093,7 +2093,7 @@ mod tests {
     }
 
     /// Cheap byte encoding for tests. `Character` is a 3-variant enum with
-    /// no public byte-mapping accessor — this mirrors the `0/1/2` ordering
+    /// no public byte-mapping accessor - this mirrors the `0/1/2` ordering
     /// of `Character::all()`.
     fn character_byte(c: legaia_art::Character) -> u8 {
         match c {
@@ -2742,7 +2742,7 @@ mod tests {
 
     /// Full magic-spell flow walking from `MagicCastBegin` all the way to
     /// `EndOfAction`, asserting each band transition. Mirrors the attack-flow
-    /// round-trip but exercises the magic dispatch table — `magic_cast_begin`
+    /// round-trip but exercises the magic dispatch table - `magic_cast_begin`
     /// → `magic_pre_cast_wait` (with a cleared sub-route so we don't divert
     /// to summon) → `magic_anim_chain` → `magic_sustain` → `magic_hit_loop`
     /// → `magic_recovery` → `magic_exit` → `done_cleanup` → `done_fade_down`
@@ -2820,7 +2820,7 @@ mod tests {
     }
 
     /// `MagicCastBegin` with `bits & 0x10` set (quarter-cost) AND a divisible
-    /// cost — verifies the cost path picks the *quarter* branch over the
+    /// cost - verifies the cost path picks the *quarter* branch over the
     /// `bits & 0x20` half branch when both bits are set (retail's switch
     /// checks bit 0x10 first via `if/else if`).
     #[test]
@@ -2830,7 +2830,7 @@ mod tests {
         host.actors[1].mp = 100;
         host.actors[1].params[0] = 0x10;
         host.spell_costs.insert(0x10, 40);
-        // Both bits set — retail picks 0x10 first.
+        // Both bits set - retail picks 0x10 first.
         host.ability_bits.insert(1, 0x10 | 0x20);
         step(&mut host, &mut ctx);
         // 100 - (40 / 4) = 90.
@@ -2866,7 +2866,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // resolve_action_queue — Miracle / Super expansion glue tests.
+    // resolve_action_queue - Miracle / Super expansion glue tests.
     // ---------------------------------------------------------------
 
     #[test]
@@ -2929,7 +2929,7 @@ mod tests {
     #[test]
     fn resolve_action_queue_no_special_match_keeps_chained() {
         use legaia_art::{ActionConstant, Character, Command};
-        // Inputs that don't form a Miracle or Super Art — queue should
+        // Inputs that don't form a Miracle or Super Art - queue should
         // contain just the directional bytes + chained-art assembly with
         // no replacement.
         let cmds = [Command::Up, Command::Up];
@@ -3079,7 +3079,7 @@ mod tests {
 
     #[test]
     fn attack_chain_skips_apply_art_strike_when_no_art_chosen() {
-        // Default actor has chosen_art = None — the strike chain must
+        // Default actor has chosen_art = None - the strike chain must
         // fire only apply_damage, not apply_art_strike.
         let mut host = RecHost::with_n_actors(3);
         host.actors[0].params[0] = 0x10;

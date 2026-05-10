@@ -12,7 +12,7 @@ The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the fi
 | `0x8007B39C` | `".LZS"` | Compressed wrapper (per-file). |
 | `0x8007B3A4` | 8 bytes | Two 4-byte mode descriptors: `00 00 00 00` and `03 02 03 00 03 05 03 00`. Indexed by `FUN_8001EBEC` to pick which extension a given mode uses. |
 | `0x8007B3AC` | `"bse.dat"` | Master sound-bank file name (loaded once at sound-init). |
-| `0x8007B3B4` | `".dpk"` | Per-scene sound pack — the format `FUN_8001FA88` loads. |
+| `0x8007B3B4` | `".dpk"` | Per-scene sound pack - the format `FUN_8001FA88` loads. |
 | `0x8007B3BC` | `".MAP"` | Sound bank map (PsyQ SoundArtist output). |
 | `0x8007B3C4` | `".PCH"` | Patch / instrument data (PsyQ output). |
 | `0x8007B3CC` | `".LZS"` | Duplicate, fallback. |
@@ -40,6 +40,6 @@ Both paths land at the same files; only the indirection differs. The same dev/re
 
 ## What's left to format-spec
 
-The byte-level layouts of the individual files (`.MAP` / `.PCH` / `.spk` / `.dpk` / `.pac`) are still TBD. With consumers identified, the next move is to read the body of `FUN_8001FA88` (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns) for the `.dpk` byte layout — `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor (almost certainly a record count).
+The byte-level layouts of the individual files (`.MAP` / `.PCH` / `.spk` / `.dpk` / `.pac`) are still TBD. With consumers identified, the next move is to read the body of `FUN_8001FA88` (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns) for the `.dpk` byte layout - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor (almost certainly a record count).
 
 The eventual home is a `crates/sound` companion to `crates/vab`.

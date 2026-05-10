@@ -65,7 +65,7 @@ def collect_citations() -> tuple[Counter, dict[str, list[str]]]:
     refs: Counter = Counter()
     sources: dict[str, list[str]] = defaultdict(list)
     for p in sorted(FUNCS_DIR.glob("*.txt")):
-        # Skip stats/summary files — they list addresses for inventory
+        # Skip stats/summary files - they list addresses for inventory
         # purposes, not as real code references, and stale entries pollute
         # the missing-helpers list.
         if (p.name.endswith("_unique_index.txt")
@@ -76,7 +76,7 @@ def collect_citations() -> tuple[Counter, dict[str, list[str]]]:
             text = p.read_text(errors="ignore")
         except PermissionError:
             # Some Ghidra-container outputs land as root-owned and can't be
-            # chowned without sudo. Skip them — they'll show up as missing
+            # chowned without sudo. Skip them - they'll show up as missing
             # references but not crash the tool.
             continue
         seen_in_file: set[str] = set()

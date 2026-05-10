@@ -106,7 +106,7 @@ fn inactive_actor_with_animation_is_not_ticked() {
 
     world.tick();
 
-    // pose_frame should remain None — inactive actors are skipped.
+    // pose_frame should remain None - inactive actors are skipped.
     assert!(world.actors[0].pose_frame.is_none());
 }
 

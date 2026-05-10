@@ -9,7 +9,7 @@
   <table>
     <thead><tr><th>Index</th><th>Name</th><th>param</th><th>next</th></tr></thead>
     <tbody>
-      <tr><td>26</td><td><code>STR</code> (<code>StrInit</code>)</td><td><code>0x80A</code></td><td>&mdash;</td></tr>
+      <tr><td>26</td><td><code>STR</code> (<code>StrInit</code>)</td><td><code>0x80A</code></td><td>-</td></tr>
       <tr><td>27</td><td><code>STR MODE</code> (<code>StrMode</code>)</td><td><code>0x000</code></td><td><code>ConfigInit</code></td></tr>
     </tbody>
   </table>
@@ -21,16 +21,16 @@
   <h2>STR sector format</h2>
   <p>STR video is carried in 2048-byte Mode 2 Form 1 sectors. Each sector's user-data area starts with a 20-byte header, followed by 2028 bytes of compressed bitstream payload:</p>
   <pre><code>Offset  Bytes  Field
-0x000   2      magic            &mdash; 0x0160 = video sector; any other value = non-video, skip silently
-0x002   2      chunk_number     &mdash; 0-indexed position of this sector within the frame
-0x004   2      chunks_per_frame &mdash; total sectors needed to complete this frame
-0x006   2      frame_number     &mdash; sequential, 0-based, wraps at 0xFFFF
-0x008   4      bs_data_size     &mdash; total bitstream bytes across all chunks for this frame
-0x00C   2      width            &mdash; frame width in pixels (multiple of 16)
-0x00E   2      height           &mdash; frame height in pixels (multiple of 16)
-0x010   2      bs_version       &mdash; 2 (BS v2 only in Legaia)
-0x012   2      quantize_scale   &mdash; per-frame quantization scale, 0..63
-0x014   2028   bs_data          &mdash; compressed bitstream payload chunk</code></pre>
+0x000   2      magic            - 0x0160 = video sector; any other value = non-video, skip silently
+0x002   2      chunk_number     - 0-indexed position of this sector within the frame
+0x004   2      chunks_per_frame - total sectors needed to complete this frame
+0x006   2      frame_number     - sequential, 0-based, wraps at 0xFFFF
+0x008   4      bs_data_size     - total bitstream bytes across all chunks for this frame
+0x00C   2      width            - frame width in pixels (multiple of 16)
+0x00E   2      height           - frame height in pixels (multiple of 16)
+0x010   2      bs_version       - 2 (BS v2 only in Legaia)
+0x012   2      quantize_scale   - per-frame quantization scale, 0..63
+0x014   2028   bs_data          - compressed bitstream payload chunk</code></pre>
   <p><code>StrFrameAssembler</code> accumulates sector payloads in arrival order. When <code>chunk_number + 1 == chunks_per_frame</code>, the full bitstream is returned truncated to <code>bs_data_size</code>. Non-video sectors are skipped silently.</p>
   <p>Implementation: <code>crates/mdec/src/str_sector.rs</code></p>
 </section>
@@ -45,8 +45,8 @@
   <h3>2. VLC decoding</h3>
   <p>Each 8&times;8 block decodes its DC coefficient first, then AC coefficients until an EOB token.</p>
   <ul class="bullets">
-    <li><strong>DC coefficient</strong> &mdash; luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). Delta-coded per component (Cr / Cb / Y0&ndash;Y3 each have independent running state).</li>
-    <li><strong>AC coefficients</strong> &mdash; MPEG-1 Table B.14 (run/level pairs). Escape sequences carry a 6-bit run + 8-bit signed level. EOB code (<code>run == 64</code>) ends the block.</li>
+    <li><strong>DC coefficient</strong> - luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). Delta-coded per component (Cr / Cb / Y0&ndash;Y3 each have independent running state).</li>
+    <li><strong>AC coefficients</strong> - MPEG-1 Table B.14 (run/level pairs). Escape sequences carry a 6-bit run + 8-bit signed level. EOB code (<code>run == 64</code>) ends the block.</li>
   </ul>
   <p>After VLC, coefficients are in JPEG zigzag scan order.</p>
 

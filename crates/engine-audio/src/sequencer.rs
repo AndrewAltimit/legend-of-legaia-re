@@ -285,7 +285,7 @@ impl Sequencer {
     }
 
     fn note_on(&mut self, spu: &mut Spu, channel: u8, key: u8, velocity: u8) {
-        // Drop the prior instance of this (channel, key) if it exists —
+        // Drop the prior instance of this (channel, key) if it exists -
         // libsnd silently restarts the voice.
         self.note_off(spu, channel, key);
         let Some(voice) = self.alloc_voice(spu) else {
@@ -404,7 +404,7 @@ mod tests {
         // play_note returns false).
         assert_eq!(seq.channels[0].program, 0);
         assert_eq!(seq.active_notes(), 0);
-        // Third event has delta 480 — not yet fired.
+        // Third event has delta 480 - not yet fired.
         assert_eq!(seq.next, 2);
     }
 

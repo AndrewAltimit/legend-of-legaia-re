@@ -127,7 +127,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
-  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) or just <code>PROT.DAT</code> — the WASM build parses it client-side, classifies every PROT entry, and filters to the ones with renderable TIMs. Nothing leaves your machine.</p>
+  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) or just <code>PROT.DAT</code> - the WASM build parses it client-side, classifies every PROT entry, and filters to the ones with renderable TIMs. Nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -196,7 +196,7 @@
     <li>Walks ISO9660 to find <code>PROT.DAT</code></li>
     <li>Parses the PROT TOC to locate all 1232 entries</li>
     <li>Classifies each entry through the same detector chain the native pipeline uses (<code>tim_passthrough</code>, <code>tim_pack</code>, <code>data_field_streaming</code>, <code>scene_tmd_stream</code>, <code>field_pack</code>, <code>effect_bundle</code>, etc.)</li>
-    <li>Runs <code>tim_scan</code> against each entry — including LZS decompression — and keeps only the entries with at least one decodable PSX TIM</li>
+    <li>Runs <code>tim_scan</code> against each entry - including LZS decompression - and keeps only the entries with at least one decodable PSX TIM</li>
     <li>Builds the filtered sidebar list, grouped by classification</li>
   </ol>
 
@@ -233,7 +233,7 @@
   let allEntries = [];      /* entry-list-json output */
   let visibleSlots = [];    /* indices into allEntries that match current filter */
   let rafId = null;          /* current 3D loop's requestAnimationFrame id */
-  let glRenderer = null;     /* TmdRenderer (WebGL) — created lazily */
+  let glRenderer = null;     /* TmdRenderer (WebGL) - created lazily */
 
   /* Shared camera state across both render paths. Persists across entries
    * so a user who orbits to a particular angle stays there as they navigate. */
@@ -316,7 +316,7 @@
       const dy = e.clientY - lastY;
       lastX = e.clientX;
       lastY = e.clientY;
-      /* 0.005 rad per pixel — feels right at default canvas size. */
+      /* 0.005 rad per pixel - feels right at default canvas size. */
       cam.yaw += dx * 0.008;
       cam.pitch += dy * 0.008;
       const limit = Math.PI / 2 - 0.05;
@@ -328,7 +328,7 @@
       const factor = Math.exp(e.deltaY * 0.001);
       /* No upper bound; lower bound is just an epsilon so the camera doesn't
        * cross through origin (matrix singularity). Past distance ≈ 1.0 the
-       * camera enters the bounding sphere — that's the fly-through view. */
+       * camera enters the bounding sphere - that's the fly-through view. */
       cam.distance = Math.max(0.001, Math.min(500.0, cam.distance * factor));
     }, { passive: false });
 
@@ -400,7 +400,7 @@
     if (!oldCanvas) return;
     const w = 800, h = 600;
 
-    /* Replace canvas — switching contexts on an existing canvas isn't
+    /* Replace canvas - switching contexts on an existing canvas isn't
      * permitted, so we destroy and recreate when switching modes. */
     const fresh = document.createElement('canvas');
     fresh.id = 'viewer-canvas';
@@ -506,7 +506,7 @@
 
     list.innerHTML = visibleSlots.map(i => {
       const e = allEntries[i];
-      const dims = e.bpp ? `${e.w}×${e.h}` : '—';
+      const dims = e.bpp ? `${e.w}×${e.h}` : '-';
       const tag = e.has_tmd ? '<span style="color:var(--accent)">3D</span> · ' : '';
       return `<li data-slot="${i}"><span class="li-idx">${e.prot_index}</span><span class="li-meta">${tag}${e.class}<br><span class="li-class">${dims}</span></span></li>`;
     }).join('');
@@ -535,7 +535,7 @@
       status.textContent = 'No file loaded.';
       return;
     }
-    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — classifying entries…`;
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) - classifying entries…`;
 
     /* Set up canvas before WASM init so the viewer can resolve it. */
     host.innerHTML = '<canvas id="viewer-canvas" class="viewer-canvas" width="1024" height="768"></canvas>';
@@ -553,10 +553,10 @@
         rebuildList();
         listPane.style.display = 'flex';
         controls.style.display = 'flex';
-        status.textContent = `Loaded: ${f.name} — ${count} viewable entries.`;
+        status.textContent = `Loaded: ${f.name} - ${count} viewable entries.`;
         refreshInfo();
       } else {
-        status.textContent = `Loaded: ${f.name} — standalone TIM rendered.`;
+        status.textContent = `Loaded: ${f.name} - standalone TIM rendered.`;
       }
 
       classFilter.addEventListener('change', rebuildList);
@@ -610,7 +610,7 @@
 
 <section class="doc-section">
   <h2>Run engine</h2>
-  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) — <code>PROT.DAT</code> and <code>CDNAME.TXT</code> are extracted automatically via ISO9660 walk. You can also drop a raw <code>PROT.DAT</code> with an optional <code>CDNAME.TXT</code>. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
+  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) - <code>PROT.DAT</code> and <code>CDNAME.TXT</code> are extracted automatically via ISO9660 walk. You can also drop a raw <code>PROT.DAT</code> with an optional <code>CDNAME.TXT</code>. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
   <p class="hint">The same disc image you use in the asset browser above works here. For PROT.DAT-only access without a disc, also supply <code>CDNAME.TXT</code> (extracted by <code>./target/release/prot-extract</code>) to enable scene lookup by name.</p>
 
   <div class="engine-panel" id="engine-panel">
@@ -618,7 +618,7 @@
       <label for="engine-prot-file"><strong>Disc image (.bin) or PROT.DAT:</strong></label>
       <input type="file" id="engine-prot-file" accept=".bin,.dat"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
-      <label for="engine-cdname-file"><strong>CDNAME.TXT</strong> <span style="font-weight:normal">(optional — auto-extracted from disc)</span>:</label>
+      <label for="engine-cdname-file"><strong>CDNAME.TXT</strong> <span style="font-weight:normal">(optional - auto-extracted from disc)</span>:</label>
       <input type="file" id="engine-cdname-file" accept=".txt"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
       <button id="engine-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
@@ -638,7 +638,7 @@
 
     <div class="engine-state" id="engine-state" style="display: none;">
       <b>Frame:</b> <span id="engine-frame">0</span> &nbsp;&nbsp;
-      <b>Mode:</b> <span id="engine-mode">—</span> &nbsp;&nbsp;
+      <b>Mode:</b> <span id="engine-mode">-</span> &nbsp;&nbsp;
       <b>Actors:</b> <span id="engine-actors">0</span> &nbsp;&nbsp;
       <b>Menu:</b> <span id="engine-menu">closed</span>
     </div>
@@ -720,7 +720,7 @@
         ? `Loaded ${count} PROT entries from disc image (CDNAME auto-extracted).`
         : `Loaded ${count} PROT entries from PROT.DAT.`;
       if (!isDisc && !cdnameText) {
-        msg += ' No CDNAME — scene lookup by name requires CDNAME.TXT.';
+        msg += ' No CDNAME - scene lookup by name requires CDNAME.TXT.';
       }
       engStatus.textContent = msg;
       sceneRow.style.display = 'flex';

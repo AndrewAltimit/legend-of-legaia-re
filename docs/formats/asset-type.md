@@ -1,6 +1,6 @@
 # Asset type dispatcher
 
-`FUN_8001F05C` is the central asset-type dispatcher — every per-asset-format branch (TIM, TMD, MES, ANM, …) is reached through it. Implementation: `crates/asset/src/lib.rs::AssetType`. Source: `ghidra/scripts/funcs/8001f05c.txt`.
+`FUN_8001F05C` is the central asset-type dispatcher - every per-asset-format branch (TIM, TMD, MES, ANM, …) is reached through it. Implementation: `crates/asset/src/lib.rs::AssetType`. Source: `ghidra/scripts/funcs/8001f05c.txt`.
 
 ## Calling convention
 
@@ -27,7 +27,7 @@ result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_on
 | `0x08` | `SIN` | Raw load |
 | `0x09` | `TMD2` | Single bare TMD blob (no pack header). Hands directly to `FUN_80026B4C`; same on-disc format as a single member of the TMD-pack used by case 2. Parse with `crates/tmd::parse` directly. |
 | `0x0B` | `MOVE2` | Raw load with cleanup of prior buffer |
-| `0x0A` | `FLAG` (implicit) | Returns sentinel `0xA00` — no malloc, no decompress, no register |
+| `0x0A` | `FLAG` (implicit) | Returns sentinel `0xA00` - no malloc, no decompress, no register |
 | `0x0F` | `FLAG` | Returns sentinel `0xF00` |
 | `0x14` | `FLAG` | Returns sentinel `0x1400` |
 
@@ -50,9 +50,9 @@ Every return is a small bitfield:
 | 0x08 SIN | 0x80 |
 | 0x09 TMD2 | 0 (success) or asset-error bit |
 | 0x0B MOVE2 | 0x10 (same bit as MOVE) |
-| 0x0A | `0xA00` (`type << 8`) — pure flag |
-| 0x0F | `0xF00` (`type << 8`) — pure flag |
-| 0x14 | `0x1400` (`type << 8`) — pure flag |
+| 0x0A | `0xA00` (`type << 8`) - pure flag |
+| 0x0F | `0xF00` (`type << 8`) - pure flag |
+| 0x14 | `0x1400` (`type << 8`) - pure flag |
 
 Both call sites (`FUN_8002541C` streaming-walker and `FUN_80020224` descriptor walker) **OR all returns into one accumulator** and return that union, so the FLAG sentinels become high bits in the streaming-walker's "what was in this stream" summary value:
 
@@ -63,7 +63,7 @@ return_value & 0xFF00  = bit per FLAG-type marker seen
 
 ## Why FLAG types exist
 
-The FLAG cases let the dispatcher accept chunks whose `type_byte` falls outside the data-bearing range without aborting the streaming walk. The data bytes are still skipped by the walker (`advance = 4 + (size & ~3)`), but the dispatcher never reads them. So FLAG chunks act as **stream-level out-of-band markers** — any code that calls `FUN_8002541C` and looks at the returned bitfield can detect that "this stream contained a `0x14`-typed marker chunk" without that marker carrying a parsed asset.
+The FLAG cases let the dispatcher accept chunks whose `type_byte` falls outside the data-bearing range without aborting the streaming walk. The data bytes are still skipped by the walker (`advance = 4 + (size & ~3)`), but the dispatcher never reads them. So FLAG chunks act as **stream-level out-of-band markers** - any code that calls `FUN_8002541C` and looks at the returned bitfield can detect that "this stream contained a `0x14`-typed marker chunk" without that marker carrying a parsed asset.
 
 Where the markers are consumed is open; possibly by code that reads past the streaming terminator (the [DATA_FIELD trailer](data-field.md)).
 
@@ -89,4 +89,4 @@ pub enum AssetType {
 
 ## Where the dispatcher actually gets called
 
-In retail SCUS, only `FUN_8002541C`'s 0x14 (DATA_FIELD) branch reaches the dispatcher *from inside `SCUS_942.54`*. The other static call site is `FUN_80020224` — a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (`FUN_801D6704` → `0x801D6B0C` with `a0 = 0`); see [asset descriptor](asset-descriptor.md).
+In retail SCUS, only `FUN_8002541C`'s 0x14 (DATA_FIELD) branch reaches the dispatcher *from inside `SCUS_942.54`*. The other static call site is `FUN_80020224` - a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (`FUN_801D6704` → `0x801D6B0C` with `a0 = 0`); see [asset descriptor](asset-descriptor.md).

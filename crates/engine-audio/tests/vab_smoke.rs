@@ -3,7 +3,7 @@
 //! verify a key-on path actually drives the voice's envelope into Attack.
 //!
 //! Synthesises ONE program with ONE tone covering the whole keyboard, one
-//! VAG body of one block. No Sony bytes — pure constructed test data.
+//! VAG body of one block. No Sony bytes - pure constructed test data.
 
 use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank};

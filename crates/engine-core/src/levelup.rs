@@ -65,7 +65,7 @@ impl Default for StatGain {
 /// Per-level stat growth curve.
 ///
 /// The retail game stores per-character HP/MP growth tables in overlay DATA
-/// (the `level_up` cluster — see overlay capture). This enum lets the engine
+/// (the `level_up` cluster - see overlay capture). This enum lets the engine
 /// hold both the captured-from-retail level-indexed arrays and the simple
 /// flat-rate fallback the engine ships with today.
 ///
@@ -75,7 +75,7 @@ impl Default for StatGain {
 /// [`LevelUpTracker::with_stat_curves`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatGrowthCurve {
-    /// Constant growth — same HP/MP gain for every level. Default.
+    /// Constant growth - same HP/MP gain for every level. Default.
     Flat(StatGain),
     /// Per-level growth indexed by `target_level - 2` (entry for L1→2 at
     /// index 0, L98→99 at index 96). Length should be `MAX_LEVEL - 1`.
@@ -153,7 +153,7 @@ pub fn retail_xp_table() -> Vec<u32> {
     cumulative
 }
 
-/// Geometric `100 × n²` approximation — used only in unit tests that need
+/// Geometric `100 × n²` approximation - used only in unit tests that need
 /// fixed threshold values independent of the retail data.
 #[cfg(test)]
 pub fn placeholder_xp_table() -> Vec<u32> {
@@ -173,12 +173,23 @@ pub fn placeholder_xp_table() -> Vec<u32> {
 /// mp_total / levels_gained)`. Outside the observed range the curve
 /// falls back to [`StatGain::default`].
 ///
-/// The retail per-character per-level table — the writer-search target
-/// for the next round of overlay analysis — would let the engine emit
-/// a true [`StatGrowthCurve::PerLevel`] vector.
+/// The retail per-character per-level table is not surfaced by the
+/// captured `overlay_magic_level_up_*` dumps: a writer-search across
+/// every dump returns no `sb` / `sh` writes targeting `+0x10E`,
+/// `+0x11C..+0x12C`, `+0x130`, or `+0x161`. The "Seru struct +0x74"
+/// pointer-dereference path is also a dead end - the only `+0x74`
+/// reads in the captured overlay surface a 32-bit battle-state flag
+/// the SCUS-side handler `FUN_800480D8` writes with the constant
+/// `0x80808080`. The grant table likely lives in a still-uncaptured
+/// overlay (battle-data init or the Seru-equip path) or is encoded
+/// inline in a Seru PROT entry the current capture set doesn't
+/// surface. Engines that want a true [`StatGrowthCurve::PerLevel`]
+/// today should populate one explicitly via
+/// [`crate::seru_stats::SeruStatTable::insert`] until the writer is
+/// pinned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelUpObservation {
-    /// Display name for diagnostics (e.g. `"Vahn mc8→mc9"`).
+    /// Display name for diagnostics (e.g. `"Vahn 4-level jump"`).
     pub label: String,
     /// Pre-event level (1-based).
     pub from_level: u8,
@@ -239,13 +250,14 @@ impl LevelUpObservation {
 pub mod observations {
     use super::LevelUpObservation;
 
-    /// Vahn level-up captured from `~/.mednafen/mcs/.mc8 → .mc9`. Pre:
-    /// cumulative XP 365 → post 730 (delta +365). The
-    /// captured `+0x00` byte changed `0x4F → 0x73` (a multi-level jump).
-    /// Per-stat byte deltas come from the diff at `+0x11C..+0x12D`.
+    /// Vahn level-up captured from a pre/post save pair (one frame before a
+    /// 4-level-jump level-up event, one frame after). Pre: cumulative XP
+    /// 365 → post 730 (delta +365). The captured `+0x00` byte changed
+    /// `0x4F → 0x73` (a multi-level jump). Per-stat byte deltas come from
+    /// the diff at `+0x11C..+0x12D`.
     ///
     /// Bytes mapped to per-stat deltas:
-    /// - `+0x11C`: `0xDD → 0x03` (rolled past 0xFF — `+0x26` mod 256)
+    /// - `+0x11C`: `0xDD → 0x03` (rolled past 0xFF - `+0x26` mod 256)
     /// - `+0x11D`: `0x00 → 0x01` (carry from above; effective u16 LE
     ///   `+0x126` if the field is u16)
     /// - `+0x11E`: `0x1B → 0x23` (+8)
@@ -255,7 +267,7 @@ pub mod observations {
     /// - `+0x128`: `0x10 → 0x12` (+2)
     /// - `+0x12A`: `0x16 → 0x1A` (+4)
     /// - `+0x12C`: `0x0B → 0x0F` (+4)
-    /// - `+0x130`: `0x02 → 0x03` (+1, rank counter — not a stat)
+    /// - `+0x130`: `0x02 → 0x03` (+1, rank counter - not a stat)
     ///
     /// SP_max byte at `+0x10E`: `0x3A → 0x42` (+8).
     ///
@@ -266,7 +278,7 @@ pub mod observations {
     /// from L6 → L10 matches the cumulative thresholds.
     pub fn vahn_mc8_to_mc9() -> LevelUpObservation {
         LevelUpObservation {
-            label: "Vahn mc8->mc9 (4-level jump)".into(),
+            label: "Vahn 4-level jump".into(),
             from_level: 6,
             to_level: 10,
             hp_gained: 0, // not surfaced in the diff (record's hp_max stayed steady)
@@ -316,7 +328,7 @@ pub struct LevelUpTracker {
     pub stat_gains: [StatGain; MAX_PARTY],
     /// Per-level growth curves, indexed by party slot. When populated, the
     /// engine prefers `stat_curves[slot]` over `stat_gains[slot]`. Default
-    /// is `[StatGrowthCurve::default(); MAX_PARTY]` — flat rate equal to
+    /// is `[StatGrowthCurve::default(); MAX_PARTY]` - flat rate equal to
     /// `StatGain::default()`.
     pub stat_curves: [StatGrowthCurve; MAX_PARTY],
 }
@@ -446,7 +458,7 @@ impl LevelUpTracker {
 
         // Curve takes precedence over the flat-rate stat_gains. A
         // `Flat(default())` curve produces the same value as the flat
-        // table — preserves backward compat for callers that haven't
+        // table - preserves backward compat for callers that haven't
         // moved to `with_stat_curves`. If the caller installed a flat
         // curve, prefer the explicit `stat_gains` (set via
         // `with_stat_gain` / `with_stat_gains`) since it's the more
@@ -473,7 +485,7 @@ impl LevelUpTracker {
         })
     }
 
-    /// Apply a `LevelUpResult` to a `CharacterRecord` — increases `hp_max`
+    /// Apply a `LevelUpResult` to a `CharacterRecord` - increases `hp_max`
     /// and `mp_max`, and restores `hp_cur` / `mp_cur` to the new maximums
     /// (Legaia restores HP/MP on level-up).
     pub fn apply_to_record(result: &LevelUpResult, record: &mut CharacterRecord) {

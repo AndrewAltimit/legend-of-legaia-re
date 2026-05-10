@@ -158,7 +158,7 @@ enum Cmd {
     /// Walk `tim_scan/<entry>/*.tim` under `extracted/` and report every
     /// TIM that places its CLUT or image at the requested VRAM cell. Used
     /// to discover which PROT entry provides a missing CLUT row that a
-    /// character mesh references — the runtime asset chain is partially
+    /// character mesh references - the runtime asset chain is partially
     /// undocumented (see `project_clut_scattering.md`), and this is the
     /// principled discovery step before adding the TIM dir to the viewer's
     /// `--vram-extra-dir` set.
@@ -188,7 +188,7 @@ enum Cmd {
         #[arg(long, default_value_t = 8)]
         verts: usize,
         /// Optional output: write a wavefront-style OBJ of the wireframe
-        /// quads (each record becomes 4 line segments — `l` directives).
+        /// quads (each record becomes 4 line segments - `l` directives).
         #[arg(short, long)]
         obj_out: Option<PathBuf>,
     },
@@ -213,7 +213,7 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         all_slots: bool,
         /// Group slots by size and print the buckets in size-descending
-        /// order. Slots in the same bucket are the same kind of record —
+        /// order. Slots in the same bucket are the same kind of record -
         /// the schema is byte-identical across every field-pack instance,
         /// so the cluster output is a static index of slot semantics.
         #[arg(long, default_value_t = false)]
@@ -1282,7 +1282,7 @@ fn extract_streaming(input: &PathBuf, out: &PathBuf, save_trailer: bool) -> Resu
         let t = AssetType::from_byte(c.type_byte);
 
         // Decide: pack-style (TIM_LIST/TMD) or single-asset.
-        // TMD2 (case 9 in FUN_8001f05c) is a *bare* TMD — the dispatcher passes
+        // TMD2 (case 9 in FUN_8001f05c) is a *bare* TMD - the dispatcher passes
         // the buffer directly to FUN_80026b4c without walking a pack header.
         // Case 2 (TMD), by contrast, walks `puVar1[i]` as pack offsets.
         let is_pack = matches!(t, AssetType::TimList | AssetType::Tmd);
@@ -1567,7 +1567,7 @@ fn tim_scan_cmd(
     Ok(())
 }
 
-/// `asset stage <PATH>` — dump one entry's stage-geometry layout. Useful
+/// `asset stage <PATH>` - dump one entry's stage-geometry layout. Useful
 /// to confirm pool placement, sample resolved quad indices, and (with
 /// `--obj-out`) export a wireframe mesh for any external viewer.
 fn stage_one(input: &PathBuf, head: usize, verts: usize, obj_out: Option<&Path>) -> Result<()> {
@@ -1688,11 +1688,11 @@ fn write_stage_obj(
     Ok(())
 }
 
-/// `asset clut-finder` — walk `extracted/tim_scan/<entry>/*.tim` and report
+/// `asset clut-finder` - walk `extracted/tim_scan/<entry>/*.tim` and report
 /// every TIM whose CLUT or image rect covers the requested VRAM cell.
 ///
 /// Used to discover which PROT entry provides a specific CLUT row that a
-/// character mesh references — see `project_clut_scattering.md`.
+/// character mesh references - see `project_clut_scattering.md`.
 fn clut_finder_cmd(extracted_root: &Path, x: u16, y: u16, clut_only: bool) -> Result<()> {
     let tim_scan_root = extracted_root.join("tim_scan");
     if !tim_scan_root.is_dir() {
@@ -1789,7 +1789,7 @@ fn clut_finder_cmd(extracted_root: &Path, x: u16, y: u16, clut_only: bool) -> Re
     Ok(())
 }
 
-/// `asset stage-scan <DIR>` — scan a directory of PROT entries for
+/// `asset stage-scan <DIR>` - scan a directory of PROT entries for
 /// stage-geometry tables and report per-entry stats.
 fn stage_scan_cmd(dir: &Path, cdname_path: Option<&Path>, only_hits: bool) -> Result<()> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
@@ -2088,7 +2088,7 @@ fn effect_bundle_one(input: &PathBuf, all_slots: bool) -> Result<()> {
     let n_tmds = eb.assets.tmds.len();
     let n_tims = eb.assets.tims.len();
     println!(
-        "  {} TMD(s) — {} master + {} sub (HEADER_A reserves 1 master + 28 sub = 29 slots)",
+        "  {} TMD(s) - {} master + {} sub (HEADER_A reserves 1 master + 28 sub = 29 slots)",
         n_tmds,
         n_tmds.min(1),
         n_tmds.saturating_sub(1),

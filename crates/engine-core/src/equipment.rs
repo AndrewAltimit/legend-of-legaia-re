@@ -193,7 +193,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
     let mut c = EquipmentCatalog::new();
 
     // ===== Weapons (slot 0) =====
-    // Vahn — swords
+    // Vahn - swords
     c.insert(EquipmentEntry {
         id: 0x20,
         name: "Bronze Sword",
@@ -231,7 +231,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         sell_price: 750,
     });
 
-    // Noa — knuckles
+    // Noa - knuckles
     c.insert(EquipmentEntry {
         id: 0x24,
         name: "Bronze Knuckles",
@@ -260,7 +260,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         sell_price: 290,
     });
 
-    // Gala — quarterstaves
+    // Gala - quarterstaves
     c.insert(EquipmentEntry {
         id: 0x27,
         name: "Wooden Staff",
@@ -427,7 +427,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
         name: "Wind Boots",
         slot: EquipSlot::Boot,
         restriction: CharRestriction::Any,
-        // Ability bit 12 = "evasion bonus" — mirrors retail's hidden flag.
+        // Ability bit 12 = "evasion bonus" - mirrors retail's hidden flag.
         modifier: mk_modifier_with_ability(0, 0, 5, 2, 8, 12),
         buy_price: 1100,
         sell_price: 550,

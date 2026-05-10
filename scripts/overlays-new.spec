@@ -1,4 +1,4 @@
-# New savestate captures — 2026-05-08
+# New savestate captures - 2026-05-08
 # Format: <save-state-path>  <label>
 ~/.mednafen/mcs/Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc0	shop
 ~/.mednafen/mcs/Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc1	save_ui_select

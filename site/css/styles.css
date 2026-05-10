@@ -1,5 +1,5 @@
 /* =====================================================================
-   legend-of-legaia-re — site stylesheet
+   legend-of-legaia-re - site stylesheet
    Three-column wiki layout: sidebar (collapsible) | content | TOC rail.
    Restrained palette: one accent (cyan) for emphasis, the rest is a
    neutral terminal grey. No animations, no gradients, no pulses.
@@ -170,7 +170,7 @@ hr {
   align-items: start;
 }
 
-/* No TOC rail when not needed — fall back to 2-column */
+/* No TOC rail when not needed - fall back to 2-column */
 .app.no-toc {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
 }
@@ -239,7 +239,7 @@ hr {
   color: var(--text-dim);
 }
 
-/* Sidebar sections — collapsible */
+/* Sidebar sections - collapsible */
 .sidebar-section {
   margin-bottom: 0.3rem;
 }

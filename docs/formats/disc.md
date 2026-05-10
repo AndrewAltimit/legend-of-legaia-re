@@ -41,5 +41,5 @@ XA/XA1.XA  ... XA21.XA
 
 `MOV/MV*.STR` are PSX MDEC video streams (delegate to public decoders like jPSXdec).
 `XA/XA*.XA` are XA-ADPCM audio; `crates/xa` decodes the format spec but the on-disc files use a non-standard interleave.
-`PROT.DAT` is the main asset archive — see [PROT.DAT TOC](prot.md).
+`PROT.DAT` is the main asset archive - see [PROT.DAT TOC](prot.md).
 `SCUS_942.54` is the executable. Reverse-engineering instructions: [`tooling/ghidra.md`](../tooling/ghidra.md).

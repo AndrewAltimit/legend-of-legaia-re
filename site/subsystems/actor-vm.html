@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Actor / sprite VM — legend-of-legaia-re</title>
+  <title>Actor / sprite VM - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -15,14 +15,14 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; actor / sprite VM</div>
   <h1>Actor / sprite VM</h1>
-  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. The simplest of Legaia's runtime VMs &mdash; 13 opcodes, byte-stream operands, no cross-context targeting. <span class="status-done">Fully ported.</span></p>
+  <p class="lede">A small fixed-width bytecode VM driving the title screen's animated sprite cluster. The simplest of Legaia's runtime VMs - 13 opcodes, byte-stream operands, no cross-context targeting. <span class="status-done">Fully ported.</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
   <p>If you've ever written a sprite-walk script for an old arcade game, this is exactly that. There's an array of "actors" (a sprite is an actor here), each one carries a small amount of per-instance state and a cursor into a bytecode buffer. Every frame, the VM reads the next byte at each actor's cursor and runs the corresponding handler. The handler might move the sprite, trigger an animation, set a flag, or wait for N frames. After the handler runs, the cursor advances and we're done with this actor for this frame.</p>
 
-  <p>The whole VM has 13 opcodes &mdash; the minimum you need for a sprite-animation system: spawn / despawn, position writes, motion, animation triggers, flag set / clear / test, wait, and a terminator. Operands are simple: typically zero or one byte after the opcode. There is no "switch context to a different actor" or "call this other script as a subroutine"; an actor's bytecode runs against itself only.</p>
+  <p>The whole VM has 13 opcodes - the minimum you need for a sprite-animation system: spawn / despawn, position writes, motion, animation triggers, flag set / clear / test, wait, and a terminator. Operands are simple: typically zero or one byte after the opcode. There is no "switch context to a different actor" or "call this other script as a subroutine"; an actor's bytecode runs against itself only.</p>
 
   <p>Because everything is fixed-width and self-contained, the actor VM was the first VM ported in the clean-room engine, and it's used as the reference implementation pattern (a <code>Host</code> trait abstracts the platform-side hooks; the dispatcher is a plain match statement over opcode bytes).</p>
 </section>
@@ -55,14 +55,14 @@
 
 <section class="doc-section" id="separate-from-field">
   <h2>Why it's separate from the field VM</h2>
-  <p>The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The <a href="script-vm.html">field VM</a> (<code>FUN_801DE840</code>) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine &mdash; actors at the rendering primitive level, scripts at the gameplay-event level &mdash; and were almost certainly written by different people on the dev team.</p>
+  <p>The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The <a href="script-vm.html">field VM</a> (<code>FUN_801DE840</code>) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - actors at the rendering primitive level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.</p>
 </section>
 
 <section class="doc-section" id="anm-connection">
   <h2>Connection to ANM</h2>
   <p>The "trigger animation" opcode hands off an <a href="../formats/index.html">ANM container</a> ID to the animation runner. <code>crates/anm</code> parses the container header + per-bone keyframe tables, and <code>legaia_anm::AnimPlayer</code> drives per-frame keyframe interpolation against the actor's bone count (<code>tick()</code> returns a <code>PoseFrame</code> the engine uploads as a posed mesh).</p>
   <p>The per-frame anim driver itself lives in <code>SCUS_942.54</code>, not in an overlay. <code>FUN_80021DF4</code> (4732 bytes, 1183 instructions) is the tick the field/battle scenes call once per frame for every active actor; it reads <code>actor[+0x4C]</code> (record pointer, written by <code>FUN_80024CFC</code>), <code>actor[+0x5A]</code> (dispatch byte), and <code>actor[+0x68]</code> (frame counter, init = 100) and ladders through seven opcodes (<code>0x01..=0x07</code>).</p>
-  <p>The function is best modelled as a <b>layered pipeline</b> rather than a per-opcode jump table &mdash; each dispatch byte selects which subset of side-effects fires in a fixed order. <code>crates/engine-vm/src/actor_tick.rs</code> ports the full pipeline: a typed <code>ActorPhysics</code> struct mirrors the retail actor record's tick-relevant fields (<code>+0x10</code> through <code>+0xD0</code>, with offset annotations on every field); <code>tick_actor(physics, scalars, listener) -&gt; TickResult</code> is the entry point.</p>
+  <p>The function is best modelled as a <b>layered pipeline</b> rather than a per-opcode jump table - each dispatch byte selects which subset of side-effects fires in a fixed order. <code>crates/engine-vm/src/actor_tick.rs</code> ports the full pipeline: a typed <code>ActorPhysics</code> struct mirrors the retail actor record's tick-relevant fields (<code>+0x10</code> through <code>+0xD0</code>, with offset annotations on every field); <code>tick_actor(physics, scalars, listener) -&gt; TickResult</code> is the entry point.</p>
   <h3>Per-arm physics</h3>
   <ul>
     <li><b>Common pre-update</b> (every byte). Drains the per-frame timer at <code>+0x54</code> and the rotation accumulator at <code>+0x22</code>.</li>

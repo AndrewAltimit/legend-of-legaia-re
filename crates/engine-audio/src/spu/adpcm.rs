@@ -12,7 +12,7 @@
 //! filter constants), but kept stateful here so a long-playing voice can be
 //! advanced one block at a time without re-walking the body.
 //!
-//! No Sony bytes — the algorithm is the standard PSX SPU formula
+//! No Sony bytes - the algorithm is the standard PSX SPU formula
 //! (see `docs/formats/vab.md` and the `legaia-xa` filter table).
 
 const F0: [i32; 5] = legaia_xa::F0;
@@ -26,14 +26,14 @@ pub const SAMPLES_PER_BLOCK: usize = 28;
 /// What a block decoder learned about the block header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockFlags {
-    /// `flag & 0x01` — voice should jump to its loop point (or stop, if no
+    /// `flag & 0x01` - voice should jump to its loop point (or stop, if no
     /// loop set) after the last sample of this block plays out.
     pub end: bool,
-    /// `flag & 0x02` — *repeat* bit. Used together with the loop-start bit
+    /// `flag & 0x02` - *repeat* bit. Used together with the loop-start bit
     /// to indicate this block is the loop tail; the SPU will jump back to
     /// the loop-start address.
     pub repeat: bool,
-    /// `flag & 0x04` — *loop-start* bit. The SPU latches this block's
+    /// `flag & 0x04` - *loop-start* bit. The SPU latches this block's
     /// address as the loop point.
     pub loop_start: bool,
     /// True if the header byte has `filter > 4`. Real banks sometimes mark

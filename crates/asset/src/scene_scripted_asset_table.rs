@@ -13,7 +13,7 @@
 //!                                          ; all <= file size
 //! +offsets[count-1]  record bytecode        ; per-record opcodes (often
 //!                                          ; leading with `0xFFFF 0x0000`
-//!                                          ; sentinel — distinct event
+//!                                          ; sentinel - distinct event
 //!                                          ; scripts per record)
 //! +0x800-aligned     u32  count = 7         ; canonical scene-asset-table lead
 //! ...                                       ; 7 descriptors, first data_offset
@@ -30,14 +30,14 @@
 //! `unknown_high_entropy` (52 + ones missed by `scene_asset_table` detector
 //! at offset 0) and `unknown_other` (depending on entropy).
 //!
-//! ### Format meaning — partially understood
+//! ### Format meaning - partially understood
 //!
 //! The prescript is plausibly the **scene event-script bytecode** that the
 //! field VM (`FUN_801DE840`) executes when the scene loads. Per-record
 //! `0xFFFF 0x0000` markers strongly resemble field-VM frame-divider opcodes.
 //! The asset table after the boundary is a standard scene asset bundle.
 //!
-//! Detection is gated on the asset-table shape — that's a much stronger
+//! Detection is gated on the asset-table shape - that's a much stronger
 //! signal than the prescript alone, which can occasionally match arbitrary
 //! `[count][offsets]`-shaped data.
 //!
@@ -55,11 +55,11 @@ use crate::AssetType;
 /// prescript.
 const SECTOR_SIZE: usize = 0x800;
 
-/// Asset-table count literal — same as [`crate::scene_asset_table`]. The
+/// Asset-table count literal - same as [`crate::scene_asset_table`]. The
 /// scripted variant always carries the canonical 7-asset shape.
 const ASSET_TABLE_COUNT: u32 = 7;
 
-/// `8 + 7 * 8` — the byte after the asset-table descriptor block.
+/// `8 + 7 * 8` - the byte after the asset-table descriptor block.
 const ASSET_TABLE_HEADER_END: u32 = 8 + (ASSET_TABLE_COUNT * 8);
 
 /// Maximum sane prescript record count. Real hits sit in `1..=71`; 4096
@@ -96,7 +96,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneScriptedAssetTable> {
         return None;
     }
 
-    // Validate the inner asset table — same checks as
+    // Validate the inner asset table - same checks as
     // `crate::scene_asset_table::detect` but at a non-zero base offset.
     let lead = read_u32_le(buf, table_off)?;
     if lead != ASSET_TABLE_COUNT {
@@ -232,7 +232,7 @@ mod tests {
         for &o in &record_offs {
             buf.extend_from_slice(&(o as u16).to_le_bytes());
         }
-        // Record bodies — fill with marker bytes to disambiguate from padding.
+        // Record bodies - fill with marker bytes to disambiguate from padding.
         for (i, &rl) in record_lens.iter().enumerate() {
             buf.extend(std::iter::repeat_n(0xA0u8 + (i as u8 & 0xF), rl));
         }
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn rejects_when_asset_type_is_unknown() {
-        // Use a definitely-unknown type byte (0xC0 — outside 0x00..=0x14).
+        // Use a definitely-unknown type byte (0xC0 - outside 0x00..=0x14).
         let buf = synth(3, &[16, 32, 48], [1, 2, 3, 4, 5, 6, 0xC0]);
         assert!(detect(&buf).is_none());
     }

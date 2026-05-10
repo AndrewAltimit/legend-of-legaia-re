@@ -4,9 +4,9 @@ PSX MDEC clean-room decoder and PSX STR video-sector parser.
 
 ## Scope
 
-- `MdecDecoder` — decodes a complete BS v2 bitstream payload into RGBA8 pixels.
-- `str_sector::StrFrameAssembler` — collects 2048-byte Mode 2 Form 1 sector data areas and returns assembled BS payloads when a full frame is ready.
-- `mdec` CLI — `decode-frame` (raw BS → PPM), `scan-str` (report frame inventory), `decode-str` (batch decode to PPMs).
+- `MdecDecoder` - decodes a complete BS v2 bitstream payload into RGBA8 pixels.
+- `str_sector::StrFrameAssembler` - collects 2048-byte Mode 2 Form 1 sector data areas and returns assembled BS payloads when a full frame is ready.
+- `mdec` CLI - `decode-frame` (raw BS → PPM), `scan-str` (report frame inventory), `decode-str` (batch decode to PPMs).
 
 ## Algorithm
 

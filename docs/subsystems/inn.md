@@ -1,7 +1,7 @@
 # Inn Subsystem
 
 Covers the HP / MP restore flow used at in-game inns. The inn UI lives inside
-the **menu overlay** — the same 129-function binary as the shop, save screen, and
+the **menu overlay** - the same 129-function binary as the shop, save screen, and
 status screens. No separate inn overlay exists.
 
 Per-scene inn costs are encoded in the menu overlay's DATA segment and are not
@@ -17,8 +17,8 @@ overlay handles:
 | Phase | Sub-screen | Description |
 |---|---|---|
 | Cost prompt | `InnConfirm` | Shows the cost for one night and a Yes / No cursor. |
-| Commit | — | Deducts gold, restores all active party members' HP/MP. |
-| Exit | — | Returns to field without resting if No or gold insufficient. |
+| Commit | - | Deducts gold, restores all active party members' HP/MP. |
+| Exit | - | Returns to field without resting if No or gold insufficient. |
 
 On confirmation the engine calls `InnSession::can_afford(world_money)` before
 committing. The commit path:
@@ -35,7 +35,7 @@ committing. The commit path:
 | `cost` | `u32` | Gold required for one stay |
 
 Key method:
-- `can_afford(world_money: i32) -> bool` — `world_money >= cost`
+- `can_afford(world_money: i32) -> bool` - `world_money >= cost`
 
 Installed on `MenuRuntime` by `open_inn(cost)` before menu entry.
 

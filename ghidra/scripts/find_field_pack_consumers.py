@@ -2,7 +2,7 @@
 # @runtime Jython
 #
 # Hunt for runtime consumers of the field-pack 97-slot schema. The
-# schema has a static offset layout — see crates/asset/src/field_pack.rs
+# schema has a static offset layout - see crates/asset/src/field_pack.rs
 # for the canonical values. A consumer is any function that loads from
 # `[reg + slot_off]` for one of the schema's interior slot offsets.
 #
@@ -18,7 +18,7 @@
 
 import os
 
-# Subset of the 97 schema slot offsets — picked to skip ones likely to
+# Subset of the 97 schema slot offsets - picked to skip ones likely to
 # collide with regular MIPS struct accesses (small offsets like 0x60 are
 # common for any struct base). These large interior offsets are
 # field-pack-specific.

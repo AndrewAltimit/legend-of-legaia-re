@@ -3,10 +3,10 @@
 //!
 //! Subcommands:
 //!
-//! - `info` — headless one-line summary of a scene's resolved asset chain.
-//! - `list-scenes` — every CDNAME scene name with its PROT range.
-//! - `play` — headless engine tick: world + camera + audio, no window.
-//! - `play-window` — windowed engine: opens a wgpu surface, renders scene
+//! - `info` - headless one-line summary of a scene's resolved asset chain.
+//! - `list-scenes` - every CDNAME scene name with its PROT range.
+//! - `play` - headless engine tick: world + camera + audio, no window.
+//! - `play-window` - windowed engine: opens a wgpu surface, renders scene
 //!   TMDs against the software PSX VRAM each frame. Input: arrows = D-pad,
 //!   Z = Cross, Esc = quit.
 
@@ -103,7 +103,7 @@ enum Cmd {
     },
     /// Boot the engine into a scene and tick it for `frames` frames.
     /// Drives the field VM, camera, BGM director, and per-actor move VMs;
-    /// logs scene transitions and the per-frame BGM events. No window —
+    /// logs scene transitions and the per-frame BGM events. No window -
     /// for that, use `asset-viewer field <scene>`.
     ///
     /// When `--str-file` is provided the STR video is pre-decoded headlessly
@@ -216,7 +216,7 @@ enum Cmd {
         /// Maximum number of session ticks to run before exiting.
         #[arg(long, default_value_t = 256)]
         max_ticks: u64,
-        /// Pre-seeded turn script — comma-separated key letters fed once
+        /// Pre-seeded turn script - comma-separated key letters fed once
         /// per tick during the CommandInput phase. Each character maps
         /// to one input bit:
         ///   `R/L/U/D` direction; `c` cross; `o` circle; `t` triangle;
@@ -257,7 +257,7 @@ enum Cmd {
         #[arg(long)]
         trace: PathBuf,
         /// Print mismatch detail even when the trace replays cleanly
-        /// (default off — silence is success).
+        /// (default off - silence is success).
         #[arg(long, default_value_t = false)]
         verbose: bool,
     },
@@ -842,13 +842,13 @@ struct PlayWindowApp {
     pad: u16,
     /// Input binding loaded from file (or default).
     mapping: legaia_engine_core::input::Mapping,
-    /// Menu runtime — drives shop / inn / status screens. Ticked per frame
+    /// Menu runtime - drives shop / inn / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
     menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
     /// World-map camera controller. `Some` when `--world-map` was passed;
     /// ticked each frame alongside the session.
     world_map_ctrl: Option<WorldMapController>,
-    /// Pad state from the previous frame — used to compute newly-pressed bits
+    /// Pad state from the previous frame - used to compute newly-pressed bits
     /// for the world-map toggle combo.
     prev_pad: u16,
     /// Rolling battle-event log surfaced in the HUD. Each tick drains
@@ -875,7 +875,7 @@ struct PlayWindowApp {
 /// every other path uses (no boot UI).
 #[allow(clippy::large_enum_variant)]
 enum BootUiState {
-    /// No boot UI — engine ticks the scene normally.
+    /// No boot UI - engine ticks the scene normally.
     Inactive,
     /// Title screen is active. Pad input drives the
     /// [`legaia_engine_core::title::TitleSession`].
@@ -889,7 +889,7 @@ enum BootUiState {
     ///
     /// `sub` holds the active sub-session pushed by
     /// `FieldMenuOutcome::Confirmed(row)` (Status, Equip, Spells, Items,
-    /// Save, Options, Arts) — when `Some`, input + draws route to the
+    /// Save, Options, Arts) - when `Some`, input + draws route to the
     /// sub instead of the menu and the menu sits in `Suspended`
     /// underneath.
     FieldMenu {
@@ -1054,7 +1054,7 @@ impl PlayWindowApp {
                     apply_inventory_outcome, apply_spell_outcome,
                 };
                 if let Some(active_sub) = sub.as_mut() {
-                    // A sub-session is open — route input + check for done.
+                    // A sub-session is open - route input + check for done.
                     active_sub.tick_pad_edge(pressed);
                     if active_sub.is_done() {
                         // Drain into world side-effects + handle save.
@@ -1075,7 +1075,7 @@ impl PlayWindowApp {
                             }
                             FieldMenuSubsession::Arts(editor) => {
                                 // No persistent ChainLibrary on the world
-                                // yet — the editor's outcome is dropped
+                                // yet - the editor's outcome is dropped
                                 // until engines wire one in.
                                 let mut throwaway =
                                     legaia_engine_core::tactical_arts_editor::ChainLibrary::new();
@@ -1462,7 +1462,7 @@ impl PlayWindowApp {
                 legaia_engine_render::spell_menu_draws_for(&self.font, args, (32, 32))
             }
             // Items / Equip / Arts have no shipped *_draws_for helpers
-            // yet — render a placeholder banner so the player can see the
+            // yet - render a placeholder banner so the player can see the
             // session is open. Engines wishing to ship dedicated overlays
             // can extend this match.
             FieldMenuSubsession::Items(_) => sub_placeholder_banner(&self.font, "ITEMS"),
@@ -1475,7 +1475,7 @@ impl PlayWindowApp {
 /// Render a one-line banner for sub-sessions that don't yet have a
 /// dedicated `*_draws_for` helper. Used by the field-menu sub-session
 /// dispatcher so the player can see "ITEMS / EQUIP / ARTS" while they
-/// browse — pressing Circle returns to the field menu.
+/// browse - pressing Circle returns to the field menu.
 fn sub_placeholder_banner(font: &Font, title: &str) -> Vec<TextDraw> {
     let glyphs = font.layout_ascii(&format!("{title}  (Circle: Back)"));
     legaia_engine_render::text_draws_for(&glyphs, (96, 80), [1.0, 0.85, 0.3, 1.0])
@@ -1601,7 +1601,7 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let _ = atlas;
-        // Boot UI is fullscreen — when active, suppress every other HUD layer
+        // Boot UI is fullscreen - when active, suppress every other HUD layer
         // and just render the active panel (title screen / save-select).
         if self.boot_ui.is_active() {
             return self.boot_ui_draws();
@@ -1825,7 +1825,7 @@ impl ApplicationHandler for PlayWindowApp {
                 let ticks = self.win.drain_ticks(dt, 4);
                 for _ in 0..ticks {
                     // When the boot UI is active, route input there and skip
-                    // the scene tick — the player hasn't entered the world
+                    // the scene tick - the player hasn't entered the world
                     // yet (or has paused into save-select).
                     if self.boot_ui.is_active() {
                         let _ = self.tick_boot_ui();
@@ -2116,8 +2116,9 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
         }) {
             Some((_, sf)) => {
                 // Read the cumulative XP value from the active-party
-                // leader's record (`+0x04..+0x06`, pinned by the mc7→mc9
-                // capture) and infer the level from the retail XP table.
+                // leader's record (`+0x04..+0x06`, pinned by the captured
+                // level-up observation triplet) and infer the level from
+                // the retail XP table.
                 // Engines that capture the actual level byte can override.
                 let lv = sf
                     .party
@@ -2392,7 +2393,7 @@ fn cmd_inventory(item: u8, party_size: u8, script: &str) -> Result<()> {
     let catalog = ItemCatalog::vanilla();
     if catalog.get(item).is_none() {
         anyhow::bail!(
-            "item id 0x{item:02X} not in vanilla catalog — pick from 0x10..0x41 or extend the catalog"
+            "item id 0x{item:02X} not in vanilla catalog - pick from 0x10..0x41 or extend the catalog"
         );
     }
     let mut targets: Vec<TargetRow> = Vec::new();
@@ -2443,7 +2444,7 @@ fn cmd_equip(slot: u8, item: u8) -> Result<()> {
     };
     let mut inv = HashMap::new();
     // Re-encode the item id so its implied slot matches the requested
-    // slot — the synthetic test catalog uses `id >> 5` as the slot bits.
+    // slot - the synthetic test catalog uses `id >> 5` as the slot bits.
     let encoded_id = (slot << 5) | (item & 0x1F);
     inv.insert(encoded_id, 1);
     let mut eq = EquipmentTable::new();
@@ -2520,7 +2521,7 @@ fn cmd_gte_replay(trace_path: &Path, verbose: bool) -> Result<()> {
     );
     let mismatches = trace.replay();
     if mismatches.is_empty() {
-        println!("gte-replay: clean — every step replayed bit-exact");
+        println!("gte-replay: clean - every step replayed bit-exact");
         if verbose {
             println!("gte-replay: trace label = {:?}", trace.label);
         }

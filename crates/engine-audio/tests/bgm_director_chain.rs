@@ -6,7 +6,7 @@
 //!
 //! The `BgmDirector` trait lives in `engine-core::scene`, but this test
 //! lives in `engine-audio` so we don't need to pull engine-core's larger
-//! dep graph. We replicate the trait's shape locally — the public surface
+//! dep graph. We replicate the trait's shape locally - the public surface
 //! is the five methods (`start`, `queue`, `pause`, `resume`, `stop`) so a
 //! parallel struct here matches by name.
 
@@ -21,7 +21,7 @@ use legaia_vab::{
 
 /// Build a one-program / one-tone / one-VAG VAB with a constant-amplitude
 /// 4-block sample. Same shape as the existing `seq_vab_spu_chain` fixture
-/// — kept here so this test stands alone.
+/// - kept here so this test stands alone.
 fn build_vab() -> Vec<u8> {
     let prog_off = VAB_HEADER_SIZE;
     let tone_off = prog_off + PROGRAMS_TABLE_SIZE;
@@ -78,10 +78,10 @@ fn build_seq_bytes() -> Vec<u8> {
 
 /// Engine-side audio device: holds a `Spu`, builds a fresh `Sequencer` per
 /// `start` call from raw SEQ bytes, mixes both into a render loop. This is
-/// the shape we want a real engine to wear — the consumer of
+/// the shape we want a real engine to wear - the consumer of
 /// `engine-core::scene::BgmDirector::start` should look like this.
 ///
-/// `bank` must have been uploaded into [`Self::spu`] — the test fixture
+/// `bank` must have been uploaded into [`Self::spu`] - the test fixture
 /// uploads via [`AudioDevice::install_bank_into_self`] so the same SPU
 /// instance owns both the sample memory and the playback voices.
 pub struct AudioDevice {
@@ -214,7 +214,7 @@ fn director_start_with_invalid_seq_bytes_silently_drops_request() {
     let report = parse(&vab_bytes, 0).expect("parse VAB");
     let mut device = AudioDevice::new();
     device.install_bank(&report, &vab_bytes);
-    // Bogus bytes — not a SEQ. Director should silently drop the request
+    // Bogus bytes - not a SEQ. Director should silently drop the request
     // (the engine-side BGM lookup also returns None for invalid IDs, so
     // robustness here matches the rest of the chain).
     device.start(42, b"this is not a SEQ");

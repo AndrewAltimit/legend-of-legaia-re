@@ -2,14 +2,14 @@
 //!
 //! Modes:
 //!
-//! * `tim <PATH>` — display a single TIM file (the original Phase 1 demo).
-//! * `tmd <PATH>` — display a Legaia TMD as a flat-shaded auto-rotating
+//! * `tim <PATH>` - display a single TIM file (the original Phase 1 demo).
+//! * `tmd <PATH>` - display a Legaia TMD as a flat-shaded auto-rotating
 //!   3D mesh. PATH may be a single `.tmd` file, or a directory in which
 //!   case the viewer walks every `*.tmd` recursively and N/P/PgDn/PgUp
 //!   cycle between them.
-//! * `stage <PATH>` — render a stage-geometry PROT entry as a wireframe.
-//! * `vab <PATH>` — load a VAB bank, play one sample.
-//! * `prot <PROT.DAT>` — browse every PROT entry. Auto-detects what the
+//! * `stage <PATH>` - render a stage-geometry PROT entry as a wireframe.
+//! * `vab <PATH>` - load a VAB bank, play one sample.
+//! * `prot <PROT.DAT>` - browse every PROT entry. Auto-detects what the
 //!   entry contains via the categorize classifier and shows / plays the
 //!   first viewable sub-asset. Currently handles:
 //!   - `tim_passthrough` → display the TIM
@@ -19,7 +19,7 @@
 //!     (148 PROT entries, 2026-05-04)
 //!   - `scene_vab_stream` → play sample 0 of the leading VAB bank
 //!     (217 PROT entries, 2026-05-04)
-//!   - VAB byte-search fallback for any class — finds VAB headers anywhere
+//!   - VAB byte-search fallback for any class - finds VAB headers anywhere
 //!     in the buffer (covers `unknown_*` entries with embedded banks)
 //!
 //! The PROT browser is the integration de-risk for Phase 1: proves the
@@ -132,7 +132,7 @@ enum Cmd {
         start: usize,
         /// Skip files smaller than this many bytes (directory mode only).
         /// Useful for filtering out scenery/effect props and only browsing
-        /// character-scale meshes — try `--min-size 15000` for `battle_data`.
+        /// character-scale meshes - try `--min-size 15000` for `battle_data`.
         #[arg(long, default_value_t = 0)]
         min_size: u64,
         /// Sort by file size descending (largest first) instead of by path.
@@ -140,8 +140,8 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         sort_by_size: bool,
         /// Filter directory listing by AABB shape (`character` = tall meshes
-        /// w/ height > 1.5 × horizontal extent — Legaia heroes/NPCs;
-        /// `arena` = wide flat meshes w/ height < 0.5 × horizontal extent —
+        /// w/ height > 1.5 × horizontal extent - Legaia heroes/NPCs;
+        /// `arena` = wide flat meshes w/ height < 0.5 × horizontal extent -
         /// battle stages; `any` = no filter). Cheaper than `--min-size` for
         /// finding actual characters since size alone doesn't distinguish
         /// hero meshes from arena props.
@@ -149,7 +149,7 @@ enum Cmd {
         shape: ShapeFilter,
         /// Extra TIM directory to overlay into VRAM, before the mesh's own
         /// sibling tim_scan dir. Use this when a mesh's prims reference
-        /// CLUT rows that live in a different PROT entry — e.g. level_up
+        /// CLUT rows that live in a different PROT entry - e.g. level_up
         /// character meshes share their CLUTs with battle_data, so:
         ///   `--vram-extra-dir extracted/tim_scan/0866_battle_data`
         /// Repeatable. Order matters: each dir's TIMs overwrite earlier ones
@@ -159,7 +159,7 @@ enum Cmd {
         /// Pre-load a known scene bundle into VRAM. Encodes the PROT entry
         /// sets that the runtime asset loader (`FUN_800520f0` + relatives in
         /// SCUS_942.54) loads together for a given scene. Use `battle` for
-        /// any mesh in `level_up`, `battle_data`, or `monster_se` — these
+        /// any mesh in `level_up`, `battle_data`, or `monster_se` - these
         /// share the same character-body palette set.
         ///
         /// Acts as a shorthand for several `--vram-extra-dir` flags. Bundle
@@ -167,7 +167,7 @@ enum Cmd {
         #[arg(long, value_enum)]
         bundle: Option<Bundle>,
         /// CDNAME-resolved per-scene bundle. Adds tim_scan dirs for every
-        /// PROT entry in the named CDNAME block — mirrors what the runtime
+        /// PROT entry in the named CDNAME block - mirrors what the runtime
         /// field/town loader (`FUN_8001f7c0` + `FUN_800255b8` in
         /// SCUS_942.54) co-loads for a scene. Use the CDNAME block name
         /// e.g. `--scene town01` / `--scene dolk` / `--scene cave01`.
@@ -191,7 +191,7 @@ enum Cmd {
     /// through `engine-core::input`, and overlays HUD text rendered via the
     /// extracted dialog font. When the scene carries an event-script PROT
     /// entry (`SceneEventScripts` or `SceneScriptedAssetTable`), the field
-    /// VM is wired to drive its records — the HUD shows VM PC, last
+    /// VM is wired to drive its records - the HUD shows VM PC, last
     /// StepResult, and a running tally of opcode types observed
     /// (Advance / Yield / Halt / Pending / Unknown) so missing FieldHost
     /// hooks surface immediately. Scenes with no event-script entry fall
@@ -305,7 +305,7 @@ impl Bundle {
             // vdf.dat dev paths and 0x36C (player_data) via the player
             // loader. battle_data (865-868) and monster_data (869) are
             // adjacent character-facing blocks that share the same VRAM
-            // CLUT/sprite slots — observed empirically that level_up hero
+            // CLUT/sprite slots - observed empirically that level_up hero
             // meshes need CLUTs from both 0866_battle_data (row 490) and
             // 0873_befect_data (row 484, x=144).
             Bundle::Battle => &[
@@ -348,7 +348,7 @@ impl Bundle {
 
 /// Resolve a CDNAME scene name to the list of `tim_scan/<entry>/` dirs
 /// for every PROT entry in that block. Mirrors what the runtime field
-/// loader (`FUN_8001f7c0` + `FUN_800255b8`) co-loads for one scene —
+/// loader (`FUN_8001f7c0` + `FUN_800255b8`) co-loads for one scene -
 /// six file types per scene, all under the same CDNAME block.
 ///
 /// Walks the `tim_scan/` directory tree to discover the actual entry
@@ -375,7 +375,7 @@ fn scene_bundle_dirs(
     let mut dirs: Vec<PathBuf> = Vec::new();
     let Ok(rd) = std::fs::read_dir(&tim_root) else {
         anyhow::bail!(
-            "no tim_scan dir at {} — run `asset tim-scan` first",
+            "no tim_scan dir at {} - run `asset tim-scan` first",
             tim_root.display()
         );
     };
@@ -404,7 +404,7 @@ fn scene_bundle_dirs(
 /// Shape-based AABB filter for directory navigation.
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum ShapeFilter {
-    /// No shape filter applied — every `*.tmd` file under the dir is included.
+    /// No shape filter applied - every `*.tmd` file under the dir is included.
     Any,
     /// Tall meshes (height > 1.5 × max horizontal extent). Hero/NPC bodies.
     Character,
@@ -747,7 +747,7 @@ fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display> {
     }
 
     // 4. Scene-TMD-prefixed stream: leading bare TMD at offset 4 is the
-    // dominant scene-asset shape (148 PROT entries). Render flat-shaded —
+    // dominant scene-asset shape (148 PROT entries). Render flat-shaded -
     // no sibling TIM dir means no texturing, but the geometry is the
     // distinctive visual signal.
     if report.class == legaia_asset::categorize::Class::SceneTmdStream
@@ -779,7 +779,7 @@ fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display> {
     }
 
     // 5. Scene-VAB-prefixed stream: leading VAB at offset 4 (217 PROT
-    // entries — the dominant distributed-VAB carrier). Play sample 0 of
+    // entries - the dominant distributed-VAB carrier). Play sample 0 of
     // the embedded bank.
     if report.class == legaia_asset::categorize::Class::SceneVabStream
         && let Some(s) = legaia_asset::scene_vab_stream::detect(bytes)
@@ -799,7 +799,7 @@ fn display_for_prot_entry(name: &str, bytes: &[u8]) -> Option<Display> {
     }
 
     // 6. VAB bank fallback: scan the entry for a VAB header (the bank may
-    // live at a non-zero offset inside a larger PROT entry — battle_data
+    // live at a non-zero offset inside a larger PROT entry - battle_data
     // and level_up entries hold theirs deep inside) and play sample 0 of
     // the first one we find.
     let vab_offsets = legaia_vab::find_vabs(bytes);
@@ -922,7 +922,7 @@ impl App {
         };
         b.current = cursor;
         b.last_count = count;
-        let help = " — [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit";
+        let help = " - [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit";
         let mut display = display;
         display.title.push_str(help);
         self.apply(display);
@@ -966,7 +966,7 @@ impl App {
         let display = match load_stage_for_view(&path) {
             Ok(payload) => {
                 let title = format!(
-                    "STAGE [{}/{}] {}  ({} verts, {} lines)  — {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
+                    "STAGE [{}/{}] {}  ({} verts, {} lines)  - {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
                     idx,
                     total,
                     short_path(&path),
@@ -1036,7 +1036,7 @@ impl App {
         let display = match load_tmd_for_view(&path, &extras) {
             Ok(TmdViewData::Flat { positions, indices }) => {
                 let title = format!(
-                    "TMD [{}/{}] {}  ({} verts, {} tris) untextured  — {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
+                    "TMD [{}/{}] {}  ({} verts, {} tris) untextured  - {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
                     idx,
                     total,
                     short_path(&path),
@@ -1055,7 +1055,7 @@ impl App {
             }
             Ok(TmdViewData::Vram(payload)) => {
                 let title = format!(
-                    "TMD [{}/{}] {}  ({} tri-verts) vram={} TIMs from {}  — {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
+                    "TMD [{}/{}] {}  ({} tri-verts) vram={} TIMs from {}  - {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
                     idx,
                     total,
                     short_path(&path),
@@ -1402,7 +1402,7 @@ fn run_world(
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = WorldApp {
         title: format!(
-            "World — scene '{}' [{} actor(s), tim_count={}]",
+            "World - scene '{}' [{} actor(s), tim_count={}]",
             scene_name, actor_count, tim_count
         ),
         win: EngineWindow::new(),
@@ -1623,9 +1623,9 @@ fn run_field(
     let scene_assets = legaia_engine_core::scene_assets::SceneAssets::build(&scene);
     let scene_mes = scene_assets.mes.clone();
     if scene_mes.is_some() {
-        log::info!("field scene: scene MES container present — dialog opcodes will render");
+        log::info!("field scene: scene MES container present - dialog opcodes will render");
     } else {
-        log::info!("field scene: no MES container — dialog opcodes will resolve to a placeholder");
+        log::info!("field scene: no MES container - dialog opcodes will resolve to a placeholder");
     }
     if let Some(es) = &event_scripts_summary {
         log::info!(
@@ -1656,7 +1656,7 @@ fn run_field(
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = FieldApp {
         title: format!(
-            "Field — scene '{}' [{} actors, tim_count={}]",
+            "Field - scene '{}' [{} actors, tim_count={}]",
             scene_name, actor_count, tim_count
         ),
         scene_name: scene_name.to_string(),
@@ -1750,13 +1750,13 @@ fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Result<()> {
     let monsters = actor_count.saturating_sub(party as usize).min(5) as u8;
     world.enter_battle(party, monsters, radius as i16);
     let _ = SceneMode::Battle; // import kept stable for readers
-    // Queue the requested action — enter_battle seeded action_state at Begin.
+    // Queue the requested action - enter_battle seeded action_state at Begin.
     world.battle_ctx.queued_action = queued_action;
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = BattleSceneApp {
-        title: format!("Battle scene — {actor_count} actors, queued_action={queued_action}"),
+        title: format!("Battle scene - {actor_count} actors, queued_action={queued_action}"),
         actor_count,
         win: EngineWindow::new(),
         font,
@@ -1806,7 +1806,7 @@ struct BattleSceneApp {
     input: InputState,
     last_dt_ms: u32,
     battle_stats: BattleSmStats,
-    /// Pad-mask snapshot from the previous tick — used for edge-trigger
+    /// Pad-mask snapshot from the previous tick - used for edge-trigger
     /// detection on Triangle / Cross.
     prev_input_pad: u16,
 }
@@ -2103,7 +2103,7 @@ impl ApplicationHandler for BattleSceneApp {
 /// Pre-flattened event-script bundle held by the field viewer.
 ///
 /// Holding the original `EventScripts<'_>` would require borrowing into
-/// the `Scene` for the lifetime of the event loop — easier to copy each
+/// the `Scene` for the lifetime of the event loop - easier to copy each
 /// record's bytes once at startup. Records are tens-to-hundreds of bytes
 /// each so the duplication cost is trivial.
 struct EventScriptSet {
@@ -2139,7 +2139,7 @@ struct FieldApp {
     tmd_paths: Vec<PathBuf>,
     meshes: Vec<WorldActorMesh>,
     world: legaia_engine_core::world::World,
-    /// Synthetic AABB enclosing every spawn point — drives the camera.
+    /// Synthetic AABB enclosing every spawn point - drives the camera.
     scene_aabb: ([f32; 3], [f32; 3]),
     input: InputState,
     /// Last per-frame delta in ms, smoothed for the FPS HUD readout.
@@ -2158,11 +2158,11 @@ struct FieldApp {
     /// panel when the field VM emits an `OpenDialog` request. `None` when
     /// the scene has no MES entry.
     scene_mes: Option<legaia_engine_core::scene_assets::SceneMes>,
-    /// Live dialog panel — populated when the field VM hits opcode 0x3F
+    /// Live dialog panel - populated when the field VM hits opcode 0x3F
     /// and cleared when the user dismisses the box. Drives the
     /// per-frame dialog-window text under the HUD.
     active_dialog: Option<legaia_engine_core::dialog::OwnedDialogPanel>,
-    /// Edge-trigger cache for Cross — used to advance one page per press
+    /// Edge-trigger cache for Cross - used to advance one page per press
     /// instead of "advance every frame Cross is held."
     prev_input_pad: u16,
 }
@@ -2293,7 +2293,7 @@ impl FieldApp {
         }
 
         // After the field VM step, see if a dialog request was raised.
-        // We never overwrite an active panel mid-conversation — the panel
+        // We never overwrite an active panel mid-conversation - the panel
         // owns the page until the user dismisses it.
         self.maybe_open_dialog();
         self.tick_active_dialog();
@@ -2423,7 +2423,7 @@ impl FieldApp {
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
 
-        // Field-VM diagnostic block — only meaningful when an event-script
+        // Field-VM diagnostic block - only meaningful when an event-script
         // entry was loaded. Shows record cursor, PC, and a histogram of
         // step outcomes so missing FieldHost hooks are visible at a glance.
         if let Some(es) = &self.event_scripts {
@@ -2474,7 +2474,7 @@ impl FieldApp {
             out.extend(text_draws_for(&layout5, (8, 80), dim));
         }
 
-        // Pad state — show one cell per logical button.
+        // Pad state - show one cell per logical button.
         let buttons = [
             PadButton::Up,
             PadButton::Down,
@@ -2515,7 +2515,7 @@ impl FieldApp {
             [0.95, 0.95, 0.6, 1.0],
         ));
 
-        // Dialog overlay — when a panel is active, lay the page glyphs out
+        // Dialog overlay - when a panel is active, lay the page glyphs out
         // through the same atlas the rest of the HUD uses, in a 2/3-width
         // box anchored near the lower third of the surface (matches the
         // retail dialog window's screen position).
@@ -2614,7 +2614,7 @@ impl ApplicationHandler for FieldApp {
                     panel.advance_page();
                 }
                 self.prev_input_pad = pad_now;
-                // Move the player slot 0 on D-pad input — gives the demo a
+                // Move the player slot 0 on D-pad input - gives the demo a
                 // visible response to keyboard / gamepad input even with no
                 // field bytecode loaded. Dialog blocks movement so the
                 // pacing matches the retail engine's "field paused while
@@ -2684,7 +2684,7 @@ struct WorldApp {
     world: legaia_engine_core::world::World,
     actor_count: usize,
     with_move_vm: bool,
-    /// Synthetic AABB enclosing every spawn point — drives the camera.
+    /// Synthetic AABB enclosing every spawn point - drives the camera.
     scene_aabb: ([f32; 3], [f32; 3]),
 }
 
@@ -2736,7 +2736,7 @@ impl WorldApp {
             }
         }
         if self.meshes.is_empty() {
-            log::error!("no TMDs uploaded successfully — nothing to draw");
+            log::error!("no TMDs uploaded successfully - nothing to draw");
         }
         if let Some(vram_cpu) = self.vram_cpu.take() {
             match r.upload_vram(&vram_cpu) {
@@ -2781,7 +2781,7 @@ impl WorldApp {
         )
     }
 
-    /// Per-actor model matrix. PSX has Y-down geometry — flip Y in the
+    /// Per-actor model matrix. PSX has Y-down geometry - flip Y in the
     /// model so the meshes appear right-side-up in the Y-up camera.
     fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.world.actors[slot];
@@ -3322,7 +3322,7 @@ fn build_vram_from_dirs(dirs: &[&Path]) -> (Vram, usize) {
 
 /// Diagnostic: scan distinct CBA values referenced by the mesh and check
 /// whether the corresponding CLUT row in VRAM has any non-zero data.
-/// Empty rows mean the CLUT lives in a PROT entry we didn't load — the
+/// Empty rows mean the CLUT lives in a PROT entry we didn't load - the
 /// user probably wants to add it via `--vram-extra-dir`.
 fn warn_unfilled_cluts(mesh: &legaia_tmd::mesh::VramMesh, vram: &Vram) {
     let mut missing_rows: std::collections::BTreeSet<u16> = std::collections::BTreeSet::new();
@@ -3335,7 +3335,7 @@ fn warn_unfilled_cluts(mesh: &legaia_tmd::mesh::VramMesh, vram: &Vram) {
         let cy = ((cba >> 6) & 0x1FF) as usize;
         let cx_base = ((cba & 0x3F) * 16) as usize;
         // Sample 16 entries (one 4bpp palette). If all zero, this CLUT
-        // wasn't uploaded — we'd render this prim with garbage.
+        // wasn't uploaded - we'd render this prim with garbage.
         let any = (0..16).any(|i| vram.pixel(cx_base + i, cy) != 0);
         if !any {
             missing_rows.insert(cba >> 6);
@@ -3343,7 +3343,7 @@ fn warn_unfilled_cluts(mesh: &legaia_tmd::mesh::VramMesh, vram: &Vram) {
     }
     if !missing_rows.is_empty() {
         log::warn!(
-            "VRAM is missing CLUT data for rows {:?} — mesh prims will sample zeros. Try --vram-extra-dir extracted/tim_scan/0866_battle_data (battle palettes are shared across level_up / town entries).",
+            "VRAM is missing CLUT data for rows {:?} - mesh prims will sample zeros. Try --vram-extra-dir extracted/tim_scan/0866_battle_data (battle palettes are shared across level_up / town entries).",
             missing_rows.iter().collect::<Vec<_>>()
         );
     }
@@ -3363,7 +3363,7 @@ fn sibling_tim_dir(tmd_path: &Path) -> Option<PathBuf> {
 }
 
 /// Build a renderable wireframe payload from a stage-geometry PROT entry.
-/// Each record becomes a line loop (4 segments — degenerate triangle quads
+/// Each record becomes a line loop (4 segments - degenerate triangle quads
 /// collapse one edge naturally). Vertex coords come from the parsed pool;
 /// PSX is Y-down so we flip Y at upload so up-is-up in the viewer camera.
 fn load_stage_for_view(path: &Path) -> Result<LinesPayload> {
@@ -3407,7 +3407,7 @@ fn load_stage_for_view(path: &Path) -> Result<LinesPayload> {
 
     // Build line indices: for each in-range record, emit 4 segments
     // forming the quad outline. Degenerate quads (idx[3] == idx[0]) just
-    // add one zero-length edge — harmless.
+    // add one zero-length edge - harmless.
     let mut indices: Vec<u32> = Vec::with_capacity(largest.records * 8);
     let mut emitted = 0usize;
     let mut skipped = 0usize;
@@ -3558,7 +3558,7 @@ fn run_dialog(
         .unwrap_or_default();
     if table_len == 0 {
         anyhow::bail!(
-            "MES {} has no offset table — only Compact-format blobs are renderable",
+            "MES {} has no offset table - only Compact-format blobs are renderable",
             path.display()
         );
     }
@@ -3580,7 +3580,7 @@ fn run_dialog(
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = DialogApp {
-        title: format!("MES {} — message {}", path.display(), message_index),
+        title: format!("MES {} - message {}", path.display(), message_index),
         path_label: path.display().to_string(),
         message_index,
         message_count: table_len,
@@ -3647,7 +3647,7 @@ impl DialogApp {
                 return;
             }
         };
-        // Replay glyphs already emitted this page so the player is in sync —
+        // Replay glyphs already emitted this page so the player is in sync -
         // but only the count, not the events: the interpreter resumes from
         // the beginning of the message, so we discard `self.page_glyphs.len()`
         // events to fast-forward.
@@ -3688,7 +3688,7 @@ impl DialogApp {
         // offset table and use `Interpreter::new_at` to avoid the borrow.
         let blob = legaia_mes::parse(&self.buf)?;
         let table = blob.offset_table.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("MES blob has no offset table — only Compact format supported")
+            anyhow::anyhow!("MES blob has no offset table - only Compact format supported")
         })?;
         let entry = table
             .get(self.message_index)
@@ -3753,7 +3753,7 @@ impl DialogApp {
         let layout = self.font.layout_ascii(&self.path_label);
         out.extend(text_draws_for(&layout, (8, 26), dim));
 
-        // Centered "dialog box" — pen near the lower-third of the surface.
+        // Centered "dialog box" - pen near the lower-third of the surface.
         let (w, h) = surface;
         let pen_x = ((w as i32) / 6).max(16);
         let pen_y = ((h as i32) * 2 / 3).max(64);

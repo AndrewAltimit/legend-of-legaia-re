@@ -11,7 +11,7 @@
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td>Cost prompt</td><td><code>InnConfirm</code></td><td>Shows cost for one stay and a Yes / No cursor.</td></tr>
-      <tr><td>Commit</td><td>&mdash;</td><td>Deducts gold; restores all active party members&rsquo; HP and MP to their current maxima.</td></tr>
+      <tr><td>Commit</td><td>-</td><td>Deducts gold; restores all active party members&rsquo; HP and MP to their current maxima.</td></tr>
     </tbody>
   </table>
   <p>On commit: <code>InnSession::can_afford(world_money)</code> gates the transaction. If affordable, gold is deducted (<code>World::money -= cost</code>) and every active roster member gets <code>hp_cur = hp_max</code>, <code>mp_cur = mp_max</code>. <code>save_party()</code> is called to sync the roster records.</p>

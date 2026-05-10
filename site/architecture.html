@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>How the layers stack — legend-of-legaia-re</title>
+  <title>How the layers stack - legend-of-legaia-re</title>
   <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
   
@@ -54,7 +54,7 @@
     <a class="layer" href="formats/index.html#prot" data-detail="prot">
       <div class="layer-head">
         <span class="layer-num">3</span>
-        <span class="layer-title">PROT.DAT — the project archive</span>
+        <span class="layer-title">PROT.DAT - the project archive</span>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/prot → <code>prot-extract</code></div>
@@ -104,7 +104,7 @@
 
 <section class="doc-section">
   <h2>The five runtime VMs</h2>
-  <p>Legaia's runtime is driven by five independent VMs that talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine — different shape, same architectural role. Click each card to read the dedicated subsystem page.</p>
+  <p>Legaia's runtime is driven by five independent VMs that talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. Click each card to read the dedicated subsystem page.</p>
 
   <div class="vm-grid">
     <a class="vm-card" href="subsystems/actor-vm.html">
@@ -164,7 +164,7 @@
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>. The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths; the engine's <code>Camera</code> ticks it via <code>Camera::tick_script</code>. The effect VM is on a different track — battle-only — but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>. The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths; the engine's <code>Camera</code> ticks it via <code>Camera::tick_script</code>. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
 </section>
 
 </main>

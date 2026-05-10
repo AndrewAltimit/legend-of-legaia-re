@@ -178,12 +178,12 @@ impl EngineWindow {
 /// uses the standard PSX convention (60° FOV, Y-up camera, Y-down geometry).
 ///
 /// # Parameters
-/// - `aabb_lo`, `aabb_hi` — world-space bounding box of the scene.
-/// - `orbit_speed` — angular velocity in radians/second (typical: 0.15–0.25).
-/// - `eye_height` — fraction of `distance` to push the eye above centre
+/// - `aabb_lo`, `aabb_hi` - world-space bounding box of the scene.
+/// - `orbit_speed` - angular velocity in radians/second (typical: 0.15–0.25).
+/// - `eye_height` - fraction of `distance` to push the eye above centre
 ///   (positive = up in camera space; typical: 0.4–0.45).
-/// - `elapsed_secs` — time since the window was opened; drives the angle.
-/// - `aspect` — viewport width / height.
+/// - `elapsed_secs` - time since the window was opened; drives the angle.
+/// - `aspect` - viewport width / height.
 pub fn orbit_camera_mvp(
     aabb_lo: [f32; 3],
     aabb_hi: [f32; 3],

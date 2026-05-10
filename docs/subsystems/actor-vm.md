@@ -4,7 +4,7 @@ A small fixed-width VM driving the title screen's animated sprite cluster. Disti
 
 ## Overview
 
-The VM walks an actor list of fixed-size structs; each actor has a small amount of per-instance state and a bytecode cursor that advances over time. Opcodes are 1 byte (no operand-byte prefix), and the operand structure is per-opcode — typically zero or one byte.
+The VM walks an actor list of fixed-size structs; each actor has a small amount of per-instance state and a bytecode cursor that advances over time. Opcodes are 1 byte (no operand-byte prefix), and the operand structure is per-opcode - typically zero or one byte.
 
 ## Opcodes
 
@@ -23,13 +23,13 @@ Full opcode table + Rust port: `crates/engine-vm/src/lib.rs`.
 
 ## Why it's separate from the field VM
 
-The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The field VM (`FUN_801DE840`) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine — actors at the rendering primitive level, scripts at the gameplay-event level — and were almost certainly written by different people on the dev team.
+The actor VM is a fixed-width 13-opcode dispatcher tailored to the title screen's sprite-walk loop. The field VM (`FUN_801DE840`) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - actors at the rendering primitive level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.
 
 ## Connection to ANM
 
 Opcode "trigger animation" hands off an ANM container ID to the animation runner. The container is parsed by `crates/anm`; per-record playback is driven by the per-actor anim tick described below.
 
-## Per-actor anim tick — `FUN_80021DF4`
+## Per-actor anim tick - `FUN_80021DF4`
 
 The per-frame anim driver lives in `SCUS_942.54`, not in an overlay. `FUN_80021DF4` is the static-binary tick the field/battle scenes call once per frame for every active actor.
 
@@ -59,11 +59,11 @@ The `crates/engine-vm` constants `ACTOR_RECORD_PTR_OFFSET`, `ACTOR_DISPATCH_BYTE
 | `0x06` | `Keyframe` | `0x80021EA0..0x80021FA4` and `0x80022F00..0x80023040` | The dominant path. Per-bone keyframe interpolation; **fully ported in [`legaia_anm::AnimPlayer`]**. |
 | `0x07` | `Spline` | `0x80022C24..0x80022CC0` | Spline / curve-driven variant. |
 
-`crates/engine-vm`'s `DispatchByte` enum exposes those values as a typed dispatch and reports `handled_natively()` for the cases the keyframe pose decoder can drive on its own (currently only `Keyframe`). The per-actor *physics* arms — the position / velocity / acceleration math common to every dispatch byte — are ported in [`crates/engine-vm/src/actor_tick.rs`](../../crates/engine-vm/src/actor_tick.rs).
+`crates/engine-vm`'s `DispatchByte` enum exposes those values as a typed dispatch and reports `handled_natively()` for the cases the keyframe pose decoder can drive on its own (currently only `Keyframe`). The per-actor *physics* arms - the position / velocity / acceleration math common to every dispatch byte - are ported in [`crates/engine-vm/src/actor_tick.rs`](../../crates/engine-vm/src/actor_tick.rs).
 
 ### Per-arm physics tick
 
-`FUN_80021DF4` is best understood as a layered pipeline rather than a per-opcode jump table — the dispatch byte selects which subset of side-effects fires:
+`FUN_80021DF4` is best understood as a layered pipeline rather than a per-opcode jump table - the dispatch byte selects which subset of side-effects fires:
 
 | Stage | Runs for | Behaviour |
 |---|---|---|
@@ -78,8 +78,8 @@ The `actor_tick` port surfaces every cross-cutting effect via the `TickEvent` en
 
 ### `+0xB4` aliases two dispatch arms
 
-`+0xB4` (4 bytes) is read as `i32` by the SFX emitter (the "key-on done, release pending" flag) and as two `i16`s by the keyframe arms (`kf_shake[0]` and `kf_shake[1]`). The retail layout aliases these uses — the same actor record never runs the SFX emitter and the keyframe arms in the same frame, so the alias is benign. The Rust port keeps both views as named fields (`release_pending: i32`, `kf_shake: [i16; 4]`) and documents the alias in the field comments.
+`+0xB4` (4 bytes) is read as `i32` by the SFX emitter (the "key-on done, release pending" flag) and as two `i16`s by the keyframe arms (`kf_shake[0]` and `kf_shake[1]`). The retail layout aliases these uses - the same actor record never runs the SFX emitter and the keyframe arms in the same frame, so the alias is benign. The Rust port keeps both views as named fields (`release_pending: i32`, `kf_shake: [i16; 4]`) and documents the alias in the field comments.
 
 ### Mednafen-state diff signature
 
-Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot) between a battle-intro idle save and an active-art-strike save shows the dispatch byte and the per-record pointer flipping in lockstep — the dispatch byte's lane (record `+0x0F`/`+0x10`) carries values like `0x04` (idle) and `0x06`/`0x06` (playing) across the same slot. The per-record pointer (`+0x00` of each anim slot, mirroring `actor[+0x4C]`) similarly flips between a self-reference (idle / sentinel pose) and a real RAM address that points into the scene-loaded ANM payload.
+Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot) between a battle-intro idle save and an active-art-strike save shows the dispatch byte and the per-record pointer flipping in lockstep - the dispatch byte's lane (record `+0x0F`/`+0x10`) carries values like `0x04` (idle) and `0x06`/`0x06` (playing) across the same slot. The per-record pointer (`+0x00` of each anim slot, mirroring `actor[+0x4C]`) similarly flips between a self-reference (idle / sentinel pose) and a real RAM address that points into the scene-loaded ANM payload.

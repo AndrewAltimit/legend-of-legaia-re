@@ -5,7 +5,7 @@ The static-analysis path. Ghidra is run headlessly inside the `blacktop/ghidra:l
 ## Toolchain
 
 - **Ghidra 12.x** in `blacktop/ghidra:latest`. Bundles OpenJDK 21 and stock Ghidra at `/ghidra`.
-- **Jython 2.7** (bundled with Ghidra) for analysis scripts. Scripts must be **ASCII-only** — Jython 2 chokes on Unicode in source unless an encoding declaration is added.
+- **Jython 2.7** (bundled with Ghidra) for analysis scripts. Scripts must be **ASCII-only** - Jython 2 chokes on Unicode in source unless an encoding declaration is added.
 - **PCSX-Redux** for runtime tracing. See [overlay capture](overlay-capture.md).
 
 ## Bringing the service up
@@ -26,7 +26,7 @@ The service uses these mounts (from `docker-compose.yml`):
 | `./ghidra/projects` → `/projects` | read-write | Ghidra project DB (gitignored) |
 | `./ghidra/scripts` → `/scripts` | read-write | Analysis scripts + per-function dumps |
 
-If you've never built the wrapper before, first run also handles UID/GID matching — see the comment at the top of `docker-compose.yml` for `.env` overrides.
+If you've never built the wrapper before, first run also handles UID/GID matching - see the comment at the top of `docker-compose.yml` for `.env` overrides.
 
 ## Importing SCUS_942.54
 
@@ -73,13 +73,13 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 
 Modify `LO` / `HI` constants in the script to scan a different range.
 
-Computed addresses are still missed — `lw r4, 0x18(r3)` where `r3 = 0x80080000 + index*4` can't be statically resolved when `index` is only known at runtime. Functions reading from arrays via runtime-computed indexing won't appear in xref lists; for these, dynamic analysis with watchpoints is the only static-tool-free path.
+Computed addresses are still missed - `lw r4, 0x18(r3)` where `r3 = 0x80080000 + index*4` can't be statically resolved when `index` is only known at runtime. Functions reading from arrays via runtime-computed indexing won't appear in xref lists; for these, dynamic analysis with watchpoints is the only static-tool-free path.
 
 ## Investigation patterns
 
 ### "Find what writes / reads a global"
 
-Use `find_lui_writers.py` with `LO` / `HI` narrowed to the target address — it
+Use `find_lui_writers.py` with `LO` / `HI` narrowed to the target address - it
 catches the LUI+ADDIU/load/store combos that Ghidra's reference manager misses.
 
 ### "Find callers of a function"
@@ -93,7 +93,7 @@ The reference manager is unreliable for indirect calls. Use:
 - `find_callers_of.py` for direct `jal` references.
 - `find_addr_data.py` to find the address as data (function-pointer tables, callbacks).
 
-If both return zero hits, the function has no static caller *in the program currently loaded into Ghidra* — that's NOT the same as "dead code in retail". Most game logic lives in RAM-loaded overlays at `0x801C0000+` that aren't part of `SCUS_942.54`. The negative result bounds where the caller can possibly live, but doesn't prove the function unreachable.
+If both return zero hits, the function has no static caller *in the program currently loaded into Ghidra* - that's NOT the same as "dead code in retail". Most game logic lives in RAM-loaded overlays at `0x801C0000+` that aren't part of `SCUS_942.54`. The negative result bounds where the caller can possibly live, but doesn't prove the function unreachable.
 
 ### "Where does this constant address get used?"
 
@@ -102,12 +102,12 @@ If the address is referenced via `lui+addiu`, the reference manager will miss it
 ### "What format does this PROT entry use?"
 
 Empirical workflow:
-1. `xxd extracted/PROT/<entry>.BIN | head -5` — eyeball the header.
+1. `xxd extracted/PROT/<entry>.BIN | head -5` - eyeball the header.
 2. Try each known parser:
-   - `asset stream <file>` — DATA_FIELD streaming.
-   - `asset describe <file>` — descriptor format (when applicable).
-   - `lzs-decode raw --size N <file>` — top-level LZS.
-   - `asset categorize <DIR>` — runs every detector and emits a per-class breakdown.
+   - `asset stream <file>` - DATA_FIELD streaming.
+   - `asset describe <file>` - descriptor format (when applicable).
+   - `lzs-decode raw --size N <file>` - top-level LZS.
+   - `asset categorize <DIR>` - runs every detector and emits a per-class breakdown.
 3. If nothing matches, dig into the function that loads it (find by reversing the call site).
 
 ## Adding a new function dump
@@ -138,7 +138,7 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 | Script | Purpose |
 |---|---|
 | `find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. |
-| `find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address — catches function-pointer tables. |
+| `find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables. |
 | `find_string_xrefs.py` | Resolve dev-path string literals (`h:\\prot\\...`) to RAM addresses and dump every code site that references them. |
 
 **Caller / xref helpers**
@@ -146,7 +146,7 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 | Script | Purpose |
 |---|---|
 | `find_callers_of.py` | Generic "callers of these target functions" tool. Edit `TARGETS_HEX`. |
-| `find_callers_of.py` + `find_addr_data.py` | Combined check for "is this function actually called?" — direct `jal` plus address-as-data. |
+| `find_callers_of.py` + `find_addr_data.py` | Combined check for "is this function actually called?" - direct `jal` plus address-as-data. |
 | `dispatcher_callers.py` | Callers of `FUN_8001f05c` (asset dispatcher) and `FUN_8001a55c` (LZS). |
 | `find_jalr_handlers.py` | Locate dispatch-table indirect calls (`lw R, +0x10(...)` followed by `jalr R`). |
 
@@ -160,7 +160,7 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 | `find_anm_buffer_users.py` | Readers/writers of the ANM buffer pointer (`_DAT_8007b7c8`). |
 | `find_mes_buffer_users.py` | Readers/writers of the MES dialog buffer pointer (`_DAT_8007b8a8`). |
 | `find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
-| `find_gte_users.py` | Count COP2 / GTE instructions per function — surfaces renderer + transform candidates. |
+| `find_gte_users.py` | Count COP2 / GTE instructions per function - surfaces renderer + transform candidates. |
 | `find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
 | `find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
 | `find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
@@ -182,7 +182,7 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 
 | Script | Purpose |
 |---|---|
-| `find_overlay_candidates.py` | Stand-alone Python (no Ghidra) — scans extracted PROT entries for MIPS-code-likelihood and ranks candidates. |
+| `find_overlay_candidates.py` | Stand-alone Python (no Ghidra) - scans extracted PROT entries for MIPS-code-likelihood and ranks candidates. |
 | `dump_overlay.lua` | PCSX-Redux Lua: dump the runtime overlay code window `0x801C0000..0x801EFFFF` to `/tmp/`. |
 | `import_overlay.sh` | Bash wrapper that imports + analyzes a captured overlay dump as Raw Binary at base `0x801C0000`. |
 | `find_overlay_calls.py` | Every call (jal or resolved jalr) into the RAM-resident overlay region `0x801C0000..0x801FFFFF`. |

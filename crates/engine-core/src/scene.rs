@@ -14,7 +14,7 @@
 //! See [`docs/subsystems/asset-loader.md`] for the per-mode layout the
 //! retail engine uses.
 //!
-//! No Sony bytes — this is plumbing over the format crates.
+//! No Sony bytes - this is plumbing over the format crates.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,13 +27,13 @@ use legaia_prot::archive::{Archive, Entry};
 use legaia_prot::cdname;
 
 /// Index over PROT.DAT + CDNAME.TXT. Built once and shared for the whole
-/// scene-host's lifetime. Thread-safe — the underlying file handle and the
+/// scene-host's lifetime. Thread-safe - the underlying file handle and the
 /// caches are guarded by Mutexes.
 pub struct ProtIndex {
     /// PROT archive (file handle + TOC). The handle needs `&mut` to seek/read,
     /// so we keep it in a Mutex behind the index.
     archive: Mutex<Archive>,
-    /// Snapshot of the entry table — kept outside the Mutex so callers can
+    /// Snapshot of the entry table - kept outside the Mutex so callers can
     /// inspect it (length, sizes, byte offsets) without locking.
     entries: Vec<Entry>,
     /// Optional CDNAME map (PROT index → first scene label in block).
@@ -42,7 +42,7 @@ pub struct ProtIndex {
     entry_cache: Mutex<HashMap<u32, Arc<Vec<u8>>>>,
     /// Lazy classification cache. Populated on first `class_of` call.
     class_cache: Mutex<HashMap<u32, Class>>,
-    /// Retail region this index was opened against. Metadata only — the TOC
+    /// Retail region this index was opened against. Metadata only - the TOC
     /// formula and CDNAME layout are identical across regions.
     pub region: Region,
 }
@@ -74,7 +74,7 @@ impl ProtIndex {
         })
     }
 
-    /// Build an index from raw in-memory PROT.DAT bytes. WASM-safe — no
+    /// Build an index from raw in-memory PROT.DAT bytes. WASM-safe - no
     /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
     /// available as a string; omit to skip scene-name resolution.
     pub fn from_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
@@ -91,7 +91,7 @@ impl ProtIndex {
         })
     }
 
-    /// Set the region for this index (builder pattern — non-breaking).
+    /// Set the region for this index (builder pattern - non-breaking).
     pub fn with_region(mut self, region: Region) -> Self {
         self.region = region;
         self
@@ -187,13 +187,13 @@ impl SceneEntry {
     }
 
     /// Parse a VAB header at `offset` (most common: 0 for standalone VAB,
-    /// or 4 for `scene_vab_stream` containers — the chunk0 prefix is 4 bytes).
+    /// or 4 for `scene_vab_stream` containers - the chunk0 prefix is 4 bytes).
     pub fn as_vab(&self, offset: usize) -> Result<legaia_vab::VabReport> {
         legaia_vab::parse(&self.bytes, offset).context("parse VAB from PROT entry bytes")
     }
 }
 
-/// Per-scene event-script container — the field-VM bytecode bundle for a
+/// Per-scene event-script container - the field-VM bytecode bundle for a
 /// scene, with each record's `(start, end)` byte range pre-walked. Returned
 /// by [`Scene::find_event_scripts`].
 ///
@@ -259,13 +259,13 @@ pub fn is_cutscene_label(label: &str) -> bool {
 /// lands, this function should be updated to read the captured map.
 pub fn cutscene_str_for(scene_label: &str) -> Option<&'static str> {
     match scene_label {
-        // op* opening cutscenes — five in CDNAME order.
+        // op* opening cutscenes - five in CDNAME order.
         "opdeene" => Some("MOV/MV1.STR"),
         "opstati" => Some("MOV/MV2.STR"),
         "opkorout" => Some("MOV/MV3.STR"),
         "opurud" => Some("MOV/MV4.STR"),
         "opmap01" => Some("MOV/MV5.STR"),
-        // ed* — only the first ending scene is FMV-backed; the rest are
+        // ed* - only the first ending scene is FMV-backed; the rest are
         // dialogue-actor-overlay driven and have no associated MV file.
         "edteien" => Some("MOV/MV6.STR"),
         _ => None,
@@ -305,8 +305,8 @@ pub const FMV_CUTSCENE_SCENES: [(&str, &str); 6] = [
 ///
 /// The retail table lives in the FMV-cutscene overlay (game modes 26/27,
 /// see [`docs/subsystems/cutscene.md`](../../../../docs/subsystems/cutscene.md)).
-/// The retail overlay isn't in the captured corpus yet — `dump_str_fmv_overlay.py`
-/// is staged but not run — so the heuristic in [`cutscene_str_for`] ships
+/// The retail overlay isn't in the captured corpus yet - `dump_str_fmv_overlay.py`
+/// is staged but not run - so the heuristic in [`cutscene_str_for`] ships
 /// as the default. Once the overlay capture lands, engines can populate a
 /// [`CutsceneMap`] from the captured table and override the heuristic via
 /// [`CutsceneMap::resolve`].
@@ -417,7 +417,7 @@ impl Scene {
         self.entries.iter().filter(move |e| e.class == class)
     }
 
-    /// Find the per-scene event-scripts container — either a standalone
+    /// Find the per-scene event-scripts container - either a standalone
     /// `SceneEventScripts` entry or the prescript prefix of a
     /// `SceneScriptedAssetTable` entry. The records inside are the field-VM
     /// (`FUN_801DE840`) per-event bytecode the scene runs on entry.
@@ -455,7 +455,7 @@ impl Scene {
         is_cutscene_label(&self.name)
     }
 
-    /// Count of entries by class — tiny diagnostic for "what's in this scene".
+    /// Count of entries by class - tiny diagnostic for "what's in this scene".
     pub fn class_counts(&self) -> HashMap<Class, usize> {
         let mut out = HashMap::new();
         for e in &self.entries {
@@ -476,7 +476,7 @@ pub trait MapIdResolver {
     fn resolve(&self, map_id: u8) -> Option<String>;
 }
 
-/// Empty resolver — every `scene_transition` is a no-op. Useful for tests
+/// Empty resolver - every `scene_transition` is a no-op. Useful for tests
 /// + engines that haven't wired a real table yet.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NullMapIdResolver;
@@ -487,7 +487,7 @@ impl MapIdResolver for NullMapIdResolver {
     }
 }
 
-/// Plain `Vec<String>`-backed resolver — index into a list of scene names
+/// Plain `Vec<String>`-backed resolver - index into a list of scene names
 /// by map id. Useful for hardcoded test fixtures.
 #[derive(Debug, Clone, Default)]
 pub struct VecMapIdResolver {
@@ -528,7 +528,7 @@ pub struct DefaultMapIdResolver {
 }
 
 impl DefaultMapIdResolver {
-    /// Build from a `ProtIndex` — calls [`ProtIndex::cdname_scene_names`]
+    /// Build from a `ProtIndex` - calls [`ProtIndex::cdname_scene_names`]
     /// and wraps the resulting ordered list.
     pub fn from_index(index: &ProtIndex) -> Self {
         Self {
@@ -555,7 +555,7 @@ impl MapIdResolver for DefaultMapIdResolver {
 /// their UI layer (e.g. log scene transitions, update HUD on battle end).
 #[derive(Debug, Clone)]
 pub enum SceneTickEvent {
-    /// World stepped normally — no scene-level events this frame.
+    /// World stepped normally - no scene-level events this frame.
     Stepped,
     /// Field VM requested a scene transition that the resolver mapped to
     /// `name`; the host loaded it and reset the field VM.
@@ -566,11 +566,11 @@ pub enum SceneTickEvent {
     UnknownMapId { map_id: u8 },
 }
 
-/// BGM dispatch hook — implemented by the audio layer (or test stubs) and
+/// BGM dispatch hook - implemented by the audio layer (or test stubs) and
 /// driven by [`SceneHost::route_bgm_events`]. The default
 /// [`NullBgmDirector`] discards every request.
 ///
-/// Sub-op semantics mirror retail field-VM op `0x35` — see
+/// Sub-op semantics mirror retail field-VM op `0x35` - see
 /// [`docs/subsystems/script-vm.md`] for the full table. The hook only
 /// receives sub-ops that change playback state (1 = start, 2 = pause,
 /// 3 = resume, 4 = stop, 9 = queue); other sub-ops are control words
@@ -585,7 +585,7 @@ pub trait BgmDirector {
     fn pause(&mut self) {}
     fn resume(&mut self) {}
     fn stop(&mut self) {}
-    /// Sub-op 9 — queue a BGM for later trigger. The bytes are pre-resolved
+    /// Sub-op 9 - queue a BGM for later trigger. The bytes are pre-resolved
     /// like [`BgmDirector::start`].
     fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         let _ = (bgm_id, seq_bytes);
@@ -607,11 +607,11 @@ pub struct SceneHost {
     pub index: Arc<ProtIndex>,
     pub world: crate::world::World,
     pub scene: Option<Scene>,
-    /// Typed asset snapshot for the currently loaded scene — refreshed
+    /// Typed asset snapshot for the currently loaded scene - refreshed
     /// every time [`SceneHost::load_scene`] or [`SceneHost::enter_field_scene`]
     /// runs. `None` until the first scene loads.
     pub assets: Option<crate::scene_assets::SceneAssets>,
-    /// Runtime resource snapshot built by [`SceneHost::enter_field_scene`] —
+    /// Runtime resource snapshot built by [`SceneHost::enter_field_scene`] -
     /// holds the populated PSX VRAM, parsed TMD pool, and parsed ANM packs.
     /// `None` until the first `enter_field_scene` call. Use for rendering
     /// and for driving `World::init_scene_animations`.
@@ -648,7 +648,7 @@ impl SceneHost {
     /// the extracted bytes are then handed to [`ProtIndex::from_bytes`].
     ///
     /// This is the user-facing path: ship the engine, the user supplies a
-    /// disc image, no extraction step needed. Native targets only — WASM
+    /// disc image, no extraction step needed. Native targets only - WASM
     /// uses `from_prot_bytes` with the bytes supplied via JS.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_disc(disc_bin: impl AsRef<Path>) -> Result<Self> {
@@ -671,7 +671,7 @@ impl SceneHost {
         Ok(Self::new(Arc::new(p)))
     }
 
-    /// Build a host from raw in-memory PROT.DAT bytes. WASM-safe — no
+    /// Build a host from raw in-memory PROT.DAT bytes. WASM-safe - no
     /// filesystem access. Pass `cdname_text` if the CDNAME.TXT contents are
     /// available; omit to skip scene-name resolution.
     pub fn from_prot_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
@@ -726,7 +726,7 @@ impl SceneHost {
             Ok(Some(bytes))
         } else if offset < bytes.len() {
             // Slice past the chunk-header wrapper so the returned bytes
-            // start at the `pQES` magic. Allocates a fresh Arc — the
+            // start at the `pQES` magic. Allocates a fresh Arc - the
             // caller usually parses once and caches the resulting Seq.
             Ok(Some(Arc::new(bytes[offset..].to_vec())))
         } else {
@@ -813,7 +813,7 @@ impl SceneHost {
                         acted += 1;
                     }
                     _ => {
-                        // Other sub-ops (5/6/7/8/10/11) are control words —
+                        // Other sub-ops (5/6/7/8/10/11) are control words -
                         // surface them back on the queue for richer engines.
                         leftover.push(crate::field_events::FieldEvent::Bgm { text_id, sub_op });
                     }
@@ -888,7 +888,7 @@ impl SceneHost {
     ///
     /// Call once after loading PROT 873 (`efect.dat`) and parsing its
     /// pack1 slice via [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
-    /// An empty catalog is safe — `BattleHostImpl::ui_element` will simply
+    /// An empty catalog is safe - `BattleHostImpl::ui_element` will simply
     /// not spawn any pool entries until a real catalog is wired.
     pub fn set_effect_catalog(&mut self, catalog: legaia_engine_vm::effect_vm::EffectCatalog) {
         self.world.effect_catalog = catalog;
@@ -1020,7 +1020,7 @@ mod tests {
         assert_eq!(bgm.idx, 113);
     }
 
-    /// BGM IDs >= 2000 are global-pool — not resolved by the per-scene
+    /// BGM IDs >= 2000 are global-pool - not resolved by the per-scene
     /// helper. The full resolver (with global pool) is engine-side; the
     /// scene-local helper just declines.
     #[test]
@@ -1089,7 +1089,7 @@ mod tests {
     #[test]
     fn route_bgm_handles_control_subops_without_scene() {
         // Build a scene-less SceneHost via the test fixture in
-        // tests/scene_bundle_smoke.rs is too heavy here — instead, just
+        // tests/scene_bundle_smoke.rs is too heavy here - instead, just
         // exercise the routing logic through a minimal scaffold by
         // directly emitting to a recording director and asserting the
         // matching events came through.

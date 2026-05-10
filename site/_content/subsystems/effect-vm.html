@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; effect VM</div>
   <h1>Effect VM (battle effect cluster)</h1>
-  <p class="lede">The runtime that drives battle-spawn effects &mdash; spell casts, item-use animations, hit sparks. Implemented as a per-slot state machine rather than a clean bytecode dispatcher: there's no central switch on a per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the per-frame walker.</p>
+  <p class="lede">The runtime that drives battle-spawn effects - spell casts, item-use animations, hit sparks. Implemented as a per-slot state machine rather than a clean bytecode dispatcher: there's no central switch on a per-slot opcode byte, and state transitions are inlined throughout 600+ instructions of the per-frame walker.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>When you cast a fireball in battle, three things happen visually: the spell-cast pose plays on the caster, a sequence of sprites animates between caster and target (the "fireball flying" frames), and a hit explosion plays on the target. Internally that's <em>one effect script</em> doing all three &mdash; one entry in <code>efect.dat</code> describing the whole thing as a sequence of frame batches.</p>
+  <p>When you cast a fireball in battle, three things happen visually: the spell-cast pose plays on the caster, a sequence of sprites animates between caster and target (the "fireball flying" frames), and a hit explosion plays on the target. Internally that's <em>one effect script</em> doing all three - one entry in <code>efect.dat</code> describing the whole thing as a sequence of frame batches.</p>
 
   <p>The effect VM is what runs that script. It owns a fixed pool of "master slots" (32 of them, one per simultaneous effect) and "child slots" (128 of them, one per active sprite within an effect). Every frame, the per-frame walker iterates the master slots and pushes each one through its state machine: spawn the next batch of children, update positions, decrement timers, retire finished sprites, advance to the next state.</p>
 
@@ -32,15 +32,15 @@
   <h2>How it dispatches</h2>
   <p>Each 28-byte master slot carries:</p>
   <pre><code>(state, counter, ?, sub_state, pos_x, pos_y, pos_z, data_ptr)</code></pre>
-  <p>The walker reads <code>*data_ptr</code> as the next-state token, but state transitions are inlined throughout <code>FUN_801E0088</code>. To produce a clean-room opcode table you'd need to extract per-state-byte transition logic by hand. The 32-master / 128-child slot pool, the spawn API, and the per-frame walker are all well-understood &mdash; the port itself is straightforward; the only question is whether to label the format an "opcode table" or a "state machine".</p>
+  <p>The walker reads <code>*data_ptr</code> as the next-state token, but state transitions are inlined throughout <code>FUN_801E0088</code>. To produce a clean-room opcode table you'd need to extract per-state-byte transition logic by hand. The 32-master / 128-child slot pool, the spawn API, and the per-frame walker are all well-understood - the port itself is straightforward; the only question is whether to label the format an "opcode table" or a "state machine".</p>
 </section>
 
 <section class="doc-section" id="pool">
   <h2>Pool layout</h2>
   <p>One contiguous 5008-byte block at <code>_DAT_8007BD30</code>:</p>
   <pre><code>+0x000  16 bytes   table-head record set by init
-+0x010  4096 bytes 128 &times; 32-byte child slots &mdash; per-sprite render state
-+0x1010 896 bytes  32 &times; 28-byte master slots &mdash; per-effect-instance state
++0x010  4096 bytes 128 &times; 32-byte child slots - per-sprite render state
++0x1010 896 bytes  32 &times; 28-byte master slots - per-effect-instance state
 +0x1390 1968 bytes (unused / future expansion)</code></pre>
   <p>32 max simultaneous effects &times; ~4 sprites avg = 128-child sprite pool.</p>
 </section>

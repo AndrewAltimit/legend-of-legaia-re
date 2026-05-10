@@ -140,7 +140,7 @@ impl LegaiaRuntime {
     /// audio started successfully, `false` otherwise (e.g. blocked by the
     /// browser before any interaction or on a platform without WebAudio).
     ///
-    /// Idempotent — calling a second time replaces the existing backend.
+    /// Idempotent - calling a second time replaces the existing backend.
     pub fn audio_init(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
@@ -203,7 +203,7 @@ impl LegaiaRuntime {
         JsValue::from_str(&format!("{event:?}"))
     }
 
-    /// Read the menu's current label (e.g. "STATUS", "SAVE — PICK SLOT")
+    /// Read the menu's current label (e.g. "STATUS", "SAVE - PICK SLOT")
     /// for HUD rendering.
     pub fn menu_label(&self) -> String {
         self.menu.current_label().to_string()

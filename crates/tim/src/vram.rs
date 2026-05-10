@@ -4,7 +4,7 @@
 //! primitive carries a CBA (CLUT base address) and TSB (texture sub-base /
 //! "tpage") that index into VRAM, not into any individual TIM. To resolve
 //! them we need every TIM in the scene placed at its canonical fb_x/fb_y
-//! position — which is exactly what the PSX BIOS does at boot when the
+//! position - which is exactly what the PSX BIOS does at boot when the
 //! game DMAs each TIM to its `fb_x/fb_y` slot.
 //!
 //! [`Vram::upload_tim`] writes both the image block and the CLUT block at
@@ -48,7 +48,7 @@ impl Vram {
         &self.pixels
     }
 
-    /// Same data, viewed as bytes — useful for GPU upload (R16Uint).
+    /// Same data, viewed as bytes - useful for GPU upload (R16Uint).
     pub fn as_bytes(&self) -> &[u8] {
         bytemuck::cast_slice(&self.pixels)
     }
@@ -111,7 +111,7 @@ mod tests {
     use super::*;
     use crate::parse;
 
-    /// Build a 4-pixel 16bpp TIM at fb_x=64, fb_y=128 — easiest case to verify
+    /// Build a 4-pixel 16bpp TIM at fb_x=64, fb_y=128 - easiest case to verify
     /// (no CLUT, image data goes straight into VRAM as-is).
     fn tim_16bpp_at(fb_x: u16, fb_y: u16) -> Vec<u8> {
         let mut buf = Vec::new();

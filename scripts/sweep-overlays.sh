@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sweep-overlays.sh — Batch process mednafen save states into named Ghidra
+# sweep-overlays.sh - Batch process mednafen save states into named Ghidra
 # programs + per-overlay function inventory CSVs.
 #
 # Usage:

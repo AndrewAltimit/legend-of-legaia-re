@@ -23,7 +23,7 @@
 //! VAG body played by an SPU running at 44.1 kHz internal, that's
 //! `0x1000 * 22050 / 44100 = 0x800`.
 //!
-//! No Sony bytes — algorithm is the documented libspu surface.
+//! No Sony bytes - algorithm is the documented libspu surface.
 
 use crate::Spu;
 use crate::spu::{

@@ -3,7 +3,7 @@
 Covers XP distribution after a battle win, the per-level stat-gain table, and
 the banner display. Post-battle level-up logic is driven by
 `engine-core::levelup::LevelUpTracker`. Retail display lives in the level-up
-overlay (mc4 capture; partial coverage).
+overlay (partial coverage).
 
 ## XP table
 
@@ -132,42 +132,59 @@ Wired into `PlayWindowApp::build_text_overlay` at anchor `(8, 60)` in
 | `mp_gained` | `u16` | MP max increase (for display) |
 | `frames_remaining` | `u16` | Counts down from 180; cleared when zero |
 
-## Fire Book I — captured write footprint
+## Fire Book I - captured write footprint
 
-The user's `mc4` (battle command menu parked on Fire Book I) → `mc5` (Fire Book I just used on Vahn) save pair pins the per-character record write footprint of an in-battle Fire Book usage. The `mednafen-state diff` over Vahn's character record (`0x80084708..+0x414`) surfaces **exactly one 3-byte region** at `+0x185..+0x188`:
+A pre/post save pair (battle command menu parked on Fire Book I → Fire Book I just used on Vahn) pins the per-character record write footprint of an in-battle Fire Book usage. The `mednafen-state diff` over Vahn's character record (`0x80084708..+0x414`) surfaces **exactly one 3-byte region** at `+0x185..+0x188`:
 
-| Offset | Pre-event (mc4) | Post-event (mc5) | Read |
+| Offset | Pre-event | Post-event | Read |
 |---|---|---|---|
 | `+0x185` | `0x01` | `0x02` | length-prefix byte (+1) |
-| `+0x186` | `0x0C` | `0x03` | first list entry — new entry inserted at front |
-| `+0x187` | `0x00` | `0x0C` | second list entry — pre-event entry shifted right |
+| `+0x186` | `0x0C` | `0x03` | first list entry - new entry inserted at front |
+| `+0x187` | `0x00` | `0x0C` | second list entry - pre-event entry shifted right |
 
 Pattern: a length-prefixed list at `+0x185` grew by one entry. The new entry was inserted at position 0; the existing entry at position 0 moved to position 1.
 
-The byte values do **not** match retail learned-art constants (those occupy `0x1B..=0x32`; see `legaia_art::tables`). `0x03` is the action constant for `Attack`; `0x0C` for direction `Left`. Two consistent interpretations remain:
+### Reader resolved
 
-1. The 3-byte cluster is a transient command-history buffer that the item-use animation populated, unrelated to the permanent Hyper-Art unlock flag — meaning the actual learn write lives outside Vahn's character record (e.g. a global story-flag word at `_DAT_1F800394` or a mask field elsewhere in main RAM).
-2. The cluster is a per-character recent-action buffer the runtime pre-fills before the Fire Book animation plays, with the new entry encoded under a different scheme than the retail Learned Art Constant table.
+A grep across the captured menu overlays (`overlay_menu_801d33d8.txt` and the identical save_ui / shop_save copies) for any read at `+0x185(reg)` surfaces exactly one reader cluster at `0x801D4440..0x801D44A4`:
 
-A reader-search through the captured battle-action overlay (`overlay_battle_action_*.txt`) for `LUI` + `ORI` pairs targeting `0x80084708 + 0x185` (or stride `+0x414` adjacent slots) would disambiguate. Until then, the field is treated as **pinned but uninterpreted** — codified in `engine_core::capture_observations::vahn_fire_book_use` as the `BEFORE` / `AFTER` byte triples plus the absolute address.
+```text
+801d4440  lbu t2,0x185(t2)        ; load count from char_rec[+0x185]
+801d4454  lbu v0,0x185(t1)
+801d445c  slt v0,s6,v0            ; loop while s6 < count
+801d4480  addu a0,t1,s6
+801d4498  lbu v1,0x1(s2)          ; spell-table[+1] = id
+801d449c  lbu v0,0x186(a0)        ; load id from char_rec[+0x186 + s6]
+801d44a4  beq v1,v0,...           ; match id against spell-table entry
+```
 
-A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair.
+The structure is `[u8 count at +0x185][u8 ids[N] at +0x186..]`. The menu's spell-table at `0x801E472C` is indexed by these IDs (stride `0x14`; `record[+0]` = sort key, `record[+1]` = ID, `record[+0xC]` = name pointer). Display is capped at 7 by `slti v0,t2,0x7` later in the loop, but the on-record array fits 16 bytes (the gap to the equipment-slot field at `+0x196`).
+
+The pre/post Fire Book I capture is a head-insert into this list: the menu's displayed-skill roster grew by one new entry. The values are skill-table indices, not action-queue constants - so the earlier "0x03 = Attack" reading is moot. Engines now read this through a typed accessor `legaia_save::character::CharacterRecord::displayed_skills` (`DisplayedSkillList { count: u8, ids: [u8; MAX_DISPLAYED_SKILLS = 16] }`); `engine_core::capture_observations::vahn_fire_book_use` gains `MENU_READER_ADDR` (`0x801D4440`) + `MENU_OVERLAY_FN` (`0x801D33D8`) constants pointing at the resolved reader.
+
+No `sb` / `sh` writers to `+0x185` exist in any captured overlay. The learn-write path lives in an overlay we haven't dumped (likely the item-use battle event, accessed via the menu rather than the action SM); when that overlay lands, the writer is the next thing to pin.
+
+A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`fire_book_use_diff_pins_vahn_record_write`) asserts exactly one record-internal region at the documented offset against the real save pair. Three new unit tests in `legaia_save::character::displayed_skills_*` exercise the typed accessor's BEFORE/AFTER round-trip + the `MAX_DISPLAYED_SKILLS` clamp.
 
 ## Open items
 
 - **Per-Seru stat grants.** Vahn / Noa / Gala have distinct HP/MP growth via
-  their Seru rosters. The per-Seru HP-grant field is at `+0x74` in the Seru
-  struct; remaining grant fields (MP, STR, DEF, INT, LUCK) are at sibling
-  offsets not yet traced. Extraction requires a live capture of the Seru struct
-  data during a level-up save state. **Status:** writer-search across the
-  captured `magic_level_up` overlay returned **negative** for code-side `sb` /
-  `sh` writes targeting the destination offsets (`+0x10E`, `+0x11C..+0x12C`,
-  `+0x130`, `+0x161`) — the per-Seru lookup table is read at runtime through a
-  pointer set at scene-load time, not in any captured static body. Engine-side
-  scaffold lives at [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` +
-  `SeruStatTable` + `LevelUpTracker::with_seru_roster` install a flat curve
-  summed across the equipped Seru. Replace with `StatGrowthCurve::PerLevel`
-  when the runtime trace lands.
+  their Seru rosters. **Status:** writer-search across the captured
+  `magic_level_up` overlay returned **negative** for code-side `sb` / `sh`
+  writes targeting the destination offsets (`+0x10E`, `+0x11C..+0x12C`,
+  `+0x130`, `+0x161`). A follow-up grep for any read at `+0x74(reg)` across
+  the same overlay surfaces five hits - but each one is reading a 32-bit
+  battle-state flag the SCUS-side handler `FUN_800480D8` writes with the
+  constant `0x80808080` (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`),
+  not a stat-grant pointer. The "Seru struct +0x74 pointer dereference"
+  hypothesis is **not supported** by the current capture set; the table base
+  lives in a still-uncaptured overlay (battle-data init or the Seru-equip
+  path) or is encoded inline in a Seru PROT entry the current capture set
+  doesn't surface. Engine-side scaffold lives at
+  [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` + `SeruStatTable`
+  + `LevelUpTracker::with_seru_roster` install a flat curve summed across the
+  equipped Seru. Replace with `StatGrowthCurve::PerLevel` when the table is
+  pinned.
 - **Battle actor struct fields `+0x14C`–`+0x176`.** The battle actor (pointed
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping

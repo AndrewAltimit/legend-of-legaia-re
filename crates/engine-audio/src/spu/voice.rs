@@ -5,7 +5,7 @@
 //!  - a loop point (latched the first time a block with `loop_start` is seen,
 //!    or set explicitly via [`Voice::set_loop_addr`])
 //!  - a streaming ADPCM decoder (one 28-sample block at a time)
-//!  - a fractional pitch counter — the SPU runs internally at 44.1 kHz and
+//!  - a fractional pitch counter - the SPU runs internally at 44.1 kHz and
 //!    advances each voice by `pitch / 0x1000` samples per output tick
 //!  - an ADSR envelope
 //!  - linear left/right volume registers (signed 16-bit, peak 0x3FFF in
@@ -14,7 +14,7 @@
 //! The PSX SPU outputs 44.1 kHz; the host stream rate is decoupled by the
 //! mixer.
 //!
-//! No Sony bytes — this is the standard PSX SPU model.
+//! No Sony bytes - this is the standard PSX SPU model.
 
 use super::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 use super::adsr::{AdsrConfig, AdsrState, Phase};
@@ -32,7 +32,7 @@ pub struct Voice {
     /// starts. Set by libspu `SpuSetVoiceStartAddr`.
     pub start_addr: u32,
     /// Loop-back address. Latched on the first block with `loop_start`,
-    /// or set explicitly. `None` means "no loop set" — when an end-flag
+    /// or set explicitly. `None` means "no loop set" - when an end-flag
     /// block plays out the voice will go silent.
     pub loop_addr: Option<u32>,
     /// Pitch, 0x1000 = 1.0×. Sample step = pitch / 0x1000.
@@ -47,7 +47,7 @@ pub struct Voice {
     pub adsr: AdsrState,
     /// Per-voice reverb routing flag. When `true` this voice's pre-master
     /// output is summed into the SPU's reverb send bus. libspu calls this
-    /// `SpuSetVoiceReverb`. Defaults to `false` — engines opt voices in
+    /// `SpuSetVoiceReverb`. Defaults to `false` - engines opt voices in
     /// when starting a Spirit Art / echo-flagged sound effect.
     pub reverb_send: bool,
 
@@ -111,7 +111,7 @@ impl Voice {
         self.adsr.key_on();
     }
 
-    /// Trigger a key-off — the envelope transitions to Release. Voice keeps
+    /// Trigger a key-off - the envelope transitions to Release. Voice keeps
     /// playing until the envelope drains.
     pub fn key_off(&mut self) {
         self.adsr.key_off();

@@ -2,7 +2,7 @@
 # Smoke check that the WASM target builds.
 #
 # Cheap fast-path: `cargo build --target wasm32-unknown-unknown -p legaia-web-viewer`.
-# This is what `main-ci.yml` runs on every PR — running it locally before
+# This is what `main-ci.yml` runs on every PR - running it locally before
 # pushing catches WASM-only breakage (typically API uses that don't compile
 # on `cdylib` targets, or wasm-bindgen feature gates).
 #

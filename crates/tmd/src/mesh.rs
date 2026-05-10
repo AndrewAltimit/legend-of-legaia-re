@@ -2,7 +2,7 @@
 //!
 //! Produces engine-agnostic position + index buffers suitable for upload to a
 //! GPU. Quads are split into two triangles using the standard PSX SDK winding
-//! `(v0, v1, v2)` + `(v1, v3, v2)` — Sony's libgs draws GT4/FT4 as two
+//! `(v0, v1, v2)` + `(v1, v3, v2)` - Sony's libgs draws GT4/FT4 as two
 //! triangles that share the (v1, v2) diagonal.
 //!
 //! Out-of-range vertex indices and prims with no decoded indices (i.e. the
@@ -17,7 +17,7 @@ use crate::{Tmd, legaia_prims};
 /// Verts are duplicated per prim-corner (no shared verts between prims), so
 /// `positions[i]`, `uvs[i]` always belong together. UVs are floats in `[0, 1)`
 /// addressing a single texture page (caller's responsibility to bind the
-/// right TIM). The PSX UV bytes are normalized by 256 — the texture page is
+/// right TIM). The PSX UV bytes are normalized by 256 - the texture page is
 /// 256 pixels wide regardless of the actual TIM dimensions.
 #[derive(Debug, Clone)]
 pub struct TexturedMesh {
@@ -89,7 +89,7 @@ pub fn tmd_to_textured_mesh(tmd: &Tmd, buf: &[u8]) -> TexturedMesh {
                     first_tsb = prim.tsb;
                     first_cba = prim.cba;
                 }
-                // UVs may be empty (untextured prim) — fall back to zeros.
+                // UVs may be empty (untextured prim) - fall back to zeros.
                 let uv_at = |i: usize| -> [f32; 2] {
                     prim.uvs
                         .get(i)
@@ -152,7 +152,7 @@ pub struct VramMesh {
     pub indices: Vec<u32>,
     /// Per-vertex normals, one per entry in `positions`. Computed at
     /// mesh-build time by accumulating face normals into per-position bins
-    /// and normalising — this gives smooth shading for connected surfaces
+    /// and normalising - this gives smooth shading for connected surfaces
     /// without needing the TMD per-prim normal-index byte offset (which is
     /// still unreversed for Legaia's six prim modes; see
     /// [`legaia_prims::vertex_offset_bytes`] for the parallel case).
@@ -192,7 +192,7 @@ impl VramMesh {
 /// fresh per-corner verts (so per-corner UVs and per-prim CBA/TSB are
 /// preserved exactly). Quads split the same way as [`tmd_to_mesh`].
 ///
-/// Untextured prims (no UVs decoded) are skipped — they wouldn't sample
+/// Untextured prims (no UVs decoded) are skipped - they wouldn't sample
 /// anything meaningful from VRAM, and emitting them would draw black /
 /// transparent triangles that obscure other geometry.
 pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
@@ -379,7 +379,7 @@ fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 
             ab[0] * ac[1] - ab[1] * ac[0],
         ];
         // Triangles weight their face normal by area (length of unnormalised
-        // cross product) — this is the standard angle-independent average
+        // cross product) - this is the standard angle-independent average
         // recommended by Max '99 ("Weights for Computing Vertex Normals from
         // Facet Normals"). Larger faces contribute more.
         for &idx in &[a, b, c] {
@@ -492,7 +492,7 @@ pub fn tmd_to_mesh(tmd: &Tmd, buf: &[u8]) -> Mesh {
                         indices.push(v_start + idxs[2] as u32);
                     }
                     4 => {
-                        // Standard PSX quad split — verts arrive as (v0, v1,
+                        // Standard PSX quad split - verts arrive as (v0, v1,
                         // v2, v3) where v3 is opposite v0; emit two triangles
                         // sharing the (v1, v2) diagonal.
                         let v0 = v_start + idxs[0] as u32;
@@ -606,7 +606,7 @@ mod tests {
 
     #[test]
     fn vram_mesh_pyramid_has_per_corner_verts() {
-        // Synth pyramid prims are FT3 (flags=0x20) — the parser decodes a
+        // Synth pyramid prims are FT3 (flags=0x20) - the parser decodes a
         // texture block with all-zero UVs/CBA/TSB. tmd_to_vram_mesh emits
         // 4 prims × 3 corners = 12 verts, one per (prim, corner) pair.
         let buf = synth_pyramid_tmd();

@@ -1,4 +1,4 @@
-//! Per-Seru stat-grant table — the disc-side data backing per-character
+//! Per-Seru stat-grant table - the disc-side data backing per-character
 //! level-up curves.
 //!
 //! ## Retail layout
@@ -6,30 +6,43 @@
 //! Each captured character record (stride `0x414`, base `0x80084708` per
 //! `legaia_save::SaveFile` analysis) holds per-stat fields at byte offsets
 //! `+0x10E` (Spirit-max), `+0x11C..+0x126` (six u16 stats at 2-byte stride),
-//! `+0x130` (rank counter), `+0x161..` (per-spell levels). The mc7 → mc8 → mc9
-//! save-state diff pinned the destination offsets ([`crate::levelup::observations::vahn_mc8_to_mc9`]).
+//! `+0x130` (rank counter), `+0x161..` (per-spell levels). A magic-rank-up
+//! and character-level-up save triplet for Vahn pinned the destination
+//! offsets ([`crate::levelup::observations::vahn_mc8_to_mc9`]).
 //!
 //! The retail growth values themselves do *not* live in the level-up overlay's
-//! data section — a writer-search across the captured `overlay_magic_level_up_*`
+//! data section - a writer-search across the captured `overlay_magic_level_up_*`
 //! dumps for `sb` / `sh` writes targeting `+0x10E`, `+0x11C..+0x12C`, `+0x130`,
-//! `+0x161` returns no code-side hits. The grants come instead from per-Seru
-//! structs loaded from PROT entries at runtime: each Seru carries an HP / MP
-//! grant pair (the level-up overlay reads them through a pointer at *Seru
-//! struct +0x74*), and the act of equipping / leveling a Seru folds those
-//! values into the consuming character's record. The exact layout of the
-//! Seru struct beyond `+0x74` (which other stats it grants, the slot for
-//! Spirit, etc.) requires either a runtime watchpoint trace or a battle-data
-//! PROT-entry decode.
+//! `+0x161` returns no code-side hits.
+//!
+//! A follow-up grep for any `lh` / `lhu` / `lb` / `lbu` / `lw` read at
+//! `+0x74(reg)` across the same overlay surfaces five hits - but every one of
+//! them is reading a 32-bit battle-state flag that gets *written* with the
+//! constant `0x80808080` by the SCUS-side battle-actor handler `FUN_800480D8`
+//! (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`), not a stat-grant
+//! pointer. The "Seru struct +0x74" pointer-dereference hypothesis is not
+//! supported by the captured code; either the table base lives in a
+//! still-uncaptured overlay (the most likely candidate is the battle-data
+//! init path that loads PROT entries 0x05C4 + sibling Seru blobs at boot) or
+//! the grant is computed inline from a packed Seru-record field that the
+//! current capture set doesn't surface.
+//!
+//! Engines wiring this module today should treat the shipped values as
+//! placeholders and override per-Seru with [`SeruStatTable::insert`]. The
+//! pinned destination offsets ([`crate::levelup::observations::vahn_mc8_to_mc9`])
+//! still describe the *consumer* layout faithfully, so any future capture
+//! that pins the *source* table can drop into the existing API without
+//! re-shaping it.
 //!
 //! ## What this module provides
 //!
 //! Two layered APIs:
 //!
-//! 1. [`SeruStatGrant`] — the clean-room shape of one Seru's grant: HP, MP,
+//! 1. [`SeruStatGrant`] - the clean-room shape of one Seru's grant: HP, MP,
 //!    Spirit, and the six u16 record-stat byte deltas. Engines populate this
 //!    from a [`crate::levelup::LevelUpObservation`] (averaging across the
 //!    observed range) until a true per-level vector is captured.
-//! 2. [`SeruStatTable`] — id-keyed map of grants. Engines compose one per
+//! 2. [`SeruStatTable`] - id-keyed map of grants. Engines compose one per
 //!    character from the Seru roster the player has equipped, sum the per-
 //!    Seru grants, and feed the resulting [`crate::levelup::StatGrowthCurve::PerLevel`]
 //!    into [`crate::levelup::LevelUpTracker::with_stat_curves`].
@@ -159,7 +172,7 @@ impl SeruStatTable {
     /// going through a [`crate::levelup::LevelUpObservation`].
     ///
     /// We materialise as `PerLevel` (not `Flat`) so the tracker resolver
-    /// honours the value directly — the [`LevelUpTracker`]'s `Flat` arm
+    /// honours the value directly - the [`LevelUpTracker`]'s `Flat` arm
     /// intentionally falls back to the explicit `stat_gains` field for
     /// backward-compat with engines that haven't migrated to curves.
     ///
@@ -173,10 +186,11 @@ impl SeruStatTable {
     }
 }
 
-/// Vanilla early-game Seru roster — placeholder values until a runtime
+/// Vanilla early-game Seru roster - placeholder values until a runtime
 /// trace pins down the retail `Seru struct +0x74` payload. The shipped
-/// values roughly match the rate at which Vahn's early-game curve observed
-/// in the mc7→mc9 captures advances HP/MP per level.
+/// values roughly match the rate at which Vahn's early-game curve advances
+/// HP/MP per level in the captured magic-rank-up + character-level-up
+/// observation triplet.
 ///
 /// The shipped roster is *flat* across every Seru id 0..=15 (10 HP / 5 MP
 /// per Seru per level), so a 4-level jump on a roster of two Seru produces
@@ -198,11 +212,11 @@ pub fn vanilla_seru_table() -> SeruStatTable {
 /// expands as the player progresses through the story. The shipped IDs
 /// match the in-game default order surfaced by `crates/engine-core::seru_learning`.
 pub mod default_rosters {
-    /// Vahn's starting roster — one elemental Seru.
+    /// Vahn's starting roster - one elemental Seru.
     pub const VAHN: &[u16] = &[0];
-    /// Noa's starting roster — one healing-element Seru.
+    /// Noa's starting roster - one healing-element Seru.
     pub const NOA: &[u16] = &[1];
-    /// Gala's starting roster — one defensive Seru.
+    /// Gala's starting roster - one defensive Seru.
     pub const GALA: &[u16] = &[2];
 }
 

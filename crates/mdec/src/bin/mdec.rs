@@ -1,4 +1,4 @@
-//! `mdec` — CLI for PSX MDEC bitstream inspection and frame decoding.
+//! `mdec` - CLI for PSX MDEC bitstream inspection and frame decoding.
 
 use std::path::PathBuf;
 
@@ -133,7 +133,7 @@ fn cmd_decode_str(str_file: &PathBuf, out_dir: &PathBuf, max_frames: u32) -> Res
     Ok(())
 }
 
-/// Write an RGBA8 buffer as a PPM (portable pixmap) — no external image crate
+/// Write an RGBA8 buffer as a PPM (portable pixmap) - no external image crate
 /// needed.
 fn write_ppm(path: &PathBuf, rgba: &[u8], width: u32, height: u32) -> Result<()> {
     use std::io::Write;

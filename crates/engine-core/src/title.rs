@@ -7,18 +7,18 @@
 //!
 //! ## States
 //!
-//! - [`TitlePhase::FadeIn`] — opening fade from black. No input
+//! - [`TitlePhase::FadeIn`] - opening fade from black. No input
 //!   accepted; advances on a frame counter.
-//! - [`TitlePhase::PressStart`] — "Press START" prompt with cursor blink.
+//! - [`TitlePhase::PressStart`] - "Press START" prompt with cursor blink.
 //!   Start (or Cross) advances to the main menu.
-//! - [`TitlePhase::MainMenu`] — three-row menu (New Game / Continue /
+//! - [`TitlePhase::MainMenu`] - three-row menu (New Game / Continue /
 //!   Options). Up/Down move the cursor; Cross confirms.
-//! - [`TitlePhase::Done`] — the player chose; engine inspects
+//! - [`TitlePhase::Done`] - the player chose; engine inspects
 //!   [`TitleSession::outcome`].
 //!
 //! Engines run [`TitleSession::tick`] each frame and react to the
 //! returned [`TitleEvent`]s (CursorMoved, MenuConfirmed, etc.). The
-//! session is intentionally renderer-free — it knows only abstract phase
+//! session is intentionally renderer-free - it knows only abstract phase
 //! state, not pixel coordinates.
 
 /// Phase of the title state machine.
@@ -34,9 +34,9 @@ pub enum TitlePhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TitleOutcome {
     NewGame,
-    /// Player picked Continue — engines drop into save-select.
+    /// Player picked Continue - engines drop into save-select.
     Continue,
-    /// Player opened the Options panel — engines push the menu.
+    /// Player opened the Options panel - engines push the menu.
     Options,
 }
 
@@ -80,7 +80,7 @@ pub struct TitleSession {
     pub blink_period: u16,
     /// Number of menu rows. Default 3 (New Game / Continue / Options).
     rows: u8,
-    /// Set to `false` if no save data is present — disables the Continue
+    /// Set to `false` if no save data is present - disables the Continue
     /// row in the menu.
     pub continue_enabled: bool,
 }

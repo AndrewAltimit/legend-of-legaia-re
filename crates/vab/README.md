@@ -5,7 +5,7 @@ Sony VAB instrument-bank parser and VAG sample extractor.
 VAB ("VAGbank") is the PsyQ format that ships SPU-ADPCM samples bundled
 with per-program tone metadata. Legaia's banks live inside `battle_data`
 and `level_up` PROT blocks, plus the `vab_01` cluster (1072–1194). The
-CDNAME label `vab_01` is misleading — verify by checking for the
+CDNAME label `vab_01` is misleading - verify by checking for the
 `VABp` magic at offset 0.
 
 ## Header layout (Sony PsyQ docs, version 7)
@@ -51,7 +51,7 @@ byte 1:  flag                      (1 = loop end+jump, 2 = sustain, 4 = start)
 bytes 2..16: 14 nibble pairs, low nibble first = 28 4-bit samples
 ```
 
-The F0/F1 filter constants are shared with [`legaia-xa`] — the algorithm
+The F0/F1 filter constants are shared with [`legaia-xa`] - the algorithm
 is identical to XA-ADPCM, only the block packaging differs.
 
 ## CLI
@@ -65,6 +65,6 @@ vab vag-sample-span <file> <sample_index>           # offsets + size
 ## See also
 
 - [`docs/formats/vab.md`](../../docs/formats/vab.md)
-- [`docs/subsystems/audio.md`](../../docs/subsystems/audio.md) — the
+- [`docs/subsystems/audio.md`](../../docs/subsystems/audio.md) - the
   PsyQ `libsnd`/`libspu` cluster in Legaia's binary, including the
   SsAPI sequencer and the SPU DMA transfer engine.

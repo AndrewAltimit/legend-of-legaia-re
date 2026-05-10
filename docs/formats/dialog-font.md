@@ -19,7 +19,7 @@ V = (c & 0xF0) - 0x20
 
 Drawn region within each cell is 14 pixels wide × 15 pixels tall (`W=0x0E`, `H=0x0F` in the GP0 0x64 packet). The remaining 2 pixels of width and 1 pixel of height per cell are inter-glyph guard space.
 
-Character codes `0x00..=0x1F` are reserved for control / escape bytes (`0x7C` newline, `0xCE` escape prefix, `0xCF` color change, `0x20` space) — they do not have glyphs.
+Character codes `0x00..=0x1F` are reserved for control / escape bytes (`0x7C` newline, `0xCE` escape prefix, `0xCF` color change, `0x20` space) - they do not have glyphs.
 
 ## Width table (advance lookup)
 
@@ -56,8 +56,8 @@ The full table is dumped to `extracted/font/dialog_font_widths.csv` and `extract
 ## CLUT
 
 ```
-VRAM (96, 510)   // CLUT 0 — dialog grayscale (white-on-transparent text)
-VRAM (96 + 16*i, 510)   // CLUT i — colored variants for status text, system prompts
+VRAM (96, 510)   // CLUT 0 - dialog grayscale (white-on-transparent text)
+VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system prompts
 ```
 
 Sixteen 16-color CLUTs are placed end-to-end across VRAM Y=510, one every 16 horizontal pixels. CLUT 0 is the canonical dialog palette: index 2 = transparent black, index 3 = white, indices 0/1/4..7 = mid-tone grays for anti-aliasing.
@@ -83,9 +83,9 @@ There are 38 entries (table indices `0x00..=0x25`).
 | `0x00..=0x07` | 55..62 | 16 | -2 | Icon strings (likely controller-button glyphs / currency icon) |
 | `0x08` | 98 | 12 | +2 | String 98 |
 | `0x09..=0x0A` | 132,133 | 12 | 0 | Strings 132/133 |
-| `0x0B..=0x0E` | 0 | 32 | 0..3 | **Variable substitution** — `y_offset` is the variable index (HP/MP/gold/exp slot), renderer calls `FUN_80034B78` to format the integer |
-| `0x0F` | 137 | 38 | 0 | String 137 (longest single-shot escape — ~6 chars wide) |
-| `0x10..=0x13` | 36,34,35,37 | 12 | 0 | **Active actor name** — string IDs 34/35/36/37 align with the in-SCUS actor name strings ("Meta"/"Terra"/"Ozma"/...) |
+| `0x0B..=0x0E` | 0 | 32 | 0..3 | **Variable substitution** - `y_offset` is the variable index (HP/MP/gold/exp slot), renderer calls `FUN_80034B78` to format the integer |
+| `0x0F` | 137 | 38 | 0 | String 137 (longest single-shot escape - ~6 chars wide) |
+| `0x10..=0x13` | 36,34,35,37 | 12 | 0 | **Active actor name** - string IDs 34/35/36/37 align with the in-SCUS actor name strings ("Meta"/"Terra"/"Ozma"/...) |
 | `0x14..=0x1C` | 139..147 | 20 | 0 | Strings 139..147 |
 | `0x1D..=0x25` | 148..156 | 28 | 0 | Strings 148..156 |
 
@@ -99,7 +99,7 @@ When `string_id != 0`, the renderer calls `FUN_8002C488(x, y + y_offset, string_
 | Word-wrap pre-pass | `FUN_80036044` | Called from `FUN_8003CC98`. Wraps lines to fit the dialog box width. |
 | Single-line renderer | `FUN_80036888` | Iterates bytes, dispatches escapes, emits one GP0 0x64 sprite per glyph. |
 | Multi-line wrapper | `FUN_8003CC98` | `FUN_80036044` + `FUN_80036888`. Used by the field VM dialog opener. |
-| Text-actor tick | `FUN_80031D00` | Per-actor text rendering; uses an alternate width-bucketed glyph layout for HUD/status numbers (column-0 stride 8 px, height 12 px) — see `DAT_80073DCC`. |
+| Text-actor tick | `FUN_80031D00` | Per-actor text rendering; uses an alternate width-bucketed glyph layout for HUD/status numbers (column-0 stride 8 px, height 12 px) - see `DAT_80073DCC`. |
 
 Per-glyph GP0 packet (variable-size textured rectangle, opaque, with raw-texture color):
 
@@ -111,18 +111,18 @@ Per-glyph GP0 packet (variable-size textured rectangle, opaque, with raw-texture
 [u16 W=14][u16 H=15]         // sprite size in pixels
 ```
 
-The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive — it is **not** embedded in the per-glyph packet.
+The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it is **not** embedded in the per-glyph packet.
 
 ## Inline control bytes
 
 | Byte | Operand | Meaning |
 |---|---|---|
-| `0x20` | — | Space. No glyph; advance X by `widths[0x20]` (=4). |
-| `0x7C` | — | Newline. Advance Y by 14 px; reset X to line-start. |
-| `0xCE` | u8 | Escape — index into the table at `0x80074050`. |
+| `0x20` | - | Space. No glyph; advance X by `widths[0x20]` (=4). |
+| `0x7C` | - | Newline. Advance Y by 14 px; reset X to line-start. |
+| `0xCE` | u8 | Escape - index into the table at `0x80074050`. |
 | `0xCF` | u8 | Color change. Sets `DAT_8007B454` (CLUT additive index 0..15). |
-| `0x00` | — | String terminator. |
-| any other `0x21..=0xFF` | — | Glyph: emit one sprite via the formula above. |
+| `0x00` | - | String terminator. |
+| any other `0x21..=0xFF` | - | Glyph: emit one sprite via the formula above. |
 
 ## Provenance
 
@@ -137,23 +137,23 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive — 
 | Author-time `^X` preprocessor | `ghidra/scripts/funcs/80036514.txt` lines 246-249 |
 | Multi-line wrapper | `ghidra/scripts/funcs/8003cc98.txt` |
 
-The dialog opener that reaches this renderer chain from the [field script VM](../subsystems/script-vm.md) opcode `0x3F` is `FUN_8001FD44` — it sets the "dialog active" story flag (`_DAT_1F800394 |= 0x40`) before forwarding into the renderer.
+The dialog opener that reaches this renderer chain from the [field script VM](../subsystems/script-vm.md) opcode `0x3F` is `FUN_8001FD44` - it sets the "dialog active" story flag (`_DAT_1F800394 |= 0x40`) before forwarding into the renderer.
 
 ## What's still open
 
-- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font — the bitmap is reachable only from a save-state VRAM dump. The font extractor writes `dialog_font_vram_4bpp.bin` (the raw 32 KB tile-page bytes) alongside the PNG, and [`scripts/find-font-carrier.py`](../../scripts/find-font-carrier.py) searches every PROT entry for matching slices. The script runs three search strategies:
+- **On-disc carrier of the glyph bitmap.** The static categorizer in `crates/asset` doesn't yet recognise the PROT entry that carries the font - the bitmap is reachable only from a save-state VRAM dump. The font extractor writes `dialog_font_vram_4bpp.bin` (the raw 32 KB tile-page bytes) alongside the PNG, and [`scripts/find-font-carrier.py`](../../scripts/find-font-carrier.py) searches every PROT entry for matching slices. The script runs three search strategies:
   1. Direct slice match (4 fixed offsets, 64-byte windows).
   2. Glyph-row signature match (per-cell 8-byte rows concatenated for 4–8 adjacent cells; survives row-major byte permutations).
   3. LZS-decompressed match (decompresses every entry that parses as a valid LZS container and re-runs both probe sets against the decoded bytes).
   All three strategies return zero hits across `PROT.DAT`, `DMY.DAT`, and `SCUS_942.54`. The font is therefore neither raw nor LZS-resident in the static asset corpus. Two remaining unblock paths:
   1. Trace the `LoadImage` (GP0 0xA0) DMA call that uploads the tile-page at `(896, 0)` and identify which PROT entry it pulls from. The `find_lui_writers.py` Ghidra script can locate the LUI+ADDIU pair that loads the source pointer; the destination is the GPU FIFO at `0x1F801810` so the search target is "writes to a struct that ultimately reaches `_DAT_1F801810`".
-  2. Diff a save state captured before the title screen finishes booting against one captured during a dialog — the font region transitions from zero to populated, so the disc read that fills it sits in the boot sequence somewhere between `FUN_8003E4E8` (PROT TOC loader) and the first dialog open. The `analyze-overlay.sh --label dialog` capture (already committed under `ghidra/scripts/funcs/overlay_dialog_*.txt`) holds the dialog overlay's text-rendering routines; the font upload itself sits earlier in boot, in a routine that's still SCUS-resident or in the title overlay.
-- **String IDs in the escape table.** Entries `0x00..=0x07` (advance 16, `y_offset = -2`) likely render multi-character icon strings from the same string pool that backs `FUN_8002C488`. The pool itself isn't yet decoded — its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.
+  2. Diff a save state captured before the title screen finishes booting against one captured during a dialog - the font region transitions from zero to populated, so the disc read that fills it sits in the boot sequence somewhere between `FUN_8003E4E8` (PROT TOC loader) and the first dialog open. The `analyze-overlay.sh --label dialog` capture (already committed under `ghidra/scripts/funcs/overlay_dialog_*.txt`) holds the dialog overlay's text-rendering routines; the font upload itself sits earlier in boot, in a routine that's still SCUS-resident or in the title overlay.
+- **String IDs in the escape table.** Entries `0x00..=0x07` (advance 16, `y_offset = -2`) likely render multi-character icon strings from the same string pool that backs `FUN_8002C488`. The pool itself isn't yet decoded - its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.
 - **`0xCC` opcode.** The text-actor renderer at `FUN_80031D00` recognises a small handful of single-byte ops (`0xCC..=0xCF`) inside its glyph stream that are distinct from the dialog renderer's `0xCE/0xCF`. They're outside the dialog font's scope and tracked under the [field script VM](../subsystems/script-vm.md) docs.
 
 ## Extraction tools
 
-`extracted/font/` (gitignored — Sony pixel data) is produced by the font-extraction step:
+`extracted/font/` (gitignored - Sony pixel data) is produced by the font-extraction step:
 
 | File | What it is |
 |---|---|
@@ -170,7 +170,7 @@ The committed extractor is `crates/font/src/bin/font-extract.rs`:
 ```
 cargo run -p legaia-font --bin font-extract -- \
     --scus extracted/SCUS_942.54 \
-    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mc4" \
+    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).<hash>.mcN" \
     --out extracted/font
 ```
 

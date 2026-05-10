@@ -82,14 +82,14 @@ fn battle_runs_to_completion_with_monster_wipe() {
     let mut last_battle_event_count = 0usize;
     use legaia_engine_vm::battle_action::ActorFlags;
 
-    // Cap at 50_000 frames — way above any real battle duration.
+    // Cap at 50_000 frames - way above any real battle duration.
     for _frame in 0..50_000 {
         let outcome = world.tick();
 
         // Engine-side animation event: clear ADVANCE_DONE on the active
         // attacker so AttackRecovery / AttackReturn can advance. In retail
         // the renderer clears this flag when the recovery animation
-        // finishes — for the integration test we simulate the same edge.
+        // finishes - for the integration test we simulate the same edge.
         let attacker = world.battle_ctx.active_actor as usize;
         if attacker < world.actors.len()
             && world.actors[attacker]
@@ -153,7 +153,7 @@ fn battle_runs_to_completion_with_monster_wipe() {
             }
         }
 
-        // Hard-fail: if the SM never produces transitions, abort early —
+        // Hard-fail: if the SM never produces transitions, abort early -
         // probably a port regression.
         if _frame == 5_000 && transitions == 0 {
             break;
@@ -183,7 +183,7 @@ fn battle_runs_to_completion_with_monster_wipe() {
 #[test]
 fn battle_party_wipe_resolves_to_party_wipe_cause() {
     let mut world = build_world();
-    // Manually wipe the party — every party slot dead.
+    // Manually wipe the party - every party slot dead.
     for i in 0..3 {
         world.actors[i].battle.liveness = 0;
         world.actors[i].battle.hp = 0;

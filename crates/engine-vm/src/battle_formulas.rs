@@ -3,7 +3,7 @@
 //! Clean-room Rust port of the in-game battle math. Each function is keyed
 //! to a citation in `docs/subsystems/battle-formulas.md` so the provenance
 //! stays traceable. None of these functions touch `FUN_800402F4`'s full
-//! selector-dispatch — that lives next to the state machine in
+//! selector-dispatch - that lives next to the state machine in
 //! [`crate::battle_action`]. This module is the **arithmetic kernel** that
 //! every selector eventually feeds into.
 
@@ -25,7 +25,7 @@ pub fn psyq_rand_step(seed: &mut u32) -> u16 {
 /// Spirit super-art damage. Hard-coded per battle-action state 0x3E / 0x46:
 /// `damage = ((target_hp * 7) / 5) + 8`, capped.
 ///
-/// `cap` is the per-spell ceiling — battle-action.md observes 288 (`0x120`)
+/// `cap` is the per-spell ceiling - battle-action.md observes 288 (`0x120`)
 /// for the larger spirit arts and 100 for the smaller ones.
 pub fn spirit_damage(target_hp: u16, cap: u16) -> u16 {
     // saturating math: target_hp * 7 fits in u32 since target_hp <= 0xFFFF
@@ -38,18 +38,18 @@ pub fn spirit_damage(target_hp: u16, cap: u16) -> u16 {
 /// record at `+0xF4`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MpCostModifier {
-    /// No ability-bit modifier — pay full cost.
+    /// No ability-bit modifier - pay full cost.
     Full,
-    /// `+0xF4 & 0x20` set — cost is halved.
+    /// `+0xF4 & 0x20` set - cost is halved.
     Half,
-    /// `+0xF4 & 0x10` set — cost is quartered.
+    /// `+0xF4 & 0x10` set - cost is quartered.
     Quarter,
 }
 
 impl MpCostModifier {
     /// Resolve the modifier from a 32-bit ability-flag word. The retail
     /// engine reads `+0xF4` as a `u32` and tests the same two bits in this
-    /// order — `Quarter` only triggers when `Half` is *not* set, matching
+    /// order - `Quarter` only triggers when `Half` is *not* set, matching
     /// the `if-else if` chain in `FUN_801E295C`'s state-0x28 body.
     pub fn from_ability_flags(flags: u32) -> Self {
         if flags & 0x20 != 0 {
@@ -83,7 +83,7 @@ pub fn mp_cost_after_ability_bits(base_cost: u16, modifier: MpCostModifier) -> u
 /// Computed in the retail engine as `roll = rand() % (caster + target);
 /// hit = (target < roll)`, which is equivalent.
 ///
-/// If both stats are zero the roll modulus is undefined — we treat that as
+/// If both stats are zero the roll modulus is undefined - we treat that as
 /// an automatic hit (matches retail behavior, which would have crashed on
 /// `% 0` but never sees both stats simultaneously zero in practice).
 pub fn accuracy_roll(caster_acc: u16, target_eva: u16, rng_seed: &mut u32) -> bool {
@@ -96,12 +96,12 @@ pub fn accuracy_roll(caster_acc: u16, target_eva: u16, rng_seed: &mut u32) -> bo
     (target_eva as u32) < roll
 }
 
-/// Stat cap table for party slots 0..2 — cap halfwords at `DAT_8007655C`.
+/// Stat cap table for party slots 0..2 - cap halfwords at `DAT_8007655C`.
 /// The table is six halfwords; party slots index it directly.
 ///
 /// Engines that load the cap table from a real `extracted/SCUS_942.54` byte
 /// pool can pass it here as the `caps` slice; the unit tests embed a
-/// reasonable default (10000 / 9999 / 999 — generous, matches the
+/// reasonable default (10000 / 9999 / 999 - generous, matches the
 /// per-actor shipping caps the game enforces in stat-up animations) so
 /// callers without disc data still get monotonic damage scaling.
 pub fn damage_cap_for_party_slot(caps: &[u16; 6], party_slot: u8) -> u16 {
@@ -123,7 +123,7 @@ pub fn damage_cap_for_party_slot(caps: &[u16; 6], party_slot: u8) -> u16 {
 /// `power_divisor` is the fixed-point base for the multiplier table.
 /// The retail engine appears to use `divisor = 16`, giving multipliers in
 /// `12..=28` the fractional range `0.75..=1.75` against the target defense.
-/// `min_floor` is the in-game minimum-damage floor (1 in vanilla — the
+/// `min_floor` is the in-game minimum-damage floor (1 in vanilla - the
 /// retail engine never deals zero damage on a successful strike unless the
 /// target is invulnerable).
 ///
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Full), 40);
         assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Half), 20);
         assert_eq!(mp_cost_after_ability_bits(40, MpCostModifier::Quarter), 10);
-        // Floor division — odd costs round down on Half.
+        // Floor division - odd costs round down on Half.
         assert_eq!(mp_cost_after_ability_bits(7, MpCostModifier::Half), 3);
     }
 
@@ -242,7 +242,7 @@ mod tests {
     fn accuracy_roll_high_caster_hits_more() {
         // 100 vs 1: the roll is `rand % 101`; we need `target < roll`,
         // i.e. `1 < roll`, which is true except when `roll = 0` or `1`.
-        // Two failures in 101 outcomes — over many seeds we should land
+        // Two failures in 101 outcomes - over many seeds we should land
         // close to >=98% hit rate.
         let mut hits = 0;
         let mut s = 1;

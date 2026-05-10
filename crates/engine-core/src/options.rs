@@ -101,7 +101,7 @@ impl OptionsRow {
     }
 }
 
-/// Phase of the SM. Edits are in-place — there is no separate "edit"
+/// Phase of the SM. Edits are in-place - there is no separate "edit"
 /// state; left/right adjusts the current row's value, up/down moves the
 /// cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

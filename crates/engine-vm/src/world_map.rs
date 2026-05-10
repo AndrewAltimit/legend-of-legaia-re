@@ -17,7 +17,7 @@
 //! ```
 //!
 //! States 2 and 3 share the same handler body (fall-through in the original C
-//! switch). State 4 is a terminal stop state — the entity stops ticking.
+//! switch). State 4 is a terminal stop state - the entity stops ticking.
 //!
 //! ## Source
 //!
@@ -71,13 +71,13 @@ pub trait WorldMapEntityHost {
     /// path below state-0 still runs when the gate is open elsewhere).
     fn activation_gate_open(&self) -> bool;
 
-    /// `DAT_8007b604` — signed encounter-rate countdown shared across all
+    /// `DAT_8007b604` - signed encounter-rate countdown shared across all
     /// entities. Decremented in the Idle state; the SM reads and writes it
     /// via the two methods below.
     fn encounter_countdown(&self) -> i8;
     fn set_encounter_countdown(&mut self, v: i8);
 
-    /// `DAT_8007b5f8 != 0` — encounter-rate flag. When zero, encounters are
+    /// `DAT_8007b5f8 != 0` - encounter-rate flag. When zero, encounters are
     /// disabled regardless of the countdown reaching zero.
     fn encounter_enabled(&self) -> bool;
 
@@ -98,11 +98,11 @@ pub trait WorldMapEntityHost {
     /// `_DAT_8007b5f4 = 1`, fade-globals, `_DAT_8007b83c = 8`.
     fn on_scene_transition(&mut self, entity_idx: usize);
 
-    /// `_DAT_1f800394 & 0x8000` — dialog / menu is active. When set, the
+    /// `_DAT_1f800394 & 0x8000` - dialog / menu is active. When set, the
     /// post-SM interaction check is suppressed.
     fn dialog_active(&self) -> bool;
 
-    /// `_DAT_8007c364[+0x10] & 0x80000` — player's movement-blocked flag.
+    /// `_DAT_8007c364[+0x10] & 0x80000` - player's movement-blocked flag.
     /// When set alongside the entity's interact-cooldown being clear, the
     /// interaction check is skipped.
     fn player_walking(&self) -> bool;
@@ -173,7 +173,7 @@ pub fn step<H: WorldMapEntityHost>(entity_idx: usize, ctx: &mut WorldMapEntityCt
 
     // Post-SM: interaction check only while Idle.
     // Runs regardless of activation_gate_open (the gate only gates the SM
-    // body above, not this path — per the original C structure).
+    // body above, not this path - per the original C structure).
     if ctx.state == 0 && !host.dialog_active() {
         let blocked = (ctx.pad_flags & 0x80000) != 0;
         if !blocked {

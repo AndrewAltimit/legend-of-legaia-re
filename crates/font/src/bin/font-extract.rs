@@ -1,4 +1,4 @@
-//! `font-extract` — produce `extracted/font/` artifacts (atlas PNG + widths CSV +
+//! `font-extract` - produce `extracted/font/` artifacts (atlas PNG + widths CSV +
 //! metadata JSON + raw 4bpp tile-page sheet) from a Legaia disc + a mednafen save
 //! state with the dialog font live in VRAM.
 //!
@@ -11,7 +11,7 @@
 //!    an `MDFNSVST` magic header, and carries VRAM as a variable named
 //!    `&GPURAM[0][0]` inside the `GPU` section.
 //!
-//! The extractor produces no Sony bytes by itself — the inputs are user-supplied
+//! The extractor produces no Sony bytes by itself - the inputs are user-supplied
 //! and the outputs land in `extracted/font/` which is gitignored.
 
 #![forbid(unsafe_code)]
@@ -61,7 +61,7 @@ struct Args {
     #[arg(long, default_value = "extracted/SCUS_942.54")]
     scus: PathBuf,
     /// Path to mednafen save state (.mc0..mc9). The save must have the dialog
-    /// font live in VRAM (any in-game capture works — the font tile-page is
+    /// font live in VRAM (any in-game capture works - the font tile-page is
     /// byte-identical across captures).
     #[arg(long)]
     save: PathBuf,
@@ -77,7 +77,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     create_dir_all(&args.out).with_context(|| format!("create {}", args.out.display()))?;
 
-    // 1. SCUS — width table + escape table.
+    // 1. SCUS - width table + escape table.
     let scus_bytes =
         std::fs::read(&args.scus).with_context(|| format!("read {}", args.scus.display()))?;
     let t_addr = parse_psx_exe_t_addr(&scus_bytes).unwrap_or(SCUS_LOAD_ADDR_FALLBACK);
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
     .context("read escape table")?;
     let escape = parse_escape_table(escape_bytes);
 
-    // 2. Save state — VRAM block.
+    // 2. Save state - VRAM block.
     let vram = read_vram_from_save(&args.save, args.verbose)
         .with_context(|| format!("read VRAM from {}", args.save.display()))?;
 
@@ -150,7 +150,7 @@ fn main() -> Result<()> {
     )
     .context("write metadata JSON")?;
 
-    // Also dump the raw 4bpp VRAM bytes — needed for downstream tooling
+    // Also dump the raw 4bpp VRAM bytes - needed for downstream tooling
     // that searches PROT entries for the on-disc carrier of the font.
     // The bytes are the literal 4bpp packed pixels (two pixels per byte,
     // low nibble first), 32768 bytes total = 256 × 256 / 2.
@@ -254,11 +254,11 @@ fn read_vram_from_save(path: &std::path::Path, verbose: bool) -> Result<Vec<u8>>
     // The VRAM lives in a variable named "&GPURAM[0][0]" inside the GPU
     // section. The format of each variable record is:
     //   u8 name_len; bytes[name_len] name; u32 data_size; bytes[data_size] data;
-    // Search for the literal name with its length prefix — robust across the
+    // Search for the literal name with its length prefix - robust across the
     // sections that wrap it.
     let needle = b"\x0d&GPURAM[0][0]";
     let pos = find_subsequence(&state, needle).ok_or_else(|| {
-        anyhow!("no `&GPURAM[0][0]` variable in save state — wrong game/version?")
+        anyhow!("no `&GPURAM[0][0]` variable in save state - wrong game/version?")
     })?;
     let size_off = pos + needle.len();
     if size_off + 4 > state.len() {
@@ -267,7 +267,7 @@ fn read_vram_from_save(path: &std::path::Path, verbose: bool) -> Result<Vec<u8>>
     let size = u32::from_le_bytes(state[size_off..size_off + 4].try_into().unwrap()) as usize;
     if size != VRAM_BYTES {
         bail!(
-            "VRAM size {size} bytes but expected {VRAM_BYTES} — save state from a different core?"
+            "VRAM size {size} bytes but expected {VRAM_BYTES} - save state from a different core?"
         );
     }
     let data_off = size_off + 4;
@@ -447,7 +447,7 @@ fn write_metadata_json(
             "vram_y_pixels": CLUT_VRAM_Y,
             "colors": CLUT_ENTRIES,
             "index_for_dialog": 0,
-            "note": "16-color BGR555 CLUT at VRAM (96, 510). Index 0 is BGR555 0x0000 — treated transparent in the renderer; index 1 is foreground white; indices 2..5 are anti-aliasing gray ramp; the upper half of the CLUT is unused by the dialog renderer.",
+            "note": "16-color BGR555 CLUT at VRAM (96, 510). Index 0 is BGR555 0x0000 - treated transparent in the renderer; index 1 is foreground white; indices 2..5 are anti-aliasing gray ramp; the upper half of the CLUT is unused by the dialog renderer.",
             "palette_bgr555": palette
         },
         "glyph_layout": {

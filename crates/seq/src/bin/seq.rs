@@ -1,10 +1,10 @@
-//! `seq` — inspector for PsyQ SEQ files.
+//! `seq` - inspector for PsyQ SEQ files.
 //!
 //! Three subcommands:
 //!
-//! - `info <PATH>` — print header (version, PPQN, tempo, time signature, BPM).
-//! - `events <PATH>` — disassemble every event with absolute tick + delta.
-//! - `json <PATH>` — full SEQ as machine-readable JSON.
+//! - `info <PATH>` - print header (version, PPQN, tempo, time signature, BPM).
+//! - `events <PATH>` - disassemble every event with absolute tick + delta.
+//! - `json <PATH>` - full SEQ as machine-readable JSON.
 
 use std::fs;
 use std::path::PathBuf;

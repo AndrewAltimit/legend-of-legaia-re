@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Motion VM (camera / NPC) — legend-of-legaia-re</title>
+  <title>Motion VM (camera / NPC) - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -38,7 +38,7 @@
       <tr><td><code>0x43</code></td><td><code>80037f5c</code></td><td>NoOp</td><td>tick budget consumed, no actor mutation</td></tr>
       <tr><td><code>0x47</code></td><td><code>80037ba8</code></td><td>MoveTowardTarget</td><td>step actor XZ toward <code>(tx, tz)</code></td></tr>
       <tr><td><code>0x4C</code></td><td><code>80037de0</code></td><td>FaceTarget</td><td>yaw rotates to bearing computed via <code>atan2(dx, dz)</code> (<code>bearing_to_yaw</code>); sub-modes 0x85 / 0x8E / 0x8F gate which component is rotated</td></tr>
-      <tr><td>(default)</td><td>&mdash;</td><td>Done</td><td>terminate</td></tr>
+      <tr><td>(default)</td><td>-</td><td>Done</td><td>terminate</td></tr>
     </tbody>
   </table>
 </section>
@@ -55,7 +55,7 @@
     <li>The field-VM op-<code>0x45</code> event stream (<code>CameraConfigure</code> / <code>CameraSave</code> / <code>CameraLoad</code> / <code>CameraApply</code>) for the high-level camera state.</li>
     <li>The motion VM (optional) for cinematic pre-baked camera paths via <code>Camera::tick_script</code>.</li>
   </ul>
-  <p>The default mode follows a target actor slot at a configured distance + height &mdash; same shape as the retail "follow the player" camera.</p>
+  <p>The default mode follows a target actor slot at a configured distance + height - same shape as the retail "follow the player" camera.</p>
 </section>
 
 </main>

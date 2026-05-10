@@ -2,7 +2,7 @@
 # @runtime Jython
 #
 # Dumps functions from the STR/MDEC FMV overlay loaded during pre-rendered video playback.
-# This overlay handles game modes 26 (StrInit) and 27 (StrMode) — it is distinct from
+# This overlay handles game modes 26 (StrInit) and 27 (StrMode) - it is distinct from
 # overlay_cutscene_dialogue.bin (which covers actor-scripted story cutscenes).
 #
 # To capture the overlay:
@@ -26,7 +26,7 @@
 #   - XA channel selector: maps (file_no, ch_no) to the cutscene name / CDNAME label.
 #   - CDNAME-to-STR entry table: maps op*/ed* scene names to MV*.STR disc paths.
 #   - libcd cluster: CdControl_raw (0x8005D9A0), CdReadFile_chunk (0x8005E4D4),
-#     CdSync (0x8005CCB4) — look for callers.
+#     CdSync (0x8005CCB4) - look for callers.
 #
 # Output files land in /scripts/funcs/overlay_str_fmv_<addr>.txt
 # (TARGETS is initially empty; populate from the inventory CSV once captured.)
@@ -39,7 +39,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 # Populate this list after running inventory_overlay.py on the str_fmv program.
 # Prioritise by incoming xref count (largest = primary dispatcher / entry point).
 TARGETS = [
-    # Placeholder — replace with real addresses from inventory CSV after capture.
+    # Placeholder - replace with real addresses from inventory CSV after capture.
 ]
 
 OUT_DIR = "/scripts/funcs"

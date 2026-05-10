@@ -28,4 +28,4 @@ offset[1]:       8b 20 00 00    word offset 0x208B → byte 0x822C (= start of T
 
 ## Distinction from the standalone TIM-pack
 
-The [standalone TIM-pack](tim-pack.md) form is structurally similar but uses an 8-byte byte-marker header (with `byte[3] == 0x01` and `byte[2] < 0x10` as discriminators) and stores count in `byte[2]`. The pack-inside-streaming-chunks form here uses a full `u32` count and lacks the marker prefix — use the right format for the source.
+The [standalone TIM-pack](tim-pack.md) form is structurally similar but uses an 8-byte byte-marker header (with `byte[3] == 0x01` and `byte[2] < 0x10` as discriminators) and stores count in `byte[2]`. The pack-inside-streaming-chunks form here uses a full `u32` count and lacks the marker prefix - use the right format for the source.

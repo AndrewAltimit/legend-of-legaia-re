@@ -12,7 +12,7 @@
 //! The retail engine routes BGM through SsAPI seq-context callbacks (see
 //! `docs/subsystems/audio.md` "PsyQ libsnd SsAPI" + the `_DAT_801CE564`
 //! seq-context resolver). We don't need that level of indirection in the
-//! port — the field VM's BGM events arrive pre-resolved with the right SEQ
+//! port - the field VM's BGM events arrive pre-resolved with the right SEQ
 //! bytes and the active VAB is staged once per scene. This adapter is the
 //! join point.
 
@@ -43,7 +43,7 @@ pub struct AudioBgmDirector {
     /// redundant `start(same_id)` calls (the field VM occasionally re-emits
     /// op `0x35` without a state change).
     pub last_started: Option<u16>,
-    /// Optional pending BGM bytes — used by `queue` to defer playback until
+    /// Optional pending BGM bytes - used by `queue` to defer playback until
     /// the engine signals a transition (typically the next field-VM tick).
     pending: Option<(u16, Vec<u8>)>,
 }
@@ -69,7 +69,7 @@ impl AudioBgmDirector {
         self.bank = Some(bank);
     }
 
-    /// Borrow the active bank — useful for tests / inspection.
+    /// Borrow the active bank - useful for tests / inspection.
     pub fn bank(&self) -> Option<&VabBank> {
         self.bank.as_ref()
     }
@@ -92,7 +92,7 @@ impl AudioBgmDirector {
 
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
         let Some(bank) = self.bank.clone() else {
-            log::warn!("AudioBgmDirector::start({bgm_id}) ignored — no VAB bank loaded for scene");
+            log::warn!("AudioBgmDirector::start({bgm_id}) ignored - no VAB bank loaded for scene");
             return Ok(());
         };
         let seq = Seq::parse(seq_bytes).context("parse SEQ for BGM start")?;
@@ -117,7 +117,7 @@ impl AudioBgmDirector {
 
 impl BgmDirector for AudioBgmDirector {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
-        // Suppress duplicate starts for the same BGM id — the field VM's
+        // Suppress duplicate starts for the same BGM id - the field VM's
         // op 0x35 occasionally re-emits without a state change (we'd lose
         // the playhead by re-attaching).
         if self.last_started == Some(bgm_id)
@@ -156,7 +156,7 @@ impl BgmDirector for AudioBgmDirector {
 mod tests {
     use legaia_engine_audio::VabBank;
 
-    /// Test stub bank — empty programs / samples. Real banks come from
+    /// Test stub bank - empty programs / samples. Real banks come from
     /// `legaia_vab::parse`.
     fn empty_bank() -> VabBank {
         VabBank {
@@ -166,7 +166,7 @@ mod tests {
         }
     }
 
-    /// Director without an audio handle — exercises queue / pause / resume
+    /// Director without an audio handle - exercises queue / pause / resume
     /// state machines without opening a cpal stream (CI has no audio
     /// device). We can't construct AudioOut without a device, so the start
     /// / stop tests live as integration tests in environments where audio

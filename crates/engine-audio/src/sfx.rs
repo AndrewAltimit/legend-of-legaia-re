@@ -10,15 +10,15 @@
 //!
 //! ## Cue ID conventions
 //!
-//! - `0x1A` — generic SFX trigger (the canonical `HitCue` "play sound"
+//! - `0x1A` - generic SFX trigger (the canonical `HitCue` "play sound"
 //!   kind). The catalog typically maps this to per-strike weapon impact
 //!   tones.
-//! - `0x4C` — hit-effect visual (no sound on its own; engines that fold
+//! - `0x4C` - hit-effect visual (no sound on its own; engines that fold
 //!   the visual into a synced sound use this slot).
-//! - `0x80..=0xFE` — reserved per-character or per-art SFX IDs (the
+//! - `0x80..=0xFE` - reserved per-character or per-art SFX IDs (the
 //!   retail engine indexes from the per-actor `+0x9C0` table).
 //!
-//! Beyond these documented bytes the catalog is open — the scheduler
+//! Beyond these documented bytes the catalog is open - the scheduler
 //! itself is agnostic to ID ranges.
 //!
 //! ## Frame timing
@@ -29,7 +29,7 @@
 //! are returned in the [`SfxFireBatch`] for the host to dispatch through
 //! [`SfxBank::play_one_shot`] (or its own SPU bridge).
 //!
-//! Pure data — no SPU access here. The scheduler is a queue + clock; the
+//! Pure data - no SPU access here. The scheduler is a queue + clock; the
 //! catalog is a lookup table; firing the actual note-on is the engine's
 //! call.
 
@@ -44,7 +44,7 @@ use crate::vab_bind::VabBank;
 /// `program_index` references the bank's program table entry that supplies
 /// envelope + pitch shape. `key` / `vel` follow MIDI conventions
 /// (0..=127). `voice_pref` lets the engine pin a cue to a specific SPU
-/// voice — `None` means "first available."
+/// voice - `None` means "first available."
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SfxEntry {
     /// Cue id this entry handles. The art-record `HitCue::kind` byte for
@@ -263,7 +263,7 @@ impl SfxScheduler {
             } else {
                 cue.frames_remaining -= 1;
                 if cue.frames_remaining == 0 {
-                    // Just hit zero — fire on the *next* tick (matches
+                    // Just hit zero - fire on the *next* tick (matches
                     // retail timing where a `timing_frames = 1` cue plays
                     // one frame after the strike begins).
                     still.push(cue);

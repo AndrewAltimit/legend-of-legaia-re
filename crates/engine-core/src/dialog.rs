@@ -13,7 +13,7 @@
 //! Provenance: the per-page glyph accumulation + page-break gate mirror the
 //! retail dialog window pager `FUN_801D84D0` in the dialog overlay (see
 //! [`docs/formats/dialog-font.md`](../../../docs/formats/dialog-font.md)).
-//! Layout / GPU bridging lives in `legaia-engine-render` —
+//! Layout / GPU bridging lives in `legaia-engine-render` -
 //! [`text_draws_for`](../../legaia_engine_render/fn.text_draws_for.html)
 //! consumes the [`Self::page_glyphs`] byte stream via [`legaia_font::Font`].
 
@@ -43,7 +43,7 @@ pub enum PanelState {
 pub struct PanelGlyph {
     /// Character byte (ASCII range for latin glyphs; some scenes embed
     /// `0x80..` wide-glyph escape pairs the MES interpreter surfaces as
-    /// [`legaia_mes::PlayerState::WideGlyph`] — those are folded to their
+    /// [`legaia_mes::PlayerState::WideGlyph`] - those are folded to their
     /// `arg` byte for now, since the wide-glyph table isn't decoded).
     pub byte: u8,
     /// CLUT additive index 0..15. `0` = default white; non-zero values come
@@ -157,7 +157,7 @@ impl<'a> DialogPanel<'a> {
 }
 
 /// Owned, self-contained dialog driver. Carries the MES bytecode bytes,
-/// the current PC, and the page accumulator without borrowing — so it can
+/// the current PC, and the page accumulator without borrowing - so it can
 /// live on the World between frames without lifetime gymnastics.
 ///
 /// Equivalent to [`DialogPanel`] for engines that want to mutate one piece
@@ -169,7 +169,7 @@ pub struct OwnedDialogPanel {
     pub bytes: Arc<Vec<u8>>,
     /// Current bytecode PC (offset into [`Self::bytes`]).
     pub pc: usize,
-    /// Frame counter — one tick per [`Self::tick`].
+    /// Frame counter - one tick per [`Self::tick`].
     pub tick_count: u64,
     /// Glyphs emitted per frame. `0` is treated as `1`.
     pub glyphs_per_frame: u8,
@@ -249,7 +249,7 @@ impl OwnedDialogPanel {
                 self.state = PanelState::Done;
             }
             Some(_) => {
-                // Spacing / Substitute / Truncated — engine-side
+                // Spacing / Substitute / Truncated - engine-side
                 // routing isn't wired yet; leave the pen alone.
             }
         }
@@ -360,7 +360,7 @@ mod tests {
     fn advance_page_clears_buffer_and_resumes() {
         // After a glyph, force a page break by injecting a control byte.
         // Compact format treats single bytes as glyphs unless they're in
-        // the control range — the interpreter's actual control byte set is
+        // the control range - the interpreter's actual control byte set is
         // out of scope here, so we just verify advance_page is a no-op
         // when not at a break, and clears properly when at one.
         let buf = three_glyph_program();
@@ -370,7 +370,7 @@ mod tests {
         let mut panel = DialogPanel::new(player);
         panel.tick();
         assert_eq!(panel.page_bytes().len(), 1);
-        // Not at page break — advance_page is idempotent.
+        // Not at page break - advance_page is idempotent.
         panel.advance_page();
         assert_eq!(panel.page_bytes().len(), 1);
     }

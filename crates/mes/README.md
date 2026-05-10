@@ -30,11 +30,11 @@ NPC-dialog sets.
 | Token | Meaning |
 |---|---|
 | `0x00` | end-of-message terminator (very common). |
-| `0x61 XX` | print glyph `XX`. Confirmed by an observed sequential run `61 9D 61 9E ... 61 AA` — clearly an alphabet sequence. |
+| `0x61 XX` | print glyph `XX`. Confirmed by an observed sequential run `61 9D 61 9E ... 61 AA` - clearly an alphabet sequence. |
 | `0x65 XX` | similar single-byte-arg opcode (likely "small numeric" or "wait N frames"). |
-| `0x4C XX` | 2-byte token (1-byte arg) — recurring control. |
-| `0x26 XX YY` | 3-byte token (2-byte arg) — possibly "page break" when arg is `0xFEFF`. |
-| `0x21 0x21 0x26 0xFE 0xFF` | recurring 5-byte sequence — likely a fixed page-break / message-boundary marker. |
+| `0x4C XX` | 2-byte token (1-byte arg) - recurring control. |
+| `0x26 XX YY` | 3-byte token (2-byte arg) - possibly "page break" when arg is `0xFEFF`. |
+| `0x21 0x21 0x26 0xFE 0xFF` | recurring 5-byte sequence - likely a fixed page-break / message-boundary marker. |
 
 All other opcodes are emitted as `Token::Unknown` with the raw byte.
 Future reverse-engineering of the bytecode interpreter (when a
@@ -75,4 +75,4 @@ mes stats-all  <path>             # event-type histogram across every message
 
 - [`docs/formats/mes.md`](../../docs/formats/mes.md)
 - [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md)
-  — opcode `0x3F` of the field VM is the dialog opener.
+  - opcode `0x3F` of the field VM is the dialog opener.

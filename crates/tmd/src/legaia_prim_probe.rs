@@ -1,5 +1,5 @@
 //! Diagnostic: probe Legaia primitive sections for known-PSX-size mode
-//! sequences. This is NOT a parser — it's a research tool to help
+//! sequences. This is NOT a parser - it's a research tool to help
 //! infer the layout. For each mode byte at offset+3 within a 4-byte
 //! window in the section, look up its expected PSX-stored size and
 //! see whether walking the section that way consumes exactly the size
@@ -9,7 +9,7 @@
 //! memory; the function itself is left available for future research.
 
 /// PSX-stored TMD primitive sizes (4-byte header + body) by mode-byte.
-/// Modes for "no light source / no normal" variants only — most common
+/// Modes for "no light source / no normal" variants only - most common
 /// in optimized retail games. From PSX SDK PsyQ docs.
 pub fn psx_stored_size(mode: u8) -> Option<usize> {
     match mode {

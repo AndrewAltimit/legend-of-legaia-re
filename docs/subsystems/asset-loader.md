@@ -6,7 +6,7 @@ How the runtime stitches per-scene assets together. Each scene-type has its own 
 
 The 11-case battle scene loader. Case 6 loads the `befect_data` bundle (PROT 0x369–0x36B). Case 0xE initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Case 0xFF dispatches `0x801F17F8` (the side-band streaming-effect handler that streams `summon.dat` and `readef.dat`).
 
-Two cases call `FUN_8003E104(monster_idx, slot, dst_buf)` to populate slots 7 and 8 with the active battle's monster sound banks — the per-monster body of `h:\mpack\monster.snd`. Each monster has a `(start_lba, end_lba+1)` entry pair in the TOC at `0x801C8980 - 0x10`. See [`subsystems/audio.md`](audio.md) → "Monster sound bank" for the full loader contract.
+Two cases call `FUN_8003E104(monster_idx, slot, dst_buf)` to populate slots 7 and 8 with the active battle's monster sound banks - the per-monster body of `h:\mpack\monster.snd`. Each monster has a `(start_lba, end_lba+1)` entry pair in the TOC at `0x801C8980 - 0x10`. See [`subsystems/audio.md`](audio.md) → "Monster sound bank" for the full loader contract.
 
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
 
@@ -14,9 +14,9 @@ The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 s
 
 The town/field scene-init chain. Builds paths under `DATA\FIELD\` and `h:\PROT\FIELD\<scene>\`. Each scene reserves **six file types** in CDNAME's per-scene block, and the loader walks the [scene asset table](../formats/scene-bundles.md) at the leading PROT entry to pull each file in turn.
 
-The on-disc form of the scene asset table is the canonical 7-typed-asset bundle (`07 00 00 00` lead). The descriptor offsets past the first are NOT file-relative — they index into the loader's runtime decompression buffer (e.g. `0031_izumi.BIN` is 96 KB but `desc[2].data_offset = 141 KB` lands inside the *decompressed* working buffer, not the source file).
+The on-disc form of the scene asset table is the canonical 7-typed-asset bundle (`07 00 00 00` lead). The descriptor offsets past the first are NOT file-relative - they index into the loader's runtime decompression buffer (e.g. `0031_izumi.BIN` is 96 KB but `desc[2].data_offset = 141 KB` lands inside the *decompressed* working buffer, not the source file).
 
-Per-scene reference resolution is partial — many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain for any given scene is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher" but the precise indexing scheme is still under investigation for non-battle scenes.
+Per-scene reference resolution is partial - many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain for any given scene is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher" but the precise indexing scheme is still under investigation for non-battle scenes.
 
 ### WARP opcode → scene transition flow (map_id)
 
@@ -27,10 +27,10 @@ The field VM opcode `0x3E` with `op0 >= 100` triggers a scene warp: `map_id = op
 The **scene name** (stored at `DAT_80084548`) is pre-set before `FUN_80025980` executes. The overlay entry function reads this buffer and passes it to `FUN_8001F7C0` and `FUN_80020118`. The mechanism that writes the scene name before the WARP fires is in code paths not yet fully traced (likely a pre-transition handler in the field/town overlay).
 
 Key globals:
-- `DAT_80084548` — scene name string (max 8 chars; e.g. `"izumi"`, `"town01"`)  
-- `DAT_80084540` — current scene's PROT base index (short)  
-- `DAT_8007b768` — pending destination PROT index; `0xffff` = none  
-- `DAT_8007ba34` — pending warp map_id (0–6); read by `FUN_80025980`  
+- `DAT_80084548` - scene name string (max 8 chars; e.g. `"izumi"`, `"town01"`)  
+- `DAT_80084540` - current scene's PROT base index (short)  
+- `DAT_8007b768` - pending destination PROT index; `0xffff` = none  
+- `DAT_8007ba34` - pending warp map_id (0–6); read by `FUN_80025980`  
 
 The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list, and the scene name is determined by a pre-WARP state-machine path not yet traced.
 
@@ -40,9 +40,9 @@ Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls th
 
 ## CLUT-data scattering
 
-Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together — the loader puts the relevant TIMs into VRAM before the TMD is rendered.
+Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
-Engines that drive a clean-room scene loop call [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder sweeps every entry's bytes in the CDNAME block, runs the TIM scanner, and uploads each parsed TIM to a software [`legaia_tim::Vram`] at its canonical `(fb_x, fb_y)` slot — the same model the PSX runtime uses when DMAing TIMs at boot. Cross-entry CLUTs resolve naturally because every TIM in the block lands in the shared VRAM before any TMD draws.
+Engines that drive a clean-room scene loop call [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder sweeps every entry's bytes in the CDNAME block, runs the TIM scanner, and uploads each parsed TIM to a software [`legaia_tim::Vram`] at its canonical `(fb_x, fb_y)` slot - the same model the PSX runtime uses when DMAing TIMs at boot. Cross-entry CLUTs resolve naturally because every TIM in the block lands in the shared VRAM before any TMD draws.
 
 The asset-viewer's `--vram-extra-dir` flag is the legacy workaround that pre-dates the bulk pre-pass; it survives for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
 

@@ -3,7 +3,7 @@
 //! The "memory breakpoint" workflow in PCSX-Redux/Mednafen is interactive:
 //! you set a watchpoint on an address, run the game, and the emulator pauses
 //! when something writes there. We don't get that interactivity from
-//! mednafen's CLI — but we can do the next best thing: take save states at
+//! mednafen's CLI - but we can do the next best thing: take save states at
 //! before/after points and diff their main RAM.
 //!
 //! Any byte that changed between A and B was written by code that ran in
@@ -53,7 +53,7 @@ pub struct DiffOptions {
     /// main RAM (`0x80000000..0x80200000`).
     pub window: (u32, u32),
     /// Merge two changed regions if they're closer than this many bytes.
-    /// Defaults to 16 (one cache line) — small enough to keep separate
+    /// Defaults to 16 (one cache line) - small enough to keep separate
     /// structures distinct, large enough to coalesce a 32-byte struct
     /// where some fields stayed unchanged.
     pub merge_gap: usize,
@@ -102,7 +102,7 @@ pub fn diff_ram(
             }
         } else if let Some((lo, hi)) = cur {
             // No diff at i. If the gap to the next diff is small enough
-            // we want to coalesce — defer the close until we either run
+            // we want to coalesce - defer the close until we either run
             // off the end or find another diff far enough out.
             if i - hi >= opts.merge_gap {
                 push_region(&mut regions, lo, hi, left, right, opts);
@@ -144,7 +144,7 @@ fn push_region(
     });
 }
 
-/// Sort regions by `bytes_changed` descending — useful for "what's the
+/// Sort regions by `bytes_changed` descending - useful for "what's the
 /// noisiest structure" queries.
 pub fn sort_by_size(diff: &mut RamDiff) {
     diff.regions
@@ -199,7 +199,7 @@ mod tests {
         let a = blank_ram();
         let mut b = blank_ram();
         b[0x100] = 0xFF;
-        b[0x200] = 0xFF; // 256 bytes apart — split.
+        b[0x200] = 0xFF; // 256 bytes apart - split.
         let d = diff_ram(&a, &b, "a", "b", &DiffOptions::default());
         assert_eq!(d.regions.len(), 2);
         assert_eq!(d.regions[0].start_addr, 0x80000100);

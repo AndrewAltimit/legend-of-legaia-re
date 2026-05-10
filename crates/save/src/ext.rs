@@ -21,7 +21,7 @@
 //! 0x0F+2N M*0x414  party records (M × CHARACTER_RECORD_SIZE bytes)
 //! ```
 //!
-//! ## Binary layout (`LGSF v2` — extends v1)
+//! ## Binary layout (`LGSF v2` - extends v1)
 //!
 //! v2 is backward-compatible: the writer always emits v2; the parser
 //! accepts both. v2 appends a per-character extension block plus a
@@ -31,9 +31,9 @@
 //! ... v1 fields above ...
 //!
 //! After party records:
-//! 4      ext_magic: b"LGX2"  (sentinel — old v1 readers stop here)
-//! 4      ext_total_size (u32 LE) — bytes of the v2 extension block
-//! 4      play_time_seconds (u32 LE) — total game time
+//! 4      ext_magic: b"LGX2"  (sentinel - old v1 readers stop here)
+//! 4      ext_total_size (u32 LE) - bytes of the v2 extension block
+//! 4      play_time_seconds (u32 LE) - total game time
 //! 1      active_party_size (P)
 //! P      active_party (P × char_slot bytes; 0..=2 main, 3+ guests)
 //! 1      ext_char_count (X)
@@ -150,7 +150,7 @@ impl Default for SaveFile {
 
 impl SaveFile {
     /// Serialise to `LGSF v2` bytes (v2 contains a v1-compatible
-    /// prelude — old readers can still consume the party + globals).
+    /// prelude - old readers can still consume the party + globals).
     pub fn write(&self) -> Vec<u8> {
         let party_bytes = self.party.write();
         let inv = &self.ext.inventory;
@@ -284,7 +284,7 @@ impl SaveFile {
         }
         let mut cursor = party_end;
         if cursor + 8 > buf.len() {
-            // V2 declared but no ext block — treat as empty.
+            // V2 declared but no ext block - treat as empty.
             return Ok(Self {
                 party,
                 ext,

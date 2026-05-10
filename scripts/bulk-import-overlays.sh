@@ -4,7 +4,7 @@
 #
 # Default base address is 0x801C0000 (the overlay window). Specific overlays
 # may load at higher offsets (e.g. 0897 at 0x801CE818); for survey purposes
-# the default base is fine — function discovery and string xrefs work, only
+# the default base is fine - function discovery and string xrefs work, only
 # specific RAM-address xrefs need the exact base.
 #
 # Usage:

@@ -35,7 +35,7 @@ fn synthetic_record() -> Vec<u8> {
     bc.extend_from_slice(&[0x44, 0x01]);
     // Op 0x4F = scene register write (slot_10, slot_12, slot_14).
     bc.extend_from_slice(&[0x4F, 0x01, 0x02, 0x03]);
-    // Halt opcode — terminates the field VM cleanly. The halt opener is
+    // Halt opcode - terminates the field VM cleanly. The halt opener is
     // 0x00 (END / HALT in the field-VM tables).
     bc.extend_from_slice(&[0x00]);
     bc

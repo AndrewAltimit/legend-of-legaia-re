@@ -6,7 +6,7 @@
 //! white blocks; with it the engine renders readable English text out of
 //! the box.
 //!
-//! No Sony bytes — this is hand-rolled.
+//! No Sony bytes - this is hand-rolled.
 
 /// One glyph: 5 wide × 7 tall, packed as 7 bytes (one per row, low 5 bits
 /// set = pixel on). Bit 4 is leftmost.

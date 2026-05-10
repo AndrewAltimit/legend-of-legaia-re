@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-mednafen.sh — launch mednafen with a specific save state pre-loaded
+# run-mednafen.sh - launch mednafen with a specific save state pre-loaded
 # and (optionally) a movie file replaying deterministic input.
 #
 # Mednafen has no headless mode and no remote-debug protocol, so this
@@ -18,7 +18,7 @@
 #   3) Run this helper with --state mc7 to verify the slot.
 #   4) Optionally record an .mcm movie that replays a short input
 #      sequence after slot load (Shift+F5 to start recording).
-#   5) Re-run with --movie to replay deterministically — useful when
+#   5) Re-run with --movie to replay deterministically - useful when
 #      you need to capture states at progressive frames during the
 #      same scripted action.
 #

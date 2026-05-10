@@ -1,4 +1,4 @@
-//! Materialised scene resources — the runtime view that turns a [`Scene`]'s
+//! Materialised scene resources - the runtime view that turns a [`Scene`]'s
 //! raw entry bytes into a populated PSX VRAM and a parsed TMD pool, without
 //! the legacy `tim_scan/<entry>/` filesystem intermediate the asset-viewer
 //! used.
@@ -8,7 +8,7 @@
 //! scene's CDNAME block into VRAM up front (so cross-entry CLUT references
 //! resolve), then the renderer walks each TMD with its CBA / TSB pointing
 //! into the now-populated VRAM. This module performs the same bulk pre-pass
-//! against bytes already in memory — so an engine binary can boot a scene
+//! against bytes already in memory - so an engine binary can boot a scene
 //! straight from `PROT.DAT` without any pre-extracted scan dirs.
 //!
 //! Build once per scene transition with [`SceneResources::build`]. Drop
@@ -26,7 +26,7 @@ use crate::scene::Scene;
 /// table at `0x8007C018 + idx*4` via `FUN_80026B4C`. Until the runtime
 /// registration order is reverse-engineered, this module surfaces every TMD
 /// hit in scene order (CDNAME entry order, then byte-offset within each
-/// entry) — an engine can pick its meshes by `(entry_idx, offset)` and
+/// entry) - an engine can pick its meshes by `(entry_idx, offset)` and
 /// pre-resolve the actor → TMD binding through a side table.
 #[derive(Debug, Clone)]
 pub struct ResolvedTmd {
@@ -70,27 +70,27 @@ impl ResolvedAnm {
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
 /// CDNAME block, plus a parsed TMD pool, plus a count of how many TIMs
-/// fed VRAM. Owns its bytes — safe to hold across a subsequent scene
+/// fed VRAM. Owns its bytes - safe to hold across a subsequent scene
 /// transition (the next [`SceneResources::build`] yields fresh state).
 #[derive(Clone)]
 pub struct SceneResources {
     /// Fully-populated PSX VRAM. Every TIM that the scene's CDNAME block
     /// carries (in any of its entries) has been DMA'd into the canonical
-    /// `(fb_x, fb_y)` slot encoded in its TIM header — same model the PSX
+    /// `(fb_x, fb_y)` slot encoded in its TIM header - same model the PSX
     /// runtime uses, so cross-entry CLUT references resolve naturally.
     pub vram: Vram,
     /// Number of TIMs uploaded to [`SceneResources::vram`]. Useful for
     /// HUD / log output.
     pub tim_count: usize,
-    /// Number of TIMs that failed to parse (typically zero — the TIM scanner
+    /// Number of TIMs that failed to parse (typically zero - the TIM scanner
     /// is conservative). When non-zero, indicates the entry bytes carry a
     /// header magic that passes the cheap scan but fails the structural
     /// parse.
     pub tim_parse_failures: usize,
-    /// Parsed TMDs — every TMD the scanner found across the scene's entries.
+    /// Parsed TMDs - every TMD the scanner found across the scene's entries.
     /// The order is CDNAME-entry order, then byte-offset within each entry.
     pub tmds: Vec<ResolvedTmd>,
-    /// Parsed ANM packs — every ANM container found across the scene's entries.
+    /// Parsed ANM packs - every ANM container found across the scene's entries.
     /// The order is CDNAME-entry order, then byte-offset within each entry.
     pub anm_packs: Vec<ResolvedAnm>,
 }
@@ -101,8 +101,8 @@ impl SceneResources {
     /// for every TIM that parses, and parses every TMD that the scanner
     /// hits.
     ///
-    /// The TIM and TMD scanners are conservative — they validate header
-    /// shape before reporting a hit — so spurious parse failures are
+    /// The TIM and TMD scanners are conservative - they validate header
+    /// shape before reporting a hit - so spurious parse failures are
     /// rare. When they happen the count is exposed via
     /// [`SceneResources::tim_parse_failures`] for diagnostic logging.
     pub fn build(scene: &Scene) -> Result<Self> {
@@ -173,7 +173,7 @@ impl SceneResources {
     /// Look up the ANM pack for actor slot `actor_idx`. Returns `None` if the
     /// scene has fewer ANM packs than the requested slot index.
     ///
-    /// Ordering follows CDNAME entry order — the same ordering `FUN_8001E890`
+    /// Ordering follows CDNAME entry order - the same ordering `FUN_8001E890`
     /// uses to register TMDs into `0x8007C018` (actor K → slot K).
     pub fn anm_pack_for_actor(&self, actor_idx: usize) -> Option<&ResolvedAnm> {
         self.anm_packs.get(actor_idx)

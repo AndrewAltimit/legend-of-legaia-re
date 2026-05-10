@@ -23,7 +23,7 @@
 //! - [`ItemEffect::Spirit`]: refunds `amount` AP into the active
 //!   character's [`crate::ap_gauge::ApGauge`].
 //! - [`ItemEffect::Capture`]: marks the target monster slot with the
-//!   capture flag — battle's monster-wipe handler reads this.
+//!   capture flag - battle's monster-wipe handler reads this.
 //! - [`ItemEffect::Escape`]: forces a Run / Escape outcome.
 //! - [`ItemEffect::Damage`]: deals `amount` HP damage (offensive
 //!   items like Bombs).
@@ -31,7 +31,7 @@
 //! ## Application
 //!
 //! [`ItemEffect::apply`] returns an [`ItemOutcome`] enum that engines
-//! fold into their world / battle event stream. Pure data — no I/O.
+//! fold into their world / battle event stream. Pure data - no I/O.
 
 use legaia_engine_vm::status_effects::StatusKind;
 

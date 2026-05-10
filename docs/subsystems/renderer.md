@@ -1,6 +1,6 @@
 # Renderer (Legaia TMD)
 
-The renderer is `FUN_8002735C` — 60 GTE ops, per-mode descriptor table at `DAT_8007326C`. Drives the `crates/tmd::legaia_prims` walker and the engine-render port.
+The renderer is `FUN_8002735C` - 60 GTE ops, per-mode descriptor table at `DAT_8007326C`. Drives the `crates/tmd::legaia_prims` walker and the engine-render port.
 
 ## Per-mode descriptor table
 
@@ -22,29 +22,29 @@ Each entry's first u32 has bytes `[?, ?, ?, type_bits]` where the low 2 bits of 
 
 `FUN_80026B4C` writes registered TMDs to `*(int **)(idx * 4 + 0x8007C018)`. Consumers in retail (4 functions, all setup-not-render):
 
-- `FUN_80021B04` — actor-spawn helper, builds per-actor OBJECT pointer table.
-- `FUN_80024D78` — per-actor OBJECT-table rebuild.
-- `FUN_8001EBEC` — per-frame OBJECT[10/11] swap (pose select for player TMDs).
-- `FUN_8001E890` — DATA_FIELD player loader; loads `data_field_player_lzs` chains, registers TMDs.
+- `FUN_80021B04` - actor-spawn helper, builds per-actor OBJECT pointer table.
+- `FUN_80024D78` - per-actor OBJECT-table rebuild.
+- `FUN_8001EBEC` - per-frame OBJECT[10/11] swap (pose select for player TMDs).
+- `FUN_8001E890` - DATA_FIELD player loader; loads `data_field_player_lzs` chains, registers TMDs.
 
-The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` — `sizeof(OBJECT) = 28`.
+The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 
 ## VRAM emulation in the engine port
 
 `crates/engine-render` emulates a 1024×512 R16Uint VRAM page so the per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can happen in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render correctly.
 
-CLUT data scatters across PROT entries — many character meshes reference CLUT rows that live in *different* PROT entries from their TMD source. The viewer's `--vram-extra-dir` is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field / town / level-up still rely on the workaround.
+CLUT data scatters across PROT entries - many character meshes reference CLUT rows that live in *different* PROT entries from their TMD source. The viewer's `--vram-extra-dir` is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field / town / level-up still rely on the workaround.
 
 ## PSX-faithful rendering knobs
 
 `Renderer::set_psx_mode(true)` enables two retail-faithful rasterisation modes on the VRAM-mesh pipeline:
 
-- **Affine UV interpolation.** Per-vertex UVs interpolate linearly in screen space (no perspective-correct division). This reproduces the texture warping you see on retail surfaces with steep depth gradients — the GP0(0x24)-class triangle commands transmit only `(u, v)` per vertex, the rasteriser does not divide by `1/w`. WGSL `@interpolate(linear)` gives the same behaviour.
+- **Affine UV interpolation.** Per-vertex UVs interpolate linearly in screen space (no perspective-correct division). This reproduces the texture warping you see on retail surfaces with steep depth gradients - the GP0(0x24)-class triangle commands transmit only `(u, v)` per vertex, the rasteriser does not divide by `1/w`. WGSL `@interpolate(linear)` gives the same behaviour.
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are snapped to integer pixel positions inside the vertex shader (NDC → pixel grid → NDC round-trip). Reproduces the GTE's per-vertex sub-pixel-truncation jitter that gives PSX rendering its characteristic shimmer on slowly-moving geometry.
 
-Texture page (`tsb`) and CLUT base address (`cba`) remain `@interpolate(flat)` — they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
+Texture page (`tsb`) and CLUT base address (`cba`) remain `@interpolate(flat)` - they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
 
-A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. The module also exposes the GTE's higher-level primitives — a `Camera` bundle that runs `RTPT` (rotate-translate-perspective) end-to-end with PSX-correct saturation on behind-camera vertices, `nclip` for back-face rejection, `avsz3` / `avsz4` for OT-bucket selection, and a small CPU rasterizer scaffold (`raster::rasterize_triangle`, top-left fill rule, integer-pixel bounding-box iterator) downstream tooling uses to validate captured traces. Production rendering still uses f32 wgpu math; this module is the single citation point for code (effect spawners, hit-detection, animation re-targeting, offline regression checks) that needs to reproduce per-vertex GTE behaviour.
+A fixed-point GTE math module at `crates/engine-render/src/gte.rs` mirrors the retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors, i64-widened multiply-add to absorb three-term sums without overflow. The module also exposes the GTE's higher-level primitives - a `Camera` bundle that runs `RTPT` (rotate-translate-perspective) end-to-end with PSX-correct saturation on behind-camera vertices, `nclip` for back-face rejection, `avsz3` / `avsz4` for OT-bucket selection, and a small CPU rasterizer scaffold (`raster::rasterize_triangle`, top-left fill rule, integer-pixel bounding-box iterator) downstream tooling uses to validate captured traces. Production rendering still uses f32 wgpu math; this module is the single citation point for code (effect spawners, hit-detection, animation re-targeting, offline regression checks) that needs to reproduce per-vertex GTE behaviour.
 
 ### GTE register-state emulator
 
@@ -72,9 +72,9 @@ Each instruction sets MAC1..MAC3 / IR1..IR3 / FLAG with the same saturation sema
 
 Beyond the cop2 instruction set the module exposes the four MIPS register-transfer ops (`MFC2` / `MTC2` / `CFC2` / `CTC2`) plus the two memory ops (`LWC2` / `SWC2`) so engines can replay a captured GTE trace without re-deriving the cop2 register layout:
 
-- `read_data(idx)` / `write_data(idx, val)` — map the 32 cop2 data registers to typed fields. Indices 0..5 = V0..V2 (xy packed pairs + sign-extended z), 6 = RGBC, 7 = OTZ, 8..11 = IR0..IR3, 12..14 = SXY0..SXY2, 15 = SXYP (push-only write), 16..19 = SZ0..SZ3, 20..22 = RGB0..RGB2, 23 = RES1 (reserved), 24..27 = MAC0..MAC3, 28..29 = packed `IRGB` / `ORGB` (BGR555), 30 = LZCS, 31 = LZCR (count leading zeros / ones of LZCS).
-- `read_ctrl(idx)` / `write_ctrl(idx, val)` — map the 32 cop2 control registers. Rotation / light / light-color matrices live as packed two-i16-per-word entries (RT11RT12 → cop2cr0, RT13RT21 → cop2cr1, RT22RT23 → cop2cr2, RT31RT32 → cop2cr3, RT33 → cop2cr4 sign-extended, etc.); translation triple at 5..7; back-color at 13..15; far-color at 21..23; viewport offsets `OFX` / `OFY` / `H` at 24..26; depth-cue slope / intercept `DQA` / `DQB` at 27..28; `ZSF3` / `ZSF4` at 29..30; `FLAG` at 31 (writable so captured traces can replay the post-instruction FLAG state).
-- `LWC2 rd, addr` / `SWC2 rd, addr` — load / store cop2 data register `rd` from memory through the `Cop2Mem` trait. `VecMem` is shipped for replay against captured RAM snapshots; `NullMem` for tests that don't exercise memory at all. `load_vertices(mem, addr)` is a 24-byte bulk-load helper for the canonical retail 3-vertex emit (`LWC2 0..5` covering V0.xy / V0.z / V1.xy / V1.z / V2.xy / V2.z at 8-byte stride).
+- `read_data(idx)` / `write_data(idx, val)` - map the 32 cop2 data registers to typed fields. Indices 0..5 = V0..V2 (xy packed pairs + sign-extended z), 6 = RGBC, 7 = OTZ, 8..11 = IR0..IR3, 12..14 = SXY0..SXY2, 15 = SXYP (push-only write), 16..19 = SZ0..SZ3, 20..22 = RGB0..RGB2, 23 = RES1 (reserved), 24..27 = MAC0..MAC3, 28..29 = packed `IRGB` / `ORGB` (BGR555), 30 = LZCS, 31 = LZCR (count leading zeros / ones of LZCS).
+- `read_ctrl(idx)` / `write_ctrl(idx, val)` - map the 32 cop2 control registers. Rotation / light / light-color matrices live as packed two-i16-per-word entries (RT11RT12 → cop2cr0, RT13RT21 → cop2cr1, RT22RT23 → cop2cr2, RT31RT32 → cop2cr3, RT33 → cop2cr4 sign-extended, etc.); translation triple at 5..7; back-color at 13..15; far-color at 21..23; viewport offsets `OFX` / `OFY` / `H` at 24..26; depth-cue slope / intercept `DQA` / `DQB` at 27..28; `ZSF3` / `ZSF4` at 29..30; `FLAG` at 31 (writable so captured traces can replay the post-instruction FLAG state).
+- `LWC2 rd, addr` / `SWC2 rd, addr` - load / store cop2 data register `rd` from memory through the `Cop2Mem` trait. `VecMem` is shipped for replay against captured RAM snapshots; `NullMem` for tests that don't exercise memory at all. `load_vertices(mem, addr)` is a 24-byte bulk-load helper for the canonical retail 3-vertex emit (`LWC2 0..5` covering V0.xy / V0.z / V1.xy / V1.z / V2.xy / V2.z at 8-byte stride).
 
 Each transfer op charges one cycle into `Gte::cycles` (matches the un-pipelined hardware budget). FLAG / cycle bookkeeping is identical between the higher-level instruction methods and the bare register-transfer path.
 
@@ -82,6 +82,6 @@ The per-mode descriptor table from `DAT_8007326C` is also exposed as a typed loo
 
 ## Stage geometry detector (legacy, signal only)
 
-A "12-byte fixed prefix `00 F0 84 7F 01 F0 1F 00 00 F1 00 00` repeated at 20-byte stride" detector lives at `crates/asset/src/stage_geom.rs`. It's not real stage geometry — it's the standard primitive-group header for Legaia TMD primitive group data when `((flags >> 1) - 8) >> 1 == K` (where K is the group type that uses 20-byte stride).
+A "12-byte fixed prefix `00 F0 84 7F 01 F0 1F 00 00 F1 00 00` repeated at 20-byte stride" detector lives at `crates/asset/src/stage_geom.rs`. It's not real stage geometry - it's the standard primitive-group header for Legaia TMD primitive group data when `((flags >> 1) - 8) >> 1 == K` (where K is the group type that uses 20-byte stride).
 
 The detector is preserved as a signal during exploration ("this buffer contains a TMD with effect-style primitives") but for actual geometry extraction use the TMD parser (`crates/tmd::legaia_prims`).

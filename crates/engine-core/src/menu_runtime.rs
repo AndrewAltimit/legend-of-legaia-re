@@ -1,4 +1,4 @@
-//! Engine-side menu runtime — wires
+//! Engine-side menu runtime - wires
 //! [`legaia_engine_vm::menu::MenuCtx`] / [`legaia_engine_vm::menu::step`] to
 //! a [`crate::world::World`] and to disk-backed save / load slots.
 //!
@@ -9,7 +9,7 @@
 //! commits at `SavePickSlot`, writes them to a file, and on `LoadSlot`
 //! commit reads a file back into the world.
 //!
-//! Rendering is engine-side (see `asset-viewer` or any custom shell) — the
+//! Rendering is engine-side (see `asset-viewer` or any custom shell) - the
 //! runtime exposes a [`MenuRuntime::current_label`] string per state so the
 //! HUD overlay has something to render even before the per-screen layouts
 //! land.
@@ -30,10 +30,10 @@ use crate::world::World;
 /// flat `<dir>/slot_NN.bin` shape for development convenience.
 pub const SAVE_EXT: &str = "bin";
 
-/// One menu-driven tick outcome — engines log / observe / react.
+/// One menu-driven tick outcome - engines log / observe / react.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuTickEvent {
-    /// Menu ticked normally — no slot operation requested this frame.
+    /// Menu ticked normally - no slot operation requested this frame.
     Stepped,
     /// Save committed to slot `slot` at `path`. Engines flash a UI banner.
     Saved {
@@ -67,7 +67,7 @@ pub struct MenuRuntime {
     pub ctx: MenuCtx,
     /// Save-slot directory. Created lazily on first save.
     pub save_dir: PathBuf,
-    /// Number of save slots the picker offers (default 3 — one per save
+    /// Number of save slots the picker offers (default 3 - one per save
     /// file in the `slot_NN.bin` shape).
     pub slot_count: u8,
     /// Index into `World::roster.members` for the active character
@@ -116,7 +116,7 @@ impl MenuRuntime {
         self.inn_session = Some(InnSession::new(cost));
     }
 
-    /// Open the menu (entry-point — typically called when the field VM
+    /// Open the menu (entry-point - typically called when the field VM
     /// requests menu via op `0x4C` sub-1).
     pub fn open(&mut self) {
         open(&mut self.ctx);
@@ -179,7 +179,7 @@ impl MenuRuntime {
     /// Serialise the world's party and global state to slot `slot` on disk.
     ///
     /// Writes an `LGSF v1` file that includes `story_flags`, `money`, and
-    /// `inventory` alongside the party records — use [`MenuRuntime::load_from_slot`]
+    /// `inventory` alongside the party records - use [`MenuRuntime::load_from_slot`]
     /// to restore. Old slot files (party-only format) are still loadable.
     pub fn save_to_slot(&self, world: &mut World, slot: u8) -> Result<PathBuf> {
         std::fs::create_dir_all(&self.save_dir)
@@ -260,7 +260,7 @@ impl MenuRuntime {
         items
     }
 
-    /// Engine-friendly label per active state — drives a HUD banner so the
+    /// Engine-friendly label per active state - drives a HUD banner so the
     /// player sees *something* before the per-screen layouts ship.
     pub fn current_label(&self) -> &'static str {
         match MenuState::from_byte(self.ctx.state) {
@@ -274,22 +274,22 @@ impl MenuRuntime {
             Some(MenuState::StatusTacticalArts) => "ARTS",
             Some(MenuState::StatusConfig) => "CONFIG",
             Some(MenuState::StatusLog) => "LOG",
-            Some(MenuState::SavePickSlot) => "SAVE — PICK SLOT",
-            Some(MenuState::SaveConfirmOverwrite) => "SAVE — OVERWRITE?",
+            Some(MenuState::SavePickSlot) => "SAVE - PICK SLOT",
+            Some(MenuState::SaveConfirmOverwrite) => "SAVE - OVERWRITE?",
             Some(MenuState::SaveWriting) => "SAVING…",
             Some(MenuState::SaveDone) => "SAVED",
-            Some(MenuState::LoadSlot) => "LOAD — PICK SLOT",
+            Some(MenuState::LoadSlot) => "LOAD - PICK SLOT",
             Some(MenuState::LoadProgress) => "LOADING…",
-            Some(MenuState::ShopBuy) => "SHOP — BUY",
-            Some(MenuState::ShopSell) => "SHOP — SELL",
-            Some(MenuState::ShopQuantity) => "SHOP — HOW MANY?",
-            Some(MenuState::ShopConfirm) => "SHOP — CONFIRM",
-            Some(MenuState::ShopExit) => "SHOP — DONE",
-            Some(MenuState::InnConfirm) => "INN — REST?",
-            Some(MenuState::InnSleep) => "INN — RESTING",
-            Some(MenuState::ItemPickTarget) => "ITEM — TARGET",
-            Some(MenuState::ItemApply) => "ITEM — APPLY",
-            Some(MenuState::ItemDone) => "ITEM — DONE",
+            Some(MenuState::ShopBuy) => "SHOP - BUY",
+            Some(MenuState::ShopSell) => "SHOP - SELL",
+            Some(MenuState::ShopQuantity) => "SHOP - HOW MANY?",
+            Some(MenuState::ShopConfirm) => "SHOP - CONFIRM",
+            Some(MenuState::ShopExit) => "SHOP - DONE",
+            Some(MenuState::InnConfirm) => "INN - REST?",
+            Some(MenuState::InnSleep) => "INN - RESTING",
+            Some(MenuState::ItemPickTarget) => "ITEM - TARGET",
+            Some(MenuState::ItemApply) => "ITEM - APPLY",
+            Some(MenuState::ItemDone) => "ITEM - DONE",
             Some(MenuState::Confirm) => "CONFIRM?",
             Some(MenuState::Closing) => "CLOSING",
             Some(MenuState::Deactivate) => "",
@@ -536,7 +536,7 @@ mod tests {
     fn current_label_changes_with_state() {
         let mut runtime = MenuRuntime::new("/tmp/legaia-doesnt-need-this-dir");
         runtime.ctx.state = MenuState::SavePickSlot.as_byte();
-        assert_eq!(runtime.current_label(), "SAVE — PICK SLOT");
+        assert_eq!(runtime.current_label(), "SAVE - PICK SLOT");
         runtime.ctx.state = MenuState::Closed.as_byte();
         assert_eq!(runtime.current_label(), "");
     }

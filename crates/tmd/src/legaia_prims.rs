@@ -30,7 +30,7 @@
 //! See [`vertex_offset_bytes`] for the lookup.
 //!
 //! Vertex indices are u16 byte-offsets into the object's vertex array
-//! (each vertex is 8 bytes — `SVECTOR { i16 x, y, z, pad }`), so the
+//! (each vertex is 8 bytes - `SVECTOR { i16 x, y, z, pad }`), so the
 //! array index is `raw_index / 8`.
 
 use anyhow::{Result, bail};
@@ -160,7 +160,7 @@ pub struct Prim {
     /// Array index = raw / 8 (since SVECTOR = 8 bytes).
     pub vertex_indices_raw: Vec<u16>,
     /// Per-vertex `(u, v)` texture coordinates if the prim has a texture
-    /// block (which Legaia's character TMDs always do — every observed mode
+    /// block (which Legaia's character TMDs always do - every observed mode
     /// in the 599-mesh battle_data corpus carries UVs). One entry per vertex.
     pub uvs: Vec<(u8, u8)>,
     /// CLUT base address (raw 16-bit value from the TMD). Decode with
@@ -201,7 +201,7 @@ impl Prim {
 
 /// Layout of texture data within a Legaia primitive.
 ///
-/// Reverse-engineered from `dump_prim_bytes` on `0866_battle_data` corpus —
+/// Reverse-engineered from `dump_prim_bytes` on `0866_battle_data` corpus -
 /// matches the standard PSX SDK textured-primitive layout. The texture block
 /// (UVs + CBA + TSB) sits between the color block(s) and the vertex indices.
 ///

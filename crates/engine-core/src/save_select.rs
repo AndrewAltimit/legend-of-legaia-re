@@ -1,14 +1,14 @@
 //! Save-slot select session.
 //!
 //! Drives the slot-list UI (read save metadata, browse, Load/Save/Delete
-//! confirmations). Renderer-agnostic — engines render the slot list
+//! confirmations). Renderer-agnostic - engines render the slot list
 //! against the existing text overlay; the session emits typed events for
 //! engines to react to (cursor blip, confirm chime, etc.).
 //!
 //! Two operating modes:
 //!
-//! - [`SaveSelectMode::Load`] — pick a non-empty slot to load.
-//! - [`SaveSelectMode::Save`] — pick any slot (empty or full) to write
+//! - [`SaveSelectMode::Load`] - pick a non-empty slot to load.
+//! - [`SaveSelectMode::Save`] - pick any slot (empty or full) to write
 //!   into. Picking a non-empty slot enters the Overwrite confirm prompt.
 //!
 //! ## States
@@ -17,11 +17,11 @@
 //!
 //! Engines call [`SaveSelectSession::tick`] each frame and react to
 //! returned [`SelectEvent`]s. The session never reads the save data
-//! itself — engines pre-load slot metadata into [`SlotSnapshot`] entries
+//! itself - engines pre-load slot metadata into [`SlotSnapshot`] entries
 //! and feed them through `set_slots`.
 
 /// Per-slot metadata. Engines build these from disc/disk save scans
-/// (the `legaia-save` crate provides the parsers). Pure data — the
+/// (the `legaia-save` crate provides the parsers). Pure data - the
 /// session never touches the filesystem.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlotSnapshot {
@@ -259,7 +259,7 @@ impl SaveSelectSession {
                     });
                 }
                 (SaveSelectMode::Save, false) => {
-                    // Empty slot — go straight to "Saved" outcome (no
+                    // Empty slot - go straight to "Saved" outcome (no
                     // destructive prompt needed).
                     self.phase = SelectPhase::Done(SelectOutcome::Saved(cursor));
                     events.push(SelectEvent::Confirmed {
@@ -521,7 +521,7 @@ mod tests {
             triangle: true,
             ..Default::default()
         });
-        // cursor = 1 (No) — switch to Yes.
+        // cursor = 1 (No) - switch to Yes.
         s.tick(SelectInput {
             left: true,
             ..Default::default()

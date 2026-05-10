@@ -1,4 +1,4 @@
-//! "VAB-prefixed scene-stream" detector — a streaming-format variant
+//! "VAB-prefixed scene-stream" detector - a streaming-format variant
 //! whose leading chunk0 carries a Sony VAB sound bank rather than a TMD.
 //!
 //! ### Layout (empirically verified across 216 PROT entries, 2026-05-04)
@@ -13,28 +13,28 @@
 //! ```
 //!
 //! Same outer wrapper as [`crate::scene_tmd_stream`]: a 4-byte streaming chunk
-//! header with type = 0x00 (the TIM dispatcher slot — repurposed by a
+//! header with type = 0x00 (the TIM dispatcher slot - repurposed by a
 //! specialized loader). The bytes from offset 4 onward are a Sony VAB sound
 //! bank (PsyQ format, `VABp` magic).
 //!
 //! Empirically the on-disc head pattern is `20 XX 00 00 70 42 41 56 ...`:
-//! - `20 XX 00 00` = LE u32 `0x0000_XX20` — chunk0 header with type=0x00 and
+//! - `20 XX 00 00` = LE u32 `0x0000_XX20` - chunk0 header with type=0x00 and
 //!   `size` low byte = 0x20 (sector-aligned-ish, varies in the 0x0C20..0x2E20
 //!   band).
 //! - `70 42 41 56` = LE u32 `0x56414270` = the four ASCII bytes `'p' 'B' 'A'
-//!   'V'` — the VAB header magic.
+//!   'V'` - the VAB header magic.
 //!
 //! Coverage impact: this shape covers the bulk of the `vab_01` cluster
 //! (CDNAME indices 1072-1194) plus VAB-bearing entries scattered through
 //! `music_01`, `chitei2`, `ropeway`, `town*`, and others. Roughly **216
-//! entries** in the post-TOC-fix corpus are this format — by far the largest
+//! entries** in the post-TOC-fix corpus are this format - by far the largest
 //! single bucket reduction since `scene_tmd_stream`.
 //!
 //! See `docs/formats/scene-bundles.md` for the full byte-level spec.
 
 use serde::Serialize;
 
-/// VAB header magic — 'p' 'B' 'A' 'V' read as a little-endian u32.
+/// VAB header magic - 'p' 'B' 'A' 'V' read as a little-endian u32.
 const VAB_MAGIC: u32 = 0x5641_4270;
 
 /// VAB header is 32 bytes (Sony PsyQ docs). The detector requires this much
@@ -98,7 +98,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneVabStream> {
         return None;
     }
     // Size must cover at least the VAB header and fit in the buffer (with
-    // tolerance — some on-disc copies have padding past the declared size).
+    // tolerance - some on-disc copies have padding past the declared size).
     if !(VAB_HEADER_SIZE..=buf.len() - 4).contains(&size) {
         return None;
     }
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn rejects_buffer_with_nonzero_type_byte() {
         let mut buf = synth(0x40, 7, 4, 16);
-        // Set high byte of chunk0 header — type byte = 0x14 (TIM_LIST).
+        // Set high byte of chunk0 header - type byte = 0x14 (TIM_LIST).
         buf[3] = 0x14;
         assert!(detect(&buf).is_none());
     }

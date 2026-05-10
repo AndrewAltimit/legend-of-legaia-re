@@ -8,7 +8,7 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   `~/.mednafen/mcs/`).
 - Index PSX-module sections (`MAIN`, `GPU`, `SPU`, `CDC`, …) and resolve
   `MAIN.MainRAM.data8` as 2 MiB of main RAM.
-- Diff main RAM between two snapshots — coalesce per-byte changes into
+- Diff main RAM between two snapshots - coalesce per-byte changes into
   contiguous "regions" with PSX virtual addresses, suitable for handing to
   Ghidra to look up writers.
 - Bisect a sequence of snapshots to find when a target address crossed a

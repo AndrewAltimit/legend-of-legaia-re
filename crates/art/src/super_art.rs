@@ -1,4 +1,4 @@
-//! Super Arts — find/replace pattern matching on the action queue.
+//! Super Arts - find/replace pattern matching on the action queue.
 //!
 //! Once the player has finished entering commands, the runtime walks the
 //! action queue and looks for known *Find* patterns. When a Find pattern
@@ -94,7 +94,7 @@ impl SuperMatcher {
         queue.truncate(new_len);
         // Append the replace bytes.
         for &b in entry.replace {
-            // Safe to unwrap — Super Art replacement bytes are always
+            // Safe to unwrap - Super Art replacement bytes are always
             // valid action constants.
             queue.push(ActionConstant::from_byte(b).expect("super art replace byte"));
         }
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn no_match_when_pattern_not_at_tail() {
-        // Pattern present but followed by an unrelated action — must NOT trigger.
+        // Pattern present but followed by an unrelated action - must NOT trigger.
         let mut q = queue_from(&[
             0x19, 0x22, 0x0E, 0x19, 0x29, // Super Javelin pattern
             0x03, // … but Attack appended after, so not at tail

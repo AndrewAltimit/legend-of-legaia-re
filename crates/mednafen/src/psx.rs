@@ -2,18 +2,18 @@
 //! state.
 //!
 //! Mednafen's PSX module stores the cop0 / cop2 register file inside the
-//! `MAIN` section as named sub-entries — `CPU.PC`, `CPU.GPR`, `GTE.MAC`, etc.
+//! `MAIN` section as named sub-entries - `CPU.PC`, `CPU.GPR`, `GTE.MAC`, etc.
 //! Naming and layout aren't strictly stable across mednafen versions, so this
 //! module is conservative: it walks sub-entries by name and parses what's
 //! present, returning `None` for entries the build doesn't expose.
 //!
 //! For overlay-resident reverse-engineering work the most useful accessor is
-//! `cpu_pc` — given a save state taken right after a function-call boundary,
+//! `cpu_pc` - given a save state taken right after a function-call boundary,
 //! the PC pinpoints the function we want to dump from Ghidra.
 
 use crate::container::SaveState;
 
-/// CPU register-file accessors. All fields are populated lazily — read what
+/// CPU register-file accessors. All fields are populated lazily - read what
 /// you need, miss what you don't.
 #[derive(Debug, Clone, Default)]
 pub struct CpuRegs {

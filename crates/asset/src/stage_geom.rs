@@ -1,8 +1,8 @@
 //! Stage-geometry record detector.
 //!
 //! Reverse-engineered from PROT entries in the 83968-byte cluster (formerly
-//! "Cluster A" in COVERAGE.md). Many stage entries — `town01`, `dolk`,
-//! `garmel`, `bylon`, `rugi`, `izumi`, … — embed a table of fixed-stride
+//! "Cluster A" in COVERAGE.md). Many stage entries - `town01`, `dolk`,
+//! `garmel`, `bylon`, `rugi`, `izumi`, … - embed a table of fixed-stride
 //! records:
 //!
 //! ```text
@@ -14,7 +14,7 @@
 //! Some files place the table at the start of the file; others at the end,
 //! with a separate (vertex/coordinate) section in the remaining space.
 //!
-//! This is empirically derived stage data — we have not yet identified the
+//! This is empirically derived stage data - we have not yet identified the
 //! consumer in the binary, so the field semantics are tentative.
 
 use serde::Serialize;
@@ -86,7 +86,7 @@ pub fn scan(buf: &[u8]) -> Vec<GeomTable> {
 }
 
 /// Iterator-friendly view of one record. The 8-byte payload is exposed both
-/// raw and decoded as 4 little-endian u16s — the most plausible interpretation
+/// raw and decoded as 4 little-endian u16s - the most plausible interpretation
 /// per cross-file analysis.
 #[derive(Debug, Clone, Copy)]
 pub struct Record<'a> {
@@ -195,7 +195,7 @@ impl Stage {
 /// Detect the records table and pick the side (before or after the largest
 /// table) that holds the vertex pool. Returns `None` if no table was found.
 ///
-/// Heuristic: prefer whichever side has more bytes — both vertex-pool layouts
+/// Heuristic: prefer whichever side has more bytes - both vertex-pool layouts
 /// are observed in the wild (pool-first in `init_data`, pool-in-trailer in
 /// `town01`). Both sides are valid u16-indexable byte regions; the empty
 /// side simply has no candidate vertices.
@@ -210,7 +210,7 @@ pub fn parse(buf: &[u8]) -> Option<Stage> {
         (0, before_bytes)
     };
     // Truncate to a multiple of VERTEX_STRIDE (pools observed in practice
-    // include 24 leading zero-pad bytes — those are still 3 valid vertex
+    // include 24 leading zero-pad bytes - those are still 3 valid vertex
     // slots, so we don't strip them).
     let pool_bytes = (pool_bytes / VERTEX_STRIDE) * VERTEX_STRIDE;
     Some(Stage {
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn ignores_runs_below_threshold() {
-        // Two records — under MIN_TABLE_RECORDS (4).
+        // Two records - under MIN_TABLE_RECORDS (4).
         let buf = synthesize(2, 0, 0);
         assert!(scan(&buf).is_empty());
     }
@@ -330,7 +330,7 @@ mod tests {
     fn quad_vertex_indices_resolves_byte_offsets_to_indices() {
         // Build a buffer with table starting at byte 80 (4 dummy verts).
         let mut buf = vec![0u8; 32]; // 4 vertex slots
-        // Table records — payload contains byte offsets 0, 16, 8, 0.
+        // Table records - payload contains byte offsets 0, 16, 8, 0.
         for _ in 0..4 {
             buf.extend_from_slice(&RECORD_PREFIX);
             buf.extend_from_slice(&0u16.to_le_bytes());

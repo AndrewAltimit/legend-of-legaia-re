@@ -3,11 +3,11 @@
 //! The PSX SPU has 512 KB of dedicated RAM. ADPCM sample blocks live there
 //! and voices read by 8-byte-aligned address. The CPU side talks to it via:
 //!
-//! 1. **Address pointer** — `_spu_t` in retail (a global current-write addr,
+//! 1. **Address pointer** - `_spu_t` in retail (a global current-write addr,
 //!    unit = 8 bytes). Set by `SpuSetTransferStartAddr`.
-//! 2. **Direction flag** — `_spu_a` (read vs write). Flipped by
+//! 2. **Direction flag** - `_spu_a` (read vs write). Flipped by
 //!    `SpuSetTransferMode`.
-//! 3. **Body** — `SpuWrite(buf, len)` queues bytes from CPU RAM to SPU RAM
+//! 3. **Body** - `SpuWrite(buf, len)` queues bytes from CPU RAM to SPU RAM
 //!    starting at the current pointer; `SpuTransfer()` (`_SpuTransfer`)
 //!    actually drains the queue, advancing the pointer in 8-byte units.
 //!
@@ -90,7 +90,7 @@ impl SpuRam {
     /// current transfer pointer, then advance the pointer. Returns the
     /// number of bytes actually written (clipped to RAM end).
     ///
-    /// Real hardware is asynchronous — the queue flush happens on the next
+    /// Real hardware is asynchronous - the queue flush happens on the next
     /// `SpuTransfer()`. The clean-room model collapses queue+drain since we
     /// want the bytes visible to subsequent decoder ticks immediately.
     pub fn write(&mut self, data: &[u8]) -> usize {
@@ -117,7 +117,7 @@ impl SpuRam {
         n
     }
 
-    /// Direct read by address — used by the voice playback layer to fetch
+    /// Direct read by address - used by the voice playback layer to fetch
     /// the next ADPCM block. Bypasses the transfer pointer/direction and
     /// is only intended for the SPU itself.
     pub fn slice(&self, addr: u32, len: u32) -> &[u8] {
@@ -126,7 +126,7 @@ impl SpuRam {
         &self.bytes[start..end]
     }
 
-    /// Direct write by address — used by `SsSpuMalloc` / staging code that
+    /// Direct write by address - used by `SsSpuMalloc` / staging code that
     /// wants to drop a whole VAB body in at a known offset, no queue.
     pub fn write_at(&mut self, addr: u32, data: &[u8]) -> usize {
         let start = (addr as usize).min(SPU_RAM_BYTES);

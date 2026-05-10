@@ -1,10 +1,10 @@
 # Navmesh / per-scene region table
 
-A 24-byte stride record table loaded into RAM at `0x80108EA4..0x801095xx` during scene loads. Carries per-scene NPC region / event-trigger / nav-region records — a candidate for the navmesh-class data the field VM and motion VM consult while pathing actors.
+A 24-byte stride record table loaded into RAM at `0x80108EA4..0x801095xx` during scene loads. Carries per-scene NPC region / event-trigger / nav-region records - a candidate for the navmesh-class data the field VM and motion VM consult while pathing actors.
 
 ## How this was located
 
-Diffing two area-load save states against each other (`mc1 = post-load early frame, scene = map01` vs. `mc3 = late frame, scene = suimon`) over the configured `navmesh_candidate` window `0x80100000..0x80120000` from [`scripts/mednafen/scenarios.toml`](../tooling/mednafen-automation.md) surfaces a 1700-byte cluster at `0x80108EA4..0x80109550` where the two scenes' contents differ. The first 0x40 bytes are byte-identical between the two saves, suggesting a small bank of shared records ahead of the per-scene records.
+Diffing two area-load save states against each other (one taken in scene `map01`, one in scene `suimon`) over the configured `navmesh_candidate` window `0x80100000..0x80120000` from [`scripts/mednafen/scenarios.toml`](../tooling/mednafen-automation.md) surfaces a 1700-byte cluster at `0x80108EA4..0x80109550` where the two scenes' contents differ. The first 0x40 bytes are byte-identical between the two saves, suggesting a small bank of shared records ahead of the per-scene records.
 
 ## Layout
 
@@ -31,13 +31,13 @@ The per-scene records (`kind == 0x01`) follow and carry distinct tags whose shap
 
 ## Confidence
 
-**Inferred — consumer not in any captured dump.** The layout above is a structural inference from a single mednafen save-state diff pair. A grep for any `LUI` + `ORI` pair targeting the `0x80108EA4..0x80109550` window across every `ghidra/scripts/funcs/*.txt` returns zero hits, meaning every consumer of this table lives in an overlay slice that hasn't been captured yet (the table address is in the `0x801XXXXX` data window that maps to scene-resident overlays).
+**Inferred - consumer not in any captured dump.** The layout above is a structural inference from a single mednafen save-state diff pair. A grep for any `LUI` + `ORI` pair targeting the `0x80108EA4..0x80109550` window across every `ghidra/scripts/funcs/*.txt` returns zero hits, meaning every consumer of this table lives in an overlay slice that hasn't been captured yet (the table address is in the `0x801XXXXX` data window that maps to scene-resident overlays).
 
-The most likely consumer is the field-VM actor-spawn family (script-VM ops `0x40` / `0x4F`) or the motion VM (`FUN_8003774C`, per-actor pursue / patrol) — both already-captured but neither reads from `0x80108EA4` in their static body. The reads must therefore go through a pointer that gets populated at scene load time, in code that lives in one of the still-uncaptured `town01` / `field` / `world_map` overlays.
+The most likely consumer is the field-VM actor-spawn family (script-VM ops `0x40` / `0x4F`) or the motion VM (`FUN_8003774C`, per-actor pursue / patrol) - both already-captured but neither reads from `0x80108EA4` in their static body. The reads must therefore go through a pointer that gets populated at scene load time, in code that lives in one of the still-uncaptured `town01` / `field` / `world_map` overlays.
 
 ## Files referencing this format
 
 - Field VM's actor-spawn family writes per-NPC records into a similarly-shaped table (same 24-byte stride, same leading id / kind bytes).
 - Motion VM consults a per-actor pursue / patrol coordinate set with similar shape.
 
-Both candidates point at the same conclusion: the navmesh table is consumed via a pointer the scene-load overlay sets up. The next step is a `mednafen-state diff` over the pointer storage range (`0x801C0000..0x801E0000`) across `mc1` ↔ `mc3` to surface which RAM cell holds the table base — that's where the writer-search should focus once the cell is known.
+Both candidates point at the same conclusion: the navmesh table is consumed via a pointer the scene-load overlay sets up. The next step is a `mednafen-state diff` over the pointer storage range (`0x801C0000..0x801E0000`) across the two area-load saves to surface which RAM cell holds the table base - that's where the writer-search should focus once the cell is known.

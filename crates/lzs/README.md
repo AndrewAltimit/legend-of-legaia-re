@@ -15,7 +15,7 @@ The algorithm is a sliding-window LZSS variant:
     * length = `(b1 & 0x0F) + 3`.
     * copy `length` bytes out of the ring buffer; each emitted byte is
       also stored at the current write position (which advances mod 4096).
-- The decompressed size is supplied externally — there's no length prefix
+- The decompressed size is supplied externally - there's no length prefix
   or end-of-stream marker.
 
 `.lzs` files are containers: a small `u32` header table at the start gives
@@ -26,8 +26,8 @@ The algorithm is a sliding-window LZSS variant:
 
 - `decompress(input, expected_output_size) -> Vec<u8>`
 - `decompress_tracked(input, expected_output_size) -> (Vec<u8>, consumed)`
-  — also returns input bytes consumed; useful for validating containers.
-- `decompress_container(input) -> Vec<Vec<u8>>` — full `.lzs` container.
+  - also returns input bytes consumed; useful for validating containers.
+- `decompress_container(input) -> Vec<Vec<u8>>` - full `.lzs` container.
 
 ### Why "decompresses without error" is not a validity signal
 
@@ -47,5 +47,5 @@ lzs-decode audit     <input>             # strict-real LZS detection
 
 ## See also
 
-- [`docs/formats/lzs.md`](../../docs/formats/lzs.md) — full algorithm and
+- [`docs/formats/lzs.md`](../../docs/formats/lzs.md) - full algorithm and
   container layout.

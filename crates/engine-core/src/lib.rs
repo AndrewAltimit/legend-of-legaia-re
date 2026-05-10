@@ -2,7 +2,7 @@
 //! the composite [`world::World`] that wires the per-VM hosts from
 //! `legaia-engine-vm` into a single runtime.
 //!
-//! Engine-agnostic. No wgpu / windowing / audio dependencies — the asset
+//! Engine-agnostic. No wgpu / windowing / audio dependencies - the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
 pub mod ap_gauge;
@@ -62,9 +62,9 @@ use std::time::Instant;
 
 /// Source of asset bytes.
 ///
-/// Two backends planned: an extracted-directory backend (for development —
+/// Two backends planned: an extracted-directory backend (for development -
 /// reads from `extracted/` produced by `legaia-extract`) and a disc-backed
-/// backend (for end users — reads directly from a disc image).
+/// backend (for end users - reads directly from a disc image).
 ///
 /// Both yield raw bytes addressed by a logical name (e.g.
 /// `"prot/0123_some_entry.bin"`). The asset crates above this layer turn
@@ -127,7 +127,7 @@ impl Vfs for DirVfs {
 /// Names are normalised to forward-slash, case-insensitive. Both
 /// `"PROT.DAT"` and `"prot.dat"` resolve to the same entry.
 ///
-/// `legaia-iso` is `cfg(not(target_arch = "wasm32"))` only — DiscVfs is
+/// `legaia-iso` is `cfg(not(target_arch = "wasm32"))` only - DiscVfs is
 /// only available on native targets. WASM builds keep `MemoryVfs`.
 #[cfg(not(target_arch = "wasm32"))]
 pub struct DiscVfs {
@@ -279,7 +279,7 @@ impl Vfs for MemoryVfs {
 /// Trivial bytes cache keyed by Vfs name.
 ///
 /// Lives behind a Mutex so it can be shared across loader threads later. The
-/// API is intentionally narrow — a real engine would need eviction policy,
+/// API is intentionally narrow - a real engine would need eviction policy,
 /// per-asset-type typed caches, and pinning. We add those when we need them.
 pub struct AssetCache {
     inner: Mutex<HashMap<String, Arc<Vec<u8>>>>,
@@ -315,7 +315,7 @@ impl Default for AssetCache {
 /// fixed-timestep gameplay updates while letting render run uncapped.
 ///
 /// On `wasm32-unknown-unknown` `std::time::Instant` is not implemented, so
-/// this type becomes a zero-size stub — callers (JS `requestAnimationFrame`
+/// this type becomes a zero-size stub - callers (JS `requestAnimationFrame`
 /// loop) supply their own delta timing.
 pub struct FrameTime {
     #[cfg(not(target_arch = "wasm32"))]

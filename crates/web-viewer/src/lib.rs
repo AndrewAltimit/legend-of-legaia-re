@@ -132,7 +132,7 @@ impl LegaiaViewer {
         let entries = parse_prot_toc(&prot_bytes)
             .ok_or_else(|| JsValue::from_str("PROT TOC parse failed"))?;
         console_log(&format!(
-            "Found {} PROT entries — classifying…",
+            "Found {} PROT entries - classifying…",
             entries.len()
         ));
         self.disc = prot_bytes;
@@ -287,7 +287,7 @@ impl LegaiaViewer {
             .unwrap_or(false)
     }
 
-    /// JSON-encoded summary of the current entry — class label, byte size,
+    /// JSON-encoded summary of the current entry - class label, byte size,
     /// MES record count (if any), SEQ presence (if any), VAB presence
     /// (if any). The JS side parses this and shows it in the inspector
     /// panel without needing N round-trips for each individual field.
@@ -315,7 +315,7 @@ impl LegaiaViewer {
         let prot_idx = entry.meta.index;
 
         // Hand-rolled JSON to keep wasm size down (no serde_json on this
-        // path — the data is fixed-shape).
+        // path - the data is fixed-shape).
         let mut s = String::new();
         s.push('{');
         s.push_str(&format!(r#""prot_index":{prot_idx},"#));

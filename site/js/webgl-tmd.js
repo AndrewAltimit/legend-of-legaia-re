@@ -1,4 +1,4 @@
-/* webgl-tmd.js — WebGL2 textured TMD renderer for the WASM viewer.
+/* webgl-tmd.js - WebGL2 textured TMD renderer for the WASM viewer.
  *
  * Mirrors the engine-render VRAM-mesh pipeline: a 1024x512 R16UI VRAM
  * texture, per-vertex (position, uv, cba_tsb) attributes, and a fragment
@@ -179,7 +179,7 @@ class TmdRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuf);
     gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(this.locUv);
-    /* UV is u8x2 sent as float (not normalized) — values 0..255. */
+    /* UV is u8x2 sent as float (not normalized) - values 0..255. */
     gl.vertexAttribPointer(this.locUv, 2, gl.UNSIGNED_BYTE, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ctBuf);
@@ -354,7 +354,7 @@ function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, v
    * goes after the rotate so it's relative to camera orientation: the model
    * stays oriented as you orbit, and W/A/S/D pans relative to your view.
    *
-   * Distance is allowed to go below 1.0 — the camera enters the bounding
+   * Distance is allowed to go below 1.0 - the camera enters the bounding
    * sphere and you fly through the model. Floor at a tiny epsilon to avoid
    * matrix singularities. */
   const cameraDist = Math.max(distance, 0.001);

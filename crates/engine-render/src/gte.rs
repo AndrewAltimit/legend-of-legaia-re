@@ -9,21 +9,21 @@
 //!
 //! ## What lives here
 //!
-//! * [`GteVec3`] / [`GteMat3`] — fixed-point vector + 3×3 rotation matrix in
+//! * [`GteVec3`] / [`GteMat3`] - fixed-point vector + 3×3 rotation matrix in
 //!   q3.12 storage with i64-widened multiply-add (`mul_vec`).
-//! * [`Camera`] — rotation matrix + q19.12 translation + projection focal
+//! * [`Camera`] - rotation matrix + q19.12 translation + projection focal
 //!   length `h` (the GTE register named `H`).
-//! * [`Camera::transform`] — PSX GTE `RTPT` (rotate-translate-perspective):
+//! * [`Camera::transform`] - PSX GTE `RTPT` (rotate-translate-perspective):
 //!   `screen = perspective_divide(rot * v + trans, h)`. Returns the
 //!   screen-space coordinate plus the post-rotation Z used for depth.
-//! * [`nclip`] — the GTE `NCLIP` operation: signed area of the screen-space
+//! * [`nclip`] - the GTE `NCLIP` operation: signed area of the screen-space
 //!   triangle. Negative ⇒ back-face under PSX winding rules.
-//! * [`avsz3`] / [`avsz4`] — average screen-Z helpers used by the OT-bucket
+//! * [`avsz3`] / [`avsz4`] - average screen-Z helpers used by the OT-bucket
 //!   selector.
-//! * [`screen_to_pixel`] — clamps GTE screen coords (q.0 fixed-point in
+//! * [`screen_to_pixel`] - clamps GTE screen coords (q.0 fixed-point in
 //!   pixels) to a render target, with the GTE's saturation behaviour.
 //! * A small CPU rasterizer scaffold under [`raster`] that plugs the above
-//!   together — useful for offline regression checks against captured
+//!   together - useful for offline regression checks against captured
 //!   GTE traces.
 //!
 //! Production rendering still goes through wgpu's f32 pipeline (see
@@ -230,7 +230,7 @@ impl ScreenXY {
     }
 }
 
-/// GTE camera state — the per-frame "rotation matrix + translation +
+/// GTE camera state - the per-frame "rotation matrix + translation +
 /// projection focal length" tuple the retail engine writes to the GTE
 /// registers (RT/TR/H) before each `RTPT` batch.
 #[derive(Debug, Clone, Copy)]
@@ -242,7 +242,7 @@ pub struct Camera {
     /// Projection focal length `H` in pixels (q.0). PSX standard = 320.
     pub h: i32,
     /// Screen-center X offset (`OFX` in q16.16 terms; we store the integer
-    /// pixel value the GTE biases by). Default 0 — set to `screen_w / 2`
+    /// pixel value the GTE biases by). Default 0 - set to `screen_w / 2`
     /// when projecting to a centered viewport.
     pub ofx: i32,
     /// Screen-center Y offset (`OFY`). Default 0.
@@ -261,7 +261,7 @@ impl Camera {
     }
 
     /// Build a camera centered on the given viewport, with the standard
-    /// PSX `H = 320` focal length. q19.12 translation is set to zero —
+    /// PSX `H = 320` focal length. q19.12 translation is set to zero -
     /// override `.trans` after construction if you need eye-space offset.
     pub const fn for_viewport(width: i32, height: i32) -> Self {
         Self {
@@ -281,7 +281,7 @@ impl Camera {
     /// - `screen_xy`: 2D screen position in q.0 pixel coords, NOT yet
     ///   saturated to i16. Caller picks: `.saturate_sxy()` for
     ///   hardware-faithful clipping, or use as-is for offline tooling.
-    /// - `view_z`: post-translation Z (q19.12) — used by [`avsz3`] /
+    /// - `view_z`: post-translation Z (q19.12) - used by [`avsz3`] /
     ///   [`avsz4`] to assign an OT bucket.
     /// - `clip`: GTE-style clip flags. `Clip::SafeFront` ⇒ vertex is in
     ///   front of the camera; `Clip::Behind` ⇒ behind (project skipped,
@@ -408,7 +408,7 @@ pub fn screen_to_pixel(screen: ScreenXY, w: i32, h: i32) -> (i32, i32) {
     (screen.x.clamp(0, w - 1), screen.y.clamp(0, h - 1))
 }
 
-/// CPU rasterizer scaffold — small enough to use as a regression target
+/// CPU rasterizer scaffold - small enough to use as a regression target
 /// against captured retail GTE traces without dragging in wgpu. Not
 /// production-grade: it's a validation tool, not a renderer replacement.
 pub mod raster {
@@ -450,7 +450,7 @@ pub mod raster {
         }
     }
 
-    /// 2D edge function — positive when `p` is on the inside (right-hand
+    /// 2D edge function - positive when `p` is on the inside (right-hand
     /// side) of the directed edge `a→b` under PSX winding. Sums of three
     /// edge functions over a triangle's bbox give the barycentric weights
     /// for an inside-triangle test (all-positive ⇒ inside).
@@ -531,9 +531,9 @@ pub mod raster {
 /// vector (TRX/TRY/TRZ), the projection focal length (H), the screen offset
 /// (OFX/OFY), and the average-Z scaling factors (ZSF3/ZSF4).
 ///
-/// This isn't a cycle-accurate emulator — it doesn't model the per-stage
+/// This isn't a cycle-accurate emulator - it doesn't model the per-stage
 /// pipeline latency or the exact MAC/IR overflow flag bits the hardware
-/// produces — but the high-level instruction shape, register file, and
+/// produces - but the high-level instruction shape, register file, and
 /// saturation behaviour all match the PSX GTE manual. Used by the engine
 /// for offline regression checks against captured GTE traces and as the
 /// substrate for downstream tooling that wants opcode-level visibility
@@ -541,69 +541,69 @@ pub mod raster {
 ///
 /// Source for the register layout: PSX hardware reference (cop2). The
 /// engine's existing [`Camera::transform`] is a higher-level wrapper around
-/// the same arithmetic — both produce identical results for the RTPT path.
+/// the same arithmetic - both produce identical results for the RTPT path.
 #[derive(Debug, Clone)]
 pub struct Gte {
     // ----- Data registers -----
-    /// V0/V1/V2 — three input vertices for batch ops (RTPT, NCDT, COLOR).
+    /// V0/V1/V2 - three input vertices for batch ops (RTPT, NCDT, COLOR).
     pub v: [GteVec3; 3],
-    /// RGBC — the input colour (R/G/B/CODE bytes).
+    /// RGBC - the input colour (R/G/B/CODE bytes).
     pub rgbc: [u8; 4],
-    /// OTZ — average-Z output (0..=0xFFFF).
+    /// OTZ - average-Z output (0..=0xFFFF).
     pub otz: u16,
-    /// IR0 — scalar accumulator (sign-extended i16).
+    /// IR0 - scalar accumulator (sign-extended i16).
     pub ir0: i32,
-    /// IR1/IR2/IR3 — truncated MAC1/MAC2/MAC3 (i16 saturating).
+    /// IR1/IR2/IR3 - truncated MAC1/MAC2/MAC3 (i16 saturating).
     pub ir1: i32,
     pub ir2: i32,
     pub ir3: i32,
-    /// SXY0/SXY1/SXY2 — screen-XY FIFO (3 entries, oldest at index 0).
+    /// SXY0/SXY1/SXY2 - screen-XY FIFO (3 entries, oldest at index 0).
     pub sxy_fifo: [ScreenXY; 3],
-    /// SZ0/SZ1/SZ2/SZ3 — screen-Z FIFO (4 entries, oldest at index 0).
+    /// SZ0/SZ1/SZ2/SZ3 - screen-Z FIFO (4 entries, oldest at index 0).
     pub sz_fifo: [u16; 4],
-    /// RGB0/RGB1/RGB2 — output RGB FIFO (3 entries).
+    /// RGB0/RGB1/RGB2 - output RGB FIFO (3 entries).
     pub rgb_fifo: [[u8; 4]; 3],
-    /// MAC0 — 32-bit scalar accumulator.
+    /// MAC0 - 32-bit scalar accumulator.
     pub mac0: i32,
-    /// MAC1/MAC2/MAC3 — wide vector accumulator (per-component, i64-widened).
+    /// MAC1/MAC2/MAC3 - wide vector accumulator (per-component, i64-widened).
     pub mac1: i64,
     pub mac2: i64,
     pub mac3: i64,
-    /// FLAG — saturation flag bits accumulated across the last instruction.
+    /// FLAG - saturation flag bits accumulated across the last instruction.
     /// Each bit corresponds to a clamp / overflow event; bit 31 is the
     /// "any error" sticky bit.
     pub flag: u32,
 
     // ----- Control registers -----
-    /// RT11..RT33 — rotation matrix (q3.12).
+    /// RT11..RT33 - rotation matrix (q3.12).
     pub rot: GteMat3,
-    /// TRX/TRY/TRZ — translation vector (q19.12).
+    /// TRX/TRY/TRZ - translation vector (q19.12).
     pub trans: GteVec3,
-    /// H — projection focal length (q.0).
+    /// H - projection focal length (q.0).
     pub h: i32,
-    /// OFX — screen-X offset (q16.16; we store the integer pixel value).
+    /// OFX - screen-X offset (q16.16; we store the integer pixel value).
     pub ofx: i32,
-    /// OFY — screen-Y offset (q16.16).
+    /// OFY - screen-Y offset (q16.16).
     pub ofy: i32,
-    /// ZSF3 — average-Z scale factor for AVSZ3.
+    /// ZSF3 - average-Z scale factor for AVSZ3.
     pub zsf3: i32,
-    /// ZSF4 — average-Z scale factor for AVSZ4.
+    /// ZSF4 - average-Z scale factor for AVSZ4.
     pub zsf4: i32,
-    /// DQA — depth-cue interpolation slope.
+    /// DQA - depth-cue interpolation slope.
     pub dqa: i32,
-    /// DQB — depth-cue interpolation intercept.
+    /// DQB - depth-cue interpolation intercept.
     pub dqb: i32,
-    /// L11..L33 — light source matrix (q3.12). Used by NCDS / NCDT
+    /// L11..L33 - light source matrix (q3.12). Used by NCDS / NCDT
     /// (normal-color triple) to compute per-vertex light intensity from
     /// the surface normal.
     pub light: GteMat3,
-    /// LR1..LB3 — light color matrix (q3.12). Maps light intensity to
+    /// LR1..LB3 - light color matrix (q3.12). Maps light intensity to
     /// the actor's RGB material colour.
     pub light_color: GteMat3,
-    /// RBK / GBK / BBK — back-color (q3.12). Ambient bias added before
+    /// RBK / GBK / BBK - back-color (q3.12). Ambient bias added before
     /// modulating by RGBC.
     pub back_color: GteVec3,
-    /// RFC / GFC / BFC — far-color (q3.12). Distance-fade target colour
+    /// RFC / GFC / BFC - far-color (q3.12). Distance-fade target colour
     /// blended by DPCS / DCPL / DPCT.
     pub far_color: GteVec3,
 
@@ -617,13 +617,13 @@ pub struct Gte {
     /// the leading-zero / leading-one count of this value, depending on
     /// its sign. Writes via MTC2 / LWC2 cache the new source.
     pub lzcs: i32,
-    /// `RES1` (cop2cr23) — reserved register on hardware. Some retail GTE
+    /// `RES1` (cop2cr23) - reserved register on hardware. Some retail GTE
     /// traces stash a temporary here; the emulator passes the value through
     /// without interpreting it.
     pub res1: u32,
 }
 
-/// PSX cop2 instruction set — symbolic identifiers used by the cycle
+/// PSX cop2 instruction set - symbolic identifiers used by the cycle
 /// counter and any disassembly tooling. Matches the public hardware
 /// instruction list (Nocash PSX spec).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -657,7 +657,7 @@ impl CopOp {
     /// (Nocash PSX hardware reference). Engines that pace MIPS execution
     /// against cop2 stalls accumulate these per emitted op.
     ///
-    /// These are the un-pipelined cycle counts — actual pipeline overlap
+    /// These are the un-pipelined cycle counts - actual pipeline overlap
     /// with neighbouring MIPS instructions can hide some of the latency,
     /// but the worst-case ceiling is what callers usually need for budget
     /// math.
@@ -788,7 +788,7 @@ impl Gte {
         self.cycles = self.cycles.saturating_add(op.cycles() as u64);
     }
 
-    /// Mirror of [`Camera::for_viewport`] — set up the projection matrices
+    /// Mirror of [`Camera::for_viewport`] - set up the projection matrices
     /// for a centred 320×240-style viewport.
     pub fn set_viewport(&mut self, width: i32, height: i32) {
         self.ofx = width / 2;
@@ -803,7 +803,7 @@ impl Gte {
     }
 
     /// Start of every cop2 op: clear FLAG and bump the cycle accumulator.
-    /// Internal helper — every public instruction calls this first.
+    /// Internal helper - every public instruction calls this first.
     fn begin_op(&mut self, op: CopOp) {
         self.clear_flag();
         self.charge(op);
@@ -911,7 +911,7 @@ impl Gte {
         self.sxy_fifo[2]
     }
 
-    /// `NCLIP` — signed area of the triangle SXY0/SXY1/SXY2. Writes MAC0.
+    /// `NCLIP` - signed area of the triangle SXY0/SXY1/SXY2. Writes MAC0.
     /// Returns the same value the FLAG and MAC0 reflect.
     pub fn nclip(&mut self) -> i64 {
         self.begin_op(CopOp::Nclip);
@@ -929,7 +929,7 @@ impl Gte {
         v
     }
 
-    /// `AVSZ3` — write OTZ ← `((SZ1 + SZ2 + SZ3) * ZSF3) >> ROT_FRAC_BITS`.
+    /// `AVSZ3` - write OTZ ← `((SZ1 + SZ2 + SZ3) * ZSF3) >> ROT_FRAC_BITS`.
     /// Writes MAC0 to the un-shifted product so callers can recover the
     /// full-precision intermediate.
     pub fn avsz3(&mut self) -> u16 {
@@ -951,7 +951,7 @@ impl Gte {
         otz
     }
 
-    /// `AVSZ4` — write OTZ ← `((SZ0 + SZ1 + SZ2 + SZ3) * ZSF4) >> ROT_FRAC_BITS`.
+    /// `AVSZ4` - write OTZ ← `((SZ0 + SZ1 + SZ2 + SZ3) * ZSF4) >> ROT_FRAC_BITS`.
     pub fn avsz4(&mut self) -> u16 {
         self.begin_op(CopOp::Avsz4);
         let sum = self.sz_fifo[0] as i64
@@ -974,10 +974,10 @@ impl Gte {
         otz
     }
 
-    /// `MVMVA` — generic matrix-vector multiply with selectable matrix
+    /// `MVMVA` - generic matrix-vector multiply with selectable matrix
     /// (rotation / light / color), vector source (V0/V1/V2/IR), and
     /// translation source (TR / BK / FC / none). This is the most flexible
-    /// GTE primitive — engines wire it for lighting passes and arbitrary
+    /// GTE primitive - engines wire it for lighting passes and arbitrary
     /// affine transforms.
     ///
     /// Args:
@@ -1119,7 +1119,7 @@ impl Gte {
         self.mvmva_inner(&self.light_color.clone(), intensity, bc, true, true);
     }
 
-    /// `NCDS` — normal colour depth (single vertex). Computes per-vertex
+    /// `NCDS` - normal colour depth (single vertex). Computes per-vertex
     /// shaded RGB using the light matrix + light-color matrix + far-color
     /// blend, modulated by the input RGBC. Pushes the result onto the
     /// RGB FIFO.
@@ -1128,7 +1128,7 @@ impl Gte {
         self.ncds_inner(self.v[0])
     }
 
-    /// `NCDT` — normal colour depth, triple. Applies NCDS to V0/V1/V2 in
+    /// `NCDT` - normal colour depth, triple. Applies NCDS to V0/V1/V2 in
     /// order; the RGB FIFO ends up with the three shaded colours.
     pub fn ncdt(&mut self) -> [[u8; 4]; 3] {
         self.begin_op(CopOp::Ncdt);
@@ -1165,8 +1165,8 @@ impl Gte {
         out
     }
 
-    /// `DCPL` — depth-cued primary color. Modulates the input RGBC with
-    /// IR1/2/3 then blends toward far_color by IR0 — same depth-fade
+    /// `DCPL` - depth-cued primary color. Modulates the input RGBC with
+    /// IR1/2/3 then blends toward far_color by IR0 - same depth-fade
     /// behaviour as NCDS but starting from the existing RGBC instead of
     /// running a light pass. Pushes the result onto the RGB FIFO.
     pub fn dcpl(&mut self) -> [u8; 4] {
@@ -1189,8 +1189,8 @@ impl Gte {
         out
     }
 
-    /// `DPCS` — depth-cued color, single. Blend RGBC toward far_color
-    /// using IR0 — no IR multiplication. Pushes the result onto the
+    /// `DPCS` - depth-cued color, single. Blend RGBC toward far_color
+    /// using IR0 - no IR multiplication. Pushes the result onto the
     /// RGB FIFO.
     pub fn dpcs(&mut self) -> [u8; 4] {
         self.begin_op(CopOp::Dpcs);
@@ -1212,7 +1212,7 @@ impl Gte {
         out
     }
 
-    /// `DPCT` — depth-cued color, triple. Apply DPCS to RGB0/RGB1/RGB2
+    /// `DPCT` - depth-cued color, triple. Apply DPCS to RGB0/RGB1/RGB2
     /// in the FIFO. The retail engine uses this to fade the output of a
     /// previous lighting pass toward the far-color.
     pub fn dpct(&mut self) -> [[u8; 4]; 3] {
@@ -1227,7 +1227,7 @@ impl Gte {
         out
     }
 
-    /// `INTPL` — interpolate vector (V0 toward FC by IR0). Writes
+    /// `INTPL` - interpolate vector (V0 toward FC by IR0). Writes
     /// MAC1/MAC2/MAC3 = `IR1 + ((FC - IR) * IR0 >> 12)`; saturates IR1/2/3.
     /// Used by DCPL internally; exposed for engines that want the bare
     /// blend.
@@ -1246,7 +1246,7 @@ impl Gte {
         self.ir3 = self.saturate_ir(self.mac3, flag_bits::IR3_SATURATED);
     }
 
-    /// `SQR` — squares IR1/IR2/IR3 in place. Writes MAC1..MAC3 = IR^2,
+    /// `SQR` - squares IR1/IR2/IR3 in place. Writes MAC1..MAC3 = IR^2,
     /// then re-saturates IR. Used by some lighting passes that want the
     /// dot of a vector with itself.
     pub fn sqr(&mut self, shift_frac: bool) {
@@ -1270,7 +1270,7 @@ impl Gte {
         self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
     }
 
-    /// `OP` — outer product. Computes the cross product of `[D1, D2, D3]`
+    /// `OP` - outer product. Computes the cross product of `[D1, D2, D3]`
     /// (where `D1..D3` are the diagonal entries of the rotation matrix
     /// in retail GTE) and IR1/IR2/IR3, returning the result in MAC and
     /// IR registers.
@@ -1309,8 +1309,8 @@ impl Gte {
         self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
     }
 
-    /// `GPF` — general-purpose fixed-point multiply: `MAC = IR * IR0`.
-    /// Used for "fixed alpha" blends — engine-shell composes this with
+    /// `GPF` - general-purpose fixed-point multiply: `MAC = IR * IR0`.
+    /// Used for "fixed alpha" blends - engine-shell composes this with
     /// DPCS to fade UI panels.
     pub fn gpf(&mut self, shift_frac: bool) {
         self.begin_op(CopOp::Gpf);
@@ -1337,7 +1337,7 @@ impl Gte {
         self.ir3 = self.saturate_ir(macs[2], flag_bits::IR3_SATURATED);
     }
 
-    /// `NCS` — normal-color (single, no shading, no depth blend). Runs the
+    /// `NCS` - normal-color (single, no shading, no depth blend). Runs the
     /// light pass against V0 and pushes the resulting `(R, G, B, code)` onto
     /// the RGB FIFO without depth-cueing. Used for fully-lit primitives that
     /// shouldn't fade with distance.
@@ -1346,7 +1346,7 @@ impl Gte {
         self.ncs_inner(self.v[0])
     }
 
-    /// `NCT` — normal-color (triple). Apply NCS to V0/V1/V2 in order.
+    /// `NCT` - normal-color (triple). Apply NCS to V0/V1/V2 in order.
     pub fn nct(&mut self) -> [[u8; 4]; 3] {
         self.begin_op(CopOp::Nct);
         let v = self.v;
@@ -1368,13 +1368,13 @@ impl Gte {
         out
     }
 
-    /// `NCCS` — normal-color color (single, no depth fade). Runs the light
+    /// `NCCS` - normal-color color (single, no depth fade). Runs the light
     /// pass like NCS but threads the result through the light-color matrix
     /// once more (which `light_pass` already does), giving a per-vertex
     /// material × light × color modulated RGB.
     ///
     /// In hardware NCCS additionally modulates by the input RGBC after the
-    /// second light-color pass — the practical effect for the engine is the
+    /// second light-color pass - the practical effect for the engine is the
     /// same RGB stream as NCS but pre-multiplied by the light-color matrix
     /// during `light_pass`. Surfaces this as a distinct entry point so
     /// engines can branch on the captured opcode byte.
@@ -1383,7 +1383,7 @@ impl Gte {
         self.nccs_inner(self.v[0])
     }
 
-    /// `NCCT` — normal-color color (triple). Apply NCCS to V0/V1/V2.
+    /// `NCCT` - normal-color color (triple). Apply NCCS to V0/V1/V2.
     pub fn ncct(&mut self) -> [[u8; 4]; 3] {
         self.begin_op(CopOp::Ncct);
         let v = self.v;
@@ -1408,8 +1408,8 @@ impl Gte {
         out
     }
 
-    /// `CDP` — color depth-cued (no normal pass). Skips the light pass —
-    /// uses the existing IR1/2/3 as the per-component intensity — but runs
+    /// `CDP` - color depth-cued (no normal pass). Skips the light pass -
+    /// uses the existing IR1/2/3 as the per-component intensity - but runs
     /// the depth-fade blend toward far_color and the RGBC modulation.
     /// Engines call this after a custom IR setup when they want the
     /// distance fade without re-running the light matrix.
@@ -1436,7 +1436,7 @@ impl Gte {
         out
     }
 
-    /// `CC` — color color (no normal, no depth). Just modulates RGBC by
+    /// `CC` - color color (no normal, no depth). Just modulates RGBC by
     /// the existing IR1/2/3 through the light-color matrix. Used by some
     /// 2D effects that want the colour modulation primitive without the
     /// rest of the lighting pipeline.
@@ -1454,8 +1454,8 @@ impl Gte {
         out
     }
 
-    /// `GPL` — general-purpose load: `MAC += IR * IR0`. Accumulating
-    /// counterpart to GPF — used to chain blend operations.
+    /// `GPL` - general-purpose load: `MAC += IR * IR0`. Accumulating
+    /// counterpart to GPF - used to chain blend operations.
     pub fn gpl(&mut self, shift_frac: bool) {
         self.begin_op(CopOp::Gpl);
         let ir0 = self.ir0 as i64;
@@ -1497,7 +1497,7 @@ impl Gte {
     //   - LWC2 rd, off(base) -- data register rd ← *(base + off)
     //   - SWC2 rd, off(base) -- *(base + off) ← data register rd
     //
-    // The retail TMD renderer + lighting pipeline use these heavily — every
+    // The retail TMD renderer + lighting pipeline use these heavily - every
     // vertex load is `LWC2 cop2cr0..cop2cr5` (V0/V1/V2 packed pairs), every
     // captured RGB writeback is `SWC2 cop2cr20..22`. Engines that want to
     // replay a captured GTE trace exactly need this transport layer.
@@ -1507,7 +1507,7 @@ impl Gte {
     // ---------------------------------------------------------------------
 
     /// Read one of the 32 cop2 data registers (cop2cr0..cop2cr31).
-    /// Returns the raw 32-bit value — the same layout an MFC2 instruction
+    /// Returns the raw 32-bit value - the same layout an MFC2 instruction
     /// would observe in the receiving CPU register.
     pub fn read_data(&self, idx: u8) -> u32 {
         match idx & 0x1F {
@@ -1541,7 +1541,7 @@ impl Gte {
             // IRGB / ORGB read the IR1/IR2/IR3 saturation as a 15-bit BGR555
             // packed colour (Nocash PSX cop2cr28/cr29 read shape).
             28 | 29 => packed_irgb(self.ir1, self.ir2, self.ir3),
-            // LZCS / LZCR — `LZCS` is the source the next read of LZCR will
+            // LZCS / LZCR - `LZCS` is the source the next read of LZCR will
             // count leading zeros / ones on. We expose the raw cached value
             // and the count.
             30 => self.lzcs as u32,
@@ -1591,7 +1591,7 @@ impl Gte {
                 let (lo, hi) = unpack_i16_lo_hi(val);
                 self.sxy_fifo[2] = ScreenXY::new(lo as i32, hi as i32);
             }
-            // SXYP — write-only "push": SXY0 ← SXY1 ← SXY2 ← new.
+            // SXYP - write-only "push": SXY0 ← SXY1 ← SXY2 ← new.
             15 => {
                 let (lo, hi) = unpack_i16_lo_hi(val);
                 self.sxy_fifo[0] = self.sxy_fifo[1];
@@ -1754,7 +1754,7 @@ impl Gte {
         }
     }
 
-    /// `MFC2` — move from cop2 data register `rd` to a returned `u32`. CPU
+    /// `MFC2` - move from cop2 data register `rd` to a returned `u32`. CPU
     /// callers stash the result in their integer register file.
     pub fn mfc2(&mut self, rd: u8) -> u32 {
         // MFC2 has a 1-cycle stall (no GTE op charge); we model it as a
@@ -1763,31 +1763,31 @@ impl Gte {
         self.read_data(rd)
     }
 
-    /// `MTC2` — move CPU `val` into cop2 data register `rd`.
+    /// `MTC2` - move CPU `val` into cop2 data register `rd`.
     pub fn mtc2(&mut self, rd: u8, val: u32) {
         self.cycles = self.cycles.saturating_add(1);
         self.write_data(rd, val);
     }
 
-    /// `CFC2` — move from cop2 control register `rd`.
+    /// `CFC2` - move from cop2 control register `rd`.
     pub fn cfc2(&mut self, rd: u8) -> u32 {
         self.cycles = self.cycles.saturating_add(1);
         self.read_ctrl(rd)
     }
 
-    /// `CTC2` — move CPU `val` into cop2 control register `rd`.
+    /// `CTC2` - move CPU `val` into cop2 control register `rd`.
     pub fn ctc2(&mut self, rd: u8, val: u32) {
         self.cycles = self.cycles.saturating_add(1);
         self.write_ctrl(rd, val);
     }
 
-    /// `LWC2 rd, off(base)` — load 32 bits from memory and write into cop2
+    /// `LWC2 rd, off(base)` - load 32 bits from memory and write into cop2
     /// data register `rd`. The caller supplies a [`Cop2Mem`] for the actual
-    /// load — the GTE doesn't model main memory itself.
+    /// load - the GTE doesn't model main memory itself.
     ///
     /// The effective address is `base + off` (the `off` is sign-extended to
     /// 32 bits by the MIPS pipeline before the call). The host's memory
-    /// implementation is responsible for the alignment guarantee — most
+    /// implementation is responsible for the alignment guarantee - most
     /// retail traces hit aligned addresses.
     pub fn lwc2<M: Cop2Mem + ?Sized>(&mut self, mem: &mut M, rd: u8, addr: u32) {
         self.cycles = self.cycles.saturating_add(1);
@@ -1795,7 +1795,7 @@ impl Gte {
         self.write_data(rd, val);
     }
 
-    /// `SWC2 rd, off(base)` — store cop2 data register `rd` into memory.
+    /// `SWC2 rd, off(base)` - store cop2 data register `rd` into memory.
     pub fn swc2<M: Cop2Mem + ?Sized>(&mut self, mem: &mut M, rd: u8, addr: u32) {
         self.cycles = self.cycles.saturating_add(1);
         let val = self.read_data(rd);
@@ -2038,7 +2038,7 @@ mod tests {
 
     #[test]
     fn mat3_mul_compose_two_y_rotations() {
-        // rot_y(a) * rot_y(b) ≈ rot_y(a + b) — verify within q3.12 rounding.
+        // rot_y(a) * rot_y(b) ≈ rot_y(a + b) - verify within q3.12 rounding.
         let a = std::f32::consts::FRAC_PI_4;
         let b = std::f32::consts::FRAC_PI_3;
         let composed = GteMat3::rot_y(a).mul(&GteMat3::rot_y(b));
@@ -2112,7 +2112,7 @@ mod tests {
     #[test]
     fn nclip_signs_back_vs_front() {
         // CCW triangle: (0,0), (10,0), (0,10). Under PSX winding
-        // (y-down), this is back-facing — nclip > 0. CW is front (negative).
+        // (y-down), this is back-facing - nclip > 0. CW is front (negative).
         let a = ScreenXY::new(0, 0);
         let b = ScreenXY::new(10, 0);
         let c = ScreenXY::new(0, 10);
@@ -2134,7 +2134,7 @@ mod tests {
     fn avsz3_zsf_default_averages_q12() {
         // With ZSF3 = ROT_ONE, the formula is (z0+z1+z2)*ROT_ONE / ROT_ONE
         // = z0+z1+z2 (the q12 cancels). So the function returns the *sum*,
-        // not a true 1/3 average — that matches a retail capture where ZSF3
+        // not a true 1/3 average - that matches a retail capture where ZSF3
         // was loaded with 4096 (the "sum" bucket scale).
         assert_eq!(avsz3(100, 200, 300), 600);
     }
@@ -2749,7 +2749,7 @@ mod tests {
 
     #[test]
     fn nccs_runs_double_light_pass_relative_to_ncs() {
-        // light_color matrix that scales by 0.5 per channel — the second
+        // light_color matrix that scales by 0.5 per channel - the second
         // pass in NCCS should darken the result vs NCS.
         let mut lc = GteMat3::IDENTITY;
         lc.m[0][0] = (ROT_ONE / 2) as i16;
@@ -2764,7 +2764,7 @@ mod tests {
         g.v[0] = GteVec3::new(ROT_ONE, ROT_ONE, ROT_ONE);
         let ncs_rgb = g.ncs();
 
-        // NCCS — same inputs.
+        // NCCS - same inputs.
         let mut g2 = Gte::new();
         g2.rgbc = g.rgbc;
         g2.light = g.light;
@@ -2823,7 +2823,7 @@ mod tests {
         g.rgbc = [0xFF, 0xFF, 0xFF, 0x00];
         // Light matrix that amplifies aggressively.
         let mut amp = GteMat3::IDENTITY;
-        amp.m[0][0] = i16::MAX; // 32767 — large q3.12 -> after >>12 stays positive.
+        amp.m[0][0] = i16::MAX; // 32767 - large q3.12 -> after >>12 stays positive.
         amp.m[1][1] = i16::MAX;
         amp.m[2][2] = i16::MAX;
         g.light = amp;
@@ -2886,7 +2886,7 @@ mod tests {
     #[test]
     fn mtc2_sxyp_pushes_through_fifo() {
         let mut g = Gte::new();
-        // Write three values via SXYP (cop2cr15) — older entries shift down.
+        // Write three values via SXYP (cop2cr15) - older entries shift down.
         let a = pack_i16_lo_hi(10, 20);
         let b = pack_i16_lo_hi(30, 40);
         let c = pack_i16_lo_hi(50, 60);
@@ -3057,8 +3057,8 @@ mod tests {
 
     #[test]
     fn lwc2_into_v0_then_rtps_matches_direct_setup() {
-        // Set up two GTEs identically — one via direct `g.v[0] = ...`, one
-        // via LWC2 from memory — and verify RTPS produces the same SXY.
+        // Set up two GTEs identically - one via direct `g.v[0] = ...`, one
+        // via LWC2 from memory - and verify RTPS produces the same SXY.
         let mut g_direct = Gte::new();
         g_direct.set_viewport(320, 240);
         g_direct.trans = GteVec3::new(0, 0, ROT_ONE * 1024);

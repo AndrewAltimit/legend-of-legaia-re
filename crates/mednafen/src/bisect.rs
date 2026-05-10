@@ -4,7 +4,7 @@
 //!
 //! The user records states at progressive points during a sequence (area
 //! load, level-up, battle action). Bisect tells them which neighbouring
-//! pair brackets the write — that's the pair to drill into with a Ghidra
+//! pair brackets the write - that's the pair to drill into with a Ghidra
 //! function-search on writers of the address in the captured overlay.
 
 use crate::extract::ram_slice;
@@ -61,7 +61,7 @@ pub fn bisect_first_bad(
     BisectOutcome::NeverBecameBad
 }
 
-/// Trace the value at `target_addr` across every snapshot — useful for
+/// Trace the value at `target_addr` across every snapshot - useful for
 /// quickly seeing how a field evolves.
 pub fn trace_addr(snapshots: &[(&str, &[u8])], target_addr: u32) -> Vec<(String, u32)> {
     snapshots

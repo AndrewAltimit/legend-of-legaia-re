@@ -12,7 +12,7 @@
 //!     retail `actor[+0x22]` interpolation factor).
 //!  2. On [`AnimPlayer::tick`] advances the factor by `actor[+0x23]`
 //!     (the per-frame factor delta) and produces the per-bone output
-//!     deltas — one `(pos, rot)` pair per bone.
+//!     deltas - one `(pos, rot)` pair per bone.
 //!  3. Reports `Done` when the factor wraps past 0xFF (one cycle done);
 //!     looped animations let the engine reset.
 
@@ -37,7 +37,7 @@ pub struct AnimPlayer {
     bone_count: usize,
     factor: u16,
     /// Per-frame factor delta (retail `actor[+0x23]`). Default `4` ≈ 64
-    /// frames per cycle — typical for idle / walk loops.
+    /// frames per cycle - typical for idle / walk loops.
     pub frame_delta: u16,
     /// `true` to loop. When `false`, [`AnimPlayer::tick`] reports
     /// `finished = true` once and clamps the factor at 0xFF for
@@ -77,7 +77,7 @@ impl AnimPlayer {
         let _ = prev;
         let factor_u8 = self.factor as u8;
         let reader = KeyframeReader::parse(&self.record, self.bone_count).expect(
-            "record validated in `new` — re-parse should always succeed since the record \
+            "record validated in `new` - re-parse should always succeed since the record \
              is held by value here and never mutated",
         );
         let bone_outputs = reader

@@ -1,6 +1,6 @@
 # Effect bundles
 
-Two distinct formats share the "effect" name — the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `data\battle\efect.dat`. Only one PROT entry uses the on-disc form; the runtime wrapper is what battle code actually consumes.
+Two distinct formats share the "effect" name - the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `data\battle\efect.dat`. Only one PROT entry uses the on-disc form; the runtime wrapper is what battle code actually consumes.
 
 ## On-disc effect bundle (magic `0x02018B0C`)
 
@@ -10,11 +10,11 @@ A bulk scan over the PROT corpus finds this format in exactly one entry: `0000_i
 
 ```
 +0   u32 LE = 0x02018B0C       ; magic
-+4   u32 LE = 0x0000001D       ; HEADER_A — TMD slot count (1 master + 28 sub = 29)
-+8   u32 LE = 0x0000001E       ; HEADER_B — HEADER_A + 1 (sentinel/terminator)
++4   u32 LE = 0x0000001D       ; HEADER_A - TMD slot count (1 master + 28 sub = 29)
++8   u32 LE = 0x0000001E       ; HEADER_B - HEADER_A + 1 (sentinel/terminator)
 ```
 
-Both header words are constant within the format. **HEADER_A = 29 = the maximum TMD count the format reserves space for** — 1 master TMD plus 0..28 sub-effect TMDs.
+Both header words are constant within the format. **HEADER_A = 29 = the maximum TMD count the format reserves space for** - 1 master TMD plus 0..28 sub-effect TMDs.
 
 ### Offset table (112 bytes after the header)
 
@@ -49,9 +49,9 @@ if let Some(eb) = effect_bundle::detect(&buf) {
 
 Implementation: `crates/asset/src/effect_bundle.rs`.
 
-## Runtime effect format — 2-pack wrapper
+## Runtime effect format - 2-pack wrapper
 
-The format `data\battle\efect.dat` (PROT entry 873) actually uses at runtime. Cross-validated against a live battle save state — the post-init buffer at RAM `_DAT_8007BD5C = 0x800E425C` is byte-identical to PROT.DAT bytes at sector `0x9086`.
+The format `data\battle\efect.dat` (PROT entry 873) actually uses at runtime. Cross-validated against a live battle save state - the post-init buffer at RAM `_DAT_8007BD5C = 0x800E425C` is byte-identical to PROT.DAT bytes at sector `0x9086`.
 
 ### Buffer layout
 
@@ -77,7 +77,7 @@ Each **pack0 entry** is a frame-batch animation record:
 Each **pack1 entry** is an effect-ID script:
 
 ```
-+0   u8   child_count         ← N — number of child sprites to spawn
++0   u8   child_count         ← N - number of child sprites to spawn
 +1   u8   flags               (bit 0 = use random child distribution)
 +2   u16  spread              ← half-range modulo for random child position (signed 8.8 fixed)
 +4   [N × 14-byte child sprite descriptors]
@@ -89,9 +89,9 @@ Each **pack1 entry** is an effect-ID script:
     +0x08  u8[6] tail         ← animation curves / sound-id / timing (per-frame walker only)
 ```
 
-The retail random-distribution loop (`FUN_801E0088` pass 1) reads only `+0x02` (width) and `+0x06` (depth) per child — those two govern where a child sprite spawns relative to the effect origin. `anim_flags` and `tail` are consumed later by the per-frame walker when advancing a live child slot's animation state.
+The retail random-distribution loop (`FUN_801E0088` pass 1) reads only `+0x02` (width) and `+0x06` (depth) per child - those two govern where a child sprite spawns relative to the effect origin. `anim_flags` and `tail` are consumed later by the per-frame walker when advancing a live child slot's animation state.
 
-A live `0873_befect_data` sample carries 14 entries in pack0 and 33 entries in pack1. Inline sprite atlas entries (between `buffer+8` and pack0) decode as `(u16 u, u16 v, u16 page_descriptor, u8 clut, u8 ?)` — standard PSX sprite UV packets.
+A live `0873_befect_data` sample carries 14 entries in pack0 and 33 entries in pack1. Inline sprite atlas entries (between `buffer+8` and pack0) decode as `(u16 u, u16 v, u16 page_descriptor, u8 clut, u8 ?)` - standard PSX sprite UV packets.
 
 ### Consumer cluster
 
@@ -109,8 +109,8 @@ Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 
 ```
 +0x000  16 bytes   table-head record set by init
-+0x010  4096 bytes 128 × 32-byte child slots — per-sprite render state
-+0x1010 896 bytes  32 × 28-byte master slots — per-effect-instance state
++0x010  4096 bytes 128 × 32-byte child slots - per-sprite render state
++0x1010 896 bytes  32 × 28-byte master slots - per-effect-instance state
 +0x1390 1968 bytes (unused / future expansion)
 ```
 
@@ -120,8 +120,8 @@ Decompiled output: `ghidra/scripts/funcs/overlay_battle_*.txt`.
 
 `0x801F17F8`, called from `FUN_800520F0` case `0xFF`, streams two specific runtime-only files via `FUN_800558FC`:
 
-- `data\battle\summon.dat` (PROT `0x37F`) — selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
-- `data\battle\readef.dat` (PROT `0x380`) — opposite branch.
+- `data\battle\summon.dat` (PROT `0x37F`) - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
+- `data\battle\readef.dat` (PROT `0x380`) - opposite branch.
 
 Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 2-pack layout but not yet confirmed.
 
@@ -132,4 +132,4 @@ Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 
 
 ## Field-pack format (magic `0x01059B84`)
 
-A small number of PROT entries lead with magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. The preamble→slot mapping is unknown — likely runtime-reconstructed from the schema's offset hints. Detector + dispatch live in `crates/asset/src/field_pack.rs`.
+A small number of PROT entries lead with magic `0x01059B84` followed by a 97-entry strict schema preceding packed TIMs/TMDs. The preamble→slot mapping is unknown - likely runtime-reconstructed from the schema's offset hints. Detector + dispatch live in `crates/asset/src/field_pack.rs`.

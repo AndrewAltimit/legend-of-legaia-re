@@ -2,14 +2,14 @@
 //!
 //! See [`docs/subsystems/effect-vm.md`](../../../docs/subsystems/effect-vm.md)
 //! for the authoritative byte-level reference. This crate ports the high-
-//! confidence pieces — the slot pool layout, the per-effect script header
-//! parser, and the public spawn API — and exposes a [`EffectHost`] trait that
+//! confidence pieces - the slot pool layout, the per-effect script header
+//! parser, and the public spawn API - and exposes a [`EffectHost`] trait that
 //! lets the engine extend the per-frame walker incrementally.
 //!
 //! ## Why no opcode table
 //!
 //! The retail per-frame walker (`FUN_801E0088`, 600+ instructions) does state
-//! transitions inline — there's no central `switch (state)` to translate into
+//! transitions inline - there's no central `switch (state)` to translate into
 //! a clean Rust dispatch. The port models the **walker as a state-machine
 //! frame** (slot iteration + state-byte countdown + child-slot allocation)
 //! and delegates per-state logic to the host. Engines wire whatever runtime
@@ -53,33 +53,33 @@ pub const CHILD_SLOT_BYTES: usize = 32;
 /// scan for the first slot where `active == 0`.
 #[derive(Debug, Clone, Default)]
 pub struct MasterSlot {
-    /// `+0x00` — child sprite count for this effect (copied from
+    /// `+0x00` - child sprite count for this effect (copied from
     /// `pack1_record[0]`). Zero means the slot is unused.
     pub child_count: u8,
-    /// `+0x01` — flags byte. Bit `0x01` = "use random child position
+    /// `+0x01` - flags byte. Bit `0x01` = "use random child position
     /// distribution" (drives the child-slot setup loop). Bit `0x02` related
     /// to alternate child-axis layout. Copied from `pack1_record[1]`.
     pub flags: u8,
-    /// `+0x02` — counter / sub-state.
+    /// `+0x02` - counter / sub-state.
     pub field_02: u8,
-    /// `+0x03` — primary state byte. Each frame the walker reads it; values
+    /// `+0x03` - primary state byte. Each frame the walker reads it; values
     /// `< 8` decrement to zero and "skip-this-slot", values `>= 8` get
     /// rebased by `-= 8` before continuing into the work path. Cleared when
     /// the effect completes.
     pub state: u8,
-    /// `+0x04` — angle (12-bit, masked `& 0xFFF` from the spawn arg).
+    /// `+0x04` - angle (12-bit, masked `& 0xFFF` from the spawn arg).
     pub angle: u16,
-    /// `+0x06` — short padding / reserved (one slot).
+    /// `+0x06` - short padding / reserved (one slot).
     pub field_06: u16,
-    /// `+0x08` — world X. Spawn writes `(caller_x as i16) << 8` (8.8 fixed).
+    /// `+0x08` - world X. Spawn writes `(caller_x as i16) << 8` (8.8 fixed).
     pub pos_x: i32,
-    /// `+0x0C` — world Y. Same encoding as `pos_x`.
+    /// `+0x0C` - world Y. Same encoding as `pos_x`.
     pub pos_y: i32,
-    /// `+0x10` — world Z. Same encoding as `pos_x`.
+    /// `+0x10` - world Z. Same encoding as `pos_x`.
     pub pos_z: i32,
-    /// `+0x14` — generic word (set by the walker during state advance).
+    /// `+0x14` - generic word (set by the walker during state advance).
     pub field_14: i32,
-    /// `+0x18` — pointer (or index) into the script body. Spawn writes
+    /// `+0x18` - pointer (or index) into the script body. Spawn writes
     /// `pack1_record_offset + 4` (skips the 4-byte header).
     ///
     /// We store this as a `u32` "offset" so it survives moves; the host
@@ -92,16 +92,16 @@ pub struct MasterSlot {
 /// (at most ~4 per active effect on average).
 #[derive(Debug, Clone, Default)]
 pub struct ChildSlot {
-    /// `+0x00..0x10` — animation / sprite descriptor. Modeled as opaque
+    /// `+0x00..0x10` - animation / sprite descriptor. Modeled as opaque
     /// bytes; engines typed-deserialize what they need from these 16 bytes.
     pub head: [u8; 16],
-    /// `+0x10` — interpolation source X (`(caller_x as i16) << 8`).
+    /// `+0x10` - interpolation source X (`(caller_x as i16) << 8`).
     pub src_x: i32,
-    /// `+0x14` — interpolation source Y.
+    /// `+0x14` - interpolation source Y.
     pub src_y: i32,
-    /// `+0x18` — interpolation source Z.
+    /// `+0x18` - interpolation source Z.
     pub src_z: i32,
-    /// `+0x1C` — packed control / sprite metadata.
+    /// `+0x1C` - packed control / sprite metadata.
     pub field_1c: u32,
 }
 
@@ -131,20 +131,20 @@ pub struct EffectScript {
 ///
 /// Models the per-child params at `pack1_record[+0x4 + child_idx * 14]`
 /// in the retail layout (the retail random-distribution loop reads only
-/// `+0x2` and `+0x6` of each — width and depth). Other fields belong to
+/// `+0x2` and `+0x6` of each - width and depth). Other fields belong to
 /// the per-frame walker.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ChildSprite {
-    /// `+0x00..0x02` — sprite identifier, copied to `MasterSlot.field_18`
+    /// `+0x00..0x02` - sprite identifier, copied to `MasterSlot.field_18`
     /// downstream.
     pub sprite_id: u16,
-    /// `+0x02` — half-width of the random X distribution (in 8.8 fixed).
+    /// `+0x02` - half-width of the random X distribution (in 8.8 fixed).
     pub width: i16,
-    /// `+0x04..0x06` — anim / shading flags.
+    /// `+0x04..0x06` - anim / shading flags.
     pub anim_flags: u16,
-    /// `+0x06` — half-width of the random Z distribution (in 8.8 fixed).
+    /// `+0x06` - half-width of the random Z distribution (in 8.8 fixed).
     pub depth: i16,
-    /// `+0x08..0x0E` — opaque tail (animation curves / sound id / etc.).
+    /// `+0x08..0x0E` - opaque tail (animation curves / sound id / etc.).
     pub tail: [u8; 6],
 }
 
@@ -152,7 +152,7 @@ pub struct ChildSprite {
 /// `_DAT_8007BD30` in retail. Engines own one of these per scene.
 #[derive(Debug, Clone)]
 pub struct Pool {
-    /// `+0x00..0x10` — pool-head record set by [`Pool::init`].
+    /// `+0x00..0x10` - pool-head record set by [`Pool::init`].
     /// `param_1`, `param_2` are the two `(id=0x1000, param=0xA00)` immediates
     /// the retail caller passes; their semantics remain opaque pending more
     /// reverse work, so we just retain them.
@@ -199,16 +199,16 @@ impl Pool {
         Self::default()
     }
 
-    /// Port of `FUN_801DE914` — pack-fixup + pool init.
+    /// Port of `FUN_801DE914` - pack-fixup + pool init.
     ///
     /// Retail behavior: zeros the entire 5008-byte pool, then writes the
     /// `(param_1, param_2)` and the three pack pointers into the head
     /// record. The pack-fixup half (rebasing pack0 and pack1's offset
     /// tables to absolute addresses) is moved to the asset layer in this
-    /// port — by the time [`Pool::init`] is called, the script catalog
+    /// port - by the time [`Pool::init`] is called, the script catalog
     /// has already been resolved to in-memory offsets.
     ///
-    /// Safe to call multiple times — re-initing the pool drops every
+    /// Safe to call multiple times - re-initing the pool drops every
     /// active effect.
     pub fn init(&mut self, head: PoolHead) {
         // Retail clears `_DAT_8007BD30` for `0x4E4 = 1252` u32 words = 5008
@@ -236,7 +236,7 @@ impl Pool {
             .filter(|&i| i < MAX_MASTER_SLOTS)
     }
 
-    /// Port of `FUN_801DFDF8` — spawn an effect at `world_pos` with `angle`
+    /// Port of `FUN_801DFDF8` - spawn an effect at `world_pos` with `angle`
     /// (12 bits used).
     ///
     /// Retail signature: `void(byte effect_id, short* world_pos, ushort
@@ -245,9 +245,9 @@ impl Pool {
     ///
     /// Returns `Some(slot)` on success, `None` if the pool is full or the
     /// global guard `_DAT_8007BD71 != -1` would fire (callers gate this).
-    /// The retail dispatch on `effect_id == 4` / `effect_id == 0x13` —
+    /// The retail dispatch on `effect_id == 4` / `effect_id == 0x13` -
     /// which calls the alternate handler `func_0x80050ed4` for "summon"
-    /// effects — is delegated to [`EffectHost::handle_summon`]; this port
+    /// effects - is delegated to [`EffectHost::handle_summon`]; this port
     /// handles only the generic case.
     pub fn spawn<H: EffectHost + ?Sized>(
         &mut self,
@@ -280,7 +280,7 @@ impl Pool {
         m.pos_y = (world_pos[1] as i32) << 8;
         m.pos_z = (world_pos[2] as i32) << 8;
         m.field_14 = 0;
-        // Retail: `*piVar8 + 4` — pointer past the 4-byte script header.
+        // Retail: `*piVar8 + 4` - pointer past the 4-byte script header.
         // We store offset-into-body since we keep the header separately.
         m.script_offset = 0;
 
@@ -293,7 +293,7 @@ impl Pool {
         // Random child-distribution: for each child sprite, write a random
         // (x_offset, z_offset) into a per-master child-record-array.
         // Retail stores these into `master.script_data[child_idx * 0xE +
-        // {2, 6}]` — i.e., it scribbles back into the *script* memory.
+        // {2, 6}]` - i.e., it scribbles back into the *script* memory.
         // That's a memory-aliasing hazard in the retail design; in the
         // port we expose the per-child random offsets via a host hook so
         // engines store them next to their per-child render state.
@@ -337,7 +337,7 @@ impl Pool {
         self.spawn(host, ui_id, world_pos, angle, script, children)
     }
 
-    /// Port of `FUN_801E0088` (skeleton) — per-frame walker.
+    /// Port of `FUN_801E0088` (skeleton) - per-frame walker.
     ///
     /// The retail walker iterates 32 master slots; for each active one it:
     ///   1. Reads `master.state` (byte +0x03):
@@ -407,7 +407,7 @@ pub enum StateOutcome {
     /// using the retail `state = frames + 8` convention so the countdown
     /// path picks it up next tick.
     Wait { frames: u8 },
-    /// Effect is done — the pool zeroes the master slot.
+    /// Effect is done - the pool zeroes the master slot.
     Terminate,
 }
 
@@ -416,7 +416,7 @@ pub enum StateOutcome {
 /// All methods have default impls so a minimal host (only RNG) compiles.
 /// Each method documents which retail function it stands in for.
 pub trait EffectHost {
-    /// Equivalent of `func_0x80056798` — uniform random `i32`. The retail
+    /// Equivalent of `func_0x80056798` - uniform random `i32`. The retail
     /// PRNG is an LCG seeded by `_DAT_8007AB80`; engines plug whatever RNG
     /// they have. Default impl returns `0` (deterministic for tests).
     fn next_random(&mut self) -> i32 {
@@ -432,7 +432,7 @@ pub trait EffectHost {
     }
 
     /// Equivalent of `func_0x80050ed4(world_pos, &stack_buf, summon_table,
-    /// 0x1000)` — the streaming-summon handler. Buffer size per slot is
+    /// 0x1000)` - the streaming-summon handler. Buffer size per slot is
     /// `0x10800 = 67584` bytes. Default no-op.
     fn handle_summon(&mut self, _effect_id: u8, _world_pos: [i16; 3], _angle: u16) {}
 
@@ -453,7 +453,7 @@ pub trait EffectHost {
     /// whatever per-effect work they have (read the next state byte,
     /// interpolate child positions, emit GPU primitives, decrement
     /// counters) and return [`StateOutcome`] describing the lifecycle.
-    /// Default impl just terminates the slot — useful for engines that
+    /// Default impl just terminates the slot - useful for engines that
     /// haven't wired the renderer yet.
     fn advance_state(&mut self, _slot: usize, _master: &mut MasterSlot) -> StateOutcome {
         StateOutcome::Terminate
@@ -465,7 +465,7 @@ pub trait EffectHost {
 /// per-child descriptor slice, indexed by effect id.
 ///
 /// Built by calling [`EffectCatalog::from_pack1_bytes`] on the raw pack1
-/// slice from PROT 873 (`efect.dat`). An empty catalog is safe — all
+/// slice from PROT 873 (`efect.dat`). An empty catalog is safe - all
 /// `spawn_by_ui_id` calls simply return `None`.
 #[derive(Debug, Clone, Default)]
 pub struct EffectCatalog {
@@ -501,7 +501,7 @@ impl EffectCatalog {
     /// remainder as the script body.
     ///
     /// Returns an empty catalog on any parse failure so callers never need
-    /// to handle an error — a missing effect just doesn't spawn.
+    /// to handle an error - a missing effect just doesn't spawn.
     pub fn from_pack1_bytes(data: &[u8]) -> Self {
         match Self::try_parse(data) {
             Some(entries) => Self { entries },
@@ -786,7 +786,7 @@ mod tests {
 
         // State < 8 → goes to 0 in one tick (retail clears, doesn't decrement).
         assert_eq!(pool.master_slots[0].state, 0);
-        // No advance_state — slot was waiting.
+        // No advance_state - slot was waiting.
         assert!(host.events.is_empty());
     }
 
@@ -896,7 +896,7 @@ mod tests {
 
         let r = pool.spawn(&mut host, 10, [0, 0, 0], 0, &EffectScript::default(), &[]);
         assert_eq!(r, None);
-        // No host event was recorded — the pool returned before any work.
+        // No host event was recorded - the pool returned before any work.
         assert!(host.events.is_empty());
     }
 
@@ -909,7 +909,7 @@ mod tests {
         let mut host = RecHost::default();
         let script = EffectScript::default();
 
-        // First spawn — slot 0.
+        // First spawn - slot 0.
         let s0 = pool
             .spawn(&mut host, 10, [1, 2, 3], 0x111, &script, &[])
             .expect("first spawn ok");
@@ -919,20 +919,20 @@ mod tests {
         // simulate a real spawn that activates the slot, mark it manually.
         pool.master_slots[0].child_count = 1;
 
-        // Tick once — host returns Terminate for this slot.
+        // Tick once - host returns Terminate for this slot.
         host.advance_outcomes = vec![StateOutcome::Terminate];
         pool.master_slots[0].state = 0; // ensure work-path runs
         pool.tick(&mut host);
         assert_eq!(pool.master_slots[0].child_count, 0); // freed
 
-        // Second spawn — should reuse slot 0 since it's the first empty.
+        // Second spawn - should reuse slot 0 since it's the first empty.
         let s1 = pool
             .spawn(&mut host, 11, [4, 5, 6], 0x222, &script, &[])
             .expect("respawn ok");
         assert_eq!(s1, 0);
     }
 
-    /// Tick a Wait-encoded slot through several frames — each tick subtracts
+    /// Tick a Wait-encoded slot through several frames - each tick subtracts
     /// 8 (saturating) until state hits 0, at which point the next tick fires
     /// `advance_state`. Mirrors retail's `state -= 8` countdown at
     /// `0x801e0130..0x801e015f`.
@@ -941,7 +941,7 @@ mod tests {
         let mut pool = Pool::new();
         let mut host = RecHost::default();
 
-        // Seed slot 0 with state = 24 — three ticks of `-= 8` before reaching 0.
+        // Seed slot 0 with state = 24 - three ticks of `-= 8` before reaching 0.
         pool.master_slots[0].child_count = 1;
         pool.master_slots[0].state = 24;
 
@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(pool.master_slots[0].state, 8);
         assert!(host.events.is_empty());
 
-        // After tick: 8 → 0 (still NOT a work tick — saturates).
+        // After tick: 8 → 0 (still NOT a work tick - saturates).
         pool.tick(&mut host);
         assert_eq!(pool.master_slots[0].state, 0);
         assert!(host.events.is_empty());

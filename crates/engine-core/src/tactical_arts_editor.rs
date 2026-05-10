@@ -7,10 +7,10 @@
 //!
 //! ## Components
 //!
-//! - [`SavedChain`] — one chain (name + sequence of [`Command`] inputs).
-//! - [`ChainLibrary`] — per-character ring buffer of saved chains, with
+//! - [`SavedChain`] - one chain (name + sequence of [`Command`] inputs).
+//! - [`ChainLibrary`] - per-character ring buffer of saved chains, with
 //!   `MAX_SLOTS` capacity.
-//! - [`ChainEditor`] — the editor state machine: `Browsing → Editing →
+//! - [`ChainEditor`] - the editor state machine: `Browsing → Editing →
 //!   Naming → Done`. Engines feed it [`EditInput`] per frame; events
 //!   surface as [`EditEvent`].
 //!
@@ -230,7 +230,7 @@ pub enum EditEvent {
     SequencePopped {
         len: usize,
     },
-    /// Player tried to commit too short a chain — feedback for HUD blip.
+    /// Player tried to commit too short a chain - feedback for HUD blip.
     InvalidCommit {
         len: usize,
     },
@@ -294,7 +294,7 @@ impl ChainEditor {
         }
     }
 
-    /// Total rows in the browse list — saved chains plus a "+ New"
+    /// Total rows in the browse list - saved chains plus a "+ New"
     /// trailer when not at capacity.
     pub fn browse_rows(&self) -> u8 {
         let mut n = self.library_view.len();
@@ -448,7 +448,7 @@ impl ChainEditor {
             events.push(EditEvent::EnteredNaming);
             return;
         }
-        // No relevant input — restore.
+        // No relevant input - restore.
         self.phase = EditorPhase::Editing { working };
     }
 
@@ -485,7 +485,7 @@ impl ChainEditor {
             }
             return;
         }
-        // No relevant input — restore.
+        // No relevant input - restore.
         self.phase = EditorPhase::Naming { working, name };
     }
 }
@@ -740,7 +740,7 @@ mod tests {
         lib.save(0, SavedChain::new("a", vec![Command::Left; 4]))
             .unwrap();
         let mut ed = ChainEditor::new(0, &lib);
-        // Cursor is at row 0 — Cross opens edit.
+        // Cursor is at row 0 - Cross opens edit.
         ed.tick(EditInput {
             cross: true,
             ..Default::default()

@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 /// canonical per-track verification belongs to the Redump project. These
 /// hashes are recorded against the project author's dump as a sanity check.
 const KNOWN_HASHES: &[(&str, &str)] = &[(
-    "Legend of Legaia (USA) — SCUS-94254 — Mode2/2352 .bin",
+    "Legend of Legaia (USA) - SCUS-94254 - Mode2/2352 .bin",
     "e6120a5d70716dd2f026a2da32d0171d52651971b52c4347a68541299f75258c",
 )];
 

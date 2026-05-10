@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# state-walk.sh — extract overlay slices from EVERY scenario in scenarios.toml.
+# state-walk.sh - extract overlay slices from EVERY scenario in scenarios.toml.
 #
 # For each scenario in the manifest, slices the configured overlay window
 # out of main RAM, writes it to /tmp/legaia_overlay_<label>.bin, and

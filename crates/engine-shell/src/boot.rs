@@ -11,7 +11,7 @@
 //!    in the BGM director for subsequent op-`0x35` triggers.
 //! 4. Drive the world tick + camera tick + event routing each frame.
 //!
-//! No window / renderer here — the binary owns winit + wgpu (or in headless
+//! No window / renderer here - the binary owns winit + wgpu (or in headless
 //! CI mode, no window). [`BootSession::tick`] is the per-frame driver
 //! callable from either path.
 
@@ -31,7 +31,7 @@ pub const DEFAULT_BOOT_SCENE: &str = "town01";
 
 /// Total SPU RAM in bytes (PSX hardware constant).
 const SPU_RAM_BYTES: u32 = 512 * 1024;
-/// Byte offset reserved for voice-0 / scratchpad — banks are allocated
+/// Byte offset reserved for voice-0 / scratchpad - banks are allocated
 /// above this. Mirrors the asset-viewer SEQ playback path.
 const SPU_RESERVED_BYTES: u32 = 0x1000;
 
@@ -55,7 +55,7 @@ impl Default for BootConfig {
 }
 
 /// Source of PROT.DAT + CDNAME.TXT bytes for a [`BootSession::open*`]
-/// call. Internal — public construction is via the typed entry points
+/// call. Internal - public construction is via the typed entry points
 /// [`BootSession::open`] and [`BootSession::open_disc`].
 enum SceneSource<'a> {
     Extracted(&'a Path),
@@ -105,7 +105,7 @@ impl BootSession {
         host.load_scene(&cfg.scene)
             .with_context(|| format!("load scene '{}'", cfg.scene))?;
 
-        // Audio + BGM director (optional — disabled for headless tests).
+        // Audio + BGM director (optional - disabled for headless tests).
         let (audio, bgm) = if cfg.enable_audio {
             match AudioOut::new() {
                 Ok(audio) => {
@@ -122,7 +122,7 @@ impl BootSession {
                     (Some(audio), Some(director))
                 }
                 Err(e) => {
-                    log::warn!("audio disabled — open failed: {e:#}");
+                    log::warn!("audio disabled - open failed: {e:#}");
                     (None, None)
                 }
             }

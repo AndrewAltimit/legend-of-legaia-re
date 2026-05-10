@@ -104,12 +104,12 @@ fn extract(file: &PathBuf, out: &PathBuf, wav: bool, sample_rate: u32) -> Result
         let vab_dir = out.join(format!("vab{:02}_at_{:08X}", i, off));
         std::fs::create_dir_all(&vab_dir)?;
 
-        // metadata.json — full header + programs + tones for downstream tooling.
+        // metadata.json - full header + programs + tones for downstream tooling.
         let meta_path = vab_dir.join("metadata.json");
         let json = serde_json::to_string_pretty(&report)?;
         std::fs::write(&meta_path, json)?;
 
-        // Each VAG body as raw .vag (just the ADPCM stream — no Sony VAG-format
+        // Each VAG body as raw .vag (just the ADPCM stream - no Sony VAG-format
         // 48-byte header, since we don't know the source pitch / rate per body).
         for s in &report.vag_samples {
             let raw = &data[s.byte_offset..s.byte_offset + s.size];

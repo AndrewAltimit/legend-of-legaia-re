@@ -1,4 +1,4 @@
-//! Shop UI state — item list, buy / sell cursor, quantity selection, and
+//! Shop UI state - item list, buy / sell cursor, quantity selection, and
 //! gold / inventory delta application.
 //!
 //! Owns only the mutable state needed to drive

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-state-diff.py — pairwise diff between two mednafen save states.
+state-diff.py - pairwise diff between two mednafen save states.
 
 Thin python wrapper over the Rust `mednafen-state diff` binary. Useful when
 you want a quick CLI without remembering the address-window flag form, or

@@ -6,7 +6,7 @@
 //! length sanity, w/h fit), so the scanner just hands every magic match to
 //! the parser and keeps successful parses.
 //!
-//! Used by `asset tim-scan` to inventory every TIM across the PROT corpus —
+//! Used by `asset tim-scan` to inventory every TIM across the PROT corpus -
 //! companion to `tmd-scan`. Most character-mesh PROT entries (battle_data,
 //! level_up, monster_se) host TIMs co-located with the TMDs they texture.
 

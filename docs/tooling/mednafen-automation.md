@@ -3,7 +3,7 @@
 A scriptable substitute for mednafen's interactive memory-watchpoint
 debugger. The toolkit treats each `.mc{0..9}` save state as a frozen RAM
 snapshot, and uses pairwise diffs + targeted bisection to surface where
-the runtime wrote between snapshots — the watchpoint-equivalent answer
+the runtime wrote between snapshots - the watchpoint-equivalent answer
 without needing a live emulator session.
 
 `crates/mednafen` provides the parser library + the `mednafen-state`
@@ -14,7 +14,7 @@ declarative scenario manifest.
 
 Mednafen's PSX module ships with a TUI debugger that supports memory
 breakpoints, register stepping, and code tracing. None of those have a
-scriptable interface — every debugger interaction is keyboard-driven
+scriptable interface - every debugger interaction is keyboard-driven
 inside the running window. PCSX-Redux has a Lua scripting API but
 requires running its own emulator process per session.
 
@@ -33,12 +33,12 @@ retail US disc, each captured at a specific gameplay moment:
 
 | Slot | Label                | Description                                                       |
 |------|----------------------|-------------------------------------------------------------------|
-| mc0  | town_rim_elm         | Rim Elm (CDNAME `town0c`, scene index `0x15`) — town residency    |
+| mc0  | town_rim_elm         | Rim Elm (CDNAME `town0c`, scene index `0x15`) - town residency    |
 | mc1  | pre_encounter        | Walking the field (`map01`), one step before encounter trigger    |
 | mc2  | post_encounter       | Battle just initiated (encounter triggered from `map01`)          |
 | mc3  | battle_drake_castle  | Battle in Drake Castle (`dolk`, scene index `0x3C`)               |
 | mc4  | pre_fire_book        | Battle command menu, about to use Fire Book I on Vahn (`dolk`)    |
-| mc5  | post_fire_book       | Battle, Fire Book I just used on Vahn — Hyper Art learned         |
+| mc5  | post_fire_book       | Battle, Fire Book I just used on Vahn - Hyper Art learned         |
 | mc6  | battle_anim_strike   | Performing a somersault on an enemy (active animation)            |
 | mc7  | pre_steal            | Battle frame: goblin about to steal an item from the party        |
 | mc8  | magic_level_up       | Magic-rank level-up banner active                                 |
@@ -46,21 +46,21 @@ retail US disc, each captured at a specific gameplay moment:
 
 Pairwise pairings of interest:
 
-- **mc1 ↔ mc2** — encounter trigger. The 133 KB battle overlay loads
+- **mc1 ↔ mc2** - encounter trigger. The 133 KB battle overlay loads
   into `0x801CE808..0x801F3818`; the actor pointer table at
   `0x801C9370+` populates with stride `0x60`; the active scene index at
   `0x80084540` does NOT change. Codified in
   `engine_core::capture_observations::encounter_trigger`.
-- **mc4 ↔ mc5** — Fire Book I usage on Vahn. Inside Vahn's character
+- **mc4 ↔ mc5** - Fire Book I usage on Vahn. Inside Vahn's character
   record (`0x80084708 + 0x414`) exactly one 3-byte cluster differs
   (`+0x185..+0x188`: `01 0C 00 → 02 03 0C`). Pattern is a length-prefixed
   list growing by one entry. Codified in
   `engine_core::capture_observations::vahn_fire_book_use`.
-- **mc7 ↔ mc8 ↔ mc9** — stat-growth + magic-rank-up triplet. Loading mc7
+- **mc7 ↔ mc8 ↔ mc9** - stat-growth + magic-rank-up triplet. Loading mc7
   and waiting ~5-10 s plays out the steal animation, then mc8's
   magic-rank up fires, then mc9's character level-up fires. Pinned in
   `engine_core::levelup::observations::vahn_mc8_to_mc9`.
-- **mc0 ↔ mc1** — town-vs-field RAM-layout reference. mc0 is the only
+- **mc0 ↔ mc1** - town-vs-field RAM-layout reference. mc0 is the only
   town-resident state in the corpus.
 
 Slot → label → watchpoint mapping is declared in
@@ -95,7 +95,7 @@ target/release/mednafen-state extract \
 ```
 
 This is the structured replacement for
-`scripts/extract-mednafen-overlay.py` — same anchor-based fallback when
+`scripts/extract-mednafen-overlay.py` - same anchor-based fallback when
 the structured `MainRAM.data8` lookup misses, plus a MIPS-shape sanity
 check.
 
@@ -123,7 +123,7 @@ Output:
 ```
 
 The largest region (`0x801F69D8..0x801F8F02`, 8631 bytes) is a 9 KB
-overlay window the area-load wrote into — that's the new scene's code
+overlay window the area-load wrote into - that's the new scene's code
 or data. The smaller regions are scattered global-state updates.
 
 ### Pairwise diff against the whole manifest
@@ -156,7 +156,7 @@ between two adjacent states bracketed the write), `AlreadyBadFromStart`
 scripts/mednafen/watchpoint-bisect.py --addr 0x8007BAC8 --trace mc0 mc1 mc2 mc3 mc4 mc5
 ```
 
-Prints the u32 value at `0x8007BAC8` in each state — useful when you
+Prints the u32 value at `0x8007BAC8` in each state - useful when you
 want to *see* the value evolve before deciding what predicate to bisect
 on.
 
@@ -270,9 +270,9 @@ each `diff_against` sister, writing a per-scenario JSON report.
 
 ## Cross-links
 
-- [`overlay-capture.md`](overlay-capture.md) — how the resulting overlay
+- [`overlay-capture.md`](overlay-capture.md) - how the resulting overlay
   slices get imported into Ghidra and analysed.
-- [`extraction.md`](extraction.md) — disc-side extraction; runs upstream
+- [`extraction.md`](extraction.md) - disc-side extraction; runs upstream
   of save-state work.
-- [`crates/mednafen/README.md`](../../crates/mednafen/README.md) — the
+- [`crates/mednafen/README.md`](../../crates/mednafen/README.md) - the
   crate's API contract.

@@ -1,4 +1,4 @@
-//! `mednafen-state` — CLI orchestrator for the mednafen-automation toolkit.
+//! `mednafen-state` - CLI orchestrator for the mednafen-automation toolkit.
 //!
 //! Subcommands:
 //!   info       Inspect a save state's section table.

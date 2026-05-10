@@ -2,9 +2,9 @@
 //!
 //! Owns a wgpu device + surface, plus two render pipelines:
 //!
-//! * **Textured-quad** (Phase 1 TIM viewer) — `upload_texture` +
+//! * **Textured-quad** (Phase 1 TIM viewer) - `upload_texture` +
 //!   `render(RenderTarget::Texture(...))`. Letterbox-preserves aspect ratio.
-//! * **Flat-shaded mesh** (Phase 1 TMD viewer) — `upload_mesh` +
+//! * **Flat-shaded mesh** (Phase 1 TMD viewer) - `upload_mesh` +
 //!   `render(RenderTarget::Mesh { ... })`. Lit by a single directional
 //!   light, depth-tested. Uses the `glam::Mat4` MVP supplied per-frame so
 //!   the host can spin the model without re-uploading.
@@ -31,7 +31,7 @@ pub use wgpu;
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
-    /// (scale_x, scale_y, _pad, _pad) — multiplied with the unit quad to
+    /// (scale_x, scale_y, _pad, _pad) - multiplied with the unit quad to
     /// produce final NDC coordinates. Set by the host based on window vs
     /// texture aspect ratio.
     scale: [f32; 4],
@@ -71,7 +71,7 @@ impl UploadedTexture {
 /// A 3D mesh uploaded to the GPU. Built from
 /// `(positions: Vec<[f32;3]>, indices: Vec<u32>)` where indices form
 /// independent triangles (3 indices = 1 tri). Per-vertex normals are
-/// computed at upload time by averaging adjacent face normals — adequate
+/// computed at upload time by averaging adjacent face normals - adequate
 /// for the TMD viewer where the source format only stores per-object
 /// normals (not per-vertex).
 pub struct UploadedMesh {
@@ -177,7 +177,7 @@ pub struct TextOverlay<'a> {
     pub draws: &'a [TextDraw],
 }
 
-/// Sprite types are semantic aliases of the text-quad types — both are
+/// Sprite types are semantic aliases of the text-quad types - both are
 /// just textured quads sampled with nearest-neighbour filtering and alpha
 /// blending. Sharing the GPU pipeline keeps engine-render small; the
 /// distinct names keep call-sites readable.
@@ -191,7 +191,7 @@ pub type SpriteOverlay<'a> = TextOverlay<'a>;
 /// produce them and engine-render can consume them.
 ///
 /// Engines that want richer per-sprite state (subpixel offset, rotation,
-/// scale) should branch off this type — it's intentionally minimal.
+/// scale) should branch off this type - it's intentionally minimal.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpriteRequest {
     /// Top-left of the sprite in world / screen pixels.
@@ -205,7 +205,7 @@ pub struct SpriteRequest {
 
 /// Convert sprite requests to [`SpriteDraw`]s, applying a screen-space
 /// `anchor` translation. The output `dst` width/height match the atlas
-/// source rect 1:1 (no scaling — engines that want PSX-native 240px
+/// source rect 1:1 (no scaling - engines that want PSX-native 240px
 /// vertical scaling should pre-scale `world_y` before calling this).
 pub fn sprite_draws_for(requests: &[SpriteRequest], anchor: (i32, i32)) -> Vec<SpriteDraw> {
     requests
@@ -443,7 +443,7 @@ pub fn dialog_box_draws_for(
             continue;
         }
         // Layout a single-byte string and look at the resulting glyph
-        // width — that's the proportional advance.
+        // width - that's the proportional advance.
         let s = [g.byte];
         let one = font.layout_ascii(std::str::from_utf8(&s).unwrap_or(" "));
         let advance = one
@@ -456,7 +456,7 @@ pub fn dialog_box_draws_for(
             pen_y += layout.line_h;
         }
         if pen_y + layout.line_h > max_y {
-            // Out of vertical room — drop the rest of this page.
+            // Out of vertical room - drop the rest of this page.
             break;
         }
         if let Some(gl) = one.glyphs.first() {
@@ -525,7 +525,7 @@ pub fn level_up_draws_for(
 ///
 /// Engines populate this view from their HUD model on a per-frame basis.
 /// The renderer is intentionally agnostic to the engine-core / engine-vm
-/// types — pass plain data here to keep the layering clean.
+/// types - pass plain data here to keep the layering clean.
 #[derive(Clone, Copy)]
 pub struct HudSlotView<'a> {
     /// Display name (character / monster). Empty string skips the row.
@@ -673,7 +673,7 @@ pub fn battle_hud_draws_for(
         let hp_color = if !slot.alive {
             dim
         } else if slot.hp_max != 0 && slot.hp * 4 <= slot.hp_max {
-            // ≤25% HP — pulse red.
+            // ≤25% HP - pulse red.
             red
         } else {
             row_color
@@ -767,7 +767,7 @@ fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
 /// Build [`TextDraw`]s for the title screen.
 ///
 /// Phase argument controls which UI is rendered:
-/// - `phase` = 0: fade-in (no text — engines fade the screen to black);
+/// - `phase` = 0: fade-in (no text - engines fade the screen to black);
 /// - `phase` = 1: "Press START" prompt (centered roughly mid-screen);
 /// - `phase` = 2: main menu (New Game / Continue / Options stacked).
 ///
@@ -776,7 +776,7 @@ fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
 /// `blink_on` toggles the prompt visibility on phase 1 every blink_period
 /// frames; engines drive this from the title session's blink phase.
 ///
-/// A natural anchor for a 320×240 surface is `pen = (96, 100)` — the
+/// A natural anchor for a 320×240 surface is `pen = (96, 100)` - the
 /// renderer offsets each line from this top-left.
 pub fn title_draws_for(
     font: &legaia_font::Font,
@@ -934,7 +934,7 @@ pub fn save_select_draws_for(
 /// Drawn during [`crate::EncounterPhase::Transition`] (where the engine
 /// type is `legaia_engine_core::encounter::EncounterPhase`). Renders a
 /// large centered "ENCOUNTER!" line plus the formation label below.
-/// Engines fade the surface independently — this just produces the
+/// Engines fade the surface independently - this just produces the
 /// glyph draws.
 pub fn encounter_banner_draws_for(
     font: &legaia_font::Font,
@@ -1398,7 +1398,7 @@ impl UploadedLines {
 
 /// What to draw this frame.
 pub enum RenderTarget<'a> {
-    /// Clear-only — the PROT browser uses this for entries with no preview.
+    /// Clear-only - the PROT browser uses this for entries with no preview.
     Clear,
     /// 2D textured quad (TIM viewer, sprite previews).
     Texture(&'a UploadedTexture),
@@ -1513,16 +1513,16 @@ pub struct Renderer {
     text_vbuf: std::cell::RefCell<wgpu::Buffer>,
     text_ibuf: std::cell::RefCell<wgpu::Buffer>,
     /// Capacity of [`Self::text_vbuf`] in vertex slots and
-    /// [`Self::text_ibuf`] in index slots. Both grow together — one quad
+    /// [`Self::text_ibuf`] in index slots. Both grow together - one quad
     /// per `TextDraw` is 4 vertices and 6 indices.
     text_vertex_capacity: std::cell::Cell<u32>,
     text_index_capacity: std::cell::Cell<u32>,
-    /// Per-overlay quad ranges from the most recent staging call —
+    /// Per-overlay quad ranges from the most recent staging call -
     /// `[(base_quad, count), ...]` in the same order overlays were passed.
     /// Drained by the in-pass draw to issue one `draw_indexed` per overlay
     /// with the matching atlas bound.
     scene_quad_ranges: std::cell::RefCell<Vec<(u32, u32)>>,
-    /// Depth target — recreated on resize.
+    /// Depth target - recreated on resize.
     depth_view: wgpu::TextureView,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
     /// affine (linear-in-screen-space) UV interpolation instead of
@@ -1733,7 +1733,7 @@ impl Renderer {
             push_constant_ranges: &[],
         });
         // Vertex layout: 3 floats position. Normals are computed in the shader
-        // from screen-space derivatives — no per-vertex normal needed, which
+        // from screen-space derivatives - no per-vertex normal needed, which
         // keeps the upload format dead-simple for the source TMDs (which only
         // store per-object normals, not per-vertex).
         let vertex_layout = wgpu::VertexBufferLayout {
@@ -2251,7 +2251,7 @@ impl Renderer {
             },
             // Scene render pass binds a depth attachment; every pipeline used
             // in that pass must declare a matching depth-stencil format.
-            // Text never reads or writes depth — `Always` + write disabled
+            // Text never reads or writes depth - `Always` + write disabled
             // keeps it a pure overlay pass.
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
@@ -2436,7 +2436,7 @@ impl Renderer {
     }
 
     /// Upload a CPU-side [`Vram`] as a 1024×512 R16Uint texture. The fragment
-    /// shader reads from it via `textureLoad` (no sampler — Uint textures
+    /// shader reads from it via `textureLoad` (no sampler - Uint textures
     /// aren't filterable on most backends, and PSX texture lookup is
     /// integer-exact anyway).
     pub fn upload_vram(&self, vram: &Vram) -> Result<UploadedVram> {
@@ -2528,7 +2528,7 @@ impl Renderer {
             .zip(normals.iter())
         {
             bytes.extend_from_slice(bytemuck::cast_slice(pos));
-            // UV padded to 4 bytes (Uint8x4 — extra bytes ignored by shader).
+            // UV padded to 4 bytes (Uint8x4 - extra bytes ignored by shader).
             bytes.push(uv[0]);
             bytes.push(uv[1]);
             bytes.push(0);
@@ -2626,7 +2626,7 @@ impl Renderer {
         self.upload_font_atlas(font.atlas_rgba(), w, h)
     }
 
-    /// Upload a sprite atlas. Alias of [`Self::upload_font_atlas`] — sprites
+    /// Upload a sprite atlas. Alias of [`Self::upload_font_atlas`] - sprites
     /// and font glyphs share the textured-quad pipeline (see [`SpriteDraw`]).
     pub fn upload_sprite_atlas(
         &self,
@@ -2771,9 +2771,9 @@ impl Renderer {
     }
 
     /// Render the scene. Dispatches by [`RenderTarget`]:
-    /// * `Clear` — clear to dark gray, no draws.
-    /// * `Texture(t)` — letterboxed quad (Phase 1 TIM viewer).
-    /// * `Mesh { mesh, mvp }` — depth-tested 3D mesh draw (Phase 1 TMD viewer).
+    /// * `Clear` - clear to dark gray, no draws.
+    /// * `Texture(t)` - letterboxed quad (Phase 1 TIM viewer).
+    /// * `Mesh { mesh, mvp }` - depth-tested 3D mesh draw (Phase 1 TMD viewer).
     pub fn render(&self, target: RenderTarget<'_>) -> Result<()> {
         // Stage uniform writes before begin_render_pass.
         match &target {
@@ -3219,10 +3219,10 @@ fn letterbox_scale(win_w: u32, win_h: u32, tex_w: u32, tex_h: u32) -> (f32, f32)
     let win_aspect = win_w as f32 / win_h.max(1) as f32;
     let tex_aspect = tex_w as f32 / tex_h.max(1) as f32;
     if win_aspect > tex_aspect {
-        // Window wider than texture — pillarbox
+        // Window wider than texture - pillarbox
         (tex_aspect / win_aspect, 1.0)
     } else {
-        // Window taller than texture — letterbox
+        // Window taller than texture - letterbox
         (1.0, win_aspect / tex_aspect)
     }
 }
@@ -3297,7 +3297,7 @@ fn vs_main(@location(0) position: vec3<f32>) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Compute face normal from screen-space derivatives. This gives flat
-    // per-triangle shading regardless of vertex normal availability — the
+    // per-triangle shading regardless of vertex normal availability - the
     // source TMDs only carry per-object normals, so true Gouraud would need
     // additional work to map normals back to verts.
     let dx = dpdx(in.world_pos);
@@ -3523,7 +3523,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 "#;
 
 /// Wireframe lines shader: pass per-vertex color through, output unchanged.
-/// Stage geometry is unlit — there are no normals on a line — so the host
+/// Stage geometry is unlit - there are no normals on a line - so the host
 /// gets to encode whatever color signal it wants (per-record, depth-shade,
 /// etc.) at upload time.
 const LINES_SHADER_SRC: &str = r#"
@@ -3804,7 +3804,7 @@ mod tests {
     fn level_up_draws_for_produces_two_line_draws() {
         let font = legaia_font::synthetic_for_tests();
         let draws = level_up_draws_for(&font, 0, 5, 10, 5, (8, 60));
-        // Two non-empty lines — at minimum the title line must produce glyphs.
+        // Two non-empty lines - at minimum the title line must produce glyphs.
         assert!(!draws.is_empty());
     }
 
@@ -3836,7 +3836,7 @@ mod tests {
             status_letters: &[],
         };
         let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
-        // Row produces glyphs for name, HP, MP, AP — at minimum one draw.
+        // Row produces glyphs for name, HP, MP, AP - at minimum one draw.
         assert!(!draws.is_empty());
     }
 
@@ -3895,7 +3895,7 @@ mod tests {
             status_letters: &[],
         };
         let draws = battle_hud_draws_for(&font, &[slot], &[], &[], (8, 100));
-        // Find any draw with the dim/red HP coloring — red has more red than green.
+        // Find any draw with the dim/red HP coloring - red has more red than green.
         let any_red = draws.iter().any(|d| d.color[0] > d.color[1]);
         assert!(any_red, "low HP should produce a red-tinted glyph");
     }

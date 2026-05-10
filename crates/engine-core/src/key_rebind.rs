@@ -201,7 +201,7 @@ impl KeyRebindSession {
         // matched and got shadowed.
         self.rebuild_row(button);
         if let Some(ref e) = evicted {
-            // The evicted key may have been another button's binding —
+            // The evicted key may have been another button's binding -
             // refresh every row to be safe; the cost is trivial (16 rows).
             for btn in self.rows.iter().map(|r| r.button).collect::<Vec<_>>() {
                 if btn != button {

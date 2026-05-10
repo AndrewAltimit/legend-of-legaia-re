@@ -3,7 +3,7 @@
 //! Each character has a per-turn AP budget that limits how many art
 //! commands they can chain. The retail engine reads this from the
 //! character record's `+0xC9` byte (`current_ap`) and `+0xCA` byte
-//! (`bonus_ap` — the +5 charged by pressing Spirit). When the player is
+//! (`bonus_ap` - the +5 charged by pressing Spirit). When the player is
 //! in command-input mode, every art slot dropped into the queue spends
 //! the slotted art's AP cost; the queue stops accepting input once the
 //! remaining budget would go below zero.
@@ -15,7 +15,7 @@
 //! ## What lives where
 //!
 //! - This module owns the per-character AP state.
-//! - The action-cost lookup ([`art_ap_cost`]) is a pure function — no
+//! - The action-cost lookup ([`art_ap_cost`]) is a pure function - no
 //!   shared state. It mirrors the per-action-byte AP table the retail
 //!   engine reads from.
 //! - [`ApGauge::can_afford`] is the gate the action-validator should
@@ -24,7 +24,7 @@
 //! ## What it does NOT model
 //!
 //! - The mid-turn refund quirk (cancel-then-redo eats 1 AP in retail
-//!   even though no commit fired) — engines that want this can wrap.
+//!   even though no commit fired) - engines that want this can wrap.
 //! - Equipment that grants extra AP (e.g. some accessories give +1 base
 //!   AP). Engines fold those into [`ApGauge::set_base_ap`].
 
@@ -53,7 +53,7 @@ pub const SPIRIT_AP_BONUS: u8 = 5;
 /// | `0x1B..=0x32`    | 1    | per-character art body (each art unit costs 1 AP) |
 /// | direction bytes  | 0    | Left / Right / Down / Up are free in the queue |
 ///
-/// Direction bytes (`0x0C..=0x0F`) cost zero — they are routed through
+/// Direction bytes (`0x0C..=0x0F`) cost zero - they are routed through
 /// the queue but only the surrounding starter+art pair pays.
 pub fn art_ap_cost(action: ActionConstant) -> u8 {
     let b = action.as_byte();
@@ -65,7 +65,7 @@ pub fn art_ap_cost(action: ActionConstant) -> u8 {
         0x10..=0x18 => 0, // anim / empty slots
         0x19 | 0x1A => 1, // Regular / Special Art Starter
         0x1B..=0x32 => 1, // per-character art body
-        _ => 0,           // unknown — treat as free
+        _ => 0,           // unknown - treat as free
     }
 }
 
@@ -88,7 +88,7 @@ pub struct ApGauge {
     /// `true` if the character has pressed Spirit this turn (so the +5
     /// bonus has already been spent into [`Self::current_ap`]).
     pub spirit_charged: bool,
-    /// Current AP balance — the queue checks against this. Decreases as
+    /// Current AP balance - the queue checks against this. Decreases as
     /// arts are pushed; resets at turn start.
     pub current_ap: u8,
 }
@@ -127,7 +127,7 @@ impl ApGauge {
         self.spirit_charged = false;
     }
 
-    /// Apply the Spirit-button charge. Idempotent within a turn — the
+    /// Apply the Spirit-button charge. Idempotent within a turn - the
     /// retail engine refuses to add the bonus twice. Returns `true` if
     /// the bonus was applied this call, `false` if it was already
     /// charged.
@@ -155,7 +155,7 @@ impl ApGauge {
         true
     }
 
-    /// Refund `cost` AP back to the gauge — used when an art is removed
+    /// Refund `cost` AP back to the gauge - used when an art is removed
     /// from the queue (cancel-while-editing). Saturates at the full
     /// post-Spirit ceiling so cancel-spam can't grant infinite AP.
     pub fn refund(&mut self, cost: u8) {
@@ -193,7 +193,7 @@ impl ApGauge {
 /// Compute the per-level AP base.
 ///
 /// Retail formula: `4 + (level / 10)`, capped at 10. The base climbs by
-/// 1 every 10 levels — characters at level 1..9 have base 4, 10..19
+/// 1 every 10 levels - characters at level 1..9 have base 4, 10..19
 /// have base 5, etc., maxing at level 60 with base 10.
 pub fn ap_base_for_level(level: u8) -> u8 {
     let raw = (DEFAULT_BASE_AP + level / 10) as u16;

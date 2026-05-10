@@ -1,4 +1,4 @@
-//! Per-actor animation runtime — wraps the actor-tick anim dispatch.
+//! Per-actor animation runtime - wraps the actor-tick anim dispatch.
 //!
 //! ## Background
 //!
@@ -14,7 +14,7 @@
 //! The dispatch byte selects a layered set of side-effects:
 //!
 //! - The **keyframe pose decoder** for opcode `0x06` is ported in
-//!   [`legaia_anm::AnimPlayer`] — that's the per-bone interpolation that
+//!   [`legaia_anm::AnimPlayer`] - that's the per-bone interpolation that
 //!   writes the renderer-consumed pose buffer at `actor[+0x4C]`.
 //! - The **per-actor physics tick** that wraps the keyframe decoder is
 //!   ported in [`crate::actor_tick`]. It models the position / velocity /
@@ -24,18 +24,18 @@
 //!   cues and render submissions surface via
 //!   [`actor_tick::TickEvent`](crate::actor_tick::TickEvent).
 //!
-//! For the bulk of retail ANM data — records the runtime calls "opcode 6"
-//! — the per-record body is a per-bone keyframe table, and the
-//! interpolation math is statically reachable in `FUN_80021DF4`. That
-//! algorithm is already ported in [`legaia_anm::AnimPlayer`].
+//! For the bulk of retail ANM data (records the runtime calls "opcode 6")
+//! the per-record body is a per-bone keyframe table, and the interpolation
+//! math is statically reachable in `FUN_80021DF4`. That algorithm is
+//! already ported in [`legaia_anm::AnimPlayer`].
 //!
-//! For everything else — records with header `a` field other than `0x06`
-//! or `0x0A` — the per-record body shape is opaque. The scaffold below
+//! For everything else - records with header `a` field other than `0x06`
+//! or `0x0A` - the per-record body shape is opaque. The scaffold below
 //! lets engines wire the runtime they need *now*: the dispatcher's `Host`
 //! trait exposes a single hook (`on_opaque_record`) for record-level
 //! side-effects (sprite swaps, voice cues), and the keyframe-driven case
-//! is fully handled by delegating to `AnimPlayer`. Per-actor physics —
-//! the part that's the same for every record kind — is in
+//! is fully handled by delegating to `AnimPlayer`. Per-actor physics -
+//! the part that's the same for every record kind - is in
 //! [`crate::actor_tick`].
 //!
 //! ## What this scaffold provides
@@ -53,13 +53,13 @@
 //!   per-actor state.
 //!
 //! When the overlay capture lands, the only change required is to fill
-//! the `Host::on_opaque_record` body with the real per-kind dispatch —
+//! the `Host::on_opaque_record` body with the real per-kind dispatch -
 //! every other piece of plumbing (per-actor pool, frame stepping,
 //! lifecycle hooks, event stream) stays as-is.
 
 use legaia_anm::{AnimPlayer, PoseFrame, RecordHeader};
 
-/// Maximum actor pool size — matches the retail per-scene actor count
+/// Maximum actor pool size - matches the retail per-scene actor count
 /// observed in the field overlay (`actor[+0x*]` table at
 /// `0x801E473C`, 16-byte stride, ≤ 32 entries used).
 pub const MAX_ACTOR_SLOTS: usize = 32;
@@ -90,24 +90,24 @@ pub const ACTOR_FRAME_COUNTER_OFFSET: usize = 0x68;
 /// [`Keyframe`]: DispatchByte::Keyframe
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchByte {
-    /// `0x01` — pose-snap branch. Specific behaviour TBD.
+    /// `0x01` - pose-snap branch. Specific behaviour TBD.
     Snap,
-    /// `0x02` — shares the keyframe interpolation block with `0x06`
+    /// `0x02` - shares the keyframe interpolation block with `0x06`
     /// in `FUN_80021DF4`.
     KeyframeAlt,
-    /// `0x03` — small handler at `0x800226DC`. Shares state-write logic
+    /// `0x03` - small handler at `0x800226DC`. Shares state-write logic
     /// with `0x05`.
     Path,
-    /// `0x04` — handler at `0x80022CBC..0x80022EE4`.
+    /// `0x04` - handler at `0x80022CBC..0x80022EE4`.
     Damp,
-    /// `0x05` — handler at `0x800228B0..0x80022B80`. Reads geometry
+    /// `0x05` - handler at `0x800228B0..0x80022B80`. Reads geometry
     /// from `actor[+0x80]` and writes pose state.
     PathAlt,
-    /// `0x06` — keyframe interpolation. Per-bone math at
+    /// `0x06` - keyframe interpolation. Per-bone math at
     /// `0x80021EA0..0x80021FA4` and the long block continuing through
     /// `0x80022FXX`. Fully ported in [`legaia_anm::AnimPlayer`].
     Keyframe,
-    /// `0x07` — handler at `0x80022C24..0x80022CC0`.
+    /// `0x07` - handler at `0x80022C24..0x80022CC0`.
     Spline,
 }
 
@@ -143,7 +143,7 @@ impl DispatchByte {
     /// `true` when this runtime can drive the dispatch natively
     /// (currently only [`Keyframe`]).
     ///
-    /// The other six dispatch bytes drive per-actor physics state — see
+    /// The other six dispatch bytes drive per-actor physics state - see
     /// [`crate::actor_tick`] for the dispatch-byte-aware physics tick.
     /// `handled_natively` only reports whether [`AnimPlayer`] (the keyframe
     /// pose decoder) can drive this dispatch byte; it does **not** mean the
@@ -178,15 +178,15 @@ impl DispatchByte {
 /// are opaque until the overlay dispatcher is captured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordKind {
-    /// `header.a == 0x06` — per-bone keyframe table. Handled by
+    /// `header.a == 0x06` - per-bone keyframe table. Handled by
     /// `AnimPlayer`. Dominant in retail field/town animations.
     Keyframe,
-    /// `header.a == 0x0A` — observed on a small subset of records. The
+    /// `header.a == 0x0A` - observed on a small subset of records. The
     /// body shape is unknown; treated as opaque for now.
     KindA,
-    /// `header.a == 0x02` — observed on title-screen records.
+    /// `header.a == 0x02` - observed on title-screen records.
     Kind2,
-    /// `header.a == 0x03` — observed on title-screen records.
+    /// `header.a == 0x03` - observed on title-screen records.
     Kind3,
     /// Any other `header.a` value. Carries the raw byte so the host can
     /// route by it.
@@ -226,7 +226,7 @@ pub enum AnimSlot {
     /// No animation is registered on this actor.
     #[default]
     Idle,
-    /// A keyframe-style animation is playing — handled natively.
+    /// A keyframe-style animation is playing - handled natively.
     Keyframe {
         player: AnimPlayer,
         kind: RecordKind,
@@ -281,7 +281,7 @@ pub enum AnimEvent {
     PoseUpdated { actor: u8, pose: PoseFrame },
     /// An opaque-kind record advanced one frame; the host's
     /// `on_opaque_record` hook saw it. The runtime only reports that
-    /// the tick happened — the host is responsible for any side
+    /// the tick happened - the host is responsible for any side
     /// effect (sprite frame swap, voice cue, etc.).
     OpaqueTick {
         actor: u8,
@@ -332,7 +332,7 @@ pub struct NullHost;
 
 impl Host for NullHost {}
 
-/// Per-actor animation runtime — fixed-size pool of `AnimSlot`s.
+/// Per-actor animation runtime - fixed-size pool of `AnimSlot`s.
 #[derive(Debug)]
 pub struct AnimRuntime {
     slots: Vec<AnimSlot>,
@@ -342,7 +342,7 @@ pub struct AnimRuntime {
     /// Pending events surfaced from the most recent `tick`. Engines
     /// drain via `take_events`.
     events: Vec<AnimEvent>,
-    /// Frame counter — useful for trace logs / fingerprinting.
+    /// Frame counter - useful for trace logs / fingerprinting.
     pub frame: u64,
 }
 
@@ -367,7 +367,7 @@ impl AnimRuntime {
 
     /// Register `record` on actor `id`. Errors if `id` is out of range.
     /// If the slot was busy, emits `AnimEvent::Replaced` and overwrites
-    /// it (matching the retail convention — `FUN_80024CFC` always
+    /// it (matching the retail convention - `FUN_80024CFC` always
     /// overwrites).
     pub fn play(
         &mut self,
@@ -455,7 +455,7 @@ impl AnimRuntime {
             let mut slot = std::mem::replace(&mut self.slots[i], AnimSlot::Idle);
             match &mut slot {
                 AnimSlot::Idle => {
-                    // Already idle — restore (still idle).
+                    // Already idle - restore (still idle).
                     self.slots[i] = AnimSlot::Idle;
                     continue;
                 }

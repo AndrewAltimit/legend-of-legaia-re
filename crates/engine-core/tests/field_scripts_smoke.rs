@@ -3,7 +3,7 @@
 //! outcome shape (Advance / Halt or Yield).
 //!
 //! Skips silently when `extracted/` is missing or `LEGAIA_DISC_BIN` is
-//! unset — same skip-pattern as the rest of the disc-gated suite.
+//! unset - same skip-pattern as the rest of the disc-gated suite.
 //!
 //! What this catches:
 //!  - `Scene::find_event_scripts` returns *something* on at least one real
@@ -78,10 +78,10 @@ fn field_vm_runs_against_real_scene_event_scripts() {
     );
     assert!(
         !hits.is_empty(),
-        "no CDNAME scene resolved an event-script entry — Scene::find_event_scripts is broken"
+        "no CDNAME scene resolved an event-script entry - Scene::find_event_scripts is broken"
     );
 
-    // Pick the first scene with the most records — exercises the most VM.
+    // Pick the first scene with the most records - exercises the most VM.
     let (scene_name, entry_idx, n_records) = hits
         .iter()
         .max_by_key(|h| h.2)
@@ -144,15 +144,15 @@ fn field_vm_runs_against_real_scene_event_scripts() {
     let progressed = totals[0] + totals[1] + totals[2];
     assert!(
         progressed > 0,
-        "no record made forward progress on '{scene_name}' — VM is stuck"
+        "no record made forward progress on '{scene_name}' - VM is stuck"
     );
-    // Every record should at least dispatch SOMETHING — total opcodes seen
+    // Every record should at least dispatch SOMETHING - total opcodes seen
     // across all records must exceed records.len() (= one outcome per record
     // minimum).
     let total_outcomes = totals.iter().sum::<u32>();
     assert!(
         total_outcomes >= records.len() as u32,
-        "fewer outcomes ({total_outcomes}) than records ({}) — possible empty bytecode buffer",
+        "fewer outcomes ({total_outcomes}) than records ({}) - possible empty bytecode buffer",
         records.len()
     );
 }

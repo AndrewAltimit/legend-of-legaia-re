@@ -3,8 +3,8 @@
 //! can be unit-tested in isolation.
 //!
 //! These three helpers are referenced from many of the still-Pending sub-ops
-//! in `FUN_801DE840`'s `case 0x4C` cluster. They are pure arithmetic — no
-//! globals, no overlay calls — so a clean-room port can match the original
+//! in `FUN_801DE840`'s `case 0x4C` cluster. They are pure arithmetic - no
+//! globals, no overlay calls - so a clean-room port can match the original
 //! byte-for-byte and the dispatcher arms can call into them directly without
 //! a `FieldHost` round-trip.
 //!
@@ -33,7 +33,7 @@
 /// The returned count does **not** include the terminator byte itself. So if
 /// the input is `[0x40, 0x40, 0x00, ...]`, the result is `2`. The dispatcher
 /// adds the terminator and the opcode prefix bytes separately when computing
-/// PC delta — see `0x4C nE sub-1`.
+/// PC delta - see `0x4C nE sub-1`.
 ///
 /// `buf` is read until either:
 /// - a terminator byte (`<= 0x1E`) is seen, or
@@ -52,7 +52,7 @@ pub fn packet_length(buf: &[u8]) -> usize {
             break;
         }
         if (b & 0xF0) == 0xC0 {
-            // Escape pair — consume one extra byte and credit it to the count.
+            // Escape pair - consume one extra byte and credit it to the count.
             i += 1;
             count += 1;
             if i >= buf.len() {
@@ -71,7 +71,7 @@ pub fn packet_length(buf: &[u8]) -> usize {
 /// original indexes a global byte array at `0x80085758` (256 bits = 32 bytes
 /// = the field-VM's per-scene "trigger flag" bank). It returns `0xFF` when
 /// the bit is set and `0` otherwise, mirroring the original's saturation
-/// pattern — callers compare for equality, not bit-by-bit.
+/// pattern - callers compare for equality, not bit-by-bit.
 ///
 /// Bit ordering matches the original: bit 7 of `flags[idx >> 3]` is index 0;
 /// bit 0 is index 7. (The mask is `0x80 >> (idx & 7)`.)
@@ -131,7 +131,7 @@ pub fn small_table_search(needle: u8, table: &[u8], lo: i16, hi: i16) -> u32 {
 ///
 /// Ported from `FUN_8003CE9C` (see `ghidra/scripts/funcs/8003ce9c.txt`). The
 /// original is a 2-instruction `lbu / lbu / sll / or / jr` sequence that the
-/// PSX MIPS toolchain emits for unaligned 16-bit loads — the field VM stores
+/// PSX MIPS toolchain emits for unaligned 16-bit loads - the field VM stores
 /// 16-bit operand fields as raw byte pairs, so most call sites pass a pointer
 /// somewhere into the bytecode stream.
 ///
@@ -139,7 +139,7 @@ pub fn small_table_search(needle: u8, table: &[u8], lo: i16, hi: i16) -> u32 {
 /// high 8 bits, exactly matching the original's `(b0 | (b1 << 8))` formula.
 ///
 /// On a buffer shorter than 2 bytes this returns the partial value extending
-/// missing bytes as zero — matching the `try_get`-style guard the dispatcher
+/// missing bytes as zero - matching the `try_get`-style guard the dispatcher
 /// arms wrap their operand reads in. Callers that need the strict 2-byte
 /// invariant should pre-validate.
 pub fn load_u16_le(buf: &[u8]) -> u16 {
@@ -156,7 +156,7 @@ pub fn load_u16_le(buf: &[u8]) -> u16 {
 /// XP-add opcode (`0x4C nE sub-5`), where the 24-bit immediate is clamped to
 /// `[0, 9999999]` after this helper extracts it.
 ///
-/// The high byte of the returned `u32` is always zero — to sign-extend the
+/// The high byte of the returned `u32` is always zero - to sign-extend the
 /// 24-bit value into an `i32`, callers should compute
 /// `(value << 8) as i32 >> 8`.
 pub fn load_u24_le(buf: &[u8]) -> u32 {
@@ -207,7 +207,7 @@ pub fn sign_extend_24(value: u32) -> i32 {
 /// - If `b & 0x80` is set, add another `0x40` (= the fine-offset bit pushes
 ///   the position to the next half-tile boundary).
 ///
-/// The signed return matches the dispatcher's local-variable type — bbox /
+/// The signed return matches the dispatcher's local-variable type - bbox /
 /// camera coordinates are stored as `short` and can be compared with negative
 /// reference values produced by tween / scroll operations. Callers that need an
 /// unsigned value (e.g. world-space `ctx.world_x` writes for MOVE_TO) cast back
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn packet_length_escape_sequence_counts_two() {
-        // 0xC1 is an escape lead — the next byte is consumed unconditionally,
+        // 0xC1 is an escape lead - the next byte is consumed unconditionally,
         // and BOTH count toward the length.
         let buf = [0xC1, 0xAB, 0x00];
         assert_eq!(packet_length(&buf), 2);
@@ -260,7 +260,7 @@ mod tests {
     fn packet_length_multiple_escapes_with_runs() {
         // 0x40 (1) + 0xC1 0xAB (2) + 0x40 (1) + 0xCD 0x05 (2) + terminator.
         // Note: the 0x05 inside the escape pair is consumed unconditionally
-        // even though it's <= 0x1E — it's already past the terminator check
+        // even though it's <= 0x1E - it's already past the terminator check
         // when the lead byte's escape semantics fire.
         let buf = [0x40, 0xC1, 0xAB, 0x40, 0xCD, 0x05, 0x00];
         assert_eq!(packet_length(&buf), 6);
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn small_table_search_out_of_range_index_skipped() {
-        // Window [0..4) but table only has 2 entries — the missing reads
+        // Window [0..4) but table only has 2 entries - the missing reads
         // are skipped (treated as misses) without panicking.
         let table = [0xAA, 0];
         assert_eq!(small_table_search(0xAA, &table, 0, 4), 0);
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn small_table_search_lo_inclusive_hi_exclusive() {
-        // Verify the range semantics — lo is included, hi is excluded.
+        // Verify the range semantics - lo is included, hi is excluded.
         let table = [0xAA, 0, 0xBB, 0, 0xCC, 0];
         assert_eq!(small_table_search(0xAA, &table, 0, 1), 0);
         assert_eq!(small_table_search(0xBB, &table, 0, 1), SEARCH_NOT_FOUND);
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn tile_center_zero_is_zero() {
-        // The dispatcher short-circuits b == 0 to 0 — verifies the special
+        // The dispatcher short-circuits b == 0 to 0 - verifies the special
         // case isn't lost in arithmetic.
         assert_eq!(tile_center(0), 0);
     }
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn tile_center_high_bit_only_does_not_zero_out() {
         // 0x80 has the fine-offset bit set but tile index 0. The original
-        // does NOT short-circuit for this — only b == 0 zeroes out.
+        // does NOT short-circuit for this - only b == 0 zeroes out.
         assert_eq!(tile_center(0x80), 0x80); // 0 * 0x80 + 0x40 + 0x40
     }
 

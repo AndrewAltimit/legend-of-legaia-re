@@ -6,12 +6,12 @@
 /// one place. See `docs/reference/builds.md` for the per-region address table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Region {
-    /// NA retail — `SCUS-94254` (1999-01-29). Anchor build for this project.
+    /// NA retail - `SCUS-94254` (1999-01-29). Anchor build for this project.
     #[default]
     Na,
-    /// JP retail — `SCPS-10059` (1998-09-09) and its reissues.
+    /// JP retail - `SCPS-10059` (1998-09-09) and its reissues.
     Jp,
-    /// EU retail — `SCES-01752` (EN) and the FR/DE/IT/ES localisations.
+    /// EU retail - `SCES-01752` (EN) and the FR/DE/IT/ES localisations.
     Eu,
 }
 

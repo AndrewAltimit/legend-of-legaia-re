@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; asset loader</div>
   <h1>Asset loader</h1>
-  <p class="lede">How the runtime stitches per-scene assets together. Battle, field, sound, BGM &mdash; each scene type has its own loader, but they all share one idiom: a dev branch that loads by PROT index, and a retail branch that resolves dev-style paths through the CDNAME name map into the same indices.</p>
+  <p class="lede">How the runtime stitches per-scene assets together. Battle, field, sound, BGM - each scene type has its own loader, but they all share one idiom: a dev branch that loads by PROT index, and a retail branch that resolves dev-style paths through the CDNAME name map into the same indices.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -15,9 +15,9 @@
     <li>Some cases also kick off async CD reads to stage things into memory while the rest of the scene is initialising.</li>
   </ul>
 
-  <p>There's a <strong>dev/retail</strong> split that runs through nearly every loader. Dev builds load by PROT index directly &mdash; the index numbers are baked in. Retail builds resolve dev-style paths (<code>h:\PROT\FIELD\&lt;scene&gt;\name</code>) through <code>FUN_8003E6BC</code>, which uses the <a href="../formats/index.html">CDNAME.TXT</a> name map to find the corresponding PROT index. Both branches end up at the same files; only the lookup mechanism differs. That's why we don't see a literal "scene N uses PROT entries [a, b, c]" table anywhere in the executable &mdash; the table is the CDNAME block layout itself.</p>
+  <p>There's a <strong>dev/retail</strong> split that runs through nearly every loader. Dev builds load by PROT index directly - the index numbers are baked in. Retail builds resolve dev-style paths (<code>h:\PROT\FIELD\&lt;scene&gt;\name</code>) through <code>FUN_8003E6BC</code>, which uses the <a href="../formats/index.html">CDNAME.TXT</a> name map to find the corresponding PROT index. Both branches end up at the same files; only the lookup mechanism differs. That's why we don't see a literal "scene N uses PROT entries [a, b, c]" table anywhere in the executable - the table is the CDNAME block layout itself.</p>
 
-  <p>The <strong>asset descriptor walker</strong> (<code>FUN_80020224</code>) is the loop that walks a per-scene asset descriptor and calls the dispatcher per descriptor. It has zero static callers in <code>SCUS_942.54</code>, which would suggest "dead code" &mdash; except its sole runtime caller is the town overlay's MAIN_INIT, at the start of every field session. So it <em>is</em> exercised by retail gameplay; the call just lives in RAM.</p>
+  <p>The <strong>asset descriptor walker</strong> (<code>FUN_80020224</code>) is the loop that walks a per-scene asset descriptor and calls the dispatcher per descriptor. It has zero static callers in <code>SCUS_942.54</code>, which would suggest "dead code" - except its sole runtime caller is the town overlay's MAIN_INIT, at the start of every field session. So it <em>is</em> exercised by retail gameplay; the call just lives in RAM.</p>
 </section>
 
 <section class="doc-section" id="battle-loader">
@@ -37,7 +37,7 @@
     </tbody>
   </table>
 
-  <p>Two cases call <code>FUN_8003E104(monster_idx, slot, dst_buf)</code> to populate slots 7 and 8 with the active battle's monster sound banks &mdash; the per-monster body of <code>h:\mpack\monster.snd</code>. Each monster has a <code>(start_lba, end_lba+1)</code> entry pair in the TOC at <code>0x801C8980 - 0x10</code>. See <a href="audio.html">Audio</a> &rarr; "Monster sound bank" for the full loader contract.</p>
+  <p>Two cases call <code>FUN_8003E104(monster_idx, slot, dst_buf)</code> to populate slots 7 and 8 with the active battle's monster sound banks - the per-monster body of <code>h:\mpack\monster.snd</code>. Each monster has a <code>(start_lba, end_lba+1)</code> entry pair in the TOC at <code>0x801C8980 - 0x10</code>. See <a href="audio.html">Audio</a> &rarr; "Monster sound bank" for the full loader contract.</p>
 
   <p class="hint">The asset-viewer's <code>--bundle battle</code> mode mirrors this loader's PROT 865&ndash;890 set so character meshes have the right CLUT bindings.</p>
 </section>
@@ -51,9 +51,9 @@
 
   <p>Each scene reserves <strong>six file types</strong> in CDNAME's per-scene block, and the loader walks the scene asset table at the leading PROT entry to pull each file in turn. The on-disc form is the canonical 7-typed-asset bundle (<code>07 00 00 00</code> lead).</p>
 
-  <p>The descriptor offsets past the first are <strong>not file-relative</strong> &mdash; they index into the loader's runtime decompression buffer. For example, <code>0031_izumi.BIN</code> is 96&nbsp;KB but <code>desc[2].data_offset = 141&nbsp;KB</code> lands inside the <em>decompressed</em> working buffer, not the source file.</p>
+  <p>The descriptor offsets past the first are <strong>not file-relative</strong> - they index into the loader's runtime decompression buffer. For example, <code>0031_izumi.BIN</code> is 96&nbsp;KB but <code>desc[2].data_offset = 141&nbsp;KB</code> lands inside the <em>decompressed</em> working buffer, not the source file.</p>
 
-  <p>Per-scene reference resolution is partial &mdash; many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain shape is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher", but the precise indexing scheme is still under investigation for non-battle scenes.</p>
+  <p>Per-scene reference resolution is partial - many scene-bundle entries cross-reference each other through indices in the descriptor table that the loader stitches at runtime. The asset chain shape is "load the scene asset table, decode each descriptor, then load each typed sub-asset using the dispatcher", but the precise indexing scheme is still under investigation for non-battle scenes.</p>
 </section>
 
 <section class="doc-section" id="warp-flow">
@@ -94,7 +94,7 @@
 
 <section class="doc-section" id="clut-scattering">
   <h2>CLUT-data scattering</h2>
-  <p>Many character meshes reference CLUT (palette) rows that live in <strong>different PROT entries</strong> from their TMD source. The runtime asset chain stitches them together &mdash; the loader puts the relevant TIMs into VRAM before the TMD is rendered.</p>
+  <p>Many character meshes reference CLUT (palette) rows that live in <strong>different PROT entries</strong> from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.</p>
   <p>The asset-viewer's <code>--vram-extra-dir</code> flag is the workaround until the chain is fully traced for every scene type. Battle is fully traced; field, town, and level-up still rely on the workaround.</p>
 </section>
 

@@ -5,7 +5,7 @@
 # - OVERLAY_TARGETS: 16 functions in overlay_0897_xxx_dat.bin tail-called
 #   from FUN_801cd8a4 + sibling 0897 helpers cited from the second-pass
 #   tracker after the first batch surfaced new orphans.
-# - SCUS_TARGETS: 2 BIOS B-vector thunks (8006ee6c/7c) — too short for
+# - SCUS_TARGETS: 2 BIOS B-vector thunks (8006ee6c/7c) - too short for
 #   force_disasm_dump.py's 8-instruction floor.
 # - OVERLAY_0896_TARGETS / OVERLAY_0978_TARGETS: short stubs reachable
 #   only via mid-function `jal`s that Ghidra's auto-analysis didn't

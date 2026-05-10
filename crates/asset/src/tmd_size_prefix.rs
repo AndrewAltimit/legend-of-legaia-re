@@ -1,6 +1,6 @@
 //! TMD-with-size-prefix detector.
 //!
-//! Sister to [`crate::scene_tmd_stream`] — same outer shape (`[u32 prefix][TMD
+//! Sister to [`crate::scene_tmd_stream`] - same outer shape (`[u32 prefix][TMD
 //! magic 0x80000002 at +4]`), but the on-disc payload is **shorter than the
 //! prefix claims**. The runtime is presumably either (a) streaming the
 //! remainder from another PROT entry, or (b) using the prefix as an
@@ -20,13 +20,13 @@
 //! ```
 //!
 //! All object pointers (`vert_top`, `norm_top`, `prim_top`) point **within
-//! the prefix-claimed total size** — so the on-disc file is genuinely a
+//! the prefix-claimed total size** - so the on-disc file is genuinely a
 //! prefix of a larger logical resource, not a malformed header.
 //!
 //! ### Provenance
 //!
 //! ~30 PROT entries match this shape. They cluster as 12 KB files (6 sectors)
-//! across scene-named PROT entries — `izumi`, `cave01`, `dolk2`, `suimon`,
+//! across scene-named PROT entries - `izumi`, `cave01`, `dolk2`, `suimon`,
 //! `vozz`, `keikoku`, `dream`, `tunnel*`, `kor*`, `koin*`, `bubu*`, `map0*`,
 //! and similar. The shared shape suggests a per-scene "primary mesh" slot
 //! that's always the same on-disc size but expands to a variable-size mesh
@@ -34,10 +34,10 @@
 //!
 //! Distinct from [`Class::SceneTmdStream`](crate::categorize::Class::SceneTmdStream)
 //! by the strict invariant `prefix_size > on-disc len`. That subset of
-//! `scene_tmd_stream`-shaped files is the exact set this detector catches —
+//! `scene_tmd_stream`-shaped files is the exact set this detector catches -
 //! `scene_tmd_stream`'s `tmd_end > buf.len()` rejection branch.
 //!
-//! ### Format meaning — open
+//! ### Format meaning - open
 //!
 //! The runtime consumer hasn't been located. The on-disc file is a *prefix*
 //! of a logical TMD-with-streaming-tail; what supplies the missing tail
@@ -56,7 +56,7 @@ const MAX_TOTAL_SIZE: u32 = 1024 * 1024;
 /// Detection result.
 #[derive(Debug, Clone, Serialize)]
 pub struct TmdSizePrefix {
-    /// Prefix u32 — claimed total size of the in-RAM resource. Always
+    /// Prefix u32 - claimed total size of the in-RAM resource. Always
     /// strictly greater than the on-disc buffer length.
     pub claimed_total: u32,
     /// Object count from `u32@12`.
@@ -158,7 +158,7 @@ mod tests {
         buf.extend_from_slice(&0x80000002u32.to_le_bytes());
         buf.extend_from_slice(&0u32.to_le_bytes());
         buf.extend_from_slice(&nobj.to_le_bytes());
-        // Object headers — 28 bytes each. Set vert/normal/prim pointers
+        // Object headers - 28 bytes each. Set vert/normal/prim pointers
         // safely within the claimed range, with small counts that fit.
         let obj_table_end = 16 + (nobj as usize) * 28;
         for i in 0..nobj {

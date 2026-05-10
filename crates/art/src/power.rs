@@ -1,8 +1,8 @@
-//! Art Power encoding — damage multiplier byte semantics.
+//! Art Power encoding - damage multiplier byte semantics.
 //!
 //! Each art records up to several "power bytes" describing the damage of
 //! each hit. The byte's value picks both the multiplier and the
-//! defense-target (UDF — Upper Defense, or LDF — Lower Defense).
+//! defense-target (UDF - Upper Defense, or LDF - Lower Defense).
 //!
 //! ## Encoding
 //!
@@ -10,7 +10,7 @@
 //! |---|---|---|
 //! | `0x16–0x1F` | UDF, then LDF (alternating starting from UDF) | 12, 18, 20, 22, 28 |
 //! | `0x0C–0x15` | Same multiplier scale, but LDF-target attacks miss floating enemies and UDF-target attacks miss short enemies | 12, 18, 20, 22, 28 |
-//! | other | No damage | — |
+//! | other | No damage | - |
 //!
 //! Concretely the values map as:
 //!
@@ -27,9 +27,9 @@ use serde::{Deserialize, Serialize};
 /// Defense type the multiplier targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PowerTarget {
-    /// Upper Defense Factor — standard high-attack target.
+    /// Upper Defense Factor - standard high-attack target.
     Udf,
-    /// Lower Defense Factor — standard low-attack target.
+    /// Lower Defense Factor - standard low-attack target.
     Ldf,
 }
 
@@ -44,11 +44,11 @@ pub struct ArtPower {
     pub alt_range: bool,
 }
 
-/// Wrapper used by tests / parsers — distinguishes "no damage" from an
+/// Wrapper used by tests / parsers - distinguishes "no damage" from an
 /// invalid byte, mirroring the engine's runtime behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PowerByte {
-    /// Byte was outside the damage-encoding range — produces no damage.
+    /// Byte was outside the damage-encoding range - produces no damage.
     NoDamage,
     /// Byte decoded to a target+multiplier.
     Damage(ArtPower),
@@ -72,12 +72,12 @@ impl PowerByte {
             target = PowerTarget::Ldf;
             idx = b - 0x1B;
         } else if (0x0C..=0x10).contains(&b) {
-            // Alt UDF range — misses short enemies.
+            // Alt UDF range - misses short enemies.
             alt_range = true;
             target = PowerTarget::Udf;
             idx = b - 0x0C;
         } else if (0x11..=0x15).contains(&b) {
-            // Alt LDF range — misses floating enemies.
+            // Alt LDF range - misses floating enemies.
             alt_range = true;
             target = PowerTarget::Ldf;
             idx = b - 0x11;

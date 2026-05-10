@@ -27,7 +27,7 @@ fn build_world() -> World {
         ..World::default()
     };
     // 3 party slots (alive) + 1 monster slot (alive). Slots 4..7 stay
-    // inactive — the SM treats them as dead.
+    // inactive - the SM treats them as dead.
     for i in 0..4 {
         let actor = world.spawn_actor(i);
         actor.battle.liveness = 1;
@@ -64,7 +64,7 @@ fn full_attack_action_emits_apply_damage_event() {
         "battle SM made zero transitions across 1000 frames"
     );
     // The base battle SM port doesn't currently call apply_damage from
-    // the AttackChain state — that's wired in `spirit_fire_damage` only.
+    // the AttackChain state - that's wired in `spirit_fire_damage` only.
     // The test still passes (zero damage events expected) but documents
     // what we'd want to see once the AttackChain damage hook lands.
     let _ = damage_events;
@@ -96,7 +96,7 @@ fn formula_driven_damage_decreases_hp_across_many_rolls() {
     // RNG variance.
     assert!(
         hits > (trials * 4 / 5),
-        "expected >80% hit rate at 100 vs 10 acc/eva — got {hits}/{trials}"
+        "expected >80% hit rate at 100 vs 10 acc/eva - got {hits}/{trials}"
     );
     assert!(total_damage > 0);
 }
@@ -117,7 +117,7 @@ fn mp_cost_drains_caster_mp_through_battle_actor() {
 #[test]
 fn battle_complete_propagates_through_world() {
     let mut world = build_world();
-    // Wipe the party — next tick should land in BattleComplete (party wipe
+    // Wipe the party - next tick should land in BattleComplete (party wipe
     // cause).
     for i in 0..3 {
         world.actors[i].battle.liveness = 0;

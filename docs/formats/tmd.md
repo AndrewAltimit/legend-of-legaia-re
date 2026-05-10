@@ -12,7 +12,7 @@ u32 flags     // 0 on disc; runtime sets to 1 after pointer fixup
 u32 nobj      // number of objects
 ```
 
-The `0x80000002` magic was confirmed via the dev string `"Model Version Err: %x"` in `FUN_80026B4C` — the registration function bails when `*tmd != 0x80000002`.
+The `0x80000002` magic was confirmed via the dev string `"Model Version Err: %x"` in `FUN_80026B4C` - the registration function bails when `*tmd != 0x80000002`.
 
 ## Object table (28 bytes per object × nobj)
 
@@ -27,7 +27,7 @@ i32 scale         // ALWAYS 0x00808080 in Legaia (Legaia-custom; standard
                   // PSX uses signed log2 scale)
 ```
 
-After `FUN_800268DC` runs at load time, `vert_top` / `normal_top` / `prim_top` are patched in-place to absolute RAM addresses. Static tools should NOT do this patch — they should use the offsets as `(ptr_base + offset)` where `ptr_base = 12` (HEADER_SIZE).
+After `FUN_800268DC` runs at load time, `vert_top` / `normal_top` / `prim_top` are patched in-place to absolute RAM addresses. Static tools should NOT do this patch - they should use the offsets as `(ptr_base + offset)` where `ptr_base = 12` (HEADER_SIZE).
 
 ## Vertex / normal data
 
@@ -91,10 +91,10 @@ Big TMD `0000.tmd` (760 prims, 15232-byte section):
 | Section offset | Bytes | Meaning |
 |---|---|---|
 | 0   | `f8 02 10 00 07 05 00 26` | Group header: count=0x02F8=760, flags=0x0010, olen=7, ilen=5, flag=0x00, mode=0x26 |
-| 8   | (20 bytes per prim) | Prim 0 — start of uniform 20-byte stride |
+| 8   | (20 bytes per prim) | Prim 0 - start of uniform 20-byte stride |
 | 8 + 760×20 = 15208 | Trailing 24 bytes of padding | |
 
-The per-prim data IS uniform 20 bytes (= `ilen*4`) — there are no per-prim sub-headers. Walker: `legaia_tmd::legaia_prims::iter_groups`.
+The per-prim data IS uniform 20 bytes (= `ilen*4`) - there are no per-prim sub-headers. Walker: `legaia_tmd::legaia_prims::iter_groups`.
 
 ## TMD pointer table
 
@@ -107,6 +107,6 @@ The per-prim data IS uniform 20 bytes (= `ilen*4`) — there are no per-prim sub
 | `FUN_8001EBEC` | Per-frame OBJECT[10/11] swap (pose select for player TMDs) |
 | `FUN_8001E890` | DATA_FIELD player loader (loads `data_field_player_lzs` chains, registers TMDs) |
 
-The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` — `sizeof(OBJECT) = 28`.
+The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 
 The renderer itself is documented separately under [renderer subsystem](../subsystems/renderer.md).

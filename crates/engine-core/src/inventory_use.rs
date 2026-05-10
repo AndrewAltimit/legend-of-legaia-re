@@ -120,10 +120,10 @@ pub enum InventoryUseState {
     /// Picking a target. `cursor` indexes into [`InventoryUseSession::targets`].
     /// `item_cursor` is preserved so Cancel returns to the same item row.
     TargetSelect { item_cursor: usize, cursor: usize },
-    /// Terminal — the engine should drain the outcome and dispose of the
+    /// Terminal - the engine should drain the outcome and dispose of the
     /// session.
     Done(ItemOutcome),
-    /// Terminal — the player cancelled out of `Browsing`.
+    /// Terminal - the player cancelled out of `Browsing`.
     Aborted,
 }
 
@@ -131,15 +131,15 @@ pub enum InventoryUseState {
 /// log to the battle HUD, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InventoryUseEvent {
-    /// Cursor moved (item list or target list — the state field tells
+    /// Cursor moved (item list or target list - the state field tells
     /// you which).
     CursorMoved,
     /// Confirm pressed but the action wasn't valid (no items / dead
     /// target / etc.). Engines play a buzz blip.
     InvalidConfirm,
-    /// Successful confirm on an item row — entered target-select.
+    /// Successful confirm on an item row - entered target-select.
     EnteredTargetSelect,
-    /// Successful confirm on a target row — completed with outcome.
+    /// Successful confirm on a target row - completed with outcome.
     Used { slot: u8, outcome: ItemOutcome },
     /// Cancelled out (either back to browse, or out of session).
     Cancelled,
@@ -150,7 +150,7 @@ pub enum InventoryUseEvent {
 pub struct InventoryUseSession {
     /// Items the player currently holds (count > 0 entries from the
     /// player's inventory). Order is the canonical "first picked up
-    /// first shown" — engines pre-sort if they want a different order.
+    /// first shown" - engines pre-sort if they want a different order.
     pub items: Vec<u8>,
     /// Available targets (party in field; party + monsters in battle).
     pub targets: Vec<TargetRow>,
@@ -176,7 +176,7 @@ impl InventoryUseSession {
         context: InventoryContext,
     ) -> Self {
         let filtered_items = filter_items(&items, &catalog, context);
-        // Empty filter still starts at the browsing screen — engines need
+        // Empty filter still starts at the browsing screen - engines need
         // to render the "no items" overlay rather than insta-abort.
         let state = InventoryUseState::Browsing { cursor: 0 };
         Self {
@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn revive_targeting_alive_actor_emits_invalid_confirm() {
-        // Resurrection Leaf (id 0x0C) — only valid on dead targets.
+        // Resurrection Leaf (id 0x0C) - only valid on dead targets.
         let mut s = empty_session(vec![0x0C], InventoryContext::Battle);
         s.input(InventoryUseInput::Confirm); // -> target select
         s.input(InventoryUseInput::Confirm); // confirm on Vahn (alive)

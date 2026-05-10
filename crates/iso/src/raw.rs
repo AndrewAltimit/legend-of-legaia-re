@@ -64,7 +64,7 @@ impl RawDisc {
 
 /// If `path` is a `.cue` sheet, parse it and return the absolute path to
 /// the referenced binary track. Otherwise return `path` unchanged. Only
-/// the FIRST `FILE "<name>" BINARY` line is honoured — Legaia ships a
+/// the FIRST `FILE "<name>" BINARY` line is honoured - Legaia ships a
 /// single-track Mode2/2352 image, so multi-track cue layouts aren't a
 /// concern in this project.
 pub fn resolve_disc_path(path: &Path) -> io::Result<PathBuf> {

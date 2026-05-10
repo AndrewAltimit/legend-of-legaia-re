@@ -1,8 +1,8 @@
 # Scene-prefixed asset bundles
 
-Four related shapes account for the dominant per-scene asset layouts on the disc. All of them lead with a 4-byte chunk0 header in the form `(type << 24) | size`, with `type = 0x00` — the same encoding as a [DATA_FIELD streaming](data-field.md) chunk header. The standard streaming walker would interpret `type=0x00` as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0 differently based on the *content* magic at offset +4.
+Four related shapes account for the dominant per-scene asset layouts on the disc. All of them lead with a 4-byte chunk0 header in the form `(type << 24) | size`, with `type = 0x00` - the same encoding as a [DATA_FIELD streaming](data-field.md) chunk header. The standard streaming walker would interpret `type=0x00` as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0 differently based on the *content* magic at offset +4.
 
-## scene_tmd_stream — bare-TMD prefix
+## scene_tmd_stream - bare-TMD prefix
 
 The dominant scene-asset layout. Implementation: `crates/asset/src/scene_tmd_stream.rs`. ~12% of all PROT entries match.
 
@@ -34,7 +34,7 @@ if let Some(s) = scene_tmd_stream::detect(&buf) {
 }
 ```
 
-## scene_vab_stream — VAB-prefix
+## scene_vab_stream - VAB-prefix
 
 Same outer wrapper as `scene_tmd_stream` but the leading chunk carries a Sony VAB sound bank instead of a TMD. The single largest distributed-VAB carrier in the corpus. Implementation: `crates/asset/src/scene_vab_stream.rs`. ~17% of all PROT entries match.
 
@@ -50,7 +50,7 @@ Same outer wrapper as `scene_tmd_stream` but the leading chunk carries a Sony VA
 Strict gate validates the VAB header: `version <= 10`, `program_count <= 128`, `tone_count <= 128`. The `chunk0_size` low byte is consistently `0x20` (sector-aligned to 32-byte boundary).
 
 Cluster anatomy:
-- 119 of 123 entries in the CDNAME `vab_01` cluster (1072..1194) match — the standard distributed-bank layout.
+- 119 of 123 entries in the CDNAME `vab_01` cluster (1072..1194) match - the standard distributed-bank layout.
 - 53 entries in `sound_data2` (878..890), 19 in `music_01`, 14 in `monster_data` / `battle_data`, plus scattered hits in `teien`, `other5`, `player_data`.
 
 Reading:
@@ -65,15 +65,15 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 }
 ```
 
-## scene_v12_table — twin-offset header
+## scene_v12_table - twin-offset header
 
-A scene-named table whose 8-word header carries three constant magic words and two algebraic ties to a record count. Implementation: `crates/asset/src/scene_v12_table.rs`. 97 PROT entries match — one per scene.
+A scene-named table whose 8-word header carries three constant magic words and two algebraic ties to a record count. Implementation: `crates/asset/src/scene_v12_table.rs`. 97 PROT entries match - one per scene.
 
 ```text
 +0x00   u16  N + 4          ; first offset table base = N + 4
 +0x02   u16  0x0012         ; constant magic
 +0x04   u16  0x0000         ; constant
-+0x06   u16  0x0014         ; constant — second-table base offset *header*
++0x06   u16  0x0014         ; constant - second-table base offset *header*
 +0x08   u16  ?              ; per-scene parameter (varies; semantics unknown)
 +0x0A   u16  N              ; record count for the first table
 +0x0C   u16  0x0000         ; constant
@@ -83,19 +83,19 @@ A scene-named table whose 8-word header carries three constant magic words and t
 
 Strict structural checks: the three constant words at fixed offsets, plus `u16[0] == N + 4` and `u16[7] == N + 2` (algebraic ties to `u16[5] = N`), plus `8 <= N <= 4096`. The constants alone are nearly enough; the algebraic ties produce zero false positives across the entire PROT corpus.
 
-Sizes range from ~30 KB to ~387 KB; median ~270 KB. Density >96% nonzero past offset `0x2000` — the leading 8 KB is the structured header / offset tables, the rest is dense payload data.
+Sizes range from ~30 KB to ~387 KB; median ~270 KB. Density >96% nonzero past offset `0x2000` - the leading 8 KB is the structured header / offset tables, the rest is dense payload data.
 
 The runtime consumer hasn't been located. Likely candidates: per-scene navmesh / collision data, scene-event trigger tables. The class name reflects the structural signature, not a guessed semantic; it should change once the consumer is reversed.
 
-[`ghidra/scripts/find_scene_v12_consumers.py`](../../ghidra/scripts/find_scene_v12_consumers.py) is the consumer-search complement: it walks every captured program for `lh` / `lhu` instructions at `+2` and `+6` immediate offsets — the offsets where the header's two constant magic words live. Functions that touch both offsets are high-confidence candidates for the v12 reader. Run with `-process` once per overlay; group hits cluster inside the consumer.
+[`ghidra/scripts/find_scene_v12_consumers.py`](../../ghidra/scripts/find_scene_v12_consumers.py) is the consumer-search complement: it walks every captured program for `lh` / `lhu` instructions at `+2` and `+6` immediate offsets - the offsets where the header's two constant magic words live. Functions that touch both offsets are high-confidence candidates for the v12 reader. Run with `-process` once per overlay; group hits cluster inside the consumer.
 
-## scene_asset_table — canonical 7-asset bundle
+## scene_asset_table - canonical 7-asset bundle
 
 The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: `crates/asset/src/scene_asset_table.rs`. 80 PROT entries match.
 
 ```text
 +0x00   u32  count = 7              ; literal `07 00 00 00`
-+0x04   u32  meta1                  ; varies — purpose unknown
++0x04   u32  meta1                  ; varies - purpose unknown
 +0x08   7 × (u32 type_size, u32 data_offset)
                                     ; each pair packs `(type<<24)|size`
 +0x40   asset payload region        ; LZS-compressed in some entries,
@@ -103,7 +103,7 @@ The on-disc form of the scene asset table that the field loader reads when enter
 ```
 
 Each descriptor is `(type_size, data_offset)`:
-- `type_size` packs `(type_byte << 24) | (size & 0x00FF_FFFF)` — the same packing the [asset-type dispatcher](asset-type.md) accepts directly.
+- `type_size` packs `(type_byte << 24) | (size & 0x00FF_FFFF)` - the same packing the [asset-type dispatcher](asset-type.md) accepts directly.
 - `data_offset` for descriptor 0 is a file-relative byte offset (always `0x40`). For descriptors 1..6, it's a **runtime-buffer offset** within the loader's working RAM, *not* a file-relative offset. Many real entries have `data_offset > file_size` for descriptors past the first; the loader presumably decompresses the payload region into a working buffer and resolves the descriptor offsets there.
 
 Type-sequence variants found across the 80 entries:
@@ -132,12 +132,12 @@ if let Some(t) = scene_asset_table::detect(buf) {
 
 The runtime consumer is the field-loader chain documented under the [asset-loader subsystem](../subsystems/asset-loader.md): `FUN_8001F7C0` + `FUN_800255B8` plus the dispatcher at `FUN_8001F05C` consumes each descriptor pair after LZS-decoding the payload region into a working buffer.
 
-## scene_scripted_asset_table — scripted prefix + canonical bundle
+## scene_scripted_asset_table - scripted prefix + canonical bundle
 
 A composite shape that pairs a `[u16 count][u16 offsets[count]]` script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: `crates/asset/src/scene_scripted_asset_table.rs`. ~6% of all PROT entries match.
 
 ```text
-+0x00              u16  count             ; 1..=4096 — number of script records
++0x00              u16  count             ; 1..=4096 - number of script records
 +0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
                                           ; monotonically non-decreasing
 +offsets[i]        record bytecode        ; per-record opcodes (typical
@@ -157,7 +157,7 @@ The two-level gate is what makes this detector zero-false-positive: the prescrip
 
 The prescript is plausibly the **scene event-script bytecode** that the field VM (`FUN_801DE840`) executes when the scene loads. The 0xFFFF 0x0000 sentinels at record starts strongly resemble field-VM frame-divider opcodes. The runtime is presumed to walk the prescript first (loading scene-specific event scripts), then load the asset bundle from the sector-aligned position. The exact prescript opcode set is unconfirmed pending more reverse work.
 
-## tmd_size_prefix — truncated TMD-prefix
+## tmd_size_prefix - truncated TMD-prefix
 
 Sister to `scene_tmd_stream` for the *truncated* case: same outer shape (`[u32 prefix][TMD magic at +4][zero flags][nobj]`), but the on-disc payload is **shorter than the prefix claims**. Implementation: `crates/asset/src/tmd_size_prefix.rs`. ~3% of all PROT entries match.
 
@@ -170,17 +170,17 @@ Sister to `scene_tmd_stream` for the *truncated* case: same outer shape (`[u32 p
 +0x10 + nobj*0x1C             ; primitive data (truncated at sector boundary)
 ```
 
-All object pointers (`vert_top`, `norm_top`, `prim_top`) point **within the prefix-claimed total size** — so the on-disc file is genuinely a prefix of a larger logical resource, not a malformed header.
+All object pointers (`vert_top`, `norm_top`, `prim_top`) point **within the prefix-claimed total size** - so the on-disc file is genuinely a prefix of a larger logical resource, not a malformed header.
 
 Strict structural checks:
 1. TMD magic at `+4`, flags == 0 at `+8`, `1 <= nobj <= 8`.
-2. `claimed_total > buf.len()` — distinguishes from `scene_tmd_stream` which catches the complete case.
+2. `claimed_total > buf.len()` - distinguishes from `scene_tmd_stream` which catches the complete case.
 3. Object table fits on disc.
 4. Each object's vert / normal / primitive ranges fit within the claimed total.
 
 The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been located; likely the loader allocates `claimed_total` bytes of RAM and either (a) zero-fills the missing tail, or (b) streams the remainder from another PROT entry.
 
-## scene_event_scripts — prescript-only
+## scene_event_scripts - prescript-only
 
 Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][u16 offsets]` prescript exists at offset 0, but the post-prescript payload is **not** a canonical 7-asset table. Implementation: `crates/asset/src/scene_event_scripts.rs`. ~20 PROT entries match.
 
@@ -195,7 +195,7 @@ Sister of `scene_scripted_asset_table` for the case where the same `[u16 count][
                                           ; `0xFFFF 0x0000`
 ...                                       ; bulk asset payload after the
                                           ; prescript (per-scene secondary
-                                          ; header; format unconfirmed —
+                                          ; header; format unconfirmed -
                                           ; appears to be a small `(count,
                                           ; descriptor[count])` table at
                                           ; the next 0x800 boundary, with
@@ -209,6 +209,6 @@ Strict structural detection:
 
 The frame-opener rate is what makes this detector zero-false-positive on its own. Random `[count][offsets]`-shaped data carries no `0xFFFF` opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).
 
-The prescript records are field-VM (`FUN_801DE840`) event scripts — the same per-frame bytecode shape used by `scene_scripted_asset_table` (`0xFFFF 0x0000` is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.
+The prescript records are field-VM (`FUN_801DE840`) event scripts - the same per-frame bytecode shape used by `scene_scripted_asset_table` (`0xFFFF 0x0000` is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.
 
 Detection runs after `scene_scripted_asset_table` and `scene_asset_table`, so any composite layouts those detectors recognize claim their entries first.

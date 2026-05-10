@@ -9,7 +9,7 @@
 //! from a periodic callback on the main browser thread.
 //!
 //! Must be initialised from a user-gesture handler to satisfy the browser
-//! autoplay policy — call [`WebAudioOut::new`] inside e.g. a button click.
+//! autoplay policy - call [`WebAudioOut::new`] inside e.g. a button click.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,7 +29,7 @@ use crate::{Sequencer, StreamResampler};
 /// cpal path uses, so playback quality is identical on both targets.
 pub struct WebAudioOut {
     _ctx: web_sys::AudioContext,
-    /// Must be kept alive for the duration of the stream — dropping this
+    /// Must be kept alive for the duration of the stream - dropping this
     /// de-registers the `onaudioprocess` callback and silences the node.
     _onaudioprocess: Closure<dyn FnMut(AudioProcessingEvent)>,
     state: Rc<RefCell<StreamResampler>>,

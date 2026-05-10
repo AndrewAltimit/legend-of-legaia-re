@@ -2,19 +2,19 @@
 //!
 //! Two layers:
 //!
-//! - [`spu`] — a clean-room model of the PSX SPU: 24 voices, 512 KB SPU RAM,
+//! - [`spu`] - a clean-room model of the PSX SPU: 24 voices, 512 KB SPU RAM,
 //!   ADSR-shaped envelopes, libspu-shaped transfer engine. Drives the
 //!   actual playback every output frame at 44.1 kHz internal rate. This is
 //!   what the engine reimplementation track uses to render in-game audio.
 //!
-//! - [`AudioOut`] — a single cpal output stream that owns an [`spu::Spu`]
+//! - [`AudioOut`] - a single cpal output stream that owns an [`spu::Spu`]
 //!   instance behind a `Mutex`, ticking it once per host-rate output sample
 //!   (with linear resampling from the SPU's 44.1 kHz to the device rate).
 //!   The asset viewer also gets a "play this VAG sample as a one-shot"
 //!   convenience path that materialises a one-block stream into SPU RAM,
 //!   sets up voice 0, and key-ons it through the same SPU model.
 //!
-//! No Sony bytes — this is a clean-room port from the libspu API surface
+//! No Sony bytes - this is a clean-room port from the libspu API surface
 //! and the PSX hardware register layout (see `docs/subsystems/audio.md`).
 
 use std::sync::{Arc, Mutex};
@@ -223,7 +223,7 @@ impl StreamResampler {
                 apply_fade(spu_sample, fv)
             };
             let mut sample = spu_faded;
-            // XA is mixed in after the fade — not subject to BGM crossfade.
+            // XA is mixed in after the fade - not subject to BGM crossfade.
             if let Some(xa) = self.xa.as_mut() {
                 if xa.is_done() {
                     self.xa = None;
@@ -268,7 +268,7 @@ impl StreamResampler {
                     self.fade_target = 1.0;
                     // fade_step stays the same (symmetric fade-in).
                 } else {
-                    // No pending — just idled at silence; release.
+                    // No pending - just idled at silence; release.
                     self.fade_step = 0.0;
                 }
             } else {
@@ -457,7 +457,7 @@ impl AudioOut {
     /// SPU output at 44.1 kHz; a one-shot stream auto-detaches when the
     /// cursor runs off the end (set `looping = true` for BGM).
     ///
-    /// `gain` uses the same Q1.14 fixed-point as SPU voice volumes —
+    /// `gain` uses the same Q1.14 fixed-point as SPU voice volumes -
     /// pass `0x4000` for unity (no attenuation).
     pub fn play_xa(
         &self,
@@ -622,7 +622,7 @@ pub struct SequencerProgress {
 /// The trick: filter=0 / shift=0 / nibble = `(pcm[i] >> 12) & 0xF` decodes
 /// (per `legaia_xa::F0[0]=0`) to exactly `(nibble_signed << 12)`. So if we
 /// encode the top 4 bits of each sample, the decoder reproduces the top
-/// 4 bits — a coarse but functional preview. Good enough for "does sample
+/// 4 bits - a coarse but functional preview. Good enough for "does sample
 /// N play and at the right pitch?"
 ///
 /// For full-fidelity playback we'd round-trip through real ADPCM encoding,

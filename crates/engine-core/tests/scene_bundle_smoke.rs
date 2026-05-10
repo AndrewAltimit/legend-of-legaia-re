@@ -83,13 +83,13 @@ fn scene_bundle_lzs_extracts_descriptor_0_for_real_scene() {
     );
     assert!(
         bundle_found > 0,
-        "no scene bundles found in any CDNAME scene — find_bundle is broken"
+        "no scene bundles found in any CDNAME scene - find_bundle is broken"
     );
     // Most bundles should LZS-decode. Set a generous floor (>50%) so this is
     // robust to a few outlier scenes whose descriptor 0 isn't LZS.
     assert!(
         lzs_ok * 2 >= bundle_found,
-        "only {} of {} bundles LZS-decoded — descriptor 0 extractor regressed",
+        "only {} of {} bundles LZS-decoded - descriptor 0 extractor regressed",
         lzs_ok,
         bundle_found
     );

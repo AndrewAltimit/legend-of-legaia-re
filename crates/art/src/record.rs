@@ -1,4 +1,4 @@
-//! [`ArtRecord`] — the per-art binary record laid out in RAM.
+//! [`ArtRecord`] - the per-art binary record laid out in RAM.
 //!
 //! Field positions and meanings from the external `Art Data Format`
 //! research. Per-character base addresses (Vahn `0x80160EFC`, Noa
@@ -7,7 +7,7 @@
 //! the power-data section both shrink/expand per art, so the format is
 //! schema-then-walk rather than fixed-stride.
 //!
-//! This struct is the *decoded* shape — the raw on-disc layout is parsed
+//! This struct is the *decoded* shape - the raw on-disc layout is parsed
 //! by [`crate::parse::parse_record`].
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,7 @@ impl EffectCue {
 
     /// Cue is "active" iff any field is non-zero. The spreadsheet's
     /// example art (`02 33 00 00 00 00 00 00`) has effect_id = 0x33 and
-    /// all-zero coords — still a real cue.
+    /// all-zero coords - still a real cue.
     pub fn is_active(&self) -> bool {
         self.effect_id != 0 || self.x != 0 || self.y != 0 || self.z != 0
     }
@@ -71,8 +71,8 @@ impl EffectCue {
 ///
 /// Layout per the researcher: high half = animation-frame timing, low half
 /// = effect/sound constant. Common low-half values:
-/// - `0x1A` — sound effect trigger
-/// - `0x4C` — hit effect (visible flash / damage popup)
+/// - `0x1A` - sound effect trigger
+/// - `0x4C` - hit effect (visible flash / damage popup)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct HitCue {
     pub timing_frames: u16,
@@ -160,7 +160,7 @@ pub struct ArtRecord {
     /// Background mode. `0` = regular, `2` = black (used by Super Arts
     /// and the Tornado Flame Hyper Art).
     pub background: u8,
-    /// "Address" slot — written by the runtime after the art is used the
+    /// "Address" slot - written by the runtime after the art is used the
     /// first time in a battle. Always `None` for static records.
     pub runtime_address: Option<u32>,
 }
@@ -187,7 +187,7 @@ impl ArtRecord {
         // total instead of once. We don't know per-hit frame indices here
         // (the consumer applies `dmg_timing` to position each hit), so we
         // approximate by saying the first 2 hits are in the repeat range
-        // when repeat_frames are active and there are >2 hits — matches
+        // when repeat_frames are active and there are >2 hits - matches
         // the documented Super Tempest case.
         if base <= 2 {
             base * count

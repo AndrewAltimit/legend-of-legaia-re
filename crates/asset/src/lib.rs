@@ -3,14 +3,14 @@
 //! The game's loader (`FUN_8001f05c` in `SCUS_942.54`) takes a buffer plus a
 //! single u32 packing `(type << 24) | (size & 0xFFFFFF)` and dispatches to a
 //! type-specific handler. Each asset can be either LZS-compressed (the common
-//! case — handled by `FUN_8001a55c`) or stored raw (handled by `FUN_8001a8b0`,
+//! case - handled by `FUN_8001a55c`) or stored raw (handled by `FUN_8001a8b0`,
 //! which is essentially a memcpy with the same `(size, src, dst)` shape).
 //!
 //! This crate provides:
-//! - [`AssetType`] — the enum of known asset categories.
-//! - [`Descriptor`] — `(type, size, data_offset)` parsed from the on-disc form.
-//! - [`decode`] — apply a [`Descriptor`] + [`DecodeMode`] to a buffer.
-//! - [`parse_player_lzs`] — parse a `player.lzs`-style container header.
+//! - [`AssetType`] - the enum of known asset categories.
+//! - [`Descriptor`] - `(type, size, data_offset)` parsed from the on-disc form.
+//! - [`decode`] - apply a [`Descriptor`] + [`DecodeMode`] to a buffer.
+//! - [`parse_player_lzs`] - parse a `player.lzs`-style container header.
 
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -43,21 +43,21 @@ pub enum AssetType {
     TimList,
     /// TMD mesh (one or many submeshes).
     Tmd,
-    /// Unknown — tagged "man" by malloc-error string.
+    /// Unknown - tagged "man" by malloc-error string.
     Man,
-    /// Unknown — tagged "mes" (likely message text).
+    /// Unknown - tagged "mes" (likely message text).
     Mes,
-    /// "move" — animation/move data.
+    /// "move" - animation/move data.
     Move,
-    /// "anm" — animation.
+    /// "anm" - animation.
     Anm,
-    /// VDF — Legaia-specific vector/animation file.
+    /// VDF - Legaia-specific vector/animation file.
     Vdf,
-    /// "sin" — unknown.
+    /// "sin" - unknown.
     Sin,
     /// Second TMD branch (`tmd_malloc_err2`); single submesh.
     Tmd2,
-    /// "move2" — variant of move data.
+    /// "move2" - variant of move data.
     Move2,
     /// Sentinel/flag returns (cases 0xA, 0xF, 0x14 in the dispatcher).
     /// All three exit the dispatcher immediately with `(case << 8)` as the
@@ -286,7 +286,7 @@ pub fn validate(buffer: &[u8], count: usize) -> Result<ContainerReport> {
             error: None,
         };
 
-        // Skip flag descriptors — they have no data.
+        // Skip flag descriptors - they have no data.
         if !t.has_data() {
             descriptors.push(report);
             continue;
@@ -367,7 +367,7 @@ pub fn validate(buffer: &[u8], count: usize) -> Result<ContainerReport> {
 // Layout: a sequence of `[u32 type_size, data_bytes...]` chunks where
 //   - `type_size = (type << 24) | (size & 0xFFFFFF)`
 //   - `data_bytes` immediately follows the header (`size` bytes of raw data)
-//   - the next chunk starts at `pos + 4 + ((size >> 2) << 2)` — i.e., size
+//   - the next chunk starts at `pos + 4 + ((size >> 2) << 2)` - i.e., size
 //     truncated DOWN to a multiple of 4, plus the header. The runtime treats
 //     size as already-aligned; if it isn't, the runtime would walk into the
 //     "wrong" position and likely crash.

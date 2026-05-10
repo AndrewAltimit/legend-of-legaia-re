@@ -48,11 +48,11 @@ LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" \
     cargo test -p legaia-extract --release
 ```
 
-With the env var unset, the test skips and passes — that gating is
+With the env var unset, the test skips and passes - that gating is
 intentional so CI works without redistributing Sony data.
 
 ## See also
 
-- [`docs/tooling/extraction.md`](../../docs/tooling/extraction.md) —
+- [`docs/tooling/extraction.md`](../../docs/tooling/extraction.md) -
   per-stage CLI invocations if you want to drive individual binaries.
-- The root [`README.md`](../../README.md) — quickstart with disc SHA-256.
+- The root [`README.md`](../../README.md) - quickstart with disc SHA-256.

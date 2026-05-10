@@ -5,7 +5,7 @@
 //! object/vert counts look plausible.
 //!
 //! Used by `asset tmd-scan` to inventory TMDs across all 1234 PROT entries
-//! (raw + LZS-decompressed) — the per-cutscene `chunk01_TMD/` extracts cover
+//! (raw + LZS-decompressed) - the per-cutscene `chunk01_TMD/` extracts cover
 //! only ~29 unique meshes; the rest of the character/monster roster lives in
 //! containers we haven't broken out yet.
 //!
@@ -16,7 +16,7 @@
 use legaia_lzs::decompress_container;
 use legaia_tmd as tmd;
 
-/// Legaia TMD identifier — see `docs/formats/tmd.md` and `FUN_80026b4c`.
+/// Legaia TMD identifier - see `docs/formats/tmd.md` and `FUN_80026b4c`.
 const LEGAIA_TMD_MAGIC: u32 = 0x80000002;
 
 /// One TMD found inside a source buffer.
@@ -44,7 +44,7 @@ pub fn scan_buffer(buf: &[u8]) -> Vec<Hit> {
     if buf.len() < tmd::HEADER_SIZE {
         return hits;
     }
-    // Walk by 4 bytes — TMDs are word-aligned in every container we've seen.
+    // Walk by 4 bytes - TMDs are word-aligned in every container we've seen.
     let mut off = 0usize;
     while off + 4 <= buf.len() {
         let magic = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn random_bytes_with_magic_but_no_parse_is_rejected() {
-        // Magic at offset 0, but everything else is junk — parser must reject.
+        // Magic at offset 0, but everything else is junk - parser must reject.
         let mut buf = vec![0u8; 64];
         buf[0..4].copy_from_slice(&LEGAIA_TMD_MAGIC.to_le_bytes());
         // FLIST_BIT clear, nobj huge → parse rejects.

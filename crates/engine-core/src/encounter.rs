@@ -8,19 +8,19 @@
 //!
 //! ## Components
 //!
-//! - [`EncounterEntry`] — one row in a per-scene table: monster-formation
+//! - [`EncounterEntry`] - one row in a per-scene table: monster-formation
 //!   id + relative weight. Heavier rows are more likely; the roll is a
 //!   weighted-random pick.
-//! - [`EncounterTable`] — the per-scene set of rows plus the base trigger
+//! - [`EncounterTable`] - the per-scene set of rows plus the base trigger
 //!   rate (probability the next step rolls a battle, expressed in 1/256).
-//! - [`EncounterTracker`] — running state. Engines feed it a step counter
+//! - [`EncounterTracker`] - running state. Engines feed it a step counter
 //!   and an RNG; it returns [`EncounterRoll`] when a battle should fire.
-//! - [`EncounterSession`] — higher-level state machine that brackets the
+//! - [`EncounterSession`] - higher-level state machine that brackets the
 //!   transition: `Idle → Triggered → ConfirmTransition → Loading → Done`.
 //!   Engines drive this to handle the camera-shake / fade / battle-load
 //!   sequence retail uses.
 //!
-//! Pure data — no Vfs / disc / world coupling. Engines call
+//! Pure data - no Vfs / disc / world coupling. Engines call
 //! [`EncounterTracker::on_step`] from the field-step path and feed the
 //! resulting [`EncounterRoll`] into their battle-load routine.
 
@@ -29,7 +29,7 @@ use std::collections::HashMap;
 /// One row in an encounter table.
 ///
 /// Each row maps to a `BattleScene` id (the index into the per-scene
-/// monster-formation list — the retail engine reads the formation from
+/// monster-formation list - the retail engine reads the formation from
 /// `battle_data` PROT entries).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncounterEntry {
@@ -67,12 +67,12 @@ pub struct EncounterTable {
     /// Display name for diagnostics.
     pub scene_label: String,
     /// Trigger rate as a 1/256 probability per step. Default is 8/256 ≈
-    /// 3% — matches the retail "moderate" rate. Engines override per
+    /// 3% - matches the retail "moderate" rate. Engines override per
     /// scene from the disc-loaded encounter parameters.
     pub trigger_rate_q8: u8,
     /// Active rows.
     pub entries: Vec<EncounterEntry>,
-    /// Per-scene "no-encounter zones" — encoded as inclusive grid-cell
+    /// Per-scene "no-encounter zones" - encoded as inclusive grid-cell
     /// rectangles `(x0, z0, x1, z1)` in scene-local coordinates. Engines
     /// query [`EncounterTable::is_safe_at`] before calling [`on_step`].
     pub safe_zones: Vec<(i16, i16, i16, i16)>,
@@ -143,7 +143,7 @@ pub struct EncounterTracker {
     /// or boost encounter rate land here. Negative values reduce the
     /// effective rate; positive values boost it. Clamped per-roll.
     rate_bias_q8: i16,
-    /// Master "no encounters" override — set during cutscenes, scripted
+    /// Master "no encounters" override - set during cutscenes, scripted
     /// transitions, and post-battle grace windows.
     suppressed: bool,
     /// Per-formation last-trigger step, used for [`EncounterEntry::min_steps_since_last`].
@@ -293,7 +293,7 @@ impl EncounterTracker {
 /// State of the [`EncounterSession`] state machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncounterPhase {
-    /// Steady state — engine ticks the tracker on every step.
+    /// Steady state - engine ticks the tracker on every step.
     Idle,
     /// A roll succeeded; the engine starts the transition (camera shake,
     /// fade-out). Stays here for [`EncounterSession::transition_frames`]
@@ -308,7 +308,7 @@ pub enum EncounterPhase {
     /// Battle is running; tracker is suspended. Engines call
     /// [`EncounterSession::end_battle`] when the battle resolves.
     Battling { roll: EncounterRoll },
-    /// Post-battle grace window — encounters suppressed for
+    /// Post-battle grace window - encounters suppressed for
     /// [`EncounterSession::grace_frames`]. Decrements per tick.
     Grace { frames_remaining: u16 },
 }
@@ -319,10 +319,10 @@ pub struct EncounterSession {
     tracker: EncounterTracker,
     phase: EncounterPhase,
     /// Frames the [`EncounterPhase::Transition`] phase lasts. Default 32
-    /// (~0.5s at 60Hz) — matches the retail fade-out duration.
+    /// (~0.5s at 60Hz) - matches the retail fade-out duration.
     pub transition_frames: u16,
     /// Frames the [`EncounterPhase::Grace`] phase lasts after a battle.
-    /// Default 30 (~0.5s) — the post-battle "no immediate re-encounter"
+    /// Default 30 (~0.5s) - the post-battle "no immediate re-encounter"
     /// window the retail engine enforces.
     pub grace_frames: u16,
 }

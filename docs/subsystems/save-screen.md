@@ -2,10 +2,10 @@
 
 Covers the save-slot selection and write flow used whenever the game writes
 progress to the PSX memory card. The save UI lives inside the **menu overlay**
-(same 129-function binary as shop, inn, and status screens — not a separate
+(same 129-function binary as shop, inn, and status screens - not a separate
 overlay). Sources: `overlay_save_ui_select.bin` and `overlay_save_ui_saving.bin`
-mednafen captures (mc1/mc2), both confirmed as the menu overlay by function-
-address identity; decompiled functions at
+mednafen captures (taken at the slot-select and writing-in-progress states),
+both confirmed as the menu overlay by function-address identity; decompiled functions at
 `ghidra/scripts/funcs/overlay_menu_801dc6b4.txt`,
 `overlay_menu_801daef4.txt`, `overlay_menu_801dafd4.txt`.
 
@@ -14,12 +14,12 @@ address identity; decompiled functions at
 The save UI is hosted by the menu overlay paged into `0x801C0000..0x801EFFFF`.
 No dedicated save-screen overlay exists. All three capture points (shop, save
 slot select, saving in progress) produced identical function address sets with
-only call-frequency differences in the inventory CSV — confirming a single
+only call-frequency differences in the inventory CSV - confirming a single
 shared overlay.
 
 ## Key functions
 
-### `FUN_801DC6B4` — save-screen outer dispatcher (856 bytes)
+### `FUN_801DC6B4` - save-screen outer dispatcher (856 bytes)
 
 Entry: `()`. Returns `true` when the save flow has terminated (outer state
 `> 5`). Drives a 9-case state machine on `_DAT_8007B43C`:
@@ -28,9 +28,9 @@ Entry: `()`. Returns `true` when the save flow has terminated (outer state
 |---|---|
 | 0 | Init: copies party pointers `_DAT_800846D0/D4` → `DAT_801EF0F0/F4`; decodes `_DAT_8007B450` (entry-context pointer) into `DAT_801E46A4` (sub-screen selector, see below); sets `_DAT_8007B440 = 0xF2` (full fade); advances to state 1. |
 | 1 | Fade-in wait: advances to state 2 once `_DAT_8007B440 < 0x79`. |
-| 2 | Sub-screen dispatch: calls `(*(DAT_801E46A4 * 4 + 0x801E4F40))(_DAT_8007B874)` — indirect function pointer table; pad input masked by `_DAT_8007B874`. |
+| 2 | Sub-screen dispatch: calls `(*(DAT_801E46A4 * 4 + 0x801E4F40))(_DAT_8007B874)` - indirect function pointer table; pad input masked by `_DAT_8007B874`. |
 | 3/4/5 | Fade-out (`_DAT_8007B9D8 = 2`); gated on `_DAT_8007B460 == 0` before advancing. |
-| ≥ 6 | Terminal — returns `true`. |
+| ≥ 6 | Terminal - returns `true`. |
 
 The **entry-context pointer** `_DAT_8007B450` determines which sub-screen opens:
 
@@ -47,7 +47,7 @@ completes, the fade-out advances states 3 → 4 → 5. The four save-coordinate
 words `DAT_801E46BC/C0/C4/C8` are zeroed on init and maintained across the
 sub-screen lifetime.
 
-### `FUN_801DAEF4` — save-slot selector (224 bytes, sub-screen 0x2 / 0x1)
+### `FUN_801DAEF4` - save-slot selector (224 bytes, sub-screen 0x2 / 0x1)
 
 Internal step counter in `DAT_801E46AC`:
 
@@ -61,7 +61,7 @@ Internal step counter in `DAT_801E46AC`:
 Each step calls `func_0x80031D00()` (text-actor tick / MES advance) before
 returning.
 
-### `FUN_801DAFD4` — save-slot confirm / saving-in-progress (584 bytes)
+### `FUN_801DAFD4` - save-slot confirm / saving-in-progress (584 bytes)
 
 Internal step counter in `DAT_801E46AC`:
 
@@ -126,11 +126,11 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x17` | `FUN_801DD330` | (unknown) |
 | `0x18` | `FUN_801DAE24` | (unknown) |
 | `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
-| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress — advances to `0x1E` on confirm |
+| `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm |
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
 | `0x1C` | `FUN_801DB380` | (unknown) |
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
-| `0x1E` | `FUN_801DBC5C` | write-step confirmation spinner — advances to `0x1F` on slot confirm |
+| `0x1E` | `FUN_801DBC5C` | write-step confirmation spinner - advances to `0x1F` on slot confirm |
 | `0x1F` | `FUN_801DBD94` | write-step quantity select / save serialisation |
 | `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
 
@@ -144,7 +144,7 @@ at `DAT_801EF0C8` using `char_id * 0x414 + 0x80084A9E` (character record base).
 8 bytes are copied first, then the full record in `do { ... } while (iVar16 < 8)`
 chunks. Calls `FUN_801CF650` (memory-card write primitive) as a setup step at
 `DAT_801e46ac == 0`. The exact offsets for `story_flags` and `inventory` within
-the save block — i.e., what follows the per-character records — are in
+the save block - i.e., what follows the per-character records - are in
 `FUN_801DBD94` (sub-screen `0x1F`); see dump at
 `ghidra/scripts/funcs/overlay_menu_801dbd94.txt`.
 
@@ -183,8 +183,8 @@ Verified by analyzing a real mednafen memory-card save at
 | `+0x054` | 12 | Primary character display name (for save-select screen) |
 | `+0x208` | 8 | CDNAME label of most-recently-visited scene (e.g. `town0b`) |
 | `+0x218` | 8 | CDNAME label of previous scene (e.g. `town01`) |
-| `+0x???` | 4 | Story flags (`_DAT_1F800394` scratchpad value) — offset not yet pinned |
-| `+0x???` | ~512 | Inventory slot array (`DAT_80085958`, 2-byte `(item_id, count)` entries) — offset not yet pinned |
+| `+0x???` | 4 | Story flags (`_DAT_1F800394` scratchpad value) - offset not yet pinned |
+| `+0x???` | ~512 | Inventory slot array (`DAT_80085958`, 2-byte `(item_id, count)` entries) - offset not yet pinned |
 
 **Investigation status.** The display header contains structured non-zero data beyond the
 four pinned fields above. The in-game money global (`_DAT_8008459C`) is displayed by

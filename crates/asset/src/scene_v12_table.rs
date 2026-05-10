@@ -1,4 +1,4 @@
-//! "v12-cluster" detector — a strict structural detector for the largest
+//! "v12-cluster" detector - a strict structural detector for the largest
 //! remaining sub-cluster of the `unknown_high_entropy` bucket.
 //!
 //! ### Provenance
@@ -14,7 +14,7 @@
 //! +0x00   u16  N + 4          ; first offset table base = `N + 4`
 //! +0x02   u16  0x0012         ; constant
 //! +0x04   u16  0x0000         ; constant
-//! +0x06   u16  0x0014         ; constant — second-table base offset *header*
+//! +0x06   u16  0x0014         ; constant - second-table base offset *header*
 //! +0x08   u16  ?              ; per-scene parameter (varies)
 //! +0x0A   u16  N              ; record count for the first table
 //! +0x0C   u16  0x0000         ; constant
@@ -25,22 +25,22 @@
 //! `u16[0]` and `u16[7]` are tied to `u16[5]` by the algebraic identities
 //! `u16[0] == N + 4` and `u16[7] == N + 2`. These constraints, paired with the
 //! three constant words at `u16[1] / u16[2] / u16[3]` and `u16[6]`, are
-//! specific enough that a full corpus scan finds **97 / 1234** entries — zero
-//! false positives — every match is a current `unknown_high_entropy`,
+//! specific enough that a full corpus scan finds **97 / 1234** entries - zero
+//! false positives - every match is a current `unknown_high_entropy`,
 //! `unknown_other`, or misclassed `field_pack` entry.
 //!
-//! ### Format meaning — open
+//! ### Format meaning - open
 //!
 //! The runtime consumer hasn't been located. Likely candidates: per-scene
 //! navmesh / collision data, scene event-trigger tables, or a scene-local SEQ
 //! sequencer block. Until the consumer is reversed we deliberately keep the
-//! detector / class name **format-agnostic** — `Class::SceneV12Table` reflects
+//! detector / class name **format-agnostic** - `Class::SceneV12Table` reflects
 //! the structural signature, not a guessed semantic.
 //!
 //! ### Coverage impact
 //!
 //! Promotes 97 entries out of `unknown_high_entropy` (95) / `unknown_other`
-//! (1) / `field_pack` (1 misclass — `0002_gameover_data.BIN`). Coverage moves
+//! (1) / `field_pack` (1 misclass - `0002_gameover_data.BIN`). Coverage moves
 //! from 532 / 1232 (43.2 %) to 629 / 1232 (51.1 %).
 //!
 //! See `docs/formats/scene-bundles.md` for the byte-level spec.
@@ -52,7 +52,7 @@ const W1_MAGIC: u16 = 0x0012;
 const W3_MAGIC: u16 = 0x0014;
 
 /// Minimum sane record count. The smallest observed live entry has `N == 0x18`
-/// (24 records). Defensive bound — anything below 8 is almost certainly a
+/// (24 records). Defensive bound - anything below 8 is almost certainly a
 /// false match on stray bytes that happen to satisfy the constants.
 const MIN_N: u16 = 8;
 
@@ -71,10 +71,10 @@ pub struct SceneV12Table {
     /// Per-scene parameter from `u16[4]`. Varies across the corpus; semantics
     /// not yet understood. Surfaced for downstream tooling.
     pub param: u16,
-    /// First offset-table base — algebraically `n + 4`. Stored for caller
+    /// First offset-table base - algebraically `n + 4`. Stored for caller
     /// convenience; equals `self.n + 4`.
     pub table_a_base: u16,
-    /// Second offset-table base — algebraically `n + 2`. Equals `self.n + 2`.
+    /// Second offset-table base - algebraically `n + 2`. Equals `self.n + 2`.
     pub table_b_base: u16,
 }
 
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn rejects_random_buffer() {
-        // Cycle 0..255 — no chance of matching the strict header.
+        // Cycle 0..255 - no chance of matching the strict header.
         let buf: Vec<u8> = (0..=255u8).cycle().take(0x100).collect();
         assert!(detect(&buf).is_none());
     }

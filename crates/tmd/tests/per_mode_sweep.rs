@@ -3,7 +3,7 @@
 //! and assert 100% clean walk.
 //!
 //! Skips silently when `extracted/tmd_scan/` is missing or
-//! `LEGAIA_DISC_BIN` is unset — same skip-pattern as the rest of the
+//! `LEGAIA_DISC_BIN` is unset - same skip-pattern as the rest of the
 //! disc-gated suite.
 //!
 //! What this catches:
@@ -66,7 +66,7 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
     let mut iter_fail = 0usize;
     let mut parse_fail = 0usize;
     let mut modes_seen: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
-    // Track flag values that vertex_offset_bytes returns None for —
+    // Track flag values that vertex_offset_bytes returns None for -
     // those would be missing entries in the 6-entry descriptor table.
     let mut unknown_flag_values: std::collections::BTreeSet<u16> =
         std::collections::BTreeSet::new();
@@ -142,7 +142,7 @@ fn per_mode_descriptor_sweep_validates_every_tmd() {
     );
     assert!(
         unknown_flag_values.is_empty(),
-        "vertex_offset_bytes returned None for flags {:?} — descriptor table missing entries",
+        "vertex_offset_bytes returned None for flags {:?} - descriptor table missing entries",
         unknown_flag_values
     );
     assert_eq!(

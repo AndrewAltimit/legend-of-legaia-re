@@ -84,7 +84,7 @@ mod tests {
         // set first_sector to 0
         buf[8..12].copy_from_slice(&0u32.to_le_bytes());
         // remove the VABp magic at position 4 (where sector=0 would put it)
-        // already missing — just test
+        // already missing - just test
         assert!(detect(&buf).is_none());
     }
 

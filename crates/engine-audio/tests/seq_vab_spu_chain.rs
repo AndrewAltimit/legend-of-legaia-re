@@ -30,7 +30,7 @@ fn build_vab() -> Vec<u8> {
     let total = vag_bodies_off + vag_size;
     let mut buf = vec![0u8; total];
 
-    // VAB header — same fields as the vab_smoke fixture.
+    // VAB header - same fields as the vab_smoke fixture.
     buf[0..4].copy_from_slice(&VAB_MAGIC.to_le_bytes());
     buf[4..8].copy_from_slice(&7u32.to_le_bytes());
     buf[8..12].copy_from_slice(&1u32.to_le_bytes());
@@ -63,7 +63,7 @@ fn build_vab() -> Vec<u8> {
     buf[t0 + 13] = 0; // pbmax
     buf[t0 + 14] = 0; // unused
     buf[t0 + 15] = 0; // unused
-    // adsr1, adsr2 — give a quick attack and a long hold so the voice is
+    // adsr1, adsr2 - give a quick attack and a long hold so the voice is
     // audibly playing on the next render cycle.
     buf[t0 + 16..t0 + 18].copy_from_slice(&0x80FFu16.to_le_bytes());
     buf[t0 + 18..t0 + 20].copy_from_slice(&0x5FC0u16.to_le_bytes());
@@ -74,7 +74,7 @@ fn build_vab() -> Vec<u8> {
     let body_size_units = (vag_size / 8) as u16;
     buf[table_off + 2..table_off + 4].copy_from_slice(&body_size_units.to_le_bytes());
 
-    // VAG body — write 4 ADPCM blocks of constant amplitude. Each block is
+    // VAG body - write 4 ADPCM blocks of constant amplitude. Each block is
     // 16 bytes: header byte (filter | shift), flag byte, then 14 nibble
     // bytes. We use shift=0 + filter=0 so each nibble decodes to its raw
     // signed-4 value × 1; nibbles 0x77 → +7 (positive max).
@@ -142,7 +142,7 @@ fn end_to_end_seq_to_pcm_chain_produces_non_silent_output() {
     sequencer.tick_us(&mut spu, 1_000.0);
 
     // Render one frame's worth of PCM (44.1 kHz mono). Look for any sample
-    // whose absolute value exceeds a threshold — the synth VAG's positive
+    // whose absolute value exceeds a threshold - the synth VAG's positive
     // amplitude should clearly clear silence. Use ~512 samples since SPU
     // mixing has some startup latency from envelope attack.
     let mut max_abs: i32 = 0;
@@ -152,7 +152,7 @@ fn end_to_end_seq_to_pcm_chain_produces_non_silent_output() {
     }
     assert!(
         max_abs > 8,
-        "SPU produced silent output (max |sample| = {max_abs}) — chain isn't wired"
+        "SPU produced silent output (max |sample| = {max_abs}) - chain isn't wired"
     );
 }
 
@@ -175,7 +175,7 @@ fn end_to_end_chain_silences_after_eot_when_not_looped() {
         let (l, r) = spu.tick();
         max_abs_late = max_abs_late.max((l as i32).abs()).max((r as i32).abs());
     }
-    // Allow a tiny noise floor — voices can hold residual envelope state
+    // Allow a tiny noise floor - voices can hold residual envelope state
     // briefly after key-off.
     assert!(
         max_abs_late < 1024,

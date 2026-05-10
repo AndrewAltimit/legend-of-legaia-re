@@ -1,4 +1,4 @@
-# DMY.DAT — developer fixtures
+# DMY.DAT - developer fixtures
 
 Sibling archive to `PROT.DAT` at the disc root. Despite the name suggesting "dummy data" or a parallel asset bank, DMY.DAT carries developer fixtures, not real game data.
 

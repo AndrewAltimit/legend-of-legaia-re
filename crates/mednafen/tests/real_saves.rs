@@ -1,6 +1,6 @@
 //! Disc-gated tests against the user's actual mednafen save states.
 //!
-//! Skipped when `LEGAIA_MEDNAFEN_DIR` is unset — keeps CI green for
+//! Skipped when `LEGAIA_MEDNAFEN_DIR` is unset - keeps CI green for
 //! contributors without a disc + saves on hand.
 
 use legaia_mednafen::diff::{DiffOptions, diff_ram, sort_by_size};
@@ -225,7 +225,7 @@ fn watchpoint_diff_for_battle_anim_strike_runs_clean() {
     // Slot semantics: with the new save corpus, mc4 is the pre-fire-book
     // command-menu save (also a battle, in `dolk`), so the diff still
     // crosses an animation-state boundary just within a different battle
-    // than before. The assertion is unchanged — at least one region.
+    // than before. The assertion is unchanged - at least one region.
     let (Some(p4), Some(p6)) = (save_for(4), save_for(6)) else {
         eprintln!("{}", skip_msg(4));
         return;

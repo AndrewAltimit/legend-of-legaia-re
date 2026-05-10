@@ -1,4 +1,4 @@
-//! `legaia-engine-shell` — the top-level engine driver crate.
+//! `legaia-engine-shell` - the top-level engine driver crate.
 //!
 //! Houses the `legaia-engine` binary plus a small wiring layer that bridges
 //! [`legaia_engine_core`] and [`legaia_engine_audio`] (the BGM director) so

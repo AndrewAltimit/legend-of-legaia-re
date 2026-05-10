@@ -28,7 +28,7 @@
 //! When `FLIST_BIT` is set in `id`, all `*_top` values are byte offsets
 //! from the end of the header (i.e., from the start of the object table).
 //! When unset, pointers are absolute RAM addresses (used after the runtime
-//! patches them in place — irrelevant for static parsing).
+//! patches them in place - irrelevant for static parsing).
 //!
 //! Vertices and normals are `SVECTOR { i16 x, y, z, pad }` = 8 bytes each.
 //!
@@ -39,13 +39,13 @@
 //! whose first instruction loads `*buffer` and compares against `0x80000002`
 //! (a TMD `id` with `FLIST_BIT` set). The difference is wrapping:
 //!
-//! - `TMD` (case 2): the loaded payload is a *pack* — `[count, off0, off1, …]`
+//! - `TMD` (case 2): the loaded payload is a *pack* - `[count, off0, off1, …]`
 //!   followed by `count` independent TMD blobs at the listed offsets. The
 //!   dispatcher iterates and calls `FUN_80026b4c(buffer + off_i, 0)` per blob.
 //!   See [`legaia_prot::timpack`] for the analogous TIM-pack format and
 //!   `crates/asset::pack` for the actual TMD-pack walker we use.
 //!
-//! - `TMD2` (case 9): the loaded payload IS a single bare TMD — the dispatcher
+//! - `TMD2` (case 9): the loaded payload IS a single bare TMD - the dispatcher
 //!   calls `FUN_80026b4c(buffer, 0)` exactly once. **No pack header.** Pass
 //!   the raw payload bytes directly to [`parse`].
 //!
@@ -56,7 +56,7 @@
 //! Primitives have a 4-byte header `{ u8 olen, u8 ilen, u8 flag, u8 mode }`
 //! followed by `ilen × 4` bytes of primitive data. The `mode` byte encodes
 //! topology + shading + texturing flags. We don't decode primitive bodies
-//! yet — just walk the headers to validate structure.
+//! yet - just walk the headers to validate structure.
 
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -66,7 +66,7 @@ pub mod legaia_prim_probe;
 pub mod legaia_prims;
 pub mod mesh;
 
-/// FLIST_BIT — when set in `id`, pointers are relative to header end.
+/// FLIST_BIT - when set in `id`, pointers are relative to header end.
 pub const FLIST_BIT: u32 = 0x8000_0000;
 
 /// Header size in bytes.
@@ -239,7 +239,7 @@ pub fn parse(buf: &[u8]) -> Result<Tmd> {
     // With FLIST_BIT, all *_top are byte offsets from `table_end_base`
     // (the end of the 12-byte header, i.e. the start of the object table).
     // Note: this is the typical interpretation; some refs say "end of
-    // object table" — testing on real Legaia TMDs confirms it's end-of-header.
+    // object table" - testing on real Legaia TMDs confirms it's end-of-header.
     let ptr_base: usize = HEADER_SIZE;
 
     let mut objects = Vec::with_capacity(nobj);
@@ -490,7 +490,7 @@ mod tests {
     /// TMD2 dispatch (asset type 0x09) hands the payload to FUN_80026b4c
     /// directly, which validates `*buffer == 0x80000002`. This test confirms
     /// `parse` accepts that exact id (Legaia's chosen TMD id) so a TMD2
-    /// payload — i.e., a single bare TMD blob — round-trips cleanly through
+    /// payload - i.e., a single bare TMD blob - round-trips cleanly through
     /// the same parser we use for TMD-pack contents.
     #[test]
     fn parses_legaia_tmd2_id() {

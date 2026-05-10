@@ -1,6 +1,6 @@
 //! Smoke test: drive the battle-action state machine via `World::tick` for
 //! many frames and assert the SM makes forward progress without hitting
-//! `UnknownState`. No disc data needed — this exercises the engine
+//! `UnknownState`. No disc data needed - this exercises the engine
 //! integration layer end-to-end.
 
 use legaia_engine_core::world::{SceneMode, World};

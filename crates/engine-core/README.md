@@ -3,7 +3,7 @@
 Engine-agnostic primitives for the clean-room engine reimplementation:
 virtual filesystem, asset cache, frame timing.
 
-No `wgpu` / windowing / audio dependencies — the asset crates (Track 1)
+No `wgpu` / windowing / audio dependencies - the asset crates (Track 1)
 talk to this layer, and the render and audio crates read from it.
 
 ## What it provides
@@ -12,9 +12,9 @@ talk to this layer, and the render and audio crates read from it.
 
 Source of asset bytes. Two backends:
 
-- `DirVfs` — filesystem-backed, rooted at a directory. Used in
+- `DirVfs` - filesystem-backed, rooted at a directory. Used in
   development against the output of `legaia-extract`.
-- (Planned) `DiscVfs` — reads directly from a disc image, so end users
+- (Planned) `DiscVfs` - reads directly from a disc image, so end users
   don't need to extract anything ahead of time.
 
 Both yield raw bytes addressed by a logical name (e.g.
@@ -28,7 +28,7 @@ TIM/TMD/VAB on every frame when an actor is referenced repeatedly.
 
 ### Frame timing
 
-`FrameClock` — fixed-step driver that targets the PSX's nominal NTSC
+`FrameClock` - fixed-step driver that targets the PSX's nominal NTSC
 60 Hz. Returns the number of logical ticks elapsed since the last call,
 so the host can drive the script VMs deterministically regardless of
 render rate.
@@ -41,7 +41,7 @@ script VMs; the `Host` traits are implemented by routing through this
 struct. `World::tick` runs:
 
 1. Effect pool tick (every frame, every mode).
-2. Per-actor move-VM tick — only for active actors with bytecode loaded
+2. Per-actor move-VM tick - only for active actors with bytecode loaded
    via `set_move_bytecode`.
 3. Mode-specific top-level VM:
    - `SceneMode::Battle` → battle-action state machine step.
@@ -53,41 +53,41 @@ implement the per-VM `Host` traits themselves; `World` is the default.
 
 ### Battle helpers
 
-- `art_strike` — translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
+- `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
   (HP delta, status, scheduled SFX cues) the world drains into its
   battle event queue.
-- `ap_gauge` — per-character Action-Point gauge driving Tactical Arts
+- `ap_gauge` - per-character Action-Point gauge driving Tactical Arts
   command input. Charges +5 on Spirit-press, refills per turn.
-- `battle_stats` — equipment-aware stat aggregator (clean-room port of
+- `battle_stats` - equipment-aware stat aggregator (clean-room port of
   `FUN_80042558`). Sums per-item modifiers, ORs ability bits, folds
   status-effect modifiers (Burned -ATK, Confused halves accuracy,
   Asleep / Stunned / Petrified zero evasion, Silenced / Petrified
   block Magic).
-- `items` — typed inventory item-effect catalog. `apply_effect`
+- `items` - typed inventory item-effect catalog. `apply_effect`
   resolves an `ItemEffect` against a `TargetSnapshot` to produce an
   `ItemOutcome` engines fold into world state.
-- `battle_round` — per-round orchestrator. `BattleRound::begin` resets
+- `battle_round` - per-round orchestrator. `BattleRound::begin` resets
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
   the world. `BattleRound::end` ticks status, drains tick damage,
   returns death count.
-- `battle_runner` — `BattleRunner` sits between player input and the
+- `battle_runner` - `BattleRunner` sits between player input and the
   action SM. `begin_round` / `commit_turn` / `end_round` bracket each
   turn; `push_command` / `push_chained_art` gate input against
   `ApGauge`; `commit_turn` resolves the queue through
   `resolve_action_queue` (Miracle / Super expansion). Per-slot buffers
   preserve state across `active_party_slot` switches.
-- `battle_hud` — renderer-agnostic UI model. Holds per-slot HP / MP /
+- `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
   (popups), `StatusEvent` (icons), and `BattleRound::begin` / `end`
   (slot panels). `engine-render::battle_hud_draws_for` turns it into
   `TextDraw`s.
-- `inventory_use` — `InventoryUseSession` state machine for the field
+- `inventory_use` - `InventoryUseSession` state machine for the field
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
   through `World::use_item`.
 
 ## See also
 
-- [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) — the
+- [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md) - the
   clean-room boundary and architecture for the engine track.

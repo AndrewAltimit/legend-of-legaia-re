@@ -3,14 +3,14 @@
 //! Field-side spell casting flow: pick caster → pick spell → pick target
 //! → resolve via [`crate::spells::cast_spell`]. Only spells whose effect
 //! is field-meaningful (Heal / HealAll / Cure / Revive) are admissible
-//! in this context — damage / capture / escape spells filter out.
+//! in this context - damage / capture / escape spells filter out.
 //!
 //! ## States
 //!
 //! `CharSelect → SpellSelect → TargetSelect → Done(SpellOutcome | Cancelled)`
 //!
 //! Each state honours Circle as "back one step"; Circle from CharSelect
-//! cancels out (Done(Cancelled)). The session never mutates the world —
+//! cancels out (Done(Cancelled)). The session never mutates the world -
 //! it returns a typed [`SpellMenuOutcome`] and engines apply it.
 
 use crate::input::PadButton;
@@ -571,7 +571,7 @@ mod tests {
     fn confirm_battle_only_spell_filters_to_invalid() {
         let mut s = SpellMenuSession::new(party(), targets(), SpellCatalog::vanilla());
         // Manually drop into SpellSelect for Noa with spell slot index 1
-        // (Reseal — Capture, battle-only).
+        // (Reseal - Capture, battle-only).
         let _ = s.tick(SpellMenuInput {
             down: true,
             ..Default::default()

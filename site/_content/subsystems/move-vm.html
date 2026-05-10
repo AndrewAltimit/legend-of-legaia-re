@@ -6,9 +6,9 @@
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>If the <a href="actor-vm.html">actor VM</a> is the title-screen sprite walker and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer in between &mdash; a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
+  <p>If the <a href="actor-vm.html">actor VM</a> is the title-screen sprite walker and the <a href="script-vm.html">field VM</a> is the cutscene / NPC scripter, the move VM is the layer in between - a tiny per-actor animation engine. Every actor (a party member, an enemy, an NPC) has a "move buffer" and a PC into it. Every frame, the actor tick calls into the move VM and runs opcodes until something forces it to pause (a HALT, a wait timer, or running out of buffer).</p>
 
-  <p>The move VM is what reads <a href="../formats/index.html">MDT</a> (move-table) records and turns them into world-space motion, render-bank writes, animation-bank selection, tween setup, and per-actor flag manipulation. It's the bytecode that drives Tactical Arts execution &mdash; when a Tactical Arts directional input maps to a move ID, the move VM is what plays out the move record one opcode at a time.</p>
+  <p>The move VM is what reads <a href="../formats/index.html">MDT</a> (move-table) records and turns them into world-space motion, render-bank writes, animation-bank selection, tween setup, and per-actor flag manipulation. It's the bytecode that drives Tactical Arts execution - when a Tactical Arts directional input maps to a move ID, the move VM is what plays out the move record one opcode at a time.</p>
 
   <p>One quirk worth noting: <strong>operands are 16-bit, not 8-bit.</strong> The PC counts in u16 units. Each handler returns its size also in u16 units, which the dispatcher epilogue adds to the PC. Coming from byte-stream VMs (the actor VM and field VM both use byte streams), this is easy to misread.</p>
 
@@ -32,7 +32,7 @@
     <li>Field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code>, which finds the move record for <code>move_id</code> and stages it into the actor at <code>actor[+0x48]</code> (buffer base) / <code>actor[+0x70]</code> (PC).</li>
     <li>Actor tick (<code>FUN_80021DF4</code>, per frame) and actor spawn (<code>FUN_80021B04</code>, one-shot) both call <code>FUN_80023070(actor)</code> to step the move buffer.</li>
     <li>Move-VM opcode <code>0x2F</code> calls <code>FUN_801D362C(actor, opcode_ptr)</code> for scene-specific extension opcodes that live in the town overlay.</li>
-    <li>The motion VM runs alongside but doesn't share opcodes &mdash; it consumes a separate per-actor "motion buffer" through the <code>0xF8</code>/<code>0xFB</code> system-channel idiom.</li>
+    <li>The motion VM runs alongside but doesn't share opcodes - it consumes a separate per-actor "motion buffer" through the <code>0xF8</code>/<code>0xFB</code> system-channel idiom.</li>
   </ul>
 </section>
 
@@ -50,7 +50,7 @@ goto v0;                                                  // computed jump</code
   <dl class="kv">
     <dt>Buffer base</dt><dd><code>actor[+0x48]</code> (<code>_DAT_8007B888</code> = MOVE root, <code>_DAT_8007B840</code> = MOVE2)</dd>
     <dt>PC</dt><dd><code>actor[+0x70]</code> (i16, in u16 units)</dd>
-    <dt>Jump table</dt><dd><code>0x80010778</code> in <code>SCUS_942.54</code> &mdash; 71 entries &times; 4 bytes</dd>
+    <dt>Jump table</dt><dd><code>0x80010778</code> in <code>SCUS_942.54</code> - 71 entries &times; 4 bytes</dd>
   </dl>
 </section>
 
@@ -108,7 +108,7 @@ goto v0;                                                  // computed jump</code
     <tbody>
       <tr><td><code>0x08</code></td><td>HALT</td><td><code>actor[+0x10] |= 0x8</code>. Sets <code>bVar3 = false</code> so the dispatcher exits without advancing PC.</td></tr>
       <tr><td><code>0x09</code></td><td>WAIT_SET</td><td><code>actor[+0x54] = v1 &lt;&lt; 3</code>. Wait timer; <code>FUN_80021DF4</code> ticks it down each frame.</td></tr>
-      <tr><td><code>0x16</code></td><td>STUB</td><td>Calls <code>FUN_80024C80</code> &mdash; body is a pure <code>jr ra</code>. Pure no-op.</td></tr>
+      <tr><td><code>0x16</code></td><td>STUB</td><td>Calls <code>FUN_80024C80</code> - body is a pure <code>jr ra</code>. Pure no-op.</td></tr>
       <tr><td><code>0x2F</code></td><td>OVERLAY_EXT</td><td>Escape to <code>FUN_801D362C</code> (town overlay): 16-bit sub-opcode, JT at <code>0x801CE868</code>, 61 entries.</td></tr>
     </tbody>
   </table>
@@ -130,33 +130,33 @@ goto v0;                                                  // computed jump</code
   <h2>Control flow</h2>
   <p>The interpreter loops: read opcode at <code>actor[+0x70]</code>, dispatch, write the new PC <code>actor[+0x70] += param_3</code>, then either continue or break depending on <code>bVar3</code>. Break opcodes:</p>
   <ul class="bullets">
-    <li><strong><code>0x08</code> HALT</strong> &mdash; clears the loop flag.</li>
-    <li><strong><code>0x09</code> WAIT_SET</strong> &mdash; wait timer is set; further opcodes deferred to next frame.</li>
+    <li><strong><code>0x08</code> HALT</strong> - clears the loop flag.</li>
+    <li><strong><code>0x09</code> WAIT_SET</strong> - wait timer is set; further opcodes deferred to next frame.</li>
     <li>A few epilogue cases (e.g. <code>0x30</code> KEY_BUFFER_FREE) jump to the epilogue without advancing.</li>
   </ul>
   <p>After the loop exits, the function returns; the caller (<code>FUN_80021B04</code> or <code>FUN_80021DF4</code>) gets a "tick complete for this actor" signal. The next frame's <code>FUN_80021DF4</code> updates physics, then re-enters from the saved PC.</p>
 </section>
 
 <section class="doc-section" id="ext-dispatcher">
-  <h2>Extension dispatcher (<code>0x2F</code>) &mdash; ported sub-ops</h2>
+  <h2>Extension dispatcher (<code>0x2F</code>) - ported sub-ops</h2>
   <p>Op <code>0x2F</code> reads <code>op[1]</code> as a 16-bit sub-opcode (range <code>0x00..0x3C</code>) and dispatches via the JT at <code>0x801CE868</code>. <code>crates/engine-vm/src/move_vm.rs</code> ports all 61 sub-opcodes; the highlights:</p>
   <ul class="bullets">
-    <li><strong>Slot table at <code>&amp;DAT_801F3498</code></strong> &mdash; 16 slots &times; 8 bytes, shared across actors. Sub-ops <code>0x25/0x26</code> round-trip world coords; <code>0x27/0x28</code> the tween-source triple at <code>+0x90</code> (with <code>&gt;&gt; 12</code> fixed-point + <code>[-0xFF, 0xFF]</code> clamp on read); <code>0x31/0x32</code> the render-bank section at <code>+0x24..+0x2C</code>; <code>0x34/0x35</code> the byte at <code>actor[+0x72]</code>.</li>
+    <li><strong>Slot table at <code>&amp;DAT_801F3498</code></strong> - 16 slots &times; 8 bytes, shared across actors. Sub-ops <code>0x25/0x26</code> round-trip world coords; <code>0x27/0x28</code> the tween-source triple at <code>+0x90</code> (with <code>&gt;&gt; 12</code> fixed-point + <code>[-0xFF, 0xFF]</code> clamp on read); <code>0x31/0x32</code> the render-bank section at <code>+0x24..+0x2C</code>; <code>0x34/0x35</code> the byte at <code>actor[+0x72]</code>.</li>
     <li><strong>Globals.</strong> <code>DAT_801F22F4</code> is a u32 predicate (sub-ops <code>0x08/0x09</code> set/clear, <code>0x0A/0x0B</code> test). <code>DAT_801F22F6</code> is a u16 counter mod 16: <code>0x0F</code> clears, <code>0x10</code> reads-and-increments, capturing the low byte into <code>actor.field_86</code>; <code>0x11</code> then writes world coords to <code>slot_table[field_86 &amp; 0xFF]</code>.</li>
     <li><strong>World-position lerp.</strong> <code>0x24</code> / <code>0x2A</code> share <code>axis = base + ((target - base) * t) &gt;&gt; 12</code>. The Y axis always lerps toward the player Y; X / Z target the fixed map origin (<code>0x24</code>) or the player position (<code>0x2A</code>). <code>0x06</code> / <code>0x07</code> are bbox-vs-player gate variants on the canonicalised box <code>[xa..xb] &times; [za..zb]</code>.</li>
     <li><strong>Midpoint blends.</strong> <code>0x0E</code> / <code>0x12</code> back the <code>FUN_801E45BC</code> "midpoint to actor world" idiom. <code>0x36/0x37</code> are axis predicates against <code>0x8E - DAT_8007C348</code>; <code>0x38/0x39</code> are squared-distance gates around the player. <code>0x23</code> is the anim-bank lerp toward operand world coords using the scratchpad ramp ratio at <code>_DAT_1F800393</code>.</li>
     <li><strong>Self-modifying bytecode.</strong> <code>0x04</code> writes actor world XYZ into <code>buffer[pc + op[2] + 3..]</code>; <code>0x1E</code> is read-modify-write on a single u16 (<code>buffer[pc + op[2] + 4] += op[3]</code>); <code>0x1B</code> is an in-bytecode copy loop. The <code>MoveHost::move_bytecode_{read,write}_u16</code> callbacks expose the actor's move buffer to these ops.</li>
-    <li><strong>HSV ramps.</strong> <code>0x1F</code> / <code>0x20</code> ramp a packed 24-bit RGB color stored in <code>actor[+0xA0..+0xA3]</code> / <code>actor[+0xA4..+0xA7]</code>: decompose, RGB&rarr;HSV via the SCUS algorithm at <code>FUN_8001A78C</code>, add <code>op[2..4]</code> per channel (H wraps mod <code>0x168</code>, S/V clamp), HSV&rarr;RGB via <code>FUN_8001A8DC</code>, re-pack. Both are size-1 by design &mdash; the operand stream re-interprets as the next outer opcode (a bytecode-density trick that simultaneously seeds the anim-block update). <code>crates/engine-vm</code> ships clean-room <code>rgb_to_hsv</code> / <code>hsv_to_rgb</code> mirroring the SCUS algorithms exactly.</li>
-    <li><strong>Fourth flag bank.</strong> <code>0x13</code> / <code>0x14</code> predicate, <code>0x1C</code> / <code>0x1D</code> set / clear &mdash; backed by the same <code>DAT_80086D70</code> bitfield the field VM's <code>0x5x/0x6x/0x7x</code> default routes touch. <code>engine-core::World</code> exposes it as a single lazily-grown <code>system_flags: Vec&lt;u8&gt;</code> with MSB-first bit ordering (<code>0x80 &gt;&gt; (idx &amp; 7)</code>, mirroring <code>FUN_8003CE08</code>). The field VM's idx encoding ranges over <code>0..=0x87FF</code>, so the bank can't be a fixed-size array.</li>
+    <li><strong>HSV ramps.</strong> <code>0x1F</code> / <code>0x20</code> ramp a packed 24-bit RGB color stored in <code>actor[+0xA0..+0xA3]</code> / <code>actor[+0xA4..+0xA7]</code>: decompose, RGB&rarr;HSV via the SCUS algorithm at <code>FUN_8001A78C</code>, add <code>op[2..4]</code> per channel (H wraps mod <code>0x168</code>, S/V clamp), HSV&rarr;RGB via <code>FUN_8001A8DC</code>, re-pack. Both are size-1 by design - the operand stream re-interprets as the next outer opcode (a bytecode-density trick that simultaneously seeds the anim-block update). <code>crates/engine-vm</code> ships clean-room <code>rgb_to_hsv</code> / <code>hsv_to_rgb</code> mirroring the SCUS algorithms exactly.</li>
+    <li><strong>Fourth flag bank.</strong> <code>0x13</code> / <code>0x14</code> predicate, <code>0x1C</code> / <code>0x1D</code> set / clear - backed by the same <code>DAT_80086D70</code> bitfield the field VM's <code>0x5x/0x6x/0x7x</code> default routes touch. <code>engine-core::World</code> exposes it as a single lazily-grown <code>system_flags: Vec&lt;u8&gt;</code> with MSB-first bit ordering (<code>0x80 &gt;&gt; (idx &amp; 7)</code>, mirroring <code>FUN_8003CE08</code>). The field VM's idx encoding ranges over <code>0..=0x87FF</code>, so the bank can't be a fixed-size array.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="cross-refs">
   <h2>Connection to other crates</h2>
   <ul class="bullets">
-    <li><strong>crates/mdt</strong> &mdash; parses the <a href="../formats/index.html">MDT format</a>. The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, <code>crates/mdt</code> can grow a disassembler.</li>
-    <li><strong>crates/engine-vm</strong> &mdash; clean-room Rust port lives at <code>crates/engine-vm/src/move_vm.rs</code>. All 71 outer opcodes plus all 61 inner ext sub-ops are ported; the <code>MoveHost</code> trait abstracts every actor-side callback. <code>actor_tick</code> mirrors the per-frame entry gate at <code>FUN_80021DF4 + 0x80022B94</code>.</li>
-    <li><strong>Field VM op <code>0x22</code></strong> (<code>EXEC_MOVE</code>) &mdash; the gateway from script-VM into move-VM; calls <code>FUN_800204F8</code> to set up the per-actor buffer.</li>
+    <li><strong>crates/mdt</strong> - parses the <a href="../formats/index.html">MDT format</a>. The per-frame data inside an MDT record is exactly the move-VM bytecode this VM consumes. With the move-VM opcode set documented, <code>crates/mdt</code> can grow a disassembler.</li>
+    <li><strong>crates/engine-vm</strong> - clean-room Rust port lives at <code>crates/engine-vm/src/move_vm.rs</code>. All 71 outer opcodes plus all 61 inner ext sub-ops are ported; the <code>MoveHost</code> trait abstracts every actor-side callback. <code>actor_tick</code> mirrors the per-frame entry gate at <code>FUN_80021DF4 + 0x80022B94</code>.</li>
+    <li><strong>Field VM op <code>0x22</code></strong> (<code>EXEC_MOVE</code>) - the gateway from script-VM into move-VM; calls <code>FUN_800204F8</code> to set up the per-actor buffer.</li>
   </ul>
 </section>
 
@@ -167,6 +167,6 @@ goto v0;                                                  // computed jump</code
     <li><strong>PC is also in u16 units.</strong> <code>actor[+0x70] &times; 2</code> is the byte offset.</li>
     <li><strong><code>param_3</code> is the size in u16 units</strong>, not bytes. The dispatcher epilogue does <code>actor[+0x70] += param_3</code>.</li>
     <li><strong><code>0x47</code>-bound check</strong>: <code>sltiu v0, v1, 0x47</code>. Out-of-range opcodes silently fall through to the loop-exit. Treat any opcode <code>&ge; 0x47</code> as "end of move buffer" rather than "unknown opcode".</li>
-    <li><strong>Cases that "look like NOPs" in the C decompile</strong> still advance the PC via <code>param_3</code> &mdash; the increment is set in MIPS branch-delay slots and is invisible at the C level (same pattern as the field VM).</li>
+    <li><strong>Cases that "look like NOPs" in the C decompile</strong> still advance the PC via <code>param_3</code> - the increment is set in MIPS branch-delay slots and is invisible at the C level (same pattern as the field VM).</li>
   </ul>
 </section>

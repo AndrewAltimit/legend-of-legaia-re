@@ -1,9 +1,9 @@
 //! Field / event script VM, ported clean-room from `FUN_801DE840`.
 //!
 //! `FUN_801DE840` lives in PROT entry `0897_xxx_dat` (the town/field overlay,
-//! see `docs/subsystems/script-vm.md`). It drives Legaia's overworld scripting — NPC
+//! see `docs/subsystems/script-vm.md`). It drives Legaia's overworld scripting - NPC
 //! movement, dialog triggers, cutscene sequencing, story flag manipulation.
-//! 17.5 KB, 357 outgoing calls — the largest function in the corpus.
+//! 17.5 KB, 357 outgoing calls - the largest function in the corpus.
 //!
 //! Unlike the small fixed-width actor VM in [`super`], the field VM has
 //! variable-length opcodes (1 to many bytes), a rich per-script context
@@ -36,7 +36,7 @@
 //!
 //! When the high bit is set, the VM operates on a *different* script's
 //! context than the caller's. The caller is responsible for resolving the
-//! target script ID (via [`peek_extended`]) before invoking [`step`] — the
+//! target script ID (via [`peek_extended`]) before invoking [`step`] - the
 //! `ctx` parameter should already point at the target's context. This mirrors
 //! the original's `func_0x8003C83C(target_id)` lookup, lifted into the host
 //! layer to keep the VM borrow-free.
@@ -46,7 +46,7 @@
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation at `ghidra/scripts/funcs/overlay_0897_801de840.txt` and the
 //! reference at `docs/subsystems/script-vm.md` are the *spec*, not source. The
-//! [`FieldHost`] trait abstracts every call the original made into SCUS — its
+//! [`FieldHost`] trait abstracts every call the original made into SCUS - its
 //! implementation lives in the engine layer.
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
@@ -60,75 +60,75 @@
 /// distinct piece of state surfaced by at least one opcode handler.
 #[derive(Debug, Clone, Default)]
 pub struct FieldCtx {
-    /// `+0x10` — context flag word. Bit `0x400` = halted (set by YIELD ops,
+    /// `+0x10` - context flag word. Bit `0x400` = halted (set by YIELD ops,
     /// checked by the dispatcher prelude). Bits `0x100`, `0x1000`, `0x20200`,
     /// `0x20000000`, `0x1000000`, `0x80000` carry per-feature semantics.
     pub flags: u32,
-    /// `+0x14` — world X (units: `0.5` tile, formula `(b & 0x7F) * 0x80 + 0x40`).
+    /// `+0x14` - world X (units: `0.5` tile, formula `(b & 0x7F) * 0x80 + 0x40`).
     pub world_x: u16,
-    /// `+0x16` — world Y (collision-derived).
+    /// `+0x16` - world Y (collision-derived).
     pub world_y: u16,
-    /// `+0x18` — world Z.
+    /// `+0x18` - world Z.
     pub world_z: u16,
-    /// `+0x26` — source value copied to [`saved_26`] by op 0x31 bit-8 path.
+    /// `+0x26` - source value copied to [`saved_26`] by op 0x31 bit-8 path.
     pub field_26: u16,
-    /// `+0x50` — script ID. `0xFB` = "system" channel.
+    /// `+0x50` - script ID. `0xFB` = "system" channel.
     pub script_id: u16,
-    /// `+0x54` — wait/timer accumulator. Cleared by YIELD; ticked by WAIT_FRAMES.
+    /// `+0x54` - wait/timer accumulator. Cleared by YIELD; ticked by WAIT_FRAMES.
     pub wait_accum: i16,
-    /// `+0x56` — move-table sub-state (op 0x22 sets to 5 if move==0, else 1).
+    /// `+0x56` - move-table sub-state (op 0x22 sets to 5 if move==0, else 1).
     pub move_substate: u16,
-    /// `+0x5A` — saved counterpart of [`field_26`] (op 0x31 bit-8 path).
+    /// `+0x5A` - saved counterpart of [`field_26`] (op 0x31 bit-8 path).
     pub saved_26: u16,
-    /// `+0x5C` — move-table index (op 0x22).
+    /// `+0x5C` - move-table index (op 0x22).
     pub move_id: u16,
-    /// `+0x5E` — set to `0xFFFE` by op 0x22.
+    /// `+0x5E` - set to `0xFFFE` by op 0x22.
     pub field_5e: u16,
-    /// `+0x62` — local flag bank (16 bits). Manipulated by 0x2B/0x2C/0x2D.
+    /// `+0x62` - local flag bank (16 bits). Manipulated by 0x2B/0x2C/0x2D.
     pub local_flags: u16,
-    /// `+0x6D` — face/body rotation index (op 0x43 sub-7).
+    /// `+0x6D` - face/body rotation index (op 0x43 sub-7).
     pub face_rotation: u8,
-    /// `+0x72` — generic per-actor scalar slot. Written / ramped by
+    /// `+0x72` - generic per-actor scalar slot. Written / ramped by
     /// op 0x4C outer-nibble-4 sub-0.
     pub field_72: u16,
-    /// `+0x24` — generic per-actor scalar slot. Written / ramped by
+    /// `+0x24` - generic per-actor scalar slot. Written / ramped by
     /// op 0x4C outer-nibble-4 sub-3 (ramp path); the immediate path is
     /// repurposed as an absolute jump and does not touch this field.
     pub field_24: i16,
-    /// `+0x28` — generic per-actor scalar slot. Written by op 0x4C
+    /// `+0x28` - generic per-actor scalar slot. Written by op 0x4C
     /// outer-nibble-4 sub-4 (immediate path); the ramp path is repurposed
     /// as an absolute jump and does not touch this field.
     pub field_28: i16,
-    /// `+0x6A` — generic per-actor scalar slot. Written / ramped by op
+    /// `+0x6A` - generic per-actor scalar slot. Written / ramped by op
     /// 0x4C outer-nibble-4 sub-1, which **halves the input** (`target >> 1`)
     /// and floors the result at `1` before applying.
     pub field_6a: i16,
-    /// `+0x8E` — inverted-Y mirror slot. Written / ramped by op 0x4C
+    /// `+0x8E` - inverted-Y mirror slot. Written / ramped by op 0x4C
     /// outer-nibble-4 sub-2 (which also conditionally writes
     /// `world_y = -value` when `flags & 0x20000000` is set).
     pub field_8e: i16,
-    /// `+0x8B` — cleared by op 0x23 NPC path.
+    /// `+0x8B` - cleared by op 0x23 NPC path.
     pub field_8b: u8,
-    /// `+0x8C` — NPC X grid coordinate (op 0x23).
+    /// `+0x8C` - NPC X grid coordinate (op 0x23).
     pub npc_x: u8,
-    /// `+0x8D` — NPC facing direction (op 0x23).
+    /// `+0x8D` - NPC facing direction (op 0x23).
     pub npc_facing: u8,
-    /// `+0x90` — opaque actor-handle field. Captured by op 0x49 sub-1 into the
+    /// `+0x90` - opaque actor-handle field. Captured by op 0x49 sub-1 into the
     /// `_DAT_8007B44C` global (the runtime later restores it across the
     /// state-resume gate). Treated as opaque by the VM.
     pub field_90: u32,
-    /// `+0x94` — saved PC (set by YIELD; the dispatcher reads this on resume).
+    /// `+0x94` - saved PC (set by YIELD; the dispatcher reads this on resume).
     pub saved_pc: u32,
-    /// `+0x42` — generic per-actor scalar slot. Written by op 0x4C
+    /// `+0x42` - generic per-actor scalar slot. Written by op 0x4C
     /// outer-nibble-0xC sub-2 (`[4C, 0xC2, b1]` writes `b1` zero-extended).
     pub field_42: u16,
-    /// `+0x58` — generic per-actor scalar slot. Written by op 0x4C
+    /// `+0x58` - generic per-actor scalar slot. Written by op 0x4C
     /// outer-nibble-0xD sub-0xD (`[4C, 0xDD, b1]` writes `b1` zero-extended).
     pub field_58: u16,
-    /// `+0x68` — local guard slot. Read by op 0x4C outer-nibble-8 sub-0xC
+    /// `+0x68` - local guard slot. Read by op 0x4C outer-nibble-8 sub-0xC
     /// to skip a forward jump when zero.
     pub field_68: i16,
-    /// `+0x74` — composite control word. XOR-toggled by op 0x4C
+    /// `+0x74` - composite control word. XOR-toggled by op 0x4C
     /// outer-nibble-0xC sub-8 (`[4C, 0xC8]` flips bit 0x10000000).
     pub field_74: u32,
 }
@@ -151,10 +151,10 @@ pub enum StepResult {
     /// Advance to a new PC offset. The next call to [`step`] should resume
     /// from `next_pc`.
     Advance { next_pc: usize },
-    /// The script has yielded — caller should wait for the next host tick
+    /// The script has yielded - caller should wait for the next host tick
     /// before resuming. The next PC was saved to `ctx.saved_pc`.
     Yield { resume_pc: usize },
-    /// The script wants to halt and not resume on its own — typically because
+    /// The script wants to halt and not resume on its own - typically because
     /// a flag-test failed and the conditional path is "halt".
     Halt { final_pc: usize },
     /// The opcode is recognized but not yet implemented in this port.
@@ -168,7 +168,7 @@ pub enum StepResult {
 /// Engine-side callbacks the field VM dispatches into.
 ///
 /// As more opcodes are ported, this trait grows. New methods land with default
-/// impls so existing hosts compile unchanged — engines override what they care
+/// impls so existing hosts compile unchanged - engines override what they care
 /// about.
 pub trait FieldHost {
     /// Read the global story-flag word at `_DAT_1F800394` (PSX scratchpad).
@@ -184,10 +184,11 @@ pub trait FieldHost {
     fn frame_delta(&self) -> u16;
 
     /// Begin executing a move-table entry on `ctx`. Mirrors `func_0x800204F8`
-    /// — the move-table consumer that `crates/mdt` parses. The VM has already
-    /// written `ctx.move_id`, `ctx.field_5e`, and `ctx.move_substate` before
-    /// this method fires; the host only needs to start the visual / animation
-    /// side of the move (or override the substate for player-vs-NPC nuances).
+    /// (the move-table consumer that `crates/mdt` parses). The VM has
+    /// already written `ctx.move_id`, `ctx.field_5e`, and `ctx.move_substate`
+    /// before this method fires; the host only needs to start the visual /
+    /// animation side of the move (or override the substate for
+    /// player-vs-NPC nuances).
     ///
     /// `move_id == 99` is the cancel sentinel on the player path.
     fn exec_move(&mut self, ctx: &mut FieldCtx, move_id: u8) {
@@ -214,7 +215,7 @@ pub trait FieldHost {
     /// that `crates/mes` parses; `func_0x8001FD44` was the original opener.
     /// `world_x` / `world_z` are pre-decoded grid coordinates for the box
     /// position; `depth_id` is the raw byte (the original indexes a length-8
-    /// `_DAT_xxx` lookup table for the actual depth value — the host decides
+    /// `_DAT_xxx` lookup table for the actual depth value - the host decides
     /// whether to use the same table or its own scheme).
     fn open_dialog(
         &mut self,
@@ -240,7 +241,7 @@ pub trait FieldHost {
 
     /// Camera config (op 0x38, simple path). When `op1 & 0x7F == 0`, the
     /// original copies `*(short *)(0x80073F04 + (op0 & 0xF) * 2)` into
-    /// `ctx.field_26`. The host owns the table — this method takes the
+    /// `ctx.field_26`. The host owns the table - this method takes the
     /// `index = op0 & 0xF` and returns the u16 to write. Returning `None`
     /// keeps `ctx.field_26` unchanged (the VM still advances PC).
     fn cam_cfg_lookup(&self, index: u8) -> Option<u16> {
@@ -264,7 +265,7 @@ pub trait FieldHost {
     }
 
     /// Set an inventory slot's count (op 0x3B). Slot encoding: low nibble +
-    /// (high nibble * page-stride) — i.e. `slot_byte` is the raw operand.
+    /// (high nibble * page-stride) - i.e. `slot_byte` is the raw operand.
     /// The original computes `*(byte*)(0x80084340 + (slot & 0xF) +
     /// (slot >> 4) * 0x414) = count;` then refreshes via
     /// `func_0x80042558()`. Hosts decide their own inventory layout.
@@ -288,7 +289,7 @@ pub trait FieldHost {
     }
 
     /// Read the secondary global-flag bank `_DAT_8007B8F4` (op 0x42 mode 0).
-    /// Distinct from the main `_DAT_1F800394` flag bank in scratchpad —
+    /// Distinct from the main `_DAT_1F800394` flag bank in scratchpad -
     /// `_DAT_8007B8F4` is in main RAM and tracks a different set of game
     /// states (likely "scene-already-visited" or similar bookkeeping).
     fn extra_flags(&self) -> u32 {
@@ -358,9 +359,9 @@ pub trait FieldHost {
 
     /// Set up multi-keyframe animation (op 0x4B). The VM has already populated
     /// `ctx.local_flags` with bit 0x1000 (animation gate), `ctx.flags` with
-    /// bit 0x1000, and the per-frame slots `ctx[+0xB0..]` / `+0xB8` / `+0xC8`
-    /// — but those layout slots are still opaque so we just hand the host
-    /// the raw frame data. `frames` is `count` × 4 bytes.
+    /// bit 0x1000, and the per-frame slots `ctx[+0xB0..]` / `+0xB8` / `+0xC8`,
+    /// but those layout slots are still opaque so we just hand the host the
+    /// raw frame data. `frames` is `count` × 4 bytes.
     fn setup_animation(&mut self, ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
         let _ = (ctx, count, base_id, frames);
     }
@@ -386,7 +387,7 @@ pub trait FieldHost {
 
     /// Camera op 0x45 CONFIGURE. The VM has decoded the 10-bit param mask
     /// from `[op0, op1]` and reads each set bit's `u16` value into `params`.
-    /// `mode` is `(op0 >> 2) & 0xF` — passed to `FUN_801de084` originally as
+    /// `mode` is `(op0 >> 2) & 0xF` - passed to `FUN_801de084` originally as
     /// a third arg. `apply_trigger` is the `u16` at `operand+2` (between the
     /// mask bytes and the per-param value stream). Hosts apply the params
     /// to camera state; original calls `FUN_801ddfe4` (init) before the
@@ -395,7 +396,7 @@ pub trait FieldHost {
         let _ = (params, apply_trigger, mode);
     }
 
-    /// Camera op 0x45 LOAD. Payload is 18 raw bytes following `op0` —
+    /// Camera op 0x45 LOAD. Payload is 18 raw bytes following `op0` -
     /// `FUN_801dbc20(operand + 1)` consumes them.
     fn camera_load(&mut self, payload: &[u8]) {
         let _ = payload;
@@ -416,7 +417,7 @@ pub trait FieldHost {
     ///
     /// `op0_word` encodes the mode (high bit + sub-op nibble); `op1_word`
     /// carries the fade target / duration. See `docs/subsystems/script-vm.md`
-    /// (opcode 0x36) for the sub-case table — the original branches based on
+    /// (opcode 0x36) for the sub-case table - the original branches based on
     /// `op0_word`'s `0xFFFF` sentinel, the `0x8000` flag bit, and the low-15
     /// sub-op.
     fn scene_fade(&mut self, op0_word: u16, op1_word: u16) -> SceneFadeResult {
@@ -448,7 +449,7 @@ pub trait FieldHost {
     /// - `1` = a previous arm completed and the script can resume
     /// - any other value = currently armed (the runtime stored a PC pointer)
     ///
-    /// Hosts model this however they like — the VM only needs the tristate.
+    /// Hosts model this however they like - the VM only needs the tristate.
     fn op49_state(&self) -> Op49State {
         Op49State::Idle
     }
@@ -467,7 +468,7 @@ pub trait FieldHost {
     fn op49_clear(&mut self) {}
 
     /// Pre-arm setup. Mirrors `func_0x80020de0(0x8007065c, _DAT_8007c34c)`
-    /// in the original — a one-shot subroutine the runtime invokes before
+    /// in the original - a one-shot subroutine the runtime invokes before
     /// suspending the script. Default no-op.
     fn op49_invoke_setup(&mut self) {}
 
@@ -503,11 +504,11 @@ pub trait FieldHost {
         0
     }
 
-    /// Op 0x4E sub-op 4 — BIOS Rand stub.
+    /// Op 0x4E sub-op 4 - BIOS Rand stub.
     ///
     /// The original at line 7479 of `overlay_0897_801de840.txt` is
     /// `iVar18 = func_0x80056798(); return iVar18;`. `FUN_80056798` is a
-    /// 3-instruction BIOS thunk: `li t2,0xa0; jr t2; _li t1,0x2f` — i.e.
+    /// 3-instruction BIOS thunk: `li t2,0xa0; jr t2; _li t1,0x2f` - i.e.
     /// `jr 0xA0` with `t1 = 0x2F`, the BIOS `Rand()` syscall. The script-VM
     /// dispatcher then uses the returned value directly as the next PC, which
     /// would jump into arbitrary memory in any sane retail execution. There
@@ -550,7 +551,7 @@ pub trait FieldHost {
     /// Op 0x4C sub-3 sub-A (dialog-depth copy to player ctx).
     ///
     /// The original writes `*(short *)(_DAT_8007C364 + 0x26) = _DAT_80073EFC`
-    /// — i.e. `player_ctx.field_26 = dialog_depth`. The player ctx is global
+    /// (i.e. `player_ctx.field_26 = dialog_depth`). The player ctx is global
     /// state and not threaded through the VM, so the host owns the write.
     /// PC += 2.
     fn copy_dialog_depth_to_player(&mut self) {}
@@ -559,9 +560,9 @@ pub trait FieldHost {
     ///
     /// Both sub-ops compute `(player.world - 0x40) >> 7` for X and Z, then
     /// invoke a SCUS helper:
-    /// - sub-8: `FUN_801de3e0(x_tile, z_tile)` — overlay-resident sub-tile
+    /// - sub-8: `FUN_801de3e0(x_tile, z_tile)` - overlay-resident sub-tile
     ///   refresh.
-    /// - sub-D: `func_0x800180EC(x_tile, z_tile)` — SCUS sub-tile refresh.
+    /// - sub-D: `func_0x800180EC(x_tile, z_tile)` - SCUS sub-tile refresh.
     ///
     /// The VM passes the sub-op id (8 or 0xD) so the host can pick the right
     /// helper. PC += 2.
@@ -587,13 +588,13 @@ pub trait FieldHost {
     ///
     /// The host owns the player-context lookup (`_DAT_8007C364`). When the
     /// host returns `None`, the player ctx isn't initialised yet OR `ctx`
-    /// IS the player ctx — both fall through to a regular advance.
+    /// IS the player ctx - both fall through to a regular advance.
     ///
     /// When the host returns `Some(coords)`, the VM:
     /// - copies `world_x / world_y / world_z / field_26` onto `ctx`,
     /// - if `ctx.flags & 0x20000000` is set, additionally calls
     ///   [`Self::set_inverted_y_mirror`] with `-player.world_y` and returns
-    ///   `OpResume::StateResume` (the `caseD_4` exit — the state-resume
+    ///   `OpResume::StateResume` (the `caseD_4` exit - the state-resume
     ///   subsystem decides whether to advance or halt),
     /// - otherwise returns `OpResume::Advance` (normal PC += 2).
     fn fetch_player_coords(&self, ctx: &FieldCtx) -> Option<PlayerCoords> {
@@ -612,7 +613,7 @@ pub trait FieldHost {
     /// Op 0x4C sub-3 sub-2 (clear the 512-byte party/inventory state region).
     ///
     /// 2-byte instruction `[4C, 0x32]`. The original zeroes the 512 bytes at
-    /// `[0x80085718 .. 0x80085918)` — a region holding party / inventory state
+    /// `[0x80085718 .. 0x80085918)` - a region holding party / inventory state
     /// adjacent to the fourth-flag-bank bitfield (`DAT_80086D70`). Hosts model
     /// their own party-state representation and call this hook to reset it.
     /// PC += 2.
@@ -628,7 +629,7 @@ pub trait FieldHost {
     /// before the host call.
     ///
     /// `payload_4` is the 32-bit value at operand+2..6 (read via
-    /// `func_0x8003CED8` — likely a packed s24 + flag byte).
+    /// `func_0x8003CED8` - likely a packed s24 + flag byte).
     /// `params` are four u16 values at operand+6..14.
     /// `target` is the signed target value at operand+14..16.
     fn actor_face_rotation_setup(
@@ -648,7 +649,7 @@ pub trait FieldHost {
     /// which allocates a fresh actor via `func_0x80020DE0(&DAT_801F2858,
     /// _DAT_8007C34C)` and writes the three operand bytes into the new
     /// actor's `+0xB8`, `+0xBA`, `+0xBC` u16 slots. The VM doesn't track
-    /// the actor pool — hosts model their own scripted-actor system.
+    /// the actor pool - hosts model their own scripted-actor system.
     fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
         let _ = (b1, b2, b3);
     }
@@ -658,7 +659,7 @@ pub trait FieldHost {
     /// 2-byte instruction `[4C, op0]`. The new view index is `op0 & 7`. The
     /// original conditionally updates `_DAT_8007B5F0` (current view index)
     /// and adjusts `player_ctx[+0x26]` by `(new_index - old_index) * 0x200`
-    /// — but only when `_DAT_8007B6B0 == -1000` (a "input idle" sentinel).
+    /// - but only when `_DAT_8007B6B0 == -1000` (a "input idle" sentinel).
     ///
     /// Hosts model the policy. Returning the previous index is informational.
     /// The VM advances PC by 2 in both branches.
@@ -671,7 +672,7 @@ pub trait FieldHost {
     /// 8-byte instruction `[43, 2, a1, a2, a3, lo, hi, b6]`. The original
     /// resolves three actor IDs via `func_0x8003C83C`; if all three resolve,
     /// it reads `u16 = LE(operand[5..7])` and byte `operand[7]`, then calls
-    /// `FUN_801D2D38(actor1, actor2, actor3, u16, byte)` — a 3-actor talk /
+    /// `FUN_801D2D38(actor1, actor2, actor3, u16, byte)` - a 3-actor talk /
     /// face setup. If any ID fails to resolve, the call is skipped silently.
     ///
     /// PC += 8 in both branches.
@@ -730,7 +731,7 @@ pub trait FieldHost {
     /// When `t = LE_u16(operand[7..9])` is non-zero, the original calls
     /// `FUN_801de698(ctx, &ctx[+0x14], &target_xyz, t)` to tween from current
     /// coords to target over `t` ticks. The VM doesn't do any of the immediate
-    /// writes itself in that branch — the host owns the tween path.
+    /// writes itself in that branch - the host owns the tween path.
     ///
     /// (When `t == 0`, the VM writes x/y/z to ctx if not `0xFFFF`, and that
     /// path doesn't need this hook.)
@@ -740,7 +741,7 @@ pub trait FieldHost {
 
     /// Op 0x43 sub-0x10 (emitter setup, FUN_801F8004).
     ///
-    /// 21-byte instruction. The original calls `FUN_801F8004(operand + 1)` —
+    /// 21-byte instruction. The original calls `FUN_801F8004(operand + 1)` -
     /// likely a particle/emitter init taking a 19-byte struct. PC += 21.
     fn op43_emitter_init(&mut self, payload: &[u8]) {
         let _ = payload;
@@ -756,7 +757,7 @@ pub trait FieldHost {
 
     /// Op 0x43 sub-0x15 (emitter setup, FUN_801F8F28).
     ///
-    /// 14-byte instruction. The original calls `FUN_801F8F28(operand + 1)` —
+    /// 14-byte instruction. The original calls `FUN_801F8F28(operand + 1)` -
     /// a 12-byte struct. PC += 14.
     fn op43_emitter_struct_12(&mut self, payload: &[u8]) {
         let _ = payload;
@@ -789,7 +790,7 @@ pub trait FieldHost {
     /// Op 0x43 sub-0x13 (opaque emitter call, FUN_801F88FC).
     ///
     /// 14-byte instruction `[43, 0x13, ...12 bytes]`. The original calls
-    /// `FUN_801F88FC(operand)` — i.e. passes a pointer to the sub-op byte plus
+    /// `FUN_801F88FC(operand)` - i.e. passes a pointer to the sub-op byte plus
     /// the 12 trailing data bytes (13 bytes total). FUN_801F88FC isn't yet
     /// reversed; treating the payload as opaque is correct until then.
     /// PC += 14.
@@ -811,11 +812,11 @@ pub trait FieldHost {
     ///
     /// 2-byte instruction `[4C, 0x39]`. The original chains three SCUS calls:
     /// 1. `FUN_801de3e0((player.world_x - 0x40) >> 7, (player.world_z - 0x40) >> 7)`
-    ///    — re-broadcast the player's tile coords to the field grid.
+    ///    - re-broadcast the player's tile coords to the field grid.
     /// 2. `func_0x80019278(player_ctx)` → write result to `player.world_y`
-    ///    — refresh collision Y at the new tile.
+    ///    - refresh collision Y at the new tile.
     /// 3. Falls through to sub-0xE: `FUN_801db8ec(player_ctx)` + `FUN_801daa50()`
-    ///    — re-render / re-rasterize the player on the framebuffer.
+    ///    - re-render / re-rasterize the player on the framebuffer.
     ///
     /// The host owns the player ctx, so the VM passes `ctx` (the active
     /// script's context) for hosts that want to correlate, but the calls
@@ -827,13 +828,13 @@ pub trait FieldHost {
     /// Op 0x4C sub-3 sub-E (player render resync).
     ///
     /// 2-byte instruction `[4C, 0x3E]`. Calls `FUN_801db8ec(player_ctx)` then
-    /// `FUN_801daa50()` — the second half of sub-9's chain, without the
+    /// `FUN_801daa50()` - the second half of sub-9's chain, without the
     /// position / collision-Y refresh. PC += 2.
     fn player_render_resync(&mut self) {}
 
     /// Op 0x4C sub-3 sub-F (field I/O resync).
     ///
-    /// 2-byte instruction `[4C, 0x3F]`. Calls `func_0x8001ebec()` — an SCUS
+    /// 2-byte instruction `[4C, 0x3F]`. Calls `func_0x8001ebec()` - an SCUS
     /// helper related to per-frame I/O / render-bank toggling (the same
     /// function called from a TMD-table setup path). PC += 2.
     fn field_io_resync(&mut self) {}
@@ -848,7 +849,7 @@ pub trait FieldHost {
     /// `caseD_4()` (STATE_RESUME, surfaced as `Yield` here).
     ///
     /// `captured_pc_offset` is the byte offset within the bytecode buffer
-    /// at `pc + header_size + 2` — the byte just past the 3-byte
+    /// at `pc + header_size + 2` - the byte just past the 3-byte
     /// instruction. The host stores this on the matched actor; on the
     /// next state-resume tick the host re-enters the dispatcher at that
     /// offset.
@@ -897,7 +898,7 @@ pub trait FieldHost {
     ///
     /// **Base instruction is 13 bytes** (opcode + 12 operand bytes). The
     /// `capture_flag` byte at the position immediately past the instruction
-    /// is **peeked** by the runtime — when it equals `0x40`, two extra
+    /// is **peeked** by the runtime - when it equals `0x40`, two extra
     /// header bytes plus a variable-length payload are consumed before PC
     /// advances. Total instruction length is therefore 13 (no capture) or
     /// `13 + 2 + payload_len` (with capture).
@@ -920,7 +921,7 @@ pub trait FieldHost {
     ///
     /// The original at `0x801E1F0C+`:
     /// 1. Walks the actor list at `_DAT_8007C354` looking for an entry whose
-    ///    `+0x90` slot equals the active ctx — if found, jumps directly to
+    ///    `+0x90` slot equals the active ctx - if found, jumps directly to
     ///    `LAB_801E2EA0` and returns `pc + 13` (skips the spawn).
     /// 2. Otherwise calls `FUN_801E5668(ctx, ..., pos, packed24, mode)` to
     ///    spawn a new actor at the world position. `mode = 1` if `op0 & 1`
@@ -931,7 +932,7 @@ pub trait FieldHost {
     ///    pointer), then advances PC by an extra `2 + pc_payload_len` past
     ///    the standard 13.
     ///
-    /// Returns the **PC delta from the opcode byte** — the VM applies it as
+    /// Returns the **PC delta from the opcode byte** - the VM applies it as
     /// `Advance { next_pc: pc + delta }`. Default impl emits the
     /// "no actor pool" branch (always returns 13) which matches the
     /// game-code path when the spawn pool is full and no slot was
@@ -966,7 +967,7 @@ pub trait FieldHost {
     ///
     /// When `ticks == 0`, the VM writes the value directly to the ctx field
     /// (no host call). When `ticks != 0`, the original schedules a
-    /// `func_0x8003C5F0` ramp from current value to target — the host
+    /// `func_0x8003C5F0` ramp from current value to target - the host
     /// drives the per-frame interpolation, so this hook fires.
     ///
     /// PC always advances by 6.
@@ -979,7 +980,7 @@ pub trait FieldHost {
     /// Sub-ops `0xA / 0xB / 0xC / 0xD` write or ramp engine globals (the
     /// originals are `_DAT_8007BCD0` / `_DAT_8007BCD4` / `_DAT_8007BCD8` /
     /// `_DAT_8007B910`). Sub-`0xD` additionally multiplies the input by
-    /// `_DAT_8008457C` and shifts right 12 bits — engines model the
+    /// `_DAT_8008457C` and shifts right 12 bits - engines model the
     /// transform host-side so this hook receives the raw `target` and `sub`.
     ///
     /// `ticks == 0` means immediate write; non-zero means ramp over `ticks`
@@ -1012,7 +1013,7 @@ pub trait FieldHost {
     /// Clear the paired sub-6 / sub-7 globals.
     ///
     /// Fires when [`op4c_nibble4_global_pair_gate`] returns `true`. The
-    /// original zeroes `_DAT_8007B92C` and `_DAT_8007B930` together — the
+    /// original zeroes `_DAT_8007B92C` and `_DAT_8007B930` together - the
     /// hook abstracts both writes into one call.
     ///
     /// [`op4c_nibble4_global_pair_gate`]: FieldHost::op4c_nibble4_global_pair_gate
@@ -1022,7 +1023,7 @@ pub trait FieldHost {
     ///
     /// 2-byte instruction `[4C, 0x30]` (lock) / `[4C, 0x31]` (unlock). The
     /// original sets `_DAT_8007B854 = 1` (sub-0) or `_DAT_8007B854 = 0`
-    /// (sub-1), then exits via `caseD_4()` — the STATE_RESUME path. The flag
+    /// (sub-1), then exits via `caseD_4()` - the STATE_RESUME path. The flag
     /// is reset to 0 by the field reset routine `FUN_8003AEB0`, suggesting
     /// it gates field-input handling during a scripted scene.
     ///
@@ -1039,12 +1040,12 @@ pub trait FieldHost {
     /// which sets `(&DAT_80086D70)[idx >> 3] |= (0x80 >> (idx & 7))`.
     ///
     /// `idx` is a 16-bit value computed by the VM as
-    /// `((opcode_byte & 0x8F) << 8) | operand_byte` — bits 0..=7 from the
+    /// `((opcode_byte & 0x8F) << 8) | operand_byte` - bits 0..=7 from the
     /// operand byte, bits 8..=11 from the low nibble of the raw opcode byte,
     /// bit 15 from the extended-prefix bit (0x80) of the raw opcode byte.
     ///
     /// The bitfield's exact size and per-script-context partitioning aren't
-    /// nailed down — the original SCUS dispatchers do **no bounds checking**
+    /// nailed down - the original SCUS dispatchers do **no bounds checking**
     /// past `idx >> 3`, so on the original a 16-bit `idx` could index past
     /// the documented 256-bit array. Hosts pick whatever representation
     /// works for them; the default impl is a no-op.
@@ -1062,7 +1063,7 @@ pub trait FieldHost {
     }
 
     /// Test a bit in the system flag bank. High-byte default-route opcode
-    /// `0x7x`. Mirrors `func_0x8003CE64` (returns 0xFF if set, 0 if clear —
+    /// `0x7x`. Mirrors `func_0x8003CE64` (returns 0xFF if set, 0 if clear -
     /// the Rust port collapses both into a `bool`).
     ///
     /// On the original, when the bit is set the dispatcher takes the post-test
@@ -1075,7 +1076,7 @@ pub trait FieldHost {
         false
     }
 
-    /// Op 0x4C outer-nibble-4 sub-5 — actor-field block (immediate write path).
+    /// Op 0x4C outer-nibble-4 sub-5 - actor-field block (immediate write path).
     ///
     /// 11-byte instruction `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi,
     /// w98_lo, w98_hi, ticks_lo, ticks_hi]`. The original at `0x801E1E14+`
@@ -1102,20 +1103,20 @@ pub trait FieldHost {
         let _ = (ctx, b1, w94, w96, w98);
     }
 
-    /// Op 0x4C outer-nibble-4 sub-5 — actor-field block (ramp path).
+    /// Op 0x4C outer-nibble-4 sub-5 - actor-field block (ramp path).
     ///
     /// Same encoding as the immediate path but `ticks != 0`. The original
     /// schedules a `func_0x8003C5F0` ramp for each of the three s16 fields
     /// (`+0x94`, `+0x96`, `+0x98`) **only when** the new target differs from
     /// the current value, then runs through the default-arm STATE_RESUME
-    /// path. The control byte at `+0x9a` is always written immediately — it
+    /// path. The control byte at `+0x9a` is always written immediately - it
     /// isn't part of the ramp.
     ///
     /// Engines drive their own per-frame ramp interpolation; this hook fires
     /// once per `[4C, 0x45]` ramp instruction with the full target tuple +
     /// ticks. Default impl is a no-op.
     ///
-    /// The VM surfaces a `Yield { resume_pc: pc }` after this hook fires —
+    /// The VM surfaces a `Yield { resume_pc: pc }` after this hook fires -
     /// the script halts until the host's STATE_RESUME layer signals
     /// completion.
     fn op4c_n4_sub5_ramp(
@@ -1137,9 +1138,9 @@ pub trait FieldHost {
     ///
     /// | Bit `0x02000000` | Bit `0x01000000` | Path |
     /// |------------------|------------------|------|
-    /// | clear            | clear            | `Default` — write/ramp `_DAT_801C6EA4 + 0x4A` |
-    /// | clear            | set              | `AbsJump` — return `signed_16(operand)` as new PC |
-    /// | set              | (ignored)        | `Delta`   — write/ramp both target slot + delta global |
+    /// | clear            | clear            | `Default` - write/ramp `_DAT_801C6EA4 + 0x4A` |
+    /// | clear            | set              | `AbsJump` - return `signed_16(operand)` as new PC |
+    /// | set              | (ignored)        | `Delta`   - write/ramp both target slot + delta global |
     ///
     /// The default impl reads the global flag word via [`global_flags`] and
     /// returns the matching variant. Hosts that don't model these specific
@@ -1157,10 +1158,10 @@ pub trait FieldHost {
         }
     }
 
-    /// Op 0x4C outer-nibble-4 sub-9 — default-path immediate write.
+    /// Op 0x4C outer-nibble-4 sub-9 - default-path immediate write.
     ///
     /// Fires when [`op4c_n4_sub9_state`] returns `Default` and `ticks == 0`.
-    /// The original writes `target` to `*(_DAT_801C6EA4 + 0x4A)` — a per-scene
+    /// The original writes `target` to `*(_DAT_801C6EA4 + 0x4A)` - a per-scene
     /// global. Default impl is a no-op.
     ///
     /// [`op4c_n4_sub9_state`]: FieldHost::op4c_n4_sub9_state
@@ -1168,7 +1169,7 @@ pub trait FieldHost {
         let _ = target;
     }
 
-    /// Op 0x4C outer-nibble-4 sub-9 — default-path ramp.
+    /// Op 0x4C outer-nibble-4 sub-9 - default-path ramp.
     ///
     /// Fires when [`op4c_n4_sub9_state`] returns `Default` and `ticks != 0`.
     /// The original schedules a ramp from the current value to `target` over
@@ -1180,7 +1181,7 @@ pub trait FieldHost {
         let _ = (target, ticks);
     }
 
-    /// Op 0x4C outer-nibble-4 sub-9 — delta-path write or ramp.
+    /// Op 0x4C outer-nibble-4 sub-9 - delta-path write or ramp.
     ///
     /// Fires when [`op4c_n4_sub9_state`] returns `Delta`. The original
     /// computes `delta = target - *(_DAT_8007C364 + 0x16)` (the delta from
@@ -1190,14 +1191,14 @@ pub trait FieldHost {
     ///
     /// On the ramp path (`ticks != 0`) the original schedules ramps for both
     /// slots then runs through STATE_RESUME. Engines compute the delta
-    /// host-side from the target + active context — they own the anchor.
+    /// host-side from the target + active context - they own the anchor.
     ///
     /// [`op4c_n4_sub9_state`]: FieldHost::op4c_n4_sub9_state
     fn op4c_n4_sub9_delta_write_or_ramp(&mut self, target: i16, ticks: u16) {
         let _ = (target, ticks);
     }
 
-    /// Op 0x4C outer-nibble-5 sub-0 — directional sound emitter.
+    /// Op 0x4C outer-nibble-5 sub-0 - directional sound emitter.
     ///
     /// 4-byte instruction `[4C, 0x50, lo, hi]`. Reads a signed-16-bit value
     /// from `operand+1..3`, splits it into a low (`< 0xF0`) and high (`>= 0xF0`)
@@ -1211,7 +1212,7 @@ pub trait FieldHost {
         let _ = (ctx, value, high);
     }
 
-    /// Op 0x4C outer-nibble-6 op0 == 0x60 — 6-word emitter call.
+    /// Op 0x4C outer-nibble-6 op0 == 0x60 - 6-word emitter call.
     ///
     /// 14-byte instruction `[4C, 0x60, lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3,
     /// lo4, hi4, lo5, hi5]`. Reads six signed-16-bit words and calls
@@ -1220,7 +1221,7 @@ pub trait FieldHost {
         let _ = words;
     }
 
-    /// Op 0x4C outer-nibble-7 — VRAM tile-flag bulk operation.
+    /// Op 0x4C outer-nibble-7 - VRAM tile-flag bulk operation.
     ///
     /// 7-byte instruction `[4C, 0x7N, x0, x1, z0, z1, mask]`. Iterates over
     /// the rectangle `[x0..x1) × [z0..z1)` in the tile-flag bitmap at
@@ -1229,10 +1230,10 @@ pub trait FieldHost {
     ///
     /// | Sub | Op |
     /// |---|---|
-    /// | 0 | `byte &= 0x0F` (clear high nibble) — yield via STATE_RESUME |
-    /// | 1 | `byte |= 0xF0` (set high nibble) — yield via STATE_RESUME |
-    /// | 2 | `byte &= ~(mask << 4)` (clear bits) — advance |
-    /// | 3 | `byte |= (mask << 4)` (set bits) — advance |
+    /// | 0 | `byte &= 0x0F` (clear high nibble) - yield via STATE_RESUME |
+    /// | 1 | `byte |= 0xF0` (set high nibble) - yield via STATE_RESUME |
+    /// | 2 | `byte &= ~(mask << 4)` (clear bits) - advance |
+    /// | 3 | `byte |= (mask << 4)` (set bits) - advance |
     ///
     /// Default impl is a no-op; the VM still drives the loop for hosts that
     /// own the tile-flag bitmap. PC advances by 7 in the advance branches;
@@ -1241,7 +1242,7 @@ pub trait FieldHost {
         let _ = (sub, x_range, z_range, mask);
     }
 
-    /// Op 0x4C outer-nibble-8 sub-2 — party-page mirror write.
+    /// Op 0x4C outer-nibble-8 sub-2 - party-page mirror write.
     ///
     /// 3-byte instruction `[4C, 0x82, page]`. The original mirrors two `u16`
     /// values within the per-page inventory struct at
@@ -1252,33 +1253,33 @@ pub trait FieldHost {
     ///   *(short *)(0x80084812 + page * 0x414) = *(short *)(0x80084810 + page * 0x414);
     /// ```
     ///
-    /// Hosts model their own inventory layout — the hook receives only
+    /// Hosts model their own inventory layout - the hook receives only
     /// `page`. PC += 3.
     fn op4c_n8_sub2_party_page_mirror(&mut self, page: u8) {
         let _ = page;
     }
 
-    /// Op 0x4C outer-nibble-8 sub-4 — write `_DAT_8007B630`.
+    /// Op 0x4C outer-nibble-8 sub-4 - write `_DAT_8007B630`.
     ///
     /// 3-byte instruction `[4C, 0x84, value]`. The original writes
-    /// `_DAT_8007B630 = value` — a global slot whose meaning is not yet
+    /// `_DAT_8007B630 = value` - a global slot whose meaning is not yet
     /// reversed (likely a per-scene effect mask). PC += 3.
     fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-8 sub-7 — register `LAB_801E5154` callback.
+    /// Op 0x4C outer-nibble-8 sub-7 - register `LAB_801E5154` callback.
     ///
     /// 2-byte instruction `[4C, 0x87]`. The original calls
     /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801E5154)` to register a callback
     /// on the actor list, then exits via `switchD_801e00f4::default()`.
     /// Since `0x4C & 0x70 = 0x40` (not in {0x50, 0x60, 0x70}), the dispatcher
-    /// default returns `param_2` — i.e. **halts at PC**, waiting for the
+    /// default returns `param_2` - i.e. **halts at PC**, waiting for the
     /// registered callback to release the script. The dispatch wrapper
     /// applies the halt; the host hook only needs to register the callback.
     fn op4c_n8_sub7_register_callback(&mut self) {}
 
-    /// Op 0x4C outer-nibble-8 sub-8 — write 3 globals.
+    /// Op 0x4C outer-nibble-8 sub-8 - write 3 globals.
     ///
     /// 6-byte instruction `[4C, 0x88, lo, hi, b3, b4]`. Writes:
     /// - `_DAT_80084628 = signed_16(operand[1..3])`
@@ -1290,7 +1291,7 @@ pub trait FieldHost {
         let _ = (value, b3, b4);
     }
 
-    /// Op 0x4C outer-nibble-8 sub-0xA — set 3 s16 + 1 u32 globals.
+    /// Op 0x4C outer-nibble-8 sub-0xA - set 3 s16 + 1 u32 globals.
     ///
     /// 11-byte instruction `[4C, 0x8A, lo0, hi0, lo1, hi1, lo2, hi2, w_b0, w_b1, w_b2, w_b3]`.
     /// Writes:
@@ -1304,11 +1305,11 @@ pub trait FieldHost {
         let _ = (slots, packed);
     }
 
-    /// Op 0x4C outer-nibble-8 sub-0xC — conditional jump on `ctx.field_68 == 0`.
+    /// Op 0x4C outer-nibble-8 sub-0xC - conditional jump on `ctx.field_68 == 0`.
     ///
     /// 4-byte instruction `[4C, 0x8C, lo, hi]`. When `ctx.field_68 == 0` the VM
     /// jumps to the absolute target `signed_16(operand[1..3])`; otherwise PC
-    /// advances by 4. The host has no input — the VM reads `ctx.field_68`
+    /// advances by 4. The host has no input - the VM reads `ctx.field_68`
     /// directly.
     ///
     /// PC += 4 on no-jump.
@@ -1316,7 +1317,7 @@ pub trait FieldHost {
         ctx.field_68 == 0
     }
 
-    /// Op 0x4C outer-nibble-8 sub-5 / sub-0xE / sub-0xF — halt-acquire idiom.
+    /// Op 0x4C outer-nibble-8 sub-5 / sub-0xE / sub-0xF - halt-acquire idiom.
     ///
     /// All three sub-ops share the **same** inner-switch body in the dump
     /// (lines 6550-6570 of `overlay_0897_801de840.txt`): a conditional
@@ -1336,11 +1337,11 @@ pub trait FieldHost {
         ctx.flags |= 0x400;
     }
 
-    /// Op 0x4C outer-nibble-8 sub-9 — write `_DAT_80073F00`.
+    /// Op 0x4C outer-nibble-8 sub-9 - write `_DAT_80073F00`.
     ///
     /// 4-byte instruction `[4C, 0x89, lo, hi]`. Writes
     /// `_DAT_80073F00 = signed_16(operand[1..3])`. The original at line 6604
-    /// of the dump then "calls FUN_801e3620 and returns" — but `0x801e3620`
+    /// of the dump then "calls FUN_801e3620 and returns" - but `0x801e3620`
     /// is actually a *branch label* inside FUN_801de840 (Ghidra mis-rendered
     /// the goto as a function call). The label body sets `iVar45 = param_2 + 4`
     /// and exits the dispatch normally; `_DAT_80073F00` is the only side
@@ -1349,7 +1350,7 @@ pub trait FieldHost {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-0xC sub-0xF — position broadcast.
+    /// Op 0x4C outer-nibble-0xC sub-0xF - position broadcast.
     ///
     /// 4-byte instruction `[4C, 0xCF, b1, b2]`. The original at lines
     /// 6912-6931 of the dump computes two 16-bit values and writes them to
@@ -1368,7 +1369,7 @@ pub trait FieldHost {
         let _ = (x_global, z_global);
     }
 
-    /// Op 0x4C outer-nibble-9 sub-0/1/2 — fade/effect dispatch via FUN_801DDE34.
+    /// Op 0x4C outer-nibble-9 sub-0/1/2 - fade/effect dispatch via FUN_801DDE34.
     ///
     /// 9-byte instruction `[4C, 0x9N, b1, lo0, hi0, lo1, hi1, lo2, hi2]` where
     /// `N ∈ {0, 1, 2}`. Reads `b1 = operand[1]`, three signed-16-bit words from
@@ -1378,7 +1379,7 @@ pub trait FieldHost {
         let _ = (sub, b1, words);
     }
 
-    /// Op 0x4C outer-nibble-9 sub-0xE — 16-word table copy.
+    /// Op 0x4C outer-nibble-9 sub-0xE - 16-word table copy.
     ///
     /// 0x22-byte (34) instruction `[4C, 0x9E, lo0..hi0, ..., lo15..hi15]`.
     /// Reads 16 signed-16-bit words from the operand stream and writes pairs
@@ -1392,17 +1393,17 @@ pub trait FieldHost {
         let _ = words;
     }
 
-    /// Op 0x4C outer-nibble-9 sub-0xF — register `LAB_801DA930` callback.
+    /// Op 0x4C outer-nibble-9 sub-0xF - register `LAB_801DA930` callback.
     ///
     /// 2-byte instruction `[4C, 0x9F]`. The original calls
     /// `func_0x8003CF40(_DAT_8007C34C, &LAB_801DA930)` (same as nibble-8 sub-7,
     /// but with a different callback target), then exits via
-    /// `switchD_801e00f4::default()` — halts at PC for opcode 0x4C. The
+    /// `switchD_801e00f4::default()` - halts at PC for opcode 0x4C. The
     /// dispatch wrapper applies the halt; the host hook only needs to
     /// register the callback.
     fn op4c_n9_sub_f_register_callback(&mut self) {}
 
-    /// Op 0x4C outer-nibble-A — conditional jump on a flag bit.
+    /// Op 0x4C outer-nibble-A - conditional jump on a flag bit.
     ///
     /// 5-byte instruction `[4C, 0xAN, bit, lo, hi]` where `N` selects the
     /// bank:
@@ -1414,7 +1415,7 @@ pub trait FieldHost {
     ///   and skips 5 bytes (`return param_2 + 5`).
     ///
     /// When the bit is **set**, the original takes the absolute jump
-    /// (`func_0x8003CE9C(operand + 2)` — signed 16-bit absolute PC). When
+    /// (`func_0x8003CE9C(operand + 2)` - signed 16-bit absolute PC). When
     /// clear, PC advances by 5.
     ///
     /// (Round 11 corrected the take/skip direction here: prior implementations
@@ -1434,7 +1435,7 @@ pub trait FieldHost {
         }
     }
 
-    /// Op 0x4C outer-nibble-C sub-4 — sub-tile broadcast.
+    /// Op 0x4C outer-nibble-C sub-4 - sub-tile broadcast.
     ///
     /// 4-byte instruction `[4C, 0xC4, x_byte, z_byte]`. Calls
     /// `FUN_801DE3E0(x_byte & 0x7F, z_byte & 0x7F)` (an overlay-resident
@@ -1443,16 +1444,16 @@ pub trait FieldHost {
         let _ = (x, z);
     }
 
-    /// Op 0x4C outer-nibble-C sub-7 — sound trigger.
+    /// Op 0x4C outer-nibble-C sub-7 - sound trigger.
     ///
     /// 4-byte instruction `[4C, 0xC7, b1, b2]`. Calls
-    /// `func_0x800402F4(b1 + 0x0B, b2, 0, 0)` — likely a SE / BGM trigger
+    /// `func_0x800402F4(b1 + 0x0B, b2, 0, 0)` - likely a SE / BGM trigger
     /// on bank `b1 + 0x0B`. PC += 4.
     fn op4c_n_c_sub7_sound_trigger(&mut self, b1: u8, b2: u8) {
         let _ = (b1, b2);
     }
 
-    /// Op 0x4C outer-nibble-C sub-0xA — write u16 at scratchpad slot.
+    /// Op 0x4C outer-nibble-C sub-0xA - write u16 at scratchpad slot.
     ///
     /// 5-byte instruction `[4C, 0xCA, slot, lo, hi]`. Writes
     /// `*(short *)(&DAT_801C6460 + slot * 2) = signed_16(operand[2..4])`.
@@ -1462,7 +1463,7 @@ pub trait FieldHost {
         let _ = (slot, value);
     }
 
-    /// Op 0x4C outer-nibble-C sub-0xB / sub-0xC — add or subtract on
+    /// Op 0x4C outer-nibble-C sub-0xB / sub-0xC - add or subtract on
     /// scratchpad slot.
     ///
     /// 5-byte instruction `[4C, 0xCN, slot, lo, hi]` where `N ∈ {0xB, 0xC}`.
@@ -1479,7 +1480,7 @@ pub trait FieldHost {
         let _ = (slot, delta, subtract);
     }
 
-    /// Op 0x4C outer-nibble-C sub-0xE — write `_DAT_8007B6AC`.
+    /// Op 0x4C outer-nibble-C sub-0xE - write `_DAT_8007B6AC`.
     ///
     /// 3-byte instruction `[4C, 0xCE, value]`. Writes `_DAT_8007B6AC = value`
     /// (zero-extended). The slot is read by op 0x43 sub-1 (the move-table
@@ -1488,7 +1489,7 @@ pub trait FieldHost {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-C sub-9 — global-pair compare gate.
+    /// Op 0x4C outer-nibble-C sub-9 - global-pair compare gate.
     ///
     /// 2-byte instruction `[4C, 0xC9]`. The original at line 6851 reads two
     /// 16-bit globals `_DAT_8007BAB8` and `_DAT_8007BA9C` and halts at PC if
@@ -1499,7 +1500,7 @@ pub trait FieldHost {
         false
     }
 
-    /// Op 0x4C outer-nibble-D sub-3 — party state setup + FUN_801D596C.
+    /// Op 0x4C outer-nibble-D sub-3 - party state setup + FUN_801D596C.
     ///
     /// 14-byte instruction `[4C, 0xD3, lo_a, hi_a, lo_b, hi_b, lo_c, hi_c,
     /// lo_d, hi_d, lo_e, hi_e, lo_f, hi_f]`. Reads two signed 16-bit values
@@ -1516,7 +1517,7 @@ pub trait FieldHost {
         let _ = (ab, cd, ef);
     }
 
-    // Op 0x4C outer-nibble-D sub-9 — set inverted-Y mirror + clear flag.
+    // Op 0x4C outer-nibble-D sub-9 - set inverted-Y mirror + clear flag.
     //
     // 4-byte instruction `[4C, 0xD9, lo, hi]`. Sets `ctx.flags |= 0x20000000`
     // (inverted-Y enable), reads `value = signed_16(operand[1..3])`. When
@@ -1527,7 +1528,7 @@ pub trait FieldHost {
     //
     // All ctx writes are done by the VM directly; no host hook fires. PC += 4.
 
-    /// Op 0x4C outer-nibble-D sub-0xA — clear inverted-Y mirror + collision Y.
+    /// Op 0x4C outer-nibble-D sub-0xA - clear inverted-Y mirror + collision Y.
     ///
     /// 2-byte instruction `[4C, 0xDA]`. Clears `ctx.flags & 0x20000000`, then
     /// calls `func_0x80019278(ctx)` (the collision-Y refresh helper) and
@@ -1536,7 +1537,7 @@ pub trait FieldHost {
         let _ = ctx;
     }
 
-    /// Op 0x4C outer-nibble-D sub-0xF — write `_DAT_801C6EA4 + 0x61` byte.
+    /// Op 0x4C outer-nibble-D sub-0xF - write `_DAT_801C6EA4 + 0x61` byte.
     ///
     /// 3-byte instruction `[4C, 0xDF, value]`. Writes one byte at the
     /// per-scene state struct's `+0x61` offset. PC += 3.
@@ -1544,29 +1545,29 @@ pub trait FieldHost {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-D sub-6 — `ctx.field_74` bitfield mutation.
+    /// Op 0x4C outer-nibble-D sub-6 - `ctx.field_74` bitfield mutation.
     ///
     /// 3-byte instruction `[4C, 0xD6, b1]`. The original at line 7028 writes:
     /// - if `b1 == 4`: clear the top bit only (`field_74 &= 0x7FFFFFFF`)
     /// - else: clear bits `0x83000000`, then set bit `0x80000000` and OR in
     ///   `(b1 as u32) << 24` (low byte of `b1` into the top byte of `field_74`).
     ///
-    /// Pure ctx mutation — host hook is a side-effect-only ack. Halt at PC
+    /// Pure ctx mutation - host hook is a side-effect-only ack. Halt at PC
     /// (the dump exits via `goto LAB_801e00bc`).
     fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {}
 
-    /// Op 0x4C outer-nibble-D sub-8 — `FUN_801D77F4` 4-arg call.
+    /// Op 0x4C outer-nibble-D sub-8 - `FUN_801D77F4` 4-arg call.
     ///
     /// 9-byte instruction `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
     /// The original at line 7042 reads three 16-bit values from the operand,
     /// adds the global `_DAT_8007B6F8` to `x` (sign-extended u16 truncation),
-    /// then calls `FUN_801D77F4(b1, x, y, z)` — overlay-resident. Hosts apply
+    /// then calls `FUN_801D77F4(b1, x, y, z)` - overlay-resident. Hosts apply
     /// the call if needed. PC += 9.
     fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
         let _ = (b1, words);
     }
 
-    /// Op 0x4C outer-nibble-E sub-2 — set 2 globals.
+    /// Op 0x4C outer-nibble-E sub-2 - set 2 globals.
     ///
     /// 6-byte instruction `[4C, 0xE2, lo, hi, _, _]`. Writes
     /// `_DAT_8007BA78 = signed_16(operand[1..3])` and `_DAT_8007B83C = 0x1A`.
@@ -1576,23 +1577,23 @@ pub trait FieldHost {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-E sub-6 — `FUN_801D8280` 3-arg call.
+    /// Op 0x4C outer-nibble-E sub-6 - `FUN_801D8280` 3-arg call.
     ///
     /// 8-byte instruction `[4C, 0xE6, lo0, hi0, lo1, hi1, lo2, hi2]`. Calls
-    /// `FUN_801D8280(s16_a, s16_b, s16_c)` — an overlay-resident helper.
+    /// `FUN_801D8280(s16_a, s16_b, s16_c)` - an overlay-resident helper.
     /// PC += 8.
     fn op4c_n_e_sub6_call_d8280(&mut self, words: [i16; 3]) {
         let _ = words;
     }
 
-    /// Op 0x4C outer-nibble-E sub-0xC — write `_DAT_8007B5FC` from `FUN_801DDF48`.
+    /// Op 0x4C outer-nibble-E sub-0xC - write `_DAT_8007B5FC` from `FUN_801DDF48`.
     ///
     /// 2-byte instruction `[4C, 0xEC]`. Writes `_DAT_8007B5FC = FUN_801DDF48()`
-    /// — captures the return of an overlay-resident helper into the global.
+    /// (captures the return of an overlay-resident helper into the global).
     /// Hosts model the call. PC += 2.
     fn op4c_n_e_sub_c_capture_ddf48(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-0xD — write `_DAT_8007BA66`.
+    /// Op 0x4C outer-nibble-E sub-0xD - write `_DAT_8007BA66`.
     ///
     /// 3-byte instruction `[4C, 0xED, value]`. Writes
     /// `_DAT_8007BA66 = value` (zero-extended u16). PC += 3.
@@ -1600,14 +1601,14 @@ pub trait FieldHost {
         let _ = value;
     }
 
-    /// Op 0x4C outer-nibble-E sub-0xE — snapshot `_DAT_80084570`.
+    /// Op 0x4C outer-nibble-E sub-0xE - snapshot `_DAT_80084570`.
     ///
     /// 2-byte instruction `[4C, 0xEE]`. Writes
-    /// `_DAT_800845DC = _DAT_80084570` — a single-direction snapshot of the
+    /// `_DAT_800845DC = _DAT_80084570` - a single-direction snapshot of the
     /// party-leader/scene state. PC += 2.
     fn op4c_n_e_sub_e_snapshot_84570(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-0 — three-way scene/menu state write.
+    /// Op 0x4C outer-nibble-E sub-0 - three-way scene/menu state write.
     ///
     /// 2-byte instruction `[4C, 0xE0, b1]`. The original at line 7173:
     /// - `b1 == 0`: `DAT_801F2744 = 1`
@@ -1619,22 +1620,22 @@ pub trait FieldHost {
         let _ = b1;
     }
 
-    /// Op 0x4C outer-nibble-E sub-9 — clear `_DAT_8007B9C4` then PC += 2.
+    /// Op 0x4C outer-nibble-E sub-9 - clear `_DAT_8007B9C4` then PC += 2.
     ///
     /// 1-byte instruction `[4C, 0xE9]`. The original at line 7362 clears
     /// `_DAT_8007B9C4` (a global state byte) and tail-calls
-    /// `switchD_801e0f24::caseD_4()` — which is the `addiu s8, s8, 0x2;
+    /// `switchD_801e0f24::caseD_4()` - which is the `addiu s8, s8, 0x2;
     /// j epilogue` block at `0x801df098`, i.e. PC += 2.
     fn op4c_n_e_sub9_clear_b9c4(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-A — call `func_0x8003C7EC` then halt at PC.
+    /// Op 0x4C outer-nibble-E sub-A - call `func_0x8003C7EC` then halt at PC.
     ///
     /// 1-byte instruction `[4C, 0xEA]`. The original at line 7367 calls the
     /// overlay-resident `func_0x8003C7EC()` (an actor-list mutator) then
     /// exits via `switchD_801e00f4::default()` → halt at PC for opcode 0x4C.
     fn op4c_n_e_sub_a_call_c7ec(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-1 — spawn a screen-anchored text balloon
+    /// Op 0x4C outer-nibble-E sub-1 - spawn a screen-anchored text balloon
     /// from the bytecode operand stream, then advance PC past the packet.
     ///
     /// Variable-length instruction `[4C, 0xE1, b1, ...string..., terminator]`.
@@ -1658,7 +1659,7 @@ pub trait FieldHost {
         let _ = (text_buf, script_id);
     }
 
-    /// Op 0x4C outer-nibble-C sub-1 — reset every entry in the global
+    /// Op 0x4C outer-nibble-C sub-1 - reset every entry in the global
     /// "trigger flag" array based on per-record flags.
     ///
     /// 1-byte instruction `[4C, 0xC1]`. The original walks the
@@ -1674,7 +1675,7 @@ pub trait FieldHost {
     ///
     /// `flags` is the trigger-flag byte array (the bit storage queried
     /// per-record). Hosts that don't model the record array can leave the
-    /// default no-op in place — the dispatcher always advances PC += 2
+    /// default no-op in place - the dispatcher always advances PC += 2
     /// regardless. The two callers (gate set / clear) merge into a single
     /// hook because the original's two branches differ only in side-effect
     /// (the loop body) and the PC delta is identical.
@@ -1684,7 +1685,7 @@ pub trait FieldHost {
         let _ = flags;
     }
 
-    /// Op 0x4C outer-nibble-D sub-1 — linked-list lookup gate.
+    /// Op 0x4C outer-nibble-D sub-1 - linked-list lookup gate.
     ///
     /// 2-byte instruction `[4C, 0xD1]`. The original walks the global
     /// list-head at `_DAT_8007C34C` via `FUN_8003CF04(head, FUN_801DC0BC)`
@@ -1696,7 +1697,7 @@ pub trait FieldHost {
     ///   and returns its result as the new PC.
     ///
     /// The host hook returns `Some(new_pc)` for the LAB path or `None` to
-    /// take the PC += 4 path. The default impl returns `None` — engines
+    /// take the PC += 4 path. The default impl returns `None` - engines
     /// without a list-walking model fall through to the safe "no jump"
     /// branch.
     fn op4c_n_d_sub_1_list_lookup_jump(&mut self, ctx: &FieldCtx) -> Option<usize> {
@@ -1704,11 +1705,11 @@ pub trait FieldHost {
         None
     }
 
-    /// Op 0x4C outer-nibble-D sub-2 — channel-lookup conditional spawn,
+    /// Op 0x4C outer-nibble-D sub-2 - channel-lookup conditional spawn,
     /// then halt at PC.
     ///
     /// 2-byte instruction `[4C, 0xD2, b1]`. The original calls
-    /// `func_0x8003C83C(b1)` (the script-context resolver — see
+    /// `func_0x8003C83C(b1)` (the script-context resolver - see
     /// `docs/subsystems/script-vm.md` "intra-function label catalogue"
     /// for the F8/FB system-channel idiom). When the result is **zero**
     /// (no resolved context), the original spawns a new script context via
@@ -1716,12 +1717,12 @@ pub trait FieldHost {
     /// guard (`*(_DAT_801C6EA4 + 8) = 1` around the call). Then halts.
     ///
     /// Hosts that don't yet model the channel resolver should leave this as
-    /// a no-op — the halt-at-PC behaviour is handled by the dispatcher.
+    /// a no-op - the halt-at-PC behaviour is handled by the dispatcher.
     fn op4c_n_d_sub_2_channel_spawn(&mut self, channel: u8) {
         let _ = channel;
     }
 
-    /// Op 0x4C outer-nibble-D sub-7 — register a list-walk callback then
+    /// Op 0x4C outer-nibble-D sub-7 - register a list-walk callback then
     /// halt at PC.
     ///
     /// 1-byte instruction `[4C, 0xD7]`. The original sets `pcVar33 =
@@ -1732,13 +1733,13 @@ pub trait FieldHost {
     /// finishes and re-arms the field VM.
     fn op4c_n_d_sub_7_register_list_walk(&mut self) {}
 
-    /// Op 0x4C outer-nibble-D sub-B — call the overlay-resident
+    /// Op 0x4C outer-nibble-D sub-B - call the overlay-resident
     /// `FUN_801E57F0` then advance PC by 13 bytes.
     ///
     /// 13-byte instruction (the original's call site at line 7085 passes
     /// `pbVar47` and falls through to `LAB_801E2EA0: return param_2 + 0xD`).
     ///
-    /// `FUN_801E57F0` was not successfully decompiled — Ghidra's dump (see
+    /// `FUN_801E57F0` was not successfully decompiled - Ghidra's dump (see
     /// `ghidra/scripts/funcs/overlay_0897_801e57f0.txt`) shows ~441
     /// instructions of `lb s8, 0x6814(zero)` data masquerading as code,
     /// indicating Ghidra mis-parsed the function's start. The actual call
@@ -1751,7 +1752,7 @@ pub trait FieldHost {
         let _ = bytecode;
     }
 
-    /// Op 0x4C outer-nibble-D sub-C — small-table lookup, then conditional
+    /// Op 0x4C outer-nibble-D sub-C - small-table lookup, then conditional
     /// per-party-record write.
     ///
     /// 5-byte instruction `[4C, 0xDC, b1, ?, ?]` (the trailing operand
@@ -1776,11 +1777,11 @@ pub trait FieldHost {
         None
     }
 
-    /// Op 0x4C outer-nibble-D sub-E — small-table lookup query (sister of
+    /// Op 0x4C outer-nibble-D sub-E - small-table lookup query (sister of
     /// sub-C without the per-party-record write side-effect).
     ///
     /// 5-byte instruction `[4C, 0xDE, b1, ?, ?]`. Same control flow as
-    /// sub-C but the party-record loop only **tests** for a match — no slot
+    /// sub-C but the party-record loop only **tests** for a match - no slot
     /// update. PC is `param_2 + 5` on miss, ce9c-jump on hit.
     fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
         let _ = needle;
@@ -1788,19 +1789,19 @@ pub trait FieldHost {
     }
 
     // -----------------------------------------------------------------
-    // Round 17 — five 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // Round 17 - five 0x4C nC sub-ops + two 0x4C nE sub-ops.
     // -----------------------------------------------------------------
 
-    /// Op 0x4C outer-nibble-C sub-0 — cancel the active move-table animation.
+    /// Op 0x4C outer-nibble-C sub-0 - cancel the active move-table animation.
     ///
     /// 2-byte instruction `[4C, 0xC0]`. The dispatcher dump (lines 6726-6732)
     /// gates on `ctx.move_id > 0` (the actor's currently-playing move); if a
     /// move is active, the original calls `func_0x800204F8(ctx)` (the move
-    /// VM's "cancel" entry — see [`docs/subsystems/move-vm.md`]).
+    /// VM's "cancel" entry - see [`docs/subsystems/move-vm.md`]).
     ///
     /// `is_active` is the gate; the host should return `true` when the actor
     /// has a move-table animation that should be cancelled. Default impl
-    /// returns `false`, so the cancel side-effect is skipped (safe fallback —
+    /// returns `false`, so the cancel side-effect is skipped (safe fallback -
     /// engines without a move VM never trigger the cancel).
     ///
     /// PC always advances by 2 (whether the move was cancelled or not).
@@ -1809,14 +1810,14 @@ pub trait FieldHost {
         false
     }
 
-    /// Op 0x4C outer-nibble-C sub-3 — script-table teleport with tile-center
+    /// Op 0x4C outer-nibble-C sub-3 - script-table teleport with tile-center
     /// math.
     ///
     /// 2-byte instruction `[4C, 0xC3]`. The original (dispatcher dump
     /// 6762-6810) calls `func_0x8003C8F0(ctx.field_50, 0)` to resolve the
     /// destination tile descriptor, then writes:
     /// - `world_x = (b & 0x7F) * 0x80 + 0x40` (with optional `+0x40` if high
-    ///   bit is set) — the standard tile-center formula,
+    ///   bit is set) - the standard tile-center formula,
     /// - `world_z` similarly,
     /// - rotation, animation frame, sprite flags get reset.
     ///
@@ -1829,7 +1830,7 @@ pub trait FieldHost {
         let _ = ctx;
     }
 
-    /// Op 0x4C outer-nibble-C sub-D — script-context allocation gate, halt.
+    /// Op 0x4C outer-nibble-C sub-D - script-context allocation gate, halt.
     ///
     /// 2-byte instruction `[4C, 0xCD]`. The original calls
     /// `func_0x8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (the linked-list-walk
@@ -1837,14 +1838,14 @@ pub trait FieldHost {
     /// - if the entry exists AND the bit is set → halt acquired, PC stays at
     ///   start-of-instruction (we model this as `Halt { final_pc: pc }`),
     /// - else → yield via `LAB_801DEE50` (also `Halt { final_pc: pc }` in our
-    ///   model — the engine-side state-resume layer drives re-entry).
+    ///   model - the engine-side state-resume layer drives re-entry).
     ///
     /// In both cases the dispatcher returns `Halt`, so the host hook only
     /// records the side effect (registering the actor with the list-walk
     /// machinery). Default no-op.
     fn op4c_n_c_sub_d_script_alloc(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-4 — bounding-box collision query against
+    /// Op 0x4C outer-nibble-E sub-4 - bounding-box collision query against
     /// the actor's world position.
     ///
     /// 9-byte instruction `[4C, 0xE4, x_lo, z_lo, x_hi, z_hi, scale, ?, ?]`.
@@ -1862,14 +1863,14 @@ pub trait FieldHost {
     ///
     /// `bbox` is `[x0, z0, x1, z1]` with each coordinate already converted
     /// from operand byte to world-space tile center. Default impl returns
-    /// `false` (= "always inside"), so the dispatcher always advances —
+    /// `false` (= "always inside"), so the dispatcher always advances -
     /// engines that don't model the world position can skip the test.
     fn op4c_n_e_sub_4_bbox_outside(&self, ctx: &FieldCtx, bbox: [i16; 4]) -> bool {
         let _ = (ctx, bbox);
         false
     }
 
-    /// Op 0x4C outer-nibble-E sub-5 — add XP to the party-XP accumulator.
+    /// Op 0x4C outer-nibble-E sub-5 - add XP to the party-XP accumulator.
     ///
     /// 5-byte instruction `[4C, 0xE5, b1, b2, b3]`. The original (dispatcher
     /// dump 7256-7267) reads a 24-bit signed value via
@@ -1887,12 +1888,12 @@ pub trait FieldHost {
         let _ = xp_delta;
     }
 
-    /// Op 0x4C outer-nibble-E sub-B — conditional actor lookup with
+    /// Op 0x4C outer-nibble-E sub-B - conditional actor lookup with
     /// embedded jump target.
     ///
     /// 5-byte instruction `[4C, 0xEB, actor_id, target_lo, target_hi]`.
     /// The original (dispatcher dump 7370-7376) calls `func_0x8003C83C(b1)`
-    /// (the actor-table walker — see also [`docs/subsystems/script-vm.md`]'s
+    /// (the actor-table walker - see also [`docs/subsystems/script-vm.md`]'s
     /// "intra-function label catalogue" for the F8/FB system-channel idiom).
     ///
     /// Two outcomes:
@@ -1903,13 +1904,13 @@ pub trait FieldHost {
     /// The host returns `Some(new_pc)` to take the resolved-actor "pc + 5"
     /// path (the host has confirmed the actor exists), or `None` to take the
     /// embedded-jump path (actor lookup missed). Default impl returns `None`
-    /// — engines without an actor pool always take the jump.
+    /// - engines without an actor pool always take the jump.
     fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
         let _ = actor_id;
         None
     }
 
-    /// Read 16-bit value used by op 0x4C nC sub-5/6 — the operand-stream
+    /// Read 16-bit value used by op 0x4C nC sub-5/6 - the operand-stream
     /// equivalent of `func_0x8003CE9C` followed by [`party_flag_test`] over
     /// the trigger-flag bank.
     ///
@@ -1921,7 +1922,7 @@ pub trait FieldHost {
     ///
     /// Returns `true` when the bit is set (= the original's `0xFF` saturation
     /// from `FUN_8003CE64`), `false` otherwise. Default impl returns `false`
-    /// — engines without a flag bank treat all bits as clear.
+    /// - engines without a flag bank treat all bits as clear.
     ///
     /// [`field_helpers::load_u16_le`]: crate::field_helpers::load_u16_le
     /// [`party_flag_test`]: crate::field_helpers::party_flag_test
@@ -1958,7 +1959,7 @@ pub trait FieldHost {
     /// original's `switchD_801e00f4::default()` fallthrough).
     ///
     /// `which` is the originating opcode/sub-op tag so hosts that need to
-    /// distinguish the call site can — it's `0x38` for op 0x38, and the raw
+    /// distinguish the call site can - it's `0x38` for op 0x38, and the raw
     /// op-0x43 sub-op (`0`, `1`, `0xA`, `0xB`) for op 0x43.
     ///
     /// The default impl returns `true` (always acquire), which keeps the
@@ -2001,13 +2002,13 @@ pub trait FieldHost {
     ///
     /// The original at lines 6496-6515 of the dispatcher dump has three paths:
     /// - `tween_frames == 0`: write `*(int *)(ctx + 0x74) = model_id;
-    ///   *(short *)(ctx + 0x78) = anim_frame`. Done — caller advances PC by 9.
+    ///   *(short *)(ctx + 0x78) = anim_frame`. Done - caller advances PC by 9.
     /// - `tween_frames != 0` and `ctx + 0x78 == 0` (no current anim):
     ///   `*(int *)(ctx + 0x74) = model_id`. (Anim left untouched.)
     /// - Otherwise call `func_0x8003C5F0(ctx, ctx + 0x74, 3, ctx[0x74],
     ///   model_id, tween_frames)` to schedule a tween.
     ///
-    /// This hook receives all four pieces of operand state — the host decides
+    /// This hook receives all four pieces of operand state - the host decides
     /// which path to take based on its own state model. The default impl is a
     /// no-op; the VM always advances PC by 9.
     fn op4c_n_8_sub_1_set_model_anim(
@@ -2036,7 +2037,7 @@ pub trait FieldHost {
     ///
     /// This hook returns `true` if the actor was found (host applied the
     /// rotation); `false` if the actor lookup missed. PC advances by 15 in
-    /// both cases — the only observable difference is whether the host's
+    /// both cases - the only observable difference is whether the host's
     /// rotation pipeline ran.
     ///
     /// The default impl returns `false` (no actor pool).
@@ -2062,7 +2063,7 @@ pub trait FieldHost {
     /// If any match: jump to absolute `LE_u16(operand+2..=operand+3)`.
     /// If no match: advance PC by 5.
     ///
-    /// The host decides the pool layout — this hook just answers
+    /// The host decides the pool layout - this hook just answers
     /// "is there at least one actor of `type_byte` active?". Default impl
     /// returns `false` (no actor pool).
     fn op4c_n_8_sub_b_actor_type_present(&self, type_byte: u8) -> bool {
@@ -2138,7 +2139,7 @@ pub trait FieldHost {
     ///
     /// Mode dispatch (line 7305+):
     /// - `mode == 0`: default zoom. Write `_DAT_801C6EA4 + 0x4C/+0x4E/+0x50
-    ///   = (zoom_x or 0x40), (zoom_y or 8), (zoom_z or 4)` — each input is
+    ///   = (zoom_x or 0x40), (zoom_y or 8), (zoom_z or 4)` - each input is
     ///   replaced with the constant when zero.
     /// - `mode == 1` and `zoom_x == 0`: set bit `0x80000` on the resolved
     ///   actor's `+0x10` flags.
@@ -2162,7 +2163,7 @@ pub trait FieldHost {
     /// (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`) is non-zero,
     /// calls `func_0x8002B994(a, b)` (the SE trigger). Otherwise no-op.
     ///
-    /// PC advances by 6 in both branches. The hook returns nothing — the
+    /// PC advances by 6 in both branches. The hook returns nothing - the
     /// host decides whether the SE fires based on its own gate state.
     fn op4c_n_d_sub_0_field_se_trigger(&mut self, a: u16, b: u16) {
         let _ = (a, b);
@@ -2172,8 +2173,8 @@ pub trait FieldHost {
     ///
     /// `[4C, 0x53]`. The original at lines 6295-6298 calls
     /// `FUN_801D65D8(1)` (dialog "is finished?" query) and falls through to
-    /// `joined_r0x801E28C4`. The dispatch ends in either case — this is a
-    /// halt-style instruction — but PC has been incremented to `pc + 2`
+    /// `joined_r0x801E28C4`. The dispatch ends in either case - this is a
+    /// halt-style instruction - but PC has been incremented to `pc + 2`
     /// before the joined block runs.
     ///
     /// The hook is purely a side-effect callback (the host pumps its dialog
@@ -2194,7 +2195,7 @@ pub trait FieldHost {
     ///
     /// The hook returns `true` when the dialog is still active (VM halts at
     /// PC), `false` when done (VM advances PC by 2). Default impl returns
-    /// `false` — engines without a dialog renderer immediately complete.
+    /// `false` - engines without a dialog renderer immediately complete.
     fn op4c_n_5_sub_4_dialog_advance(&mut self, ctx: &mut FieldCtx) -> bool {
         let _ = ctx;
         false
@@ -2214,12 +2215,12 @@ pub trait FieldHost {
 ///   `switchD::default` fallthrough.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActorSearchResult {
-    /// Per-character sub-table is empty — advance PC.
+    /// Per-character sub-table is empty - advance PC.
     #[default]
     EmptySlot,
-    /// Marker matched — take the absolute-jump path.
+    /// Marker matched - take the absolute-jump path.
     Found,
-    /// Sub-table populated but no match — halt at PC.
+    /// Sub-table populated but no match - halt at PC.
     NoMatch,
 }
 
@@ -2238,15 +2239,15 @@ pub struct CameraParam {
 /// [`FieldHost::op4c_n4_sub9_state`] for the bit table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sub9State {
-    /// Bits `0x02000000` clear, `0x01000000` clear — default path. Write or
+    /// Bits `0x02000000` clear, `0x01000000` clear - default path. Write or
     /// ramp `_DAT_801C6EA4 + 0x4A` only.
     #[default]
     Default,
-    /// Bits `0x02000000` clear, `0x01000000` set — absolute jump. The VM
+    /// Bits `0x02000000` clear, `0x01000000` set - absolute jump. The VM
     /// returns the signed-16 operand as the new PC and bypasses the
     /// per-tick logic entirely.
     AbsJump,
-    /// Bit `0x02000000` set — delta path. The host writes/ramps both the
+    /// Bit `0x02000000` set - delta path. The host writes/ramps both the
     /// target slot AND a delta-accumulator at `_DAT_8007BCAC`.
     Delta,
 }
@@ -2254,9 +2255,9 @@ pub enum Sub9State {
 /// Outcome of [`FieldHost::scene_fade`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SceneFadeResult {
-    /// Fade started or completed — VM advances past the instruction.
+    /// Fade started or completed - VM advances past the instruction.
     Done,
-    /// Scene is busy with a previous transition — hold at current PC, the
+    /// Scene is busy with a previous transition - hold at current PC, the
     /// runtime will retry next tick.
     Busy,
 }
@@ -2265,7 +2266,7 @@ pub enum SceneFadeResult {
 /// original (idle = 0, done = 1, anything else = currently armed). Hosts
 /// World coordinates copied onto a script context by Op 0x4C sub-3 sub-7
 /// ([`FieldHost::fetch_player_coords`]). All values are at-rest player ctx
-/// fields — the VM doesn't transform them before assigning.
+/// fields - the VM doesn't transform them before assigning.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PlayerCoords {
     /// `+0x14` on the player ctx.
@@ -2297,7 +2298,7 @@ pub enum Op49State {
 /// `None`. Use this before calling [`step`] to know which `FieldCtx` to pass.
 ///
 /// The system channel script ID is `0xFB`. Unknown IDs match the original's
-/// `"UNFIND INDICATION %d"` diagnostic — the caller decides how to recover
+/// `"UNFIND INDICATION %d"` diagnostic - the caller decides how to recover
 /// (the original returns `pc + 1`).
 pub fn peek_extended(bytecode: &[u8], pc: usize) -> Option<u8> {
     let op = *bytecode.get(pc)?;
@@ -2371,7 +2372,7 @@ pub fn step<H: FieldHost>(
     // On extended (cross-context) dispatch, the resolved target ctx may be
     // halted; the original returns immediately rather than running the
     // instruction. Carve-out: opcode 0x32 (CFLAG_CLR) with bit 10 (mask 0x400)
-    // is the only instruction allowed to run while halted — it's how a script
+    // is the only instruction allowed to run while halted - it's how a script
     // un-halts a target. The system channel (script_id == 0xFB) also bypasses
     // the halt check.
     if extended && ctx.is_halted() && ctx.script_id != 0xFB {
@@ -2386,12 +2387,12 @@ pub fn step<H: FieldHost>(
     }
 
     match opcode {
-        // 0x21 / 0x24 / 0x25 / 0x48 — NOP cluster.
+        // 0x21 / 0x24 / 0x25 / 0x48 - NOP cluster.
         0x21 | 0x24 | 0x25 | 0x48 => StepResult::Advance {
             next_pc: pc + header_size,
         },
 
-        // 0x22 — EXEC_MOVE: schedule move-table playback on ctx.
+        // 0x22 - EXEC_MOVE: schedule move-table playback on ctx.
         // Encoding: `[22, move_id]`. Sets ctx[+0x5C] = move_id, ctx[+0x5E] =
         // 0xFFFE, ctx[+0x56] = 5 if move_id==0 else 1. Then dispatches into
         // the move-table consumer via `host.exec_move`.
@@ -2408,7 +2409,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x23 — MOVE_TO: teleport ctx to grid (x_byte, z_byte).
+        // 0x23 - MOVE_TO: teleport ctx to grid (x_byte, z_byte).
         // World coords use grid_to_world(). Player path also calls camera/
         // scroll; NPC path sets facing + movement init. Both go through
         // host.move_to(). PC += 3 (or +4 if extended).
@@ -2433,7 +2434,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x26 — JMP_REL: PC = pc + header_size + (lo + hi*0x100). Unconditional.
+        // 0x26 - JMP_REL: PC = pc + header_size + (lo + hi*0x100). Unconditional.
         0x26 => {
             let Some(&lo) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2446,7 +2447,7 @@ pub fn step<H: FieldHost>(
             StepResult::Advance { next_pc: target }
         }
 
-        // 0x2B — LFLAG_SET: ctx.local_flags |= 1 << (operand & 0x1F).
+        // 0x2B - LFLAG_SET: ctx.local_flags |= 1 << (operand & 0x1F).
         0x2B => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2457,7 +2458,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x2C — LFLAG_CLR.
+        // 0x2C - LFLAG_CLR.
         0x2C => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2468,7 +2469,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x2D — LFLAG_TST: if bit set, advance; else halt.
+        // 0x2D - LFLAG_TST: if bit set, advance; else halt.
         0x2D => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2483,7 +2484,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x2E — GFLAG_SET on _DAT_1F800394.
+        // 0x2E - GFLAG_SET on _DAT_1F800394.
         0x2E => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2494,7 +2495,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x2F — GFLAG_CLR.
+        // 0x2F - GFLAG_CLR.
         0x2F => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2505,7 +2506,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x30 — GFLAG_TST.
+        // 0x30 - GFLAG_TST.
         0x30 => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2520,8 +2521,8 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x31 — CFLAG_SET on ctx.flags. Bit 8 has a side-effect: copy
-        // ctx[+0x26] -> ctx[+0x5A]. Both paths advance PC by 2 — the original
+        // 0x31 - CFLAG_SET on ctx.flags. Bit 8 has a side-effect: copy
+        // ctx[+0x26] -> ctx[+0x5A]. Both paths advance PC by 2 - the original
         // calls `switchD_801e0f24::caseD_4()` (entry 0x801df098, which does
         // `addiu s8, s8, 0x2; j 0x801e3628`) for bit-8, and falls through to
         // the same advance for normal bits via `code_r0x801df098`.
@@ -2539,7 +2540,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x32 — CFLAG_CLR.
+        // 0x32 - CFLAG_CLR.
         0x32 => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2550,7 +2551,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x33 — CFLAG_TST.
+        // 0x33 - CFLAG_TST.
         0x33 => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2565,13 +2566,13 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x37 / 0x41 — YIELD: save PC, set halt bit. Resume PC is the byte
+        // 0x37 / 0x41 - YIELD: save PC, set halt bit. Resume PC is the byte
         // AFTER this opcode + tail-2. The original's iVar24 = 3 lines up with
         // pc + header_size + 2 in our model (header_size = 1 non-extended,
         // 2 extended; +2 is the original's "+3" minus the implicit +1 for the
         // opcode byte that's already in header_size).
         //
-        // saved_pc stores the byte address of the *opcode* (pre-extended) —
+        // saved_pc stores the byte address of the *opcode* (pre-extended) -
         // the original writes `pbVar43`, which is `buffer_base + pc_offset`
         // BEFORE the extended-bit increment. So saved_pc == pc regardless.
         //
@@ -2586,7 +2587,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x47 — YIELD_4: same as 0x37/0x41 but the post-yield PC delta is 4
+        // 0x47 - YIELD_4: same as 0x37/0x41 but the post-yield PC delta is 4
         // (i.e. iVar24 = 4 in the original).
         0x47 => {
             ctx.saved_pc = pc as u32;
@@ -2597,7 +2598,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x35 — BGM: 4-byte instruction. text_id (LE u16) at [operand],
+        // 0x35 - BGM: 4-byte instruction. text_id (LE u16) at [operand],
         // sub_op at [operand + 2]. Host dispatches on sub_op.
         0x35 => {
             let Some(&lo) = bytecode.get(operand) else {
@@ -2616,7 +2617,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x38 — CAM_CFG. Two paths share the 3-byte instruction `[38, op0,
+        // 0x38 - CAM_CFG. Two paths share the 3-byte instruction `[38, op0,
         // op1]`:
         //
         // - **Simple path** (`op1 & 0x7F == 0`): the original copies
@@ -2660,7 +2661,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x39 — PLAY_SFX. 2-byte instruction.
+        // 0x39 - PLAY_SFX. 2-byte instruction.
         0x39 => {
             let Some(&sfx_id) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2671,7 +2672,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3A — ADD_MONEY. 4-byte instruction. Three operand bytes form a
+        // 0x3A - ADD_MONEY. 4-byte instruction. Three operand bytes form a
         // 24-bit signed integer (little-endian; bit 23 = sign). Host applies
         // the delta and decides clamping (original clamps to [0, 9999999]).
         0x3A => {
@@ -2697,7 +2698,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3B — SET_ITEM_COUNT. 3-byte instruction.
+        // 0x3B - SET_ITEM_COUNT. 3-byte instruction.
         0x3B => {
             let Some(&slot) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2711,7 +2712,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3C — PARTY_ADD. 2-byte instruction.
+        // 0x3C - PARTY_ADD. 2-byte instruction.
         0x3C => {
             let Some(&char_id) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2722,7 +2723,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3D — PARTY_REMOVE. 2-byte instruction.
+        // 0x3D - PARTY_REMOVE. 2-byte instruction.
         0x3D => {
             let Some(&char_id) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2733,7 +2734,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x42 — COND_JMP. Multi-mode conditional.
+        // 0x42 - COND_JMP. Multi-mode conditional.
         //
         // Mode 0: extra-flags test. `[42, 0, bit, lo, hi]`. If
         //   `host.extra_flags() & (1 << bit)` is clear → skip 5 bytes.
@@ -2757,7 +2758,7 @@ pub fn step<H: FieldHost>(
         // Mode 2+: the original calls `switchD_801e00f4::default()`. The
         //   dispatcher's default arm checks `opcode_byte & 0x70`; since
         //   0x42 & 0x70 = 0x40 (not in {0x50,0x60,0x70}), it returns
-        //   `param_2` — halt at PC.
+        //   `param_2` - halt at PC.
         0x42 => {
             let Some(&mode) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2801,7 +2802,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3E — WARP / INTERACT. Two paths:
+        // 0x3E - WARP / INTERACT. Two paths:
         //
         // - INTERACT (`op0 == 0xFF` or `op0 < 100`): `[3E, op0, op1]`,
         //   PC += 3. Calls `host.field_interact(op0, op1)`.
@@ -2833,7 +2834,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x46 — RENDER_CFG. Two forms keyed off `op0`:
+        // 0x46 - RENDER_CFG. Two forms keyed off `op0`:
         //
         // - Long form (`op0 == 0x24`): `[46, 0x24, b1, b2, b3, b4]`, PC += 6.
         //   Writes the four bytes via `host.render_cfg_long`.
@@ -2880,7 +2881,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x4F — SCENE_REGISTER_WRITE. `[4F, b0, b1, b2]`, PC += 4. The
+        // 0x4F - SCENE_REGISTER_WRITE. `[4F, b0, b1, b2]`, PC += 4. The
         // original writes three u16 values (zero-extended bytes) to scene
         // offsets +0x10, +0x12, +0x14.
         0x4F => {
@@ -2899,7 +2900,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x44 — COUNTER. `[44, op0]`, PC += 2.
+        // 0x44 - COUNTER. `[44, op0]`, PC += 2.
         0x44 => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -2910,10 +2911,10 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x4B — ANIMATE. `[4B, count, base_id, ...4*count keyframe bytes]`.
+        // 0x4B - ANIMATE. `[4B, count, base_id, ...4*count keyframe bytes]`.
         // PC += 3 + count * 4. Sets ctx.flags |= 0x1000, ctx.local_flags |=
         // 0x1000 (with bits 0x2000+0x0C00 cleared via mask 0xD3FF), writes
-        // ctx[+0x6c] = count (face_rotation slot is reused — the original
+        // ctx[+0x6c] = count (face_rotation slot is reused - the original
         // stores the count there).
         0x4B => {
             let Some(&count) = bytecode.get(operand) else {
@@ -2938,7 +2939,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x4C — MENU_CTRL. Sub-dispatched by `op0 >> 4`.
+        // 0x4C - MENU_CTRL. Sub-dispatched by `op0 >> 4`.
         //
         // - sub-0: party leader change. `[4C, op0]` (2 bytes). leader_id =
         //   op0 & 7.
@@ -3015,7 +3016,7 @@ pub fn step<H: FieldHost>(
                         // No host hook fires; the original writes
                         // `_DAT_8007b5f0 = uVar31` (current view-index slot)
                         // before falling through, but `uVar31` was just read
-                        // from the same slot a few lines earlier — net effect
+                        // from the same slot a few lines earlier - net effect
                         // is a no-op write.
                         StepResult::Advance {
                             next_pc: pc + header_size + 1,
@@ -3053,7 +3054,7 @@ pub fn step<H: FieldHost>(
                             if ctx.flags & 0x2000_0000 != 0 {
                                 let inverted_y = (p.world_y as i16).wrapping_neg();
                                 host.set_inverted_y_mirror(ctx, inverted_y);
-                                // Original returns via `caseD_4()` — the
+                                // Original returns via `caseD_4()` - the
                                 // STATE_RESUME exit. We surface that as a
                                 // Yield so the host's state-resume layer
                                 // decides whether the next caller resumes.
@@ -3103,7 +3104,7 @@ pub fn step<H: FieldHost>(
                     16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                 },
                 4 => {
-                    // 0x4C outer nibble 4 — immediate-or-ramp cluster.
+                    // 0x4C outer nibble 4 - immediate-or-ramp cluster.
                     // 6-byte instruction `[4C, op0, val_lo, val_hi,
                     // ticks_lo, ticks_hi]`. The original at line ~5901 of
                     // FUN_801DE840 reads: target = signed_16(op+1..3),
@@ -3137,7 +3138,7 @@ pub fn step<H: FieldHost>(
                         1 => {
                             // ctx[+0x6A] write or ramp. The input is halved
                             // (s16 arithmetic shift right 1) with a floor of
-                            // 1 — see FUN_801DE840 line ~5923:
+                            // 1 - see FUN_801DE840 line ~5923:
                             //   `iVar46 = signed_16(operand[0..2]);`
                             //   `uVar31 = iVar46 >> 1;`
                             //   `if (uVar31 == 0) uVar31 = 1;`
@@ -3166,7 +3167,7 @@ pub fn step<H: FieldHost>(
                         3 => {
                             // sub-3: ticks!=0 ramps `ctx.field_24`; ticks==0
                             // reuses the same 6-byte encoding as an absolute
-                            // jump — the original at FUN_801DE840 line ~5961
+                            // jump - the original at FUN_801DE840 line ~5961
                             // returns `iVar18 = signed_16(operand[0..2])`,
                             // which propagates back through the dispatcher
                             // as the new PC offset.
@@ -3180,7 +3181,7 @@ pub fn step<H: FieldHost>(
                             }
                         }
                         4 => {
-                            // sub-4: mirror of sub-3 — ticks==0 writes
+                            // sub-4: mirror of sub-3 - ticks==0 writes
                             // `ctx.field_28`; ticks!=0 is the absolute jump.
                             if ticks == 0 {
                                 ctx.field_28 = target;
@@ -3193,7 +3194,7 @@ pub fn step<H: FieldHost>(
                         }
                         6 | 7 => {
                             // sub-6 (`_DAT_8007B92C`) / sub-7 (`_DAT_8007B930`)
-                            // — paired global writes gated by `_DAT_800845A8`.
+                            // - paired global writes gated by `_DAT_800845A8`.
                             // When the gate is set, the original short-circuits
                             // both ports of the pair and clears them together;
                             // otherwise the regular global-write/ramp dispatch
@@ -3246,7 +3247,7 @@ pub fn step<H: FieldHost>(
                                 }
                             } else {
                                 host.op4c_n4_sub5_ramp(ctx, b1, w94, w96, w98, sub5_ticks);
-                                // Ramp path falls through STATE_RESUME — yield
+                                // Ramp path falls through STATE_RESUME - yield
                                 // and let the host's resume layer signal when
                                 // to advance past the 11-byte instruction.
                                 StepResult::Yield {
@@ -3287,7 +3288,7 @@ pub fn step<H: FieldHost>(
                         // case-4 inner switch (line 6188 of the dump): they
                         // hit `default: func_0x8001a068(s_SUB_40_ERROR_801cec88);
                         // iVar18 = switchD_801e00f4::default(); return iVar18;`
-                        // — the dispatcher's default returns `param_2` ⇒ halt
+                        // - the dispatcher's default returns `param_2` ⇒ halt
                         // at PC.
                         0xE..=0xF => StepResult::Halt { final_pc: pc },
                         // `op0 & 0x0F` is at most 0xF; the arms above cover
@@ -3295,7 +3296,7 @@ pub fn step<H: FieldHost>(
                         16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                     }
                 }
-                // Outer nibble 5 — sound directional + dialog dispatch.
+                // Outer nibble 5 - sound directional + dialog dispatch.
                 // Only sub-0 (sound directional, 4-byte) is ported; sub-1
                 // (NPC move + run with halt-acquire), sub-2/3/4 (dialog
                 // query cluster) remain `Pending` because they thread
@@ -3303,7 +3304,7 @@ pub fn step<H: FieldHost>(
                 // own host-hook surface. Sub-ops 5..=0xF have no `case`
                 // arm in the original inner switch, so they silently
                 // fall through and the function returns `iVar45 = param_2`
-                // (initialised at the top of FUN_801de840) — halt at PC.
+                // (initialised at the top of FUN_801de840) - halt at PC.
                 5 => match op0 & 0x0F {
                     0 => {
                         let Some(&lo) = bytecode.get(operand + 1) else {
@@ -3329,7 +3330,7 @@ pub fn step<H: FieldHost>(
                     // calls `FUN_801D65D8(1)` then `goto
                     // joined_r0x801E28C4`; both branches halt-style return
                     // after `param_2 = param_2 + 2`. We model this as
-                    // "halt at pc+2" — the host pumps its dialog state
+                    // "halt at pc+2" - the host pumps its dialog state
                     // machine through the side-effect hook.
                     3 => {
                         host.op4c_n_5_sub_3_dialog_wait(ctx);
@@ -3355,12 +3356,12 @@ pub fn step<H: FieldHost>(
                     1..=2 => StepResult::Pending { opcode, pc },
                     _ => StepResult::Halt { final_pc: pc },
                 },
-                // Outer nibble 6 — emitter call families.
+                // Outer nibble 6 - emitter call families.
                 // Only op0 == 0x60 (6-word emitter) is ported. op0 == 0x61
                 // is a halt-acquire variant whose 16-byte encoding interacts
                 // with cross-context dispatch; remaining values (0x62..=0x6F)
                 // hit `else { return param_2; }` in the original at line
-                // 6330 of the dump — halt at PC.
+                // 6330 of the dump - halt at PC.
                 6 => match op0 {
                     0x60 => {
                         if operand + 13 > bytecode.len() {
@@ -3381,7 +3382,7 @@ pub fn step<H: FieldHost>(
                     0x61 => StepResult::Pending { opcode, pc },
                     _ => StepResult::Halt { final_pc: pc },
                 },
-                // Outer nibble 7 — VRAM tile-flag bulk operation. 7-byte
+                // Outer nibble 7 - VRAM tile-flag bulk operation. 7-byte
                 // instruction. Sub-0/1 yield via STATE_RESUME; sub-2/3
                 // advance directly; other sub-ops halt at PC.
                 7 => {
@@ -3409,10 +3410,10 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // Outer nibble 8 — large multi-purpose dispatcher. The
+                // Outer nibble 8 - large multi-purpose dispatcher. The
                 // ported subset covers the simple writes + the field_68
                 // conditional-jump + sub-9 (DAT_80073F00 write) + sub-5/E/F
-                // (halt-acquire idiom — the original at lines 6550-6570
+                // (halt-acquire idiom - the original at lines 6550-6570
                 // shares one inner-switch arm body across all three sub-ops:
                 // ctx mutation that sets saved_pc + halt bit + clears
                 // wait_accum, then halts at PC). Sub-0 (actor allocator),
@@ -3492,7 +3493,7 @@ pub fn step<H: FieldHost>(
                         // calls `switchD_801e00f4::default()` (= halt for
                         // 0x4C since `0x4C & 0x70 = 0x40`); script resumes
                         // when the registered callback fires. Distinct from
-                        // an Advance — a re-entry of the dispatcher at the
+                        // an Advance - a re-entry of the dispatcher at the
                         // same PC re-registers, so the host's hook should
                         // be idempotent.
                         host.op4c_n8_sub7_register_callback();
@@ -3518,7 +3519,7 @@ pub fn step<H: FieldHost>(
                         let s0 = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
                         let s1 = i16::from_le_bytes([bytecode[operand + 3], bytecode[operand + 4]]);
                         let s2 = i16::from_le_bytes([bytecode[operand + 5], bytecode[operand + 6]]);
-                        // Original uses `func_0x8003CEB8` — a 24-bit LE
+                        // Original uses `func_0x8003CEB8` - a 24-bit LE
                         // decoder. High byte is zero-padded; hosts can
                         // sign-extend if they need to.
                         let packed = u32::from_le_bytes([
@@ -3564,7 +3565,7 @@ pub fn step<H: FieldHost>(
                     // Sub-5/E/F all share the halt-acquire body. The host
                     // hook applies the standard ctx mutation; the dispatch
                     // halts at PC regardless of acquire success/failure
-                    // (both paths in the dump halt — success via
+                    // (both paths in the dump halt - success via
                     // `switchD_801e00f4::default()`, failure via
                     // `LAB_801dee50`).
                     5 | 0xE | 0xF => {
@@ -3618,12 +3619,12 @@ pub fn step<H: FieldHost>(
                     }
                     _ => StepResult::Pending { opcode, pc },
                 },
-                // Outer nibble 9 — fade family + table copy + callback.
+                // Outer nibble 9 - fade family + table copy + callback.
                 // Sub-0/1/2 (fade dispatch, 9-byte) and sub-0xE (16-word
                 // table copy, 34-byte) ported. Sub-0xF (callback registration
                 // via LAB_801da930) remains `Pending`. Sub-3..=0xD have no
                 // `case` arm in the original (line 6694–6696 of the dump
-                // returns `param_2` when `2 < uVar27 < 0xE`) — halt at PC.
+                // returns `param_2` when `2 < uVar27 < 0xE`) - halt at PC.
                 9 => {
                     let sub = op0 & 0x0F;
                     match sub {
@@ -3663,7 +3664,7 @@ pub fn step<H: FieldHost>(
                         // Sub-0xF: register `LAB_801DA930` callback then halt
                         // at PC. The original goes through
                         // `switchD_801e00f4::default()`, which for opcode 0x4C
-                        // (`& 0x70 = 0x40`) returns `param_2` — halt at PC.
+                        // (`& 0x70 = 0x40`) returns `param_2` - halt at PC.
                         // The script resumes when the registered callback
                         // fires.
                         0xF => {
@@ -3673,7 +3674,7 @@ pub fn step<H: FieldHost>(
                         _ => StepResult::Halt { final_pc: pc },
                     }
                 }
-                // Outer nibble 0xA — conditional jump on flag bit. The 5-byte
+                // Outer nibble 0xA - conditional jump on flag bit. The 5-byte
                 // instruction `[4C, 0xAN, bit, lo, hi]` dispatches first on
                 // sub-op (`bne a1, zero, 0x801e258c` at 0x801e2568 of the
                 // overlay disassembly), then per-sub-op checks one bit:
@@ -3699,14 +3700,14 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // Outer nibble 0xC — small per-actor / per-scene writes.
+                // Outer nibble 0xC - small per-actor / per-scene writes.
                 // Ported subset covers sub-0 (move-table cancel, PC += 2),
                 // sub-1 (flag-loop reset, PC += 2), sub-2 (field_42), sub-3
                 // (script-table teleport, PC += 2), sub-4 (sub-tile
                 // broadcast), sub-5/6 (party-flag conditional jumps via
                 // `func_0x8003CE9C` + `party_flag_test`), sub-7 (sound
                 // trigger), sub-8 (field_74 XOR), sub-9 (global-pair compare
-                // gate — PC += 2 unless globals differ, then halt), sub-0xA
+                // gate - PC += 2 unless globals differ, then halt), sub-0xA
                 // / sub-0xB / sub-0xC (slot table writes), sub-0xD
                 // (script-context alloc, halt), sub-0xE (b6ac write), sub-0xF
                 // (position broadcast). All 16 sub-ops in nibble 0xC are now
@@ -3733,7 +3734,7 @@ pub fn step<H: FieldHost>(
                     // 16-bit flag index via `load_u16_le`, queries the host's
                     // party-flag bank, and jumps to `LAB_801E2A10` when the
                     // bit is **clear** (jump-if-zero polarity). The original's
-                    // jump target is the dispatcher's "no-op fallthrough" —
+                    // jump target is the dispatcher's "no-op fallthrough" -
                     // both branches advance PC += 4.
                     5 => {
                         if operand + 3 > bytecode.len() {
@@ -3742,7 +3743,7 @@ pub fn step<H: FieldHost>(
                         let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
                         let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
                         // Both polarities (5 = jump-if-zero, 6 = jump-if-nonzero)
-                        // share the same dispatcher fallthrough — the original's
+                        // share the same dispatcher fallthrough - the original's
                         // `joined_r0x801e28c4` block returns `param_2 + 4` either
                         // way. The polarity selects which arm runs the
                         // host-visible side effect, but PC delta is constant.
@@ -3896,7 +3897,7 @@ pub fn step<H: FieldHost>(
                     }
                     _ => StepResult::Pending { opcode, pc },
                 },
-                // Outer nibble 0xD — party state + camera-ish setup.
+                // Outer nibble 0xD - party state + camera-ish setup.
                 // Ported subset covers sub-1 (linked-list lookup gate, 2-byte
                 // host-Option, PC += 4 on miss), sub-2 (channel-spawn halt,
                 // 2-byte), sub-3 (party state setup, 14-byte), sub-6
@@ -4083,7 +4084,7 @@ pub fn step<H: FieldHost>(
                         }
                     }
                     // Sub-E: 5-byte. Sister of sub-C without the per-record
-                    // write — same control flow.
+                    // write - same control flow.
                     0xE => {
                         let Some(&b1) = bytecode.get(operand + 1) else {
                             return StepResult::Unknown { opcode, pc };
@@ -4097,7 +4098,7 @@ pub fn step<H: FieldHost>(
                     }
                     _ => StepResult::Pending { opcode, pc },
                 },
-                // Outer nibble 0xE — misc scene writes + emitter helper calls.
+                // Outer nibble 0xE - misc scene writes + emitter helper calls.
                 // Ported subset covers sub-0 (3-way state write, halt at PC),
                 // sub-2 (set globals, 6-byte), sub-6 (FUN_801D8280, 8-byte),
                 // sub-9 (clear b9c4 via caseD_4 = PC += 2), sub-0xA (call
@@ -4311,7 +4312,7 @@ pub fn step<H: FieldHost>(
                     }
                     _ => StepResult::Pending { opcode, pc },
                 },
-                // Outer nibble 0xF — only `op0 == 0xFF` is valid; falls
+                // Outer nibble 0xF - only `op0 == 0xFF` is valid; falls
                 // through to the default arm (PC += 2). Other sub-ops in
                 // this nibble print SUB_CMD_0F_ERROR and also fall through.
                 0xF => StepResult::Advance {
@@ -4320,7 +4321,7 @@ pub fn step<H: FieldHost>(
                 // Outer nibble 0xB has no `case 0xb` in the original 0x4C
                 // switch (the dump goes case 0xa → default → case 0xc).
                 // The default arm (line 6718) prints SUB_CMD_ERROR and
-                // returns the dispatcher default — halt at PC.
+                // returns the dispatcher default - halt at PC.
                 0xB => StepResult::Halt { final_pc: pc },
                 // `op0 >> 4` is at most 0xF; outer nibble is fully covered
                 // above, so this arm is dead code.
@@ -4328,11 +4329,11 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x36 — SCENE_FADE. `[36, lo0, hi0, lo1, hi1]`, PC += 5 normally.
+        // 0x36 - SCENE_FADE. `[36, lo0, hi0, lo1, hi1]`, PC += 5 normally.
         // The host decides whether the fade applies (`SceneFadeResult::Done`)
         // or the scene is busy (`Busy` → halt at same PC). The original has
         // many sub-paths (0xFFFF wait, bit-15-set sub-cases 0..4, bit-15-clear
-        // sub-paths) — they all funnel through the host.
+        // sub-paths) - they all funnel through the host.
         0x36 => {
             let Some(&lo0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -4356,7 +4357,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x45 — CAMERA. Sub-dispatched by `op0 & 0xC0`:
+        // 0x45 - CAMERA. Sub-dispatched by `op0 & 0xC0`:
         // - 0x40 LOAD: `[45, op0, ...18-byte payload]`, PC += 20.
         // - 0x80 SAVE: `[45, op0]`, PC += 2.
         // - 0x00 CONFIGURE: 10-bit mask in `[op0, op1]` selects slots; each
@@ -4411,7 +4412,7 @@ pub fn step<H: FieldHost>(
                     let mask = (u16::from(op0) << 8) | u16::from(op1);
                     let apply_trigger = u16::from_le_bytes([trig_lo, trig_hi]);
                     let mode = (op0 >> 2) & 0x0F;
-                    // Cursor starts at 4 (past opcode+op0+op1+trigger u16 — i.e.
+                    // Cursor starts at 4 (past opcode+op0+op1+trigger u16 - i.e.
                     // operand + 3, since operand=pc+header_size means
                     // operand+3 = pc+header_size+3). The original `iVar18 = 4`
                     // is the byte index relative to pbVar47 (= operand), so
@@ -4440,7 +4441,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x4D — BBOX_TEST. `[4D, x_min, z_min, x_max, z_max, lo_skip,
+        // 0x4D - BBOX_TEST. `[4D, x_min, z_min, x_max, z_max, lo_skip,
         // hi_skip]` (7 bytes). Inside box → PC += 7. Outside box →
         // forward-skip jump per `FUN_801e3614` (which is just
         // `addiu v0, v0, -2; j 0x801e3624; addu s8, s8, v0`).
@@ -4496,7 +4497,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x3F — DIALOG: open a dialog box.
+        // 0x3F - DIALOG: open a dialog box.
         // Encoding: [3F, lo, hi, len, [len bytes inline], xb, zb, depth_id]
         // - text_id = lo + hi*0x100 (16-bit, little-endian)
         // - inline buffer holds `len` raw bytes (the original copies up to
@@ -4535,7 +4536,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x40 — DATA_BLOCK: skip `len` bytes after the header.
+        // 0x40 - DATA_BLOCK: skip `len` bytes after the header.
         // Encoding: [0x40, len, ...len bytes]. PC += header_size + 1 + len.
         0x40 => {
             let Some(&len) = bytecode.get(operand) else {
@@ -4546,7 +4547,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x4A — WAIT_FRAMES: ctx.wait_accum += frame_delta. If accum < target,
+        // 0x4A - WAIT_FRAMES: ctx.wait_accum += frame_delta. If accum < target,
         // halt at the same PC (script will resume on next tick); else clear
         // and advance. Target is read via the SCUS helper `func_0x8003CE9C`,
         // which reads a 16-bit little-endian value from the operand cursor.
@@ -4569,7 +4570,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x4E — inventory comparison-and-jump. Sub-dispatched by
+        // 0x4E - inventory comparison-and-jump. Sub-dispatched by
         // `op1 >> 4`. Encoding for sub-ops 0/1:
         //   `[4E, page, mode, arg_lo, arg_hi, skip_lo, skip_hi]` (7 bytes).
         // `mode` high nibble = sub-op; low nibble = comparison operator
@@ -4697,7 +4698,7 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // Sub-op 4: `iVar18 = func_0x80056798(); return iVar18;` —
+                // Sub-op 4: `iVar18 = func_0x80056798(); return iVar18;` -
                 // FUN_80056798 is a BIOS Rand thunk (`jr 0xA0; t1=0x2F`).
                 // The original returns the random value as the next PC. There
                 // are no captured callers, so this is almost certainly a dev
@@ -4715,7 +4716,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x49 — STATE_RESUME. Multi-frame state machine on `_DAT_8007B450`.
+        // 0x49 - STATE_RESUME. Multi-frame state machine on `_DAT_8007B450`.
         // The host surfaces the tristate via [`FieldHost::op49_state`].
         //
         // - `Idle`: arm a new resume. Sub-op 1 also captures `ctx.field_90`
@@ -4723,7 +4724,7 @@ pub fn step<H: FieldHost>(
         //   instruction halts at the same PC; the host advances the
         //   underlying state machine and flips to `Done` on the next
         //   resume.
-        // - `Armed`: another resume is already in flight — halt.
+        // - `Armed`: another resume is already in flight - halt.
         // - `Done`: clear state and dispatch on the sub-op:
         //   - 1, 3, 7: PC += 3
         //   - 2, 4: PC += 7
@@ -4747,7 +4748,7 @@ pub fn step<H: FieldHost>(
                 Op49State::Done => {
                     host.op49_clear();
                     match sub_op {
-                        // sub-0 in DONE state — embedded MES bytecode walker.
+                        // sub-0 in DONE state - embedded MES bytecode walker.
                         // Instruction: `[49, 0, length, ...length args..., ...mes_bytes]`.
                         // The original reads `length = pbVar47[2]`, then calls
                         // `func_0x8003ca38(pbVar47 + length + 3)` (= the MES-shape
@@ -4777,7 +4778,7 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 13,
                         },
                         // sub-6/8/9/C/D in Done all jump through LAB_801df898
-                        // which does `addiu s8, s8, 0x5; j 0x801df89c` —
+                        // which does `addiu s8, s8, 0x5; j 0x801df89c` -
                         // PC += 5 from the opcode (= header_size + 4 past
                         // the sub-op byte). The original reads
                         // `_DAT_8007babc` into a register but only
@@ -4798,7 +4799,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x34 — EFFECT. Sub-dispatched by `op0 >> 4` (4 sub-ops).
+        // 0x34 - EFFECT. Sub-dispatched by `op0 >> 4` (4 sub-ops).
         // Sub-ops ported:
         // - 0: effect-global colour + intensity setup. PC += 7. Reads RGB at
         //   operand[1..4] + s16 intensity at operand[4..6]; the original
@@ -4835,7 +4836,7 @@ pub fn step<H: FieldHost>(
                 1 => {
                     // Base instruction is 13 bytes (opcode + 12 operand
                     // bytes). The "capture flag" at `pbVar46[0xC]` is the
-                    // BYTE JUST PAST the instruction — the runtime peeks at
+                    // BYTE JUST PAST the instruction - the runtime peeks at
                     // the first byte of the next instruction to decide
                     // whether to consume it as a capture extension.
                     let Some(payload) = bytecode.get(operand + 1..operand + 12) else {
@@ -4847,7 +4848,7 @@ pub fn step<H: FieldHost>(
                     let world_x = i16::from_le_bytes([payload[3], payload[4]]);
                     let world_z = i16::from_le_bytes([payload[5], payload[6]]);
                     // The original NEGATES the y component (`local_a6 = -local_a6`)
-                    // before the spawn call — undo the sign here.
+                    // before the spawn call - undo the sign here.
                     let raw_neg_y = i16::from_le_bytes([payload[7], payload[8]]);
                     let world_y = raw_neg_y.wrapping_neg();
                     // Peek the byte AT pc + 13 (first byte after the
@@ -4915,7 +4916,7 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x43 — ACTOR_CTRL. Massive sub-dispatcher (22+ sub-ops keyed on
+        // 0x43 - ACTOR_CTRL. Massive sub-dispatcher (22+ sub-ops keyed on
         // `pbVar47[0]`). Sub-ops ported:
         // - 2: 3-actor talk via FUN_801D2D38, 8-byte instruction.
         // - 7: face/body rotation setup, 17-byte instruction.
@@ -5241,7 +5242,7 @@ pub fn step<H: FieldHost>(
 
         // Default arm: high-byte route. The original dispatcher's default
         // case checks `*pbVar43 & 0x70` (raw opcode byte) and routes to one
-        // of three SCUS helpers — SET / CLEAR / TEST against the 256-bit
+        // of three SCUS helpers - SET / CLEAR / TEST against the 256-bit
         // bitfield at DAT_80086D70 (the **fourth flag bank**).
         //
         // The masked opcode here is `opcode_byte & 0x7F`, so `0x5x`/`0x6x`/
@@ -5293,7 +5294,7 @@ pub fn step<H: FieldHost>(
                     }
                 }
                 // For opcode in 0x50..=0x77, `opcode & 0x70` can only be
-                // 0x50, 0x60, or 0x70 — every value handled above.
+                // 0x50, 0x60, or 0x70 - every value handled above.
                 _ => unreachable!("opcode 0x{:02X} & 0x70 must be 0x50/0x60/0x70", opcode),
             }
         }
@@ -5302,7 +5303,7 @@ pub fn step<H: FieldHost>(
         // (line 4622 of the dump) routes through `*pbVar43 & 0x70`; for any
         // raw opcode byte whose high nibble is NOT 0x5x/0x6x/0x7x and whose
         // masked opcode isn't matched explicitly above, the original returns
-        // `param_2` — halt at PC. The masked opcode here is `opcode_byte &
+        // `param_2` - halt at PC. The masked opcode here is `opcode_byte &
         // 0x7F`; the field VM has 43 documented opcodes, all of which are
         // explicitly cased above, so reaching this arm means a malformed or
         // future-extension byte. Halt rather than panic so we behave like
@@ -5320,7 +5321,7 @@ pub fn step<H: FieldHost>(
 ///
 /// `caller_player` is `true` when `caller_ctx` is the active player script
 /// (the original branches on `iVar18 == _DAT_8007C364`). The host is the
-/// authority — pass `caller_ctx.script_id == host.player_script_id()` or
+/// authority - pass `caller_ctx.script_id == host.player_script_id()` or
 /// equivalent. When in doubt, pass `false` and only the target halts.
 pub fn step_with_caller<H: FieldHost>(
     host: &mut H,
@@ -5501,7 +5502,7 @@ mod tests {
         n_e_capture_ddf48_calls: u32,
         n_e_ba66_writes: Vec<u8>,
         n_e_snapshot_84570_calls: u32,
-        // Round 16 — overlay-helper hooks.
+        // Round 16 - overlay-helper hooks.
         n_c_sub_1_flag_loops: u32,
         n_d_sub_1_jump_target: Option<usize>,
         n_d_sub_2_channel_calls: Vec<u8>,
@@ -5512,7 +5513,7 @@ mod tests {
         n_d_sub_e_jump_target: Option<usize>,
         n_d_sub_e_calls: Vec<u8>,
         n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
-        // Round 17 — five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+        // Round 17 - five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
         n_c_sub_0_move_cancels: u32,
         n_c_sub_0_active: bool,
         n_c_sub_3_teleports: u32,
@@ -5526,7 +5527,7 @@ mod tests {
         // 0x43 halt-acquire (sub-0/1/A/B).
         halt_acquire_predicate: bool,
         halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
-        // Round 18 — 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
+        // Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
         n_8_sub_1_set_model_calls: Vec<(u32, u16, u16)>, // (model_id, anim, tween)
         n_8_sub_6_actor_set_rotation_calls: Vec<(u8, [i16; 3], [i16; 3])>,
         n_8_sub_6_actor_present: bool,
@@ -6464,7 +6465,7 @@ mod tests {
     #[test]
     fn extended_032_with_bit_10_unhalt_carve_out() {
         // 0x32 (CFLAG_CLR) with bit 10 (mask 0x400) is the unique opcode that
-        // can run on a halted target — it's how a script un-halts another.
+        // can run on a halted target - it's how a script un-halts another.
         let mut host = TestHost::default();
         let mut ctx = FieldCtx {
             flags: 0x400,
@@ -6618,7 +6619,7 @@ mod tests {
     fn dialog_truncated_buffer_returns_unknown() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // len = 10 but bytecode only has 5 trailing bytes — should error.
+        // len = 10 but bytecode only has 5 trailing bytes - should error.
         let bc = [0x3F, 0x00, 0x00, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05];
         let r = step(&mut host, &mut ctx, &bc, 0);
         assert!(matches!(
@@ -6766,7 +6767,7 @@ mod tests {
     fn cond_jmp_mode_0_skips_when_flag_clear() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // mode=0, bit=3, lo=0xFF, hi=0xFF — flag clear -> skip 5 bytes.
+        // mode=0, bit=3, lo=0xFF, hi=0xFF - flag clear -> skip 5 bytes.
         let r = step(&mut host, &mut ctx, &[0x42, 0x00, 0x03, 0xFF, 0xFF], 0);
         assert_eq!(r, StepResult::Advance { next_pc: 5 });
     }
@@ -6859,7 +6860,7 @@ mod tests {
         let mut ctx = FieldCtx::default();
         // [0x42, 0x01, 0x0C, 0x10, 0x00] → mode 1, op1=0xC, delta=0x0010.
         // Expected next_pc = 0 + 3 + 0x10 = 19 (header_size=2, +1 for mode,
-        // +0x10 delta — 3 + delta).
+        // +0x10 delta - 3 + delta).
         let r = step(&mut host, &mut ctx, &[0x42, 0x01, 0x0C, 0x10, 0x00], 0);
         assert_eq!(r, StepResult::Advance { next_pc: 19 });
     }
@@ -7149,7 +7150,7 @@ mod tests {
         let mut host = TestHost {
             player_coords: Some(PlayerCoords {
                 world_x: 0,
-                world_y: 0x0010, // small positive — easy to negate
+                world_y: 0x0010, // small positive - easy to negate
                 world_z: 0,
                 field_26: 0,
             }),
@@ -7308,7 +7309,7 @@ mod tests {
 
     #[test]
     fn op_4c_n4_sub_3_ticks_zero_jumps_absolute() {
-        // ticks=0 path: returned `iVar18` = signed_16(operand[0..2]) — the
+        // ticks=0 path: returned `iVar18` = signed_16(operand[0..2]) - the
         // new PC offset is the literal target value.
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -7409,7 +7410,7 @@ mod tests {
             0,
         );
         assert_eq!(r, StepResult::Advance { next_pc: 6 });
-        // No write happened — the gate short-circuited to a pair-clear.
+        // No write happened - the gate short-circuited to a pair-clear.
         assert!(host.n4_global_writes.is_empty());
         assert_eq!(host.n4_global_pair_clears, 1);
     }
@@ -7469,7 +7470,7 @@ mod tests {
     fn op_4c_n4_sub_5_truncated_buffer_returns_unknown() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // Only 8 bytes — sub-5 needs 11.
+        // Only 8 bytes - sub-5 needs 11.
         let bytes = [0x4C, 0x45, 0x07, 0x23, 0x01, 0xFF, 0xFF, 0x67];
         let r = step(&mut host, &mut ctx, &bytes, 0);
         assert!(matches!(r, StepResult::Unknown { .. }));
@@ -7582,7 +7583,7 @@ mod tests {
     fn op_34_sub_2_no_match_advances_two() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // sub_op = 2, b1 = 0x40 — but op34_sub2_capture_match=false (default)
+        // sub_op = 2, b1 = 0x40 - but op34_sub2_capture_match=false (default)
         // so the host returns false → Advance PC += 2.
         let r = step(&mut host, &mut ctx, &[0x34, 0x20, 0x40, 0x00], 0);
         assert_eq!(r, StepResult::Advance { next_pc: 2 });
@@ -7881,7 +7882,7 @@ mod tests {
     fn camera_configure_decodes_mask_and_advances() {
         // op0 = 0x00 (top 2 bits clear; mode = (0 >> 2) & 0xF = 0).
         // op1 = 0b1010_0000 = 0xA0 → mask bit 7 (slot 2), bit 5 (slot 4).
-        // Wait — the bit interpretation is "MSB-first across the 10-bit
+        // Wait - the bit interpretation is "MSB-first across the 10-bit
         // mask" from CONCAT11(op0, op1). So mask = u16(op0:op1) =
         // 0x00A0 = 0b0000_0000_1010_0000. Bit 9 → slot 0, bit 0 → slot 9.
         // Set bits at positions 7 and 5 → slot indices 9-7=2 and 9-5=4.
@@ -8214,12 +8215,12 @@ mod tests {
             0x49, // opcode
             0x00, // sub-op
             0x02, // length
-            0xAA, 0xBB, // 2 args (ignored by walker — walker starts past them)
+            0xAA, 0xBB, // 2 args (ignored by walker - walker starts past them)
             0x50, 0xC3, 0xAA, 0x00, // MES body (3 bytes walked) + terminator
         ];
         let r = step(&mut host, &mut ctx, bc, 0);
         // PC = 0 + (header_size=1) + 4 + length=2 + walked=3 = 10. The
-        // terminator is NOT consumed by the walker — it stops at it.
+        // terminator is NOT consumed by the walker - it stops at it.
         assert_eq!(r, StepResult::Advance { next_pc: 10 });
         assert_eq!(host.op49_clears, 1);
     }
@@ -8252,15 +8253,15 @@ mod tests {
     fn walk_mes_bytecode_pair_extends_cx_prefix() {
         // 0xC0..0xCF prefix bytes consume one extra byte each (the pair byte).
         // 0xC0 0x05 (pair 0x05 NOT a terminator, because it's a pair byte not
-        // a top-level byte) — counts 2.
+        // a top-level byte) - counts 2.
         assert_eq!(walk_mes_bytecode(&[0xC0, 0x05, 0x10]), 2);
-        // 0xCF 0x99 — counts 2; then 0x50 — counts 3 total; then 0x10 stops.
+        // 0xCF 0x99 - counts 2; then 0x50 - counts 3 total; then 0x10 stops.
         assert_eq!(walk_mes_bytecode(&[0xCF, 0x99, 0x50, 0x10]), 3);
     }
 
     #[test]
     fn walk_mes_bytecode_eof_mid_pair_stops_gracefully() {
-        // 0xC0 at end of buffer — original would read past EOF; we stop.
+        // 0xC0 at end of buffer - original would read past EOF; we stop.
         assert_eq!(walk_mes_bytecode(&[0xC0]), 1);
     }
 
@@ -8635,7 +8636,7 @@ mod tests {
     fn yield_propagates_to_caller_when_target_is_player() {
         let mut host = TestHost::default();
         let mut target = FieldCtx {
-            script_id: 0xFB, // arbitrary — caller designates as player below
+            script_id: 0xFB, // arbitrary - caller designates as player below
             ..Default::default()
         };
         let mut caller = FieldCtx::default();
@@ -8663,7 +8664,7 @@ mod tests {
         let mut host = TestHost::default();
         let mut target = FieldCtx::default();
         let mut caller = FieldCtx::default();
-        // 0x21 NOP — no yield. Caller untouched even when target == player.
+        // 0x21 NOP - no yield. Caller untouched even when target == player.
         let r = step_with_caller(&mut host, &mut target, &mut caller, true, &[0x21], 0);
         assert_eq!(r, StepResult::Advance { next_pc: 1 });
         assert!(!caller.is_halted());
@@ -8748,7 +8749,7 @@ mod tests {
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &[0x70, 0x05, 0xAA, 0xBB], 0);
         assert_eq!(r, StepResult::Advance { next_pc: 4 });
-        // No writes — TEST is read-only.
+        // No writes - TEST is read-only.
         assert!(host.sys_flag_writes.is_empty());
     }
 
@@ -8798,7 +8799,7 @@ mod tests {
     fn sysflag_set_truncated_idx_byte_is_unknown() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // 1-byte buffer — no idx byte available.
+        // 1-byte buffer - no idx byte available.
         let r = step(&mut host, &mut ctx, &[0x50], 0);
         assert!(matches!(r, StepResult::Unknown { .. }));
     }
@@ -8807,7 +8808,7 @@ mod tests {
     fn sysflag_test_truncated_offset_is_unknown() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // 3-byte buffer — missing the second offset byte.
+        // 3-byte buffer - missing the second offset byte.
         let r = step(&mut host, &mut ctx, &[0x70, 0x05, 0xAA], 0);
         assert!(matches!(r, StepResult::Unknown { .. }));
     }
@@ -8909,7 +8910,7 @@ mod tests {
         //   0B: 4C 48 22 00 00 00   nibble-4 sub-8: ctx.field_26 = 0x0022, immediate
         //   11: 4C 42 33 00 00 00   nibble-4 sub-2: ctx.field_8e = 0x0033, immediate
         //   17: 21                  NOP
-        //   18: 21                  NOP — terminal (run_until_halt limit)
+        //   18: 21                  NOP - terminal (run_until_halt limit)
         let bytecode = [
             0x26, 0x04, 0x00, // 00..03 JMP +4 → PC=5
             0xAA, 0xAA, // 03..05 garbage (skipped)
@@ -8924,7 +8925,7 @@ mod tests {
         let mut ctx = FieldCtx::default();
         // Cap steps low enough that the trace ends inside the buffer; with
         // 6 instructions the trace stops at PC=0x19 reading past EOF
-        // (Unknown). That's fine — we assert state, not the terminal kind.
+        // (Unknown). That's fine - we assert state, not the terminal kind.
         let _ = run_until_halt(&mut host, &mut ctx, &bytecode, 0, 16);
 
         assert_eq!(ctx.field_72, 0x11);
@@ -9059,7 +9060,7 @@ mod tests {
 
     #[test]
     fn op_4c_n8_sub_c_branch_taken_when_field_68_zero() {
-        // [4C, 0x8C, 0x10, 0x00] — field_68 = 0 → branch to 0x0010.
+        // [4C, 0x8C, 0x10, 0x00] - field_68 = 0 → branch to 0x0010.
         let bytecode = [0x4Cu8, 0x8C, 0x10, 0x00];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx {
@@ -9144,7 +9145,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_a_sub_0_advances_when_ctx_flag_clear() {
-        // [4C, 0xA0, bit=4, lo, hi] — ctx.flags bit 4 clear → skip 5 bytes.
+        // [4C, 0xA0, bit=4, lo, hi] - ctx.flags bit 4 clear → skip 5 bytes.
         // The asm at 0x801e2580/4 ANDs ctx[+0x10] with `(1 << bit)` and only
         // branches to the take-jump label when the result is non-zero.
         let bytecode = [0x4Cu8, 0xA0, 0x04, 0x00, 0x01];
@@ -9203,7 +9204,7 @@ mod tests {
 
     #[test]
     fn op_4c_n9_sub_f_registers_callback_and_halts() {
-        // [4C, 0x9F] — register `LAB_801DA930` callback then halt at PC.
+        // [4C, 0x9F] - register `LAB_801DA930` callback then halt at PC.
         // Same dispatch pattern as nibble-8 sub-7 (callback target differs).
         let bytecode = [0x4Cu8, 0x9F];
         let mut host = TestHost::default();
@@ -9215,9 +9216,9 @@ mod tests {
 
     #[test]
     fn op_4c_n8_sub_7_registers_callback_and_halts() {
-        // [4C, 0x87] — register actor-list callback (LAB_801E5154) then halt
+        // [4C, 0x87] - register actor-list callback (LAB_801E5154) then halt
         // at PC. The original goes through `switchD_801e00f4::default()`,
-        // which for opcode 0x4C (`& 0x70 = 0x40`) returns `param_2` —
+        // which for opcode 0x4C (`& 0x70 = 0x40`) returns `param_2` -
         // halt at PC. Our hook is one-shot per dispatch entry.
         let bytecode = [0x4Cu8, 0x87];
         let mut host = TestHost::default();
@@ -9420,7 +9421,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_c_sub_f_uses_actor_world_when_byte_is_ff() {
-        // [4C, 0xCF, 0xFF, 0xFF] — both bytes select the actor's coords.
+        // [4C, 0xCF, 0xFF, 0xFF] - both bytes select the actor's coords.
         let bytecode = [0x4Cu8, 0xCF, 0xFF, 0xFF];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx {
@@ -9725,7 +9726,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_d_sub_b_truncated_buffer_returns_unknown() {
-        // 12 bytes only — sub-B needs 13.
+        // 12 bytes only - sub-B needs 13.
         let bytecode = [0x4Cu8, 0xDB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -9805,7 +9806,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_e_sub_1_text_actor_short_string_advances_correctly() {
-        // [4C, E1, 'A', 'B', 'C', 0] — packet length 3, total advance 6.
+        // [4C, E1, 'A', 'B', 'C', 0] - packet length 3, total advance 6.
         let bytecode = [0x4Cu8, 0xE1, b'A', b'B', b'C', 0x00];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx {
@@ -9821,7 +9822,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_e_sub_1_text_actor_with_escape_sequences() {
-        // [4C, E1, 'A', 0xC1, 0xAB, 'B', 0] — escape pair counts as 2,
+        // [4C, E1, 'A', 0xC1, 0xAB, 'B', 0] - escape pair counts as 2,
         // total packet length = 4, total advance = 7.
         let bytecode = [0x4Cu8, 0xE1, b'A', 0xC1, 0xAB, b'B', 0x00];
         let mut host = TestHost::default();
@@ -9848,7 +9849,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Round 17 — five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // Round 17 - five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
     // -----------------------------------------------------------------
 
     #[test]
@@ -9867,7 +9868,7 @@ mod tests {
     #[test]
     fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes_when_inactive() {
         // Even when the host returns false (no active move), PC still
-        // advances by 2 — the cancel side-effect is conditional but the
+        // advances by 2 - the cancel side-effect is conditional but the
         // dispatcher's PC delta is constant.
         let bytecode = [0x4Cu8, 0xC0];
         let mut host = TestHost::default();
@@ -9889,7 +9890,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes() {
-        // [4C, 0xC5, 0x05, 0x00] — flag idx 5. Bit 5 in the host's bank is
+        // [4C, 0xC5, 0x05, 0x00] - flag idx 5. Bit 5 in the host's bank is
         // unset, so the original "jump-if-zero" path fires; both branches
         // advance PC by 4.
         let bytecode = [0x4Cu8, 0xC5, 0x05, 0x00];
@@ -9922,7 +9923,7 @@ mod tests {
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 4 });
-        // The 0x1234 bit is set in the bank — the dispatcher's load_u16_le
+        // The 0x1234 bit is set in the bank - the dispatcher's load_u16_le
         // must produce 0x1234 (LE), not 0x3412 (BE).
         assert!(*host.n_c_party_flag_bits.get(&0x1234).unwrap());
     }
@@ -10043,7 +10044,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_e_sub_5_add_xp_positive_value() {
-        // [4C, E5, 0xE8, 0x03, 0x00] — 0x0003E8 = 1000.
+        // [4C, E5, 0xE8, 0x03, 0x00] - 0x0003E8 = 1000.
         let bytecode = [0x4Cu8, 0xE5, 0xE8, 0x03, 0x00];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -10144,7 +10145,7 @@ mod tests {
         assert!(host.n_e_sub_b_actor_ids.is_empty());
     }
 
-    // -- Round 18 — 0x4C n8 actor-allocator + nE camera + nD/n5 dialog ---
+    // -- Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog ---
 
     #[test]
     fn op_4c_n_8_sub_1_set_model_anim_advances_pc_by_9() {
@@ -10166,7 +10167,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_8_sub_1_truncated_buffer_returns_unknown() {
-        // Only 8 bytes — sub-1 needs 9 total.
+        // Only 8 bytes - sub-1 needs 9 total.
         let bytecode = [0x4Cu8, 0x81, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -10207,7 +10208,7 @@ mod tests {
     #[test]
     fn op_4c_n_8_sub_6_advances_15_even_when_actor_missing() {
         // The original short-circuits to `return param_2 + 0xF` when the
-        // actor lookup fails — PC still advances by 15.
+        // actor lookup fails - PC still advances by 15.
         let bytecode = [
             0x4Cu8, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0xFF,
@@ -10374,7 +10375,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_e_sub_7_truncated_buffer_returns_unknown() {
-        // 6 bytes — last byte is missing.
+        // 6 bytes - last byte is missing.
         let bytecode = [0x4Cu8, 0xE7, 0x12, 0x34, 0x56, 0xEF];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -10404,7 +10405,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_e_sub_8_camera_zoom_signed_mode_round_trip() {
-        // Mode is i16 — verify negative / sign-bit values flow through.
+        // Mode is i16 - verify negative / sign-bit values flow through.
         let bytecode = [0x4Cu8, 0xE8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -10414,7 +10415,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_e_sub_8_truncated_buffer_returns_unknown() {
-        // 9 bytes — needs 10.
+        // 9 bytes - needs 10.
         let bytecode = [0x4Cu8, 0xE8, 0x40, 0x00, 0x08, 0x00, 0x04, 0x00, 0x00];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
@@ -10441,7 +10442,7 @@ mod tests {
 
     #[test]
     fn op_4c_n_d_sub_0_truncated_buffer_returns_unknown() {
-        let bytecode = [0x4Cu8, 0xD0, 0x34, 0x12, 0x78]; // 5 bytes — needs 6
+        let bytecode = [0x4Cu8, 0xD0, 0x34, 0x12, 0x78]; // 5 bytes - needs 6
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
@@ -10494,7 +10495,7 @@ mod tests {
     fn op_4c_n_e_sub_4_uses_shared_tile_center_helper() {
         // Verifies the round-18 tile_center helper is wired in: 0x10 → 0x840,
         // 0x90 → 0x880, 0x00 → 0. This is the same case the round-17 inline
-        // closure verified — confirm round-18's lift to a shared helper
+        // closure verified - confirm round-18's lift to a shared helper
         // didn't change semantics.
         let bytecode = [0x4Cu8, 0xE4, 0x10, 0x90, 0x00, 0x10, 0x00, 0x00, 0x00];
         let mut host = TestHost::default();

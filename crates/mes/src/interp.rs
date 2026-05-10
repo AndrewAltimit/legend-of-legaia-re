@@ -50,16 +50,16 @@ pub enum MesEvent {
     /// Print one single-byte glyph.
     Glyph(u8),
     /// Print one wide (2-byte) glyph. The pair `(opcode, arg)` matches
-    /// the source bytes — the renderer typically uses the arg as a tile
+    /// the source bytes - the renderer typically uses the arg as a tile
     /// index within the table selected by opcode.
     WideGlyph(u8, u8),
     /// Substitute a name (character / item / magic / spell / quest) into
     /// the glyph stream. Engines route by `kind` to look up the
     /// corresponding name in the right table.
     Substitute { kind: SubstituteKind, arg: u8 },
-    /// `0xCE XX` — apply horizontal spacing without emitting a glyph.
+    /// `0xCE XX` - apply horizontal spacing without emitting a glyph.
     Spacing(u8),
-    /// `0xCF XX` — render `XX` as a single glyph alone (the `0xCF`
+    /// `0xCF XX` - render `XX` as a single glyph alone (the `0xCF`
     /// prefix is just a "skip me" marker for the surrounding logic).
     SkipTwo(u8),
     /// Bytes `0x80..=0x9F`. Most likely page-break / wait-for-input
@@ -67,7 +67,7 @@ pub enum MesEvent {
     /// `(byte & 0x7F) < 0x20`. Exact semantics per byte value are still
     /// unconfirmed, so the byte is surfaced verbatim.
     Control(u8),
-    /// `0x00..=0x1E` — end of message. The interpreter halts here unless
+    /// `0x00..=0x1E` - end of message. The interpreter halts here unless
     /// `run_past_end` is set; the renderer typically tears the dialog
     /// window down on this event.
     EndOfMessage(u8),
@@ -101,14 +101,14 @@ impl<'a> Interpreter<'a> {
             bail!("new_compact requires a compact blob, got {:?}", blob.format);
         }
         let table = blob.offset_table.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("compact blob has no offset table — was it parsed correctly?")
+            anyhow::anyhow!("compact blob has no offset table - was it parsed correctly?")
         })?;
         let entry = table
             .get(message_index)
             .copied()
             .ok_or_else(|| anyhow::anyhow!("message index {message_index} out of range"))?;
         let bytecode_offset = blob.bytecode_offset.ok_or_else(|| {
-            anyhow::anyhow!("compact blob has no bytecode offset — parse failure?")
+            anyhow::anyhow!("compact blob has no bytecode offset - parse failure?")
         })?;
         let pc = bytecode_offset + entry as usize;
         if pc >= buf.len() {
@@ -130,7 +130,7 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    /// Current PC — byte offset of the next token to read.
+    /// Current PC - byte offset of the next token to read.
     pub fn pc(&self) -> usize {
         self.inner.pos()
     }
@@ -266,7 +266,7 @@ pub enum PlayerState {
     WideGlyph(u8, u8),
     PageBreak,
     WaitingForInput,
-    /// Control / spacing / substitution / skip / truncated event — the
+    /// Control / spacing / substitution / skip / truncated event - the
     /// engine routes the side-effect (substitute name into buffer,
     /// apply spacing, etc.). `Control` events from the `0x80..0x9F`
     /// range are surfaced here too if `pause_on_control` is set; those
@@ -357,7 +357,7 @@ pub fn validate_compact(buf: &[u8]) -> Result<Vec<MessageValidation>> {
         // Heuristic: <= 5% Truncated events == well-formed. A Truncated
         // event only occurs at end-of-buffer for an incomplete 2-byte
         // op, so a high count is a strong "this isn't real bytecode"
-        // signal. (Old "Unknown" heuristic doesn't apply — every byte
+        // signal. (Old "Unknown" heuristic doesn't apply - every byte
         // now classifies into a typed Token.)
         let looks_valid = total == 0 || (truncated as f32 / total as f32) <= 0.05;
         out.push(MessageValidation {

@@ -16,7 +16,7 @@ Each descriptor pair is `(type_size, data_offset)` where `data_offset` is byte-r
 
 ## How `FUN_80020224` got reached
 
-`FUN_801D6704` (the town overlay's `MAIN_INIT`) calls `FUN_80020224` at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the format IS exercised by retail gameplay — through a runtime overlay rather than the on-disc `SCUS_942.54` static call graph.
+`FUN_801D6704` (the town overlay's `MAIN_INIT`) calls `FUN_80020224` at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the format IS exercised by retail gameplay - through a runtime overlay rather than the on-disc `SCUS_942.54` static call graph.
 
 ## Strict-scan against the disc
 
@@ -24,4 +24,4 @@ Strictly scanning all 1232 PROT entries against this format finds zero hits. Tha
 
 ## Note on naming
 
-The Rust function is named `parse_player_lzs` for historical reasons — the format was first encountered while investigating `player.lzs` chains. The format itself isn't player-specific.
+The Rust function is named `parse_player_lzs` for historical reasons - the format was first encountered while investigating `player.lzs` chains. The format itself isn't player-specific.

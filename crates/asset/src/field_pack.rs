@@ -1,4 +1,4 @@
-//! Field-pack container — the most common shape under PROT entries that hold
+//! Field-pack container - the most common shape under PROT entries that hold
 //! field/town/dungeon scene data.
 //!
 //! ## Format
@@ -12,14 +12,14 @@
 //!   ...preamble (variable size, content shape currently unknown)...
 //!   [zero padding to 4-byte alignment]
 //!   [u32 LE = MAGIC = 0x01059B84]
-//!   [97 × u32 LE — schema table, identical across all 124 instances]
-//!   [packed TIMs — back-to-back, each TIM begins with 0x10000000 magic]
-//!   [packed TMDs — each preceded by a u32 LE size header]
+//!   [97 × u32 LE - schema table, identical across all 124 instances]
+//!   [packed TIMs - back-to-back, each TIM begins with 0x10000000 magic]
+//!   [packed TMDs - each preceded by a u32 LE size header]
 //! [file end]
 //! ```
 //!
 //! The 97 schema entries are ascending u32 LE values from `0x60` to `0x16651`.
-//! They are the *same offsets in every fieldpack* — i.e. the schema describes
+//! They are the *same offsets in every fieldpack* - i.e. the schema describes
 //! a static abstract sub-record layout, not file-relative offsets. The
 //! preamble bytes that fill those slots vary per-scene; the runtime mapping
 //! between preamble bytes and schema slots is not yet understood, so this
@@ -27,7 +27,7 @@
 //!
 //! ## What this gives us
 //!
-//! - Reliable detection (`detect`) with no false positives — the magic plus
+//! - Reliable detection (`detect`) with no false positives - the magic plus
 //!   the strict ascending-u32 schema is a high-bar signature.
 //! - Boundary information: where the preamble ends, where the TIMs start,
 //!   how many sub-record slots the schema declares, and the implied size of
@@ -39,7 +39,7 @@
 //! ## What this doesn't (yet) do
 //!
 //! - Map preamble bytes to schema slots. The schema offsets cover a 91 KB
-//!   range, but in many fieldpack files the preamble is only ~47 KB —
+//!   range, but in many fieldpack files the preamble is only ~47 KB -
 //!   meaning the offsets cannot be plain file-relative byte offsets. They
 //!   may index into a runtime-reconstructed buffer (preamble decompressed
 //!   into a fixed-shape RAM region), but the reconstruction step has not
@@ -62,7 +62,7 @@ pub enum SlotKind {
     /// Large texture blob, consistent with a TIM page (size `0x2088`).
     /// Five slots: 1, 2, 3, 30, 41.
     TimPage,
-    /// NPC slot record — part of a 21-entry tabular array (size `0x218`).
+    /// NPC slot record - part of a 21-entry tabular array (size `0x218`).
     /// Slots 5–25.
     NpcRecord,
     /// Dialog-trigger or event-region record (size `0x110`).
@@ -71,7 +71,7 @@ pub enum SlotKind {
     CollisionBox,
     /// Compact record (size `0x210`).
     CompactRecord,
-    /// Medium record (size `0x410` or `0x1010` — two count buckets).
+    /// Medium record (size `0x410` or `0x1010` - two count buckets).
     MediumRecord,
     /// Any other single-occurrence record with a known size.
     SingleRecord,
@@ -115,7 +115,7 @@ pub struct FieldPack {
     pub magic_offset: usize,
     /// File offset of the first byte of the 97-entry schema table.
     pub table_offset: usize,
-    /// File offset immediately after the schema table — first byte of the
+    /// File offset immediately after the schema table - first byte of the
     /// packed-TIM region.
     pub assets_start: usize,
     /// Total file size, for convenience when reporting.
@@ -140,7 +140,7 @@ pub struct SchemaSlot {
 
 impl FieldPack {
     /// File-offset range of the preamble (before the magic). Its content
-    /// shape is unknown — see module docs.
+    /// shape is unknown - see module docs.
     pub fn preamble_range(&self) -> (usize, usize) {
         (0, self.magic_offset)
     }
@@ -309,7 +309,7 @@ mod tests {
             };
             buf.extend_from_slice(&v.to_le_bytes());
         }
-        // Trailing data — pretend there's some asset bytes after the table.
+        // Trailing data - pretend there's some asset bytes after the table.
         buf.extend_from_slice(&[0xAAu8; 64]);
         buf
     }

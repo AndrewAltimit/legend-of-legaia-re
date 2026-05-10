@@ -25,7 +25,7 @@
 //! - The retail 4×u32 ability mask at `0x80074358..0x80074368`.
 //!   Engines aggregate that themselves through [`BattleStats::abilities`]
 //!   ORed across every party member.
-//! - The character-record byte layout — `legaia_save::CharacterRecord`
+//! - The character-record byte layout - `legaia_save::CharacterRecord`
 //!   exposes the relevant fields. This module is layout-agnostic.
 
 use legaia_engine_vm::status_effects::StatusKind;
@@ -34,7 +34,7 @@ use legaia_engine_vm::status_effects::StatusKind;
 /// halfwords on the character record (see `docs/subsystems/battle.md`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatRecord {
-    /// Base attack power (weapon-independent — character's "STR").
+    /// Base attack power (weapon-independent - character's "STR").
     pub base_attack: u16,
     /// Base upper-defense factor (UDF).
     pub base_udf: u16,
@@ -95,7 +95,7 @@ impl EquipmentTable {
 /// Status-effect modifiers folded into the resolved stats.
 ///
 /// The retail engine applies a per-status delta to the stat lines in
-/// the same `FUN_80042558` pass — Burned reduces ATK by 1/8, Confused
+/// the same `FUN_80042558` pass - Burned reduces ATK by 1/8, Confused
 /// drops accuracy in half, etc. These values are baked into the
 /// resolver and exposed for engines that want to override them.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -105,11 +105,11 @@ pub struct StatusModifiers {
     /// Multiplier applied to accuracy when the actor is Confused. `0.5`.
     pub confused_acc_mult: f32,
     /// Multiplier applied to evasion when Asleep / Stunned / Petrified.
-    /// `0.0` — these statuses make the actor a sitting duck.
+    /// `0.0` - these statuses make the actor a sitting duck.
     pub immobilised_eva_mult: f32,
     /// Multiplier applied to MP cost when Silenced. The retail engine
     /// blocks magic outright; this is exposed for engines that prefer
-    /// "magic costs more" semantics. Default `f32::INFINITY` — a host
+    /// "magic costs more" semantics. Default `f32::INFINITY` - a host
     /// that wants a hard block reads [`BattleStats::magic_blocked`].
     pub silenced_mp_mult: f32,
 }
@@ -125,7 +125,7 @@ impl Default for StatusModifiers {
     }
 }
 
-/// Resolved per-actor battle stats — the inputs the strike resolver
+/// Resolved per-actor battle stats - the inputs the strike resolver
 /// reads each turn.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BattleStats {
@@ -176,7 +176,7 @@ fn mul_clamp(value: u16, mult: f32) -> u16 {
 
 /// Compute resolved [`BattleStats`] from a base [`StatRecord`], the
 /// equipment catalog, and the set of active status kinds. Pure
-/// function — does not mutate any input.
+/// function - does not mutate any input.
 pub fn compute_battle_stats(
     record: &StatRecord,
     table: &EquipmentTable,

@@ -229,7 +229,7 @@ fn full_menu_loop_field_menu_to_options_to_save_back_to_scene() {
     let mut fm = FieldMenuSession::new();
     fm.money = 5000;
     fm.play_time_seconds = 600;
-    // Confirm row 0 (Items) — would push InventoryUseSession in shell.
+    // Confirm row 0 (Items) - would push InventoryUseSession in shell.
     let _ = fm.tick(FieldMenuInput {
         cross: true,
         ..Default::default()

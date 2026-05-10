@@ -1,4 +1,4 @@
-//! Effect-bundle container — the format used by `data\battle\efect.dat`
+//! Effect-bundle container - the format used by `data\battle\efect.dat`
 //! (PROT 0872) and a sibling sub-section of `etmd.dat` (PROT 0873).
 //!
 //! ## Format
@@ -13,14 +13,14 @@
 //!   [u32 LE = MAGIC = 0x02018B0C]
 //!   [u32 LE = HEADER_A = 0x0000001D]   ; constant across all observed bundles
 //!   [u32 LE = HEADER_B = 0x0000001E]   ; constant across all observed bundles
-//!   [28 × u32 LE — offset table, identical across all observed bundles]
-//!   [asset region — packed Legaia TMD primitive groups + TIM textures]
+//!   [28 × u32 LE - offset table, identical across all observed bundles]
+//!   [asset region - packed Legaia TMD primitive groups + TIM textures]
 //! [file end]
 //! ```
 //!
 //! The 28 offsets are the **same values** in every known bundle (`0x17F4`
-//! through `0x404D`). They are abstract sub-record offsets — not file
-//! offsets — describing a fixed effect-record schema that the runtime fills
+//! through `0x404D`). They are abstract sub-record offsets - not file
+//! offsets - describing a fixed effect-record schema that the runtime fills
 //! in with bundle-specific bytes. This mirrors the field-pack pattern in
 //! [`crate::field_pack`].
 //!
@@ -41,7 +41,7 @@
 //!   table is a single Legaia TMD (magic `0x80000002`) covering many
 //!   primitive groups; the 28 schema offsets index into its primitive
 //!   data. Walking individual effect primitives requires the per-mode
-//!   descriptor table at `DAT_8007326c` — see `legaia_tmd::legaia_prims`.
+//!   descriptor table at `DAT_8007326c` - see `legaia_tmd::legaia_prims`.
 //! - Map each schema slot to a named effect. The runtime correspondence
 //!   (effect ID → slot index) lives in code that hasn't been traced yet.
 
@@ -56,7 +56,7 @@ pub const HEADER_A: u32 = 0x0000_001D;
 
 /// Second header u32. Constant in all observed effect bundles. The
 /// `HEADER_B == HEADER_A + 1` relationship is a property of the format,
-/// not a coincidence — both values are the same across every bundle.
+/// not a coincidence - both values are the same across every bundle.
 pub const HEADER_B: u32 = 0x0000_001E;
 
 /// Number of u32 entries in the offset table.
@@ -92,7 +92,7 @@ pub struct EffectBundle {
     pub magic_offset: usize,
     /// File offset of the first byte of the offset table (= magic + 12).
     pub table_offset: usize,
-    /// File offset immediately after the offset table — first byte of the
+    /// File offset immediately after the offset table - first byte of the
     /// asset region (TMD + TIMs).
     pub assets_start: usize,
     /// Total file size, for convenience when reporting.
@@ -105,7 +105,7 @@ pub struct EffectBundle {
     /// from `offset[i+1] - offset[i]`; the last slot's size is unknown and
     /// reported as `None`.
     pub slots: Vec<SchemaSlot>,
-    /// Detected sub-assets in the asset region — one master TMD plus zero or
+    /// Detected sub-assets in the asset region - one master TMD plus zero or
     /// more sub-effect TMDs and zero or more PSX TIMs. Populated by `detect`.
     pub assets: AssetRegion,
 }
@@ -115,7 +115,7 @@ pub struct EffectBundle {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct AssetRegion {
     /// File offsets of every validated Legaia TMD in the asset region.
-    /// `tmds[0]` is the *master* TMD — always at `assets_start`, always with
+    /// `tmds[0]` is the *master* TMD - always at `assets_start`, always with
     /// (382 verts, 760 normals, 760 prims). The remainder are sub-effect
     /// TMDs of variable size; the format reserves up to 28 slots (HEADER_A
     /// = 1 master + 28 sub = 29) but bundles can fill fewer.
@@ -163,7 +163,7 @@ impl EffectBundle {
 ///
 /// The combination of magic + constant headers + strict-ascending shape +
 /// boundary anchors is specific enough that incidental hits are vanishingly
-/// unlikely — the same approach that makes [`crate::field_pack::detect`]
+/// unlikely - the same approach that makes [`crate::field_pack::detect`]
 /// false-positive-free.
 pub fn detect(buf: &[u8]) -> Option<EffectBundle> {
     let magic_bytes = MAGIC.to_le_bytes();
@@ -420,7 +420,7 @@ mod tests {
         buf.extend_from_slice(&TMD_MAGIC.to_le_bytes());
         buf.extend_from_slice(&0u32.to_le_bytes()); // flags
         buf.extend_from_slice(&1u32.to_le_bytes()); // nobjs
-        // obj[0] — values don't matter for validation except scale
+        // obj[0] - values don't matter for validation except scale
         for _ in 0..6 {
             buf.extend_from_slice(&0u32.to_le_bytes());
         }

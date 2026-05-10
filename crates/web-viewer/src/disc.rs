@@ -1,10 +1,10 @@
-//! Pure-Rust in-memory disc walker. No `std::fs`, no JS bindings — works on
+//! Pure-Rust in-memory disc walker. No `std::fs`, no JS bindings - works on
 //! both the wasm32 and native targets, so it can be unit-tested with a real
 //! disc image when one is available.
 //!
 //! Two formats handled:
 //!   1. Mode2/2352 .bin disc images. ISO9660 walk → returns `PROT.DAT` bytes.
-//!   2. Raw PROT.DAT — TOC parse.
+//!   2. Raw PROT.DAT - TOC parse.
 
 const SECTOR: u32 = 0x800;
 const RAW_SECTOR_SIZE: usize = 2352;
@@ -160,10 +160,10 @@ pub fn extract_cdname_txt(disc: &[u8]) -> Option<String> {
 /// Parse the PROT.DAT TOC and return a vector of entry locations within `buf`.
 /// The header lives at file offset 0x000 or 0x800; layout (matching
 /// `legaia-prot::archive::detect_header`):
-///   header[0..4]   — unused
-///   header[4..8]   — i32 `file_num - 1` (count of entries minus one)
-///   header[8..12]  — i32 `header_sectors` (TOC sector count)
-///   header[12..]   — TOC u32 array
+///   header[0..4]   - unused
+///   header[4..8]   - i32 `file_num - 1` (count of entries minus one)
+///   header[8..12]  - i32 `header_sectors` (TOC sector count)
+///   header[12..]   - TOC u32 array
 pub fn parse_prot_toc(buf: &[u8]) -> Option<Vec<EntryMeta>> {
     let mut header_offset = None;
     for &off in &[0x000usize, 0x800] {

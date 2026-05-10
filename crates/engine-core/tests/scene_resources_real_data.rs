@@ -1,9 +1,9 @@
 //! Real-data check: build [`SceneResources`] from a CDNAME scene's PROT
 //! bytes and confirm the runtime VRAM pre-pass populates the right shape
-//! of data — non-empty VRAM, non-zero parsed-TMD pool, parse-failure
+//! of data - non-empty VRAM, non-zero parsed-TMD pool, parse-failure
 //! count zero or near-zero on every scene the corpus ships.
 //!
-//! Also validates `World::init_scene_animations` — the scene-init ANM
+//! Also validates `World::init_scene_animations` - the scene-init ANM
 //! binding that wires actor slot K → TMD slot K and seeds the AnimPlayer
 //! from ANM record 0, matching the retail registration order in
 //! `FUN_8001E890` (`see ghidra/scripts/funcs/8001e928.txt`).
@@ -38,7 +38,7 @@ fn scene_resources_populate_vram_for_first_town() {
     }
 
     let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
-    // `town01` is the first scripted town in the corpus — every captured
+    // `town01` is the first scripted town in the corpus - every captured
     // playthrough hits it, and it has the full canonical 6-asset bundle.
     let scene = match Scene::load(&index, "town01") {
         Ok(s) => s,
@@ -56,7 +56,7 @@ fn scene_resources_populate_vram_for_first_town() {
         res.tim_parse_failures, 0,
         "tim_scan should round-trip cleanly on retail data"
     );
-    // VRAM should hold non-zero pixels somewhere — pick the highest fb_y a
+    // VRAM should hold non-zero pixels somewhere - pick the highest fb_y a
     // dialog tile-page would land at and assert the bottom-half rows
     // contain at least one non-zero word.
     let mut populated_rows = 0usize;

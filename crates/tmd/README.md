@@ -4,7 +4,7 @@ PSX TMD (3D mesh) parser, with the Legaia-specific primitive walker and
 OBJ exporter.
 
 TMD is Sony's PlayStation 3D model format (PsyQ `libgte` / `libgs`).
-Legaia ships a custom variant — distinct enough that a stock TMD parser
+Legaia ships a custom variant - distinct enough that a stock TMD parser
 won't read it.
 
 ## Header layout (12 bytes)
@@ -30,7 +30,7 @@ i32 scale     // signed log2 scale; always 0x00808080 in Legaia
 
 When `FLIST_BIT` is set, all `*_top` values are byte offsets from the end
 of the header (i.e. from the start of the object table). The runtime
-patches them to absolute RAM addresses via `FUN_800268dc` — **static
+patches them to absolute RAM addresses via `FUN_800268dc` - **static
 parsers must NOT do that patch**.
 
 Vertices and normals are `SVECTOR { i16 x, y, z, pad }` = 8 bytes each.
@@ -60,9 +60,9 @@ exported).
 
 Both route through `FUN_80026b4c`. The wrapping differs:
 
-- `TMD` (case 2): payload is a *pack* — `[count, off0, off1, …]` followed
+- `TMD` (case 2): payload is a *pack* - `[count, off0, off1, …]` followed
   by `count` independent TMD blobs. Use `legaia_asset::pack` to walk.
-- `TMD2` (case 9): payload is a single bare TMD — pass it directly to
+- `TMD2` (case 9): payload is a single bare TMD - pass it directly to
   `parse`. **No pack header.**
 
 ## CLI
@@ -78,7 +78,7 @@ tmd validate-prims <input>           # vertex-index-range sanity check
 
 ## See also
 
-- [`docs/formats/tmd.md`](../../docs/formats/tmd.md) — full byte-level spec
+- [`docs/formats/tmd.md`](../../docs/formats/tmd.md) - full byte-level spec
   with descriptor-table and group-header derivations.
-- [`docs/subsystems/renderer.md`](../../docs/subsystems/renderer.md) —
+- [`docs/subsystems/renderer.md`](../../docs/subsystems/renderer.md) -
   how `FUN_8002735c` maps to GTE ops.
