@@ -357,6 +357,70 @@ impl CutsceneMap {
     pub fn is_empty(&self) -> bool {
         self.forward.is_empty()
     }
+
+    /// Iterate over the explicit `(scene_label, str_path)` entries the
+    /// caller has installed (excludes heuristic fallbacks). Order is
+    /// unspecified.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.forward.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+
+    /// Parse a [`CutsceneMap`] from a TOML document. The document holds a
+    /// top-level `[scenes]` table that maps CDNAME labels to STR-file
+    /// paths:
+    ///
+    /// ```toml
+    /// [scenes]
+    /// opdeene = "MOV/MV1.STR"
+    /// opstati = "MOV/MV2.STR"
+    /// edteien = "MOV/MV6.STR"
+    /// ```
+    ///
+    /// Unknown top-level keys are ignored so engines can layer engine-
+    /// specific config alongside.
+    pub fn from_toml_str(toml_str: &str) -> Result<Self> {
+        #[derive(serde::Deserialize)]
+        struct Doc {
+            scenes: Option<HashMap<String, String>>,
+        }
+        let doc: Doc =
+            toml::from_str(toml_str).with_context(|| "parse cutscene-map TOML document")?;
+        let mut map = Self::default();
+        if let Some(table) = doc.scenes {
+            for (k, v) in table {
+                map.forward.insert(k, v);
+            }
+        }
+        Ok(map)
+    }
+
+    /// Read a TOML config from disk. Wraps [`Self::from_toml_str`].
+    pub fn from_toml_path(path: &Path) -> Result<Self> {
+        let s = std::fs::read_to_string(path)
+            .with_context(|| format!("read cutscene-map at {}", path.display()))?;
+        Self::from_toml_str(&s).with_context(|| format!("parse {}", path.display()))
+    }
+
+    /// Serialise the map back to TOML form. Round-trips with
+    /// [`Self::from_toml_str`].
+    pub fn to_toml_string(&self) -> String {
+        let mut out = String::from("[scenes]\n");
+        let mut keys: Vec<&String> = self.forward.keys().collect();
+        keys.sort();
+        for k in keys {
+            let v = &self.forward[k];
+            // TOML basic-string escaping: paths use `\\` separators which
+            // need explicit escaping. Use single-quoted literal strings to
+            // sidestep that entirely.
+            let safe_v = if v.contains('\'') {
+                format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""))
+            } else {
+                format!("'{}'", v)
+            };
+            out.push_str(&format!("{} = {}\n", k, safe_v));
+        }
+        out
+    }
 }
 
 /// A scene = the per-CDNAME-block bundle of PROT entries that the runtime
@@ -981,6 +1045,93 @@ mod tests {
         let m = CutsceneMap::from_heuristic();
         assert_eq!(m.resolve("town01"), None);
         assert_eq!(m.resolve("xxx"), None);
+    }
+
+    #[test]
+    fn cutscene_map_from_toml_str_parses_scenes_table() {
+        let doc = r#"
+[scenes]
+opdeene = "MOV/MV1.STR"
+opstati = 'MOV/MV2.STR'
+edteien = "MOV/MV6.STR"
+"#;
+        let m = CutsceneMap::from_toml_str(doc).expect("parse");
+        assert_eq!(m.len(), 3);
+        assert_eq!(m.resolve("opdeene"), Some("MOV/MV1.STR".into()));
+        assert_eq!(m.resolve("opstati"), Some("MOV/MV2.STR".into()));
+        assert_eq!(m.resolve("edteien"), Some("MOV/MV6.STR".into()));
+        // Unmapped scenes still fall through to the heuristic.
+        assert_eq!(m.resolve("opmap01"), Some("MOV/MV5.STR".into()));
+    }
+
+    #[test]
+    fn cutscene_map_from_toml_str_empty_doc_yields_empty_map() {
+        let m = CutsceneMap::from_toml_str("").expect("parse");
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn cutscene_map_from_toml_str_ignores_unknown_top_level_keys() {
+        let doc = r#"
+some_other_setting = 42
+[other_table]
+foo = "bar"
+[scenes]
+opdeene = "MOV/MV1.STR"
+"#;
+        let m = CutsceneMap::from_toml_str(doc).expect("parse");
+        assert_eq!(m.len(), 1);
+        assert_eq!(m.resolve("opdeene"), Some("MOV/MV1.STR".into()));
+    }
+
+    #[test]
+    fn cutscene_map_to_toml_string_round_trips() {
+        let mut m = CutsceneMap::new();
+        m.insert("opdeene", "MOV/MV1.STR");
+        m.insert("edteien", "MOV/MV6.STR");
+        let toml_doc = m.to_toml_string();
+        let parsed = CutsceneMap::from_toml_str(&toml_doc).expect("re-parse");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed.resolve("opdeene"), Some("MOV/MV1.STR".into()));
+        assert_eq!(parsed.resolve("edteien"), Some("MOV/MV6.STR".into()));
+    }
+
+    #[test]
+    fn cutscene_map_to_toml_string_handles_backslash_paths() {
+        let mut m = CutsceneMap::new();
+        // Some engines load using Windows-style separators; the TOML
+        // writer must escape these so the round-trip is lossless.
+        m.insert("opdeene", "MOV\\MV1.STR");
+        let toml_doc = m.to_toml_string();
+        let parsed = CutsceneMap::from_toml_str(&toml_doc).expect("re-parse");
+        assert_eq!(parsed.resolve("opdeene"), Some("MOV\\MV1.STR".into()));
+    }
+
+    #[test]
+    fn cutscene_map_entries_iterates_explicit_only() {
+        let mut m = CutsceneMap::new();
+        m.insert("opdeene", "MOV/MV1.STR");
+        m.insert("edteien", "MOV/MV6.STR");
+        let mut entries: Vec<(String, String)> =
+            m.entries().map(|(a, b)| (a.into(), b.into())).collect();
+        entries.sort();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "edteien");
+        assert_eq!(entries[1].0, "opdeene");
+    }
+
+    #[test]
+    fn cutscene_map_from_toml_path_reads_file() {
+        let dir = std::env::temp_dir();
+        let p = dir.join("legaia-re-cutscene-test.toml");
+        std::fs::write(
+            &p,
+            "[scenes]\nopdeene = \"MOV/MV1.STR\"\nedteien = \"MOV/MV6.STR\"\n",
+        )
+        .expect("write tmp");
+        let m = CutsceneMap::from_toml_path(&p).expect("read");
+        assert_eq!(m.len(), 2);
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]

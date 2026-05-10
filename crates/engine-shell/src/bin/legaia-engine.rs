@@ -138,6 +138,17 @@ enum Cmd {
         /// ticking begins. Use for `op*`/`ed*` scenes paired with FMV files.
         #[arg(long)]
         str_file: Option<PathBuf>,
+        /// Optional TOML mapping CDNAME labels to MV*.STR paths. When set,
+        /// the engine consults this map first and falls through to the
+        /// hard-coded heuristic for unmapped labels. Format:
+        ///
+        /// ```toml
+        /// [scenes]
+        /// opdeene = "MOV/MV1.STR"
+        /// edteien = "MOV/MV6.STR"
+        /// ```
+        #[arg(long)]
+        cutscene_map: Option<PathBuf>,
     },
     /// Open a window, boot a scene, and run the engine with rendering.
     /// Accepts keyboard input (arrows = D-pad, Z = Cross, Esc = quit).
@@ -178,6 +189,9 @@ enum Cmd {
         /// Save directory used by `--boot-ui` for the save-select pass.
         #[arg(long, default_value = "saves")]
         save_dir: PathBuf,
+        /// Optional TOML CDNAME→STR map; same format as `play --cutscene-map`.
+        #[arg(long)]
+        cutscene_map: Option<PathBuf>,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -360,6 +374,14 @@ enum ConfigCmd {
         #[arg(long, default_value = "legaia-input.toml")]
         config_file: PathBuf,
     },
+    /// Write the heuristic CDNAME→MV cutscene map to a TOML file.
+    /// Useful as a starting point for engines that want to override one
+    /// or two entries while keeping the rest of the heuristic intact.
+    DumpCutsceneMap {
+        /// Output path (use `-` for stdout).
+        #[arg(long, default_value = "legaia-cutscene-map.toml")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -383,6 +405,7 @@ fn main() -> Result<()> {
             no_audio,
             frame_ms,
             str_file,
+            cutscene_map,
         } => cmd_play(
             &scene,
             &extracted_root,
@@ -391,6 +414,7 @@ fn main() -> Result<()> {
             !no_audio,
             frame_ms,
             str_file.as_deref(),
+            cutscene_map.as_deref(),
         ),
         Cmd::PlayWindow {
             scene,
@@ -401,6 +425,7 @@ fn main() -> Result<()> {
             str_file,
             boot_ui,
             save_dir,
+            cutscene_map,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -410,6 +435,7 @@ fn main() -> Result<()> {
             str_file.as_deref(),
             boot_ui,
             &save_dir,
+            cutscene_map.as_deref(),
         ),
         Cmd::Save {
             extracted_root,
@@ -505,6 +531,7 @@ fn cmd_info(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_play(
     scene: &str,
     extracted_root: &std::path::Path,
@@ -513,14 +540,30 @@ fn cmd_play(
     enable_audio: bool,
     frame_ms: u64,
     str_file: Option<&Path>,
+    cutscene_map_path: Option<&Path>,
 ) -> Result<()> {
+    // If the user supplied a `--cutscene-map` TOML doc, install it as the
+    // explicit override layer; otherwise fall back to the heuristic.
+    let cutscene_map = if let Some(p) = cutscene_map_path {
+        legaia_engine_core::scene::CutsceneMap::from_toml_path(p)
+            .with_context(|| format!("load cutscene map {}", p.display()))?
+    } else {
+        legaia_engine_core::scene::CutsceneMap::default()
+    };
+    if cutscene_map_path.is_some() {
+        eprintln!(
+            "info: cutscene-map loaded with {} explicit entry/entries",
+            cutscene_map.len()
+        );
+    }
     // Auto-resolve a `--scene op*` / `--scene edteien` request to its
-    // paired FMV via `legaia_engine_core::scene::cutscene_str_for` when the
-    // user didn't explicitly pass `--str-file` and the extracted root
-    // has the file on disk.
+    // paired FMV via the cutscene map (which falls through to the
+    // hard-coded heuristic) when the user didn't explicitly pass
+    // `--str-file` and the extracted root has the file on disk.
     let auto_str = match (str_file, disc) {
         (Some(_), _) => None,
-        (None, None) => legaia_engine_core::scene::cutscene_str_for(scene)
+        (None, None) => cutscene_map
+            .resolve(scene)
             .map(|rel| extracted_root.join(rel))
             .filter(|p| p.exists()),
         // Disc-mode resolution would need an ISO9660 read; punt.
@@ -814,6 +857,21 @@ fn cmd_config(cmd: ConfigCmd) -> Result<()> {
             mapping.bindings.insert(key.clone(), btn.clone());
             mapping.save(&config_file)?;
             println!("binding saved: {key} → {btn} ({})", config_file.display());
+        }
+        ConfigCmd::DumpCutsceneMap { out } => {
+            let map = legaia_engine_core::scene::CutsceneMap::from_heuristic();
+            let toml_doc = map.to_toml_string();
+            if out.as_os_str() == "-" {
+                print!("{toml_doc}");
+            } else {
+                std::fs::write(&out, &toml_doc)
+                    .with_context(|| format!("write {}", out.display()))?;
+                println!(
+                    "wrote {} cutscene-map entry/entries → {}",
+                    map.len(),
+                    out.display()
+                );
+            }
         }
     }
     Ok(())
@@ -1461,24 +1519,317 @@ impl PlayWindowApp {
                 };
                 legaia_engine_render::spell_menu_draws_for(&self.font, args, (32, 32))
             }
-            // Items / Equip / Arts have no shipped *_draws_for helpers
-            // yet - render a placeholder banner so the player can see the
-            // session is open. Engines wishing to ship dedicated overlays
-            // can extend this match.
-            FieldMenuSubsession::Items(_) => sub_placeholder_banner(&self.font, "ITEMS"),
-            FieldMenuSubsession::Equip { .. } => sub_placeholder_banner(&self.font, "EQUIP"),
-            FieldMenuSubsession::Arts(_) => sub_placeholder_banner(&self.font, "ARTS"),
+            FieldMenuSubsession::Items(s) => self.items_session_draws(s),
+            FieldMenuSubsession::Equip { session, char_slot } => {
+                self.equip_session_draws(session, *char_slot)
+            }
+            FieldMenuSubsession::Arts(s) => self.arts_session_draws(s),
         }
     }
-}
 
-/// Render a one-line banner for sub-sessions that don't yet have a
-/// dedicated `*_draws_for` helper. Used by the field-menu sub-session
-/// dispatcher so the player can see "ITEMS / EQUIP / ARTS" while they
-/// browse - pressing Circle returns to the field menu.
-fn sub_placeholder_banner(font: &Font, title: &str) -> Vec<TextDraw> {
-    let glyphs = font.layout_ascii(&format!("{title}  (Circle: Back)"));
-    legaia_engine_render::text_draws_for(&glyphs, (96, 80), [1.0, 0.85, 0.3, 1.0])
+    /// Build draws for the inventory item-use overlay. Resolves item
+    /// names through `ItemCatalog`, party / monster targets through the
+    /// session's `targets` field. Drives both browsing and target-select
+    /// phases via `inventory_use_draws_for`.
+    fn items_session_draws(
+        &self,
+        s: &legaia_engine_core::inventory_use::InventoryUseSession,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_core::inventory_use::InventoryUseState;
+        // Each visible item row needs its name + count + admissibility.
+        // The session's `filtered_items` already lists indices into
+        // `items` that pass the context filter; we render every owned
+        // item but dim the ones outside the filter.
+        let filter_set: std::collections::HashSet<usize> =
+            s.filtered_items.iter().copied().collect();
+        // Count duplicate item-ids so the overlay shows one row per
+        // unique id rather than one row per stack slot.
+        let mut counts: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
+        for id in &s.items {
+            *counts.entry(*id).or_insert(0) =
+                counts.get(id).copied().unwrap_or(0).saturating_add(1);
+        }
+        // Stable order from first-seen.
+        let mut seen: std::collections::HashSet<u8> = std::collections::HashSet::new();
+        let mut row_data: Vec<(String, u8, bool)> = Vec::new();
+        for (i, id) in s.items.iter().enumerate() {
+            if !seen.insert(*id) {
+                continue;
+            }
+            let entry = s.catalog.get(*id);
+            let name = entry
+                .map(|e| e.name.to_string())
+                .unwrap_or_else(|| format!("Item {id:02X}"));
+            let count = counts.get(id).copied().unwrap_or(1);
+            let admissible = filter_set.contains(&i);
+            row_data.push((name, count, admissible));
+        }
+        let item_rows: Vec<legaia_engine_render::InventoryItemRow<'_>> = row_data
+            .iter()
+            .map(|(n, c, a)| legaia_engine_render::InventoryItemRow {
+                name: n,
+                count: *c,
+                admissible: *a,
+            })
+            .collect();
+        let target_rows: Vec<legaia_engine_render::InventoryTargetRow<'_>> = s
+            .targets
+            .iter()
+            .map(|t| legaia_engine_render::InventoryTargetRow {
+                name: &t.name,
+                hp: t.hp,
+                hp_max: t.hp_max,
+                mp: t.mp,
+                mp_max: t.mp_max,
+                alive: t.alive,
+            })
+            .collect();
+        let (phase, cursor) = match s.state {
+            InventoryUseState::Browsing { cursor } => (0u8, cursor as u8),
+            InventoryUseState::TargetSelect { cursor, .. } => (1u8, cursor as u8),
+            _ => (0u8, 0),
+        };
+        let selected_item_name = s.current_item().map(|e| e.name);
+        let in_battle = matches!(
+            s.context,
+            legaia_engine_core::inventory_use::InventoryContext::Battle
+        );
+        let args = legaia_engine_render::InventoryUseDrawArgs {
+            items: &item_rows,
+            targets: &target_rows,
+            in_battle,
+            cursor,
+            phase,
+            selected_item_name,
+        };
+        legaia_engine_render::inventory_use_draws_for(&self.font, args, (16, 32))
+    }
+
+    /// Build draws for the equipment overlay. Resolves slot labels
+    /// through `EquipSlot::label`, candidate names from the engine's
+    /// equipment catalog, and per-candidate stat deltas by diffing the
+    /// active modifier against the slot's current occupant.
+    fn equip_session_draws(
+        &self,
+        session: &legaia_engine_core::equip_session::EquipSession,
+        char_slot: u8,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_core::equip_session::EquipState;
+        use legaia_engine_core::equipment::EquipSlot;
+
+        // Display name comes from the world's roster snapshot; fall back
+        // to "Slot N" if the world doesn't have a record for the slot.
+        let names = legaia_engine_core::field_menu_dispatch::roster_names(&self.session.host.world);
+        let character_name = names
+            .get(char_slot as usize)
+            .cloned()
+            .unwrap_or_else(|| format!("Slot {}", char_slot + 1));
+
+        let record = session.record();
+        let mut slot_label_buf: Vec<String> = Vec::with_capacity(8);
+        for i in 0..8u8 {
+            let label = EquipSlot::from_index(i)
+                .map(|s| s.label().to_string())
+                .unwrap_or_else(|| format!("Slot {i}"));
+            slot_label_buf.push(label);
+        }
+        let mut slot_item_buf: Vec<String> = Vec::with_capacity(8);
+        for &id in record.equip.iter() {
+            slot_item_buf.push(if id == 0 {
+                "(empty)".to_string()
+            } else {
+                format!("Item {id:02X}")
+            });
+        }
+        let slot_rows: Vec<legaia_engine_render::EquipSlotRow<'_>> = (0..8usize)
+            .map(|i| legaia_engine_render::EquipSlotRow {
+                label: &slot_label_buf[i],
+                current_name: &slot_item_buf[i],
+            })
+            .collect();
+
+        let (phase, cursor, active_slot, confirm_label_owned) = match session.state() {
+            EquipState::SlotPicker { cursor } => (
+                legaia_engine_render::EquipDrawPhase::SlotPicker,
+                cursor as u16,
+                cursor,
+                None,
+            ),
+            EquipState::ItemPicker { slot, cursor } => (
+                legaia_engine_render::EquipDrawPhase::ItemPicker,
+                cursor,
+                slot,
+                None,
+            ),
+            EquipState::Confirm {
+                slot,
+                item_id,
+                cursor,
+            } => {
+                let label = format!("Equip Item {item_id:02X}?");
+                (
+                    legaia_engine_render::EquipDrawPhase::Confirm,
+                    cursor as u16,
+                    slot,
+                    Some(label),
+                )
+            }
+            EquipState::Done(_) => (legaia_engine_render::EquipDrawPhase::SlotPicker, 0, 0, None),
+        };
+
+        // Candidates only matter when we're past the slot picker.
+        let (candidate_names, candidate_meta): (Vec<String>, Vec<(u8, i16, i16)>) =
+            if phase == legaia_engine_render::EquipDrawPhase::SlotPicker {
+                (Vec::new(), Vec::new())
+            } else {
+                let items = session.items_for_slot(active_slot);
+                let current_id = record.equip[active_slot as usize];
+                let current_mod = session
+                    .equipment()
+                    .get(current_id)
+                    .copied()
+                    .unwrap_or_default();
+                let names: Vec<String> = items
+                    .iter()
+                    .map(|it| format!("Item {:02X}", it.id))
+                    .collect();
+                let meta: Vec<(u8, i16, i16)> = items
+                    .iter()
+                    .map(|it| {
+                        let cand_mod = session.equipment().get(it.id).copied().unwrap_or_default();
+                        let count = session.inventory().get(&it.id).copied().unwrap_or(0);
+                        (
+                            count,
+                            cand_mod.atk - current_mod.atk,
+                            cand_mod.udf - current_mod.udf,
+                        )
+                    })
+                    .collect();
+                (names, meta)
+            };
+        let candidate_rows: Vec<legaia_engine_render::EquipCandidateRow<'_>> = candidate_meta
+            .iter()
+            .enumerate()
+            .map(
+                |(i, (count, da, du))| legaia_engine_render::EquipCandidateRow {
+                    name: &candidate_names[i],
+                    count: *count,
+                    atk_delta: *da,
+                    udf_delta: *du,
+                },
+            )
+            .collect();
+
+        let args = legaia_engine_render::EquipDrawArgs {
+            character_name: &character_name,
+            slots: &slot_rows,
+            candidates: &candidate_rows,
+            phase,
+            cursor,
+            active_slot,
+            confirm_label: confirm_label_owned.as_deref(),
+        };
+        legaia_engine_render::equipment_session_draws_for(&self.font, args, (16, 32))
+    }
+
+    /// Build draws for the Tactical Arts editor overlay. Pulls the
+    /// saved-chain library snapshot the editor took at construction; the
+    /// editor's `library_view` is the authoritative source until the
+    /// engine calls `apply_outcome`.
+    fn arts_session_draws(
+        &self,
+        s: &legaia_engine_core::tactical_arts_editor::ChainEditor,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_core::tactical_arts_editor::{ChainLibrary, EditorPhase};
+        let char_slot = s.char_slot();
+        let names = legaia_engine_core::field_menu_dispatch::roster_names(&self.session.host.world);
+        let character_name = names
+            .get(char_slot as usize)
+            .cloned()
+            .unwrap_or_else(|| format!("Slot {}", char_slot + 1));
+
+        let saved = s.library_view();
+        let pretty_buf: Vec<String> = saved.iter().map(|c| c.pretty_sequence()).collect();
+        let saved_rows: Vec<legaia_engine_render::ArtsChainRow<'_>> = saved
+            .iter()
+            .enumerate()
+            .map(|(i, c)| legaia_engine_render::ArtsChainRow {
+                name: &c.name,
+                pretty_sequence: &pretty_buf[i],
+            })
+            .collect();
+
+        let (phase_tag, browse_cursor, editing_pretty_owned, editing_len, naming_name_owned) =
+            match s.phase() {
+                EditorPhase::Browsing { cursor } => (
+                    legaia_engine_render::ArtsEditorPhase::Browsing,
+                    *cursor,
+                    String::new(),
+                    0usize,
+                    String::new(),
+                ),
+                EditorPhase::Editing { working } => {
+                    let pretty = working
+                        .iter()
+                        .map(|c| match c {
+                            legaia_art::queue::Command::Left => "L",
+                            legaia_art::queue::Command::Right => "R",
+                            legaia_art::queue::Command::Up => "U",
+                            legaia_art::queue::Command::Down => "D",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    (
+                        legaia_engine_render::ArtsEditorPhase::Editing,
+                        0u8,
+                        pretty,
+                        working.len(),
+                        String::new(),
+                    )
+                }
+                EditorPhase::Naming { working, name } => {
+                    let pretty = working
+                        .iter()
+                        .map(|c| match c {
+                            legaia_art::queue::Command::Left => "L",
+                            legaia_art::queue::Command::Right => "R",
+                            legaia_art::queue::Command::Up => "U",
+                            legaia_art::queue::Command::Down => "D",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    (
+                        legaia_engine_render::ArtsEditorPhase::Naming,
+                        0u8,
+                        pretty,
+                        working.len(),
+                        name.clone(),
+                    )
+                }
+                EditorPhase::Done(_) => (
+                    legaia_engine_render::ArtsEditorPhase::Browsing,
+                    0u8,
+                    String::new(),
+                    0usize,
+                    String::new(),
+                ),
+            };
+
+        let can_add_new = saved.len() < ChainLibrary::MAX_SLOTS;
+        let args = legaia_engine_render::ArtsEditorDrawArgs {
+            character_name: &character_name,
+            phase: phase_tag,
+            saved: &saved_rows,
+            browse_cursor,
+            editing_pretty: &editing_pretty_owned,
+            editing_len,
+            min_len: ChainLibrary::MIN_LEN,
+            max_len: ChainLibrary::MAX_LEN,
+            naming_name: &naming_name_owned,
+            can_add_new,
+        };
+        legaia_engine_render::tactical_arts_editor_draws_for(&self.font, args, (16, 32))
+    }
 }
 
 impl PlayWindowApp {
@@ -1984,13 +2335,28 @@ fn cmd_play_window(
     str_file: Option<&Path>,
     boot_ui: bool,
     save_dir: &Path,
+    cutscene_map_path: Option<&Path>,
 ) -> Result<()> {
+    // Optional cutscene-map override layered on top of the heuristic.
+    let cutscene_map = if let Some(p) = cutscene_map_path {
+        legaia_engine_core::scene::CutsceneMap::from_toml_path(p)
+            .with_context(|| format!("load cutscene map {}", p.display()))?
+    } else {
+        legaia_engine_core::scene::CutsceneMap::default()
+    };
+    if cutscene_map_path.is_some() {
+        eprintln!(
+            "info: cutscene-map loaded with {} explicit entry/entries",
+            cutscene_map.len()
+        );
+    }
     // Auto-resolve op*/ed* cutscene scenes to their MV*.STR file when
     // the user didn't pass --str-file but the extracted root has the
     // file on disk. Mirrors the same convenience path in cmd_play.
     let auto_str = match (str_file, disc) {
         (Some(_), _) => None,
-        (None, None) => legaia_engine_core::scene::cutscene_str_for(scene)
+        (None, None) => cutscene_map
+            .resolve(scene)
             .map(|rel| extracted_root.join(rel))
             .filter(|p| p.exists()),
         (None, Some(_)) => None,

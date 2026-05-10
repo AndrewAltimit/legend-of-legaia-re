@@ -134,6 +134,7 @@ impl FieldMenuSubsession {
                 let _ = s.tick(SpellMenuInput::from_pad_edge(pressed));
             }
             Self::Arts(s) => {
+                let square = pressed & PadButton::Square.mask() != 0;
                 let _ = s.tick(EditInput {
                     up: pressed & PadButton::Up.mask() != 0,
                     down: pressed & PadButton::Down.mask() != 0,
@@ -142,8 +143,11 @@ impl FieldMenuSubsession {
                     cross: pressed & PadButton::Cross.mask() != 0,
                     circle: pressed & PadButton::Circle.mask() != 0,
                     triangle: pressed & PadButton::Triangle.mask() != 0,
-                    square: pressed & PadButton::Square.mask() != 0,
-                    name_next: false,
+                    square,
+                    // Square doubles as "cycle name" while in the naming
+                    // phase; the editor's tick path ignores name_next
+                    // outside that phase.
+                    name_next: square,
                 });
             }
             Self::Status(s) => {
@@ -353,7 +357,7 @@ fn default_element_views() -> Vec<ElementRankView> {
 
 /// Engine-friendly placeholder names. Engines with character-name data
 /// can override by building their own [`StatusSnapshot`] vector.
-fn roster_names(world: &World) -> Vec<String> {
+pub fn roster_names(world: &World) -> Vec<String> {
     let canonical = ["Vahn", "Noa", "Gala"];
     world
         .roster
