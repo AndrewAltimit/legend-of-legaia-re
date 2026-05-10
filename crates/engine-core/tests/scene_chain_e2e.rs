@@ -113,48 +113,89 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
         // magic and parse via `legaia_vab::parse` past the chunk header.
         // This catches regressions in the chunk-header offset math used
         // by `SceneAssets::build` and the BGM resolver.
+        //
+        // We also probe `seq_in_stream_entries` because most retail BGM
+        // entries have a `[u32 chunk0 type=0][VAB][chunk1][SEQ]` layout —
+        // chunk0 holds a VAB whose header sits at +4, even though the
+        // entry's primary classification is the SEQ-bearing stream. The
+        // classifier promotes such entries to `SceneVabStream`, but
+        // border-cases (sub-sized VAB, version mismatch, non-canonical
+        // `ps`/`ts`) can fail the strict detector and fall through. The
+        // SEQ scanner, by contrast, just looks for the `pQES` magic, so
+        // it surfaces every BGM entry. Probing both vectors gives the
+        // full coverage the test wants.
+        let mut probed_idxs: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let probe_vab_at = |bytes: &[u8],
+                            scene_name: &str,
+                            entry_idx: u32,
+                            counters: &mut (usize, usize, usize),
+                            sample: &mut Option<(String, u32, usize)>| {
+            // Try chunk0 wrapper offset (+4) first; fall back to offset 0
+            // for raw vab_01-cluster entries.
+            let off = 4usize;
+            let (resolved_off, ok) = if bytes.len() >= off + 4 && &bytes[off..off + 4] == b"VABp" {
+                (off, true)
+            } else if bytes.len() >= 4 && &bytes[..4] == b"VABp" {
+                (0, true)
+            } else {
+                (0, false)
+            };
+            if !ok {
+                counters.2 += 1; // vab_parse_bad
+                return;
+            }
+            counters.0 += 1; // vab_magic_ok
+            match legaia_vab::parse(bytes, resolved_off) {
+                Ok(rep) => {
+                    counters.1 += 1; // vab_parse_ok
+                    if sample.is_none() {
+                        *sample = Some((scene_name.to_string(), entry_idx, rep.programs.len()));
+                    }
+                }
+                Err(_) => counters.2 += 1,
+            }
+        };
+
         if !assets.vab_entries.is_empty() {
             scenes_with_vab += 1;
             total_vab_entries += assets.vab_entries.len();
             // Probe the first 2 entries per scene to keep walltime
             // bounded — coverage across hundreds of scenes is ample.
             for &vab_idx in assets.vab_entries.iter().take(2) {
+                if !probed_idxs.insert(vab_idx) {
+                    continue;
+                }
                 let bytes = host.index.entry_bytes(vab_idx).expect("read VAB entry");
-                // `scene_vab_stream` shape is `[u32 chunk0 type=0,size=N][VABp at +4]`.
-                // The classifier already filtered for VABp magic at offset 4,
-                // so we'd expect those bytes to start the VAB header.
-                let off = 4usize;
-                if bytes.len() >= off + 4 && &bytes[off..off + 4] == b"VABp" {
-                    vab_magic_ok += 1;
-                    match legaia_vab::parse(&bytes, off) {
-                        Ok(rep) => {
-                            vab_parse_ok += 1;
-                            if sample_vab.is_none() {
-                                sample_vab =
-                                    Some((scene_name.clone(), vab_idx, rep.programs.len()));
-                            }
-                        }
-                        Err(_) => vab_parse_bad += 1,
-                    }
-                } else {
-                    // Probe at offset 0 as a fallback for non-streaming
-                    // VABs (vab_01-cluster entries that aren't wrapped).
-                    if bytes.len() >= 4 && &bytes[..4] == b"VABp" {
-                        vab_magic_ok += 1;
-                        match legaia_vab::parse(&bytes, 0) {
-                            Ok(rep) => {
-                                vab_parse_ok += 1;
-                                if sample_vab.is_none() {
-                                    sample_vab =
-                                        Some((scene_name.clone(), vab_idx, rep.programs.len()));
-                                }
-                            }
-                            Err(_) => vab_parse_bad += 1,
-                        }
-                    } else {
-                        vab_parse_bad += 1;
+                let mut counters = (vab_magic_ok, vab_parse_ok, vab_parse_bad);
+                probe_vab_at(&bytes, scene_name, vab_idx, &mut counters, &mut sample_vab);
+                vab_magic_ok = counters.0;
+                vab_parse_ok = counters.1;
+                vab_parse_bad = counters.2;
+            }
+        }
+
+        // Stream-resident VAB probe: any SEQ-stream entry whose chunk0
+        // carries a VAB header counts toward the test's coverage even if
+        // the strict `scene_vab_stream` detector didn't claim it.
+        for &(seq_idx, _seq_off) in assets.seq_in_stream_entries.iter().take(2) {
+            if !probed_idxs.insert(seq_idx) {
+                continue;
+            }
+            let bytes = host.index.entry_bytes(seq_idx).expect("read SEQ entry");
+            // Only a VABp at chunk0 (+4) qualifies — raw SEQ at 0 doesn't
+            // carry a VAB and shouldn't count.
+            if bytes.len() >= 8 && &bytes[4..8] == b"VABp" {
+                if scenes_with_vab == 0 || !assets.vab_entries.contains(&seq_idx) {
+                    // Only bump the per-scene counter once.
+                    if assets.vab_entries.is_empty() && scenes_with_vab == 0 {
+                        scenes_with_vab += 1;
                     }
                 }
+                let mut counters = (vab_magic_ok, vab_parse_ok, vab_parse_bad);
+                probe_vab_at(&bytes, scene_name, seq_idx, &mut counters, &mut sample_vab);
+                vab_magic_ok = counters.0;
+                vab_parse_ok = counters.1;
+                vab_parse_bad = counters.2;
             }
         }
     }

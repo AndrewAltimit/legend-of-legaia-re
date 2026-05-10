@@ -241,6 +241,23 @@ impl CharacterRecord {
         true
     }
 
+    /// Cumulative XP at `+0x04..+0x06` (u16 LE).
+    ///
+    /// Pinned by the mc7 → mc8 → mc9 save-state diff: a level-up event at
+    /// L9 → L10 grew the value at this offset by `+365`, exactly the per-
+    /// level XP increment for L9→10 in the retail XP table at
+    /// `SCUS_942.54 0x8007123C`. Returns the cumulative XP value the engine
+    /// can feed into [`crate::level_for_cumulative_xp`] to derive the
+    /// character level.
+    pub fn cumulative_xp(&self) -> u16 {
+        u16::from_le_bytes([self.raw[0x04], self.raw[0x05]])
+    }
+
+    /// Replace the cumulative-XP field.
+    pub fn set_cumulative_xp(&mut self, xp: u16) {
+        self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
+    }
+
     /// Typed snapshot of every documented field — convenient for JSON
     /// dumps. Fields not in [`Snapshot`] still pass through `write` via
     /// the underlying [`Self::raw`] buffer.
@@ -336,6 +353,22 @@ impl Party {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cumulative_xp_round_trip() {
+        let mut r = CharacterRecord::zeroed();
+        r.set_cumulative_xp(365);
+        assert_eq!(r.cumulative_xp(), 365);
+        // Verify the bytes land at +0x04..+0x06 in LE.
+        assert_eq!(r.raw[0x04], 0x6D);
+        assert_eq!(r.raw[0x05], 0x01);
+    }
+
+    #[test]
+    fn cumulative_xp_default_is_zero() {
+        let r = CharacterRecord::zeroed();
+        assert_eq!(r.cumulative_xp(), 0);
+    }
 
     #[test]
     fn zeroed_record_round_trips_to_all_zeros() {

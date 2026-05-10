@@ -499,6 +499,13 @@ pub struct World {
     /// look up [`crate::monster_catalog::MonsterDef`] by id when
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
+
+    /// CDNAME label of the active scene, if any. Set by
+    /// [`World::set_active_scene_label`] on scene-load and consumed by
+    /// engine-side helpers ([`World::install_encounter_for_scene`] reads
+    /// this when it's called with the empty string, the encounter HUD
+    /// surfaces it for diagnostics, etc.). Empty when no scene is loaded.
+    pub active_scene_label: String,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -606,7 +613,16 @@ impl World {
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
+            active_scene_label: String::new(),
         }
+    }
+
+    /// Record the active scene label. Engines call this from the scene-load
+    /// path (typically right before `install_encounter_for_scene`) so
+    /// downstream consumers (HUD, diagnostics, save snapshots) can surface
+    /// the current scene without re-walking the [`crate::scene::SceneHost`].
+    pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
+        self.active_scene_label = label.into();
     }
 
     /// Drain emitted field-VM events. Engines call once per frame after
@@ -1271,6 +1287,42 @@ impl World {
     /// table is known. `None` disables encounters for the active scene.
     pub fn set_encounter_session(&mut self, session: Option<crate::encounter::EncounterSession>) {
         self.encounter = session;
+    }
+
+    /// Install an encounter session resolved from a registry against the
+    /// given CDNAME label. Engines call this from the scene-load path so
+    /// every scene gets its retail-mapped encounter table without having
+    /// to plumb tables through the boot config.
+    ///
+    /// Returns `true` when the registry resolved a non-empty table and
+    /// installed it, `false` when no rule matched (or the resolved table
+    /// has `trigger_rate_q8 == 0` — in which case the session is
+    /// installed-but-quiet so the engine can still call `on_field_step`
+    /// without nil checks).
+    ///
+    /// The on-disc resolver (reading the per-scene encounter table out of
+    /// `0865_battle_data`) lands once a runtime watchpoint trace pins the
+    /// table offset. Engines currently feed the registry from
+    /// [`crate::encounter_registry::vanilla_encounter_registry`] or a
+    /// custom composition.
+    pub fn install_encounter_for_scene(
+        &mut self,
+        registry: &crate::encounter_registry::EncounterRegistry,
+        scene_label: &str,
+    ) -> bool {
+        match registry.resolve(scene_label) {
+            Some(table) => {
+                let tracker = crate::encounter::EncounterTracker::new(table.clone());
+                let session = crate::encounter::EncounterSession::new(tracker);
+                let nonempty = !table.is_empty();
+                self.encounter = Some(session);
+                nonempty
+            }
+            None => {
+                self.encounter = None;
+                false
+            }
+        }
     }
 
     /// Install a formation + monster catalog pair. Boot wires this once;
@@ -3829,5 +3881,67 @@ mod tests {
         assert!(world.item_catalog.is_empty());
         world.set_item_catalog(ItemCatalog::vanilla());
         assert!(!world.item_catalog.is_empty());
+    }
+
+    #[test]
+    fn install_encounter_for_scene_resolves_field_pattern() {
+        use crate::encounter_registry::vanilla_encounter_registry;
+        let mut world = World::new();
+        let r = vanilla_encounter_registry();
+        let installed = world.install_encounter_for_scene(&r, "map01");
+        assert!(installed, "field pattern should match");
+        assert!(world.encounter.is_some());
+    }
+
+    #[test]
+    fn install_encounter_for_scene_quiets_in_towns() {
+        use crate::encounter_registry::vanilla_encounter_registry;
+        let mut world = World::new();
+        let r = vanilla_encounter_registry();
+        let installed = world.install_encounter_for_scene(&r, "town01");
+        assert!(!installed, "town pattern resolves but is quiet");
+        assert!(
+            world.encounter.is_some(),
+            "session installed for nil checks"
+        );
+    }
+
+    #[test]
+    fn install_encounter_for_scene_returns_false_with_no_default() {
+        use crate::encounter_registry::EncounterRegistry;
+        let mut world = World::new();
+        let r = EncounterRegistry::new(); // empty, no default
+        let installed = world.install_encounter_for_scene(&r, "anything");
+        assert!(!installed);
+        assert!(world.encounter.is_none());
+    }
+
+    #[test]
+    fn install_encounter_for_scene_replaces_active_session() {
+        use crate::encounter_registry::vanilla_encounter_registry;
+        let mut world = World::new();
+        let r = vanilla_encounter_registry();
+        // Install a field session, then a town session — the town call
+        // should replace the field session even though it's quiet.
+        world.install_encounter_for_scene(&r, "map01");
+        assert!(world.encounter.is_some());
+        let initial_table_label = world
+            .encounter
+            .as_ref()
+            .unwrap()
+            .tracker()
+            .table()
+            .scene_label
+            .clone();
+        world.install_encounter_for_scene(&r, "town01");
+        let new_table_label = world
+            .encounter
+            .as_ref()
+            .unwrap()
+            .tracker()
+            .table()
+            .scene_label
+            .clone();
+        assert_ne!(initial_table_label, new_table_label);
     }
 }
