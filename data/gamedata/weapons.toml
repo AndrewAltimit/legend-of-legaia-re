@@ -1,0 +1,222 @@
+# Weapons table.
+#
+# `equip_best` = the character whose `Favorite Weapons` class includes this
+# weapon family (gets full Attack value + smaller Arms-button width in the
+# action queue per docs/formats/art-data.md).
+# `equip_others` = list of additional characters that *can* equip it; empty
+# = exclusive to `equip_best`.
+#
+# Source: walkthrough 2 weapons section, cross-checked against retail-shop
+# inventories in `shops.toml`.
+
+[[weapon]]
+key = "astral_sword"
+name = "Astral Sword"
+attack = 97
+equip_best = "Vahn"
+equip_others = []
+
+[[weapon]]
+key = "battle_axe"
+name = "Battle Axe"
+price = 15600
+attack = 62
+equip_best = "Gala"
+equip_others = ["Vahn", "Noa"]
+
+[[weapon]]
+key = "battle_knife"
+name = "Battle Knife"
+price = 1200
+attack = 18
+equip_best = "Vahn"
+equip_others = ["Noa", "Gala"]
+
+[[weapon]]
+key = "beast_buster"
+name = "Beast Buster"
+price = 14500
+attack = 58
+equip_best = "Vahn"
+equip_others = []
+
+[[weapon]]
+key = "bloody_claw"
+name = "Bloody Claw"
+price = 9500
+attack = 49
+equip_best = "Noa"
+equip_others = ["Vahn", "Gala"]
+
+[[weapon]]
+key = "chaos_breaker"
+name = "Chaos Breaker"
+price = 32000
+attack = 72
+equip_best = "Vahn"
+equip_others = []
+
+[[weapon]]
+key = "crimson_nails"
+name = "Crimson Nails"
+price = 980
+attack = 16
+equip_best = "Noa"
+equip_others = ["Vahn", "Gala"]
+
+[[weapon]]
+key = "fighter_claw"
+name = "Fighter Claw"
+price = 2900
+attack = 26
+equip_best = "Noa"
+equip_others = ["Vahn", "Gala"]
+
+[[weapon]]
+key = "force_blade"
+name = "Force Blade"
+price = 4200
+attack = 40
+equip_best = "Vahn"
+equip_others = []
+
+[[weapon]]
+key = "gala_mace"
+name = "Gala Mace"
+price = 5200
+attack = 38
+equip_best = "Gala"
+equip_others = []
+
+[[weapon]]
+key = "golden_claw"
+name = "Golden Claw"
+price = 44000
+attack = 86
+equip_best = "Noa"
+equip_others = []
+
+[[weapon]]
+key = "great_axe"
+name = "Great Axe"
+price = 55000
+attack = 88
+equip_best = "Gala"
+equip_others = []
+
+[[weapon]]
+key = "hard_beat"
+name = "Hard Beat"
+price = 3800
+attack = 34
+equip_best = "Noa"
+equip_others = []
+
+[[weapon]]
+key = "nail_glove"
+name = "Nail Glove"
+price = 160
+attack = 6
+equip_best = "Noa"
+equip_others = ["Vahn", "Gala"]
+
+[[weapon]]
+key = "heavy_strike"
+name = "Heavy Strike"
+price = 34000
+attack = 73
+equip_best = "Noa"
+equip_others = []
+
+[[weapon]]
+key = "noa_feral"
+name = "Noa Feral"
+price = 600
+attack = 9
+equip_best = "Noa"
+equip_others = ["Vahn", "Gala"]
+
+[[weapon]]
+key = "holy_claw"
+name = "Holy Claw"
+price = 17000
+attack = 64
+equip_best = "Noa"
+equip_others = []
+
+[[weapon]]
+key = "power_club"
+name = "Power Club"
+price = 36000
+attack = 76
+equip_best = "Gala"
+equip_others = []
+
+[[weapon]]
+key = "ra_seru_blade"
+name = "Ra-Seru Blade"
+attack = 98
+equip_best = "Vahn"
+equip_others = []
+
+[[weapon]]
+key = "ra_seru_club"
+name = "Ra-Seru Club"
+attack = 100
+equip_best = "Gala"
+equip_others = []
+
+[[weapon]]
+key = "ra_seru_fangs"
+name = "Ra-Seru Fangs"
+attack = 96
+equip_best = "Noa"
+equip_others = []
+
+[[weapon]]
+key = "red_club"
+name = "Red Club"
+price = 3600
+attack = 30
+equip_best = "Gala"
+equip_others = ["Vahn", "Noa"]
+
+[[weapon]]
+key = "short_sword"
+name = "Short Sword"
+price = 2700
+attack = 24
+equip_best = "Vahn"
+equip_others = ["Noa", "Gala"]
+
+[[weapon]]
+key = "survival_axe"
+name = "Survival Axe"
+price = 10800
+attack = 53
+equip_best = "Gala"
+equip_others = ["Vahn", "Noa"]
+
+[[weapon]]
+key = "survival_club"
+name = "Survival Club"
+price = 860
+attack = 15
+equip_best = "Vahn"
+equip_others = ["Noa", "Gala"]
+
+[[weapon]]
+key = "survival_knife"
+name = "Survival Knife"
+price = 180
+attack = 6
+equip_best = "Vahn"
+equip_others = ["Noa", "Gala"]
+
+[[weapon]]
+key = "vahn_fist"
+name = "Vahn Fist"
+price = 500
+attack = 11
+equip_best = "Vahn"
+equip_others = []

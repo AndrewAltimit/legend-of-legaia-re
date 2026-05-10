@@ -1,0 +1,111 @@
+# Boss HP estimates from walkthrough commentary. These are fan-recorded
+# observations, not retail-extracted constants - useful as sanity checks
+# for damage / HP-formula reverse-engineering, NOT as authoritative data.
+#
+# `hp_min` / `hp_max` bracket the walkthrough's stated range; if the
+# walkthrough gives a single number, both fields hold the same value.
+# `tournament` (when set) names the Muscle Dome course where the HP
+# was measured (Beginner / Expert / Master).
+
+[[boss]]
+name = "Zeto"
+location = "Zeto's Dungeon"
+hp_min = 5000
+hp_max = 5000
+
+[[boss]]
+name = "Xain"
+location = "Fire Path"
+hp_min = 10000
+hp_max = 10000
+
+[[boss]]
+name = "Berserker (Master)"
+location = "Muscle Dome"
+hp_min = 4500
+hp_max = 4500
+tournament = "Master"
+
+[[boss]]
+name = "Caruban (Expert)"
+location = "Muscle Dome"
+hp_min = 0
+hp_max = 1200
+tournament = "Expert"
+
+[[boss]]
+name = "Aluru (Expert)"
+location = "Muscle Dome"
+hp_min = 0
+hp_max = 1200
+tournament = "Expert"
+
+[[boss]]
+name = "Dark Ogre (Expert)"
+location = "Muscle Dome"
+hp_min = 3500
+hp_max = 3500
+tournament = "Expert"
+
+[[boss]]
+name = "Gold Bison (Expert)"
+location = "Muscle Dome"
+hp_min = 3500
+hp_max = 3500
+tournament = "Expert"
+
+[[boss]]
+name = "Ironman (Expert)"
+location = "Muscle Dome"
+hp_min = 2500
+hp_max = 2500
+tournament = "Expert"
+
+[[boss]]
+name = "Dohati"
+location = "Dohati's Castle"
+hp_min = 30000
+hp_max = 30000
+
+[[boss]]
+name = "Lu Delilas"
+location = "Nivora Ravine"
+hp_min = 10000
+hp_max = 10000
+
+[[boss]]
+name = "Che Delilas"
+location = "Nivora Ravine"
+hp_min = 12000
+hp_max = 12000
+
+[[boss]]
+name = "Gi Delilas"
+location = "Nivora Ravine"
+hp_min = 10000
+hp_max = 11000
+
+[[boss]]
+name = "Zora"
+location = "Floating Castle"
+hp_min = 21500
+hp_max = 22500
+
+[[boss]]
+name = "Jette"
+location = "Jette's Fortress"
+hp_min = 33200
+hp_max = 35800
+
+[[boss]]
+name = "Lapis"
+location = "Mt. Dhini (top)"
+hp_min = 70000
+hp_max = 70000
+
+[[boss]]
+name = "Viguro Lv2 (Master)"
+location = "Muscle Dome"
+hp_min = 1200
+hp_max = 1200
+tournament = "Master"

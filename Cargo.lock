@@ -1354,6 +1354,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-gamedata"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "legaia-art",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "legaia-iso"
 version = "0.1.0"
 dependencies = [

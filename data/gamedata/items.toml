@@ -1,0 +1,484 @@
+# Items: consumables + key items.
+#
+# `key` is a stable string identifier used by `shops.toml`, `casino.toml`,
+# `fishing.toml`, and tests. snake_case version of the name; consistent
+# with the inventory item-modifier slot bytes once those get pinned by
+# the `cheats` crate.
+#
+# `category` partitions:
+#   "consumable"      - usable in/out of battle (healing, doors, elixirs)
+#   "permanent_stat"  - permanent stat upgrade (waters)
+#   "key"             - quest-progression key item
+#   "art_book"        - teaches a Hyper Art (non-stackable)
+#   "fishing_lure"    - bait/lure
+#   "minigame"        - card / pass / membership
+
+[[item]]
+key = "healing_leaf"
+name = "Healing Leaf"
+category = "consumable"
+price = 100
+effect = "Restores 200 HP."
+
+[[item]]
+key = "healing_shroom"
+name = "Healing Shroom"
+category = "consumable"
+price = 60
+effect = "Restores 60 HP."
+
+[[item]]
+key = "healing_bloom"
+name = "Healing Bloom"
+category = "consumable"
+price = 600
+effect = "Restores 200 HP to each character."
+
+[[item]]
+key = "healing_flower"
+name = "Healing Flower"
+category = "consumable"
+price = 800
+effect = "Restores 800 HP."
+
+[[item]]
+key = "healing_fruit"
+name = "Healing Fruit"
+category = "consumable"
+price = 2400
+effect = "Restores 800 HP to each character."
+
+[[item]]
+key = "healing_berry"
+name = "Healing Berry"
+category = "consumable"
+price = 3000
+effect = "Restores maximum HP."
+
+[[item]]
+key = "soru_bread"
+name = "Soru Bread"
+category = "consumable"
+price = 6000
+effect = "Restores maximum HP."
+
+[[item]]
+key = "magic_leaf"
+name = "Magic Leaf"
+category = "consumable"
+price = 1000
+effect = "Restores 50 MP."
+
+[[item]]
+key = "magic_fruit"
+name = "Magic Fruit"
+category = "consumable"
+price = 5000
+effect = "Restores 200 MP."
+
+[[item]]
+key = "phoenix"
+name = "Phoenix"
+category = "consumable"
+price = 1600
+effect = "Restores a fallen ally with a small amount of HP."
+
+[[item]]
+key = "antidote"
+name = "Antidote"
+category = "consumable"
+price = 40
+effect = "Cures the poison status effect on a single character."
+
+[[item]]
+key = "medicine"
+name = "Medicine"
+category = "consumable"
+price = 300
+effect = "Cures all status effects on a single character."
+
+[[item]]
+key = "door_of_light"
+name = "Door of Light"
+category = "consumable"
+price = 200
+effect = "Escape from a dungeon."
+
+[[item]]
+key = "door_of_wind"
+name = "Door of Wind"
+category = "consumable"
+price = 200
+effect = "Teleport between visited towns."
+
+[[item]]
+key = "fury_boost"
+name = "Fury Boost"
+category = "consumable"
+price = 2000
+effect = "Boosts the attack gauge for one battle."
+
+[[item]]
+key = "incense"
+name = "Incense"
+category = "consumable"
+price = 2000
+effect = "Lowers the random-encounter rate for a short time."
+
+[[item]]
+key = "power_elixir"
+name = "Power Elixir"
+category = "consumable"
+price = 1500
+effect = "Raises Attack of selected character for the battle."
+
+[[item]]
+key = "shield_elixir"
+name = "Shield Elixir"
+category = "consumable"
+price = 1500
+effect = "Raises Defense of selected character for the battle."
+
+[[item]]
+key = "speed_elixir"
+name = "Speed Elixir"
+category = "consumable"
+price = 1500
+effect = "Raises Speed of selected character for the battle."
+
+[[item]]
+key = "wonder_elixir"
+name = "Wonder Elixir"
+category = "consumable"
+price = 6000
+effect = "Raises all stats of selected character for the battle."
+
+# ---- Permanent stat upgrades ----
+
+[[item]]
+key = "life_water"
+name = "Life Water"
+category = "permanent_stat"
+price = 5000
+effect = "Permanently raises maximum HP by 16."
+
+[[item]]
+key = "magic_water"
+name = "Magic Water"
+category = "permanent_stat"
+price = 5000
+effect = "Permanently raises maximum MP by 8."
+
+[[item]]
+key = "power_water"
+name = "Power Water"
+category = "permanent_stat"
+price = 2000
+effect = "Permanently raises Attack by 4."
+
+[[item]]
+key = "guardian_water"
+name = "Guardian Water"
+category = "permanent_stat"
+price = 2000
+effect = "Permanently raises UDF and LDF by 4."
+
+[[item]]
+key = "swift_water"
+name = "Swift Water"
+category = "permanent_stat"
+price = 2000
+effect = "Permanently raises Speed by 4."
+
+[[item]]
+key = "wisdom_water"
+name = "Wisdom Water"
+category = "permanent_stat"
+price = 2000
+effect = "Permanently raises Intelligence by 4."
+
+[[item]]
+key = "miracle_water"
+name = "Miracle Water"
+category = "permanent_stat"
+price = 10000
+effect = "Permanently raises all stats by 4."
+
+[[item]]
+key = "honey"
+name = "Honey"
+category = "permanent_stat"
+price = 0
+effect = "Permanently raises all stats by 4. Hidden boss reward in Rim Elm (Queen Bee tree)."
+
+# ---- Hyper Art books ----
+
+[[item]]
+key = "fire_book_i"
+name = "Fire Book I"
+category = "art_book"
+price = 0
+effect = "Teaches Vahn the Tornado Flame Hyper Art."
+
+[[item]]
+key = "fire_book_ii"
+name = "Fire Book II"
+category = "art_book"
+price = 0
+effect = "Teaches Vahn the Fire Blow Hyper Art."
+
+[[item]]
+key = "fire_book_iii"
+name = "Fire Book III"
+category = "art_book"
+price = 0
+effect = "Teaches Vahn the Burning Flare Hyper Art."
+
+[[item]]
+key = "wind_book_i"
+name = "Wind Book I"
+category = "art_book"
+price = 0
+effect = "Teaches Noa the Frost Breath Hyper Art."
+
+[[item]]
+key = "wind_book_ii"
+name = "Wind Book II"
+category = "art_book"
+price = 0
+effect = "Teaches Noa the Vulture Blade Hyper Art."
+
+[[item]]
+key = "wind_book_iii"
+name = "Wind Book III"
+category = "art_book"
+price = 0
+effect = "Teaches Noa the Hurricane Kick Hyper Art."
+
+[[item]]
+key = "thunder_book_i"
+name = "Thunder Book I"
+category = "art_book"
+price = 0
+effect = "Teaches Gala the Thunder Punch Hyper Art."
+
+[[item]]
+key = "thunder_book_ii"
+name = "Thunder Book II"
+category = "art_book"
+price = 0
+effect = "Teaches Gala the Lightning Storm Hyper Art."
+
+[[item]]
+key = "thunder_book_iii"
+name = "Thunder Book III"
+category = "art_book"
+price = 0
+effect = "Teaches Gala the Explosive Fist Hyper Art."
+
+# ---- Key items ----
+
+[[item]]
+key = "platinum_card"
+name = "Platinum Card"
+category = "key"
+effect = "Unlocks hidden items at certain shops."
+
+[[item]]
+key = "point_card"
+name = "Point Card"
+category = "key"
+effect = "Battle command: spend accumulated card points as damage."
+
+[[item]]
+key = "sunrise_key"
+name = "Sunrise Key"
+category = "key"
+effect = "Opens the Sunrise Gate at Drake Castle."
+
+[[item]]
+key = "lightning_key"
+name = "Lightning Key"
+category = "key"
+effect = "Opens the Lightning Gate at Drake Castle."
+
+[[item]]
+key = "star_key"
+name = "Star Key"
+category = "key"
+effect = "Opens the Star Gate at Drake Castle."
+
+[[item]]
+key = "mountain_key"
+name = "Mountain Key"
+category = "key"
+effect = "Opens the Mountain Gate at Drake Castle."
+
+[[item]]
+key = "water_key"
+name = "Water Key"
+category = "key"
+effect = "Closes the Drake Castle floodgate."
+
+[[item]]
+key = "fertilizer"
+name = "Fertilizer"
+category = "key"
+effect = "Grows the Bridge Grass in West Voz Forest."
+
+[[item]]
+key = "weed_hammer"
+name = "Weed Hammer"
+category = "key"
+effect = "Smashes the Crystallized Weeds in East Voz Forest."
+
+[[item]]
+key = "zalans_letter"
+name = "Zalan's Letter"
+category = "key"
+effect = "Letter from Zalan to his son."
+
+[[item]]
+key = "spring_salts"
+name = "Spring Salts"
+category = "key"
+effect = "Make a hot-spring bath and give to Octam's mayor."
+
+[[item]]
+key = "letona_key"
+name = "Letona Key"
+category = "key"
+effect = "Opens the Ratayu gate to Mt. Letona."
+
+[[item]]
+key = "west_ratayu_key"
+name = "West Ratayu Key"
+category = "key"
+effect = "Opens the west gate in Ratayu."
+
+[[item]]
+key = "evil_seru_key"
+name = "Evil Seru Key"
+category = "key"
+effect = "Opens the sealed Seru Blade room in Ratayu."
+
+[[item]]
+key = "genesis_seedling"
+name = "Genesis Seedling"
+category = "key"
+effect = "Seedling of Sol's Genesis Tree."
+
+[[item]]
+key = "ruins_key"
+name = "Ruins Key"
+category = "key"
+effect = "Calls Tieg at Uru Mais."
+
+[[item]]
+key = "timespace_bomb"
+name = "Timespace Bomb"
+category = "key"
+effect = "Required to open Nivora Ravine."
+
+[[item]]
+key = "music_score"
+name = "Music Score"
+category = "key"
+effect = "Cara and Grantes' love song."
+
+[[item]]
+key = "soren_flute"
+name = "Soren Flute"
+category = "key"
+effect = "Calls the Soren at Mt. Dhini."
+
+[[item]]
+key = "camera_stone"
+name = "Camera Stone"
+category = "key"
+effect = "Takes pictures (breaks after four uses)."
+
+[[item]]
+key = "swimsuit"
+name = "Swimsuit"
+category = "key"
+effect = "Used while taking pictures at Vidna."
+
+[[item]]
+key = "gold_card"
+name = "Gold Card"
+category = "key"
+effect = "Membership for Sol Disco Fever."
+
+[[item]]
+key = "marys_diary"
+name = "Mary's Diary"
+category = "key"
+effect = "Trade to learn arts."
+
+[[item]]
+key = "soren_secrets"
+name = "Soren Secrets"
+category = "key"
+effect = "Trade to learn arts."
+
+[[item]]
+key = "soren_book_of_arts"
+name = "Soren Book of Arts"
+category = "key"
+effect = "Found in Floating Fortress (torture machine)."
+
+# ---- Fishing rods + lures ----
+
+[[item]]
+key = "old_rod"
+name = "Old Rod"
+category = "key"
+effect = "Beginner's fishing rod."
+
+[[item]]
+key = "deluxe_rod"
+name = "Deluxe Rod"
+category = "key"
+effect = "Expert's fishing rod."
+
+[[item]]
+key = "legendary_rod"
+name = "Legendary Rod"
+category = "key"
+effect = "Master's fishing rod."
+
+[[item]]
+key = "light_lure"
+name = "Light Lure"
+category = "fishing_lure"
+price = 200
+effect = "Lure for shallow water."
+
+[[item]]
+key = "normal_lure"
+name = "Normal Lure"
+category = "fishing_lure"
+price = 300
+effect = "Lure for normal-depth water."
+
+[[item]]
+key = "heavy_lure"
+name = "Heavy Lure"
+category = "fishing_lure"
+price = 400
+effect = "Lure for deep water."
+
+[[item]]
+key = "lippian_flute"
+name = "Lippian Flute"
+category = "consumable"
+price = 100
+effect = "In battle, summons a Lippian."
+
+[[item]]
+key = "spikefish_flute"
+name = "Spikefish Flute"
+category = "consumable"
+price = 100
+effect = "In battle, summons a Spikefish (auto-escape)."

@@ -1,0 +1,41 @@
+# Player characters: elemental affinity + favorite-weapon class.
+#
+# `affinity_strong` and `affinity_weak` partition the 8 elements (fire,
+# wind, thunder, water, earth, light, dark, evil). Source: walkthrough 2
+# character info section.
+#
+# `weapon_classes` lists the favorite-weapon class names; cross-checked
+# against `weapons.toml` `equip_best`. Per docs/formats/art-data.md, a
+# weapon in the favorite class shrinks the Arms-button width in the
+# action queue.
+
+[[character]]
+key = "Vahn"
+name = "Vahn"
+ra_seru = "Meta"
+ra_seru_element = "fire"
+affinity_strong = ["fire"]
+affinity_weak = ["water"]
+weapon_classes = ["Knives", "Swords", "Knuckles"]
+notes = "Balanced offense and defense; weak at water-element Seru."
+
+[[character]]
+key = "Noa"
+name = "Noa"
+ra_seru = "Terra"
+ra_seru_element = "wind"
+affinity_strong = ["wind"]
+affinity_weak = ["thunder", "earth"]
+weapon_classes = ["Claw", "Feral"]
+left_handed = true
+notes = "Excellent agility and speed. The only left-handed party member; her Arms button is the right input direction."
+
+[[character]]
+key = "Gala"
+name = "Gala"
+ra_seru = "Ozma"
+ra_seru_element = "thunder"
+affinity_strong = ["thunder"]
+affinity_weak = ["wind", "water"]
+weapon_classes = ["Club", "Mace"]
+notes = "Strongest melee output of the three; slower turn order."

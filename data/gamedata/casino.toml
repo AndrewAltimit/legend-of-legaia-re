@@ -1,0 +1,229 @@
+# Casino prizes + Muscle Dome courses.
+#
+# Two slot-machine prize tables exist (Vidna + Sol), and three Muscle
+# Dome arena courses (Beginner / Expert / Master) each with an ordered
+# enemy line-up + reward.
+
+[[slot_prize]]
+location = "Vidna"
+item = "war_soul"
+cost_coins = 1000
+
+[[slot_prize]]
+location = "Vidna"
+item = "spirit_jewel"
+cost_coins = 800
+
+[[slot_prize]]
+location = "Vidna"
+item = "guardian_ring"
+cost_coins = 400
+
+[[slot_prize]]
+location = "Vidna"
+item = "fury_boost"
+cost_coins = 150
+
+[[slot_prize]]
+location = "Vidna"
+item = "power_elixir"
+cost_coins = 80
+
+[[slot_prize]]
+location = "Vidna"
+item = "shield_elixir"
+cost_coins = 80
+
+[[slot_prize]]
+location = "Vidna"
+item = "phoenix"
+cost_coins = 50
+
+[[slot_prize]]
+location = "Vidna"
+item = "heavy_lure"
+cost_coins = 10
+
+[[slot_prize]]
+location = "Vidna"
+item = "normal_lure"
+cost_coins = 5
+
+[[slot_prize]]
+location = "Vidna"
+item = "light_lure"
+cost_coins = 2
+
+# ---- Sol slot prizes ----
+
+[[slot_prize]]
+location = "Sol"
+item = "earth_egg"
+cost_coins = 100000
+notes = "Only appears once you have 100,000 coins."
+
+[[slot_prize]]
+location = "Sol"
+item = "evil_god_icon"
+cost_coins = 10000
+
+[[slot_prize]]
+location = "Sol"
+item = "lost_grail"
+cost_coins = 8000
+
+[[slot_prize]]
+location = "Sol"
+item = "life_armband"
+cost_coins = 5000
+
+[[slot_prize]]
+location = "Sol"
+item = "deluxe_rod"
+cost_coins = 2500
+
+[[slot_prize]]
+location = "Sol"
+item = "vitality_ring"
+cost_coins = 1000
+
+[[slot_prize]]
+location = "Sol"
+item = "magic_ring"
+cost_coins = 500
+
+[[slot_prize]]
+location = "Sol"
+item = "healing_berry"
+cost_coins = 250
+
+[[slot_prize]]
+location = "Sol"
+item = "incense"
+cost_coins = 200
+
+[[slot_prize]]
+location = "Sol"
+item = "fury_boost"
+cost_coins = 150
+
+[[slot_prize]]
+location = "Sol"
+item = "soru_bread"
+cost_coins = 100
+
+[[slot_prize]]
+location = "Sol"
+item = "gold_card"
+cost_coins = 50
+
+# ---- Muscle Dome courses ----
+
+[[muscle_dome_course]]
+name = "Beginner"
+entry_fee = 100
+reward_coins = 818
+enemies = [
+    "Red Piura",
+    "Skeleton",
+    "Drake Ghost",
+    "Caruban",
+    "Gola Gola",
+    "Zeto",
+    "Viguro Lv2",
+    "Xain",
+]
+
+[[muscle_dome_course]]
+name = "Expert"
+entry_fee = 100
+reward_coins = 1532
+enemies = [
+    "Black Piura",
+    "High Gomboo",
+    "Dark Ogre",
+    "Gold Bison",
+    "Ironman",
+    "Caruban",
+    "Aluru",
+    "Xain",
+]
+
+[[muscle_dome_course]]
+name = "Master"
+entry_fee = 100
+reward_coins = 13856
+reward_first_clear = "war_god_icon"
+enemies = [
+    "Ironman",
+    "Viguro Lv2",
+    "Gold Bison",
+    "Caruban",
+    "Zeto",
+    "Berserker",
+    "Xain",
+    "Dohati",
+    "Lu Delilas",
+    "Che Delilas",
+    "Gi Delilas",
+    "Zora",
+    "Jette",
+]
+
+[[baka_fighter]]
+round = 1
+buttons = ["Square"]
+
+[[baka_fighter]]
+round = 2
+buttons = ["X"]
+
+[[baka_fighter]]
+round = 3
+buttons = ["O"]
+
+[[baka_fighter]]
+round = 4
+buttons = ["Square", "X"]
+
+[[baka_fighter]]
+round = 5
+buttons = ["O", "O", "O", "X", "X", "X"]
+notes = "Xain"
+
+[[baka_fighter]]
+round = 6
+buttons = ["O", "X"]
+
+[[baka_fighter]]
+round = 7
+buttons = ["Square", "Square", "Square", "X", "X", "X", "O", "O", "O"]
+
+[[baka_fighter]]
+round = 8
+buttons = ["X", "O", "Square", "Square", "Square", "Square"]
+
+[[baka_fighter]]
+round = 9
+buttons = ["O", "O", "X"]
+
+[[baka_fighter]]
+round = 10
+buttons = ["Square", "X", "O"]
+
+[[baka_fighter]]
+round = 11
+buttons = ["Square", "Square", "O", "X"]
+
+[[baka_fighter]]
+round = 12
+buttons = ["O", "O", "X", "Square"]
+
+[[baka_fighter]]
+round = 13
+buttons = ["X", "X", "Square", "Square", "X", "X", "O", "O"]
+
+[[baka_fighter]]
+round = 14
+buttons = ["Square", "Square", "X", "O", "O", "O", "X"]
+notes = "Songi"

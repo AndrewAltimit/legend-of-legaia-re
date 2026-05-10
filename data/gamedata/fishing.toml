@@ -1,0 +1,58 @@
+# Fishing pond prizes. Vidna and Buma share the same point pool - points
+# from either pond can be spent at either store.
+
+[[fishing_prize]]
+location = "Vidna"
+item = "mettle_armband"
+cost_points = 1500
+
+[[fishing_prize]]
+location = "Vidna"
+item = "power_ring"
+cost_points = 1000
+
+[[fishing_prize]]
+location = "Vidna"
+item = "healing_fruit"
+cost_points = 500
+
+[[fishing_prize]]
+location = "Vidna"
+item = "lippian_flute"
+cost_points = 200
+
+[[fishing_prize]]
+location = "Vidna"
+item = "spikefish_flute"
+cost_points = 200
+
+[[fishing_prize]]
+location = "Buma"
+item = "water_egg"
+cost_points = 20000
+notes = "Only appears once you have 20,000 points."
+
+[[fishing_prize]]
+location = "Buma"
+item = "life_grail"
+cost_points = 6500
+
+[[fishing_prize]]
+location = "Buma"
+item = "magic_grail"
+cost_points = 6500
+
+[[fishing_prize]]
+location = "Buma"
+item = "spirit_talisman"
+cost_points = 4000
+
+[[fishing_prize]]
+location = "Buma"
+item = "lippian_flute"
+cost_points = 200
+
+[[fishing_prize]]
+location = "Buma"
+item = "spikefish_flute"
+cost_points = 200

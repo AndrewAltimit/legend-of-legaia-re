@@ -107,6 +107,7 @@ const NAV = [
       { href: 'reference/functions.html',       text: 'Key functions',            key: 'reference/functions' },
       { href: 'reference/memory-map.html',      text: 'PSX RAM map',              key: 'reference/memory-map' },
       { href: 'reference/cheats.html',          text: 'Cheat databases',          key: 'reference/cheats' },
+      { href: 'reference/gamedata.html',        text: 'Curated game-data tables', key: 'reference/gamedata' },
     ],
   },
   {

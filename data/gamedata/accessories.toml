@@ -1,0 +1,590 @@
+# Accessories. Many fall into structured effect classes that can be
+# pinned by the existing battle-formula reverse engineering: HP-percent
+# bumps, MP-percent bumps, AP modifiers, encounter-rate, status nullifies,
+# elemental-defense bumps, etc. Where a numeric percentage is documented,
+# `effect_class` + `effect_value` carry the structured form; the free-text
+# `effect` is always populated for display.
+#
+# `effect_class` values used (informal taxonomy, not retail):
+#   hp_max_pct, mp_max_pct, ap_accrual_pct, mp_cost_pct, ap_cost_pct,
+#   ap_freeze_100, attack_pct, udf_pct, ldf_pct, defense_pct, speed_pct,
+#   intelligence_pct, agility_pct, hp_per_step, mp_per_step,
+#   hp_per_turn, mp_per_turn, revive_once, art_power_pct,
+#   xp_pct, gold_pct, item_drop_chance, seru_absorb_chance,
+#   first_attack, last_attack, encounter_pct, ambush_def_pct,
+#   ambush_off_pct, escape_chance, escape_def_pct, escape_block,
+#   counter_chance, ignore_defense, double_attack, berserk,
+#   protect_status, elemental_def, all_status_def, all_elemental_def,
+#   summon_seru
+
+[[accessory]]
+key = "life_ring"
+name = "Life Ring"
+price = 9500
+effect = "Maximum HP increases by 10%."
+effect_class = "hp_max_pct"
+effect_value = 10
+
+[[accessory]]
+key = "life_armband"
+name = "Life Armband"
+price = 30000
+effect = "Maximum HP increases by 25%."
+effect_class = "hp_max_pct"
+effect_value = 25
+
+[[accessory]]
+key = "meis_pendant"
+name = "Mei's Pendant"
+effect = "Maximum HP increases by 10%."
+effect_class = "hp_max_pct"
+effect_value = 10
+
+[[accessory]]
+key = "mineas_ring"
+name = "Minea's Ring"
+effect = "Maximum HP increases by 25%."
+effect_class = "hp_max_pct"
+effect_value = 25
+
+[[accessory]]
+key = "magic_ring"
+name = "Magic Ring"
+price = 20000
+effect = "Maximum MP increases by 10%."
+effect_class = "mp_max_pct"
+effect_value = 10
+
+[[accessory]]
+key = "magic_armband"
+name = "Magic Armband"
+price = 50000
+effect = "Maximum MP increases by 25%."
+effect_class = "mp_max_pct"
+effect_value = 25
+
+[[accessory]]
+key = "zalans_crown"
+name = "Zalan's Crown"
+effect = "AP accrual rate increases by 10%."
+effect_class = "ap_accrual_pct"
+effect_value = 10
+
+[[accessory]]
+key = "seru_flame"
+name = "Seru Flame"
+effect = "AP accrual rate increases by 25%."
+effect_class = "ap_accrual_pct"
+effect_value = 25
+
+[[accessory]]
+key = "mettle_ring"
+name = "Mettle Ring"
+price = 12000
+effect = "AP gained from spirit and incoming hits +10%."
+effect_class = "ap_accrual_pct"
+effect_value = 10
+
+[[accessory]]
+key = "mettle_armband"
+name = "Mettle Armband"
+price = 40000
+effect = "AP gained +25%."
+effect_class = "ap_accrual_pct"
+effect_value = 25
+
+[[accessory]]
+key = "scarlet_jewel"
+name = "Scarlet Jewel"
+price = 2500
+effect = "Upper Defense increases by 20%."
+effect_class = "udf_pct"
+effect_value = 20
+
+[[accessory]]
+key = "azure_jewel"
+name = "Azure Jewel"
+price = 2500
+effect = "Lower Defense increases by 20%."
+effect_class = "ldf_pct"
+effect_value = 20
+
+[[accessory]]
+key = "guardian_ring"
+name = "Guardian Ring"
+price = 8000
+effect = "UDF and LDF increase by 20%."
+effect_class = "defense_pct"
+effect_value = 20
+
+[[accessory]]
+key = "power_ring"
+name = "Power Ring"
+price = 8000
+effect = "Attack increases by 20%."
+effect_class = "attack_pct"
+effect_value = 20
+
+[[accessory]]
+key = "speed_ring"
+name = "Speed Ring"
+price = 8000
+effect = "Speed increases by 20%."
+effect_class = "speed_pct"
+effect_value = 20
+
+[[accessory]]
+key = "wisdom_ring"
+name = "Wisdom Ring"
+price = 8000
+effect = "Intelligence increases by 20%."
+effect_class = "intelligence_pct"
+effect_value = 20
+
+[[accessory]]
+key = "vitality_ring"
+name = "Vitality Ring"
+price = 50000
+effect = "Agility increases by 20%."
+effect_class = "agility_pct"
+effect_value = 20
+
+[[accessory]]
+key = "star_pearl"
+name = "Star Pearl"
+effect = "Intelligence increases by 20%."
+effect_class = "intelligence_pct"
+effect_value = 20
+
+[[accessory]]
+key = "spirit_jewel"
+name = "Spirit Jewel"
+price = 30000
+effect = "MP cost reduced by 25%."
+effect_class = "mp_cost_pct"
+effect_value = -25
+
+[[accessory]]
+key = "spirit_talisman"
+name = "Spirit Talisman"
+price = 50000
+effect = "MP cost reduced by 50%."
+effect_class = "mp_cost_pct"
+effect_value = -50
+
+[[accessory]]
+key = "mettle_gem"
+name = "Mettle Gem"
+price = 64000
+effect = "AP cost reduced by 50%."
+effect_class = "ap_cost_pct"
+effect_value = -50
+
+[[accessory]]
+key = "mettle_goblet"
+name = "Mettle Goblet"
+price = 65000
+effect = "AP remains at 100."
+effect_class = "ap_freeze_100"
+
+[[accessory]]
+key = "fire_droplet"
+name = "Fire Droplet"
+effect = "AP remains at 100."
+effect_class = "ap_freeze_100"
+
+[[accessory]]
+key = "life_source"
+name = "Life Source"
+price = 50000
+effect = "Slowly restores HP while walking (5 HP per step)."
+effect_class = "hp_per_step"
+effect_value = 5
+
+[[accessory]]
+key = "magic_source"
+name = "Magic Source"
+price = 50000
+effect = "Slowly restores MP while walking (1 MP per step)."
+effect_class = "mp_per_step"
+effect_value = 1
+
+[[accessory]]
+key = "mettle_source"
+name = "Mettle Source"
+price = 50000
+effect = "Slowly accrues AP while walking."
+effect_class = "ap_per_step"
+
+[[accessory]]
+key = "life_grail"
+name = "Life Grail"
+price = 40000
+effect = "Restores 200 HP after every battle turn."
+effect_class = "hp_per_turn"
+effect_value = 200
+
+[[accessory]]
+key = "magic_grail"
+name = "Magic Grail"
+price = 40000
+effect = "Restores 20 MP after every battle turn."
+effect_class = "mp_per_turn"
+effect_value = 20
+
+[[accessory]]
+key = "lost_grail"
+name = "Lost Grail"
+price = 60000
+effect = "Revives the wearer once when they fall in battle."
+effect_class = "revive_once"
+
+[[accessory]]
+key = "war_soul"
+name = "War Soul"
+price = 60000
+effect = "Increases the power of arts."
+effect_class = "art_power_pct"
+
+[[accessory]]
+key = "cure_amulet"
+name = "Cure Amulet"
+price = 800
+effect = "Protects against Venom."
+effect_class = "protect_status"
+status = "venom"
+
+[[accessory]]
+key = "pure_amulet"
+name = "Pure Amulet"
+price = 1600
+effect = "Protects against Venom and Toxic."
+effect_class = "protect_status"
+status = "venom_toxic"
+
+[[accessory]]
+key = "forest_amulet"
+name = "Forest Amulet"
+price = 4000
+effect = "Protects against Rot."
+effect_class = "protect_status"
+status = "rot"
+
+[[accessory]]
+key = "magic_amulet"
+name = "Magic Amulet"
+price = 4000
+effect = "Protects against Curse."
+effect_class = "protect_status"
+status = "curse"
+
+[[accessory]]
+key = "nature_amulet"
+name = "Nature Amulet"
+price = 8000
+effect = "Protects against Numb."
+effect_class = "protect_status"
+status = "numb"
+
+[[accessory]]
+key = "stone_amulet"
+name = "Stone Amulet"
+price = 15000
+effect = "Protects against Petrify."
+effect_class = "protect_status"
+status = "petrify"
+
+[[accessory]]
+key = "wonder_amulet"
+name = "Wonder Amulet"
+price = 50000
+effect = "Protects against all status attacks."
+effect_class = "all_status_def"
+
+[[accessory]]
+key = "earth_jewel"
+name = "Earth Jewel"
+price = 2000
+effect = "Earth defense up."
+effect_class = "elemental_def"
+element = "earth"
+
+[[accessory]]
+key = "deep_sea_jewel"
+name = "Deep Sea Jewel"
+price = 2000
+effect = "Water defense up."
+effect_class = "elemental_def"
+element = "water"
+
+[[accessory]]
+key = "burning_jewel"
+name = "Burning Jewel"
+price = 2000
+effect = "Fire defense up."
+effect_class = "elemental_def"
+element = "fire"
+
+[[accessory]]
+key = "tempest_jewel"
+name = "Tempest Jewel"
+price = 2000
+effect = "Wind defense up."
+effect_class = "elemental_def"
+element = "wind"
+
+[[accessory]]
+key = "madlight_jewel"
+name = "Madlight Jewel"
+price = 4000
+effect = "Thunder defense up."
+effect_class = "elemental_def"
+element = "thunder"
+
+[[accessory]]
+key = "luminous_jewel"
+name = "Luminous Jewel"
+price = 4000
+effect = "Light defense up."
+effect_class = "elemental_def"
+element = "light"
+
+[[accessory]]
+key = "ebony_jewel"
+name = "Ebony Jewel"
+price = 4000
+effect = "Dark defense up."
+effect_class = "elemental_def"
+element = "dark"
+
+[[accessory]]
+key = "rainbow_jewel"
+name = "Rainbow Jewel"
+price = 50000
+effect = "Defense up against all elements."
+effect_class = "all_elemental_def"
+
+[[accessory]]
+key = "earth_egg"
+name = "Earth Egg"
+effect = "Earth defense up; converted by Zalan to Earth Talisman."
+effect_class = "elemental_def"
+element = "earth"
+
+[[accessory]]
+key = "water_egg"
+name = "Water Egg"
+effect = "Water defense up; converted by Zalan to Water Talisman."
+effect_class = "elemental_def"
+element = "water"
+
+[[accessory]]
+key = "light_ra_seru_egg"
+name = "Light Ra-Seru Egg"
+effect = "Light defense up; converted by Zalan to Light Talisman."
+effect_class = "elemental_def"
+element = "light"
+
+[[accessory]]
+key = "dark_stone"
+name = "Dark Stone"
+effect = "Dark defense up; converted by Zalan to Dark Talisman."
+effect_class = "elemental_def"
+element = "dark"
+
+[[accessory]]
+key = "earth_talisman"
+name = "Earth Talisman"
+effect = "Earth defense up; can summon Palma."
+effect_class = "summon_seru"
+summons = "Palma"
+
+[[accessory]]
+key = "water_talisman"
+name = "Water Talisman"
+effect = "Water defense up; can summon Mule."
+effect_class = "summon_seru"
+summons = "Mule"
+
+[[accessory]]
+key = "light_talisman"
+name = "Light Talisman"
+effect = "Light defense up; can summon Horn."
+effect_class = "summon_seru"
+summons = "Horn"
+
+[[accessory]]
+key = "dark_talisman"
+name = "Dark Talisman"
+effect = "Dark defense up; can summon Jedo."
+effect_class = "summon_seru"
+summons = "Jedo"
+
+[[accessory]]
+key = "evil_talisman"
+name = "Evil Talisman"
+effect = "Lowers encounter rate; can summon Juggernaut."
+effect_class = "summon_seru"
+summons = "Juggernaut"
+
+[[accessory]]
+key = "target_chain"
+name = "Target Chain"
+price = 1200
+effect = "Increases hit rate."
+
+[[accessory]]
+key = "defender_chain"
+name = "Defender Chain"
+price = 1200
+effect = "Increases evasion rate."
+
+[[accessory]]
+key = "guardian_chain"
+name = "Guardian Chain"
+price = 6000
+effect = "Wearer cannot block; neither can the enemy."
+
+[[accessory]]
+key = "speed_chain"
+name = "Speed Chain"
+price = 30000
+effect = "Wearer always gets the first turn in battle."
+effect_class = "first_attack"
+
+[[accessory]]
+key = "slowness_chain"
+name = "Slowness Chain"
+price = 1000
+effect = "Wearer gets the last turn (good for healers)."
+effect_class = "last_attack"
+
+[[accessory]]
+key = "crimson_book"
+name = "Crimson Book"
+price = 65000
+effect = "Earned XP +25%."
+effect_class = "xp_pct"
+effect_value = 25
+
+[[accessory]]
+key = "golden_book"
+name = "Golden Book"
+price = 40000
+effect = "Earned gold +25%."
+effect_class = "gold_pct"
+effect_value = 25
+
+[[accessory]]
+key = "bronze_book"
+name = "Bronze Book"
+price = 8000
+effect = "Increases item-drop chance."
+effect_class = "item_drop_chance"
+
+[[accessory]]
+key = "ivory_book"
+name = "Ivory Book"
+price = 5000
+effect = "Increases the chance of absorbing a Seru."
+effect_class = "seru_absorb_chance"
+
+[[accessory]]
+key = "silver_compass"
+name = "Silver Compass"
+price = 3000
+effect = "Reduces ambush rate."
+effect_class = "ambush_def_pct"
+
+[[accessory]]
+key = "golden_compass"
+name = "Golden Compass"
+price = 3000
+effect = "Increases pre-emptive strike rate."
+effect_class = "ambush_off_pct"
+
+[[accessory]]
+key = "good_luck_bell"
+name = "Good Luck Bell"
+price = 12000
+effect = "Lowers random-encounter rate."
+effect_class = "encounter_pct"
+effect_value = -50
+
+[[accessory]]
+key = "bad_luck_bell"
+name = "Bad Luck Bell"
+price = 13000
+effect = "Increases random-encounter rate."
+effect_class = "encounter_pct"
+effect_value = 50
+
+[[accessory]]
+key = "nemesis_gem"
+name = "Nemesis Gem"
+effect = "Increases random-encounter rate."
+effect_class = "encounter_pct"
+effect_value = 50
+
+[[accessory]]
+key = "war_god_icon"
+name = "War God Icon"
+price = 60000
+effect = "Allows the same attack sequence to fire twice."
+effect_class = "double_attack"
+
+[[accessory]]
+key = "evil_god_icon"
+name = "Evil God Icon"
+price = 40000
+effect = "Steal items from defeated enemies."
+
+[[accessory]]
+key = "warrior_icon"
+name = "Warrior Icon"
+price = 55000
+effect = "Allows counterattacks."
+effect_class = "counter_chance"
+
+[[accessory]]
+key = "unholy_icon"
+name = "Unholy Icon"
+price = 50000
+effect = "Ignore enemy defenses."
+effect_class = "ignore_defense"
+
+[[accessory]]
+key = "evil_medallion"
+name = "Evil Medallion"
+price = 9998
+effect = "Wearer enters berserk; multiple art attacks per turn."
+effect_class = "berserk"
+
+[[accessory]]
+key = "chicken_heart"
+name = "Chicken Heart"
+price = 10000
+effect = "Increases successful-escape rate."
+effect_class = "escape_chance"
+
+[[accessory]]
+key = "chicken_safe"
+name = "Chicken Safe"
+price = 10000
+effect = "Reduces incoming damage while escaping."
+effect_class = "escape_def_pct"
+
+[[accessory]]
+key = "chicken_guard"
+name = "Chicken Guard"
+price = 10000
+effect = "Prevents enemies from escaping."
+effect_class = "escape_block"
+
+[[accessory]]
+key = "chicken_king"
+name = "Chicken King"
+price = 25000
+effect = "Always escape from non-boss battles."
+effect_class = "escape_chance"
+effect_value = 100

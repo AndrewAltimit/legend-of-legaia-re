@@ -1,0 +1,1130 @@
+# Enemies. `location` is the canonical zone the walkthrough names; level
+# variants (Lv2/Lv3) escalate alongside the mist progression.
+#
+# `drop` and `steal` are the items received from defeating / stealing
+# (with Evil God Icon) the enemy. The "* Not Available *" shorthand from
+# the walkthrough becomes `none = true`.
+#
+# Walkthrough 2 (Psycho Penguin / squall_ff8) supplies the drop+steal
+# table verbatim with the original PSM Magazine attribution.
+
+[[enemy]]
+name = "Acid Slime"
+location = "Karisto"
+drop = "healing_berry"
+steal = "silver_compass"
+
+[[enemy]]
+name = "Aluru"
+location = "Dohati's Castle, Sol"
+element = "light"
+drop = "power_elixir"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Aluru Lv2"
+location = "Nivora Ravine"
+element = "light"
+drop = "healing_berry"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Aluru Lv3"
+location = "Bio Castle"
+element = "light"
+drop = "healing_fruit"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Amethyst"
+location = "Nivora Ravine"
+drop = "magic_leaf"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Barra"
+location = "Floating Castle, Rogue"
+element = "wind"
+drop = "door_of_wind"
+steal = "life_water"
+
+[[enemy]]
+name = "Barra Lv2"
+location = "Jette, Noaru Valley"
+element = "wind"
+drop = "magic_fruit"
+steal = "power_water"
+
+[[enemy]]
+name = "Barra Lv3"
+location = "Bio Castle"
+element = "wind"
+drop = "healing_fruit"
+steal = "guardian_water"
+
+[[enemy]]
+name = "Berserker"
+location = "Sky Gardens"
+boss = true
+drop = "fire_book_ii"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Berserker Lv2"
+location = "Rogue's Tower"
+boss = true
+drop = "miracle_water"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Berserker Lv3"
+location = "Rogue's Tower"
+boss = true
+drop = "miracle_water"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Black Piura"
+location = "Snowdrift Cave"
+drop = "healing_leaf"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Blue Piura"
+location = "Snowdrift Cave"
+drop = "healing_leaf"
+steal = "good_luck_bell"
+
+[[enemy]]
+name = "Boogie Pump"
+location = "Uru Mais"
+drop = "fury_boost"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Caruban"
+location = "Mt. Rikuroa"
+boss = true
+drop = "healing_bloom"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Caruban Lv2"
+location = "Rogue's Tower"
+boss = true
+drop = "miracle_water"
+
+[[enemy]]
+name = "Caruban Lv3"
+location = "Rogue's Tower"
+boss = true
+drop = "miracle_water"
+
+[[enemy]]
+name = "Che Delilas"
+location = "Nivora Ravine"
+boss = true
+drop = "thunder_book_iii"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Cort"
+location = "Jette's Fortress"
+boss = true
+drop = "magic_grail"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Cort (Juggernaut)"
+location = "Juggernaut"
+boss = true
+steal = "evil_medallion"
+
+[[enemy]]
+name = "Curry Devil"
+location = "Octam (Mist)"
+drop = "door_of_wind"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Dark Ogre"
+location = "Karisto"
+drop = "power_elixir"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Dead Bone"
+location = "Sol"
+drop = "magic_fruit"
+steal = "incense"
+
+[[enemy]]
+name = "Death Trigger"
+location = "Karisto"
+drop = "healing_berry"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Death Wings"
+location = "Sebucus"
+drop = "antidote"
+steal = "medicine"
+
+[[enemy]]
+name = "Demon Fly"
+location = "Ratayu"
+drop = "antidote"
+steal = "golden_compass"
+
+[[enemy]]
+name = "Devil Pump"
+location = "Vidna (Mist)"
+drop = "swift_water"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Dohati"
+location = "Dohati's Castle"
+boss = true
+drop = "mettle_armband"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Drake Ghost"
+location = "Drake Castle (Mist)"
+drop = "door_of_light"
+steal = "power_elixir"
+
+[[enemy]]
+name = "Evil Fly"
+location = "Drake"
+drop = "antidote"
+steal = "antidote"
+
+[[enemy]]
+name = "Evil Shadow"
+location = "Ratayu"
+drop = "phoenix"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Freed"
+location = "Fire Path (iced)"
+element = "water"
+drop = "magic_leaf"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Freed Lv2"
+location = "Uru Mais"
+element = "water"
+drop = "medicine"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Freed Lv3"
+location = "Bio Castle"
+element = "water"
+drop = "medicine"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Frog"
+location = "Drake, Voz Forest"
+drop = "antidote"
+steal = "antidote"
+
+[[enemy]]
+name = "Garnet"
+location = "Mt. Dhini"
+drop = "magic_fruit"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Gaza"
+location = "Sol"
+boss = true
+steal = "life_water"
+
+[[enemy]]
+name = "Gaza (Sim-Seru)"
+location = "Warrior's Square"
+boss = true
+steal = "power_water"
+
+[[enemy]]
+name = "Gel Frog"
+location = "Fire Path"
+drop = "antidote"
+steal = "medicine"
+
+[[enemy]]
+name = "Ghost Knight"
+location = "Sol"
+drop = "door_of_light"
+steal = "speed_elixir"
+
+[[enemy]]
+name = "Gi Delilas"
+location = "Nivora Ravine"
+boss = true
+drop = "fire_book_iii"
+steal = "swift_water"
+
+[[enemy]]
+name = "Giant Rat"
+location = "Karisto"
+drop = "healing_flower"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Gilium"
+location = "Jette's Fortress"
+element = "thunder"
+steal = "power_water"
+
+[[enemy]]
+name = "Gilium Lv2"
+location = "Noaru Valley"
+element = "thunder"
+steal = "guardian_water"
+
+[[enemy]]
+name = "Gilium Lv3"
+location = "Bio Castle"
+element = "thunder"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Gimard"
+location = "Rim Elm, Drake Castle"
+element = "fire"
+drop = "healing_leaf"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Gimard Lv2"
+location = "Biron Monastery"
+element = "fire"
+drop = "magic_leaf"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Gimard Lv3"
+location = "Bio Castle"
+element = "fire"
+drop = "healing_berry"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Gizam"
+location = "Voz, Zeto"
+element = "water"
+drop = "antidote"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Gizam Lv2"
+location = "Shadow Gate"
+element = "water"
+drop = "healing_fruit"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Gizam Lv3"
+location = "Bio Castle"
+element = "water"
+drop = "healing_berry"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Gobu Gobu"
+location = "Drake, Snowdrift Cave"
+drop = "healing_leaf"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Gola Gola"
+location = "Fire Path"
+element = "fire"
+drop = "healing_berry"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Gola Gola Lv2"
+location = "Rogue Tower"
+element = "fire"
+drop = "healing_fruit"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Gola Gola Lv3"
+location = "Bio Castle"
+element = "fire"
+drop = "magic_fruit"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Gold Bison"
+location = "Conkram"
+drop = "healing_berry"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Gold Face"
+location = "Shadow Gate"
+drop = "magic_leaf"
+steal = "power_water"
+
+[[enemy]]
+name = "Golem"
+location = "Mt. Rikuroa"
+drop = "guardian_water"
+steal = "life_water"
+
+[[enemy]]
+name = "Gomboo"
+location = "Drake"
+drop = "healing_leaf"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Green Slime"
+location = "Drake"
+drop = "healing_leaf"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Grude"
+location = "Karisto"
+drop = "healing_fruit"
+steal = "fury_boost"
+
+[[enemy]]
+name = "Guardian"
+location = "Jeremi"
+drop = "door_of_wind"
+steal = "shield_elixir"
+
+[[enemy]]
+name = "Heavy Grude"
+location = "Karisto"
+drop = "healing_berry"
+steal = "fury_boost"
+
+[[enemy]]
+name = "Hell's Rat"
+location = "Mt. Letona"
+drop = "magic_leaf"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Hell's Trigger"
+location = "Sebucus"
+drop = "healing_flower"
+steal = "healing_flower"
+
+[[enemy]]
+name = "High Gomboo"
+location = "Sebucus"
+drop = "healing_fruit"
+steal = "healing_berry"
+
+[[enemy]]
+name = "High Mantis"
+location = "Karisto"
+drop = "healing_fruit"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Hornet"
+location = "Drake"
+drop = "antidote"
+steal = "antidote"
+
+[[enemy]]
+name = "Iota"
+location = "Rogue Tower"
+element = "earth"
+drop = "nature_amulet"
+steal = "swift_water"
+
+[[enemy]]
+name = "Iota Lv2"
+location = "Jette's Fortress"
+element = "earth"
+drop = "spirit_talisman"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Iota Lv3"
+location = "Bio Castle"
+element = "earth"
+drop = "spirit_talisman"
+steal = "life_grail"
+
+[[enemy]]
+name = "Ironman"
+location = "Mt. Dhini"
+drop = "power_water"
+steal = "life_water"
+
+[[enemy]]
+name = "Jette"
+location = "Jette's Fortress"
+boss = true
+drop = "miracle_water"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Kabuki Rat"
+location = "Jeremi"
+drop = "healing_bloom"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Kemaro"
+location = "Sol"
+element = "earth"
+drop = "healing_berry"
+steal = "swift_water"
+
+[[enemy]]
+name = "Kemaro Lv2"
+location = "Conkram (Mist)"
+element = "earth"
+drop = "healing_fruit"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Kemaro Lv3"
+location = "Bio Castle"
+element = "earth"
+drop = "healing_fruit"
+steal = "spirit_talisman"
+
+[[enemy]]
+name = "Killer Bee"
+location = "Octam"
+drop = "antidote"
+steal = "medicine"
+
+[[enemy]]
+name = "Killer Bison"
+location = "Sebucus"
+drop = "healing_flower"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Killer Wolf"
+location = "Usha Research Center"
+drop = "door_of_wind"
+steal = "healing_flower"
+
+[[enemy]]
+name = "King Frog"
+location = "Mt. Letona"
+drop = "medicine"
+steal = "phoenix"
+
+[[enemy]]
+name = "Koru"
+location = "Nivora Ravine"
+drop = "healing_fruit"
+
+[[enemy]]
+name = "Lamia"
+location = "Conkram"
+drop = "magic_fruit"
+steal = "magic_water"
+
+[[enemy]]
+name = "Lapis"
+location = "Mt. Dhini"
+boss = true
+drop = "evil_medallion"
+
+[[enemy]]
+name = "Lava Face"
+location = "Nivora Ravine"
+drop = "magic_fruit"
+steal = "guardian_water"
+
+[[enemy]]
+name = "Lip Kid"
+location = "Vidna, Ratayu"
+drop = "magic_leaf"
+steal = "lippian_flute"
+
+[[enemy]]
+name = "Lip King"
+location = "Mt. Letona"
+drop = "lippian_flute"
+steal = "lippian_flute"
+
+[[enemy]]
+name = "Lippian"
+location = "Drake, Voz"
+drop = "medicine"
+steal = "lippian_flute"
+
+[[enemy]]
+name = "Lu Delilas"
+location = "Nivora Ravine"
+boss = true
+drop = "wind_book_iii"
+steal = "magic_water"
+
+[[enemy]]
+name = "Lucifer"
+location = "Nivora Ravine"
+drop = "magic_fruit"
+steal = "magic_water"
+
+[[enemy]]
+name = "Mad Bird"
+location = "Conkram"
+drop = "fury_boost"
+steal = "spikefish_flute"
+
+[[enemy]]
+name = "Mad Golem"
+location = "Conkram"
+drop = "healing_berry"
+steal = "magic_water"
+
+[[enemy]]
+name = "Mad Mantis"
+location = "Octam"
+drop = "healing_bloom"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Mad Ogre"
+location = "Sebucus"
+drop = "power_elixir"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Mage"
+location = "Sol"
+drop = "magic_fruit"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Medusa"
+location = "Sol"
+drop = "magic_leaf"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Moldy Worm"
+location = "Mt. Rikuroa"
+drop = "medicine"
+steal = "phoenix"
+
+[[enemy]]
+name = "Mush Mush"
+location = "Snowdrift Cave"
+drop = "medicine"
+steal = "healing_shroom"
+
+[[enemy]]
+name = "Mushrin"
+location = "Snowdrift Cave"
+drop = "healing_shroom"
+steal = "healing_shroom"
+
+[[enemy]]
+name = "Mushroom"
+location = "Snowdrift Cave"
+drop = "healing_shroom"
+steal = "healing_shroom"
+
+[[enemy]]
+name = "Mushura"
+location = "Ratayu"
+element = "earth"
+drop = "speed_elixir"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Mushura Lv2"
+location = "Floating Castle"
+element = "earth"
+drop = "healing_berry"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Mushura Lv3"
+location = "Bio Castle"
+element = "earth"
+drop = "healing_berry"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Neo Bison"
+location = "Mt. Dhini"
+drop = "healing_fruit"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Neo Grude"
+location = "Nivora Ravine"
+drop = "healing_fruit"
+steal = "fury_boost"
+
+[[enemy]]
+name = "Nightmare"
+location = "Conkram"
+drop = "magic_water"
+steal = "door_of_wind"
+
+[[enemy]]
+name = "Nighto"
+location = "West Voz Forest"
+element = "dark"
+drop = "phoenix"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Nighto Lv2"
+location = "Jeremi"
+element = "dark"
+drop = "magic_leaf"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Nighto Lv3"
+location = "Bio Castle"
+element = "dark"
+drop = "magic_fruit"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Nova"
+location = "Fire Path"
+element = "wind"
+drop = "healing_berry"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Nova Lv2"
+location = "Dohati's Castle"
+element = "wind"
+drop = "shield_elixir"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Nova Lv3"
+location = "Bio Castle"
+element = "wind"
+drop = "healing_fruit"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Nurga"
+location = "Karisto"
+drop = "magic_leaf"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Oak Slime"
+location = "Sebucus"
+drop = "healing_bloom"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Ogre"
+location = "Sebucus"
+drop = "power_elixir"
+steal = "healing_bloom"
+
+[[enemy]]
+name = "Orb"
+location = "Octam"
+element = "light"
+drop = "magic_leaf"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Orb Lv2"
+location = "Vidna"
+element = "light"
+drop = "healing_bloom"
+steal = "healing_bloom"
+
+[[enemy]]
+name = "Orb Lv3"
+location = "Bio Castle"
+element = "light"
+drop = "magic_fruit"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Ostrich"
+location = "Drake"
+drop = "healing_leaf"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Poisonous Worm"
+location = "Sebucus"
+drop = "antidote"
+steal = "medicine"
+
+[[enemy]]
+name = "Pump Bat"
+location = "Mt. Rikuroa"
+drop = "phoenix"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Puera"
+location = "Floating Castle"
+element = "dark"
+steal = "magic_water"
+
+[[enemy]]
+name = "Puera Lv2"
+location = "Jette's Fortress"
+element = "dark"
+steal = "life_water"
+
+[[enemy]]
+name = "Puera Lv3"
+location = "Bio Castle"
+element = "dark"
+steal = "crimson_book"
+
+[[enemy]]
+name = "Queen Bee"
+location = "Karisto / Rim Elm hidden tree"
+drop = "antidote"
+steal = "phoenix"
+
+[[enemy]]
+name = "Red Piura"
+location = "Snowdrift Cave"
+drop = "healing_leaf"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Rock Lizard"
+location = "Nivora Ravine"
+drop = "healing_fruit"
+steal = "guardian_water"
+
+[[enemy]]
+name = "Rogue"
+location = "Rogue's Tower"
+boss = true
+steal = "guardian_water"
+
+[[enemy]]
+name = "Scale Lizard"
+location = "Karisto"
+drop = "door_of_wind"
+steal = "swift_water"
+
+[[enemy]]
+name = "Shade"
+location = "Sol"
+drop = "magic_fruit"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Skeleton"
+location = "Sol / Muscle Dome"
+drop = "magic_leaf"
+steal = "incense"
+
+[[enemy]]
+name = "Skull Knight"
+location = "Ratayu"
+drop = "magic_leaf"
+steal = "incense"
+
+[[enemy]]
+name = "Slippery"
+location = "Conkram"
+element = "water"
+drop = "door_of_wind"
+steal = "power_water"
+
+[[enemy]]
+name = "Slippery Lv2"
+location = "Rogue Tower"
+element = "water"
+drop = "lost_grail"
+steal = "guardian_water"
+
+[[enemy]]
+name = "Slippery Lv3"
+location = "Bio Castle"
+element = "water"
+drop = "lost_grail"
+steal = "magic_grail"
+
+[[enemy]]
+name = "Songi (1st)"
+location = "Mt. Letona"
+boss = true
+drop = "mettle_ring"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Songi (2nd)"
+location = "Zeto's Dungeon"
+boss = true
+drop = "thunder_book_ii"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Songi (3rd)"
+location = "Valley of Noaru"
+boss = true
+steal = "magic_water"
+
+[[enemy]]
+name = "Sorcerer"
+location = "Buma"
+drop = "magic_fruit"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Speed Wolf"
+location = "Snowdrift Cave"
+drop = "swift_water"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Spike Fish"
+location = "Jeremi"
+drop = "healing_flower"
+steal = "spikefish_flute"
+
+[[enemy]]
+name = "Spoon"
+location = "Sol"
+element = "light"
+drop = "healing_berry"
+steal = "magic_water"
+
+[[enemy]]
+name = "Spoon Lv2"
+location = "Rogue / Jette"
+element = "light"
+drop = "healing_berry"
+steal = "life_water"
+
+[[enemy]]
+name = "Spoon Lv3"
+location = "Bio Castle"
+element = "light"
+drop = "healing_berry"
+steal = "life_grail"
+
+[[enemy]]
+name = "Stone Lizard"
+location = "Fire Path"
+drop = "healing_fruit"
+steal = "power_water"
+
+[[enemy]]
+name = "Swordie"
+location = "Jeremi, Dohati"
+element = "wind"
+drop = "speed_elixir"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Swordie Lv2"
+location = "Vidna"
+element = "wind"
+drop = "healing_berry"
+steal = "healing_bloom"
+
+[[enemy]]
+name = "Swordie Lv3"
+location = "Bio Castle"
+element = "wind"
+drop = "healing_berry"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Terror Face"
+location = "Floating Castle"
+drop = "healing_fruit"
+steal = "swift_water"
+
+[[enemy]]
+name = "Theeder"
+location = "Snowdrift Cave"
+element = "thunder"
+drop = "healing_leaf"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Theeder Lv2"
+location = "Monastery, Zeto"
+element = "thunder"
+drop = "magic_leaf"
+steal = "magic_leaf"
+
+[[enemy]]
+name = "Theeder Lv3"
+location = "Bio Castle"
+element = "thunder"
+drop = "healing_flower"
+steal = "magic_fruit"
+
+[[enemy]]
+name = "Thermo"
+location = "Karisto"
+drop = "magic_fruit"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Topaz"
+location = "Floating Castle"
+drop = "magic_fruit"
+steal = "wisdom_water"
+
+[[enemy]]
+name = "Twin Tomb"
+location = "Sol"
+drop = "healing_bloom"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Van Saryu"
+location = "Ratayu"
+boss = true
+drop = "lost_grail"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Vera"
+location = "Mt. Rikuroa, Voz"
+element = "light"
+drop = "healing_leaf"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Vera Lv2"
+location = "Zeto's Dungeon"
+element = "light"
+drop = "healing_flower"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Vera Lv3"
+location = "Bio Castle"
+element = "light"
+drop = "healing_fruit"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Verial"
+location = "Vidna"
+drop = "magic_fruit"
+steal = "phoenix"
+
+[[enemy]]
+name = "Viguro"
+location = "Ratayu, Voz"
+element = "thunder"
+drop = "golden_compass"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Viguro Lv2"
+location = "Ratayu"
+element = "thunder"
+drop = "healing_fruit"
+steal = "healing_fruit"
+
+[[enemy]]
+name = "Viguro Lv3"
+location = "Bio Castle"
+element = "thunder"
+drop = "healing_berry"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Wailing Bird"
+location = "Conkram"
+drop = "healing_fruit"
+steal = "spikefish_flute"
+
+[[enemy]]
+name = "Warfish"
+location = "Nivora Ravine"
+drop = "medicine"
+steal = "incense"
+
+[[enemy]]
+name = "Warhalf"
+location = "Sol"
+drop = "healing_flower"
+steal = "door_of_wind"
+
+[[enemy]]
+name = "Warman"
+location = "Sol"
+drop = "healing_flower"
+steal = "door_of_light"
+
+[[enemy]]
+name = "Wolf"
+location = "Sebucus"
+drop = "phoenix"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Worm"
+location = "Karisto"
+drop = "antidote"
+steal = "antidote"
+
+[[enemy]]
+name = "Xain"
+location = "Fire Path"
+boss = true
+drop = "wind_book_ii"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Zenoir"
+location = "Zeto's Dungeon"
+element = "fire"
+drop = "healing_flower"
+steal = "healing_leaf"
+
+[[enemy]]
+name = "Zenoir Lv2"
+location = "Dohati's Castle"
+element = "fire"
+drop = "magic_leaf"
+steal = "healing_flower"
+
+[[enemy]]
+name = "Zenoir Lv3"
+location = "Bio Castle"
+element = "fire"
+drop = "magic_fruit"
+steal = "healing_berry"
+
+[[enemy]]
+name = "Zeto"
+location = "Zeto's Dungeon"
+boss = true
+drop = "silver_compass"
+steal = "wonder_elixir"
+
+[[enemy]]
+name = "Zora"
+location = "Floating Castle"
+boss = true
+steal = "swift_water"
