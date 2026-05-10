@@ -34,6 +34,29 @@ pub const MAX_DISPLAYED_SKILLS: usize = 16;
 /// Stat-cap clamp value the runtime applies via `FUN_80042558`.
 pub const STAT_CAP: u16 = 0x3E7;
 
+/// Per-stat record-side cap constant the engine writes to `+0x120`
+/// during a level-up event. Empirically `100` for every captured
+/// character and every captured save state. Documented at
+/// `docs/formats/save-record.md` "+0x120 cap constant" section.
+pub const RECORD_CAP_CONSTANT: u16 = 100;
+
+/// Number of "live" stats stored at `+0x110..+0x11B` (six u16s LE).
+/// Mirrored at `+0x122..+0x12D` as the record-side copy.
+pub const LIVE_STAT_COUNT: usize = 6;
+
+/// Number of summon-level bytes at `+0x161..+0x178` (16 bytes,
+/// one per summon ID). Pinned by the GameShark "All Summons Level 9"
+/// cheat which sets every byte in this window to `0x09`.
+pub const SUMMON_SLOT_COUNT: usize = 16;
+
+/// Number of magic-slot groups at `+0x13D..+0x160`. Each group is
+/// 12 bytes (one byte per spell within the group). Pinned by the
+/// "Magic Modifier N" cheat family which has three repeating
+/// instances per character at offsets `+0x13D / +0x149 / +0x155`.
+pub const MAGIC_GROUP_COUNT: usize = 3;
+/// Byte stride between adjacent magic-slot groups.
+pub const MAGIC_GROUP_STRIDE: usize = 12;
+
 // --- Sub-structs -----------------------------------------------------------
 
 /// HP / MP / SP triplet: each pair is (current, maximum) at `+0x104..0x110`.
@@ -122,6 +145,62 @@ impl Default for DisplayedSkillList {
             ids: [0; MAX_DISPLAYED_SKILLS],
         }
     }
+}
+
+/// The six "live" stats at `+0x110..+0x11B` (six u16s LE), in
+/// the order `(AGL, ATK, UDF, LDF, SPD, INT)`.
+///
+/// The runtime reads these for moment-to-moment battle resolution.
+/// On level-up the engine writes the record-side copy at
+/// `+0x122..+0x12D` first, then mirrors it into this window.
+///
+/// Pinned by the GameShark "Max AGL / Max ATK / ..." cheats which
+/// each carry two address sites per character (one in this window,
+/// one in the record-side window).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct LiveStats {
+    /// Agility (`+0x110`).
+    pub agl: u16,
+    /// Attack (`+0x112`).
+    pub atk: u16,
+    /// Up-defence (`+0x114`).
+    pub udf: u16,
+    /// Down-defence (`+0x116`).
+    pub ldf: u16,
+    /// Speed (`+0x118`).
+    pub spd: u16,
+    /// Intelligence (`+0x11A`).
+    pub int: u16,
+}
+
+/// The record-side stat window at `+0x11C..+0x12D` - a 9 × u16 view
+/// the engine writes during level-up before mirroring into the live
+/// window at `+0x110..+0x11B`.
+///
+/// Pinned across the captured Noa + Gala 4-level triplets and
+/// cross-checked against the GameShark "Max HP / Max MP / Max ATK / ..."
+/// cheats which target both the live AND the record copies.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct RecordStats {
+    /// Maximum HP (`+0x11C`).
+    pub hp_max: u16,
+    /// Maximum MP (`+0x11E`).
+    pub mp_max: u16,
+    /// Per-stat cap constant. Always `100` in captured saves
+    /// (`+0x120`). See [`RECORD_CAP_CONSTANT`].
+    pub cap_constant: u16,
+    /// Agility (`+0x122`).
+    pub agl: u16,
+    /// Attack (`+0x124`).
+    pub atk: u16,
+    /// Up-defence (`+0x126`).
+    pub udf: u16,
+    /// Down-defence (`+0x128`).
+    pub ldf: u16,
+    /// Speed (`+0x12A`).
+    pub spd: u16,
+    /// Intelligence (`+0x12C`).
+    pub int: u16,
 }
 
 // --- Top-level character record -------------------------------------------
@@ -317,6 +396,146 @@ impl CharacterRecord {
         self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
     }
 
+    /// "Magic Rank" / level field at `+0x130` (u8).
+    ///
+    /// Captured Noa + Gala level-up triplets show this byte ticking
+    /// `+1` per level-up event regardless of how many character
+    /// levels were granted; the GameShark `Level 99` cheat for each
+    /// character sets the same byte to `0x63`. The two readings are
+    /// reconciled by treating this byte as the **Magic Rank** (not
+    /// the character level): single-level XP gains tick rank +1
+    /// per event, and the cheat-set value of 99 unlocks every
+    /// magic / summon at maximum power without affecting the
+    /// character's Tactical Arts level. The character's combat
+    /// level is derived from cumulative XP via
+    /// [`crate::level_for_cumulative_xp`].
+    pub fn magic_rank(&self) -> u8 {
+        self.raw[0x130]
+    }
+
+    /// Replace the magic-rank field.
+    pub fn set_magic_rank(&mut self, rank: u8) {
+        self.raw[0x130] = rank;
+    }
+
+    /// Live stats at `+0x110..+0x11B`, in `(AGL, ATK, UDF, LDF,
+    /// SPD, INT)` order.
+    pub fn live_stats(&self) -> LiveStats {
+        let r = |off: usize| u16::from_le_bytes([self.raw[off], self.raw[off + 1]]);
+        LiveStats {
+            agl: r(0x110),
+            atk: r(0x112),
+            udf: r(0x114),
+            ldf: r(0x116),
+            spd: r(0x118),
+            int: r(0x11A),
+        }
+    }
+
+    /// Replace the live-stats window.
+    pub fn set_live_stats(&mut self, s: LiveStats) {
+        let mut w = |off: usize, v: u16| {
+            self.raw[off..off + 2].copy_from_slice(&v.to_le_bytes());
+        };
+        w(0x110, s.agl);
+        w(0x112, s.atk);
+        w(0x114, s.udf);
+        w(0x116, s.ldf);
+        w(0x118, s.spd);
+        w(0x11A, s.int);
+    }
+
+    /// Record-side stats at `+0x11C..+0x12D` (9 × u16 LE).
+    /// Engine writes these first on level-up, then mirrors into
+    /// [`Self::live_stats`].
+    pub fn record_stats(&self) -> RecordStats {
+        let r = |off: usize| u16::from_le_bytes([self.raw[off], self.raw[off + 1]]);
+        RecordStats {
+            hp_max: r(0x11C),
+            mp_max: r(0x11E),
+            cap_constant: r(0x120),
+            agl: r(0x122),
+            atk: r(0x124),
+            udf: r(0x126),
+            ldf: r(0x128),
+            spd: r(0x12A),
+            int: r(0x12C),
+        }
+    }
+
+    /// Replace the record-side stats window.
+    pub fn set_record_stats(&mut self, s: RecordStats) {
+        let mut w = |off: usize, v: u16| {
+            self.raw[off..off + 2].copy_from_slice(&v.to_le_bytes());
+        };
+        w(0x11C, s.hp_max);
+        w(0x11E, s.mp_max);
+        w(0x120, s.cap_constant);
+        w(0x122, s.agl);
+        w(0x124, s.atk);
+        w(0x126, s.udf);
+        w(0x128, s.ldf);
+        w(0x12A, s.spd);
+        w(0x12C, s.int);
+    }
+
+    /// Per-character summon-level bytes at `+0x161..+0x178` (16
+    /// bytes; one byte per summon ID 0..=15).
+    ///
+    /// Pinned by the GameShark "All Summons Level 9" cheat which
+    /// stamps `0x09` into every byte in this window. Distinct from
+    /// the per-character spell-level array (which the prior
+    /// `SpellList::levels` field misidentified as).
+    pub fn summon_levels(&self) -> [u8; SUMMON_SLOT_COUNT] {
+        let mut out = [0u8; SUMMON_SLOT_COUNT];
+        out.copy_from_slice(&self.raw[0x161..0x161 + SUMMON_SLOT_COUNT]);
+        out
+    }
+
+    /// Replace the per-summon-level array.
+    pub fn set_summon_levels(&mut self, levels: [u8; SUMMON_SLOT_COUNT]) {
+        self.raw[0x161..0x161 + SUMMON_SLOT_COUNT].copy_from_slice(&levels);
+    }
+
+    /// Per-magic-group spell IDs at `+0x13D..+0x160` - three
+    /// 12-byte groups in source order. The byte at `+0x13C` is the
+    /// "Magic Slot Activator" gate (pinned by the cheat of the same
+    /// name; setting it to `0x24` enables every spell slot).
+    pub fn magic_groups(&self) -> [[u8; MAGIC_GROUP_STRIDE]; MAGIC_GROUP_COUNT] {
+        let mut out = [[0u8; MAGIC_GROUP_STRIDE]; MAGIC_GROUP_COUNT];
+        for (i, group) in out.iter_mut().enumerate() {
+            let base = 0x13D + i * MAGIC_GROUP_STRIDE;
+            group.copy_from_slice(&self.raw[base..base + MAGIC_GROUP_STRIDE]);
+        }
+        out
+    }
+
+    /// Replace the magic-group spell IDs.
+    pub fn set_magic_groups(&mut self, groups: [[u8; MAGIC_GROUP_STRIDE]; MAGIC_GROUP_COUNT]) {
+        for (i, group) in groups.iter().enumerate() {
+            let base = 0x13D + i * MAGIC_GROUP_STRIDE;
+            self.raw[base..base + MAGIC_GROUP_STRIDE].copy_from_slice(group);
+        }
+    }
+
+    /// "Magic Slot Activator" byte at `+0x13C`. The cheat database
+    /// sets this to `0x24` to enable the magic-slot system; the
+    /// engine reads it as a count / gate when assembling the menu.
+    pub fn magic_slot_activator(&self) -> u8 {
+        self.raw[0x13C]
+    }
+
+    /// Replace the magic-slot-activator byte.
+    pub fn set_magic_slot_activator(&mut self, value: u8) {
+        self.raw[0x13C] = value;
+    }
+
+    /// Game-time field accessor lives outside this record (game time
+    /// is a party-wide global at `0x80084570`); see
+    /// [`legaia_engine_core::ram_map`] for the engine-side cell.
+    /// Provided here as a doc anchor for cross-reference.
+    pub const GAME_TIME_GLOBAL_ADDR: u32 = 0x80084570;
+
     /// Typed snapshot of every documented field - convenient for JSON
     /// dumps. Fields not in [`Snapshot`] still pass through `write` via
     /// the underlying [`Self::raw`] buffer.
@@ -328,6 +547,11 @@ impl CharacterRecord {
             ability_bits: self.ability_bits().to_vec(),
             hp_mp_sp: self.hp_mp_sp(),
             stat_cap: self.stat_cap(),
+            live_stats: self.live_stats(),
+            record_stats: self.record_stats(),
+            magic_rank: self.magic_rank(),
+            magic_slot_activator: self.magic_slot_activator(),
+            summon_levels: self.summon_levels().to_vec(),
             spell_count: spells.count,
             spell_ids: spells.ids.to_vec(),
             spell_levels: spells.levels.to_vec(),
@@ -347,8 +571,19 @@ pub struct Snapshot {
     pub ability_bits: Vec<u8>,
     /// HP / MP / SP triplet at `+0x104`.
     pub hp_mp_sp: HpMpSp,
-    /// Stat cap at `+0x11A`.
+    /// Stat cap at `+0x11A`. NB: this offset overlaps the live INT
+    /// stat in the cheat-derived layout; treat with care.
     pub stat_cap: u16,
+    /// Live stats at `+0x110..+0x11B` (AGL, ATK, UDF, LDF, SPD, INT).
+    pub live_stats: LiveStats,
+    /// Record-side stats at `+0x11C..+0x12D`.
+    pub record_stats: RecordStats,
+    /// Magic-rank byte at `+0x130`.
+    pub magic_rank: u8,
+    /// Magic-slot-activator byte at `+0x13C`.
+    pub magic_slot_activator: u8,
+    /// Per-summon-level bytes at `+0x161..+0x178`.
+    pub summon_levels: Vec<u8>,
     /// Spell-list count at `+0x13C`.
     pub spell_count: u8,
     /// Spell IDs at `+0x13D` (length [`MAX_SPELLS`]).
@@ -623,5 +858,133 @@ mod tests {
         assert!(Party::parse(&[]).is_err());
         assert!(Party::parse(&[0u8; 0x100]).is_err());
         assert!(Party::parse(&[0u8; 0x415]).is_err());
+    }
+
+    /// The "Max AGL / ATK / UDF / LDF / SPD / INT" GameShark cheats
+    /// each have two address sites per character: one in the live
+    /// window (`+0x110..+0x11B`) and one in the record window
+    /// (`+0x122..+0x12D`). Verify that writing the live window and
+    /// reading it back round-trips through the typed accessor.
+    #[test]
+    fn live_stats_round_trip() {
+        let mut r = CharacterRecord::zeroed();
+        let s = LiveStats {
+            agl: 0x3E7,
+            atk: 0x3E7,
+            udf: 0x3E7,
+            ldf: 0x3E7,
+            spd: 0x3E7,
+            int: 0x3E7,
+        };
+        r.set_live_stats(s);
+        let read_back = r.live_stats();
+        assert_eq!(read_back, s);
+        // The bytes should land at the cheat-pinned offsets.
+        assert_eq!(
+            &r.raw[0x110..0x11C],
+            &[
+                0xE7, 0x03, 0xE7, 0x03, 0xE7, 0x03, 0xE7, 0x03, 0xE7, 0x03, 0xE7, 0x03,
+            ]
+        );
+    }
+
+    /// Record-side stats round-trip including the cap constant at
+    /// `+0x120`.
+    #[test]
+    fn record_stats_round_trip_pins_cap_constant() {
+        let mut r = CharacterRecord::zeroed();
+        let s = RecordStats {
+            hp_max: 0x270F,
+            mp_max: 0x03E7,
+            cap_constant: RECORD_CAP_CONSTANT,
+            agl: 50,
+            atk: 60,
+            udf: 70,
+            ldf: 80,
+            spd: 90,
+            int: 100,
+        };
+        r.set_record_stats(s);
+        assert_eq!(r.record_stats(), s);
+        // Cap constant lands at +0x120 LE.
+        assert_eq!(&r.raw[0x120..0x122], &[100, 0]);
+    }
+
+    /// The "Level 99" GameShark cheat writes `0x63` to `+0x130`.
+    /// Our accessor calls this byte `magic_rank`; the test asserts
+    /// the read/write reaches the same bytes the cheat targets.
+    #[test]
+    fn magic_rank_writes_byte_at_offset_0x130() {
+        let mut r = CharacterRecord::zeroed();
+        r.set_magic_rank(99);
+        assert_eq!(r.raw[0x130], 99);
+        assert_eq!(r.magic_rank(), 99);
+    }
+
+    /// "All Summons Level 9" stamps `0x09` into 16 bytes at
+    /// `+0x161..+0x178`.
+    #[test]
+    fn summon_levels_round_trip_16_bytes() {
+        let mut r = CharacterRecord::zeroed();
+        let levels = [0x09u8; SUMMON_SLOT_COUNT];
+        r.set_summon_levels(levels);
+        assert_eq!(r.summon_levels(), levels);
+        assert!(
+            r.raw[0x161..0x161 + SUMMON_SLOT_COUNT]
+                .iter()
+                .all(|&b| b == 0x09)
+        );
+        // Bytes outside the window must be untouched.
+        assert_eq!(r.raw[0x160], 0);
+        assert_eq!(r.raw[0x161 + SUMMON_SLOT_COUNT], 0);
+    }
+
+    /// Magic-slot-activator gate at `+0x13C`. Cheat sets to 0x24.
+    #[test]
+    fn magic_slot_activator_writes_byte_at_offset_0x13c() {
+        let mut r = CharacterRecord::zeroed();
+        r.set_magic_slot_activator(0x24);
+        assert_eq!(r.raw[0x13C], 0x24);
+        assert_eq!(r.magic_slot_activator(), 0x24);
+    }
+
+    /// Magic groups: three 12-byte windows starting at `+0x13D`.
+    #[test]
+    fn magic_groups_round_trip_three_windows() {
+        let mut r = CharacterRecord::zeroed();
+        let mut groups = [[0u8; MAGIC_GROUP_STRIDE]; MAGIC_GROUP_COUNT];
+        for (i, group) in groups.iter_mut().enumerate() {
+            for (j, slot) in group.iter_mut().enumerate() {
+                *slot = (i as u8) * 16 + (j as u8) + 1;
+            }
+        }
+        r.set_magic_groups(groups);
+        let read_back = r.magic_groups();
+        assert_eq!(read_back, groups);
+        // First byte of group 0 lands at +0x13D.
+        assert_eq!(r.raw[0x13D], 1);
+        // First byte of group 1 lands at +0x149.
+        assert_eq!(r.raw[0x149], 17);
+        // First byte of group 2 lands at +0x155.
+        assert_eq!(r.raw[0x155], 33);
+        // Last byte of group 2 lands at +0x160.
+        assert_eq!(r.raw[0x160], 33 + 11);
+    }
+
+    /// Snapshot now includes the cheat-derived fields.
+    #[test]
+    fn snapshot_includes_new_cheat_derived_fields() {
+        let mut r = CharacterRecord::zeroed();
+        r.set_magic_rank(42);
+        r.set_magic_slot_activator(0x24);
+        r.set_record_stats(RecordStats {
+            cap_constant: RECORD_CAP_CONSTANT,
+            ..RecordStats::default()
+        });
+        let snap = r.snapshot();
+        assert_eq!(snap.magic_rank, 42);
+        assert_eq!(snap.magic_slot_activator, 0x24);
+        assert_eq!(snap.record_stats.cap_constant, RECORD_CAP_CONSTANT);
+        assert_eq!(snap.summon_levels.len(), SUMMON_SLOT_COUNT);
     }
 }

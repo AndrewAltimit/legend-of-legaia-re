@@ -192,6 +192,21 @@ enum Cmd {
         /// Optional TOML CDNAME→STR map; same format as `play --cutscene-map`.
         #[arg(long)]
         cutscene_map: Option<PathBuf>,
+        /// Optional GameShark `.gs.txt` or Mednafen `.cht` cheat file.
+        /// Each entry is parsed and applied once at boot through the
+        /// `legaia_engine_core::cheat_applier` registry. Per-entry
+        /// status is logged to stderr. Conditional codes (`D0`/`E0`)
+        /// are treated as always-true unless `--cheat-strict` is set.
+        #[arg(long)]
+        cheat_file: Option<PathBuf>,
+        /// When `--cheat-file` is set, honour conditional codes
+        /// strictly: skip every write that follows a `D0`/`E0` gate
+        /// the engine doesn't emulate. Default is to apply
+        /// conditionals as always-true (which is what the player
+        /// expects for "Save Anywhere" / "Status Modifier Menu" /
+        /// etc. style cheats).
+        #[arg(long, default_value_t = false)]
+        cheat_strict: bool,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -426,6 +441,8 @@ fn main() -> Result<()> {
             boot_ui,
             save_dir,
             cutscene_map,
+            cheat_file,
+            cheat_strict,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -436,6 +453,8 @@ fn main() -> Result<()> {
             boot_ui,
             &save_dir,
             cutscene_map.as_deref(),
+            cheat_file.as_deref(),
+            cheat_strict,
         ),
         Cmd::Save {
             extracted_root,
@@ -2325,6 +2344,58 @@ fn keycode_to_name(code: KeyCode) -> &'static str {
     }
 }
 
+/// Parse a GameShark `.gs.txt` or Mednafen `.cht` cheat file and
+/// apply every entry to `world` through the
+/// [`legaia_engine_core::cheat_applier`] registry. Logs per-entry
+/// status to stderr.
+fn apply_cheat_file(
+    world: &mut legaia_engine_core::world::World,
+    path: &Path,
+    strict: bool,
+) -> Result<()> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let mut db = if path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("cht"))
+        .unwrap_or(false)
+    {
+        legaia_cheats::parse_mednafen_cht(&text)?
+    } else {
+        legaia_cheats::parse_gs_text(&text)?
+    };
+    db.dedupe_identical();
+    let opts = legaia_engine_core::cheat_applier::ApplyOptions {
+        execute_conditionals: !strict,
+        skip_unmapped: false,
+    };
+    let report = legaia_engine_core::cheat_applier::apply(world, &db, opts);
+    eprintln!(
+        "Cheat report ({} entries, {} writes; {} applied, {} unmapped, {} unknown):",
+        report.per_entry.len(),
+        report.total_writes,
+        report.applied,
+        report.unmapped,
+        report.unknown_addresses
+    );
+    for entry in &report.per_entry {
+        let total = entry.applied + entry.skipped;
+        let tag = if entry.applied == total {
+            "ok  "
+        } else if entry.applied == 0 {
+            "skip"
+        } else {
+            "part"
+        };
+        eprintln!(
+            "  {tag}  {:.<60} {}/{} writes",
+            entry.description, entry.applied, total
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_play_window(
     scene: &str,
@@ -2336,6 +2407,8 @@ fn cmd_play_window(
     boot_ui: bool,
     save_dir: &Path,
     cutscene_map_path: Option<&Path>,
+    cheat_file: Option<&Path>,
+    cheat_strict: bool,
 ) -> Result<()> {
     // Optional cutscene-map override layered on top of the heuristic.
     let cutscene_map = if let Some(p) = cutscene_map_path {
@@ -2401,6 +2474,14 @@ fn cmd_play_window(
         if matches!(world.mode, SceneMode::Field) {
             world.install_encounter_for_scene(&registry, scene);
         }
+    }
+
+    // Apply the cheat file (if any) to the live World before building
+    // scene resources. The applier mutates `world.roster` /
+    // `world.money` / `world.play_time_seconds` etc. through the
+    // ram_map registry.
+    if let Some(path) = cheat_file {
+        apply_cheat_file(&mut session.host.world, path, cheat_strict)?;
     }
 
     let scene_res = {

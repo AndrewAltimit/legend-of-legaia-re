@@ -1,0 +1,356 @@
+R I 2 L 0 80084816 64 100 AP
+R I 2 L 0 80084c2a 64 100 AP
+R I 2 L 0 8008503e 64 100 AP
+R I 2 L 0 801d9274 100f 100% Casting Power (Fishing Mini Game)
+R I 2 L 0 80084598 0 1st Character Modifier 1
+R I 2 L 0 8007b8a2 0 1st Character Modifier 1
+R I 2 L 0 8007b8f8 0 1st Character Modifier 1
+R I 2 L 0 800837f8 0 1st Character Modifier 1
+R I 2 L 0 8008444c ffff 65535 Fishing Points
+R I 2 L 0 8008575c f77f Access All Towns When You Use Door of Wind
+R I 2 L 0 8008575e f8ff Access All Towns When You Use Door of Wind
+R I 1 L 0 800848a3 0 Accessory 1 Modifier
+R I 1 L 0 80084cb7 0 Accessory 1 Modifier
+R I 1 L 0 800850cb 0 Accessory 1 Modifier
+R I 1 L 0 800848a4 0 Accessory 2 Modifier
+R I 1 L 0 80084cb8 0 Accessory 2 Modifier
+R I 1 L 0 800850cc 0 Accessory 2 Modifier
+R I 1 L 0 800848a5 0 Accessory 3 Modifier
+R I 1 L 0 80084cb9 0 Accessory 3 Modifier
+R I 1 L 0 800850cd 0 Accessory 3 Modifier
+R I 1 L 0 800848a1 9 Activate Meta at Lv9
+R I 1 L 0 800850c9 1b Activate Ozma at Lv9
+R I 1 L 0 80084cb4 12 Activate Terra at Lv9
+R I 1 L 0 80084869 9 All Summons Level 9
+R I 2 L 0 8008486a 909 All Summons Level 9
+R I 2 L 0 8008486c 909 All Summons Level 9
+R I 2 L 0 8008486e 909 All Summons Level 9
+R I 2 L 0 80084870 909 All Summons Level 9
+R I 2 L 0 80084872 909 All Summons Level 9
+R I 2 L 0 80084874 909 All Summons Level 9
+R I 2 L 0 80084876 909 All Summons Level 9
+R I 2 L 0 80084878 909 All Summons Level 9
+R I 2 L 0 8008487a 909 All Summons Level 9
+R I 2 L 0 8008487c 909 All Summons Level 9
+R I 2 L 0 8008487e 909 All Summons Level 9
+R I 2 L 0 80084880 909 All Summons Level 9
+R I 2 L 0 80084882 909 All Summons Level 9
+R I 2 L 0 80084884 909 All Summons Level 9
+R I 2 L 0 80084886 909 All Summons Level 9
+R I 1 L 0 80084c7d 9 All Summons Level 9
+R I 2 L 0 80084c7e 909 All Summons Level 9
+R I 2 L 0 80084c80 909 All Summons Level 9
+R I 2 L 0 80084c82 909 All Summons Level 9
+R I 2 L 0 80084c84 909 All Summons Level 9
+R I 2 L 0 80084c86 909 All Summons Level 9
+R I 2 L 0 80084c88 909 All Summons Level 9
+R I 2 L 0 80084c8a 909 All Summons Level 9
+R I 2 L 0 80084c8c 909 All Summons Level 9
+R I 2 L 0 80084c8e 909 All Summons Level 9
+R I 2 L 0 80084c90 909 All Summons Level 9
+R I 2 L 0 80084c92 909 All Summons Level 9
+R I 2 L 0 80084c94 909 All Summons Level 9
+R I 2 L 0 80084c96 909 All Summons Level 9
+R I 2 L 0 80084c98 909 All Summons Level 9
+R I 2 L 0 80084c9a 909 All Summons Level 9
+R I 1 L 0 8008489e 0 Armor Modifier
+R I 1 L 0 80084cb2 0 Armor Modifier
+R I 1 L 0 800850c6 0 Armor Modifier
+R I 2 L 0 8008489e 384b Best Equipment
+R I 1 L 0 800848a0 1b Best Equipment
+R I 1 L 0 800848a2 5f Best Equipment
+R I 2 L 0 80084cb2 3e51 Best Equipment
+R I 1 L 0 80084cb5 2d Best Equipment
+R I 1 L 0 80084cb6 64 Best Equipment
+R I 2 L 0 800422f4 1 Bought Any Item or Find Items You Will Get 99 Quantity
+R I 2 L 0 80084594 3 Character Activator
+R I 2 L 0 801dc06c 0 Comp Has No Life (Baka Fighter Mini Game)
+R I 2 L 0 8007b6f4 a0 Control Camera (Press L2-Up/R2-Down/L2+R2-Zoom)
+R I 2 L 0 8007b6f4 230 Control Camera (Press L2-Up/R2-Down/L2+R2-Zoom)
+R I 2 L 0 801d3cac 1 Enable Access to The Punch Mode On The Wild Card Slot Machine
+R I 2 L 0 8007b450 85 End of Game Stat Page
+R I 2 L 0 80084708 0 Exp Modifier
+R I 2 L 0 80084b1c 0 Exp Modifier
+R I 2 L 0 80084f30 0 Exp Modifier
+R I 2 L 0 801d91cc 0 Fish Modifier (Fishing Mini Game)
+R I 1 L 0 8008459a 2 Gala Activator
+R I 2 L 0 80084570 0 Game Time 0:00:00
+R I 1 L 0 8008488d f Has all Arts
+R I 2 L 0 8008488e d0e Has all Arts
+R I 2 L 0 80084890 b0c Has all Arts
+R I 2 L 0 80084892 90a Has all Arts
+R I 2 L 0 80084894 708 Has all Arts
+R I 2 L 0 80084896 506 Has all Arts
+R I 2 L 0 80084898 304 Has all Arts
+R I 2 L 0 8008489a 102 Has all Arts
+R I 1 L 0 80084ca1 f Has all Arts
+R I 2 L 0 80084ca2 f10 Has all Arts
+R I 2 L 0 80084ca4 d0e Has all Arts
+R I 2 L 0 80084ca6 b0c Has all Arts
+R I 2 L 0 80084ca8 90a Has all Arts
+R I 2 L 0 80084caa 708 Has all Arts
+R I 2 L 0 80084cac 506 Has all Arts
+R I 2 L 0 80084cae 104 Has all Arts
+R I 1 L 0 80085959 63 Have 99 Items
+R I 1 L 0 8008595b 63 Have 99 Items
+R I 1 L 0 8008595d 63 Have 99 Items
+R I 1 L 0 8008595f 63 Have 99 Items
+R I 1 L 0 80085961 63 Have 99 Items
+R I 1 L 0 80085963 63 Have 99 Items
+R I 1 L 0 80085965 63 Have 99 Items
+R I 1 L 0 80085967 63 Have 99 Items
+R I 1 L 0 80085969 63 Have 99 Items
+R I 1 L 0 8008596b 63 Have 99 Items
+R I 1 L 0 8008596d 63 Have 99 Items
+R I 1 L 0 8008596f 63 Have 99 Items
+R I 1 L 0 80085971 63 Have 99 Items
+R I 1 L 0 80085973 63 Have 99 Items
+R I 1 L 0 80085975 63 Have 99 Items
+R I 1 L 0 80085977 63 Have 99 Items
+R I 1 L 0 80085979 63 Have 99 Items
+R I 1 L 0 8008597b 63 Have 99 Items
+R I 1 L 0 8008597d 63 Have 99 Items
+R I 1 L 0 8008597f 63 Have 99 Items
+R I 1 L 0 80085981 63 Have 99 Items
+R I 1 L 0 80085983 63 Have 99 Items
+R I 1 L 0 80085985 63 Have 99 Items
+R I 1 L 0 80085987 63 Have 99 Items
+R I 1 L 0 80085989 63 Have 99 Items
+R I 1 L 0 8008598b 63 Have 99 Items
+R I 1 L 0 8008598d 63 Have 99 Items
+R I 1 L 0 8008598f 63 Have 99 Items
+R I 1 L 0 80085991 63 Have 99 Items
+R I 1 L 0 80085993 63 Have 99 Items
+R I 1 L 0 80085995 63 Have 99 Items
+R I 1 L 0 80085997 63 Have 99 Items
+R I 1 L 0 80085999 63 Have 99 Items
+R I 1 L 0 8008599b 63 Have 99 Items
+R I 1 L 0 8008599d 63 Have 99 Items
+R I 1 L 0 8008599f 63 Have 99 Items
+R I 1 L 0 800859a1 63 Have 99 Items
+R I 1 L 0 800859a3 63 Have 99 Items
+R I 1 L 0 800859a5 63 Have 99 Items
+R I 1 L 0 800859a7 63 Have 99 Items
+R I 1 L 0 800859a9 63 Have 99 Items
+R I 1 L 0 800859ab 63 Have 99 Items
+R I 1 L 0 800859ad 63 Have 99 Items
+R I 1 L 0 800859af 63 Have 99 Items
+R I 1 L 0 800859b1 63 Have 99 Items
+R I 1 L 0 800859b3 63 Have 99 Items
+R I 1 L 0 800859b5 63 Have 99 Items
+R I 1 L 0 800859b7 63 Have 99 Items
+R I 1 L 0 800859b9 63 Have 99 Items
+R I 1 L 0 800859bb 63 Have 99 Items
+R I 1 L 0 800859bd 63 Have 99 Items
+R I 1 L 0 800859bf 63 Have 99 Items
+R I 1 L 0 800859c1 63 Have 99 Items
+R I 1 L 0 800859c3 63 Have 99 Items
+R I 1 L 0 800859c5 63 Have 99 Items
+R I 1 L 0 800859c7 63 Have 99 Items
+R I 1 L 0 800859c9 63 Have 99 Items
+R I 1 L 0 800859cb 63 Have 99 Items
+R I 1 L 0 800859cd 63 Have 99 Items
+R I 1 L 0 800859cf 63 Have 99 Items
+R I 1 L 0 800859d1 63 Have 99 Items
+R I 1 L 0 800859d3 63 Have 99 Items
+R I 1 L 0 800859d5 63 Have 99 Items
+R I 1 L 0 800859d7 63 Have 99 Items
+R I 1 L 0 800859d9 63 Have 99 Items
+R I 1 L 0 800859db 63 Have 99 Items
+R I 1 L 0 800859dd 63 Have 99 Items
+R I 1 L 0 800859df 63 Have 99 Items
+R I 1 L 0 800859e1 63 Have 99 Items
+R I 1 L 0 800859e3 63 Have 99 Items
+R I 1 L 0 800859e5 63 Have 99 Items
+R I 1 L 0 800859e7 63 Have 99 Items
+R I 2 L 0 8008488c 1000 Have All Art Moves
+R I 2 L 0 8008488e 201 Have All Art Moves
+R I 2 L 0 80084890 403 Have All Art Moves
+R I 2 L 0 80084892 605 Have All Art Moves
+R I 2 L 0 80084894 807 Have All Art Moves
+R I 2 L 0 80084896 a09 Have All Art Moves
+R I 2 L 0 80084898 c0b Have All Art Moves
+R I 2 L 0 8008489a e0d Have All Art Moves
+R I 2 L 0 8008489c f Have All Art Moves
+R I 2 L 0 80084ca0 1000 Have All Art Moves
+R I 2 L 0 80084ca2 201 Have All Art Moves
+R I 2 L 0 80084ca4 403 Have All Art Moves
+R I 2 L 0 80084ca6 605 Have All Art Moves
+R I 2 L 0 80084ca8 807 Have All Art Moves
+R I 2 L 0 80084caa a09 Have All Art Moves
+R I 2 L 0 80084cac c0b Have All Art Moves
+R I 2 L 0 80084cae e0d Have All Art Moves
+R I 2 L 0 80084cb0 f Have All Art Moves
+R I 2 L 0 800850b4 1000 Have All Art Moves
+R I 2 L 0 800850b6 201 Have All Art Moves
+R I 2 L 0 800850b8 403 Have All Art Moves
+R I 2 L 0 800850ba 605 Have All Art Moves
+R I 2 L 0 800850bc 807 Have All Art Moves
+R I 2 L 0 800850be a09 Have All Art Moves
+R I 2 L 0 800850c0 c0b Have All Art Moves
+R I 2 L 0 800850c2 e0d Have All Art Moves
+R I 2 L 0 800850c4 f Have All Art Moves
+R I 2 L 0 80084844 811f Have all Summons
+R I 2 L 0 80084846 8c86 Have all Summons
+R I 2 L 0 80084848 829e Have all Summons
+R I 2 L 0 8008484a 9587 Have all Summons
+R I 2 L 0 8008484c 88a0 Have all Summons
+R I 2 L 0 8008484e 8f8b Have all Summons
+R I 2 L 0 80084850 8d9f Have all Summons
+R I 2 L 0 80084852 9390 Have all Summons
+R I 2 L 0 80084854 849a Have all Summons
+R I 2 L 0 80084856 928a Have all Summons
+R I 2 L 0 80084858 859b Have all Summons
+R I 2 L 0 8008485a 948e Have all Summons
+R I 2 L 0 8008485c 839d Have all Summons
+R I 2 L 0 8008485e 9189 Have all Summons
+R I 2 L 0 80084860 969c Have all Summons
+R I 2 L 0 80084862 9997 Have all Summons
+R I 2 L 0 80084c58 811f Have all Summons
+R I 2 L 0 80084c5a 8c86 Have all Summons
+R I 2 L 0 80084c5c 829e Have all Summons
+R I 2 L 0 80084c5e 9587 Have all Summons
+R I 2 L 0 80084c60 88a0 Have all Summons
+R I 2 L 0 80084c62 8f8b Have all Summons
+R I 2 L 0 80084c64 8d9f Have all Summons
+R I 2 L 0 80084c66 9390 Have all Summons
+R I 2 L 0 80084c68 849a Have all Summons
+R I 2 L 0 80084c6a 928a Have all Summons
+R I 2 L 0 80084c6c 859b Have all Summons
+R I 2 L 0 80084c6e 948e Have all Summons
+R I 2 L 0 80084c70 839d Have all Summons
+R I 2 L 0 80084c72 9189 Have all Summons
+R I 2 L 0 80084c74 969c Have all Summons
+R I 2 L 0 80084c76 9997 Have all Summons
+R I 1 L 0 8008489f 0 Head Gear Modifier
+R I 1 L 0 80084cb3 0 Head Gear Modifier
+R I 1 L 0 800850c7 0 Head Gear Modifier
+R I 2 L 0 800845a4 e0ff Infinite Coins
+R I 2 L 0 800845a6 5f5 Infinite Coins
+R I 2 L 0 8008459c ffff Infinite Gold (Never Glitchy)
+R I 2 L 0 8007a6bc 270f Infinite HP (Gala)
+R I 2 L 0 80085036 270f Infinite HP (Gala)
+R I 2 L 0 800ed0dc 270f Infinite HP (Gala)
+R I 2 L 0 800ed102 270f Infinite HP (Gala)
+R I 2 L 0 8007a6bc 270f Infinite HP (Noa)
+R I 2 L 0 80084c22 270f Infinite HP (Noa)
+R I 2 L 0 800ece08 270f Infinite HP (Noa)
+R I 2 L 0 800ece2e 270f Infinite HP (Noa)
+R I 2 L 0 8007a6bc 270f Infinite HP (Vahn)
+R I 2 L 0 8008480e 270f Infinite HP (Vahn)
+R I 2 L 0 800ecb34 270f Infinite HP (Vahn)
+R I 2 L 0 800ecb5a 270f Infinite HP (Vahn)
+R I 2 L 0 8004309e 2400 Infinite Items All Slots
+R I 2 L 0 801dbfc4 c80 Infinite Life (Baka Fighter Mini Game)
+R I 2 L 0 8007a6bc 3e7 Infinite MP (Gala)
+R I 2 L 0 8008503a 3e7 Infinite MP (Gala)
+R I 2 L 0 800ed0e0 3e7 Infinite MP (Gala)
+R I 2 L 0 800ed104 3e7 Infinite MP (Gala)
+R I 2 L 0 8007a6bc 3e7 Infinite MP (Noa)
+R I 2 L 0 80084c26 3e7 Infinite MP (Noa)
+R I 2 L 0 800ece0c 3e7 Infinite MP (Noa)
+R I 2 L 0 800ece30 3e7 Infinite MP (Noa)
+R I 2 L 0 8007a6bc 3e7 Infinite MP (Vahn)
+R I 2 L 0 80084812 3e7 Infinite MP (Vahn)
+R I 2 L 0 800ecb38 3e7 Infinite MP (Vahn)
+R I 2 L 0 800ecb5c 3e7 Infinite MP (Vahn)
+R I 1 L 0 800848a2 0 Leg Gear Modifier
+R I 1 L 0 80084cb6 0 Leg Gear Modifier
+R I 1 L 0 800850ca 0 Leg Gear Modifier
+R I 2 L 0 80084838 63 Level 99
+R I 2 L 0 80084c4c 63 Level 99
+R I 2 L 0 80085060 63 Level 99
+R I 1 L 0 80084844 24 Magic Slot Activator
+R I 1 L 0 80084c58 24 Magic Slot Activator
+R I 1 L 0 8008506c 24 Magic Slot Activator
+R I 2 L 0 80084540 0 Map Modifier (Hold L2+R2)
+R I 2 L 0 80084818 3e7 Max AGL
+R I 2 L 0 8008482a 3e7 Max AGL
+R I 2 L 0 80084c2c 3e7 Max AGL
+R I 2 L 0 80084c3e 3e7 Max AGL
+R I 2 L 0 80085040 3e7 Max AGL
+R I 2 L 0 80085052 3e7 Max AGL
+R I 2 L 0 8008481a 3e7 Max ATK
+R I 2 L 0 8008482c 3e7 Max ATK
+R I 2 L 0 80084c2e 3e7 Max ATK
+R I 2 L 0 80084c40 3e7 Max ATK
+R I 2 L 0 80085042 3e7 Max ATK
+R I 2 L 0 80085054 3e7 Max ATK
+R I 2 L 0 801d53cc ffff Max Dance Points (Dancing Mini Game)
+R I 2 L 0 80084708 ffff Max Exp
+R I 2 L 0 8008470a 98 Max Exp
+R I 2 L 0 80084b1c ffff Max Exp
+R I 2 L 0 80084b1e 98 Max Exp
+R I 2 L 0 80084f30 ffff Max Exp
+R I 2 L 0 80084f32 98 Max Exp
+R I 2 L 0 8008480c 270f Max HP
+R I 2 L 0 8008480e 270f Max HP
+R I 2 L 0 80084824 270f Max HP
+R I 2 L 0 80084c20 270f Max HP
+R I 2 L 0 80084c22 270f Max HP
+R I 2 L 0 80084c38 270f Max HP
+R I 2 L 0 80085034 270f Max HP
+R I 2 L 0 80085036 270f Max HP
+R I 2 L 0 8008504c 270f Max HP
+R I 2 L 0 80084822 3e7 Max INT
+R I 2 L 0 80084834 3e7 Max INT
+R I 2 L 0 80084c36 3e7 Max INT
+R I 2 L 0 80084c48 3e7 Max INT
+R I 2 L 0 8008504a 3e7 Max INT
+R I 2 L 0 8008505c 3e7 Max INT
+R I 2 L 0 8008481e 3e7 Max LDF
+R I 2 L 0 80084830 3e7 Max LDF
+R I 2 L 0 80084c32 3e7 Max LDF
+R I 2 L 0 80084c44 3e7 Max LDF
+R I 2 L 0 80085046 3e7 Max LDF
+R I 2 L 0 80085058 3e7 Max LDF
+R I 2 L 0 80084810 3e7 Max MP
+R I 2 L 0 80084812 3e7 Max MP
+R I 2 L 0 80084826 3e7 Max MP
+R I 2 L 0 80084c24 3e7 Max MP
+R I 2 L 0 80084c26 3e7 Max MP
+R I 2 L 0 80084c3a 3e7 Max MP
+R I 2 L 0 80085038 3e7 Max MP
+R I 2 L 0 8008503a 3e7 Max MP
+R I 2 L 0 8008504e 3e7 Max MP
+R I 2 L 0 80084820 3e7 Max SPD
+R I 2 L 0 80084832 3e7 Max SPD
+R I 2 L 0 80084c34 3e7 Max SPD
+R I 2 L 0 80084c46 3e7 Max SPD
+R I 2 L 0 80085048 3e7 Max SPD
+R I 2 L 0 8008505a 3e7 Max SPD
+R I 2 L 0 8008481c 3e7 Max UDF
+R I 2 L 0 8008482e 3e7 Max UDF
+R I 2 L 0 80084c30 3e7 Max UDF
+R I 2 L 0 80084c42 3e7 Max UDF
+R I 2 L 0 80085044 3e7 Max UDF
+R I 2 L 0 80085056 3e7 Max UDF
+R I 2 L 0 8007ea96 2400 Maxed HP for All Characters
+R I 1 L 0 800848a1 9 Meta Max Level
+R I 2 L 0 8007b450 d Name Modifier For Gala (Push Select)
+R I 2 L 0 8007b450 11 Name Modifier For Vahn (Push Select)
+R I 2 L 0 801d9298 0 No Life (Fishing Mini Game)
+R I 2 L 0 8007b5fc 377 No Random Battles
+R I 2 L 0 801d9168 0 No Tension (Fishing Mini Game)
+R I 1 L 0 80084599 1 Noa Activator
+R I 2 L 0 8007b83c 0 Press R2 For Debug Menu
+R I 1 L 0 8007b83c 0 Press Select+R1+R2+L1+L2 For Debug Menu
+R I 2 L 0 80084708 ffff Quick Level Gain
+R I 2 L 0 8004390e 2400 Remove Vahn's Chest
+R I 2 L 0 8007b450 4097 Save Anywhere
+R I 2 L 0 8007b6a8 1 Save Anywhere (Press Select+X)
+R I 2 L 0 7a894 68fb Slow Motion
+R I 2 L 0 8007a894 68fb Slow Motion
+R I 2 L 0 8007b6f4 15b Small Maps
+R I 2 L 0 8008444c ffff Start With A Lot Of Fishing Points
+R I 2 L 0 8007b450 1 Status Modifier Menu (Push Select To Enter Menu, L2 To Exit Menu)
+R I 1 L 0 80084cb4 11 Terra Max Level
+R I 2 L 0 801dbff0 2 Two Rounds Won In Baka Fighter
+R I 2 L 0 80084540 30c View Credits (Start Game Like Normal)
+R I 2 L 0 801d078c 6 Walk Thru Walls
+R I 2 L 0 801d071c 6 Walk Thru Walls
+R I 2 L 0 801d065c 6 Walk Thru Walls
+R I 2 L 0 801d06bc 6 Walk Thru Walls
+R I 1 L 0 800848a0 0 Weapon Modifier
+R I 1 L 0 80084cb5 0 Weapon Modifier
+R I 1 L 0 800850c8 0 Weapon Modifier

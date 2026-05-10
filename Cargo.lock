@@ -1219,6 +1219,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-cheats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "legaia-engine-audio"
 version = "0.1.0"
 dependencies = [
@@ -1241,6 +1251,7 @@ dependencies = [
  "legaia-anm",
  "legaia-art",
  "legaia-asset",
+ "legaia-cheats",
  "legaia-engine-vm",
  "legaia-font",
  "legaia-iso",
@@ -1284,6 +1295,7 @@ dependencies = [
  "env_logger",
  "glam",
  "legaia-art",
+ "legaia-cheats",
  "legaia-engine-audio",
  "legaia-engine-core",
  "legaia-engine-render",

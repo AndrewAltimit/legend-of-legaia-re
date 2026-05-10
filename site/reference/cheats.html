@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cheat databases - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; cheat databases</div>
+  <h1>Cheat databases</h1>
+  <p class="lede">Third-party GameShark / Pro-Action-Replay cheat code dumps for <em>Legend of Legaia</em> (NTSC-U) are an unusually rich source of ground-truth RAM addresses. This page documents the encoding, the parser, the citation table, and the runtime applier wired into <code>legaia-engine play-window --cheat-file</code>.</p>
+</header>
+
+<section class="doc-section" id="files">
+  <h2>Data files</h2>
+  <p>The corpus lives at <code>data/cheats/</code> in the repo:</p>
+  <ul class="bullets">
+    <li><code>legaia-ntsc-u.gs.txt</code> - GameShark text dump format (one effect per line).</li>
+    <li><code>legaia-ntsc-u.cht</code> - Mednafen <code>.cht</code> format (TOML-shaped triples; multi-write effects join codes with <code>+</code>).</li>
+  </ul>
+  <p>Both files describe the same effects in different on-disk encodings; round-trip between them is part of the test suite.</p>
+</section>
+
+<section class="doc-section" id="format">
+  <h2>GameShark code prefix table</h2>
+  <p>The high byte of the address is the operation prefix:</p>
+  <table>
+    <thead><tr><th>Prefix</th><th>Operation</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x80</code></td><td>u16 LE write</td><td><code>80084816 0064</code> &rarr; <code>mem16[0x80084816] = 0x0064</code></td></tr>
+      <tr><td><code>0x30</code></td><td>u8 write</td><td><code>300848A3 0000</code> &rarr; <code>mem8[0x800848A3] = 0x00</code></td></tr>
+      <tr><td><code>0xD0</code></td><td>conditional: if <code>mem16 == value</code>, execute next</td><td><code>D007B7C0 0100</code> (Select pressed)</td></tr>
+      <tr><td><code>0xE0</code></td><td>conditional: if <code>mem16 != value</code>, execute next</td><td><code>E007B83C 0003</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="parser">
+  <h2>Parser + classifier</h2>
+  <p>The <code>crates/cheats</code> crate exposes <code>parse_gs_text</code>, <code>parse_mednafen_cht</code>, and <code>classify_address</code>. The companion <code>cheat-tool</code> CLI:</p>
+  <pre><code>cargo run -p legaia-cheats --bin cheat-tool -- parse data/cheats/legaia-ntsc-u.cht
+cargo run -p legaia-cheats --bin cheat-tool -- classify data/cheats/legaia-ntsc-u.gs.txt --dedupe
+cargo run -p legaia-cheats --bin cheat-tool -- diff data/cheats/legaia-ntsc-u.gs.txt data/cheats/legaia-ntsc-u.cht
+cargo run -p legaia-cheats --bin cheat-tool -- extract-offsets data/cheats/legaia-ntsc-u.cht
+cargo run -p legaia-cheats --bin cheat-tool -- offset-table data/cheats/legaia-ntsc-u.cht</code></pre>
+  <p>Categories the classifier emits: <code>CharacterRecord</code>, <code>PartyMoney</code>, <code>Inventory</code>, <code>BattleActor</code>, <code>ScriptVmGlobal</code>, <code>CameraGlobal</code>, <code>PadInput</code>, <code>WorldStoryFlag</code>, <code>Minigame</code>, <code>FieldVmCollision</code>, <code>ScratchActiveActor</code>, <code>CodePatch</code>, <code>Unknown</code>.</p>
+</section>
+
+<section class="doc-section" id="citations">
+  <h2>Notable citations the cheat database pinned</h2>
+  <ul class="bullets">
+    <li><strong>Inventory layout</strong>: <code>0x80085958</code> + 2-byte stride, 72 slots, alternating <code>(id, count)</code>. Pinned by the "Have 99 Items" / "Have Max Items" / "Item Modifier" cheat triplet.</li>
+    <li><strong>Battle actor pool stride</strong>: <code>0x800EC9E8</code> + <code>0x2D4</code> per party slot. Vahn HP at <code>+0x14C</code> / Noa at base+<code>0x2D4</code>+<code>0x14C</code> = <code>0x800ECE08</code>. The "Infinite HP/MP" cheats target both the live (<code>+0x14C/+0x150</code>) and settled (<code>+0x172/+0x174</code>) sites.</li>
+    <li><strong>Story flag bitmap</strong>: <code>0x80085600..0x80085800</code> holds town-visited / Door of Wind state. "Access All Towns" writes <code>0xF77F / 0xF8FF</code> at <code>0x8008575C/E</code>.</li>
+    <li><strong>Code-patch sites</strong>: cheats writing <code>0x2400</code> (MIPS <code>nop</code>) flag specific instructions: inventory-add (<code>0x800422F4</code>), count-decrement (<code>0x8004309E</code>), Vahn chest draw (<code>0x80043910</code>), HP-write branch (<code>0x8007EA96</code>). Useful Ghidra anchors.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="applier">
+  <h2>Runtime applier</h2>
+  <p><code>legaia-engine play-window --cheat-file &lt;PATH&gt;</code> parses the file, applies every entry through the <code>legaia_engine_core::ram_map</code> registry, and logs per-entry status:</p>
+  <pre><code>Cheat report (49 entries, 96 writes; 71 applied, 25 unmapped, 0 unknown):
+  ok    Infinite HP (Vahn)............... 4/4 writes
+  ok    Infinite Gold (Never Glitchy).... 1/1 writes
+  skip  Walk Thru Walls.................. 0/4 writes (FieldVmCollision unmapped)
+  ...</code></pre>
+  <p>Conditional codes are treated as always-true by default. Pass <code>--cheat-strict</code> to honour them, which will skip every cheat that gates on a button press the engine doesn't emulate.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <ul class="bullets">
+    <li><a href="../formats/save-record.html">Per-character save record format</a> - full <code>0x414</code>-byte offset table the cheat citations anchor.</li>
+    <li><a href="memory-map.html">PSX RAM map</a> - newly-pinned globals from the cheat database.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'reference/cheats' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

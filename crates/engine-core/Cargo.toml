@@ -27,6 +27,7 @@ legaia-vab = { path = "../vab" }
 legaia-anm = { path = "../anm" }
 legaia-art = { path = "../art" }
 legaia-save = { path = "../save" }
+legaia-cheats = { path = "../cheats" }
 
 [dev-dependencies]
 tempfile = "3"
