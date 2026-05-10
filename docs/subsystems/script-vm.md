@@ -526,3 +526,16 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
 The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
 The frame-sentinel `0xFFFF 0x0000` that opens many scene-event-scripts records is **not** itself an opcode - the `scene-event-scripts` mode skips past it before walking the opcode stream of each record.
+
+## FMV-trigger sites — exhaustive backward sweep
+
+A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds **only two distinct writers**. Both are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
+
+| Label | Function | Mode-write addr | FMV-id source | Trigger condition |
+|---|---|---|---|---|
+| `field_vm_op_4c_e2` | `FUN_801DE840` | `0x801E3104` | `decode_u16_be(pc+1)` from field-VM bytecode | Field-VM hits the byte sequence `0x4C 0xE2 lo hi`; reached via JT chain `0x801CEE60` (high nibble 0xE) → `0x801CF008` (low nibble 0x2) → label `0x801E30E4`. |
+| `title_attract_loop` | `FUN_801DE234`, case `0x10` | `0x801E0F50` | Hardcoded `0` (= `MV1.STR`, intro) | Title-screen idle countdown `DAT_801ef16c` underflows. |
+
+**`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
+
+The corollary for §2.7's seven mid-game scenes (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`): they **must** trigger via the same `0x4C 0xE2` op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only `PROT[371] taiku, fmv_id=5`). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot — the lift is blocked on the same intra-transition byte-level capture that gates [`docs/formats/field-pack.md`](../formats/field-pack.md).

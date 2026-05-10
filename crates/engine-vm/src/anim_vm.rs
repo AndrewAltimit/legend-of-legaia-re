@@ -433,16 +433,12 @@ impl<'a> OpaqueAnimRecord<'a> {
         Some(self.read_u16_le(off)? as i16)
     }
 
-    /// `+0x0E` movement-scaling factor.
+    /// `+0x0E` movement-scaling factor. Used by `FUN_80047430` as the
+    /// per-frame velocity numerator: per-frame translation step is
+    /// `(angle_lookup * movement_scale * frame_index) / frame_count` (the
+    /// `frame_count` divisor is the byte at `*(+0x88) + 1`).
     pub fn movement_scale(&self) -> Option<i16> {
         self.read_i16_le(0x0E)
-    }
-
-    /// `+0x21D` per-frame stride byte. The consumer uses
-    /// `8 / stride` to pick the items-per-block factor (caps at 8;
-    /// `stride == 0` is treated as `1`).
-    pub fn frame_stride(&self) -> Option<u8> {
-        self.read_u8(0x21D)
     }
 
     /// `+0x56` sub-state counter; ticks during the `Kind2 -> Kind4`
@@ -466,18 +462,28 @@ impl<'a> OpaqueAnimRecord<'a> {
         self.read_u8(0x78)
     }
 
-    /// `+0x84` depth / elevation byte. Stored to `actor[+0x21B]` and
-    /// shifted left 4 into `actor[+0x176]` by the consumer.
+    /// `+0x84` max-frame byte. The consumer stamps it into
+    /// `actor[+0x21B]` and shifts it left by 4 into `actor[+0x176]`
+    /// (the per-actor frame-counter cap; the high 12 bits of the actor's
+    /// `+0x68` u16 frame counter index a frame in the nested per-frame
+    /// data array).
     pub fn depth_84(&self) -> Option<u8> {
         self.read_u8(0x84)
     }
 
-    /// `+0x85` count A.
+    /// `+0x85` loop-target frame index. When the playback head reaches
+    /// `count_86 - 1` and the actor's previous-action sentinel
+    /// `actor[+0x21B]` is non-zero, the per-bone interpolator pulls the
+    /// "next" frame from this index instead of `frame_index + 1` (the
+    /// `FUN_8004998C` line ~1077 path: `pbVar17 = pbVar20 + count_85 *
+    /// bones * 9 + 2`).
     pub fn count_85(&self) -> Option<u8> {
         self.read_u8(0x85)
     }
 
-    /// `+0x86` count B.
+    /// `+0x86` loop-trigger frame index (the frame at which the
+    /// loop-target lookup kicks in; the comparison is `frame_index ==
+    /// count_86 - 1`).
     pub fn count_86(&self) -> Option<u8> {
         self.read_u8(0x86)
     }
@@ -488,11 +494,11 @@ impl<'a> OpaqueAnimRecord<'a> {
         self.read_u8(0x87)
     }
 
-    /// `+0x88` u32 pointer-shaped value to nested per-frame data. The
-    /// consumer reads the byte at `*(ptr + 1)` as the per-frame item
-    /// count. Engines that re-host the struct should resolve this
-    /// pointer in their own address space before consuming the
-    /// per-frame data.
+    /// `+0x88` u32 pointer-shaped value to nested per-frame data. Use
+    /// [`NestedFrameData::from_bytes`] on the buffer the pointer
+    /// references to walk the layout. Engines that re-host the struct
+    /// should resolve this pointer in their own address space before
+    /// consuming the per-frame data.
     pub fn nested_data_ptr_raw(&self) -> Option<u32> {
         let bytes = self.bytes.get(0x88..0x88 + 4)?;
         Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
@@ -506,6 +512,442 @@ impl<'a> OpaqueAnimRecord<'a> {
     /// `+0x176` animation-frame counter.
     pub fn anim_frame_176(&self) -> Option<u16> {
         self.read_u16_le(0x176)
+    }
+}
+
+/// Per-actor LOD step byte at `actor[+0x21D]`.
+///
+/// Set by the consumer at `0x8004B080..0x8004B090` to `4` (default) or
+/// `8`, and to `0` / `2` by other paths. `FUN_80049348` reads it as a
+/// child-step divisor: `lod_step = 8 / (actor[+0x21D] | 1)`. The render
+/// pass then iterates the actor's child-actor chain at `+0x1FB..` with
+/// stride `lod_step`, so a higher value ≡ rendering fewer sub-actors per
+/// frame (LOD culling). The value is **on the actor record**, not on
+/// the nested ANM consumer struct; an earlier read of the docs that
+/// placed it on the consumer struct was a misread of the `s1` register
+/// at `0x8004ad80`.
+///
+/// Use [`ActorAnimState::lod_step_factor`] to fold the `8 / x` math and
+/// the floor-at-1 rule.
+pub const ACTOR_LOD_STEP_OFFSET: usize = 0x21D;
+
+/// Per-actor previous-action sentinel at `actor[+0x21B]`. The consumer
+/// stamps `OpaqueAnimRecord::depth_84` into this byte at the end of an
+/// anim transition (`FUN_8004AD80` line 1058: `*(actor + 0x21B) =
+/// *(consumer + 0x84)`). The per-bone interpolator at `FUN_8004998C`
+/// reads it back when deciding whether to pull the "next" frame from
+/// the loop target (`OpaqueAnimRecord::count_85`) or from the linear
+/// `frame_index + 1` slot.
+pub const ACTOR_PREV_ACTION_OFFSET: usize = 0x21B;
+
+/// Per-actor frame-counter cap at `actor[+0x176]`. The consumer stamps
+/// `OpaqueAnimRecord::depth_84 << 4` into this u16 at the start of a
+/// new anim. The actor's own frame-counter `actor[+0x68]` (a u16 with
+/// the frame index in the high 12 bits and the sub-frame interpolation
+/// factor in the low 4 bits) clamps against it.
+pub const ACTOR_FRAME_CAP_OFFSET: usize = 0x176;
+
+/// Typed view onto a borrowed actor record's anim-related fields. Wraps
+/// the same `0x2D4`-byte buffer the battle-action SM owns and exposes
+/// the LOD step + frame-counter cap accessors so engines that re-host
+/// the actor record don't have to repeat the offset arithmetic.
+#[derive(Debug, Clone, Copy)]
+pub struct ActorAnimState<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> ActorAnimState<'a> {
+    /// Wrap a byte slice. The slice should point at the actor record's
+    /// first byte; offsets are relative to that. Out-of-range reads
+    /// return `None`.
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes }
+    }
+
+    /// `actor[+0x21B]` previous-action sentinel.
+    pub fn prev_action(&self) -> Option<u8> {
+        self.bytes.get(ACTOR_PREV_ACTION_OFFSET).copied()
+    }
+
+    /// `actor[+0x21D]` raw LOD step byte (values observed: 0, 2, 4, 8).
+    pub fn lod_step_raw(&self) -> Option<u8> {
+        self.bytes.get(ACTOR_LOD_STEP_OFFSET).copied()
+    }
+
+    /// Folded LOD step: `8 / max(stride, 1)`, clamped to `[1, 8]`. For
+    /// the observed inputs `0 / 2 / 4 / 8` this returns `8 / 4 / 2 / 1`
+    /// — i.e. how many child actors the renderer skips per outer step.
+    pub fn lod_step_factor(&self) -> Option<u8> {
+        let raw = self.lod_step_raw()?;
+        let denom = if raw == 0 { 1 } else { raw };
+        Some((8 / denom).clamp(1, 8))
+    }
+
+    /// `actor[+0x176]` frame-counter cap (u16 LE).
+    pub fn frame_cap(&self) -> Option<u16> {
+        let bytes = self
+            .bytes
+            .get(ACTOR_FRAME_CAP_OFFSET..ACTOR_FRAME_CAP_OFFSET + 2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    /// `actor[+0x68]` frame counter (u16 LE). Layout:
+    ///
+    /// - bits `[4..15]` (high 12 bits): frame index into the per-frame
+    ///   data array.
+    /// - bits `[0..3]` (low 4 bits): sub-frame interpolation factor
+    ///   (`0` = exact frame, `1..=15` = lerp factor / 16 between this
+    ///   frame and the next).
+    pub fn frame_counter(&self) -> Option<u16> {
+        let bytes = self.bytes.get(0x68..0x68 + 2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    /// Frame index extracted from `frame_counter()` (high 12 bits).
+    pub fn frame_index(&self) -> Option<u16> {
+        Some(self.frame_counter()? >> 4)
+    }
+
+    /// Sub-frame interpolation factor (low 4 bits, `0..=15`).
+    pub fn sub_frame_factor(&self) -> Option<u8> {
+        Some((self.frame_counter()? & 0x000F) as u8)
+    }
+}
+
+/// One bone's keyframe within a nested per-frame data block: 6
+/// sign-extended 12-bit values laid out as two `[i16; 3]` vectors.
+///
+/// The pair shape mirrors what `FUN_8004998C` writes to the GPU OT
+/// scratch buffer at `(unaff_gp + 0x6F4)` - `vec_a` is the first vec3
+/// (x, y, z) and `vec_b` is the second. The interpretation (rotation
+/// quat / euler / position delta) is renderer-side; on the data side
+/// they're just two signed-12-bit triplets per bone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoneFrame {
+    /// First 12-bit triplet (`puVar14[0..3]` after sign extension).
+    pub vec_a: [i16; 3],
+    /// Second 12-bit triplet (`puVar14[3..6]` after sign extension).
+    pub vec_b: [i16; 3],
+}
+
+impl BoneFrame {
+    /// Decode a 9-byte bone keyframe.
+    ///
+    /// The packing pairs adjacent low bytes with shared high-nibble
+    /// bytes. For each output index `k` in `0..=5`:
+    ///
+    /// ```text
+    /// k=0: byte[0] | (byte[2] & 0x0F) << 8
+    /// k=1: byte[1] | (byte[2] & 0xF0) << 4
+    /// k=2: byte[3] | (byte[5] & 0x0F) << 8
+    /// k=3: byte[4] | (byte[5] & 0xF0) << 4
+    /// k=4: byte[6] | (byte[8] & 0x0F) << 8
+    /// k=5: byte[7] | (byte[8] & 0xF0) << 4
+    /// ```
+    ///
+    /// Each result is a 12-bit value; if bit 11 (`0x800`) is set the
+    /// consumer ORs `0xF000` to sign-extend - we do the same here so
+    /// the returned `i16` is the runtime-equivalent value.
+    pub fn from_9_bytes(b: &[u8; 9]) -> Self {
+        let pack = |lo: u8, nib: u8| -> i16 {
+            let v = u16::from(lo) | (u16::from(nib) << 8);
+            if v & 0x0800 != 0 {
+                (v | 0xF000) as i16
+            } else {
+                v as i16
+            }
+        };
+        let a0 = pack(b[0], b[2] & 0x0F);
+        let a1 = pack(b[1], (b[2] & 0xF0) >> 4);
+        let a2 = pack(b[3], b[5] & 0x0F);
+        let b0 = pack(b[4], (b[5] & 0xF0) >> 4);
+        let b1 = pack(b[6], b[8] & 0x0F);
+        let b2 = pack(b[7], (b[8] & 0xF0) >> 4);
+        BoneFrame {
+            vec_a: [a0, a1, a2],
+            vec_b: [b0, b1, b2],
+        }
+    }
+
+    /// Encode this bone keyframe back into 9 bytes. Round-trip with
+    /// [`BoneFrame::from_9_bytes`] for any value whose components fit
+    /// the signed 12-bit range `[-2048, 2047]`. Out-of-range components
+    /// are masked to 12 bits (matching what the runtime would observe
+    /// after sign-extension).
+    pub fn to_9_bytes(&self) -> [u8; 9] {
+        let unpack = |v: i16| -> (u8, u8) {
+            let m = (v as u16) & 0x0FFF;
+            ((m & 0xFF) as u8, ((m >> 8) & 0x0F) as u8)
+        };
+        let (al0, ah0) = unpack(self.vec_a[0]);
+        let (al1, ah1) = unpack(self.vec_a[1]);
+        let (al2, ah2) = unpack(self.vec_a[2]);
+        let (bl0, bh0) = unpack(self.vec_b[0]);
+        let (bl1, bh1) = unpack(self.vec_b[1]);
+        let (bl2, bh2) = unpack(self.vec_b[2]);
+        [
+            al0,
+            al1,
+            ah0 | (ah1 << 4),
+            al2,
+            bl0,
+            ah2 | (bh0 << 4),
+            bl1,
+            bl2,
+            bh1 | (bh2 << 4),
+        ]
+    }
+
+    /// Linear interpolate between this frame and `other` by `frac/16`.
+    /// Mirrors `FUN_8004998C`'s `dst = a + (b - a) * frac >> 4`
+    /// formula component-wise. `frac` is clamped to `0..=15`.
+    pub fn lerp16(&self, other: &BoneFrame, frac: u8) -> BoneFrame {
+        let f = frac.min(15) as i32;
+        let comp = |a: i16, b: i16| -> i16 {
+            let a = a as i32;
+            let b = b as i32;
+            (a + (((b - a) * f) >> 4)) as i16
+        };
+        BoneFrame {
+            vec_a: [
+                comp(self.vec_a[0], other.vec_a[0]),
+                comp(self.vec_a[1], other.vec_a[1]),
+                comp(self.vec_a[2], other.vec_a[2]),
+            ],
+            vec_b: [
+                comp(self.vec_b[0], other.vec_b[0]),
+                comp(self.vec_b[1], other.vec_b[1]),
+                comp(self.vec_b[2], other.vec_b[2]),
+            ],
+        }
+    }
+}
+
+/// Stride per bone within a frame, in bytes.
+pub const NESTED_BONE_STRIDE: usize = 9;
+
+/// Header size at the start of the nested per-frame data buffer
+/// (`bones_per_frame` byte + `frame_count` byte).
+pub const NESTED_HEADER_SIZE: usize = 2;
+
+/// Errors returned by [`NestedFrameData::from_bytes`] when the slice
+/// cannot back the declared frame / bone counts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NestedFrameDataError {
+    /// Slice shorter than 2 bytes (no header).
+    HeaderTooSmall,
+    /// `bones_per_frame` (the header byte at `+0`) is zero — the
+    /// renderer's loop bound (`bones * 6` ushorts) would degenerate
+    /// to nothing useful.
+    ZeroBonesPerFrame,
+    /// `frame_count` (the header byte at `+1`) is zero — the consumer
+    /// reads `(frame_count - 1) * 16` to seed the actor's frame-counter
+    /// cap, so a zero count produces a wrap-around bug at runtime.
+    ZeroFrameCount,
+    /// Slice is shorter than `2 + bones * frames * 9`.
+    BodyTruncated { needed: usize, got: usize },
+}
+
+impl std::fmt::Display for NestedFrameDataError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NestedFrameDataError::HeaderTooSmall => f.write_str("header too small (< 2 bytes)"),
+            NestedFrameDataError::ZeroBonesPerFrame => {
+                f.write_str("bones_per_frame header byte is zero")
+            }
+            NestedFrameDataError::ZeroFrameCount => f.write_str("frame_count header byte is zero"),
+            NestedFrameDataError::BodyTruncated { needed, got } => {
+                write!(f, "body truncated: needed {needed} bytes, got {got}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for NestedFrameDataError {}
+
+/// Borrowed view of the buffer pointed at by `OpaqueAnimRecord::nested_data_ptr_raw()`
+/// (i.e. consumer-struct field `+0x88`).
+///
+/// ## Layout
+///
+/// ```text
+/// +0x00  u8  bones_per_frame  (B)
+/// +0x01  u8  frame_count      (N)
+/// +0x02..+0x02 + N*B*9        N frames × B bones × 9-byte keyframe
+/// ```
+///
+/// Per-bone 9-byte block decodes as a [`BoneFrame`] — six packed
+/// sign-extended 12-bit values arranged as two `[i16; 3]` vectors.
+///
+/// ## Provenance
+///
+/// - Header byte `+0` is the per-frame loop count: see `FUN_80048A08`
+///   (`ghidra/scripts/funcs/80048a08.txt` line 749, the rendering loop's
+///   bound is `**buf`).
+/// - Header byte `+1` is the frame count: see `FUN_8004AD80`
+///   (`ghidra/scripts/funcs/8004ad80.txt` line 1367,
+///   `(buf[1] - 1) * 16` is stamped into the actor's frame counter as
+///   the wrap-around terminus).
+/// - Frame stride is `B * 9` and the body starts at offset `+2`: see
+///   `FUN_8004998C` (`ghidra/scripts/funcs/8004998c.txt` line 1040,
+///   `pbVar15 = pbVar20 + frame_index * B * 9 + 2`).
+/// - Per-bone packing (6 × 12-bit → 9 bytes) and sign extension: see
+///   `FUN_8004998C` lines 1049..1054 (unpack) and 1055..1062
+///   (`if (uVar & 0x0800 != 0) ... |= 0xF000`).
+#[derive(Debug, Clone, Copy)]
+pub struct NestedFrameData<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> NestedFrameData<'a> {
+    /// Wrap a slice and validate its size against the declared bone /
+    /// frame counts. Returns `Err` if the slice is too small or either
+    /// count is zero.
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, NestedFrameDataError> {
+        if bytes.len() < NESTED_HEADER_SIZE {
+            return Err(NestedFrameDataError::HeaderTooSmall);
+        }
+        let bones = bytes[0];
+        let frames = bytes[1];
+        if bones == 0 {
+            return Err(NestedFrameDataError::ZeroBonesPerFrame);
+        }
+        if frames == 0 {
+            return Err(NestedFrameDataError::ZeroFrameCount);
+        }
+        let needed =
+            NESTED_HEADER_SIZE + usize::from(bones) * usize::from(frames) * NESTED_BONE_STRIDE;
+        if bytes.len() < needed {
+            return Err(NestedFrameDataError::BodyTruncated {
+                needed,
+                got: bytes.len(),
+            });
+        }
+        Ok(Self { bytes })
+    }
+
+    /// Wrap a slice **without** validating the body size. Useful for
+    /// inspection of malformed buffers; out-of-range frame / bone reads
+    /// will return `None`.
+    pub fn from_bytes_lenient(bytes: &'a [u8]) -> Option<Self> {
+        if bytes.len() < NESTED_HEADER_SIZE {
+            return None;
+        }
+        Some(Self { bytes })
+    }
+
+    /// Header byte at `+0`: number of bones per frame.
+    pub fn bones_per_frame(&self) -> u8 {
+        self.bytes[0]
+    }
+
+    /// Header byte at `+1`: number of frames in the buffer.
+    pub fn frame_count(&self) -> u8 {
+        self.bytes[1]
+    }
+
+    /// Total expected size in bytes: `2 + bones * frames * 9`.
+    pub fn expected_size(&self) -> usize {
+        NESTED_HEADER_SIZE
+            + usize::from(self.bones_per_frame())
+                * usize::from(self.frame_count())
+                * NESTED_BONE_STRIDE
+    }
+
+    /// Stride in bytes between adjacent frames (`bones * 9`).
+    pub fn frame_stride(&self) -> usize {
+        usize::from(self.bones_per_frame()) * NESTED_BONE_STRIDE
+    }
+
+    /// Read one bone's keyframe at `(frame_idx, bone_idx)`.
+    pub fn bone(&self, frame_idx: usize, bone_idx: usize) -> Option<BoneFrame> {
+        if frame_idx >= usize::from(self.frame_count()) {
+            return None;
+        }
+        if bone_idx >= usize::from(self.bones_per_frame()) {
+            return None;
+        }
+        let off =
+            NESTED_HEADER_SIZE + frame_idx * self.frame_stride() + bone_idx * NESTED_BONE_STRIDE;
+        let slice = self.bytes.get(off..off + NESTED_BONE_STRIDE)?;
+        let arr: &[u8; 9] = slice.try_into().ok()?;
+        Some(BoneFrame::from_9_bytes(arr))
+    }
+
+    /// Iterate every bone in `frame_idx` in storage order.
+    ///
+    /// Returns `None` if `frame_idx` is out of range; otherwise an
+    /// iterator that yields `BoneFrame` for `bone_idx` in
+    /// `0..bones_per_frame`.
+    pub fn frame(&self, frame_idx: usize) -> Option<FrameView<'a>> {
+        if frame_idx >= usize::from(self.frame_count()) {
+            return None;
+        }
+        let stride = self.frame_stride();
+        let start = NESTED_HEADER_SIZE + frame_idx * stride;
+        let body = self.bytes.get(start..start + stride)?;
+        Some(FrameView {
+            bones: body,
+            bones_per_frame: self.bones_per_frame(),
+        })
+    }
+
+    /// Linear-interpolate every bone in `frame_idx` toward the bone in
+    /// `next_idx` by `frac/16`. Returns a `Vec<BoneFrame>` with one
+    /// entry per bone. Mirrors `FUN_8004998C` line ~1115's loop body.
+    ///
+    /// `frac` is clamped to `0..=15` per the runtime (the consumer
+    /// extracts the low nibble of `actor[+0x68]` for it).
+    pub fn interpolate(
+        &self,
+        frame_idx: usize,
+        next_idx: usize,
+        frac: u8,
+    ) -> Option<Vec<BoneFrame>> {
+        let bones = usize::from(self.bones_per_frame());
+        let mut out = Vec::with_capacity(bones);
+        for b in 0..bones {
+            let cur = self.bone(frame_idx, b)?;
+            let nxt = self.bone(next_idx, b)?;
+            out.push(cur.lerp16(&nxt, frac));
+        }
+        Some(out)
+    }
+}
+
+/// Borrowed view of a single frame's bones inside a [`NestedFrameData`].
+///
+/// Use [`NestedFrameData::frame`] to obtain one. Iterating yields one
+/// [`BoneFrame`] per bone in storage order.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameView<'a> {
+    bones: &'a [u8],
+    bones_per_frame: u8,
+}
+
+impl<'a> FrameView<'a> {
+    /// Number of bones in this frame.
+    pub fn bones_per_frame(&self) -> u8 {
+        self.bones_per_frame
+    }
+
+    /// Read one bone at `bone_idx`.
+    pub fn bone(&self, bone_idx: usize) -> Option<BoneFrame> {
+        if bone_idx >= usize::from(self.bones_per_frame) {
+            return None;
+        }
+        let off = bone_idx * NESTED_BONE_STRIDE;
+        let arr: &[u8; 9] = self
+            .bones
+            .get(off..off + NESTED_BONE_STRIDE)?
+            .try_into()
+            .ok()?;
+        Some(BoneFrame::from_9_bytes(arr))
+    }
+
+    /// Iterate every bone in storage order.
+    pub fn iter_bones(&self) -> impl Iterator<Item = BoneFrame> + '_ {
+        (0..usize::from(self.bones_per_frame)).filter_map(|i| self.bone(i))
     }
 }
 
@@ -803,7 +1245,6 @@ mod tests {
         let mut buf = vec![0u8; 0x300];
         buf[0x00] = 0x18; // kind = Other(0x18) (somersault-class)
         buf[0x0E..0x10].copy_from_slice(&((-128i16).to_le_bytes()));
-        buf[0x21D] = 4;
         buf[0x56..0x58].copy_from_slice(&7u16.to_le_bytes());
         buf[0x84] = 0x10;
         buf[0x85] = 12;
@@ -815,7 +1256,6 @@ mod tests {
         let r = OpaqueAnimRecord::new(&buf);
         assert_eq!(r.kind(), Some(OpaqueRecordKind::Other(0x18)));
         assert_eq!(r.movement_scale(), Some(-128));
-        assert_eq!(r.frame_stride(), Some(4));
         assert_eq!(r.substate_counter(), Some(7));
         assert_eq!(r.depth_84(), Some(0x10));
         assert_eq!(r.count_85(), Some(12));
@@ -823,6 +1263,258 @@ mod tests {
         assert_eq!(r.effect_id(), Some(0x42));
         assert_eq!(r.nested_data_ptr_raw(), Some(0x80AB_CDEF));
         assert_eq!(r.anim_frame_176(), Some(255));
+    }
+
+    #[test]
+    fn actor_anim_state_lod_step_factor_folds_division() {
+        // raw=0 → denom 1, factor 8/1 = 8 (clamped, 1..=8)
+        // raw=2 → factor 4
+        // raw=4 → factor 2
+        // raw=8 → factor 1
+        let cases = &[(0u8, 8u8), (2, 4), (4, 2), (8, 1)];
+        for &(raw, expected) in cases {
+            let mut buf = vec![0u8; 0x250];
+            buf[ACTOR_LOD_STEP_OFFSET] = raw;
+            let s = ActorAnimState::new(&buf);
+            assert_eq!(
+                s.lod_step_factor(),
+                Some(expected),
+                "raw 0x{raw:02x} should give factor {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn actor_anim_state_frame_counter_extracts_index_and_subframe() {
+        // bits[4..15] = frame index, bits[0..3] = sub-frame factor.
+        // 0x1234 → index = 0x123, sub = 0x4.
+        let mut buf = vec![0u8; 0x250];
+        buf[0x68..0x6A].copy_from_slice(&0x1234u16.to_le_bytes());
+        buf[ACTOR_PREV_ACTION_OFFSET] = 0x55;
+        buf[ACTOR_FRAME_CAP_OFFSET..ACTOR_FRAME_CAP_OFFSET + 2]
+            .copy_from_slice(&0x0123u16.to_le_bytes());
+        let s = ActorAnimState::new(&buf);
+        assert_eq!(s.frame_counter(), Some(0x1234));
+        assert_eq!(s.frame_index(), Some(0x123));
+        assert_eq!(s.sub_frame_factor(), Some(0x4));
+        assert_eq!(s.prev_action(), Some(0x55));
+        assert_eq!(s.frame_cap(), Some(0x0123));
+    }
+
+    #[test]
+    fn bone_frame_round_trips_for_in_range_components() {
+        // Components in [-2048, 2047] round-trip exactly through
+        // the 9-byte packed form.
+        let cases = &[
+            BoneFrame {
+                vec_a: [0, 0, 0],
+                vec_b: [0, 0, 0],
+            },
+            BoneFrame {
+                vec_a: [1, -1, 100],
+                vec_b: [-100, 2047, -2048],
+            },
+            BoneFrame {
+                vec_a: [0x07FF, -0x0800, 0x055],
+                vec_b: [0x0123, -0x0456, 0x0789],
+            },
+        ];
+        for original in cases {
+            let bytes = original.to_9_bytes();
+            let decoded = BoneFrame::from_9_bytes(&bytes);
+            assert_eq!(*original, decoded, "round-trip failed for {original:?}");
+        }
+    }
+
+    #[test]
+    fn bone_frame_sign_extends_high_nibble_bit() {
+        // byte[2] = 0x80: low nibble 0x0 → vec_a[0]=0, high nibble 0x8 →
+        // vec_a[1] = 0 | (0x8 << 8) = 0x800 → bit 11 set → sign-extends
+        // to 0xF800 = -2048.
+        let bytes = [0x00u8, 0x00, 0x80, 0, 0, 0, 0, 0, 0];
+        let bf = BoneFrame::from_9_bytes(&bytes);
+        assert_eq!(bf.vec_a, [0, -2048, 0]);
+        // byte[2] = 0x07: high nibble 0, low nibble 7 → vec_a[0] =
+        // 0 | (0x7 << 8) = 0x700, no sign extension (bit 11 clear).
+        let bytes2 = [0u8, 0, 0x07, 0, 0, 0, 0, 0, 0];
+        let bf2 = BoneFrame::from_9_bytes(&bytes2);
+        assert_eq!(bf2.vec_a, [0x700, 0, 0]);
+    }
+
+    #[test]
+    fn bone_frame_pack_uses_correct_byte_pairings() {
+        // Packing rules from FUN_8004998C lines 1049..1054:
+        //
+        //   k=0 ← byte[0] | (byte[2] & 0x0F) << 8
+        //   k=1 ← byte[1] | (byte[2] & 0xF0) << 4
+        //   k=2 ← byte[3] | (byte[5] & 0x0F) << 8
+        //   k=3 ← byte[4] | (byte[5] & 0xF0) << 4
+        //   k=4 ← byte[6] | (byte[8] & 0x0F) << 8
+        //   k=5 ← byte[7] | (byte[8] & 0xF0) << 4
+        //
+        // Pick low nibbles only so the assertions stay sign-clean.
+        let bytes = [0x11u8, 0x22, 0x21, 0x33, 0x44, 0x43, 0x55, 0x66, 0x65];
+        let bf = BoneFrame::from_9_bytes(&bytes);
+        assert_eq!(bf.vec_a[0], 0x0111); // byte[0]=0x11, low nibble of byte[2] (0x1)
+        assert_eq!(bf.vec_a[1], 0x0222); // byte[1]=0x22, high nibble of byte[2] (0x2)
+        assert_eq!(bf.vec_a[2], 0x0333); // byte[3]=0x33, low nibble of byte[5] (0x3)
+        assert_eq!(bf.vec_b[0], 0x0444); // byte[4]=0x44, high nibble of byte[5] (0x4)
+        assert_eq!(bf.vec_b[1], 0x0555); // byte[6]=0x55, low nibble of byte[8] (0x5)
+        assert_eq!(bf.vec_b[2], 0x0666); // byte[7]=0x66, high nibble of byte[8] (0x6)
+    }
+
+    #[test]
+    fn nested_frame_data_round_trips_two_frames_three_bones() {
+        // 2 frames × 3 bones × 9 bytes = 54 body bytes + 2 header = 56 total.
+        let bones = 3usize;
+        let frames = 2usize;
+        let mut buf = vec![0u8; NESTED_HEADER_SIZE + frames * bones * NESTED_BONE_STRIDE];
+        buf[0] = bones as u8;
+        buf[1] = frames as u8;
+        // Stamp distinct bone keyframes per (frame, bone) so we can
+        // verify the indexing math.
+        let mut written = Vec::new();
+        for f in 0..frames {
+            for b in 0..bones {
+                let bone = BoneFrame {
+                    vec_a: [(f as i16) * 100 + b as i16, 0, 0],
+                    vec_b: [0, 0, (b as i16) * -10],
+                };
+                let off =
+                    NESTED_HEADER_SIZE + f * bones * NESTED_BONE_STRIDE + b * NESTED_BONE_STRIDE;
+                buf[off..off + NESTED_BONE_STRIDE].copy_from_slice(&bone.to_9_bytes());
+                written.push(bone);
+            }
+        }
+
+        let nfd = NestedFrameData::from_bytes(&buf).expect("valid");
+        assert_eq!(nfd.bones_per_frame(), 3);
+        assert_eq!(nfd.frame_count(), 2);
+        assert_eq!(nfd.expected_size(), buf.len());
+        assert_eq!(nfd.frame_stride(), bones * NESTED_BONE_STRIDE);
+
+        for f in 0..frames {
+            for b in 0..bones {
+                let bone = nfd.bone(f, b).unwrap();
+                let expected = written[f * bones + b];
+                assert_eq!(bone, expected, "(frame={f}, bone={b})");
+            }
+        }
+    }
+
+    #[test]
+    fn nested_frame_data_frame_view_iterates_in_storage_order() {
+        let bones = 2u8;
+        let frames = 1u8;
+        let mut buf = vec![
+            0u8;
+            NESTED_HEADER_SIZE
+                + usize::from(bones) * usize::from(frames) * NESTED_BONE_STRIDE
+        ];
+        buf[0] = bones;
+        buf[1] = frames;
+        let bone_a = BoneFrame {
+            vec_a: [10, 20, 30],
+            vec_b: [-1, -2, -3],
+        };
+        let bone_b = BoneFrame {
+            vec_a: [100, 200, 300],
+            vec_b: [-100, -200, -300],
+        };
+        buf[2..11].copy_from_slice(&bone_a.to_9_bytes());
+        buf[11..20].copy_from_slice(&bone_b.to_9_bytes());
+
+        let nfd = NestedFrameData::from_bytes(&buf).unwrap();
+        let frame = nfd.frame(0).unwrap();
+        let bones_seen: Vec<_> = frame.iter_bones().collect();
+        assert_eq!(bones_seen.len(), 2);
+        assert_eq!(bones_seen[0], bone_a);
+        assert_eq!(bones_seen[1], bone_b);
+    }
+
+    #[test]
+    fn nested_frame_data_rejects_zero_counts_and_truncated_body() {
+        // Zero bone count.
+        let buf = vec![0u8, 5, 0, 0, 0];
+        assert_eq!(
+            NestedFrameData::from_bytes(&buf).err(),
+            Some(NestedFrameDataError::ZeroBonesPerFrame)
+        );
+        // Zero frame count.
+        let buf = vec![3u8, 0, 0, 0, 0];
+        assert_eq!(
+            NestedFrameData::from_bytes(&buf).err(),
+            Some(NestedFrameDataError::ZeroFrameCount)
+        );
+        // Truncated body: header says 2 bones × 1 frame = 18 bytes
+        // body, but only 10 are present.
+        let mut buf = vec![0u8; NESTED_HEADER_SIZE + 10];
+        buf[0] = 2;
+        buf[1] = 1;
+        match NestedFrameData::from_bytes(&buf) {
+            Err(NestedFrameDataError::BodyTruncated { needed, got }) => {
+                assert_eq!(needed, NESTED_HEADER_SIZE + 2 * NESTED_BONE_STRIDE);
+                assert_eq!(got, NESTED_HEADER_SIZE + 10);
+            }
+            other => panic!("expected BodyTruncated, got {other:?}"),
+        }
+        // Header too small.
+        let buf = vec![0u8];
+        assert_eq!(
+            NestedFrameData::from_bytes(&buf).err(),
+            Some(NestedFrameDataError::HeaderTooSmall)
+        );
+    }
+
+    #[test]
+    fn nested_frame_data_interpolate_matches_runtime_lerp_formula() {
+        let bones = 1u8;
+        let frames = 2u8;
+        let mut buf = vec![
+            0u8;
+            NESTED_HEADER_SIZE
+                + usize::from(bones) * usize::from(frames) * NESTED_BONE_STRIDE
+        ];
+        buf[0] = bones;
+        buf[1] = frames;
+        let f0 = BoneFrame {
+            vec_a: [0, 0, 0],
+            vec_b: [0, 0, 0],
+        };
+        let f1 = BoneFrame {
+            vec_a: [16, -16, 32],
+            vec_b: [0, 0, 0],
+        };
+        buf[2..11].copy_from_slice(&f0.to_9_bytes());
+        buf[11..20].copy_from_slice(&f1.to_9_bytes());
+
+        let nfd = NestedFrameData::from_bytes(&buf).unwrap();
+        // At frac=0, result equals frame 0.
+        let r0 = nfd.interpolate(0, 1, 0).unwrap();
+        assert_eq!(r0[0], f0);
+        // At frac=8 (half), each component advances halfway:
+        // 0 + (16 - 0) * 8 >> 4 = 8.
+        let r8 = nfd.interpolate(0, 1, 8).unwrap();
+        assert_eq!(r8[0].vec_a, [8, -8, 16]);
+        // Frac is clamped to 15.
+        let r15 = nfd.interpolate(0, 1, 15).unwrap();
+        // 0 + (16 - 0) * 15 >> 4 = 240 / 16 = 15
+        assert_eq!(r15[0].vec_a, [15, -15, 30]);
+        // Out-of-range frac is clamped to 15 internally.
+        let r99 = nfd.interpolate(0, 1, 99).unwrap();
+        assert_eq!(r99[0].vec_a, [15, -15, 30]);
+    }
+
+    #[test]
+    fn nested_frame_data_lenient_accepts_short_buffer() {
+        // Lenient view accepts any 2+ byte slice; out-of-range reads
+        // return None.
+        let buf = vec![3u8, 5, 0, 0, 0];
+        let nfd = NestedFrameData::from_bytes_lenient(&buf).unwrap();
+        assert_eq!(nfd.bones_per_frame(), 3);
+        assert_eq!(nfd.frame_count(), 5);
+        assert!(nfd.bone(0, 0).is_none()); // body too small
+        assert!(nfd.frame(0).is_none());
     }
 
     #[test]

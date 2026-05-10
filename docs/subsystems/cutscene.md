@@ -251,6 +251,23 @@ The field-VM port handles this op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in
 
 The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's `addiu s8, s8, 6` is fixed, but only bytes `+1..+3` are read). Disassemblers should leave them as opaque padding.
 
+### Static FMV-trigger sites — exhaustive
+
+A backward sweep of every Ghidra dump in the corpus surfaces only **two** writers of `_DAT_8007B83C = 0x1A` in retail. Both are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`.
+
+| Site | Function | Mode-write addr | FMV-id source | Trigger condition |
+|---|---|---|---|---|
+| `field_vm_op_4c_e2` | `FUN_801DE840` | `0x801E3104` | `decode_u16_be(pc+1)` from field-VM bytecode | Field-VM bytecode hits `0x4C 0xE2 lo hi`; reached via JT chain `0x801CEE60` (high nibble 0xE) → `0x801CF008` (low nibble 0x2). |
+| `title_attract_loop` | `FUN_801DE234` | `0x801E0F50` | Hardcoded `0` (= `MV1.STR`, intro) | Title-screen idle countdown `DAT_801ef16c` underflows. |
+
+**`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine — Ghidra promotes it to a `FUN_` symbol because the JT at `0x801CF008[2]` resolves to that address. The actual control flow is `outer 0x4C dispatcher → 0x801E0C3C → 0x801E3040 → jump-table indirect to 0x801E30E4`.
+
+### Why the seven mid-game scenes don't surface in a bytewise PROT scan
+
+`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e` all kick off mid-game STR FMVs. Since `field_vm_op_4c_e2` is the only field-VM-driven trigger and the title-screen attract path is hardcoded to `fmv_id = 0`, those seven scenes **must** trigger via the same `0x4C 0xE2` op. The byte sequence is not statically present in their on-disc PROT entries, however — the disassembler's `--bytewise` mode (which scans every byte of every PROT entry) surfaces only one in-range trigger across the corpus (`PROT[371] taiku`, `fmv_id=5`).
+
+The conclusion is that the seven scenes' field-VM bytecode is **reconstructed at scene-load time** from the field-pack preamble's runtime-projected slot. The lift is therefore blocked on the same intra-transition byte-level capture that gates the [field-pack runtime projection](../formats/field-pack.md) — once the loader's preamble → runtime-RAM-cell projection is mapped, the `0x4C 0xE2` op-byte sequence becomes scannable in RAM and the per-scene MV index falls out of a single-frame disassembly.
+
 ## Open items
 
 - **Function-by-function overlay decompilation.** `ghidra/scripts/dump_str_fmv_overlay.py` ships a `TARGETS` list re-ranked by xref count from `inventory_overlay.py` against the captured `overlay_str_fmv.bin` slice. The 27 entry points cluster around `FUN_801CF098` (the 1236-byte main play loop) - inbound xrefs from `0x801CECA0` confirm the FMV-state struct selector reads `_DAT_8007BA78 << 6 + 0x801D0A6C` to pick the entry passed in. Per-function sub-asset decode (XA channel selector, MDEC frame demux state machine) still pending.

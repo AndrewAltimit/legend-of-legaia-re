@@ -1,0 +1,213 @@
+//! Static catalogue of every retail code path that fires a STR FMV by
+//! writing the FMV index + the `StrInit` game mode (`0x1A`).
+//!
+//! ## Background
+//!
+//! The retail STR FMV play loop (`FUN_801CF098` in the cutscene-overlay
+//! slice) only runs when the global game-mode word at `_DAT_8007B83C`
+//! equals `0x1A` and the FMV index at `_DAT_8007BA78` (a `s16`) selects
+//! one of the six runtime FMV-state struct slots at `0x801D0A6C` (see
+//! [`docs/formats/str-fmv-table.md`]).
+//!
+//! A backward sweep of every Ghidra dump in the corpus surfaces only
+//! **two** writers of `_DAT_8007B83C = 0x1A`:
+//!
+//! 1. [`FIELD_VM_OP_4C_E2`] — the field-VM opcode `0x4C 0xE2 lo hi` handler
+//!    inside `FUN_801DE840`. Reachable only via the field-VM 2nd-stage
+//!    jump-table at `0x801CF008` entry `2`. Reads `fmv_id` from the
+//!    bytecode stream.
+//! 2. [`TITLE_ATTRACT_LOOP`] — the title-screen menu state machine in
+//!    `FUN_801DE234`, case `0x10`. Hardcodes `fmv_id = 0` (intro
+//!    `MV1.STR`) when the attract-loop timer at `DAT_801ef16c` underflows.
+//!
+//! There is no static caller of the [`FIELD_VM_OP_4C_E2`] handler — the
+//! `FUN_801E30E4` label that the PRD refers to is reached **only** via
+//! the JT dispatch chain `0x4C → byte1 >> 4 == 0xE → byte1 & 0xF == 0x2`,
+//! and Ghidra's reference manager does not promote that to a call edge.
+//!
+//! ## Implication for the seven mid-game scenes
+//!
+//! `town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e` all
+//! kick off mid-game STR FMVs. Since [`FIELD_VM_OP_4C_E2`] is the only
+//! field-VM-driven trigger and the title-screen attract path is
+//! hardcoded to `fmv_id = 0`, those seven scenes **must** trigger via
+//! the same `0x4C 0xE2` op. The byte sequence is not statically
+//! present in their on-disc PROT entries, however — a bytewise scan
+//! across the corpus surfaces only one in-range trigger
+//! (`PROT[371] taiku`, `fmv_id=5`). The conclusion is that the
+//! seven scenes' field-VM bytecode is reconstructed at scene-load
+//! time from the field-pack preamble's runtime-projected slot (the
+//! same indirection blocking the §2.5 / `field-pack` byte-level map).
+//!
+//! ## Provenance
+//!
+//! Every cell below is sourced from `ghidra/scripts/funcs/`
+//! disassembly + decompilation dumps. Each [`FmvTriggerSite`] entry
+//! pins the exact `_DAT_8007B83C = 0x1A` writer location.
+
+/// One static code path that fires a STR FMV by writing the FMV index
+/// + setting `_DAT_8007B83C = 0x1A`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FmvTriggerSite {
+    /// Short identifier - useful for log messages and tests.
+    pub label: &'static str,
+    /// Function entry the writer lives in.
+    pub function: &'static str,
+    /// Byte offset / instruction address of the `sh 0x1a` write.
+    pub mode_write_addr: u32,
+    /// Byte offset / instruction address of the FMV-id write.
+    /// `None` when the path doesn't write `_DAT_8007BA78` itself
+    /// (e.g. it relies on a previously-stored value).
+    pub fmv_id_write_addr: Option<u32>,
+    /// Whether `fmv_id` is hardcoded to a literal value or read from
+    /// a dynamic source (the field-VM bytecode stream).
+    pub fmv_id_source: FmvIdSource,
+    /// One-line summary of the trigger condition.
+    pub trigger_condition: &'static str,
+}
+
+/// How a trigger site obtains the `_DAT_8007BA78` value it writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FmvIdSource {
+    /// The handler decodes the FMV id from the field-VM bytecode
+    /// (specifically `decode_u16_be(pc+1)` via `FUN_8003CE9C`). The
+    /// id range observed in retail is `0..=5` (one slot per
+    /// `MV1.STR..MV6.STR`).
+    BytecodeOperand,
+    /// The handler stores a literal value. Currently the only
+    /// observed literal is `0`, which selects `MV1.STR` (the intro).
+    Literal(i16),
+}
+
+/// Field-VM `0x4C 0xE2 lo hi` FMV-trigger op handler. Reached from the
+/// `FUN_801DE840` main dispatcher via `FUN_801E0C3C` (16-entry JT at
+/// `0x801CEE60`, byte1 high nibble) → `FUN_801E3040` (15-entry JT at
+/// `0x801CF008`, byte1 low nibble) → entry `2` lands at `0x801E30E4`.
+///
+/// Disassembly summary:
+///
+/// ```text
+/// 801e30e4  jal 0x8003ce9c              ; v0 = decode_u16_be(pc+1)
+/// 801e30e8  _addiu a0,s6,0x1
+/// 801e30ec  addiu s8,s8,0x6              ; advance PC by 6 (2 op + 2 id + 2 reserved)
+/// 801e30f0  lui v1,0x8008
+/// 801e30f4  sh v0,-0x4588(v1)            ; *(_DAT_8007BA78) = fmv_id
+/// 801e30f8  lui v1,0x8008
+/// 801e30fc  li v0,0x1a
+/// 801e3100  j 0x801e3624                 ; rejoin dispatcher tail
+/// 801e3104  _sh v0,-0x47c4(v1)           ; *(_DAT_8007B83C) = 0x1A
+/// ```
+pub const FIELD_VM_OP_4C_E2: FmvTriggerSite = FmvTriggerSite {
+    label: "field_vm_op_4c_e2",
+    function: "FUN_801DE840",
+    mode_write_addr: 0x801E_3104,
+    fmv_id_write_addr: Some(0x801E_30F4),
+    fmv_id_source: FmvIdSource::BytecodeOperand,
+    trigger_condition: "field-VM bytecode hits the byte sequence `0x4C 0xE2 lo hi`; \
+         JT dispatch via 0x801CEE60 (high nibble 0xE) → 0x801CF008 (low nibble 0x2)",
+};
+
+/// Title-screen attract-loop FMV trigger. Lives inside the menu state
+/// machine `FUN_801DE234`, case `0x10` (the title-screen idle state).
+///
+/// Decompilation summary (`overlay_menu_801de234.txt` lines 3784..3788):
+///
+/// ```c
+/// DAT_801ef16c = DAT_801ef16c - (uint)DAT_1f800393;
+/// if (DAT_801ef16c < 0) {
+///     _DAT_8007ba78 = 0;          // fmv_id = 0 → MV1.STR (intro)
+///     _DAT_8007b83c = 0x1a;       // game mode = StrInit
+///     ...
+/// }
+/// ```
+///
+/// `DAT_801ef16c` is the title-screen idle countdown. When it
+/// underflows, the intro FMV plays; on completion the play loop returns
+/// to the title screen.
+pub const TITLE_ATTRACT_LOOP: FmvTriggerSite = FmvTriggerSite {
+    label: "title_attract_loop",
+    function: "FUN_801DE234",
+    // Decompilation line numbers map to the case-0x10 path; the
+    // assembly address is the menu overlay's per-state handler tail.
+    // We pin the case label rather than a single instruction since
+    // the writers sit two lines apart.
+    mode_write_addr: 0x801E_0F50,
+    fmv_id_write_addr: Some(0x801E_0F4C),
+    fmv_id_source: FmvIdSource::Literal(0),
+    trigger_condition: "title-screen attract countdown `DAT_801ef16c` underflows; fires the \
+         intro `MV1.STR` after the title screen has been idle for the \
+         configured timeout",
+};
+
+/// The complete catalogue of static FMV-trigger sites observed in the
+/// corpus. Tests + tooling assert this is exhaustive against a fresh
+/// dump pass of `_DAT_8007B83C = 0x1a`.
+pub const FMV_TRIGGER_SITES: &[FmvTriggerSite] = &[FIELD_VM_OP_4C_E2, TITLE_ATTRACT_LOOP];
+
+/// `_DAT_8007B83C` (the global game-mode word). The STR FMV play loop
+/// only fires when this equals [`STR_INIT_MODE`].
+pub const GAME_MODE_ADDR: u32 = 0x8007_B83C;
+
+/// `_DAT_8007BA78` (the active FMV index, `s16`). Selects a 64-byte
+/// runtime FMV-state slot at `0x801D0A6C + index * 64`.
+pub const FMV_ID_ADDR: u32 = 0x8007_BA78;
+
+/// Game mode `0x1A` (`= 26`). The STR-init mode that the cutscene
+/// overlay's tick handler watches for.
+pub const STR_INIT_MODE: u8 = 0x1A;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalogue_contains_field_vm_and_title_attract() {
+        assert_eq!(FMV_TRIGGER_SITES.len(), 2);
+        assert!(
+            FMV_TRIGGER_SITES
+                .iter()
+                .any(|s| s.label == "field_vm_op_4c_e2")
+        );
+        assert!(
+            FMV_TRIGGER_SITES
+                .iter()
+                .any(|s| s.label == "title_attract_loop")
+        );
+    }
+
+    #[test]
+    fn field_vm_site_reads_fmv_id_from_bytecode_operand() {
+        assert!(matches!(
+            FIELD_VM_OP_4C_E2.fmv_id_source,
+            FmvIdSource::BytecodeOperand
+        ));
+    }
+
+    #[test]
+    fn title_attract_site_hardcodes_fmv_id_zero() {
+        assert!(matches!(
+            TITLE_ATTRACT_LOOP.fmv_id_source,
+            FmvIdSource::Literal(0)
+        ));
+    }
+
+    #[test]
+    fn every_site_writes_a_known_address() {
+        for site in FMV_TRIGGER_SITES {
+            assert_eq!(
+                site.mode_write_addr & 0xFF00_0000,
+                0x8000_0000,
+                "{} mode_write_addr should be in main RAM",
+                site.label
+            );
+            if let Some(addr) = site.fmv_id_write_addr {
+                assert_eq!(
+                    addr & 0xFF00_0000,
+                    0x8000_0000,
+                    "{} fmv_id_write_addr should be in main RAM",
+                    site.label
+                );
+            }
+        }
+    }
+}
