@@ -59,8 +59,15 @@ enum TimSource {
 
 #[wasm_bindgen]
 pub struct LegaiaViewer {
-    canvas: HtmlCanvasElement,
-    ctx: CanvasRenderingContext2d,
+    /// Canvas DOM id. We re-resolve the actual `HtmlCanvasElement` and its
+    /// 2D context on every render call: the JS UI swaps in a fresh canvas
+    /// when transitioning between 2D and 3D modes (a HTMLCanvasElement
+    /// can only ever hold one rendering-context type for its lifetime),
+    /// and any cached references would still point at the *old*, detached
+    /// element after the swap. The fallout was "2D entries don't render
+    /// after viewing a 3D entry" - the put_image_data call landed on the
+    /// orphan canvas and never touched the visible DOM node.
+    canvas_id: String,
     disc: Vec<u8>,
     /// Filtered list of entries visible in the UI. Order matches PROT order.
     viewable: Vec<ViewerEntry>,
@@ -74,21 +81,12 @@ impl LegaiaViewer {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas_id: &str) -> Result<LegaiaViewer, JsValue> {
         console_error_panic_hook::set_once();
-        let win = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-        let doc = win
-            .document()
-            .ok_or_else(|| JsValue::from_str("no document"))?;
-        let canvas = doc
-            .get_element_by_id(canvas_id)
-            .ok_or_else(|| JsValue::from_str("canvas not found"))?
-            .dyn_into::<HtmlCanvasElement>()?;
-        let ctx = canvas
-            .get_context("2d")?
-            .ok_or_else(|| JsValue::from_str("no 2d context"))?
-            .dyn_into::<CanvasRenderingContext2d>()?;
+        // Validate that the id resolves to a canvas at construction, even
+        // though we re-resolve on every render. This catches the common
+        // typo case immediately instead of silently no-oping later.
+        let _ = resolve_canvas(canvas_id)?;
         Ok(Self {
-            canvas,
-            ctx,
+            canvas_id: canvas_id.to_string(),
             disc: Vec::new(),
             viewable: Vec::new(),
             current: 0,
@@ -398,34 +396,9 @@ impl LegaiaViewer {
     /// always exactly 1 MB = 1024×512×2). Used by the WebGL2 path to upload
     /// to a R16UI texture.
     pub fn current_vram_bytes(&self) -> Vec<u8> {
-        let Some(entry) = self.viewable.get(self.current) else {
-            return Vec::new();
-        };
-        let off = entry.meta.byte_offset as usize;
-        let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
-        if end > self.disc.len() {
-            return Vec::new();
-        }
-        let buf = &self.disc[off..end];
-
-        let mut vram = legaia_tim::Vram::new();
-
-        // Walk every TIM in this entry (raw + LZS-decompressed) and upload
-        // each at its declared (fb_x, fb_y).
-        let scan = tim_scan::scan_entry(buf);
-        for (source, hit) in &scan.hits {
-            let tim_buf: Option<&[u8]> = match source {
-                tim_scan::Source::Raw => Some(&buf[hit.offset..]),
-                tim_scan::Source::Lzs(idx) => scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..]),
-            };
-            if let Some(b) = tim_buf
-                && let Ok(tim) = legaia_tim::parse(b)
-            {
-                vram.upload_tim(&tim);
-            }
-        }
-
-        vram.as_bytes().to_vec()
+        self.build_current_vram()
+            .map(|v| v.as_bytes().to_vec())
+            .unwrap_or_default()
     }
 
     /// Returns the mesh data for the current entry's TMD as four typed arrays
@@ -434,10 +407,9 @@ impl LegaiaViewer {
     /// Each as a separate getter so JS can pull them as typed arrays without
     /// reparsing JSON.
     pub fn mesh_positions(&self) -> Vec<f32> {
-        let Some((tmd, tmd_buf)) = self.parse_current_tmd() else {
+        let Some(mesh) = self.build_current_vram_mesh() else {
             return Vec::new();
         };
-        let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf);
         let mut out = Vec::with_capacity(mesh.positions.len() * 3);
         for p in &mesh.positions {
             out.push(p[0]);
@@ -448,10 +420,9 @@ impl LegaiaViewer {
     }
 
     pub fn mesh_uvs(&self) -> Vec<u8> {
-        let Some((tmd, tmd_buf)) = self.parse_current_tmd() else {
+        let Some(mesh) = self.build_current_vram_mesh() else {
             return Vec::new();
         };
-        let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf);
         let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
         for uv in &mesh.uvs {
             out.push(uv[0]);
@@ -461,10 +432,9 @@ impl LegaiaViewer {
     }
 
     pub fn mesh_cba_tsb(&self) -> Vec<u16> {
-        let Some((tmd, tmd_buf)) = self.parse_current_tmd() else {
+        let Some(mesh) = self.build_current_vram_mesh() else {
             return Vec::new();
         };
-        let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf);
         let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
         for ct in &mesh.cba_tsb {
             out.push(ct[0]);
@@ -474,20 +444,18 @@ impl LegaiaViewer {
     }
 
     pub fn mesh_indices(&self) -> Vec<u32> {
-        let Some((tmd, tmd_buf)) = self.parse_current_tmd() else {
-            return Vec::new();
-        };
-        legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf).indices
+        self.build_current_vram_mesh()
+            .map(|m| m.indices)
+            .unwrap_or_default()
     }
 
     /// Returns the model's bounding sphere center (`[cx, cy, cz]`) and radius
     /// `r` packed as `[cx, cy, cz, r]`. JS uses this to build the MVP matrix
     /// without re-parsing the TMD each frame.
     pub fn mesh_bounds(&self) -> Vec<f32> {
-        let Some((tmd, tmd_buf)) = self.parse_current_tmd() else {
+        let Some(mesh) = self.build_current_vram_mesh() else {
             return vec![0.0; 4];
         };
-        let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf);
         if mesh.positions.is_empty() {
             return vec![0.0; 4];
         }
@@ -621,14 +589,11 @@ impl LegaiaViewer {
         let label = format!("PROT {} · {}", entry.meta.index, entry.class.name());
 
         // The 3D path is driven from JS via render_tmd_triangles; if the
-        // entry has a TMD, we leave the canvas blank so the rAF loop can
-        // take over. The TIM path is the default for entries without a TMD.
+        // entry has a TMD, leave the canvas as the JS side set it up
+        // (the rAF loop will repaint it). Don't try to acquire a 2D
+        // context here - JS may already have bound webgl2 to it, in
+        // which case getContext("2d") returns null.
         if entry.tmd_source.is_some() {
-            // Hand off to the JS-driven 3D loop. Just clear the canvas.
-            self.canvas.set_width(800);
-            self.canvas.set_height(600);
-            self.ctx.set_fill_style_str("#0a0e15");
-            self.ctx.fill_rect(0.0, 0.0, 800.0, 600.0);
             return Ok(());
         }
 
@@ -652,6 +617,126 @@ impl LegaiaViewer {
                 self.render_tim_at(&buf, 0, &format!("{label} (LZS)"))
             }
         }
+    }
+
+    /// Build the VRAM the current entry would have at boot (every TIM the
+    /// entry contains, uploaded at its declared `(fb_x, fb_y)`). Returns
+    /// `None` when there's no current entry or the entry is out of bounds.
+    /// Used by both [`Self::current_vram_bytes`] (GPU upload) and the
+    /// [`Self::build_current_vram_mesh`] filter (drops prims whose texture
+    /// pages weren't supplied so the WebGL pipeline doesn't rasterise
+    /// solid-`CLUT[0]` tints over correctly-textured geometry).
+    ///
+    /// When the entry has a parseable TMD, the upload is *targeted* to
+    /// just the TIMs whose image / CLUT regions overlap something the
+    /// mesh actually samples. A single PROT entry can contain hundreds
+    /// of TIMs, and uploading all of them into the 1 MB VRAM produces
+    /// collisions (last-write-wins clobbers a CLUT row with image data
+    /// from an unrelated TIM) which the paletted decode then renders as
+    /// rainbow noise.
+    fn build_current_vram(&self) -> Option<legaia_tim::Vram> {
+        let entry = self.viewable.get(self.current)?;
+        let off = entry.meta.byte_offset as usize;
+        let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
+        if end > self.disc.len() {
+            return None;
+        }
+        let buf = &self.disc[off..end];
+        let needs = self.tmd_prim_targets();
+        let mut vram = legaia_tim::Vram::new();
+        let scan = tim_scan::scan_entry(buf);
+        for (source, hit) in &scan.hits {
+            let tim_buf: Option<&[u8]> = match source {
+                tim_scan::Source::Raw => Some(&buf[hit.offset..]),
+                tim_scan::Source::Lzs(idx) => scan.lzs_sections.get(*idx).map(|s| &s[hit.offset..]),
+            };
+            if let Some(b) = tim_buf
+                && let Ok(tim) = legaia_tim::parse(b)
+            {
+                if needs.is_empty() {
+                    vram.upload_tim(&tim);
+                } else {
+                    let (img, clut) = tim_block_targeting(&tim, &needs);
+                    if !img && !clut {
+                        continue;
+                    }
+                    vram.upload_tim_partial(&tim, img, clut);
+                }
+            }
+        }
+        Some(vram)
+    }
+
+    /// Collect the CLUT + page rectangles every textured primitive in the
+    /// current entry's TMD samples. Empty when the entry has no TMD or
+    /// the TMD has no textured prims (= no targeting; upload everything).
+    fn tmd_prim_targets(&self) -> Vec<PrimTarget> {
+        let Some((tmd, tmd_buf)) = self.parse_current_tmd() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for o in &tmd.objects {
+            let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+                &tmd_buf,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            );
+            for g in &groups {
+                for p in &g.prims {
+                    if p.uvs.is_empty() {
+                        continue;
+                    }
+                    let (cx, cy) = p.cba_xy();
+                    let (px, py, depth, _) = p.tpage_xy();
+                    let clut_w: u16 = match depth {
+                        4 => 16,
+                        8 => 256,
+                        _ => 0,
+                    };
+                    let mut umin = u8::MAX;
+                    let mut umax = 0u8;
+                    let mut vmin = u8::MAX;
+                    let mut vmax = 0u8;
+                    for &(u, v) in &p.uvs {
+                        umin = umin.min(u);
+                        umax = umax.max(u);
+                        vmin = vmin.min(v);
+                        vmax = vmax.max(v);
+                    }
+                    let (u_lo, u_hi) = match depth {
+                        4 => (umin as u16 >> 2, umax as u16 >> 2),
+                        8 => (umin as u16 >> 1, umax as u16 >> 1),
+                        _ => (umin as u16, umax as u16),
+                    };
+                    out.push(PrimTarget {
+                        clut: (cx, cy, clut_w, 1),
+                        page: (
+                            px + u_lo,
+                            py + vmin as u16,
+                            u_hi.saturating_sub(u_lo) + 1,
+                            (vmax as u16).saturating_sub(vmin as u16) + 1,
+                        ),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// Build the current entry's mesh, dropped down to just the primitives
+    /// whose texture pages have data in the entry's VRAM. Returns `None`
+    /// if the entry has no parseable TMD.
+    fn build_current_vram_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
+        let (tmd, tmd_buf) = self.parse_current_tmd()?;
+        let vram = self.build_current_vram();
+        Some(match vram {
+            Some(v) => {
+                legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&tmd, &tmd_buf, |cba, tsb, uvs| {
+                    v.prim_has_texture_data(cba, tsb, uvs)
+                })
+            }
+            None => legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &tmd_buf),
+        })
     }
 
     /// Parse the current entry's TMD if it has one. Returns the parsed TMD
@@ -705,26 +790,95 @@ impl LegaiaViewer {
             return self.draw_message(&format!("{label}: empty TIM ({}x{})", w, h));
         }
 
-        self.canvas.set_width(w);
-        self.canvas.set_height(h);
+        let (canvas, ctx) = self.acquire_2d_context()?;
+        canvas.set_width(w);
+        canvas.set_height(h);
 
         let clamped = rgba;
         let img = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&clamped), w, h)?;
-        self.ctx.put_image_data(&img, 0.0, 0.0)?;
+        ctx.put_image_data(&img, 0.0, 0.0)?;
         Ok(())
     }
 
     fn draw_message(&self, msg: &str) -> Result<(), JsValue> {
-        self.canvas.set_width(800);
-        self.canvas.set_height(200);
-        self.ctx.set_fill_style_str("#0a0e15");
-        self.ctx.fill_rect(0.0, 0.0, 800.0, 200.0);
-        self.ctx.set_fill_style_str("#8b949e");
-        self.ctx
-            .set_font("16px JetBrains Mono, ui-monospace, monospace");
-        self.ctx.fill_text(msg, 16.0, 100.0)?;
+        let (canvas, ctx) = self.acquire_2d_context()?;
+        canvas.set_width(800);
+        canvas.set_height(200);
+        ctx.set_fill_style_str("#0a0e15");
+        ctx.fill_rect(0.0, 0.0, 800.0, 200.0);
+        ctx.set_fill_style_str("#8b949e");
+        ctx.set_font("16px JetBrains Mono, ui-monospace, monospace");
+        ctx.fill_text(msg, 16.0, 100.0)?;
         Ok(())
     }
+
+    /// Resolve `canvas_id` to its current `HtmlCanvasElement` and a fresh
+    /// 2D rendering context. The element is re-fetched from the DOM each
+    /// time because the JS UI replaces the canvas when switching between
+    /// the 2D (TIM blit) and 3D (WebGL2) modes - getContext returns null
+    /// for the second context type bound to a single canvas, and any
+    /// cached reference goes stale the moment `oldCanvas.replaceWith(...)`
+    /// runs in `startTexturedTmdLoop` / `startFlatTmdLoop`.
+    fn acquire_2d_context(&self) -> Result<(HtmlCanvasElement, CanvasRenderingContext2d), JsValue> {
+        let canvas = resolve_canvas(&self.canvas_id)?;
+        let ctx = canvas
+            .get_context("2d")?
+            .ok_or_else(|| {
+                JsValue::from_str(
+                    "no 2d context (canvas was already bound to webgl - JS must \
+                     replace the canvas element before requesting a 2D draw)",
+                )
+            })?
+            .dyn_into::<CanvasRenderingContext2d>()?;
+        Ok((canvas, ctx))
+    }
+}
+
+/// VRAM rectangles a single primitive's CBA / TSB lookup will touch.
+/// Used by the targeted VRAM upload to skip TIMs that have no bearing on
+/// the current entry's mesh.
+#[derive(Clone, Copy)]
+struct PrimTarget {
+    clut: (u16, u16, u16, u16),
+    page: (u16, u16, u16, u16),
+}
+
+/// For a given TIM and the mesh's target rectangles, decide
+/// independently whether to upload its image and CLUT blocks. Returns
+/// `(upload_image, upload_clut)`. A block is uploaded iff it's useful
+/// (overlaps a same-kind target) AND doesn't clobber a different-kind
+/// target. The "doesn't clobber" half is what kills the rainbow-noise
+/// symptom that comes from a TIM's image bytes landing on a VRAM row
+/// another primitive uses as its CLUT.
+fn tim_block_targeting(tim: &legaia_tim::Tim, needs: &[PrimTarget]) -> (bool, bool) {
+    let img = &tim.image;
+    let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
+    let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));
+    let img_useful = needs.iter().any(|t| rects_overlap(img_rect, t.page));
+    let img_collides_clut = needs.iter().any(|t| rects_overlap(img_rect, t.clut));
+    let clut_useful = clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.clut)));
+    let clut_collides_page =
+        clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.page)));
+    (
+        img_useful && !img_collides_clut,
+        clut_useful && !clut_collides_page,
+    )
+}
+
+fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+fn resolve_canvas(canvas_id: &str) -> Result<HtmlCanvasElement, JsValue> {
+    let win = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+    let doc = win
+        .document()
+        .ok_or_else(|| JsValue::from_str("no document"))?;
+    let el = doc
+        .get_element_by_id(canvas_id)
+        .ok_or_else(|| JsValue::from_str("canvas not found"))?;
+    el.dyn_into::<HtmlCanvasElement>()
+        .map_err(|_| JsValue::from_str("element with that id is not a <canvas>"))
 }
 
 /// Detect a parseable Legaia TMD inside a PROT entry buffer. Two layouts:

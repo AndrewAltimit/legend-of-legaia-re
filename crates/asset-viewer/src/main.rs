@@ -3255,16 +3255,47 @@ fn load_tmd_for_view(tmd_path: &Path, vram_extras: &[PathBuf]) -> Result<TmdView
         legaia_tmd::parse(&bytes).with_context(|| format!("parse TMD {}", tmd_path.display()))?;
     let sibling = sibling_tim_dir(tmd_path);
     if sibling.is_some() || !vram_extras.is_empty() {
-        let vram_mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &bytes);
-        if !vram_mesh.indices.is_empty() {
-            // Order: extras first (shared/base data), sibling last (so the
-            // mesh's own scene data overlays the base on collision).
-            let mut dirs: Vec<&Path> = vram_extras.iter().map(|p| p.as_path()).collect();
-            if let Some(s) = sibling.as_ref() {
-                dirs.push(s.as_path());
+        // Order: extras first (shared/base data), sibling last (so the
+        // mesh's own scene data overlays the base on collision).
+        let mut dirs: Vec<&Path> = vram_extras.iter().map(|p| p.as_path()).collect();
+        if let Some(s) = sibling.as_ref() {
+            dirs.push(s.as_path());
+        }
+        // Collect the CLUT rows / texture pages that this TMD's primitives
+        // actually sample. The TIM corpus on a single PROT entry can run
+        // into the hundreds (399 TIMs across all of `0866_battle_data`),
+        // and uploading every one of them clobbers the 1 MB VRAM with
+        // overlapping image / CLUT regions - what was a valid palette row
+        // for one prim ends up sampled as raw image data, which the
+        // shader's paletted decode renders as rainbow garbage. Targeting
+        // the upload to the prims actually present in this mesh keeps the
+        // VRAM small and collision-free.
+        let needs = collect_prim_targets(&tmd, &bytes);
+        let (vram, tim_count) = build_vram_targeted(&dirs, &needs);
+        if tim_count > 0 {
+            // Drop primitives whose texture page wasn't supplied - they
+            // would otherwise rasterise as flat `CLUT[0]` (commonly green
+            // for Legaia palettes) and obscure correctly-textured geometry.
+            let mut considered = 0usize;
+            let mut dropped = 0usize;
+            let vram_mesh =
+                legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&tmd, &bytes, |cba, tsb, uvs| {
+                    considered += 1;
+                    let keep = vram.prim_has_texture_data(cba, tsb, uvs);
+                    if !keep {
+                        dropped += 1;
+                    }
+                    keep
+                });
+            if dropped > 0 {
+                log::info!(
+                    "skipped {} prim(s) with empty VRAM texture pages ({}/{} kept)",
+                    dropped,
+                    considered - dropped,
+                    considered,
+                );
             }
-            let (vram, tim_count) = build_vram_from_dirs(&dirs);
-            if tim_count > 0 {
+            if !vram_mesh.indices.is_empty() {
                 warn_unfilled_cluts(&vram_mesh, &vram);
                 let label = match sibling.as_ref() {
                     Some(s) if vram_extras.is_empty() => short_path(s),
@@ -3289,6 +3320,151 @@ fn load_tmd_for_view(tmd_path: &Path, vram_extras: &[PathBuf]) -> Result<TmdView
         positions: mesh.positions,
         indices: mesh.indices,
     })
+}
+
+/// VRAM rectangles a single primitive's CBA / TSB lookup will touch.
+/// `clut` is the 1-row CLUT block; `page` is the (width, height) of the
+/// sampled portion of the texture page. Coordinates are VRAM-word units
+/// (= 16bpp pixels). Used by [`collect_prim_targets`] + [`build_vram_targeted`]
+/// to skip TIM uploads that have nothing to do with the current mesh.
+#[derive(Clone, Copy)]
+struct PrimTarget {
+    clut: (u16, u16, u16, u16), // x, y, w, h
+    page: (u16, u16, u16, u16),
+}
+
+/// Collect the VRAM rectangles every textured primitive in `tmd` will
+/// sample. Empty result means the mesh has no textured prims.
+fn collect_prim_targets(tmd: &legaia_tmd::Tmd, buf: &[u8]) -> Vec<PrimTarget> {
+    let mut out = Vec::new();
+    for o in &tmd.objects {
+        let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+        for g in &groups {
+            for p in &g.prims {
+                if p.uvs.is_empty() {
+                    continue;
+                }
+                let (cx, cy) = p.cba_xy();
+                let (px, py, depth, _abr) = p.tpage_xy();
+                let clut_w: u16 = match depth {
+                    4 => 16,
+                    8 => 256,
+                    _ => 0,
+                };
+                let mut umin = u8::MAX;
+                let mut umax = 0u8;
+                let mut vmin = u8::MAX;
+                let mut vmax = 0u8;
+                for &(u, v) in &p.uvs {
+                    umin = umin.min(u);
+                    umax = umax.max(u);
+                    vmin = vmin.min(v);
+                    vmax = vmax.max(v);
+                }
+                let (u_lo, u_hi) = match depth {
+                    4 => (umin as u16 >> 2, umax as u16 >> 2),
+                    8 => (umin as u16 >> 1, umax as u16 >> 1),
+                    _ => (umin as u16, umax as u16),
+                };
+                let page_w = u_hi.saturating_sub(u_lo) + 1;
+                let page_h = (vmax as u16).saturating_sub(vmin as u16) + 1;
+                out.push(PrimTarget {
+                    clut: (cx, cy, clut_w, 1),
+                    page: (px + u_lo, py + vmin as u16, page_w, page_h),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Axis-aligned rectangle intersection test in VRAM-word space.
+fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Targeted VRAM upload with per-block guards.
+///
+/// For every TIM in the candidate dirs, decide *independently* whether
+/// to write its image block and its CLUT block:
+///
+/// - **Image block** is written iff it overlaps at least one mesh
+///   texture-page rectangle AND it does NOT overlap any mesh CLUT
+///   rectangle. Skipping the image when it would land on a CLUT row
+///   is what removes the rainbow-noise symptom - otherwise the
+///   paletted decode reads image bytes as BGR555 palette entries.
+///
+/// - **CLUT block** is written iff it overlaps at least one mesh CLUT
+///   rectangle AND it does NOT overlap any mesh page rectangle.
+///
+/// A TIM can contribute one block, both, or neither. Falls back to
+/// "upload everything" when the mesh has no textured prims.
+fn build_vram_targeted(dirs: &[&Path], needs: &[PrimTarget]) -> (Vram, usize) {
+    if needs.is_empty() {
+        return build_vram_from_dirs(dirs);
+    }
+    let mut vram = Vram::new();
+    let mut count = 0usize;
+    let mut total = 0usize;
+    let mut img_only = 0usize;
+    let mut clut_only = 0usize;
+    let mut both = 0usize;
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("tim")) {
+                continue;
+            }
+            let Ok(buf) = std::fs::read(&p) else {
+                continue;
+            };
+            let Ok(tim) = legaia_tim::parse(&buf) else {
+                continue;
+            };
+            total += 1;
+            let img = &tim.image;
+            let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
+            let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));
+
+            let img_useful = needs.iter().any(|t| rects_overlap(img_rect, t.page));
+            let img_collides_clut = needs.iter().any(|t| rects_overlap(img_rect, t.clut));
+            let clut_useful =
+                clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.clut)));
+            let clut_collides_page =
+                clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.page)));
+
+            let upload_image = img_useful && !img_collides_clut;
+            let upload_clut = clut_useful && !clut_collides_page;
+            if !upload_image && !upload_clut {
+                continue;
+            }
+            vram.upload_tim_partial(&tim, upload_image, upload_clut);
+            count += 1;
+            match (upload_image, upload_clut) {
+                (true, true) => both += 1,
+                (true, false) => img_only += 1,
+                (false, true) => clut_only += 1,
+                _ => {}
+            }
+        }
+    }
+    log::info!(
+        "targeted VRAM upload: {} of {} TIMs contribute (both={} img-only={} clut-only={}) for {} prim target(s)",
+        count,
+        total,
+        both,
+        img_only,
+        clut_only,
+        needs.len(),
+    );
+    (vram, count)
 }
 
 /// Walk each dir in order, uploading every `.tim` to a single fresh VRAM.

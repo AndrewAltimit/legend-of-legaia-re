@@ -29,6 +29,18 @@ Useful flags:
 - `--vram-extra-dir <dir>` - workaround for character meshes whose CLUT
   rows live in *different* PROT entries from their TMD source.
 
+When VRAM is built from one or more TIM directories, the `tmd` viewer
+drops primitives whose texture page region is empty - those would
+otherwise rasterise as solid `CLUT[0]` (a flat green / cyan tint over
+correctly-textured geometry) and obscure the rest of the model. The
+diagnostic `skipped N prim(s) with empty VRAM texture pages` line in
+the log tells you how aggressive the filter was; pair it with
+`--vram-extra-dir` to recover the missing pages. Primitive-section walks
+are also lenient: a single malformed group near the end of an object's
+prim section no longer hides every valid group that came before it,
+so multi-object TMDs render every part of the model that walks cleanly
+instead of cutting off at the first error boundary.
+
 ### `stage` - wireframe stage geometry
 
 Renders the 12-byte-prefix + 8-byte u16 quad records identified by

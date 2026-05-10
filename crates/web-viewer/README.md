@@ -18,10 +18,22 @@ instead of every raw entry.
 - `legaia-tmd` - mesh parser.
 
 Rendering targets the canvas's 2D context (`CanvasRenderingContext2d` +
-`ImageData`) - no `wgpu` dependency on the WASM target. The 3D path
-(`tmd3d` module) does software rasterisation onto the same canvas,
-which is enough for "browse the asset library from a phone" but not
-enough to drive a real game scene.
+`ImageData`) for TIM blits and the canvas's WebGL2 context for textured
+3D TMDs - no `wgpu` dependency on the WASM target. The 3D path
+(`tmd3d` module + `site/js/webgl-tmd.js`) does either software
+painter's-algorithm rasterisation or a paletted GPU shader matching
+the engine-render VRAM-mesh pipeline, which is enough for "browse the
+asset library from a phone" but not enough to drive a real game scene.
+
+A canvas can only ever bind one rendering context type for its lifetime
+(once `getContext("webgl2")` succeeds, `getContext("2d")` returns null
+forever on that element). The host page swaps in a fresh `<canvas>`
+between entry switches and `LegaiaViewer` re-resolves it by id on every
+2D draw, so flipping back to a TIM entry after viewing a TMD entry
+keeps working. When a disc is loaded, primitives whose texture pages
+weren't supplied are dropped from the mesh before upload, which
+prevents the "solid green / cyan tint" symptom for entries that
+reference TIMs sitting in other PROT entries.
 
 ## Build
 
