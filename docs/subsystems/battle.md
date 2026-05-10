@@ -337,6 +337,62 @@ The active scene-name table at `0x80084540` (CDNAME label + scene index) is **id
 
 Codified as constants in [`crates/engine-core::capture_observations::encounter_trigger`](../../crates/engine-core/src/capture_observations.rs); a disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`encounter_trigger_diff_loads_battle_overlay`) exercises the real save bytes.
 
+## Battle scene-init residency window
+
+A separate `map01` save pair (one frame with the encounter armed but
+battle not yet entered, the next frame with battle just initiated)
+pins the **post-load residency window** of the battle scene-init
+pipeline. Distinct from the encounter-trigger overlay swap above; this
+pair brackets the loader function with concrete RAM-resident artefacts
+the loader writes into.
+
+| Range | Bytes changed | What it is |
+|---|---:|---|
+| `0x80124690..0x801503C4` | ~168 KB | Battle-bundle residency window. Pre-battle holds field-scene payload (sample dialog text strings visible); post-battle holds battle-bundle data (vertex / TIM / actor records). Codified as `BATTLE_BUNDLE_WINDOW`. |
+| `0x801CE808..0x801D3018` | ~16 KB | Battle-overlay scratch slice. Wholesale reset on entry; distinct from the broader encounter-trigger overlay residency at `0x801CE800..0x801F4000`. Codified as `OVERLAY_SCRATCH_WINDOW`. |
+| `0x800836C8` | 4 B | Per-frame actor-tick fn-pointer slot in the bundle-pool extension. Pre-battle reads `0x80024C50`; post-battle reads `0xF41D0280` = `FUN_80021DF4`. Codified as `ACTOR_TICK_FN_PTR_ADDR` / `ACTOR_TICK_FN_PTR_VALUE`. |
+| `0x801FFCA0..0x801FFFFE` | ~600 B | CD I/O state slice. Rewires while the battle bundle is paged in; reliable "battle scene-init in flight" signature. |
+
+The pair is **post-load** by design - both save frames resolve to a
+state where the loader function has already returned. The loader
+function (which reads PROT entry `0x05C4` + sibling Seru blobs and
+populates the battle bundle) lives in an overlay slice that is not
+directly visible in either snapshot. Pinning it requires a
+mid-execution capture between the field→battle game-mode flip and
+this residency state, which the current Mednafen workflow can't
+generate without manual frame-stepping (mednafen 1.29 has no headless
+mode).
+
+Codified as constants in
+[`engine_core::capture_observations::battle_init_overlay`](../../crates/engine-core/src/capture_observations.rs);
+disc-gated test
+`battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring`
+in `crates/mednafen/tests/real_saves.rs`.
+
+## Item-use battle-event residency
+
+A mid-battle save pair (battle just initiated; party member about to
+use a Healing Leaf) pins the **item-use sub-mode residency**:
+
+| Address | Pre / Post | Notes |
+|---|---|---|
+| `_DAT_8007B8D0` | `0x8014BD30 → 0x800ABA4C` | Field-pack base pointer flips. The item-use sub-mode reseats the active scene asset buffer. |
+| `0x801BA7DC..0x801BADEC` | ~660 B shift | Script-VM context block. The menu / item / target / commit pipeline rewrites the entire ctx region as it runs. |
+| Actor pool slots 0..4 | per-frame motion deltas | 3 party + 2 monsters (count-2 formation). Slots 5..7 stay zero across the pair. |
+
+The captured pair uses a **Healing Leaf** (consumable HP-restore) -
+not Fire Book I (a spell-learn item). The pair therefore pins the
+residency window of the item-use battle-event handler without lifting
+the Fire Book-specific writer to the displayed-skills array at
+`+0x185`. A second save pair specifically capturing Fire Book I use
+is required to lift that writer.
+
+Codified as constants in
+[`engine_core::capture_observations::item_use_battle_event`](../../crates/engine-core/src/capture_observations.rs);
+disc-gated test
+`item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift`
+in `crates/mednafen/tests/real_saves.rs`.
+
 ## Captured stat-growth observations
 
 The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../tooling/mednafen-automation.md)) over a magic-rank-up + character-level-up save triplet pins the per-byte footprint for Vahn (party slot 0). The observed deltas inside Vahn's character record at `0x80084708` (stride `0x414`):

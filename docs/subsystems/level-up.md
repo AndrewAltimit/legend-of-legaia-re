@@ -260,10 +260,18 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   delta search across PROT.DAT (using the three pinned per-character triplets
   for orientation) also fails to surface a stat-grant table — the candidate
   cluster at PROT.DAT byte offset `0x033E9000` is animation-curve data, not
-  stat grants. The grant table likely lives in a still-uncaptured overlay
-  (battle-data init or the Seru-equip path) or is encoded inline in a Seru
-  PROT entry the current capture set doesn't surface. Engine-side scaffold
-  lives at [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` +
+  stat grants. A new battle scene-init save pair (mc1 = `map01` field with
+  encounter armed; mc2 = `map01` battle initiated) pins the **post-load
+  residency window** of the battle scene-init pipeline (codified as
+  `engine_core::capture_observations::battle_init_overlay`), but the loader
+  function itself - the helper that reads PROT entry `0x05C4` + sibling
+  Seru blobs and decompresses the per-Seru stat-grant data into RAM - has
+  finished by the time the post-load save is captured. The loader still
+  resides in an overlay slice that requires a mid-execution capture
+  (between the field→battle game-mode flip and the post-load state) which
+  the current Mednafen workflow can't generate without manual
+  frame-stepping. Engine-side scaffold lives at
+  [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` +
   `SeruStatTable` + `LevelUpTracker::with_seru_roster` install a flat curve
   summed across the equipped Seru. Replace with `StatGrowthCurve::PerLevel`
   when the table is pinned.
