@@ -112,6 +112,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/navmesh.html",       "Per-scene primitive scratch buffer", "formats/navmesh",       "formats/navmesh.html"),
     ("formats/encounter.html",     "Encounter record",              "formats/encounter",          "formats/encounter.html"),
     ("formats/str-fmv-table.html", "STR FMV table",                 "formats/str-fmv-table",      "formats/str-fmv-table.html"),
+    ("formats/save-record.html",   "Per-character save record",     "formats/save-record",        "formats/save-record.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
     # Per-tooling pages (mirrored from docs/tooling/)
     ("tooling/extraction.html",    "Extraction CLIs",               "tooling/extraction",         "tooling/extraction.html"),
@@ -121,6 +122,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
+    ("reference/cheats.html",      "Cheat databases",               "reference/cheats",           "reference/cheats.html"),
 ]
 
 

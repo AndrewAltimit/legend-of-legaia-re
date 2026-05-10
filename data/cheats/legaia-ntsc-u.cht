@@ -1,0 +1,201 @@
+# Mednafen .cht format dump for Legend of Legaia (NTSC-U).
+# Multi-write cheats use "+" between (address, value) pairs.
+# Conditional codes use prefix bytes D0/E0 (if-equal / if-not-equal),
+# followed by the address and the comparison value.
+cheats = 49
+
+cheat0_desc = "100 AP (Vahn)"
+cheat0_code = "80084816 0064"
+cheat0_enable = false
+
+cheat1_desc = "100 AP (Noa)"
+cheat1_code = "80084C2A 0064"
+cheat1_enable = false
+
+cheat2_desc = "100 AP (Gala)"
+cheat2_code = "8008503E 0064"
+cheat2_enable = false
+
+cheat3_desc = "65535 Fishing Points"
+cheat3_code = "8008444C FFFF"
+cheat3_enable = false
+
+cheat4_desc = "Access All Towns When You Use Door of Wind"
+cheat4_code = "8008575C F77F+8008575E F8FF"
+cheat4_enable = false
+
+cheat5_desc = "Best Equipment (Vahn)"
+cheat5_code = "8008489E 384B+300848A0 001B+300848A2 005F"
+cheat5_enable = false
+
+cheat6_desc = "Best Equipment (Noa)"
+cheat6_code = "80084CB2 3E51+30084CB5 002D+30084CB6 0064"
+cheat6_enable = false
+
+cheat7_desc = "Bought Any Item or Find Items You Will Get 99 Quantity"
+cheat7_code = "800422F4 0001"
+cheat7_enable = false
+
+cheat8_desc = "Character Activator"
+cheat8_code = "80084594 0003"
+cheat8_enable = false
+
+cheat9_desc = "Control Camera (Press L2-Up/R2-Down/L2+R2-Zoom)"
+cheat9_code = "D007B7C0 0001+1007B790 0005+D007B7C0 0002+1107B790 0005+D007B7C0 0003+8007B6F4 00A0+D007B7C0 0000+8007B6F4 0230"
+cheat9_enable = false
+
+cheat10_desc = "End of Game Stat Page (Push Select)"
+cheat10_code = "D007B7C0 0100+8007B450 0085"
+cheat10_enable = false
+
+cheat11_desc = "Game Time 0:00:00"
+cheat11_code = "80084570 0000"
+cheat11_enable = false
+
+cheat12_desc = "Has all Arts (Vahn)"
+cheat12_code = "3008488D 000F+8008488E 0D0E+80084890 0B0C+80084892 090A+80084894 0708+80084896 0506+80084898 0304+8008489A 0102"
+cheat12_enable = false
+
+cheat13_desc = "Has all Arts (Noa)"
+cheat13_code = "30084CA1 000F+80084CA2 0F10+80084CA4 0D0E+80084CA6 0B0C+80084CA8 090A+80084CAA 0708+80084CAC 0506+80084CAE 0104"
+cheat13_enable = false
+
+cheat14_desc = "Have All Art Moves (Vahn)"
+cheat14_code = "8008488C 1000+8008488E 0201+80084890 0403+80084892 0605+80084894 0807+80084896 0A09+80084898 0C0B+8008489A 0E0D+8008489C 000F"
+cheat14_enable = false
+
+cheat15_desc = "Have All Art Moves (Noa)"
+cheat15_code = "80084CA0 1000+80084CA2 0201+80084CA4 0403+80084CA6 0605+80084CA8 0807+80084CAA 0A09+80084CAC 0C0B+80084CAE 0E0D+80084CB0 000F"
+cheat15_enable = false
+
+cheat16_desc = "Have All Art Moves (Gala)"
+cheat16_code = "800850B4 1000+800850B6 0201+800850B8 0403+800850BA 0605+800850BC 0807+800850BE 0A09+800850C0 0C0B+800850C2 0E0D+800850C4 000F"
+cheat16_enable = false
+
+cheat17_desc = "Have all Summons (Vahn)"
+cheat17_code = "80084844 811F+80084846 8C86+80084848 829E+8008484A 9587+8008484C 88A0+8008484E 8F8B+80084850 8D9F+80084852 9390+80084854 849A+80084856 928A+80084858 859B+8008485A 948E+8008485C 839D+8008485E 9189+80084860 969C+80084862 9997"
+cheat17_enable = false
+
+cheat18_desc = "Have all Summons (Noa)"
+cheat18_code = "80084C58 811F+80084C5A 8C86+80084C5C 829E+80084C5E 9587+80084C60 88A0+80084C62 8F8B+80084C64 8D9F+80084C66 9390+80084C68 849A+80084C6A 928A+80084C6C 859B+80084C6E 948E+80084C70 839D+80084C72 9189+80084C74 969C+80084C76 9997"
+cheat18_enable = false
+
+cheat19_desc = "Infinite Coins"
+cheat19_code = "800845A4 E0FF+800845A6 05F5"
+cheat19_enable = false
+
+cheat20_desc = "Infinite Gold (Never Glitchy)"
+cheat20_code = "8008459C FFFF"
+cheat20_enable = false
+
+cheat21_desc = "Infinite HP (Vahn)"
+cheat21_code = "8007A6BC 270F+8008480E 270F+800ECB34 270F+800ECB5A 270F"
+cheat21_enable = false
+
+cheat22_desc = "Infinite HP (Noa)"
+cheat22_code = "8007A6BC 270F+80084C22 270F+800ECE08 270F+800ECE2E 270F"
+cheat22_enable = false
+
+cheat23_desc = "Infinite HP (Gala)"
+cheat23_code = "8007A6BC 270F+80085036 270F+800ED0DC 270F+800ED102 270F"
+cheat23_enable = false
+
+cheat24_desc = "Infinite Items All Slots"
+cheat24_code = "8004309E 2400"
+cheat24_enable = false
+
+cheat25_desc = "Infinite MP (Vahn)"
+cheat25_code = "8007A6BC 03E7+80084812 03E7+800ECB38 03E7+800ECB5C 03E7"
+cheat25_enable = false
+
+cheat26_desc = "Infinite MP (Noa)"
+cheat26_code = "8007A6BC 03E7+80084C26 03E7+800ECE0C 03E7+800ECE30 03E7"
+cheat26_enable = false
+
+cheat27_desc = "Infinite MP (Gala)"
+cheat27_code = "8007A6BC 03E7+8008503A 03E7+800ED0E0 03E7+800ED104 03E7"
+cheat27_enable = false
+
+cheat28_desc = "Level 99 (Vahn)"
+cheat28_code = "80084838 0063"
+cheat28_enable = false
+
+cheat29_desc = "Level 99 (Noa)"
+cheat29_code = "80084C4C 0063"
+cheat29_enable = false
+
+cheat30_desc = "Level 99 (Gala)"
+cheat30_code = "80085060 0063"
+cheat30_enable = false
+
+cheat31_desc = "Magic Slot Activator"
+cheat31_code = "30084844 0024"
+cheat31_enable = false
+
+cheat32_desc = "Map Modifier (Hold L2+R2)"
+cheat32_code = "D007B7C0 0003+80084540 0000"
+cheat32_enable = false
+
+cheat33_desc = "Max Exp (Vahn)"
+cheat33_code = "80084708 FFFF+8008470A 0098"
+cheat33_enable = false
+
+cheat34_desc = "Max HP (Vahn)"
+cheat34_code = "8008480C 270F+8008480E 270F+80084824 270F"
+cheat34_enable = false
+
+cheat35_desc = "Maxed HP for All Characters"
+cheat35_code = "8007EA96 2400"
+cheat35_enable = false
+
+cheat36_desc = "Name Modifier For Vahn (Push Select)"
+cheat36_code = "D007B7C0 0100+8007B450 0011+D007B7C0 0001+8007B450 0000"
+cheat36_enable = false
+
+cheat37_desc = "No Random Battles"
+cheat37_code = "8007B5FC 0377"
+cheat37_enable = false
+
+cheat38_desc = "Press R2 For Debug Menu"
+cheat38_code = "D007B7C0 0002+D007B83C 0003+8007B83C 0000"
+cheat38_enable = false
+
+cheat39_desc = "Quick Level Gain"
+cheat39_code = "80084708 FFFF"
+cheat39_enable = false
+
+cheat40_desc = "Remove Vahn's Chest"
+cheat40_code = "8004390E 2400"
+cheat40_enable = false
+
+cheat41_desc = "Save Anywhere (Press Select+X)"
+cheat41_code = "D007B7C0 0140+8007B6A8 0001"
+cheat41_enable = false
+
+cheat42_desc = "Shop Modifier (Push Select)"
+cheat42_code = "D007B7C0 0100+8007B450 0000+D007B7C0 0001+8007B450 0000"
+cheat42_enable = false
+
+cheat43_desc = "Slow Motion"
+cheat43_code = "8007A894 68FB"
+cheat43_enable = false
+
+cheat44_desc = "Small Maps"
+cheat44_code = "8007B6F4 015B"
+cheat44_enable = false
+
+cheat45_desc = "Status Modifier Menu (Push Select To Enter Menu, L2 To Exit Menu)"
+cheat45_code = "D007B7C0 0100+8007B450 0001+D007B7C0 0001+8007B450 0000"
+cheat45_enable = false
+
+cheat46_desc = "View Credits (Start Game Like Normal)"
+cheat46_code = "80084540 030C"
+cheat46_enable = false
+
+cheat47_desc = "Walk Thru Walls"
+cheat47_code = "D01D078C 0006+801D078C 0006+D01D071C 0028+801D071C 0006+D01D065C 0028+801D065C 0006+D01D06BC 000D+801D06BC 0006"
+cheat47_enable = false
+
+cheat48_desc = "Two Rounds Won In Baka Fighter"
+cheat48_code = "801DBFF0 0002"
+cheat48_enable = false

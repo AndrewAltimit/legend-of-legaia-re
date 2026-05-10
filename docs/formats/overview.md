@@ -36,6 +36,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [ANM animation](anm.md) | `(u16 count, u16 offsets[count], records)` layout. Asset type `0x06`. |
 | [MDT move table](mdt.md) | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
 | [Art data](art-data.md) | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
+| [Per-character save record](save-record.md) | Runtime `0x414`-byte record at `0x80084708 + slot * 0x414`. Cheat-database-pinned offset table for stats / level / magic rank / spells / summons / equipment. |
 
 ## Streaming + scene containers
 

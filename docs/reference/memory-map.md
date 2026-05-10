@@ -25,7 +25,65 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x80086D70` | u8[32] | **Fourth flag bank** - 256-bit bitfield, accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))`. |
 | `0x80087AF8` | u32 | Result of `FUN_80020224` descriptor walker, set by town-overlay MAIN INIT. |
 | `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
-| `0x800845A4` | u32 | Party-money / XP bank. |
+| `0x800845A4` | u32 | Casino coin bank. "Infinite Coins" cheat writes `0x05F5_E0FF`. |
+
+## Cheat-database-pinned globals
+
+These are RAM cells the GameShark cheat database has named anchors
+for. See [`docs/reference/cheats.md`](cheats.md) for the full
+citation table.
+
+| Address | Type | Purpose | Cheat citation |
+|---|---|---|---|
+| `0x80084540` | u16 | Active scene-name pool slot (also "Map Modifier"). | `View Credits` writes `0x030C` (credits scene). |
+| `0x80084570` | u32 | Game-time seconds counter. | `Game Time 0:00:00` zeroes it. |
+| `0x80084594` | u8 | Party member count. | `Character Activator` writes `0x03`. |
+| `0x80084599` | u8 | Noa "join the party" gate. | `Noa Activator` writes `0x01`. |
+| `0x8008459A` | u8 | Gala join-party gate. | `Gala Activator` writes `0x02`. |
+| `0x8008459C` | u32 | Party gold. | `Infinite Gold (Never Glitchy)`. |
+| `0x800845A4` | u32 | Casino coin bank. | `Infinite Coins`. |
+| `0x80085600..0x80085800` | u8[512] | Story-flag bitmap window (Door of Wind, town visited markers). | `Access All Towns` writes `0xF77F` / `0xF8FF`. |
+| `0x80085958..` | u8[144] | 72-slot inventory array, 2-byte stride `(id, count)`. | `Have 99 Items` and `Item Modifier`. |
+| `0x800EC9E8` | u8[0x2D4] × N | Battle actor pool, party-slot stride `0x2D4`. | `Infinite HP/MP (Vahn/Noa/Gala)` cheats target slots 0..2. |
+| `0x8007A6BC` | u16 | Shared "currently-acting character" HP/MP scratch. | Every "Infinite HP/MP" cheat hits this first. |
+| `0x8007A894` | u16 | Frame-pacing logic timer. | `Slow Motion` writes `0x68FB`. |
+| `0x8007B450` | u16 | Menu-request register the menu overlay polls each frame. | `Save Anywhere`, `Status Modifier Menu`, `Shop Modifier`, `End of Game Stat Page`. |
+| `0x8007B5FC` | u16 | Encounter step counter. | `No Random Battles` writes `0x0377`. |
+| `0x8007B6A8` | u16 | Save-anywhere allow flag. | `Save Anywhere (Press Select+X)`. |
+| `0x8007B6F4` | u16 | Camera mode word. | `Control Camera` and `Small Maps` cheats. |
+| `0x8007B790` | u16 | Camera zoom-state register. | `Control Camera` reads here. |
+| `0x80084708 + n*0x414` | u8[0x414] | Per-character record (4 slots). | Hundreds of cheats; see [`docs/formats/save-record.md`](../formats/save-record.md). |
+
+### Mini-game scratch cells
+
+Cheat-pinned mini-game RAM. Outside the engine's current scope but
+worth recording so we can recognise them in saves.
+
+| Address | Mini-game | Purpose |
+|---|---|---|
+| `0x8008444C` | Fishing | Persistent fishing-points counter. |
+| `0x801D9168` | Fishing | Tension gauge. |
+| `0x801D91CC` | Fishing | Active fish ID. |
+| `0x801D9274` | Fishing | Casting power. |
+| `0x801D9298` | Fishing | Fish life. |
+| `0x801DBFC4` | Baka Fighter | Player life. |
+| `0x801DBFF0` | Baka Fighter | Rounds-won counter. |
+| `0x801DC06C` | Baka Fighter | Computer life. |
+| `0x801D3CAC` | Wild Card slot machine | Punch-mode unlock. |
+| `0x801D53CC` | Dance | Dance-points counter. |
+| `0x801D078C` `0x801D071C` `0x801D065C` `0x801D06BC` | Field overlay | Walk-through-walls collision-state cells. |
+
+### Code-patch sites in `SCUS_942.54`
+
+`0x2400` is the MIPS `nop` opcode; cheats that write `0x2400` are
+patching an instruction. Useful Ghidra anchors.
+
+| Address | Effect | Cheat |
+|---|---|---|
+| `0x800422F4` | Inventory-add `count = 99` patch | `Bought Any Item / Find Items You Will Get 99 Quantity` |
+| `0x8004309E` | Inventory count-decrement nop | `Infinite Items All Slots` |
+| `0x80043910` (range `0x80043900..0x80043920`) | Vahn chest draw-call nop | `Remove Vahn's Chest` |
+| `0x8007EA96` | HP-write branch nop | `Maxed HP for All Characters` |
 
 ## Sound + audio path
 

@@ -87,6 +87,7 @@ const NAV = [
       { href: 'formats/navmesh.html',                text: 'Per-scene scratch buffer', key: 'formats/navmesh' },
       { href: 'formats/encounter.html',              text: 'Encounter record',         key: 'formats/encounter' },
       { href: 'formats/str-fmv-table.html',          text: 'STR FMV table',            key: 'formats/str-fmv-table' },
+      { href: 'formats/save-record.html',            text: 'Per-character save record', key: 'formats/save-record' },
     ],
   },
   {
@@ -105,6 +106,7 @@ const NAV = [
       { href: 'reference/index.html',           text: 'Reference index',          key: 'reference/index' },
       { href: 'reference/functions.html',       text: 'Key functions',            key: 'reference/functions' },
       { href: 'reference/memory-map.html',      text: 'PSX RAM map',              key: 'reference/memory-map' },
+      { href: 'reference/cheats.html',          text: 'Cheat databases',          key: 'reference/cheats' },
     ],
   },
   {
