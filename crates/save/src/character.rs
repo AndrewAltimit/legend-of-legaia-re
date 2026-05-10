@@ -649,6 +649,29 @@ impl Party {
         }
         out
     }
+
+    /// Build a [`Party`] from a retail SC save block (the 8 KiB block whose
+    /// first two bytes are [`crate::SAVE_BLOCK_MAGIC`]).
+    ///
+    /// Walks [`crate::card::read_retail_char_records`] and parses each
+    /// returned record. Stops at the first all-zero slot, so a partial
+    /// roster (e.g. Vahn alone in the prologue) returns members in the
+    /// order they appear on disc.
+    ///
+    /// `max_records` caps the walk - retail saves never hold more than 4
+    /// active records (Vahn / Noa / Gala / Terra).
+    pub fn from_retail_sc_block(sc_block: &[u8], max_records: usize) -> anyhow::Result<Self> {
+        let raw = crate::card::read_retail_char_records(sc_block, max_records)
+            .ok_or_else(|| anyhow::anyhow!("SC block too small to hold the record header"))?;
+        let mut members = Vec::with_capacity(raw.len());
+        for (i, bytes) in raw.iter().enumerate() {
+            members.push(
+                CharacterRecord::parse(bytes)
+                    .map_err(|e| anyhow::anyhow!("character record {i}: {e}"))?,
+            );
+        }
+        Ok(Self { members })
+    }
 }
 
 #[cfg(test)]
