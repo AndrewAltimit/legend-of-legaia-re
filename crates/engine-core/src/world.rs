@@ -1335,6 +1335,42 @@ impl World {
         self.monster_catalog = catalog;
     }
 
+    /// Install a [`crate::encounter_record::EncounterRecord`] decoded from
+    /// an on-disc byte slice as the next encounter for the active scene.
+    ///
+    /// Mirrors the retail flow at `0x801DA620..0x801DA678`: the parsed
+    /// record's monster ids are turned into a [`crate::monster_catalog::FormationDef`]
+    /// (registered into `formation_table`), wrapped in a single-row
+    /// [`crate::encounter::EncounterTable`] (rate `0xFF/256` so the next
+    /// step roll always fires), and installed as the active session.
+    ///
+    /// Returns the synthesized `formation_id` so engines can immediately
+    /// transition to battle if they want to skip the per-step roll.
+    /// `None` means the record was empty (no monsters).
+    pub fn install_encounter_from_record(
+        &mut self,
+        scene_label: &str,
+        record: &crate::encounter_record::EncounterRecord,
+    ) -> Option<u16> {
+        if record.is_empty() {
+            return None;
+        }
+        let formation = record.to_formation_def(scene_label);
+        let formation_id = formation.formation_id;
+        self.formation_table.insert(formation);
+
+        use crate::encounter::{
+            EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
+        };
+        let mut table = EncounterTable::new(scene_label);
+        // Force the next roll to succeed: the record IS the encounter.
+        table.set_trigger_rate(0xFF);
+        table.push(EncounterEntry::new(formation_id, 1));
+        let tracker = EncounterTracker::new(table);
+        self.encounter = Some(EncounterSession::new(tracker));
+        Some(formation_id)
+    }
+
     /// Field-step trigger. Engines call this once per "the player walked
     /// one map cell" (typically when the player actor's grid coord moves)
     /// to advance the encounter tracker. Returns `true` if a battle
@@ -3942,5 +3978,45 @@ mod tests {
             .scene_label
             .clone();
         assert_ne!(initial_table_label, new_table_label);
+    }
+
+    #[test]
+    fn install_encounter_from_record_registers_and_arms() {
+        use crate::encounter_record::EncounterRecord;
+        let mut world = World::new();
+        // mc2-shaped record: two monsters, both id 4.
+        let record = EncounterRecord {
+            count: 2,
+            monster_ids: [0x04, 0x04, 0, 0],
+        };
+        let formation_id = world
+            .install_encounter_from_record("map01", &record)
+            .expect("non-empty record produces an id");
+        // Formation registered.
+        let formation = world
+            .formation_table
+            .formation(formation_id)
+            .expect("formation registered");
+        assert_eq!(formation.slots.len(), 2);
+        assert_eq!(formation.slots[0].monster_id, 4);
+        assert_eq!(formation.slots[1].monster_id, 4);
+        // Session installed and rate forced high.
+        let session = world.encounter.as_ref().expect("session installed");
+        assert_eq!(session.tracker().table().trigger_rate_q8, 0xFF);
+        assert_eq!(session.tracker().table().entries.len(), 1);
+        assert_eq!(
+            session.tracker().table().entries[0].formation_id,
+            formation_id
+        );
+    }
+
+    #[test]
+    fn install_encounter_from_record_empty_returns_none() {
+        use crate::encounter_record::EncounterRecord;
+        let mut world = World::new();
+        let id = world.install_encounter_from_record("map01", &EncounterRecord::EMPTY);
+        assert!(id.is_none());
+        // No session installed.
+        assert!(world.encounter.is_none());
     }
 }

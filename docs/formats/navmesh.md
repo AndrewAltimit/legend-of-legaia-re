@@ -1,43 +1,41 @@
-# Navmesh / per-scene region table
+# Per-scene primitive scratch buffer at `0x80108EA4`
 
-A 24-byte stride record table loaded into RAM at `0x80108EA4..0x801095xx` during scene loads. Carries per-scene NPC region / event-trigger / nav-region records - a candidate for the navmesh-class data the field VM and motion VM consult while pathing actors.
+The 1700-byte cluster at `0x80108EA4..0x80109550` that differs across area-load saves is **not** a 24-byte stride navmesh. It's a per-scene scratch buffer that the renderer fills with assembled GPU primitive data on scene entry — the contents shape varies by scene because the buffer holds whatever the per-scene pre-fill writes for that scene's billboard / decoration / sprite set.
 
-## How this was located
+This entry exists to record the negative finding so the next person doesn't re-walk the same path.
 
-Diffing two area-load save states against each other (one taken in scene `map01`, one in scene `suimon`) over the configured `navmesh_candidate` window `0x80100000..0x80120000` from [`scripts/mednafen/scenarios.toml`](../tooling/mednafen-automation.md) surfaces a 1700-byte cluster at `0x80108EA4..0x80109550` where the two scenes' contents differ. The first 0x40 bytes are byte-identical between the two saves, suggesting a small bank of shared records ahead of the per-scene records.
+## What the data actually looks like
 
-## Layout
+Inspected across `mc1` (field `map01`), `mc2` (in-battle), `mc3` (field `suimon`), the bytes have three shapes that don't match a navmesh table:
 
-24-byte fixed stride. The leading byte is a sequential record id (records 0..N − 1); the second byte is a sub-id / kind flag.
+- **Repeating constant runs**: in `mc1` (`map01`), addresses `0x80108EA4..0x801095xx` hold `0c 00 0c 00 0c 00 ... 0d 00 0d 00 ... 0e 00 ...` — a uniform u16 sequence with no record structure.
+- **GPU-packet shapes** in `mc2` and `mc3`: 12-byte runs that mirror the GP0 packet header + RGB-color + delta-position layout the PSX renderer emits. Bytes like `80 80 80 7E` / `80 80 80 76` are the canonical TMD primitive flag/mode/code/ilen quartet; bytes like `c1 c1 c1` / `cc cc cc` / `f7 f7 f7` are RGB color triplets; signed `0xff` deltas appear at the i16 positions.
+- **Cross-save residency**: `mc1`, `mc2`, and `mc3` all show *different* shapes at the same offset. A real navmesh would carry stable per-scene records that other code reads through a known base pointer; this region is overwritten wholesale on scene entry.
 
-```text
-+0x00  u8   id          ; sequential 0, 1, 2, ...
-+0x01  u8   kind         ; 0x00 for the leading shared bank, 0x01 for per-scene records
-+0x02  i16  field_a      ; signed coordinate / size value (X?)
-+0x04  i16  field_b      ; signed coordinate / size value (Y?)
-+0x06  i16  field_c      ; signed coordinate / size value (Z?)
-+0x08  i16  field_d      ;
-+0x0A  i16  field_e      ;
-+0x0C  i16  field_f      ;
-+0x0E  i16  field_g      ;
-+0x10  u32  tag          ; 4-byte ASCII tag (e.g. "ZZZ\0", "EEE\0", "XXX\0", "(((\0", "333T")
-+0x14  u16  sub_a        ;
-+0x16  u16  sub_b        ;
+## Why the original "navmesh" reading misled
+
+The cluster *was* spotted by diffing two area-load saves and noticing 1700 bytes differed. That's how scene-resident data shows up — but it's also how *any* working buffer that gets repopulated on scene entry shows up. The leading `id` / `kind` interpretation in the first reading happened to fit `mc3` (where some bytes look like 0x00/0x01-shaped record ids), but breaks for `mc1` (uniform `0x0c00`) and `mc2` (battle state, no field rendering active).
+
+## Why no consumer was ever found
+
+A `mednafen-state` pointer-hunt over the full 2 MiB main-RAM window for any u32 value pointing into `0x80108EA4..0x80109550` returns **zero** hits in `mc1`, `mc2`, or `mc3`. There is no RAM cell anywhere — overlay slot, SCUS data segment, kernel stack, or runtime heap — that holds the table base. That's the smoking gun: a real navmesh table would be consulted through a stable base-pointer cell. This buffer is consumed by code that knows its address as a constant (LUI+ADDIU pair compiled into the renderer), not via indirection.
+
+The wider window `0x80108000..0x8010A000` does have 6 external pointers (in `mc1`), but they target neighbouring offsets (`0x80108398`, `0x80108BC8`, `0x80108C2C`, `0x80108C38`) — that's the pre-fill / sprite-batcher reading from data structures *adjacent to* this scratch region, not the scratch region itself.
+
+## Reproducing the negative finding
+
+```bash
+./target/release/mednafen-state extract <mc1.mc1> --start 0x80000000 --end 0x80200000 --out /tmp/ram_mc1.bin
+./target/release/mednafen-state extract <mc3.mc3> --start 0x80000000 --end 0x80200000 --out /tmp/ram_mc3.bin
+
+python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc1.bin \
+    --target-lo 0x80108EA4 --target-hi 0x80109550 --exclude-self
+python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc3.bin \
+    --target-lo 0x80108EA4 --target-hi 0x80109550 --exclude-self
 ```
 
-Records observed in the leading bank carry small ASCII tags: `(((\0` (`0x00282828`), `333T` (`0x54333333`), `ZZZ\0` (`0x005A5A5A`), `EEE\0` (`0x00454545`), `XXX\0` (`0x00585858`), `...\0` (`0x002E2E2E`). The repeating-3-character tags suggest debug names attached to template records used by the scene pre-fill / world-map renderer.
+Both invocations return zero hits. The narrow `--target-lo`/`--target-hi` bounds match the original reading; widen to `0x80108000..0x8010A000` to surface the adjacent sprite-batcher pointers.
 
-The per-scene records (`kind == 0x01`) follow and carry distinct tags whose shape varies by scene.
+## What the actual navmesh / pathing data is
 
-## Confidence
-
-**Inferred - consumer not in any captured dump.** The layout above is a structural inference from a single mednafen save-state diff pair. A grep for any `LUI` + `ORI` pair targeting the `0x80108EA4..0x80109550` window across every `ghidra/scripts/funcs/*.txt` returns zero hits, meaning every consumer of this table lives in an overlay slice that hasn't been captured yet (the table address is in the `0x801XXXXX` data window that maps to scene-resident overlays).
-
-The most likely consumer is the field-VM actor-spawn family (script-VM ops `0x40` / `0x4F`) or the motion VM (`FUN_8003774C`, per-actor pursue / patrol) - both already-captured but neither reads from `0x80108EA4` in their static body. The reads must therefore go through a pointer that gets populated at scene load time, in code that lives in one of the still-uncaptured `town01` / `field` / `world_map` overlays.
-
-## Files referencing this format
-
-- Field VM's actor-spawn family writes per-NPC records into a similarly-shaped table (same 24-byte stride, same leading id / kind bytes).
-- Motion VM consults a per-actor pursue / patrol coordinate set with similar shape.
-
-Both candidates point at the same conclusion: the navmesh table is consumed via a pointer the scene-load overlay sets up. The next step is a `mednafen-state diff` over the pointer storage range (`0x801C0000..0x801E0000`) across the two area-load saves to surface which RAM cell holds the table base - that's where the writer-search should focus once the cell is known.
+Real per-scene region / event-trigger data for actor pathing is NOT in this RAM window. The encounter-record pointer (one piece of pathing-adjacent data) lives in actor records at `actor[+0x94]` — see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow. NPC region / collision-box records live in the field-pack schema slots (slot kinds `NpcRecord` / `CollisionBox` / `EventTrigger` from [`field-pack.md`](field-pack.md)).

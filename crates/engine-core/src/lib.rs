@@ -17,6 +17,7 @@ pub mod camera;
 pub mod capture_observations;
 pub mod dialog;
 pub mod encounter;
+pub mod encounter_record;
 pub mod encounter_registry;
 pub mod equip_session;
 pub mod equipment;

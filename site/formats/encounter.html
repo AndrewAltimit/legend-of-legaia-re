@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Encounter record - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; encounter record</div>
+  <h1>Encounter record format</h1>
+  <p class="lede">The on-disc encounter record installed onto a field actor when the script VM triggers a battle. The pointer is written at <code>actor[+0x94]</code> by field-VM op handlers and consumed by the world-map / field entity tick at <code>FUN_801DA51C</code> to populate the global encounter formation cell.</p>
+</header>
+
+<section class="doc-section" id="confidence">
+  <h2>Confidence</h2>
+  <p><strong>Inferred — structural reading from a single tracer.</strong> The reader (<code>FUN_801DA51C</code> body at <code>0x801DA620..0x801DA678</code>) is fully decoded. The on-disc <em>carrier</em> of these records (which PROT entry holds the encounter-record array) is not yet pinned — see "What this doesn't tell us" below.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>+0x00  u8[3]  reserved             ; cleared to zero by the reader before the copy
++0x03  u8     monster_count         ; 0..4 inclusive
++0x04  u8[N]  monster_ids           ; N == monster_count
+                                    ; each id indexes the per-scene battle_data group
+[possibly more after — fields not consumed by the formation copy]</code></pre>
+  <p>The reader copies <code>monster_ids[0..count]</code> into the global formation cell at <code>0x8007BD0C..0x8007BD0F</code> (a 4-byte array, one byte per slot). Slots beyond <code>count</code> stay zeroed. <code>monster_count == 0</code> clears the formation cell entirely (no monsters spawn this round).</p>
+</section>
+
+<section class="doc-section" id="reader">
+  <h2>Reader</h2>
+  <p><code>FUN_801DA51C</code> (the world-map / field entity tick, see the <a href="../subsystems/world-map.html">world-map subsystem</a>) at offsets <code>0x801DA620..0x801DA678</code>:</p>
+<pre><code>801da620  lui v0,0x8008
+801da624  addiu s0,v0,-0x42f4   ; s0 = formation_cell_base = 0x8007BD0C
+801da628  sb zero,0x3(s0)        ; clear monster slot 3 (0x8007BD0F)
+801da62c  sb zero,0x2(s0)        ; clear monster slot 2 (0x8007BD0E)
+801da630  sb zero,0x1(s0)        ; clear monster slot 1 (0x8007BD0D)
+801da634  jal 0x801de190         ; helper (effect / sound trigger)
+801da638  _sb zero,-0x42f4(v0)   ; clear monster slot 0 (0x8007BD0C)
+801da63c  lw v0,0x94(s1)         ; v0 = encounter_record_ptr = actor[+0x94]
+801da640  nop
+801da644  lbu a1,0x3(v0)         ; a1 = monster_count = record[+0x3]
+801da648  nop
+801da64c  beq a1,zero,0x801da67c  ; nothing to copy: skip loop
+801da650  _clear a0
+801da654  move a2,s0             ; a2 = formation cell base
+801da658  lw v0,0x94(s1)         ; re-read record pointer (volatile)
+801da65c  addu v1,a0,a2          ; v1 = &formation[a0]
+801da660  addu v0,a0,v0          ; v0 = record + a0
+801da664  lbu v0,0x4(v0)         ; v0 = record[+0x4 + a0] = monster_ids[a0]
+801da668  addiu a0,a0,0x1
+801da66c  sb v0,0x0(v1)          ; formation[a0-1] = monster_ids[a0-1]
+801da670  slt v0,a0,a1
+801da674  bne v0,zero,0x801da658  ; loop until a0 == monster_count
+801da678  _nop</code></pre>
+  <p>The <code>s1</code> register is the actor record (caller's <code>a0</code> in <code>FUN_801DA51C</code>); <code>+0x94</code> is the encounter-record pointer slot. The clear-then-copy ordering means a <code>monster_count &lt; 4</code> record correctly leaves trailing slots zeroed.</p>
+</section>
+
+<section class="doc-section" id="writer">
+  <h2>Writer (record-pointer install)</h2>
+  <p>The script-VM dispatcher (<code>FUN_801DE840</code>, see the <a href="../subsystems/script-vm.html">script-VM subsystem</a>) installs the encounter record on an actor with the pattern at <code>0x801DEEDC..0x801DEEEC</code>:</p>
+<pre><code>801deedc  lw v0,0x10(s5)
+801deee0  sw s0,0x94(s5)         ; actor[+0x94] = s0 (encounter record pointer)
+801deee4  sh zero,0x54(s5)       ; reset actor sub-state
+801deee8  ori v0,v0,0x400        ; raise "encounter armed" flag (state[0x400])
+801deeec  sw v0,0x10(s5)</code></pre>
+  <p><code>s0</code> is loaded from the script-bytecode immediate operand earlier in the dispatcher; <code>s5</code> is the resolved target actor (from a context-pointer that may indirect through the system-channel resolver <code>FUN_8003C83C</code>). Several copies of this clause appear in the dispatcher (<code>0x801DEF08</code>, <code>0x801DEFA0</code>, <code>0x801DF038</code>, <code>0x801DF3FC</code>, <code>0x801E1C38</code>, <code>0x801E1F44</code>, <code>0x801E21C0</code> …); each is a different op handler that triggers an encounter on a different actor selector (self / system-channel / actor-by-id / etc.).</p>
+</section>
+
+<section class="doc-section" id="formation-cell">
+  <h2>Formation cell + battle-data variant selector</h2>
+  <p>Adjacent to the formation cell:</p>
+  <table class="param-table">
+    <thead><tr><th>Address</th><th>Size</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8007BD0C</code></td><td><code>u8[4]</code></td><td>Active formation: monster ids per slot, populated by the reader above.</td></tr>
+      <tr><td><code>0x8007BD11</code></td><td><code>u8</code></td><td>Battle-data PROT-id selector. <code>FUN_800520F0</code> case-4 path reads this byte and chooses PROT entry <strong><code>0x367</code></strong> when it equals the case-1 character index, otherwise <strong><code>0x36D</code></strong>. The selected entry is loaded as a kind-2 streaming asset for the battle scene.</td></tr>
+    </tbody>
+  </table>
+  <p>Snapshots of the formation cell across captures (see <a href="../tooling/mednafen-automation.html"><code>scripts/mednafen/scenarios.toml</code></a>):</p>
+  <table class="param-table">
+    <thead><tr><th>Save</th><th><code>0x8007BD0C..0F</code></th><th>Interpretation</th></tr></thead>
+    <tbody>
+      <tr><td><code>mc1</code> (pre-encounter, <code>map01</code>)</td><td><code>01 00 00 00</code></td><td>One-monster record from the previous battle; selector reset to <code>0x01</code>.</td></tr>
+      <tr><td><code>mc2</code> (in-battle, <code>map01</code>)</td><td><code>04 04 00 00</code></td><td>Two-slot encounter, both slots monster id <code>0x04</code>.</td></tr>
+      <tr><td><code>mc3</code> (post-battle, <code>suimon</code>)</td><td><code>0A 0D 00 00</code></td><td>Two-slot encounter, monsters <code>0x0A</code> and <code>0x0D</code>.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="open-questions">
+  <h2>What this doesn't tell us</h2>
+  <ul class="bullets">
+    <li><strong>The on-disc carrier of encounter records.</strong> The records come from somewhere on the disc — most likely embedded in <code>0865_battle_data</code> (15.99 MB) or in a per-scene field-pack slot — but the writer that reads them off disc and installs the pointer at <code>actor[+0x94]</code> is in an overlay slice that hasn't been narrowed yet. Once located, the offset and stride of the on-disc encounter array can be lifted directly.</li>
+    <li><strong>The encounter selector logic.</strong> The script-VM op stores a single <code>s0</code> value into <code>actor[+0x94]</code>; how the bytecode encodes "which encounter from the per-scene set" (an index? a byte offset? a fixed-record id?) needs the upstream operand decode.</li>
+    <li><strong>Per-scene encounter rate / safe-zone gating.</strong> That's a different mechanism (per-step roll on a counter at <code>_DAT_8007B5F8</code> per the <a href="../subsystems/world-map.html">world-map page</a>); the encounter record is the result of a successful trigger, not the rate input.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/encounter' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>
