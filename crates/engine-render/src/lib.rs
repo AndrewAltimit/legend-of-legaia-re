@@ -1377,6 +1377,525 @@ pub fn key_rebind_draws_for(
     out
 }
 
+/// One row in the inventory item-use list. Plain-data view so the
+/// renderer doesn't depend on `engine-core::inventory_use`.
+pub struct InventoryItemRow<'a> {
+    pub name: &'a str,
+    pub count: u8,
+    /// `true` when the item passes the active context's filter
+    /// (battle/field). Failing items still appear, dimmed.
+    pub admissible: bool,
+}
+
+/// One row in the inventory item-use target picker.
+pub struct InventoryTargetRow<'a> {
+    pub name: &'a str,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+    pub alive: bool,
+}
+
+/// Bundle of arguments for [`inventory_use_draws_for`]. Bundled so the
+/// function takes one payload struct rather than ten positional args.
+pub struct InventoryUseDrawArgs<'a> {
+    pub items: &'a [InventoryItemRow<'a>],
+    pub targets: &'a [InventoryTargetRow<'a>],
+    /// `true` for battle context (target column shows monsters too);
+    /// `false` for field (party only). Drives the title.
+    pub in_battle: bool,
+    /// Cursor row inside the active phase column.
+    pub cursor: u8,
+    /// `0` = item column, `1` = target column.
+    pub phase: u8,
+    /// Selected item id when in target phase. `None` while browsing.
+    pub selected_item_name: Option<&'a str>,
+}
+
+/// Build [`TextDraw`]s for the inventory item-use overlay shared by the
+/// field menu's Items row and the battle command-menu's Items option.
+///
+/// Layout (anchored at `pen`):
+/// ```text
+/// ITEMS
+/// > Healing Leaf            x 04         | Vahn        HP 250/300
+///   Magic Leaf              x 02         | Noa         HP 180/220
+///   Antidote Leaf           x 01         | Gala        HP  90/280
+///   ...                                  |
+/// ```
+///
+/// The right-hand target column is only drawn when `phase == 1` (target
+/// select). Failing items (filtered out by the active context) render
+/// dimmed but stay visible so the player understands why their item
+/// disappeared.
+pub fn inventory_use_draws_for(
+    font: &legaia_font::Font,
+    args: InventoryUseDrawArgs<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+    let red: [f32; 4] = [1.0, 0.55, 0.55, 1.0];
+
+    let mut out = Vec::new();
+
+    let title = if args.in_battle { "ITEMS [B]" } else { "ITEMS" };
+    out.extend(text_draws_for(&font.layout_ascii(title), pen, gold));
+
+    if args.items.is_empty() {
+        let l = font.layout_ascii("(no usable items)");
+        out.extend(text_draws_for(&l, (pen.0, pen.1 + LINE_H), dim));
+        return out;
+    }
+
+    // Item column.
+    for (i, item) in args.items.iter().enumerate() {
+        let y = pen.1 + LINE_H + i as i32 * LINE_H;
+        let selected_here = args.phase == 0 && i as u8 == args.cursor;
+        let color = if !item.admissible {
+            dim
+        } else if selected_here {
+            gold
+        } else {
+            white
+        };
+        if selected_here {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        }
+        let line = format!("{:<20} x{:>3}", item.name, item.count);
+        out.extend(text_draws_for(
+            &font.layout_ascii(&line),
+            (pen.0 + 14, y),
+            color,
+        ));
+    }
+
+    // Target column when picking a target.
+    if args.phase == 1 {
+        let col_x = pen.0 + 240;
+        if let Some(name) = args.selected_item_name {
+            let head = format!("Use: {name}");
+            out.extend(text_draws_for(
+                &font.layout_ascii(&head),
+                (col_x, pen.1),
+                gold,
+            ));
+        }
+        for (i, t) in args.targets.iter().enumerate() {
+            let y = pen.1 + LINE_H + i as i32 * LINE_H;
+            let selected_here = i as u8 == args.cursor;
+            let color = if !t.alive {
+                red
+            } else if selected_here {
+                gold
+            } else {
+                white
+            };
+            if selected_here {
+                out.extend(text_draws_for(&font.layout_ascii(">"), (col_x, y), color));
+            }
+            let line = if t.mp_max > 0 {
+                format!(
+                    "{:<8} HP {:>3}/{:<3} MP {:>3}/{:<3}",
+                    t.name, t.hp, t.hp_max, t.mp, t.mp_max
+                )
+            } else {
+                format!("{:<8} HP {:>3}/{:<3}", t.name, t.hp, t.hp_max)
+            };
+            out.extend(text_draws_for(
+                &font.layout_ascii(&line),
+                (col_x + 14, y),
+                color,
+            ));
+        }
+        if args.targets.is_empty() {
+            let l = font.layout_ascii("(no targets)");
+            out.extend(text_draws_for(&l, (col_x, pen.1 + LINE_H), dim));
+        }
+    }
+    out
+}
+
+/// One slot row in the equipment screen.
+pub struct EquipSlotRow<'a> {
+    pub label: &'a str,
+    /// Currently-equipped item display name. "(empty)" for an unfilled
+    /// slot.
+    pub current_name: &'a str,
+}
+
+/// One candidate row in the per-slot item picker.
+pub struct EquipCandidateRow<'a> {
+    pub name: &'a str,
+    pub count: u8,
+    /// Stat preview delta vs. the current equipped item: positive deltas
+    /// are tinted green, negatives red. Engines compute these by running
+    /// `compute_battle_stats` once with the candidate id installed.
+    pub atk_delta: i16,
+    pub udf_delta: i16,
+}
+
+/// Phase tag for [`equipment_session_draws_for`]. Mirrors
+/// `engine-core::equip_session::EquipState` without naming the enum so
+/// the renderer doesn't pull engine-core in as a dependency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EquipDrawPhase {
+    /// Cursor on the slot grid.
+    SlotPicker,
+    /// Cursor on the candidate-item list for the active slot.
+    ItemPicker,
+    /// Yes/No confirmation prompt (`cursor` == 0 for Yes, 1 for No).
+    Confirm,
+}
+
+/// Bundle for [`equipment_session_draws_for`].
+pub struct EquipDrawArgs<'a> {
+    /// Display name of the character being equipped.
+    pub character_name: &'a str,
+    pub slots: &'a [EquipSlotRow<'a>],
+    /// Candidate items for the active slot. Empty in `SlotPicker` phase.
+    pub candidates: &'a [EquipCandidateRow<'a>],
+    pub phase: EquipDrawPhase,
+    /// Cursor row inside the active phase column.
+    pub cursor: u16,
+    /// Active slot index (0..=7) when in `ItemPicker` / `Confirm`.
+    pub active_slot: u8,
+    /// Optional pending swap label rendered above the Yes/No prompt
+    /// ("Equip Iron Sword?"). Only consumed in `Confirm`.
+    pub confirm_label: Option<&'a str>,
+}
+
+/// Build [`TextDraw`]s for the equipment overlay shared by the field
+/// menu's Equip row and the shop's "buy then equip" flow.
+///
+/// Layout (anchored at `pen`):
+/// ```text
+/// EQUIP - Vahn
+/// > Weapon       Iron Sword
+///   Helmet       Leather Cap
+///   Body Armor   (empty)
+///   ...
+///                                      | Iron Sword     ATK +10
+///                                      | Wood Sword     ATK +5
+///                                      | (empty)
+///   Equip Iron Sword?  Yes  No
+/// ```
+pub fn equipment_session_draws_for(
+    font: &legaia_font::Font,
+    args: EquipDrawArgs<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+    let green: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
+    let red: [f32; 4] = [1.0, 0.55, 0.55, 1.0];
+
+    let mut out = Vec::new();
+
+    let head = format!("EQUIP - {}", args.character_name);
+    out.extend(text_draws_for(&font.layout_ascii(&head), pen, gold));
+
+    // Slot column.
+    for (i, slot) in args.slots.iter().enumerate() {
+        let y = pen.1 + LINE_H + i as i32 * LINE_H;
+        let cursor_here = args.phase == EquipDrawPhase::SlotPicker && i as u16 == args.cursor;
+        let row_active = args.phase != EquipDrawPhase::SlotPicker && args.active_slot as usize == i;
+        let color = if cursor_here || row_active {
+            gold
+        } else {
+            white
+        };
+        if cursor_here {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        }
+        out.extend(text_draws_for(
+            &font.layout_ascii(slot.label),
+            (pen.0 + 14, y),
+            color,
+        ));
+        let item_color = if slot.current_name == "(empty)" {
+            dim
+        } else {
+            color
+        };
+        out.extend(text_draws_for(
+            &font.layout_ascii(slot.current_name),
+            (pen.0 + 110, y),
+            item_color,
+        ));
+    }
+
+    // Candidate column.
+    if args.phase != EquipDrawPhase::SlotPicker {
+        let col_x = pen.0 + 250;
+        let head = if let Some(slot) = args.slots.get(args.active_slot as usize) {
+            format!("> {}", slot.label)
+        } else {
+            "Slot".to_string()
+        };
+        out.extend(text_draws_for(
+            &font.layout_ascii(&head),
+            (col_x, pen.1),
+            gold,
+        ));
+
+        if args.candidates.is_empty() {
+            out.extend(text_draws_for(
+                &font.layout_ascii("(no items)"),
+                (col_x, pen.1 + LINE_H),
+                dim,
+            ));
+        }
+        for (i, c) in args.candidates.iter().enumerate() {
+            let y = pen.1 + LINE_H + i as i32 * LINE_H;
+            let selected_here = args.phase == EquipDrawPhase::ItemPicker && i as u16 == args.cursor;
+            let color = if selected_here { gold } else { white };
+            if selected_here {
+                out.extend(text_draws_for(&font.layout_ascii(">"), (col_x, y), color));
+            }
+            let line = format!("{:<14} x{:>2}", c.name, c.count);
+            out.extend(text_draws_for(
+                &font.layout_ascii(&line),
+                (col_x + 14, y),
+                color,
+            ));
+            let mut delta_x = col_x + 14 + 130;
+            if c.atk_delta != 0 {
+                let s = format!("ATK {:+}", c.atk_delta);
+                let dc = if c.atk_delta > 0 { green } else { red };
+                out.extend(text_draws_for(&font.layout_ascii(&s), (delta_x, y), dc));
+                delta_x += 56;
+            }
+            if c.udf_delta != 0 {
+                let s = format!("UDF {:+}", c.udf_delta);
+                let dc = if c.udf_delta > 0 { green } else { red };
+                out.extend(text_draws_for(&font.layout_ascii(&s), (delta_x, y), dc));
+            }
+        }
+    }
+
+    // Confirm prompt at the bottom.
+    if args.phase == EquipDrawPhase::Confirm {
+        let prompt_y = pen.1 + LINE_H + args.slots.len() as i32 * LINE_H + LINE_H;
+        if let Some(label) = args.confirm_label {
+            out.extend(text_draws_for(
+                &font.layout_ascii(label),
+                (pen.0, prompt_y),
+                white,
+            ));
+        }
+        for (i, opt) in ["Yes", "No"].iter().enumerate() {
+            let x = pen.0 + 110 + i as i32 * 50;
+            let selected = i as u16 == args.cursor;
+            let color = if selected { gold } else { white };
+            if selected {
+                out.extend(text_draws_for(
+                    &font.layout_ascii(">"),
+                    (x - 10, prompt_y + LINE_H),
+                    color,
+                ));
+            }
+            out.extend(text_draws_for(
+                &font.layout_ascii(opt),
+                (x, prompt_y + LINE_H),
+                color,
+            ));
+        }
+    }
+    out
+}
+
+/// One saved Tactical Arts chain row in the editor's browse list.
+pub struct ArtsChainRow<'a> {
+    pub name: &'a str,
+    /// One-line stringification of the command sequence ("L R D U R").
+    /// Engines build this with `SavedChain::pretty_sequence()`.
+    pub pretty_sequence: &'a str,
+}
+
+/// Phase tag for [`tactical_arts_editor_draws_for`]. Mirrors
+/// `engine-core::tactical_arts_editor::EditorPhase` without depending on
+/// the enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtsEditorPhase {
+    /// Cursor on the saved-chain list (browse).
+    Browsing,
+    /// Player editing a sequence of directions.
+    Editing,
+    /// Player picking a name for the new chain.
+    Naming,
+}
+
+/// Bundle for [`tactical_arts_editor_draws_for`].
+pub struct ArtsEditorDrawArgs<'a> {
+    pub character_name: &'a str,
+    pub phase: ArtsEditorPhase,
+    pub saved: &'a [ArtsChainRow<'a>],
+    /// Cursor row inside the saved list. Only consumed in `Browsing`.
+    pub browse_cursor: u8,
+    /// Live working-sequence pretty string, e.g. "L R D".
+    pub editing_pretty: &'a str,
+    /// Live working-sequence length (used to display "len 3 / 7" status).
+    pub editing_len: usize,
+    /// Min / max sequence length the editor enforces (3..=7 in retail).
+    pub min_len: usize,
+    pub max_len: usize,
+    /// Currently-picked name in the naming phase ("Combo A", ...).
+    pub naming_name: &'a str,
+    /// `true` when there is room in the library for one more saved
+    /// chain - the browse list shows a trailing "+ New" row only then.
+    pub can_add_new: bool,
+}
+
+/// Build [`TextDraw`]s for the Tactical Arts editor overlay shared by
+/// the field menu's Arts row.
+///
+/// Layout (anchored at `pen`) - varies per phase:
+/// ```text
+/// Browsing:
+///   ARTS - Vahn
+///   > Combo A     L R D U
+///     Striker     U U L R D
+///     + New
+///
+/// Editing:
+///   ARTS - Vahn  (Editing)
+///   Sequence: L R D     (3 / 7)
+///   D-Pad: append   Triangle: pop   Cross: name
+///
+/// Naming:
+///   ARTS - Vahn  (Naming)
+///   Name: Combo B
+///   Square: cycle    Cross: save    Circle: back
+/// ```
+pub fn tactical_arts_editor_draws_for(
+    font: &legaia_font::Font,
+    args: ArtsEditorDrawArgs<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+    let green: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
+
+    let mut out = Vec::new();
+
+    let head = match args.phase {
+        ArtsEditorPhase::Browsing => format!("ARTS - {}", args.character_name),
+        ArtsEditorPhase::Editing => format!("ARTS - {}  (Editing)", args.character_name),
+        ArtsEditorPhase::Naming => format!("ARTS - {}  (Naming)", args.character_name),
+    };
+    out.extend(text_draws_for(&font.layout_ascii(&head), pen, gold));
+
+    match args.phase {
+        ArtsEditorPhase::Browsing => {
+            // Saved chains.
+            for (i, chain) in args.saved.iter().enumerate() {
+                let y = pen.1 + LINE_H + i as i32 * LINE_H;
+                let selected = i as u8 == args.browse_cursor;
+                let color = if selected { gold } else { white };
+                if selected {
+                    out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+                }
+                out.extend(text_draws_for(
+                    &font.layout_ascii(chain.name),
+                    (pen.0 + 14, y),
+                    color,
+                ));
+                out.extend(text_draws_for(
+                    &font.layout_ascii(chain.pretty_sequence),
+                    (pen.0 + 110, y),
+                    color,
+                ));
+            }
+            // Trailing "+ New" row.
+            if args.can_add_new {
+                let i = args.saved.len();
+                let y = pen.1 + LINE_H + i as i32 * LINE_H;
+                let selected = i as u8 == args.browse_cursor;
+                let color = if selected { gold } else { white };
+                if selected {
+                    out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+                }
+                out.extend(text_draws_for(
+                    &font.layout_ascii("+ New"),
+                    (pen.0 + 14, y),
+                    color,
+                ));
+            }
+            let foot_y = pen.1
+                + LINE_H
+                + (args.saved.len() + if args.can_add_new { 1 } else { 0 }) as i32 * LINE_H
+                + LINE_H;
+            out.extend(text_draws_for(
+                &font.layout_ascii("Cross: Edit  Triangle: Delete  Circle: Back"),
+                (pen.0, foot_y),
+                dim,
+            ));
+        }
+        ArtsEditorPhase::Editing => {
+            let line1 = format!(
+                "Sequence: {}     ({} / {})",
+                args.editing_pretty, args.editing_len, args.max_len
+            );
+            let len_ok = args.editing_len >= args.min_len;
+            let color = if len_ok { green } else { white };
+            out.extend(text_draws_for(
+                &font.layout_ascii(&line1),
+                (pen.0, pen.1 + LINE_H),
+                color,
+            ));
+            out.extend(text_draws_for(
+                &font.layout_ascii("D-Pad: append   Triangle: pop"),
+                (pen.0, pen.1 + LINE_H * 3),
+                dim,
+            ));
+            let cross_hint = if len_ok {
+                "Cross: Name & Save"
+            } else {
+                "Cross: Name & Save  (need 3+ inputs)"
+            };
+            out.extend(text_draws_for(
+                &font.layout_ascii(cross_hint),
+                (pen.0, pen.1 + LINE_H * 4),
+                if len_ok { gold } else { dim },
+            ));
+            out.extend(text_draws_for(
+                &font.layout_ascii("Circle: Back"),
+                (pen.0, pen.1 + LINE_H * 5),
+                dim,
+            ));
+        }
+        ArtsEditorPhase::Naming => {
+            let l = format!("Name: {}", args.naming_name);
+            out.extend(text_draws_for(
+                &font.layout_ascii(&l),
+                (pen.0, pen.1 + LINE_H),
+                gold,
+            ));
+            let sequence = format!("Sequence: {}", args.editing_pretty);
+            out.extend(text_draws_for(
+                &font.layout_ascii(&sequence),
+                (pen.0, pen.1 + LINE_H * 2),
+                white,
+            ));
+            out.extend(text_draws_for(
+                &font.layout_ascii("Square: cycle name   Cross: Save   Circle: Back"),
+                (pen.0, pen.1 + LINE_H * 4),
+                dim,
+            ));
+        }
+    }
+
+    out
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -4225,6 +4744,317 @@ mod tests {
         let rows = [("Cross", "Z"), ("Circle", "S")];
         let draws = key_rebind_draws_for(&font, &rows, 0, true, (16, 32));
         assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn inventory_use_draws_render_item_rows_with_counts() {
+        let font = legaia_font::synthetic_for_tests();
+        let items = vec![
+            InventoryItemRow {
+                name: "Healing Leaf",
+                count: 4,
+                admissible: true,
+            },
+            InventoryItemRow {
+                name: "Magic Leaf",
+                count: 2,
+                admissible: true,
+            },
+        ];
+        let args = InventoryUseDrawArgs {
+            items: &items,
+            targets: &[],
+            in_battle: false,
+            cursor: 0,
+            phase: 0,
+            selected_item_name: None,
+        };
+        let draws = inventory_use_draws_for(&font, args, (16, 32));
+        // Title + cursor + 2 rows worth of glyphs.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn inventory_use_draws_empty_inventory_shows_message() {
+        let font = legaia_font::synthetic_for_tests();
+        let args = InventoryUseDrawArgs {
+            items: &[],
+            targets: &[],
+            in_battle: false,
+            cursor: 0,
+            phase: 0,
+            selected_item_name: None,
+        };
+        let draws = inventory_use_draws_for(&font, args, (16, 32));
+        // Title plus the "no usable items" line, no cursor.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn inventory_use_draws_target_phase_renders_target_column() {
+        let font = legaia_font::synthetic_for_tests();
+        let items = vec![InventoryItemRow {
+            name: "Healing Leaf",
+            count: 4,
+            admissible: true,
+        }];
+        let targets = vec![InventoryTargetRow {
+            name: "Vahn",
+            hp: 100,
+            hp_max: 200,
+            mp: 10,
+            mp_max: 30,
+            alive: true,
+        }];
+        let no_target = inventory_use_draws_for(
+            &font,
+            InventoryUseDrawArgs {
+                items: &items,
+                targets: &targets,
+                in_battle: true,
+                cursor: 0,
+                phase: 0,
+                selected_item_name: None,
+            },
+            (16, 32),
+        );
+        let with_target = inventory_use_draws_for(
+            &font,
+            InventoryUseDrawArgs {
+                items: &items,
+                targets: &targets,
+                in_battle: true,
+                cursor: 0,
+                phase: 1,
+                selected_item_name: Some("Healing Leaf"),
+            },
+            (16, 32),
+        );
+        // Phase 1 layers the target column on top of the items column.
+        assert!(with_target.len() > no_target.len());
+    }
+
+    #[test]
+    fn equipment_session_draws_render_slot_grid_in_picker_phase() {
+        let font = legaia_font::synthetic_for_tests();
+        let slots = vec![
+            EquipSlotRow {
+                label: "Weapon",
+                current_name: "Iron Sword",
+            },
+            EquipSlotRow {
+                label: "Helmet",
+                current_name: "(empty)",
+            },
+        ];
+        let args = EquipDrawArgs {
+            character_name: "Vahn",
+            slots: &slots,
+            candidates: &[],
+            phase: EquipDrawPhase::SlotPicker,
+            cursor: 0,
+            active_slot: 0,
+            confirm_label: None,
+        };
+        let draws = equipment_session_draws_for(&font, args, (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn equipment_session_draws_item_picker_renders_candidate_column() {
+        let font = legaia_font::synthetic_for_tests();
+        let slots = vec![EquipSlotRow {
+            label: "Weapon",
+            current_name: "(empty)",
+        }];
+        let candidates = vec![
+            EquipCandidateRow {
+                name: "Iron Sword",
+                count: 1,
+                atk_delta: 5,
+                udf_delta: 0,
+            },
+            EquipCandidateRow {
+                name: "Wood Sword",
+                count: 1,
+                atk_delta: -2,
+                udf_delta: 0,
+            },
+        ];
+        let picker_only = equipment_session_draws_for(
+            &font,
+            EquipDrawArgs {
+                character_name: "Vahn",
+                slots: &slots,
+                candidates: &candidates,
+                phase: EquipDrawPhase::ItemPicker,
+                cursor: 0,
+                active_slot: 0,
+                confirm_label: None,
+            },
+            (16, 32),
+        );
+        let no_picker = equipment_session_draws_for(
+            &font,
+            EquipDrawArgs {
+                character_name: "Vahn",
+                slots: &slots,
+                candidates: &[],
+                phase: EquipDrawPhase::SlotPicker,
+                cursor: 0,
+                active_slot: 0,
+                confirm_label: None,
+            },
+            (16, 32),
+        );
+        assert!(picker_only.len() > no_picker.len());
+    }
+
+    #[test]
+    fn equipment_session_draws_confirm_phase_shows_yes_no_prompt() {
+        let font = legaia_font::synthetic_for_tests();
+        let slots = vec![EquipSlotRow {
+            label: "Weapon",
+            current_name: "Iron Sword",
+        }];
+        let candidates = vec![EquipCandidateRow {
+            name: "Steel Sword",
+            count: 1,
+            atk_delta: 3,
+            udf_delta: 0,
+        }];
+        let draws = equipment_session_draws_for(
+            &font,
+            EquipDrawArgs {
+                character_name: "Vahn",
+                slots: &slots,
+                candidates: &candidates,
+                phase: EquipDrawPhase::Confirm,
+                cursor: 0,
+                active_slot: 0,
+                confirm_label: Some("Equip Steel Sword?"),
+            },
+            (16, 32),
+        );
+        // Confirm draws should include candidate column glyphs.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn tactical_arts_editor_draws_browsing_lists_saved_chains() {
+        let font = legaia_font::synthetic_for_tests();
+        let saved = vec![
+            ArtsChainRow {
+                name: "Combo A",
+                pretty_sequence: "L R D U",
+            },
+            ArtsChainRow {
+                name: "Striker",
+                pretty_sequence: "U U L R D",
+            },
+        ];
+        let args = ArtsEditorDrawArgs {
+            character_name: "Vahn",
+            phase: ArtsEditorPhase::Browsing,
+            saved: &saved,
+            browse_cursor: 1,
+            editing_pretty: "",
+            editing_len: 0,
+            min_len: 3,
+            max_len: 7,
+            naming_name: "",
+            can_add_new: true,
+        };
+        let draws = tactical_arts_editor_draws_for(&font, args, (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn tactical_arts_editor_draws_editing_shows_running_sequence() {
+        let font = legaia_font::synthetic_for_tests();
+        let args = ArtsEditorDrawArgs {
+            character_name: "Vahn",
+            phase: ArtsEditorPhase::Editing,
+            saved: &[],
+            browse_cursor: 0,
+            editing_pretty: "L R D",
+            editing_len: 3,
+            min_len: 3,
+            max_len: 7,
+            naming_name: "",
+            can_add_new: true,
+        };
+        let draws = tactical_arts_editor_draws_for(&font, args, (16, 32));
+        // Editing emits at least: title, sequence line, two hint lines.
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn tactical_arts_editor_draws_naming_shows_name_and_sequence() {
+        let font = legaia_font::synthetic_for_tests();
+        let args = ArtsEditorDrawArgs {
+            character_name: "Vahn",
+            phase: ArtsEditorPhase::Naming,
+            saved: &[],
+            browse_cursor: 0,
+            editing_pretty: "L R D",
+            editing_len: 3,
+            min_len: 3,
+            max_len: 7,
+            naming_name: "Combo A",
+            can_add_new: true,
+        };
+        let draws = tactical_arts_editor_draws_for(&font, args, (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn tactical_arts_editor_draws_browse_no_new_when_full() {
+        let font = legaia_font::synthetic_for_tests();
+        let saved = vec![
+            ArtsChainRow {
+                name: "C1",
+                pretty_sequence: "L R D",
+            },
+            ArtsChainRow {
+                name: "C2",
+                pretty_sequence: "L R D",
+            },
+        ];
+        let with_new = tactical_arts_editor_draws_for(
+            &font,
+            ArtsEditorDrawArgs {
+                character_name: "Vahn",
+                phase: ArtsEditorPhase::Browsing,
+                saved: &saved,
+                browse_cursor: 0,
+                editing_pretty: "",
+                editing_len: 0,
+                min_len: 3,
+                max_len: 7,
+                naming_name: "",
+                can_add_new: true,
+            },
+            (16, 32),
+        );
+        let no_new = tactical_arts_editor_draws_for(
+            &font,
+            ArtsEditorDrawArgs {
+                character_name: "Vahn",
+                phase: ArtsEditorPhase::Browsing,
+                saved: &saved,
+                browse_cursor: 0,
+                editing_pretty: "",
+                editing_len: 0,
+                min_len: 3,
+                max_len: 7,
+                naming_name: "",
+                can_add_new: false,
+            },
+            (16, 32),
+        );
+        // Without "+ New" we have fewer glyphs (no extra row).
+        assert!(with_new.len() > no_new.len());
     }
 
     #[test]

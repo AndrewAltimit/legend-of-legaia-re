@@ -147,6 +147,20 @@ impl EquipSession {
         &self.record
     }
 
+    /// Read access to the in-progress inventory map. Engines render the
+    /// per-candidate count from this.
+    pub fn inventory(&self) -> &HashMap<u8, u8> {
+        &self.inventory
+    }
+
+    /// Read access to the equipment-stat table backing this session.
+    /// Engines render per-candidate stat-delta previews by comparing
+    /// `equipment.get(id)` for the candidate against the slot's current
+    /// occupant.
+    pub fn equipment(&self) -> &EquipmentTable {
+        &self.equipment
+    }
+
     /// `true` if the session is in `Done` state.
     pub fn is_done(&self) -> bool {
         matches!(self.state, EquipState::Done(_))

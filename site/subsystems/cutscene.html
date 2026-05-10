@@ -111,6 +111,26 @@ mdec decode-str cutscene.str --out-dir frames/
 legaia-engine play-str cutscene.str</code></pre>
 </section>
 
+<section class="doc-section" id="cutscene-map">
+  <h2>CDNAME &rarr; STR override map</h2>
+  <p>Engines can override the hard-coded heuristic resolver in <code>cutscene_str_for</code> by handing <code>play</code> / <code>play-window</code> a TOML config:</p>
+  <pre><code># legaia-cutscene-map.toml
+[scenes]
+opdeene  = "MOV/MV1.STR"
+opstati  = "MOV/MV2.STR"
+opkorout = "MOV/MV3.STR"
+opurud   = "MOV/MV4.STR"
+opmap01  = "MOV/MV5.STR"
+edteien  = "MOV/MV6.STR"</code></pre>
+  <pre><code># Generate a starter file pre-seeded with the heuristic mapping
+legaia-engine config dump-cutscene-map --out legaia-cutscene-map.toml
+
+# Run with the override
+legaia-engine play --scene opdeene --cutscene-map legaia-cutscene-map.toml
+legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.toml</code></pre>
+  <p>The map layers on top of the heuristic: explicit entries win, missing keys fall through to <code>cutscene_str_for</code>. API: <code>CutsceneMap::from_toml_path</code> / <code>from_toml_str</code> / <code>to_toml_string</code>. The retail mapping table itself still requires the STR/MDEC overlay capture; the TOML interface lets engines distribute the recovered map once that lands without a code change.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open items</h2>
   <ul class="bullets">
