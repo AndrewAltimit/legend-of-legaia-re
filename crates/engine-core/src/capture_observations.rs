@@ -130,14 +130,49 @@ pub mod encounter_trigger {
 /// Either way, `+0x185..+0x188` is **the only** record-internal write the
 /// Fire Book event produced. Engines that want to detect "Vahn just used
 /// Fire Book I" can read this region and compare against the `BEFORE` /
-/// `AFTER` constants below; engines that want to set the learn flag
-/// directly should NOT round-trip through this field until a writer-search
-/// against the captured battle-action overlay confirms the semantic.
+/// `AFTER` constants below.
+///
+/// **Reader resolved (2026-05-10).** Grep across the captured menu
+/// overlays (`overlay_menu_801d33d8.txt`, `overlay_save_ui_*`,
+/// `overlay_shop_save_*` — all the same overlay, different captures)
+/// found exactly one reader cluster at `0x801D4440..0x801D44A4`:
+///
+/// ```text
+/// 801d4440  lbu t2,0x185(t2)        ; load count from char_rec[+0x185]
+/// 801d4454  lbu v0,0x185(t1)
+/// 801d445c  slt v0,s6,v0            ; loop while s6 < count
+/// 801d4460  beq v0,zero,...
+/// 801d4480  addu a0,t1,s6
+/// 801d4484  lbu v0,0x0(s2)
+/// 801d4498  lbu v1,0x1(s2)          ; spell-table[+1] = id
+/// 801d449c  lbu v0,0x186(a0)        ; load id from char_rec[+0x186 + s6]
+/// 801d44a4  beq v1,v0,...           ; match id against spell-table entry
+/// ```
+///
+/// The structure is `[u8 count at +0x185][u8 ids[N] at +0x186..]`. The
+/// menu's spell-table at `0x801E472C` is indexed by these IDs (stride
+/// 0x14; `record[+0]` = sort key, `record[+1]` = ID, `record[+0xC]` =
+/// name pointer). Display is capped at 7 by `slti v0,t2,0x7` later in
+/// the loop, but the on-record array fits 16 bytes (the gap to the
+/// equipment-slot field at +0x196), so [`MAX_DISPLAYED_SKILLS`] is 16.
+///
+/// The Fire Book mc4 → mc5 transition (`count: 1 → 2`, `ids[0]: 0x0C →
+/// 0x03`, `ids[1]: 0x00 → 0x0C`) is a head-insert into this list — i.e.
+/// the menu's displayed-skill roster grew by one new entry. Engines that
+/// want a typed view should use [`legaia_save::character::CharacterRecord::displayed_skills`].
+///
+/// No `sb`/`sh` writers to `+0x185` exist in any captured overlay — the
+/// learn writer lives in an overlay we haven't dumped (likely the item-use
+/// path of the battle-action overlay, accessed via the menu rather than
+/// the action SM).
+///
+/// [`MAX_DISPLAYED_SKILLS`]: legaia_save::character::MAX_DISPLAYED_SKILLS
 pub mod vahn_fire_book_use {
     /// Vahn's character-record base in retail RAM.
     pub const VAHN_RECORD_BASE: u32 = 0x80084708;
 
-    /// Offset of the changed cluster within Vahn's record.
+    /// Offset of the changed cluster within Vahn's record. Aliased by
+    /// [`legaia_save::character::CharacterRecord::displayed_skills`].
     pub const CHANGED_OFFSET: u32 = 0x185;
 
     /// Length of the changed cluster.
@@ -148,6 +183,16 @@ pub mod vahn_fire_book_use {
 
     /// Post-event bytes at `VAHN_RECORD_BASE + CHANGED_OFFSET`.
     pub const AFTER: [u8; 3] = [0x02, 0x03, 0x0C];
+
+    /// Address of the menu-overlay reader's leading instruction (`lbu
+    /// t2,0x185(t2)`) — the loop that surfaces the displayed-skill list.
+    pub const MENU_READER_ADDR: u32 = 0x801D4440;
+
+    /// Address of the menu-overlay function the reader belongs to.
+    /// Same address shows up across `overlay_menu_*`, `overlay_save_ui_*`,
+    /// and `overlay_shop_save_*` dumps — they're identical copies of the
+    /// menu overlay function.
+    pub const MENU_OVERLAY_FN: u32 = 0x801D33D8;
 
     /// Absolute address of the cluster (handy for direct callers).
     pub const fn changed_addr() -> u32 {

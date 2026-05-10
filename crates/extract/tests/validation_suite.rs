@@ -34,111 +34,51 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("all_zeros", 1),
     ("data_field_streaming", 26),
-    // Added 2026-05-05: sister of `data_field_streaming` — leading chunks parse
-    // cleanly (all known types, all magic-OK) but the final chunk's declared
-    // `size` walks past EOF without a terminator. The runtime extends the chunk
-    // via streaming DMA continuation rather than a literal terminator on disc.
-    // Promoted 3 entries from `unknown_other` (`0157_rikuroa`, `0228_station`,
-    // `0373_taiku` — scene streams with 2-3 leading chunks then a partial
-    // MOVE/VDF chunk) and 1 from `unknown_low_entropy` (`1205_other5` — a 6-
-    // leading-chunk stream with a partial TIM tail).
     ("data_field_truncated", 4),
     ("effect_bundle", 1),
-    // 2026-05-04: dropped 4 → 3 after the scene_v12_table detector promoted
-    // `0002_gameover_data.BIN` (v12 header at offset 0; field_pack magic at
-    // 0x39800 was a coincidental embedded region).
-    // 2026-05-05: dropped 3 → 2 after the scene_event_scripts detector took
-    // `0003_town01.BIN` (prescript shape at offset 0; the previous field_pack
-    // hit was on a deeper magic occurrence inside the prescript records).
     ("field_pack", 2),
-    // 2026-05-04: dropped 70 → 44 after the scene_asset_table detector promoted
-    // 26 entries that previously matched `n=1` only (a coincidental first-
-    // descriptor match). Those 26 are now classed `scene_asset_table` along
-    // with 54 sibling entries that didn't pass the LZS-decode gate.
-    // 2026-05-05: dropped 44 → 42 after `scene_event_scripts` promoted 2
-    // entries whose prescript shape + 50%-FFFF-opener rate is a much more
-    // specific signal than "happens to LZS-decode for some descriptors".
     ("lzs_container", 42),
-    // Added 2026-05-04: MIPS overlay-code detector recognises `addiu sp, sp, -X`
-    // followed by a plausible MIPS prologue continuation (`sw`, `addiu`, `lui`,
-    // `lw`, R-type). All 22 matches are in the `0901..=0969_xxx_dat` cluster —
-    // small overlay code blobs (14-37 KB plus one 163 KB outlier) that load
-    // into the runtime overlay window. Promoted 21 from `unknown_other` and
-    // 1 from `unknown_low_entropy`.
     ("mips_overlay", 22),
-    ("mostly_zeros", 29),
-    // Added 2026-05-04: sister of `mips_overlay` — same kind of overlay code
-    // blob, but the first chunk is a 4–64 entry pointer table instead of an
-    // immediate `addiu sp, sp, -X` prologue. Each pointer u32 lies in the
-    // `0x801C0000..=0x80200000` overlay window. 42 matches across the
-    // `0900..=0968_xxx_dat` cluster (some monotonic function-entry tables,
-    // some switch dispatch tables with repeating handlers, some preceded by
-    // a string title for dance/music subsystems). Promoted 41 from
-    // `unknown_other` (138 → 97) and 1 from `unknown_low_entropy` (75 → 74).
+    // `monster_sound_bank` matches `h:\mpack\monster.snd` (`[u32 format=2]
+    // [u16 spu_addrs[256]][ADPCM]`, every slot bit-15 set). One PROT entry.
+    ("monster_sound_bank", 1),
+    // `mostly_zeros` jumped after the working categorize pipeline tightened
+    // its mid-entropy bucket: zero-padded fillers that previously fell into
+    // `unknown_low_entropy` now collapse to `mostly_zeros` once the leading
+    // sectors of zeros dominate the byte histogram.
+    ("mostly_zeros", 101),
+    // `overlay_data_blob` covers mid-entropy data with >= 18 % printable
+    // ASCII — overlay string tables and mixed-text dumps with no clearer
+    // signal. Drains the stragglers that used to live in `unknown_other`.
+    ("overlay_data_blob", 27),
     ("overlay_ptr_table", 42),
     ("pochi_filler", 265),
-    // Added 2026-05-04: strict 7-asset descriptor table — leads with
-    // `07 00 00 00`, then 7 descriptor pairs covering the canonical
-    // `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` asset sequence. The
-    // descriptor offsets past the first are runtime-buffer offsets, not
-    // file-relative byte offsets — the detector accepts up to 16 MB. Moves
-    // 26 entries from `lzs_container`, 43 from `unknown_high_entropy`, and
-    // 11 from `unknown_other`.
     ("scene_asset_table", 80),
     ("scene_tmd_stream", 148),
-    // Added 2026-05-04: VAB-prefixed scene-stream detector recognizes the
-    // `[chunk0 type=0x00, size=N][VABp magic at +4]` pattern shared by 217
-    // PROT entries (the `vab_01` cluster + scattered scene blocks). Moves
-    // 216 entries out of `unknown_other` (385 → 169) and 1 from
-    // `unknown_low_entropy` (77 → 76); `unknown_high_entropy` is unchanged.
     ("scene_vab_stream", 217),
-    // Added 2026-05-04: strict 8-word v12 header
-    // `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]` matches 97 scene-named PROT entries
-    // (one per scene). Format meaning unconfirmed (likely per-scene navmesh /
-    // collision / event-trigger). Moves 95 from `unknown_high_entropy`
-    // (219 → 124), 1 from `unknown_other` (169 → 168), 1 from `field_pack`
-    // (4 → 3 — `0002_gameover_data.BIN` had v12 at offset 0).
     ("scene_v12_table", 97),
-    // Added 2026-05-05: composite shape — `[u16 prescript][bodies][pad][canonical
-    // 7-asset scene_asset_table]`. The leading prescript carries scene-event
-    // bytecode (likely field-VM frames); the asset table at the next 0x800
-    // sector boundary holds the standard scene bundle. Promoted ~64 entries
-    // from `unknown_high_entropy` (81 → 17) and ~13 from `unknown_other`
-    // (95 → 82 in disc-mode).
     ("scene_scripted_asset_table", 79),
-    // Added 2026-05-05: sister of `scene_scripted_asset_table` — same
-    // `[u16 count][u16 offsets[count]]` prescript shape, but no canonical
-    // 7-asset table at the next sector boundary. Frame-opener gate
-    // (>= 50% of records lead with the field-VM `0xFFFF 0x0000` sentinel)
-    // keeps it zero-false-positive. 20 entries: 5 from `unknown_high_entropy`,
-    // 14 from `unknown_other`, 1 reclaimed from a coincidental `field_pack`
-    // false positive (`0003_town01.BIN`).
-    ("scene_event_scripts", 20),
+    // `scene_event_scripts` ticked 20 → 21 after a tighter prescript opener
+    // gate caught one more borderline scene whose body is field-VM bytecode
+    // without a trailing canonical asset table.
+    ("scene_event_scripts", 21),
     ("tim_pack", 7),
-    // Added 2026-05-05: TMD-size-prefix detector — sister of `scene_tmd_stream`
-    // for the *truncated* case (`prefix_size > on-disc len`). On-disc file is
-    // a prefix of a logical TMD whose remainder is supplied at runtime. Promoted
-    // 34 entries from `unknown_other` (95 → 61 in disc-mode).
     ("tmd_size_prefix", 34),
-    // 2026-05-05: dropped 81 → 17 after `scene_scripted_asset_table` promoted
-    // ~64 entries; further dropped 17 → 12 after `scene_event_scripts` took
-    // 5 (0318/0337/0399/0587/0646).
-    ("unknown_high_entropy", 12),
-    // 2026-05-05: dropped 74 → 73 after `data_field_truncated` claimed
-    // `1205_other5` (a 6-chunk streaming buffer with a partial TIM tail
-    // that previously hid in the low-entropy bucket because the chunk-0
-    // header word `0x00008220` masked as zero-leading).
-    ("unknown_low_entropy", 73),
-    // 2026-05-05: dropped 95 → 50 in working dir after `tmd_size_prefix` (34)
-    // and `scene_scripted_asset_table` (~13). Further dropped 50 → 34 after
-    // `scene_event_scripts` took ~14 entries (large town/scene bundles whose
-    // prescript holds field-VM event scripts but whose post-prescript payload
-    // isn't a canonical asset table). Then dropped 34 → 31 after
-    // `data_field_truncated` claimed `0157_rikuroa`, `0228_station`,
-    // `0373_taiku` (scene streams with a partial MOVE/VDF tail). The disc-
-    // mode count is 31 (vs. 33 in working dir) because `categorize.json`
-    // and `manifest.json` are working-dir artifacts, not real PROT entries.
-    ("unknown_other", 31),
+    // `vab_multi_bank` is the level_up multi-bank archive (`[u32 reserved=0]
+    // [u32 count][u32 sector_nums[count]]` with VABp at `sector_nums[0] *
+    // 0x800 + 4`). One PROT entry.
+    ("vab_multi_bank", 1),
+    // `zero_sector_high_entropy` covers files with >= 2 sectors of leading
+    // zeros followed by a high-entropy body — characteristic of cutscene /
+    // XA audio fragments. Four PROT entries.
+    ("zero_sector_high_entropy", 4),
+    // Residual buckets after every newer detector has had a pass.
+    // `unknown_high_entropy` dropped after `overlay_data_blob` /
+    // `zero_sector_high_entropy` claimed the readable / zero-led entries.
+    ("unknown_high_entropy", 7),
+    // `unknown_other` collapsed to 3: every other entry now lands in a
+    // named class, with the residue being the few that don't match anything.
+    ("unknown_other", 3),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter

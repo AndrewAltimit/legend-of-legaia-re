@@ -24,6 +24,13 @@ const MAX_ACTIVE_SPELL_SLOTS: usize = (0x380 - 0x2B0) / ACTIVE_SPELL_SLOT_STRIDE
 /// Equipment slot count at `+0x196..0x19D`.
 const EQUIPMENT_SLOT_COUNT: usize = 8;
 
+/// Maximum entries the displayed-skill list at `+0x185..+0x196` can hold.
+/// The byte at `+0x185` is a count; the 16 bytes at `+0x186..+0x196` are
+/// the parallel ID array. The menu reader at `0x801D4440` (in the menu
+/// overlay) caps display at 7 entries; the on-record array is sized for
+/// 16 to fill the gap to the equipment-slot field at `+0x196`.
+pub const MAX_DISPLAYED_SKILLS: usize = 16;
+
 /// Stat-cap clamp value the runtime applies via `FUN_80042558`.
 pub const STAT_CAP: u16 = 0x3E7;
 
@@ -80,6 +87,39 @@ impl Default for SpellList {
             count: 0,
             ids: [0; MAX_SPELLS],
             levels: [0; MAX_SPELLS],
+        }
+    }
+}
+
+/// Displayed-skill list at `+0x185..+0x196` — the menu's spell / Hyper Art
+/// display roster the per-character menu overlay (`FUN_801D33D8`) reads on
+/// each frame.
+///
+/// `count` at `+0x185` is the number of valid entries; `ids[..count]` are
+/// indices into the menu's static skill table at `0x801E472C` (stride 0x14;
+/// each record carries a name pointer at `+0xC` and a sort key at `+0x0`).
+///
+/// The Fire Book I capture (`vahn_fire_book_use` in
+/// [`legaia_engine_core::capture_observations`]) shows this field is the
+/// learn signal the runtime updates when an item teaches a Hyper Art:
+/// `count` increments by one and the new ID is inserted at position 0
+/// (head insert). The menu reader caps rendering at 7 entries, but the
+/// on-record array is sized for `MAX_DISPLAYED_SKILLS = 16` to fill the
+/// gap to the equipment slots at `+0x196`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayedSkillList {
+    /// Number of valid entries in `ids` (range `0..=MAX_DISPLAYED_SKILLS`).
+    pub count: u8,
+    /// Skill IDs (only `count` entries are semantically valid; the rest of
+    /// the array is preserved verbatim on round-trip).
+    pub ids: [u8; MAX_DISPLAYED_SKILLS],
+}
+
+impl Default for DisplayedSkillList {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            ids: [0; MAX_DISPLAYED_SKILLS],
         }
     }
 }
@@ -201,6 +241,24 @@ impl CharacterRecord {
         self.raw[0x161..0x161 + MAX_SPELLS].copy_from_slice(&list.levels);
     }
 
+    /// Displayed-skill list at `+0x185..0x196`. Read by the menu overlay's
+    /// per-character skill renderer (loop at `0x801D4440`); written by the
+    /// item-use battle event (Fire Book I and friends) when an item teaches
+    /// a Hyper Art / spell.
+    pub fn displayed_skills(&self) -> DisplayedSkillList {
+        let count = self.raw[0x185];
+        let mut ids = [0u8; MAX_DISPLAYED_SKILLS];
+        ids.copy_from_slice(&self.raw[0x186..0x186 + MAX_DISPLAYED_SKILLS]);
+        DisplayedSkillList { count, ids }
+    }
+
+    /// Replace the displayed-skill list. The count clamps at
+    /// [`MAX_DISPLAYED_SKILLS`].
+    pub fn set_displayed_skills(&mut self, list: DisplayedSkillList) {
+        self.raw[0x185] = list.count.min(MAX_DISPLAYED_SKILLS as u8);
+        self.raw[0x186..0x186 + MAX_DISPLAYED_SKILLS].copy_from_slice(&list.ids);
+    }
+
     /// Equipment-slot bytes at `+0x196..0x19D`.
     pub fn equipment(&self) -> EquipmentSlots {
         let mut slots = [0u8; EQUIPMENT_SLOT_COUNT];
@@ -263,6 +321,7 @@ impl CharacterRecord {
     /// the underlying [`Self::raw`] buffer.
     pub fn snapshot(&self) -> Snapshot {
         let spells = self.spell_list();
+        let displayed = self.displayed_skills();
         let equip = self.equipment();
         Snapshot {
             ability_bits: self.ability_bits().to_vec(),
@@ -271,6 +330,8 @@ impl CharacterRecord {
             spell_count: spells.count,
             spell_ids: spells.ids.to_vec(),
             spell_levels: spells.levels.to_vec(),
+            displayed_skill_count: displayed.count,
+            displayed_skill_ids: displayed.ids.to_vec(),
             equipment_slots: equip.slots.to_vec(),
         }
     }
@@ -293,6 +354,10 @@ pub struct Snapshot {
     pub spell_ids: Vec<u8>,
     /// Spell levels at `+0x161` (length [`MAX_SPELLS`]).
     pub spell_levels: Vec<u8>,
+    /// Displayed-skill-list count at `+0x185`.
+    pub displayed_skill_count: u8,
+    /// Displayed-skill IDs at `+0x186` (length [`MAX_DISPLAYED_SKILLS`]).
+    pub displayed_skill_ids: Vec<u8>,
     /// Equipment slots at `+0x196` (length [`EQUIPMENT_SLOT_COUNT`]).
     pub equipment_slots: Vec<u8>,
 }
@@ -459,6 +524,64 @@ mod tests {
                 assert_eq!(b, 0xCC, "byte at offset 0x{i:X} corrupted by set_stat_cap");
             }
         }
+    }
+
+    /// The Fire Book I capture (mc4 → mc5) showed Vahn's record changing
+    /// at `+0x185..+0x188` from `[0x01, 0x0C, 0x00]` to `[0x02, 0x03, 0x0C]`.
+    /// The typed accessor must read those exact bytes back as the same
+    /// list shape (count + head-inserted ID).
+    #[test]
+    fn displayed_skills_reads_fire_book_capture_pattern() {
+        let mut r = CharacterRecord::zeroed();
+        // Pre-event (mc4): count=1, ids=[0x0C, ...].
+        r.raw[0x185] = 0x01;
+        r.raw[0x186] = 0x0C;
+        let before = r.displayed_skills();
+        assert_eq!(before.count, 1);
+        assert_eq!(before.ids[0], 0x0C);
+        assert_eq!(before.ids[1], 0x00);
+
+        // Post-event (mc5): count=2, ids=[0x03, 0x0C, ...] (head insert).
+        r.raw[0x185] = 0x02;
+        r.raw[0x186] = 0x03;
+        r.raw[0x187] = 0x0C;
+        let after = r.displayed_skills();
+        assert_eq!(after.count, 2);
+        assert_eq!(after.ids[0], 0x03);
+        assert_eq!(after.ids[1], 0x0C);
+        assert_eq!(after.count - before.count, 1);
+    }
+
+    /// Setter writes back to `+0x185..+0x196` and round-trips through `parse`.
+    #[test]
+    fn displayed_skills_round_trip() {
+        let mut r = CharacterRecord::zeroed();
+        let mut ids = [0u8; MAX_DISPLAYED_SKILLS];
+        ids[..3].copy_from_slice(&[0x03, 0x0C, 0x1F]);
+        let list = DisplayedSkillList { count: 3, ids };
+        r.set_displayed_skills(list);
+        assert_eq!(r.raw[0x185], 0x03);
+        assert_eq!(&r.raw[0x186..0x186 + 3], &[0x03, 0x0C, 0x1F]);
+        let bytes = r.write();
+        let r2 = CharacterRecord::parse(&bytes).unwrap();
+        let read_back = r2.displayed_skills();
+        assert_eq!(read_back.count, 3);
+        assert_eq!(read_back.ids[..3], [0x03, 0x0C, 0x1F]);
+    }
+
+    /// Count clamps at `MAX_DISPLAYED_SKILLS` to keep the byte field
+    /// within the +0x185..+0x196 window before the equipment slots.
+    #[test]
+    fn displayed_skills_count_clamps_at_max() {
+        let mut r = CharacterRecord::zeroed();
+        let list = DisplayedSkillList {
+            count: 200,
+            ids: [0xAA; MAX_DISPLAYED_SKILLS],
+        };
+        r.set_displayed_skills(list);
+        assert_eq!(r.raw[0x185], MAX_DISPLAYED_SKILLS as u8);
+        // The equipment-slot byte at +0x196 must not be clobbered.
+        assert_eq!(r.raw[0x196], 0x00);
     }
 
     #[test]

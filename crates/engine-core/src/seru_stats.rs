@@ -12,14 +12,26 @@
 //! The retail growth values themselves do *not* live in the level-up overlay's
 //! data section — a writer-search across the captured `overlay_magic_level_up_*`
 //! dumps for `sb` / `sh` writes targeting `+0x10E`, `+0x11C..+0x12C`, `+0x130`,
-//! `+0x161` returns no code-side hits. The grants come instead from per-Seru
-//! structs loaded from PROT entries at runtime: each Seru carries an HP / MP
-//! grant pair (the level-up overlay reads them through a pointer at *Seru
-//! struct +0x74*), and the act of equipping / leveling a Seru folds those
-//! values into the consuming character's record. The exact layout of the
-//! Seru struct beyond `+0x74` (which other stats it grants, the slot for
-//! Spirit, etc.) requires either a runtime watchpoint trace or a battle-data
-//! PROT-entry decode.
+//! `+0x161` returns no code-side hits.
+//!
+//! A follow-up grep for any `lh` / `lhu` / `lb` / `lbu` / `lw` read at
+//! `+0x74(reg)` across the same overlay surfaces five hits — but every one of
+//! them is reading a 32-bit battle-state flag that gets *written* with the
+//! constant `0x80808080` by the SCUS-side battle-actor handler `FUN_800480D8`
+//! (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`), not a stat-grant
+//! pointer. The "Seru struct +0x74" pointer-dereference hypothesis is not
+//! supported by the captured code; either the table base lives in a
+//! still-uncaptured overlay (the most likely candidate is the battle-data
+//! init path that loads PROT entries 0x05C4 + sibling Seru blobs at boot) or
+//! the grant is computed inline from a packed Seru-record field that the
+//! current capture set doesn't surface.
+//!
+//! Engines wiring this module today should treat the shipped values as
+//! placeholders and override per-Seru with [`SeruStatTable::insert`]. The
+//! pinned destination offsets ([`crate::levelup::observations::vahn_mc8_to_mc9`])
+//! still describe the *consumer* layout faithfully, so any future capture
+//! that pins the *source* table can drop into the existing API without
+//! re-shaping it.
 //!
 //! ## What this module provides
 //!

@@ -173,9 +173,20 @@ pub fn placeholder_xp_table() -> Vec<u32> {
 /// mp_total / levels_gained)`. Outside the observed range the curve
 /// falls back to [`StatGain::default`].
 ///
-/// The retail per-character per-level table — the writer-search target
-/// for the next round of overlay analysis — would let the engine emit
-/// a true [`StatGrowthCurve::PerLevel`] vector.
+/// The retail per-character per-level table is not surfaced by the
+/// captured `overlay_magic_level_up_*` dumps: a writer-search across
+/// every dump returns no `sb` / `sh` writes targeting `+0x10E`,
+/// `+0x11C..+0x12C`, `+0x130`, or `+0x161`. The "Seru struct +0x74"
+/// pointer-dereference path is also a dead end — the only `+0x74`
+/// reads in the captured overlay surface a 32-bit battle-state flag
+/// the SCUS-side handler `FUN_800480D8` writes with the constant
+/// `0x80808080`. The grant table likely lives in a still-uncaptured
+/// overlay (battle-data init or the Seru-equip path) or is encoded
+/// inline in a Seru PROT entry the current capture set doesn't
+/// surface. Engines that want a true [`StatGrowthCurve::PerLevel`]
+/// today should populate one explicitly via
+/// [`crate::seru_stats::SeruStatTable::insert`] until the writer is
+/// pinned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelUpObservation {
     /// Display name for diagnostics (e.g. `"Vahn mc8→mc9"`).
