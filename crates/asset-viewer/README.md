@@ -28,18 +28,40 @@ Useful flags:
   runtime asset chain is fully traced.
 - `--vram-extra-dir <dir>` - workaround for character meshes whose CLUT
   rows live in *different* PROT entries from their TMD source.
+- `--no-textures` (alias `--flat-shaded`) - skip the VRAM path entirely
+  and render unlit flat-shaded geometry. Use this when you want to see
+  what a mesh's silhouette looks like without battling palette guesses;
+  the runtime LoadImage trace for field / town scenes isn't captured
+  yet, so some palette rows always render as garbage in textured mode.
 
 When VRAM is built from one or more TIM directories, the `tmd` viewer
-drops primitives whose texture page region is empty - those would
-otherwise rasterise as solid `CLUT[0]` (a flat green / cyan tint over
-correctly-textured geometry) and obscure the rest of the model. The
-diagnostic `skipped N prim(s) with empty VRAM texture pages` line in
-the log tells you how aggressive the filter was; pair it with
-`--vram-extra-dir` to recover the missing pages. Primitive-section walks
-are also lenient: a single malformed group near the end of an object's
-prim section no longer hides every valid group that came before it,
-so multi-object TMDs render every part of the model that walks cleanly
-instead of cutting off at the first error boundary.
+drops primitives whose texture page region is empty or whose CLUT row
+is populated at the wrong palette depth - those would otherwise
+rasterise as solid `CLUT[0]` (a flat green / cyan tint over
+correctly-textured geometry) or rainbow-noise stripes (16 entries
+sliced out of a 256-entry gradient) and obscure the rest of the model.
+The diagnostic logs distinguish each failure mode:
+
+```
+skipped N prim(s) (M/N kept)
+  missing CLUT data for K prim(s) across rows [r0, r1, ...]
+  CLUT row R IS populated but 256 entries wide (8-bit palette);
+    prim expects 16 entries (4-bit) - prim dropped to avoid rainbow noise
+  missing texture-page data for K prim(s) across tpages [t0, t1, ...]
+```
+
+Primitive-section walks are also lenient: a single malformed group near
+the end of an object's prim section no longer hides every valid group
+that came before it, so multi-object TMDs render every part of the
+model that walks cleanly instead of cutting off at the first error
+boundary.
+
+For offline diagnostics the same targeted-upload + per-prim verdict
+logic is also exposed by the `tmd` CLI: `tmd prims <input> --vram-dir
+<dir>` prints a per-prim status tag (`Ok` / `MissingClut` /
+`ClutDepthMismatch` / `MissingTexturePage`), and `tmd vram-dump <input>
+-o vram.png [--annotate]` writes the simulated post-upload VRAM as a
+PNG so collisions are obvious without firing up the GUI.
 
 ### `stage` - wireframe stage geometry
 

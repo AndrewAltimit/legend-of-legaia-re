@@ -51,6 +51,21 @@
   <p><code>crates/engine-render</code> emulates a 1024&times;512 R16Uint VRAM page so the per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can happen in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render correctly.</p>
 
   <p>CLUT data scatters across PROT entries - many character meshes reference CLUT rows that live in <em>different</em> PROT entries from their TMD source. The viewer's <code>--vram-extra-dir</code> is the workaround until the runtime asset chain is fully traced. Battle is fully traced (the bundle loader handles this); field, town, and level-up still rely on the workaround. See <a href="asset-loader.html">Asset loader &rarr; "CLUT-data scattering"</a>.</p>
+
+  <h3>Targeted VRAM upload</h3>
+  <p>The TIM corpus on a single PROT entry can run into the hundreds. Uploading every TIM into the 1&nbsp;MB VRAM clobbers regions a different mesh references as its CLUT row, and the paletted decode reads image pixels as palette entries (rainbow noise). The asset viewer and the <code>tmd</code> CLI both go through <code>legaia_tmd::vram_targeted::build_vram_targeted</code>: for every TIM, the image block and CLUT block are decided <em>independently</em> against the prim-target rectangles for the current TMD - a TIM can contribute one block, both, or neither.</p>
+  <p><code>legaia_tim::vram::Vram::prim_texture_status</code> then classifies each prim's <code>(cba, tsb, uv)</code> lookup as <code>Ok</code> / <code>MissingClut</code> / <code>ClutDepthMismatch&nbsp;{&nbsp;populated_width,&nbsp;expected_width&nbsp;}</code> / <code>MissingTexturePage</code> so the viewer can drop bad prims at mesh-build time and the CLI can explain <em>why</em> a prim was dropped (the most common case is a 4bpp prim referencing a CLUT row that's been populated as a 256-entry 8bpp palette by a different TIM).</p>
+  <p>The same filter is wired into engine-side scene loads through <code>ResolvedTmd::build_filtered_vram_mesh</code>, so battle / field actor meshes inherit the same cleanup the asset viewer has.</p>
+
+  <h3>Texture-window register (GP0 0xE2)</h3>
+  <p><code>Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)</code> maps to GP0(0xE2) "Texture Window setting": four 5-bit values in 8-pixel steps that clamp / wrap texture-coordinate sampling to a smaller window inside the texture page. Default is all-zero (no-op). Retail Legaia leaves the register at zero almost everywhere; the API is wired primarily so future runtime LoadImage / DMA-to-VRAM trace work can replay the register state faithfully. The fragment shader applies the per-pixel <code>coord = (coord &amp; ~(mask*8)) | ((offset &amp; mask)*8)</code> transformation before texture-page lookup.</p>
+
+  <h3>Asset-viewer flat-shaded fallback</h3>
+  <p><code>asset-viewer tmd &lt;PATH&gt; --no-textures</code> (alias <code>--flat-shaded</code>) suppresses the VRAM path entirely and renders unlit flat geometry. Useful for inspecting mesh silhouettes without battling palette guesses (the runtime LoadImage trace for field / town scenes is not yet captured, so some palette rows always render as garbage in textured mode).</p>
+
+  <h3><code>tmd</code> CLI VRAM diagnostics</h3>
+  <p><code>tmd prims &lt;PATH&gt; --vram-dir extracted/tim_scan/&lt;entry&gt;</code> simulates the targeted upload and adds a per-prim verdict trailer (<code>-&gt; Ok</code> / <code>-&gt; MISSING CLUT (row N)</code> / <code>-&gt; DEPTH MISMATCH (row N populated with K entries; prim expects M)</code> / <code>-&gt; MISSING TEXTURE PAGE (tpage 0xNN)</code>).</p>
+  <p><code>tmd vram-dump &lt;PATH&gt; -o vram.png [--vram-dir ...] [--annotate]</code> exports the post-upload software VRAM as a 1024x512 PNG with optional red CLUT-row + green texture-page outlines, so collisions are obvious without firing up the GUI.</p>
 </section>
 
 <section class="doc-section" id="psx-mode">

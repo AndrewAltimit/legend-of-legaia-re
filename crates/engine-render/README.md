@@ -51,6 +51,17 @@ The VRAM-mesh pipeline supports PSX-faithful rasterisation via
   remain `@interpolate(flat)` so each triangle samples from the same
   page and palette, matching `GP0(0x24)` semantics.
 
+`Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to
+GP0(0xE2) "Texture Window setting" - four 5-bit values in 8-pixel steps
+that clamp / wrap texture-coordinate sampling to a smaller window inside
+the texture page. Default all-zero is a no-op. The fragment shader
+applies the per-pixel
+`coord = (coord & ~(mask*8)) | ((offset & mask)*8)` transformation
+before texture-page lookup. Retail Legaia leaves the register at zero
+almost everywhere; the API is wired primarily so future runtime
+LoadImage / DMA-to-VRAM trace work can replay the register state
+faithfully.
+
 Toggle is global - apply once per frame before submitting draws.
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
 live in [`gte`](src/gte.rs); production rendering still uses f32 wgpu

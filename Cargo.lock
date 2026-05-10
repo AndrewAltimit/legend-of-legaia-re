@@ -1470,6 +1470,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "legaia-tim",
+ "png",
  "serde",
  "serde_json",
 ]

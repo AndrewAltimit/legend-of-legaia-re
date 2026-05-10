@@ -65,6 +65,7 @@ pub mod descriptor;
 pub mod legaia_prim_probe;
 pub mod legaia_prims;
 pub mod mesh;
+pub mod vram_targeted;
 
 /// FLIST_BIT - when set in `id`, pointers are relative to header end.
 pub const FLIST_BIT: u32 = 0x8000_0000;

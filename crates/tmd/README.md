@@ -67,6 +67,22 @@ the caller can pair it with `legaia_tim::Vram::prim_has_texture_data`
 (or any other heuristic) so the mesh upload doesn't include prims that
 would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 
+## Targeted VRAM upload + per-prim diagnostics
+
+`vram_targeted::collect_prim_targets` collects the VRAM rectangles every
+textured prim in a TMD will sample, and `vram_targeted::build_vram_targeted`
+walks the candidate TIM directories and decides per-block whether to
+upload each TIM's image and / or CLUT block (suppressing blocks that
+would clobber another mesh's CLUT row, which is what causes rainbow
+noise). The asset viewer GUI and the `tmd prims` / `tmd vram-dump` CLI
+share this logic so on-screen rendering and offline diagnostics agree.
+
+`legaia_tim::vram::Vram::prim_texture_status` returns a structured
+verdict per prim: `Ok` / `MissingClut { row }` /
+`ClutDepthMismatch { row, populated_width, expected_width }` /
+`MissingTexturePage { tpage }`. The CLI prints these as readable trailers
+on each prim row when invoked with `--vram-dir`.
+
 ## TMD vs TMD2 (asset dispatcher types `0x02` and `0x09`)
 
 Both route through `FUN_80026b4c`. The wrapping differs:
@@ -84,6 +100,10 @@ tmd scan-dir       <dir>             # walk + classify a directory of TMDs
 tmd dump-obj       <input> <out.obj>
 tmd probe          <input>           # heuristic: is this a Legaia TMD?
 tmd prims          <input>           # walk + print primitive groups
+tmd prims          <input> --vram-dir extracted/tim_scan/<entry>
+                                     # also simulate targeted VRAM upload + per-prim verdict
+tmd vram-dump      <input> -o vram.png [--vram-dir ...] [--annotate]
+                                     # export simulated post-upload VRAM as PNG
 tmd validate-prims <input>           # vertex-index-range sanity check
 ```
 
