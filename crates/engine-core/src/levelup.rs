@@ -239,8 +239,8 @@ impl LevelUpObservation {
 pub mod observations {
     use super::LevelUpObservation;
 
-    /// Vahn level-up captured from `~/.mednafen/mcs/.mc8 → .mc9` (post-#26
-    /// session 13). Pre: cumulative XP 365 → post 730 (delta +365). The
+    /// Vahn level-up captured from `~/.mednafen/mcs/.mc8 → .mc9`. Pre:
+    /// cumulative XP 365 → post 730 (delta +365). The
     /// captured `+0x00` byte changed `0x4F → 0x73` (a multi-level jump).
     /// Per-stat byte deltas come from the diff at `+0x11C..+0x12D`.
     ///

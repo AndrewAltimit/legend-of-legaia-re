@@ -967,12 +967,11 @@ impl BattleSession {
         }
     }
 
-    /// Push a `Command` and (if needed) open a target picker for it. This
-    /// is the natural completion of the eleventh batch's wiring: engines
-    /// drive command admission through this API instead of calling
-    /// `push_command` + `open_target_picker` separately. The session
-    /// remembers the command and pushes it onto the runner queue only
-    /// after the picker resolves successfully.
+    /// Push a `Command` and (if needed) open a target picker for it.
+    /// Engines drive command admission through this API instead of
+    /// calling `push_command` + `open_target_picker` separately. The
+    /// session remembers the command and pushes it onto the runner
+    /// queue only after the picker resolves successfully.
     ///
     /// `kind` is the [`crate::target_picker::TargetKind`] expected by the
     /// command; immediate kinds (`AllEnemies` / `AllAllies` / `Self_`)

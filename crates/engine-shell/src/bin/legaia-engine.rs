@@ -864,6 +864,10 @@ struct PlayWindowApp {
     boot_ui: BootUiState,
     /// Save directory the save-select session reads / writes against.
     save_dir: std::path::PathBuf,
+    /// User-editable settings (BGM / SFX volume, message speed, …). Wired
+    /// to the Options screen's [`OptionsSession`] and persisted via
+    /// the engine's options round-trip path.
+    options_state: legaia_engine_core::options::OptionsState,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -877,6 +881,14 @@ enum BootUiState {
     Title(legaia_engine_core::title::TitleSession),
     /// Save-select panel is active.
     SaveSelect(legaia_engine_core::save_select::SaveSelectSession),
+    /// Options / config panel is active.
+    Options(legaia_engine_core::options::OptionsSession),
+    /// Field (pause) menu is active. Wraps the live scene so dropping
+    /// out returns control to the field tick.
+    FieldMenu(legaia_engine_core::field_menu::FieldMenuSession),
+    /// Game-over panel is active after a party wipe.
+    #[allow(dead_code)]
+    GameOver(legaia_engine_core::game_over::GameOverSession),
 }
 
 impl BootUiState {
@@ -948,8 +960,11 @@ impl PlayWindowApp {
                             );
                         }
                         TitleOutcome::Options => {
-                            // Not yet wired — fall through to the scene.
-                            self.boot_ui = BootUiState::Inactive;
+                            self.boot_ui = BootUiState::Options(
+                                legaia_engine_core::options::OptionsSession::new(
+                                    self.options_state.clone(),
+                                ),
+                            );
                         }
                     }
                 }
@@ -989,6 +1004,86 @@ impl PlayWindowApp {
                             // Save-select in Load mode shouldn't emit these,
                             // but degrade gracefully.
                             self.boot_ui = BootUiState::Inactive;
+                        }
+                    }
+                }
+                true
+            }
+            BootUiState::Options(session) => {
+                use legaia_engine_core::options::{OptionsInput, OptionsOutcome};
+                let input = OptionsInput {
+                    up,
+                    down,
+                    left,
+                    right,
+                    cross,
+                    circle,
+                    start,
+                };
+                let _ = session.tick(input);
+                if let Some(outcome) = session.outcome() {
+                    match outcome {
+                        OptionsOutcome::Confirmed => {
+                            self.options_state = session.state().clone();
+                        }
+                        OptionsOutcome::Cancelled => {
+                            session.revert_if_cancelled();
+                        }
+                    }
+                    // After options, route back to Title so the player can
+                    // pick New Game / Continue (matches retail flow).
+                    self.boot_ui =
+                        BootUiState::Title(legaia_engine_core::title::TitleSession::new());
+                }
+                true
+            }
+            BootUiState::FieldMenu(session) => {
+                use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
+                let input = FieldMenuInput {
+                    up,
+                    down,
+                    cross,
+                    circle,
+                    start,
+                };
+                let _ = session.tick(input);
+                if let Some(outcome) = session.outcome() {
+                    match outcome {
+                        FieldMenuOutcome::Closed => {
+                            self.boot_ui = BootUiState::Inactive;
+                        }
+                        FieldMenuOutcome::Confirmed(_row) => {
+                            // Sub-session dispatch is engine-specific; the
+                            // generic shell drops back to scene tick.
+                            self.boot_ui = BootUiState::Inactive;
+                        }
+                    }
+                }
+                true
+            }
+            BootUiState::GameOver(session) => {
+                use legaia_engine_core::game_over::{GameOverInput, GameOverOutcome};
+                let input = GameOverInput { up, down, cross };
+                let _ = session.tick(input);
+                if let Some(outcome) = session.outcome() {
+                    match outcome {
+                        GameOverOutcome::Continue => {
+                            let snapshots = scan_save_dir(&self.save_dir);
+                            self.boot_ui = BootUiState::SaveSelect(
+                                legaia_engine_core::save_select::SaveSelectSession::new(
+                                    legaia_engine_core::save_select::SaveSelectMode::Load,
+                                    snapshots,
+                                ),
+                            );
+                        }
+                        GameOverOutcome::Retry | GameOverOutcome::Quit => {
+                            // Retry → drop to scene; Quit → back to title.
+                            self.boot_ui = match outcome {
+                                GameOverOutcome::Quit => BootUiState::Title(
+                                    legaia_engine_core::title::TitleSession::new(),
+                                ),
+                                _ => BootUiState::Inactive,
+                            };
                         }
                     }
                 }
@@ -1058,6 +1153,47 @@ impl PlayWindowApp {
                     (16, 32),
                 )
             }
+            BootUiState::Options(s) => {
+                let rows = s.state().rows();
+                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
+                    .iter()
+                    .map(|r| legaia_engine_render::OptionsRowView {
+                        label: r.label,
+                        value: &r.value,
+                    })
+                    .collect();
+                legaia_engine_render::options_draws_for(
+                    &self.font,
+                    &row_views,
+                    s.cursor(),
+                    (96, 80),
+                )
+            }
+            BootUiState::FieldMenu(s) => {
+                let view = s.view();
+                let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
+                    .rows
+                    .iter()
+                    .map(|r| legaia_engine_render::FieldMenuRowView {
+                        label: r.label,
+                        enabled: r.enabled,
+                    })
+                    .collect();
+                legaia_engine_render::field_menu_draws_for(
+                    &self.font,
+                    &row_views,
+                    view.cursor,
+                    view.money,
+                    view.play_time_seconds,
+                    (32, 64),
+                )
+            }
+            BootUiState::GameOver(s) => legaia_engine_render::game_over_draws_for(
+                &self.font,
+                s.cursor(),
+                s.continue_enabled,
+                (96, 100),
+            ),
         }
     }
 
@@ -1430,6 +1566,19 @@ impl ApplicationHandler for PlayWindowApp {
                         self.prev_pad = self.pad;
                         continue;
                     }
+                    // Start in field opens the pause menu. Edge-detect so a
+                    // held key doesn't auto-reopen.
+                    let pressed_edge = self.pad & !self.prev_pad;
+                    if pressed_edge & 0x0008 != 0 && !self.menu_runtime.is_open() {
+                        let view_money = self.session.host.world.money;
+                        let play_secs = self.session.host.world.play_time_seconds;
+                        let mut s = legaia_engine_core::field_menu::FieldMenuSession::new();
+                        s.money = view_money.max(0) as u32;
+                        s.play_time_seconds = play_secs;
+                        self.boot_ui = BootUiState::FieldMenu(s);
+                        self.prev_pad = self.pad;
+                        continue;
+                    }
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
@@ -1673,6 +1822,7 @@ fn cmd_play_window(
         battle_event_log: std::collections::VecDeque::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
+        options_state: legaia_engine_core::options::OptionsState::default(),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
