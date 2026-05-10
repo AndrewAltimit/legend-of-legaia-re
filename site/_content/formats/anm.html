@@ -137,6 +137,30 @@ u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
   <p>See <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code> line ~3389 for the disassembly. The full handler body requires a targeted dump of <code>0x801e2630..0x801e2670</code> within <code>overlay_0897.bin</code>.</p>
 </section>
 
+<section class="doc-section" id="per-actor-anim-state-offsets">
+  <h2>Per-actor anim state offsets</h2>
+  <p>A pre-action / mid-action save pair (a quiet battle frame vs an in-flight somersault strike) pins the per-actor anim state to a small named region inside the <code>0x2D4</code>-byte battle actor record. Slot-0 actor record base = <code>0x800EC9E8</code>; the slots continue at <code>+ 0x2D4</code> for each subsequent slot.</p>
+  <table>
+    <thead>
+      <tr><th>Offset</th><th>Length</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>+0x1D8</code></td><td>16 B</td><td>Per-actor anim-PC. Pre-anim is mostly zero with a sentinel <code>01 77</code> at <code>+0x1D7..+0x1D8</code>; mid-anim holds incrementing per-bone counters (e.g. <code>00 11 00 27 00 03 03 0F 0E 19 27 00</code>).</td></tr>
+      <tr><td><code>+0x1F4</code></td><td>18 B</td><td>Per-frame anim flag accumulator. Pre-anim values are zero; mid-anim transitions to a stamped run of <code>0x11</code> bytes once the action engages.</td></tr>
+      <tr><td><code>+0x234</code></td><td>16 B</td><td>4-pointer anim dispatch table (4 × u32, all the same value). Pre-anim = <code>0x8015CC30</code>; mid-anim = <code>0x801621D0</code>. The pointer is bumped by <code>+0x55A0</code> bytes between the two captures - the loader has paged a different ANM record into a different position in the heap for the strike.</td></tr>
+    </tbody>
+  </table>
+  <p>The anim-record header at the post-anim dispatch pointer reads as a 24-byte control block:</p>
+<pre><code>+0x00  u32  len = 0x18
++0x04  u32  reserved
++0x08  u32  reserved
++0x0C  u32  field_C  (= 4 in the captured record - frame count?)
++0x10  u32  field_10 (= 5)
++0x14  u32  field_14 (= 0x00299307 - dispatch flags / first opcode word?)
++0x18  u32  field_18 (= 0x0140017E - first opcode block)</code></pre>
+  <p>These offsets are codified as <code>engine_core::capture_observations::battle_action_animation</code> and exercised by the disc-gated test <code>battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window</code>. The per-record dispatch jump table whose entry point is the value at <code>+0x234</code> still requires a Ghidra dump - the pinned offsets above bracket the runtime state but do not yet cover the opcode set itself.</p>
+</section>
+
 <section class="doc-section" id="allocator-preamble">
   <h2>Allocator preamble</h2>
   <p>When the dispatcher (<code>FUN_8001f05c</code> case 6) loads ANM data, the malloc'd buffer at <code>_DAT_8007B7C8</code> carries a 16-byte allocator preamble before the payload:</p>

@@ -254,6 +254,37 @@
   <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out.</p>
 </section>
 
+<section class="doc-section" id="battle-scene-init-residency">
+  <h2>Battle scene-init residency window</h2>
+  <p>A separate <code>map01</code> save pair (one frame with the encounter armed but battle not yet entered, the next frame with battle just initiated) pins the <strong>post-load residency window</strong> of the battle scene-init pipeline. Distinct from the encounter-trigger overlay swap above; this pair brackets the loader function with concrete RAM-resident artefacts the loader writes into.</p>
+  <table class="data-table">
+    <thead><tr><th>Range</th><th>Bytes changed</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x80124690..0x801503C4</code></td><td>~168 KB</td><td>Battle-bundle residency window. Pre-battle holds field-scene payload; post-battle holds battle-bundle data.</td></tr>
+      <tr><td><code>0x801CE808..0x801D3018</code></td><td>~16 KB</td><td>Battle-overlay scratch slice. Wholesale reset on entry.</td></tr>
+      <tr><td><code>0x800836C8</code></td><td>4 B</td><td>Per-frame actor-tick fn-pointer slot. Pre-battle = <code>0x80024C50</code>; post-battle = <code>FUN_80021DF4</code>.</td></tr>
+      <tr><td><code>0x801FFCA0..0x801FFFFE</code></td><td>~600 B</td><td>CD I/O state slice; rewires while the battle bundle is paged in.</td></tr>
+    </tbody>
+  </table>
+  <p>The pair is <strong>post-load</strong> by design - both save frames resolve to a state where the loader function has already returned. The loader function (which reads PROT entry <code>0x05C4</code> + sibling Seru blobs and populates the battle bundle) lives in an overlay slice that is not directly visible in either snapshot. Pinning it requires a mid-execution capture between the field&rarr;battle game-mode flip and this residency state.</p>
+  <p>Codified as <code>engine_core::capture_observations::battle_init_overlay</code>; disc-gated test <code>battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring</code>.</p>
+</section>
+
+<section class="doc-section" id="item-use-residency">
+  <h2>Item-use battle-event residency</h2>
+  <p>A mid-battle save pair (battle just initiated; party member about to use a Healing Leaf) pins the <strong>item-use sub-mode residency</strong>:</p>
+  <table class="data-table">
+    <thead><tr><th>Address</th><th>Pre &rarr; Post</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>_DAT_8007B8D0</code></td><td><code>0x8014BD30 &rarr; 0x800ABA4C</code></td><td>Field-pack base pointer flips. The item-use sub-mode reseats the active scene asset buffer.</td></tr>
+      <tr><td><code>0x801BA7DC..0x801BADEC</code></td><td>~660 B shift</td><td>Script-VM context block. The menu / item / target / commit pipeline rewrites the entire ctx region.</td></tr>
+      <tr><td>Actor pool slots 0..4</td><td>per-frame motion deltas</td><td>3 party + 2 monsters (count-2 formation). Slots 5..7 stay zero across the pair.</td></tr>
+    </tbody>
+  </table>
+  <p>The captured pair uses a <strong>Healing Leaf</strong> (consumable HP-restore) - not Fire Book I (a spell-learn item). The pair therefore pins the residency window of the item-use battle-event handler without lifting the Fire Book-specific writer to the displayed-skills array at <code>+0x185</code>. A second save pair specifically capturing Fire Book I use is required to lift that writer.</p>
+  <p>Codified as <code>engine_core::capture_observations::item_use_battle_event</code>; disc-gated test <code>item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift</code>.</p>
+</section>
+
 <section class="doc-section" id="captured-stat-growth">
   <h2>Captured stat-growth observations</h2>
   <p>The <code>mednafen-state diff</code> toolkit over a magic-rank-up + character-level-up save triplet pins the per-byte footprint for Vahn (party slot 0). The deltas inside Vahn's character record at <code>0x80084708</code> (stride <code>0x414</code>):</p>

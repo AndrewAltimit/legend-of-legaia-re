@@ -51,22 +51,21 @@ end = 0x8007B8D4
 hint = "_DAT_8007B8D0 = scene-asset load destination + 0x12800. mc0 reads `f0 4d 0b 80` => 0x800B4DF0; field-pack base for town0c is 0x800A25F0 (= 0x800B4DF0 - 0x12800)."
 
 # ----------------------------------------------------------------------
-# mc1 - Rim Elm cave (the save-point room). Same CDNAME `town0c` as mc0
-# but a different sub-area of the town. Useful for sub-area-internal
-# diffs - everything that survives identical CDNAME residency but
-# different rooms.
+# mc1 - field state on `map01` with an encounter armed but battle not
+# yet entered. Formation cell at 0x8007BD0C is `00 00 00 00` (cleared);
+# the field-pack base pointer at _DAT_8007B8D0 still holds the
+# field-side residency value (0x8014BD30) and the bundle window at
+# 0x80124690 still carries field-side payload (sample dialog text
+# visible). This is the "before" save for the §2.2 battle scene-init
+# capture pair.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 1
-label = "fmv_playback_str_cutscene"
-description = "FMV playback in progress (cutscene / MDEC overlay residency)"
-topics = ["FMV", "cutscene overlay", "STR file table", "MDEC"]
-diff_against = [0, 2]
+label = "map01_field_pre_battle"
+description = "Field state on `map01` with encounter armed but battle not yet initiated"
+topics = ["battle scene-init", "encounter armed", "pre-battle"]
+diff_against = [2]
 
-# Capture the cutscene overlay window. The compact STR-file table sits at
-# 0x801CAE40 (24-byte stride, 6 entries: MV1.STR..MV6.STR); the ISO9660-
-# shape directory copies sit at 0x801CCA80 (56-byte stride). Path strings
-# at 0x801CE810; mid-game FMV-trigger field-scene labels at 0x801CE8AC.
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
@@ -75,43 +74,40 @@ end = 0x80200000
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Empty during FMV - the cutscene overlay tears the field scene down before STR playback begins."
+hint = "Active scene: `map01` (CDNAME label, scene_id 0x55). Same scene as mc2; battle layers over the active field scene rather than swapping it."
 
 [[scenarios.watchpoints]]
-label = "fmv_compact_table"
-start = 0x801CAE40
-end = 0x801CAEC8
-hint = "6-entry compact STR-file table. Each entry = 24 bytes: name[12] + reserved u32 + BCD MSF + size. Parsed by `legaia_asset::str_fmv_table::parse_entries`."
+label = "formation_cell_pre"
+start = 0x8007BD0C
+end = 0x8007BD10
+hint = "Formation cell pre-battle. mc1 reads `00 00 00 00` (cleared); the encounter trigger has not yet copied monster ids in. Diff vs mc2 surfaces the encounter copy."
 
 [[scenarios.watchpoints]]
-label = "fmv_iso9660_directory_copies"
-start = 0x801CCA80
-end = 0x801CCBE0
-hint = "ISO9660-shape directory record copies. 56 bytes per entry; publisher tag 'USA' at +0x17 of each."
+label = "field_pack_ram_base_pointer_field"
+start = 0x8007B8D0
+end = 0x8007B8D4
+hint = "_DAT_8007B8D0 = 0x8014BD30 (field-side residency). Same value as mc2; the field-pack base does not flip on encounter trigger because battles layer over the field scene."
 
 [[scenarios.watchpoints]]
-label = "fmv_mid_game_scene_labels"
-start = 0x801CE8AC
-end = 0x801CE8E0
-hint = "CDNAME labels for mid-game FMV-bearing field scenes: town0b, map01, chitei2, map02, jou, uru2, town0e."
+label = "battle_bundle_window_pre"
+start = 0x80124690
+end = 0x801503C4
+hint = "168 KB region holds field-scene payload pre-battle (sample text strings visible). mc1 reads recognisable ASCII; mc2 reads battle-bundle data. Diff = `engine_core::capture_observations::battle_init_overlay::BATTLE_BUNDLE_WINDOW`."
 
 # ----------------------------------------------------------------------
-# mc2 - Rim Elm intro (CDNAME `town01`, scene 0x03) — the field-pack
-# save. This is the key save for §2.5 field-pack mapping work.
-# `town01` is the very-first scripted town in the corpus (entry-point of
-# the game) and is the only block whose first three PROT entries
-# (0003/0004/0005) match the field-pack magic 0x01059B84.
-#
-# The active field-pack RAM base for this save is 0x80139530 (computed
-# as `_DAT_8007B8D0 - 0x12800` where `_DAT_8007B8D0 = 0x8014BD30` for
-# this save). Per-scene base; see `engine_core::capture_observations::field_pack_load`.
+# mc2 - battle initiated on `map01`. Formation cell at 0x8007BD0C is
+# `04 04 00 00` (count = 2, two copies of monster id 4). The battle
+# bundle has been paged into the 168 KB window starting at 0x80124690;
+# the 16 KB battle-overlay scratch slice at 0x801CE808..0x801D3018 has
+# been reset; the actor-tick fn pointer at 0x800836F8 = 0x80021DF4.
+# This is the "after" save for §2.2 battle scene-init.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 2
-label = "town01_intro_rim_elm"
-description = "Rim Elm intro (CDNAME `town01`, scene 0x03) - field-pack scene"
-topics = ["field-pack RAM layout", "scene asset loader", "town01 block"]
-diff_against = [0, 3]
+label = "map01_battle_initiated"
+description = "Battle initiated on `map01` (count=2 formation, two monster id 4)"
+topics = ["battle scene-init", "battle bundle", "battle action overlay"]
+diff_against = [1]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -121,98 +117,55 @@ end = 0x80200000
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene: index 0x03 (town01). The 8-byte block at +0x54 carries `03 00 00 00` then `00 01 02 03` (sub-PROT-entry list within the town01 block)."
+hint = "Active scene: `map01` (unchanged from mc1)."
 
 [[scenarios.watchpoints]]
-label = "field_pack_ram_region"
-start = 0x80139530
-end = 0x8014BD30
-hint = "Field-pack RAM region for town01 - 75 KB asset bundle loaded by FUN_8001f7c0. Schema slot 0 sits at base+0x60 (= 0x80139590); slot 96 at base+0x16651 (= 0x8014FB81 - hits the trailing zone). Contents at base+0x60 are post-processed GP0 GPU primitive packets, NOT the raw schema-shaped on-disc records."
+label = "formation_cell_post"
+start = 0x8007BD0C
+end = 0x8007BD10
+hint = "Formation cell post-battle-init. mc2 reads `04 04 00 00` (count=2 in slots 0..1, monster id 4)."
 
 [[scenarios.watchpoints]]
-label = "field_pack_ram_base_pointer"
-start = 0x8007B8D0
-end = 0x8007B8D4
-hint = "_DAT_8007B8D0 - the loader writes `base + 0x12800` here. mc2 reads `30 bd 14 80` => 0x8014BD30; subtract 0x12800 to recover field-pack base = 0x80139530."
+label = "battle_overlay_scratch_window"
+start = 0x801CE808
+end = 0x801D3018
+hint = "16 KB battle-overlay scratch slice. Wholesale reset on battle entry; baseline `engine_core::capture_observations::battle_init_overlay::OVERLAY_SCRATCH_WINDOW`."
 
 [[scenarios.watchpoints]]
-label = "asset_descriptor_table_base"
-start = 0x8007B85C
-end = 0x8007B860
-hint = "_DAT_8007B85C - asset descriptor table pointer. Identical across mc2 and mc0 (both = 0x8015CBD0); the descriptor table is statically allocated and indexes into the per-scene field-pack RAM region above."
+label = "battle_bundle_window_post"
+start = 0x80124690
+end = 0x801503C4
+hint = "168 KB battle-bundle residency window. mc2 reads battle-side data; diff vs mc1 surfaces the field→battle bundle swap. Constant: `BATTLE_BUNDLE_WINDOW`."
 
 [[scenarios.watchpoints]]
-label = "scene_asset_pool"
-start = 0x800C5000
-end = 0x80139530
-hint = "Heap-resident scene asset pool. mc2 vs mc0 surfaces ~400 KB of differences here - sibling buffers (TIM atlases, primitive scratch, descriptor-driven data) the loader fills before / alongside the field-pack region."
+label = "actor_tick_fn_ptr"
+start = 0x800836C8
+end = 0x800836CC
+hint = "Battle-bundle extension pointer slot. mc1 reads `0x4C500280` = `0x80024C50` (non-battle tick handler); mc2 reads `0xF41D0280` = `FUN_80021DF4` (per-frame actor tick). The pointer flips when battle scene-init completes. Constant: `ACTOR_TICK_FN_PTR_VALUE`."
+
+[[scenarios.watchpoints]]
+label = "actor_pool_window"
+start = 0x801C9370
+end = 0x801C9900
+hint = "8-slot battle actor pointer table. In the count=2 formation, slots 0..4 are populated (3 party + 2 monsters); slots 5..7 zero."
 
 # ----------------------------------------------------------------------
-# mc3 - Rim Elm normal entry mid-load (CDNAME `town0c`, scene 0x15)
-# captured BETWEEN scene-name flip and field-pack-base flip. The
-# scene-bundle pool already says `town0c` but `_DAT_8007B8D0` still
-# points to the previous scene's efect.dat base. Diff vs mc2 captures
-# the loader's order-of-operations:
-#   (1) write new scene name into the bundle pool
-#   (2) populate the new field-pack region at the destination base
-#   (3) flip the global base pointer last
-# Pinned in `engine_core::capture_observations::field_pack_intra_transition`.
+# mc3 - mid-battle on `map01` with an item about to be used (Healing
+# Leaf - a consumable HP-restore, NOT Fire Book I). Formation cell
+# stays at `04 04 00 00`. The field-pack base pointer at _DAT_8007B8D0
+# has flipped to 0x800ABA4C (item-use sub-mode reseats the active
+# scene asset buffer); the script-VM context block at
+# 0x801BA7DC..0x801BADEC has shifted ~660 bytes as the menu / item /
+# target / commit pipeline runs. This pair pins the **item-use
+# battle-event overlay residency** even though the §2.6-specific
+# Fire Book +0x185 writer cannot be lifted from a Healing Leaf use.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 3
-label = "town0c_rim_elm_normal_pre_load"
-description = "Rim Elm normal entry mid-transition (CDNAME `town0c`, scene 0x15)"
-topics = ["intra-transition", "field-pack loader order-of-ops", "town0c"]
-diff_against = [0, 2]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084580
-hint = "Active scene: town0c (CDNAME at +0x08, +0x18); scene_id 0x55 at +0x00. mc3 has town0c here even though `_DAT_8007B8D0` still reads the OLD town01 base - the loader flips the name first, then populates new RAM, then swaps the global pointer."
-
-[[scenarios.watchpoints]]
-label = "field_pack_ram_base_pointer_stale"
-start = 0x8007B8D0
-end = 0x8007B8D4
-hint = "Bit-identical to mc2's `30 bd 14 80` => 0x8014BD30 (old town01 base). The loader has not yet written the new town0c value (would be `f0 4d 0b 80` => 0x800B4DF0). This is the intra-transition signature."
-
-[[scenarios.watchpoints]]
-label = "next_field_pack_region_partial"
-start = 0x800A25F0
-end = 0x800B4DF0
-hint = "New town0c field-pack region (matches mc0's pinned base). In mc3 this region is partially populated even though the global base pointer hasn't flipped yet."
-
-[[scenarios.watchpoints]]
-label = "previous_field_pack_region_zeroed"
-start = 0x80139530
-end = 0x8013A000
-hint = "Old town01 field-pack region. In mc3 this is zeroed - the loader clears the previous region before populating the new one."
-
-# ----------------------------------------------------------------------
-# mc4..mc6: NOA character-level-up triplet (battle scene `map01`).
-#
-# Each save captures a different frame of Noa's level-up event:
-#   mc4 = pre-level-up (battle just won, XP not yet credited)
-#   mc5 = record-write frame (record stats + XP + rank counter applied)
-#   mc6 = live-copy frame (live in-battle stats applied; HP_max/MP_max
-#         /SP_max not yet settled in live copy)
-#   mc7 = doubles as Gala-pre AND Noa-settle (HP_max/MP_max/SP_max
-#         settled in live copy)
-#
-# Codified deltas: `engine_core::levelup::observations::noa_4_level_jump`.
-# Phase split documented at `engine_core::capture_observations::char_level_up`.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 4
-label = "noa_level_up_pre"
-description = "Pre-Noa-level-up battle frame (`map01`)"
-topics = ["stat growth", "level-up curve", "Noa"]
-diff_against = [5, 6, 7]
+label = "map01_item_use_healing_leaf"
+description = "Mid-battle on `map01`, item (Healing Leaf) about to be used"
+topics = ["battle item-use", "healing leaf", "item-use overlay residency"]
+diff_against = [2, 4]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -222,14 +175,99 @@ end = 0x80200000
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene: `map01` (battle scene)."
+hint = "Active scene: `map01` (unchanged from mc1/mc2)."
 
 [[scenarios.watchpoints]]
-label = "char_record_noa"
-start = 0x80084B1C
-end = 0x80084F30
-hint = "Noa's character record. Pre-event values: cumulative XP 102 at +0x004 (u16 LE), HP_max 0x96 (150) at +0x106 / +0x11C, SP_max 0x38 (56) at +0x10E."
+label = "formation_cell_active"
+start = 0x8007BD0C
+end = 0x8007BD10
+hint = "Formation cell stays at `04 04 00 00` (count=2 active encounter)."
 
+[[scenarios.watchpoints]]
+label = "field_pack_base_item_use"
+start = 0x8007B8D0
+end = 0x8007B8D4
+hint = "_DAT_8007B8D0 = 0x800ABA4C (item-use sub-mode residency). Distinct from mc1/mc2's 0x8014BD30; the item handler reseats the scene asset buffer."
+
+[[scenarios.watchpoints]]
+label = "script_vm_ctx_window_item_use"
+start = 0x801BA7DC
+end = 0x801BADEC
+hint = "Script-VM context block. ~660 bytes shift across mc2 ↔ mc3 as the menu / item / target / commit pipeline runs. Constant: `item_use_battle_event::SCRIPT_VM_CTX_WINDOW`."
+
+# ----------------------------------------------------------------------
+# mc4 - mid-action animation on `map01`: a somersault-class strike is
+# in flight. Per-actor anim state in the slot-0 actor record at
+# 0x800EC9E8 has populated the anim-PC bytes at +0x1D8..+0x1E8, the
+# per-frame flag accumulator at +0x1F4..+0x205, and the 4-pointer
+# anim dispatch table at +0x234..+0x244 (now reads 0x801621D0,
+# 4 copies). Diff vs mc3 narrows the per-actor anim state offsets to
+# this small named region within the 0x2D4-byte actor record - direct
+# input to PRD §2.1 (ANM opaque-record interpreter).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 4
+label = "map01_mid_somersault_strike"
+description = "Mid-action animation on `map01` (somersault-class strike in flight)"
+topics = ["ANM opaque records", "anim-PC", "actor anim dispatch"]
+diff_against = [3]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: `map01` (unchanged from mc1/mc2/mc3)."
+
+[[scenarios.watchpoints]]
+label = "actor_record_slot0_anim_pc"
+start = 0x800ECBC0
+end = 0x800ECBD0
+hint = "Slot-0 actor record +0x1D8..+0x1E8 (16 bytes). Pre-animation = mostly zero with sentinel `01 77` at +0x1D7..+0x1D8; mid-animation = incrementing per-bone counters. Constant: `battle_action_animation::ANIM_PC_FIELD_OFFSET`."
+
+[[scenarios.watchpoints]]
+label = "actor_record_slot0_anim_flags"
+start = 0x800ECBDC
+end = 0x800ECBEE
+hint = "Slot-0 actor record +0x1F4..+0x205 (18 bytes). Per-frame anim flag accumulator. Pre = zero; mid = stamped run of `0x11` bytes. Constant: `ANIM_FRAME_FLAGS_OFFSET`."
+
+[[scenarios.watchpoints]]
+label = "actor_record_slot0_anim_dispatch"
+start = 0x800ECC1C
+end = 0x800ECC2C
+hint = "Slot-0 actor record +0x234..+0x244 (16 bytes; 4 × u32). Anim dispatch pointer table. Pre = 4 × `0x8015CC30`; mid = 4 × `0x801621D0`. Constant: `ANIM_DISPATCH_PTR_TABLE_OFFSET`."
+
+[[scenarios.watchpoints]]
+label = "anim_record_header_post"
+start = 0x801621D0
+end = 0x801621E8
+hint = "Anim-record header at the post-animation dispatch pointer (mc4). 24 bytes: u32 len=0x18, _, _, u32 4 (frame_count?), u32 5, u32 0x00299307, u32 0x0140017E. Pre-animation save (mc3) reads zeros at this address; the loader has paged a different ANM record into this slot for the somersault."
+
+# ----------------------------------------------------------------------
+# mc5..mc9: legacy NOA / GALA character-level-up captures (battle scene
+# `map01`). Captured into the previous corpus rotation; tests against
+# them skip-pass when the scene fingerprint no longer matches the
+# expected level-up phase. Slot semantics retained here for reference:
+#
+#   mc5 = record-write frame (record stats + XP + rank counter applied)
+#   mc6 = live-copy frame    (live in-battle stats applied; HP_max /
+#                              MP_max / SP_max not yet settled)
+#   mc7 = doubles as Gala-pre AND Noa-settle (HP_max / MP_max / SP_max
+#         settled in live copy)
+#   mc8 = Gala record-write
+#   mc9 = Gala live-copy + settle
+#
+# Codified deltas: `engine_core::levelup::observations::noa_4_level_jump`
+# (Noa) and `gala_4_level_jump` (Gala). Phase split documented at
+# `engine_core::capture_observations::char_level_up`.
+#
+# When the user re-captures slot 4 for ANM-strike work the level-up
+# triplet test loses its phase-1 anchor; the test skips by design via
+# `require_slot_scenes` until a fresh anchor save replaces slot 4.
+# ----------------------------------------------------------------------
 [[scenarios]]
 slot = 5
 label = "noa_level_up_record_write"

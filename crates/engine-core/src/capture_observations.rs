@@ -623,6 +623,256 @@ pub mod char_level_up {
     }
 }
 
+/// Battle scene-init transition observation captured from a save pair:
+/// one save in the active field scene with the encounter armed but
+/// battle not yet entered, then one save with battle just initiated
+/// against the same encounter.
+///
+/// The captured pair is a `map01` battle scene with the formation cell
+/// at `0x8007BD0C` flipped from `00 00 00 00` (no formation) to
+/// `04 04 00 00` (count = 2, two copies of monster id `0x04`). The
+/// scene-bundle pool at `0x80084540` carries `map01` in both saves -
+/// the pre-battle save is on the field-pack-bearing side of the same
+/// scene rather than the world-map (battles layer over the active
+/// field scene rather than swapping it out).
+///
+/// Findings:
+///
+/// - The 168 KB region at `0x80124690..0x801503C4` flips from a
+///   field-scene payload (sample dialog text visible, e.g. the
+///   "Hold still, I am going to lick your wounds." string from the
+///   intro field) to battle-bundle data (vertex / TIM / actor records).
+///   This is the **battle-data init load window** - whatever overlay
+///   handler kicks the battle scene-init copies the battle bundle
+///   here.
+/// - The 16 KB region at `0x801CE808..0x801D3018` flips wholesale -
+///   this is the **battle-overlay scratch slice** the battle action
+///   handlers reset on entry. Distinct from the broader battle-action
+///   overlay code/data residency (which extends further up to
+///   `0x801F4000`).
+/// - The 8-slot battle actor pointer table at `0x801C9370+` (stride
+///   `0x60`) populates with 5 active slots (slots 0..2 = party,
+///   slots 3..4 = the two monsters, slots 5..7 cleared). Confirmed
+///   against the count-2 formation: only 2 monster slots filled.
+/// - The CD I/O state slice at `0x801FFCA0..0x801FFFFE` rewires
+///   pending sector reads as the battle bundle is paged in - a
+///   reliable "battle scene-init in flight" signature.
+/// - The bundle-pool extension at `0x80083680..0x80083820` carries
+///   ~80 bytes of battle-side function-pointer wiring; one slot at
+///   `0x800836F8` flips to `0xF41D0280` (= `FUN_80021DF4`, the
+///   per-frame actor tick), making the bundle-pool extension a
+///   reliable "battle ticker armed" signal.
+///
+/// The single remaining gap is the **stat-grant table LOADER**: a
+/// static helper (still in an uncaptured overlay slice) that reads
+/// the per-Seru stat-grant data off PROT entry `0x05C4` + sibling
+/// Seru blobs.
+///
+/// This save pair pins the **residency window** the loader writes
+/// into; the loader itself is not directly visible in either
+/// snapshot (it has finished by the time mc2 is captured).
+pub mod battle_init_overlay {
+    use super::ByteDelta;
+
+    /// 168 KB battle-bundle residency window: the field-scene payload
+    /// is overwritten here when battle scene-init runs. Computed from
+    /// the captured `mednafen-state diff` extent.
+    pub const BATTLE_BUNDLE_WINDOW: (u32, u32) = (0x80124690, 0x801503C4);
+
+    /// 16 KB battle-overlay scratch slice. Resets on battle entry;
+    /// distinct from the broader battle-action overlay residency at
+    /// `0x801CE800..0x801F4000`.
+    pub const OVERLAY_SCRATCH_WINDOW: (u32, u32) = (0x801CE808, 0x801D3018);
+
+    /// 8-slot battle actor pointer table; populated post-trigger.
+    pub const ACTOR_POOL_BASE: u32 = 0x801C9370;
+    /// Stride between adjacent actor-pointer slots (header bytes).
+    pub const ACTOR_POOL_SLOT_STRIDE: u32 = 0x60;
+    /// 8 slots: 0..2 party, 3..7 monsters (per the existing battle
+    /// pointer-table doc).
+    pub const ACTOR_POOL_SLOT_COUNT: u32 = 8;
+
+    /// Bundle-pool extension that picks up the per-frame actor tick
+    /// pointer when battle scene-init completes.
+    pub const BUNDLE_POOL_EXTENSION_BASE: u32 = 0x80083680;
+    /// Address inside the extension where the per-frame actor tick
+    /// pointer (`FUN_80021DF4 = 0x80021DF4`) lands once battle is up.
+    /// The slot holds a non-battle handler (`0x80024C50`) before
+    /// scene-init runs.
+    pub const ACTOR_TICK_FN_PTR_ADDR: u32 = 0x800836C8;
+    /// Expected value once battle scene-init completes.
+    pub const ACTOR_TICK_FN_PTR_VALUE: u32 = 0x80021DF4;
+
+    /// CD I/O state slice that re-wires while the battle bundle is
+    /// paged in. A non-zero diff over this window plus a stable
+    /// scene-name table is a reliable "battle scene-init in flight"
+    /// signature.
+    pub const CD_IO_STATE_WINDOW: (u32, u32) = (0x801FFCA0, 0x801FFFFE);
+
+    /// Formation cell address. Pre/post deltas: `00 00 00 00` →
+    /// `04 04 00 00` for the captured pair.
+    pub const FORMATION_CELL_ADDR: u32 = 0x8007BD0C;
+
+    /// Encounter delta against the captured pair (count=0 → count=2,
+    /// monster id 4 in slots 0..1). Independent of which encounter
+    /// the user captured - if a different formation is captured this
+    /// constant becomes documentation rather than an assertion.
+    pub const FORMATION_CELL_DELTAS: [ByteDelta; 2] = [
+        ByteDelta {
+            addr: FORMATION_CELL_ADDR,
+            before: 0x00,
+            after: 0x04,
+        },
+        ByteDelta {
+            addr: FORMATION_CELL_ADDR + 1,
+            before: 0x00,
+            after: 0x04,
+        },
+    ];
+}
+
+/// Battle action animation observation captured from a save pair:
+/// one save with the action menu armed but no animation in flight,
+/// and one save mid-action-animation (somersault / strike pose).
+///
+/// The captured pair shares the active scene `map01` and battle
+/// state. The actor record stride is `0x2D4` bytes; all observations
+/// here are offsets relative to a single actor record base
+/// (slot 0 base = `0x800EC9E8`).
+///
+/// Findings (unblocks PRD §2.1, the ANM opaque-record interpreter):
+///
+/// - The **per-actor anim-PC** lives at `+0x1D8..+0x1E8` (16 bytes).
+///   In the pre-animation save the window is mostly zero with a
+///   sentinel pair `01 77` at offset `+0x1D7..+0x1D8`; in the
+///   mid-animation save the window holds incrementing per-bone
+///   counters (e.g. `00 11 00 27 00 03 03 0F 0E 19 27 00`).
+/// - The **per-frame anim flag accumulator** lives at `+0x1F4..+0x205`
+///   (18 bytes). Pre-animation values are all zero; mid-animation
+///   the bytes monotonically transition to a stamped run of `0x11`
+///   bytes once the action engages.
+/// - A 4-pointer **animation dispatch table** lives at `+0x234..+0x244`
+///   (16 bytes; 4 × u32). Each pointer holds the same value (the
+///   active anim record). Pre-animation = `0x8015CC30`;
+///   mid-animation = `0x801621D0`. The pointer is bumped between
+///   the two captures by `+0x55A0` bytes - the loader has paged a
+///   different ANM record into a different position in the heap.
+/// - The anim-record header at the dispatch pointer (read from
+///   `0x801621D0`) shows the shape `[u32 len=0x18, _, _, u32 4,
+///   u32 5, u32 0x00299307, u32 0x0140017E]` - consistent with a
+///   small (24 byte) per-record control block carrying the kind
+///   word, frame count, dispatch flags, and the first opcode block.
+///
+/// These offsets bracket the per-actor anim state to a small named
+/// region; combined with a Ghidra dump of the per-record dispatch
+/// jump table (whose entry point is the value written into the
+/// dispatch pointer above) the per-kind opcodes can be lifted.
+pub mod battle_action_animation {
+    /// Actor record stride.
+    pub const ACTOR_RECORD_STRIDE: u32 = 0x2D4;
+
+    /// Slot 0 (party leader) actor record base. The 8-slot pool
+    /// continues at `+ ACTOR_RECORD_STRIDE` for each subsequent slot.
+    pub const SLOT0_ACTOR_RECORD_BASE: u32 = 0x800EC9E8;
+
+    /// Per-actor anim-PC region (16 bytes). Holds increment-style
+    /// per-bone or per-frame cursors.
+    pub const ANIM_PC_FIELD_OFFSET: u32 = 0x1D8;
+    /// Length of the anim-PC region.
+    pub const ANIM_PC_FIELD_LEN: u32 = 0x10;
+
+    /// Per-frame anim flag accumulator (18 bytes).
+    pub const ANIM_FRAME_FLAGS_OFFSET: u32 = 0x1F4;
+    /// Length of the flag accumulator.
+    pub const ANIM_FRAME_FLAGS_LEN: u32 = 0x12;
+
+    /// 4 × u32 anim dispatch pointer table.
+    pub const ANIM_DISPATCH_PTR_TABLE_OFFSET: u32 = 0x234;
+    /// 4 × u32 = 16 bytes.
+    pub const ANIM_DISPATCH_PTR_TABLE_LEN: usize = 16;
+
+    /// Resolve the absolute address of the dispatch-pointer slot 0
+    /// for a given actor record base.
+    pub fn dispatch_ptr_addr(actor_record_base: u32) -> u32 {
+        actor_record_base + ANIM_DISPATCH_PTR_TABLE_OFFSET
+    }
+
+    /// Read the four u32 dispatch pointers from a contiguous main-RAM
+    /// slice. Returns `None` if the actor record base is outside the
+    /// PSX RAM window or the slice is too short.
+    pub fn read_dispatch_pointers(main_ram: &[u8], actor_record_base: u32) -> Option<[u32; 4]> {
+        let off =
+            (actor_record_base - 0x80000000) as usize + ANIM_DISPATCH_PTR_TABLE_OFFSET as usize;
+        let bytes = main_ram.get(off..off + ANIM_DISPATCH_PTR_TABLE_LEN)?;
+        let mut out = [0u32; 4];
+        for (i, slot) in out.iter_mut().enumerate() {
+            let chunk = &bytes[i * 4..i * 4 + 4];
+            *slot = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        }
+        Some(out)
+    }
+}
+
+/// Battle item-use observation captured from a save pair: one save
+/// with battle just initiated, one save with the active party member
+/// using a Healing Leaf (consumable HP-restore item, NOT Fire Book I -
+/// the spell-learn writer for the displayed-skills array tracked in
+/// PRD §2.6 needs a separate capture).
+///
+/// The captured pair shares the `map01` battle scene. Both the pre
+/// and post saves have the formation cell populated at
+/// `0x8007BD0C..0x8007BD0F = 04 04 00 00` (a 2-monster encounter is
+/// active across both frames).
+///
+/// Findings:
+///
+/// - The post-event save shifts the entire field-pack residency: the
+///   loader-base pointer at `_DAT_8007B8D0` flips from `0x8014BD30`
+///   (mc2 / pre-event) to `0x800ABA4C` (mc3 / post-event), implying
+///   the menu / item-use pipeline rebases the active scene asset
+///   buffer for the item handler. The bundle pool at `0x80084540`
+///   stays on `map01` across both, so this is an internal sub-mode
+///   transition rather than a scene swap.
+/// - The script-VM context block at `0x801BA7DC..0x801BADEC` shifts
+///   wholesale (~660 bytes), consistent with the menu/item dispatch
+///   path running to completion (item picker → target picker →
+///   action commit → animation queue).
+/// - Actor pool slot 0..4 records (5 active actors in the count-2
+///   formation: 3 party + 2 monsters) are unchanged in identity but
+///   carry per-frame motion state deltas. Slots 5..7 are zeroed in
+///   both saves.
+/// - The "fire-book +0x185" interpretation gap is NOT closed by this
+///   pair - this is a Healing Leaf use, not a spell-learn item, and
+///   the displayed-skills writer for `+0x185` does not fire. The
+///   pair does pin the **item-use battle-event overlay residency**
+///   (the bundle / overlay scratch differences are stable signatures
+///   for "an item handler is running") even though the specific
+///   Fire Book writer cannot be lifted from these saves alone.
+pub mod item_use_battle_event {
+    /// Field-pack base pointer cell. Flips between pre / post saves
+    /// when the item-use sub-mode reseats the active scene buffer.
+    pub const FIELD_PACK_BASE_PTR_ADDR: u32 = 0x8007B8D0;
+
+    /// Pre-event value (battle-init residency).
+    pub const FIELD_PACK_BASE_PTR_PRE: u32 = 0x8014BD30;
+    /// Post-event value (item-use residency).
+    pub const FIELD_PACK_BASE_PTR_POST: u32 = 0x800ABA4C;
+
+    /// Script-VM context block window. ~660 bytes shift across the
+    /// pair as the menu / item / target / commit pipeline runs.
+    pub const SCRIPT_VM_CTX_WINDOW: (u32, u32) = (0x801BA7DC, 0x801BADEC);
+
+    /// 8-slot battle actor pool. In the count-2 formation, slots 0..4
+    /// are populated (3 party + 2 monsters); slots 5..7 are zero in
+    /// both saves and remain zero across the pair.
+    pub const ACTOR_POOL_BASE: u32 = 0x801C9370;
+
+    /// Number of active actor slots in the count-2 formation.
+    pub const ACTIVE_SLOTS: u32 = 5;
+    /// Total slots; trailing entries are zero-armed.
+    pub const TOTAL_SLOTS: u32 = 8;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -840,5 +1090,39 @@ mod tests {
         // Pre-event entry at position 0 (`0x0C`) appears at position 1
         // post-event - consistent with insertion at the front.
         assert_eq!(vahn_fire_book_use::AFTER[2], vahn_fire_book_use::BEFORE[1]);
+    }
+
+    #[test]
+    fn battle_init_window_extents_consistent() {
+        let (lo, hi) = battle_init_overlay::OVERLAY_SCRATCH_WINDOW;
+        assert!(hi > lo);
+        assert_eq!(hi - lo, 0x4810); // ~16 KB, matches captured diff extent
+        let (lo, hi) = battle_init_overlay::BATTLE_BUNDLE_WINDOW;
+        assert_eq!(hi - lo, 0x2BD34); // ~168 KB, matches captured diff extent
+    }
+
+    #[test]
+    fn battle_action_anim_offsets_are_in_actor_record() {
+        // Actor record stride = 0x2D4. All anim-state offsets must fall
+        // within a single record.
+        let stride = 0x2D4u32;
+        for &off in &[
+            battle_action_animation::ANIM_PC_FIELD_OFFSET,
+            battle_action_animation::ANIM_FRAME_FLAGS_OFFSET,
+            battle_action_animation::ANIM_DISPATCH_PTR_TABLE_OFFSET,
+        ] {
+            assert!(
+                off < stride,
+                "+0x{off:X} should fit in the 0x{stride:X}-byte record"
+            );
+        }
+    }
+
+    #[test]
+    fn battle_action_anim_dispatch_table_size_is_4_pointers() {
+        assert_eq!(
+            battle_action_animation::ANIM_DISPATCH_PTR_TABLE_LEN,
+            4 * std::mem::size_of::<u32>()
+        );
     }
 }

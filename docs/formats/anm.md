@@ -138,6 +138,44 @@ See `ghidra/scripts/funcs/overlay_0897_801de840.txt` line ~3389 for the
 disassembly. The full handler body requires a targeted dump of
 `0x801e2630..0x801e2670` within `overlay_0897.bin`.
 
+## Per-actor anim state offsets
+
+A pre-action / mid-action save pair (a quiet battle frame vs an
+in-flight somersault strike) pins the per-actor anim state to a small
+named region inside the `0x2D4`-byte battle actor record. Slot-0 actor
+record base = `0x800EC9E8`; the slots continue at `+ 0x2D4` for each
+subsequent slot.
+
+| Offset | Length | Purpose |
+|---|---|---|
+| `+0x1D8` | 16 B | Per-actor anim-PC. Pre-anim is mostly zero with a sentinel `01 77` at `+0x1D7..+0x1D8`; mid-anim holds incrementing per-bone counters (e.g. `00 11 00 27 00 03 03 0F 0E 19 27 00`). |
+| `+0x1F4` | 18 B | Per-frame anim flag accumulator. Pre-anim values are zero; mid-anim transitions to a stamped run of `0x11` bytes once the action engages. |
+| `+0x234` | 16 B | 4-pointer anim dispatch table (4 × u32, all the same value). Pre-anim = `0x8015CC30`; mid-anim = `0x801621D0`. The pointer is bumped by `+0x55A0` bytes between the two captures - the loader has paged a different ANM record into a different position in the heap for the strike. |
+
+The anim-record header at the post-anim dispatch pointer reads as a
+24-byte control block:
+
+```
++0x00  u32  len = 0x18
++0x04  u32  reserved
++0x08  u32  reserved
++0x0C  u32  field_C  (= 4 in the captured record - frame count?)
++0x10  u32  field_10 (= 5)
++0x14  u32  field_14 (= 0x00299307 - dispatch flags / first opcode word?)
++0x18  u32  field_18 (= 0x0140017E - first opcode block)
+```
+
+These offsets are codified as
+[`engine_core::capture_observations::battle_action_animation`](../../crates/engine-core/src/capture_observations.rs)
+and exercised by the disc-gated test
+`battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window`
+in `crates/mednafen/tests/real_saves.rs`.
+
+The per-record dispatch jump table whose entry point is the value at
+`+0x234` (the four-copy pointer) still requires a Ghidra dump - the
+pinned offsets above bracket the runtime state but do not yet cover the
+opcode set itself.
+
 ## Allocator preamble
 
 When the dispatcher (`FUN_8001f05c` case 6) loads ANM data, the malloc'd
