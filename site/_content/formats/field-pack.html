@@ -187,11 +187,87 @@ _clear a3</code></pre>
   <p>The 97-slot field-pack data is consumed at <strong>static offsets</strong> - there is no slot-iteration loop in the captured code. The byte-identical schema confirms it: the consumer treats the buffer as a fixed in-RAM layout template and reads NPC/event/collision slots by hard-coded index, not by walking the offset table. Per-NPC and per-event slot handlers are called indirectly through the descriptor table; their specific entry points require capturing a full scene-init execution trace (not yet available in the overlay dumps).</p>
 </section>
 
+<section class="doc-section" id="loader-chain">
+  <h2>Loader chain</h2>
+  <p>Tracing the <code>town01</code> save <code>mc2</code> (CDNAME <code>town01</code>, scene <code>0x03</code>) through the captured overlays + <code>SCUS_942.54</code> pins the runtime path that brings a field-pack file into RAM:</p>
+<pre><code>FUN_801D6704  (overlay 0897, scene-transition orchestrator)
+  └── FUN_8001F7C0(buffer_ptr, scene_name_table=0x80084548,
+                   scene_index=0x80084540, 0)         ; scene asset loader (SCUS)
+        ├── builds path  DATA\FIELD\&lt;scene&gt;           ; e.g. DATA\FIELD\town01
+        ├── loads it via FUN_8003E6BC(path, buffer_ptr)
+        ├── builds path  h:\PROT\FIELD\&lt;scene&gt;\efect.dat
+        └── loads efect.dat at  buffer_ptr + 0x12800
+              and writes  buffer_ptr + 0x12800  to  _DAT_8007B8D0
+  └── FUN_80020224  (descriptor-pair walker)
+        └── FUN_8001F05C(descriptor)                  ; per-asset-type dispatcher
+              … iterates table at _DAT_8007B85C</code></pre>
+  <p>The scene transition itself is initiated by <code>FUN_8001FD44(scene_name, sub_index)</code> - a static SCUS function that strcpy's the new scene name into the scene-name table at <code>0x80084548</code>, copies the previous scene name into <code>0x80084558</code>, and OR-flips the <code>0x40</code> bit in <code>_DAT_1F800394</code> (pending-transition story flag). Dialog-overlay handlers like <code>FUN_801D1344</code> call this directly when a story event needs to warp - e.g. the <code>town01</code> warp requires <code>_DAT_1F800394 &amp; 0x04000000 != 0</code> plus a couple of menu-state flags.</p>
+  <p><code>buffer_ptr</code> is read from scratchpad cell <code>0x1F8003EC</code> (the heap-resident scene asset buffer pointer). Per-scene values vary because the loader allocates from a pool. The asset descriptor table at <code>_DAT_8007B85C = 0x8015CBD0</code> is <strong>statically allocated</strong> and identical across captured saves; its entries point into the per-scene field-pack region above.</p>
+</section>
+
+<section class="doc-section" id="per-scene-runtime-ram-base">
+  <h2>Per-scene runtime RAM base</h2>
+  <p>The active field-pack RAM base is recoverable from any save by reading <code>_DAT_8007B8D0</code> and subtracting <code>0x12800</code>. The constants and a <code>recover_base()</code> helper live in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/src/capture_observations.rs"><code>crates/engine-core/src/capture_observations.rs</code></a> under <code>field_pack_load</code>.</p>
+<table>
+<thead><tr>
+<th>Save</th>
+<th>CDNAME</th>
+<th>scene <code>0x80084540</code></th>
+<th><code>_DAT_8007B8D0</code></th>
+<th>Field-pack RAM base</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>mc2</code></td>
+<td><code>town01</code></td>
+<td><code>0x03</code></td>
+<td><code>0x8014BD30</code></td>
+<td><code>0x80139530</code></td>
+</tr>
+<tr>
+<td><code>mc0</code></td>
+<td><code>town0c</code></td>
+<td><code>0x15</code></td>
+<td><code>0x800B4DF0</code></td>
+<td><code>0x800A25F0</code></td>
+</tr>
+</tbody>
+</table>
+  <p>The 75 KB region between the field-pack base and <code>_DAT_8007B8D0</code> (<code>base..base + 0x12800</code>) holds the loaded field asset; the slot-96 trailing zone of the schema falls inside it, and <code>efect.dat</code> lands immediately after.</p>
+</section>
+
+<section class="doc-section" id="runtime-vs-on-disc">
+  <h2>Runtime layout differs from on-disc schema</h2>
+  <p>Reading the <code>mc2</code> save at <code>base + 0x60</code> (where on-disc slot 0 sits) yields <strong>post-processed GP0 GPU primitive packets</strong>, not the raw NPC / event-trigger / collision records the disc bytes encode. The 91 KB schema describes the <strong>on-disc</strong> logical layout; a loader transforms the on-disc preamble into a runtime structure that mixes:</p>
+<ul>
+<li>GP0-shaped primitive packets (visible at <code>base + 0x60</code>)</li>
+<li>The 400 KB shared scene-asset pool at <code>0x800C505C..0x80139527</code> (mc2 vs mc0 diff) the loader fills before / alongside the field-pack region - sibling buffers for TIM atlases, primitive scratch, descriptor-driven data</li>
+<li>The static asset descriptor table at <code>0x8015CBD0</code> whose entries point into the per-scene region</li>
+</ul>
+  <p>A direct preamble-byte → runtime-RAM-cell mapping requires capturing the loader <strong>during</strong> a scene transition (a frame between "scene change requested" and "field-pack region populated"). The current single-save snapshot is post-load, so only the FINAL runtime layout is observable, not the disc-byte-to-RAM-cell projection.</p>
+</section>
+
 <section class="doc-section" id="mednafen-state-diff-observations">
   <h2>Mednafen-state diff observations</h2>
-  <p>A prior diff over the engine RAM range <code>0x801C0000..0x80200000</code> lit up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer. The field-pack consumer (per-slot reader) is one of the candidates for what lives there; pinning down which routine in the overlay reads which schema slot still requires a writer-search pass through the captured overlay programs.</p>
-  <h3>Town residency reference</h3>
-  <p>The mednafen save corpus includes one town-resident state (CDNAME label <code>town0c</code>, scene index <code>0x15</code> - the first town save in the corpus). Cross-scene RAM diffs against any field save (e.g. one captured in <code>map01</code>) surface the per-town overlay payload + scene-bundle pool layout for <code>town0c</code> specifically. <strong><code>town0c</code> is NOT one of the four PROT entries that match the field-pack magic</strong> (those live in the <code>town01</code> block: <code>0002_gameover_data</code>, <code>0003_town01</code>, <code>0004_town01</code>, <code>0005_town01</code>). Pinning the field-pack preamble → slot mapping needs an additional save inside the <code>town01</code> block specifically; <code>town0c</code> serves as a generic "town residency" reference but does not carry the field-pack data on its own. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> and the [<code>town01_save_documents_active_scene_label</code>] disc-gated test for the recorded scene index + label.</p>
+  <p>A prior diff over the engine RAM range <code>0x801C0000..0x80200000</code> lit up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer.</p>
+  <h3>Town01 vs town0c diff (mc2 ↔ mc0, full main RAM)</h3>
+<table>
+<thead><tr>
+<th>Region</th>
+<th>Bytes changed</th>
+<th>Interpretation</th>
+</tr></thead>
+<tbody>
+<tr><td><code>0x800C505C..0x80139527</code></td><td>~402 KB</td><td>Shared scene-asset pool; ends just before mc2's field-pack base</td></tr>
+<tr><td><code>0x801853F5..0x801B93D0</code></td><td>~205 KB</td><td>Heap-resident sibling region (<code>0x80185000..0x801B9000</code>)</td></tr>
+<tr><td><code>0x8015CBD0..0x80184C89</code></td><td>~152 KB</td><td>Asset descriptor table contents (base = <code>0x8015CBD0</code>)</td></tr>
+<tr><td><code>0x80098900..0x800BE5FC</code></td><td>~132 KB</td><td>Other heap-resident scene buffers</td></tr>
+<tr><td><code>0x80084140..0x80084398</code></td><td>526 B</td><td>Scene-bundle metadata (pre-<code>SCENE_NAME_TABLE</code>)</td></tr>
+<tr><td><code>0x801F3488..0x801F69D8</code></td><td>7.6 KB</td><td>Just-before the 9 KB MIPS-overlay slot - post-overlay scratch</td></tr>
+</tbody>
+</table>
+  <p>The pinned residency window (9 KB MIPS overlay at <code>0x801F69D8..0x801F8F02</code>) does NOT change between mc2 and mc0 - both are town-resident saves and share a town overlay there. Engine-relevant residency differences live in the ~933 KB of heap-pool deltas above.</p>
+  <p>The disc-gated tests <code>town01_field_pack_save_documents_active_scene_and_ram_base</code> and <code>town01_vs_town0c_diff_lights_up_field_pack_pool</code> (in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/tests/real_saves.rs"><code>crates/mednafen/tests/real_saves.rs</code></a>) exercise both the static-scene-label assertion and the empirical heap-pool diff against the user's actual saves.</p>
 </section>
 
 <section class="doc-section" id="tooling">
@@ -201,7 +277,7 @@ asset field-pack &lt;PATH&gt; --all-slots    # all 97 slot offsets/sizes
 asset field-pack &lt;PATH&gt; --groups       # cluster slots by size (semantic index)
 asset field-pack-scan &lt;DIR&gt;            # find every field-pack in a PROT dir</code></pre>
   <h3>Rust API</h3>
-  <p><code>legaia_asset::field_pack::FieldPack</code> exposes typed accessors:</p>
+  <p><code>legaia_asset::field_pack::FieldPack</code> exposes typed accessors over a parsed file:</p>
 <pre><code>// Classify a slot by index.
 let kind: Option&lt;SlotKind&gt; = fp.slot_kind(i);
 
@@ -212,7 +288,29 @@ for (kind, bytes) in fp.iter_slots(buf) {
     //                   CollisionBox, CompactRecord, MediumRecord,
     //                   SingleRecord, LastSlot}
 }</code></pre>
-  <p><code>SlotKind</code> is derived from the slot's byte size and covers the major structural clusters identified in the size table above.  Per-slot interpretation beyond size-clustering is deferred pending a consumer trace (see "Why the magic isn't load-bearing" above).</p>
-  <p>The detector is reliable for classification today; per-slot interpretation is bracketed by the cluster table above and pending a per-scene consumer trace for the final mapping.</p>
+  <p>For static schema enumeration without holding a file:</p>
+<pre><code>use legaia_asset::field_pack::{CANONICAL_SCHEMA, canonical_slot, iter_canonical_slots};
+
+// 97-element static array of u32 LE schema offsets.
+assert_eq!(CANONICAL_SCHEMA[0], 0x60);
+
+// Per-slot accessor: returns (offset, size) where size is None for slot 96.
+let (off, size) = canonical_slot(5).unwrap();
+
+// Iterate (index, kind, offset, size) over the canonical schema.
+for (i, kind, off, size) in iter_canonical_slots() { /* ... */ }</code></pre>
+  <p><code>SlotKind</code> is derived from the slot's byte size and covers the major structural clusters identified in the size table above.</p>
+  <p><code>legaia_engine_core::capture_observations::field_pack_load</code> exposes the runtime constants:</p>
+<pre><code>use legaia_engine_core::capture_observations::field_pack_load;
+
+// Pin the heap-allocated RAM base from a saved main-RAM image.
+let base = field_pack_load::recover_base(main_ram).expect("scene loaded");
+
+// Walk the schema in RAM at this base.
+for (i, _kind, off, _size) in legaia_asset::field_pack::iter_canonical_slots() {
+    let abs = base + off;
+    /* ... */
+}</code></pre>
+  <p>The detector is reliable for classification today; per-slot interpretation beyond size-clustering is bracketed by the cluster table above and pending a per-scene loader trace for the final on-disc → RAM projection.</p>
 </section>
 

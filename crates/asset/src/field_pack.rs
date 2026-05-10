@@ -108,6 +108,46 @@ pub const SCHEMA_FIRST: u32 = 0x60;
 /// Last value in the schema (= start of the 97th abstract record).
 pub const SCHEMA_LAST: u32 = 0x16651;
 
+/// The 97 schema slot offsets. Byte-identical across every retail
+/// field-pack file (MD5 `edcfdf1575889d63d2077c396089d7f3`); exposed as a
+/// static array so callers can interpret schema slots without parsing a
+/// concrete file. Sourced from `0005_town01.BIN` which has the schema
+/// table at byte offset 0x4 (preamble-less canonical layout).
+#[rustfmt::skip]
+pub const CANONICAL_SCHEMA: [u32; RECORD_COUNT] = [
+    0x00060, 0x00061, 0x020E9, 0x04171, 0x061F9, 0x06609, 0x06821, 0x06A39,
+    0x06C51, 0x06E69, 0x07081, 0x07299, 0x074B1, 0x076C9, 0x078E1, 0x07AF9,
+    0x07D11, 0x07F29, 0x08141, 0x08359, 0x08571, 0x08789, 0x089A1, 0x08BB9,
+    0x08DD1, 0x08FE9, 0x09201, 0x09541, 0x09751, 0x097E1, 0x098B1, 0x0B939,
+    0x0BA49, 0x0BE59, 0x0C069, 0x0C279, 0x0C589, 0x0C799, 0x0C829, 0x0C8B9,
+    0x0C949, 0x0C9D9, 0x0EA61, 0x0FA71, 0x10A81, 0x10E91, 0x112A1, 0x113B1,
+    0x114C1, 0x11551, 0x115E1, 0x116F1, 0x11781, 0x11811, 0x11A21, 0x11B51,
+    0x11C61, 0x11D61, 0x12371, 0x12401, 0x12511, 0x12621, 0x12A31, 0x12C41,
+    0x12CD1, 0x12D61, 0x12E61, 0x13271, 0x13371, 0x13481, 0x13691, 0x13821,
+    0x138B1, 0x13BC1, 0x13CD1, 0x13EE1, 0x13F71, 0x14081, 0x14191, 0x142A1,
+    0x143B1, 0x14501, 0x14611, 0x14741, 0x14BD1, 0x14CE1, 0x14EF1, 0x14F81,
+    0x15091, 0x152A1, 0x15371, 0x15481, 0x15991, 0x15A21, 0x15C31, 0x16441,
+    0x16651,
+];
+
+/// Convenience accessor: return slot `i` of the [`CANONICAL_SCHEMA`] as
+/// `(offset, size)`. Size is `None` for the last slot.
+pub fn canonical_slot(i: usize) -> Option<(u32, Option<u32>)> {
+    let off = *CANONICAL_SCHEMA.get(i)?;
+    let size = CANONICAL_SCHEMA.get(i + 1).map(|next| next - off);
+    Some((off, size))
+}
+
+/// Iterate `(slot_index, kind, offset, size)` over the canonical
+/// 97-slot schema. Useful for downstream tooling that wants to enumerate
+/// the static schema without holding any concrete field-pack buffer.
+pub fn iter_canonical_slots() -> impl Iterator<Item = (usize, SlotKind, u32, Option<u32>)> {
+    (0..RECORD_COUNT).map(|i| {
+        let (off, size) = canonical_slot(i).unwrap();
+        (i, SlotKind::from_size(size), off, size)
+    })
+}
+
 /// Parsed location and slot layout of a fieldpack inside a PROT entry buffer.
 #[derive(Debug, Clone, Serialize)]
 pub struct FieldPack {
@@ -436,5 +476,48 @@ mod tests {
         for (_kind, bytes) in fp.iter_slots(&buf) {
             assert!(bytes.is_empty());
         }
+    }
+
+    #[test]
+    fn canonical_schema_anchors_match_global_constants() {
+        assert_eq!(CANONICAL_SCHEMA.len(), RECORD_COUNT);
+        assert_eq!(CANONICAL_SCHEMA[0], SCHEMA_FIRST);
+        assert_eq!(CANONICAL_SCHEMA[RECORD_COUNT - 1], SCHEMA_LAST);
+    }
+
+    #[test]
+    fn canonical_schema_is_strictly_ascending() {
+        for w in CANONICAL_SCHEMA.windows(2) {
+            assert!(w[0] < w[1], "schema must be strictly ascending");
+        }
+    }
+
+    #[test]
+    fn canonical_slot_returns_size_for_inner_slots_and_none_for_last() {
+        assert_eq!(canonical_slot(0), Some((0x60, Some(1))));
+        assert_eq!(canonical_slot(1), Some((0x61, Some(0x2088))));
+        assert_eq!(canonical_slot(RECORD_COUNT - 1), Some((SCHEMA_LAST, None)));
+        assert_eq!(canonical_slot(RECORD_COUNT), None);
+    }
+
+    #[test]
+    fn iter_canonical_slots_yields_record_count_with_known_kinds() {
+        let mut npc_count = 0usize;
+        let mut event_count = 0usize;
+        let mut collision_count = 0usize;
+        let mut tim_page_count = 0usize;
+        for (_, kind, _, _) in iter_canonical_slots() {
+            match kind {
+                SlotKind::NpcRecord => npc_count += 1,
+                SlotKind::EventTrigger => event_count += 1,
+                SlotKind::CollisionBox => collision_count += 1,
+                SlotKind::TimPage => tim_page_count += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(npc_count, 21);
+        assert_eq!(event_count, 17);
+        assert_eq!(collision_count, 16);
+        assert_eq!(tim_page_count, 5);
     }
 }

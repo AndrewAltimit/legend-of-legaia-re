@@ -16,92 +16,16 @@ filename_pattern = "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{s
 # (Left unset here so the manifest is portable.)
 
 # ----------------------------------------------------------------------
-# mc0 - Town-resident state (Rim Elm). The first town save in the corpus.
-# Scene index `0x15` / CDNAME label `town0c`. Useful for any town-context
-# diff that needs an in-town reference (NPC dialog state, town-overlay
-# residency, town-vs-field RAM-layout deltas).
-#
-# Note: the four PROT entries that match the field-pack magic
-# (`0002_gameover_data`, `0003_town01`, `0004_town01`, `0005_town01`) live
-# in the `town01` block, not `town0c`. Pinning the field-pack preamble →
-# slot mapping needs a second town save inside `town01` specifically;
-# `town0c` is a useful generic "town residency" reference but does not
-# carry the field-pack data on its own.
+# mc0 - Rim Elm next to the Genesis Tree (CDNAME `town0c`, scene 0x15).
+# Regular town residency; useful as a generic "town overlay loaded"
+# reference. `town0c` does NOT use the field-pack format; for the
+# field-pack save see mc2 (`town01` intro Rim Elm).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 0
-label = "town_rim_elm"
-description = "Rim Elm town (in-scene, CDNAME `town0c`)"
-topics = ["town overlay", "scene_bundle", "field-pack reference"]
-diff_against = [1, 2]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: index 0x15 (town0c). Diff vs mc1 (map01) to see what scene-init writes per scene."
-
-[[scenarios.watchpoints]]
-label = "town_overlay_window"
-start = 0x801F69D8
-end = 0x801F8F02
-hint = "9 KB MIPS-overlay slot identified earlier; town overlay populates here."
-
-# ----------------------------------------------------------------------
-# mc1 - Pre-encounter walking state (CDNAME `map01`, outskirts of Rim Elm).
-# Save just BEFORE a step that triggers the encounter. Pair with mc2 to
-# crack the encounter-trigger write footprint (PRD §3.6 / encounter table
-# runtime).
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 1
-label = "pre_encounter"
-description = "Walking the field, one step before an encounter triggers (`map01`)"
-topics = ["encounter table base", "field state", "navmesh"]
-diff_against = [2, 3]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: index 0x55 (map01). Same scene as mc2; diff isolates encounter-trigger writes."
-
-[[scenarios.watchpoints]]
-label = "battle_actor_pool"
-start = 0x801C9300
-end = 0x801CA000
-hint = "Empty in mc1 (field state); populated in mc2 (battle init). Diff mc1↔mc2 surfaces actor-pool init writes."
-
-[[scenarios.watchpoints]]
-label = "battle_overlay_window"
-start = 0x801CE808
-end = 0x801F3818
-hint = "133 KB battle overlay. Loaded between mc1 (field) and mc2 (battle); diff measures the overlay payload size."
-
-[[scenarios.watchpoints]]
-label = "navmesh_candidate"
-start = 0x80100000
-end = 0x80120000
-hint = "Suspected per-scene navmesh window; diff mc1↔mc3 (different field scene) to see scene-data writes."
-
-# ----------------------------------------------------------------------
-# mc2 - Post-encounter battle init (CDNAME `map01`).
-# Save just AFTER battle init, same scene as mc1. Diff mc1↔mc2 surfaces
-# encounter-trigger write footprint.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 2
-label = "post_encounter"
-description = "Battle just initiated (encounter triggered from `map01`)"
-topics = ["encounter resolution", "battle scene init", "actor pool"]
+label = "town0c_rim_elm_genesis_tree"
+description = "Rim Elm next to the Genesis Tree (CDNAME `town0c`, scene 0x15)"
+topics = ["town overlay", "scene_bundle", "town residency reference"]
 diff_against = [1, 3]
 
 [scenarios.overlay_slice]
@@ -112,94 +36,147 @@ end = 0x80200000
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene still 0x55 (map01); battle context layered on top."
+hint = "Active scene: index 0x15 (town0c). Diff vs mc2 (town01) to see the field-pack vs non-field-pack town shape difference."
 
 [[scenarios.watchpoints]]
-label = "battle_actor_pool"
-start = 0x801C9370
-end = 0x801C9900
-hint = "8-slot actor pointer table; populated post-encounter. Slot stride observed in diff = 0x60."
+label = "town_overlay_window"
+start = 0x801F69D8
+end = 0x801F8F02
+hint = "9 KB MIPS-overlay slot identified earlier; town overlay populates here."
 
 [[scenarios.watchpoints]]
-label = "encounter_resolution_globals"
-start = 0x80083000
-end = 0x80084000
-hint = "Scene-bundle / sound-pool region; ~600 bytes change between mc1 and mc2 - likely encounter formation + BGM resolution."
+label = "field_pack_ram_base_pointer"
+start = 0x8007B8D0
+end = 0x8007B8D4
+hint = "_DAT_8007B8D0 = scene-asset load destination + 0x12800. mc0 reads `f0 4d 0b 80` => 0x800B4DF0; field-pack base for town0c is 0x800A25F0 (= 0x800B4DF0 - 0x12800)."
 
 # ----------------------------------------------------------------------
-# mc3 - Drake-Castle battle (CDNAME `dolk`). Steady-state battle in a
-# different scene than mc2; useful as the "different battle, different
-# scene" diff partner. Also the move-table boot-path scene - `dolk` block
-# scene index `0x3C` populates `MOVE` base at `0x800E412C`.
+# mc1 - Rim Elm cave (the save-point room). Same CDNAME `town0c` as mc0
+# but a different sub-area of the town. Useful for sub-area-internal
+# diffs - everything that survives identical CDNAME residency but
+# different rooms.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 1
+label = "town0c_rim_elm_cave"
+description = "Rim Elm cave with save point (CDNAME `town0c`, scene 0x15)"
+topics = ["sub-area diff", "town overlay residency"]
+diff_against = [0, 3]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: index 0x15 (town0c). Same scene as mc0 / mc3; differences here are sub-area transitions only."
+
+# ----------------------------------------------------------------------
+# mc2 - Rim Elm intro (CDNAME `town01`, scene 0x03) — the field-pack
+# save. This is the key save for §2.5 field-pack mapping work.
+# `town01` is the very-first scripted town in the corpus (entry-point of
+# the game) and is the only block whose first three PROT entries
+# (0003/0004/0005) match the field-pack magic 0x01059B84.
+#
+# The active field-pack RAM base for this save is 0x80139530 (computed
+# as `_DAT_8007B8D0 - 0x12800` where `_DAT_8007B8D0 = 0x8014BD30` for
+# this save). Per-scene base; see `engine_core::capture_observations::field_pack_load`.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 2
+label = "town01_intro_rim_elm"
+description = "Rim Elm intro (CDNAME `town01`, scene 0x03) - field-pack scene"
+topics = ["field-pack RAM layout", "scene asset loader", "town01 block"]
+diff_against = [0, 1]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: index 0x03 (town01). The 8-byte block at +0x54 carries `03 00 00 00` then `00 01 02 03` (sub-PROT-entry list within the town01 block)."
+
+[[scenarios.watchpoints]]
+label = "field_pack_ram_region"
+start = 0x80139530
+end = 0x8014BD30
+hint = "Field-pack RAM region for town01 - 75 KB asset bundle loaded by FUN_8001f7c0. Schema slot 0 sits at base+0x60 (= 0x80139590); slot 96 at base+0x16651 (= 0x8014FB81 - hits the trailing zone). Contents at base+0x60 are post-processed GP0 GPU primitive packets, NOT the raw schema-shaped on-disc records."
+
+[[scenarios.watchpoints]]
+label = "field_pack_ram_base_pointer"
+start = 0x8007B8D0
+end = 0x8007B8D4
+hint = "_DAT_8007B8D0 - the loader writes `base + 0x12800` here. mc2 reads `30 bd 14 80` => 0x8014BD30; subtract 0x12800 to recover field-pack base = 0x80139530."
+
+[[scenarios.watchpoints]]
+label = "asset_descriptor_table_base"
+start = 0x8007B85C
+end = 0x8007B860
+hint = "_DAT_8007B85C - asset descriptor table pointer. Identical across mc2 and mc0 (both = 0x8015CBD0); the descriptor table is statically allocated and indexes into the per-scene field-pack RAM region above."
+
+[[scenarios.watchpoints]]
+label = "scene_asset_pool"
+start = 0x800C5000
+end = 0x80139530
+hint = "Heap-resident scene asset pool. mc2 vs mc0 surfaces ~400 KB of differences here - sibling buffers (TIM atlases, primitive scratch, descriptor-driven data) the loader fills before / alongside the field-pack region."
+
+# ----------------------------------------------------------------------
+# mc3 - Rim Elm shop (CDNAME `town0c`, scene 0x15). Third town0c
+# sub-area save in the corpus.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 3
-label = "battle_drake_castle"
-description = "Battle in Drake Castle (CDNAME `dolk`, scene index 0x3C)"
-topics = ["move-table boot path", "battle scene init", "scene-vs-scene diff"]
-diff_against = [2, 4]
+label = "town0c_rim_elm_shop"
+description = "Rim Elm shop (CDNAME `town0c`, scene 0x15)"
+topics = ["sub-area diff", "shop entry context"]
+diff_against = [0, 1]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "move_table_base"
-start = 0x8007B888
-end = 0x8007B89C
-hint = "MOVE base in `dolk` is `0x800E412C` (cf. eighth post-#26 batch trace)."
-
-[[scenarios.watchpoints]]
-label = "battle_actor_pool"
-start = 0x801C9370
-end = 0x801C9900
-hint = "Different formation than mc2 - stride identical, contents differ."
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: index 0x15 (town0c). Same scene as mc0 / mc1; differences here are sub-area transitions only."
 
 # ----------------------------------------------------------------------
-# mc4 - Battle in Drake Castle, command menu open, cursor parked one
-# input away from using "Fire Book I" on Vahn (the Hyper-Arts unlock item
-# in retail). Pair with mc5 to crack the per-character Hyper-Arts learn
-# write footprint.
+# mc4 - The spring between Rim Elm and Drake Castle (CDNAME `izumi`,
+# scene 0x1E). First non-town field save in the corpus and a useful
+# "small linear field" reference.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 4
-label = "pre_fire_book"
-description = "Battle command menu, about to use Fire Book I on Vahn (`dolk`)"
-topics = ["item use", "hyper arts", "menu cursor"]
-diff_against = [5, 6]
+label = "izumi_spring"
+description = "Spring between Rim Elm and Drake Castle (CDNAME `izumi`, scene 0x1E)"
+topics = ["small field scene", "transition area"]
+diff_against = [0, 5]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "vahn_record"
-start = 0x80084708
-end = 0x80084B1C
-hint = "Vahn's character record (stride 0x414). Hyper-Arts list at +0x185..+0x18C; diff vs mc5 shows the list grow by one entry."
-
-[[scenarios.watchpoints]]
-label = "inventory_window"
-start = 0x80120000
-end = 0x80140000
-hint = "Inventory store; Fire Book consumption decrements its slot count between mc4 and mc5."
-
-[[scenarios.watchpoints]]
-label = "battle_actor_pool"
-start = 0x801C9370
-end = 0x801C9900
-hint = "Battle is in progress; per-actor HP/MP at +0x14C."
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: index 0x1E (izumi)."
 
 # ----------------------------------------------------------------------
-# mc5 - Battle in Drake Castle, Fire Book I just activated on Vahn.
-# Vahn's per-character Hyper-Arts list grew by one entry. Diff mc4↔mc5
-# pins the per-character Hyper-Arts learn footprint.
+# mc5 - Outside Drake Castle (CDNAME `dolk`, scene 0x3C). Town-style
+# `dolk` residency without battle context.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 5
-label = "post_fire_book"
-description = "Battle, Fire Book I just used on Vahn - Hyper Art learned (`dolk`)"
-topics = ["hyper arts", "spell learning", "character record"]
+label = "dolk_drake_castle_outside"
+description = "Outside Drake Castle (CDNAME `dolk`, scene 0x3C)"
+topics = ["castle approach", "dolk residency"]
 diff_against = [4, 6]
 
 [scenarios.overlay_slice]
@@ -207,43 +184,37 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "vahn_record"
-start = 0x80084708
-end = 0x80084B1C
-hint = "+0x185..+0x187 changes from `01 0C 00` (1-entry list) to `02 03 0C` (2-entry list with new art constant 0x03 inserted at front). Mirror in `engine_core::levelup::observations::vahn_fire_book_use()`."
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: index 0x3C (dolk)."
 
 [[scenarios.watchpoints]]
-label = "inventory_window"
-start = 0x80120000
-end = 0x80140000
-hint = "Decremented item count for Fire Book I; diff mc4↔mc5 isolates the slot."
+label = "move_table_base"
+start = 0x8007B888
+end = 0x8007B89C
+hint = "MOVE base in `dolk` is `0x800E412C` (cf. eighth post-#26 batch trace)."
 
 # ----------------------------------------------------------------------
-# mc6 - Performing a somersault on an enemy (animation playing).
-# Unchanged from prior batches.
+# mc6 - Drake Castle area (CDNAME `dolk`, scene 0x3C). Second `dolk`
+# residency snapshot.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 6
-label = "battle_anim_strike"
-description = "Performing a somersault on an enemy (active animation)"
-topics = ["actor anim dispatcher"]
-diff_against = [3, 5]
+label = "dolk_drake_castle"
+description = "Drake Castle (CDNAME `dolk`, scene 0x3C)"
+topics = ["castle interior", "dolk residency"]
+diff_against = [5, 7]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "actor_anim_state"
-start = 0x801C9370
-end = 0x801C9500
-hint = "Actor pointer table + per-actor anim PC at +0x4C; diff vs mc5 reveals which actor is playing what."
-
-[[scenarios.watchpoints]]
-label = "anim_dispatch_callback"
-start = 0x801C9400
-end = 0x801C9700
-hint = "Per-actor +0x4C carries the anim dispatch fn pointer; diff mc3→mc6 to find it."
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene: index 0x3C (dolk)."
 
 # ----------------------------------------------------------------------
 # mc7 - Pre-event: goblin about to steal an item (battle in progress).
@@ -256,7 +227,7 @@ hint = "Per-actor +0x4C carries the anim dispatch fn pointer; diff mc3→mc6 to 
 [[scenarios]]
 slot = 7
 label = "pre_steal"
-description = "Battle frame: goblin about to steal an item from the party"
+description = "Battle frame: goblin about to steal an item from the party (`map01`)"
 topics = ["status effects", "item theft", "stat growth"]
 diff_against = [8, 9]
 
@@ -283,12 +254,12 @@ end = 0x1F8003A0
 hint = "_DAT_1F800394 story flags. Diff to surface in-battle status writes."
 
 # ----------------------------------------------------------------------
-# mc8 - Magic level-up event firing
+# mc8 - Magic level-up event firing (`map01`)
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
 label = "magic_level_up"
-description = "Magic-rank level-up banner active"
+description = "Magic-rank level-up banner active (`map01`)"
 topics = ["spell rank-up", "stat growth"]
 diff_against = [7, 9]
 
@@ -315,12 +286,12 @@ end = 0x80085344
 hint = "Gala's character record (stride 0x414)."
 
 # ----------------------------------------------------------------------
-# mc9 - Character level-up event firing (after mc8)
+# mc9 - Character level-up event firing (after mc8) (`map01`)
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 9
 label = "char_level_up"
-description = "Character level-up banner active (after magic-rank up)"
+description = "Character level-up banner active, after magic-rank up (`map01`)"
 topics = ["stat growth", "level-up curve"]
 diff_against = [7, 8]
 
