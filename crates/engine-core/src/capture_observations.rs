@@ -232,15 +232,15 @@ pub mod vahn_fire_book_use {
 ///
 /// **Per-scene RAM base (pinned):**
 ///
-/// - mc2 (`town01`, scene 0x03): `_DAT_8007B8D0 = 0x8014BD30`, so the
+/// - `town01` (scene 0x03): `_DAT_8007B8D0 = 0x8014BD30`, so the
 ///   field-pack RAM base is `0x80139530` (= `0x8014BD30 - 0x12800`).
-/// - mc0 (`town0c`, scene 0x15): `_DAT_8007B8D0 = 0x800B4DF0`, base is
+/// - `town0c` (scene 0x15): `_DAT_8007B8D0 = 0x800B4DF0`, base is
 ///   `0x800A25F0`.
 ///
 /// The per-scene base differs because the loader allocates from a heap
 /// pool. The asset descriptor table base at `_DAT_8007B85C` is
-/// **statically allocated** (= `0x8015CBD0` in both saves) and indexes
-/// into the per-scene field-pack region.
+/// **statically allocated** (= `0x8015CBD0` in every captured save)
+/// and indexes into the per-scene field-pack region.
 ///
 /// **Runtime layout != on-disc schema (confirmed by capture):**
 ///
@@ -254,9 +254,9 @@ pub mod vahn_fire_book_use {
 ///
 /// - GP0-shaped primitive packets (visible at `base + 0x60`)
 /// - An auxiliary lookup / descriptor table elsewhere in the heap (the
-///   400 KB diff window at `0x800C505C..0x80139527` between mc2 and mc0
-///   is the shared scene-asset pool the loader fills before the
-///   field-pack region itself)
+///   400 KB diff window at `0x800C505C..0x80139527` between the
+///   `town01` and `town0c` saves is the shared scene-asset pool the
+///   loader fills before the field-pack region itself)
 /// - The descriptor table at `_DAT_8007B85C = 0x8015CBD0` whose entries
 ///   point into the field-pack region above
 ///
@@ -312,13 +312,13 @@ pub mod field_pack_load {
     /// `_DAT_1F800394`.
     pub const SCENE_TRANSITION_PENDING_BIT: u32 = 0x40;
 
-    /// Field-pack RAM base for the `town01` (intro Rim Elm) save mc2.
+    /// Field-pack RAM base for the `town01` (intro Rim Elm) save.
     /// = `0x8014BD30 - 0x12800`.
-    pub const TOWN01_BASE_MC2: u32 = 0x80139530;
+    pub const TOWN01_FIELD_PACK_BASE: u32 = 0x80139530;
 
-    /// Field-pack RAM base for the `town0c` (Rim Elm Genesis Tree) save
-    /// mc0. = `0x800B4DF0 - 0x12800`.
-    pub const TOWN0C_BASE_MC0: u32 = 0x800A25F0;
+    /// Field-pack RAM base for the `town0c` (Rim Elm Genesis Tree)
+    /// save. = `0x800B4DF0 - 0x12800`.
+    pub const TOWN0C_FIELD_PACK_BASE: u32 = 0x800A25F0;
 
     /// Recover the active per-scene field-pack RAM base from a save's
     /// main-RAM image. Returns `None` if the load-dest pointer reads
@@ -337,8 +337,8 @@ pub mod field_pack_load {
 /// Intra-transition observation captured from a save pair where the new
 /// scene name has already been written into the scene-bundle pool but the
 /// global field-pack base pointer (`_DAT_8007B8D0`) still reads the old
-/// value. Pinned from the `mc2` (settled `town01` intro Rim Elm) and `mc3`
-/// (`town0c` mid-transition) save pair.
+/// value. Pinned from a settled `town01` intro Rim Elm save paired
+/// with a mid-transition `town0c` save.
 ///
 /// Findings:
 ///
@@ -352,8 +352,9 @@ pub mod field_pack_load {
 ///   loader's order-of-operations as: write new scene name -> populate
 ///   new field-pack region -> swap the global base pointer.
 /// - The new field-pack region for `town0c` populates at
-///   `0x800A25F0 .. 0x800B4DF0 + N` (matching the `mc0` settled values).
-///   In the mid-transition snapshot, the region is partially written.
+///   `0x800A25F0 .. 0x800B4DF0 + N` (matching the settled-state
+///   values from a fully-loaded `town0c` save). In the
+///   mid-transition snapshot, the region is partially written.
 /// - The asset descriptor table at `0x8015CBD0` is bit-identical between
 ///   the pre- and mid-transition snapshots (4 KB SHA-256 match) - it is
 ///   statically allocated at boot and never relocated.
@@ -383,11 +384,11 @@ pub mod field_pack_intra_transition {
     /// null-padded).
     pub const SCENE_NAME_MAX_LEN: usize = 8;
 
-    /// Old field-pack base (`town01` intro Rim Elm, captured `mc2`).
+    /// Old field-pack base (`town01` intro Rim Elm settled state).
     pub const PREV_BASE: u32 = 0x80139530;
 
-    /// New field-pack base (`town0c` Rim Elm normal, captured `mc3`
-    /// mid-transition; matches `mc0`'s settled value).
+    /// New field-pack base (`town0c` Rim Elm normal scene; matches
+    /// the settled `town0c` value once the loader completes).
     pub const NEXT_BASE: u32 = 0x800A25F0;
 
     /// Read the CDNAME label from one of the two scene-bundle pool slots
@@ -416,10 +417,10 @@ pub mod field_pack_intra_transition {
     pub fn detect_mid_transition(main_ram: &[u8]) -> Option<(String, u32)> {
         let label = read_pool_slot_name(main_ram, 0)?;
         let base = super::field_pack_load::recover_base(main_ram)?;
-        // The "settled" pre-transition state (mc2 town01) has label="town01"
-        // + base=PREV_BASE. The mid-transition state (mc3 town0c) has
-        // label="town0c" + base=PREV_BASE - the label has flipped, the
-        // base has not. We surface that case.
+        // The settled pre-transition state (`town01`) has
+        // label="town01" + base=PREV_BASE. The mid-transition state
+        // (`town0c`) has label="town0c" + base=PREV_BASE — the label
+        // has flipped, the base has not. We surface that case.
         if label != "town01" && base == PREV_BASE {
             return Some((label, base));
         }
@@ -430,8 +431,8 @@ pub mod field_pack_intra_transition {
     }
 }
 
-/// FMV cutscene overlay observation captured from `mc1` during STR
-/// playback.
+/// FMV cutscene overlay observation captured from a save state taken
+/// during STR playback (FMV-overlay-resident state).
 ///
 /// The cutscene overlay loads at `0x801C0000` and occupies roughly
 /// `0x801CAD90..0x801F1200` (~156 KB of mixed code + data + sparse
@@ -670,7 +671,8 @@ pub mod char_level_up {
 ///
 /// This save pair pins the **residency window** the loader writes
 /// into; the loader itself is not directly visible in either
-/// snapshot (it has finished by the time mc2 is captured).
+/// snapshot (it has finished by the time the post-load save is
+/// captured).
 pub mod battle_init_overlay {
     use super::ByteDelta;
 
@@ -828,11 +830,11 @@ pub mod battle_action_animation {
 ///
 /// - The post-event save shifts the entire field-pack residency: the
 ///   loader-base pointer at `_DAT_8007B8D0` flips from `0x8014BD30`
-///   (mc2 / pre-event) to `0x800ABA4C` (mc3 / post-event), implying
-///   the menu / item-use pipeline rebases the active scene asset
-///   buffer for the item handler. The bundle pool at `0x80084540`
-///   stays on `map01` across both, so this is an internal sub-mode
-///   transition rather than a scene swap.
+///   (pre-event) to `0x800ABA4C` (post-event), implying the menu /
+///   item-use pipeline rebases the active scene asset buffer for
+///   the item handler. The bundle pool at `0x80084540` stays on
+///   `map01` across both, so this is an internal sub-mode transition
+///   rather than a scene swap.
 /// - The script-VM context block at `0x801BA7DC..0x801BADEC` shifts
 ///   wholesale (~660 bytes), consistent with the menu/item dispatch
 ///   path running to completion (item picker → target picker →
@@ -871,6 +873,198 @@ pub mod item_use_battle_event {
     pub const ACTIVE_SLOTS: u32 = 5;
     /// Total slots; trailing entries are zero-armed.
     pub const TOTAL_SLOTS: u32 = 8;
+}
+
+/// Per-STR FMV trigger corpus: nine save states captured RIGHT before
+/// each FMV begins playing, one per `_DAT_8007BA78` value
+/// (`fmv_id ∈ 0..=8`).
+///
+/// Each save is taken at the moment the field-VM (or debug-menu)
+/// trigger has just written the next-game-mode global to `0x1A`
+/// (`StrInit`) and the FMV index to `_DAT_8007BA78`, but BEFORE the
+/// main mode dispatcher swaps in the str_fmv overlay. This means:
+///
+/// - The trigger-side state (`_DAT_8007BA78` + game mode) is fully
+///   pinned and reproducible across the corpus.
+/// - The FMV overlay is **NOT** loaded in any of the saves — the
+///   compact-table-at-`0x801CAE40` and the runtime FMV-state-table
+///   at `0x801D0A6C` aren't visible from these saves alone.
+/// - All nine saves were captured from the same active scene
+///   (`map01`) via a debug-menu-driven sequence, NOT a per-scene
+///   field-VM trigger op. The `0x4C 0xE2 lo hi` byte sequence does
+///   NOT appear in the field-pack RAM region for any save (a scan
+///   of the 192 KB region following the loader-base pointer turns
+///   up zero matches in every save) — this is consistent with the
+///   debug menu poking `_DAT_8007BA78` directly rather than with
+///   the field VM stepping through a trigger-bearing bytecode
+///   buffer.
+///
+/// **Findings.**
+///
+/// 1. **`fmv_id` range extends to at least `0..=8`** — six more
+///    valid trigger values than the previously-documented
+///    `0..=5`. Combined with the static read of the str_fmv
+///    overlay's runtime FMV-state table at `0x801D0A6C` from a prior
+///    corpus rotation, twelve slots are visible in the table; the
+///    first nine are reachable through the debug menu.
+/// 2. **Game mode is `0x1A` (StrInit) for every save** — the trigger
+///    op writes `_DAT_8007B83C = 0x1A` unconditionally, regardless
+///    of which fmv_id was selected.
+/// 3. **All saves resolve to `map01`** in the scene-bundle pool
+///    (slot 0 = slot 1 = `map01`). The field-pack base
+///    (`recover_base`) returns `0x80139530` consistently — a NEW
+///    cross-validation point for `map01`'s field-pack RAM
+///    residency, as `map01` is one of the seven mid-game
+///    FMV-trigger field scenes documented in
+///    `legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES`.
+/// 4. **BGM ID is `2000` (global pool index `0`) for every save** —
+///    the FMV trigger path resets the BGM selector to the start of
+///    the global pool.
+///
+/// **Implication for the per-scene MV-index lift (PRD §2.7).** These
+/// saves were generated by debug-menu trigger paths, NOT by stepping
+/// the field VM through a per-scene FMV trigger op. They therefore
+/// pin the `(fmv_id, game_mode)` tuple across the full `0..=8` range
+/// but **do not** disambiguate which fmv_id the seven mid-game
+/// scenes' field-VM bytecode actually writes at runtime. That
+/// per-scene mapping remains gated on a scene-load-time capture of
+/// the field-pack preamble's runtime-projected slot.
+pub mod cutscene_trigger_corpus {
+    /// PSX-virtual address of the FMV-id global written by the
+    /// field-VM op `0x4C 0xE2` handler at `0x801E30E4`. The runtime
+    /// FMV-state selector at `0x801CECA0` reads this as a `s16`.
+    pub const FMV_ID_ADDR: u32 = 0x8007_BA78;
+
+    /// PSX-virtual address of the next-game-mode global. Every
+    /// FMV-trigger writer pokes this to `0x1A` (StrInit).
+    pub const GAME_MODE_ADDR: u32 = 0x8007_B83C;
+
+    /// Expected game mode value when the corpus saves are loaded.
+    /// The main mode dispatcher transitions to mode `26 = StrInit`
+    /// on the next frame.
+    pub const EXPECTED_GAME_MODE: u8 = 0x1A;
+
+    /// PSX-virtual address of the BGM ID global written by the
+    /// field-VM op `0x35` sub-op `1` BGM selector. The trigger path
+    /// resets this to `2000` (global pool index `0`) before the
+    /// FMV plays.
+    pub const BGM_ID_ADDR: u32 = 0x8007_BAC8;
+
+    /// Expected BGM ID value across the corpus. `2000` resolves to
+    /// global pool entry `0` per the BGM resolver `FUN_800243F0`.
+    pub const EXPECTED_BGM_ID: u16 = 2000;
+
+    /// Expected scene name in the scene-bundle pool (slots 0 + 1).
+    /// All nine saves share this label; per-save corpus assertions
+    /// can use it as a fast residency check.
+    pub const EXPECTED_SCENE_LABEL: &str = "map01";
+
+    /// Expected `recover_base` return value for every save in the
+    /// corpus — the `map01` field-pack base. Pins `map01`'s
+    /// field-pack runtime residency for cross-referencing against
+    /// `FMV_TRIGGER_FIELD_SCENES` and the existing
+    /// `field_pack_load::TOWN01_FIELD_PACK_BASE` constant.
+    pub const MAP01_FIELD_PACK_BASE: u32 = 0x80139530;
+
+    /// One save in the per-STR FMV corpus.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct CorpusEntry {
+        /// Mednafen save-state slot suffix (`mc{N}`).
+        pub slot: u32,
+        /// FMV index the field-VM / debug menu wrote to
+        /// [`FMV_ID_ADDR`] before this save was taken.
+        pub expected_fmv_id: i16,
+    }
+
+    /// Nine corpus entries, one per `fmv_id ∈ 0..=8`. The user-side
+    /// slot numbering is `[2,3,4,5,6,7,8,9,0]` mapped to
+    /// `expected_fmv_id ∈ 0..=8`.
+    pub const CORPUS: [CorpusEntry; 9] = [
+        CorpusEntry {
+            slot: 2,
+            expected_fmv_id: 0,
+        },
+        CorpusEntry {
+            slot: 3,
+            expected_fmv_id: 1,
+        },
+        CorpusEntry {
+            slot: 4,
+            expected_fmv_id: 2,
+        },
+        CorpusEntry {
+            slot: 5,
+            expected_fmv_id: 3,
+        },
+        CorpusEntry {
+            slot: 6,
+            expected_fmv_id: 4,
+        },
+        CorpusEntry {
+            slot: 7,
+            expected_fmv_id: 5,
+        },
+        CorpusEntry {
+            slot: 8,
+            expected_fmv_id: 6,
+        },
+        CorpusEntry {
+            slot: 9,
+            expected_fmv_id: 7,
+        },
+        CorpusEntry {
+            slot: 0,
+            expected_fmv_id: 8,
+        },
+    ];
+
+    /// Read the FMV-id global from main RAM (signed 16-bit LE).
+    pub fn read_fmv_id(main_ram: &[u8]) -> Option<i16> {
+        let off = (FMV_ID_ADDR - 0x80000000) as usize;
+        let bytes = main_ram.get(off..off + 2)?;
+        Some(i16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    /// Read the game-mode byte from main RAM.
+    pub fn read_game_mode(main_ram: &[u8]) -> Option<u8> {
+        let off = (GAME_MODE_ADDR - 0x80000000) as usize;
+        main_ram.get(off).copied()
+    }
+
+    /// Read the BGM-id global from main RAM (unsigned 16-bit LE).
+    pub fn read_bgm_id(main_ram: &[u8]) -> Option<u16> {
+        let off = (BGM_ID_ADDR - 0x80000000) as usize;
+        let bytes = main_ram.get(off..off + 2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    /// Search the field-pack region following `field_pack_base` for
+    /// the field-VM FMV-trigger op `0x4C 0xE2 lo hi`. Returns each
+    /// match as `(absolute_addr, fmv_id_operand)`. Used to confirm
+    /// (or refute) that the captured save still has the trigger
+    /// bytecode resident — the corpus saves return zero matches, a
+    /// stable signature of the debug-menu-driven trigger path.
+    pub fn scan_field_pack_for_trigger_ops(
+        main_ram: &[u8],
+        field_pack_base: u32,
+        scan_len: u32,
+    ) -> Vec<(u32, i16)> {
+        let lo = (field_pack_base - 0x80000000) as usize;
+        let hi = (lo + scan_len as usize).min(main_ram.len());
+        let bytes = &main_ram[lo..hi];
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i + 3 < bytes.len() {
+            if bytes[i] == 0x4C && bytes[i + 1] == 0xE2 {
+                let id = i16::from_le_bytes([bytes[i + 2], bytes[i + 3]]);
+                out.push((field_pack_base + i as u32, id));
+                i += 4;
+            } else {
+                i += 1;
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -981,22 +1175,23 @@ mod tests {
         let zero = vec![0u8; 0x100000];
         assert!(field_pack_load::recover_base(&zero).is_none());
 
-        // Plant the pinned mc2 value (`0x8014BD30`) at the right offset.
+        // Plant the pinned `town01` settled value (`0x8014BD30`) at
+        // the right offset.
         let mut ram = vec![0u8; 0x100000];
         let off = (field_pack_load::LOAD_DEST_PLUS_OFFSET_PTR - 0x80000000) as usize;
         ram[off..off + 4].copy_from_slice(&0x8014BD30u32.to_le_bytes());
         let base = field_pack_load::recover_base(&ram).expect("should recover");
-        assert_eq!(base, field_pack_load::TOWN01_BASE_MC2);
+        assert_eq!(base, field_pack_load::TOWN01_FIELD_PACK_BASE);
     }
 
     #[test]
     fn field_pack_constants_round_trip_through_recover() {
         assert_eq!(
-            field_pack_load::TOWN01_BASE_MC2 + field_pack_load::EFFECT_OFFSET,
+            field_pack_load::TOWN01_FIELD_PACK_BASE + field_pack_load::EFFECT_OFFSET,
             0x8014BD30
         );
         assert_eq!(
-            field_pack_load::TOWN0C_BASE_MC0 + field_pack_load::EFFECT_OFFSET,
+            field_pack_load::TOWN0C_FIELD_PACK_BASE + field_pack_load::EFFECT_OFFSET,
             0x800B4DF0
         );
     }
@@ -1019,7 +1214,7 @@ mod tests {
 
     #[test]
     fn intra_transition_detector_flags_label_base_disagreement() {
-        // Plant the mc3 mid-transition shape: slot 0 says "town0c",
+        // Plant the mid-transition shape: slot 0 says "town0c",
         // _DAT_8007B8D0 still says PREV_BASE+0x12800 (the old town01 base).
         let mut ram = vec![0u8; 0x200000];
         let pool_off = (field_pack_intra_transition::SCENE_NAME_TABLE_ADDR
@@ -1037,7 +1232,7 @@ mod tests {
             Some(("town0c".to_string(), field_pack_intra_transition::PREV_BASE))
         );
 
-        // Settled state (mc2): slot 0 says "town01" + base = PREV_BASE.
+        // Settled state: slot 0 says "town01" + base = PREV_BASE.
         // detector should NOT flag this case.
         ram[pool_off..pool_off + 6].copy_from_slice(b"town01");
         assert!(field_pack_intra_transition::detect_mid_transition(&ram).is_none());
@@ -1124,5 +1319,93 @@ mod tests {
             battle_action_animation::ANIM_DISPATCH_PTR_TABLE_LEN,
             4 * std::mem::size_of::<u32>()
         );
+    }
+
+    #[test]
+    fn cutscene_corpus_covers_consecutive_fmv_ids_0_through_8() {
+        let mut seen = std::collections::BTreeSet::new();
+        for entry in cutscene_trigger_corpus::CORPUS {
+            seen.insert(entry.expected_fmv_id);
+        }
+        let expected: std::collections::BTreeSet<i16> = (0..=8).collect();
+        assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn cutscene_corpus_user_slot_assignments_match_capture_intent() {
+        // The user captured slot 2 → STR 0, slot 3 → STR 1, ...,
+        // slot 0 → STR 8. Encode that fingerprint here so the
+        // corpus indices stay synchronised with the on-disc saves.
+        let want = [
+            (2u32, 0i16),
+            (3, 1),
+            (4, 2),
+            (5, 3),
+            (6, 4),
+            (7, 5),
+            (8, 6),
+            (9, 7),
+            (0, 8),
+        ];
+        for (i, entry) in cutscene_trigger_corpus::CORPUS.iter().enumerate() {
+            assert_eq!(entry.slot, want[i].0);
+            assert_eq!(entry.expected_fmv_id, want[i].1);
+        }
+    }
+
+    #[test]
+    fn cutscene_corpus_readers_lift_planted_values() {
+        let mut ram = vec![0u8; 0x200000];
+        // Plant fmv_id = 5 (s16 LE).
+        let off = (cutscene_trigger_corpus::FMV_ID_ADDR - 0x80000000) as usize;
+        ram[off..off + 2].copy_from_slice(&5i16.to_le_bytes());
+        assert_eq!(cutscene_trigger_corpus::read_fmv_id(&ram), Some(5));
+
+        // Plant game mode = 0x1A.
+        let off = (cutscene_trigger_corpus::GAME_MODE_ADDR - 0x80000000) as usize;
+        ram[off] = 0x1A;
+        assert_eq!(
+            cutscene_trigger_corpus::read_game_mode(&ram),
+            Some(cutscene_trigger_corpus::EXPECTED_GAME_MODE)
+        );
+
+        // Plant BGM id = 2000.
+        let off = (cutscene_trigger_corpus::BGM_ID_ADDR - 0x80000000) as usize;
+        ram[off..off + 2].copy_from_slice(&2000u16.to_le_bytes());
+        assert_eq!(
+            cutscene_trigger_corpus::read_bgm_id(&ram),
+            Some(cutscene_trigger_corpus::EXPECTED_BGM_ID)
+        );
+    }
+
+    #[test]
+    fn cutscene_corpus_field_pack_scan_finds_planted_trigger() {
+        let mut ram = vec![0u8; 0x200000];
+        let base = cutscene_trigger_corpus::MAP01_FIELD_PACK_BASE;
+        let off = (base - 0x80000000) as usize;
+        // Plant a `0x4C 0xE2 0x05 0x00` trigger op at base + 0x100.
+        ram[off + 0x100] = 0x4C;
+        ram[off + 0x101] = 0xE2;
+        ram[off + 0x102] = 0x05;
+        ram[off + 0x103] = 0x00;
+        let hits = cutscene_trigger_corpus::scan_field_pack_for_trigger_ops(&ram, base, 0x200);
+        assert_eq!(hits, vec![(base + 0x100, 5)]);
+
+        // No matches in a zero-filled RAM image — confirming the
+        // corpus's empirical "no trigger op found in field-pack"
+        // observation when no op is planted.
+        let zero = vec![0u8; 0x200000];
+        let no_hits = cutscene_trigger_corpus::scan_field_pack_for_trigger_ops(&zero, base, 0x200);
+        assert!(no_hits.is_empty());
+    }
+
+    #[test]
+    fn cutscene_corpus_map01_field_pack_base_round_trips() {
+        // The corpus's pinned map01 field-pack base, plus the
+        // EFFECT_OFFSET, should match the load-dest pointer value
+        // observed in every save.
+        let load_dest =
+            cutscene_trigger_corpus::MAP01_FIELD_PACK_BASE + field_pack_load::EFFECT_OFFSET;
+        assert_eq!(load_dest, 0x8014BD30);
     }
 }

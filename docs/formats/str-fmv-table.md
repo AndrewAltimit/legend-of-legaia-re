@@ -1,14 +1,17 @@
 # In-RAM STR FMV file table
 
-The cutscene / MDEC overlay's compact lookup table for STR FMV files. The retail engine loads this 6-entry table into RAM during overlay residency (around `0x801CAE40`); each entry is the minimum a libcd-driven STR player needs - filename, BCD MSF for `CdControl(CdlSetloc, ...)`, and file size for the chunk-read budget.
+The cutscene / MDEC overlay's lookup tables for STR FMV files. Two distinct tables coexist in the str_fmv overlay's data section, with **different roles**:
 
-A second copy of the same six files appears nearby in full ISO9660 directory-record form (`0x801CCA80`); the compact form is the fast lookup, the directory copies are presumably retained for `CdReadDir`-style validation. Only the compact form is parsed here.
+1. **Compact STR FMV table** at `0x801CAE40` - 6 entries, 24 bytes each, labelled `MV1.STR;1` .. `MV6.STR;1`. Carries a libcd-shaped filename + BCD MSF + size. *This table is dev-shape metadata, not the play-engine source* (see "Runtime mapping vs compact table" below).
+2. **Runtime FMV-state table** at `0x801D0A6C` - 12 entries, 64 bytes each. The play loop (`FUN_801CF098`) reads this. Each entry's `+0x00` field is a path-string pointer into the **path string table** at `0x801CE810`, plus per-segment seek offsets, frame counts, and resolution flags.
+
+A third copy of the six MV files appears nearby in full ISO9660 directory-record form (`0x801CCA80`, 56-byte stride); the runtime FMV-state table is the actual lookup, the directory copies are presumably retained for `CdReadDir`-style validation.
 
 ## Confidence
 
-**Inferred — structural reading from a single live capture.** Pinned from the `mc1` save state during FMV playback. The 24-byte stride + libcd MSF shape is consistent across all six entries; the compact table is the structure the FMV overlay reads when seeking the disc head.
+**Inferred — structural reading.** The compact-table layout is pinned from a captured FMV-overlay-resident save state. The runtime FMV-state table layout is pinned from the same overlay binary, cross-validated against the play loop's offset reads at `FUN_801CF098 +0x38..+0x60`. The retail trigger range (`0..=8`) is pinned by the per-STR FMV trigger corpus (nine save states, `_DAT_8007BA78 ∈ 0..=8`).
 
-## Layout
+## Compact table layout (`0x801CAE40`, 6 × 24 B)
 
 ```text
 +0x00  char[12]  filename     "MV1.STR;1\0..." (null-padded; libcd path shape)
@@ -28,28 +31,44 @@ LBA = ((M * 60) + S) * 75 + F - 150
 
 The `-150` accounts for the 2-second pre-gap.
 
-## What's in the captured table
+### Pinned compact-table entries
 
-| Idx | Name        | M:S.F (decimal) | LBA      | Size (bytes) |
-|----:|-------------|-----------------|---------:|-------------:|
-| 0   | `MV1.STR;1` | 53:51.33        | 242,208  |    5,099,520 |
-| 1   | `MV2.STR;1` | 68:24.34        | 307,759  |   18,104,320 |
-| 2   | `MV3.STR;1` | 58:22.36        | 262,711  |    7,045,120 |
-| 3   | `MV4.STR;1` | 48:08.37        | 216,612  |   13,393,920 |
-| 4   | `MV5.STR;1` | 63:35.38        | 286,063  |   13,701,120 |
-| 5   | `MV6.STR;1` | 41:14.19        | 185,419  |   14,811,136 |
+| Idx | Name        | BCD MSF (decimal) | Computed LBA | Disc match (`disc-extract list`) |
+|----:|-------------|-------------------|-------------:|---|
+| 0   | `MV1.STR;1` | 33:51.53          |   152,228    | **disc `MV2.STR`** (size 5,099,520) |
+| 1   | `MV2.STR;1` | 34:24.68          |   154,718    | **disc `MV3.STR`** (size 18,104,320) |
+| 2   | `MV3.STR;1` | 36:22.58          |   163,558    | **disc `MV4.STR`** (size 7,045,120) |
+| 3   | `MV4.STR;1` | 37:08.48          |   166,998    | **disc `MV5.STR`** (size 13,393,920) |
+| 4   | `MV5.STR;1` | 38:35.63          |   173,538    | **disc `MV6.STR`** (size 13,701,120) |
+| 5   | `MV6.STR;1` | 19:14.41          |    86,441    | disc `XA15.XA` |
 
-## What this gives us
+The compact table's name fields are dev-only labels and **do not match what the disc reader resolves at the table's BCD MSF**. The first five entries shift by one against the disc layout (entry [0] "MV1" points at disc MV2, etc.), and entry [5] "MV6" points at the unrelated `XA15.XA`. The compact table is a separate dev/init lookup, not the FMV play engine's resolver.
 
-- An in-RAM cross-check for the disc-side ISO9660 walk (`legaia_iso`) - any drift between the two representations is a corpus issue.
-- The MSF↔LBA conversion needed to look up the same files via the disc reader without going back through the directory.
-- A residency signature: the compact table's first entry name (`MV1.STR;1`) at `0x801CAE40` is the cheap "is the FMV overlay loaded" check.
+## Path string table (`0x801CE810`, null-terminated)
 
-## Runtime FMV-state table
+The runtime FMV-state slots' path-pointer field (`+0x00`) points into this packed string table. Nine null-padded paths in storage order:
 
-The compact table at `0x801CAE40` is read once by the str_fmv overlay and expanded into a 64-byte-stride runtime FMV-state table at `0x801D0A6C` (still inside the overlay's residency window). Each entry holds libcd state pointers, decoder scratch, and the framerate/resolution flags the play loop needs - the compact table on its own only carries the disc-locator data.
+| Path-table offset | String                |
+|------------------:|-----------------------|
+| `+0x008`          | `\DATA\MOV.STR;1`     |
+| `+0x018`          | `\DATA\MOV15.STR;1`   |
+| `+0x02C`          | `\MOV\MV1A.STR;1`     |
+| `+0x03C`          | `\MOV\MV6.STR;1`      |
+| `+0x04C`          | `\MOV\MV5.STR;1`      |
+| `+0x05C`          | `\MOV\MV4.STR;1`      |
+| `+0x06C`          | `\MOV\MV3.STR;1`      |
+| `+0x07C`          | `\MOV\MV2.STR;1`      |
+| `+0x08C`          | `\MOV\MV1.STR;1`      |
 
-The selector lives in the str_fmv overlay caller of `FUN_801CF098` (the 1236-byte main play loop) at `0x801CECA0`:
+Three of the nine paths (`\DATA\MOV.STR;1`, `\DATA\MOV15.STR;1`, `\MOV\MV1A.STR;1`) are dev-only - the corresponding files are not on the retail disc.
+
+## Mid-game scene labels (`0x801CE8AC`)
+
+The same overlay data section carries seven CDNAME-shape labels for the mid-game FMV-trigger field scenes the FMV overlay knows about: `town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`. These match `legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES`.
+
+## Runtime FMV-state table (`0x801D0A6C`, 12 × 64 B)
+
+The play loop's selector lives at `0x801CECA0`:
 
 ```text
 0x801CEC94: lh   v0, -0x4588(s0)        ; v0 = (s16) _DAT_8007BA78
@@ -58,11 +77,41 @@ The selector lives in the str_fmv overlay caller of `FUN_801CF098` (the 1236-byt
 0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &runtime_table[fmv_id]
 ```
 
-`_DAT_8007BA78` is written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op) for the full opcode trace. On retail USA the index is bounded `0..=5` (one slot per `MVn.STR`); the engine-side mapping ships in `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
+The 64-byte slot has the shape `[u32 path_ptr, u32 flag, u32 segment_id, u32 frame_count, u32, u32, u32 width, u32 height, ...]`. The play loop reads the path pointer at `+0x00` and opens the file via libcd.
 
-## What this doesn't tell us
+`_DAT_8007BA78` is a `s16` written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#fmv-trigger-op) for the full opcode trace.
 
-- The runtime XA channel selector for multi-channel STR containers (`\DATA\MOV.STR;1`, which is referenced separately in the overlay's path table).
+### Authoritative runtime mapping
+
+The retail USA build's twelve runtime FMV-state slots resolve as:
+
+| `fmv_id` | path resolved        | notes |
+|---------:|----------------------|-------|
+| 0        | `\MOV\MV1.STR;1`     | intro logo (also fired by title-screen attract loop) |
+| 1        | `\MOV\MV3.STR;1`     | first segment (start sector 1) |
+| 2        | `\MOV\MV3.STR;1`     | second segment (start sector offset `+0x1A5`) |
+| 3        | `\MOV\MV4.STR;1`     | |
+| 4        | `\MOV\MV6.STR;1`     | |
+| 5        | `\DATA\MOV15.STR;1`  | dev-only path (file not on retail disc) |
+| 6..=11   | `\DATA\MOV.STR;1`    | dev-only path (file not on retail disc) |
+
+`MV2.STR` and `MV5.STR` exist on the retail disc but are **never referenced by any FMV slot** - the runtime FMV play engine never opens them.
+
+The same authoritative mapping ships in `legaia_engine_core::cutscene::fmv_index_to_str_filename` (returns `Some(path)` for `0..=4`, `None` for cut/missing slots).
+
+## Per-STR FMV trigger corpus
+
+The current corpus carries nine save states captured RIGHT before each FMV begins playing, one per `_DAT_8007BA78` value (`fmv_id ∈ 0..=8`). Each save pins:
+
+- `_DAT_8007BA78 = expected_fmv_id` (s16 LE)
+- `_DAT_8007B83C = 0x1A` (StrInit game mode)
+- `_DAT_8007BAC8 = 2000` (BGM ID; global pool index 0)
+- Active scene = `map01` (one of the seven mid-game FMV-trigger field scenes)
+- `recover_base()` = `0x80139530` (the `map01` field-pack base)
+
+The `0x4C 0xE2 lo hi` byte sequence does NOT appear in the field-pack RAM region for any save in the corpus - the saves were generated by debug-menu-driven trigger paths, NOT by stepping the field VM through a per-scene FMV trigger op. The corpus pins the trigger-side state across the full `0..=8` range but does not disambiguate which fmv_id each of the seven mid-game scenes' field-VM bytecode writes at runtime.
+
+The corpus is codified at `legaia_engine_core::capture_observations::cutscene_trigger_corpus` and exercised by the disc-gated test `crates/mednafen/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
 
 ## Rust API
 
@@ -76,23 +125,29 @@ let bytes = &main_ram[off..off + 6 * str_fmv_table::ENTRY_STRIDE];
 // Parse 6 entries; zero-filled trailing slots are dropped silently.
 let entries = str_fmv_table::parse_entries(bytes, 6).expect("table parses");
 for entry in &entries {
-    println!(
-        "{} at LBA {} ({} bytes)",
-        entry.name,
-        entry.lba(),
-        entry.size,
-    );
+    println!("{} at LBA {} ({} bytes)", entry.name, entry.lba(), entry.size);
 }
 
-// Cheap signature check.
+// Resolve fmv_id (the value the field VM writes to _DAT_8007BA78)
+// to a STR file via the authoritative runtime mapping.
+use legaia_engine_core::cutscene::fmv_index_to_str_filename;
+assert_eq!(fmv_index_to_str_filename(0), Some("MOV/MV1.STR"));
+assert_eq!(fmv_index_to_str_filename(1), Some("MOV/MV3.STR"));
+assert_eq!(fmv_index_to_str_filename(5), None); // cut/missing slot
+
+// Cheap signature check (compact table head).
 assert!(str_fmv_table::looks_like_str_fmv_table(bytes));
 ```
 
 ## Provenance
 
-| Subject | Source |
+| Subject                                    | Source |
 |---|---|
-| Compact-table layout | `mc1` capture; `legaia_asset::str_fmv_table` |
-| BCD MSF semantics | PSX-SPX libcd `CdlLOC` definition |
-| ISO9660 directory copy | `mc1` capture at `0x801CCA80` |
-| Residency signature | `legaia_engine_core::capture_observations::str_fmv_overlay::is_resident` |
+| Compact-table layout                       | FMV-overlay-resident save; `legaia_asset::str_fmv_table` |
+| BCD MSF semantics                          | PSX-SPX libcd `CdlLOC` definition |
+| ISO9660 directory copy at `0x801CCA80`     | FMV-overlay-resident save |
+| Path string table at `0x801CE810`          | FMV-overlay binary data section |
+| Runtime FMV-state slot pointers            | FMV-overlay binary data section, cross-validated against `FUN_801CF098 +0x00` read |
+| `fmv_id ∈ 0..=8` range                     | Per-STR FMV trigger corpus (nine save states); `cutscene_trigger_corpus` |
+| Trigger-side state at game mode `0x1A`     | Per-STR FMV trigger corpus |
+| Residency signature                        | `legaia_engine_core::capture_observations::str_fmv_overlay::is_resident` |

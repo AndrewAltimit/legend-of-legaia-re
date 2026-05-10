@@ -76,8 +76,12 @@ enum Cmd {
         #[arg(long)]
         scene: Option<String>,
         /// By default, the scan only reports FMV triggers whose fmv_id is in
-        /// the retail valid range (0..=5 = MV1.STR..MV6.STR). Pass this to
-        /// disable filtering and see every coincidental 0x4C 0xE2 match.
+        /// the retail valid range (0..=8). The runtime FMV-state table at
+        /// `0x801D0A6C` has 12 slots — slots 0..=4 reference real
+        /// `MV*.STR` files; slots 5..=11 reference cut paths. The
+        /// per-STR FMV trigger corpus pins fmv_ids 0..=8 as
+        /// debug-menu-reachable values. Pass this to disable
+        /// filtering and see every coincidental 0x4C 0xE2 match.
         #[arg(long)]
         no_filter: bool,
         /// Run the scan over every PROT entry's raw bytes (not just
@@ -253,7 +257,7 @@ fn cmd_scan_prot(
         if no_filter {
             "off"
         } else {
-            "on (fmv_id 0..=5)"
+            "on (fmv_id 0..=8)"
         }
     );
     let entries = archive.entries.clone();
@@ -270,13 +274,13 @@ fn cmd_scan_prot(
             // Brute-force byte-pattern scan for `0x4C 0xE2 lo hi`. The
             // dispatcher's PC math reserves the two trailing operand bytes
             // but doesn't check them, so we don't either - the in-range
-            // fmv_id alone (0..=5) is a strong-enough fingerprint to surface
+            // fmv_id alone (0..=8) is a strong-enough fingerprint to surface
             // the seven retail FMV-bearing scenes. Window step = 1.
             let mut p = 0usize;
             while p + 4 <= buf.len() {
                 if buf[p] == 0x4C && buf[p + 1] == 0xE2 {
                     let fmv_id = i16::from_le_bytes([buf[p + 2], buf[p + 3]]);
-                    if no_filter || (0..=5).contains(&fmv_id) {
+                    if no_filter || (0..=8).contains(&fmv_id) {
                         entry_triggers.push((None, p, fmv_id));
                     }
                 }
@@ -292,7 +296,7 @@ fn cmd_scan_prot(
             for (i, &(start, end)) in ranges.iter().enumerate() {
                 let body = &buf[start..end];
                 for (pc, fmv_id) in find_fmv_triggers(body) {
-                    if !no_filter && !(0..=5).contains(&fmv_id) {
+                    if !no_filter && !(0..=8).contains(&fmv_id) {
                         continue;
                     }
                     entry_triggers.push((Some(i), start + pc, fmv_id));

@@ -71,8 +71,10 @@ pub struct FmvTriggerSite {
 pub enum FmvIdSource {
     /// The handler decodes the FMV id from the field-VM bytecode
     /// (specifically `decode_u16_be(pc+1)` via `FUN_8003CE9C`). The
-    /// id range observed in retail is `0..=5` (one slot per
-    /// `MV1.STR..MV6.STR`).
+    /// id range observed in retail is `0..=8` (the runtime
+    /// FMV-state table at `0x801D0A6C` carries 12 slots; the
+    /// per-STR FMV trigger corpus pins the first nine as
+    /// debug-menu-reachable).
     BytecodeOperand,
     /// The handler stores a literal value. Currently the only
     /// observed literal is `0`, which selects `MV1.STR` (the intro).

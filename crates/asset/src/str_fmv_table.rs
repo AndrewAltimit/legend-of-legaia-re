@@ -36,11 +36,11 @@
 //!
 //! ## Provenance
 //!
-//! Captured from the `mc1` save state during FMV playback. The 6-entry
-//! table sits at `0x801CAE40` with stride `0x18`. The matching ISO9660-
-//! shaped directory records start at `0x801CCA80` with stride `0x38` and
-//! carry the publisher tag "USA" + LBA in big-endian-then-little-endian
-//! ISO9660 fashion.
+//! Captured from a save state with the FMV cutscene overlay loaded.
+//! The 6-entry table sits at `0x801CAE40` with stride `0x18`. The
+//! matching ISO9660-shaped directory records start at `0x801CCA80`
+//! with stride `0x38` and carry the publisher tag "USA" + LBA in
+//! big-endian-then-little-endian ISO9660 fashion.
 
 use serde::Serialize;
 
@@ -153,7 +153,8 @@ pub fn looks_like_str_fmv_table(bytes: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    /// Build a synthetic 6-entry table that mirrors the mc1-captured layout.
+    /// Build a synthetic 6-entry table that mirrors the layout
+    /// captured from a real FMV-overlay-resident save state.
     fn synthetic_table() -> Vec<u8> {
         let mut buf = Vec::with_capacity(6 * ENTRY_STRIDE);
         // (name, bcd_minute, bcd_second, bcd_frame, size)
@@ -186,7 +187,8 @@ mod tests {
 
     #[test]
     fn bcd_round_trip_pinned_values() {
-        // mc1-captured: MV1 at minute=53, second=51, frame=33 (decimal).
+        // Pinned from a real capture: MV1 at minute=53, second=51,
+        // frame=33 (decimal).
         assert_eq!(bcd_to_decimal(0x53), Some(53));
         assert_eq!(bcd_to_decimal(0x51), Some(51));
         assert_eq!(bcd_to_decimal(0x33), Some(33));

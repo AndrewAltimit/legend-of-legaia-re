@@ -76,6 +76,34 @@ fn require_slot_scenes(test_name: &str, expected: &[(u8, &str)]) -> bool {
     true
 }
 
+/// Skip-tolerant guard: returns `true` if the slot is NOT in a
+/// per-STR FMV-trigger capture state (game mode != 0x1A). Tests that
+/// rely on battle / item / level-up state should skip when the slot
+/// has been re-captured into an FMV-trigger state, since the global
+/// game-mode word being 0x1A means the str_fmv overlay is about to
+/// page in and the prior battle-side residency has been blown away.
+fn require_not_fmv_trigger(test_name: &str, slot: u8) -> bool {
+    let Some(path) = save_for(slot) else {
+        return true;
+    };
+    let Ok(state) = SaveState::from_path(&path) else {
+        return true;
+    };
+    let Ok(ram) = state.main_ram() else {
+        return true;
+    };
+    let off = (0x8007B83Cu32 - 0x80000000) as usize;
+    let mode = ram.get(off).copied().unwrap_or(0xFF);
+    if mode == 0x1A {
+        eprintln!(
+            "[skip {test_name}] mc{slot} is in FMV-trigger state (game mode 0x1A); \
+             corpus has been re-captured into the per-STR FMV trigger shape"
+        );
+        return false;
+    }
+    true
+}
+
 #[test]
 fn parses_real_state_and_extracts_main_ram() {
     let path = match save_for(0) {
@@ -554,6 +582,9 @@ fn town0c_residency_save_documents_active_scene_label() {
     // mc0 is a town-resident state (CDNAME `town0c`, scene index 0x15).
     // Confirm the scene-name table reads accordingly so future diffs that
     // depend on town residency anchor against this save.
+    if !require_slot_scenes("town0c_residency", &[(0, "town0c")]) {
+        return;
+    }
     let Some(p0) = save_for(0) else {
         eprintln!("{}", skip_msg(0));
         return;
@@ -598,7 +629,7 @@ fn town01_field_pack_save_documents_active_scene_and_ram_base() {
         field_pack_load::recover_base(r).expect("mc2 should have a non-zero load-dest pointer");
     assert_eq!(
         recovered,
-        field_pack_load::TOWN01_BASE_MC2,
+        field_pack_load::TOWN01_FIELD_PACK_BASE,
         "mc2 field-pack base should match the pinned constant"
     );
 
@@ -698,7 +729,7 @@ fn intro_rim_elm_to_normal_rim_elm_transition_pins_loader_order_of_ops() {
         "mc2 pool slot 0 should be town01"
     );
     let base2 = field_pack_load::recover_base(r2).expect("mc2 base recoverable");
-    assert_eq!(base2, field_pack_load::TOWN01_BASE_MC2);
+    assert_eq!(base2, field_pack_load::TOWN01_FIELD_PACK_BASE);
 
     // mc3 mid-transition: pool slot 0 = town0c (new), but the global
     // base pointer still reads the OLD value (= base2). The detector
@@ -841,6 +872,12 @@ fn battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring() {
     if !require_slot_scenes("battle_init_overlay_pair", &[(1, "map01"), (2, "map01")]) {
         return;
     }
+    if !require_not_fmv_trigger("battle_init_overlay_pair", 1) {
+        return;
+    }
+    if !require_not_fmv_trigger("battle_init_overlay_pair", 2) {
+        return;
+    }
     let p1 = save_for(1).unwrap();
     let p2 = save_for(2).unwrap();
     let s1 = SaveState::from_path(&p1).unwrap();
@@ -913,6 +950,12 @@ fn battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window() {
     //   - the +0x1D8..+0x1E8 anim-PC window is non-zero in mc4
     //     (the mid-anim save) but mostly zero in mc3
     if !require_slot_scenes("battle_action_anim_pair", &[(3, "map01"), (4, "map01")]) {
+        return;
+    }
+    if !require_not_fmv_trigger("battle_action_anim_pair", 3) {
+        return;
+    }
+    if !require_not_fmv_trigger("battle_action_anim_pair", 4) {
         return;
     }
     let p3 = save_for(3).unwrap();
@@ -1047,4 +1090,87 @@ fn item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift() {
         r3[off..off + 4].iter().any(|&b| b != 0),
         "mc3 formation cell should still be active"
     );
+}
+
+/// The per-STR FMV trigger corpus: nine saves taken right before each
+/// FMV begins playing, one per `fmv_id ∈ 0..=8`. Each save should
+/// carry `_DAT_8007BA78 = expected_fmv_id`, `_DAT_8007B83C = 0x1A`
+/// (StrInit), and the `map01` scene label in the bundle pool.
+///
+/// Skip-pass when any save isn't present, when the scene label has
+/// rotated away from `map01`, or when the trigger-side state isn't
+/// `(0x1A, expected_fmv_id)` for every save.
+#[test]
+fn cutscene_trigger_corpus_pins_fmv_id_across_nine_saves() {
+    use legaia_engine_core::capture_observations::cutscene_trigger_corpus as ctc;
+    use legaia_engine_core::capture_observations::field_pack_load;
+
+    // Slot fingerprint: the user's per-STR captures are all on
+    // `map01`. If any slot fingerprints differently, the corpus
+    // has been rotated to a non-FMV-trigger shape and the test
+    // skip-passes.
+    let expected_scenes: Vec<(u8, &str)> = ctc::CORPUS
+        .iter()
+        .map(|e| (e.slot as u8, "map01"))
+        .collect();
+    if !require_slot_scenes("cutscene_trigger_corpus", &expected_scenes) {
+        return;
+    }
+
+    for entry in ctc::CORPUS {
+        let slot = entry.slot as u8;
+        let path = match save_for(slot) {
+            Some(p) => p,
+            None => {
+                eprintln!("[skip cutscene_trigger_corpus] {}", skip_msg(slot));
+                return;
+            }
+        };
+        let s = SaveState::from_path(&path).unwrap();
+        let ram = s.main_ram().unwrap();
+
+        let fmv_id = ctc::read_fmv_id(ram).expect("fmv_id reads");
+        let mode = ctc::read_game_mode(ram).expect("game mode reads");
+        let bgm = ctc::read_bgm_id(ram).expect("BGM id reads");
+
+        if mode != ctc::EXPECTED_GAME_MODE {
+            eprintln!(
+                "[skip cutscene_trigger_corpus] mc{slot} game mode = 0x{mode:02X} != 0x1A; \
+                 corpus rotation - the saves are not FMV-trigger captures any more"
+            );
+            return;
+        }
+
+        assert_eq!(
+            fmv_id, entry.expected_fmv_id,
+            "mc{slot} should hold fmv_id = {} (got {fmv_id})",
+            entry.expected_fmv_id
+        );
+        assert_eq!(
+            bgm,
+            ctc::EXPECTED_BGM_ID,
+            "mc{slot} BGM id should be {} (got {bgm})",
+            ctc::EXPECTED_BGM_ID
+        );
+
+        // Field-pack base for `map01` is constant across the corpus.
+        let base = field_pack_load::recover_base(ram).expect("recover_base");
+        assert_eq!(
+            base,
+            ctc::MAP01_FIELD_PACK_BASE,
+            "mc{slot} field-pack base = 0x{base:08X}, expected map01 base"
+        );
+
+        // Field-pack region carries no `0x4C 0xE2 lo hi` byte
+        // sequence — empirical signature of the debug-menu trigger
+        // path (the field VM never executed a trigger op for these
+        // saves, so the bytecode pattern was never written into the
+        // field-pack region).
+        let triggers = ctc::scan_field_pack_for_trigger_ops(ram, base, 0x30000);
+        assert!(
+            triggers.is_empty(),
+            "mc{slot}: expected no field-pack trigger ops (debug-menu-driven), got {}",
+            triggers.len()
+        );
+    }
 }
