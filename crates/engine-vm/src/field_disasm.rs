@@ -1686,16 +1686,20 @@ fn render_mnemonic(insn: &Insn) -> String {
     format!("{ext}{body}")
 }
 
-/// Map a retail FMV index to its filename. `0..=5` maps to `MV1.STR..MV6.STR`.
-/// Indices outside that range map to `(unknown)`.
+/// Map a retail FMV index to its filename via the runtime FMV-state
+/// table at `0x801D0A6C`. The retail mapping skips `MV2.STR` and
+/// `MV5.STR` (disc-resident but not referenced by any FMV slot) and
+/// reaches them via `MV3.STR` segments instead. Slots `5..=11`
+/// reference cut paths.
 pub fn fmv_filename(fmv_id: i16) -> &'static str {
     match fmv_id {
         0 => "MV1.STR",
-        1 => "MV2.STR",
-        2 => "MV3.STR",
+        1 => "MV3.STR",
+        2 => "MV3.STR", // second segment of MV3 (different start sector)
         3 => "MV4.STR",
-        4 => "MV5.STR",
-        5 => "MV6.STR",
+        4 => "MV6.STR",
+        5 => "(cut: MOV15.STR)",
+        6..=11 => "(cut: MOV.STR)",
         _ => "(unknown)",
     }
 }
@@ -1886,21 +1890,23 @@ mod tests {
         bc.extend_from_slice(&[0x4C, 0xE2, 0, 0, 0, 0]);
         // Some unrelated nop
         bc.push(0x21);
-        // Trigger 5: MV6.STR
-        bc.extend_from_slice(&[0x4C, 0xE2, 5, 0, 0, 0]);
+        // Trigger 4: MV6.STR
+        bc.extend_from_slice(&[0x4C, 0xE2, 4, 0, 0, 0]);
         // Trigger 3: MV4.STR
         bc.extend_from_slice(&[0x4C, 0xE2, 3, 0, 0, 0]);
         let triggers = find_fmv_triggers(&bc);
         assert_eq!(triggers.len(), 3);
         assert_eq!(triggers[0], (0, 0));
-        assert_eq!(triggers[1].1, 5);
+        assert_eq!(triggers[1].1, 4);
         assert_eq!(triggers[2].1, 3);
     }
 
     #[test]
     fn fmv_filename_known_indices() {
         assert_eq!(fmv_filename(0), "MV1.STR");
-        assert_eq!(fmv_filename(5), "MV6.STR");
+        assert_eq!(fmv_filename(1), "MV3.STR");
+        assert_eq!(fmv_filename(4), "MV6.STR");
+        assert_eq!(fmv_filename(5), "(cut: MOV15.STR)");
         assert_eq!(fmv_filename(99), "(unknown)");
     }
 

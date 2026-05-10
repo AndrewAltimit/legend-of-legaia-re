@@ -518,7 +518,8 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts <PATH> [
 
 # Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
 # their CDNAME label and decoded fmv_id (filtered to the retail valid
-# range 0..=5 unless --no-filter is passed):
+# range 0..=8 unless --no-filter is passed; the runtime FMV-state table
+# at 0x801D0A6C carries 12 slots — slots 5..=11 point at cut paths):
 cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
     --disc <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```

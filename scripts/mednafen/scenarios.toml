@@ -6,6 +6,28 @@
 # `scripts/mednafen/`.
 #
 # See `docs/tooling/mednafen-automation.md` for the workflow.
+#
+# ## Current corpus rotation
+#
+# This rotation captures the **per-STR FMV trigger corpus**: nine save
+# states taken right before each FMV begins playing, one per
+# `_DAT_8007BA78` value (`fmv_id ∈ 0..=8`). Slot mapping (debug-menu
+# driven, all from active scene `map01`):
+#
+#   mc2 → STR 0 (fmv_id 0)    mc3 → STR 1 (fmv_id 1)
+#   mc4 → STR 2 (fmv_id 2)    mc5 → STR 3 (fmv_id 3)
+#   mc6 → STR 4 (fmv_id 4)    mc7 → STR 5 (fmv_id 5)
+#   mc8 → STR 6 (fmv_id 6)    mc9 → STR 7 (fmv_id 7)
+#   mc0 → STR 8 (fmv_id 8)
+#
+# (mc1 is unrelated to the FMV corpus in this rotation.)
+#
+# Existing slot-specific tests (encounter trigger, battle init, item-use,
+# anim, level-up triplets, FMV-overlay residency) carry slot-fingerprint
+# guards (`require_slot_scenes`) and skip-pass when the corpus has been
+# rotated to a different shape. They remain in the test suite as
+# documentation of the prior captures; the constants they reference are
+# still authoritative for the engine layer.
 
 [defaults]
 # Filename pattern for the user's mednafen saves. {slot} is replaced with
@@ -16,54 +38,17 @@ filename_pattern = "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{s
 # (Left unset here so the manifest is portable.)
 
 # ----------------------------------------------------------------------
-# mc0 - Rim Elm next to the Genesis Tree (CDNAME `town0c`, scene 0x15).
-# Regular town residency; useful as a generic "town overlay loaded"
-# reference. `town0c` does NOT use the field-pack format; for the
-# field-pack save see mc2 (`town01` intro Rim Elm).
+# mc0 - per-STR FMV trigger corpus, slot 0 maps to STR 8 (fmv_id 8).
+# Active scene = `map01`. Game mode = 0x1A (StrInit). The runtime
+# FMV-state slot[8] points at \DATA\MOV.STR;1 (cut path; not on retail
+# disc). The save still autoplays the FMV via the str_fmv overlay's
+# fallback path, but no actual MV*.STR file is opened.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 0
-label = "town0c_rim_elm_genesis_tree"
-description = "Rim Elm next to the Genesis Tree (CDNAME `town0c`, scene 0x15)"
-topics = ["town overlay", "scene_bundle", "town residency reference"]
-diff_against = [2, 3]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: index 0x15 (town0c). Diff vs mc2 (town01) to see the field-pack vs non-field-pack town shape difference."
-
-[[scenarios.watchpoints]]
-label = "town_overlay_window"
-start = 0x801F69D8
-end = 0x801F8F02
-hint = "9 KB MIPS-overlay slot identified earlier; town overlay populates here."
-
-[[scenarios.watchpoints]]
-label = "field_pack_ram_base_pointer"
-start = 0x8007B8D0
-end = 0x8007B8D4
-hint = "_DAT_8007B8D0 = scene-asset load destination + 0x12800. mc0 reads `f0 4d 0b 80` => 0x800B4DF0; field-pack base for town0c is 0x800A25F0 (= 0x800B4DF0 - 0x12800)."
-
-# ----------------------------------------------------------------------
-# mc1 - field state on `map01` with an encounter armed but battle not
-# yet entered. Formation cell at 0x8007BD0C is `00 00 00 00` (cleared);
-# the field-pack base pointer at _DAT_8007B8D0 still holds the
-# field-side residency value (0x8014BD30) and the bundle window at
-# 0x80124690 still carries field-side payload (sample dialog text
-# visible). This is the "before" save for the §2.2 battle scene-init
-# capture pair.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 1
-label = "map01_field_pre_battle"
-description = "Field state on `map01` with encounter armed but battle not yet initiated"
-topics = ["battle scene-init", "encounter armed", "pre-battle"]
+label = "fmv_trigger_str_8"
+description = "Per-STR FMV trigger captured for fmv_id=8 (cut path slot, debug-menu driven)"
+topics = ["FMV trigger", "fmv_id 8", "str_fmv overlay", "cut path slot"]
 diff_against = [2]
 
 [scenarios.overlay_slice]
@@ -71,145 +56,55 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 (s16 LE). mc0 reads `08 00` (fmv_id = 8). Set by the FMV-trigger op handler at FUN_801E30E4 from the bytecode operand."
+
+[[scenarios.watchpoints]]
+label = "next_game_mode_global"
+start = 0x8007B83C
+end = 0x8007B83D
+hint = "_DAT_8007B83C (u8). 0x1A across the corpus = next-game-mode StrInit. Constant: `cutscene_trigger_corpus::EXPECTED_GAME_MODE`."
+
+[[scenarios.watchpoints]]
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene: `map01` (CDNAME label, scene_id 0x55). Same scene as mc2; battle layers over the active field scene rather than swapping it."
-
-[[scenarios.watchpoints]]
-label = "formation_cell_pre"
-start = 0x8007BD0C
-end = 0x8007BD10
-hint = "Formation cell pre-battle. mc1 reads `00 00 00 00` (cleared); the encounter trigger has not yet copied monster ids in. Diff vs mc2 surfaces the encounter copy."
-
-[[scenarios.watchpoints]]
-label = "field_pack_ram_base_pointer_field"
-start = 0x8007B8D0
-end = 0x8007B8D4
-hint = "_DAT_8007B8D0 = 0x8014BD30 (field-side residency). Same value as mc2; the field-pack base does not flip on encounter trigger because battles layer over the field scene."
-
-[[scenarios.watchpoints]]
-label = "battle_bundle_window_pre"
-start = 0x80124690
-end = 0x801503C4
-hint = "168 KB region holds field-scene payload pre-battle (sample text strings visible). mc1 reads recognisable ASCII; mc2 reads battle-bundle data. Diff = `engine_core::capture_observations::battle_init_overlay::BATTLE_BUNDLE_WINDOW`."
+hint = "Active scene: `map01` for every save in the FMV corpus. The user-side trigger sequence is debug-menu driven, all from this scene."
 
 # ----------------------------------------------------------------------
-# mc2 - battle initiated on `map01`. Formation cell at 0x8007BD0C is
-# `04 04 00 00` (count = 2, two copies of monster id 4). The battle
-# bundle has been paged into the 168 KB window starting at 0x80124690;
-# the 16 KB battle-overlay scratch slice at 0x801CE808..0x801D3018 has
-# been reset; the actor-tick fn pointer at 0x800836F8 = 0x80021DF4.
-# This is the "after" save for §2.2 battle scene-init.
+# mc1 - unrelated to the FMV corpus in this rotation. Held for legacy
+# scenario compatibility - the FMV-overlay residency test guards on the
+# overlay's residency signature and skip-passes if absent.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 1
+label = "unassigned"
+description = "Slot not part of the per-STR FMV corpus; legacy reference"
+topics = ["unassigned"]
+diff_against = []
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "scene_bundle_pool"
+start = 0x80084540
+end = 0x80084560
+hint = "Active scene-bundle pool. Contents are corpus-rotation specific."
+
+# ----------------------------------------------------------------------
+# mc2 - per-STR FMV trigger corpus, slot 2 maps to STR 0 (fmv_id 0).
+# fmv_id 0 plays \MOV\MV1.STR;1 (intro logo). This is also the same FMV
+# that the title-screen attract loop fires after the idle countdown.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 2
-label = "map01_battle_initiated"
-description = "Battle initiated on `map01` (count=2 formation, two monster id 4)"
-topics = ["battle scene-init", "battle bundle", "battle action overlay"]
-diff_against = [1]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: `map01` (unchanged from mc1)."
-
-[[scenarios.watchpoints]]
-label = "formation_cell_post"
-start = 0x8007BD0C
-end = 0x8007BD10
-hint = "Formation cell post-battle-init. mc2 reads `04 04 00 00` (count=2 in slots 0..1, monster id 4)."
-
-[[scenarios.watchpoints]]
-label = "battle_overlay_scratch_window"
-start = 0x801CE808
-end = 0x801D3018
-hint = "16 KB battle-overlay scratch slice. Wholesale reset on battle entry; baseline `engine_core::capture_observations::battle_init_overlay::OVERLAY_SCRATCH_WINDOW`."
-
-[[scenarios.watchpoints]]
-label = "battle_bundle_window_post"
-start = 0x80124690
-end = 0x801503C4
-hint = "168 KB battle-bundle residency window. mc2 reads battle-side data; diff vs mc1 surfaces the field→battle bundle swap. Constant: `BATTLE_BUNDLE_WINDOW`."
-
-[[scenarios.watchpoints]]
-label = "actor_tick_fn_ptr"
-start = 0x800836C8
-end = 0x800836CC
-hint = "Battle-bundle extension pointer slot. mc1 reads `0x4C500280` = `0x80024C50` (non-battle tick handler); mc2 reads `0xF41D0280` = `FUN_80021DF4` (per-frame actor tick). The pointer flips when battle scene-init completes. Constant: `ACTOR_TICK_FN_PTR_VALUE`."
-
-[[scenarios.watchpoints]]
-label = "actor_pool_window"
-start = 0x801C9370
-end = 0x801C9900
-hint = "8-slot battle actor pointer table. In the count=2 formation, slots 0..4 are populated (3 party + 2 monsters); slots 5..7 zero."
-
-# ----------------------------------------------------------------------
-# mc3 - mid-battle on `map01` with an item about to be used (Healing
-# Leaf - a consumable HP-restore, NOT Fire Book I). Formation cell
-# stays at `04 04 00 00`. The field-pack base pointer at _DAT_8007B8D0
-# has flipped to 0x800ABA4C (item-use sub-mode reseats the active
-# scene asset buffer); the script-VM context block at
-# 0x801BA7DC..0x801BADEC has shifted ~660 bytes as the menu / item /
-# target / commit pipeline runs. This pair pins the **item-use
-# battle-event overlay residency** even though the §2.6-specific
-# Fire Book +0x185 writer cannot be lifted from a Healing Leaf use.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 3
-label = "map01_item_use_healing_leaf"
-description = "Mid-battle on `map01`, item (Healing Leaf) about to be used"
-topics = ["battle item-use", "healing leaf", "item-use overlay residency"]
-diff_against = [2, 4]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: `map01` (unchanged from mc1/mc2)."
-
-[[scenarios.watchpoints]]
-label = "formation_cell_active"
-start = 0x8007BD0C
-end = 0x8007BD10
-hint = "Formation cell stays at `04 04 00 00` (count=2 active encounter)."
-
-[[scenarios.watchpoints]]
-label = "field_pack_base_item_use"
-start = 0x8007B8D0
-end = 0x8007B8D4
-hint = "_DAT_8007B8D0 = 0x800ABA4C (item-use sub-mode residency). Distinct from mc1/mc2's 0x8014BD30; the item handler reseats the scene asset buffer."
-
-[[scenarios.watchpoints]]
-label = "script_vm_ctx_window_item_use"
-start = 0x801BA7DC
-end = 0x801BADEC
-hint = "Script-VM context block. ~660 bytes shift across mc2 ↔ mc3 as the menu / item / target / commit pipeline runs. Constant: `item_use_battle_event::SCRIPT_VM_CTX_WINDOW`."
-
-# ----------------------------------------------------------------------
-# mc4 - mid-action animation on `map01`: a somersault-class strike is
-# in flight. Per-actor anim state in the slot-0 actor record at
-# 0x800EC9E8 has populated the anim-PC bytes at +0x1D8..+0x1E8, the
-# per-frame flag accumulator at +0x1F4..+0x205, and the 4-pointer
-# anim dispatch table at +0x234..+0x244 (now reads 0x801621D0,
-# 4 copies). Diff vs mc3 narrows the per-actor anim state offsets to
-# this small named region within the 0x2D4-byte actor record - direct
-# input to PRD §2.1 (ANM opaque-record interpreter).
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 4
-label = "map01_mid_somersault_strike"
-description = "Mid-action animation on `map01` (somersault-class strike in flight)"
-topics = ["ANM opaque records", "anim-PC", "actor anim dispatch"]
+label = "fmv_trigger_str_0"
+description = "Per-STR FMV trigger captured for fmv_id=0 → MV1.STR (intro logo)"
+topics = ["FMV trigger", "fmv_id 0", "MV1.STR"]
 diff_against = [3]
 
 [scenarios.overlay_slice]
@@ -217,180 +112,173 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `00 00` (fmv_id = 0)."
+
+[[scenarios.watchpoints]]
+label = "next_game_mode_global"
+start = 0x8007B83C
+end = 0x8007B83D
+hint = "_DAT_8007B83C = 0x1A (StrInit)."
+
+[[scenarios.watchpoints]]
+label = "field_pack_base_pointer"
+start = 0x8007B8D0
+end = 0x8007B8D4
+hint = "_DAT_8007B8D0 = 0x8014BD30 (= 0x80139530 + 0x12800). map01's field-pack base; constant: `cutscene_trigger_corpus::MAP01_FIELD_PACK_BASE`."
+
+# ----------------------------------------------------------------------
+# mc3 - fmv_id=1. Plays \MOV\MV3.STR;1 first segment (start sector 1,
+# ~225 frames). NOTE: skips MV2.STR (which is on the disc but never
+# referenced by any FMV-state slot).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 3
+label = "fmv_trigger_str_1"
+description = "Per-STR FMV trigger captured for fmv_id=1 → MV3.STR (first segment)"
+topics = ["FMV trigger", "fmv_id 1", "MV3.STR segment 1", "skips MV2"]
+diff_against = [4]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `01 00` (fmv_id = 1)."
+
+[[scenarios.watchpoints]]
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene: `map01` (unchanged from mc1/mc2/mc3)."
-
-[[scenarios.watchpoints]]
-label = "actor_record_slot0_anim_pc"
-start = 0x800ECBC0
-end = 0x800ECBD0
-hint = "Slot-0 actor record +0x1D8..+0x1E8 (16 bytes). Pre-animation = mostly zero with sentinel `01 77` at +0x1D7..+0x1D8; mid-animation = incrementing per-bone counters. Constant: `battle_action_animation::ANIM_PC_FIELD_OFFSET`."
-
-[[scenarios.watchpoints]]
-label = "actor_record_slot0_anim_flags"
-start = 0x800ECBDC
-end = 0x800ECBEE
-hint = "Slot-0 actor record +0x1F4..+0x205 (18 bytes). Per-frame anim flag accumulator. Pre = zero; mid = stamped run of `0x11` bytes. Constant: `ANIM_FRAME_FLAGS_OFFSET`."
-
-[[scenarios.watchpoints]]
-label = "actor_record_slot0_anim_dispatch"
-start = 0x800ECC1C
-end = 0x800ECC2C
-hint = "Slot-0 actor record +0x234..+0x244 (16 bytes; 4 × u32). Anim dispatch pointer table. Pre = 4 × `0x8015CC30`; mid = 4 × `0x801621D0`. Constant: `ANIM_DISPATCH_PTR_TABLE_OFFSET`."
-
-[[scenarios.watchpoints]]
-label = "anim_record_header_post"
-start = 0x801621D0
-end = 0x801621E8
-hint = "Anim-record header at the post-animation dispatch pointer (mc4). 24 bytes: u32 len=0x18, _, _, u32 4 (frame_count?), u32 5, u32 0x00299307, u32 0x0140017E. Pre-animation save (mc3) reads zeros at this address; the loader has paged a different ANM record into this slot for the somersault."
+hint = "Active scene: `map01` (debug-menu trigger from the same field scene as the rest of the corpus)."
 
 # ----------------------------------------------------------------------
-# mc5..mc9: legacy NOA / GALA character-level-up captures (battle scene
-# `map01`). Captured into the previous corpus rotation; tests against
-# them skip-pass when the scene fingerprint no longer matches the
-# expected level-up phase. Slot semantics retained here for reference:
-#
-#   mc5 = record-write frame (record stats + XP + rank counter applied)
-#   mc6 = live-copy frame    (live in-battle stats applied; HP_max /
-#                              MP_max / SP_max not yet settled)
-#   mc7 = doubles as Gala-pre AND Noa-settle (HP_max / MP_max / SP_max
-#         settled in live copy)
-#   mc8 = Gala record-write
-#   mc9 = Gala live-copy + settle
-#
-# Codified deltas: `engine_core::levelup::observations::noa_4_level_jump`
-# (Noa) and `gala_4_level_jump` (Gala). Phase split documented at
-# `engine_core::capture_observations::char_level_up`.
-#
-# When the user re-captures slot 4 for ANM-strike work the level-up
-# triplet test loses its phase-1 anchor; the test skips by design via
-# `require_slot_scenes` until a fresh anchor save replaces slot 4.
+# mc4 - fmv_id=2. Plays \MOV\MV3.STR;1 SECOND segment. Same path as
+# slot[1] but with start-sector offset `+0x1A5` (~635 frames). The
+# duplicate path-pointer + distinct sector offset is the runtime's way
+# of partitioning a single MV*.STR file into multiple cutscenes.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 4
+label = "fmv_trigger_str_2"
+description = "Per-STR FMV trigger captured for fmv_id=2 → MV3.STR (second segment)"
+topics = ["FMV trigger", "fmv_id 2", "MV3.STR segment 2", "multi-segment"]
+diff_against = [5]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `02 00` (fmv_id = 2)."
+
+# ----------------------------------------------------------------------
+# mc5 - fmv_id=3. Plays \MOV\MV4.STR;1.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 5
-label = "noa_level_up_record_write"
-description = "Mid-Noa-level-up: record-stat window written (`map01`)"
-topics = ["stat growth", "level-up curve", "Noa", "record write phase"]
-diff_against = [4, 6]
+label = "fmv_trigger_str_3"
+description = "Per-STR FMV trigger captured for fmv_id=3 → MV4.STR"
+topics = ["FMV trigger", "fmv_id 3", "MV4.STR"]
+diff_against = [6]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "char_record_noa_record_window"
-start = 0x80084C38
-end = 0x80084C4A
-hint = "Noa's record stat window at +0x11C..+0x12D (= 0x80084B1C + 0x11C). 9 u16 LE values: HP_max, MP_max, cap=100, six stats. Phase 1 of 3."
-
-[[scenarios.watchpoints]]
-label = "char_record_noa_xp_and_rank"
-start = 0x80084B20
-end = 0x80084B22
-hint = "XP at +0x004 (u16 LE). Phase 1 also bumps rank counter at +0x130."
-
-[[scenarios]]
-slot = 6
-label = "noa_level_up_live_copy"
-description = "Mid-Noa-level-up: live in-battle stats copied (`map01`)"
-topics = ["stat growth", "level-up curve", "Noa", "live copy phase"]
-diff_against = [5, 7]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "char_record_noa_live_window"
-start = 0x80084C20
-end = 0x80084C38
-hint = "Noa's live in-battle window at +0x104..+0x11B (HP_cur, HP_max, MP_cur, MP_max, SP_cur, SP_max, six u16 stats). In mc6, HP_cur/MP_cur and the six u16 stats are written; HP_max/MP_max/SP_max are NOT yet settled."
-
-[[scenarios]]
-slot = 7
-label = "gala_level_up_pre"
-description = "Pre-Gala-level-up battle frame (also Noa-settle frame) (`map01`)"
-topics = ["stat growth", "level-up curve", "Gala", "Noa settle"]
-diff_against = [4, 8, 9]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "char_record_noa_settled"
-start = 0x80084C22
-end = 0x80084C2C
-hint = "Noa's live HP_max/MP_max/SP_max at +0x106 / +0x10A / +0x10E (relative to Noa base 0x80084B1C). Settled in mc7."
-
-[[scenarios.watchpoints]]
-label = "char_record_gala"
-start = 0x80084F30
-end = 0x80085344
-hint = "Gala's character record. Pre-event values: cumulative XP 140 at +0x004, HP_max 0x00D2 (210) at +0x11C, SP_max 0x35 (53) unchanged across the triplet."
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `03 00` (fmv_id = 3)."
 
 # ----------------------------------------------------------------------
-# mc7..mc9: GALA character-level-up pair (battle scene `map01`).
-#
-#   mc7 = pre-Gala-level-up (also Noa-settle)
-#   mc8 = record-write frame (Gala record stats + XP + rank applied)
-#   mc9 = live-copy / settle frame (Gala live in-battle stats applied;
-#         HP_max/MP_max settle in same frame)
-#
-# Codified deltas: `engine_core::levelup::observations::gala_4_level_jump`.
-# Gala's level-up grants HP/MP/stats but NOT SP_max (Gala uses physical
-# Tactical Arts, not Seru magic).
+# mc6 - fmv_id=4. Plays \MOV\MV6.STR;1. NOTE: skips MV5.STR (which is
+# on the disc but never referenced by any FMV-state slot).
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 6
+label = "fmv_trigger_str_4"
+description = "Per-STR FMV trigger captured for fmv_id=4 → MV6.STR"
+topics = ["FMV trigger", "fmv_id 4", "MV6.STR", "skips MV5"]
+diff_against = [7]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `04 00` (fmv_id = 4)."
+
+# ----------------------------------------------------------------------
+# mc7 - fmv_id=5. Maps to slot[5] which points at \DATA\MOV15.STR;1
+# (cut path; not on retail disc). The trigger-side state is fully
+# pinned but the play-loop opens a non-existent path.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 7
+label = "fmv_trigger_str_5"
+description = "Per-STR FMV trigger captured for fmv_id=5 (cut path slot)"
+topics = ["FMV trigger", "fmv_id 5", "cut path slot"]
+diff_against = [8]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `05 00` (fmv_id = 5). Slot[5] points at \\DATA\\MOV15.STR;1 - cut path."
+
+# ----------------------------------------------------------------------
+# mc8 - fmv_id=6. Maps to slot[6] which points at \DATA\MOV.STR;1 (cut).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
-label = "gala_level_up_record_write"
-description = "Mid-Gala-level-up: record-stat window written (`map01`)"
-topics = ["stat growth", "level-up curve", "Gala", "record write phase"]
-diff_against = [7, 9]
+label = "fmv_trigger_str_6"
+description = "Per-STR FMV trigger captured for fmv_id=6 (cut path slot)"
+topics = ["FMV trigger", "fmv_id 6", "cut path slot"]
+diff_against = [9]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "char_record_gala_record_window"
-start = 0x8008504C
-end = 0x8008505E
-hint = "Gala's record stat window at +0x11C..+0x12D (= 0x80084F30 + 0x11C). HP_max delta = +44 (0x002C), MP_max delta = +8."
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `06 00` (fmv_id = 6). Slot[6] points at \\DATA\\MOV.STR;1 - cut path."
 
-[[scenarios.watchpoints]]
-label = "char_record_gala_xp_and_rank"
-start = 0x80084F34
-end = 0x80084F36
-hint = "Gala XP at +0x004 (u16 LE). Phase 1 also bumps rank counter at +0x130."
-
+# ----------------------------------------------------------------------
+# mc9 - fmv_id=7. Maps to slot[7] which points at \DATA\MOV.STR;1 (cut).
+# ----------------------------------------------------------------------
 [[scenarios]]
 slot = 9
-label = "gala_level_up_settled"
-description = "Post-Gala-level-up: live in-battle stats applied (`map01`)"
-topics = ["stat growth", "level-up curve", "Gala", "live copy phase"]
-diff_against = [7, 8]
+label = "fmv_trigger_str_7"
+description = "Per-STR FMV trigger captured for fmv_id=7 (cut path slot)"
+topics = ["FMV trigger", "fmv_id 7", "cut path slot"]
+diff_against = [0]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "char_record_gala_live_window"
-start = 0x80085034
-end = 0x8008504C
-hint = "Gala's live in-battle window at +0x104..+0x11B (= 0x80084F30 + 0x104). Settled deltas land here in mc9."
-
-[[scenarios.watchpoints]]
-label = "char_record_gala_sp_max_unchanged"
-start = 0x8008503E
-end = 0x80085040
-hint = "Gala's SP_max at +0x10E should NOT change across the triplet (Gala uses physical Tactical Arts; level-up grants no SP)."
-
-[[scenarios.watchpoints]]
-label = "stat_growth_lookup_window"
-start = 0x80120000
-end = 0x80140000
-hint = "Per-Seru stat-grant lookup region. Captured deltas exposed via `engine_core::levelup::observations::{noa_4_level_jump, gala_4_level_jump}`. The grant table source itself is still capture-blocked - searching this window across the triplets is part of the §2.2 hunt."
+label = "fmv_id_global"
+start = 0x8007BA78
+end = 0x8007BA7A
+hint = "_DAT_8007BA78 = `07 00` (fmv_id = 7). Slot[7] points at \\DATA\\MOV.STR;1 - cut path."
