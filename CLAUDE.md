@@ -103,6 +103,8 @@ How the runtime engine works.
 | [`functions.md`](docs/reference/functions.md) | Notable Ghidra-traced function entry points (the canonical directory). |
 | [`memory-map.md`](docs/reference/memory-map.md) | RAM map + key globals. |
 | [`builds.md`](docs/reference/builds.md) | TCRF region data; known builds. |
+| [`cheats.md`](docs/reference/cheats.md) | GameShark / Mednafen cheat database parser + classifier; pinned RAM offsets for character record, inventory, battle actor, story flags. |
+| [`gamedata.md`](docs/reference/gamedata.md) | Curated arts/magic/items/weapons/armor/accessories/enemies/shops/casino/fishing tables mined from public walkthroughs. Ground-truth labels for binary records under reverse engineering. |
 
 ### Crates - [`crates/`](crates/)
 
@@ -130,6 +132,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/extract`](crates/extract/README.md) | `legaia-extract` | Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. |
 | [`crates/mdec`](crates/mdec/README.md) | `mdec` | PSX MDEC clean-room decoder (BS v2 bitstream → RGBA8 pixels): VLC tables, 8-point IDCT, YCbCr→RGB, `StrFrameAssembler` for multi-sector STR video frames. |
 | [`crates/mednafen`](crates/mednafen/README.md) | `mednafen-state` | Mednafen save-state parser (`MDFNSVST` gzip + targeted-scan section indexer) + watchpoint-equivalent automation toolkit: pairwise main-RAM diff with PSX-virtual-address regions, sequence bisection for write-transition detection, declarative scenario manifest at [`scripts/mednafen/scenarios.toml`](scripts/mednafen/scenarios.toml). |
+| [`crates/gamedata`](crates/gamedata/README.md) | `gamedata-tool` | Curated game-data tables (arts with command sequences + AP costs, magic, items, weapons, armor, accessories, enemies with drop / steal table, shops, casino, fishing) mined from public walkthroughs. Cross-validates against `legaia-art::tables`. Acts as ground-truth labels for the binary records being reverse-engineered. See [`docs/reference/gamedata.md`](docs/reference/gamedata.md). |
 
 **Track 2 - engine reimplementation (clean-room Rust)**
 

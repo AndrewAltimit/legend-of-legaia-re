@@ -123,6 +123,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
     ("reference/cheats.html",      "Cheat databases",               "reference/cheats",           "reference/cheats.html"),
+    ("reference/gamedata.html",    "Curated game-data tables",      "reference/gamedata",         "reference/gamedata.html"),
 ]
 
 

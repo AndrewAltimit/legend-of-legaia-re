@@ -1,0 +1,560 @@
+# Tactical Arts: per-character arts with command sequences and AP costs.
+#
+# `command` is the player-facing input scheme as printed in the walkthrough.
+# Tokens: "Arms", "Ra-Seru", "High", "Low".
+# `directions` is the raw direction-byte sequence that ends up in the on-disc
+# Art Record (`crates/art` parser, +0x00 prefix). Mapping:
+#
+#   Vahn / Gala: Arms = L (1)  Ra-Seru = R (2)  High = U (4)  Low = D (3)
+#   Noa:         Arms = R (2)  Ra-Seru = L (1)  High = U (4)  Low = D (3)
+#
+# Noa is left-handed - her Arms is the *right* button (`> < ^ v` in the older
+# walkthrough notation). Same animation, mirrored input.
+#
+# `kind` is one of: regular, hyper, super, miracle.
+# `action_constant` (when set) is the byte value 0x1B..=0x32 the action queue
+# stores; cross-checked against `crates/art/src/tables.rs`.
+
+[[arts]]
+character = "Vahn"
+name = "Hyper Elbow"
+kind = "regular"
+ap = 18
+command = ["Arms", "Ra-Seru", "High"]
+directions = [1, 2, 4]
+action_constant = 0x29
+
+[[arts]]
+character = "Vahn"
+name = "Charging Scorch"
+kind = "regular"
+ap = 18
+command = ["Low", "Ra-Seru", "High"]
+directions = [3, 2, 4]
+action_constant = 0x28
+
+[[arts]]
+character = "Vahn"
+name = "Somersault"
+kind = "regular"
+ap = 18
+command = ["High", "Low", "High"]
+directions = [4, 3, 4]
+action_constant = 0x27
+
+[[arts]]
+character = "Vahn"
+name = "Slash Kick"
+kind = "regular"
+ap = 18
+command = ["High", "Low", "Arms"]
+directions = [4, 3, 1]
+action_constant = 0x26
+
+[[arts]]
+character = "Vahn"
+name = "Power Punch"
+kind = "regular"
+ap = 18
+command = ["Arms", "Arms", "Low"]
+directions = [1, 1, 3]
+action_constant = 0x25
+
+[[arts]]
+character = "Vahn"
+name = "Cross Kick"
+kind = "regular"
+ap = 24
+command = ["Low", "Low", "Low", "High"]
+directions = [3, 3, 3, 4]
+action_constant = 0x24
+
+[[arts]]
+character = "Vahn"
+name = "Pyro Pummel"
+kind = "regular"
+ap = 24
+command = ["Arms", "Ra-Seru", "High", "Arms"]
+directions = [1, 2, 4, 1]
+action_constant = 0x23
+
+[[arts]]
+character = "Vahn"
+name = "Spin Combo"
+kind = "regular"
+ap = 24
+command = ["High", "Low", "Ra-Seru", "Arms"]
+directions = [4, 3, 2, 1]
+action_constant = 0x22
+
+[[arts]]
+character = "Vahn"
+name = "PK Combo"
+kind = "regular"
+ap = 24
+command = ["Low", "High", "High", "Arms"]
+directions = [3, 4, 4, 1]
+action_constant = 0x21
+
+[[arts]]
+character = "Vahn"
+name = "Hurricane"
+kind = "regular"
+ap = 24
+command = ["High", "High", "Low", "Low"]
+directions = [4, 4, 3, 3]
+action_constant = 0x20
+
+[[arts]]
+character = "Vahn"
+name = "Cyclone"
+kind = "regular"
+ap = 24
+command = ["Low", "High", "High", "High"]
+directions = [3, 4, 4, 4]
+action_constant = 0x1F
+
+[[arts]]
+character = "Vahn"
+name = "Tornado Flame (Hyper)"
+kind = "hyper"
+ap = 30
+command = ["Ra-Seru", "Ra-Seru", "Arms"]
+directions = [2, 2, 1]
+action_constant = 0x1E
+
+[[arts]]
+character = "Vahn"
+name = "Fire Blow"
+kind = "hyper"
+ap = 40
+command = ["Ra-Seru", "Ra-Seru", "Low", "Arms"]
+directions = [2, 2, 3, 1]
+action_constant = 0x1D
+
+[[arts]]
+character = "Vahn"
+name = "Burning Flare"
+kind = "hyper"
+ap = 50
+command = ["Ra-Seru", "Low", "Arms", "Low", "Arms"]
+directions = [2, 3, 1, 3, 1]
+action_constant = 0x1C
+
+[[arts]]
+character = "Vahn"
+name = "Power Slash"
+kind = "super"
+ap = 54
+command = ["Low", "Ra-Seru", "High", "Low", "High", "Low", "Arms"]
+directions = [3, 2, 4, 3, 4, 3, 1]
+action_constant = 0x2E
+
+[[arts]]
+character = "Vahn"
+name = "Fire Tackle"
+kind = "super"
+ap = 54
+command = ["Arms", "Ra-Seru", "Arms", "Arms", "Low", "Ra-Seru", "High"]
+directions = [1, 2, 1, 1, 3, 2, 4]
+action_constant = 0x2D
+
+[[arts]]
+character = "Vahn"
+name = "Maximum Blow"
+kind = "super"
+ap = 54
+command = ["Low", "Ra-Seru", "High", "Low", "Arms", "Arms", "Low"]
+directions = [3, 2, 4, 3, 1, 1, 3]
+action_constant = 0x2C
+
+[[arts]]
+character = "Vahn"
+name = "Tri-Somersault"
+kind = "super"
+ap = 60
+command = ["High", "Low", "High", "High", "High", "Low", "High"]
+directions = [4, 3, 4, 4, 4, 3, 4]
+action_constant = 0x2B
+
+[[arts]]
+character = "Vahn"
+name = "Rolling Combo"
+kind = "super"
+ap = 66
+command = ["High", "Low", "Ra-Seru", "Arms", "Arms", "Low", "High", "High", "Arms"]
+directions = [4, 3, 2, 1, 1, 3, 4, 4, 1]
+# Action constant 0x2F / 0x30 are split internally as "Rolling Combo 1/2" -
+# the runtime emits both as one combo. Use 0x2F here as the entry point.
+action_constant = 0x2F
+
+[[arts]]
+character = "Vahn"
+name = "Vahn's Craze"
+kind = "miracle"
+ap = 99
+command = ["Ra-Seru", "Low", "Arms", "High", "Arms", "High", "Ra-Seru", "Low", "Arms"]
+directions = [2, 3, 1, 4, 1, 4, 2, 3, 1]
+action_constant = 0x1B
+
+[[arts]]
+character = "Noa"
+name = "Lizard Tail"
+kind = "regular"
+ap = 18
+command = ["High", "Low", "High"]
+directions = [4, 3, 4]
+action_constant = 0x2B
+
+[[arts]]
+character = "Noa"
+name = "Acrobatic Blitz"
+kind = "regular"
+ap = 18
+command = ["High", "Low", "Low"]
+directions = [4, 3, 3]
+action_constant = 0x2A
+
+[[arts]]
+character = "Noa"
+name = "Sonic Javelin"
+kind = "regular"
+ap = 18
+command = ["Arms", "Low", "Arms"]
+directions = [2, 3, 2]
+action_constant = 0x29
+
+[[arts]]
+character = "Noa"
+name = "Blizzard Bash"
+kind = "regular"
+ap = 18
+command = ["Arms", "Ra-Seru", "Low"]
+directions = [2, 1, 3]
+action_constant = 0x28
+
+[[arts]]
+character = "Noa"
+name = "Mirage Lancer"
+kind = "regular"
+ap = 24
+command = ["Arms", "Arms", "High", "High"]
+directions = [2, 2, 4, 4]
+action_constant = 0x27
+
+[[arts]]
+character = "Noa"
+name = "Dolphin Attack"
+kind = "regular"
+ap = 24
+command = ["Arms", "Arms", "Ra-Seru", "Arms"]
+directions = [2, 2, 1, 2]
+action_constant = 0x26
+
+[[arts]]
+character = "Noa"
+name = "Bird Step"
+kind = "regular"
+ap = 24
+command = ["Low", "Low", "Low", "High"]
+directions = [3, 3, 3, 4]
+action_constant = 0x25
+
+[[arts]]
+character = "Noa"
+name = "Swan Driver"
+kind = "regular"
+ap = 24
+command = ["Low", "High", "High", "High"]
+directions = [3, 4, 4, 4]
+action_constant = 0x24
+
+[[arts]]
+character = "Noa"
+name = "Tough Love"
+kind = "regular"
+ap = 30
+command = ["Low", "High", "Low", "Ra-Seru", "Arms"]
+directions = [3, 4, 3, 1, 2]
+action_constant = 0x23
+
+[[arts]]
+character = "Noa"
+name = "Rushing Gale"
+kind = "regular"
+ap = 30
+command = ["High", "High", "Ra-Seru", "Low", "Arms"]
+directions = [4, 4, 1, 3, 2]
+action_constant = 0x22
+
+[[arts]]
+character = "Noa"
+name = "Tempest Break"
+kind = "regular"
+ap = 36
+command = ["Arms", "Arms", "Ra-Seru", "High", "High", "High"]
+directions = [2, 2, 1, 4, 4, 4]
+action_constant = 0x21
+
+[[arts]]
+character = "Noa"
+name = "Frost Breath"
+kind = "hyper"
+ap = 40
+command = ["Ra-Seru", "Ra-Seru", "Arms", "Arms"]
+directions = [1, 1, 2, 2]
+action_constant = 0x20
+
+[[arts]]
+character = "Noa"
+name = "Vulture Blade"
+kind = "hyper"
+ap = 50
+command = ["Ra-Seru", "Ra-Seru", "Arms", "Ra-Seru", "Arms"]
+directions = [1, 1, 2, 1, 2]
+action_constant = 0x1F
+
+[[arts]]
+character = "Noa"
+name = "Hurricane Kick"
+kind = "hyper"
+ap = 70
+command = ["Ra-Seru", "High", "High", "High", "High", "Low", "Arms"]
+directions = [1, 4, 4, 4, 4, 3, 2]
+# All three Hurricane Kick on-disc levels (0x1C/0x1D/0x1E) share this
+# Learned-Art slot. Use 0x1C as the entry point.
+action_constant = 0x1C
+
+[[arts]]
+character = "Noa"
+name = "Super Javelin"
+kind = "super"
+ap = 48
+command = ["High", "High", "Ra-Seru", "Low", "Arms", "Low", "Arms"]
+directions = [4, 4, 1, 3, 2, 3, 2]
+action_constant = 0x2F
+
+[[arts]]
+character = "Noa"
+name = "Dragon Fangs"
+kind = "super"
+ap = 54
+command = ["High", "Low", "High", "High", "Low", "Low"]
+directions = [4, 3, 4, 4, 3, 3]
+action_constant = 0x32
+
+[[arts]]
+character = "Noa"
+name = "Triple Lizard"
+kind = "super"
+ap = 66
+command = ["Low", "Low", "Low", "High", "High", "High", "Low", "High"]
+directions = [3, 3, 3, 4, 4, 4, 3, 4]
+action_constant = 0x2E
+
+[[arts]]
+character = "Noa"
+name = "Super Tempest"
+kind = "super"
+ap = 60
+command = ["Arms", "Arms", "Ra-Seru", "Arms", "Arms", "Ra-Seru", "High", "High", "High"]
+directions = [2, 2, 1, 2, 2, 1, 4, 4, 4]
+action_constant = 0x30
+
+[[arts]]
+character = "Noa"
+name = "Love You"
+kind = "super"
+ap = 72
+command = ["Arms", "Arms", "High", "High", "Low", "High", "Low", "Ra-Seru", "Arms"]
+directions = [2, 2, 4, 4, 3, 4, 3, 1, 2]
+action_constant = 0x31
+
+[[arts]]
+character = "Noa"
+name = "Noa's Ark"
+kind = "miracle"
+ap = 99
+command = ["Ra-Seru", "High", "Arms", "Low", "High", "Ra-Seru", "High", "Low", "Arms"]
+directions = [1, 4, 2, 3, 4, 1, 4, 3, 2]
+action_constant = 0x1B
+
+[[arts]]
+character = "Gala"
+name = "Flying Knee Attack"
+kind = "regular"
+ap = 18
+command = ["Low", "High", "Arms"]
+directions = [3, 4, 1]
+action_constant = 0x29
+
+[[arts]]
+character = "Gala"
+name = "Battering Ram"
+kind = "regular"
+ap = 18
+command = ["Arms", "Ra-Seru", "Low"]
+directions = [1, 2, 3]
+action_constant = 0x28
+
+[[arts]]
+character = "Gala"
+name = "Ironhead"
+kind = "regular"
+ap = 18
+command = ["High", "Low", "Low"]
+directions = [4, 3, 3]
+action_constant = 0x27
+
+[[arts]]
+character = "Gala"
+name = "Back Punch"
+kind = "regular"
+ap = 18
+command = ["Arms", "Ra-Seru", "Arms"]
+directions = [1, 2, 1]
+action_constant = 0x26
+
+[[arts]]
+character = "Gala"
+name = "Guillotine"
+kind = "regular"
+ap = 18
+command = ["Arms", "High", "Arms"]
+directions = [1, 4, 1]
+action_constant = 0x25
+
+[[arts]]
+character = "Gala"
+name = "Head-Splitter"
+kind = "regular"
+ap = 18
+command = ["Arms", "High", "High"]
+directions = [1, 4, 4]
+action_constant = 0x24
+
+[[arts]]
+character = "Gala"
+name = "Side Kick"
+kind = "regular"
+ap = 24
+command = ["Low", "Low", "High", "High"]
+directions = [3, 3, 4, 4]
+action_constant = 0x23
+
+[[arts]]
+character = "Gala"
+name = "Black Rain"
+kind = "regular"
+ap = 24
+command = ["High", "Arms", "Low", "Low"]
+directions = [4, 1, 3, 3]
+action_constant = 0x22
+
+[[arts]]
+character = "Gala"
+name = "Neo Raising"
+kind = "regular"
+ap = 30
+command = ["Arms", "Arms", "Ra-Seru", "High", "Arms"]
+directions = [1, 1, 2, 4, 1]
+action_constant = 0x21
+
+[[arts]]
+character = "Gala"
+name = "Electro Thrash"
+kind = "regular"
+ap = 30
+command = ["High", "Arms", "Low", "Ra-Seru", "Arms"]
+directions = [4, 1, 3, 2, 1]
+action_constant = 0x20
+
+[[arts]]
+character = "Gala"
+name = "Bull Horns"
+kind = "regular"
+ap = 30
+command = ["Arms", "High", "Ra-Seru", "Low", "Arms"]
+directions = [1, 4, 2, 3, 1]
+action_constant = 0x1F
+
+[[arts]]
+character = "Gala"
+name = "Thunder Punch (Hyper)"
+kind = "hyper"
+ap = 30
+command = ["Ra-Seru", "Ra-Seru", "Arms"]
+directions = [2, 2, 1]
+action_constant = 0x1E
+
+[[arts]]
+character = "Gala"
+name = "Lightning Storm"
+kind = "hyper"
+ap = 40
+command = ["Ra-Seru", "Ra-Seru", "High", "Arms"]
+directions = [2, 2, 4, 1]
+action_constant = 0x1D
+
+[[arts]]
+character = "Gala"
+name = "Explosive Fist"
+kind = "hyper"
+ap = 50
+command = ["Ra-Seru", "Ra-Seru", "Arms", "Arms", "Arms"]
+directions = [2, 2, 1, 1, 1]
+action_constant = 0x1C
+
+[[arts]]
+character = "Gala"
+name = "Rushing Crush"
+kind = "super"
+ap = 54
+command = ["Arms", "Ra-Seru", "Low", "High", "Arms", "High", "High"]
+directions = [1, 2, 3, 4, 1, 4, 4]
+action_constant = 0x2D
+
+[[arts]]
+character = "Gala"
+name = "Super Ironhead"
+kind = "super"
+ap = 54
+command = ["Low", "High", "Arms", "High", "High", "Low", "Low"]
+directions = [3, 4, 1, 4, 4, 3, 3]
+action_constant = 0x2C
+
+[[arts]]
+character = "Gala"
+name = "Back Punch x3"
+kind = "super"
+ap = 54
+command = ["High", "Low", "Low", "High", "Arms", "Ra-Seru", "Arms"]
+directions = [4, 3, 3, 4, 1, 2, 1]
+action_constant = 0x2B
+
+[[arts]]
+character = "Gala"
+name = "Heaven's Drop"
+kind = "super"
+ap = 60
+command = ["Low", "High", "Arms", "High", "High", "Arms", "Low", "Low"]
+directions = [3, 4, 1, 4, 4, 1, 3, 3]
+action_constant = 0x2E
+
+[[arts]]
+character = "Gala"
+name = "Neo Static Raising"
+kind = "super"
+ap = 66
+command = ["Arms", "Ra-Seru", "Arms", "High", "Arms", "Arms", "Ra-Seru", "High", "Arms"]
+directions = [1, 2, 1, 4, 1, 1, 2, 4, 1]
+action_constant = 0x2F
+
+[[arts]]
+character = "Gala"
+name = "Biron Rage"
+kind = "miracle"
+ap = 99
+command = ["Ra-Seru", "Ra-Seru", "Low", "High", "Low", "High", "Low", "Arms", "Arms"]
+directions = [2, 2, 3, 4, 3, 4, 3, 1, 1]
+action_constant = 0x1B

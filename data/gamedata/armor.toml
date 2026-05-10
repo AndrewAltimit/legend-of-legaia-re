@@ -1,0 +1,460 @@
+# Armor table: body armor / helmet / shoes.
+#
+# `slot` = the equipment slot ("armor" / "helmet" / "shoes").
+# `udf` = upper defense factor (used by power bytes 0x16-0x1A and 0x0C-0x10).
+# `ldf` = lower defense factor (used by power bytes 0x1B-0x1F and 0x11-0x15).
+# `equip` is one of: Vahn / Noa / Gala / None (None = quest-restricted -
+#   the War God Plate is "Equipped On: None" in the walkthrough; we
+#   carry that through verbatim).
+
+[[armor]]
+key = "battle_robe"
+name = "Battle Robe"
+slot = "armor"
+price = 35000
+udf = 65
+ldf = 60
+equip = "Noa"
+
+[[armor]]
+key = "electric_shoes"
+name = "Electric Shoes"
+slot = "shoes"
+price = 560
+udf = 6
+ldf = 8
+equip = "Noa"
+
+[[armor]]
+key = "expert_armor"
+name = "Expert Armor"
+slot = "armor"
+price = 22200
+udf = 57
+ldf = 56
+equip = "Vahn"
+
+[[armor]]
+key = "expert_boots"
+name = "Expert Boots"
+slot = "shoes"
+price = 8800
+udf = 40
+ldf = 37
+equip = "Vahn"
+
+[[armor]]
+key = "expert_seal"
+name = "Expert Seal"
+slot = "helmet"
+price = 2400
+udf = 23
+ldf = 16
+equip = "Vahn"
+
+[[armor]]
+key = "fighters_band"
+name = "Fighter's Band"
+slot = "helmet"
+price = 2600
+udf = 28
+ldf = 20
+equip = "Gala"
+
+[[armor]]
+key = "fighting_boots"
+name = "Fighting Boots"
+slot = "shoes"
+price = 4300
+udf = 33
+ldf = 31
+equip = "Gala"
+
+[[armor]]
+key = "fighting_plate"
+name = "Fighting Plate"
+slot = "armor"
+price = 4600
+udf = 28
+ldf = 30
+equip = "Gala"
+
+[[armor]]
+key = "fighting_robe"
+name = "Fighting Robe"
+slot = "armor"
+price = 1100
+udf = 10
+ldf = 9
+equip = "Noa"
+
+[[armor]]
+key = "green_clip"
+name = "Green Clip"
+slot = "helmet"
+price = 1000
+udf = 16
+ldf = 10
+equip = "Noa"
+
+[[armor]]
+key = "green_robe"
+name = "Green Robe"
+slot = "armor"
+price = 2800
+udf = 19
+ldf = 18
+equip = "Noa"
+
+[[armor]]
+key = "guardian_clip"
+name = "Guardian Clip"
+slot = "helmet"
+price = 320
+udf = 7
+ldf = 4
+equip = "Noa"
+
+[[armor]]
+key = "hero_armor"
+name = "Hero Armor"
+slot = "armor"
+price = 40000
+udf = 68
+ldf = 67
+equip = "Vahn"
+
+[[armor]]
+key = "hero_boots"
+name = "Hero Boots"
+slot = "shoes"
+price = 15500
+udf = 55
+ldf = 42
+equip = "Vahn"
+
+[[armor]]
+key = "hunter_clothes"
+name = "Hunter Clothes"
+slot = "armor"
+price = 900
+udf = 8
+ldf = 7
+equip = "Vahn"
+
+[[armor]]
+key = "hero_seal"
+name = "Hero Seal"
+slot = "helmet"
+price = 12500
+udf = 44
+ldf = 40
+equip = "Vahn"
+
+[[armor]]
+key = "ironman_armor"
+name = "Ironman Armor"
+slot = "armor"
+price = 5300
+udf = 33
+ldf = 34
+equip = "Vahn"
+
+[[armor]]
+key = "ironman_boots"
+name = "Ironman Boots"
+slot = "shoes"
+price = 1400
+udf = 16
+ldf = 14
+equip = "Vahn"
+
+[[armor]]
+key = "ironman_seal"
+name = "Ironman Seal"
+slot = "helmet"
+price = 940
+udf = 15
+ldf = 10
+equip = "Vahn"
+
+[[armor]]
+key = "jeweled_clip"
+name = "Jeweled Clip"
+slot = "helmet"
+price = 2500
+udf = 25
+ldf = 18
+equip = "Noa"
+
+[[armor]]
+key = "master_armor"
+name = "Master Armor"
+slot = "armor"
+price = 15400
+udf = 45
+ldf = 45
+equip = "Vahn"
+
+[[armor]]
+key = "master_boots"
+name = "Master Boots"
+slot = "shoes"
+price = 3200
+udf = 25
+ldf = 22
+equip = "Vahn"
+
+[[armor]]
+key = "olive_shoes"
+name = "Olive Shoes"
+slot = "shoes"
+price = 3900
+udf = 34
+ldf = 29
+equip = "Noa"
+
+[[armor]]
+key = "power_plate"
+name = "Power Plate"
+slot = "armor"
+price = 2100
+udf = 16
+ldf = 17
+equip = "Vahn"
+
+[[armor]]
+key = "power_earrings"
+name = "Power Earrings"
+slot = "helmet"
+price = 780
+udf = 14
+ldf = 8
+equip = "Gala"
+
+[[armor]]
+key = "power_shoes"
+name = "Power Shoes"
+slot = "shoes"
+price = 1300
+udf = 16
+ldf = 14
+equip = "Gala"
+
+[[armor]]
+key = "pronged_crown"
+name = "Pronged Crown"
+slot = "helmet"
+price = 18200
+udf = 50
+ldf = 47
+equip = "Noa"
+
+# ---- Ra-Seru endgame set (no price; quest reward) ----
+
+[[armor]]
+key = "ra_seru_armor"
+name = "Ra-Seru Armor"
+slot = "armor"
+udf = 83
+ldf = 82
+equip = "Vahn"
+
+[[armor]]
+key = "ra_seru_boots"
+name = "Ra-Seru Boots"
+slot = "shoes"
+udf = 86
+ldf = 82
+equip = "Vahn"
+
+[[armor]]
+key = "ra_seru_helmet"
+name = "Ra-Seru Helmet"
+slot = "helmet"
+udf = 64
+ldf = 64
+equip = "Gala"
+
+[[armor]]
+key = "ra_seru_plate"
+name = "Ra-Seru Plate"
+slot = "armor"
+udf = 75
+ldf = 84
+equip = "Gala"
+
+[[armor]]
+key = "ra_seru_plume"
+name = "Ra-Seru Plume"
+slot = "helmet"
+udf = 60
+ldf = 64
+equip = "Noa"
+
+[[armor]]
+key = "ra_seru_robe"
+name = "Ra-Seru Robe"
+slot = "armor"
+udf = 84
+ldf = 78
+equip = "Noa"
+
+[[armor]]
+key = "ra_seru_seal"
+name = "Ra-Seru Seal"
+slot = "helmet"
+udf = 62
+ldf = 64
+equip = "Vahn"
+
+[[armor]]
+key = "ra_seru_shoes"
+name = "Ra-Seru Shoes"
+slot = "shoes"
+udf = 90
+ldf = 60
+equip = "Noa"
+
+[[armor]]
+key = "ra_seru_thongs"
+name = "Ra-Seru Thongs"
+slot = "shoes"
+udf = 88
+ldf = 84
+equip = "Gala"
+
+[[armor]]
+key = "royal_crown"
+name = "Royal Crown"
+slot = "helmet"
+price = 9400
+udf = 37
+ldf = 30
+equip = "Noa"
+
+[[armor]]
+key = "savior_clothes"
+name = "Savior Clothes"
+slot = "armor"
+price = 1800
+udf = 16
+ldf = 15
+equip = "Vahn"
+
+[[armor]]
+key = "scarlet_robe"
+name = "Scarlet Robe"
+slot = "armor"
+price = 4800
+udf = 31
+ldf = 29
+equip = "Noa"
+
+[[armor]]
+key = "steel_boots"
+name = "Steel Boots"
+slot = "shoes"
+price = 18000
+udf = 61
+ldf = 46
+equip = "Noa"
+
+[[armor]]
+key = "tempest_robe"
+name = "Tempest Robe"
+slot = "armor"
+price = 13400
+udf = 42
+ldf = 39
+equip = "Noa"
+
+[[armor]]
+key = "tempest_shoes"
+name = "Tempest Shoes"
+slot = "shoes"
+price = 1900
+udf = 19
+ldf = 17
+equip = "Noa"
+
+[[armor]]
+key = "triumph_armor"
+name = "Triumph Armor"
+slot = "armor"
+price = 50000
+udf = 70
+ldf = 69
+equip = "Vahn"
+
+[[armor]]
+key = "triumph_boots"
+name = "Triumph Boots"
+slot = "shoes"
+price = 31000
+udf = 72
+ldf = 54
+equip = "Vahn"
+
+[[armor]]
+key = "valor_plate"
+name = "Valor Plate"
+slot = "armor"
+price = 13800
+udf = 41
+ldf = 44
+equip = "Vahn"
+
+[[armor]]
+key = "war_god_plate"
+name = "War God Plate"
+slot = "armor"
+price = 28800
+udf = 75
+ldf = 84
+equip = "None"
+
+[[armor]]
+key = "war_god_band"
+name = "War God Band"
+slot = "helmet"
+price = 21000
+udf = 47
+ldf = 42
+equip = "Gala"
+
+[[armor]]
+key = "war_god_boots"
+name = "War God Boots"
+slot = "shoes"
+price = 29000
+udf = 66
+ldf = 49
+equip = "Gala"
+
+[[armor]]
+key = "warrior_armor"
+name = "Warrior Armor"
+slot = "armor"
+price = 3700
+udf = 24
+ldf = 24
+equip = "Vahn"
+
+[[armor]]
+key = "warrior_boots"
+name = "Warrior Boots"
+slot = "shoes"
+price = 420
+udf = 7
+ldf = 7
+equip = "Vahn"
+
+[[armor]]
+key = "warrior_seal"
+name = "Warrior Seal"
+slot = "helmet"
+price = 240
+udf = 6
+ldf = 3
+equip = "Vahn"

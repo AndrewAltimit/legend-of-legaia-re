@@ -1,0 +1,260 @@
+# Spells: 21 Seru spells (level-1, learned from Seru) + 8 Ra-Seru summons
+# (egg-derived). Element + MP cost + display attack name + target shape.
+#
+# `family` distinguishes:
+#   "seru"     - elemental Seru spells gained by absorbing matching Seru
+#                in battle (with Ivory Book to boost rate). Per-level
+#                variants (Lv2/Lv3) exist for higher-mist enemies; this
+#                table only covers the canonical names.
+#   "ra-seru"  - egg-derived character-bound summons. Each costs 200-255 MP
+#                and is gated by completing a side quest (Zalan converts
+#                the egg into a Talisman accessory).
+#
+# `target` is the AoE shape:
+#   single_enemy / all_enemies / single_ally / all_allies / self
+#
+# Sources: walkthrough magic-chart sections cross-validated; element
+# spelling normalised to lowercase ("light" not "Light").
+
+# ---------------------------------------------------------------------------
+# Seru spells (21 entries)
+# ---------------------------------------------------------------------------
+
+[[spell]]
+name = "Nighto"
+family = "seru"
+element = "dark"
+mp = 13
+attack = "Hell's Music"
+target = "single_enemy"
+
+[[spell]]
+name = "Puera"
+family = "seru"
+element = "dark"
+mp = 120
+attack = "Dream Illusion"
+target = "all_enemies"
+
+[[spell]]
+name = "Mushura"
+family = "seru"
+element = "earth"
+mp = 60
+attack = "Crazy Driver"
+target = "all_enemies"
+
+[[spell]]
+name = "Kemaro"
+family = "seru"
+element = "earth"
+mp = 72
+attack = "Canine Fangs"
+target = "single_enemy"
+
+[[spell]]
+name = "Iota"
+family = "seru"
+element = "earth"
+mp = 90
+attack = "Odd Dimension"
+target = "all_enemies"
+
+[[spell]]
+name = "Gimard"
+family = "seru"
+element = "fire"
+mp = 10
+attack = "Burning Attack"
+target = "single_enemy"
+
+[[spell]]
+name = "Zenoir"
+family = "seru"
+element = "fire"
+mp = 36
+attack = "Vertical Hammer"
+target = "single_enemy"
+
+[[spell]]
+name = "Gola Gola"
+family = "seru"
+element = "fire"
+mp = 40
+attack = "Spinning Flare"
+target = "all_enemies"
+
+[[spell]]
+name = "Vera"
+family = "seru"
+element = "light"
+mp = 6
+attack = "Mystic Care"
+target = "single_ally"
+
+[[spell]]
+name = "Orb"
+family = "seru"
+element = "light"
+mp = 18
+attack = "Holy Orb"
+target = "all_allies"
+
+[[spell]]
+name = "Spoon"
+family = "seru"
+element = "light"
+mp = 45
+attack = "Holy Eyes"
+target = "all_allies"
+
+[[spell]]
+name = "Aluru"
+family = "seru"
+element = "light"
+mp = 90
+attack = "Final Blast"
+target = "single_enemy"
+
+[[spell]]
+name = "Theeder"
+family = "seru"
+element = "thunder"
+mp = 24
+attack = "Turning Laser"
+target = "single_enemy"
+
+[[spell]]
+name = "Viguro"
+family = "seru"
+element = "thunder"
+mp = 64
+attack = "Plasma Storm"
+target = "all_enemies"
+
+[[spell]]
+name = "Gilium"
+family = "seru"
+element = "thunder"
+mp = 160
+attack = "Space Cannon"
+target = "all_enemies"
+
+[[spell]]
+name = "Gizam"
+family = "seru"
+element = "water"
+mp = 28
+attack = "Bubble Crush"
+target = "all_enemies"
+
+[[spell]]
+name = "Freed"
+family = "seru"
+element = "water"
+mp = 40
+attack = "Freezing Point"
+target = "all_enemies"
+
+[[spell]]
+name = "Slippery"
+family = "seru"
+element = "water"
+mp = 110
+attack = "Deadly Rain"
+target = "all_enemies"
+
+[[spell]]
+name = "Swordie"
+family = "seru"
+element = "wind"
+mp = 32
+attack = "Sonicizer"
+target = "single_enemy"
+
+[[spell]]
+name = "Nova"
+family = "seru"
+element = "wind"
+mp = 48
+attack = "Violent Wind"
+target = "single_enemy"
+
+[[spell]]
+name = "Barra"
+family = "seru"
+element = "wind"
+mp = 85
+attack = "Hell Dive"
+target = "single_enemy"
+
+# ---------------------------------------------------------------------------
+# Ra-Seru summons (8 entries) - egg-bound, talisman-gated
+# ---------------------------------------------------------------------------
+
+[[spell]]
+name = "Meta"
+family = "ra-seru"
+element = "fire"
+mp = 240
+attack = "Inferno"
+target = "all_enemies"
+character = "Vahn"
+
+[[spell]]
+name = "Terra"
+family = "ra-seru"
+element = "wind"
+mp = 240
+attack = "Queen Twister"
+target = "all_enemies"
+character = "Noa"
+
+[[spell]]
+name = "Ozma"
+family = "ra-seru"
+element = "thunder"
+mp = 240
+attack = "Voltagor"
+target = "all_enemies"
+character = "Gala"
+
+[[spell]]
+name = "Palma"
+family = "ra-seru"
+element = "earth"
+mp = 200
+attack = "Meteor Cluster"
+target = "all_enemies"
+
+[[spell]]
+name = "Mule"
+family = "ra-seru"
+element = "water"
+mp = 200
+attack = "Deep Avalanche"
+target = "all_enemies"
+
+[[spell]]
+name = "Horn"
+family = "ra-seru"
+element = "light"
+mp = 200
+attack = "Resurrector"
+target = "all_allies"
+
+[[spell]]
+name = "Jedo"
+family = "ra-seru"
+element = "dark"
+mp = 200
+attack = "Deadly Promise"
+target = "all_enemies"
+
+[[spell]]
+name = "Juggernaut"
+family = "ra-seru"
+element = "evil"
+mp = 255
+attack = "Dark Eclipse"
+target = "all_enemies"

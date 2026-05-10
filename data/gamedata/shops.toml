@@ -1,0 +1,515 @@
+# Per-town shop inventories.
+#
+# Each `[[shop]]` is one merchant; one town can have multiple shops.
+# `town` matches the canonical town label used by CDNAME scene blocks
+# (Rim Elm, Hunter's Spring, Drake Castle, Biron Monastery, Wind Cave,
+# Jeremi, Vidna, Octam, Underground Octam, Ratayu, Karisto Station,
+# Sol, Buma, Usha Research, Soren Camp, Conkram).
+#
+# `phase` (optional) distinguishes pre-/post-mist or quest-gated stock
+# variants (e.g. Biron Monastery's shop after the mist clears unlocks
+# additional weapons).
+#
+# `inventory` is an ordered list of item keys; each key resolves through
+# items.toml / weapons.toml / armor.toml / accessories.toml. The
+# `gamedata-tool resolve-shops` CLI joins those tables and prints the
+# full priced inventory.
+#
+# Item keys with a `*` in the original walkthrough indicate "new in this
+# town" - kept here as `featured = ["item_key", ...]`.
+
+[[shop]]
+town = "Rim Elm"
+name = "Variety Shop"
+inventory = [
+    "hunter_clothes",
+    "scarlet_jewel",
+    "azure_jewel",
+    "survival_knife",
+    "warrior_seal",
+    "warrior_boots",
+    "cure_amulet",
+    "healing_leaf",
+    "antidote",
+    "door_of_light",
+]
+featured = ["hunter_clothes", "scarlet_jewel", "azure_jewel"]
+
+[[shop]]
+town = "Hunter's Spring"
+name = "Variety Shop"
+merchant = "Lezam"
+inventory = [
+    "golden_compass",
+    "silver_compass",
+    "target_chain",
+    "defender_chain",
+    "healing_leaf",
+    "antidote",
+    "door_of_light",
+]
+featured = ["golden_compass", "silver_compass"]
+
+[[shop]]
+town = "Hunter's Spring"
+name = "Market"
+merchant = "Lezam's Sister"
+inventory = [
+    "target_chain",
+    "defender_chain",
+    "healing_leaf",
+    "healing_flower",
+    "magic_leaf",
+    "medicine",
+    "door_of_light",
+]
+
+[[shop]]
+town = "Drake Castle"
+name = "Arms Shop"
+inventory = [
+    "survival_knife",
+    "nail_glove",
+    "warrior_seal",
+    "warrior_boots",
+    "guardian_clip",
+    "fighting_robe",
+    "electric_shoes",
+]
+
+[[shop]]
+town = "Drake Castle"
+name = "Items Shop"
+inventory = [
+    "target_chain",
+    "defender_chain",
+    "cure_amulet",
+    "healing_leaf",
+    "antidote",
+    "medicine",
+    "door_of_light",
+]
+
+[[shop]]
+town = "Biron Monastery"
+merchant = "Morlang"
+phase = "before mist"
+inventory = [
+    "survival_knife",
+    "nail_glove",
+    "savior_clothes",
+    "warrior_boots",
+    "guardian_clip",
+    "fighting_robe",
+    "electric_shoes",
+]
+
+[[shop]]
+town = "Biron Monastery"
+merchant = "Corey"
+phase = "before mist"
+inventory = [
+    "healing_flower",
+    "healing_bloom",
+    "magic_leaf",
+    "earth_jewel",
+    "deep_sea_jewel",
+    "burning_jewel",
+    "tempest_jewel",
+    "healing_leaf",
+    "medicine",
+    "door_of_light",
+]
+featured = ["healing_flower", "healing_bloom", "magic_leaf"]
+
+[[shop]]
+town = "Biron Monastery"
+merchant = "Morlang"
+phase = "after mist"
+inventory = [
+    "battle_knife",
+    "crimson_nails",
+    "survival_club",
+    "ironman_seal",
+    "savior_clothes",
+    "ironman_boots",
+    "power_earrings",
+    "power_plate",
+    "power_shoes",
+]
+
+[[shop]]
+town = "Wind Cave"
+name = "Arms Shop"
+inventory = [
+    "short_sword",
+    "fighter_claw",
+    "battle_knife",
+    "crimson_nails",
+    "survival_club",
+    "ironman_seal",
+    "savior_clothes",
+    "ironman_boots",
+    "green_clip",
+    "green_robe",
+    "tempest_shoes",
+    "power_earrings",
+    "power_plate",
+    "power_shoes",
+]
+featured = ["short_sword", "fighter_claw"]
+
+[[shop]]
+town = "Wind Cave"
+name = "Items Shop"
+inventory = [
+    "scarlet_jewel",
+    "azure_jewel",
+    "golden_compass",
+    "silver_compass",
+    "earth_jewel",
+    "deep_sea_jewel",
+    "burning_jewel",
+    "tempest_jewel",
+    "target_chain",
+    "defender_chain",
+    "cure_amulet",
+    "healing_leaf",
+    "medicine",
+    "door_of_light",
+]
+featured = ["scarlet_jewel", "azure_jewel"]
+
+[[shop]]
+town = "Jeremi"
+name = "Arms Shop"
+inventory = [
+    "short_sword",
+    "fighter_claw",
+    "warrior_armor",
+    "master_boots",
+    "green_clip",
+    "green_robe",
+    "tempest_shoes",
+]
+
+[[shop]]
+town = "Jeremi"
+name = "Items Shop"
+inventory = [
+    "pure_amulet",
+    "magic_amulet",
+    "healing_leaf",
+    "healing_flower",
+    "medicine",
+    "door_of_light",
+    "door_of_wind",
+]
+
+[[shop]]
+town = "Vidna"
+name = "Arms Shop"
+inventory = [
+    "short_sword",
+    "fighter_claw",
+    "red_club",
+    "expert_seal",
+    "warrior_armor",
+    "master_boots",
+    "fighting_plate",
+]
+
+[[shop]]
+town = "Vidna"
+name = "Gift Shop"
+inventory = [
+    "magic_leaf",
+    "phoenix",
+    "mettle_ring",
+    "scarlet_jewel",
+    "azure_jewel",
+    "golden_compass",
+    "silver_compass",
+    "pure_amulet",
+    "forest_amulet",
+    "healing_flower",
+    "healing_bloom",
+    "medicine",
+    "door_of_light",
+    "door_of_wind",
+]
+featured = ["magic_leaf", "phoenix"]
+
+[[shop]]
+town = "Octam"
+name = "Arms Shop"
+inventory = [
+    "bloody_claw",
+    "survival_axe",
+    "master_armor",
+    "scarlet_robe",
+    "fighters_band",
+    "valor_plate",
+]
+
+[[shop]]
+town = "Octam"
+name = "Items Shop"
+inventory = [
+    "earth_jewel",
+    "deep_sea_jewel",
+    "burning_jewel",
+    "tempest_jewel",
+    "madlight_jewel",
+    "luminous_jewel",
+    "ebony_jewel",
+    "healing_flower",
+    "healing_bloom",
+    "magic_leaf",
+    "medicine",
+    "phoenix",
+    "door_of_light",
+    "door_of_wind",
+]
+
+[[shop]]
+town = "Underground Octam"
+name = "Arms Shop"
+inventory = [
+    "force_blade",
+    "hard_beat",
+    "red_club",
+    "expert_seal",
+    "ironman_armor",
+    "master_boots",
+    "jeweled_clip",
+    "scarlet_robe",
+    "olive_shoes",
+    "fighters_band",
+    "fighting_plate",
+    "fighting_boots",
+]
+
+[[shop]]
+town = "Underground Octam"
+name = "Items Shop"
+inventory = [
+    "earth_jewel",
+    "deep_sea_jewel",
+    "burning_jewel",
+    "tempest_jewel",
+    "madlight_jewel",
+    "luminous_jewel",
+    "ebony_jewel",
+    "healing_flower",
+    "healing_bloom",
+    "magic_leaf",
+    "medicine",
+    "phoenix",
+    "door_of_light",
+    "door_of_wind",
+]
+
+[[shop]]
+town = "Ratayu"
+name = "Arms Shop"
+inventory = [
+    "force_blade",
+    "hard_beat",
+    "survival_axe",
+    "expert_seal",
+    "ironman_armor",
+    "expert_boots",
+    "jeweled_clip",
+    "tempest_robe",
+    "olive_shoes",
+    "fighters_band",
+    "valor_plate",
+    "fighting_boots",
+]
+
+[[shop]]
+town = "Ratayu"
+name = "Items Shop"
+inventory = [
+    "life_ring",
+    "power_ring",
+    "guardian_ring",
+    "mettle_ring",
+    "chicken_safe",
+    "chicken_guard",
+    "slowness_chain",
+    "healing_flower",
+    "healing_bloom",
+    "magic_leaf",
+    "phoenix",
+    "door_of_light",
+    "door_of_wind",
+]
+featured = ["life_ring", "power_ring", "guardian_ring"]
+
+[[shop]]
+town = "Karisto Station"
+name = "Honest Person's Store"
+inventory = [
+    "healing_bloom",
+    "door_of_wind",
+    "door_of_light",
+]
+
+[[shop]]
+town = "Karisto Station"
+merchant = "Camper"
+inventory = [
+    "life_source",
+    "magic_source",
+    "mettle_source",
+    "vitality_ring",
+    "healing_berry",
+    "door_of_light",
+    "door_of_wind",
+]
+featured = ["life_source", "magic_source", "mettle_source"]
+notes = "Gated by Platinum Card."
+
+[[shop]]
+town = "Sol"
+name = "Arms Shop I"
+inventory = [
+    "holy_claw",
+    "battle_axe",
+    "hero_seal",
+    "expert_armor",
+    "steel_boots",
+    "war_god_plate",
+]
+
+[[shop]]
+town = "Sol"
+name = "Items Shop I"
+inventory = [
+    "guardian_ring",
+    "speed_ring",
+    "wisdom_ring",
+    "healing_berry",
+    "healing_bloom",
+    "phoenix",
+    "door_of_light",
+]
+
+[[shop]]
+town = "Sol"
+name = "Arms Shop II"
+inventory = [
+    "beast_buster",
+    "bloody_claw",
+    "survival_axe",
+    "master_armor",
+    "hero_boots",
+    "royal_crown",
+    "tempest_robe",
+]
+
+[[shop]]
+town = "Sol"
+name = "Items Shop II (Bakery)"
+inventory = [
+    "life_ring",
+    "power_ring",
+    "stone_amulet",
+    "nature_amulet",
+    "healing_flower",
+    "magic_leaf",
+    "door_of_wind",
+]
+featured = ["life_ring", "power_ring"]
+
+[[shop]]
+town = "Buma"
+name = "Variety Store"
+inventory = [
+    "mettle_armband",
+    "war_soul",
+    "chaos_breaker",
+    "battle_robe",
+    "war_god_band",
+    "war_god_boots",
+    "chicken_heart",
+    "healing_berry",
+    "healing_fruit",
+    "magic_fruit",
+    "medicine",
+    "phoenix",
+    "door_of_light",
+    "door_of_wind",
+]
+featured = ["mettle_armband", "war_soul"]
+
+[[shop]]
+town = "Usha Research Center"
+merchant = "Ashif"
+inventory = [
+    "ivory_book",
+    "bronze_book",
+    "bad_luck_bell",
+    "healing_berry",
+    "magic_fruit",
+    "medicine",
+    "phoenix",
+]
+
+[[shop]]
+town = "Soren Camp"
+name = "Arms Shop"
+inventory = [
+    "chaos_breaker",
+    "heavy_strike",
+    "power_club",
+    "hero_seal",
+    "hero_armor",
+    "triumph_boots",
+    "pronged_crown",
+    "battle_robe",
+    "steel_boots",
+    "war_god_band",
+    "war_god_plate",
+    "war_god_boots",
+]
+
+[[shop]]
+town = "Soren Camp"
+name = "Item Shop"
+inventory = [
+    "healing_berry",
+    "healing_fruit",
+    "magic_fruit",
+    "medicine",
+    "phoenix",
+    "door_of_light",
+    "door_of_wind",
+]
+
+[[shop]]
+town = "Conkram"
+name = "Arms Shop"
+inventory = [
+    "chaos_breaker",
+    "heavy_strike",
+    "power_club",
+    "hero_armor",
+    "battle_robe",
+    "war_god_plate",
+]
+
+[[shop]]
+town = "Conkram"
+name = "Items Shop"
+inventory = [
+    "healing_berry",
+    "healing_fruit",
+    "magic_fruit",
+    "medicine",
+    "phoenix",
+    "door_of_light",
+    "door_of_wind",
+]
