@@ -51,6 +51,16 @@ struct MeshUniforms {
     ///   "vertex jitter"); `0.0` for smooth modern subpixel positions
     /// - `[3]` reserved (padding to vec4 std140)
     psx_params: [f32; 4],
+    /// GP0(0xE2) "Texture Window setting" - per-frame scene state.
+    /// `[0..4]` = `(mask_x, mask_y, offset_x, offset_y)` each in 8-pixel
+    /// steps (0..=31). The fragment shader applies, per texel:
+    ///   `tex_x = (tex_x AND NOT (mask_x*8)) OR ((offset_x AND mask_x)*8)`
+    ///   (and the same for Y), which clamps texture sampling to a smaller
+    ///   window inside the texture page. No-op when all zero.
+    ///
+    /// Set with [`Renderer::set_texture_window`]. Defaults to all-zero so
+    /// existing callers aren't affected.
+    tex_window: [u32; 4],
 }
 
 pub struct UploadedTexture {
@@ -2049,6 +2059,12 @@ pub struct Renderer {
     /// positions to reproduce the GTE's per-vertex sub-pixel-truncation
     /// "vertex jitter." Default `false` for clean smooth rendering.
     psx_mode: std::cell::Cell<bool>,
+    /// GP0(0xE2) "Texture Window setting" - `(mask_x, mask_y, off_x, off_y)`
+    /// each in 8-pixel steps (0..=31). Applied per-fragment in the
+    /// VRAM-mesh shader. Defaults to all-zero (no-op), which matches
+    /// retail Legaia's typical state - the register only gets non-zero
+    /// values from a handful of effect / scene-init scripts.
+    tex_window: std::cell::Cell<[u32; 4]>,
 }
 
 impl Renderer {
@@ -2235,6 +2251,7 @@ impl Renderer {
                 mvp: Mat4::IDENTITY.to_cols_array_2d(),
                 light_dir: [0.4, -0.8, 0.4, 0.0],
                 psx_params: [width as f32, height as f32, 0.0, 0.0],
+                tex_window: [0; 4],
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -2833,6 +2850,7 @@ impl Renderer {
             scene_quad_ranges: std::cell::RefCell::new(Vec::new()),
             depth_view,
             psx_mode: std::cell::Cell::new(false),
+            tex_window: std::cell::Cell::new([0; 4]),
         })
     }
 
@@ -2849,6 +2867,32 @@ impl Renderer {
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
+    }
+
+    /// Set the GP0(0xE2) "Texture Window setting" register state used by
+    /// the VRAM-mesh fragment shader. Values are in 8-pixel steps
+    /// (0..=31): `mask` selects which texel-coordinate bits get forced
+    /// from `offset` (the standard PSX wrap-window mechanic). All-zero
+    /// (the default) is a no-op - texel coords pass through unchanged.
+    ///
+    /// Retail Legaia leaves this register at zero almost everywhere; a
+    /// handful of effect / scene-init scripts in the move-VM extension
+    /// table touch it. Exposed primarily so that future work driving the
+    /// runtime LoadImage / DMA-to-VRAM trace can replay the register
+    /// state faithfully.
+    pub fn set_texture_window(&self, mask_x: u8, mask_y: u8, off_x: u8, off_y: u8) {
+        self.tex_window.set([
+            (mask_x as u32) & 0x1F,
+            (mask_y as u32) & 0x1F,
+            (off_x as u32) & 0x1F,
+            (off_y as u32) & 0x1F,
+        ]);
+    }
+
+    /// Read the current `(mask_x, mask_y, off_x, off_y)` texture window
+    /// register state, in 8-pixel steps (0..=31). All zero means no-op.
+    pub fn texture_window(&self) -> [u32; 4] {
+        self.tex_window.get()
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -3325,6 +3369,7 @@ impl Renderer {
                             snap,
                             0.0,
                         ],
+                        tex_window: self.tex_window.get(),
                     }]),
                 );
             }
@@ -3567,11 +3612,13 @@ impl Renderer {
             snap,
             0.0,
         ];
+        let tex_window = self.tex_window.get();
         let push = |bytes: &mut [u8], slot: usize, mvp: Mat4| {
             let u = MeshUniforms {
                 mvp: mvp.to_cols_array_2d(),
                 light_dir: normalize3([0.4, -0.8, 0.4]),
                 psx_params,
+                tex_window,
             };
             let off = slot * stride;
             let n = std::mem::size_of::<MeshUniforms>();
@@ -3797,6 +3844,14 @@ struct MeshUniforms {
     light_dir: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, _pad)
     psx_params: vec4<f32>,
+    // GP0(0xE2) "Texture Window setting":
+    //   .x = mask_x  (in 8-pixel steps, 0..31)
+    //   .y = mask_y  (in 8-pixel steps, 0..31)
+    //   .z = offset_x (in 8-pixel steps, 0..31)
+    //   .w = offset_y (in 8-pixel steps, 0..31)
+    // No-op when all four are zero (Legaia's default; the register only
+    // gets written by some effect / scene-init scripts in retail).
+    tex_window: vec4<u32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 
@@ -3842,6 +3897,14 @@ struct MeshUniforms {
     light_dir: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, _pad)
     psx_params: vec4<f32>,
+    // GP0(0xE2) "Texture Window setting":
+    //   .x = mask_x  (in 8-pixel steps, 0..31)
+    //   .y = mask_y  (in 8-pixel steps, 0..31)
+    //   .z = offset_x (in 8-pixel steps, 0..31)
+    //   .w = offset_y (in 8-pixel steps, 0..31)
+    // No-op when all four are zero (Legaia's default; the register only
+    // gets written by some effect / scene-init scripts in retail).
+    tex_window: vec4<u32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_color: texture_2d<f32>;
@@ -3897,6 +3960,14 @@ struct MeshUniforms {
     light_dir: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, _pad)
     psx_params: vec4<f32>,
+    // GP0(0xE2) "Texture Window setting":
+    //   .x = mask_x  (in 8-pixel steps, 0..31)
+    //   .y = mask_y  (in 8-pixel steps, 0..31)
+    //   .z = offset_x (in 8-pixel steps, 0..31)
+    //   .w = offset_y (in 8-pixel steps, 0..31)
+    // No-op when all four are zero (Legaia's default; the register only
+    // gets written by some effect / scene-init scripts in retail).
+    tex_window: vec4<u32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 @group(1) @binding(0) var t_vram: texture_2d<u32>;
@@ -3977,8 +4048,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Truncate (PSX behaviour: GP0 G3 commands transmit signed 8-bit UV
     // bytes; the rasterizer takes the integer part of the interpolated
     // position).
-    let u_pix = u32(max(in.uv_affine.x, 0.0)) & 0xFFu;
-    let v_pix = u32(max(in.uv_affine.y, 0.0)) & 0xFFu;
+    var u_pix = u32(max(in.uv_affine.x, 0.0)) & 0xFFu;
+    var v_pix = u32(max(in.uv_affine.y, 0.0)) & 0xFFu;
+    // Apply GP0(0xE2) texture-window register, in pixel space:
+    //   coord = (coord & ~(mask*8)) | ((offset & mask) * 8)
+    // No-op when mask == 0 (the all-zero default) since the AND-NOT is
+    // identity and the OR adds zero. Hardware reference: GPU command list
+    // section "GP0(E2h) - Texture Window setting (Mask/Offset)".
+    let mask_x = u.tex_window.x * 8u;
+    let mask_y = u.tex_window.y * 8u;
+    let off_x = (u.tex_window.z & u.tex_window.x) * 8u;
+    let off_y = (u.tex_window.w & u.tex_window.y) * 8u;
+    u_pix = (u_pix & (~mask_x & 0xFFu)) | (off_x & 0xFFu);
+    v_pix = (v_pix & (~mask_y & 0xFFu)) | (off_y & 0xFFu);
 
     let tpage_x = (tsb & 0xFu) * 64u;
     let tpage_y = ((tsb >> 4u) & 1u) * 256u;
@@ -4051,6 +4133,14 @@ struct MeshUniforms {
     light_dir: vec4<f32>,
     // (viewport_w, viewport_h, snap_enable, _pad)
     psx_params: vec4<f32>,
+    // GP0(0xE2) "Texture Window setting":
+    //   .x = mask_x  (in 8-pixel steps, 0..31)
+    //   .y = mask_y  (in 8-pixel steps, 0..31)
+    //   .z = offset_x (in 8-pixel steps, 0..31)
+    //   .w = offset_y (in 8-pixel steps, 0..31)
+    // No-op when all four are zero (Legaia's default; the register only
+    // gets written by some effect / scene-init scripts in retail).
+    tex_window: vec4<u32>,
 };
 @group(0) @binding(0) var<uniform> u: MeshUniforms;
 

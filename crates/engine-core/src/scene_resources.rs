@@ -43,6 +43,23 @@ pub struct ResolvedTmd {
     pub raw: Vec<u8>,
 }
 
+impl ResolvedTmd {
+    /// Build a renderable VRAM mesh, dropping primitives whose CBA / TSB
+    /// would sample VRAM regions the scene's TIM uploads didn't populate.
+    /// Mirrors the asset-viewer's filter so engine-side scene rendering
+    /// inherits the same "skip prims that would render as flat green" /
+    /// "skip prims with palette-depth mismatches" cleanup.
+    ///
+    /// Use [`legaia_tmd::mesh::tmd_to_vram_mesh`] directly instead when
+    /// the caller wants every prim regardless of VRAM state (e.g. the
+    /// flat-shaded pre-VRAM path).
+    pub fn build_filtered_vram_mesh(&self, vram: &Vram) -> legaia_tmd::mesh::VramMesh {
+        legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&self.tmd, &self.raw, |cba, tsb, uvs| {
+            vram.prim_has_texture_data(cba, tsb, uvs)
+        })
+    }
+}
+
 /// One ANM pack found in the scene's CDNAME block.
 #[derive(Clone)]
 pub struct ResolvedAnm {
@@ -237,6 +254,32 @@ mod tests {
         assert_eq!(res.tim_count, 0);
         assert_eq!(res.tim_parse_failures, 0);
         assert!(res.tmds.is_empty());
+    }
+
+    #[test]
+    fn build_filtered_vram_mesh_returns_empty_for_empty_tmd() {
+        // ResolvedTmd around an empty TMD just to exercise the helper -
+        // the filter only matters when prims exist, but we want to prove
+        // the wiring compiles and runs without panicking on the no-prim
+        // edge case (which is what most synthetic test fixtures hit).
+        let rtmd = ResolvedTmd {
+            entry_idx: 0,
+            offset: 0,
+            byte_len: 0,
+            tmd: legaia_tmd::Tmd {
+                header: legaia_tmd::Header {
+                    id: 0x80000002,
+                    flags: 0,
+                    nobj: 0,
+                    flist_bit_set: false,
+                },
+                objects: vec![],
+            },
+            raw: Vec::new(),
+        };
+        let vram = Vram::new();
+        let mesh = rtmd.build_filtered_vram_mesh(&vram);
+        assert!(mesh.indices.is_empty());
     }
 
     #[test]

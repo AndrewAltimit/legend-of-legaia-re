@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use legaia_tmd::{legaia_prim_probe, legaia_prims, parse};
+use legaia_tim::vram::{PrimTextureStatus, VRAM_HEIGHT, VRAM_WIDTH, Vram};
+use legaia_tmd::{legaia_prim_probe, legaia_prims, parse, vram_targeted};
 
 #[derive(Parser)]
 #[command(name = "tmd", about = "PSX TMD parser")]
@@ -40,11 +41,48 @@ enum Cmd {
     /// Iterate the primitive section using the Legaia-specific 8-byte
     /// group header layout (decoded from FUN_8002735c). Reports per-group
     /// header + per-prim vertex indices.
+    ///
+    /// When `--vram-dir <DIR>` is supplied (repeatable), the command also
+    /// simulates the targeted VRAM upload that the asset-viewer performs
+    /// at runtime: every TIM under the dir(s) is loaded, blocks that
+    /// would clobber a CLUT row are suppressed, and per-prim status is
+    /// reported (`Ok` / `MissingClut` / `ClutDepthMismatch` /
+    /// `MissingTexturePage`). Useful for diagnosing why a particular
+    /// mesh renders with the wrong palette without firing up the GUI.
     Prims {
         input: PathBuf,
         /// Limit per-group prim listing (default: print all).
         #[arg(long)]
         limit: Option<usize>,
+        /// Directory containing `*.tim` files to overlay into a simulated
+        /// VRAM. Repeatable; later dirs overwrite earlier ones at
+        /// overlapping VRAM addresses (matches PSX hardware DMA).
+        #[arg(long)]
+        vram_dir: Vec<PathBuf>,
+    },
+    /// Simulate the targeted VRAM upload for a TMD's prims and write the
+    /// resulting 1024x512 software VRAM as a PNG. Pixels are decoded as
+    /// BGR555 with the high bit (STP) silently dropped, which matches
+    /// the `t_vram` texture binding the engine fragment shader sees.
+    /// Useful for confirming visually that the right TIMs landed and
+    /// that no rainbow-noise collisions occurred.
+    VramDump {
+        /// TMD whose prims drive the targeted upload.
+        input: PathBuf,
+        /// Output PNG path.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Directory containing `*.tim` files to overlay into VRAM.
+        /// Repeatable. When empty, every TIM under the TMD's sibling
+        /// `tim_scan/<entry>/` directory (if any) is uploaded.
+        #[arg(long)]
+        vram_dir: Vec<PathBuf>,
+        /// When set, also draw a 1-pixel red outline around every CLUT
+        /// row a prim samples and a green outline around every texture
+        /// page region. Helps locate which parts of VRAM the mesh
+        /// actually reads vs which parts are just background uploads.
+        #[arg(long, default_value_t = false)]
+        annotate: bool,
     },
     /// Validate the Legaia primitive iterator across every `.tmd` file
     /// under a directory. Reports per-file deltas (claimed vs walked prim
@@ -73,7 +111,17 @@ fn main() -> Result<()> {
             no_faces,
         } => dump_obj(&input, &out, no_faces),
         Cmd::Probe { input } => probe(&input),
-        Cmd::Prims { input, limit } => prims(&input, limit),
+        Cmd::Prims {
+            input,
+            limit,
+            vram_dir,
+        } => prims(&input, limit, &vram_dir),
+        Cmd::VramDump {
+            input,
+            out,
+            vram_dir,
+            annotate,
+        } => vram_dump(input.as_path(), out.as_path(), &vram_dir, annotate),
         Cmd::ValidatePrims {
             dir,
             verbose,
@@ -275,10 +323,34 @@ fn validate_prims(dir: &PathBuf, verbose: bool, slack_bytes: usize) -> Result<()
     Ok(())
 }
 
-fn prims(input: &PathBuf, limit: Option<usize>) -> Result<()> {
+fn prims(input: &PathBuf, limit: Option<usize>, vram_dirs: &[PathBuf]) -> Result<()> {
     let raw = std::fs::read(input)?;
     let tmd = parse(&raw)?;
     println!("file={}  nobj={}", input.display(), tmd.objects.len());
+
+    // When the caller supplies VRAM dirs, simulate the same targeted
+    // upload the asset-viewer performs at runtime. This lets us print a
+    // per-prim verdict ("Ok" / "MissingClut" / "ClutDepthMismatch" /
+    // "MissingTexturePage") so the user can see which prims would render
+    // correctly without firing up the GUI.
+    let simulated_vram: Option<Vram> = if vram_dirs.is_empty() {
+        None
+    } else {
+        let dir_paths: Vec<&Path> = vram_dirs.iter().map(|p| p.as_path()).collect();
+        let needs = vram_targeted::collect_prim_targets(&tmd, &raw);
+        let (vram, stats) = vram_targeted::build_vram_targeted(&dir_paths, &needs);
+        println!(
+            "vram-sim: {} TIMs scanned, {} contributed (both={} img-only={} clut-only={}) for {} prim target(s)",
+            stats.total_tims,
+            stats.uploaded_tims,
+            stats.uploaded_both,
+            stats.uploaded_image_only,
+            stats.uploaded_clut_only,
+            needs.len(),
+        );
+        Some(vram)
+    };
+
     for (i, o) in tmd.objects.iter().enumerate() {
         let groups =
             match legaia_prims::iter_groups(&raw, o.primitives_byte_offset, o.primitives_byte_size)
@@ -320,8 +392,12 @@ fn prims(input: &PathBuf, limit: Option<usize>) -> Result<()> {
                 let (cx, cy) = p.cba_xy();
                 let (px, py, depth, abr) = p.tpage_xy();
                 let uv_s: Vec<String> = p.uvs.iter().map(|(u, v)| format!("({u},{v})")).collect();
+                let status_tag = simulated_vram
+                    .as_ref()
+                    .map(|v| describe_status(v.prim_texture_status(p.cba, p.tsb, &p.uvs)))
+                    .unwrap_or_default();
                 println!(
-                    "          prim[{}] verts=[{}] cba=0x{:04X}@({},{}) tsb=0x{:04X}@({},{}) depth={}bpp abr={} uvs=[{}]",
+                    "          prim[{}] verts=[{}] cba=0x{:04X}@({},{}) tsb=0x{:04X}@({},{}) depth={}bpp abr={} uvs=[{}]{}",
                     pi,
                     idxs.join(", "),
                     p.cba,
@@ -333,6 +409,7 @@ fn prims(input: &PathBuf, limit: Option<usize>) -> Result<()> {
                     depth,
                     abr,
                     uv_s.join(", "),
+                    status_tag,
                 );
             }
             if take < n {
@@ -341,6 +418,162 @@ fn prims(input: &PathBuf, limit: Option<usize>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Render `PrimTextureStatus` as a short trailing tag that fits on the
+/// per-prim print line. Empty when no VRAM was supplied (i.e. we're not
+/// in simulation mode).
+fn describe_status(status: PrimTextureStatus) -> String {
+    match status {
+        PrimTextureStatus::Ok => "  -> Ok".to_string(),
+        PrimTextureStatus::MissingClut { row } => {
+            format!("  -> MISSING CLUT (row {} not uploaded)", row)
+        }
+        PrimTextureStatus::ClutDepthMismatch {
+            row,
+            populated_width,
+            expected_width,
+        } => format!(
+            "  -> DEPTH MISMATCH (row {} populated with {} entries; prim expects {})",
+            row, populated_width, expected_width
+        ),
+        PrimTextureStatus::MissingTexturePage { tpage } => {
+            format!("  -> MISSING TEXTURE PAGE (tpage 0x{:02X})", tpage)
+        }
+    }
+}
+
+/// Simulate a targeted VRAM upload for `tmd_path`, then export the
+/// software VRAM as a 1024x512 PNG. Pixels decode as BGR555 (the high
+/// STP bit is treated as alpha=255). When `vram_dirs` is empty, fall
+/// back to the TMD's sibling `tim_scan/<entry>/` directory.
+fn vram_dump(tmd_path: &Path, out: &Path, vram_dirs: &[PathBuf], annotate: bool) -> Result<()> {
+    let raw = std::fs::read(tmd_path).with_context(|| format!("read {}", tmd_path.display()))?;
+    let tmd = parse(&raw)?;
+
+    // Pick candidate VRAM dirs - explicit flags take precedence over the
+    // sibling-dir convention. Keeping the convention as a fallback means
+    // `tmd vram-dump foo.tmd -o foo.png` Just Works for files extracted
+    // by `legaia-extract`.
+    let mut owned_dirs: Vec<PathBuf> = vram_dirs.to_vec();
+    if owned_dirs.is_empty()
+        && let Some(sibling) = sibling_tim_dir(tmd_path)
+    {
+        owned_dirs.push(sibling);
+    }
+    let dir_paths: Vec<&Path> = owned_dirs.iter().map(|p| p.as_path()).collect();
+    let needs = vram_targeted::collect_prim_targets(&tmd, &raw);
+    let (vram, stats) = vram_targeted::build_vram_targeted(&dir_paths, &needs);
+    eprintln!(
+        "vram-dump: {} TIMs scanned, {} contributed (both={} img-only={} clut-only={}) for {} prim target(s)",
+        stats.total_tims,
+        stats.uploaded_tims,
+        stats.uploaded_both,
+        stats.uploaded_image_only,
+        stats.uploaded_clut_only,
+        needs.len(),
+    );
+
+    let mut rgba = vram_to_rgba(&vram);
+    if annotate {
+        annotate_vram_png(&mut rgba, &needs);
+    }
+    write_png(out, &rgba, VRAM_WIDTH as u32, VRAM_HEIGHT as u32)
+        .with_context(|| format!("write PNG to {}", out.display()))?;
+    eprintln!(
+        "wrote {} ({}x{} BGR555 + STP-as-alpha)",
+        out.display(),
+        VRAM_WIDTH,
+        VRAM_HEIGHT
+    );
+    Ok(())
+}
+
+/// Convert one PSX BGR555 + STP word into an RGBA8 pixel. STP=1 forces
+/// opaque; STP=0 with all-zero color is transparent (PSX cutout); other
+/// STP=0 pixels stay opaque.
+fn bgr555_to_rgba(word: u16) -> [u8; 4] {
+    let r5 = (word & 0x1F) as u8;
+    let g5 = ((word >> 5) & 0x1F) as u8;
+    let b5 = ((word >> 10) & 0x1F) as u8;
+    let stp = (word >> 15) & 1;
+    let r = (r5 << 3) | (r5 >> 2);
+    let g = (g5 << 3) | (g5 >> 2);
+    let b = (b5 << 3) | (b5 >> 2);
+    let a = if word == 0 && stp == 0 { 0 } else { 0xFF };
+    [r, g, b, a]
+}
+
+fn vram_to_rgba(vram: &Vram) -> Vec<u8> {
+    let mut rgba = Vec::with_capacity(VRAM_WIDTH * VRAM_HEIGHT * 4);
+    for y in 0..VRAM_HEIGHT {
+        for x in 0..VRAM_WIDTH {
+            let px = vram.pixel(x, y);
+            rgba.extend_from_slice(&bgr555_to_rgba(px));
+        }
+    }
+    rgba
+}
+
+/// Stamp a thin red outline over every CLUT rect and a thin green
+/// outline over every texture-page rect. Used by `vram-dump --annotate`
+/// so it's obvious from the PNG which regions the mesh's prims sample.
+fn annotate_vram_png(rgba: &mut [u8], needs: &[vram_targeted::PrimTarget]) {
+    fn stamp(rgba: &mut [u8], rect: (u16, u16, u16, u16), color: [u8; 4]) {
+        let (x, y, w, h) = (
+            rect.0 as usize,
+            rect.1 as usize,
+            rect.2 as usize,
+            rect.3 as usize,
+        );
+        if w == 0 || h == 0 {
+            return;
+        }
+        let x_end = (x + w).min(VRAM_WIDTH);
+        let y_end = (y + h).min(VRAM_HEIGHT);
+        for px in x..x_end {
+            put(rgba, px, y, color);
+            put(rgba, px, y_end - 1, color);
+        }
+        for py in y..y_end {
+            put(rgba, x, py, color);
+            put(rgba, x_end - 1, py, color);
+        }
+    }
+    fn put(rgba: &mut [u8], x: usize, y: usize, color: [u8; 4]) {
+        if x >= VRAM_WIDTH || y >= VRAM_HEIGHT {
+            return;
+        }
+        let i = (y * VRAM_WIDTH + x) * 4;
+        rgba[i..i + 4].copy_from_slice(&color);
+    }
+    for n in needs {
+        stamp(rgba, n.page, [0x00, 0xFF, 0x00, 0xFF]);
+        stamp(rgba, n.clut, [0xFF, 0x00, 0x00, 0xFF]);
+    }
+}
+
+fn write_png(out: &Path, rgba: &[u8], w: u32, h: u32) -> Result<()> {
+    let f = std::fs::File::create(out)?;
+    let bw = std::io::BufWriter::new(f);
+    let mut enc = png::Encoder::new(bw, w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(rgba)?;
+    Ok(())
+}
+
+/// Find the TIM directory that holds every TIM from the same PROT entry
+/// as `tmd_path`. Convention: the bulk-scan extractors write TMDs to
+/// `extracted/tmd_scan/<entry>/raw_off<HEX>.tmd` and TIMs to
+/// `extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<BPP>bpp.tim`.
+/// Returns the matching `tim_scan/<entry>/` if it exists.
+fn sibling_tim_dir(tmd_path: &Path) -> Option<PathBuf> {
+    let entry_dir = tmd_path.parent()?;
+    let entry_name = entry_dir.file_name()?;
+    let scan_root = entry_dir.parent()?.parent()?; // up two: tmd_scan -> extracted
+    let tim_dir = scan_root.join("tim_scan").join(entry_name);
+    tim_dir.is_dir().then_some(tim_dir)
 }
 
 fn probe(input: &PathBuf) -> Result<()> {

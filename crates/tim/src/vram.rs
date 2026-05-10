@@ -22,6 +22,43 @@ pub const VRAM_WIDTH: usize = 1024;
 pub const VRAM_HEIGHT: usize = 512;
 pub const VRAM_PIXELS: usize = VRAM_WIDTH * VRAM_HEIGHT;
 
+/// Detailed verdict on whether a primitive's `(cba, tsb, uvs)` lookup will
+/// produce coherent pixels in the current VRAM. Returned by
+/// [`Vram::prim_texture_status`]; [`Vram::prim_has_texture_data`] is a thin
+/// wrapper that just checks for `Ok` here.
+///
+/// "Coherent" means: the CLUT row has the right number of populated
+/// entries for the prim's depth, AND the UV bbox inside the texture page
+/// has non-zero data. A `ClutDepthMismatch` row is one where a 4bpp prim
+/// references a CLUT scanline that's actually 256 wide (typical when the
+/// wrong TIM was uploaded for the row) - rendering it gives rainbow noise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimTextureStatus {
+    /// CLUT (if any) and texture page both populated and depth-matched.
+    Ok,
+    /// CLUT row sits in unfilled VRAM (no TIM has uploaded this row).
+    MissingClut { row: u16 },
+    /// CLUT row has data but only at the wrong palette depth - e.g. a
+    /// 4bpp prim sampling a 256-entry 8bpp palette. `populated_width` is
+    /// the run of non-zero entries in the row; `expected_width` is what
+    /// this prim's depth needs (16 or 256).
+    ClutDepthMismatch {
+        row: u16,
+        populated_width: u16,
+        expected_width: u16,
+    },
+    /// Texture page region (UV bbox) is empty - the TIM that should
+    /// supply the texels for this prim wasn't uploaded.
+    MissingTexturePage { tpage: u16 },
+}
+
+impl PrimTextureStatus {
+    /// True when the prim should be drawn (no missing/mismatched data).
+    pub fn ok(&self) -> bool {
+        matches!(self, PrimTextureStatus::Ok)
+    }
+}
+
 /// Software 1MB VRAM. Each cell is one 16-bit framebuffer word. Indexed
 /// row-major: `pixels[y * VRAM_WIDTH + x]`.
 #[derive(Clone)]
@@ -158,6 +195,13 @@ impl Vram {
     /// arbitrary slice of a 256-colour gradient, not a coherent 16-colour
     /// scheme - usually the wrong TIM was loaded for the asset).
     pub fn prim_has_texture_data(&self, cba: u16, tsb: u16, uvs: &[(u8, u8)]) -> bool {
+        self.prim_texture_status(cba, tsb, uvs).ok()
+    }
+
+    /// Like [`Self::prim_has_texture_data`] but returns a structured verdict.
+    /// Used by diagnostic surfaces that want to tell the user which prims
+    /// were dropped and why.
+    pub fn prim_texture_status(&self, cba: u16, tsb: u16, uvs: &[(u8, u8)]) -> PrimTextureStatus {
         // CLUT row: 1 row of 16 (4bpp) or 256 (8bpp) BGR555 entries.
         let cx = ((cba & 0x3F) * 16) as usize;
         let cy = ((cba >> 6) & 0x1FF) as usize;
@@ -167,30 +211,34 @@ impl Vram {
             _ => 16,
         };
         let clut_w = match depth_bits {
-            4 => 16,
+            4 => 16usize,
             8 => 256,
             _ => 0,
         };
-        let clut_ok = if clut_w == 0 {
-            true // 15bpp direct - no CLUT involved.
-        } else {
-            self.region_has_data(cx, cy, clut_w, 1)
-        };
+        if clut_w != 0 && !self.region_has_data(cx, cy, clut_w, 1) {
+            return PrimTextureStatus::MissingClut {
+                row: (cba >> 6) & 0x1FF,
+            };
+        }
         // Depth-mismatch check: if a 4bpp prim's CLUT row is filled far
         // past its 16-entry palette window (e.g. it's actually a 256-entry
         // 8bpp palette from a different TIM), the first 16 entries are an
         // arbitrary slice of a wide gradient and the prim renders as
-        // rainbow stripes. Treat the row as un-fit-for-purpose in that case.
-        let clut_fits_depth = if clut_w == 0 || clut_w == 256 {
-            true
-        } else {
-            // Count populated entries in the row over a window two depths
-            // wide. If we see substantial data past `clut_w * 2`, the row
-            // is almost certainly the wrong depth for this prim.
-            let beyond = self.region_has_data(cx + clut_w * 2, cy, 16, 1);
-            !beyond
-        };
-        let clut_ok = clut_ok && clut_fits_depth;
+        // rainbow stripes. Count the populated run length so the diagnostic
+        // can tell the user how wide the row actually is.
+        if clut_w != 0 && clut_w < 256 {
+            let populated_width = self.row_populated_width(cx, cy, 256) as u16;
+            // If well over the prim's expected width is filled, treat as a
+            // depth mismatch. We allow a little slack (factor of 2) since
+            // some 4bpp palettes pack two 16-entry CLUTs in a 32-wide row.
+            if populated_width as usize > clut_w * 2 {
+                return PrimTextureStatus::ClutDepthMismatch {
+                    row: (cba >> 6) & 0x1FF,
+                    populated_width,
+                    expected_width: clut_w as u16,
+                };
+            }
+        }
 
         // Texture page region: hash the UV bbox into VRAM coords and check
         // that some words are non-zero. UV byte layout matches the shader:
@@ -223,21 +271,29 @@ impl Vram {
         };
         let page_w = vram_u_hi.saturating_sub(vram_u_lo) + 1;
         let page_h = (vmax as usize).saturating_sub(vmin as usize) + 1;
-        let page_ok =
-            self.region_has_data(tpage_x + vram_u_lo, tpage_y + vmin as usize, page_w, page_h);
+        if !self.region_has_data(tpage_x + vram_u_lo, tpage_y + vmin as usize, page_w, page_h) {
+            return PrimTextureStatus::MissingTexturePage { tpage: tsb & 0x1F };
+        }
+        PrimTextureStatus::Ok
+    }
 
-        // Drop the primitive in two cases:
-        // - Texture-page region wasn't uploaded: every texel would index
-        //   palette entry 0, and if `CLUT[0]` is non-zero (extremely
-        //   common - many palettes start with a dark / mid green or cyan),
-        //   the prim rasterises as a flat-tinted solid that obscures other
-        //   geometry.
-        // - CLUT row was uploaded but doesn't fit the prim's bit depth
-        //   (e.g. 256-entry palette where a 16-entry one was expected).
-        //   Rendering the first 16 entries of a 256-colour gradient gives
-        //   the famous rainbow-noise look that no amount of bit-correct
-        //   decoding can recover from.
-        page_ok && clut_ok
+    /// Length (in pixels) of the populated run starting at `(x, y)` in
+    /// VRAM. Used to gauge how wide a CLUT row's contents are - 16 for a
+    /// 4bpp palette, 256 for an 8bpp one. `max_w` caps the search so the
+    /// scan is bounded.
+    pub fn row_populated_width(&self, x: usize, y: usize, max_w: usize) -> usize {
+        if y >= VRAM_HEIGHT || x >= VRAM_WIDTH {
+            return 0;
+        }
+        let end = (x + max_w).min(VRAM_WIDTH);
+        let mut last_nonzero: Option<usize> = None;
+        let base = y * VRAM_WIDTH;
+        for col in x..end {
+            if self.pixels[base + col] != 0 {
+                last_nonzero = Some(col);
+            }
+        }
+        last_nonzero.map(|c| c + 1 - x).unwrap_or(0)
     }
 }
 
@@ -349,6 +405,71 @@ mod tests {
         vram3.write_words(0, 64, 256, 1, &[0x1234; 256]);
         vram3.write_words(64, 0, 4, 16, &[0x4567; 64]);
         assert!(!vram3.prim_has_texture_data(cba, tsb, &uvs));
+    }
+
+    #[test]
+    fn prim_texture_status_classifies_each_failure_mode() {
+        // Texture page at tpage_x=64, tpage_y=0 (TSB low nibble = 1, depth 4bpp).
+        // CLUT row at cy=64, cx=0 (CBA = 64<<6 = 0x1000).
+        let tsb = 0x0001;
+        let cba = 64 << 6;
+        let uvs = [(0, 0), (16, 16), (0, 16)];
+
+        // (1) Empty VRAM -> MissingClut.
+        let vram = Vram::new();
+        match vram.prim_texture_status(cba, tsb, &uvs) {
+            PrimTextureStatus::MissingClut { row } => assert_eq!(row, 64),
+            other => panic!("expected MissingClut, got {:?}", other),
+        }
+
+        // (2) CLUT only, sized correctly for 4bpp -> MissingTexturePage.
+        let mut vram = Vram::new();
+        vram.write_words(0, 64, 16, 1, &[0x1234; 16]);
+        match vram.prim_texture_status(cba, tsb, &uvs) {
+            PrimTextureStatus::MissingTexturePage { .. } => {}
+            other => panic!("expected MissingTexturePage, got {:?}", other),
+        }
+
+        // (3) Both populated, depth correct -> Ok.
+        let mut vram = Vram::new();
+        vram.write_words(0, 64, 16, 1, &[0x1234; 16]);
+        vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert_eq!(
+            vram.prim_texture_status(cba, tsb, &uvs),
+            PrimTextureStatus::Ok
+        );
+
+        // (4) CLUT row is 256 wide for a 4bpp prim -> ClutDepthMismatch.
+        let mut vram = Vram::new();
+        vram.write_words(0, 64, 256, 1, &[0x1234; 256]);
+        vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        match vram.prim_texture_status(cba, tsb, &uvs) {
+            PrimTextureStatus::ClutDepthMismatch {
+                row,
+                populated_width,
+                expected_width,
+            } => {
+                assert_eq!(row, 64);
+                assert_eq!(populated_width, 256);
+                assert_eq!(expected_width, 16);
+            }
+            other => panic!("expected ClutDepthMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn row_populated_width_counts_run_length() {
+        let mut vram = Vram::new();
+        vram.write_words(0, 32, 16, 1, &[0xAAAA; 16]);
+        assert_eq!(vram.row_populated_width(0, 32, 256), 16);
+        assert_eq!(vram.row_populated_width(0, 32, 8), 8);
+        // No data at this row.
+        assert_eq!(vram.row_populated_width(0, 33, 256), 0);
+        // Sparse: a single non-zero pixel at column 5.
+        let mut vram = Vram::new();
+        vram.write_words(5, 100, 1, 1, &[0xFFFF]);
+        // Run length is "last non-zero column + 1 - start" = 6.
+        assert_eq!(vram.row_populated_width(0, 100, 256), 6);
     }
 
     #[test]

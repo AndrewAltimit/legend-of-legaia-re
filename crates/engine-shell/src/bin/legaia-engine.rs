@@ -1874,7 +1874,12 @@ impl PlayWindowApp {
             let mut lo = [f32::INFINITY; 3];
             let mut hi = [f32::NEG_INFINITY; 3];
             for rtmd in &res.tmds {
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
+                // Use the VRAM-aware filter so prims whose CBA / TSB sample
+                // un-uploaded regions get dropped at mesh-build time. This
+                // matches the asset-viewer's cleanup and avoids the "flat
+                // green CLUT[0]" shells over correctly-textured geometry
+                // that the unfiltered builder produces.
+                let vmesh = rtmd.build_filtered_vram_mesh(&res.vram);
                 if vmesh.indices.is_empty() {
                     continue;
                 }
