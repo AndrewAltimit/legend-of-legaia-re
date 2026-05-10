@@ -208,3 +208,22 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
   </ul>
   <p>For the exhaustive opcode reference and the full <code>0x4C</code> outer-nibble dispatcher table, see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> on GitHub.</p>
 </section>
+
+<section class="doc-section" id="field-disasm-tool">
+  <h2>Disassembler tool: <code>field-disasm</code></h2>
+  <p><code>crates/engine-vm/src/bin/field_disasm.rs</code> walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the <em>width</em> logic of <code>step()</code> without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps.</p>
+<pre><code># Walk a raw script body, print each opcode + operand:
+cargo run -p legaia-engine-vm --bin field-disasm -- file &lt;PATH&gt;
+
+# Detect a [u16 count][u16 offsets[count]] prescript at the start of &lt;PATH&gt;
+# and walk every record body individually:
+cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts &lt;PATH&gt; [--summary]
+
+# Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
+# their CDNAME label and decoded fmv_id (filtered to the retail valid
+# range 0..=5 unless --no-filter is passed):
+cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
+    --disc &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
+  <p>The library exposes <code>legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}</code> for downstream tooling. The <code>InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }</code> variant carries the operand of the <code>0x4C 0xE2</code> op for callers who want to grep for cutscene triggers across the corpus.</p>
+  <p>The frame-sentinel <code>0xFFFF 0x0000</code> that opens many scene-event-scripts records is <strong>not</strong> itself an opcode - the <code>scene-event-scripts</code> mode skips past it before walking the opcode stream of each record.</p>
+</section>

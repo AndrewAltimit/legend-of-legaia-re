@@ -503,3 +503,26 @@ Pitfalls when verifying:
 3. The C decomp sometimes collapses sub-op-first dispatch ordering. Round 11's 0x4C nibble-A bug was an inversion that only became visible after reading raw asm at `0x801e2568` (`bne a1, zero, 0x801e258c` dispatching on sub-op BEFORE the ctx[+0x10] check). When tests pass but the C reads suspicious, walk the asm.
 
 A standing audit pass - picking 5 random ported sub-ops and cross-checking against the dump - turned up **no further inversion bugs** as of round 15.
+
+## Disassembler tool: `field-disasm`
+
+`crates/engine-vm/src/bin/field_disasm.rs` is a CLI that walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the *width* logic of `crate::field::step` without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps.
+
+```bash
+# Walk a raw script body, print each opcode + operand:
+cargo run -p legaia-engine-vm --bin field-disasm -- file <PATH>
+
+# Detect a [u16 count][u16 offsets[count]] prescript at the start of <PATH>
+# and walk every record body individually:
+cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts <PATH> [--summary]
+
+# Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
+# their CDNAME label and decoded fmv_id (filtered to the retail valid
+# range 0..=5 unless --no-filter is passed):
+cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
+    --disc <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
+```
+
+The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
+
+The frame-sentinel `0xFFFF 0x0000` that opens many scene-event-scripts records is **not** itself an opcode - the `scene-event-scripts` mode skips past it before walking the opcode stream of each record.

@@ -71,6 +71,7 @@ pub mod battle_action;
 pub mod battle_formulas;
 pub mod effect_vm;
 pub mod field;
+pub mod field_disasm;
 pub mod field_helpers;
 pub mod menu;
 pub mod motion_vm;
