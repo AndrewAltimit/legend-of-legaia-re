@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSX TIM - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; psx tim (texture)</div>
+  <h1>PSX TIM (texture)</h1>
+  <p class="lede">A standard PlayStation texture format. The format is well-documented externally; we don't reimplement the parser. Magic check: first u32 == <code>0x00000010</code>.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+<pre><code>u32  id          // 0x00000010
+u32  flags       // bits 0..2 = pixel mode (0=4bit, 1=8bit, 2=16bit, 3=24bit)
+                 // bit 3   = CLUT present
+[CLUT block if flag bit 3 set]
+[image block]</code></pre>
+  <p>Each block has its own header <code>(u32 size, u16 dx, u16 dy, u16 w, u16 h)</code> followed by pixel data.</p>
+  <p>In the extracted streaming files, all observed TIMs use <strong>type 8</strong> (4-bit indexed with CLUT). They're VRAM-ready textures.</p>
+</section>
+
+<section class="doc-section" id="vram-emulation-in-the-engine-port">
+  <h2>VRAM emulation in the engine port</h2>
+  <p><code>crates/engine-render</code> emulates a 1024×512 R16Uint VRAM page so per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can be done in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render with the correct CLUT bindings.</p>
+  <p>Some character meshes reference CLUT rows that live in <strong>different PROT entries</strong> from their TMD source (the runtime asset chain stitches them together). The viewer's <code>--vram-extra-dir</code> flag is the workaround until the chain is fully traced for every scene type.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/tim' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

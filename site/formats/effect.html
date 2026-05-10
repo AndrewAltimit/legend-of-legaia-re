@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Effect bundles - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; effect bundles</div>
+  <h1>Effect bundles</h1>
+  <p class="lede">Two distinct formats share the "effect" name - the on-disc bundle (magic <code>0x02018B0C</code>) and the runtime 2-pack wrapper used by <code>data\battle\efect.dat</code>. Only one PROT entry uses the on-disc form; the runtime wrapper is what battle code actually consumes.</p>
+</header>
+
+<section class="doc-section" id="on-disc-effect-bundle-magic-0x02018b0c">
+  <h2>On-disc effect bundle (magic <code>0x02018B0C</code>)</h2>
+  <p>A bulk scan over the PROT corpus finds this format in exactly one entry: <code>0000_init_data</code> (engine bootstrap data).</p>
+  <h3>Header (12 bytes)</h3>
+<pre><code>+0   u32 LE = 0x02018B0C       ; magic
++4   u32 LE = 0x0000001D       ; HEADER_A - TMD slot count (1 master + 28 sub = 29)
++8   u32 LE = 0x0000001E       ; HEADER_B - HEADER_A + 1 (sentinel/terminator)</code></pre>
+  <p>Both header words are constant within the format. <strong>HEADER_A = 29 = the maximum TMD count the format reserves space for</strong> - 1 master TMD plus 0..28 sub-effect TMDs.</p>
+  <h3>Offset table (112 bytes after the header)</h3>
+  <p>28 strictly-ascending u32 LE values:</p>
+<pre><code>0x17F4, 0x1832, 0x198F, 0x1B9B, 0x1D75, 0x1EFD, 0x20BB, 0x224B,
+0x2438, 0x260B, 0x26DD, 0x27C3, 0x2982, 0x2AA1, 0x2C44, 0x2D9F,
+0x2F77, 0x30E6, 0x3300, 0x34BE, 0x36BE, 0x3805, 0x39B6, 0x3AB4,
+0x3C4A, 0x3E23, 0x3F78, 0x404D</code></pre>
+  <p>Slot sizes derive from <code>offset[i+1] - offset[i]</code>. The 28th slot's size depends on the post-table asset-region layout.</p>
+  <h3>Asset region (after the table)</h3>
+  <p>The asset region begins with a <strong>master Legaia TMD</strong> at <code>assets_start</code>. The single observed master carries <code>1 object, 382 verts, 760 normals, 760 primitives</code>. The 28 schema offsets do not byte-align with sub-TMD file positions; they likely index into an abstract runtime buffer whose semantics live in a consumer that hasn't been reached.</p>
+  <h3>API</h3>
+<pre><code>use legaia_asset::effect_bundle;
+if let Some(eb) = effect_bundle::detect(&amp;buf) {
+    println!("magic @ 0x{:X}, asset region 0x{:X}..0x{:X}",
+             eb.magic_offset, eb.assets_start, eb.file_size);
+    for (i, slot) in eb.slots.iter().enumerate() {
+        let size = slot.size.map(|s| format!("{}", s)).unwrap_or("?".into());
+        println!("  slot[{}] off=0x{:X} size={}", i, slot.offset, size);
+    }
+}</code></pre>
+  <p>Implementation: <code>crates/asset/src/effect_bundle.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="runtime-effect-format-2-pack-wrapper">
+  <h2>Runtime effect format - 2-pack wrapper</h2>
+  <p>The format <code>data\battle\efect.dat</code> (PROT entry 873) actually uses at runtime. Cross-validated against a live battle save state - the post-init buffer at RAM <code>_DAT_8007BD5C = 0x800E425C</code> is byte-identical to PROT.DAT bytes at sector <code>0x9086</code>.</p>
+  <h3>Buffer layout</h3>
+<pre><code>+0    u32   pack0_offset    ← fixed up to absolute pointer on first init
++4    u32   pack1_offset    ← fixed up to absolute pointer on first init
++8    [N × 8-byte sprite atlas entries]
+...   [pack0]  u32 count, u32 entry_offsets[count]   ← packs of frame-batched anim entries
+...   [pack1]  u32 count, u32 entry_offsets[count]   ← packs of effect scripts</code></pre>
+  <p>Each <strong>pack0 entry</strong> is a frame-batch animation record:</p>
+<pre><code>+0   u8 frame_count     ← number of 6-byte frames
++1   u8 flags
++2   [N × 6-byte frame records]
+   each frame:
+    +0  u8  sprite_atlas_index   (indexes the inline 8-byte atlas at buffer+8)
+    +1..+5 (timing / dir bits)</code></pre>
+  <p>Each <strong>pack1 entry</strong> is an effect-ID script:</p>
+<pre><code>+0   u8   child_count         ← N - number of child sprites to spawn
++1   u8   flags               (bit 0 = use random child distribution)
++2   u16  spread              ← half-range modulo for random child position (signed 8.8 fixed)
++4   [N × 14-byte child sprite descriptors]
+   each descriptor (retail offsets from the per-frame walker):
+    +0x00  u16  sprite_id     ← indexes pack0; copied to master slot on spawn
+    +0x02  i16  width         ← half-width of random X distribution (8.8 fixed)
+    +0x04  u16  anim_flags    ← animation / shading flags read by the per-frame walker
+    +0x06  i16  depth         ← half-width of random Z distribution (8.8 fixed)
+    +0x08  u8[6] tail         ← animation curves / sound-id / timing (per-frame walker only)</code></pre>
+  <p>The retail random-distribution loop (<code>FUN_801E0088</code> pass 1) reads only <code>+0x02</code> (width) and <code>+0x06</code> (depth) per child - those two govern where a child sprite spawns relative to the effect origin. <code>anim_flags</code> and <code>tail</code> are consumed later by the per-frame walker when advancing a live child slot's animation state.</p>
+  <p>A live <code>0873_befect_data</code> sample carries 14 entries in pack0 and 33 entries in pack1. Inline sprite atlas entries (between <code>buffer+8</code> and pack0) decode as <code>(u16 u, u16 v, u16 page_descriptor, u8 clut, u8 ?)</code> - standard PSX sprite UV packets.</p>
+  <h3>Consumer cluster</h3>
+  <p>The runtime consumer lives in the battle overlay (<code>0898_xxx_dat</code>):</p>
+<table>
+<thead><tr>
+<th>Function</th>
+<th>Span</th>
+<th>Role</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x801DE914</code></td>
+<td>0x138</td>
+<td><strong>Init / pack-fixup.</strong> Called by <code>FUN_800520F0</code> case <code>0xE</code> with <code>(id=0x1000, param=0xA00)</code>. Zeros the 5008-byte runtime pool at <code>_DAT_8007BD30</code>, treats <code>_DAT_8007BD5C</code> as the 2-pack wrapper, walks both packs converting offsets→pointers (fixup gated by <code>byte[3] == 0</code>). Stores post-fixup state in the table-head 16-byte record <code>(u16 id, u16 param, u32 buf+8, u32 pack0_data+4, u32 pack1_data+4)</code>. Sets the init flag <code>_DAT_8007BD58 = 1</code>.</td>
+</tr>
+<tr>
+<td><code>0x801DFDF8</code></td>
+<td>0x290</td>
+<td><strong>Public spawn-effect API.</strong> Signature: <code>(byte effect_id, short* world_pos, ushort angle)</code>. Reads <code>pack1[effect_id]</code> from the head record to find the effect's script. Allocates the first free slot in the 32-entry × 28-byte master pool, writes pos/angle, copies script header bytes, sets script cursor to <code>entry + 4</code>. Special-cases <code>effect_id = 4 → 0x801F5D90</code> and <code>effect_id = 0x13 → 0x801F5CF8</code>.</td>
+</tr>
+<tr>
+<td><code>0x801E0088</code></td>
+<td>0x970</td>
+<td><strong>Per-frame walker (update + render).</strong> Two passes. Pass 1 (32 master slots): for each active slot, decrement state byte; if zero, fetch next 14-byte script instruction (byte 0 indexes pack0 → an anim batch; the rest provides angle/dir/lifetime). Spawns into the 128 child slots; applies sin/cos via lookup tables at <code>_DAT_8007B7F8</code> and <code>_DAT_8007B81C</code>. Pass 2 (128 child slots): builds a PSX GPU sprite primitive (<code>0x9000000</code> opcode + <code>0x2E000000</code> RGB), pulls UV/size/page from the inline sprite atlas via the child's anim cursor, submits via <code>func_0x8003D2C4</code>.</td>
+</tr>
+</tbody>
+</table>
+  <p>Decompiled output: <code>ghidra/scripts/funcs/overlay_battle_*.txt</code>.</p>
+  <h3>Runtime pool layout (<code>_DAT_8007BD30</code>, 5008 bytes total)</h3>
+<pre><code>+0x000  16 bytes   table-head record set by init
++0x010  4096 bytes 128 × 32-byte child slots - per-sprite render state
++0x1010 896 bytes  32 × 28-byte master slots - per-effect-instance state
++0x1390 1968 bytes (unused / future expansion)</code></pre>
+  <p>32 max simultaneous effects × ~4 sprites avg = 128-child sprite pool.</p>
+  <h3>Side-band streaming-effect handler</h3>
+  <p><code>0x801F17F8</code>, called from <code>FUN_800520F0</code> case <code>0xFF</code>, streams two specific runtime-only files via <code>FUN_800558FC</code>:</p>
+  <ul class="bullets">
+    <li><code>data\battle\summon.dat</code> (PROT <code>0x37F</code>) - selected when <code>_DAT_8007BD24[0x26B] &amp; 0x80 != 0</code>.</li>
+    <li><code>data\battle\readef.dat</code> (PROT <code>0x380</code>) - opposite branch.</li>
+  </ul>
+  <p>Buffer size per slot: <code>0x10800</code> = 67584 bytes. Format unverified; may share the 2-pack layout but not yet confirmed.</p>
+  <h3>Open questions</h3>
+  <ul class="bullets">
+    <li><strong>Effect-ID → human effect name.</strong> Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". Reachable by tracing call sites of <code>FUN_801DFDF8</code> in damage / battle-action code.</li>
+    <li><strong>summon.dat / readef.dat formats.</strong> Not yet decoded.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="field-pack-format-magic-0x01059b84">
+  <h2>Field-pack format (magic <code>0x01059B84</code>)</h2>
+  <p>A small number of PROT entries lead with magic <code>0x01059B84</code> followed by a 97-entry strict schema preceding packed TIMs/TMDs. The preamble→slot mapping is unknown - likely runtime-reconstructed from the schema's offset hints. Detector + dispatch live in <code>crates/asset/src/field_pack.rs</code>.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/effect' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

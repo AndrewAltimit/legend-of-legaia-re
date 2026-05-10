@@ -21,6 +21,76 @@
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
   <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand: title screen, town, battle, menu. Two of the runtime VMs (the field/event VM and the effect VM) live in those overlays.</p>
+
+  <figure class="overlay-strip">
+    <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="overlay-strip-title">
+      <title id="overlay-strip-title">Overlay residency in the 0x801C0000 window</title>
+      <style>
+        .ov-frame { fill: none; stroke: #2a323e; stroke-width: 1.5; }
+        .ov-rail  { fill: none; stroke: #1f2630; stroke-width: 1; stroke-dasharray: 3 3; }
+        .ov-card  { fill: #131922; stroke: #58c4b3; stroke-width: 1.4; rx: 4; ry: 4; }
+        .ov-title { font: 600 12px 'JetBrains Mono', monospace; fill: #c9d1d9; }
+        .ov-sub   { font: 11px 'JetBrains Mono', monospace; fill: #8b949e; }
+        .ov-addr  { font: 11px 'JetBrains Mono', monospace; fill: #58c4b3; }
+        .ov-band  { font: 10px 'Inter', sans-serif; fill: #636b76; letter-spacing: 0.06em; text-transform: uppercase; }
+        .ov-note  { font: 11px 'Inter', sans-serif; fill: #8b949e; }
+      </style>
+
+      <text x="20" y="22" class="ov-band">RAM overlay window - mutually exclusive at runtime</text>
+      <text x="20" y="60" class="ov-addr">0x801C0000</text>
+      <text x="20" y="334" class="ov-addr">0x80200000</text>
+      <text x="100" y="60" class="ov-note">~256 KB window. The disc loads exactly one overlay here for the active game mode.</text>
+
+      <line x1="20" y1="72" x2="860" y2="72" class="ov-rail"/>
+      <line x1="20" y1="320" x2="860" y2="320" class="ov-rail"/>
+
+      <rect x="40" y="92" width="180" height="68" class="ov-card"/>
+      <text x="56" y="114" class="ov-title">Title (0971)</text>
+      <text x="56" y="132" class="ov-sub">Actor / sprite VM</text>
+      <text x="56" y="146" class="ov-sub">FUN_801D6628</text>
+
+      <rect x="240" y="92" width="180" height="68" class="ov-card"/>
+      <text x="256" y="114" class="ov-title">Town (0897)</text>
+      <text x="256" y="132" class="ov-sub">Field/event script VM</text>
+      <text x="256" y="146" class="ov-sub">FUN_801DE840 (~190 KB)</text>
+
+      <rect x="440" y="92" width="180" height="68" class="ov-card"/>
+      <text x="456" y="114" class="ov-title">Battle (0898)</text>
+      <text x="456" y="132" class="ov-sub">Action SM + effect VM</text>
+      <text x="456" y="146" class="ov-sub">FUN_801E295C / E0088</text>
+
+      <rect x="640" y="92" width="200" height="68" class="ov-card"/>
+      <text x="656" y="114" class="ov-title">Menu / save / shop / options</text>
+      <text x="656" y="132" class="ov-sub">Inventory, equip, status,</text>
+      <text x="656" y="146" class="ov-sub">save-slot, options/config</text>
+
+      <rect x="40" y="184" width="180" height="68" class="ov-card"/>
+      <text x="56" y="206" class="ov-title">World map</text>
+      <text x="56" y="224" class="ov-sub">Controller</text>
+      <text x="56" y="238" class="ov-sub">FUN_801E76D4</text>
+
+      <rect x="240" y="184" width="180" height="68" class="ov-card"/>
+      <text x="256" y="206" class="ov-title">Cutscene</text>
+      <text x="256" y="224" class="ov-sub">STR / MDEC video</text>
+      <text x="256" y="238" class="ov-sub">game modes 26/27</text>
+
+      <rect x="440" y="184" width="180" height="68" class="ov-card"/>
+      <text x="456" y="206" class="ov-title">Level-up</text>
+      <text x="456" y="224" class="ov-sub">XP, stat-grant tables,</text>
+      <text x="456" y="238" class="ov-sub">magic-rank-up flow</text>
+
+      <rect x="640" y="184" width="200" height="68" class="ov-card"/>
+      <text x="656" y="206" class="ov-title">Minigame hub</text>
+      <text x="656" y="224" class="ov-sub">Fishing, slot, Baka,</text>
+      <text x="656" y="238" class="ov-sub">dance, Muscle Dome</text>
+
+      <text x="20" y="278" class="ov-band">Always resident in 0x80010000-0x800FFFFF</text>
+      <rect x="40" y="290" width="800" height="22" class="ov-card" style="stroke:#2a323e"/>
+      <text x="56" y="306" class="ov-sub">SCUS_942.54: boot path, asset dispatcher, move VM, motion VM, libsnd / libspu / libcd / libapi</text>
+    </svg>
+    <figcaption>Battle and town never coexist in RAM - the battle overlay loads on top of the town overlay's slot. Menus are layered over field/battle but mutually exclusive among themselves.</figcaption>
+  </figure>
+
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
 </section>
 
@@ -117,73 +187,12 @@
 
 <section class="doc-section" id="port">
   <h2>The clean-room port</h2>
+  <p>The Rust port lives in its own page - phase plan, crate layering, architectural principles, and the legal posture.</p>
   <div class="card-grid">
     <a class="card" href="engine.html">
       <div class="card-title">Engine reimplementation</div>
-      <div class="card-body">The clean-room Rust port. Phase plan, crate layering, architectural principles, and the legal posture (same as ScummVM / OpenRCT2 / OpenMW: bring your own disc).</div>
+      <div class="card-body">Phase plan + crate layering. Same legal pattern as ScummVM / OpenRCT2 / OpenMW: bring your own disc.</div>
     </a>
-  </div>
-  <div class="card-grid">
-    <div class="card">
-      <div class="card-title">Boot UI sessions</div>
-      <div class="card-body"><code>engine-core::title::TitleSession</code> drives the <code>FadeIn &rarr; PressStart &rarr; MainMenu &rarr; Done</code> loop with a no-save fallback path; <code>engine-core::save_select::SaveSelectSession</code> covers the slot-list UI with Browsing / ConfirmLoad / ConfirmOverwrite / ConfirmDelete phases. Both are renderer-agnostic and emit typed event streams; <code>legaia-engine title</code> + <code>save-select</code> drive them headlessly with scripted input.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Encounter system</div>
-      <div class="card-body"><code>engine-core::encounter</code>: <code>EncounterTable</code> holds the per-scene rows + trigger rate + safe zones; <code>EncounterTracker</code> rolls per-step against the table with rate-bias hooks for accessory effects; <code>EncounterSession</code> brackets the transition with <code>Idle &rarr; Transition &rarr; Triggered &rarr; Battling &rarr; Grace</code> phases so engines render the camera-shake / fade chain.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Battle target picker</div>
-      <div class="card-body"><code>engine-core::target_picker::TargetPickerSession</code> drives the post-action target cursor. Parameterised on a <code>TargetKind</code> (SingleEnemy / SingleAlly / SingleAllyOrSelf / DeadAlly / AnyAlly / AllEnemies / AllAllies / Self_) with skip-self / dead-only logic baked in; sweep targets resolve immediately, single-target picks walk valid candidates with cursor-wrap.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Equipment catalog</div>
-      <div class="card-body"><code>engine-core::equipment::EquipmentCatalog</code> ships ~30 vanilla entries covering weapons (character-locked: Vahn-only swords, Noa-only knuckles, Gala-only quarterstaves), helmets, body armor, hand guards, boots, rings, and accessories. Per-entry <code>ItemModifier</code> with stat deltas + ability-bit packing; <code>to_modifier_table</code> hands the resolved table to <code>compute_battle_stats</code>.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Seru capture &amp; spell learning</div>
-      <div class="card-body"><code>engine-core::seru_learning</code>: <code>SeruRegistry</code> maps Seru ids to spell ids + capture-point grants; <code>SeruCaptureLog</code> tracks per-character per-Seru running totals with a <code>learnable_mask</code> filter; <code>record_capture</code> is the pure resolver that fires <code>LearnEvent</code>s when a character crosses the threshold; <code>SeruCaptureSession</code> drives the post-capture banner sequence ("Captured: Spark!" &rarr; "Vahn learned Spark!").</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Tactical Arts chain editor</div>
-      <div class="card-body"><code>engine-core::tactical_arts_editor</code>: <code>ChainLibrary</code> stores up to 8 saved chains per character (3..=7-byte sequences, retail-faithful caps). <code>ChainEditor</code> drives the menu-side editor - <code>Browsing &rarr; Editing &rarr; Naming &rarr; Done</code> - emitting typed events for each direction push, pop, and commit. Engines feed picks back to <code>BattleRunner::push_chained_art</code> at battle start.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Save format LGSF v2</div>
-      <div class="card-body"><code>crates/save/src/ext.rs</code>: backward-compatible v1 prelude plus an extension block (magic <code>LGX2</code>) carrying play-time, the active-party slot list, per-character <code>CharSaveExt</code> rows (learned-arts mask, learned-spell list, per-Seru capture totals, four active-chain quick slots), and the cross-character saved-chain library.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Dialog renderer pipeline</div>
-      <div class="card-body"><code>engine-render::dialog_box_draws_for</code> takes the dialog panel's typed glyph stream + a <code>DialogBoxLayout</code> (origin / size / padding / line height / column count) and emits <code>TextDraw</code>s with per-glyph CLUT tinting via <code>dialog_clut_color</code>, greedy width-based wrap, and newline support; <code>dialog_panel_draws_for</code> is the engine-core compatibility shim.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Field (pause) menu</div>
-      <div class="card-body"><code>engine-core::field_menu::FieldMenuSession</code>: seven-row pause panel (Items / Equip / Spells / Arts / Status / Save / Config) with a <code>FieldMenuRowMask</code> for per-row enable/disable; Cross enters a sub-session, the shell pushes the matching tracker, and <code>resume(close)</code> hands control back. Wired into <code>play-window</code> so Start in field opens the menu.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Field-menu sub-session dispatcher</div>
-      <div class="card-body"><code>engine-core::field_menu_dispatch::FieldMenuSubsession</code> wires every <code>FieldMenuRow</code> selection to its real session: <code>InventoryUseSession</code>, <code>EquipSession</code>, <code>SpellMenuSession</code>, <code>ChainEditor</code>, <code>StatusScreenSession</code>, <code>SaveSelectSession</code>, <code>OptionsSession</code>. <code>build(row, world, options, slots, library, catalog, table)</code> constructs the matching session from world state; <code>tick_pad_edge(pressed)</code> routes edge-triggered pad input. Apply helpers (<code>apply_equip_outcome</code>, <code>apply_inventory_outcome</code>, <code>apply_spell_outcome</code>, <code>apply_arts_outcome</code>) drain finished sub-sessions back into <code>World</code>. <code>play-window</code>'s <code>BootUiState::FieldMenu</code> uses this - Cross on a row pushes the right session, control returns to <code>FieldMenuSession::resume</code> when the sub finishes.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Status screen</div>
-      <div class="card-body"><code>engine-core::status_screen::StatusScreenSession</code>: per-character snapshot (level / XP / HP / MP / AP / six base stats / equipment list / element ranks). L1/R1 cycle through party members; the <code>StatusSnapshot</code> view is plain data so engines populate from the live record without coupling to the renderer.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Field spell menu</div>
-      <div class="card-body"><code>engine-core::spell_menu::SpellMenuSession</code>: out-of-battle casting flow (CharSelect &rarr; SpellSelect &rarr; TargetSelect). <code>is_field_usable</code> filters out battle-only effects (Damage / Capture / Escape / Buff); dead-target / Revive constraints are validated; resolution flows through the existing <code>spells::cast_spell</code> resolver and surfaces a typed <code>SpellMenuOutcome</code>.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Options &amp; key rebind</div>
-      <div class="card-body"><code>engine-core::options::OptionsSession</code>: typed <code>OptionsState</code> (BGM / SFX volume 0..=10, message speed 1..=8, vibration on/off, audio stereo/mono) with in-place editing. <code>engine-core::key_rebind::KeyRebindSession</code> drives the per-button rebind table; pressing any key in <code>AwaitingKey</code> swaps the binding into <code>input::Mapping</code> while clearing any conflicting key so two keys never report the same pad button.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Game-over panel</div>
-      <div class="card-body"><code>engine-core::game_over::GameOverSession</code>: three-row Continue/Retry/Quit panel with a fade-in counter; Continue dimmed when no save data is present. Engines invoke this on a <code>BattleSession::Defeat</code> outcome and route Continue back through <code>SaveSelectSession</code>.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Built-in fallback font</div>
-      <div class="card-body"><code>legaia_font::Font::placeholder</code> ships a hand-rolled 5&times;7 ASCII bitmap font in <code>legaia_font::builtin</code> so HUD text renders legibly even before <code>font-extract</code> populates the real dialog atlas. Printable-ASCII range plus a hollow-box unknown glyph; non-ASCII bytes still distinguish from missing glyphs.</div>
-    </div>
   </div>
 </section>
 

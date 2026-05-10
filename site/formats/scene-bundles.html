@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scene bundles - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene-prefixed asset bundles</div>
+  <h1>Scene-prefixed asset bundles</h1>
+  <p class="lede">Four related shapes account for the dominant per-scene asset layouts on the disc. All of them lead with a 4-byte chunk0 header in the form <code>(type &lt;&lt; 24) | size</code>, with <code>type = 0x00</code> - the same encoding as a <a href="data-field.html">DATA_FIELD streaming</a> chunk header. The standard streaming walker would interpret <code>type=0x00</code> as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0 differently based on the <em>content</em> magic at offset +4.</p>
+</header>
+
+<section class="doc-section" id="scene-tmd-stream-bare-tmd-prefix">
+  <h2>scene_tmd_stream - bare-TMD prefix</h2>
+  <p>The dominant scene-asset layout. Implementation: <code>crates/asset/src/scene_tmd_stream.rs</code>. ~12% of all PROT entries match.</p>
+<pre><code>+0x00          u32 chunk0_header   ; (type=0x00 &lt;&lt; 24) | size
++0x04          Legaia TMD          ; magic 0x80000002, fills `size` bytes
++0x04 + size   streaming chunks    ; standard DATA_FIELD chunks until terminator
+                                   ; OR end-of-file</code></pre>
+  <p>Strict structural detection:</p>
+  <ol class="bullets">
+    <li><code>buf.len() &gt;= 32</code>.</li>
+    <li><code>buf[4..8] == 0x80000002</code> (Legaia TMD magic).</li>
+    <li><code>buf[8..12] == 0</code> (TMD on-disc flags; runtime sets to 1 after pointer fixup).</li>
+    <li><code>buf[12..16]</code> = <code>nobj</code>, <code>1 &lt;= nobj &lt;= 64</code>.</li>
+    <li>Chunk0 header at <code>buf[0..4]</code> has type byte 0.</li>
+    <li>TMD body size (low 24 bits of chunk0 header) is 4-aligned and at least <code>12 + nobj * 28</code>; <code>4 + size &lt;= buf.len()</code>.</li>
+    <li>Streaming tail at offset <code>4 + tmd_size</code> walks at least one valid chunk header OR a terminator.</li>
+  </ol>
+  <p>Reading:</p>
+<pre><code>use legaia_asset::scene_tmd_stream;
+if let Some(s) = scene_tmd_stream::detect(&amp;buf) {
+    let tmd = legaia_tmd::parse(&amp;buf[s.tmd_range()])?;  // bare TMD, no wrapper
+    for chunk in &amp;s.tail_chunks {
+        // each chunk is (type, size, payload) per data-field.md
+    }
+}</code></pre>
+</section>
+
+<section class="doc-section" id="scene-vab-stream-vab-prefix">
+  <h2>scene_vab_stream - VAB-prefix</h2>
+  <p>Same outer wrapper as <code>scene_tmd_stream</code> but the leading chunk carries a Sony VAB sound bank instead of a TMD. The single largest distributed-VAB carrier in the corpus. Implementation: <code>crates/asset/src/scene_vab_stream.rs</code>. ~17% of all PROT entries match.</p>
+<pre><code>+0x00          u32 chunk0_header  ; LE: type=0x00 in high byte, size=N in low 24 bits
++0x04          u32 magic          ; 0x56414270 ('VABp' read as LE u32 = 'p' 'B' 'A' 'V')
++0x08          u32 version        ; 7 in retail (must be ≤ 10)
++0x0C..        VAB header tail + programs[] + tones[] + VAG offsets
++0x04 + N      streaming chunks   ; standard DATA_FIELD chunks until terminator
+                                  ; OR end-of-file</code></pre>
+  <p>Strict gate validates the VAB header: <code>version &lt;= 10</code>, <code>program_count &lt;= 128</code>, <code>tone_count &lt;= 128</code>. The <code>chunk0_size</code> low byte is consistently <code>0x20</code> (sector-aligned to 32-byte boundary).</p>
+  <p>Cluster anatomy:</p>
+  <ul class="bullets">
+    <li>119 of 123 entries in the CDNAME <code>vab_01</code> cluster (1072..1194) match - the standard distributed-bank layout.</li>
+    <li>53 entries in <code>sound_data2</code> (878..890), 19 in <code>music_01</code>, 14 in <code>monster_data</code> / <code>battle_data</code>, plus scattered hits in <code>teien</code>, <code>other5</code>, <code>player_data</code>.</li>
+  </ul>
+  <p>Reading:</p>
+<pre><code>use legaia_asset::scene_vab_stream;
+use legaia_vab::parse_header;
+
+if let Some(s) = scene_vab_stream::detect(buf) {
+    let header = parse_header(buf, s.vab_range().start)?;
+    println!("VAB v{} ps={} ts={}", header.version, header.ps, header.ts);
+}</code></pre>
+</section>
+
+<section class="doc-section" id="scene-v12-table-twin-offset-header">
+  <h2>scene_v12_table - twin-offset header</h2>
+  <p>A scene-named table whose 8-word header carries three constant magic words and two algebraic ties to a record count. Implementation: <code>crates/asset/src/scene_v12_table.rs</code>. 97 PROT entries match - one per scene.</p>
+<pre><code>+0x00   u16  N + 4          ; first offset table base = N + 4
++0x02   u16  0x0012         ; constant magic
++0x04   u16  0x0000         ; constant
++0x06   u16  0x0014         ; constant - second-table base offset *header*
++0x08   u16  ?              ; per-scene parameter (varies; semantics unknown)
++0x0A   u16  N              ; record count for the first table
++0x0C   u16  0x0000         ; constant
++0x0E   u16  N + 2          ; second offset table base = N + 2
+...                          ; trailing dense data (&gt;96% nonzero past 0x2000)</code></pre>
+  <p>Strict structural checks: the three constant words at fixed offsets, plus <code>u16[0] == N + 4</code> and <code>u16[7] == N + 2</code> (algebraic ties to <code>u16[5] = N</code>), plus <code>8 &lt;= N &lt;= 4096</code>. The constants alone are nearly enough; the algebraic ties produce zero false positives across the entire PROT corpus.</p>
+  <p>Sizes range from ~30 KB to ~387 KB; median ~270 KB. Density &gt;96% nonzero past offset <code>0x2000</code> - the leading 8 KB is the structured header / offset tables, the rest is dense payload data.</p>
+  <p>The runtime consumer hasn't been located. Likely candidates: per-scene navmesh / collision data, scene-event trigger tables. The class name reflects the structural signature, not a guessed semantic; it should change once the consumer is reversed.</p>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_scene_v12_consumers.py"><code>ghidra/scripts/find_scene_v12_consumers.py</code></a> is the consumer-search complement: it walks every captured program for <code>lh</code> / <code>lhu</code> instructions at <code>+2</code> and <code>+6</code> immediate offsets - the offsets where the header's two constant magic words live. Functions that touch both offsets are high-confidence candidates for the v12 reader. Run with <code>-process</code> once per overlay; group hits cluster inside the consumer.</p>
+</section>
+
+<section class="doc-section" id="scene-asset-table-canonical-7-asset-bundle">
+  <h2>scene_asset_table - canonical 7-asset bundle</h2>
+  <p>The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: <code>crates/asset/src/scene_asset_table.rs</code>. 80 PROT entries match.</p>
+<pre><code>+0x00   u32  count = 7              ; literal `07 00 00 00`
++0x04   u32  meta1                  ; varies - purpose unknown
++0x08   7 × (u32 type_size, u32 data_offset)
+                                    ; each pair packs `(type&lt;&lt;24)|size`
++0x40   asset payload region        ; LZS-compressed in some entries,
+                                    ; raw in the rest</code></pre>
+  <p>Each descriptor is <code>(type_size, data_offset)</code>:</p>
+  <ul class="bullets">
+    <li><code>type_size</code> packs <code>(type_byte &lt;&lt; 24) | (size &amp; 0x00FF_FFFF)</code> - the same packing the <a href="asset-type.html">asset-type dispatcher</a> accepts directly.</li>
+    <li><code>data_offset</code> for descriptor 0 is a file-relative byte offset (always <code>0x40</code>). For descriptors 1..6, it's a <strong>runtime-buffer offset</strong> within the loader's working RAM, <em>not</em> a file-relative offset. Many real entries have <code>data_offset &gt; file_size</code> for descriptors past the first; the loader presumably decompresses the payload region into a working buffer and resolves the descriptor offsets there.</li>
+  </ul>
+  <p>Type-sequence variants found across the 80 entries:</p>
+<table>
+<thead><tr>
+<th>Tuple</th>
+<th>Count</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>(1, 2, 3, 4, 5, 6, 7)</code></td>
+<td>67</td>
+<td>Standard scene bundle: <code>(TimList, Tmd, Man, Mes, Move, Anm, Vdf)</code>.</td>
+</tr>
+<tr>
+<td><code>(1, 3, 4, 5, 6, 7, 0x14)</code></td>
+<td>7</td>
+<td>Skips Tmd; trailing <code>0x14 = Flag(0x14)</code> sentinel.</td>
+</tr>
+<tr>
+<td><code>(2, 3, 4, 5, 6, 7, 0x14)</code></td>
+<td>4</td>
+<td>Skips TimList.</td>
+</tr>
+<tr>
+<td><code>(10, 2, 3, 4, 5, 6, 7)</code></td>
+<td>1</td>
+<td>Leading <code>Flag(0xA)</code> sentinel.</td>
+</tr>
+<tr>
+<td><code>(1, 2, 3, 4, 6, 7, 0x14)</code></td>
+<td>1</td>
+<td>Skips Move.</td>
+</tr>
+</tbody>
+</table>
+  <p>All scene-named (<code>izumi</code>, <code>cave01</code>, <code>bylon</code>, <code>dolk</code>, <code>vell</code>, <code>urudre1</code>, <code>chitei2</code>, <code>nilboa</code>, <code>keikoku</code>, <code>concnow</code>, <code>jouina/b/c/e</code>, …). Sizes ~60 KB to ~452 KB.</p>
+  <p>Reading:</p>
+<pre><code>use legaia_asset::scene_asset_table;
+if let Some(t) = scene_asset_table::detect(buf) {
+    for (i, d) in t.descriptors.iter().enumerate() {
+        println!("desc[{}]: type={:#04x} size={} off={:#x}",
+                 i, d.type_byte, d.size, d.data_offset);
+    }
+}</code></pre>
+  <p>The runtime consumer is the field-loader chain documented under the <a href="../subsystems/asset-loader.html">asset-loader subsystem</a>: <code>FUN_8001F7C0</code> + <code>FUN_800255B8</code> plus the dispatcher at <code>FUN_8001F05C</code> consumes each descriptor pair after LZS-decoding the payload region into a working buffer.</p>
+</section>
+
+<section class="doc-section" id="scene-scripted-asset-table-scripted-prefix-canonical-bundle">
+  <h2>scene_scripted_asset_table - scripted prefix + canonical bundle</h2>
+  <p>A composite shape that pairs a <code>[u16 count][u16 offsets[count]]</code> script prescript at offset 0 with a canonical 7-asset scene table at the next 0x800 sector boundary. Implementation: <code>crates/asset/src/scene_scripted_asset_table.rs</code>. ~6% of all PROT entries match.</p>
+<pre><code>+0x00              u16  count             ; 1..=4096 - number of script records
++0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
+                                          ; monotonically non-decreasing
++offsets[i]        record bytecode        ; per-record opcodes (typical
+                                          ; opener: 0xFFFF 0x0000 sentinel +
+                                          ; field-VM-shaped frame ops)
++0x800-aligned     u32  count = 7         ; canonical scene-asset-table lead
+...                                       ; same layout as scene_asset_table</code></pre>
+  <p>Strict gate validates <strong>both</strong> the prescript and the inner asset table:</p>
+  <ol class="bullets">
+    <li><code>u16[0]</code> is the record count (<code>1..=4096</code>).</li>
+    <li><code>u16[1]</code> algebraically ties to the count: <code>offsets[0] = 2 + count*2</code>.</li>
+    <li>All offsets monotonic, in-bounds.</li>
+    <li>Past the last record offset, the next <code>0x800</code>-aligned position carries <code>u32 count = 7</code> plus a valid <code>scene_asset_table</code> header (first descriptor at <code>+0x40</code>, all type bytes <code>&lt;= 0x14</code>).</li>
+  </ol>
+  <p>The two-level gate is what makes this detector zero-false-positive: the prescript shape alone occasionally matches arbitrary <code>[count][offsets]</code>-shaped data, but the asset-table check at the next sector boundary is a strong second signal.</p>
+  <p>The prescript is plausibly the <strong>scene event-script bytecode</strong> that the field VM (<code>FUN_801DE840</code>) executes when the scene loads. The 0xFFFF 0x0000 sentinels at record starts strongly resemble field-VM frame-divider opcodes. The runtime is presumed to walk the prescript first (loading scene-specific event scripts), then load the asset bundle from the sector-aligned position. The exact prescript opcode set is unconfirmed pending more reverse work.</p>
+</section>
+
+<section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">
+  <h2>tmd_size_prefix - truncated TMD-prefix</h2>
+  <p>Sister to <code>scene_tmd_stream</code> for the <em>truncated</em> case: same outer shape (<code>[u32 prefix][TMD magic at +4][zero flags][nobj]</code>), but the on-disc payload is <strong>shorter than the prefix claims</strong>. Implementation: <code>crates/asset/src/tmd_size_prefix.rs</code>. ~3% of all PROT entries match.</p>
+<pre><code>+0x00   u32  total_size       ; claimed total in-memory size, &gt; on-disc len
++0x04   u32  0x80000002       ; Legaia TMD magic
++0x08   u32  0x00000000       ; TMD flags (on-disc; runtime sets to 1)
++0x0C   u32  nobj             ; small (typically 2 or 4)
++0x10   object_table[nobj]    ; 28 bytes per object (PsyQ TMD layout)
++0x10 + nobj*0x1C             ; primitive data (truncated at sector boundary)</code></pre>
+  <p>All object pointers (<code>vert_top</code>, <code>norm_top</code>, <code>prim_top</code>) point <strong>within the prefix-claimed total size</strong> - so the on-disc file is genuinely a prefix of a larger logical resource, not a malformed header.</p>
+  <p>Strict structural checks:</p>
+  <ol class="bullets">
+    <li>TMD magic at <code>+4</code>, flags == 0 at <code>+8</code>, <code>1 &lt;= nobj &lt;= 8</code>.</li>
+    <li><code>claimed_total &gt; buf.len()</code> - distinguishes from <code>scene_tmd_stream</code> which catches the complete case.</li>
+    <li>Object table fits on disc.</li>
+    <li>Each object's vert / normal / primitive ranges fit within the claimed total.</li>
+  </ol>
+  <p>The 34 hits are all 12 KB files (6 sectors). The runtime consumer hasn't been located; likely the loader allocates <code>claimed_total</code> bytes of RAM and either (a) zero-fills the missing tail, or (b) streams the remainder from another PROT entry.</p>
+</section>
+
+<section class="doc-section" id="scene-event-scripts-prescript-only">
+  <h2>scene_event_scripts - prescript-only</h2>
+  <p>Sister of <code>scene_scripted_asset_table</code> for the case where the same <code>[u16 count][u16 offsets]</code> prescript exists at offset 0, but the post-prescript payload is <strong>not</strong> a canonical 7-asset table. Implementation: <code>crates/asset/src/scene_event_scripts.rs</code>. ~20 PROT entries match.</p>
+<pre><code>+0x00              u16  count             ; 3..=4096
++0x02              u16  offsets[count]    ; offsets[0] = 2 + count*2,
+                                          ; monotonically non-decreasing,
+                                          ; all &lt;= file size
++offsets[i]        record bytecode        ; per-record opcodes; the bulk
+                                          ; of records open with the
+                                          ; field-VM frame sentinel
+                                          ; `0xFFFF 0x0000`
+...                                       ; bulk asset payload after the
+                                          ; prescript (per-scene secondary
+                                          ; header; format unconfirmed -
+                                          ; appears to be a small `(count,
+                                          ; descriptor[count])` table at
+                                          ; the next 0x800 boundary, with
+                                          ; alternating `(type, size)` and
+                                          ; runtime-buffer offset pairs)</code></pre>
+  <p>Strict structural detection:</p>
+  <ol class="bullets">
+    <li>Prescript shape valid (count <code>3..=4096</code>, <code>offsets[0] == 2 + count*2</code>, monotonic, in-bounds).</li>
+    <li><strong>Frame-opener rate ≥ 50 %</strong> of records start with the field-VM <code>0xFFFF 0x0000</code> sentinel.</li>
+  </ol>
+  <p>The frame-opener rate is what makes this detector zero-false-positive on its own. Random <code>[count][offsets]</code>-shaped data carries no <code>0xFFFF</code> opener at the record positions; real scene-event-script bundles carry it on the majority of records (50–92 %).</p>
+  <p>The prescript records are field-VM (<code>FUN_801DE840</code>) event scripts - the same per-frame bytecode shape used by <code>scene_scripted_asset_table</code> (<code>0xFFFF 0x0000</code> is the field VM's frame divider opcode). Records likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene sequences, pickup / interaction scripts. The per-scene asset payload that follows is loaded by these scripts at runtime.</p>
+  <p>Detection runs after <code>scene_scripted_asset_table</code> and <code>scene_asset_table</code>, so any composite layouts those detectors recognize claim their entries first.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/scene-bundles' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

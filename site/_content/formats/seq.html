@@ -1,0 +1,151 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; seq - psyq sequenced-music format</div>
+  <h1>SEQ - PsyQ sequenced-music format</h1>
+  <p class="lede">PsyQ's <code>SsSeqOpen</code> / <code>SsSeqPlay</code> accepts a 13-byte-header SEQ file: a thin MIDI variant that names a single track with delta-time + event records. Legaia uses it for in-game music, paired with a <a href="vab.html">VAB</a> sound bank that holds the instrument samples.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>The format is a publicly-documented PsyQ SDK shape (header layout + event encoding). This page describes byte order, the meaning of every header field, and how Sony's SsAPI sequencer consumes the event stream</p>
+  <ul class="bullets">
+    <li><strong>no Sony bytes appear here</strong>.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="header">
+  <h2>Header</h2>
+  <p>Two header shapes coexist in the wild:</p>
+  <h3>Standard PsyQ shape (13 bytes)</h3>
+<pre><code>+0x00  u8[4]   magic   "pQES"  (0x70 0x51 0x45 0x53)
++0x04  u16 BE  version          (typically 1)
++0x06  u16 BE  resolution       PPQN - ticks per quarter note
++0x08  u24 BE  initial tempo    microseconds per quarter note
++0x0B  u8      time-sig num     (e.g. 4)
++0x0C  u8      time-sig denom   power of 2 (2 means /4, 3 means /8)
++0x0D  ...     event stream</code></pre>
+  <h3>Legaia variant (15 bytes)</h3>
+  <p>Every retail Legaia SEQ examined uses a <strong>u32 BE version</strong> field rather than the u16 BE PsyQ-doc form, with two reserved zero bytes between the magic and the version word. The remaining fields shift by two bytes:</p>
+<pre><code>+0x00  u8[4]   magic   "pQES"
++0x04  u32 BE  version          (always 1 in retail)
++0x08  u16 BE  resolution       PPQN
++0x0A  u24 BE  initial tempo    microseconds per quarter note
++0x0D  u8      time-sig num
++0x0E  u8      time-sig denom   power of 2
++0x0F  ...     event stream</code></pre>
+  <p><code>crates/seq::parse_header</code> accepts both shapes - it probes <code>u32 BE at +4..+8 == 1</code> and dispatches accordingly. <code>HEADER_LEN</code> is the standard length; <code>HEADER_LEN_LEGAIA</code> is the variant length.</p>
+  <p><code>version</code> is verified by the SsAPI loader (<code>FUN_80062410</code> in SCUS, see <a href="../subsystems/audio.html"><code>subsystems/audio.md</code></a>). Files with <code>version != 1</code> emit <code>s_This_is_an_old_SEQ_Data_Format_*</code>.</p>
+</section>
+
+<section class="doc-section" id="event-stream">
+  <h2>Event stream</h2>
+  <p>Each event is a <em>delta-time</em> (variable-length integer) followed by a status byte and zero or more data bytes. Running status applies: if the first byte of an event is <code>&lt; 0x80</code>, reuse the previous status byte and treat that byte as data.</p>
+<table>
+<thead><tr>
+<th>Status range</th>
+<th>Event</th>
+<th>Data bytes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x80..=0x8F</code></td>
+<td>Note Off</td>
+<td>2 (key, velocity)</td>
+</tr>
+<tr>
+<td><code>0x90..=0x9F</code></td>
+<td>Note On</td>
+<td>2 (key, velocity) - <code>velocity == 0</code> ≡ NoteOff</td>
+</tr>
+<tr>
+<td><code>0xA0..=0xAF</code></td>
+<td>Poly Aftertouch</td>
+<td>2</td>
+</tr>
+<tr>
+<td><code>0xB0..=0xBF</code></td>
+<td>Control Change</td>
+<td>2 (controller, value)</td>
+</tr>
+<tr>
+<td><code>0xC0..=0xCF</code></td>
+<td>Program Change</td>
+<td>1 (program)</td>
+</tr>
+<tr>
+<td><code>0xD0..=0xDF</code></td>
+<td>Channel Aftertouch</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>0xE0..=0xEF</code></td>
+<td>Pitch Bend</td>
+<td>2 (LSB, MSB; both 7-bit)</td>
+</tr>
+<tr>
+<td><code>0xFF NN LL</code></td>
+<td>Meta event</td>
+<td>LL bytes (LL is VLQ)</td>
+</tr>
+</tbody>
+</table>
+  <p>Channel index is the low nibble of the status byte (<code>0..=15</code>).</p>
+  <h3>Variable-length quantity (VLQ)</h3>
+  <p>A VLQ is a big-endian sequence of 7-bit groups; the high bit of each byte is <code>1</code> for "more bytes follow", <code>0</code> for the final group. Maximum 4 bytes per delta. SEQ uses VLQ both for delta-times and meta-event length fields. See <code>legaia_seq::read_vlq</code>.</p>
+  <h3>Meta events</h3>
+<table>
+<thead><tr>
+<th>Kind</th>
+<th>Length</th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x2F</code></td>
+<td>0</td>
+<td>End-of-Track (always the final event)</td>
+</tr>
+<tr>
+<td><code>0x51</code></td>
+<td>3</td>
+<td>Set Tempo (u24 BE microseconds per quarter note)</td>
+</tr>
+<tr>
+<td><code>0x58</code></td>
+<td>4</td>
+<td>Time signature (numerator, denominator-pow2, MIDI clocks/metronome, 32nds/quarter)</td>
+</tr>
+<tr>
+<td><code>0x59</code></td>
+<td>2</td>
+<td>Key signature (sharps as <code>i8</code>, minor flag)</td>
+</tr>
+<tr>
+<td>other</td>
+<td>LL</td>
+<td>surfaced as <code>MetaMessage::Other { kind, data }</code></td>
+</tr>
+</tbody>
+</table>
+  <p>End-of-Track is required and terminates parsing.</p>
+</section>
+
+<section class="doc-section" id="tempo-math">
+  <h2>Tempo math</h2>
+  <p><code>tempo</code> is microseconds per quarter note; <code>ppqn</code> is ticks per quarter note. Per-tick duration is <code>tempo / ppqn</code> microseconds, and the SsAPI runtime accumulates real-world time against this rate. A mid-stream <code>SetTempo</code> overrides for <strong>future</strong> events only - events that already fired at the previous tempo are unaffected.</p>
+  <p><code>legaia_seq::us_per_tick(tempo, ppqn)</code> returns the per-tick duration as <code>f64</code>.</p>
+</section>
+
+<section class="doc-section" id="where-the-data-lives">
+  <h2>Where the data lives</h2>
+  <p>SEQ payloads are loaded by the PsyQ libsnd <code>SsSeqOpen</code> family - see <a href="../subsystems/audio.html"><code>subsystems/audio.md</code></a> → "Public SEQ API". On-disc, SEQ data lives inside the same scene-VAB-prefixed streaming containers described in <a href="scene-bundles.html">scene-bundles.md</a>. The <code>_DAT_8007BAC8</code> slot the field VM writes (opcode <code>0x35</code>) is consumed by <code>FUN_800243F0</code>, which resolves a SEQ payload through the <a href="cdname.html">CDNAME</a> per-scene block and hands it to <code>FUN_80062340</code> (<code>SsSeqOpen</code>) for playback.</p>
+</section>
+
+<section class="doc-section" id="tooling">
+  <h2>Tooling</h2>
+  <p><code>crates/seq</code> (binary <code>seq</code>) parses SEQ files end-to-end:</p>
+<pre><code>seq info    &lt;PATH&gt;    # header summary + event-type histogram
+seq events  &lt;PATH&gt;    # disassemble every event in source order
+seq json    &lt;PATH&gt;    # full parse as JSON</code></pre>
+  <p>Playback is the engine side: <code>legaia_engine_audio::Sequencer</code> consumes a parsed <code>Seq</code> + a loaded <code>VabBank</code> and drives the clean-room SPU model. See <code>docs/subsystems/audio.md</code> → "Engine-audio model".</p>
+</section>
+

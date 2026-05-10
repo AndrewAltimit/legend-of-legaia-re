@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DMY.DAT (dev fixtures) - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; dmy.dat - developer fixtures</div>
+  <h1>DMY.DAT - developer fixtures</h1>
+  <p class="lede">Sibling archive to <code>PROT.DAT</code> at the disc root. Despite the name suggesting "dummy data" or a parallel asset bank, DMY.DAT carries developer fixtures, not real game data.</p>
+</header>
+
+<section class="doc-section" id="contents">
+  <h2>Contents</h2>
+  <p>Three discernable patterns:</p>
+  <ol class="bullets">
+    <li>A memory-bus test pattern (alternating bit-walk values used to validate RAM during development).</li>
+    <li>Paired random blobs (used as test inputs for the audio / video pipelines).</li>
+    <li>A small offset table at the start.</li>
+  </ol>
+  <p>No part of the file is referenced by retail gameplay code; the file is included on disc but never loaded.</p>
+</section>
+
+<section class="doc-section" id="treatment">
+  <h2>Treatment</h2>
+  <p>Skipped by the categorize pipeline. Not interesting for either preservation or the engine port.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/dmy' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

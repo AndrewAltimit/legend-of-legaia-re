@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pochi-filler placeholders - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; pochi-filler placeholder slots</div>
+  <h1>Pochi-filler placeholder slots</h1>
+  <p class="lede">265 of 1232 PROT entries are placeholder slots filled with a developer fill pattern. Detection class: <code>pochi_filler</code>. Detector + class: <code>crates/asset/src/categorize.rs</code>.</p>
+</header>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>+0x000..0x786   ASCII "pochipochi..." (37 lines × 52 bytes + "po" = 1926 bytes)
++0x786          0x1A (DOS EOF marker)
++0x787..end     scratch / leftover data (no consistent format)</code></pre>
+  <p><code>pochi</code> (Japanese <code>ポチ</code>) is a generic dog name common in Japanese dev fill - uninitialised memory shows up obviously in a debugger this way.</p>
+  <p>Detection: <code>buf.starts_with(b"pochi") &amp;&amp; buf[0x786] == 0x1A</code>.</p>
+</section>
+
+<section class="doc-section" id="why-so-many">
+  <h2>Why so many</h2>
+  <p>These slots cluster at fixed <em>offsets within their CDNAME block</em> - typically positions 2, 4, 5, 6 inside a scene's reserved 6-8-slot block. Each scene reserves N PROT slots for asset variants, but most scenes only fill some; unused slots get pochi-filled.</p>
+  <p>Some scene blocks are almost entirely pochi. The <code>edstati3</code> block (likely "ending station 3", possibly cut content) has 36 of ~38 pochi entries.</p>
+</section>
+
+<section class="doc-section" id="how-to-handle">
+  <h2>How to handle</h2>
+  <p>Treat as known-empty:</p>
+  <ul class="bullets">
+    <li>Don't run format detectors against them.</li>
+    <li>Don't include in TMD/TIM bulk-scan totals.</li>
+    <li>Skip in any "what's still uncategorised" tally.</li>
+  </ul>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/pochi' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

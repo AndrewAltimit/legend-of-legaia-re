@@ -1,0 +1,51 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mips overlay code</div>
+  <h1>MIPS overlay code</h1>
+  <p class="lede">Static disc copies of runtime overlays - small subsystem code blobs that load into the <code>0x801C0000+</code> overlay window. Distinct from the major full-scene overlays (title / town / battle / options); these are smaller specialised blobs from the <code>0901..=0969_xxx_dat</code> PROT range.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>Implementation: <code>crates/asset/src/mips_overlay.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>+0x00   u32  0x27BDFFXX        ; addiu sp, sp, -X (negative stack adjust)
++0x04   u32  prologue follow-up; sw ra/s* (0xAFB?_00XX), or another addiu /
+                                ; lui / sw / R-type - the second instruction
+                                ; of the entry function's prologue
++0x08   ...                    ; rest of the overlay code blob</code></pre>
+</section>
+
+<section class="doc-section" id="detection">
+  <h2>Detection</h2>
+  <p>Three checks together produce zero false positives across the corpus:</p>
+  <ol class="bullets">
+    <li><code>u32_le[0] &amp; 0xFFFF_FF00 == 0x27BD_FF00</code> - <code>addiu sp, sp, -X</code>.</li>
+    <li><code>(u32_le[0] &amp; 0xFF) ∈ [0x80, 0xF8]</code> - only accept reasonable stack adjustments (8 to 128 bytes).</li>
+    <li><code>u32_le[1]</code>'s 6-bit MIPS opcode field is one of the common function-prologue follow-ups (<code>sw</code>, <code>addiu</code>, <code>lui</code>, <code>lw</code>, R-type, ldc/sdc).</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="cluster-anatomy">
+  <h2>Cluster anatomy</h2>
+  <p>All matches cluster in the <code>0901..=0969</code> PROT range - sized 14 KB to 37 KB (one outlier at 163 KB for <code>0969_xxx_dat.BIN</code>). The <code>find-overlay</code> heuristic ranks these as MIPS-code-shape candidates; this detector formalises that ranking into the categorize pipeline.</p>
+  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/bulk-import-overlays.sh</code></a> once a base address is determined. The overlay window is <code>0x801C0000</code>–<code>0x80200000</code>; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.</p>
+</section>
+
+<section class="doc-section" id="likely-subsystems">
+  <h2>Likely subsystems</h2>
+  <p>Based on size and the <code>xxx_dat</code> clustering: cutscenes, world-map, menu screens, mini-games, or per-scene specialised code that doesn't fit in the main town-field overlay.</p>
+</section>
+
+<section class="doc-section" id="reading-the-format">
+  <h2>Reading the format</h2>
+<pre><code>use legaia_asset::mips_overlay;
+
+if let Some(m) = mips_overlay::detect(buf) {
+    println!("MIPS overlay: stack frame = {} bytes; second op = {:#04x}",
+             m.stack_frame_bytes, m.second_op);
+}</code></pre>
+</section>
+

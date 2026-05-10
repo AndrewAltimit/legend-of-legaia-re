@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Navmesh / region table - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; navmesh / per-scene region table</div>
+  <h1>Navmesh / per-scene region table</h1>
+  <p class="lede">A 24-byte stride record table loaded into RAM at <code>0x80108EA4..0x801095xx</code> during scene loads. Carries per-scene NPC region / event-trigger / nav-region records - a candidate for the navmesh-class data the field VM and motion VM consult while pathing actors.</p>
+</header>
+
+<section class="doc-section" id="how-this-was-located">
+  <h2>How this was located</h2>
+  <p>Diffing two area-load save states against each other (one taken in scene <code>map01</code>, one in scene <code>suimon</code>) over the configured <code>navmesh_candidate</code> window <code>0x80100000..0x80120000</code> from <a href="../tooling/mednafen-automation.html"><code>scripts/mednafen/scenarios.toml</code></a> surfaces a 1700-byte cluster at <code>0x80108EA4..0x80109550</code> where the two scenes' contents differ. The first 0x40 bytes are byte-identical between the two saves, suggesting a small bank of shared records ahead of the per-scene records.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+  <p>24-byte fixed stride. The leading byte is a sequential record id (records 0..N − 1); the second byte is a sub-id / kind flag.</p>
+<pre><code>+0x00  u8   id          ; sequential 0, 1, 2, ...
++0x01  u8   kind         ; 0x00 for the leading shared bank, 0x01 for per-scene records
++0x02  i16  field_a      ; signed coordinate / size value (X?)
++0x04  i16  field_b      ; signed coordinate / size value (Y?)
++0x06  i16  field_c      ; signed coordinate / size value (Z?)
++0x08  i16  field_d      ;
++0x0A  i16  field_e      ;
++0x0C  i16  field_f      ;
++0x0E  i16  field_g      ;
++0x10  u32  tag          ; 4-byte ASCII tag (e.g. "ZZZ\0", "EEE\0", "XXX\0", "(((\0", "333T")
++0x14  u16  sub_a        ;
++0x16  u16  sub_b        ;</code></pre>
+  <p>Records observed in the leading bank carry small ASCII tags: <code>(((\0</code> (<code>0x00282828</code>), <code>333T</code> (<code>0x54333333</code>), <code>ZZZ\0</code> (<code>0x005A5A5A</code>), <code>EEE\0</code> (<code>0x00454545</code>), <code>XXX\0</code> (<code>0x00585858</code>), <code>...\0</code> (<code>0x002E2E2E</code>). The repeating-3-character tags suggest debug names attached to template records used by the scene pre-fill / world-map renderer.</p>
+  <p>The per-scene records (<code>kind == 0x01</code>) follow and carry distinct tags whose shape varies by scene.</p>
+</section>
+
+<section class="doc-section" id="confidence">
+  <h2>Confidence</h2>
+  <p><strong>Inferred - consumer not in any captured dump.</strong> The layout above is a structural inference from a single mednafen save-state diff pair. A grep for any <code>LUI</code> + <code>ORI</code> pair targeting the <code>0x80108EA4..0x80109550</code> window across every <code>ghidra/scripts/funcs/*.txt</code> returns zero hits, meaning every consumer of this table lives in an overlay slice that hasn't been captured yet (the table address is in the <code>0x801XXXXX</code> data window that maps to scene-resident overlays).</p>
+  <p>The most likely consumer is the field-VM actor-spawn family (script-VM ops <code>0x40</code> / <code>0x4F</code>) or the motion VM (<code>FUN_8003774C</code>, per-actor pursue / patrol) - both already-captured but neither reads from <code>0x80108EA4</code> in their static body. The reads must therefore go through a pointer that gets populated at scene load time, in code that lives in one of the still-uncaptured <code>town01</code> / <code>field</code> / <code>world_map</code> overlays.</p>
+</section>
+
+<section class="doc-section" id="files-referencing-this-format">
+  <h2>Files referencing this format</h2>
+  <ul class="bullets">
+    <li>Field VM's actor-spawn family writes per-NPC records into a similarly-shaped table (same 24-byte stride, same leading id / kind bytes).</li>
+    <li>Motion VM consults a per-actor pursue / patrol coordinate set with similar shape.</li>
+  </ul>
+  <p>Both candidates point at the same conclusion: the navmesh table is consumed via a pointer the scene-load overlay sets up. The next step is a <code>mednafen-state diff</code> over the pointer storage range (<code>0x801C0000..0x801E0000</code>) across the two area-load saves to surface which RAM cell holds the table base - that's where the writer-search should focus once the cell is known.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/navmesh' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

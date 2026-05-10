@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pack format - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; pack format (inside tim_list and tmd chunks)</div>
+  <h1>Pack format (inside TIM_LIST and TMD chunks)</h1>
+  <p class="lede">A simple <code>(count, offset_table, data)</code> layout used as the data payload of a TIM_LIST or TMD chunk inside a <a href="data-field.html">DATA_FIELD streaming</a> container.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>Implementation: <code>crates/asset/src/pack.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>u32 count
+u32 word_offset[count]   // each is in 4-byte words from the start of THIS pack data
+... sub-asset bytes, packed back-to-back ...</code></pre>
+  <p>Sub-asset <code>i</code> lives at byte range <code>[word_offset[i] * 4 .. word_offset[i+1] * 4)</code>, with the last sub-asset ending at the chunk's end.</p>
+</section>
+
+<section class="doc-section" id="example">
+  <h2>Example</h2>
+  <p>A TIM_LIST chunk header followed by a 2-TIM pack:</p>
+<pre><code>chunk header:    6c 02 01 01    type=0x01 (TIM_LIST), size=0x01026C
+pack count:      02 00 00 00    count = 2
+offset[0]:       03 00 00 00    word offset 3 → byte 12 (= start of TIM 0)
+offset[1]:       8b 20 00 00    word offset 0x208B → byte 0x822C (= start of TIM 1)
+[then 2 PSX TIMs back-to-back]</code></pre>
+</section>
+
+<section class="doc-section" id="distinction-from-the-standalone-tim-pack">
+  <h2>Distinction from the standalone TIM-pack</h2>
+  <p>The <a href="tim-pack.html">standalone TIM-pack</a> form is structurally similar but uses an 8-byte byte-marker header (with <code>byte[3] == 0x01</code> and <code>byte[2] &lt; 0x10</code> as discriminators) and stores count in <code>byte[2]</code>. The pack-inside-streaming-chunks form here uses a full <code>u32</code> count and lacks the marker prefix - use the right format for the source.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/pack' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

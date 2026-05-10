@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dialog font - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; dialog font (proportional latin)</div>
+  <h1>Dialog font (proportional Latin)</h1>
+  <p class="lede">The proportional sans-serif font used by the dialog box, the field menu, and most in-game UI text. It lives in VRAM at runtime and is referenced by every text-rendering primitive the engine emits.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>The font has three pieces of static data, all in <code>SCUS_942.54</code>:</p>
+  <ol class="bullets">
+    <li>A <strong>256-byte width table</strong> at <code>0x80073F1C</code>, indexed by character byte.</li>
+    <li>A <strong>38-entry escape-sequence table</strong> at <code>0x80074050</code>, indexed by the byte that follows a <code>0xCE</code> runtime escape.</li>
+    <li>The <strong>glyph bitmaps</strong>, which sit in VRAM at <code>(896, 0)..(960, 256)</code> (a 4bpp tile-page covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine; the on-disc PROT entry that carries them has not yet been classified by the static categorizer.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="glyph-layout-in-vram">
+  <h2>Glyph layout in VRAM</h2>
+  <p>Format: 4bpp indexed, 16-pixel × 16-pixel cells, 16 columns × 14 rows = 224 cells. Cell <code>c</code> (for character byte <code>c</code> in the range <code>0x20..=0xFF</code>) lives at:</p>
+<pre><code>U = (c &amp; 0x0F) * 16
+V = (c &amp; 0xF0) - 0x20</code></pre>
+  <p>Drawn region within each cell is 14 pixels wide × 15 pixels tall (<code>W=0x0E</code>, <code>H=0x0F</code> in the GP0 0x64 packet). The remaining 2 pixels of width and 1 pixel of height per cell are inter-glyph guard space.</p>
+  <p>Character codes <code>0x00..=0x1F</code> are reserved for control / escape bytes (<code>0x7C</code> newline, <code>0xCE</code> escape prefix, <code>0xCF</code> color change, <code>0x20</code> space) - they do not have glyphs.</p>
+</section>
+
+<section class="doc-section" id="width-table-advance-lookup">
+  <h2>Width table (advance lookup)</h2>
+<pre><code>0x80073F1C  u8 widths[256]</code></pre>
+  <p>256 bytes, indexed by character byte. The advance for character <code>c</code> is computed as:</p>
+<pre><code>advance = widths[c] + DAT_800740E8 + 1</code></pre>
+  <p>where <code>DAT_800740E8</code> is a per-string padding override that's normally zero (and is reset to zero at the end of each render call). The trailing <code>+1</code> is a fixed inter-character gap.</p>
+  <p>Bytes <code>widths[0x00..=0x1F]</code> overlap with three actor-name strings ("Meta", "Terra", "Ozma") that live at <code>0x80073F24..0x80073F3B</code>; only entries <code>0x20..=0xFF</code> are meaningful for glyph advance.</p>
+  <p>Sample widths from the table:</p>
+<table>
+<thead><tr>
+<th><code>c</code></th>
+<th>char</th>
+<th>width</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x20</code></td>
+<td><code> </code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>0x21</code></td>
+<td><code>!</code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>0x41</code></td>
+<td><code>A</code></td>
+<td>7</td>
+</tr>
+<tr>
+<td><code>0x49</code></td>
+<td><code>I</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>0x4D</code></td>
+<td><code>M</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>0x57</code></td>
+<td><code>W</code></td>
+<td>9</td>
+</tr>
+<tr>
+<td><code>0x69</code></td>
+<td><code>i</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>0x6D</code></td>
+<td><code>m</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>0x7E</code></td>
+<td><code>~</code></td>
+<td>9</td>
+</tr>
+</tbody>
+</table>
+  <p>The full table is dumped to <code>extracted/font/dialog_font_widths.csv</code> and <code>extracted/font/dialog_font_metadata.json</code> as part of the extraction step.</p>
+</section>
+
+<section class="doc-section" id="clut">
+  <h2>CLUT</h2>
+<pre><code>VRAM (96, 510)   // CLUT 0 - dialog grayscale (white-on-transparent text)
+VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system prompts</code></pre>
+  <p>Sixteen 16-color CLUTs are placed end-to-end across VRAM Y=510, one every 16 horizontal pixels. CLUT 0 is the canonical dialog palette: index 2 = transparent black, index 3 = white, indices 0/1/4..7 = mid-tone grays for anti-aliasing.</p>
+  <p>The runtime selects which CLUT to use via <code>DAT_8007B454</code>, modifiable inline by the <code>0xCF</code> color-change escape (see below). The CLUT word written into the GP0 packet is <code>DAT_8007B454 + 0x7F86</code>; the constant <code>0x7F86</code> decodes as VRAM CLUT-coords <code>(96, 510)</code>, so <code>DAT_8007B454</code> is just an additive index 0..15.</p>
+</section>
+
+<section class="doc-section" id="escape-table-0x80074050">
+  <h2>Escape table (<code>0x80074050</code>)</h2>
+  <p>Triggered by byte <code>0xCE</code> in the rendered string. The byte that follows indexes a 4-byte record:</p>
+<pre><code>struct EscapeEntry {
+    i16  string_id;   // 0 = render runtime variable; nonzero = look up a string
+    u8   advance_px;  // pixel advance after rendering this escape
+    i8   y_offset;    // Y offset (or variable index when string_id == 0)
+};</code></pre>
+  <p>There are 38 entries (table indices <code>0x00..=0x25</code>).</p>
+<table>
+<thead><tr>
+<th>Index</th>
+<th><code>string_id</code></th>
+<th><code>advance</code></th>
+<th><code>y_offset</code></th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x00..=0x07</code></td>
+<td>55..62</td>
+<td>16</td>
+<td>-2</td>
+<td>Icon strings (likely controller-button glyphs / currency icon)</td>
+</tr>
+<tr>
+<td><code>0x08</code></td>
+<td>98</td>
+<td>12</td>
+<td>+2</td>
+<td>String 98</td>
+</tr>
+<tr>
+<td><code>0x09..=0x0A</code></td>
+<td>132,133</td>
+<td>12</td>
+<td>0</td>
+<td>Strings 132/133</td>
+</tr>
+<tr>
+<td><code>0x0B..=0x0E</code></td>
+<td>0</td>
+<td>32</td>
+<td>0..3</td>
+<td><strong>Variable substitution</strong> - <code>y_offset</code> is the variable index (HP/MP/gold/exp slot), renderer calls <code>FUN_80034B78</code> to format the integer</td>
+</tr>
+<tr>
+<td><code>0x0F</code></td>
+<td>137</td>
+<td>38</td>
+<td>0</td>
+<td>String 137 (longest single-shot escape - ~6 chars wide)</td>
+</tr>
+<tr>
+<td><code>0x10..=0x13</code></td>
+<td>36,34,35,37</td>
+<td>12</td>
+<td>0</td>
+<td><strong>Active actor name</strong> - string IDs 34/35/36/37 align with the in-SCUS actor name strings ("Meta"/"Terra"/"Ozma"/...)</td>
+</tr>
+<tr>
+<td><code>0x14..=0x1C</code></td>
+<td>139..147</td>
+<td>20</td>
+<td>0</td>
+<td>Strings 139..147</td>
+</tr>
+<tr>
+<td><code>0x1D..=0x25</code></td>
+<td>148..156</td>
+<td>28</td>
+<td>0</td>
+<td>Strings 148..156</td>
+</tr>
+</tbody>
+</table>
+  <p>When <code>string_id != 0</code>, the renderer calls <code>FUN_8002C488(x, y + y_offset, string_id)</code> to draw the looked-up string. When <code>string_id == 0</code>, <code>y_offset &lt; 4</code> selects which scratch variable (the four runtime-tracked numbers) and the renderer calls <code>FUN_80034B78</code> to format and draw it.</p>
+</section>
+
+<section class="doc-section" id="rendering-pipeline">
+  <h2>Rendering pipeline</h2>
+<table>
+<thead><tr>
+<th>Step</th>
+<th>Function</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Source preprocessor</td>
+<td><code>FUN_80036514</code></td>
+<td>Expands authoring-time <code>^X</code> (0x5E) escapes into runtime <code>0xCE (X-0x2D)</code> escape stream.</td>
+</tr>
+<tr>
+<td>Word-wrap pre-pass</td>
+<td><code>FUN_80036044</code></td>
+<td>Called from <code>FUN_8003CC98</code>. Wraps lines to fit the dialog box width.</td>
+</tr>
+<tr>
+<td>Single-line renderer</td>
+<td><code>FUN_80036888</code></td>
+<td>Iterates bytes, dispatches escapes, emits one GP0 0x64 sprite per glyph.</td>
+</tr>
+<tr>
+<td>Multi-line wrapper</td>
+<td><code>FUN_8003CC98</code></td>
+<td><code>FUN_80036044</code> + <code>FUN_80036888</code>. Used by the field VM dialog opener.</td>
+</tr>
+<tr>
+<td>Text-actor tick</td>
+<td><code>FUN_80031D00</code></td>
+<td>Per-actor text rendering; uses an alternate width-bucketed glyph layout for HUD/status numbers (column-0 stride 8 px, height 12 px) - see <code>DAT_80073DCC</code>.</td>
+</tr>
+</tbody>
+</table>
+  <p>Per-glyph GP0 packet (variable-size textured rectangle, opaque, with raw-texture color):</p>
+<pre><code>[0x04 00 00 00]              // OT-list terminator
+[0x64 80 80 80]              // cmd 0x64 + RGB shading
+[i16 X][i16 Y]               // top-left in screen coords
+[u8 U][u8 V][u16 CLUT]       // U,V within texture page; CLUT word
+[u16 W=14][u16 H=15]         // sprite size in pixels</code></pre>
+  <p>The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it is <strong>not</strong> embedded in the per-glyph packet.</p>
+</section>
+
+<section class="doc-section" id="inline-control-bytes">
+  <h2>Inline control bytes</h2>
+<table>
+<thead><tr>
+<th>Byte</th>
+<th>Operand</th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x20</code></td>
+<td>-</td>
+<td>Space. No glyph; advance X by <code>widths[0x20]</code> (=4).</td>
+</tr>
+<tr>
+<td><code>0x7C</code></td>
+<td>-</td>
+<td>Newline. Advance Y by 14 px; reset X to line-start.</td>
+</tr>
+<tr>
+<td><code>0xCE</code></td>
+<td>u8</td>
+<td>Escape - index into the table at <code>0x80074050</code>.</td>
+</tr>
+<tr>
+<td><code>0xCF</code></td>
+<td>u8</td>
+<td>Color change. Sets <code>DAT_8007B454</code> (CLUT additive index 0..15).</td>
+</tr>
+<tr>
+<td><code>0x00</code></td>
+<td>-</td>
+<td>String terminator.</td>
+</tr>
+<tr>
+<td>any other <code>0x21..=0xFF</code></td>
+<td>-</td>
+<td>Glyph: emit one sprite via the formula above.</td>
+</tr>
+</tbody>
+</table>
+</section>
+
+<section class="doc-section" id="provenance">
+  <h2>Provenance</h2>
+<table>
+<thead><tr>
+<th>Subject</th>
+<th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Width table location + indexing</td>
+<td><code>ghidra/scripts/funcs/80036888.txt</code> line 345 (<code>+ (uint)*(byte *)((int)&amp;DAT_80073f1c + (uint)bVar1)</code>)</td>
+</tr>
+<tr>
+<td>Glyph U/V formula</td>
+<td><code>ghidra/scripts/funcs/80036888.txt</code> lines 332-335 (<code>*pbVar4 &lt;&lt; 4</code> for U, <code>(bVar1 &amp; 0xf0) - 0x20</code> for V)</td>
+</tr>
+<tr>
+<td>GP0 packet shape</td>
+<td><code>ghidra/scripts/funcs/8003c11c.txt</code> (the simpler text-actor renderer with the same packet layout)</td>
+</tr>
+<tr>
+<td>Escape table location + entry layout</td>
+<td><code>ghidra/scripts/funcs/80036888.txt</code> lines 282-321</td>
+</tr>
+<tr>
+<td>CLUT base</td>
+<td><code>ghidra/scripts/funcs/80036888.txt</code> lines 195-196 (<code>addiu v1,v1,0x7f86</code>)</td>
+</tr>
+<tr>
+<td>Color-change escape</td>
+<td><code>ghidra/scripts/funcs/80036888.txt</code> lines 278-280 (case <code>0xCF</code>)</td>
+</tr>
+<tr>
+<td>Author-time <code>^X</code> preprocessor</td>
+<td><code>ghidra/scripts/funcs/80036514.txt</code> lines 246-249</td>
+</tr>
+<tr>
+<td>Multi-line wrapper</td>
+<td><code>ghidra/scripts/funcs/8003cc98.txt</code></td>
+</tr>
+</tbody>
+</table>
+  <p>The dialog opener that reaches this renderer chain from the <a href="../subsystems/script-vm.html">field script VM</a> opcode <code>0x3F</code> is <code>FUN_8001FD44</code> - it sets the "dialog active" story flag (<code>_DAT_1F800394 |= 0x40</code>) before forwarding into the renderer.</p>
+</section>
+
+<section class="doc-section" id="what-s-still-open">
+  <h2>What's still open</h2>
+  <ul class="bullets">
+    <li><strong>On-disc carrier of the glyph bitmap.</strong> The static categorizer in <code>crates/asset</code> doesn't yet recognise the PROT entry that carries the font - the bitmap is reachable only from a save-state VRAM dump. The font extractor writes <code>dialog_font_vram_4bpp.bin</code> (the raw 32 KB tile-page bytes) alongside the PNG, and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/find-font-carrier.py"><code>scripts/find-font-carrier.py</code></a> searches every PROT entry for matching slices. The script runs three search strategies:</li>
+  </ul>
+  <ol class="bullets">
+    <li>Direct slice match (4 fixed offsets, 64-byte windows).</li>
+    <li>Glyph-row signature match (per-cell 8-byte rows concatenated for 4–8 adjacent cells; survives row-major byte permutations).</li>
+    <li>LZS-decompressed match (decompresses every entry that parses as a valid LZS container and re-runs both probe sets against the decoded bytes).</li>
+  </ol>
+  <p>All three strategies return zero hits across <code>PROT.DAT</code>, <code>DMY.DAT</code>, and <code>SCUS_942.54</code>. The font is therefore neither raw nor LZS-resident in the static asset corpus. Two remaining unblock paths:</p>
+  <ol class="bullets">
+    <li>Trace the <code>LoadImage</code> (GP0 0xA0) DMA call that uploads the tile-page at <code>(896, 0)</code> and identify which PROT entry it pulls from. The <code>find_lui_writers.py</code> Ghidra script can locate the LUI+ADDIU pair that loads the source pointer; the destination is the GPU FIFO at <code>0x1F801810</code> so the search target is "writes to a struct that ultimately reaches <code>_DAT_1F801810</code>".</li>
+    <li>Diff a save state captured before the title screen finishes booting against one captured during a dialog - the font region transitions from zero to populated, so the disc read that fills it sits in the boot sequence somewhere between <code>FUN_8003E4E8</code> (PROT TOC loader) and the first dialog open. The <code>analyze-overlay.sh --label dialog</code> capture (already committed under <code>ghidra/scripts/funcs/overlay_dialog_*.txt</code>) holds the dialog overlay's text-rendering routines; the font upload itself sits earlier in boot, in a routine that's still SCUS-resident or in the title overlay.</li>
+  </ol>
+  <ul class="bullets">
+    <li><strong>String IDs in the escape table.</strong> Entries <code>0x00..=0x07</code> (advance 16, <code>y_offset = -2</code>) likely render multi-character icon strings from the same string pool that backs <code>FUN_8002C488</code>. The pool itself isn't yet decoded - its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.</li>
+    <li><strong><code>0xCC</code> opcode.</strong> The text-actor renderer at <code>FUN_80031D00</code> recognises a small handful of single-byte ops (<code>0xCC..=0xCF</code>) inside its glyph stream that are distinct from the dialog renderer's <code>0xCE/0xCF</code>. They're outside the dialog font's scope and tracked under the <a href="../subsystems/script-vm.html">field script VM</a> docs.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="extraction-tools">
+  <h2>Extraction tools</h2>
+  <p><code>extracted/font/</code> (gitignored - Sony pixel data) is produced by the font-extraction step:</p>
+<table>
+<thead><tr>
+<th>File</th>
+<th>What it is</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>dialog_font_sheet.png</code></td>
+<td>The full 256×256 source-pixel font tile-page, 4bpp expanded with CLUT 0</td>
+</tr>
+<tr>
+<td><code>dialog_font_atlas.png</code></td>
+<td>Per-glyph atlas, 14×15 cells laid out in 16 columns × 14 rows (224 glyphs total)</td>
+</tr>
+<tr>
+<td><code>dialog_font_metadata.json</code></td>
+<td>Width table + escape table + VRAM source rect, in machine-readable form</td>
+</tr>
+<tr>
+<td><code>dialog_font_widths.csv</code></td>
+<td>Just the width table as CSV</td>
+</tr>
+<tr>
+<td><code>dialog_font_vram_4bpp.bin</code></td>
+<td>Raw 32 KB 4bpp VRAM bytes (downstream tooling can hash + search PROT for the carrier)</td>
+</tr>
+</tbody>
+</table>
+  <p>The extractor reads the SCUS executable for the static tables, and a mednafen save state's <code>&amp;GPURAM[0][0]</code> section for the live VRAM bytes. The font region is byte-stable across all captured save states (with cosmetic differences only in cells touched by transient UI elements that share the tile-page).</p>
+  <p>The committed extractor is <code>crates/font/src/bin/font-extract.rs</code>:</p>
+<pre><code>cargo run -p legaia-font --bin font-extract -- \
+    --scus extracted/SCUS_942.54 \
+    --save "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;hash&gt;.mcN" \
+    --out extracted/font</code></pre>
+  <p>Save-state parsing locates VRAM by searching for the <code>&amp;GPURAM[0][0]</code> variable header (mednafen uses a <code>u8 name_len; bytes name; u32 size; bytes data;</code> record format inside each section); no MDFNSVST section walk is required.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/dialog-font' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

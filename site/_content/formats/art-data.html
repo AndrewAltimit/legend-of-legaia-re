@@ -1,0 +1,569 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; art data - tactical arts records</div>
+  <h1>Art Data - Tactical Arts records</h1>
+  <p class="lede">Each playable character (Vahn, Noa, Gala) has a per-character table of <em>art records</em> describing damage, animation, hit timing, status effects, and Super/Miracle Art trigger metadata. These records drive the battle action system.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"><code>crates/art</code></a>.</p>
+</section>
+
+<section class="doc-section" id="where-the-data-lives">
+  <h2>Where the data lives</h2>
+<table>
+<thead><tr>
+<th>Source</th>
+<th>Location</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Vahn art records (RAM)</td>
+<td><code>0x80160EFC</code> (first record) onwards</td>
+</tr>
+<tr>
+<td>Noa art records (RAM)</td>
+<td><code>0x80176998</code> (first record) onwards</td>
+</tr>
+<tr>
+<td>Gala art records (RAM)</td>
+<td><code>0x8018BA54</code> (first record) onwards</td>
+</tr>
+<tr>
+<td>Learned Art Constants (RAM)</td>
+<td>Vahn <code>0x8008488D</code>, Noa <code>0x80084CA1</code>, Gala <code>0x8008506C</code></td>
+</tr>
+<tr>
+<td>On-disc source</td>
+<td>PROT entry <code>0x05C4</code></td>
+</tr>
+<tr>
+<td>Miracle Art trigger entries (RAM <code>801F</code> segment)</td>
+<td>Vahn's Craze <code>0x64F4</code>, Noa's Ark <code>0x6504</code>, Biron Rage <code>0x6514</code></td>
+</tr>
+<tr>
+<td>Miracle Art trigger entries (PROT <code>0x05C4</code> area)</td>
+<td>Vahn's Craze <code>0x0CDC</code>, Noa's Ark <code>0x0CEC</code>, Biron Rage <code>0x0CFC</code></td>
+</tr>
+</tbody>
+</table>
+  <p>Confidence: <strong>Inferred</strong> - citation chain comes from external RE work cross-referenced with Meth962's earlier observations; a watchpoint trace pinning the runtime read sites is still pending.</p>
+</section>
+
+<section class="doc-section" id="action-constants">
+  <h2>Action Constants</h2>
+  <p>Every entry in the battle action queue is one of these <code>0x00–0x32</code> values:</p>
+<table>
+<thead><tr>
+<th>Byte</th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x00</code></td>
+<td>Nothing</td>
+</tr>
+<tr>
+<td><code>0x01</code></td>
+<td>Item</td>
+</tr>
+<tr>
+<td><code>0x02</code></td>
+<td>Magic</td>
+</tr>
+<tr>
+<td><code>0x03</code></td>
+<td>Attack</td>
+</tr>
+<tr>
+<td><code>0x04</code></td>
+<td>Spirit</td>
+</tr>
+<tr>
+<td><code>0x05</code></td>
+<td>Escape</td>
+</tr>
+<tr>
+<td><code>0x06</code></td>
+<td>unidentified</td>
+</tr>
+<tr>
+<td><code>0x07</code></td>
+<td>Faint Animation 1</td>
+</tr>
+<tr>
+<td><code>0x08</code></td>
+<td>Faint Animation 2</td>
+</tr>
+<tr>
+<td><code>0x09</code></td>
+<td>unidentified</td>
+</tr>
+<tr>
+<td><code>0x0A</code></td>
+<td>Item / Magic Animation</td>
+</tr>
+<tr>
+<td><code>0x0B</code></td>
+<td>Block Animation</td>
+</tr>
+<tr>
+<td><code>0x0C</code></td>
+<td>Left</td>
+</tr>
+<tr>
+<td><code>0x0D</code></td>
+<td>Right</td>
+</tr>
+<tr>
+<td><code>0x0E</code></td>
+<td>Down</td>
+</tr>
+<tr>
+<td><code>0x0F</code></td>
+<td>Up</td>
+</tr>
+<tr>
+<td><code>0x10</code></td>
+<td>Spirit Animation</td>
+</tr>
+<tr>
+<td><code>0x11–0x18</code></td>
+<td>Empty Slots 1–8 (placeholder, never appears in static data)</td>
+</tr>
+<tr>
+<td><code>0x19</code></td>
+<td>Regular Art Starter</td>
+</tr>
+<tr>
+<td><code>0x1A</code></td>
+<td>Special Art Starter</td>
+</tr>
+<tr>
+<td><code>0x1B–0x32</code></td>
+<td>Per-character arts (the <em>constant</em> is shared across characters but resolves to a different art per character - see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/src/tables.rs"><code>crates/art/src/tables.rs</code></a>)</td>
+</tr>
+</tbody>
+</table>
+  <p>The first 4 directional bytes of a Miracle Art's replacement string are stored on disc with the high nibble's MSB set (<code>0x8C</code> / <code>0x8D</code> / <code>0x8E</code> / <code>0x8F</code>); the runtime ANDs with <code>0x7F</code> when copying into the queue. <code>legaia_art::miracle::unmask_replacement_byte</code> matches that.</p>
+</section>
+
+<section class="doc-section" id="art-record-layout">
+  <h2>Art record layout</h2>
+  <p>The layout is <strong>schema-then-walk</strong>: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The researcher captured field positions but did not pin every byte - this page documents the schema; <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art"><code>crates/art</code></a> ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.</p>
+  <h3>Fixed prefix</h3>
+<pre><code>+0x00  u8[]   command sequence - values 1=L, 2=R, 3=D, 4=U; terminated by 0x00
+       u8     action constant (0x1B..=0x32)
+       u8     anim_index (primary)
+       u8[5]  anim_extra (reserved; usually 0; some Hyper Arts chain multiple records)</code></pre>
+  <h3>Variable fields (positions documented, exact byte offsets per art-specific)</h3>
+<table>
+<thead><tr>
+<th>Field</th>
+<th>Encoding</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Art Name</td>
+<td>UTF-like string. Populated for Super Arts, Miracle Art finishers, and some Hyper Arts; absent for regular arts (the runtime falls back to a per-character name table).</td>
+</tr>
+<tr>
+<td>Art Power (×4)</td>
+<td>Each byte is a damage multiplier - see <a href="#power-encoding">Power encoding</a> below.</td>
+</tr>
+<tr>
+<td>Damage Timing (×4)</td>
+<td>One byte per Art Power byte; the animation frame at which that hit fires.</td>
+</tr>
+<tr>
+<td>Special Effect Cues (×2)</td>
+<td>Each cue occupies 2 words: half-word effect_id, then 3 half-words XYZ. Active iff any field is non-zero.</td>
+</tr>
+<tr>
+<td>Hit Effect Cues (×4)</td>
+<td>Each cue is a 32-bit word: high half = timing in frames, low half = constant (<code>0x1A</code> = sound effect, <code>0x4C</code> = hit effect, …).</td>
+</tr>
+<tr>
+<td>Identifier</td>
+<td>Byte. Some values trigger special animations (<code>0x67</code> in Heaven's Drop = Thunderbolt).</td>
+</tr>
+<tr>
+<td>Anim Speed</td>
+<td>Byte. Lower = slower playback, higher = faster.</td>
+</tr>
+<tr>
+<td>Effect on Enemy</td>
+<td>Byte. <code>1</code> = Burned, <code>2</code> = Shocked, others reserved.</td>
+</tr>
+<tr>
+<td>Repeat Frames</td>
+<td>3 bytes: count, start_frame, end_frame. Replays a frame range; for some arts also repeats the damage from power bytes that fall in the range (Super Tempest's 4 power bytes → 8 actual hits).</td>
+</tr>
+<tr>
+<td>Background</td>
+<td>Byte. <code>0</code> = regular, <code>2</code> = black (Super Arts and Tornado Flame Hyper Art).</td>
+</tr>
+<tr>
+<td>Runtime Address</td>
+<td>Word. Written by the runtime after the art is used once in battle - always <code>None</code> in static data.</td>
+</tr>
+</tbody>
+</table>
+  <h3>Power encoding</h3>
+<table>
+<thead><tr>
+<th>Byte range</th>
+<th>Defense target</th>
+<th>Multiplier sequence</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x16–0x1A</code></td>
+<td>UDF (Upper Defense Factor)</td>
+<td><code>12, 18, 20, 22, 28</code></td>
+<td>Standard UDF range</td>
+</tr>
+<tr>
+<td><code>0x1B–0x1F</code></td>
+<td>LDF (Lower Defense Factor)</td>
+<td><code>12, 18, 20, 22, 28</code></td>
+<td>Standard LDF range</td>
+</tr>
+<tr>
+<td><code>0x0C–0x10</code></td>
+<td>UDF (alt range)</td>
+<td><code>12, 18, 20, 22, 28</code></td>
+<td>UDF-target hits miss <strong>short</strong> enemies</td>
+</tr>
+<tr>
+<td><code>0x11–0x15</code></td>
+<td>LDF (alt range)</td>
+<td><code>12, 18, 20, 22, 28</code></td>
+<td>LDF-target hits miss <strong>floating</strong> enemies</td>
+</tr>
+<tr>
+<td>any other</td>
+<td>-</td>
+<td>-</td>
+<td>No damage</td>
+</tr>
+</tbody>
+</table>
+  <p>Concretely: <code>0x1D</code> = LDF × 20, <code>0x19</code> = UDF × 22, <code>0x1F</code> = LDF × 28, <code>0x1A</code> = UDF × 28.</p>
+</section>
+
+<section class="doc-section" id="learned-art-constant">
+  <h2>Learned Art Constant</h2>
+  <p>A separate per-character byte (<code>0x8008488D</code> Vahn, <code>0x80084CA1</code> Noa, <code>0x8008506C</code> Gala) tracks the <em>highest learned art slot</em>. Slot indices <code>0..=0x10</code> resolve to action constants through a per-character indirection table - and that table has <strong>holes</strong>: Noa skips slots <code>0x02</code> and <code>0x03</code> because her Hurricane Kick covers all three on-disc levels through a single learned slot.</p>
+  <p>Crate API: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/src/tables.rs"><code>legaia_art::learned_art_action(character, slot)</code></a> returns the action constant for a slot, or <code>None</code> for holes / out-of-range.</p>
+<table>
+<thead><tr>
+<th>Slot</th>
+<th>Vahn</th>
+<th>Noa</th>
+<th>Gala</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x00</code></td>
+<td>Vahn's Craze (<code>0x1B</code>)</td>
+<td>Noa's Ark (<code>0x1B</code>)</td>
+<td>Biron Rage (<code>0x1B</code>)</td>
+</tr>
+<tr>
+<td><code>0x01</code></td>
+<td>Burning Flare (<code>0x1C</code>)</td>
+<td>Hurricane Kick (<code>0x1C</code>)</td>
+<td>Explosive Fist (<code>0x1C</code>)</td>
+</tr>
+<tr>
+<td><code>0x02</code></td>
+<td>Fire Blow (<code>0x1D</code>)</td>
+<td>-</td>
+<td>Lightning Storm (<code>0x1D</code>)</td>
+</tr>
+<tr>
+<td><code>0x03</code></td>
+<td>Tornado Flame (<code>0x1E</code>)</td>
+<td>-</td>
+<td>Thunder Punch (<code>0x1E</code>)</td>
+</tr>
+<tr>
+<td><code>0x04</code></td>
+<td>Cyclone (<code>0x1F</code>)</td>
+<td>Vulture Blade (<code>0x1F</code>)</td>
+<td>Bull Horns (<code>0x1F</code>)</td>
+</tr>
+<tr>
+<td><code>0x05</code></td>
+<td>Hurricane (<code>0x20</code>)</td>
+<td>Frost Breath (<code>0x20</code>)</td>
+<td>Electro Thrash (<code>0x20</code>)</td>
+</tr>
+<tr>
+<td><code>0x06</code></td>
+<td>PK Combo (<code>0x21</code>)</td>
+<td>Tempest Break (<code>0x21</code>)</td>
+<td>Neo Raising (<code>0x21</code>)</td>
+</tr>
+<tr>
+<td><code>0x07</code></td>
+<td>Spin Combo (<code>0x22</code>)</td>
+<td>Rushing Gale (<code>0x22</code>)</td>
+<td>Black Rain (<code>0x22</code>)</td>
+</tr>
+<tr>
+<td><code>0x08</code></td>
+<td>Pyro Pummel (<code>0x23</code>)</td>
+<td>Tough Love (<code>0x23</code>)</td>
+<td>Side Kick (<code>0x23</code>)</td>
+</tr>
+<tr>
+<td><code>0x09</code></td>
+<td>Cross Kick (<code>0x24</code>)</td>
+<td>Swan Driver (<code>0x24</code>)</td>
+<td>Head-Splitter (<code>0x24</code>)</td>
+</tr>
+<tr>
+<td><code>0x0A</code></td>
+<td>Power Punch (<code>0x25</code>)</td>
+<td>Bird Step (<code>0x25</code>)</td>
+<td>Guillotine (<code>0x25</code>)</td>
+</tr>
+<tr>
+<td><code>0x0B</code></td>
+<td>Slash Kick (<code>0x26</code>)</td>
+<td>Dolphin Attack (<code>0x26</code>)</td>
+<td>Back Punch (<code>0x26</code>)</td>
+</tr>
+<tr>
+<td><code>0x0C</code></td>
+<td>Somersault (<code>0x27</code>)</td>
+<td>Mirage Lancer (<code>0x27</code>)</td>
+<td>Ironhead (<code>0x27</code>)</td>
+</tr>
+<tr>
+<td><code>0x0D</code></td>
+<td>Charging Scorch (<code>0x28</code>)</td>
+<td>Blizzard Bash (<code>0x28</code>)</td>
+<td>Battering Ram (<code>0x28</code>)</td>
+</tr>
+<tr>
+<td><code>0x0E</code></td>
+<td>Hyper Elbow (<code>0x29</code>)</td>
+<td>Sonic Javelin (<code>0x29</code>)</td>
+<td>Flying Knee Attack (<code>0x29</code>)</td>
+</tr>
+<tr>
+<td><code>0x0F</code></td>
+<td>-</td>
+<td>Acrobatic Blitz (<code>0x2A</code>)</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>0x10</code></td>
+<td>-</td>
+<td>Lizard Tail (<code>0x2B</code>)</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+  <p>Vahn and Gala stop at <code>0x0E</code> (15 learned arts each). Noa extends to <code>0x10</code> (15 learned arts but spread across 17 slot positions because of the two Hurricane Kick holes).</p>
+</section>
+
+<section class="doc-section" id="art-anim-data">
+  <h2>Art Anim Data</h2>
+  <p>Selects the animation record played when the art fires. The Art Record's <code>anim_index</code> byte at offset +16 indexes a per-character animation table. Slot <code>0</code> is always Spirit; slot <code>3</code> is always Art Starter. Some slots are holes (e.g. Vahn has no slot <code>0x0C</code>, Gala has no slot <code>0x09</code>).</p>
+  <p>Crate API: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/src/tables.rs"><code>legaia_art::art_anim_name(character, anim_index)</code></a>.</p>
+<table>
+<thead><tr>
+<th>Anim</th>
+<th>Vahn</th>
+<th>Noa</th>
+<th>Gala</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x00</code></td>
+<td>Spirit</td>
+<td>Spirit</td>
+<td>Spirit</td>
+</tr>
+<tr>
+<td><code>0x01</code></td>
+<td>Power Punch</td>
+<td>Tempest Break</td>
+<td>Bull Horns</td>
+</tr>
+<tr>
+<td><code>0x02</code></td>
+<td>Slash Kick</td>
+<td>Tough Love</td>
+<td>Head-Splitter</td>
+</tr>
+<tr>
+<td><code>0x03</code></td>
+<td>Art Starter</td>
+<td>Art Starter</td>
+<td>Art Starter</td>
+</tr>
+<tr>
+<td><code>0x04</code></td>
+<td>Tornado Flame</td>
+<td>Hurricane Kick 1</td>
+<td>Lightning Storm</td>
+</tr>
+<tr>
+<td><code>0x05</code></td>
+<td>Hurricane</td>
+<td>Hurricane Kick 2</td>
+<td>Back Punch</td>
+</tr>
+<tr>
+<td><code>0x06</code></td>
+<td>Charging Scorch</td>
+<td>Rushing Gale</td>
+<td>Ironhead</td>
+</tr>
+<tr>
+<td><code>0x07</code></td>
+<td>PK Combo</td>
+<td>Swan Driver</td>
+<td>Battering Ram</td>
+</tr>
+<tr>
+<td><code>0x08</code></td>
+<td>Fire Blow</td>
+<td>Frost Breath</td>
+<td>Flying Knee Attack</td>
+</tr>
+<tr>
+<td><code>0x09</code></td>
+<td>Somersault</td>
+<td>Lizard Tail</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>0x0A</code></td>
+<td>Cyclone</td>
+<td>Jurassic Blow 2</td>
+<td>Thunder Punch</td>
+</tr>
+<tr>
+<td><code>0x0B</code></td>
+<td>Hyper Elbow</td>
+<td>Bird Step</td>
+<td>Guillotine</td>
+</tr>
+<tr>
+<td><code>0x0C</code></td>
+<td>-</td>
+<td>Dolphin Attack</td>
+<td>Explosive Fist</td>
+</tr>
+<tr>
+<td><code>0x0D</code></td>
+<td>Burning Flare</td>
+<td>Vulture Blade</td>
+<td>Black Rain</td>
+</tr>
+<tr>
+<td><code>0x0E</code></td>
+<td>Spin Combo</td>
+<td>Mirage Lancer</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>0x0F</code></td>
+<td>Pyro Pummel</td>
+<td>Blizzard Bash</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>0x10</code></td>
+<td>Cross Kick</td>
+<td>Sonic Javelin</td>
+<td>Side Kick</td>
+</tr>
+<tr>
+<td><code>0x11</code></td>
+<td>Acrobatic Blitz</td>
+<td>Electro Thrash</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>0x12</code></td>
+<td>-</td>
+<td>-</td>
+<td>Neo Raising</td>
+</tr>
+</tbody>
+</table>
+  <p>Most art records reference exactly one anim slot; a handful (e.g. Hurricane Kick on Noa) use the <code>anim_extra</code> reserved bytes at +17 to chain into a continuation slot for multi-stage animations.</p>
+</section>
+
+<section class="doc-section" id="miracle-arts">
+  <h2>Miracle Arts</h2>
+  <p>Each character has one Miracle Art. When the player enters the <em>exact</em> command sequence for that art, the runtime <strong>clears the entire action queue</strong> and writes the art's replacement string instead.</p>
+<table>
+<thead><tr>
+<th>Character</th>
+<th>Art</th>
+<th>RAM</th>
+<th>PROT</th>
+<th>Command sequence</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Vahn</td>
+<td>Vahn's Craze</td>
+<td><code>0x64F4</code></td>
+<td><code>0x0CDC</code></td>
+<td>R D L U L U R D L</td>
+</tr>
+<tr>
+<td>Noa</td>
+<td>Noa's Ark</td>
+<td><code>0x6504</code></td>
+<td><code>0x0CEC</code></td>
+<td>L U R D U L U D R</td>
+</tr>
+<tr>
+<td>Gala</td>
+<td>Biron Rage</td>
+<td><code>0x6514</code></td>
+<td><code>0x0CFC</code></td>
+<td>R R D U D U D L L</td>
+</tr>
+</tbody>
+</table>
+  <p>Each replacement string follows the shape <code>[L, R, D, U, SpecialStarter, art1, art2, ...]</code> where the four leading directionals are the on-disc MSB-set bytes (<code>0x8C</code>/<code>0x8D</code>/<code>0x8E</code>/<code>0x8F</code>), masked to <code>0x0C</code>/<code>0x0D</code>/<code>0x0E</code>/<code>0x0F</code> at copy time. The full table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/src/miracle.rs"><code>crates/art/src/miracle.rs</code></a>.</p>
+</section>
+
+<section class="doc-section" id="super-arts">
+  <h2>Super Arts</h2>
+  <p>Super Arts are not invoked by direct command-string match. Instead, after each art finishes, the runtime walks the full action queue and looks for a registered <em>Find</em> pattern. If a Find pattern matches the <strong>tail</strong> of the queue and all participating arts paid AP, the matched bytes are replaced by a <em>Replace</em> tail that ends with the Super Art's finisher action constant.</p>
+  <p>Example - Vahn's Tri-Somersault (<code>0x2B</code>):</p>
+<pre><code>Find:    19 27 0F 19 1F 0E 19 27
+         (Starter Somersault Up Starter Cyclone Down Starter Somersault)
+Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
+         (… SpecialStarter, Tri-Somersault × 3 hits)</code></pre>
+  <p>Triggers:</p>
+  <ol class="bullets">
+    <li>The last art of the Find string must be the last action in the queue.</li>
+    <li>All arts in the Find string must be non-NEW (their AP cost is paid).</li>
+    <li>Super Arts themselves do not consume AP - the chain arts pay it.</li>
+  </ol>
+  <p>Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/src/super_art.rs"><code>crates/art/src/super_art.rs</code></a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <ul class="bullets">
+    <li><a href="../subsystems/battle-action.html"><code>docs/subsystems/battle-action.md</code></a> - battle action state machine that consumes the queue and resolves damage.</li>
+    <li><a href="../subsystems/battle-formulas.html"><code>docs/subsystems/battle-formulas.md</code></a> - damage / MP / accuracy / RNG arithmetic kernels that read the power bytes.</li>
+    <li><a href="mdt.html"><code>docs/formats/mdt.md</code></a> - the per-frame <em>animation</em> bytecode for the Tactical Arts move VM, distinct from this art-record layer.</li>
+  </ul>
+</section>
+
