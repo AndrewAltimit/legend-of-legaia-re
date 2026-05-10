@@ -187,6 +187,14 @@ pub fn placeholder_xp_table() -> Vec<u32> {
 /// today should populate one explicitly via
 /// [`crate::seru_stats::SeruStatTable::insert`] until the writer is
 /// pinned.
+///
+/// `stat_deltas` covers the persistent record stat window at
+/// `+0x11C..+0x12D` (18 bytes = 9 u16 LE values). The first two values
+/// mirror HP_max and MP_max; the third (`+0x120`) is a per-stat cap
+/// constant (consistently `100` across all captured characters);
+/// `+0x122..+0x12D` are the six u16 record-side stats. Use
+/// [`LevelUpObservation::record_stats_u16`] to read the window as nine
+/// u16 LE deltas.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelUpObservation {
     /// Display name for diagnostics (e.g. `"Vahn 4-level jump"`).
@@ -203,11 +211,13 @@ pub struct LevelUpObservation {
     /// range. Engines that mirror the retail "Spirit gain on level-up"
     /// behavior fold this into their gauge cap.
     pub sp_gained: u16,
-    /// Per-stat byte deltas observed at char-record `+0x11C..+0x12D`.
-    /// Each entry is the total delta across `levels_gained` levels.
-    /// The retail layout for these bytes is not yet pinned (the typed
-    /// `CharacterRecord` accessors don't surface them yet).
-    pub stat_deltas: [u8; 12],
+    /// Per-stat byte deltas observed at char-record `+0x11C..+0x12D` (18
+    /// bytes = 9 u16 LE values). Each u16 entry is the total delta across
+    /// `levels_gained` levels. The first two values are HP_max / MP_max
+    /// (mirroring `+0x106` / `+0x10A` in the live copy); the third value
+    /// at `+0x120` is the per-stat cap constant (`100`); the remaining
+    /// six are the record-side stats at `+0x122..+0x12D`.
+    pub stat_deltas: [u8; 18],
 }
 
 impl LevelUpObservation {
@@ -224,6 +234,20 @@ impl LevelUpObservation {
             hp: self.hp_gained / n,
             mp: self.mp_gained / n,
         }
+    }
+
+    /// Read the stat-record window at `+0x11C..+0x12D` as 9 u16 LE
+    /// deltas. The first two are HP_max / MP_max; index 2 is the per-
+    /// stat cap constant (`100` across all captured characters); the
+    /// last six are the record-side stats at `+0x122..+0x12D`.
+    pub fn record_stats_u16(&self) -> [u16; 9] {
+        let mut out = [0u16; 9];
+        for (i, slot) in out.iter_mut().enumerate() {
+            let lo = self.stat_deltas[i * 2];
+            let hi = self.stat_deltas[i * 2 + 1];
+            *slot = u16::from_le_bytes([lo, hi]);
+        }
+        out
     }
 
     /// Build a [`StatGrowthCurve::PerLevel`] vector that emits the
@@ -247,16 +271,30 @@ impl LevelUpObservation {
 /// The slot indices match the retail party layout (Vahn = 0, Noa = 1,
 /// Gala = 2). Slot 3 is reserved for whichever character occupies the
 /// fourth party slot (Maya / Songi in the late game).
+///
+/// Each character's level-up event splits across multiple frames in
+/// retail. The save-state corpus pins three phases per character:
+///
+/// | Phase | Window | Writes |
+/// |---|---|---|
+/// | Record write | pre → mid | char-record stats `+0x11C..+0x12D`, XP `+0x004..+0x005`, rank `+0x130` |
+/// | Live copy | mid → post | live stat window `+0x104..+0x11B` (HP_cur, MP_cur, six u16 stats) |
+/// | Settle | post → next | live HP_max / MP_max / SP_max settle at `+0x106 / +0x10A / +0x10E` |
+///
+/// The Noa and Gala observations exposed below capture the *settled*
+/// pre→settled diff (multi-frame collapse) so consumers see the total
+/// delta the level-up event grants. The phase split is documented in
+/// [`crate::capture_observations::char_level_up`].
 pub mod observations {
     use super::LevelUpObservation;
 
-    /// Vahn level-up captured from a pre/post save pair (one frame before a
-    /// 4-level-jump level-up event, one frame after). Pre: cumulative XP
-    /// 365 → post 730 (delta +365). The captured `+0x00` byte changed
-    /// `0x4F → 0x73` (a multi-level jump). Per-stat byte deltas come from
-    /// the diff at `+0x11C..+0x12D`.
+    /// Vahn level-up captured from a pre/post save pair in the **legacy**
+    /// `mc7→mc9` corpus (rotated out when the per-character level-up
+    /// triplets shipped). Bytes are kept here as historical fact -
+    /// engines that want a Vahn observation should re-capture against
+    /// the new corpus once a Vahn-specific triplet lands.
     ///
-    /// Bytes mapped to per-stat deltas:
+    /// Bytes mapped to per-stat deltas (from the original capture):
     /// - `+0x11C`: `0xDD → 0x03` (rolled past 0xFF - `+0x26` mod 256)
     /// - `+0x11D`: `0x00 → 0x01` (carry from above; effective u16 LE
     ///   `+0x126` if the field is u16)
@@ -270,24 +308,90 @@ pub mod observations {
     /// - `+0x130`: `0x02 → 0x03` (+1, rank counter - not a stat)
     ///
     /// SP_max byte at `+0x10E`: `0x3A → 0x42` (+8).
-    ///
-    /// The XP table gap of 365 → 730 spans the L1→2..L9→10 cumulative
-    /// range, but the level field semantics are unconfirmed (the byte
-    /// at `+0x00` jumped by +0x24 = 36 which doesn't match a single-
-    /// level granularity). Treating the observation as a 4-level jump
-    /// from L6 → L10 matches the cumulative thresholds.
     pub fn vahn_mc8_to_mc9() -> LevelUpObservation {
         LevelUpObservation {
-            label: "Vahn 4-level jump".into(),
+            label: "Vahn 4-level jump (legacy mc8→mc9)".into(),
             from_level: 6,
             to_level: 10,
             hp_gained: 0, // not surfaced in the diff (record's hp_max stayed steady)
             mp_gained: 0,
             sp_gained: 8, // observed at +0x10E
             stat_deltas: [
-                // 12 stat bytes at +0x11C..+0x127 (interpreted as 12 u8 stats).
-                // Engines that decode these as 6 u16s should fold pairs.
-                0x26, 0x01, 0x08, 0x00, 0x00, 0x00, 0x04, 0x00, 0x04, 0x00, 0x02, 0x00,
+                // 18 bytes at +0x11C..+0x12D (9 u16 LE deltas).
+                // [+0x11C] HP_max LSB/MSB (rolled +0x26)
+                0x26, 0x01, // [+0x11E] MP_max LSB/MSB (+8)
+                0x08, 0x00, // [+0x120] cap constant (no change)
+                0x00, 0x00, // [+0x122..+0x12D] six record-side stats
+                0x04, 0x00, 0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x04, 0x00, 0x04, 0x00,
+            ],
+        }
+    }
+
+    /// Noa level-up captured from `mc4` (pre-level-up battle frame) to
+    /// `mc7` (settled post-level-up frame). Spans Noa's `cumulative XP
+    /// 102 → 336` reward, a 4-level jump across the early-game
+    /// thresholds (L2 → L6).
+    ///
+    /// Settled deltas (mc4 → mc7):
+    /// - HP_max: `0x96 → 0xB6` (+32) at `+0x106` (live) and `+0x11C` (record)
+    /// - MP_max: `0x0A → 0x10` (+6) at `+0x10A` (live) and `+0x11E` (record)
+    /// - SP_max: `0x38 → 0x60` (+40) at `+0x10E` (live only; record at
+    ///   `+0x120` is a 100-cap constant, not SP_max)
+    /// - Six record-side stats at `+0x122..+0x12D`: +4 / +3 / +3 / +2 / +4 / +3
+    /// - Rank counter at `+0x130`: `0x01 → 0x02` (+1)
+    /// - XP at `+0x004..+0x005` (u16 LE): 102 → 336 (+234, Noa's share
+    ///   of the battle reward)
+    ///
+    /// The phase split (mc4 → mc5 record, mc5 → mc6 live copy, mc6 → mc7
+    /// settle) is documented in [`crate::capture_observations::char_level_up`].
+    pub fn noa_mc4_to_mc7() -> LevelUpObservation {
+        LevelUpObservation {
+            label: "Noa 4-level jump (mc4→mc7)".into(),
+            from_level: 2,
+            to_level: 6,
+            hp_gained: 32,
+            mp_gained: 6,
+            sp_gained: 40,
+            stat_deltas: [
+                // [+0x11C] HP_max (+32 = 0x20)
+                0x20, 0x00, // [+0x11E] MP_max (+6)
+                0x06, 0x00, // [+0x120] cap constant (no change, both saves read 100)
+                0x00, 0x00, // [+0x122..+0x12D] six record-side stats
+                0x04, 0x00, 0x03, 0x00, 0x03, 0x00, 0x02, 0x00, 0x04, 0x00, 0x03, 0x00,
+            ],
+        }
+    }
+
+    /// Gala level-up captured from `mc7` (pre-level-up battle frame) to
+    /// `mc9` (settled post-level-up frame). Spans Gala's `cumulative XP
+    /// 140 → 394` reward, a 4-level jump across the early-game
+    /// thresholds (L3 → L7).
+    ///
+    /// Settled deltas (mc7 → mc9):
+    /// - HP_max: `0xD2 → 0xFE` (+44) at `+0x106` (live) and `+0x11C` (record)
+    /// - MP_max: `0x28 → 0x30` (+8) at `+0x10A` (live) and `+0x11E` (record)
+    /// - SP_max: **no change** at `+0x10E` (Gala uses physical Tactical
+    ///   Arts; level-up grants no SP for him)
+    /// - Six record-side stats at `+0x122..+0x12D`: +2 / +4 / +4 / +2 / +2 / +2
+    /// - Rank counter at `+0x130`: `0x01 → 0x02` (+1)
+    /// - XP at `+0x004..+0x005` (u16 LE): 140 → 394 (+254, Gala's share)
+    ///
+    /// The phase split (mc7 → mc8 record, mc8 → mc9 live copy) is
+    /// documented in [`crate::capture_observations::char_level_up`].
+    pub fn gala_mc7_to_mc9() -> LevelUpObservation {
+        LevelUpObservation {
+            label: "Gala 4-level jump (mc7→mc9)".into(),
+            from_level: 3,
+            to_level: 7,
+            hp_gained: 44,
+            mp_gained: 8,
+            sp_gained: 0,
+            stat_deltas: [
+                // [+0x11C] HP_max (+44 = 0x2C)
+                0x2C, 0x00, // [+0x11E] MP_max (+8)
+                0x08, 0x00, // [+0x120] cap constant (no change)
+                0x00, 0x00, // [+0x122..+0x12D] six record-side stats
+                0x02, 0x00, 0x04, 0x00, 0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x02, 0x00,
             ],
         }
     }
@@ -706,7 +810,7 @@ mod tests {
             hp_gained: 8,
             mp_gained: 4,
             sp_gained: 8,
-            stat_deltas: [0; 12],
+            stat_deltas: [0; 18],
         };
         let avg = obs.average_per_level();
         assert_eq!(avg.hp, 2);
@@ -732,7 +836,7 @@ mod tests {
             hp_gained: 0,
             mp_gained: 0,
             sp_gained: 0,
-            stat_deltas: [0; 12],
+            stat_deltas: [0; 18],
         };
         assert_eq!(obs.levels_gained(), 0);
         assert_eq!(obs.average_per_level(), StatGain { hp: 0, mp: 0 });
@@ -748,6 +852,67 @@ mod tests {
         assert_eq!(obs.sp_gained, 8);
         // First stat delta byte is the wrap-around 0xDD->0x03 = +0x26.
         assert_eq!(obs.stat_deltas[0], 0x26);
+        // u16 LE projection: HP_max delta = 0x0126 (rolled past 0xFF).
+        let stats = obs.record_stats_u16();
+        assert_eq!(stats[0], 0x0126);
+        // [+0x120] cap constant unchanged.
+        assert_eq!(stats[2], 0);
+    }
+
+    #[test]
+    fn noa_mc4_to_mc7_observation_pins_settled_deltas() {
+        let obs = observations::noa_mc4_to_mc7();
+        assert_eq!(obs.from_level, 2);
+        assert_eq!(obs.to_level, 6);
+        assert_eq!(obs.levels_gained(), 4);
+        assert_eq!(obs.hp_gained, 32);
+        assert_eq!(obs.mp_gained, 6);
+        // Noa is a Seru-magic user; level-up grants Spirit at +0x10E.
+        assert_eq!(obs.sp_gained, 40);
+        let stats = obs.record_stats_u16();
+        // HP_max delta at +0x11C.
+        assert_eq!(stats[0], 32);
+        // MP_max delta at +0x11E.
+        assert_eq!(stats[1], 6);
+        // [+0x120] per-stat cap constant unchanged.
+        assert_eq!(stats[2], 0);
+        // Six record-side stat deltas at +0x122..+0x12D.
+        assert_eq!(&stats[3..9], &[4, 3, 3, 2, 4, 3]);
+    }
+
+    #[test]
+    fn gala_mc7_to_mc9_observation_pins_settled_deltas() {
+        let obs = observations::gala_mc7_to_mc9();
+        assert_eq!(obs.from_level, 3);
+        assert_eq!(obs.to_level, 7);
+        assert_eq!(obs.levels_gained(), 4);
+        assert_eq!(obs.hp_gained, 44);
+        assert_eq!(obs.mp_gained, 8);
+        // Gala uses physical Tactical Arts; level-up grants no SP.
+        assert_eq!(obs.sp_gained, 0);
+        let stats = obs.record_stats_u16();
+        assert_eq!(stats[0], 44);
+        assert_eq!(stats[1], 8);
+        assert_eq!(stats[2], 0);
+        assert_eq!(&stats[3..9], &[2, 4, 4, 2, 2, 2]);
+    }
+
+    #[test]
+    fn record_stats_u16_lifts_18_byte_window() {
+        let mut obs = LevelUpObservation {
+            label: "round-trip".into(),
+            from_level: 1,
+            to_level: 2,
+            hp_gained: 0,
+            mp_gained: 0,
+            sp_gained: 0,
+            stat_deltas: [0; 18],
+        };
+        // Set the second u16 (at +0x11E) to 0x1234 LE.
+        obs.stat_deltas[2] = 0x34;
+        obs.stat_deltas[3] = 0x12;
+        let stats = obs.record_stats_u16();
+        assert_eq!(stats[1], 0x1234);
     }
 
     #[test]
@@ -759,7 +924,7 @@ mod tests {
             hp_gained: 20,
             mp_gained: 4,
             sp_gained: 0,
-            stat_deltas: [0; 12],
+            stat_deltas: [0; 18],
         };
         let mut t = LevelUpTracker::new()
             .with_xp_table(placeholder_xp_table())

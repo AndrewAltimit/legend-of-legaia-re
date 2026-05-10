@@ -78,7 +78,7 @@
       <div class="status-card-title">Open work</div>
       <div class="status-card-body">
         <ul style="margin: 0.25rem 0 0 1rem; padding: 0;">
-          <li>Shop and level-up overlays carry the per-scene item costs and per-character HP/MP growth curves; both still need overlay capture.</li>
+          <li>Shop overlay carries the per-scene item costs (still needs overlay capture). Per-character level-up triplets (Vahn / Noa / Gala) are now captured pinning the multi-frame write split + per-character SP-grant divergence; the per-Seru stat-grant <em>source</em> table source still lives in an uncaptured battle-data init overlay.</li>
           <li>STR/MDEC FMV cutscene overlay (game modes 26/27) not yet captured; <code>play-str</code> already plays standalone STR files.</li>
           <li>Retail save block: money + inventory RAM addresses confirmed, but the serialisation path into the staging buffer hasn't been traced to byte offsets within the block.</li>
           <li>Field-VM WARP <code>map_id → scene-name</code> handler; the engine currently uses CDNAME order as an approximation.</li>

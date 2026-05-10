@@ -503,6 +503,126 @@ pub mod str_fmv_overlay {
     }
 }
 
+/// Character-level-up write-footprint observation pinned across the
+/// `mc4..=mc9` save corpus. Three saves per character span pre /
+/// during / post the level-up event:
+///
+/// | Character | Slot | Saves         | XP delta (u16 LE at `+0x004`) |
+/// |-----------|-----:|---------------|--------------------------------|
+/// | Noa       | 1    | mc4 → mc5 → mc6 → mc7 settle | `102 → 336` (+234) |
+/// | Gala      | 2    | mc7 → mc8 → mc9 (settled in mc9) | `140 → 394` (+254) |
+///
+/// Each level-up event splits the character record write across multiple
+/// frames. For Noa the captured save-pair sequence pins:
+///
+/// 1. **Record write (`mc4 → mc5`)**. The persistent record stat window
+///    at `+0x11C..+0x12D` (9 u16 LE values), the XP at `+0x004..+0x005`,
+///    and the rank counter at `+0x130` are written in one frame. The
+///    live in-battle stat copy at `+0x104..+0x11B` is unchanged at this
+///    point.
+/// 2. **Live copy (`mc5 → mc6`)**. The live stat copy mirrors the record
+///    copy: HP_cur (`+0x104`), MP_cur (`+0x108`), and the six u16 stats at
+///    `+0x110..+0x11B` settle to their post-level-up values. HP_max /
+///    MP_max / SP_max in the live copy at `+0x106 / +0x10A / +0x10E`
+///    have NOT yet been written.
+/// 3. **Settle (`mc6 → mc7`)**. The live HP_max / MP_max / SP_max settle
+///    at `+0x106 / +0x10A / +0x10E`. After this frame the live and
+///    record copies of HP_max / MP_max agree.
+///
+/// Gala's level-up sequence runs in two phases (mc7 → mc8 record, mc8 →
+/// mc9 live + settle); the Gala capture lacks a dedicated "record-only"
+/// frame, so HP_max / MP_max / SP_max in the live copy land in the
+/// `mc8 → mc9` step alongside HP_cur / MP_cur / live stats.
+///
+/// The pinned byte deltas live in [`crate::levelup::observations`]:
+/// - [`crate::levelup::observations::noa_mc4_to_mc7`]
+/// - [`crate::levelup::observations::gala_mc7_to_mc9`]
+///
+/// **Per-character record bases** (verified across the captured corpus,
+/// stride `0x414`):
+/// - Vahn: `0x80084708`
+/// - Noa:  `0x80084B1C`
+/// - Gala: `0x80084F30`
+/// - Slot 3: `0x80085344`
+///
+/// **Record stat window** at `+0x11C..+0x12D` (9 u16 LE values). Values
+/// pinned across the corpus:
+/// - `[+0x11C]` HP_max — mirrors live `+0x106`.
+/// - `[+0x11E]` MP_max — mirrors live `+0x10A`.
+/// - `[+0x120]` per-stat cap constant `100` — unchanged across every
+///   captured save and every character.
+/// - `[+0x122..+0x12D]` six u16 record-side stats — mirror live
+///   `+0x110..+0x11B`.
+///
+/// SP_max at `+0x10E` lives only in the live in-battle copy. The record
+/// at `+0x120` is a 100-cap constant, **not** SP_max. Noa's level-up
+/// grants `+40` SP_max (Seru-magic user); Gala's grants `0` (physical
+/// Tactical Arts user).
+pub mod char_level_up {
+    /// PSX-virtual-address base of the character record table.
+    pub const TABLE_BASE: u32 = 0x80084708;
+
+    /// Per-character record stride.
+    pub const RECORD_STRIDE: u32 = 0x414;
+
+    /// Vahn's character record base address.
+    pub const VAHN_BASE: u32 = TABLE_BASE;
+    /// Noa's character record base address (slot 1).
+    pub const NOA_BASE: u32 = TABLE_BASE + RECORD_STRIDE;
+    /// Gala's character record base address (slot 2).
+    pub const GALA_BASE: u32 = TABLE_BASE + 2 * RECORD_STRIDE;
+    /// Fourth party slot record base address.
+    pub const SLOT3_BASE: u32 = TABLE_BASE + 3 * RECORD_STRIDE;
+
+    /// Offset within the record where the level-up event writes the live
+    /// in-battle stat copy: HP_cur, HP_max, MP_cur, MP_max, SP_cur,
+    /// SP_max (six u16s) at `+0x104..+0x110`, then six u16 live stats at
+    /// `+0x110..+0x11C`.
+    pub const LIVE_WINDOW: (u32, u32) = (0x104, 0x11C);
+
+    /// Offset within the record of the persistent stat window (9 u16 LE
+    /// values: HP_max, MP_max, cap, six stats).
+    pub const RECORD_WINDOW: (u32, u32) = (0x11C, 0x12E);
+
+    /// Offset of the rank counter (single byte, increments by 1 per
+    /// level-up event).
+    pub const RANK_COUNTER: u32 = 0x130;
+
+    /// Offset of the XP low word (u16 LE).
+    pub const XP_LO: u32 = 0x004;
+
+    /// Per-stat cap constant value. Unchanged across every captured
+    /// save; the `+0x120` u16 LE field carries this exact value for
+    /// Vahn, Noa, and Gala in every state.
+    pub const RECORD_STAT_CAP: u16 = 100;
+
+    /// Read a character's record-window u16 LE deltas across two saves.
+    /// Returns the 9 u16 values for the given record base in `main_ram`.
+    pub fn read_record_stats(main_ram: &[u8], record_base: u32) -> Option<[u16; 9]> {
+        let off = (record_base - 0x80000000) as usize + RECORD_WINDOW.0 as usize;
+        let end = off + 18;
+        let bytes = main_ram.get(off..end)?;
+        let mut out = [0u16; 9];
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = u16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]]);
+        }
+        Some(out)
+    }
+
+    /// Read the rank counter for the given record base.
+    pub fn read_rank_counter(main_ram: &[u8], record_base: u32) -> Option<u8> {
+        let off = (record_base - 0x80000000) as usize + RANK_COUNTER as usize;
+        main_ram.get(off).copied()
+    }
+
+    /// Read the cumulative XP (u16 LE) at `+0x004`.
+    pub fn read_xp_u16(main_ram: &[u8], record_base: u32) -> Option<u16> {
+        let off = (record_base - 0x80000000) as usize + XP_LO as usize;
+        let bytes = main_ram.get(off..off + 2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -551,6 +671,58 @@ mod tests {
         let addr = vahn_fire_book_use::changed_addr();
         assert!(addr >= vahn_fire_book_use::VAHN_RECORD_BASE);
         assert!(addr < vahn_fire_book_use::VAHN_RECORD_BASE + 0x414);
+    }
+
+    #[test]
+    fn char_level_up_record_bases_are_stride_consistent() {
+        assert_eq!(char_level_up::VAHN_BASE, 0x80084708);
+        assert_eq!(char_level_up::NOA_BASE, char_level_up::VAHN_BASE + 0x414);
+        assert_eq!(
+            char_level_up::GALA_BASE,
+            char_level_up::VAHN_BASE + 2 * 0x414
+        );
+        assert_eq!(
+            char_level_up::SLOT3_BASE,
+            char_level_up::VAHN_BASE + 3 * 0x414
+        );
+    }
+
+    #[test]
+    fn char_level_up_record_window_spans_18_bytes() {
+        let (lo, hi) = char_level_up::RECORD_WINDOW;
+        assert_eq!(hi - lo, 18);
+    }
+
+    #[test]
+    fn char_level_up_readers_lift_from_synthesised_main_ram() {
+        let mut ram = vec![0u8; 0x200000];
+        let off = (char_level_up::NOA_BASE - 0x80000000) as usize;
+        // Plant XP = 336 at +0x004.
+        ram[off + 0x004] = 0x50;
+        ram[off + 0x005] = 0x01;
+        // Plant a record stat window: HP_max = 182, MP_max = 16, cap = 100,
+        // six stats = 124, 24, 16, 13, 34, 6.
+        let stats: [u16; 9] = [182, 16, 100, 124, 24, 16, 13, 34, 6];
+        for (i, s) in stats.iter().enumerate() {
+            let lo = (*s & 0xFF) as u8;
+            let hi = (*s >> 8) as u8;
+            ram[off + 0x11C + i * 2] = lo;
+            ram[off + 0x11C + i * 2 + 1] = hi;
+        }
+        // Plant rank = 2.
+        ram[off + 0x130] = 2;
+
+        assert_eq!(
+            char_level_up::read_xp_u16(&ram, char_level_up::NOA_BASE),
+            Some(336)
+        );
+        assert_eq!(
+            char_level_up::read_rank_counter(&ram, char_level_up::NOA_BASE),
+            Some(2)
+        );
+        let lifted = char_level_up::read_record_stats(&ram, char_level_up::NOA_BASE).unwrap();
+        assert_eq!(lifted, stats);
+        assert_eq!(lifted[2], char_level_up::RECORD_STAT_CAP);
     }
 
     #[test]

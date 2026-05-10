@@ -194,16 +194,25 @@ end = 0x8013A000
 hint = "Old town01 field-pack region. In mc3 this is zeroed - the loader clears the previous region before populating the new one."
 
 # ----------------------------------------------------------------------
-# mc4 - The spring between Rim Elm and Drake Castle (CDNAME `izumi`,
-# scene 0x1E). First non-town field save in the corpus and a useful
-# "small linear field" reference.
+# mc4..mc6: NOA character-level-up triplet (battle scene `map01`).
+#
+# Each save captures a different frame of Noa's level-up event:
+#   mc4 = pre-level-up (battle just won, XP not yet credited)
+#   mc5 = record-write frame (record stats + XP + rank counter applied)
+#   mc6 = live-copy frame (live in-battle stats applied; HP_max/MP_max
+#         /SP_max not yet settled in live copy)
+#   mc7 = doubles as Gala-pre AND Noa-settle (HP_max/MP_max/SP_max
+#         settled in live copy)
+#
+# Codified deltas: `engine_core::levelup::observations::noa_mc4_to_mc7`.
+# Phase split documented at `engine_core::capture_observations::char_level_up`.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 4
-label = "izumi_spring"
-description = "Spring between Rim Elm and Drake Castle (CDNAME `izumi`, scene 0x1E)"
-topics = ["small field scene", "transition area"]
-diff_against = [0, 5]
+label = "noa_level_up_pre"
+description = "Pre-Noa-level-up battle frame (`map01`)"
+topics = ["stat growth", "level-up curve", "Noa"]
+diff_against = [5, 6, 7]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -213,17 +222,19 @@ end = 0x80200000
 label = "scene_bundle_pool"
 start = 0x80084540
 end = 0x80084560
-hint = "Active scene: index 0x1E (izumi)."
+hint = "Active scene: `map01` (battle scene)."
 
-# ----------------------------------------------------------------------
-# mc5 - Outside Drake Castle (CDNAME `dolk`, scene 0x3C). Town-style
-# `dolk` residency without battle context.
-# ----------------------------------------------------------------------
+[[scenarios.watchpoints]]
+label = "char_record_noa"
+start = 0x80084B1C
+end = 0x80084F30
+hint = "Noa's character record. Pre-event values: cumulative XP 102 at +0x004 (u16 LE), HP_max 0x96 (150) at +0x106 / +0x11C, SP_max 0x38 (56) at +0x10E."
+
 [[scenarios]]
 slot = 5
-label = "dolk_drake_castle_outside"
-description = "Outside Drake Castle (CDNAME `dolk`, scene 0x3C)"
-topics = ["castle approach", "dolk residency"]
+label = "noa_level_up_record_write"
+description = "Mid-Noa-level-up: record-stat window written (`map01`)"
+topics = ["stat growth", "level-up curve", "Noa", "record write phase"]
 diff_against = [4, 6]
 
 [scenarios.overlay_slice]
@@ -231,26 +242,22 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: index 0x3C (dolk)."
+label = "char_record_noa_record_window"
+start = 0x80084C38
+end = 0x80084C4A
+hint = "Noa's record stat window at +0x11C..+0x12D (= 0x80084B1C + 0x11C). 9 u16 LE values: HP_max, MP_max, cap=100, six stats. Phase 1 of 3."
 
 [[scenarios.watchpoints]]
-label = "move_table_base"
-start = 0x8007B888
-end = 0x8007B89C
-hint = "MOVE base in `dolk` is `0x800E412C` (cf. eighth post-#26 batch trace)."
+label = "char_record_noa_xp_and_rank"
+start = 0x80084B20
+end = 0x80084B22
+hint = "XP at +0x004 (u16 LE). Phase 1 also bumps rank counter at +0x130."
 
-# ----------------------------------------------------------------------
-# mc6 - Drake Castle area (CDNAME `dolk`, scene 0x3C). Second `dolk`
-# residency snapshot.
-# ----------------------------------------------------------------------
 [[scenarios]]
 slot = 6
-label = "dolk_drake_castle"
-description = "Drake Castle (CDNAME `dolk`, scene 0x3C)"
-topics = ["castle interior", "dolk residency"]
+label = "noa_level_up_live_copy"
+description = "Mid-Noa-level-up: live in-battle stats copied (`map01`)"
+topics = ["stat growth", "level-up curve", "Noa", "live copy phase"]
 diff_against = [5, 7]
 
 [scenarios.overlay_slice]
@@ -258,56 +265,51 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: index 0x3C (dolk)."
+label = "char_record_noa_live_window"
+start = 0x80084C20
+end = 0x80084C38
+hint = "Noa's live in-battle window at +0x104..+0x11B (HP_cur, HP_max, MP_cur, MP_max, SP_cur, SP_max, six u16 stats). In mc6, HP_cur/MP_cur and the six u16 stats are written; HP_max/MP_max/SP_max are NOT yet settled."
 
-# ----------------------------------------------------------------------
-# mc7 - Pre-event: goblin about to steal an item (battle in progress).
-#
-# Loading mc7 and waiting ~5-10 seconds (no input) plays out: a goblin
-# steal animation → magic-rank level-up event (mc8) → character level-up
-# event (mc9). This triplet is intended for stat-growth + magic-rank
-# work.
-# ----------------------------------------------------------------------
 [[scenarios]]
 slot = 7
-label = "pre_steal"
-description = "Battle frame: goblin about to steal an item from the party (`map01`)"
-topics = ["status effects", "item theft", "stat growth"]
-diff_against = [8, 9]
+label = "gala_level_up_pre"
+description = "Pre-Gala-level-up battle frame (also Noa-settle frame) (`map01`)"
+topics = ["stat growth", "level-up curve", "Gala", "Noa settle"]
+diff_against = [4, 8, 9]
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "battle_actor_pool"
-start = 0x801C9370
-end = 0x801C9500
-hint = "Battle actor pointer table; per-actor HP/MP at +0x14C"
+label = "char_record_noa_settled"
+start = 0x80084C22
+end = 0x80084C2C
+hint = "Noa's live HP_max/MP_max/SP_max at +0x106 / +0x10A / +0x10E (relative to Noa base 0x80084B1C). Settled in mc7."
 
 [[scenarios.watchpoints]]
-label = "inventory_table"
-start = 0x80120000
-end = 0x80140000
-hint = "Inventory store; theft writes here. Diff mc7↔mc8 to surface the inventory cell."
-
-[[scenarios.watchpoints]]
-label = "story_flags_word"
-start = 0x1F800390
-end = 0x1F8003A0
-hint = "_DAT_1F800394 story flags. Diff to surface in-battle status writes."
+label = "char_record_gala"
+start = 0x80084F30
+end = 0x80085344
+hint = "Gala's character record. Pre-event values: cumulative XP 140 at +0x004, HP_max 0x00D2 (210) at +0x11C, SP_max 0x35 (53) unchanged across the triplet."
 
 # ----------------------------------------------------------------------
-# mc8 - Magic level-up event firing (`map01`)
+# mc7..mc9: GALA character-level-up pair (battle scene `map01`).
+#
+#   mc7 = pre-Gala-level-up (also Noa-settle)
+#   mc8 = record-write frame (Gala record stats + XP + rank applied)
+#   mc9 = live-copy / settle frame (Gala live in-battle stats applied;
+#         HP_max/MP_max settle in same frame)
+#
+# Codified deltas: `engine_core::levelup::observations::gala_mc7_to_mc9`.
+# Gala's level-up grants HP/MP/stats but NOT SP_max (Gala uses physical
+# Tactical Arts, not Seru magic).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
-label = "magic_level_up"
-description = "Magic-rank level-up banner active (`map01`)"
-topics = ["spell rank-up", "stat growth"]
+label = "gala_level_up_record_write"
+description = "Mid-Gala-level-up: record-stat window written (`map01`)"
+topics = ["stat growth", "level-up curve", "Gala", "record write phase"]
 diff_against = [7, 9]
 
 [scenarios.overlay_slice]
@@ -315,31 +317,22 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "char_record_vahn"
-start = 0x80084708
-end = 0x80084B1C
-hint = "Vahn's character record (stride 0x414). Spell list at +0x13C; spell levels at +0x161."
+label = "char_record_gala_record_window"
+start = 0x8008504C
+end = 0x8008505E
+hint = "Gala's record stat window at +0x11C..+0x12D (= 0x80084F30 + 0x11C). HP_max delta = +44 (0x002C), MP_max delta = +8."
 
 [[scenarios.watchpoints]]
-label = "char_record_noa"
-start = 0x80084B1C
-end = 0x80084F30
-hint = "Noa's character record (stride 0x414)."
+label = "char_record_gala_xp_and_rank"
+start = 0x80084F34
+end = 0x80084F36
+hint = "Gala XP at +0x004 (u16 LE). Phase 1 also bumps rank counter at +0x130."
 
-[[scenarios.watchpoints]]
-label = "char_record_gala"
-start = 0x80084F30
-end = 0x80085344
-hint = "Gala's character record (stride 0x414)."
-
-# ----------------------------------------------------------------------
-# mc9 - Character level-up event firing (after mc8) (`map01`)
-# ----------------------------------------------------------------------
 [[scenarios]]
 slot = 9
-label = "char_level_up"
-description = "Character level-up banner active, after magic-rank up (`map01`)"
-topics = ["stat growth", "level-up curve"]
+label = "gala_level_up_settled"
+description = "Post-Gala-level-up: live in-battle stats applied (`map01`)"
+topics = ["stat growth", "level-up curve", "Gala", "live copy phase"]
 diff_against = [7, 8]
 
 [scenarios.overlay_slice]
@@ -347,25 +340,19 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-label = "char_record_vahn"
-start = 0x80084708
-end = 0x80084B1C
-hint = "Vahn's character record. HP/MP at +0x104; stat cap at +0x11A."
+label = "char_record_gala_live_window"
+start = 0x80085034
+end = 0x8008504C
+hint = "Gala's live in-battle window at +0x104..+0x11B (= 0x80084F30 + 0x104). Settled deltas land here in mc9."
 
 [[scenarios.watchpoints]]
-label = "char_record_noa"
-start = 0x80084B1C
-end = 0x80084F30
-hint = "Noa's character record (stride 0x414)."
-
-[[scenarios.watchpoints]]
-label = "char_record_gala"
-start = 0x80084F30
-end = 0x80085344
-hint = "Gala's character record (stride 0x414)."
+label = "char_record_gala_sp_max_unchanged"
+start = 0x8008503E
+end = 0x80085040
+hint = "Gala's SP_max at +0x10E should NOT change across the triplet (Gala uses physical Tactical Arts; level-up grants no SP)."
 
 [[scenarios.watchpoints]]
 label = "stat_growth_lookup_window"
 start = 0x80120000
 end = 0x80140000
-hint = "Per-Seru stat-grant lookup. Diff mc7->mc9 to surface per-character growth values. Captured Vahn deltas exposed via engine_core::levelup::observations::vahn_mc8_to_mc9."
+hint = "Per-Seru stat-grant lookup region. Captured deltas exposed via `engine_core::levelup::observations::{noa_mc4_to_mc7, gala_mc7_to_mc9}`. The grant table source itself is still capture-blocked - searching this window across the triplets is part of the §2.2 hunt."
