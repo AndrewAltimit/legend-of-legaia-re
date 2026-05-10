@@ -21,6 +21,7 @@ pub mod equip_session;
 pub mod equipment;
 pub mod field_events;
 pub mod field_menu;
+pub mod field_menu_dispatch;
 pub mod game_over;
 pub mod inn;
 pub mod input;

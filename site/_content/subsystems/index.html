@@ -147,6 +147,10 @@
       <div class="card-body"><code>engine-core::field_menu::FieldMenuSession</code>: seven-row pause panel (Items / Equip / Spells / Arts / Status / Save / Config) with a <code>FieldMenuRowMask</code> for per-row enable/disable; Cross enters a sub-session, the shell pushes the matching tracker, and <code>resume(close)</code> hands control back. Wired into <code>play-window</code> so Start in field opens the menu.</div>
     </div>
     <div class="card">
+      <div class="card-title">Field-menu sub-session dispatcher</div>
+      <div class="card-body"><code>engine-core::field_menu_dispatch::FieldMenuSubsession</code> wires every <code>FieldMenuRow</code> selection to its real session: <code>InventoryUseSession</code>, <code>EquipSession</code>, <code>SpellMenuSession</code>, <code>ChainEditor</code>, <code>StatusScreenSession</code>, <code>SaveSelectSession</code>, <code>OptionsSession</code>. <code>build(row, world, options, slots, library, catalog, table)</code> constructs the matching session from world state; <code>tick_pad_edge(pressed)</code> routes edge-triggered pad input. Apply helpers (<code>apply_equip_outcome</code>, <code>apply_inventory_outcome</code>, <code>apply_spell_outcome</code>, <code>apply_arts_outcome</code>) drain finished sub-sessions back into <code>World</code>. <code>play-window</code>'s <code>BootUiState::FieldMenu</code> uses this — Cross on a row pushes the right session, control returns to <code>FieldMenuSession::resume</code> when the sub finishes.</div>
+    </div>
+    <div class="card">
       <div class="card-title">Status screen</div>
       <div class="card-body"><code>engine-core::status_screen::StatusScreenSession</code>: per-character snapshot (level / XP / HP / MP / AP / six base stats / equipment list / element ranks). L1/R1 cycle through party members; the <code>StatusSnapshot</code> view is plain data so engines populate from the live record without coupling to the renderer.</div>
     </div>

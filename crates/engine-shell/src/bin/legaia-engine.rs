@@ -873,6 +873,7 @@ struct PlayWindowApp {
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
 /// supplied to play-window. The default `Inactive` variant is what
 /// every other path uses (no boot UI).
+#[allow(clippy::large_enum_variant)]
 enum BootUiState {
     /// No boot UI — engine ticks the scene normally.
     Inactive,
@@ -885,7 +886,16 @@ enum BootUiState {
     Options(legaia_engine_core::options::OptionsSession),
     /// Field (pause) menu is active. Wraps the live scene so dropping
     /// out returns control to the field tick.
-    FieldMenu(legaia_engine_core::field_menu::FieldMenuSession),
+    ///
+    /// `sub` holds the active sub-session pushed by
+    /// `FieldMenuOutcome::Confirmed(row)` (Status, Equip, Spells, Items,
+    /// Save, Options, Arts) — when `Some`, input + draws route to the
+    /// sub instead of the menu and the menu sits in `Suspended`
+    /// underneath.
+    FieldMenu {
+        session: legaia_engine_core::field_menu::FieldMenuSession,
+        sub: Option<legaia_engine_core::field_menu_dispatch::FieldMenuSubsession>,
+    },
     /// Game-over panel is active after a party wipe.
     #[allow(dead_code)]
     GameOver(legaia_engine_core::game_over::GameOverSession),
@@ -1037,8 +1047,69 @@ impl PlayWindowApp {
                 }
                 true
             }
-            BootUiState::FieldMenu(session) => {
+            BootUiState::FieldMenu { session, sub } => {
                 use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
+                use legaia_engine_core::field_menu_dispatch::{
+                    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
+                    apply_inventory_outcome, apply_spell_outcome,
+                };
+                if let Some(active_sub) = sub.as_mut() {
+                    // A sub-session is open — route input + check for done.
+                    active_sub.tick_pad_edge(pressed);
+                    if active_sub.is_done() {
+                        // Drain into world side-effects + handle save.
+                        let finished = sub.take().expect("sub was Some");
+                        match finished {
+                            FieldMenuSubsession::Items(s) => {
+                                apply_inventory_outcome(&s, &mut self.session.host.world);
+                            }
+                            FieldMenuSubsession::Equip { session, char_slot } => {
+                                let _ = apply_equip_outcome(
+                                    &session,
+                                    char_slot,
+                                    &mut self.session.host.world,
+                                );
+                            }
+                            FieldMenuSubsession::Spells(s) => {
+                                apply_spell_outcome(&s, &mut self.session.host.world);
+                            }
+                            FieldMenuSubsession::Arts(editor) => {
+                                // No persistent ChainLibrary on the world
+                                // yet — the editor's outcome is dropped
+                                // until engines wire one in.
+                                let mut throwaway =
+                                    legaia_engine_core::tactical_arts_editor::ChainLibrary::new();
+                                let _ = apply_arts_outcome(editor, &mut throwaway);
+                            }
+                            FieldMenuSubsession::Status(_) => {}
+                            FieldMenuSubsession::Save(s) => {
+                                use legaia_engine_core::save_select::SelectOutcome;
+                                if let Some(SelectOutcome::Saved(slot)) = s.outcome() {
+                                    let runtime =
+                                        legaia_engine_core::menu_runtime::MenuRuntime::new(
+                                            self.save_dir.clone(),
+                                        );
+                                    match runtime.save_to_slot(&mut self.session.host.world, slot) {
+                                        Ok(p) => log::info!(
+                                            "field menu: saved slot {} to {}",
+                                            slot,
+                                            p.display()
+                                        ),
+                                        Err(e) => {
+                                            log::warn!("field menu: save slot {slot} failed: {e:#}")
+                                        }
+                                    }
+                                }
+                            }
+                            FieldMenuSubsession::Config(mut o) => {
+                                o.revert_if_cancelled();
+                                self.options_state = o.state().clone();
+                            }
+                        }
+                        let _ = session.resume(false);
+                    }
+                    return true;
+                }
                 let input = FieldMenuInput {
                     up,
                     down,
@@ -1047,14 +1118,31 @@ impl PlayWindowApp {
                     start,
                 };
                 let _ = session.tick(input);
+                // After Cross on a row the menu phase becomes Suspended.
+                // Build the matching sub-session and route control there.
+                if session.is_suspended()
+                    && let legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } =
+                        session.phase()
+                {
+                    let snapshots = scan_save_dir(&self.save_dir);
+                    *sub = Some(FieldMenuSubsession::build(
+                        row,
+                        &self.session.host.world,
+                        &self.options_state,
+                        &snapshots,
+                        &legaia_engine_core::tactical_arts_editor::ChainLibrary::new(),
+                        &legaia_engine_core::spells::SpellCatalog::vanilla(),
+                        &legaia_engine_core::battle_stats::EquipmentTable::new(),
+                    ));
+                }
                 if let Some(outcome) = session.outcome() {
                     match outcome {
                         FieldMenuOutcome::Closed => {
                             self.boot_ui = BootUiState::Inactive;
                         }
                         FieldMenuOutcome::Confirmed(_row) => {
-                            // Sub-session dispatch is engine-specific; the
-                            // generic shell drops back to scene tick.
+                            // Sub-session signaled "close menu entirely"
+                            // via resume(true). Drop straight to scene.
                             self.boot_ui = BootUiState::Inactive;
                         }
                     }
@@ -1169,8 +1257,14 @@ impl PlayWindowApp {
                     (96, 80),
                 )
             }
-            BootUiState::FieldMenu(s) => {
-                let view = s.view();
+            BootUiState::FieldMenu { session, sub } => {
+                if let Some(active_sub) = sub {
+                    // Render the active sub-session's overlay. Each branch
+                    // builds the matching plain-data view + calls the
+                    // shipped `*_draws_for` helper.
+                    return self.field_menu_sub_draws(active_sub);
+                }
+                let view = session.view();
                 let row_views: Vec<legaia_engine_render::FieldMenuRowView<'_>> = view
                     .rows
                     .iter()
@@ -1213,6 +1307,178 @@ impl PlayWindowApp {
             self.battle_event_log.push_back(ev.summary());
         }
     }
+
+    /// Build [`TextDraw`]s for an active field-menu sub-session. Each
+    /// variant maps to the matching `*_draws_for` helper in
+    /// `legaia-engine-render`. Renderer-side state stays in this method
+    /// so the sub-session enums in `legaia-engine-core` can stay
+    /// renderer-agnostic.
+    fn field_menu_sub_draws(
+        &self,
+        sub: &legaia_engine_core::field_menu_dispatch::FieldMenuSubsession,
+    ) -> Vec<TextDraw> {
+        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        match sub {
+            FieldMenuSubsession::Status(s) => {
+                let Some(snap) = s.current() else {
+                    return Vec::new();
+                };
+                let stat_rows: Vec<legaia_engine_render::StatusStatRow<'_>> = snap
+                    .stats
+                    .iter()
+                    .zip(snap.stat_labels.iter())
+                    .map(|(v, l)| legaia_engine_render::StatusStatRow {
+                        label: l,
+                        value: *v as u32,
+                    })
+                    .collect();
+                let equip_rows: Vec<(&str, &str)> = snap
+                    .equip
+                    .iter()
+                    .map(|e| (e.label, e.item_name.as_str()))
+                    .collect();
+                let view = legaia_engine_render::StatusPanelView {
+                    name: &snap.name,
+                    level: snap.level,
+                    xp: snap.xp,
+                    xp_to_next: snap.xp_to_next,
+                    hp: snap.hp,
+                    hp_max: snap.hp_max,
+                    mp: snap.mp,
+                    mp_max: snap.mp_max,
+                    ap: snap.ap,
+                    ap_max: snap.ap_max,
+                    stat_rows: &stat_rows,
+                    equip_rows: &equip_rows,
+                };
+                legaia_engine_render::status_screen_draws_for(
+                    &self.font,
+                    &view,
+                    Some("L1/R1: Switch  Circle: Back"),
+                    (32, 32),
+                )
+            }
+            FieldMenuSubsession::Config(s) => {
+                let rows = s.state().rows();
+                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
+                    .iter()
+                    .map(|r| legaia_engine_render::OptionsRowView {
+                        label: r.label,
+                        value: &r.value,
+                    })
+                    .collect();
+                legaia_engine_render::options_draws_for(
+                    &self.font,
+                    &row_views,
+                    s.cursor(),
+                    (96, 80),
+                )
+            }
+            FieldMenuSubsession::Save(s) => {
+                use legaia_engine_core::save_select::SelectPhase;
+                let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
+                    .slots()
+                    .iter()
+                    .map(|snap| legaia_engine_render::SaveSelectRow {
+                        label: &snap.label,
+                        present: snap.present,
+                        party_lv: snap.party_lv,
+                        play_time_seconds: snap.play_time_seconds,
+                        money: snap.money,
+                        location: &snap.location,
+                    })
+                    .collect();
+                let (cursor, confirm) = match s.phase() {
+                    SelectPhase::Browsing { cursor } => (cursor as usize, None),
+                    SelectPhase::ConfirmLoad { slot, cursor } => {
+                        (slot as usize, Some(("Load this slot?", cursor)))
+                    }
+                    SelectPhase::ConfirmOverwrite { slot, cursor } => {
+                        (slot as usize, Some(("Overwrite slot?", cursor)))
+                    }
+                    SelectPhase::ConfirmDelete { slot, cursor } => {
+                        (slot as usize, Some(("Delete slot?", cursor)))
+                    }
+                    SelectPhase::Done(_) => return Vec::new(),
+                };
+                legaia_engine_render::save_select_draws_for(
+                    &self.font,
+                    "SAVE",
+                    &rows,
+                    cursor,
+                    confirm,
+                    (16, 32),
+                )
+            }
+            FieldMenuSubsession::Spells(s) => {
+                use legaia_engine_core::spell_menu::SpellMenuPhase;
+                let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
+                let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
+                let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
+                let spell_rows = s.current_spell_rows();
+                let spell_views: Vec<legaia_engine_render::SpellRowView<'_>> = spell_rows
+                    .iter()
+                    .map(|sr| legaia_engine_render::SpellRowView {
+                        name: sr.name.as_str(),
+                        mp_cost: sr.mp_cost,
+                        admissible: sr.admissible,
+                    })
+                    .collect();
+                let target_views: Vec<legaia_engine_render::SpellTargetView<'_>> = s
+                    .targets()
+                    .iter()
+                    .map(|t| legaia_engine_render::SpellTargetView {
+                        name: t.name.as_str(),
+                        hp: t.hp,
+                        hp_max: t.hp_max,
+                        alive: t.alive(),
+                    })
+                    .collect();
+                let (selected_caster, selected_spell, phase, cursor) = match s.phase() {
+                    SpellMenuPhase::CharSelect { cursor } => (None, None, 0u8, *cursor),
+                    SpellMenuPhase::SpellSelect { caster, cursor } => {
+                        (Some(*caster), None, 1u8, *cursor)
+                    }
+                    SpellMenuPhase::TargetSelect {
+                        caster,
+                        spell_id,
+                        cursor,
+                    } => (Some(*caster), Some(*spell_id), 2u8, *cursor),
+                    SpellMenuPhase::Done(_) => return Vec::new(),
+                };
+                let names_arr: Vec<&str> = names.to_vec();
+                let args = legaia_engine_render::SpellMenuDrawArgs {
+                    party_names: &names_arr,
+                    party_hp: &hp,
+                    party_mp: &mp,
+                    selected_caster,
+                    spells: &spell_views,
+                    selected_spell,
+                    targets: &target_views,
+                    selected_target: None,
+                    cursor,
+                    phase,
+                };
+                legaia_engine_render::spell_menu_draws_for(&self.font, args, (32, 32))
+            }
+            // Items / Equip / Arts have no shipped *_draws_for helpers
+            // yet — render a placeholder banner so the player can see the
+            // session is open. Engines wishing to ship dedicated overlays
+            // can extend this match.
+            FieldMenuSubsession::Items(_) => sub_placeholder_banner(&self.font, "ITEMS"),
+            FieldMenuSubsession::Equip { .. } => sub_placeholder_banner(&self.font, "EQUIP"),
+            FieldMenuSubsession::Arts(_) => sub_placeholder_banner(&self.font, "ARTS"),
+        }
+    }
+}
+
+/// Render a one-line banner for sub-sessions that don't yet have a
+/// dedicated `*_draws_for` helper. Used by the field-menu sub-session
+/// dispatcher so the player can see "ITEMS / EQUIP / ARTS" while they
+/// browse — pressing Circle returns to the field menu.
+fn sub_placeholder_banner(font: &Font, title: &str) -> Vec<TextDraw> {
+    let glyphs = font.layout_ascii(&format!("{title}  (Circle: Back)"));
+    legaia_engine_render::text_draws_for(&glyphs, (96, 80), [1.0, 0.85, 0.3, 1.0])
 }
 
 impl PlayWindowApp {
@@ -1575,7 +1841,10 @@ impl ApplicationHandler for PlayWindowApp {
                         let mut s = legaia_engine_core::field_menu::FieldMenuSession::new();
                         s.money = view_money.max(0) as u32;
                         s.play_time_seconds = play_secs;
-                        self.boot_ui = BootUiState::FieldMenu(s);
+                        self.boot_ui = BootUiState::FieldMenu {
+                            session: s,
+                            sub: None,
+                        };
                         self.prev_pad = self.pad;
                         continue;
                     }
