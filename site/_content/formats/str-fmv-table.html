@@ -1,0 +1,79 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; STR FMV table</div>
+  <h1>In-RAM STR FMV file table</h1>
+  <p class="lede">The cutscene / MDEC overlay's compact lookup table for STR FMV files. The retail engine loads this 6-entry table into RAM during overlay residency (around <code>0x801CAE40</code>); each entry is the minimum a libcd-driven STR player needs - filename, BCD MSF for <code>CdControl(CdlSetloc, ...)</code>, and file size for the chunk-read budget.</p>
+  <p>A second copy of the same six files appears nearby in full ISO9660 directory-record form (<code>0x801CCA80</code>); the compact form is the fast lookup, the directory copies are presumably retained for <code>CdReadDir</code>-style validation. Only the compact form is parsed here.</p>
+</header>
+
+<section class="doc-section" id="confidence">
+  <h2>Confidence</h2>
+  <p><strong>Inferred — structural reading from a single live capture.</strong> Pinned from a save state during FMV playback. The 24-byte stride + libcd MSF shape is consistent across all six entries; the compact table is the structure the FMV overlay reads when seeking the disc head.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>+0x00  char[12]  filename     "MV1.STR;1\0..." (null-padded; libcd path shape)
++0x0C  u32       reserved     zero across all observed entries
++0x10  u32       bcd_msf      byte 0 = BCD minute, 1 = BCD second,
+                              2 = BCD frame, 3 = zero
++0x14  u32       size         file size in bytes (LE)</code></pre>
+  <p><code>bcd_msf</code> is the standard libcd <code>CdlLOC</code> representation: each byte is two BCD digits (high nibble = tens, low nibble = ones). The byte order packs into the u32 such that reading <code>bcd_msf</code> as 4 LE bytes recovers <code>[M, S, F, 0]</code> directly.</p>
+  <p>Convert to absolute LBA with the standard CD identity:</p>
+<pre><code>LBA = ((M * 60) + S) * 75 + F - 150</code></pre>
+  <p>The <code>-150</code> accounts for the 2-second pre-gap.</p>
+</section>
+
+<section class="doc-section" id="captured-table">
+  <h2>What's in the captured table</h2>
+  <table class="param-table">
+    <thead><tr><th>Idx</th><th>Name</th><th>M:S.F (decimal)</th><th>LBA</th><th>Size (bytes)</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><code>MV1.STR;1</code></td><td>53:51.33</td><td>242,208</td><td>5,099,520</td></tr>
+      <tr><td>1</td><td><code>MV2.STR;1</code></td><td>68:24.34</td><td>307,759</td><td>18,104,320</td></tr>
+      <tr><td>2</td><td><code>MV3.STR;1</code></td><td>58:22.36</td><td>262,711</td><td>7,045,120</td></tr>
+      <tr><td>3</td><td><code>MV4.STR;1</code></td><td>48:08.37</td><td>216,612</td><td>13,393,920</td></tr>
+      <tr><td>4</td><td><code>MV5.STR;1</code></td><td>63:35.38</td><td>286,063</td><td>13,701,120</td></tr>
+      <tr><td>5</td><td><code>MV6.STR;1</code></td><td>41:14.19</td><td>185,419</td><td>14,811,136</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="what-this-gives-us">
+  <h2>What this gives us</h2>
+  <ul class="bullets">
+    <li>An in-RAM cross-check for the disc-side ISO9660 walk - any drift between the two representations is a corpus issue.</li>
+    <li>The MSF↔LBA conversion needed to look up the same files via the disc reader without going back through the directory.</li>
+    <li>A residency signature: the compact table's first entry name (<code>MV1.STR;1</code>) at <code>0x801CAE40</code> is the cheap "is the FMV overlay loaded" check.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="open-questions">
+  <h2>What this doesn't tell us</h2>
+  <ul class="bullets">
+    <li>Which <strong>scene</strong> triggers which MV. The scene-to-MV mapping is encoded in the field-VM script for each FMV-bearing scene (see <a href="../subsystems/cutscene.html">cutscene subsystem</a>), not in this table.</li>
+    <li>The runtime XA channel selector for multi-channel STR containers (<code>\DATA\MOV.STR;1</code>, which is referenced separately in the overlay's path table).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="rust-api">
+  <h2>Rust API</h2>
+<pre><code>use legaia_asset::str_fmv_table;
+
+// Slice the compact table out of a captured main-RAM image.
+let off = (0x801CAE40 - 0x80000000) as usize;
+let bytes = &amp;main_ram[off..off + 6 * str_fmv_table::ENTRY_STRIDE];
+
+// Parse 6 entries; zero-filled trailing slots are dropped silently.
+let entries = str_fmv_table::parse_entries(bytes, 6).expect("table parses");
+for entry in &amp;entries {
+    println!(
+        "{} at LBA {} ({} bytes)",
+        entry.name,
+        entry.lba(),
+        entry.size,
+    );
+}
+
+// Cheap signature check.
+assert!(str_fmv_table::looks_like_str_fmv_table(bytes));</code></pre>
+</section>

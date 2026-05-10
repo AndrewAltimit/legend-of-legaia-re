@@ -111,6 +111,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/overlay-ptr-table.html","Overlay pointer-table code", "formats/overlay-ptr-table",  "formats/overlay-ptr-table.html"),
     ("formats/navmesh.html",       "Per-scene primitive scratch buffer", "formats/navmesh",       "formats/navmesh.html"),
     ("formats/encounter.html",     "Encounter record",              "formats/encounter",          "formats/encounter.html"),
+    ("formats/str-fmv-table.html", "STR FMV table",                 "formats/str-fmv-table",      "formats/str-fmv-table.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
     # Per-tooling pages (mirrored from docs/tooling/)
     ("tooling/extraction.html",    "Extraction CLIs",               "tooling/extraction",         "tooling/extraction.html"),

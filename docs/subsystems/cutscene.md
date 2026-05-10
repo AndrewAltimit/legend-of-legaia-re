@@ -184,22 +184,51 @@ The retail mapping table itself still requires the STR/MDEC overlay
 capture; the TOML interface lets engines distribute the recovered map
 once that lands without a code change.
 
+## STR/MDEC FMV overlay residency
+
+The retail `StrInit` / `StrMode` handlers live in a dedicated overlay distinct from the dialogue overlay. The overlay loads at `0x801C0000+` and occupies roughly `0x801CAD90..0x801F1200` (~156 KB of mixed code + data + sparse zero-padding) when an FMV is active.
+
+Pinned data structures inside the residency window (captured from a save state during FMV playback):
+
+| Address | Size | Stride | Contents |
+|---|---:|---:|---|
+| `0x801CAE40` | 144 B | 24 B × 6 | Compact MV-file table: `MV1.STR;1` .. `MV6.STR;1` |
+| `0x801CCA80` | 336 B | 56 B × 6 | ISO9660-shape directory record copies of the same six files |
+| `0x801CE810` | ~150 B | variable | Path-string table (\\DATA\\MOV.STR;1, \\DATA\\MOV15.STR;1, \\MOV\\MV1A.STR;1, \\MOV\\MV6..MV1.STR;1) |
+| `0x801CE8AC` | ~50 B | variable | CDNAME labels for mid-game FMV-bearing field scenes |
+
+### Compact MV-file table layout
+
+Each entry in the compact table at `0x801CAE40` is 24 bytes:
+
+```text
++0x00 char[12]  filename (libcd-shaped, e.g. "MV1.STR;1\0")
++0x0C u32       reserved (zero across the captured corpus)
++0x10 u32       BCD MSF (byte 0=BCD minute, 1=BCD second, 2=BCD frame, 3=zero)
++0x14 u32       file size in bytes (LE)
+```
+
+`bcd_msf` matches the libcd `CdlLOC` representation passed to `CdControl(CdlSetloc, ...)`. Convert to LBA with the standard CD identity: `LBA = ((M * 60) + S) * 75 + F - 150`.
+
+The Rust parser is `legaia_asset::str_fmv_table::parse_entries`; the residency check + pinned addresses are in `legaia_engine_core::capture_observations::str_fmv_overlay`.
+
+### Mid-game FMV-bearing field scenes
+
+The FMV overlay's data section carries the CDNAME labels of seven field scenes - distinct from the `op*` / `ed*` engine cutscene scenes:
+
+```text
+town0b  map01  chitei2  map02  jou  uru2  town0e
+```
+
+These scenes have FMV trigger points in their field-VM scripts. The exact `MV*.STR` each plays is encoded in the per-scene script (the field-VM op invokes the FMV player with the MV index); the heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order, and `FMV_TRIGGER_FIELD_SCENES` (sibling constant) lists the mid-game scenes whose specific MV index isn't pinned.
+
 ## Open items
 
-- **STR/MDEC FMV overlay capture.** The retail `StrInit` / `StrMode` handlers are in a dedicated
-  overlay distinct from the dialogue overlay. Save state during a pre-rendered FMV video (opening
-  or ending movie) and run `scripts/analyze-overlay.sh --label str_fmv`; then run
-  `ghidra/scripts/dump_str_fmv_overlay.py` after import.
-  Unblocks: XA channel mapping, PROT-to-STR entry table, `play --scene cutsceneN`.
-- **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the STR/MDEC
-  overlay (not the dialogue overlay). Until reversed, WAV→cutscene assignment is manual.
-- **8-bit ADPCM.** `coding_info` bit detection is implemented; the decoder emits silence for
-  8-bit groups. No 8-bit audio has been observed in the corpus so far.
-- **CDNAME scene label patterns.** In-engine cutscene scenes prefixed with `op`/`ed` use the town
-  field-VM overlay (same binary as `overlay_cutscene_dialogue.bin`) via actor scripting; they are
-  distinct from FMV (`MOV/MV*.STR`). See `is_cutscene_label()` in `engine-core/src/scene.rs`. The
-  mapping from `op*`/`ed*` CDNAME labels to `MV*.STR` files is overlay-resident (blocked on
-  STR/MDEC overlay capture).
+- **MV-index per mid-game FMV-bearing scene.** The seven mid-game field scenes above are confirmed FMV-bearing (the FMV overlay knows their CDNAME labels), but the exact `MV*.STR` each plays requires reading the field-VM script for the scene. Once the per-scene FMV-trigger op is decoded, this maps directly into the `CutsceneMap` TOML.
+- **Function-by-function overlay decompilation.** `ghidra/scripts/dump_str_fmv_overlay.py` ships a starter `TARGETS` list seeded from the SP-prologue scan over the captured slice. After import, an inventory pass + xref re-rank yields the final entry-point set.
+- **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the STR/MDEC overlay. The MV-file table doesn't carry XA channel info directly; the channel selector is presumably driven by `\DATA\MOV.STR;1` (which appears to be a multi-channel container distinct from the per-cutscene `\MOV\MVn.STR;1` files).
+- **MOV15.STR + MV1A.STR.** Two extra path strings (`\DATA\MOV15.STR;1` and `\MOV\MV1A.STR;1`) appear alongside the six numbered MVs. These are dev / debug branches: `MOV15` is the 15-FPS test file (referenced by the `psx.cdspeedup` / 15 fps debug paths), and `MV1A` is an alternate / cut version of MV1. Neither ships in the released disc layout.
+- **8-bit ADPCM.** `coding_info` bit detection is implemented; the decoder emits silence for 8-bit groups. No 8-bit audio has been observed in the corpus so far.
 
 ## Provenance
 

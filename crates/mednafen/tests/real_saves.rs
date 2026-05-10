@@ -519,3 +519,143 @@ fn town01_vs_town0c_diff_lights_up_field_pack_pool() {
         "expected a diff region covering the scene-bundle metadata block at 0x80084140"
     );
 }
+
+#[test]
+fn intro_rim_elm_to_normal_rim_elm_transition_pins_loader_order_of_ops() {
+    // mc2 (settled `town01` intro Rim Elm) -> mc3 (mid-transition into
+    // `town0c` Rim Elm normal): captures a single frame between the
+    // scene-name pool flip and the field-pack-base pointer flip.
+    //
+    // Asserts the order-of-operations the loader follows: write new
+    // scene name into the bundle pool first, populate the new field-pack
+    // region next, swap `_DAT_8007B8D0` last. mc3 catches the system
+    // *between* steps 1 and 3.
+    if !require_slot_scenes(
+        "intro_rim_elm_to_normal_rim_elm",
+        &[(2, "town01"), (3, "town0c")],
+    ) {
+        return;
+    }
+    let (Some(p2), Some(p3)) = (save_for(2), save_for(3)) else {
+        eprintln!("{}", skip_msg(3));
+        return;
+    };
+    let s2 = SaveState::from_path(&p2).unwrap();
+    let s3 = SaveState::from_path(&p3).unwrap();
+    let r2 = s2.main_ram().unwrap();
+    let r3 = s3.main_ram().unwrap();
+
+    use legaia_engine_core::capture_observations::{field_pack_intra_transition, field_pack_load};
+
+    // mc2 settled state: pool slot 0 = town01, base = pinned town01 base.
+    assert_eq!(
+        field_pack_intra_transition::read_pool_slot_name(r2, 0).as_deref(),
+        Some("town01"),
+        "mc2 pool slot 0 should be town01"
+    );
+    let base2 = field_pack_load::recover_base(r2).expect("mc2 base recoverable");
+    assert_eq!(base2, field_pack_load::TOWN01_BASE_MC2);
+
+    // mc3 mid-transition: pool slot 0 = town0c (new), but the global
+    // base pointer still reads the OLD value (= base2). The detector
+    // surfaces this disagreement.
+    assert_eq!(
+        field_pack_intra_transition::read_pool_slot_name(r3, 0).as_deref(),
+        Some("town0c"),
+        "mc3 pool slot 0 should be town0c"
+    );
+    let base3 = field_pack_load::recover_base(r3).expect("mc3 base recoverable");
+    assert_eq!(
+        base3, base2,
+        "mc3 should still read the OLD field-pack base; loader hasn't \
+         flipped _DAT_8007B8D0 yet"
+    );
+    assert_eq!(
+        field_pack_intra_transition::detect_mid_transition(r3),
+        Some(("town0c".to_string(), field_pack_intra_transition::PREV_BASE)),
+        "mid-transition detector should fire on mc3"
+    );
+
+    // The asset descriptor table at 0x8015CBD0 is statically allocated;
+    // its 4 KB head should be bit-identical between mc2 and mc3.
+    let dt = (field_pack_load::ASSET_DESCRIPTOR_TABLE_PTR_VALUE - 0x80000000) as usize;
+    assert_eq!(
+        &r2[dt..dt + 0x1000],
+        &r3[dt..dt + 0x1000],
+        "asset descriptor table should not move during a scene transition"
+    );
+
+    // mc3's NEW field-pack region (matches mc0's pinned `town0c` base)
+    // must already carry data even though the global base pointer hasn't
+    // flipped yet - this is the load-then-swap evidence.
+    let new_off = (field_pack_intra_transition::NEXT_BASE - 0x80000000) as usize;
+    let nz = r3[new_off..new_off + 0x12800]
+        .iter()
+        .filter(|&&b| b != 0)
+        .count();
+    assert!(
+        nz > 0x4000,
+        "mc3 new field-pack region at 0x{:08X} should be partially \
+         populated already; saw only {nz} non-zero bytes",
+        field_pack_intra_transition::NEXT_BASE
+    );
+}
+
+#[test]
+fn fmv_overlay_residency_in_mc1_pins_compact_table_address() {
+    // mc1 captures FMV playback. The cutscene overlay should be
+    // resident, with the compact MV-file table at the pinned address
+    // and parseable into 6 entries (MV1.STR..MV6.STR).
+    let Some(p1) = save_for(1) else {
+        eprintln!("{}", skip_msg(1));
+        return;
+    };
+    let s = SaveState::from_path(&p1).unwrap();
+    let r = s.main_ram().unwrap();
+
+    use legaia_asset::str_fmv_table;
+    use legaia_engine_core::capture_observations::str_fmv_overlay;
+
+    if !str_fmv_overlay::is_resident(r) {
+        eprintln!(
+            "[skip fmv_overlay_residency] mc1 doesn't carry the FMV \
+             overlay residency signature; corpus has been re-captured"
+        );
+        return;
+    }
+
+    let off = (str_fmv_overlay::COMPACT_TABLE_ADDR - 0x80000000) as usize;
+    let entries = str_fmv_table::parse_entries(
+        &r[off..off + str_fmv_overlay::MV_BASENAMES.len() * str_fmv_table::ENTRY_STRIDE],
+        str_fmv_overlay::MV_BASENAMES.len(),
+    )
+    .expect("compact MV table should parse");
+    assert_eq!(entries.len(), 6);
+    for (i, entry) in entries.iter().enumerate() {
+        let expected_basename = str_fmv_overlay::MV_BASENAMES[i];
+        let stripped = entry.name.split(';').next().unwrap_or(entry.name.as_str());
+        assert_eq!(
+            stripped, expected_basename,
+            "MV entry {i} basename should be {expected_basename}"
+        );
+        assert!(
+            entry.size >= 4 * 2336,
+            "MV{} size suspiciously small",
+            i + 1
+        );
+        assert!(entry.minute < 100 && entry.second < 60 && entry.frame < 75);
+    }
+
+    // The mid-game scene labels embedded in the overlay's data section
+    // should be readable at the pinned address.
+    let lbl_off = (str_fmv_overlay::MID_GAME_LABELS_ADDR - 0x80000000) as usize;
+    let lbl_window = &r[lbl_off..lbl_off + 0x40];
+    for label in str_fmv_overlay::MID_GAME_LABELS {
+        assert!(
+            lbl_window
+                .windows(label.len())
+                .any(|w| w == label.as_bytes()),
+            "mid-game scene label {label:?} should appear in the FMV overlay's label table"
+        );
+    }
+}

@@ -334,6 +334,175 @@ pub mod field_pack_load {
     }
 }
 
+/// Intra-transition observation captured from a save pair where the new
+/// scene name has already been written into the scene-bundle pool but the
+/// global field-pack base pointer (`_DAT_8007B8D0`) still reads the old
+/// value. Pinned from the `mc2` (settled `town01` intro Rim Elm) and `mc3`
+/// (`town0c` mid-transition) save pair.
+///
+/// Findings:
+///
+/// - The scene-bundle pool entry at [`SCENE_NAME_TABLE_ADDR`] flips to
+///   the destination scene name (`town0c`) before the loader has populated
+///   the new field-pack region. Both pool slots (`+0x08` and `+0x18`) carry
+///   the new name simultaneously.
+/// - `_DAT_8007B8D0` retains the previous scene's value through the
+///   transition. It only flips to the new value (new field-pack base
+///   `+ 0x12800`) AFTER the new region is fully populated. This pins the
+///   loader's order-of-operations as: write new scene name -> populate
+///   new field-pack region -> swap the global base pointer.
+/// - The new field-pack region for `town0c` populates at
+///   `0x800A25F0 .. 0x800B4DF0 + N` (matching the `mc0` settled values).
+///   In the mid-transition snapshot, the region is partially written.
+/// - The asset descriptor table at `0x8015CBD0` is bit-identical between
+///   the pre- and mid-transition snapshots (4 KB SHA-256 match) - it is
+///   statically allocated at boot and never relocated.
+/// - The previous scene's field-pack region (here `town01` at
+///   `0x80139530`) is zeroed out before the new region is populated.
+///
+/// This observation matters because it pins the loader projection
+/// boundary: at any point during the transition, the engine can resolve
+/// "which scene is residency-active" by reading the scene-bundle pool, and
+/// "which scene's data is at `recover_base()`" by reading
+/// [`field_pack_load::LOAD_DEST_PLUS_OFFSET_PTR`]. The two answers can
+/// disagree mid-transition, and that disagreement is the signal that the
+/// loader is in flight.
+pub mod field_pack_intra_transition {
+    /// Scene-bundle pool base. Each pool slot is 16 bytes:
+    /// `[u32 scene_id][u32 reserved][char name[8]]`. Slots 0 and 1 both
+    /// carry the active / pending scene name.
+    pub const SCENE_NAME_TABLE_ADDR: u32 = 0x80084540;
+
+    /// Stride between the two scene-bundle pool slots.
+    pub const SCENE_NAME_SLOT_STRIDE: u32 = 0x10;
+
+    /// Offset of the 8-byte CDNAME label inside one scene-bundle pool slot.
+    pub const SCENE_NAME_OFFSET_IN_SLOT: u32 = 0x08;
+
+    /// Maximum length of a CDNAME label inside a pool slot (8 bytes,
+    /// null-padded).
+    pub const SCENE_NAME_MAX_LEN: usize = 8;
+
+    /// Old field-pack base (`town01` intro Rim Elm, captured `mc2`).
+    pub const PREV_BASE: u32 = 0x80139530;
+
+    /// New field-pack base (`town0c` Rim Elm normal, captured `mc3`
+    /// mid-transition; matches `mc0`'s settled value).
+    pub const NEXT_BASE: u32 = 0x800A25F0;
+
+    /// Read the CDNAME label from one of the two scene-bundle pool slots
+    /// (`slot` is 0 or 1). Returns the trimmed label if it parses as
+    /// printable ASCII, otherwise `None`.
+    pub fn read_pool_slot_name(main_ram: &[u8], slot: u32) -> Option<String> {
+        if slot > 1 {
+            return None;
+        }
+        let base =
+            SCENE_NAME_TABLE_ADDR + slot * SCENE_NAME_SLOT_STRIDE + SCENE_NAME_OFFSET_IN_SLOT;
+        let off = (base - 0x80000000) as usize;
+        let bytes = main_ram.get(off..off + SCENE_NAME_MAX_LEN)?;
+        let nul = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        if nul == 0 || !bytes[..nul].iter().all(|&b| b.is_ascii_graphic()) {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&bytes[..nul]).into_owned())
+    }
+
+    /// Detect whether `main_ram` is captured mid-transition: the
+    /// scene-bundle pool's slot-0 name disagrees with the scene name
+    /// implied by the field-pack base pointer's last-known value.
+    /// Returns `(pool_label, recovered_base_value)` only when both
+    /// readings succeed AND they disagree about which scene is loaded.
+    pub fn detect_mid_transition(main_ram: &[u8]) -> Option<(String, u32)> {
+        let label = read_pool_slot_name(main_ram, 0)?;
+        let base = super::field_pack_load::recover_base(main_ram)?;
+        // The "settled" pre-transition state (mc2 town01) has label="town01"
+        // + base=PREV_BASE. The mid-transition state (mc3 town0c) has
+        // label="town0c" + base=PREV_BASE - the label has flipped, the
+        // base has not. We surface that case.
+        if label != "town01" && base == PREV_BASE {
+            return Some((label, base));
+        }
+        if label != "town0c" && base == NEXT_BASE {
+            return Some((label, base));
+        }
+        None
+    }
+}
+
+/// FMV cutscene overlay observation captured from `mc1` during STR
+/// playback.
+///
+/// The cutscene overlay loads at `0x801C0000` and occupies roughly
+/// `0x801CAD90..0x801F1200` (~156 KB of mixed code + data + sparse
+/// zero-padding).  Key data structures pinned in the captured snapshot:
+///
+/// - **Compact FMV file table** at [`COMPACT_TABLE_ADDR`]: 6 entries of
+///   24 bytes each, each carrying a libcd-style filename + BCD MSF + size.
+///   Parsed by [`legaia_asset::str_fmv_table`].
+/// - **ISO9660-shape directory copies** at [`ISO_DIRECTORY_TABLE_ADDR`]:
+///   the same six files re-encoded as full ISO9660 directory records
+///   (56 bytes each, includes the publisher tag `"USA"` and BE+LE LBA in
+///   ISO9660 fashion). The compact table is the lookup; the directory
+///   copies are presumably retained for `CdReadDir`-style validation.
+/// - **STR file path strings** at [`PATH_TABLE_ADDR`]: nine null-padded
+///   path strings - `\DATA\MOV.STR;1`, `\DATA\MOV15.STR;1`,
+///   `\MOV\MV1A.STR;1`, plus `\MOV\MV6.STR;1` .. `\MOV\MV1.STR;1` in
+///   reverse order. The reversed order matches the disc-walk order the
+///   LZS / loader test scripts emit.
+/// - **Mid-game FMV scene labels** at [`MID_GAME_LABELS_ADDR`]: seven
+///   CDNAME-shape strings (`town0b`, `map01`, `chitei2`, `map02`, `jou`,
+///   `uru2`, `town0e`). These are the field scenes that the FMV overlay
+///   knows about for mid-game cutscene triggers (distinct from the `op*`
+///   opening / `ed*` ending scenes that the field VM dispatches by name).
+///
+/// The captured slice is also exported as `/tmp/legaia_overlay_str_fmv.bin`
+/// by the auto-capture pipeline and corresponds to the
+/// `dump_str_fmv_overlay.py` post-script.
+pub mod str_fmv_overlay {
+    /// Overlay residency window (inclusive lower, exclusive upper).
+    pub const OVERLAY_WINDOW: (u32, u32) = (0x801C0000, 0x80200000);
+
+    /// Compact FMV file table. 24 bytes per entry, 6 entries.
+    pub const COMPACT_TABLE_ADDR: u32 = 0x801CAE40;
+
+    /// ISO9660-shape directory record copies. 56 bytes per entry,
+    /// 6 entries. The publisher tag `"USA"` appears at +0x17 of each.
+    pub const ISO_DIRECTORY_TABLE_ADDR: u32 = 0x801CCA80;
+
+    /// Packed path string table. Nine null-padded paths covering MOV.STR,
+    /// MOV15.STR, MV1A.STR, plus MV6..MV1 in reverse order.
+    pub const PATH_TABLE_ADDR: u32 = 0x801CE810;
+
+    /// Packed scene-label table for mid-game FMV-bearing field scenes.
+    pub const MID_GAME_LABELS_ADDR: u32 = 0x801CE8AC;
+
+    /// CDNAME-shape mid-game scene labels in capture order. These seven
+    /// field scenes appear in the FMV overlay's data section, suggesting
+    /// the FMV overlay special-cases their entry / exit transitions.
+    pub const MID_GAME_LABELS: [&str; 7] = [
+        "town0b", "map01", "chitei2", "map02", "jou", "uru2", "town0e",
+    ];
+
+    /// Six MV file basenames in canonical disc order (matches both the
+    /// compact table and the ISO9660 directory copies).
+    pub const MV_BASENAMES: [&str; 6] = [
+        "MV1.STR", "MV2.STR", "MV3.STR", "MV4.STR", "MV5.STR", "MV6.STR",
+    ];
+
+    /// Detect whether the FMV overlay is residency-resident in `main_ram`.
+    /// The check looks for the compact table's first entry name (`MV1.STR`)
+    /// at the pinned address - if present, the overlay is loaded.
+    pub fn is_resident(main_ram: &[u8]) -> bool {
+        let off = (COMPACT_TABLE_ADDR - 0x80000000) as usize;
+        let head = match main_ram.get(off..off + 8) {
+            Some(b) => b,
+            None => return false,
+        };
+        head.starts_with(b"MV1.STR")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +577,81 @@ mod tests {
             field_pack_load::TOWN0C_BASE_MC0 + field_pack_load::EFFECT_OFFSET,
             0x800B4DF0
         );
+    }
+
+    #[test]
+    fn intra_transition_pool_slot_name_round_trips() {
+        // Build a synthetic main-RAM image with "town0c" planted in slot 0.
+        let mut ram = vec![0u8; 0x100000];
+        let off = (field_pack_intra_transition::SCENE_NAME_TABLE_ADDR
+            + field_pack_intra_transition::SCENE_NAME_OFFSET_IN_SLOT
+            - 0x80000000) as usize;
+        ram[off..off + 6].copy_from_slice(b"town0c");
+        let label = field_pack_intra_transition::read_pool_slot_name(&ram, 0);
+        assert_eq!(label.as_deref(), Some("town0c"));
+        // Slot 1 is empty (no name) - reading should fail gracefully.
+        assert!(field_pack_intra_transition::read_pool_slot_name(&ram, 1).is_none());
+        // Slot 2 doesn't exist.
+        assert!(field_pack_intra_transition::read_pool_slot_name(&ram, 2).is_none());
+    }
+
+    #[test]
+    fn intra_transition_detector_flags_label_base_disagreement() {
+        // Plant the mc3 mid-transition shape: slot 0 says "town0c",
+        // _DAT_8007B8D0 still says PREV_BASE+0x12800 (the old town01 base).
+        let mut ram = vec![0u8; 0x200000];
+        let pool_off = (field_pack_intra_transition::SCENE_NAME_TABLE_ADDR
+            + field_pack_intra_transition::SCENE_NAME_OFFSET_IN_SLOT
+            - 0x80000000) as usize;
+        ram[pool_off..pool_off + 6].copy_from_slice(b"town0c");
+        let load_dest_off = (field_pack_load::LOAD_DEST_PLUS_OFFSET_PTR - 0x80000000) as usize;
+        let stale_load_dest =
+            field_pack_intra_transition::PREV_BASE + field_pack_load::EFFECT_OFFSET;
+        ram[load_dest_off..load_dest_off + 4].copy_from_slice(&stale_load_dest.to_le_bytes());
+
+        let mid = field_pack_intra_transition::detect_mid_transition(&ram);
+        assert_eq!(
+            mid,
+            Some(("town0c".to_string(), field_pack_intra_transition::PREV_BASE))
+        );
+
+        // Settled state (mc2): slot 0 says "town01" + base = PREV_BASE.
+        // detector should NOT flag this case.
+        ram[pool_off..pool_off + 6].copy_from_slice(b"town01");
+        assert!(field_pack_intra_transition::detect_mid_transition(&ram).is_none());
+    }
+
+    #[test]
+    fn fmv_overlay_resident_check_passes_on_planted_signature() {
+        // FMV overlay residency is detected by the "MV1.STR" prefix at the
+        // pinned compact-table address.
+        let mut ram = vec![0u8; 0x200000];
+        assert!(!str_fmv_overlay::is_resident(&ram));
+        let off = (str_fmv_overlay::COMPACT_TABLE_ADDR - 0x80000000) as usize;
+        ram[off..off + 9].copy_from_slice(b"MV1.STR;1");
+        assert!(str_fmv_overlay::is_resident(&ram));
+    }
+
+    #[test]
+    fn fmv_overlay_mid_game_labels_are_lowercase_cdname_shape() {
+        for label in str_fmv_overlay::MID_GAME_LABELS {
+            assert!(!label.is_empty());
+            assert!(label.len() <= 8, "{label} exceeds CDNAME slot width");
+            assert!(
+                label
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+                "{label} not CDNAME-shape"
+            );
+        }
+    }
+
+    #[test]
+    fn fmv_overlay_mv_basenames_are_canonical_order() {
+        let last_digit = |s: &str| s.chars().nth(2).unwrap().to_digit(10).unwrap();
+        for (i, name) in str_fmv_overlay::MV_BASENAMES.iter().enumerate() {
+            assert_eq!(last_digit(name), (i as u32) + 1);
+        }
     }
 
     #[test]

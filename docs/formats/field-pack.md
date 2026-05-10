@@ -130,6 +130,32 @@ Reading the `mc2` save at `base + 0x60` (where on-disc slot 0 sits) yields **pos
 
 A direct preamble-byte → runtime-RAM-cell mapping requires capturing the loader **during** a scene transition (a frame between "scene change requested" and "field-pack region populated"). The current single-save snapshot is post-load, so only the FINAL runtime layout is observable, not the disc-byte-to-RAM-cell projection.
 
+## Loader order-of-operations
+
+A save captured mid-transition between `town01` (intro Rim Elm) and `town0c` (Rim Elm normal entry) pins the loader's order-of-operations. The mid-transition snapshot has these properties simultaneously:
+
+- The scene-bundle pool at `0x80084540` already carries the **destination** scene name (`town0c`) - both pool slots `+0x08` and `+0x18` flip together.
+- `_DAT_8007B8D0` still reads the **previous** scene's value (`0x8014BD30`, town01's `efect.dat` base).
+- The destination scene's field-pack region at the canonical town0c base (`0x800A25F0..0x800B4DF0`) is partially populated.
+- The previous scene's field-pack region at `0x80139530` is zeroed.
+- The static asset descriptor table at `0x8015CBD0` is bit-identical between the pre- and mid-transition snapshots (4 KB SHA-256 match).
+
+That sequencing pins the loader as: **(1)** write new scene name into the bundle pool, **(2)** zero the previous field-pack region, **(3)** populate the destination region at its canonical base, **(4)** flip `_DAT_8007B8D0` last. Mid-transition, the engine can detect a scene swap is in flight by checking that the pool slot's CDNAME label disagrees with the field-pack base implied by `_DAT_8007B8D0`.
+
+The detector and constants live in `legaia_engine_core::capture_observations::field_pack_intra_transition`:
+
+```rust
+use legaia_engine_core::capture_observations::field_pack_intra_transition;
+
+if let Some((label, stale_base)) =
+    field_pack_intra_transition::detect_mid_transition(main_ram)
+{
+    eprintln!(
+        "scene transition in flight: pool says {label}, base still reads 0x{stale_base:08X}"
+    );
+}
+```
+
 ## Mednafen-state diff observations
 
 A prior diff over the engine RAM range `0x801C0000..0x80200000` lit up a 9 KB region at `0x801F69D8..0x801F8F02` that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (`addiu sp,sp,-N`, `sw s1,N(sp)`, `lui s1,0x801F`, `ori s1,s1,...`), confirming the slot is an MIPS overlay rather than a data buffer.

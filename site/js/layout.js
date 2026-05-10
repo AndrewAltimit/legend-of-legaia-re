@@ -86,6 +86,7 @@ const NAV = [
       { href: 'formats/overlay-ptr-table.html',      text: 'Overlay ptr-table code',   key: 'formats/overlay-ptr-table' },
       { href: 'formats/navmesh.html',                text: 'Per-scene scratch buffer', key: 'formats/navmesh' },
       { href: 'formats/encounter.html',              text: 'Encounter record',         key: 'formats/encounter' },
+      { href: 'formats/str-fmv-table.html',          text: 'STR FMV table',            key: 'formats/str-fmv-table' },
     ],
   },
   {
