@@ -41,8 +41,22 @@
         <li><code>FUN_80023070</code> - move-table VM (71 opcodes, JT at <code>0x80010778</code>)</li>
         <li><code>FUN_801D362C</code> - move-VM extension (61 sub-opcodes via op <code>0x2F</code>)</li>
         <li><code>FUN_801DE840</code> - field / event script VM (43 ops, switch at <code>0x801E00F4</code>)</li>
+        <li><code>FUN_801E0C3C</code> - field-VM <code>0x4C</code> 2nd-stage dispatcher (16-entry JT at <code>0x801CEE60</code>)</li>
+        <li><code>FUN_801E3040</code> - field-VM <code>0x4C</code> outer-nibble-<code>0xE</code> sub-dispatcher (15-entry JT at <code>0x801CF008</code>)</li>
+        <li><code>FUN_801E30E4</code> - field-VM <code>0x4C 0xE2</code> FMV trigger; writes FMV index to <code>_DAT_8007BA78</code> + game mode <code>0x1A</code> (StrInit) to <code>_DAT_8007B83C</code></li>
+        <li><code>FUN_8003CE9C</code> - field-VM context resolver (sign-extended u16 read)</li>
         <li><code>FUN_800204F8</code> - move-buffer setup (Tactical Arts)</li>
         <li><code>FUN_80021DF4</code> - per-frame actor tick</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>Cutscene / FMV</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_801CF098</code> - STR/MDEC FMV main play loop (1236 B / 309 instr; takes <code>(loop_mode, &amp;runtime_fmv_state)</code>)</li>
+        <li><code>0x801CECA0</code> - jal site that selects the FMV-state struct via <code>_DAT_8007BA78 &lt;&lt; 6 + 0x801D0A6C</code></li>
+        <li><code>0x801CAE40</code> (data) - compact MV-file table (24 B &times; 6 entries: name + libcd BCD MSF + size)</li>
+        <li><code>0x801D0A6C</code> (data) - runtime FMV-state table (64 B &times; 6 entries; populated from the compact table at startup)</li>
       </ul>
     </div>
 

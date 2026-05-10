@@ -94,6 +94,21 @@ pub enum FieldEvent {
     },
     /// Field-VM op 0x2C (exec_move) - the move-table consumer.
     ExecMove { move_id: u8 },
+    /// Field-VM op `0x4C 0xE2` (FMV trigger).
+    ///
+    /// The retail handler at `0x801E30E4` writes the s16 operand to
+    /// `_DAT_8007BA78` (the runtime FMV index, used to select an entry
+    /// from the 64-byte-stride FMV-state table at `0x801D0A6C`) and
+    /// kicks the next-game-mode global `_DAT_8007B83C` to `0x1A` (game
+    /// mode 26 = StrInit). On retail, indices 0..=5 select
+    /// `MV1.STR..MV6.STR`. Engines that want to actually play the
+    /// FMV should pop this event, resolve the index to a STR file
+    /// (using their disc handle and the
+    /// `cutscene::FmvIndex::str_filename` mapping), and kick whatever
+    /// STR/MDEC playback path they have. Engines without an FMV path
+    /// can drop the event - the field VM doesn't require any
+    /// host-side response.
+    FmvTrigger { fmv_id: i16 },
 }
 
 impl FieldEvent {
@@ -185,6 +200,7 @@ impl FieldEvent {
                 format!("MoveTo(x={world_x}, z={world_z}, player={is_player})")
             }
             FieldEvent::ExecMove { move_id } => format!("ExecMove({move_id})"),
+            FieldEvent::FmvTrigger { fmv_id } => format!("FmvTrigger({fmv_id})"),
         }
     }
 }
@@ -271,6 +287,7 @@ mod tests {
                 is_player: false,
             },
             FieldEvent::ExecMove { move_id: 0 },
+            FieldEvent::FmvTrigger { fmv_id: 3 },
         ];
         for e in events {
             assert!(!e.summary().is_empty());

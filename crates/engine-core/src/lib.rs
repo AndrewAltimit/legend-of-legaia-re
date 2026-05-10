@@ -15,6 +15,7 @@ pub mod battle_session;
 pub mod battle_stats;
 pub mod camera;
 pub mod capture_observations;
+pub mod cutscene;
 pub mod dialog;
 pub mod encounter;
 pub mod encounter_record;

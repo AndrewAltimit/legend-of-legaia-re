@@ -1567,14 +1567,19 @@ pub trait FieldHost {
         let _ = (b1, words);
     }
 
-    /// Op 0x4C outer-nibble-E sub-2 - set 2 globals.
+    /// Op 0x4C outer-nibble-E sub-2 - FMV trigger.
     ///
-    /// 6-byte instruction `[4C, 0xE2, lo, hi, _, _]`. Writes
-    /// `_DAT_8007BA78 = signed_16(operand[1..3])` and `_DAT_8007B83C = 0x1A`.
-    /// The latter is a state-machine kick (the value 0x1A = 26 selects a
-    /// specific menu/transition state). PC += 6.
-    fn op4c_n_e_sub2_set_globals(&mut self, value: i16) {
-        let _ = value;
+    /// 7-byte instruction `[4C, 0xE2, lo, hi, _, _, _]` (PC advances by
+    /// 1+6). Writes `_DAT_8007BA78 = signed_16(operand[1..3])` (the
+    /// FMV index passed to the STR/MDEC overlay) and
+    /// `_DAT_8007B83C = 0x1A` (next-game-mode = 26 / StrInit). The
+    /// FMV index selects a 64-byte entry from the runtime FMV-state
+    /// table at `0x801D0A6C` (which the str_fmv overlay populates from
+    /// the compact MV-file table at `0x801CAE40`); index range
+    /// `0..=5` corresponds to `MV1.STR..MV6.STR`. The trailing 3
+    /// bytes are reserved by the dispatcher's PC math but unused.
+    fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
+        let _ = fmv_id;
     }
 
     /// Op 0x4C outer-nibble-E sub-6 - `FUN_801D8280` 3-arg call.
@@ -4140,9 +4145,9 @@ pub fn step<H: FieldHost>(
                         if operand + 3 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
                         }
-                        let value =
+                        let fmv_id =
                             i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
-                        host.op4c_n_e_sub2_set_globals(value);
+                        host.op4c_n_e_sub2_fmv_trigger(fmv_id);
                         StepResult::Advance {
                             next_pc: pc + header_size + 5,
                         }
@@ -5497,7 +5502,7 @@ mod tests {
         n_d_party_setups: Vec<(u32, u32, u32)>,
         n_d_collision_y_calls: u32,
         n_d_scene_byte_writes: Vec<u8>,
-        n_e_globals_writes: Vec<i16>,
+        n_e_fmv_triggers: Vec<i16>,
         n_e_d8280_calls: Vec<[i16; 3]>,
         n_e_capture_ddf48_calls: u32,
         n_e_ba66_writes: Vec<u8>,
@@ -5937,8 +5942,8 @@ mod tests {
         fn op4c_n_d_sub_f_scene_byte_write(&mut self, value: u8) {
             self.n_d_scene_byte_writes.push(value);
         }
-        fn op4c_n_e_sub2_set_globals(&mut self, value: i16) {
-            self.n_e_globals_writes.push(value);
+        fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
+            self.n_e_fmv_triggers.push(fmv_id);
         }
         fn op4c_n_e_sub6_call_d8280(&mut self, words: [i16; 3]) {
             self.n_e_d8280_calls.push(words);
@@ -9530,13 +9535,30 @@ mod tests {
     }
 
     #[test]
-    fn op_4c_n_e_sub_2_set_globals_advances_six_bytes() {
-        let bytecode = [0x4Cu8, 0xE2, 0x10, 0x00, 0, 0];
+    fn op_4c_n_e_sub_2_fmv_trigger_decodes_fmv_id() {
+        // The 6-byte form `[4C, 0xE2, lo, hi, _, _]` triggers an FMV
+        // (game-mode 26 / StrInit). The fmv_id is the s16 at +1..+3
+        // and selects an entry in the runtime FMV-state table.
+        let bytecode = [0x4Cu8, 0xE2, 0x03, 0x00, 0, 0];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 6 });
-        assert_eq!(host.n_e_globals_writes, vec![0x10i16]);
+        assert_eq!(host.n_e_fmv_triggers, vec![3i16]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_2_fmv_trigger_sign_extends_negative() {
+        // s16 sign-extension - retail dispatcher reads through
+        // FUN_8003CE9C which sign-extends. fmv_id can be negative
+        // when the script wants to clear the trigger / signal a
+        // sentinel.
+        let bytecode = [0x4Cu8, 0xE2, 0xFF, 0xFF, 0, 0];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_e_fmv_triggers, vec![-1i16]);
     }
 
     #[test]
