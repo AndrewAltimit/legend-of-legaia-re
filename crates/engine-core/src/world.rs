@@ -345,6 +345,14 @@ pub struct World {
     /// loads it, and reinitialises the field VM. `None` between transitions.
     pub pending_scene_transition: Option<u8>,
 
+    /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
+    /// the field VM has signalled that the next-game-mode global should
+    /// transition to game mode 26 (StrInit) with the given index. Engines
+    /// drain this after [`World::tick`] to actually open the corresponding
+    /// `MV*.STR` (use [`crate::cutscene::FmvIndex::str_filename`] for the
+    /// retail mapping). `None` between triggers.
+    pub pending_fmv_trigger: Option<i16>,
+
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
     /// Mirror of the `FieldHost` callbacks - see [`FieldEvent`] for the
@@ -585,6 +593,7 @@ impl World {
             battle_end: None,
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
+            pending_fmv_trigger: None,
             pending_field_events: Vec::new(),
             pending_battle_events: Vec::new(),
             current_bgm: None,
@@ -2029,6 +2038,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_scene_transition = Some(map_id);
     }
 
+    fn op4c_n_e_sub2_fmv_trigger(&mut self, fmv_id: i16) {
+        // Field-VM op `0x4C 0xE2` - retail handler at 0x801E30E4 writes
+        // the resolved s16 to `_DAT_8007BA78` (FMV index) and pokes
+        // `_DAT_8007B83C = 0x1A` (next game mode = 26 = StrInit). We
+        // record the request here so the SceneHost / engine driver can
+        // pop it after the field step returns and switch its scene
+        // mode without invalidating the field-VM borrow.
+        self.world.pending_fmv_trigger = Some(fmv_id);
+        self.world
+            .pending_field_events
+            .push(FieldEvent::FmvTrigger { fmv_id });
+    }
+
     fn bgm(&mut self, text_id: u16, sub_op: u8) {
         // Sub-ops 1 (start field BGM) and 9 (queue) are the cases that
         // pin a "currently playing" id. Other sub-ops are control words
@@ -2774,6 +2796,29 @@ mod tests {
         world.load_field_script(bytecode);
         let _ = world.tick();
         assert_eq!(world.pending_scene_transition, None);
+    }
+
+    /// Field-VM op `0x4C 0xE2` (FMV trigger) records the FMV index in
+    /// `World::pending_fmv_trigger` AND emits a `FieldEvent::FmvTrigger`
+    /// for engines to drain. Retail handler at `0x801E30E4` writes the
+    /// s16 to `_DAT_8007BA78` and pokes next-game-mode = 0x1A; the
+    /// world mirrors the request via these two channels.
+    #[test]
+    fn field_op_4c_e2_records_pending_fmv_trigger() {
+        use crate::cutscene::{STR_INIT_GAME_MODE, fmv_index_to_str_filename};
+        use crate::field_events::FieldEvent;
+
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // `[0x4C, 0xE2, 0x03, 0x00, 0, 0]` → fmv_id 3 → MV4.STR.
+        let bytecode = vec![0x4C, 0xE2, 0x03, 0x00, 0, 0];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.pending_fmv_trigger, Some(3));
+        let events = world.drain_field_events();
+        assert!(events.contains(&FieldEvent::FmvTrigger { fmv_id: 3 }));
+        assert_eq!(fmv_index_to_str_filename(3), Some("MOV/MV4.STR"));
+        assert_eq!(STR_INIT_GAME_MODE, 26);
     }
 
     // --- Save / load round-trip ----------------------------------------

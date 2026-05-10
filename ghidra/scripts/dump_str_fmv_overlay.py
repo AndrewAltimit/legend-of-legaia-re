@@ -36,36 +36,38 @@ import os
 from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
-# Function entry-point candidates surfaced from the captured `mc1` FMV-overlay
-# slice (`/tmp/legaia_overlay_str_fmv.bin`, 0x801C0000..0x80200000). Identified
-# by the MIPS SP-prologue pattern `addiu sp, sp, -N`. Re-rank by incoming xref
-# count after the inventory pass; the list below is a starting batch.
+# Function entry-points in the captured `mc1` FMV-overlay slice
+# (`/tmp/legaia_overlay_str_fmv.bin`, 0x801C0000..0x80200000). Re-ranked by
+# incoming xref count from the `inventory_overlay.py` CSV
+# (`/scripts/inventory_overlay_str_fmv.bin.csv`); ties broken by function size.
 TARGETS = [
-    # Bracket the compact MV-file table consumer cluster (table at 0x801CAE40).
-    "0x801CEA3C",
-    "0x801CF098",
-    "0x801CF574",
-    "0x801CF740",
-    "0x801CF988",
-    "0x801CFA14",
-    "0x801CFAD4",
-    "0x801CFB94",
-    "0x801CFC18",
-    "0x801CFCDC",
-    "0x801CFD84",
-    "0x801CFE00",
-    # Smaller leaf / helper entries (post-1KB padding boundary).
-    "0x801CFE20",
-    "0x801CFE5C",
-    "0x801CFE98",
-    "0x801CFEBC",
-    "0x801CFEE0",
-    "0x801CFFDC",
-    "0x801D0070",
-    "0x801D0100",
-    "0x801D0198",
-    "0x801D0248",
-    "0x801D0378",
+    "0x801CFFDC",  # 5 incoming
+    "0x801CFB94",  # 3 incoming
+    "0x801D0248",  # 2 incoming, 304 bytes
+    "0x801CFA14",  # 2 incoming, 192 bytes
+    "0x801D0100",  # 2 incoming, 152 bytes
+    "0x801D0198",  # 2 incoming, 152 bytes
+    "0x801CFEBC",  # 2 incoming, 36 bytes
+    "0x801CFE00",  # 2 incoming, 32 bytes
+    "0x801D0230",  # 2 incoming, 24 bytes
+    "0x801CF098",  # 1 incoming, 1236 bytes (largest, root caller)
+    "0x801D070C",  # 1 incoming, 828 bytes
+    "0x801D0378",  # 1 incoming, 652 bytes
+    "0x801CF740",  # 1 incoming, 368 bytes
+    "0x801CFEE0",  # 1 incoming, 252 bytes
+    "0x801F1A00",  # 1 incoming, 232 bytes (out-of-cluster helper)
+    "0x801CF8B0",  # 1 incoming, 216 bytes
+    "0x801D0604",  # 1 incoming, 212 bytes
+    "0x801CFAD4",  # 1 incoming, 192 bytes
+    "0x801D0070",  # 1 incoming, 144 bytes
+    "0x801CF988",  # 1 incoming, 140 bytes
+    "0x801CFD84",  # 1 incoming, 124 bytes
+    "0x801CFC18",  # 1 incoming, 56 bytes
+    "0x801CF56C",  # 0 incoming (root entry candidate, 468 bytes)
+    "0x801CFCDC",  # 0 incoming (156 bytes)
+    "0x801CFE20",  # 0 incoming (60 bytes)
+    "0x801CFE5C",  # 0 incoming (60 bytes)
+    "0x801CFE98",  # 0 incoming (36 bytes)
 ]
 
 OUT_DIR = "/scripts/funcs"

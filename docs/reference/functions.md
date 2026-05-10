@@ -210,6 +210,11 @@ sub-state, `+0x07` action-type).
 | `801DB7B0` | Generic 4-byte jump-table dispatcher (town overlay). 7 instructions: `(*(table[v1])(...))()` where table base = `v0 - 0xD6C`. Caller sets `v0` (lui-immediate) and `v1` (index). |
 | `801DE840` | **Field / event script VM** (town/field overlay). 17.5 KB / 357 outgoing calls. The largest function in the corpus. See [`subsystems/script-vm.md`](../subsystems/script-vm.md). |
 | `801E00F4` | Field-VM dispatcher switch table. |
+| `801E0C3C` | Field-VM outer-op `0x4C` second-stage dispatcher: re-reads byte 1 of the bytecode, takes `byte1 >> 4`, and routes through the 16-entry JT at `0x801CEE60`. The combined `0x4C <byte1>` family covers menu / party / camera / scene-state writes; per-nibble handlers re-dispatch on `byte1 & 0xF`. |
+| `801E3040` | Field-VM `0x4C` outer-nibble-`0xE` dispatcher (reached via the `0x801CEE60` JT entry 14). 15-entry sub-JT at `0x801CF008` indexed by `byte1 & 0xF`. Cluster covers misc scene writes, FMV trigger, camera animate / zoom, etc. |
+| `801E30E4` | Field-VM `0x4C 0xE2` (FMV trigger). Writes `_DAT_8007BA78 = (s16)bytecode[2..3]` (FMV index for the runtime table at `0x801D0A6C`) and pokes `_DAT_8007B83C = 0x1A` (next game mode = 26 = `StrInit`). PC += 6 from byte 1 (op total 7 bytes); trailing 3 bytes are reserved. See [`subsystems/cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op). |
+| `801CF098` | STR/MDEC FMV main play loop (str_fmv overlay). 1236 bytes / 309 instructions / 9 outgoing calls — the largest function in the captured slice. Takes `(int loop_mode, &runtime_fmv_state)`; called from `0x801CECA0` with `param_2 = 0x801D0A6C + (s16)_DAT_8007BA78 * 64`. Drives the per-frame `CdReadFile` → `StrFrameAssembler` → MDEC → blit pipeline; reads `_DAT_8007BA78` again at `0x801CF4E0` as an early-abort flag. |
+| `8003CE9C` | Field-VM context resolver: `(s16)*(u16*)param_1`. Reads a little-endian 16-bit value at the bytecode pointer and sign-extends. Used by every field-VM op that takes an `s16` operand (BGM id, FMV id, ramp targets, etc.). |
 | `801F5748` | Inventory / menu hub (town overlay). 11 KB / 192 calls. |
 | `801EAD98` | Field subsystem hub (town overlay). 5.9 KB / 35 calls. |
 | `801ED710` | Battle records / stats screen renderer (field overlay). 2 KB. See Records section below. |

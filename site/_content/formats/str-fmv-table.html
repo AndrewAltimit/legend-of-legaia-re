@@ -47,10 +47,20 @@
   </ul>
 </section>
 
+<section class="doc-section" id="runtime-table">
+  <h2>Runtime FMV-state table</h2>
+  <p>The compact table at <code>0x801CAE40</code> is read once by the str_fmv overlay and expanded into a 64-byte-stride runtime FMV-state table at <code>0x801D0A6C</code> (still inside the overlay's residency window). Each entry holds libcd state pointers, decoder scratch, and the framerate/resolution flags the play loop needs - the compact table on its own only carries the disc-locator data.</p>
+  <p>The selector lives in the str_fmv overlay caller of <code>FUN_801CF098</code> (the 1236-byte main play loop) at <code>0x801CECA0</code>:</p>
+<pre><code>0x801CEC94: lh   v0, -0x4588(s0)        ; v0 = (s16) _DAT_8007BA78
+0x801CEC9C: sll  v0, v0, 6              ; v0 = fmv_id * 64
+0x801CECA0: jal  FUN_801CF098
+0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &amp;runtime_table[fmv_id]</code></pre>
+  <p><code>_DAT_8007BA78</code> is written by the field-VM FMV-trigger op (<code>0x4C 0xE2 lo hi …</code>); see the <a href="../subsystems/cutscene.html#fmv-trigger-op">cutscene subsystem</a> for the full opcode trace. On retail USA the index is bounded <code>0..=5</code> (one slot per <code>MVn.STR</code>); the engine-side mapping ships in <code>legaia_engine_core::cutscene::fmv_index_to_str_filename</code>.</p>
+</section>
+
 <section class="doc-section" id="open-questions">
   <h2>What this doesn't tell us</h2>
   <ul class="bullets">
-    <li>Which <strong>scene</strong> triggers which MV. The scene-to-MV mapping is encoded in the field-VM script for each FMV-bearing scene (see <a href="../subsystems/cutscene.html">cutscene subsystem</a>), not in this table.</li>
     <li>The runtime XA channel selector for multi-channel STR containers (<code>\DATA\MOV.STR;1</code>, which is referenced separately in the overlay's path table).</li>
   </ul>
 </section>

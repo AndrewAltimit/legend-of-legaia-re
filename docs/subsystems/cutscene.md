@@ -220,12 +220,40 @@ The FMV overlay's data section carries the CDNAME labels of seven field scenes -
 town0b  map01  chitei2  map02  jou  uru2  town0e
 ```
 
-These scenes have FMV trigger points in their field-VM scripts. The exact `MV*.STR` each plays is encoded in the per-scene script (the field-VM op invokes the FMV player with the MV index); the heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order, and `FMV_TRIGGER_FIELD_SCENES` (sibling constant) lists the mid-game scenes whose specific MV index isn't pinned.
+These scenes have FMV trigger points in their field-VM scripts. The exact `MV*.STR` each plays is encoded in the per-scene script as the operand of the field-VM FMV-trigger op (decoded below). The heuristic in [`cutscene_str_for`](../../crates/engine-core/src/scene.rs) covers the `op*` / `ed*` scenes in CDNAME order; `FMV_TRIGGER_FIELD_SCENES` (sibling constant) lists the mid-game scenes; and the per-scene MV index resolves through [`cutscene::fmv_index_to_str_filename`](../../crates/engine-core/src/cutscene.rs) once the scene's bytecode is disassembled.
+
+## Field-VM FMV-trigger op
+
+The field VM triggers an FMV via a 7-byte instruction sub-dispatched off opcode `0x4C`:
+
+```text
+0x4C  0xE2  lo  hi  _  _  _      ; PC advances by 7
+            ^^^^^^
+            i16 LE  fmv_id (sign-extended through FUN_8003CE9C)
+```
+
+Outer opcode `0x4C` enters the field-VM dispatcher's high-nibble re-dispatch at `FUN_801E0C3C` (JT base `0x801CEE60`). The high nibble of byte 1 selects the secondary handler; the low nibble selects the inner sub-op. For byte 1 = `0xE2`:
+
+| Step | Address | What it does |
+|---|---|---|
+| Outer dispatch  | `0x801DE94C..0x801DE980` | `andi 0x7F`, subtract `0x21`, jump through 47-entry JT at `0x801CECC0`. PC += 1. |
+| Outer JT entry  | `0x801CED6C` | Outer op `0x4C` → handler `0x801E0C3C`. |
+| High-nibble JT  | `0x801CEE70` | `byte1 >> 4 == 0xE` → handler `0x801E3040`. |
+| Sub-op JT       | `0x801CF010` | `byte1 & 0xF == 0x2` → handler `0x801E30E4`. |
+| FMV handler     | `0x801E30E4` | `_DAT_8007BA78 = (s16)bytecode[2..3]`; `_DAT_8007B83C = 0x1A` (next game mode = 26 = `StrInit`). PC += 6. |
+
+The two globals it writes are the only side-effects:
+
+- **`_DAT_8007BA78`** - FMV index. Read by the str_fmv overlay to select a 64-byte runtime FMV-state struct from the table at `0x801D0A6C` (populated from the compact MV-file table at `0x801CAE40`). On retail USA, indices `0..=5` map to `MV1.STR..MV6.STR` in order.
+- **`_DAT_8007B83C`** - next-game-mode global. Setting it to `0x1A` (decimal 26) kicks the main mode dispatcher (`FUN_80017714`) into `StrInit` on the next frame, which loads the str_fmv overlay and reads `_DAT_8007BA78` to pick the file.
+
+The field-VM port handles this op as `op4c_n_e_sub2_fmv_trigger(fmv_id: i16)` in [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs) and the world's [`FieldHostImpl`](../../crates/engine-core/src/world.rs) records the request as `World::pending_fmv_trigger` plus a `FieldEvent::FmvTrigger { fmv_id }`. Engines drain those after `World::tick` and either play the resolved STR file (use [`cutscene::fmv_index_to_str_filename`](../../crates/engine-core/src/cutscene.rs) for the retail mapping) or skip the FMV - the field VM doesn't require any host-side response.
+
+The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's `addiu s8, s8, 6` is fixed, but only bytes `+1..+3` are read). Disassemblers should leave them as opaque padding.
 
 ## Open items
 
-- **MV-index per mid-game FMV-bearing scene.** The seven mid-game field scenes above are confirmed FMV-bearing (the FMV overlay knows their CDNAME labels), but the exact `MV*.STR` each plays requires reading the field-VM script for the scene. Once the per-scene FMV-trigger op is decoded, this maps directly into the `CutsceneMap` TOML.
-- **Function-by-function overlay decompilation.** `ghidra/scripts/dump_str_fmv_overlay.py` ships a starter `TARGETS` list seeded from the SP-prologue scan over the captured slice. After import, an inventory pass + xref re-rank yields the final entry-point set.
+- **Function-by-function overlay decompilation.** `ghidra/scripts/dump_str_fmv_overlay.py` ships a `TARGETS` list re-ranked by xref count from `inventory_overlay.py` against the captured `overlay_str_fmv.bin` slice. The 27 entry points cluster around `FUN_801CF098` (the 1236-byte main play loop) - inbound xrefs from `0x801CECA0` confirm the FMV-state struct selector reads `_DAT_8007BA78 << 6 + 0x801D0A6C` to pick the entry passed in. Per-function sub-asset decode (XA channel selector, MDEC frame demux state machine) still pending.
 - **XA channel map.** `(file_no, ch_no)` → cutscene-name association is inside the STR/MDEC overlay. The MV-file table doesn't carry XA channel info directly; the channel selector is presumably driven by `\DATA\MOV.STR;1` (which appears to be a multi-channel container distinct from the per-cutscene `\MOV\MVn.STR;1` files).
 - **MOV15.STR + MV1A.STR.** Two extra path strings (`\DATA\MOV15.STR;1` and `\MOV\MV1A.STR;1`) appear alongside the six numbered MVs. These are dev / debug branches: `MOV15` is the 15-FPS test file (referenced by the `psx.cdspeedup` / 15 fps debug paths), and `MV1A` is an alternate / cut version of MV1. Neither ships in the released disc layout.
 - **8-bit ADPCM.** `coding_info` bit detection is implemented; the decoder emits silence for 8-bit groups. No 8-bit audio has been observed in the corpus so far.

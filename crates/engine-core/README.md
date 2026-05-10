@@ -86,6 +86,12 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   + battle inventory flow. Filters items by `InventoryContext`,
   validates target compatibility (Revive vs alive), folds `ItemOutcome`
   through `World::use_item`.
+- `cutscene` - FMV index ↔ `MV*.STR` filename mapping. The retail
+  field-VM `0x4C 0xE2` op writes a 16-bit FMV index to
+  `_DAT_8007BA78` and kicks game mode `StrInit` (26); the world
+  records it as `pending_fmv_trigger` plus a `FieldEvent::FmvTrigger`
+  event. Engines drain the event and resolve the index via
+  `cutscene::fmv_index_to_str_filename`.
 
 ## See also
 

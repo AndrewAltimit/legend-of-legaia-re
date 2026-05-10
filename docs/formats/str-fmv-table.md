@@ -45,9 +45,23 @@ The `-150` accounts for the 2-second pre-gap.
 - The MSF↔LBA conversion needed to look up the same files via the disc reader without going back through the directory.
 - A residency signature: the compact table's first entry name (`MV1.STR;1`) at `0x801CAE40` is the cheap "is the FMV overlay loaded" check.
 
+## Runtime FMV-state table
+
+The compact table at `0x801CAE40` is read once by the str_fmv overlay and expanded into a 64-byte-stride runtime FMV-state table at `0x801D0A6C` (still inside the overlay's residency window). Each entry holds libcd state pointers, decoder scratch, and the framerate/resolution flags the play loop needs - the compact table on its own only carries the disc-locator data.
+
+The selector lives in the str_fmv overlay caller of `FUN_801CF098` (the 1236-byte main play loop) at `0x801CECA0`:
+
+```text
+0x801CEC94: lh   v0, -0x4588(s0)        ; v0 = (s16) _DAT_8007BA78
+0x801CEC9C: sll  v0, v0, 6              ; v0 = fmv_id * 64
+0x801CECA0: jal  FUN_801CF098
+0x801CECA4:  addu a1, v0, 0x801D0A6C    ; param_2 = &runtime_table[fmv_id]
+```
+
+`_DAT_8007BA78` is written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op) for the full opcode trace. On retail USA the index is bounded `0..=5` (one slot per `MVn.STR`); the engine-side mapping ships in `legaia_engine_core::cutscene::fmv_index_to_str_filename`.
+
 ## What this doesn't tell us
 
-- Which **scene** triggers which MV. The scene-to-MV mapping is encoded in the field-VM script for each FMV-bearing scene (see [`subsystems/cutscene.md`](../subsystems/cutscene.md#mid-game-fmv-bearing-field-scenes)), not in this table.
 - The runtime XA channel selector for multi-channel STR containers (`\DATA\MOV.STR;1`, which is referenced separately in the overlay's path table).
 
 ## Rust API
