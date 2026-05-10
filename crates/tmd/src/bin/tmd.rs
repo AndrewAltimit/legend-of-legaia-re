@@ -317,7 +317,23 @@ fn prims(input: &PathBuf, limit: Option<usize>) -> Result<()> {
             let take = limit.unwrap_or(n);
             for (pi, p) in g.prims.iter().take(take).enumerate() {
                 let idxs: Vec<String> = p.vertex_indices().iter().map(|i| i.to_string()).collect();
-                println!("          prim[{}] verts=[{}]", pi, idxs.join(", "));
+                let (cx, cy) = p.cba_xy();
+                let (px, py, depth, abr) = p.tpage_xy();
+                let uv_s: Vec<String> = p.uvs.iter().map(|(u, v)| format!("({u},{v})")).collect();
+                println!(
+                    "          prim[{}] verts=[{}] cba=0x{:04X}@({},{}) tsb=0x{:04X}@({},{}) depth={}bpp abr={} uvs=[{}]",
+                    pi,
+                    idxs.join(", "),
+                    p.cba,
+                    cx,
+                    cy,
+                    p.tsb,
+                    px,
+                    py,
+                    depth,
+                    abr,
+                    uv_s.join(", "),
+                );
             }
             if take < n {
                 println!("          ... ({} more prims)", n - take);

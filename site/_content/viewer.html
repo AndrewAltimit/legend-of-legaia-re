@@ -262,6 +262,31 @@
       glRenderer = null;
     }
   }
+  /* Replace the active canvas with a fresh element. Required between
+   * entry switches because a HTMLCanvasElement can only ever bind one
+   * rendering-context type for its lifetime - once a canvas has been
+   * used with getContext("webgl2") (e.g. by the textured TMD loop), a
+   * subsequent getContext("2d") returns null forever, so any future
+   * TIM blit would silently no-op. The 3D start* paths recreate the
+   * canvas themselves; this helper covers the 3D->2D transition. */
+  function recreateCanvas() {
+    const old = document.getElementById('viewer-canvas');
+    if (!old) return;
+    const fresh = document.createElement('canvas');
+    fresh.id = 'viewer-canvas';
+    fresh.className = 'viewer-canvas';
+    fresh.width = old.width || 1024;
+    fresh.height = old.height || 768;
+    old.replaceWith(fresh);
+  }
+  /* Stop any active 3D loop and recreate the canvas. Call before any
+   * `viewer.set_slot` / `viewer.next_entry` / `viewer.prev_entry` (which
+   * re-render Rust-side, including 2D blits that need a fresh 2D context). */
+  function prepareEntrySwitch() {
+    stopRaf();
+    disposeGl();
+    recreateCanvas();
+  }
   function resetCamera() {
     cam.yaw = 0;
     cam.pitch = 0.25;
@@ -514,6 +539,7 @@
     list.querySelectorAll('li').forEach(li => {
       li.addEventListener('click', () => {
         const slot = parseInt(li.dataset.slot, 10);
+        prepareEntrySwitch();
         viewer.set_slot(slot);
         refreshInfo();
       });
@@ -570,6 +596,7 @@
         if (Number.isNaN(idx)) return;
         const slot = allEntries.findIndex(e => e.prot_index === idx);
         if (slot >= 0) {
+          prepareEntrySwitch();
           viewer.set_slot(slot);
           refreshInfo();
         } else {
@@ -582,6 +609,7 @@
         const stat = JSON.parse(viewer.status());
         const cur = visibleSlots.indexOf(stat.slot);
         const next = cur < 0 ? 0 : (cur + delta + visibleSlots.length) % visibleSlots.length;
+        prepareEntrySwitch();
         viewer.set_slot(visibleSlots[next]);
         refreshInfo();
       };

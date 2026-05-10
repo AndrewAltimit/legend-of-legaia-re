@@ -36,6 +36,8 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+use crate::descriptor::Descriptor;
+
 /// Group header size in bytes.
 pub const GROUP_HEADER_SIZE: usize = 8;
 
@@ -212,9 +214,20 @@ impl Prim {
 ///   `[u0, v0, cba_lo, cba_hi, u1, v1, tsb_lo, tsb_hi, u2, v2, u3, v3]`
 ///
 /// The block ends exactly at the vertex-index offset reported by
-/// [`vertex_offset_bytes`]; the start is `vert_off - block_len`. Any prim
-/// whose color section + texture block doesn't fit in `[0, vert_off)` is
-/// treated as untextured (uvs empty, cba/tsb 0).
+/// [`vertex_offset_bytes`]; the start is `vert_off - block_len`.
+///
+/// **Untextured prims (POLY_F3/F4/G3/G4)** carry no texture block - the
+/// bytes immediately before the vertex indices are per-vertex *colors* or
+/// per-vertex *normal indices*, not UV/CBA/TSB. The caller must consult
+/// [`crate::descriptor::Descriptor::for_flags`] for the group's flags and
+/// only invoke this function when `packet_shape.is_textured()` is `true`;
+/// otherwise garbage bytes get interpreted as a texture descriptor, the
+/// renderer's VRAM lookup samples some random page+CLUT slot, and the
+/// resulting prim either renders as a single flat colour (the famous green
+/// tint when `CLUT[0]` is non-zero) or as a transparent hole. Returns
+/// `(Vec::new(), 0, 0)` when `vert_off < block_len` as a defensive guard
+/// in case a caller passes a stride that's too short for the textured
+/// block layout.
 fn extract_textures(
     buf: &[u8],
     prim_off: usize,
@@ -256,6 +269,10 @@ pub struct Group {
 ///
 /// `section_start` and `section_size` are byte ranges within `buf`; they
 /// come from `Object::primitives_byte_offset` / `primitives_byte_size`.
+///
+/// Returns `Err` on the first malformed group; if you'd rather collect
+/// every well-formed group up to the failure point, use
+/// [`iter_groups_lenient`].
 pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Result<Vec<Group>> {
     let section_end = section_start
         .checked_add(section_size)
@@ -297,6 +314,13 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
         }
         let n_verts = header.n_vertices();
         let vert_off = vertex_offset_bytes(header.flags);
+        // Per-group descriptor: the packet shape decides whether the
+        // bytes immediately before the vertex indices are a texture block
+        // (FT*/GT*) or per-vertex colours / normal indices (F*/G*). Reading
+        // those colour bytes as a texture descriptor is what produced
+        // bogus CBA/TSB values in earlier renderer output.
+        let descriptor = Descriptor::for_flags(header.flags);
+        let is_textured = descriptor.is_some_and(|d| d.packet_shape.is_textured());
         let mut prims = Vec::with_capacity(header.count as usize);
         for i in 0..header.count as usize {
             let prim_off = prim_base + i * stride;
@@ -309,7 +333,7 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
                     vertex_indices_raw.push(u16::from_le_bytes(buf[o..o + 2].try_into().unwrap()));
                 }
             }
-            let (uvs, cba, tsb) = if let Some(off) = vert_off {
+            let (uvs, cba, tsb) = if is_textured && let Some(off) = vert_off {
                 extract_textures(buf, prim_off, n_verts, off)
             } else {
                 (Vec::new(), 0, 0)
@@ -331,6 +355,82 @@ pub fn iter_groups(buf: &[u8], section_start: usize, section_size: usize) -> Res
         pos += group_total;
     }
     Ok(out)
+}
+
+/// Lenient sibling of [`iter_groups`]: walk groups until a terminator,
+/// the section ends, or the next header would be malformed (overruns the
+/// section, or has `ilen == 0` so the prim stride can't be derived).
+///
+/// On a malformed boundary, returns every well-formed group walked so far
+/// instead of throwing the whole walk away. Mesh builders use this so a
+/// single bad group near the end of an object's primitive section doesn't
+/// hide every valid group that came before it - the visible symptom of
+/// the strict variant was a TMD rendering only the first object's worth
+/// of geometry, with the rest of the model missing.
+pub fn iter_groups_lenient(buf: &[u8], section_start: usize, section_size: usize) -> Vec<Group> {
+    let Some(section_end) = section_start.checked_add(section_size) else {
+        return Vec::new();
+    };
+    if section_end > buf.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut pos = section_start;
+    while pos + GROUP_HEADER_SIZE <= section_end {
+        let Ok(header) = GroupHeader::parse(buf, pos) else {
+            break;
+        };
+        if header.is_terminator() {
+            break;
+        }
+        if header.ilen == 0 {
+            break;
+        }
+        let header_offset = pos;
+        let prim_base = pos + GROUP_HEADER_SIZE;
+        let stride = header.prim_stride();
+        let group_total = header.total_bytes();
+        if pos + group_total > section_end {
+            break;
+        }
+        let n_verts = header.n_vertices();
+        let vert_off = vertex_offset_bytes(header.flags);
+        let descriptor = Descriptor::for_flags(header.flags);
+        let is_textured = descriptor.is_some_and(|d| d.packet_shape.is_textured());
+        let mut prims = Vec::with_capacity(header.count as usize);
+        for i in 0..header.count as usize {
+            let prim_off = prim_base + i * stride;
+            let mut vertex_indices_raw = Vec::with_capacity(n_verts);
+            if let Some(off) = vert_off
+                && off + n_verts * 2 <= stride
+            {
+                for v in 0..n_verts {
+                    let o = prim_off + off + v * 2;
+                    vertex_indices_raw.push(u16::from_le_bytes(buf[o..o + 2].try_into().unwrap()));
+                }
+            }
+            let (uvs, cba, tsb) = if is_textured && let Some(off) = vert_off {
+                extract_textures(buf, prim_off, n_verts, off)
+            } else {
+                (Vec::new(), 0, 0)
+            };
+            prims.push(Prim {
+                bytes_offset: prim_off,
+                bytes_size: stride,
+                vertex_indices_raw,
+                uvs,
+                cba,
+                tsb,
+            });
+        }
+        out.push(Group {
+            header_offset,
+            header,
+            prims,
+        });
+        pos += group_total;
+    }
+    out
 }
 
 /// Stats summarizing iter_groups output.
@@ -474,5 +574,86 @@ mod tests {
         // Truncated buffer: header says count=10 but only 8 bytes of buffer
         let buf = vec![10, 0, 0x20, 0, 7, 5, 1, 0x27];
         assert!(iter_groups(&buf, 0, buf.len()).is_err());
+    }
+
+    #[test]
+    fn lenient_returns_partial_walk_on_error() {
+        // Two groups: a valid FT3 group followed by a malformed one with
+        // ilen=0. Strict iter_groups bails on the second; lenient should
+        // return the first.
+        let mut buf = ft3_section();
+        // Strip the trailing terminator and the footer slot before
+        // appending the malformed group, so the malformed header lands
+        // where the next group would start.
+        buf.truncate(buf.len() - 4); // drop terminator
+        // Append a malformed header with ilen == 0.
+        buf.extend_from_slice(&1u16.to_le_bytes()); // count=1
+        buf.extend_from_slice(&0x0020u16.to_le_bytes()); // flags
+        buf.extend_from_slice(&[7, 0, 1, 0x27]); // ilen=0 (malformed)
+        // Pad enough that the boundary check evaluates against the bad ilen.
+        buf.extend_from_slice(&[0u8; 32]);
+
+        // Strict variant rejects the whole walk:
+        assert!(iter_groups(&buf, 0, buf.len()).is_err());
+        // Lenient variant keeps the first group:
+        let groups = iter_groups_lenient(&buf, 0, buf.len());
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].header.count, 2);
+        assert_eq!(groups[0].prims[0].vertex_indices(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn lenient_handles_empty_section() {
+        // Empty section -> empty walk, no panic.
+        assert!(iter_groups_lenient(&[], 0, 0).is_empty());
+        // Section_end past buffer -> empty walk (defensive).
+        assert!(iter_groups_lenient(&[0u8; 4], 0, 100).is_empty());
+    }
+
+    /// Untextured Gouraud-quad group (`flags=0x1F` -> row 3 quad,
+    /// `PacketShape::G4`). The bytes immediately before the vertex
+    /// indices are per-vertex colours, not a texture block; the
+    /// descriptor-gated walker must leave `uvs` empty and `cba/tsb`
+    /// zero. Earlier walks read those colour words as `(uv, cba, tsb)`,
+    /// producing bogus CLUT addresses and the spurious "VRAM is missing
+    /// CLUT data for row 0" warnings.
+    #[test]
+    fn untextured_prim_does_not_yield_uvs() {
+        let mut buf = Vec::new();
+        // Group header: count=1, flags=0x1F, olen=8, ilen=6, flag=1, mode=0x39.
+        // Flags 0x1F => f_shifted=0x0F => row 3 quad => G4 (byte3=0x02), vert_off=0x06*2+2=14? No, byte3=0 -> vert_off=byte4=12? Recompute:
+        // table_idx = (0x0F - 8) >> 1 = 3. (byte3, byte4) = (0x02, 0x06). is_quad=1. byte3!=0/1/3 -> vert_off = (byte4+2)*2 = 16 bytes.
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&0x001Fu16.to_le_bytes());
+        buf.extend_from_slice(&[8, 6, 1, 0x39]);
+        // Prim body: 24 bytes. Bytes 0..16 are colours (would be misread
+        // as texture descriptor); bytes 16..24 hold 4 u16 vertex indices.
+        let mut prim = vec![0u8; 24];
+        // Put recognisable colour bytes in the first 16 so we'd notice if
+        // they leaked into uvs/cba/tsb.
+        for (i, byte) in prim.iter_mut().enumerate().take(16) {
+            *byte = 0xC0 + (i as u8);
+        }
+        for (vi, &raw) in [0u16, 8, 16, 24].iter().enumerate() {
+            let off = 16 + vi * 2;
+            prim[off..off + 2].copy_from_slice(&raw.to_le_bytes());
+        }
+        buf.extend_from_slice(&prim);
+        // Footer slot (one prim stride) + terminator.
+        buf.extend_from_slice(&[0u8; 24]);
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        let groups = iter_groups(&buf, 0, buf.len()).unwrap();
+        assert_eq!(groups.len(), 1);
+        let p = &groups[0].prims[0];
+        assert!(
+            p.uvs.is_empty(),
+            "untextured G4 must not produce uvs; got {:?}",
+            p.uvs
+        );
+        assert_eq!(p.cba, 0, "untextured G4 must not produce a CBA");
+        assert_eq!(p.tsb, 0, "untextured G4 must not produce a TSB");
+        // Vertex indices must still decode normally.
+        assert_eq!(p.vertex_indices(), vec![0, 1, 2, 3]);
     }
 }

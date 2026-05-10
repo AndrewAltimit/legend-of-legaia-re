@@ -70,14 +70,11 @@ pub fn tmd_to_textured_mesh(tmd: &Tmd, buf: &[u8]) -> TexturedMesh {
 
     for o in &tmd.objects {
         let object_vert_count = o.header.n_vert;
-        let groups = match legaia_prims::iter_groups(
+        let groups = legaia_prims::iter_groups_lenient(
             buf,
             o.primitives_byte_offset,
             o.primitives_byte_size,
-        ) {
-            Ok(g) => g,
-            Err(_) => continue,
-        };
+        );
 
         for g in &groups {
             for prim in &g.prims {
@@ -203,14 +200,11 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
 
     for o in &tmd.objects {
         let object_vert_count = o.header.n_vert;
-        let groups = match legaia_prims::iter_groups(
+        let groups = legaia_prims::iter_groups_lenient(
             buf,
             o.primitives_byte_offset,
             o.primitives_byte_size,
-        ) {
-            Ok(g) => g,
-            Err(_) => continue,
-        };
+        );
 
         for g in &groups {
             for prim in &g.prims {
@@ -219,6 +213,91 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
                     continue;
                 }
                 if prim.uvs.is_empty() {
+                    continue;
+                }
+                let ct = [prim.cba, prim.tsb];
+                let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
+                    let v = &o.vertices[vidx as usize];
+                    let i = positions.len() as u32;
+                    positions.push([v.x as f32, v.y as f32, v.z as f32]);
+                    let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
+                    uvs.push([u8v, v8v]);
+                    cba_tsb.push(ct);
+                    i
+                };
+                match raw_idx.len() {
+                    3 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        indices.extend_from_slice(&[i0, i1, i2]);
+                    }
+                    4 => {
+                        let i0 = push_vert(raw_idx[0], 0);
+                        let i1 = push_vert(raw_idx[1], 1);
+                        let i2 = push_vert(raw_idx[2], 2);
+                        let i3 = push_vert(raw_idx[3], 3);
+                        indices.extend_from_slice(&[i0, i1, i2, i1, i3, i2]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let normals = compute_smooth_normals(&positions, &indices);
+    VramMesh {
+        positions,
+        uvs,
+        cba_tsb,
+        indices,
+        normals,
+    }
+}
+
+/// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't
+/// have valid data when sampled - the caller's `keep_prim` closure decides
+/// per primitive whether the (CBA, TSB, UV) tuple has plausible VRAM data.
+///
+/// Returning `false` from the closure skips that primitive entirely (its
+/// vertices don't enter the mesh), which is the cleanest way to deal with
+/// the asset-viewer case where a TMD references CLUT rows / texture pages
+/// that the loaded TIM bundle didn't supply: rather than rasterising
+/// solid `CLUT[0]` over the whole prim (which often shows up as a flat
+/// green / cyan tint), we just leave the prim out and let the rest of the
+/// model render correctly.
+///
+/// The closure receives the raw CBA/TSB bytes and a slice of per-vertex
+/// UVs (`(u, v)` each in `0..=255`); a typical predicate is "any non-zero
+/// VRAM pixel inside the CLUT row + texture-page UV bbox". See
+/// `crates/asset-viewer` for a concrete VRAM-backed predicate.
+pub fn tmd_to_vram_mesh_filtered<F>(tmd: &Tmd, buf: &[u8], mut keep_prim: F) -> VramMesh
+where
+    F: FnMut(u16, u16, &[(u8, u8)]) -> bool,
+{
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut cba_tsb = Vec::new();
+    let mut indices = Vec::new();
+
+    for o in &tmd.objects {
+        let object_vert_count = o.header.n_vert;
+        let groups = legaia_prims::iter_groups_lenient(
+            buf,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        );
+
+        for g in &groups {
+            for prim in &g.prims {
+                let raw_idx = prim.vertex_indices();
+                if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
+                    continue;
+                }
+                if prim.uvs.is_empty() {
+                    continue;
+                }
+                if !keep_prim(prim.cba, prim.tsb, &prim.uvs) {
                     continue;
                 }
                 let ct = [prim.cba, prim.tsb];
@@ -286,14 +365,11 @@ pub fn tmd_to_vram_mesh_posed(
             .unwrap_or([0.0; 3]);
 
         let object_vert_count = o.header.n_vert;
-        let groups = match legaia_prims::iter_groups(
+        let groups = legaia_prims::iter_groups_lenient(
             buf,
             o.primitives_byte_offset,
             o.primitives_byte_size,
-        ) {
-            Ok(g) => g,
-            Err(_) => continue,
-        };
+        );
 
         for g in &groups {
             for prim in &g.prims {
@@ -462,19 +538,11 @@ pub fn tmd_to_mesh(tmd: &Tmd, buf: &[u8]) -> Mesh {
         let v_end = positions.len() as u32;
         let object_vert_count = v_end - v_start;
 
-        let groups = match legaia_prims::iter_groups(
+        let groups = legaia_prims::iter_groups_lenient(
             buf,
             o.primitives_byte_offset,
             o.primitives_byte_size,
-        ) {
-            Ok(g) => g,
-            Err(_) => {
-                // Skip objects whose prim section won't walk; their verts
-                // remain in the buffer but contribute no faces.
-                vert_base = v_end;
-                continue;
-            }
-        };
+        );
 
         for g in &groups {
             for prim in &g.prims {

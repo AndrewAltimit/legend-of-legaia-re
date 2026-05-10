@@ -56,8 +56,24 @@ impl Vram {
     /// Upload a TIM's image block (and CLUT, if present) at the positions
     /// stored in the TIM header. Out-of-bounds writes are clipped.
     pub fn upload_tim(&mut self, tim: &Tim) {
-        if let Some(clut) = tim.clut.as_ref() {
+        self.upload_tim_partial(tim, true, true);
+    }
+
+    /// Like [`Self::upload_tim`] but lets the caller choose, per block,
+    /// whether to write it. Asset-viewer / web-viewer use this for
+    /// **targeted** uploads: when a TIM's image block would land on top
+    /// of a VRAM region another primitive uses as its CLUT, the caller
+    /// passes `upload_image = false` so the image bytes don't clobber a
+    /// palette row (the symptom otherwise is rainbow noise - the
+    /// paletted decode reads image data as BGR555 colours). The
+    /// symmetric case (`upload_clut = false`) covers CLUT blocks
+    /// landing on top of someone else's texture page.
+    pub fn upload_tim_partial(&mut self, tim: &Tim, upload_image: bool, upload_clut: bool) {
+        if upload_clut && let Some(clut) = tim.clut.as_ref() {
             self.write_words(clut.fb_x, clut.fb_y, clut.w, clut.h, &clut.entries);
+        }
+        if !upload_image {
+            return;
         }
         // Image block: data is `fb_w * h` 16-bit words.
         let img = &tim.image;
@@ -103,6 +119,125 @@ impl Vram {
             return 0;
         }
         self.pixels[y * VRAM_WIDTH + x]
+    }
+
+    /// True if any pixel in the rectangle `[x..x+w) × [y..y+h)` is non-zero.
+    /// Coordinates and dimensions outside VRAM are clipped silently. Used
+    /// by mesh builders to decide whether a primitive's CLUT / texture
+    /// page region was actually populated by the TIMs that have been
+    /// uploaded so far - empty regions render as solid `CLUT[0]` (commonly
+    /// a flat green or cyan), so it's better to drop those primitives at
+    /// build time than rasterise garbage over them.
+    pub fn region_has_data(&self, x: usize, y: usize, w: usize, h: usize) -> bool {
+        let x_end = (x + w).min(VRAM_WIDTH);
+        let y_end = (y + h).min(VRAM_HEIGHT);
+        if x >= x_end || y >= y_end {
+            return false;
+        }
+        for row in y..y_end {
+            let base = row * VRAM_WIDTH;
+            for col in x..x_end {
+                if self.pixels[base + col] != 0 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Predicate suitable for [`legaia_tmd::mesh::tmd_to_vram_mesh_filtered`]:
+    /// returns `true` when both the prim's CLUT row and the UV bbox inside
+    /// its texture page have non-zero VRAM data, AND the CLUT row's
+    /// occupied width is plausibly the right depth (a 4bpp prim sampling
+    /// a CLUT scanline that's clearly a 256-entry 8bpp palette is a
+    /// strong signal that the wrong TIM is supplying this row).
+    ///
+    /// Returns `false` when either side is empty or the depth mismatch is
+    /// large enough that rendering would produce rainbow noise (a 4bpp
+    /// prim indexing the first 16 entries of an 8bpp palette gives an
+    /// arbitrary slice of a 256-colour gradient, not a coherent 16-colour
+    /// scheme - usually the wrong TIM was loaded for the asset).
+    pub fn prim_has_texture_data(&self, cba: u16, tsb: u16, uvs: &[(u8, u8)]) -> bool {
+        // CLUT row: 1 row of 16 (4bpp) or 256 (8bpp) BGR555 entries.
+        let cx = ((cba & 0x3F) * 16) as usize;
+        let cy = ((cba >> 6) & 0x1FF) as usize;
+        let depth_bits = match (tsb >> 7) & 0x3 {
+            0 => 4u8,
+            1 => 8,
+            _ => 16,
+        };
+        let clut_w = match depth_bits {
+            4 => 16,
+            8 => 256,
+            _ => 0,
+        };
+        let clut_ok = if clut_w == 0 {
+            true // 15bpp direct - no CLUT involved.
+        } else {
+            self.region_has_data(cx, cy, clut_w, 1)
+        };
+        // Depth-mismatch check: if a 4bpp prim's CLUT row is filled far
+        // past its 16-entry palette window (e.g. it's actually a 256-entry
+        // 8bpp palette from a different TIM), the first 16 entries are an
+        // arbitrary slice of a wide gradient and the prim renders as
+        // rainbow stripes. Treat the row as un-fit-for-purpose in that case.
+        let clut_fits_depth = if clut_w == 0 || clut_w == 256 {
+            true
+        } else {
+            // Count populated entries in the row over a window two depths
+            // wide. If we see substantial data past `clut_w * 2`, the row
+            // is almost certainly the wrong depth for this prim.
+            let beyond = self.region_has_data(cx + clut_w * 2, cy, 16, 1);
+            !beyond
+        };
+        let clut_ok = clut_ok && clut_fits_depth;
+
+        // Texture page region: hash the UV bbox into VRAM coords and check
+        // that some words are non-zero. UV byte layout matches the shader:
+        // 4bpp packs 4 pixels per word (u >> 2), 8bpp packs 2 (u >> 1),
+        // 15bpp uses one word per texel.
+        let tpage_x = ((tsb & 0xF) * 64) as usize;
+        let tpage_y = (((tsb >> 4) & 1) * 256) as usize;
+        let mut umin = u8::MAX;
+        let mut umax = 0u8;
+        let mut vmin = u8::MAX;
+        let mut vmax = 0u8;
+        for &(u, v) in uvs {
+            if u < umin {
+                umin = u;
+            }
+            if u > umax {
+                umax = u;
+            }
+            if v < vmin {
+                vmin = v;
+            }
+            if v > vmax {
+                vmax = v;
+            }
+        }
+        let (vram_u_lo, vram_u_hi) = match depth_bits {
+            4 => (umin as usize >> 2, umax as usize >> 2),
+            8 => (umin as usize >> 1, umax as usize >> 1),
+            _ => (umin as usize, umax as usize),
+        };
+        let page_w = vram_u_hi.saturating_sub(vram_u_lo) + 1;
+        let page_h = (vmax as usize).saturating_sub(vmin as usize) + 1;
+        let page_ok =
+            self.region_has_data(tpage_x + vram_u_lo, tpage_y + vmin as usize, page_w, page_h);
+
+        // Drop the primitive in two cases:
+        // - Texture-page region wasn't uploaded: every texel would index
+        //   palette entry 0, and if `CLUT[0]` is non-zero (extremely
+        //   common - many palettes start with a dark / mid green or cyan),
+        //   the prim rasterises as a flat-tinted solid that obscures other
+        //   geometry.
+        // - CLUT row was uploaded but doesn't fit the prim's bit depth
+        //   (e.g. 256-entry palette where a 16-entry one was expected).
+        //   Rendering the first 16 entries of a 256-colour gradient gives
+        //   the famous rainbow-noise look that no amount of bit-correct
+        //   decoding can recover from.
+        page_ok && clut_ok
     }
 }
 
@@ -171,6 +306,61 @@ mod tests {
         assert_eq!(vram.pixel(1023, 0), 0xAAAA);
         // Other cells of the source were clipped, so this row stays zero past 1023.
         // (No way to read beyond VRAM_WIDTH; just verify nothing crashed.)
+    }
+
+    #[test]
+    fn region_has_data_detects_filled_and_empty_rows() {
+        let mut vram = Vram::new();
+        // Plant a single non-zero pixel inside (10, 20).
+        vram.write_words(10, 20, 1, 1, &[0x1234]);
+        assert!(vram.region_has_data(0, 20, 64, 1));
+        assert!(vram.region_has_data(10, 20, 1, 1));
+        assert!(!vram.region_has_data(0, 19, 64, 1));
+        // Out-of-bounds rectangles clip silently and report empty.
+        assert!(!vram.region_has_data(2000, 0, 64, 1));
+        assert!(!vram.region_has_data(0, 1000, 64, 1));
+    }
+
+    #[test]
+    fn prim_has_texture_data_drops_empty_pages() {
+        // Texture page at tpage_x=64, tpage_y=0 (TSB low nibble = 1, depth 4bpp).
+        // CLUT row at cy=64, cx=0 (CBA = 64<<6 = 0x1000).
+        let tsb = 0x0001;
+        let cba = 64 << 6;
+        let uvs = [(0, 0), (16, 16), (0, 16)];
+        let mut vram = Vram::new();
+        // Empty VRAM -> drop.
+        assert!(!vram.prim_has_texture_data(cba, tsb, &uvs));
+        // CLUT only -> still drop (page absent, would render flat CLUT[0]).
+        vram.write_words(0, 64, 16, 1, &[0x1234; 16]);
+        assert!(!vram.prim_has_texture_data(cba, tsb, &uvs));
+        // Page only -> also drop (no palette, would render transparent
+        // holes anyway and just churn the GPU).
+        let mut vram2 = Vram::new();
+        vram2.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert!(!vram2.prim_has_texture_data(cba, tsb, &uvs));
+        // Both populated -> keep.
+        vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert!(vram.prim_has_texture_data(cba, tsb, &uvs));
+        // Both populated, but CLUT row extends far past 16 entries (= the
+        // wrong-depth TIM is supplying it as an 8bpp palette) -> drop, the
+        // 4bpp prim would render the first 16 of a 256-colour gradient.
+        let mut vram3 = Vram::new();
+        vram3.write_words(0, 64, 256, 1, &[0x1234; 256]);
+        vram3.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert!(!vram3.prim_has_texture_data(cba, tsb, &uvs));
+    }
+
+    #[test]
+    fn prim_has_texture_data_15bpp_uses_page_only() {
+        // 15bpp direct: depth bits = 2 in TSB. Bit 7..8: (tsb >> 7) & 0x3 = 2.
+        let tsb = (2u16 << 7) | 1; // tpage_x = 64, depth = 15bpp
+        let cba = 0; // ignored in 15bpp
+        let uvs = [(0, 0), (8, 8), (0, 8)];
+        let mut vram = Vram::new();
+        assert!(!vram.prim_has_texture_data(cba, tsb, &uvs));
+        vram.write_words(64, 0, 16, 8, &[0x7FFF; 128]);
+        assert!(vram.prim_has_texture_data(cba, tsb, &uvs));
     }
 
     #[test]

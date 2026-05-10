@@ -54,7 +54,18 @@ see [`ghidra/scripts/funcs/8002735c.txt`](../../ghidra/scripts/funcs/8002735c.tx
 The walker `legaia_prims::iter_groups` yields each group's metadata plus
 a slice over its prim records. `dump-obj` consumes that and emits OBJ
 with faces (vertex + face data; materials/UVs are renderer-side, not
-exported).
+exported). For renderer use there's also `iter_groups_lenient`, which
+returns every group walked successfully up to a malformed boundary
+instead of bailing on the whole walk - the strict variant would otherwise
+hide every valid group in the section before the failure, which
+manifested in the asset viewer as multi-object TMDs rendering only the
+first object's worth of geometry.
+
+`mesh::tmd_to_vram_mesh_filtered` lets a caller drop primitives whose
+texture page hasn't been uploaded into VRAM yet via a closure predicate;
+the caller can pair it with `legaia_tim::Vram::prim_has_texture_data`
+(or any other heuristic) so the mesh upload doesn't include prims that
+would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 
 ## TMD vs TMD2 (asset dispatcher types `0x02` and `0x09`)
 
