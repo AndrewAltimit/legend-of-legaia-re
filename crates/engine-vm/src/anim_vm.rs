@@ -332,6 +332,183 @@ pub struct NullHost;
 
 impl Host for NullHost {}
 
+/// Per-record consumer-struct kind byte at offset `+0x00` of the
+/// runtime ANM record pointed at by `actor[+0x234]`.
+///
+/// Per the SCUS battle-anim consumer ladder in `FUN_8004AD80`
+/// (`ghidra/scripts/funcs/8004ad80.txt` lines ~1680..1706), the kind
+/// byte drives a per-frame side-effect ladder. Five kinds have
+/// explicit branches; everything else is "raw playback" (the surrounding
+/// per-field reads still happen, but no kind-specific sub-state mutates).
+///
+/// Cross-references to `docs/formats/anm.md`'s kind table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpaqueRecordKind {
+    /// `0x02` - handshake state. When the global character action byte
+    /// is `-0x4D`/`-0x4B` and the actor's anim flag at `+0x14C` is zero,
+    /// the consumer flips this kind to `Kind4` and ticks the per-record
+    /// counter at `+0x56`.
+    Kind2,
+    /// `0x04` - action engaged. If actor's anim-flag is zero, set
+    /// `actor[+0x1DA] = 7`; else copy `actor[+0x1F2]` into `+0x1DA`.
+    Kind4,
+    /// `0x05` - OR `actor[+0x1DC] |= 4` (set bit 2 of per-actor flag byte).
+    Kind5,
+    /// `0x07` - set `actor[+0x1DA] = 8`.
+    Kind7,
+    /// `0x08` - OR `actor[+0x1DC] |= 8`.
+    Kind8,
+    /// Any other byte. Carries the raw value so callers can route on it.
+    Other(u8),
+}
+
+impl OpaqueRecordKind {
+    /// Classify the kind byte (offset `+0x00` of the consumer struct).
+    pub fn from_byte(b: u8) -> Self {
+        match b {
+            0x02 => OpaqueRecordKind::Kind2,
+            0x04 => OpaqueRecordKind::Kind4,
+            0x05 => OpaqueRecordKind::Kind5,
+            0x07 => OpaqueRecordKind::Kind7,
+            0x08 => OpaqueRecordKind::Kind8,
+            other => OpaqueRecordKind::Other(other),
+        }
+    }
+
+    /// Round-trip back to the raw byte the consumer compares against.
+    pub fn as_byte(self) -> u8 {
+        match self {
+            OpaqueRecordKind::Kind2 => 0x02,
+            OpaqueRecordKind::Kind4 => 0x04,
+            OpaqueRecordKind::Kind5 => 0x05,
+            OpaqueRecordKind::Kind7 => 0x07,
+            OpaqueRecordKind::Kind8 => 0x08,
+            OpaqueRecordKind::Other(v) => v,
+        }
+    }
+
+    /// `true` for kinds with explicit per-frame side-effect logic in
+    /// `FUN_8004AD80`. `Other` returns `false` (raw playback).
+    pub fn has_side_effect(self) -> bool {
+        !matches!(self, OpaqueRecordKind::Other(_))
+    }
+}
+
+/// Typed view onto the runtime per-record consumer struct that
+/// `actor[+0x234]` points at. Wraps a borrowed buffer and exposes the
+/// fields the SCUS battle-anim consumers (`FUN_80047430`,
+/// `FUN_80049348`, `FUN_8004AD80`, etc.) read.
+///
+/// All offsets are relative to the start of the buffer. Out-of-range
+/// reads return `None` so that engines walking partially-loaded records
+/// behave predictably.
+#[derive(Debug, Clone, Copy)]
+pub struct OpaqueAnimRecord<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> OpaqueAnimRecord<'a> {
+    /// Wrap a byte slice. The slice must point at the runtime struct's
+    /// first byte (the kind byte). The minimum useful length is
+    /// `+0x88 + 4` (covers all the listed offsets); shorter slices are
+    /// permitted but field accessors will return `None` for out-of-range
+    /// reads.
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes }
+    }
+
+    /// `+0x00` kind byte.
+    pub fn kind(&self) -> Option<OpaqueRecordKind> {
+        Some(OpaqueRecordKind::from_byte(*self.bytes.first()?))
+    }
+
+    fn read_u8(&self, off: usize) -> Option<u8> {
+        self.bytes.get(off).copied()
+    }
+    fn read_u16_le(&self, off: usize) -> Option<u16> {
+        let bytes = self.bytes.get(off..off + 2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+    fn read_i16_le(&self, off: usize) -> Option<i16> {
+        Some(self.read_u16_le(off)? as i16)
+    }
+
+    /// `+0x0E` movement-scaling factor.
+    pub fn movement_scale(&self) -> Option<i16> {
+        self.read_i16_le(0x0E)
+    }
+
+    /// `+0x21D` per-frame stride byte. The consumer uses
+    /// `8 / stride` to pick the items-per-block factor (caps at 8;
+    /// `stride == 0` is treated as `1`).
+    pub fn frame_stride(&self) -> Option<u8> {
+        self.read_u8(0x21D)
+    }
+
+    /// `+0x56` sub-state counter; ticks during the `Kind2 -> Kind4`
+    /// transition.
+    pub fn substate_counter(&self) -> Option<u16> {
+        self.read_u16_le(0x56)
+    }
+
+    /// `+0x76` flag byte.
+    pub fn flag_76(&self) -> Option<u8> {
+        self.read_u8(0x76)
+    }
+
+    /// `+0x77` adjustment byte.
+    pub fn adjust_77(&self) -> Option<u8> {
+        self.read_u8(0x77)
+    }
+
+    /// `+0x78` per-frame multiplier.
+    pub fn multiplier_78(&self) -> Option<u8> {
+        self.read_u8(0x78)
+    }
+
+    /// `+0x84` depth / elevation byte. Stored to `actor[+0x21B]` and
+    /// shifted left 4 into `actor[+0x176]` by the consumer.
+    pub fn depth_84(&self) -> Option<u8> {
+        self.read_u8(0x84)
+    }
+
+    /// `+0x85` count A.
+    pub fn count_85(&self) -> Option<u8> {
+        self.read_u8(0x85)
+    }
+
+    /// `+0x86` count B.
+    pub fn count_86(&self) -> Option<u8> {
+        self.read_u8(0x86)
+    }
+
+    /// `+0x87` special-effect ID. Non-zero values are passed to
+    /// `FUN_8004E13C` by the consumer.
+    pub fn effect_id(&self) -> Option<u8> {
+        self.read_u8(0x87)
+    }
+
+    /// `+0x88` u32 pointer-shaped value to nested per-frame data. The
+    /// consumer reads the byte at `*(ptr + 1)` as the per-frame item
+    /// count. Engines that re-host the struct should resolve this
+    /// pointer in their own address space before consuming the
+    /// per-frame data.
+    pub fn nested_data_ptr_raw(&self) -> Option<u32> {
+        let bytes = self.bytes.get(0x88..0x88 + 4)?;
+        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    /// `+0x172` counter slot.
+    pub fn counter_172(&self) -> Option<u16> {
+        self.read_u16_le(0x172)
+    }
+
+    /// `+0x176` animation-frame counter.
+    pub fn anim_frame_176(&self) -> Option<u16> {
+        self.read_u16_le(0x176)
+    }
+}
+
 /// Per-actor animation runtime - fixed-size pool of `AnimSlot`s.
 #[derive(Debug)]
 pub struct AnimRuntime {
@@ -607,6 +784,54 @@ mod tests {
         );
         // Too-small buffer → None.
         assert!(RecordKind::from_record(&[0u8; 4]).is_none());
+    }
+
+    #[test]
+    fn opaque_record_kind_byte_round_trips_known_kinds() {
+        for b in [0x02u8, 0x04, 0x05, 0x07, 0x08] {
+            let k = OpaqueRecordKind::from_byte(b);
+            assert_eq!(k.as_byte(), b);
+            assert!(k.has_side_effect());
+        }
+        let other = OpaqueRecordKind::from_byte(0x18);
+        assert_eq!(other.as_byte(), 0x18);
+        assert!(!other.has_side_effect());
+    }
+
+    #[test]
+    fn opaque_anim_record_reads_documented_offsets() {
+        let mut buf = vec![0u8; 0x300];
+        buf[0x00] = 0x18; // kind = Other(0x18) (somersault-class)
+        buf[0x0E..0x10].copy_from_slice(&((-128i16).to_le_bytes()));
+        buf[0x21D] = 4;
+        buf[0x56..0x58].copy_from_slice(&7u16.to_le_bytes());
+        buf[0x84] = 0x10;
+        buf[0x85] = 12;
+        buf[0x86] = 24;
+        buf[0x87] = 0x42;
+        buf[0x88..0x8C].copy_from_slice(&0x80AB_CDEFu32.to_le_bytes());
+        buf[0x176..0x178].copy_from_slice(&255u16.to_le_bytes());
+
+        let r = OpaqueAnimRecord::new(&buf);
+        assert_eq!(r.kind(), Some(OpaqueRecordKind::Other(0x18)));
+        assert_eq!(r.movement_scale(), Some(-128));
+        assert_eq!(r.frame_stride(), Some(4));
+        assert_eq!(r.substate_counter(), Some(7));
+        assert_eq!(r.depth_84(), Some(0x10));
+        assert_eq!(r.count_85(), Some(12));
+        assert_eq!(r.count_86(), Some(24));
+        assert_eq!(r.effect_id(), Some(0x42));
+        assert_eq!(r.nested_data_ptr_raw(), Some(0x80AB_CDEF));
+        assert_eq!(r.anim_frame_176(), Some(255));
+    }
+
+    #[test]
+    fn opaque_anim_record_short_buffer_returns_none_for_out_of_range() {
+        let buf = vec![0x04u8, 0, 0, 0]; // only 4 bytes
+        let r = OpaqueAnimRecord::new(&buf);
+        assert_eq!(r.kind(), Some(OpaqueRecordKind::Kind4));
+        assert_eq!(r.depth_84(), None);
+        assert_eq!(r.nested_data_ptr_raw(), None);
     }
 
     #[test]

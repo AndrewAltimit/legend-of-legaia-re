@@ -1303,8 +1303,12 @@ dependencies = [
 name = "legaia-engine-vm"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
  "legaia-anm",
  "legaia-art",
+ "legaia-asset",
+ "legaia-prot",
 ]
 
 [[package]]

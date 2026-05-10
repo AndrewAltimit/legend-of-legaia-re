@@ -171,10 +171,80 @@ and exercised by the disc-gated test
 `battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window`
 in `crates/mednafen/tests/real_saves.rs`.
 
-The per-record dispatch jump table whose entry point is the value at
-`+0x234` (the four-copy pointer) still requires a Ghidra dump - the
-pinned offsets above bracket the runtime state but do not yet cover the
-opcode set itself.
+### Per-record consumer struct - SCUS-resident, kind-byte dispatch
+
+The pointer stored at `actor[+0x234]` (and shadowed into the render
+context at `+0x4C` via `FUN_80049348` line 213 -
+`*(undefined4 *)(param_1 + 0x4c) = *(undefined4 *)(iVar6 + uVar4 * 4 + 0x234)`)
+points at a **runtime per-record control struct**, not a bytecode
+program. The per-frame consumer is the ladder in `FUN_8004AD80`
+(SCUS_942.54, `ghidra/scripts/funcs/8004ad80.txt` lines ~1363..1706),
+which dispatches on the byte at offset `+0x00` of the struct:
+
+| `kind` byte | Behaviour |
+|---|---|
+| `0x02` | Handshake: when the global character action byte `(unaff_gp + 0x9F4)` is `-0x4D` / `-0x4B` AND `actor[+0x14C] == 0`, advance to kind `0x04` and tick the per-record counter at `+0x56`. |
+| `0x04` | Action engaged. If actor's anim-flag at `+0x14C` is zero, set `actor[+0x1DA] = 7` (next sub-state). Else copy `actor[+0x1F2]` into `+0x1DA`. |
+| `0x05` | OR `actor[+0x1DC] |= 4` (set bit 2 of per-actor flag byte). |
+| `0x07` | Set `actor[+0x1DA] = 8`. |
+| `0x08` | OR `actor[+0x1DC] |= 8` (set bit 3 of per-actor flag byte). |
+| other | No kind-specific branch; the record is consumed by the surrounding fields below. |
+
+So the "per-record dispatch jump table" the actor record's `+0x234`
+slot points at is a **flat struct** consumed via field-offset reads,
+not an instruction-pointer entry into a switch. The 24-byte header
+section observed at the captured pointer (`u32 0x18, ..., u32 0x0140017E`
+for the somersault strike) is part of this same struct - its leading
+byte reads as kind `0x18` (`= 24`) which falls into the "other"
+arm and means the somersault is a raw-playback record (no scripted
+sub-state mutation in `FUN_8004AD80`; it's driven entirely by the
+field reads below).
+
+### Per-record struct fields
+
+The consumers (`FUN_80047430`, `FUN_80049348`, `FUN_8004AD80`,
+`FUN_80048310`, `FUN_80048A08`, `FUN_8004998C`, `FUN_800495C8`,
+`FUN_80049858`) read these offsets within the struct pointed at by
+`actor[+0x234]`:
+
+| Offset | Type | Purpose |
+|---|---|---|
+| `+0x00` | `u8` kind | Kind byte (see table above). PR #52's `u32 0x18` is `kind=0x18` plus three padding bytes. |
+| `+0x0E` | `i16` | Movement-scaling factor (used in physics integration). |
+| `+0x21D` | `u8` stride | Per-frame stride byte; `8 / stride` = items per 8-byte block. Caps at `8`; `4` is the default. |
+| `+0x34` / `+0x38` | vec | Position vec A (copied into render-ctx `+0x14` / `+0x18`). |
+| `+0x44` / `+0x48` | vec | Position vec B (copied into render-ctx `+0x24` / `+0x28`). |
+| `+0x56` | `u16` | Sub-state counter; ticked during `0x02 -> 0x04` transition. |
+| `+0x76` | `u8` | Flag byte. |
+| `+0x77` | `u8` | Adjustment byte (added to a per-arm constant). |
+| `+0x78` | `u8` | Per-frame multiplier. |
+| `+0x84` | `u8` | Depth / elevation byte; `actor[+0x21B] = +0x84`, `actor[+0x176] = +0x84 << 4`. |
+| `+0x85` | `u8` | Count A (used in nested-data stride math). |
+| `+0x86` | `u8` | Count B (used in nested-data stride math). |
+| `+0x87` | `u8` | Special-effect ID; non-zero values are passed to `FUN_8004E13C`. |
+| `+0x88` | `ptr` | Pointer to nested per-frame data array. Byte at `*+0x88 + 1` is the per-frame item count. |
+| `+0x172` | `u16` | Counter slot. |
+| `+0x176` | `u16` | Animation-frame counter. |
+| `+0x1BA` | `u16` | Per-actor render flag set (copied to render-ctx `+0x7A`). |
+
+The `+0x234..+0x244` slot in the actor record is a 4-deep
+**history queue** of dispatch pointers (so the renderer can blend
+between the previous and current ANM record across a transition).
+`FUN_80047430` lines 1080-1088 implement the back-shift: when a new
+record activates, `actor[+0x234]` receives the new pointer and the
+previous values shift down through `+0x238..+0x244`.
+
+### What the engine port still needs
+
+`crates/engine-vm/src/anim_vm.rs::Host::on_opaque_record` covers the
+field-read interpretation. Engines pin a typed `OpaqueAnimRecord`
+view onto the buffer at `actor[+0x234]` and read the listed offsets
+directly; the `kind` byte routes the per-frame side-effect ladder.
+
+The pre-action capture's dispatch pointer (`0x8015CC30`) and the
+in-flight strike capture's pointer (`0x801621D0`) point at distinct
+records that share this struct shape - the loader pages a different
+ANM record into the heap when the action ID changes.
 
 ## Allocator preamble
 

@@ -8,6 +8,14 @@ license.workspace = true
 name = "legaia_engine_vm"
 path = "src/lib.rs"
 
+[[bin]]
+name = "field-disasm"
+path = "src/bin/field_disasm.rs"
+
 [dependencies]
+anyhow.workspace = true
+clap.workspace = true
 legaia-art = { path = "../art" }
 legaia-anm = { path = "../anm" }
+legaia-asset = { path = "../asset" }
+legaia-prot = { path = "../prot" }
