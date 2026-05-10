@@ -242,6 +242,32 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
   <p>The frame-sentinel <code>0xFFFF 0x0000</code> that opens many scene-event-scripts records is <strong>not</strong> itself an opcode - the <code>scene-event-scripts</code> mode skips past it before walking the opcode stream of each record.</p>
 </section>
 
+<section class="doc-section" id="fmv-trigger-sites">
+  <h2>FMV-trigger sites &mdash; exhaustive backward sweep</h2>
+  <p>A grep across every Ghidra dump in the corpus for writes to the global game-mode word <code>_DAT_8007B83C = 0x1A</code> (the <code>StrInit</code> mode that boots the str_fmv overlay) finds <strong>only two distinct writers</strong>. Both are codified in <a href="../../crates/engine-vm/src/cutscene_trigger.rs"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>:</p>
+  <table>
+    <thead><tr><th>Label</th><th>Function</th><th>Mode-write addr</th><th>FMV-id source</th><th>Trigger condition</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>field_vm_op_4c_e2</code></td>
+        <td><code>FUN_801DE840</code></td>
+        <td><code>0x801E3104</code></td>
+        <td><code>decode_u16_be(pc+1)</code> from field-VM bytecode</td>
+        <td>Field-VM hits the byte sequence <code>0x4C 0xE2 lo hi</code>; reached via JT chain <code>0x801CEE60</code> (high nibble 0xE) &rarr; <code>0x801CF008</code> (low nibble 0x2) &rarr; label <code>0x801E30E4</code>.</td>
+      </tr>
+      <tr>
+        <td><code>title_attract_loop</code></td>
+        <td><code>FUN_801DE234</code>, case <code>0x10</code></td>
+        <td><code>0x801E0F50</code></td>
+        <td>Hardcoded <code>0</code> (= <code>MV1.STR</code>, intro)</td>
+        <td>Title-screen idle countdown <code>DAT_801ef16c</code> underflows.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong><code>FUN_801E30E4</code> has zero static callers.</strong> It is a label inside <code>FUN_801DE840</code>, not a callable subroutine. Ghidra promotes it to a <code>FUN_</code> symbol because the JT entry at <code>0x801CF008[2]</code> resolves there; the actual control flow is the dispatch chain above. A direct <code>grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/</code> returns zero matches.</p>
+  <p>The corollary for the seven mid-game scenes (<code>town0b</code>, <code>map01</code>, <code>chitei2</code>, <code>map02</code>, <code>jou</code>, <code>uru2</code>, <code>town0e</code>): they <strong>must</strong> trigger via the same <code>0x4C 0xE2</code> op, but the byte sequence is not in their on-disc PROT entries (a bytewise scan of every PROT entry finds only <code>PROT[371] taiku</code>, <code>fmv_id=5</code>). The bytecode is therefore reconstructed at scene-load time from the field-pack preamble's runtime-projected slot &mdash; the lift is blocked on the same intra-transition byte-level capture that gates <a href="../formats/field-pack.html">field-pack</a>.</p>
+</section>
+
 </main>
 </div>
 <script src="../js/layout.js"></script>

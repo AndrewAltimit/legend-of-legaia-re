@@ -209,23 +209,29 @@ The consumers (`FUN_80047430`, `FUN_80049348`, `FUN_8004AD80`,
 
 | Offset | Type | Purpose |
 |---|---|---|
-| `+0x00` | `u8` kind | Kind byte (see table above). PR #52's `u32 0x18` is `kind=0x18` plus three padding bytes. |
-| `+0x0E` | `i16` | Movement-scaling factor (used in physics integration). |
-| `+0x21D` | `u8` stride | Per-frame stride byte; `8 / stride` = items per 8-byte block. Caps at `8`; `4` is the default. |
+| `+0x00` | `u8` kind | Kind byte (see table above). The captured `u32 0x18` header word is `kind=0x18` plus three padding bytes. |
+| `+0x0E` | `i16` | Movement-scaling factor. `FUN_80047430` integrates per-frame translation as `(angle_lookup * +0x0E * frame_index) / frame_count` (where `frame_count` is the byte at `*(+0x88) + 1`). |
 | `+0x34` / `+0x38` | vec | Position vec A (copied into render-ctx `+0x14` / `+0x18`). |
 | `+0x44` / `+0x48` | vec | Position vec B (copied into render-ctx `+0x24` / `+0x28`). |
 | `+0x56` | `u16` | Sub-state counter; ticked during `0x02 -> 0x04` transition. |
 | `+0x76` | `u8` | Flag byte. |
 | `+0x77` | `u8` | Adjustment byte (added to a per-arm constant). |
 | `+0x78` | `u8` | Per-frame multiplier. |
-| `+0x84` | `u8` | Depth / elevation byte; `actor[+0x21B] = +0x84`, `actor[+0x176] = +0x84 << 4`. |
-| `+0x85` | `u8` | Count A (used in nested-data stride math). |
-| `+0x86` | `u8` | Count B (used in nested-data stride math). |
+| `+0x84` | `u8` | Max-frame byte; the consumer stamps `actor[+0x21B] = +0x84` (previous-action sentinel) and `actor[+0x176] = +0x84 << 4` (frame-counter cap). |
+| `+0x85` | `u8` | Loop-target frame index. When `frame_index == +0x86 - 1` and `actor[+0x21B] != 0`, the per-bone interpolator (`FUN_8004998C` line ~1077) sources the "next" frame from `*(+0x88) + 2 + +0x85 * bones * 9` instead of the linear `frame_index + 1` slot. |
+| `+0x86` | `u8` | Loop-trigger frame index (the frame at which the loop-target lookup kicks in). |
 | `+0x87` | `u8` | Special-effect ID; non-zero values are passed to `FUN_8004E13C`. |
-| `+0x88` | `ptr` | Pointer to nested per-frame data array. Byte at `*+0x88 + 1` is the per-frame item count. |
+| `+0x88` | `ptr` | Pointer to nested per-frame data array. See ["Nested per-frame data"](#nested-per-frame-data) below. |
 | `+0x172` | `u16` | Counter slot. |
 | `+0x176` | `u16` | Animation-frame counter. |
 | `+0x1BA` | `u16` | Per-actor render flag set (copied to render-ctx `+0x7A`). |
+
+`actor[+0x21D]` (NOT a consumer-struct field — it's a byte on the
+actor record itself) is a per-actor LOD-step byte. `FUN_80049348`
+reads it as `lod_step = 8 / max(actor[+0x21D], 1)` and uses the result
+to skip child actors during the render pass. Observed values are
+`0` / `2` / `4` / `8`, mapping to `lod_step = 8` / `4` / `2` / `1`.
+The `crates/engine-vm` view onto this is `anim_vm::ActorAnimState`.
 
 The `+0x234..+0x244` slot in the actor record is a 4-deep
 **history queue** of dispatch pointers (so the renderer can blend
@@ -234,12 +240,89 @@ between the previous and current ANM record across a transition).
 record activates, `actor[+0x234]` receives the new pointer and the
 previous values shift down through `+0x238..+0x244`.
 
+### Nested per-frame data
+
+The buffer pointed at by `consumer[+0x88]` carries the per-frame bone
+keyframes the renderer interpolates each tick. Layout (validated against
+`FUN_8004AD80`, `FUN_80048A08`, `FUN_8004998C`, `FUN_80047430`):
+
+```
++0x00  u8   bones_per_frame  (B)
++0x01  u8   frame_count      (N)
++0x02..+0x02 + N*B*9         N frames × B bones × 9-byte keyframe
+```
+
+- Header byte `+0` is the per-frame loop count: `FUN_80048A08` line 749
+  reads `**(byte **)(consumer + 0x88)` as the inner render loop bound.
+- Header byte `+1` is the frame count: `FUN_8004AD80` line 1367 reads
+  `*(byte *)(*(+0x88) + 1)` and stamps `(byte+1 - 1) * 16` into the
+  actor's frame-counter cap. `FUN_80047430` line 990 divides per-frame
+  velocity by this byte to get the per-frame translation step, so
+  `frame_count == 0` produces a runtime divide-by-zero.
+- Frame stride is `B * 9` and the body starts at offset `+2`:
+  `FUN_8004998C` line 1040 reads `pbVar15 = pbVar20 + frame_index * B *
+  9 + 2`.
+
+Each per-bone 9-byte block encodes six packed sign-extended 12-bit
+signed values, laid out as two `[i16; 3]` vectors:
+
+```text
+byte[0] | (byte[2] & 0x0F) << 8   → vec_a.x
+byte[1] | (byte[2] & 0xF0) << 4   → vec_a.y
+byte[3] | (byte[5] & 0x0F) << 8   → vec_a.z
+byte[4] | (byte[5] & 0xF0) << 4   → vec_b.x
+byte[6] | (byte[8] & 0x0F) << 8   → vec_b.y
+byte[7] | (byte[8] & 0xF0) << 4   → vec_b.z
+```
+
+The packing pairs adjacent low bytes (`[0]`/`[1]`, `[3]`/`[4]`, `[6]`/`[7]`)
+with shared high-nibble bytes (`[2]`, `[5]`, `[8]`). For each unpacked
+12-bit value, if bit 11 (`0x800`) is set, the consumer ORs `0xF000` to
+sign-extend (`FUN_8004998C` lines 1055..1062). The two vectors are
+treated as runtime angle / pose deltas; their renderer-side semantic
+(rotation triplet, position delta, etc.) is lost in compilation but
+the byte layout is exact.
+
+#### Frame counter / sub-frame interpolation
+
+The actor's `actor[+0x68]` field is a `u16` frame counter:
+
+- bits `[4..15]` (high 12 bits): frame index (used to seek into the
+  per-frame data above).
+- bits `[0..3]` (low 4 bits): sub-frame interpolation factor `0..=15`.
+
+When the sub-frame factor is non-zero, `FUN_8004998C` lerps each bone
+component-wise toward the next frame using the formula
+`dst = a + (b - a) * frac >> 4`. The "next" frame is one of:
+
+- Frame `+0x85` (the loop target) if `frame_index == +0x86 - 1` and
+  `actor[+0x21B] != 0`.
+- Frame `frame_count - 1` if `frame_index == frame_count - 1` (terminal
+  frame uses the buffer's own end-frame for clamping).
+- `frame_index + 1` otherwise.
+
+#### Engine-side accessors
+
+`crates/engine-vm::anim_vm` exposes the layout as typed views:
+
+- `OpaqueAnimRecord` wraps the consumer struct at `actor[+0x234]`.
+- `NestedFrameData` wraps the buffer pointed at by `+0x88` and exposes
+  `bones_per_frame` / `frame_count` / `frame(i)` / `bone(f, b)` /
+  `interpolate(f, next, frac)`.
+- `BoneFrame` carries the unpacked `vec_a` / `vec_b` triplets and
+  round-trips through `from_9_bytes` / `to_9_bytes`.
+- `ActorAnimState` exposes the actor-side `+0x21D` LOD step
+  (`lod_step_factor`), the previous-action sentinel at `+0x21B`, the
+  frame-counter cap at `+0x176`, and the frame counter at `+0x68`
+  (with `frame_index` / `sub_frame_factor` extractors).
+
 ### What the engine port still needs
 
 `crates/engine-vm/src/anim_vm.rs::Host::on_opaque_record` covers the
 field-read interpretation. Engines pin a typed `OpaqueAnimRecord`
-view onto the buffer at `actor[+0x234]` and read the listed offsets
-directly; the `kind` byte routes the per-frame side-effect ladder.
+view onto the buffer at `actor[+0x234]`, walk the per-frame data via
+`OpaqueAnimRecord::nested_data_ptr_raw` + `NestedFrameData::from_bytes`,
+and lerp via `NestedFrameData::interpolate`.
 
 The pre-action capture's dispatch pointer (`0x8015CC30`) and the
 in-flight strike capture's pointer (`0x801621D0`) point at distinct
