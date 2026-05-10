@@ -66,6 +66,85 @@ in retail (derived from their respective Seru rosters).
 
 The tracker supports per-slot overrides via `with_stat_gains([StatGain; 4])`.
 
+## Captured per-character level-up footprint
+
+Three per-character 4-level-jump observations have been captured from the
+mednafen save corpus. Each one is a settled pre→post diff over the
+character record window; the underlying captures are pre / mid / post
+save triplets at battle scene `map01`.
+
+| Character | Slot | XP delta (u16 LE at `+0x004`) | HP_max | MP_max | SP_max |
+|---|---:|---|---:|---:|---:|
+| Vahn (legacy) | 0 | 365 → 730 (+365) | (`+0x126` wrap, +38) | +8 | +8 |
+| Noa | 1 | 102 → 336 (+234) | +32 | +6 | **+40** |
+| Gala | 2 | 140 → 394 (+254) | +44 | +8 | **0** |
+
+Codified in [`engine_core::levelup::observations`](../../crates/engine-core/src/levelup.rs):
+- `vahn_4_level_jump` (legacy historical fact - the source saves were rotated
+  out of the active corpus when the Noa / Gala triplets shipped).
+- `noa_4_level_jump` (settled delta across Noa's 3-phase split).
+- `gala_4_level_jump` (settled delta across Gala's 2-phase split).
+
+Each `LevelUpObservation::stat_deltas` is an 18-byte window covering
+`+0x11C..+0x12D` (9 u16 LE values: HP_max, MP_max, per-stat cap (always 100),
+six record-side stats). `LevelUpObservation::record_stats_u16()` lifts the
+window as `[u16; 9]`.
+
+### Phase split (multi-frame writes)
+
+The level-up event splits the character record write across multiple frames.
+For Noa the captured triplet pins three phases:
+
+| Phase | Window | Writes |
+|---|---|---|
+| Record write | pre → mid₁ | `+0x11C..+0x12D` (record stat window), `+0x004..+0x005` (XP), `+0x130` (rank counter +1) |
+| Live copy | mid₁ → mid₂ | `+0x104..+0x11B` (HP_cur, MP_cur, six u16 live stats) |
+| Settle | mid₂ → post | `+0x106 / +0x10A / +0x10E` (live HP_max / MP_max / SP_max settle) |
+
+Gala's level-up runs in two phases (record write, then live copy + settle
+collapsed into one frame).
+
+The slot indices that hold each frame in the active corpus live in
+[`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml);
+they rotate as the corpus is re-captured for new investigations.
+
+The phase split + per-character record bases (Vahn `0x80084708`,
+Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`)
+are documented in [`engine_core::capture_observations::char_level_up`](../../crates/engine-core/src/capture_observations.rs)
+with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
+
+### Per-character semantic findings
+
+- **Noa grants `+40` SP_max** at `+0x10E`. Noa is a Seru-magic user; level-ups
+  scale her Spirit gauge.
+- **Gala grants `0` SP_max** across the entire triplet. Gala uses physical
+  Tactical Arts (no Seru magic), so the level-up event leaves `+0x10E`
+  untouched. Engines that copy Vahn's curve to Gala mis-grant SP.
+- **The `+0x120` u16 LE field is a per-stat cap constant `100`**, not SP_max.
+  Pinned across every captured save (Vahn, Noa, Gala) and every state. The
+  earlier `legaia_save::character::CharacterRecord::stat_cap` accessor
+  reading `+0x11A` is misnamed — `+0x11A` is one of the live stat slots and
+  is mutated on level-up. Engines should read the cap from `+0x120` instead.
+- **Rank counter at `+0x130`** increments by `+1` per level-up event,
+  independent of `levels_gained` (Noa and Gala both jumped four levels but
+  bumped this byte by one).
+
+### Cross-character delta search (negative finding)
+
+A grep across `extracted/PROT.DAT` for u8 sequences matching the observed
+Vahn / Noa / Gala stat-delta tuples surfaces a 128-byte stride table at
+PROT.DAT byte offset `0x033E9000`. Inspection shows records with
+ramp-up-peak-ramp-down patterns (`06 06 07 08 09 0A 0B 0C 0D 0E 0F 0F 0F 0E
+0D 0C 0B 0A 09 08 07`) characteristic of **per-effect animation curves**
+(particle weight tables / attack timing curves), **not** stat-grant data.
+The matched stat-shape patterns (Vahn `04 04 02 02 04 04`, Gala `02 04 04
+02 02 02`) sit inside these animation curves as coincidental byte runs.
+
+Net: cross-character u8-pattern search does not surface a stat-grant table.
+The next viable approach is locating the battle-data init overlay slice that
+loads the Seru PROT entries and tracing the stat read at the moment a level-
+up event applies.
+
 ## Level-up flow
 
 After a battle win with `BattleEndCause::MonsterWipe`:
@@ -177,14 +256,23 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   battle-state flag the SCUS-side handler `FUN_800480D8` writes with the
   constant `0x80808080` (`lui v0, 0x80; ori v0, v0, 0x8080; sw v0, 0x74(s0)`),
   not a stat-grant pointer. The "Seru struct +0x74 pointer dereference"
-  hypothesis is **not supported** by the current capture set; the table base
-  lives in a still-uncaptured overlay (battle-data init or the Seru-equip
-  path) or is encoded inline in a Seru PROT entry the current capture set
-  doesn't surface. Engine-side scaffold lives at
-  [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` + `SeruStatTable`
-  + `LevelUpTracker::with_seru_roster` install a flat curve summed across the
-  equipped Seru. Replace with `StatGrowthCurve::PerLevel` when the table is
-  pinned.
+  hypothesis is **not supported** by the current capture set. Cross-character
+  delta search across PROT.DAT (using the three pinned per-character triplets
+  for orientation) also fails to surface a stat-grant table — the candidate
+  cluster at PROT.DAT byte offset `0x033E9000` is animation-curve data, not
+  stat grants. The grant table likely lives in a still-uncaptured overlay
+  (battle-data init or the Seru-equip path) or is encoded inline in a Seru
+  PROT entry the current capture set doesn't surface. Engine-side scaffold
+  lives at [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` +
+  `SeruStatTable` + `LevelUpTracker::with_seru_roster` install a flat curve
+  summed across the equipped Seru. Replace with `StatGrowthCurve::PerLevel`
+  when the table is pinned.
+- **`+0x120` u16 LE field renaming.** The captured triplets pin
+  `record[+0x120]` as a constant 100 across every save / character. The
+  existing `legaia_save::character::CharacterRecord::stat_cap` accessor reads
+  `+0x11A` instead, which is a live stat byte (mutated by level-up). The
+  accessor needs renaming or relocation. Tracked separately to keep this
+  level-up doc focused.
 - **Battle actor struct fields `+0x14C`–`+0x176`.** The battle actor (pointed
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping

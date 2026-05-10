@@ -167,91 +167,199 @@ fn scenarios_manifest_resolves_every_save() {
 }
 
 #[test]
-fn level_up_diff_pins_captured_offsets_for_vahn_record() {
-    // mc8 → mc9 spans the character level-up event for Vahn (slot 0 of
-    // the party record table at 0x80084708, stride 0x414). The diff
-    // window is exactly Vahn's record. We assert the byte-level deltas
-    // that the post-#26 batch 13 wired into
-    // `engine_core::levelup::observations::vahn_mc8_to_mc9`.
-    let (Some(p8), Some(p9)) = (save_for(8), save_for(9)) else {
-        eprintln!("{}", skip_msg(8));
+fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
+    // The four save slots assigned to Noa's level-up in the manifest
+    // span pre / record-write / live-copy / settled frames at battle
+    // scene `map01`. Asserts (a) the multi-frame write split documented
+    // in `engine_core::capture_observations::char_level_up`, and (b)
+    // the settled byte-level deltas that
+    // `engine_core::levelup::observations::noa_4_level_jump` codifies.
+    //
+    // Slot indices read here from the active corpus; see
+    // `scripts/mednafen/scenarios.toml` for the current assignment.
+    if !require_slot_scenes(
+        "noa_level_up_triplet",
+        &[(4, "map01"), (5, "map01"), (6, "map01"), (7, "map01")],
+    ) {
+        return;
+    }
+    let (Some(p4), Some(p5), Some(p6), Some(p7)) =
+        (save_for(4), save_for(5), save_for(6), save_for(7))
+    else {
+        eprintln!("{}", skip_msg(4));
         return;
     };
-    let s8 = SaveState::from_path(&p8).unwrap();
-    let s9 = SaveState::from_path(&p9).unwrap();
-    let r8 = s8.main_ram().unwrap();
-    let r9 = s9.main_ram().unwrap();
-    // Vahn record window: 0x80084708..+0x414.
+    let s4 = SaveState::from_path(&p4).unwrap();
+    let s5 = SaveState::from_path(&p5).unwrap();
+    let s6 = SaveState::from_path(&p6).unwrap();
+    let s7 = SaveState::from_path(&p7).unwrap();
+    let r4 = s4.main_ram().unwrap();
+    let r5 = s5.main_ram().unwrap();
+    let r6 = s6.main_ram().unwrap();
+    let r7 = s7.main_ram().unwrap();
+
+    use legaia_engine_core::capture_observations::char_level_up;
+    use legaia_engine_core::levelup::observations::noa_4_level_jump;
+
+    let noa_record = (char_level_up::NOA_BASE, char_level_up::NOA_BASE + 0x414);
+
+    // Phase 1 (pre → record-write): writes the persistent record stat
+    // window (+0x11C..+0x12D), XP (+0x004), and rank (+0x130). The live
+    // in-battle copy at +0x104..+0x11B is unchanged at this point.
     let opts = DiffOptions {
-        window: (0x80084708, 0x80084708 + 0x414),
+        window: noa_record,
         merge_gap: 0,
         min_bytes_changed: 1,
     };
-    let d = diff_ram(r8, r9, "magic_level_up", "char_level_up", &opts);
-    // Capture: 11 regions, 14 bytes changed (per `mednafen-state diff` run).
+    let record_window = char_level_up::NOA_BASE + 0x11C..char_level_up::NOA_BASE + 0x12E;
+    let live_window = char_level_up::NOA_BASE + 0x104..char_level_up::NOA_BASE + 0x11C;
+    let phase1 = diff_ram(r4, r5, "noa_pre", "noa_record_write", &opts);
     assert!(
-        d.regions.len() >= 4,
-        "expected several discrete deltas, got {}",
-        d.regions.len()
-    );
-    // Specifically: +0x10E single-byte +8 (SP_max). The window is the
-    // full record so each region's start_addr is absolute.
-    let region_at = |addr: u32| {
-        d.regions
+        phase1
+            .regions
             .iter()
-            .find(|r| r.start_addr == addr)
-            .unwrap_or_else(|| panic!("no region starting at {:#x}", addr))
-    };
-    let r10e = region_at(0x80084708 + 0x10E);
-    assert_eq!(r10e.bytes_changed, 1);
-    // Stat-byte cluster at +0x122..+0x12C (six byte-stride single-step
-    // increments). The diff merges them into separate regions because
-    // merge_gap=0; we just check at least 6 regions in that range.
-    let in_stat_range = d
-        .regions
-        .iter()
-        .filter(|r| r.start_addr >= 0x80084708 + 0x122 && r.start_addr <= 0x80084708 + 0x12C)
-        .count();
-    assert!(
-        in_stat_range >= 4,
-        "expected 6 stat-byte deltas at +0x122..+0x12C, got {}",
-        in_stat_range
+            .any(|r| record_window.contains(&r.start_addr)),
+        "phase 1 (pre → record-write) should write into the record stat window"
     );
+    assert!(
+        phase1
+            .regions
+            .iter()
+            .any(|r| r.start_addr == char_level_up::NOA_BASE + char_level_up::RANK_COUNTER),
+        "phase 1 should bump the rank counter at +0x130"
+    );
+    assert!(
+        !phase1
+            .regions
+            .iter()
+            .any(|r| live_window.contains(&r.start_addr)),
+        "phase 1 should NOT touch the live in-battle window (+0x104..+0x11B)"
+    );
+
+    // Phase 2 (record-write → live-copy): writes the live in-battle copy.
+    let phase2 = diff_ram(r5, r6, "noa_record_write", "noa_live_copy", &opts);
+    assert!(
+        phase2
+            .regions
+            .iter()
+            .any(|r| live_window.contains(&r.start_addr)),
+        "phase 2 (record-write → live-copy) should write into the live in-battle window"
+    );
+
+    // Phase 3 (live-copy → settle): settles HP_max / MP_max / SP_max in
+    // the live copy at +0x106 / +0x10A / +0x10E.
+    let phase3 = diff_ram(r6, r7, "noa_live_copy", "noa_settle", &opts);
+    assert!(
+        phase3
+            .regions
+            .iter()
+            .any(|r| r.start_addr == char_level_up::NOA_BASE + 0x10E),
+        "phase 3 (live-copy → settle) should settle SP_max at +0x10E"
+    );
+
+    // Settled deltas (pre → settle) match the codified observation.
+    let stats4 = char_level_up::read_record_stats(r4, char_level_up::NOA_BASE).unwrap();
+    let stats7 = char_level_up::read_record_stats(r7, char_level_up::NOA_BASE).unwrap();
+    let obs = noa_4_level_jump();
+    let obs_stats = obs.record_stats_u16();
+    for (i, (a, b)) in stats4.iter().zip(stats7.iter()).enumerate() {
+        let delta = b.wrapping_sub(*a);
+        assert_eq!(
+            delta, obs_stats[i],
+            "record stat[{i}] settled delta should match observation"
+        );
+    }
+    // Per-stat cap at index 2 stayed pinned at 100 in both saves.
+    assert_eq!(stats4[2], char_level_up::RECORD_STAT_CAP);
+    assert_eq!(stats7[2], char_level_up::RECORD_STAT_CAP);
 }
 
 #[test]
-fn magic_rank_up_diff_pins_spell_level_offset() {
-    // mc7 → mc8 is the magic-rank-up event (Vahn casts a spell during
-    // a battle and his spell-rank counter at +0x9C ticks up; the spell
-    // level array at +0x161 increments by 1 for the spell that ranked).
-    let (Some(p7), Some(p8)) = (save_for(7), save_for(8)) else {
+fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
+    // The three save slots assigned to Gala's level-up in the manifest
+    // span pre / record-write / live-settled frames at battle scene
+    // `map01`. Mirrors the Noa test but with the Gala record at slot 2.
+    //
+    // Slot indices read here from the active corpus; see
+    // `scripts/mednafen/scenarios.toml` for the current assignment.
+    if !require_slot_scenes(
+        "gala_level_up_triplet",
+        &[(7, "map01"), (8, "map01"), (9, "map01")],
+    ) {
+        return;
+    }
+    let (Some(p7), Some(p8), Some(p9)) = (save_for(7), save_for(8), save_for(9)) else {
         eprintln!("{}", skip_msg(7));
         return;
     };
     let s7 = SaveState::from_path(&p7).unwrap();
     let s8 = SaveState::from_path(&p8).unwrap();
+    let s9 = SaveState::from_path(&p9).unwrap();
     let r7 = s7.main_ram().unwrap();
     let r8 = s8.main_ram().unwrap();
+    let r9 = s9.main_ram().unwrap();
+
+    use legaia_engine_core::capture_observations::char_level_up;
+    use legaia_engine_core::levelup::observations::gala_4_level_jump;
+
+    let gala_record = (char_level_up::GALA_BASE, char_level_up::GALA_BASE + 0x414);
     let opts = DiffOptions {
-        window: (0x80084708, 0x80084708 + 0x414),
+        window: gala_record,
         merge_gap: 0,
         min_bytes_changed: 1,
     };
-    let d = diff_ram(r7, r8, "pre_steal", "magic_level_up", &opts);
-    // Expect a single-byte delta at +0x161 (spell levels) and at +0x9C
-    // (magic-rank counter).
-    let has_spell_lvl = d.regions.iter().any(|r| r.start_addr == 0x80084708 + 0x161);
-    let has_magic_rank = d.regions.iter().any(|r| r.start_addr == 0x80084708 + 0x9C);
+
+    // Phase 1 (pre → record-write): writes the record stat window + XP + rank.
+    let record_window = char_level_up::GALA_BASE + 0x11C..char_level_up::GALA_BASE + 0x12E;
+    let live_window = char_level_up::GALA_BASE + 0x104..char_level_up::GALA_BASE + 0x11C;
+    let phase1 = diff_ram(r7, r8, "gala_pre", "gala_record_write", &opts);
     assert!(
-        has_spell_lvl,
-        "expected delta at +0x161 (spell levels); regions={:?}",
-        d.regions.iter().map(|r| r.start_addr).collect::<Vec<_>>()
+        phase1
+            .regions
+            .iter()
+            .any(|r| record_window.contains(&r.start_addr)),
+        "phase 1 (pre → record-write) should write into the record stat window"
     );
     assert!(
-        has_magic_rank,
-        "expected delta at +0x9C (magic-rank); regions={:?}",
-        d.regions.iter().map(|r| r.start_addr).collect::<Vec<_>>()
+        phase1
+            .regions
+            .iter()
+            .any(|r| r.start_addr == char_level_up::GALA_BASE + char_level_up::RANK_COUNTER),
+        "phase 1 should bump the rank counter at +0x130"
     );
+
+    // Phase 2 (record-write → live+settle): writes the live in-battle
+    // copy. Gala's capture collapses HP_cur/MP_cur/live-stats and
+    // HP_max/MP_max into one frame.
+    let phase2 = diff_ram(r8, r9, "gala_record_write", "gala_live_copy", &opts);
+    assert!(
+        phase2
+            .regions
+            .iter()
+            .any(|r| live_window.contains(&r.start_addr)),
+        "phase 2 (record-write → live+settle) should write into the live in-battle window"
+    );
+
+    // Gala doesn't gain SP_max from level-up (physical Tactical Arts
+    // user). +0x10E should NOT change across the entire triplet.
+    let r10e_off = (char_level_up::GALA_BASE - 0x80000000) as usize + 0x10E;
+    assert_eq!(r7[r10e_off], r8[r10e_off]);
+    assert_eq!(r7[r10e_off], r9[r10e_off]);
+
+    // Settled deltas (pre → live+settle) match the codified observation.
+    let stats7 = char_level_up::read_record_stats(r7, char_level_up::GALA_BASE).unwrap();
+    let stats9 = char_level_up::read_record_stats(r9, char_level_up::GALA_BASE).unwrap();
+    let obs = gala_4_level_jump();
+    let obs_stats = obs.record_stats_u16();
+    for (i, (a, b)) in stats7.iter().zip(stats9.iter()).enumerate() {
+        let delta = b.wrapping_sub(*a);
+        assert_eq!(
+            delta, obs_stats[i],
+            "record stat[{i}] settled delta should match observation"
+        );
+    }
+    assert_eq!(stats7[2], char_level_up::RECORD_STAT_CAP);
+    assert_eq!(stats9[2], char_level_up::RECORD_STAT_CAP);
 }
 
 #[test]
