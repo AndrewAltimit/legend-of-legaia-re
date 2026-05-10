@@ -150,17 +150,30 @@ up event applies.
 After a battle win with `BattleEndCause::MonsterWipe`:
 
 1. The engine calls `World::apply_battle_xp(xp_reward)`.
-2. `apply_battle_xp` calls `LevelUpTracker::grant_xp(char_id, share)` for
-   each active party member.
-3. `grant_xp` accumulates XP and checks the retail XP table for threshold
+2. `apply_battle_xp` enumerates the surviving party members (slots whose
+   `BattleActor::hp > 0`) and divides `xp_reward` equally among them
+   (integer divide, remainder dropped on the floor). Dead members
+   receive zero XP.
+3. `apply_battle_xp` calls `LevelUpTracker::grant_xp(char_id, share)`
+   for each surviving party member.
+4. `grant_xp` accumulates XP and checks the retail XP table for threshold
    crossings. Multi-level jumps collapse into a single `LevelUpResult` with
    summed HP/MP gains.
-4. For each level-up: `LevelUpTracker::apply_to_record(result, record)` bumps
-   `hp_max` and `mp_max`, then restores `hp_cur` and `mp_cur` to the new maxima
-   (retail restores full HP/MP on level-up).
-5. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed
+5. For each level-up: `LevelUpTracker::apply_to_record(result, record)` bumps
+   `hp_max` and `mp_max`, restores `hp_cur` and `mp_cur` to the new maxima
+   (retail restores full HP/MP on level-up), and writes `result.new_level`
+   back to the record's `+0x100` byte via `CharacterRecord::set_level`.
+6. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed
    to `World::battle_events`.
-6. `World::current_level_up_banner` is set to the last character who levelled up.
+7. `World::current_level_up_banner` is set to the last character who levelled up.
+
+### Hydration on load
+
+`World::load_full` syncs `LevelUpTracker::level[]` from each loaded
+character record's `+0x100` byte. Without this, a reloaded party would
+keep the tracker's default `1` per slot even when the saved records hold
+the party at level 30; the next XP grant would then roll the party back
+to level 1 + N.
 
 ## Level-up banner
 
@@ -285,9 +298,18 @@ A disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednaf
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping
   has not been traced from the stat aggregator.
-- **XP share formula.** Retail may divide the monster XP pool by active party
-  size before calling the per-character threshold check. The current port grants
-  the full `xp_reward` to each party member independently.
+- **Pin the retail XP divisor.** The current port divides the monster XP
+  pool by `alive_count` (surviving party members) and credits each
+  surviving slot the floored share. A LUI+ADDIU sweep across `SCUS_942.54`
+  and every captured overlay (`overlay_magic_level_up`,
+  `overlay_battle_action`, …) does not surface a static reader for the
+  XP table at `0x8007123C`, so the reader is either in an
+  overlay slice that hasn't been captured yet or accesses the table via
+  a runtime-computed index that LUI+ADDIU resolution misses. The
+  scanner [`scripts/find_xp_table_readers.py`](../../ghidra/scripts/find_xp_table_readers.py)
+  + [`scripts/find_xp_table_all_overlays.py`](../../ghidra/scripts/find_xp_table_all_overlays.py)
+  are kept around so the divisor + dead-member exclusion can be re-verified
+  once the gap closes.
 - **Overlay display.** The retail level-up overlay shows per-stat increments
   (STR, INT, VIT, etc.) with an animated counter. Only HP/MP are tracked in the
   current port; other stats are handled by the per-character record's stat

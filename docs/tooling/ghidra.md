@@ -162,6 +162,8 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 | `find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
 | `find_gte_users.py` | Count COP2 / GTE instructions per function - surfaces renderer + transform candidates. |
 | `find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
+| `find_xp_table_readers.py` | LUI+ADDIU resolver narrowed to the retail XP table at `0x8007123C..0x80071300`. Single-program variant. |
+| `find_xp_table_all_overlays.py` | Same scan, intended for `-process -recursive` over every imported program (SCUS + overlays). Used to confirm no static reader for the XP table surfaces in the current overlay set. |
 | `find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
 | `find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
 | `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |

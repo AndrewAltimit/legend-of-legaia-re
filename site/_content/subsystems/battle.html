@@ -311,23 +311,42 @@
   <h2>Battle rewards composite</h2>
   <p><code>World::apply_battle_loot(formation, catalog) -&gt; BattleRewards</code> is the post-victory composite that turns a defeated formation into the runtime side-effects:</p>
   <ul>
-    <li>Sums each <code>MonsterDef::exp</code> and distributes the total via <code>World::apply_battle_xp</code> (per-character level-up checks against <code>LevelUpTracker::xp_table</code>).</li>
+    <li>Sums each <code>MonsterDef::exp</code> and distributes the total via <code>World::apply_battle_xp</code>, which splits the pool equally among the surviving party members (integer divide, remainder dropped; dead members get zero) and runs per-character level-up checks against <code>LevelUpTracker::xp_table</code>.</li>
     <li>Sums each <code>MonsterDef::gold</code> and adds it to <code>World::money</code> (saturating).</li>
-    <li>Returns <code>BattleRewards { xp, gold, level_ups: Vec&lt;LevelUpResult&gt; }</code> for the engine to surface as the post-battle banner ("got N XP, M gold, level up!").</li>
+    <li>For each defeated monster with a non-<code>None</code> <code>drop_item</code> and <code>drop_rate_q8 &gt; 0</code>, pulls one byte from <code>World::next_rng</code> and compares against <code>drop_rate_q8 / 256</code>. On hit, the item id is appended to <code>BattleRewards::drops</code> and incremented in <code>World::inventory</code>.</li>
+    <li>Returns <code>BattleRewards { xp, gold, level_ups, drops }</code> for the engine to surface as the post-battle banner ("got N XP, M gold, level up, found Healing Leaf!").</li>
   </ul>
   <p>Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: <code>crates/engine-core::world::World::apply_battle_loot</code>.</p>
+</section>
+
+<section class="doc-section" id="battlesession-resolve-driver">
+  <h2>BattleSession Resolve driver</h2>
+  <p><code>BattleSession</code> owns the action SM during the <code>Resolve</code> phase. After <code>commit_turn</code> succeeds, the session builds a per-slot <code>ResolveDriver</code> queue keyed on whether the slot's resolved action queue carries a <code>RegularStarter</code> (&rarr; <code>TacticalArts</code> category) or only directional commands (&rarr; <code>Attack</code> category).</p>
+  <p>Per frame the session: drains world events into HUD popups, arms <code>world.battle_ctx</code> for the head-of-queue attacker if not already armed, calls <code>world.tick()</code> exactly once, clears the render-side <code>ADVANCE_DONE</code> flag on <code>AttackRecovery</code>, applies clean-room formula damage on <code>AttackChain &rarr; AttackRecovery</code> transitions, and advances to the next attacker on <code>EndOfAction</code>. When the queue drains, the session transitions to <code>RoundOutro</code>; <code>StepOutcome::BattleComplete</code> routes through the existing <code>BattleEnd</code> event into the terminal <code>Victory</code> / <code>Defeat</code> phase.</p>
+  <p>End-to-end coverage in <code>crates/engine-core/tests/end_to_end_gameplay_loop.rs::battle_session_drives_action_sm_to_monster_wipe</code> exercises the full pipeline &mdash; encounter trigger &rarr; <code>BattleSession</code> setup &rarr; <code>push_command</code> per slot &rarr; commit via <code>SessionInput { start: true, .. }</code> &rarr; Resolve &rarr; <code>BattlePhase::Victory</code>.</p>
 </section>
 
 <section class="doc-section" id="end-to-end-loop">
   <h2>End-to-end gameplay loop integration test</h2>
   <p><code>crates/engine-core/tests/end_to_end_gameplay_loop.rs</code> stitches every gameplay-side subsystem into one cycle:</p>
   <ol>
-    <li><strong>Boot</strong> &mdash; load an <code>LGSF v2</code> <code>SaveFile</code> (party + story flags + money + inventory) into a fresh <code>World</code> via <code>load_full</code>.</li>
+    <li><strong>Boot</strong> &mdash; load an <code>LGSF v2</code> <code>SaveFile</code> (party + story flags + money + inventory) into a fresh <code>World</code> via <code>load_full</code>. <code>load_full</code> hydrates the <code>LevelUpTracker</code> per-slot level from each record's <code>+0x100</code> byte so reloads don't roll the tracker back to L1.</li>
     <li><strong>Field walk</strong> &mdash; switch to <code>SceneMode::Field</code>, install an <code>EncounterSession</code> keyed to <code>vanilla_formation_table</code> at saturated trigger rate, step until <code>EncounterPhase::Triggered</code>.</li>
     <li><strong>Encounter</strong> &mdash; drain the formation roll, populate monster slots 3..N from the <code>MonsterCatalog</code>, flip mode to <code>SceneMode::Battle</code>.</li>
     <li><strong>Battle SM</strong> &mdash; drive <code>World::tick</code> while applying clean-room formula damage on every <code>AttackChain &rarr; AttackRecovery</code> transition until the action SM resolves to <code>BattleEndCause::MonsterWipe</code>.</li>
-    <li><strong>Rewards</strong> &mdash; call <code>World::apply_battle_loot</code> to credit XP / gold and trigger per-character level-ups; assert at least one party slot crossed a threshold.</li>
+    <li><strong>Rewards</strong> &mdash; call <code>World::apply_battle_loot</code> to credit the per-character XP / gold split, fire drop rolls, and trigger per-character level-ups; assert at least one party slot crossed a threshold.</li>
     <li><strong>Save round-trip</strong> &mdash; <code>world.save_full().write() &rarr; SaveFile::parse() &rarr; load_full()</code> into a fresh <code>World</code>; assert HP/MP, level, money, story flags, and inventory survived intact.</li>
   </ol>
-  <p>The synthetic variant runs in CI. The disc-gated variant (<code>real_psx_memory_card_save_drives_full_loop</code>) boots the same loop from a real Legaia memory-card save block via <code>Party::from_retail_sc_block</code> when <code>~/.mednafen/sav/</code> holds a Legaia card; skips otherwise.</p>
+  <p>The crate ships four test variants:</p>
+  <table>
+    <thead><tr><th>Test</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>synthetic_party_completes_full_gameplay_loop</code></td><td>Default CI cycle; hand-spins the action SM.</td></tr>
+      <tr><td><code>battle_session_phase_transitions_during_loop</code></td><td>Smoke around the BattleSession side; verifies the session reaches <code>CommandInput</code>.</td></tr>
+      <tr><td><code>battle_session_drives_action_sm_to_monster_wipe</code></td><td>Drives the same loop through <code>BattleSession::tick</code> &mdash; <code>push_command</code> &rarr; <code>SessionInput { start: true }</code> &rarr; Resolve &rarr; <code>BattlePhase::Victory</code>.</td></tr>
+      <tr><td><code>real_battle_data_encounter_drives_loop</code></td><td>Disc-gated: scans an early <code>PROT.DAT</code> entry for a valid <code>EncounterRecord</code> pattern, installs it via <code>install_encounter_from_record</code>, and resolves the battle.</td></tr>
+      <tr><td><code>real_psx_memory_card_save_drives_full_loop</code></td><td>Disc-gated: boots the loop from a real Legaia memory-card save block.</td></tr>
+    </tbody>
+  </table>
+  <p>Disc-gated variants skip silently when <code>extracted/PROT.DAT</code> / the mednafen card is missing.</p>
 </section>

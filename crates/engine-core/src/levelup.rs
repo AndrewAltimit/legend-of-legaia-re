@@ -590,8 +590,9 @@ impl LevelUpTracker {
     }
 
     /// Apply a `LevelUpResult` to a `CharacterRecord` - increases `hp_max`
-    /// and `mp_max`, and restores `hp_cur` / `mp_cur` to the new maximums
-    /// (Legaia restores HP/MP on level-up).
+    /// and `mp_max`, restores `hp_cur` / `mp_cur` to the new maximums
+    /// (Legaia restores HP/MP on level-up), and writes the new level back
+    /// to the record's `+0x100` byte.
     pub fn apply_to_record(result: &LevelUpResult, record: &mut CharacterRecord) {
         let mut hms = record.hp_mp_sp();
         hms.hp_max = hms.hp_max.saturating_add(result.hp_gained);
@@ -599,6 +600,7 @@ impl LevelUpTracker {
         hms.hp_cur = hms.hp_max;
         hms.mp_cur = hms.mp_max;
         record.set_hp_mp_sp(hms);
+        record.set_level(result.new_level);
     }
 }
 

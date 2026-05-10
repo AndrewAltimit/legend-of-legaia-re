@@ -531,13 +531,18 @@ pub struct DialogRequest {
 ///
 /// Engines surface this as the post-battle banner ("got X XP, Y gold, level
 /// up!"). The XP / gold totals reflect what was actually credited (monster
-/// ids missing from the catalog don't contribute), and `level_ups` carries
-/// the per-character results from [`World::apply_battle_xp`].
+/// ids missing from the catalog don't contribute), `level_ups` carries the
+/// per-character results from [`World::apply_battle_xp`], and `drops`
+/// carries the item ids the loot roll surfaced from each fallen monster.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BattleRewards {
     pub xp: u32,
     pub gold: u32,
     pub level_ups: Vec<LevelUpResult>,
+    /// Item drops the post-battle loot roll surfaced. One entry per
+    /// monster slot that *both* (a) had a non-`None` `drop_item` in the
+    /// catalog and (b) rolled below `drop_rate_q8 / 256`.
+    pub drops: Vec<u8>,
 }
 
 /// Camera state populated by `camera_save` / `camera_load` and read by
@@ -869,21 +874,40 @@ impl World {
         self.battle_defense.get(idx).copied().unwrap_or(0)
     }
 
-    /// Distribute `xp_reward` to every active party member after a
-    /// `BattleEndCause::MonsterWipe`. For each member that crosses a level
-    /// threshold, bumps the roster record's HP/MP maxima, resyncs the live
-    /// `BattleActor` mirror, pushes a [`BattleEvent::LevelUp`], and appends
-    /// a [`LevelUpResult`] to the returned vec.
+    /// Distribute `xp_reward` to the surviving party members after a
+    /// `BattleEndCause::MonsterWipe`. Mirrors the retail-shape split:
     ///
-    /// Engines call this once per battle win with the monster group's total
-    /// XP reward. The XP amount is the same for every party member (Legaia's
-    /// retail formula; per-character splitting can be layered on top once the
-    /// overlay is captured).
+    /// - Surviving members (HP > 0) split the reward equally, rounded down.
+    /// - Dead members (HP == 0) receive zero XP.
+    /// - Remainder bytes from the integer divide are dropped on the floor,
+    ///   matching the retail end-of-battle distribution.
+    ///
+    /// For each member that crosses a level threshold, bumps the roster
+    /// record's HP/MP maxima, resyncs the live `BattleActor` mirror, pushes
+    /// a [`BattleEvent::LevelUp`], and appends a [`LevelUpResult`] to the
+    /// returned vec.
+    ///
+    /// If every party member is dead (TPK) but the caller still invokes this
+    /// (e.g. a Phoenix Down style revive-after-victory), the split degenerates
+    /// to a no-op — there are no alive recipients.
     pub fn apply_battle_xp(&mut self, xp_reward: u32) -> Vec<LevelUpResult> {
         let party_count = self.party_count as usize;
+        // Living-member count drives the divisor. We pull HP from
+        // `BattleActor` (the live mirror) so the resolver sees the
+        // post-battle state, not the record's saved HP.
+        let alive: Vec<u8> = (0..party_count as u8)
+            .filter(|&i| self.actors.get(i as usize).is_some_and(|a| a.battle.hp > 0))
+            .collect();
+        if alive.is_empty() {
+            return Vec::new();
+        }
+        let per_member_xp = xp_reward / alive.len() as u32;
+        if per_member_xp == 0 {
+            return Vec::new();
+        }
         let mut results = Vec::new();
-        for char_id in 0..party_count as u8 {
-            let Some(result) = self.level_up_tracker.grant_xp(char_id, xp_reward) else {
+        for char_id in alive {
+            let Some(result) = self.level_up_tracker.grant_xp(char_id, per_member_xp) else {
                 continue;
             };
             let slot = char_id as usize;
@@ -930,10 +954,26 @@ impl World {
     ) -> BattleRewards {
         let mut xp_total: u32 = 0;
         let mut gold_total: u32 = 0;
+        let mut drops: Vec<u8> = Vec::new();
         for slot in &formation.slots {
-            if let Some(def) = catalog.get(slot.monster_id) {
-                xp_total = xp_total.saturating_add(def.exp as u32);
-                gold_total = gold_total.saturating_add(def.gold as u32);
+            let Some(def) = catalog.get(slot.monster_id) else {
+                continue;
+            };
+            xp_total = xp_total.saturating_add(def.exp as u32);
+            gold_total = gold_total.saturating_add(def.gold as u32);
+            if let Some(item_id) = def.drop_item
+                && def.drop_rate_q8 > 0
+            {
+                // 1-in-256 fixed-point drop roll: pull one byte from the
+                // deterministic RNG and compare. `drop_rate_q8 == 255`
+                // makes the drop near-guaranteed (1/256 floor); `0`
+                // already short-circuited above.
+                let roll = (self.next_rng() & 0xFF) as u8;
+                if roll < def.drop_rate_q8 {
+                    drops.push(item_id);
+                    let entry = self.inventory.entry(item_id).or_insert(0);
+                    *entry = entry.saturating_add(1);
+                }
             }
         }
         let level_ups = if xp_total > 0 {
@@ -947,6 +987,7 @@ impl World {
             xp: xp_total,
             gold: gold_total,
             level_ups,
+            drops,
         }
     }
 
@@ -1160,7 +1201,9 @@ impl World {
     /// Restore engine state from a [`legaia_save::SaveFile`] produced by [`World::save_full`].
     ///
     /// Party records are applied through [`World::load_party`]; globals overwrite the
-    /// current `story_flags`, `money`, and `inventory`.
+    /// current `story_flags`, `money`, and `inventory`. Sync per-slot
+    /// [`LevelUpTracker::level`] from each loaded record's `+0x100` byte
+    /// so reloads don't silently reset every party slot to level 1.
     pub fn load_full(&mut self, sf: legaia_save::SaveFile) {
         self.load_party(sf.party);
         self.story_flags = sf.ext.story_flags;
@@ -1169,6 +1212,16 @@ impl World {
         for (id, count) in sf.ext.inventory {
             if count > 0 {
                 self.inventory.insert(id, count);
+            }
+        }
+        // Hydrate the level-up tracker's per-slot level from the loaded
+        // character records. Without this, the tracker keeps its default
+        // 1-per-slot level even when the saved record has the party at
+        // level 30 — the next level-up grant would silently roll the
+        // party back to level 1 + N.
+        for (slot, rec) in self.roster.members.iter().enumerate() {
+            if slot < self.level_up_tracker.level.len() {
+                self.level_up_tracker.level[slot] = rec.level().max(1);
             }
         }
         // V2 ext block - repopulate engine-side trackers.
@@ -3631,6 +3684,8 @@ mod tests {
             party_count: 1,
             ..World::default()
         };
+        // Slot 0 must be alive for the split to credit XP.
+        world.actors[0].battle.hp = 100;
         // Retail table: 50 XP to reach level 2 (SCUS 0x8007123C entry[0]).
         world.apply_battle_xp(50);
         let banner = world
@@ -3648,11 +3703,136 @@ mod tests {
     }
 
     #[test]
+    fn apply_battle_xp_skips_dead_members() {
+        let mut world = World {
+            party_count: 3,
+            ..World::default()
+        };
+        // Alive: slots 0 + 2. Dead: slot 1 (HP = 0).
+        world.actors[0].battle.hp = 100;
+        world.actors[1].battle.hp = 0;
+        world.actors[2].battle.hp = 100;
+        let results = world.apply_battle_xp(100);
+        // 100 / 2 alive = 50 each; both should reach L2 (50 threshold).
+        let slot_ids: Vec<u8> = results.iter().map(|r| r.char_id).collect();
+        assert!(slot_ids.contains(&0));
+        assert!(slot_ids.contains(&2));
+        assert!(
+            !slot_ids.contains(&1),
+            "dead slot 1 must not appear in level-up results"
+        );
+    }
+
+    #[test]
+    fn apply_battle_xp_no_alive_returns_empty() {
+        let mut world = World {
+            party_count: 3,
+            ..World::default()
+        };
+        // No actor with HP > 0 → nobody to credit.
+        let results = world.apply_battle_xp(500);
+        assert!(results.is_empty());
+        assert!(world.current_level_up_banner.is_none());
+    }
+
+    #[test]
+    fn apply_battle_loot_rolls_drop_item_when_rate_is_max() {
+        use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+        let mut cat = MonsterCatalog::new();
+        let mut def = MonsterDef::new(7, "Slime", 10, 5);
+        def.drop_item = Some(0x42);
+        def.drop_rate_q8 = 255; // near-guaranteed roll
+        cat.insert(def);
+        let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        let rewards = world.apply_battle_loot(&formation, &cat);
+        assert_eq!(rewards.drops, vec![0x42]);
+        assert_eq!(world.inventory.get(&0x42).copied(), Some(1));
+    }
+
+    #[test]
+    fn apply_battle_loot_never_drops_when_rate_zero() {
+        use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+        let mut cat = MonsterCatalog::new();
+        let mut def = MonsterDef::new(7, "Slime", 10, 5);
+        def.drop_item = Some(0x42);
+        def.drop_rate_q8 = 0;
+        cat.insert(def);
+        let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        let rewards = world.apply_battle_loot(&formation, &cat);
+        assert!(rewards.drops.is_empty());
+        assert!(!world.inventory.contains_key(&0x42));
+    }
+
+    #[test]
+    fn load_full_hydrates_level_up_tracker_from_record_levels() {
+        // Build a 3-character save with levels 7, 12, 25.
+        let mut party = legaia_save::Party::zeroed(3);
+        party.members[0].set_level(7);
+        party.members[1].set_level(12);
+        party.members[2].set_level(25);
+        let sf = legaia_save::SaveFile {
+            party,
+            ext: legaia_save::SaveExt::default(),
+            ext_v2: legaia_save::SaveExtV2::default(),
+        };
+        let mut world = World::new();
+        // Tracker defaults to 1 for every slot.
+        assert_eq!(world.level_up_tracker.level[0], 1);
+        world.load_full(sf);
+        assert_eq!(world.level_up_tracker.level[0], 7);
+        assert_eq!(world.level_up_tracker.level[1], 12);
+        assert_eq!(world.level_up_tracker.level[2], 25);
+    }
+
+    #[test]
+    fn load_full_zero_level_record_clamps_to_one() {
+        // Records that haven't had a level written (zero byte at +0x100)
+        // shouldn't make the tracker think the slot is below L1.
+        let party = legaia_save::Party::zeroed(2);
+        let sf = legaia_save::SaveFile {
+            party,
+            ext: legaia_save::SaveExt::default(),
+            ext_v2: legaia_save::SaveExtV2::default(),
+        };
+        let mut world = World::new();
+        world.load_full(sf);
+        assert_eq!(world.level_up_tracker.level[0], 1);
+        assert_eq!(world.level_up_tracker.level[1], 1);
+    }
+
+    #[test]
+    fn apply_battle_xp_drops_remainder_from_integer_division() {
+        let mut world = World {
+            party_count: 3,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.actors[1].battle.hp = 100;
+        world.actors[2].battle.hp = 100;
+        // 101 / 3 = 33; the leftover 2 XP is dropped.
+        let _ = world.apply_battle_xp(101);
+        assert_eq!(world.level_up_tracker.xp[0], 33);
+        assert_eq!(world.level_up_tracker.xp[1], 33);
+        assert_eq!(world.level_up_tracker.xp[2], 33);
+    }
+
+    #[test]
     fn level_up_banner_countdown_clears() {
         let mut world = World {
             party_count: 1,
             ..World::default()
         };
+        world.actors[0].battle.hp = 100;
         world.apply_battle_xp(50); // retail table: exactly L2 threshold
         assert!(world.current_level_up_banner.is_some());
         for _ in 0..=crate::levelup::LevelUpBanner::DEFAULT_FRAMES {
@@ -3670,6 +3850,7 @@ mod tests {
             party_count: 1,
             ..World::default()
         };
+        world.actors[0].battle.hp = 100;
         world.apply_battle_xp(49); // retail table: 49 < 50 (L2 threshold)
         assert!(world.current_level_up_banner.is_none());
     }
