@@ -42,9 +42,19 @@ Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls th
 
 Many character meshes reference CLUT rows that live in **different PROT entries** from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.
 
-Engines that drive a clean-room scene loop call [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder sweeps every entry's bytes in the CDNAME block, runs the TIM scanner, and uploads each parsed TIM to a software [`legaia_tim::Vram`] at its canonical `(fb_x, fb_y)` slot - the same model the PSX runtime uses when DMAing TIMs at boot. Cross-entry CLUTs resolve naturally because every TIM in the block lands in the shared VRAM before any TMD draws.
+Engines that drive a clean-room scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
 
-The asset-viewer's `--vram-extra-dir` flag is the legacy workaround that pre-dates the bulk pre-pass; it survives for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
+1. Parses every TMD in the scene's CDNAME block (plus the optional shared blocks - see below).
+2. Collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes will sample).
+3. Walks every TIM and decides per-block whether to upload it, suppressing the image block when it would land on a CLUT row another mesh references and vice-versa.
+
+This matches what the retail field loader does (DMA only the texture bytes the current scene's meshes need) and avoids the 4bpp-vs-256-wide CLUT collisions that previously dropped 80%+ of textured prims through the prim filter. See [`renderer.md`](renderer.md#engine-side-targeted-upload--shared-blocks) for the engine-side wiring.
+
+### Field-shared CDNAME blocks
+
+`FIELD_SHARED_BLOCKS = ["init_data", "player_data"]` is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. `player_data` (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)`; `init_data` (PROT 0) holds shared UI / sprite tiles. `SceneHost::enter_field_scene` passes these to `build_targeted` so the player TMD survives every town / dungeon transition without being re-loaded per scene.
+
+The legacy [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer `build_targeted` for production scene loads. The asset-viewer's `--vram-extra-dir` flag remains the manual workaround for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
 
 To find which PROT entry provides a missing CLUT row, run:
 

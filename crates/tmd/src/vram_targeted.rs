@@ -205,6 +205,69 @@ pub fn build_vram_from_dirs(dirs: &[&Path]) -> (Vram, usize) {
     (vram, count)
 }
 
+/// In-memory variant of [`build_vram_targeted`]. Takes an iterator over
+/// already-loaded TIM byte slices (e.g. from `tim_scan::scan_buffer`
+/// hits inside a PROT entry) instead of walking the filesystem, so an
+/// engine driving the scene-asset chain doesn't need on-disk
+/// intermediates. Same per-block "upload image iff useful AND not
+/// colliding with someone else's CLUT" logic as the directory variant.
+///
+/// Returns the populated VRAM + per-block statistics.
+pub fn build_vram_targeted_from_buffers<'a, I>(
+    tim_bufs: I,
+    needs: &[PrimTarget],
+) -> (Vram, VramUploadStats)
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
+    let mut vram = Vram::new();
+    let mut stats = VramUploadStats::default();
+    if needs.is_empty() {
+        // Empty needs → no targeting to do, upload everything as-is. Same
+        // semantics as `build_vram_from_dirs`'s fallback path.
+        for buf in tim_bufs {
+            stats.total_tims += 1;
+            let Ok(tim) = legaia_tim::parse(buf) else {
+                continue;
+            };
+            vram.upload_tim(&tim);
+            stats.uploaded_tims += 1;
+            stats.uploaded_both += 1;
+        }
+        return (vram, stats);
+    }
+    for buf in tim_bufs {
+        stats.total_tims += 1;
+        let Ok(tim) = legaia_tim::parse(buf) else {
+            continue;
+        };
+        let img = &tim.image;
+        let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
+        let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));
+
+        let img_useful = needs.iter().any(|t| rects_overlap(img_rect, t.page));
+        let img_collides_clut = needs.iter().any(|t| rects_overlap(img_rect, t.clut));
+        let clut_useful = clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.clut)));
+        let clut_collides_page =
+            clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.page)));
+
+        let upload_image = img_useful && !img_collides_clut;
+        let upload_clut = clut_useful && !clut_collides_page;
+        if !upload_image && !upload_clut {
+            continue;
+        }
+        vram.upload_tim_partial(&tim, upload_image, upload_clut);
+        stats.uploaded_tims += 1;
+        match (upload_image, upload_clut) {
+            (true, true) => stats.uploaded_both += 1,
+            (true, false) => stats.uploaded_image_only += 1,
+            (false, true) => stats.uploaded_clut_only += 1,
+            _ => {}
+        }
+    }
+    (vram, stats)
+}
+
 /// Internal helper used by both [`build_vram_from_dirs`] and the
 /// targeted-upload empty-needs fallback.
 fn build_vram_unfiltered(dirs: &[&Path]) -> (Vram, usize, usize) {
@@ -256,5 +319,73 @@ mod tests {
         assert_eq!(stats.uploaded_tims, 0);
         // Empty VRAM, no uploads attempted.
         assert_eq!(vram.pixel(0, 0), 0);
+    }
+
+    /// Synthetic 4bpp TIM: image at `(img_x, img_y)` 1x1 (just enough
+    /// for the upload to register), CLUT at `(clut_x, clut_y)` 16-wide.
+    fn tim_4bpp_at(img_x: u16, img_y: u16, clut_x: u16, clut_y: u16) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Header: id=0x10, flags=0x08 (4bpp with CLUT)
+        buf.extend_from_slice(&0x10u32.to_le_bytes());
+        buf.extend_from_slice(&0x08u32.to_le_bytes());
+        // CLUT block: len = 12 (header) + 16 entries * 2 = 44
+        buf.extend_from_slice(&44u32.to_le_bytes());
+        buf.extend_from_slice(&clut_x.to_le_bytes());
+        buf.extend_from_slice(&clut_y.to_le_bytes());
+        buf.extend_from_slice(&16u16.to_le_bytes()); // w
+        buf.extend_from_slice(&1u16.to_le_bytes()); // h
+        // 16 distinct non-zero entries
+        for i in 0..16u16 {
+            buf.extend_from_slice(&(0x1000 | i).to_le_bytes());
+        }
+        // Image block: 1x1, fb_w=1 (one 16-bit word holds 4 4bpp pixels)
+        buf.extend_from_slice(&14u32.to_le_bytes()); // bs_len = 8 + 1*1*2 = 10... wait header is 12 then 1 word data so 14
+        buf.extend_from_slice(&img_x.to_le_bytes());
+        buf.extend_from_slice(&img_y.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes()); // fb_w
+        buf.extend_from_slice(&1u16.to_le_bytes()); // h
+        buf.extend_from_slice(&0xAAAAu16.to_le_bytes());
+        buf
+    }
+
+    /// Two TIMs collide: TIM A's image at (16, 0); TIM B's CLUT at (16, 0).
+    /// The mesh wants TIM B's CLUT for paletted decode. The targeted
+    /// builder must suppress TIM A's image upload to keep TIM B's CLUT
+    /// row intact - otherwise the paletted decode reads TIM A's image
+    /// bytes as palette entries (rainbow noise).
+    #[test]
+    fn from_buffers_suppresses_image_on_clut_collision() {
+        let tim_a = tim_4bpp_at(/*img*/ 16, 0, /*clut*/ 0, 100);
+        let tim_b = tim_4bpp_at(/*img*/ 64, 64, /*clut*/ 16, 0);
+        // Mesh references CLUT at (16, 0) with 4bpp width 16, page at (64, 64).
+        let needs = vec![PrimTarget {
+            clut: (16, 0, 16, 1),
+            page: (64, 64, 1, 1),
+        }];
+        let (vram, stats) =
+            build_vram_targeted_from_buffers([tim_a.as_slice(), tim_b.as_slice()], &needs);
+        assert_eq!(stats.total_tims, 2);
+        // TIM A's image (16, 0) would collide with TIM B's CLUT - suppressed.
+        // But TIM A's CLUT (0, 100) is useful for no prim - suppressed.
+        // TIM B's image (64, 64) is useful + no collision - written.
+        // TIM B's CLUT (16, 0) is useful + no collision - written.
+        // So TIM A contributes nothing; TIM B contributes both blocks.
+        assert_eq!(stats.uploaded_tims, 1);
+        assert_eq!(stats.uploaded_both, 1);
+        assert_eq!(stats.uploaded_image_only, 0);
+        assert_eq!(stats.uploaded_clut_only, 0);
+        // TIM B's CLUT row entry [0] is 0x1000 (not TIM A's image bytes).
+        assert_eq!(vram.pixel(16, 0), 0x1000);
+    }
+
+    #[test]
+    fn from_buffers_empty_needs_uploads_everything() {
+        let tim_a = tim_4bpp_at(16, 0, 0, 100);
+        let (vram, stats) = build_vram_targeted_from_buffers([tim_a.as_slice()], &[]);
+        assert_eq!(stats.total_tims, 1);
+        assert_eq!(stats.uploaded_tims, 1);
+        assert_eq!(stats.uploaded_both, 1);
+        // CLUT entry [0] visible.
+        assert_eq!(vram.pixel(0, 100), 0x1000);
     }
 }

@@ -27,6 +27,7 @@ mednafen-state diff LEFT RIGHT [--start ADDR --end ADDR --json PATH]
 mednafen-state bisect --addr ADDR SAVE...
 mednafen-state trace  --addr ADDR SAVE...
 mednafen-state watch LABEL [--manifest PATH]
+mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs]
 mednafen-state scenarios [--manifest PATH]
 ```
 

@@ -41,6 +41,20 @@ The TIM corpus on a single PROT entry can run into the hundreds. Uploading every
 
 The same filter is wired into engine-side scene loads through `ResolvedTmd::build_filtered_vram_mesh`, so battle / field actor meshes inherit the same cleanup the asset viewer has.
 
+### Engine-side targeted upload + shared blocks
+
+`SceneResources::build_targeted` is the engine-side mirror of the asset-viewer's targeted-upload path: it parses every TMD in a scene, collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes), then walks every TIM and decides per-block whether to write it. This matches what the retail field loader does - DMA only the texture bytes the current scene's meshes need - and avoids the CLUT-row collisions that drop 80%+ of textured prims under the naive "upload every TIM" path.
+
+`build_targeted` also accepts a list of *shared* CDNAME blocks via the [`FIELD_SHARED_BLOCKS`](../../crates/engine-core/src/scene_resources.rs) constant (`init_data` + `player_data`). These are the blocks the retail engine keeps resident across field-scene transitions - `player_data` (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)`; `init_data` (PROT 0) holds shared UI / sprite tiles. The shared blocks are uploaded *first*, so scene-local TIMs win any slot collision (mirrors the retail boot-then-scene order).
+
+`SceneHost::enter_field_scene` calls `build_targeted` with the field shared blocks by default; the legacy `SceneResources::build` / `build_with_shared` paths remain for tests and engines that want the unfiltered upload for diagnostic purposes.
+
+`legaia-engine info --scene <name> --tmd-stats` reports per-TMD `kept / miss_clut / depth_mm / miss_page` counts so future regressions in the targeted-upload pipeline are visible without firing up the windowed viewer. `--vram-png` / `--vram-bin` write the engine VRAM as a 1024x512 PNG / raw BGR555 blob; `--runtime-vram <bin>` (paired with `mednafen-state vram-dump --out-bin`) reports per-region pixel-coverage statistics against the runtime ground truth, and `--vram-diff-png` writes a colour-coded diff (red = runtime has, engine missing; green = engine extras; blue = both populated but different).
+
+### CLUT-depth-mismatch threshold
+
+`Vram::prim_texture_status` flags `ClutDepthMismatch` when a CLUT row is populated past what the prim's color depth could legitimately fill: for 4bpp prims the threshold is `16 * 16 = 256` entries (16 distinct 16-entry palettes packed in one row, picked by the prim's `CBA` low 6 bits - the standard Legaia character-TIM layout); for 8bpp it's `2 * 256` (one palette plus slack for stray pixels). Anything past that indicates another TIM's image bytes have spilled onto the CLUT row, and the paletted decode would index into pixel data. The targeted-upload path in `build_targeted` prevents this spillage, so engine-side scenes hit the mismatch threshold only when a regression breaks the per-TIM block-arbitration.
+
 ### Texture-window register
 
 `Renderer::set_texture_window(mask_x, mask_y, off_x, off_y)` maps to GP0(0xE2) "Texture Window setting": four 5-bit values in 8-pixel steps that clamp / wrap texture-coordinate sampling to a smaller window inside the texture page. Default is all-zero (no-op). Retail Legaia leaves the register at zero almost everywhere; the API is wired primarily so future runtime LoadImage / DMA-to-VRAM trace work can replay the register state faithfully. The fragment shader applies the per-pixel `coord = (coord & ~(mask*8)) | ((offset & mask)*8)` transformation before texture-page lookup.

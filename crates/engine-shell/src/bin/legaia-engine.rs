@@ -19,7 +19,7 @@ use glam::{Mat4, Vec3};
 use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
-use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_core::scene_resources::{FIELD_SHARED_BLOCKS, SceneResources};
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
@@ -63,6 +63,42 @@ enum Cmd {
         /// `.bin` disc image. When provided, `--extracted-root` is ignored.
         #[arg(long)]
         disc: Option<PathBuf>,
+        /// Optional: also write the populated [`SceneResources::vram`] to
+        /// a 1024x512 RGBA8 PNG for offline comparison against a runtime
+        /// VRAM dump (`mednafen-state vram-dump --out-bin`).
+        #[arg(long)]
+        vram_png: Option<PathBuf>,
+        /// Optional: dump the raw 1 MiB BGR555 little-endian VRAM bytes to
+        /// this path for pixel-exact diffs against a runtime capture.
+        #[arg(long)]
+        vram_bin: Option<PathBuf>,
+        /// Optional: read a 1 MiB runtime VRAM blob (from
+        /// `mednafen-state vram-dump --out-bin`) and report per-region
+        /// coverage statistics: how many runtime non-zero rows the engine
+        /// also populates, broken down by VRAM half (texture pages above
+        /// y=256 vs framebuffers / scratch in the top half).
+        #[arg(long)]
+        runtime_vram: Option<PathBuf>,
+        /// Optional: write a colour-coded diff PNG showing where engine
+        /// VRAM matches / differs from the runtime VRAM. Used together
+        /// with `--runtime-vram`.
+        #[arg(long)]
+        vram_diff_png: Option<PathBuf>,
+        /// Optional: for every parsed TMD, walk the prim filter against
+        /// the built VRAM and report kept / dropped counts. Surfaces
+        /// "this mesh references VRAM the pre-pass didn't populate"
+        /// failure modes without firing up the windowed viewer.
+        #[arg(long)]
+        tmd_stats: bool,
+        /// Disable the asset-viewer-style targeted-VRAM upload. By
+        /// default, each TIM's image and CLUT block are decided
+        /// independently, suppressing the side that would clobber
+        /// another mesh's data - this matches what the retail field
+        /// loader does and dramatically reduces CLUT-row collisions on
+        /// town / field scenes. Use `--no-targeted` to force the
+        /// uniform-upload-every-TIM behaviour (legacy diagnostic mode).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        no_targeted: bool,
     },
     /// List every distinct scene name the CDNAME map exposes, with the
     /// PROT entry range each one covers.
@@ -407,7 +443,23 @@ fn main() -> Result<()> {
             scene,
             extracted_root,
             disc,
-        } => cmd_info(&scene, &extracted_root, disc.as_deref()),
+            vram_png,
+            vram_bin,
+            runtime_vram,
+            vram_diff_png,
+            tmd_stats,
+            no_targeted,
+        } => cmd_info(
+            &scene,
+            &extracted_root,
+            disc.as_deref(),
+            vram_png.as_deref(),
+            vram_bin.as_deref(),
+            runtime_vram.as_deref(),
+            vram_diff_png.as_deref(),
+            tmd_stats,
+            !no_targeted,
+        ),
         Cmd::ListScenes {
             extracted_root,
             disc,
@@ -510,16 +562,45 @@ fn main() -> Result<()> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_info(
     scene_name: &str,
     extracted_root: &std::path::Path,
     disc: Option<&std::path::Path>,
+    vram_png: Option<&Path>,
+    vram_bin: Option<&Path>,
+    runtime_vram: Option<&Path>,
+    vram_diff_png: Option<&Path>,
+    tmd_stats: bool,
+    targeted: bool,
 ) -> Result<()> {
     let index = open_index_from_args(extracted_root, disc)?;
     let scene =
         Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
     let assets = SceneAssets::build(&scene);
-    let resources = SceneResources::build(&scene)?;
+
+    // Load the field-shared blocks (`init_data`, `player_data`) when we
+    // can, so the engine VRAM mirrors the retail boot-then-scene layout.
+    // Missing blocks (e.g. when running against a region whose CDNAME
+    // doesn't carry one of the names) skip with a warning rather than
+    // failing - the comparison still works against the rest.
+    let mut shared_scenes: Vec<Scene> = Vec::new();
+    for name in FIELD_SHARED_BLOCKS {
+        match Scene::load(&index, name) {
+            Ok(s) => shared_scenes.push(s),
+            Err(e) => eprintln!("warning: shared block '{name}' not loaded: {e}"),
+        }
+    }
+    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+    let (resources, targeted_stats) = if targeted {
+        let (r, s) = SceneResources::build_targeted(&scene, &shared_refs)?;
+        (r, Some(s))
+    } else {
+        (
+            SceneResources::build_with_shared(&scene, &shared_refs)?,
+            None,
+        )
+    };
 
     println!("scene '{}'", scene.name);
     println!(
@@ -528,10 +609,25 @@ fn cmd_info(
     );
     println!("  entries swept:          {}", scene.entries.len());
     println!(
-        "  TIMs uploaded to VRAM:  {} (parse failures: {})",
-        resources.tim_count, resources.tim_parse_failures
+        "  shared blocks loaded:   {:?}",
+        shared_scenes
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
     );
-    println!("  TMDs parsed:            {}", resources.tmds.len());
+    println!(
+        "  TIMs uploaded to VRAM:  {} (scene-local: {}, shared: {}, parse failures: {})",
+        resources.tim_count,
+        resources.tim_count - resources.shared_tim_count,
+        resources.shared_tim_count,
+        resources.tim_parse_failures
+    );
+    println!(
+        "  TMDs parsed:            {} (scene-local: {}, shared: {})",
+        resources.tmds.len(),
+        resources.tmds.len() - resources.shared_tmd_count,
+        resources.shared_tmd_count
+    );
     println!(
         "  MES container:          {}",
         if assets.mes.is_some() {
@@ -547,6 +643,272 @@ fn cmd_info(
     );
     println!("  VAB entries:            {}", assets.vab_entries.len());
     println!("  Event-script records:   {}", assets.event_records.len());
+    if let Some(s) = &targeted_stats {
+        println!(
+            "  targeted VRAM upload:   total_tims={} uploaded={} both={} image_only={} clut_only={}",
+            s.total_tims,
+            s.uploaded_tims,
+            s.uploaded_both,
+            s.uploaded_image_only,
+            s.uploaded_clut_only
+        );
+    }
+
+    if tmd_stats {
+        println!("  per-TMD filter stats (drop reasons):");
+        let mut total_kept = 0usize;
+        let mut total_miss_clut = 0usize;
+        let mut total_depth_mismatch = 0usize;
+        let mut total_miss_page = 0usize;
+        let mut total_skipped = 0usize;
+        for (i, rtmd) in resources.tmds.iter().enumerate() {
+            let (_mesh, stats) = rtmd.build_filtered_vram_mesh_reasoned(&resources.vram);
+            total_kept += stats.kept;
+            total_miss_clut += stats.missing_clut;
+            total_depth_mismatch += stats.clut_depth_mismatch;
+            total_miss_page += stats.missing_texture_page;
+            total_skipped += stats.skipped_bad_vert_index + stats.skipped_untextured;
+            println!(
+                "    tmd[{i:2}] entry={:4} off=0x{:06X}  kept={:4} miss_clut={:3} depth_mm={:3} miss_page={:4} no_uv={:3}  keep={:5.1}%",
+                rtmd.entry_idx,
+                rtmd.offset,
+                stats.kept,
+                stats.missing_clut,
+                stats.clut_depth_mismatch,
+                stats.missing_texture_page,
+                stats.skipped_untextured,
+                100.0 * stats.keep_ratio()
+            );
+        }
+        let textured = total_kept + total_miss_clut + total_depth_mismatch + total_miss_page;
+        let aggregate_keep = if textured > 0 {
+            100.0 * total_kept as f32 / textured as f32
+        } else {
+            100.0
+        };
+        println!(
+            "  aggregate filter:        kept={} miss_clut={} depth_mm={} miss_page={} skipped={} (textured kept={:.1}%)",
+            total_kept,
+            total_miss_clut,
+            total_depth_mismatch,
+            total_miss_page,
+            total_skipped,
+            aggregate_keep
+        );
+    }
+
+    if vram_png.is_some() || vram_bin.is_some() || runtime_vram.is_some() {
+        let engine_bytes = vram_to_le_bytes(&resources.vram);
+        if let Some(p) = vram_png {
+            write_vram_png(p, &engine_bytes)?;
+            println!("[ok] wrote engine VRAM PNG to {}", p.display());
+        }
+        if let Some(p) = vram_bin {
+            std::fs::write(p, &engine_bytes)
+                .with_context(|| format!("writing engine VRAM bin to {}", p.display()))?;
+            println!(
+                "[ok] wrote engine VRAM bin to {} ({} bytes)",
+                p.display(),
+                engine_bytes.len()
+            );
+        }
+        if let Some(p) = runtime_vram {
+            let runtime_bytes = std::fs::read(p)
+                .with_context(|| format!("reading runtime VRAM blob from {}", p.display()))?;
+            if runtime_bytes.len() != engine_bytes.len() {
+                anyhow::bail!(
+                    "runtime VRAM size {} != expected {} (1 MiB BGR555)",
+                    runtime_bytes.len(),
+                    engine_bytes.len()
+                );
+            }
+            let report = vram_coverage_report(&engine_bytes, &runtime_bytes);
+            print_vram_coverage(&report);
+            if let Some(diff_path) = vram_diff_png {
+                write_vram_diff_png(diff_path, &engine_bytes, &runtime_bytes)?;
+                println!("[ok] wrote VRAM diff PNG to {}", diff_path.display());
+            }
+        } else if vram_diff_png.is_some() {
+            eprintln!("warning: --vram-diff-png requires --runtime-vram; skipping diff");
+        }
+    }
+    Ok(())
+}
+
+/// Serialise a software `Vram` into a 1 MiB little-endian BGR555 buffer
+/// matching `mednafen-state vram-dump --out-bin`.
+fn vram_to_le_bytes(vram: &legaia_tim::Vram) -> Vec<u8> {
+    const W: usize = 1024;
+    const H: usize = 512;
+    let mut out = Vec::with_capacity(W * H * 2);
+    for y in 0..H {
+        for x in 0..W {
+            let px = vram.pixel(x, y);
+            out.extend_from_slice(&px.to_le_bytes());
+        }
+    }
+    out
+}
+
+fn write_vram_png(path: &Path, bgr555_le: &[u8]) -> Result<()> {
+    const W: u32 = 1024;
+    const H: u32 = 512;
+    let rgba = legaia_mednafen::vram_to_rgba8(bgr555_le);
+    let f = std::fs::File::create(path)
+        .with_context(|| format!("create VRAM PNG {}", path.display()))?;
+    let bw = std::io::BufWriter::new(f);
+    let mut enc = png::Encoder::new(bw, W, H);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(&rgba)?;
+    Ok(())
+}
+
+/// Compact per-region VRAM coverage report.
+struct VramCoverage {
+    /// Per-tile counts. Each tile is 64x64 pixels (16 tiles wide, 8 rows tall).
+    runtime_nonzero_pixels: u64,
+    engine_nonzero_pixels: u64,
+    overlap_pixels: u64,
+    runtime_only_pixels: u64,
+    engine_only_pixels: u64,
+    /// `(y_range_label, runtime_nonzero, engine_nonzero, overlap)` for
+    /// the common VRAM regions.
+    bands: Vec<(&'static str, u64, u64, u64)>,
+}
+
+fn vram_coverage_report(engine: &[u8], runtime: &[u8]) -> VramCoverage {
+    const W: usize = 1024;
+    const H: usize = 512;
+    let mut runtime_nz = 0u64;
+    let mut engine_nz = 0u64;
+    let mut overlap = 0u64;
+    let mut runtime_only = 0u64;
+    let mut engine_only = 0u64;
+    for i in 0..(W * H) {
+        let off = i * 2;
+        let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
+        let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
+        let rnz = rw != 0;
+        let enz = ew != 0;
+        if rnz {
+            runtime_nz += 1;
+        }
+        if enz {
+            engine_nz += 1;
+        }
+        match (rnz, enz) {
+            (true, true) => overlap += 1,
+            (true, false) => runtime_only += 1,
+            (false, true) => engine_only += 1,
+            _ => {}
+        }
+    }
+    // Band reports split VRAM into top half (display + scratch) and bottom
+    // half (texture pages + CLUTs), then split the bottom into upper-256
+    // (typical character / scene textures) and lower-256 (extra texture
+    // pages, CLUT rows).
+    let band = |y0: usize, y1: usize| -> (u64, u64, u64) {
+        let mut rt = 0u64;
+        let mut en = 0u64;
+        let mut ov = 0u64;
+        for y in y0..y1 {
+            for x in 0..W {
+                let off = (y * W + x) * 2;
+                let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
+                let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
+                let rnz = rw != 0;
+                let enz = ew != 0;
+                if rnz {
+                    rt += 1;
+                }
+                if enz {
+                    en += 1;
+                }
+                if rnz && enz {
+                    ov += 1;
+                }
+            }
+        }
+        (rt, en, ov)
+    };
+    let mut bands = Vec::new();
+    let (rt, en, ov) = band(0, 256);
+    bands.push(("top half y=  0..256 (display FB + scratch)", rt, en, ov));
+    let (rt, en, ov) = band(256, 384);
+    bands.push(("texpage rows y=256..384 (primary textures)", rt, en, ov));
+    let (rt, en, ov) = band(384, 512);
+    bands.push(("texpage rows y=384..512 (textures + CLUTs)", rt, en, ov));
+    VramCoverage {
+        runtime_nonzero_pixels: runtime_nz,
+        engine_nonzero_pixels: engine_nz,
+        overlap_pixels: overlap,
+        runtime_only_pixels: runtime_only,
+        engine_only_pixels: engine_only,
+        bands,
+    }
+}
+
+fn print_vram_coverage(c: &VramCoverage) {
+    let total_runtime = c.runtime_nonzero_pixels.max(1);
+    println!("VRAM coverage (engine vs runtime, BGR555 != 0 pixel mask)");
+    println!(
+        "  runtime non-zero pixels:  {:>8}   (= the loaded VRAM ground truth)",
+        c.runtime_nonzero_pixels
+    );
+    println!("  engine  non-zero pixels:  {:>8}", c.engine_nonzero_pixels);
+    println!(
+        "  overlap (engine ∩ rt):    {:>8}   ({:.1}% of runtime)",
+        c.overlap_pixels,
+        100.0 * c.overlap_pixels as f64 / total_runtime as f64
+    );
+    println!(
+        "  runtime-only (gap):       {:>8}   ({:.1}% missing in engine)",
+        c.runtime_only_pixels,
+        100.0 * c.runtime_only_pixels as f64 / total_runtime as f64
+    );
+    println!("  engine-only (extra):      {:>8}", c.engine_only_pixels);
+    println!("  per-band breakdown:");
+    for (label, rt, en, ov) in &c.bands {
+        let pct = if *rt > 0 {
+            100.0 * (*ov as f64) / (*rt as f64)
+        } else {
+            0.0
+        };
+        println!("    {label:<48} runtime={rt:>7} engine={en:>7} overlap={ov:>7} ({pct:5.1}%)");
+    }
+}
+
+fn write_vram_diff_png(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()> {
+    const W: u32 = 1024;
+    const H: u32 = 512;
+    let mut rgba = Vec::with_capacity((W * H * 4) as usize);
+    for i in 0..(W as usize * H as usize) {
+        let off = i * 2;
+        let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
+        let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
+        let rnz = rw != 0;
+        let enz = ew != 0;
+        let color = match (rnz, enz) {
+            (false, false) => [0u8, 0, 0, 0xFF],
+            // Engine matches runtime exactly (same word) → grey
+            (true, true) if rw == ew => [0x60, 0x60, 0x60, 0xFF],
+            // Both non-zero but different content → blue
+            (true, true) => [0x30, 0x80, 0xFF, 0xFF],
+            // Runtime has content engine doesn't → red (the gap)
+            (true, false) => [0xFF, 0x40, 0x40, 0xFF],
+            // Engine has content runtime doesn't → green (extras / wrong slot)
+            (false, true) => [0x40, 0xFF, 0x40, 0xFF],
+        };
+        rgba.extend_from_slice(&color);
+    }
+    let f = std::fs::File::create(path)
+        .with_context(|| format!("create diff PNG {}", path.display()))?;
+    let bw = std::io::BufWriter::new(f);
+    let mut enc = png::Encoder::new(bw, W, H);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(&rgba)?;
     Ok(())
 }
 

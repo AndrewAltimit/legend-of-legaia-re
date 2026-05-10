@@ -13,6 +13,21 @@
 //!
 //! Build once per scene transition with [`SceneResources::build`]. Drop
 //! when the scene changes.
+//!
+//! ## Shared-block overlay
+//!
+//! The retail field / town engine doesn't only load the scene's own
+//! CDNAME block - it also keeps a small number of shared blocks resident
+//! in VRAM across every field transition. The two confirmed examples are
+//! `init_data` (PROT 0; shared UI/sprite atlas slots) and `player_data`
+//! (PROT 876; the player character TMD + 256x256 atlas at VRAM
+//! `fb=(768, 0)`). These survive scene transitions because they live in
+//! VRAM slots the per-scene loader never touches.
+//!
+//! Callers that want this engine-side parity drive
+//! [`SceneResources::build_with_shared`] and pass [`FIELD_SHARED_BLOCKS`]
+//! as the shared scene set. The default zero-arg [`SceneResources::build`]
+//! stays backward-compatible.
 
 use anyhow::Result;
 use legaia_asset::{anm_detect, tim_scan, tmd_scan};
@@ -58,6 +73,44 @@ impl ResolvedTmd {
             vram.prim_has_texture_data(cba, tsb, uvs)
         })
     }
+
+    /// Same as [`ResolvedTmd::build_filtered_vram_mesh`] but also
+    /// returns [`legaia_tmd::mesh::FilterStats`] so callers can report
+    /// how many prims fell through the VRAM-coverage filter. Engines
+    /// use this for "town01 mesh K: 92% prims kept" diagnostics.
+    pub fn build_filtered_vram_mesh_stats(
+        &self,
+        vram: &Vram,
+    ) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::FilterStats) {
+        legaia_tmd::mesh::tmd_to_vram_mesh_filtered_stats(&self.tmd, &self.raw, |cba, tsb, uvs| {
+            vram.prim_has_texture_data(cba, tsb, uvs)
+        })
+    }
+
+    /// Same shape as [`ResolvedTmd::build_filtered_vram_mesh_stats`] but
+    /// surfaces *why* each dropped prim was rejected (MissingClut /
+    /// DepthMismatch / MissingTexturePage) via
+    /// [`legaia_tmd::mesh::FilterStatsByReason`]. Useful for engine
+    /// diagnostics that want to distinguish "the loader skipped the
+    /// texture page" from "two TIMs collided on the same CLUT row".
+    pub fn build_filtered_vram_mesh_reasoned(
+        &self,
+        vram: &Vram,
+    ) -> (
+        legaia_tmd::mesh::VramMesh,
+        legaia_tmd::mesh::FilterStatsByReason,
+    ) {
+        legaia_tmd::mesh::tmd_to_vram_mesh_status_stats(&self.tmd, &self.raw, |cba, tsb, uvs| {
+            use legaia_tim::vram::PrimTextureStatus;
+            use legaia_tmd::mesh::PrimDecision;
+            match vram.prim_texture_status(cba, tsb, uvs) {
+                PrimTextureStatus::Ok => PrimDecision::Keep,
+                PrimTextureStatus::MissingClut { .. } => PrimDecision::MissingClut,
+                PrimTextureStatus::ClutDepthMismatch { .. } => PrimDecision::ClutDepthMismatch,
+                PrimTextureStatus::MissingTexturePage { .. } => PrimDecision::MissingTexturePage,
+            }
+        })
+    }
 }
 
 /// One ANM pack found in the scene's CDNAME block.
@@ -85,6 +138,16 @@ impl ResolvedAnm {
     }
 }
 
+/// Default shared CDNAME blocks the retail field / town engine keeps
+/// resident across scene transitions. Pair with
+/// [`SceneResources::build_with_shared`] to match the runtime VRAM layout.
+///
+/// `init_data` (PROT 0) holds shared sprite / UI tiles at VRAM
+/// `fb=(704, 0)` and `fb=(704, 256)`. `player_data` (PROT 876) holds
+/// the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with
+/// CLUT at `(0, 500)`.
+pub const FIELD_SHARED_BLOCKS: &[&str] = &["init_data", "player_data"];
+
 /// Per-scene runtime resources: VRAM populated from every TIM in the
 /// CDNAME block, plus a parsed TMD pool, plus a count of how many TIMs
 /// fed VRAM. Owns its bytes - safe to hold across a subsequent scene
@@ -110,6 +173,14 @@ pub struct SceneResources {
     /// Parsed ANM packs - every ANM container found across the scene's entries.
     /// The order is CDNAME-entry order, then byte-offset within each entry.
     pub anm_packs: Vec<ResolvedAnm>,
+    /// Number of TIMs contributed by shared CDNAME blocks (e.g.
+    /// `init_data`, `player_data`). Counted separately so the diagnostic
+    /// "this scene has N scene-local TIMs and K shared TIMs" survives a
+    /// single field. Zero when `build` was used (no shared overlay).
+    pub shared_tim_count: usize,
+    /// Number of TMDs contributed by shared CDNAME blocks. Same semantics
+    /// as `shared_tim_count`.
+    pub shared_tmd_count: usize,
 }
 
 impl SceneResources {
@@ -123,51 +194,225 @@ impl SceneResources {
     /// rare. When they happen the count is exposed via
     /// [`SceneResources::tim_parse_failures`] for diagnostic logging.
     pub fn build(scene: &Scene) -> Result<Self> {
+        Self::build_with_shared(scene, &[])
+    }
+
+    /// Same as [`SceneResources::build_with_shared`] but uses the
+    /// asset-viewer-style *targeted* VRAM-upload heuristic: every scene
+    /// TMD's prim CBA/TSB/UV needs are collected first, then each TIM's
+    /// image and CLUT blocks are uploaded *independently* based on
+    /// whether they overlap with mesh-required regions and whether they
+    /// would clobber some other mesh's data.
+    ///
+    /// Returns `None` for the upload stats when the scene has no
+    /// textured prims (caller falls back to the unfiltered upload).
+    /// This is the engine-side parity for what the retail field
+    /// loader's asset-chain does: only DMA the TIM bytes the current
+    /// frame's meshes need, leaving the rest of VRAM for other scene
+    /// resources.
+    ///
+    /// See [`legaia_tmd::vram_targeted::build_vram_targeted_from_buffers`]
+    /// for the per-TIM block-arbitration rule.
+    pub fn build_targeted(
+        scene: &Scene,
+        shared_scenes: &[&Scene],
+    ) -> Result<(Self, legaia_tmd::vram_targeted::VramUploadStats)> {
+        let mut tmds = Vec::new();
+        let mut anm_packs = Vec::new();
+        let mut shared_tmd_count = 0usize;
+
+        // Pass 1: parse every TMD and ANM from shared + scene so we know
+        // exactly what VRAM regions the meshes will sample.
+        let parse_scene_tmds_anms = |s: &Scene,
+                                     tmds: &mut Vec<ResolvedTmd>,
+                                     anm_packs: &mut Vec<ResolvedAnm>,
+                                     tmd_count: &mut usize| {
+            for entry in &s.entries {
+                let bytes: &[u8] = &entry.bytes;
+                for hit in tmd_scan::scan_buffer(bytes) {
+                    let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
+                    if let Ok(tmd) = legaia_tmd::parse(&payload) {
+                        tmds.push(ResolvedTmd {
+                            entry_idx: entry.idx,
+                            offset: hit.offset,
+                            byte_len: hit.byte_len,
+                            tmd,
+                            raw: payload,
+                        });
+                        *tmd_count += 1;
+                    }
+                }
+                if let Some(det) = anm_detect::detect(bytes) {
+                    let payload = bytes[..det.size].to_vec();
+                    if let Ok(pack) = legaia_anm::parse(&payload) {
+                        anm_packs.push(ResolvedAnm {
+                            entry_idx: entry.idx,
+                            offset: 0,
+                            byte_len: det.size,
+                            pack,
+                            payload,
+                        });
+                    }
+                }
+            }
+        };
+        for shared in shared_scenes {
+            parse_scene_tmds_anms(shared, &mut tmds, &mut anm_packs, &mut shared_tmd_count);
+        }
+        parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize);
+
+        // Pass 2: collect prim targets from every TMD - the union is
+        // what the targeted upload aims for.
+        let mut needs = Vec::new();
+        for rtmd in &tmds {
+            needs.extend(legaia_tmd::vram_targeted::collect_prim_targets(
+                &rtmd.tmd, &rtmd.raw,
+            ));
+        }
+
+        // Pass 3: walk every TIM hit (across both shared and scene
+        // entries) and feed the targeted builder.
+        let mut tim_bufs: Vec<Vec<u8>> = Vec::new();
+        let mut tim_parse_failures = 0usize;
+        let collect_tim_bufs =
+            |s: &Scene, tim_bufs: &mut Vec<Vec<u8>>, tim_parse_failures: &mut usize| {
+                for entry in &s.entries {
+                    let bytes: &[u8] = &entry.bytes;
+                    for hit in tim_scan::scan_buffer(bytes) {
+                        let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
+                        // Validate the TIM parses; otherwise drop early so
+                        // the targeted builder doesn't have to retry.
+                        if legaia_tim::parse(payload).is_ok() {
+                            tim_bufs.push(payload.to_vec());
+                        } else {
+                            *tim_parse_failures += 1;
+                        }
+                    }
+                }
+            };
+        for shared in shared_scenes {
+            collect_tim_bufs(shared, &mut tim_bufs, &mut tim_parse_failures);
+        }
+        let shared_tim_count = tim_bufs.len();
+        collect_tim_bufs(scene, &mut tim_bufs, &mut tim_parse_failures);
+        let tim_count = tim_bufs.len();
+
+        let (vram, upload_stats) = legaia_tmd::vram_targeted::build_vram_targeted_from_buffers(
+            tim_bufs.iter().map(|v| v.as_slice()),
+            &needs,
+        );
+
+        Ok((
+            Self {
+                vram,
+                tim_count,
+                tim_parse_failures,
+                tmds,
+                anm_packs,
+                shared_tim_count,
+                shared_tmd_count,
+            },
+            upload_stats,
+        ))
+    }
+
+    /// Same as [`SceneResources::build`] but also bulk-uploads every TIM
+    /// and parses every TMD from a set of *shared* CDNAME-block scenes -
+    /// the retail engine keeps these resident across scene transitions
+    /// at VRAM slots the per-scene loader never touches (player TMD,
+    /// shared UI sprite atlas, etc.).
+    ///
+    /// The shared scenes contribute to [`SceneResources::vram`] *first*,
+    /// so scene-local TIMs that map to overlapping slots win the upload
+    /// (mirrors the runtime "load shared at boot, then load scene"
+    /// order). Their TIM/TMD counts feed [`SceneResources::shared_tim_count`]
+    /// / [`SceneResources::shared_tmd_count`]. The TMDs and ANM packs
+    /// are appended to the same flat pools so existing
+    /// [`SceneResources::tmd_by_coords`] / [`SceneResources::anm_pack_for_actor`]
+    /// lookups work unchanged.
+    ///
+    /// See [`FIELD_SHARED_BLOCKS`] for the names a field / town caller
+    /// passes in.
+    pub fn build_with_shared(scene: &Scene, shared_scenes: &[&Scene]) -> Result<Self> {
         let mut vram = Vram::new();
         let mut tim_count = 0usize;
         let mut tim_parse_failures = 0usize;
         let mut tmds = Vec::new();
         let mut anm_packs = Vec::new();
+        let mut shared_tmd_count = 0usize;
 
-        for entry in &scene.entries {
-            let bytes: &[u8] = &entry.bytes;
-            for hit in tim_scan::scan_buffer(bytes) {
-                let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
-                match legaia_tim::parse(payload) {
-                    Ok(tim) => {
-                        vram.upload_tim(&tim);
-                        tim_count += 1;
+        let sweep_scene = |s: &Scene,
+                           vram: &mut Vram,
+                           tmds: &mut Vec<ResolvedTmd>,
+                           anm_packs: &mut Vec<ResolvedAnm>,
+                           tim_count: &mut usize,
+                           tim_parse_failures: &mut usize,
+                           tmd_count: &mut usize| {
+            for entry in &s.entries {
+                let bytes: &[u8] = &entry.bytes;
+                for hit in tim_scan::scan_buffer(bytes) {
+                    let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
+                    match legaia_tim::parse(payload) {
+                        Ok(tim) => {
+                            vram.upload_tim(&tim);
+                            *tim_count += 1;
+                        }
+                        Err(_) => *tim_parse_failures += 1,
                     }
-                    Err(_) => tim_parse_failures += 1,
+                }
+                for hit in tmd_scan::scan_buffer(bytes) {
+                    let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
+                    if let Ok(tmd) = legaia_tmd::parse(&payload) {
+                        tmds.push(ResolvedTmd {
+                            entry_idx: entry.idx,
+                            offset: hit.offset,
+                            byte_len: hit.byte_len,
+                            tmd,
+                            raw: payload,
+                        });
+                        *tmd_count += 1;
+                    }
+                }
+                if let Some(det) = anm_detect::detect(bytes) {
+                    let payload = bytes[..det.size].to_vec();
+                    if let Ok(pack) = legaia_anm::parse(&payload) {
+                        anm_packs.push(ResolvedAnm {
+                            entry_idx: entry.idx,
+                            offset: 0,
+                            byte_len: det.size,
+                            pack,
+                            payload,
+                        });
+                    }
                 }
             }
-            for hit in tmd_scan::scan_buffer(bytes) {
-                let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
-                if let Ok(tmd) = legaia_tmd::parse(&payload) {
-                    tmds.push(ResolvedTmd {
-                        entry_idx: entry.idx,
-                        offset: hit.offset,
-                        byte_len: hit.byte_len,
-                        tmd,
-                        raw: payload,
-                    });
-                }
-            }
-            // ANM containers are a different magic than TIM/TMD; detect from
-            // the entry start (they're full-entry assets, not embedded).
-            if let Some(det) = anm_detect::detect(bytes) {
-                let payload = bytes[..det.size].to_vec();
-                if let Ok(pack) = legaia_anm::parse(&payload) {
-                    anm_packs.push(ResolvedAnm {
-                        entry_idx: entry.idx,
-                        offset: 0,
-                        byte_len: det.size,
-                        pack,
-                        payload,
-                    });
-                }
-            }
+        };
+
+        // Shared blocks first so scene-local TIMs win any slot collision.
+        for shared in shared_scenes {
+            sweep_scene(
+                shared,
+                &mut vram,
+                &mut tmds,
+                &mut anm_packs,
+                &mut tim_count,
+                &mut tim_parse_failures,
+                &mut shared_tmd_count,
+            );
         }
+        // After the shared sweep, tim_count IS the shared contribution -
+        // snapshot it before the scene sweep mutates it further.
+        let shared_tim_count = tim_count;
+
+        sweep_scene(
+            scene,
+            &mut vram,
+            &mut tmds,
+            &mut anm_packs,
+            &mut tim_count,
+            &mut tim_parse_failures,
+            &mut 0usize,
+        );
 
         Ok(Self {
             vram,
@@ -175,6 +420,8 @@ impl SceneResources {
             tim_parse_failures,
             tmds,
             anm_packs,
+            shared_tim_count,
+            shared_tmd_count,
         })
     }
 
@@ -298,7 +545,73 @@ mod tests {
         ]);
         let res = SceneResources::build(&scene).unwrap();
         assert_eq!(res.tim_count, 2);
+        assert_eq!(res.shared_tim_count, 0);
         assert_eq!(res.vram.pixel(0, 0), 0xAAAA);
         assert_eq!(res.vram.pixel(128, 128), 0xAAAA);
+    }
+
+    /// Shared CDNAME blocks (e.g. `init_data`, `player_data`) must
+    /// populate VRAM at slots the per-scene block doesn't touch - this
+    /// proves the order is shared-first then scene, so the scene wins
+    /// any slot collision, but non-overlapping shared slots survive.
+    #[test]
+    fn build_with_shared_uploads_shared_tims_into_distinct_slots() {
+        let scene_only = make_scene(vec![SceneEntry {
+            idx: 0,
+            class: Class::UnknownOther,
+            bytes: Arc::new(synth_tim_16bpp(64, 0)),
+        }]);
+        let shared = make_scene(vec![SceneEntry {
+            idx: 100,
+            class: Class::UnknownOther,
+            bytes: Arc::new(synth_tim_16bpp(768, 0)),
+        }]);
+        let res = SceneResources::build_with_shared(&scene_only, &[&shared]).unwrap();
+        // 1 shared TIM + 1 scene TIM = 2 total
+        assert_eq!(res.tim_count, 2);
+        assert_eq!(res.shared_tim_count, 1);
+        // Shared TIM landed at (768, 0); scene TIM at (64, 0).
+        assert_eq!(res.vram.pixel(768, 0), 0xAAAA);
+        assert_eq!(res.vram.pixel(64, 0), 0xAAAA);
+    }
+
+    /// Scene-local TIMs win when the shared and scene blocks both target
+    /// the same VRAM slot. Mirrors the retail boot-then-scene ordering:
+    /// init_data lays down the boot atlas, then a scene-specific TIM at
+    /// the same slot overwrites it.
+    #[test]
+    fn build_with_shared_scene_wins_overlapping_slots() {
+        // Shared writes 0xAAAA at (0, 0); scene writes 0x5555 at (0, 0).
+        // Build two distinct 1px TIMs that target the same slot.
+        fn pixel_at(x: u16, y: u16, color: u16) -> Vec<u8> {
+            let mut b = Vec::new();
+            b.extend_from_slice(&0x10u32.to_le_bytes());
+            b.extend_from_slice(&0x02u32.to_le_bytes());
+            b.extend_from_slice(&20u32.to_le_bytes());
+            b.extend_from_slice(&x.to_le_bytes());
+            b.extend_from_slice(&y.to_le_bytes());
+            b.extend_from_slice(&4u16.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes());
+            for _ in 0..4 {
+                b.extend_from_slice(&color.to_le_bytes());
+            }
+            b
+        }
+        let shared = make_scene(vec![SceneEntry {
+            idx: 100,
+            class: Class::UnknownOther,
+            bytes: Arc::new(pixel_at(0, 0, 0xAAAA)),
+        }]);
+        let scene_only = make_scene(vec![SceneEntry {
+            idx: 0,
+            class: Class::UnknownOther,
+            bytes: Arc::new(pixel_at(0, 0, 0x5555)),
+        }]);
+        let res = SceneResources::build_with_shared(&scene_only, &[&shared]).unwrap();
+        assert_eq!(
+            res.vram.pixel(0, 0),
+            0x5555,
+            "scene must win slot collision"
+        );
     }
 }
