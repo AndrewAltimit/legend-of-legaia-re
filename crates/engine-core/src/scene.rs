@@ -301,6 +301,64 @@ pub const FMV_CUTSCENE_SCENES: [(&str, &str); 6] = [
     ("edteien", "MOV/MV6.STR"),
 ];
 
+/// Engine-override CDNAME→MV cutscene map.
+///
+/// The retail table lives in the FMV-cutscene overlay (game modes 26/27,
+/// see [`docs/subsystems/cutscene.md`](../../../../docs/subsystems/cutscene.md)).
+/// The retail overlay isn't in the captured corpus yet — `dump_str_fmv_overlay.py`
+/// is staged but not run — so the heuristic in [`cutscene_str_for`] ships
+/// as the default. Once the overlay capture lands, engines can populate a
+/// [`CutsceneMap`] from the captured table and override the heuristic via
+/// [`CutsceneMap::resolve`].
+///
+/// The map is *additive*: entries the user inserts win, missing entries
+/// fall back to the heuristic. Engines feed it from a captured-data file
+/// or from the boot config.
+#[derive(Debug, Clone, Default)]
+pub struct CutsceneMap {
+    forward: std::collections::HashMap<String, String>,
+}
+
+impl CutsceneMap {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Build a map seeded with the heuristic mapping ([`FMV_CUTSCENE_SCENES`]).
+    /// Engines can then override or extend specific entries.
+    pub fn from_heuristic() -> Self {
+        let mut m = Self::default();
+        for (label, str_path) in FMV_CUTSCENE_SCENES.iter() {
+            m.forward
+                .insert((*label).to_string(), (*str_path).to_string());
+        }
+        m
+    }
+
+    /// Insert / replace a CDNAME-label → STR-path mapping.
+    pub fn insert(&mut self, scene_label: impl Into<String>, str_path: impl Into<String>) {
+        self.forward.insert(scene_label.into(), str_path.into());
+    }
+
+    /// Resolve a CDNAME label to its STR path. Falls through to the
+    /// hard-coded heuristic if the map doesn't carry the label.
+    pub fn resolve(&self, scene_label: &str) -> Option<String> {
+        if let Some(path) = self.forward.get(scene_label) {
+            return Some(path.clone());
+        }
+        cutscene_str_for(scene_label).map(|s| s.to_string())
+    }
+
+    /// Number of explicit entries (excludes heuristic fallbacks).
+    pub fn len(&self) -> usize {
+        self.forward.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.forward.is_empty()
+    }
+}
+
 /// A scene = the per-CDNAME-block bundle of PROT entries that the runtime
 /// loads together. Mirrors the per-scene shape `FUN_8001f7c0` consumes.
 pub struct Scene {
@@ -890,6 +948,39 @@ mod tests {
         assert_eq!(cutscene_label_for_str("mv1.str"), Some("opdeene"));
         assert_eq!(cutscene_label_for_str("MOV/mv6.STR"), Some("edteien"));
         assert_eq!(cutscene_label_for_str("garbage"), None);
+    }
+
+    #[test]
+    fn cutscene_map_default_is_empty_and_resolves_via_heuristic() {
+        let m = CutsceneMap::new();
+        assert!(m.is_empty());
+        assert_eq!(m.resolve("opdeene"), Some("MOV/MV1.STR".into()));
+        assert_eq!(m.resolve("town01"), None);
+    }
+
+    #[test]
+    fn cutscene_map_explicit_entry_overrides_heuristic() {
+        let mut m = CutsceneMap::new();
+        m.insert("opdeene", "MOV/CUSTOM.STR");
+        assert_eq!(m.resolve("opdeene"), Some("MOV/CUSTOM.STR".into()));
+        // Other entries still fall through to the heuristic.
+        assert_eq!(m.resolve("opstati"), Some("MOV/MV2.STR".into()));
+    }
+
+    #[test]
+    fn cutscene_map_from_heuristic_preloaded() {
+        let m = CutsceneMap::from_heuristic();
+        assert_eq!(m.len(), FMV_CUTSCENE_SCENES.len());
+        for (label, path) in FMV_CUTSCENE_SCENES.iter() {
+            assert_eq!(m.resolve(label), Some((*path).into()));
+        }
+    }
+
+    #[test]
+    fn cutscene_map_unknown_label_falls_through_to_heuristic_none() {
+        let m = CutsceneMap::from_heuristic();
+        assert_eq!(m.resolve("town01"), None);
+        assert_eq!(m.resolve("xxx"), None);
     }
 
     #[test]

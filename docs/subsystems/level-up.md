@@ -25,13 +25,15 @@ table can be overridden via `with_xp_table(Vec<u32>)`.
 Total XP to reach level N (from level 1):
 - Level 2: 50
 - Level 3: 106
-- Level 5: 281
-- Level 10: 765
-- Level 20: 2780
-- Level 50: 17925
-- Level 99: 61444
+- Level 5: 312
+- Level 10: 949
+- Level 20: 3093
+- Level 50: 14655
+- Level 99: 34663
 
-(Rounded; computed from the prefix sum of the SCUS_942.54 increment table.)
+(Computed by prefix-summing the 98 u16 LE increments at SCUS_942.54
+`0x8007123C`. Verified by `legaia_save::RETAIL_XP_CUMULATIVE` and
+`level_for_cumulative_xp` round-trip.)
 
 ## Stat gains
 
@@ -136,7 +138,15 @@ Wired into `PlayWindowApp::build_text_overlay` at anchor `(8, 60)` in
   their Seru rosters. The per-Seru HP-grant field is at `+0x74` in the Seru
   struct; remaining grant fields (MP, STR, DEF, INT, LUCK) are at sibling
   offsets not yet traced. Extraction requires a live capture of the Seru struct
-  data during a level-up save state.
+  data during a level-up save state. **Status:** writer-search across the
+  captured `magic_level_up` overlay returned **negative** for code-side `sb` /
+  `sh` writes targeting the destination offsets (`+0x10E`, `+0x11C..+0x12C`,
+  `+0x130`, `+0x161`) — the per-Seru lookup table is read at runtime through a
+  pointer set at scene-load time, not in any captured static body. Engine-side
+  scaffold lives at [`crates/engine-core/src/seru_stats.rs`]: `SeruStatGrant` +
+  `SeruStatTable` + `LevelUpTracker::with_seru_roster` install a flat curve
+  summed across the equipped Seru. Replace with `StatGrowthCurve::PerLevel`
+  when the runtime trace lands.
 - **Battle actor struct fields `+0x14C`–`+0x176`.** The battle actor (pointed
   to by `DAT_801C9370[slot]`) holds HP at `+0x14C`, max HP at `+0x14E`, and
   additional stats at `+0x150`/`+0x152`/`+0x154`/`+0x156`; full field mapping

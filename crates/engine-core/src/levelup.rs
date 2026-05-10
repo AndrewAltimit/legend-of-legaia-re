@@ -384,6 +384,27 @@ impl LevelUpTracker {
         self
     }
 
+    /// Install a flat per-level curve derived from a [`crate::seru_stats::SeruStatTable`]
+    /// summed against `roster`. Convenience wrapper around
+    /// [`crate::seru_stats::SeruStatTable::to_flat_curve`] that targets a
+    /// specific party slot.
+    ///
+    /// Once true per-Seru-level grants are captured (currently blocked on a
+    /// runtime watchpoint trace through `Seru struct +0x74`) engines should
+    /// migrate to a captured per-level vector rather than this flat curve.
+    pub fn with_seru_roster(
+        mut self,
+        char_slot: u8,
+        table: &crate::seru_stats::SeruStatTable,
+        roster: &[u16],
+    ) -> Self {
+        let slot = char_slot as usize;
+        if slot < MAX_PARTY {
+            self.stat_curves[slot] = table.to_flat_curve(roster);
+        }
+        self
+    }
+
     /// Grant `xp` to party slot `char_id`. If the accumulated XP crosses one
     /// or more level thresholds the highest level reached is returned.
     /// Multi-level jumps collapse into a single result with the total stat
@@ -736,6 +757,21 @@ mod tests {
         assert_eq!(r.new_level, 3);
         assert_eq!(r.hp_gained, 20);
         assert_eq!(r.mp_gained, 4);
+    }
+
+    #[test]
+    fn with_seru_roster_installs_flat_curve_summed_from_table() {
+        use crate::seru_stats::{SeruStatGrant, SeruStatTable};
+        let mut table = SeruStatTable::new();
+        table.insert(0, SeruStatGrant::hp_mp(8, 3));
+        table.insert(1, SeruStatGrant::hp_mp(4, 2));
+        // Roster sum: hp 12, mp 5.
+        let mut t = LevelUpTracker::new()
+            .with_xp_table(placeholder_xp_table())
+            .with_seru_roster(0, &table, &[0, 1]);
+        let r = t.grant_xp(0, 100).expect("level up");
+        assert_eq!(r.hp_gained, 12);
+        assert_eq!(r.mp_gained, 5);
     }
 
     #[test]

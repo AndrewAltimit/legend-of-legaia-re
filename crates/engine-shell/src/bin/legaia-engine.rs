@@ -1600,22 +1600,22 @@ fn cmd_play_window(
     // Wire vanilla encounter + monster tables so triggered encounters can
     // resolve to a concrete monster set. Engines that load real disc-side
     // tables override this via `World::set_formation_table` later.
+    //
+    // The encounter session itself comes from the registry: the vanilla
+    // pattern set decides per scene-label whether the table is a field
+    // encounter, a quiet town/cutscene, or no session at all. This is the
+    // path engines extend with disc-loaded tables once `0865_battle_data`
+    // surfaces a per-scene encounter offset.
     {
         let world = &mut session.host.world;
+        world.set_active_scene_label(scene);
         world.set_formation_table(
             legaia_engine_core::monster_catalog::vanilla_formation_table(),
             legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
         );
-        // Default early-game encounter table — the scene-loader path will
-        // replace this when real disc data lands. Still useful for the
-        // default `town01` boot so the encounter trigger fires on step.
-        let table = legaia_engine_core::monster_catalog::default_early_encounter_table(scene);
+        let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
         if matches!(world.mode, SceneMode::Field) {
-            world.set_encounter_session(Some(
-                legaia_engine_core::encounter::EncounterSession::new(
-                    legaia_engine_core::encounter::EncounterTracker::new(table),
-                ),
-            ));
+            world.install_encounter_for_scene(&registry, scene);
         }
     }
 
@@ -1696,27 +1696,28 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
                 .map(|sf| (b.len(), sf))
         }) {
             Some((_, sf)) => {
-                // CharacterRecord doesn't expose `level()` yet — use the
-                // active-party leader's HP/MP cap as a coarse stand-in
-                // for display. Engines that reverse-engineer the level
-                // byte will replace this.
+                // Read the cumulative XP value from the active-party
+                // leader's record (`+0x04..+0x06`, pinned by the mc7→mc9
+                // capture) and infer the level from the retail XP table.
+                // Engines that capture the actual level byte can override.
                 let lv = sf
                     .party
                     .members
                     .first()
-                    .map(|r| {
-                        let hms = r.hp_mp_sp();
-                        // Approximate level = max(1, hp_max / 20).
-                        (hms.hp_max / 20).clamp(1, 99) as u8
-                    })
+                    .map(|r| legaia_save::level_for_cumulative_xp(r.cumulative_xp() as u32))
                     .unwrap_or(1);
+                let location = if sf.ext_v2.active_party.is_empty() {
+                    "Field".to_string()
+                } else {
+                    format!("Field (party x{})", sf.ext_v2.active_party.len())
+                };
                 SlotSnapshot {
                     slot,
                     present: true,
                     label: format!("Slot {slot}"),
                     play_time_seconds: sf.ext_v2.play_time_seconds,
                     party_lv: lv,
-                    location: String::from("Field"),
+                    location,
                     money: sf.ext.money.max(0) as u32,
                 }
             }
