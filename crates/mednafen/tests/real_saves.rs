@@ -130,6 +130,94 @@ fn scenarios_manifest_resolves_every_save() {
 }
 
 #[test]
+fn level_up_diff_pins_captured_offsets_for_vahn_record() {
+    // mc8 → mc9 spans the character level-up event for Vahn (slot 0 of
+    // the party record table at 0x80084708, stride 0x414). The diff
+    // window is exactly Vahn's record. We assert the byte-level deltas
+    // that the post-#26 batch 13 wired into
+    // `engine_core::levelup::observations::vahn_mc8_to_mc9`.
+    let (Some(p8), Some(p9)) = (save_for(8), save_for(9)) else {
+        eprintln!("{}", skip_msg(8));
+        return;
+    };
+    let s8 = SaveState::from_path(&p8).unwrap();
+    let s9 = SaveState::from_path(&p9).unwrap();
+    let r8 = s8.main_ram().unwrap();
+    let r9 = s9.main_ram().unwrap();
+    // Vahn record window: 0x80084708..+0x414.
+    let opts = DiffOptions {
+        window: (0x80084708, 0x80084708 + 0x414),
+        merge_gap: 0,
+        min_bytes_changed: 1,
+    };
+    let d = diff_ram(r8, r9, "magic_level_up", "char_level_up", &opts);
+    // Capture: 11 regions, 14 bytes changed (per `mednafen-state diff` run).
+    assert!(
+        d.regions.len() >= 4,
+        "expected several discrete deltas, got {}",
+        d.regions.len()
+    );
+    // Specifically: +0x10E single-byte +8 (SP_max). The window is the
+    // full record so each region's start_addr is absolute.
+    let region_at = |addr: u32| {
+        d.regions
+            .iter()
+            .find(|r| r.start_addr == addr)
+            .unwrap_or_else(|| panic!("no region starting at {:#x}", addr))
+    };
+    let r10e = region_at(0x80084708 + 0x10E);
+    assert_eq!(r10e.bytes_changed, 1);
+    // Stat-byte cluster at +0x122..+0x12C (six byte-stride single-step
+    // increments). The diff merges them into separate regions because
+    // merge_gap=0; we just check at least 6 regions in that range.
+    let in_stat_range = d
+        .regions
+        .iter()
+        .filter(|r| r.start_addr >= 0x80084708 + 0x122 && r.start_addr <= 0x80084708 + 0x12C)
+        .count();
+    assert!(
+        in_stat_range >= 4,
+        "expected 6 stat-byte deltas at +0x122..+0x12C, got {}",
+        in_stat_range
+    );
+}
+
+#[test]
+fn magic_rank_up_diff_pins_spell_level_offset() {
+    // mc7 → mc8 is the magic-rank-up event (Vahn casts a spell during
+    // a battle and his spell-rank counter at +0x9C ticks up; the spell
+    // level array at +0x161 increments by 1 for the spell that ranked).
+    let (Some(p7), Some(p8)) = (save_for(7), save_for(8)) else {
+        eprintln!("{}", skip_msg(7));
+        return;
+    };
+    let s7 = SaveState::from_path(&p7).unwrap();
+    let s8 = SaveState::from_path(&p8).unwrap();
+    let r7 = s7.main_ram().unwrap();
+    let r8 = s8.main_ram().unwrap();
+    let opts = DiffOptions {
+        window: (0x80084708, 0x80084708 + 0x414),
+        merge_gap: 0,
+        min_bytes_changed: 1,
+    };
+    let d = diff_ram(r7, r8, "pre_steal", "magic_level_up", &opts);
+    // Expect a single-byte delta at +0x161 (spell levels) and at +0x9C
+    // (magic-rank counter).
+    let has_spell_lvl = d.regions.iter().any(|r| r.start_addr == 0x80084708 + 0x161);
+    let has_magic_rank = d.regions.iter().any(|r| r.start_addr == 0x80084708 + 0x9C);
+    assert!(
+        has_spell_lvl,
+        "expected delta at +0x161 (spell levels); regions={:?}",
+        d.regions.iter().map(|r| r.start_addr).collect::<Vec<_>>()
+    );
+    assert!(
+        has_magic_rank,
+        "expected delta at +0x9C (magic-rank); regions={:?}",
+        d.regions.iter().map(|r| r.start_addr).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn watchpoint_diff_for_battle_anim_strike_runs_clean() {
     // mc6 (somersault) has the actor anim-state writes we want to surface.
     // This exercises the watch flow end-to-end against real data.

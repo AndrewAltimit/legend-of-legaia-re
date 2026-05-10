@@ -160,6 +160,127 @@ pub fn placeholder_xp_table() -> Vec<u32> {
     (1u32..MAX_LEVEL as u32).map(|n| 100 * n * n).collect()
 }
 
+/// One observed level-up delta from a save-state capture pair.
+///
+/// Captured via the `mednafen-state diff` toolkit (`scripts/mednafen/`):
+/// engines get a "before" save (pre-level-up) and an "after" save
+/// (post-level-up), diff the character-record window across them, and
+/// translate the byte-level deltas into this struct.
+///
+/// The observation is an *average* across `levels_gained`, so engines
+/// using [`LevelUpObservation::to_curve`] get a flat curve where every
+/// level inside the observed range yields `(hp_total / levels_gained,
+/// mp_total / levels_gained)`. Outside the observed range the curve
+/// falls back to [`StatGain::default`].
+///
+/// The retail per-character per-level table — the writer-search target
+/// for the next round of overlay analysis — would let the engine emit
+/// a true [`StatGrowthCurve::PerLevel`] vector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelUpObservation {
+    /// Display name for diagnostics (e.g. `"Vahn mc8→mc9"`).
+    pub label: String,
+    /// Pre-event level (1-based).
+    pub from_level: u8,
+    /// Post-event level (1-based).
+    pub to_level: u8,
+    /// Total HP_max gained across `from_level → to_level`.
+    pub hp_gained: u16,
+    /// Total MP_max gained across `from_level → to_level`.
+    pub mp_gained: u16,
+    /// Spirit-max (SP_max at char-record `+0x10E`) gain across the same
+    /// range. Engines that mirror the retail "Spirit gain on level-up"
+    /// behavior fold this into their gauge cap.
+    pub sp_gained: u16,
+    /// Per-stat byte deltas observed at char-record `+0x11C..+0x12D`.
+    /// Each entry is the total delta across `levels_gained` levels.
+    /// The retail layout for these bytes is not yet pinned (the typed
+    /// `CharacterRecord` accessors don't surface them yet).
+    pub stat_deltas: [u8; 12],
+}
+
+impl LevelUpObservation {
+    /// Number of levels the observation spans.
+    pub fn levels_gained(&self) -> u16 {
+        self.to_level.saturating_sub(self.from_level) as u16
+    }
+
+    /// Per-level [`StatGain`] averaged across the observed range. Used
+    /// internally by [`Self::to_curve`].
+    pub fn average_per_level(&self) -> StatGain {
+        let n = self.levels_gained().max(1);
+        StatGain {
+            hp: self.hp_gained / n,
+            mp: self.mp_gained / n,
+        }
+    }
+
+    /// Build a [`StatGrowthCurve::PerLevel`] vector that emits the
+    /// per-level average inside the observed `from_level..to_level`
+    /// range and falls back to [`StatGain::default`] outside it.
+    pub fn to_curve(&self) -> StatGrowthCurve {
+        let avg = self.average_per_level();
+        let mut table: Vec<StatGain> = Vec::with_capacity((MAX_LEVEL - 1) as usize);
+        for prev in 1u8..MAX_LEVEL {
+            let inside = prev >= self.from_level && prev < self.to_level;
+            table.push(if inside { avg } else { StatGain::default() });
+        }
+        StatGrowthCurve::PerLevel(table)
+    }
+}
+
+/// Captured observations indexed by party slot. Engines read this and
+/// install per-slot curves at boot via
+/// [`LevelUpTracker::with_observed_curve`].
+///
+/// The slot indices match the retail party layout (Vahn = 0, Noa = 1,
+/// Gala = 2). Slot 3 is reserved for whichever character occupies the
+/// fourth party slot (Maya / Songi in the late game).
+pub mod observations {
+    use super::LevelUpObservation;
+
+    /// Vahn level-up captured from `~/.mednafen/mcs/.mc8 → .mc9` (post-#26
+    /// session 13). Pre: cumulative XP 365 → post 730 (delta +365). The
+    /// captured `+0x00` byte changed `0x4F → 0x73` (a multi-level jump).
+    /// Per-stat byte deltas come from the diff at `+0x11C..+0x12D`.
+    ///
+    /// Bytes mapped to per-stat deltas:
+    /// - `+0x11C`: `0xDD → 0x03` (rolled past 0xFF — `+0x26` mod 256)
+    /// - `+0x11D`: `0x00 → 0x01` (carry from above; effective u16 LE
+    ///   `+0x126` if the field is u16)
+    /// - `+0x11E`: `0x1B → 0x23` (+8)
+    /// - `+0x122`: `0x67 → 0x6B` (+4)
+    /// - `+0x124`: `0x1C → 0x20` (+4)
+    /// - `+0x126`: `0x13 → 0x15` (+2)
+    /// - `+0x128`: `0x10 → 0x12` (+2)
+    /// - `+0x12A`: `0x16 → 0x1A` (+4)
+    /// - `+0x12C`: `0x0B → 0x0F` (+4)
+    /// - `+0x130`: `0x02 → 0x03` (+1, rank counter — not a stat)
+    ///
+    /// SP_max byte at `+0x10E`: `0x3A → 0x42` (+8).
+    ///
+    /// The XP table gap of 365 → 730 spans the L1→2..L9→10 cumulative
+    /// range, but the level field semantics are unconfirmed (the byte
+    /// at `+0x00` jumped by +0x24 = 36 which doesn't match a single-
+    /// level granularity). Treating the observation as a 4-level jump
+    /// from L6 → L10 matches the cumulative thresholds.
+    pub fn vahn_mc8_to_mc9() -> LevelUpObservation {
+        LevelUpObservation {
+            label: "Vahn mc8->mc9 (4-level jump)".into(),
+            from_level: 6,
+            to_level: 10,
+            hp_gained: 0, // not surfaced in the diff (record's hp_max stayed steady)
+            mp_gained: 0,
+            sp_gained: 8, // observed at +0x10E
+            stat_deltas: [
+                // 12 stat bytes at +0x11C..+0x127 (interpreted as 12 u8 stats).
+                // Engines that decode these as 6 u16s should fold pairs.
+                0x26, 0x01, 0x08, 0x00, 0x00, 0x00, 0x04, 0x00, 0x04, 0x00, 0x02, 0x00,
+            ],
+        }
+    }
+}
+
 /// One level-up event returned by [`LevelUpTracker::grant_xp`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LevelUpResult {
@@ -247,6 +368,19 @@ impl LevelUpTracker {
     /// Convenience: install the same curve into every party slot.
     pub fn with_stat_curve(mut self, curve: StatGrowthCurve) -> Self {
         self.stat_curves = std::array::from_fn(|_| curve.clone());
+        self
+    }
+
+    /// Install a curve derived from a captured `LevelUpObservation`.
+    /// Engines call this when they have one or more recorded delta samples
+    /// from real save-state captures and want the tracker to reproduce
+    /// the same average-per-level gain inside the observed range. Outside
+    /// that range the curve falls back to [`StatGain::default`].
+    pub fn with_observed_curve(mut self, char_slot: u8, obs: &LevelUpObservation) -> Self {
+        let slot = char_slot as usize;
+        if slot < MAX_PARTY {
+            self.stat_curves[slot] = obs.to_curve();
+        }
         self
     }
 
@@ -528,6 +662,80 @@ mod tests {
         assert_eq!(r.new_level, 3);
         assert_eq!(r.hp_gained, 20); // 7 + 13
         assert_eq!(r.mp_gained, 3); // 1 + 2
+    }
+
+    #[test]
+    fn observation_to_curve_yields_per_level_average_inside_range() {
+        let obs = LevelUpObservation {
+            label: "test 4-level jump".into(),
+            from_level: 6,
+            to_level: 10,
+            hp_gained: 8,
+            mp_gained: 4,
+            sp_gained: 8,
+            stat_deltas: [0; 12],
+        };
+        let avg = obs.average_per_level();
+        assert_eq!(avg.hp, 2);
+        assert_eq!(avg.mp, 1);
+        let curve = obs.to_curve();
+        // Inside the observed range each level emits the average.
+        assert_eq!(curve.gain_for(6), StatGain { hp: 2, mp: 1 });
+        assert_eq!(curve.gain_for(9), StatGain { hp: 2, mp: 1 });
+        // Outside the range falls back to default.
+        assert_eq!(curve.gain_for(1), StatGain::default());
+        assert_eq!(curve.gain_for(50), StatGain::default());
+        // Sum across the observed range == hp_gained / mp_gained.
+        let total = curve.sum_range(6, 10);
+        assert_eq!(total, StatGain { hp: 8, mp: 4 });
+    }
+
+    #[test]
+    fn observation_with_zero_levels_gained_is_zero_avg() {
+        let obs = LevelUpObservation {
+            label: "no-op".into(),
+            from_level: 5,
+            to_level: 5,
+            hp_gained: 0,
+            mp_gained: 0,
+            sp_gained: 0,
+            stat_deltas: [0; 12],
+        };
+        assert_eq!(obs.levels_gained(), 0);
+        assert_eq!(obs.average_per_level(), StatGain { hp: 0, mp: 0 });
+    }
+
+    #[test]
+    fn vahn_mc8_to_mc9_observation_matches_capture() {
+        let obs = observations::vahn_mc8_to_mc9();
+        assert_eq!(obs.from_level, 6);
+        assert_eq!(obs.to_level, 10);
+        assert_eq!(obs.levels_gained(), 4);
+        // Spirit-max gain captured at +0x10E (single-byte +8).
+        assert_eq!(obs.sp_gained, 8);
+        // First stat delta byte is the wrap-around 0xDD->0x03 = +0x26.
+        assert_eq!(obs.stat_deltas[0], 0x26);
+    }
+
+    #[test]
+    fn with_observed_curve_installs_per_slot() {
+        let obs = LevelUpObservation {
+            label: "synthetic".into(),
+            from_level: 1,
+            to_level: 3,
+            hp_gained: 20,
+            mp_gained: 4,
+            sp_gained: 0,
+            stat_deltas: [0; 12],
+        };
+        let mut t = LevelUpTracker::new()
+            .with_xp_table(placeholder_xp_table())
+            .with_observed_curve(0, &obs);
+        let r = t.grant_xp(0, 400).expect("level up");
+        // Each level inside [1, 3) yields avg(20/2) = 10 HP, avg(4/2) = 2 MP.
+        assert_eq!(r.new_level, 3);
+        assert_eq!(r.hp_gained, 20);
+        assert_eq!(r.mp_gained, 4);
     }
 
     #[test]

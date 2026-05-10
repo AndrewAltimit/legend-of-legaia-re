@@ -514,11 +514,26 @@ fn cmd_play(
     frame_ms: u64,
     str_file: Option<&Path>,
 ) -> Result<()> {
-    // If a STR file was supplied, pre-decode it headlessly and log the frame
-    // count. This is phase 1 for `op*`/`ed*` in-engine cutscene scenes where
-    // an FMV precedes the dialogue-overlay scene proper. The scene ticking
-    // (phase 2) runs unconditionally after this block.
-    if let Some(str_path) = str_file {
+    // Auto-resolve a `--scene op*` / `--scene edteien` request to its
+    // paired FMV via `legaia_engine_core::scene::cutscene_str_for` when the
+    // user didn't explicitly pass `--str-file` and the extracted root
+    // has the file on disk.
+    let auto_str = match (str_file, disc) {
+        (Some(_), _) => None,
+        (None, None) => legaia_engine_core::scene::cutscene_str_for(scene)
+            .map(|rel| extracted_root.join(rel))
+            .filter(|p| p.exists()),
+        // Disc-mode resolution would need an ISO9660 read; punt.
+        (None, Some(_)) => None,
+    };
+    let resolved_str: Option<&Path> = str_file.or(auto_str.as_deref());
+
+    // If a STR file was supplied (explicitly or auto-resolved), pre-decode
+    // it headlessly and log the frame count. This is phase 1 for
+    // `op*`/`ed*` in-engine cutscene scenes where an FMV precedes the
+    // dialogue-overlay scene proper. The scene ticking (phase 2) runs
+    // unconditionally after this block.
+    if let Some(str_path) = resolved_str {
         use legaia_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
         let data = std::fs::read(str_path)
             .with_context(|| format!("read STR file {}", str_path.display()))?;
@@ -1552,9 +1567,21 @@ fn cmd_play_window(
     boot_ui: bool,
     save_dir: &Path,
 ) -> Result<()> {
-    // Phase 1: if a STR file is provided, play the video in a window first.
-    // The user closes (or ESC) the STR window, then the scene window opens.
-    if let Some(str_path) = str_file {
+    // Auto-resolve op*/ed* cutscene scenes to their MV*.STR file when
+    // the user didn't pass --str-file but the extracted root has the
+    // file on disk. Mirrors the same convenience path in cmd_play.
+    let auto_str = match (str_file, disc) {
+        (Some(_), _) => None,
+        (None, None) => legaia_engine_core::scene::cutscene_str_for(scene)
+            .map(|rel| extracted_root.join(rel))
+            .filter(|p| p.exists()),
+        (None, Some(_)) => None,
+    };
+    let resolved_str: Option<&Path> = str_file.or(auto_str.as_deref());
+    // Phase 1: if a STR file is provided (or auto-resolved), play the
+    // video in a window first. The user closes (or ESC) the STR window,
+    // then the scene window opens.
+    if let Some(str_path) = resolved_str {
         cmd_play_str(str_path, 640, 480)?;
     }
 

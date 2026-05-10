@@ -241,6 +241,66 @@ pub fn is_cutscene_label(label: &str) -> bool {
     label.starts_with("op") || label.starts_with("ed")
 }
 
+/// Return the FMV [`MOV/MVn.STR`] filename associated with a CDNAME
+/// cutscene scene, if any. The retail engine reads the mapping from
+/// the cutscene overlay; until that table is captured the mapping is
+/// derived from CDNAME ordering: the five `op*` opening scenes map
+/// 1:1 to `MV1.STR..MV5.STR`, and the first `ed*` ending scene maps to
+/// `MV6.STR`. Other ending scenes are dialogue-actor-overlay driven
+/// (no FMV).
+///
+/// Returns `Some("MOV/MVn.STR")` for resolvable scenes, `None`
+/// otherwise. Engines join the relative path against their extracted
+/// root (or read the named ISO9660 entry from a `.bin` disc image).
+///
+/// Heuristic mapping pinned to the disc's MV1..MV6 file count + the
+/// CDNAME ordering of the `op*` / `ed*` scene labels. The exact retail
+/// table lives in the cutscene overlay (not yet captured); when it
+/// lands, this function should be updated to read the captured map.
+pub fn cutscene_str_for(scene_label: &str) -> Option<&'static str> {
+    match scene_label {
+        // op* opening cutscenes — five in CDNAME order.
+        "opdeene" => Some("MOV/MV1.STR"),
+        "opstati" => Some("MOV/MV2.STR"),
+        "opkorout" => Some("MOV/MV3.STR"),
+        "opurud" => Some("MOV/MV4.STR"),
+        "opmap01" => Some("MOV/MV5.STR"),
+        // ed* — only the first ending scene is FMV-backed; the rest are
+        // dialogue-actor-overlay driven and have no associated MV file.
+        "edteien" => Some("MOV/MV6.STR"),
+        _ => None,
+    }
+}
+
+/// Inverse of [`cutscene_str_for`]: resolve a `MOV/MVn.STR` filename to
+/// its CDNAME scene label, if known. Useful for diagnostic dumps that
+/// want to surface "this STR plays during scene X".
+pub fn cutscene_label_for_str(str_filename: &str) -> Option<&'static str> {
+    let trimmed = str_filename
+        .rsplit_once('/')
+        .map(|(_, name)| name)
+        .unwrap_or(str_filename);
+    match trimmed.to_ascii_uppercase().as_str() {
+        "MV1.STR" => Some("opdeene"),
+        "MV2.STR" => Some("opstati"),
+        "MV3.STR" => Some("opkorout"),
+        "MV4.STR" => Some("opurud"),
+        "MV5.STR" => Some("opmap01"),
+        "MV6.STR" => Some("edteien"),
+        _ => None,
+    }
+}
+
+/// All known FMV-backed cutscene scenes in CDNAME order.
+pub const FMV_CUTSCENE_SCENES: [(&str, &str); 6] = [
+    ("opdeene", "MOV/MV1.STR"),
+    ("opstati", "MOV/MV2.STR"),
+    ("opkorout", "MOV/MV3.STR"),
+    ("opurud", "MOV/MV4.STR"),
+    ("opmap01", "MOV/MV5.STR"),
+    ("edteien", "MOV/MV6.STR"),
+];
+
 /// A scene = the per-CDNAME-block bundle of PROT entries that the runtime
 /// loads together. Mirrors the per-scene shape `FUN_8001f7c0` consumes.
 pub struct Scene {
@@ -786,6 +846,51 @@ impl SceneHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cutscene_str_for_resolves_known_op_scenes() {
+        assert_eq!(cutscene_str_for("opdeene"), Some("MOV/MV1.STR"));
+        assert_eq!(cutscene_str_for("opstati"), Some("MOV/MV2.STR"));
+        assert_eq!(cutscene_str_for("opkorout"), Some("MOV/MV3.STR"));
+        assert_eq!(cutscene_str_for("opurud"), Some("MOV/MV4.STR"));
+        assert_eq!(cutscene_str_for("opmap01"), Some("MOV/MV5.STR"));
+    }
+
+    #[test]
+    fn cutscene_str_for_resolves_first_ed_scene_only() {
+        assert_eq!(cutscene_str_for("edteien"), Some("MOV/MV6.STR"));
+        // The remaining ed* scenes are dialogue-actor-overlay driven and
+        // have no FMV file.
+        assert_eq!(cutscene_str_for("edbylon"), None);
+        assert_eq!(cutscene_str_for("edlast"), None);
+        assert_eq!(cutscene_str_for("edstati3"), None);
+    }
+
+    #[test]
+    fn cutscene_str_for_returns_none_for_non_cutscene_labels() {
+        assert_eq!(cutscene_str_for("town01"), None);
+        assert_eq!(cutscene_str_for("battle_data"), None);
+        assert_eq!(cutscene_str_for(""), None);
+    }
+
+    #[test]
+    fn cutscene_label_for_str_round_trip() {
+        for (label, path) in FMV_CUTSCENE_SCENES.iter() {
+            assert_eq!(cutscene_str_for(label), Some(*path));
+            // Inverse via either form (with or without dir prefix).
+            let bare = path.rsplit_once('/').map(|(_, n)| n).unwrap_or(path);
+            assert_eq!(cutscene_label_for_str(bare), Some(*label));
+            assert_eq!(cutscene_label_for_str(path), Some(*label));
+        }
+    }
+
+    #[test]
+    fn cutscene_label_for_str_handles_case_insensitive_filenames() {
+        // ISO9660 filenames may upper- or lowercase depending on extractor.
+        assert_eq!(cutscene_label_for_str("mv1.str"), Some("opdeene"));
+        assert_eq!(cutscene_label_for_str("MOV/mv6.STR"), Some("edteien"));
+        assert_eq!(cutscene_label_for_str("garbage"), None);
+    }
 
     #[test]
     fn default_map_id_resolver_resolves_by_position() {

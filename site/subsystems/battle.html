@@ -352,6 +352,42 @@ Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
   <h3>CommandInput sub-phase: target picker</h3>
   <p>During <code>CommandInput</code> the session has two sub-phases: <code>SubPhase::CommandSelect</code> (input drives the command queue) and <code>SubPhase::TargetPick</code> (input drives a <code>TargetPickerSession</code> cursor). Engines call <code>BattleSession::open_target_picker(world, kind, actor_slot, pending_command, &amp;mut events)</code> when the player picks an action that needs a target; the session builds the picker's <code>SlotState</code> arrays from live <code>BattleActor::hp</code> values and forwards subsequent input to the picker until it resolves. Resolution surfaces as typed <code>SessionEvent</code> outcomes: <code>TargetConfirmed { target_slot }</code>, <code>TargetSweepConfirmed</code>, or <code>TargetCancelled</code>; sweep targets (<code>AllEnemies</code> / <code>AllAllies</code> / <code>Self_</code>) resolve immediately during <code>open_target_picker</code>. <code>cancel_target_picker</code> provides an explicit drop path for the buffered command.</p>
   <p>Implementation: <code>crates/engine-core/src/battle_session.rs</code>. Smoke-tested via the new <code>legaia-engine battle</code> subcommand.</p>
+  <h3>Target picker &harr; runner wiring</h3>
+  <p><code>BattleSession::push_command_with_target(world, cmd, kind, actor_slot)</code> is the top-level API engines drive when a command needs a target. The session charges AP up-front, opens the picker via <code>open_target_picker_mut</code>, and stashes the command in <code>pending_target_command</code>. When the picker resolves, <code>maybe_close_picker_with_world</code> writes the resolved slot to <code>BattleActor::active_target</code> (the field the action SM reads at strike time via <code>host.actor(actor_slot).active_target</code>) and admits the buffered command into the runner queue without re-charging AP. Sweep targets write the <code>0xFF</code> sentinel; cancellation drops the buffered command without admitting it. <code>BattleRunner::push_no_ap(slot, cmd)</code> is the post-confirm admit path.</p>
+</section>
+
+<section class="doc-section" id="cutscene-routing">
+  <h2>CDNAME &rarr; MV STR routing</h2>
+  <p><code>engine_core::scene::cutscene_str_for(scene_label) -&gt; Option&lt;&amp;'static str&gt;</code> resolves an <code>op*</code> / <code>edteien</code> CDNAME label to its paired <code>MOV/MVn.STR</code> filename. The disc carries 6 STR files (<code>MV1.STR..MV6.STR</code>); the heuristic mapping covers all 6:</p>
+  <table class="data-table">
+    <thead><tr><th>CDNAME label</th><th>STR file</th></tr></thead>
+    <tbody>
+      <tr><td><code>opdeene</code></td><td><code>MOV/MV1.STR</code></td></tr>
+      <tr><td><code>opstati</code></td><td><code>MOV/MV2.STR</code></td></tr>
+      <tr><td><code>opkorout</code></td><td><code>MOV/MV3.STR</code></td></tr>
+      <tr><td><code>opurud</code></td><td><code>MOV/MV4.STR</code></td></tr>
+      <tr><td><code>opmap01</code></td><td><code>MOV/MV5.STR</code></td></tr>
+      <tr><td><code>edteien</code></td><td><code>MOV/MV6.STR</code></td></tr>
+    </tbody>
+  </table>
+  <p>The remaining <code>ed*</code> scenes (<code>edbylon</code>, <code>edbalden</code>, <code>edlast</code>, <code>edretoin</code>, <code>edkorout</code>, <code>edbubu</code>, <code>eddoman</code>, <code>edson</code>, <code>edstati3</code>) are dialogue-actor-overlay driven and have no FMV. <code>cutscene_label_for_str(filename)</code> is the inverse (case-insensitive on basename). The exact retail mapping table lives in the cutscene overlay; once captured, the lookup function should consult the captured map. The <code>legaia-engine play</code> and <code>play-window</code> subcommands auto-resolve the STR file when the user passes <code>--scene &lt;op*|edteien&gt;</code> and the extracted root contains the matching MV file.</p>
+</section>
+
+<section class="doc-section" id="captured-stat-growth">
+  <h2>Captured stat-growth observations</h2>
+  <p>The <code>mednafen-state diff</code> toolkit over <code>mc7..mc9</code> pins the per-byte footprint of a magic-rank-up + character-level-up event for Vahn (party slot 0). The deltas inside Vahn's character record at <code>0x80084708</code> (stride <code>0x414</code>):</p>
+  <table class="data-table">
+    <thead><tr><th>Event</th><th>Offset</th><th>Before &rarr; After</th><th>Interpretation</th></tr></thead>
+    <tbody>
+      <tr><td>mc7 &rarr; mc8 (magic-rank up)</td><td><code>+0x9C</code></td><td><code>0x09 &rarr; 0x0A</code></td><td>magic-rank counter</td></tr>
+      <tr><td>mc7 &rarr; mc8</td><td><code>+0x161</code></td><td><code>0x02 &rarr; 0x03</code></td><td><code>spell_levels[0]</code> +1</td></tr>
+      <tr><td>mc8 &rarr; mc9 (level-up, 4-level jump)</td><td><code>+0x04..+0x06</code></td><td><code>0x016D &rarr; 0x02DA</code></td><td>u16 LE XP delta (+365)</td></tr>
+      <tr><td>mc8 &rarr; mc9</td><td><code>+0x10E</code></td><td><code>0x3A &rarr; 0x42</code></td><td>low byte of <code>sp_max</code> (Spirit, +8)</td></tr>
+      <tr><td>mc8 &rarr; mc9</td><td><code>+0x11C..+0x12C</code></td><td>six per-byte +1..+4</td><td>per-stat increments at byte stride 2</td></tr>
+      <tr><td>mc8 &rarr; mc9</td><td><code>+0x130</code></td><td><code>0x02 &rarr; 0x03</code></td><td>rank counter (+1)</td></tr>
+    </tbody>
+  </table>
+  <p>The retail per-Seru per-level lookup table that drives these increments is not in <code>SCUS_942.54</code>; the writer lives in the level-up overlay (already captured) and the table base is referenced through a pointer at <code>Seru struct +0x74</code>. A writer-search across the captured overlay is the next step toward a true per-character <code>StatGrowthCurve::PerLevel</code> vector. Engines populate one captured observation at a time via <code>LevelUpTracker::with_observed_curve(slot, &amp;observations::vahn_mc8_to_mc9())</code>; <code>LevelUpObservation::to_curve</code> emits the per-level average inside the observed range and falls back to the default outside it. Implementation: <code>crates/engine-core/src/levelup.rs</code>.</p>
 </section>
 
 <section class="doc-section" id="monster-catalog">

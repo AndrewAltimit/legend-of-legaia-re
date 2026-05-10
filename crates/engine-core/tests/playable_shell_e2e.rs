@@ -253,6 +253,179 @@ fn save_full_load_full_round_trips_v2_extension() {
 }
 
 #[test]
+fn target_picker_wiring_writes_active_target_and_admits_buffered_command() {
+    // Closes the wiring gap noted in the post-#26 session-recommendations:
+    // BattleSession opened the target picker but didn't route the resolved
+    // target back into the runner's command queue or the actor's
+    // `active_target` field. After the post-#26 batch 13 wiring, both
+    // happen on `TargetConfirmed` (when called via `tick_command_input`'s
+    // mutable-world path).
+    use legaia_art::Command;
+    let mut s = BattleSession::new();
+    s.set_party([Character::Vahn, Character::Noa, Character::Gala]);
+    for (i, name) in ["Vahn", "Noa", "Gala"].iter().enumerate() {
+        s.set_slot_info(
+            i as u8,
+            SessionSlotInfo {
+                name: (*name).into(),
+                is_party: true,
+                record: Some(StatRecord {
+                    base_attack: 50,
+                    base_udf: 30,
+                    base_ldf: 25,
+                    base_accuracy: 80,
+                    base_evasion: 20,
+                    ..Default::default()
+                }),
+                mp_max: 30,
+            },
+        );
+    }
+    s.set_slot_info(
+        3,
+        SessionSlotInfo {
+            name: "Goblin".into(),
+            is_party: false,
+            record: Some(StatRecord::default()),
+            mp_max: 0,
+        },
+    );
+    s.set_slot_info(
+        4,
+        SessionSlotInfo {
+            name: "Wolf".into(),
+            is_party: false,
+            record: Some(StatRecord::default()),
+            mp_max: 0,
+        },
+    );
+    s.set_monster_count(2);
+    let mut w = build_world_with_party();
+    w.actors[3].battle.hp = 50;
+    w.actors[3].battle.max_hp = 50;
+    w.actors[4].battle.hp = 30;
+    w.actors[4].battle.max_hp = 30;
+    s.begin_round(&mut w);
+    // Force into CommandInput by ticking through the intro.
+    while !matches!(s.phase(), BattlePhase::CommandInput) {
+        let _ = s.tick(&mut w, SessionInput::default());
+    }
+    // Push a command with single-enemy targeting. Runner buffer stays
+    // empty until the picker resolves.
+    let ok = s.push_command_with_target(
+        &mut w,
+        Command::Right,
+        legaia_engine_core::target_picker::TargetKind::SingleEnemy,
+        0,
+    );
+    assert!(ok, "command should admit");
+    assert_eq!(s.sub_phase(), SubPhase::TargetPick);
+    // Cross — confirm target. Wiring writes `active_target` and admits
+    // the buffered command into the runner queue.
+    let confirm = SessionInput {
+        cross: true,
+        ..Default::default()
+    };
+    let evs = s.tick(&mut w, confirm);
+    let confirmed = evs.iter().any(|e| {
+        matches!(
+            e,
+            legaia_engine_core::battle_session::SessionEvent::TargetConfirmed { .. }
+        )
+    });
+    assert!(confirmed);
+    let pushed = evs.iter().any(|e| {
+        matches!(
+            e,
+            legaia_engine_core::battle_session::SessionEvent::CommandPushed {
+                slot: 0,
+                command: Command::Right,
+            }
+        )
+    });
+    assert!(pushed, "buffered command should auto-admit on confirm");
+    // Active-target write — the picker confirmed monster slot 0 (the first
+    // alive enemy). The active_target byte is the *row-relative* slot
+    // index emitted by `PickerOutcome::Single` (so `0` here, even though
+    // the absolute battle-actor slot is 3).
+    assert_eq!(w.actors[0].battle.active_target, 0);
+    assert_eq!(s.runner.current_buffer(), &[Command::Right]);
+    assert_eq!(s.sub_phase(), SubPhase::CommandSelect);
+}
+
+#[test]
+fn target_picker_cancel_drops_buffered_command_keeps_runner_empty() {
+    use legaia_art::Command;
+    let mut s = BattleSession::new();
+    s.set_party([Character::Vahn, Character::Noa, Character::Gala]);
+    for i in 0..3 {
+        s.set_slot_info(
+            i,
+            SessionSlotInfo {
+                name: format!("p{i}"),
+                is_party: true,
+                record: Some(StatRecord::default()),
+                mp_max: 30,
+            },
+        );
+    }
+    s.set_slot_info(
+        3,
+        SessionSlotInfo {
+            name: "G".into(),
+            is_party: false,
+            record: Some(StatRecord::default()),
+            mp_max: 0,
+        },
+    );
+    s.set_monster_count(1);
+    let mut w = build_world_with_party();
+    w.actors[3].battle.hp = 50;
+    w.actors[3].battle.max_hp = 50;
+    s.begin_round(&mut w);
+    while !matches!(s.phase(), BattlePhase::CommandInput) {
+        let _ = s.tick(&mut w, SessionInput::default());
+    }
+    let ok = s.push_command_with_target(
+        &mut w,
+        Command::Down,
+        legaia_engine_core::target_picker::TargetKind::SingleEnemy,
+        0,
+    );
+    assert!(ok);
+    let cancel = SessionInput {
+        circle: true,
+        ..Default::default()
+    };
+    let evs = s.tick(&mut w, cancel);
+    let cancelled = evs.iter().any(|e| {
+        matches!(
+            e,
+            legaia_engine_core::battle_session::SessionEvent::TargetCancelled
+        )
+    });
+    assert!(cancelled);
+    // Runner buffer empty — cancellation drops the buffered command.
+    assert!(s.runner.current_buffer().is_empty());
+}
+
+#[test]
+fn cutscene_str_routing_resolves_op_scenes_to_mv_files() {
+    use legaia_engine_core::scene::{cutscene_label_for_str, cutscene_str_for};
+    // 5 op* scenes + 1 ed* scene cover all 6 disc-side MV*.STR files.
+    assert_eq!(cutscene_str_for("opdeene"), Some("MOV/MV1.STR"));
+    assert_eq!(cutscene_str_for("edteien"), Some("MOV/MV6.STR"));
+    // Round-trip every known pairing.
+    for &(label, path) in legaia_engine_core::scene::FMV_CUTSCENE_SCENES.iter() {
+        assert_eq!(cutscene_str_for(label), Some(path));
+        assert_eq!(cutscene_label_for_str(path), Some(label));
+    }
+    // Non-FMV scenes return None.
+    assert_eq!(cutscene_str_for("edlast"), None);
+    assert_eq!(cutscene_str_for("town01"), None);
+}
+
+#[test]
 fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
     // 1. Title screen → New Game.
     let mut t = TitleSession::without_save_data();
