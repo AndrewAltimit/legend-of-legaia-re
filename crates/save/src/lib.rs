@@ -88,6 +88,17 @@ const fn build_retail_cumulative() -> [u32; 98] {
     out
 }
 
+/// Cumulative XP needed to reach `level` (1..=99). `xp_for_level(1) == 0`
+/// and `xp_for_level(2) == RETAIL_XP_CUMULATIVE[0]`. Levels above 99 saturate
+/// at the L99 threshold — the table doesn't go higher.
+pub fn xp_for_level(level: u8) -> u32 {
+    if level <= 1 {
+        return 0;
+    }
+    let idx = (level as usize - 2).min(RETAIL_XP_CUMULATIVE.len() - 1);
+    RETAIL_XP_CUMULATIVE[idx]
+}
+
 /// Infer the character level (1..=99) from a cumulative-XP value.
 ///
 /// Returns `1` for any `xp < 50` (the L2 threshold), and `99` once `xp`
