@@ -15,140 +15,37 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> · tooling</div>
   <h1>Tooling</h1>
-  <p class="lede">Extraction CLIs, the headless Ghidra workflow, runtime overlay capture, and the mednafen save-state automation toolkit.</p>
+  <p class="lede">Extraction CLIs, the headless Ghidra workflow, runtime overlay capture, and the mednafen save-state automation toolkit. Each section below is a per-tool page with the full reference.</p>
 </header>
 
-<section class="doc-section">
-  <h2>Asset extraction</h2>
-  <p>Each crate ships its own extraction binary; the top-level <code>legaia-extract</code> orchestrates them end-to-end.</p>
-<pre><code># Full pipeline
-./target/release/legaia-extract \
-    "/path/to/Legend of Legaia (USA).bin" --out extracted
-
-# Per-stage tools
-./target/release/disc-extract  # Mode2/2352 + ISO9660 walk
-./target/release/prot-extract  # PROT.DAT TOC + CDNAME → per-entry files
-./target/release/lzs-decode    # LZS decompress
-./target/release/asset         # Categorize + sub-asset walk
-./target/release/tim           # PSX TIM → PNG
-./target/release/tmd           # Legaia TMD parser + OBJ export
-./target/release/vab           # VAB extraction → WAV
-./target/release/mes           # MES dialog parse / disasm / json
-./target/release/mdt           # MDT move table parser</code></pre>
-  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/extraction.md" target="_blank" rel="noopener">Full extraction tooling reference →</a></p>
+<section class="doc-section" id="pages">
+  <h2>Pages</h2>
+  <div class="card-grid">
+    <a class="card" href="extraction.html">
+      <div class="card-title">Extraction CLIs</div>
+      <div class="card-body">Per-stage extraction binaries plus the top-level <code>legaia-extract</code> orchestrator. Disc → ISO9660 → PROT.DAT → categorize → sub-asset extract → PNG.</div>
+    </a>
+    <a class="card" href="ghidra.html">
+      <div class="card-title">Ghidra in Docker</div>
+      <div class="card-body">Headless Ghidra runs in a single Docker service. Setup, per-query invocations, the script catalogue, the LUI+ADDIU workaround.</div>
+    </a>
+    <a class="card" href="overlay-capture.html">
+      <div class="card-title">Overlay capture</div>
+      <div class="card-body">Static analysis hits a wall when code lives in RAM overlays at <code>0x801C0000+</code>. Capture from mednafen save states, PCSX-Redux Lua dumps, or Duckstation <code>.sav</code> files.</div>
+    </a>
+    <a class="card" href="mednafen-automation.html">
+      <div class="card-title">Mednafen automation</div>
+      <div class="card-body">Scriptable substitute for mednafen's interactive memory-watchpoint debugger. Pairwise diffs, sequence bisection, declarative scenarios for blocked decompilation work.</div>
+    </a>
+  </div>
 </section>
 
-<section class="doc-section">
-  <h2>Ghidra in Docker</h2>
-  <p>Headless Ghidra runs in a single Docker service. Volumes mount the extracted disc as read-only data plus the project DB and scripts directory as read-write.</p>
-<pre><code>docker compose up -d ghidra
-
-# One-time: import SCUS_942.54
-docker compose exec ghidra /ghidra/support/analyzeHeadless \
-    /projects legaia -import /data/SCUS_942.54
-
-# Run an analysis script
-docker compose exec ghidra /ghidra/support/analyzeHeadless \
-    /projects legaia -process SCUS_942.54 \
-    -postScript dump_funcs.py -noanalysis -scriptPath /scripts</code></pre>
-
-  <h3>The script catalogue</h3>
-  <p>All scripts live in <code>ghidra/scripts/</code>:</p>
-  <ul>
-    <li><code>dump_funcs.py</code> - dump a list of functions by entry address.</li>
-    <li><code>find_lui_writers.py</code> - find LUI+ADDIU pairs that target a specific 32-bit address. Necessary because Ghidra's reference manager doesn't auto-resolve these.</li>
-    <li><code>function-coverage.py</code> - citation-graph closure: which referenced helpers don't have their own dump yet.</li>
-    <li><code>force_disasm_dump.py</code> - for <code>jal</code> targets Ghidra hasn't auto-disassembled. Walks instructions, validates ≥8 instructions, then creates the function and dumps it.</li>
-    <li><code>analyze-overlay.sh</code> - one-shot mednafen save state → labelled overlay program in Ghidra + asset-load CSV.</li>
-    <li><code>import-overlay-named.sh</code> - preserve overlays across imports (for capturing multiple game-mode overlays simultaneously).</li>
-  </ul>
-
-  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ghidra.md" target="_blank" rel="noopener">Full Ghidra workflow reference →</a></p>
-</section>
-
-<section class="doc-section">
-  <h2>Runtime overlay capture</h2>
-  <p>Static analysis hits a wall when code lives in RAM overlays at <code>0x801C0000+</code>. Capture works from mednafen save states, PCSX-Redux Lua dumps, or Duckstation <code>.sav</code> files. All three are supported:</p>
-<pre><code># Mednafen
-scripts/analyze-overlay.sh ~/.mednafen/mcs/Legend*Legaia*.mc0 --label level_up
-
-# Duckstation (zstd-compressed .sav)
-scripts/extract-duckstation-overlay.py SCUS-94254_1.sav --out /tmp/legaia_overlay_fishing.bin
-scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing</code></pre>
-  <p>The pipeline locates main RAM using known SCUS anchor strings (e.g. <code>"---- FIELD PROGRAM -----%d"</code>), slices the <code>0x801C0000–0x80200000</code> window (256 KB), and imports into Ghidra as a named program. Run <code>inventory_overlay.py</code> to get a function CSV, then write a per-overlay dump script.</p>
-  <p>Hex <code>jal</code> args in the overlay = PROT indices; cross-reference <code>extracted/CDNAME.TXT</code> to identify which scene asset bundle the overlay loads.</p>
-
-  <h3>Captured overlays</h3>
-  <p>All major runtime code paths are now covered:</p>
-  <ul>
-    <li><strong>Town / field / dialog / inventory</strong> - field VM (<code>FUN_801DE840</code>), MES renderer, inventory hub</li>
-    <li><strong>Battle / battle-action</strong> - per-actor SM (<code>FUN_801E295C</code>), effect VM cluster</li>
-    <li><strong>Options / config / menus</strong> - item / magic / equipment / status / options UI</li>
-    <li><strong>Shop, save screen, level-up, world map, cutscene</strong> - all fully dumped</li>
-    <li><strong>Minigame hub</strong> (fishing, slot machine, Baka Fighter, dance, debug menu) - five variants of the same overlay; debug-menu capture is the superset (189 functions)</li>
-    <li><strong>Muscle Dome / Baka card battle</strong> - distinct overlay; round dispatcher (<code>FUN_801D8DE8</code>), 6500-byte game SM (<code>FUN_801D5854</code>), card resolution (<code>FUN_801D388C</code>); 148 functions dumped</li>
-  </ul>
-
-  <p class="hint">For preserving multiple overlay imports across runs, use <code>import-overlay-named.sh</code> - it produces <code>overlay_&lt;label&gt;.bin</code> rather than overwriting <code>overlay.bin</code>.</p>
-
-  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/overlay-capture.md" target="_blank" rel="noopener">Full overlay capture reference →</a></p>
-</section>
-
-<section class="doc-section">
-  <h2>Mednafen automation</h2>
-  <p>A scriptable substitute for mednafen's interactive memory-watchpoint debugger. The toolkit treats each <code>.mc{0..9}</code> save state as a frozen RAM snapshot, then uses pairwise diffs and targeted bisection to surface where the runtime wrote between snapshots - the watchpoint-equivalent answer without needing a live emulator session.</p>
-
-  <h3>The crate</h3>
-  <p><code>crates/mednafen</code> ships:</p>
-  <ul>
-    <li><strong>MDFNSVST parser</strong> - gzip wrapper + targeted-scan section indexer. Resolves <code>MAIN.MainRAM.data8</code> as 2 MiB of PSX main RAM and indexes the <code>GPU</code> / <code>SPU</code> / <code>CDC</code> / <code>MDEC</code> / <code>DMA</code> / <code>TIMER</code> sections.</li>
-    <li><strong>Diff engine</strong> - coalesces per-byte changes into PSX-virtual-address regions; emits sortable JSON for downstream tools.</li>
-    <li><strong>Bisect helper</strong> - walks an ordered snapshot list and reports which adjacent pair brackets a write to a target address.</li>
-    <li><strong>Scenario manifest</strong> - declarative <code>scripts/mednafen/scenarios.toml</code> mapping each save slot to a labelled scenario with overlay slices and watchpoint regions.</li>
-  </ul>
-
-  <h3>The CLI</h3>
-<pre><code># Inspect one save's section table
-target/release/mednafen-state info "$HOME/.mednafen/mcs/...mc0"
-
-# Slice an overlay window (replaces extract-mednafen-overlay.py)
-target/release/mednafen-state extract SAVE \
-    --start 0x801C0000 --end 0x80200000 --out /tmp/overlay.bin
-
-# Diff two saves in the overlay window
-target/release/mednafen-state diff mc1.mc mc2.mc \
-    --start 0x801C0000 --end 0x80200000 --top 8
-
-# Bisect a sequence of saves for a transition
-target/release/mednafen-state bisect --addr 0x8007B888 mc0 mc1 mc2 mc3
-
-# Run all watchpoints for a scenario against its sister states
-target/release/mednafen-state watch area_load_early</code></pre>
-
-  <h3>The scenarios</h3>
-  <p>Ten labelled scenarios cover the gameplay states most useful for blocked decompilation work:</p>
-  <ul>
-    <li><strong>mc0 town_rim_elm</strong> - Rim Elm (CDNAME <code>town0c</code>) - the corpus's only town-resident state, anchors town-vs-field RAM-layout diffs</li>
-    <li><strong>mc1 pre_encounter / mc2 post_encounter</strong> - same field scene (<code>map01</code>), one save before and one after an encounter triggers; pins the 133 KB battle-overlay residency window at <code>0x801CE808..0x801F3818</code></li>
-    <li><strong>mc3 battle_drake_castle</strong> - battle in <code>dolk</code>, also the move-table boot-path scene</li>
-    <li><strong>mc4 pre_fire_book / mc5 post_fire_book</strong> - battle command menu before vs. after using Fire Book I on Vahn; pins exactly one 3-byte cluster at character-record <code>+0x185..+0x188</code></li>
-    <li><strong>mc6 battle_anim_strike</strong> - performing a somersault on an enemy (active animation)</li>
-    <li><strong>mc7 pre_steal / mc8 magic_level_up / mc9 char_level_up</strong> - battle stat-growth + magic-rank-up triplet (loading <code>mc7</code> and waiting plays out into <code>mc8</code> then <code>mc9</code>)</li>
-  </ul>
-
-  <h3>Why scripted snapshots?</h3>
-  <p>Mednafen's TUI debugger has memory breakpoints but no scriptable interface - every interaction is keyboard-driven inside the running window. Save-state diffs answer the same question (<em>"between this point and that point, what addresses got written?"</em>) without needing the live debugger. Cluster the changed bytes into contiguous regions and you have a ranked list of structures to look up writers for in Ghidra.</p>
-
-  <h3>Findings unlocked by the toolkit</h3>
-  <ul>
-    <li><strong>MOVE-table source pinned</strong> - tracing <code>_DAT_8007B888</code> across the 10 saves shows three distinct values (one per scene); the per-scene CDNAME block's slot-1 PROT entry (a <code>scene_asset_table</code>) carries descriptor[4] = <code>Move</code> at sizes that match each scene's runtime base. <code>MOVE2</code> (<code>_DAT_8007B840</code>) is zero across every save - populated only by scenes with an alternate move table.</li>
-    <li><strong>Anim dispatcher located in SCUS</strong> - diffing the actor pool between battle-intro idle (<code>mc4</code>) and active somersault (<code>mc6</code>) over <code>0x801C9594..0x801C9F7F</code> reveals 0x60-byte slots whose <code>+0x00</code> is the anim PC pointer (<code>actor[+0x4C]</code> mirror) and whose dispatch byte (<code>actor[+0x5A]</code>) flips between values 0x04 (idle) and 0x06 (playing). The dispatcher is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (already dumped) - seven opcodes, the keyframe path is fully ported.</li>
-    <li><strong>Navmesh / region table located</strong> - diffing the navmesh candidate window (<code>0x80100000..0x80120000</code>) between <code>mc1</code> and <code>mc3</code> isolates a 24-byte stride record table at <code>0x80108EA4..0x801095xx</code> with sequential record ids, six i16 coordinate fields, a 4-byte ASCII tag, and per-scene records following a leading shared bank.</li>
-    <li><strong>Encounter-trigger overlay residency pinned</strong> - diffing <code>mc1</code> (walking <code>map01</code>, one step before the encounter) against <code>mc2</code> (battle just initiated, same scene) over the engine RAM range surfaces a single 133 KB region at <code>0x801CE808..0x801F3818</code> that is the battle overlay loaded on encounter trigger. The active scene-name table at <code>0x80084540</code> does not change - battle is layered on top of the field scene, not swapped for it. Codified in <code>engine_core::capture_observations::encounter_trigger</code>.</li>
-    <li><strong>Fire Book I write footprint pinned</strong> - diffing <code>mc4</code> (command menu parked on Fire Book I) against <code>mc5</code> (Fire Book I just used on Vahn) over Vahn's full character record (<code>0x80084708..+0x414</code>) surfaces <em>exactly one</em> 3-byte region at <code>+0x185..+0x188</code>: the byte sequence <code>01 0C 00</code> rewrites to <code>02 03 0C</code>. Pattern matches a length-prefixed list growing by one entry. Codified in <code>engine_core::capture_observations::vahn_fire_book_use</code>; precise interpretation pending a reader-search of the captured battle-action overlay.</li>
-  </ul>
-
-  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/mednafen-automation.md" target="_blank" rel="noopener">Full mednafen-automation reference →</a></p>
+<section class="doc-section" id="quick-pipeline">
+  <h2>Full extraction pipeline at a glance</h2>
+  <p>The recommended end-to-end run:</p>
+<pre><code>./target/release/legaia-extract \
+    "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p><code>--skip-png</code> / <code>--skip-verify</code> skip the slow steps. Disc-gated tests (everything that touches a real <code>.bin</code>) run when <code>LEGAIA_DISC_BIN</code> is set; CI runs without disc data and the tests skip cleanly.</p>
 </section>
 
 </main>

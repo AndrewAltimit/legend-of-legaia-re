@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overlay pointer-table code - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; overlay pointer-table code</div>
+  <h1>Overlay pointer-table code</h1>
+  <p class="lede">Sister format to <a href="mips-overlay.html">MIPS overlay code</a>. Same family of disc-resident overlay code blobs, but the first chunk is a function/jump-table header instead of an <code>addiu sp, sp, -X</code> prologue.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>Implementation: <code>crates/asset/src/overlay_ptr_table.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>+0x00   u32  ptr_0      ; address in 0x801C0000..=0x801FFFFF (overlay window)
++0x04   u32  ptr_1      ; same range
+...
++N*4    u32  ptr_{N-1}  ; last pointer (still in range)
++(N+1)*4 ...            ; first non-pointer u32 (typically MIPS code, sometimes
+                        ; a `jr ra; nop` stub or a leading ASCII string)</code></pre>
+  <p>The pointer-table length <code>N</code> ranges from 4 to 64. Tables come in three shapes:</p>
+  <ul class="bullets">
+    <li><strong>Function entry-point tables</strong> - small, monotonic; one slot per public function.</li>
+    <li><strong>Switch dispatch tables</strong> - larger, repeating; emitted by the C compiler for <code>switch(x)</code> over a dense integer range.</li>
+    <li><strong>Per-mode actor vtables</strong> - small alphabet of 3 distinct values across N slots.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="detection">
+  <h2>Detection</h2>
+  <p>Two checks produce zero overlap with already-named formats:</p>
+  <ol class="bullets">
+    <li>The first u32 is in <code>0x801C0000..=0x801FFFFF</code> (the overlay window).</li>
+    <li>The run of consecutive overlay-pointer u32s is between 4 and 64 long.</li>
+  </ol>
+  <p>We do <strong>not</strong> require monotonicity - switch dispatch tables legitimately contain repeating handler addresses.</p>
+</section>
+
+<section class="doc-section" id="cluster-anatomy">
+  <h2>Cluster anatomy</h2>
+  <p>All matches cluster in the <code>0900..=0968_xxx_dat</code> PROT range - sized 14 KB to 160 KB. Pointer-range distribution:</p>
+  <ul class="bullets">
+    <li>30 entries: <code>0x801F6Axx</code>–<code>0x801F71xx</code> cluster (small function-entry tables, monotonic, 5–14 entries).</li>
+    <li>12 entries: <code>0x801F84xx+</code> cluster (some monotonic, some switch dispatch with repeating handlers).</li>
+  </ul>
+  <p>A handful of entries lead with a Shift-JIS / ASCII title string before the pointer table - <code>0907_xxx_dat.BIN</code> "Hell's Music", <code>0924_xxx_dat.BIN</code> "Ultimate Rave", <code>0927_xxx_dat.BIN</code> "Dark Eclipse", <code>0957_xxx_dat.BIN</code>. These are likely the <strong>Disco King dance-minigame</strong> song-data overlays.</p>
+</section>
+
+<section class="doc-section" id="reading-the-format">
+  <h2>Reading the format</h2>
+<pre><code>use legaia_asset::overlay_ptr_table;
+
+if let Some(t) = overlay_ptr_table::detect(buf) {
+    println!("Overlay pointer table: {} entries, first=0x{:08x}, last=0x{:08x}",
+             t.count, t.first_ptr, t.last_ptr);
+}</code></pre>
+  <p>Each entry can be Ghidra-imported via <a href="../tooling/overlay-capture.html"><code>scripts/bulk-import-overlays.sh</code></a> once the load address is determined; the pointer values bound the load address from above (<code>&lt;= min_ptr</code>).</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/overlay-ptr-table' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

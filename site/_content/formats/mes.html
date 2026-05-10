@@ -1,0 +1,216 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mes dialog format</div>
+  <h1>MES dialog format</h1>
+  <p class="lede">Container format for Legaia's dialog text. Two on-disc variants share an offset table + bytecode tail. The bytecode encoding is a stream of glyph bytes interleaved with substitution opcodes; the interpreter is statically linked into <code>SCUS_942.54</code> (it is not overlay-resident).</p>
+</header>
+
+<section class="doc-section" id="variants">
+  <h2>Variants</h2>
+<table>
+<thead><tr>
+<th>Variant</th>
+<th>Discriminator</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Compact</td>
+<td>First u16 = <code>0x0404</code></td>
+<td>Smaller; embedded inline in <code>data\battle\efect.dat</code> and similar.</td>
+</tr>
+<tr>
+<td>Records</td>
+<td>First two bytes = <code>0x44 0x78</code></td>
+<td>Used by larger dialog blobs; also the form RAM-extracted from town overlays.</td>
+</tr>
+</tbody>
+</table>
+  <p>Both share a header → offset table → bytecode body shape.</p>
+  <h3>Compact variant - fixed header layout</h3>
+<pre><code>+0x00   u32 LE = 0x00000404       ; magic
++0x04   ...                        ; unused padding (0x24 bytes)
++0x28   u32  back_ptr             ; runtime pointer (patched on load)
++0x2C   u32  forward_ptr          ; runtime pointer
++0x30   u32  expanded_size        ; byte count of the expanded blob
++0x34   u32  count                ; number of messages in the offset table
++0x38   i16[8]                    ; per-line metrics array (16 bytes)
++0x48   ...                        ; additional header fields (16 bytes)
++0x58   u16  ?                    ; pre-table header word
++0x5A   u32  ?                    ; pre-table header dword
++0x5E   u16  ?                    ; pre-table header word
++0x60   u16  ?                    ; pre-table header word
++0x62   u24 LE [N]                ; offset table - 3 bytes per entry, up to 0x56 entries
+...
++0xC8   bytecode region starts here</code></pre>
+  <p><code>count</code> gives the number of messages; the offset table spans <code>0x62..0xC8</code> (maximal extent = 0x56 u24 entries = 86 messages at this point in the structure). Each offset is a byte offset from <code>0xC8</code> to the start of that message's bytecode.</p>
+  <h3>Records variant</h3>
+  <p>The Records format has no fixed header. The parser identifies record boundaries by scanning for recurring <code>0x44 0x78</code> marker pairs (at least 4 hits required). Each marker starts a variable-stride record; the inter-record contents are the bytecode and any embedded header fields. Full per-record structure is not yet reversed - capture a town or field overlay to observe how the runtime parses this variant.</p>
+</section>
+
+<section class="doc-section" id="bytecode-encoding">
+  <h2>Bytecode encoding</h2>
+  <p>Reverse-engineered from the four SCUS interpreter functions (<a href="#fun_8003ca38--glyph-stride-walker"><code>FUN_8003CA38</code></a>, <a href="#fun_80036044--text-width-measurement"><code>FUN_80036044</code></a>, <a href="#fun_80036888--text-renderer"><code>FUN_80036888</code></a>, <a href="#fun_80036514--substitution-expander"><code>FUN_80036514</code></a>). The same byte-classification table is used by all four; only the action per byte differs.</p>
+<table>
+<thead><tr>
+<th>Byte range</th>
+<th>Stride</th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x00..0x1E</code></td>
+<td>1</td>
+<td>End-of-message / line terminator. The walker stops here.</td>
+</tr>
+<tr>
+<td><code>0x1F..0x5D</code></td>
+<td>1</td>
+<td>Single-byte glyph (font tile index).</td>
+</tr>
+<tr>
+<td><code>0x5E XX</code></td>
+<td>2</td>
+<td><strong>Alias</strong> - the substitution expander rewrites this in-place to <code>0xCE (XX-0x2D)</code>.</td>
+</tr>
+<tr>
+<td><code>0x5F..0xBF</code></td>
+<td>1</td>
+<td>Single-byte glyph.</td>
+</tr>
+<tr>
+<td><code>0xC0 XX</code></td>
+<td>2</td>
+<td>2-byte wide glyph (no substitution).</td>
+</tr>
+<tr>
+<td><code>0xC1 XX</code></td>
+<td>2</td>
+<td>Substitute character name. Reads name from save record at <code>0x80084708 + XX*0x414</code>; XX = 99 means "current party leader" (<code>DAT_80084597</code>).</td>
+</tr>
+<tr>
+<td><code>0xC2 XX</code></td>
+<td>2</td>
+<td>Substitute item name from <code>PTR_DAT_8007436C[XX*3]</code>.</td>
+</tr>
+<tr>
+<td><code>0xC3 XX</code></td>
+<td>2</td>
+<td>Substitute magic name from <code>PTR_s_Magic_800754D0[XX*3]</code>.</td>
+</tr>
+<tr>
+<td><code>0xC4 XX</code></td>
+<td>2</td>
+<td>Substitute item name (different consumer site than <code>0xC2</code>; same <code>PTR_DAT_8007436C</code> table).</td>
+</tr>
+<tr>
+<td><code>0xC5 XX</code></td>
+<td>2</td>
+<td>Substitute spell name from 2D table at <code>DAT_80075EC4</code>, keyed by <code>(XX&gt;&gt;6, XX&amp;0x3F)</code>.</td>
+</tr>
+<tr>
+<td><code>0xC6 XX</code></td>
+<td>2</td>
+<td>2-byte wide glyph (no substitution; not in any switch case).</td>
+</tr>
+<tr>
+<td><code>0xC7 XX</code></td>
+<td>2</td>
+<td>Substitute terrain / quest name from <code>DAT_80073F24 + XX*8</code>.</td>
+</tr>
+<tr>
+<td><code>0xC8..0xCD XX</code></td>
+<td>2</td>
+<td>2-byte wide glyph (stride only).</td>
+</tr>
+<tr>
+<td><code>0xCE XX</code></td>
+<td>2</td>
+<td>Spacing op. The width-measure increments the glyph counter without emitting; the renderer uses <code>XX</code> as a horizontal offset.</td>
+</tr>
+<tr>
+<td><code>0xCF XX</code></td>
+<td>2</td>
+<td>Skip 2 bytes (passthrough - <code>XX</code> is rendered alone, not paired with the <code>0xCF</code> prefix).</td>
+</tr>
+<tr>
+<td><code>0xD0..0xFE</code></td>
+<td>1</td>
+<td>Single-byte glyph.</td>
+</tr>
+<tr>
+<td><code>0xFF</code></td>
+<td>1</td>
+<td><strong>Alias</strong> - the substitution expander rewrites this to <code>0xCF</code>.</td>
+</tr>
+</tbody>
+</table>
+  <p>The "is this a substitution opcode?" gate in <code>FUN_80036044</code> is the integer test <code>(byte + 0x40) &lt; 8</code>, which catches <code>0xC0..0xC7</code>. Within that range the cases <code>0xC1..0xC5</code> and <code>0xC7</code> are explicit; <code>0xC0</code> and <code>0xC6</code> fall through to "no substitution" (still 2-byte stride).</p>
+</section>
+
+<section class="doc-section" id="interpreter-functions">
+  <h2>Interpreter functions</h2>
+  <h3><code>FUN_8003CA38</code> - glyph stride walker</h3>
+  <p>16-instruction primitive that returns the count of bytes (= glyphs) until the next terminator. The classification logic is just:</p>
+<pre><code>int FUN_8003CA38(byte *p) {
+  int n = 0;
+  for (; *p &gt; 0x1E; p++) {
+    if ((*p &amp; 0xF0) == 0xC0) { p++; n++; }
+    n++;
+  }
+  return n;
+}</code></pre>
+  <p>Used by the dialog window pager to compute line lengths cheaply.</p>
+  <h3><code>FUN_80036044</code> - text width measurement</h3>
+  <p>Walks the bytecode and returns total width. Adds the substitution dispatch on top of the stride walker - for each <code>0xC1..0xC5</code> or <code>0xC7</code> byte, it follows the substitution pointer into the corresponding name table and recursively walks that string's width too. Calls itself implicitly by re-running the same <code>(byte &gt; 0x1F)</code> loop on the substituted string.</p>
+  <h3><code>FUN_80036888</code> - text renderer</h3>
+  <p>The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls <a href="#fun_80036514--substitution-expander"><code>FUN_80036514</code></a> at the start to expand substitutions into a working buffer.</p>
+  <h3><code>FUN_80036514</code> - substitution expander</h3>
+  <p>Reads source bytecode from <code>param_2</code> and writes expanded bytecode to <code>param_1</code>. Two input-time aliases are normalised:</p>
+<table>
+<thead><tr>
+<th>Source byte</th>
+<th>Rewritten as</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x5E XX</code></td>
+<td><code>0xCE (XX - 0x2D)</code></td>
+</tr>
+<tr>
+<td><code>0xFF</code></td>
+<td><code>0xCF</code></td>
+</tr>
+</tbody>
+</table>
+  <p>Then it walks the input and inlines <code>0xC1..0xC5</code> / <code>0xC7</code> substitutions: each substitution opcode is replaced by the bytes of the substituted name, copied character-by-character.</p>
+</section>
+
+<section class="doc-section" id="dialog-window-pager-fun-801d84d0">
+  <h2>Dialog window pager - <code>FUN_801D84D0</code></h2>
+  <p>Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (<code>_DAT_801F2734</code>, range <code>0..0x19</code>) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in <code>_DAT_801F3540[line]</code> (16-line buffer at <code>0x801F3580</code>). Test <code>(byte &amp; 0x7F) &lt; 0x20</code> is used to detect line terminators (catches both <code>0x00..0x1F</code> and <code>0x80..0x9F</code>).</p>
+  <p>The crate-level Rust port of this pager lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/README.md"><code>crates/engine-vm</code></a> as the dialog-window state machine.</p>
+</section>
+
+<section class="doc-section" id="live-blob-example">
+  <h2>Live blob example</h2>
+  <p>A town-overlay save state captured a live MES blob in RAM at <code>0x80109270</code> (3893 bytes). The header + bytecode structure matches both Compact and Records expectations after small variant-specific tweaks. The blob is used to validate the Rust parser end-to-end.</p>
+</section>
+
+<section class="doc-section" id="cli">
+  <h2>CLI</h2>
+<pre><code>mes info       &lt;PATH&gt;             # detect variant + report header
+mes disasm     &lt;PATH&gt;             # walk the bytecode, print decoded ops
+mes json       &lt;PATH&gt;             # emit machine-readable JSON
+mes events     &lt;PATH&gt; [--index N] # walk the interpreter for one message
+mes stats-all  &lt;PATH&gt;             # event-type histogram across every message</code></pre>
+</section>
+
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <ul class="bullets">
+    <li><a href="dialog-font.html"><code>dialog-font.md</code></a> - proportional dialog font in VRAM.</li>
+    <li><a href="../reference/functions.html"><code>reference/functions.md</code></a> - all four interpreter functions plus <code>FUN_8001FD44</code> (dialog opener).</li>
+    <li><a href="../subsystems/script-vm.html"><code>subsystems/script-vm.md</code></a> - script VM op <code>0x3F</code> calls the dialog opener.</li>
+  </ul>
+</section>
+

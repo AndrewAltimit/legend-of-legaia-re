@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MDT move table - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; mdt - move tables (tactical arts)</div>
+  <h1>MDT - move tables (Tactical Arts)</h1>
+  <p class="lede">The runtime buffer format consumed by <code>FUN_800204F8</code> (Tactical Arts move-table consumer; the same function the <a href="../subsystems/script-vm.html">script VM</a> opcode <code>0x22</code> <code>EXEC_MOVE</code> invokes). Implementation: <code>crates/mdt</code>.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>The per-frame data inside each MDT record is <strong>bytecode for the move VM</strong> - see <a href="../subsystems/move-vm.html"><code>subsystems/move-vm.md</code></a> for the 71-opcode dispatcher (<code>FUN_80023070</code>) that walks it.</p>
+</section>
+
+<section class="doc-section" id="layout-the-consumer-reads">
+  <h2>Layout the consumer reads</h2>
+<pre><code>buf                           ← _DAT_8007B888 (MOVE) or _DAT_8007B840 (MOVE2)
++0x000  u32 offset_table[1024]   ; indexed by (move_id &amp; 0x3FF)
+        ; entry == 0 means "no record for this id"
+        ; otherwise entry is a byte offset into `buf`
+
+at offset_table[id]:
+record:
+  +0x00  u8  reserved
+  +0x01  u8  flags                 ; bit 0 = "use frame divisor"
+  +0x02  u16 max_position_x16      ; clamps the playhead at (this * 16) - 1
+  +0x04  u16 reserved
+  +0x06  u8  divisor               ; only consulted when flags &amp; 1
+  +0x07+ per-frame data            ; size = max_position_x16 * 16 (approx)</code></pre>
+  <p>Routing: if actor flag bit <code>0x01000000</code> is set, use the alternate base <code>_DAT_8007B75C</code>. Otherwise use <code>MOVE</code> for <code>move_id &lt; 0x400</code> and <code>MOVE2</code> for <code>move_id &gt;= 0x400</code>.</p>
+  <p>The per-frame interpretation in <code>FUN_800204F8</code> clamps <code>actor[0x68]</code> (current playhead) to <code>[0, max_position_x16 * 16)</code>, advances by <code>actor[0x6A]</code> (frame delta) optionally divided by <code>record[6]</code>, and reads the per-frame data into the per-actor animation state.</p>
+</section>
+
+<section class="doc-section" id="cdname-mismatch">
+  <h2>CDNAME mismatch</h2>
+  <p>The CDNAME-named <code>0972</code> / <code>0973</code> <code>move_program_no.BIN</code> files are flat 128-byte stride record arrays - they <strong>don't</strong> match the runtime buffer layout above. <code>mdt classify</code> flags this.</p>
+  <p><code>crates/mdt</code> parses both layouts and surfaces a verdict (<code>OffsetTableLayout</code> / <code>FlatRecordTable</code> / <code>Unknown</code>).</p>
+</section>
+
+<section class="doc-section" id="on-disc-source-per-scene-scene-asset-table-slot-4">
+  <h2>On-disc source - per-scene <code>scene_asset_table</code> slot 4</h2>
+  <p>The MOVE base pointer (<code>_DAT_8007B888</code>) is <strong>populated per scene</strong> during area transitions, not from a single boot-time PROT entry. Every per-scene CDNAME block's second PROT entry (the slot-1 entry classified as <code>scene_asset_table</code>) carries an <code>Asset(0x05) = Move</code> descriptor - that descriptor's payload is the runtime MOVE table for that scene.</p>
+<pre><code>PROT entry at scene_block + 1            ← class = scene_asset_table
+  u32 count = 7
+  u32 meta1
+  7 × (u32 type_size, u32 data_offset)   ← descriptor[4].type_byte == 0x05 (Move)
+  ...payload...</code></pre>
+  <p>Examples (verified by mednafen save-state diff against <code>_DAT_8007B888</code>):</p>
+<table>
+<thead><tr>
+<th>Scene block</th>
+<th>Slot-1 PROT entry</th>
+<th>Move size</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>dolk</code> (60)</td>
+<td><code>0061_dolk.BIN</code></td>
+<td><code>0xE370</code> (58224)</td>
+<td>Loaded as <code>MOVE</code> at <code>0x800E412C</code> (Drake Castle save).</td>
+</tr>
+<tr>
+<td><code>suimon</code> (77)</td>
+<td><code>0078_suimon.BIN</code></td>
+<td><code>0x09A0</code> (2464)</td>
+<td>Loaded as <code>MOVE</code> at <code>0x801355D0</code> (Suimon-block saves).</td>
+</tr>
+<tr>
+<td><code>map01</code> (85)</td>
+<td><code>0086_map01.BIN</code></td>
+<td><code>0x7E30</code> (32304)</td>
+<td>Loaded as <code>MOVE</code> at <code>0x8011A624</code> (every <code>map01</code>-resident save, including the menu and battle states layered on top of <code>map01</code>).</td>
+</tr>
+</tbody>
+</table>
+  <p>The <code>meta1</code> u32 in the scene_asset_table header is the per-scene meta value the loader carries forward; the <code>data_offset</code> for descriptor[4] (and the other six) references positions inside a runtime-allocated decompression buffer rather than a file-relative byte offset, so the on-disc payload is decoded into a working buffer before the per-asset slicing runs.</p>
+  <p><code>scene_asset_table::move_descriptor</code> exposes the slot lookup as a typed accessor:</p>
+<pre><code>let s = legaia_asset::scene_asset_table::detect(&amp;prot_bytes)?;
+let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
+  <p>The <code>MOVE2</code> (<code>_DAT_8007B840</code>) base is zero across every observed save state, suggesting it's only populated by a small number of scenes that need an alternate move table; the analogous "Move2" descriptor type in <a href="../formats/scene-bundles.html"><code>scene_scripted_asset_table</code></a> hasn't been observed in the corpus yet.</p>
+</section>
+
+<section class="doc-section" id="cli">
+  <h2>CLI</h2>
+<pre><code>mdt classify &lt;PATH&gt;                        # which layout?
+mdt records  &lt;PATH&gt; --limit 8              # decode as flat record table
+mdt slots    &lt;PATH&gt; --limit 8              # decode as offset-table layout</code></pre>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/mdt' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

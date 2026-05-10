@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ANM animation - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; anm animation container</div>
+  <h1>ANM animation container</h1>
+  <p class="lede">Asset type <code>0x06</code> from the <a href="asset-type.html">asset-type dispatcher</a>. Implementation: <code>crates/anm</code>.</p>
+</header>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>u32 count
+u32 byte_offsets[count]    // each is a byte offset into the buffer
+records[]                  // per-record bodies; offsets[i+1] - offsets[i] = record size</code></pre>
+  <p>Each record begins with an 8-byte header:</p>
+<pre><code>u16 a              // varies (3..14 observed) - likely record kind / opcode
+u16 b              // varies (0..40 observed) - likely frame count
+u16 marker_1       // = 0x080C in every record observed
+u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)</code></pre>
+</section>
+
+<section class="doc-section" id="per-record-body-animation-opcode-6">
+  <h2>Per-record body - animation opcode 6</h2>
+  <p>For records consumed via animation opcode <code>0x06</code> (the bulk of retail ANM data), the body after the header is a per-bone <strong>keyframe table</strong>, not opcode bytecode. The per-frame interpreter is the canonical actor tick <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (block at <code>0x80022ec4..0x80023040</code>), which walks the table indexed by a bone count sourced from the actor's mesh context. Layout:</p>
+<pre><code>+0..+8                      header (a, b, marker_1, marker_2)
++8..+(8 + 8*N)              per-bone OUTPUT slots - written by the tick
+                             (8 bytes per bone: packed pos+rot deltas)
++(8 + 8*N)..+(8 + 32*N)     per-bone KEYFRAME data - read by the tick
+                             (24 bytes per bone = 12 little-endian i16
+                              shorts: src_pos.xyz, dst_pos.xyz,
+                              src_rot.xyz, dst_rot.xyz)</code></pre>
+  <p>Total record size for opcode-6 records is <code>8 + 32*N</code> bytes for <code>N</code> bones. The tick reads the 12 shorts, multiplies the <code>(dst - src)</code> deltas by <code>actor[+0x22]</code> (the per-actor interpolation factor - driven from the field-VM frame counter), and writes the resulting 8 packed bytes back into the OUTPUT slots.</p>
+  <p><code>crates/anm</code> exposes the typed accessor <code>KeyframeReader</code> for this layout. The bone count is supplied by the caller (the actor's mesh context owns it at runtime); offline tooling can use <code>KeyframeReader::infer_bone_count</code> to recover it from the record size when it fits the equation exactly.</p>
+</section>
+
+<section class="doc-section" id="public-entry-point-play-anm-by-id">
+  <h2>Public entry point - <code>play_anm_by_id</code></h2>
+  <p><code>FUN_80024CFC</code> (<code>play_anm_by_id(id, actor, ?)</code> in SCUS) is the writer that primes an actor for animation playback:</p>
+  <ol class="bullets">
+    <li>Calls <code>FUN_80020DE0</code> (actor allocator).</li>
+    <li>Reads the per-record offset from the ANM payload at <code>_DAT_8007B7C8 + (id*4) + 4</code>.</li>
+    <li>Stores <code>(anm_base + record_offset)</code> in <code>actor[+0x4C]</code> (the per-actor anim record pointer).</li>
+    <li>Writes <code>0xB</code> to <code>actor[+0x56]</code> (animation state byte) and <code>100</code> to <code>actor[+0x68]</code> (frame counter).</li>
+  </ol>
+  <p>The actor tick <code>FUN_80021DF4</code> then reads <code>actor[+0x4C]</code> whenever <code>actor[+0x5A]</code> is <code>2</code> or <code>6</code> and runs the keyframe interpolation pass described above. Other animation opcodes (set in <code>actor[+0x5A]</code>) gate different per-record body layouts; only opcode <code>6</code> is fully traced today.</p>
+</section>
+
+<section class="doc-section" id="connection-to-other-systems">
+  <h2>Connection to other systems</h2>
+  <p>The <a href="../subsystems/script-vm.html">field/event script VM</a> opcode <code>0x34</code> sub-op 3 plays a 3D animation by indexing into an ANM container and handing the entry to <code>func_0x800252EC</code>. That sibling path lands the same <code>actor[+0x4C]</code> slot the actor tick consumes.</p>
+</section>
+
+<section class="doc-section" id="non-keyframe-records">
+  <h2>Non-keyframe records</h2>
+  <p>Records whose body size is not a multiple of 32 don't fit the opcode-6 keyframe layout. Two structural sub-classes:</p>
+<table>
+<thead><tr>
+<th>Body</th>
+<th>Sub-class</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>0 bytes</td>
+<td>Empty / stub</td>
+<td>Placeholder slot; the actor tick skips it</td>
+</tr>
+<tr>
+<td>Not a multiple of 32</td>
+<td>Irregular body</td>
+<td>Opcode-specific layout; interpreter unknown</td>
+</tr>
+</tbody>
+</table>
+  <p>Use <code>anm scan-non-keyframe 'extracted/PROT/*.BIN' --histogram</code> to surface these across the corpus. The subcommand silently skips non-ANM files (safe to glob), and <code>--histogram</code> prints the top-8 byte distribution per record to help fingerprint the layout.</p>
+</section>
+
+<section class="doc-section" id="dispatch-byte-at-actor-0x5a">
+  <h2>Dispatch byte at <code>actor[+0x5A]</code></h2>
+  <p><code>FUN_80021DF4</code> ladders through <code>actor[+0x5A]</code> (<code>u16</code>) and routes to a per-opcode handler block. Observed values:</p>
+<table>
+<thead><tr>
+<th><code>actor[+0x5A]</code></th>
+<th>Handler block in <code>FUN_80021DF4</code></th>
+<th>Status</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x01</code></td>
+<td>(TBD)</td>
+<td>Snap variant - pose-snap only</td>
+</tr>
+<tr>
+<td><code>0x02</code></td>
+<td>shares with <code>0x06</code> at <code>0x80021E90..</code></td>
+<td>Per-bone keyframe-style</td>
+</tr>
+<tr>
+<td><code>0x03</code></td>
+<td><code>0x800226DC..</code></td>
+<td>Path / state-write variant</td>
+</tr>
+<tr>
+<td><code>0x04</code></td>
+<td><code>0x80022CBC..0x80022EE4</code></td>
+<td>Damp / spring-decay variant</td>
+</tr>
+<tr>
+<td><code>0x05</code></td>
+<td><code>0x800228B0..0x80022B80</code></td>
+<td>Path-alt - reads geometry from <code>actor[+0x80]</code></td>
+</tr>
+<tr>
+<td><code>0x06</code></td>
+<td><code>0x80021EA0..0x80021FA4</code></td>
+<td>Keyframe interpolation - fully traced + ported</td>
+</tr>
+<tr>
+<td><code>0x07</code></td>
+<td><code>0x80022C24..0x80022CC0</code></td>
+<td>Spline / curve-driven variant</td>
+</tr>
+</tbody>
+</table>
+  <p>The <code>crates/engine-vm</code> <code>DispatchByte</code> enum exposes those values as a typed dispatch - <code>DispatchByte::from_byte(actor[+0x5A])</code> and <code>DispatchByte::handled_natively()</code> for the cases the keyframe pose decoder can drive on its own (currently only <code>Keyframe</code>).</p>
+  <p>The per-arm physics tick (the part that <em>isn't</em> per-record bytecode - i.e. position / velocity / acceleration math, the SFX emitter at dispatch <code>0x05</code>, and the per-arm render submissions for <code>0x04</code> and <code>0x07</code>) is fully ported in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/src/actor_tick.rs"><code>crates/engine-vm/src/actor_tick.rs</code></a>. Cross-cutting effects surface via <code>TickEvent</code> so engines can fold them into their own audio mixer / scene graph / move-VM driver. See <a href="../subsystems/actor-vm.html#per-arm-physics-tick">the actor-VM doc</a> for the per-arm breakdown.</p>
+  <p>The per-frame interpreter for non-opcode-6 records is <strong>partially overlay-resident</strong>. <code>FUN_80024CFC</code> only primes the actor (<code>actor[+0x4C]</code> = record pointer, <code>actor[+0x56] = 0xB</code>); a handler in the town overlay (<code>FUN_801DE840</code>, overlay 0897) reads <code>actor[+0x4C]</code> at <code>801e260c</code> via a sub-dispatch table at <code>0x801CEF88</code> (routes by <code>opcode &amp; 0xF</code>, 16 entries):</p>
+  <ol class="bullets">
+    <li>Guard: reads <code>actor[+0x5C]</code>; skips the whole handler if ≤ 0.</li>
+    <li>Calls <code>FUN_800204f8</code> (<code>a0 = actor</code>) - actor advance / move tick.</li>
+    <li>Loads <code>s6 = actor[+0x4C]</code> - the ANM record pointer.</li>
+    <li>Calls <code>FUN_80056798</code> (BIOS vector <code>0xa0/0x2F</code>) while advancing the</li>
+  </ol>
+  <p>field VM PC by 2 in the delay slot.</p>
+  <ol class="bullets">
+    <li>The 40-byte body at <code>801e2630..801e2670</code> uses <code>s6</code> and the return value</li>
+  </ol>
+  <p>to complete the frame-selection logic; this segment is in the overlay dump but not extracted in the current function-coverage pass.</p>
+  <p>This path is gated on <code>actor[+0x5C]</code> and is distinct from the opcode-6 keyframe path in <code>FUN_80021DF4</code> (which gates on <code>actor[+0x5A] == 6</code>).</p>
+  <p>See <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code> line ~3389 for the disassembly. The full handler body requires a targeted dump of <code>0x801e2630..0x801e2670</code> within <code>overlay_0897.bin</code>.</p>
+</section>
+
+<section class="doc-section" id="allocator-preamble">
+  <h2>Allocator preamble</h2>
+  <p>When the dispatcher (<code>FUN_8001f05c</code> case 6) loads ANM data, the malloc'd buffer at <code>_DAT_8007B7C8</code> carries a 16-byte allocator preamble before the payload:</p>
+<pre><code>+0x00  back_ptr        (RAM ptr - usually base - 0xC or similar)
++0x04  forward_ptr     (RAM ptr to next allocation)
++0x08  forward_ptr_2   (RAM ptr - sometimes 0)
++0x0C  expanded_size   (u32 - payload byte length)
++0x10  -- payload starts here --</code></pre>
+  <p><code>crates/anm::peel_preamble</code> strips it; the on-disc form has no preamble.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/anm' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

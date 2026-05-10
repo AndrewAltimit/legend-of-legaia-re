@@ -1,0 +1,202 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; asset type dispatcher</div>
+  <h1>Asset type dispatcher</h1>
+  <p class="lede"><code>FUN_8001F05C</code> is the central asset-type dispatcher - every per-asset-format branch (TIM, TMD, MES, ANM, …) is reached through it. Implementation: <code>crates/asset/src/lib.rs::AssetType</code>. Source: <code>ghidra/scripts/funcs/8001f05c.txt</code>.</p>
+</header>
+
+<section class="doc-section" id="calling-convention">
+  <h2>Calling convention</h2>
+<pre><code>result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_only);</code></pre>
+  <ul class="bullets">
+    <li><code>type_and_size</code> packs <strong>type</strong> in the high 8 bits, <strong>size</strong> in the low 24 bits.</li>
+    <li><code>copy_only != 0</code> → asset is uncompressed; the dispatcher calls <code>FUN_8001A8B0</code> (memcpy).</li>
+    <li><code>copy_only == 0</code> → asset is LZS-compressed; the dispatcher calls <code>FUN_8001A55C</code> (the <a href="lzs.html">LZS decoder</a>).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="type-table">
+  <h2>Type table</h2>
+<table>
+<thead><tr>
+<th>Type byte</th>
+<th>Name (from malloc-error string)</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x00</code></td>
+<td><code>TIM</code></td>
+<td>Single PSX texture, 0x11800-byte buffer</td>
+</tr>
+<tr>
+<td><code>0x01</code></td>
+<td><code>TIM_LIST</code> (<code>Tim_Malloc_Err</code>)</td>
+<td>Pack of multiple TIMs, 0x70800-byte buffer</td>
+</tr>
+<tr>
+<td><code>0x02</code></td>
+<td><code>TMD</code></td>
+<td>Pack of meshes; calls <code>FUN_80026B4C</code> per submesh</td>
+</tr>
+<tr>
+<td><code>0x03</code></td>
+<td><code>MAN</code></td>
+<td>Raw load</td>
+</tr>
+<tr>
+<td><code>0x04</code></td>
+<td><code>MES</code></td>
+<td>Dialog text</td>
+</tr>
+<tr>
+<td><code>0x05</code></td>
+<td><code>MOVE</code></td>
+<td>Raw load</td>
+</tr>
+<tr>
+<td><code>0x06</code></td>
+<td><code>ANM</code></td>
+<td>Animation, raw load</td>
+</tr>
+<tr>
+<td><code>0x07</code></td>
+<td><code>VDF</code></td>
+<td>Post-processed via <code>FUN_8001FBCC</code> per entry</td>
+</tr>
+<tr>
+<td><code>0x08</code></td>
+<td><code>SIN</code></td>
+<td>Raw load</td>
+</tr>
+<tr>
+<td><code>0x09</code></td>
+<td><code>TMD2</code></td>
+<td>Single bare TMD blob (no pack header). Hands directly to <code>FUN_80026B4C</code>; same on-disc format as a single member of the TMD-pack used by case 2. Parse with <code>crates/tmd::parse</code> directly.</td>
+</tr>
+<tr>
+<td><code>0x0B</code></td>
+<td><code>MOVE2</code></td>
+<td>Raw load with cleanup of prior buffer</td>
+</tr>
+<tr>
+<td><code>0x0A</code></td>
+<td><code>FLAG</code> (implicit)</td>
+<td>Returns sentinel <code>0xA00</code> - no malloc, no decompress, no register</td>
+</tr>
+<tr>
+<td><code>0x0F</code></td>
+<td><code>FLAG</code></td>
+<td>Returns sentinel <code>0xF00</code></td>
+</tr>
+<tr>
+<td><code>0x14</code></td>
+<td><code>FLAG</code></td>
+<td>Returns sentinel <code>0x1400</code></td>
+</tr>
+</tbody>
+</table>
+  <p>Names come from the dev's malloc-error strings literally embedded in the binary (<code>s_Tim_Malloc_Err_800104E8</code>, <code>s_tmd_malloc_err_80010504</code>, etc).</p>
+</section>
+
+<section class="doc-section" id="return-value-bitfield">
+  <h2>Return-value bitfield</h2>
+  <p>Every return is a small bitfield:</p>
+<table>
+<thead><tr>
+<th>Type</th>
+<th>Return</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>0x00 TIM</td>
+<td>0x01</td>
+</tr>
+<tr>
+<td>0x01 TIM_LIST</td>
+<td>0x01</td>
+</tr>
+<tr>
+<td>0x02 TMD</td>
+<td>0x02</td>
+</tr>
+<tr>
+<td>0x03 MAN</td>
+<td>0x04</td>
+</tr>
+<tr>
+<td>0x04 MES</td>
+<td>0x08</td>
+</tr>
+<tr>
+<td>0x05 MOVE</td>
+<td>0x10</td>
+</tr>
+<tr>
+<td>0x06 ANM</td>
+<td>0x20</td>
+</tr>
+<tr>
+<td>0x07 VDF</td>
+<td>0x40</td>
+</tr>
+<tr>
+<td>0x08 SIN</td>
+<td>0x80</td>
+</tr>
+<tr>
+<td>0x09 TMD2</td>
+<td>0 (success) or asset-error bit</td>
+</tr>
+<tr>
+<td>0x0B MOVE2</td>
+<td>0x10 (same bit as MOVE)</td>
+</tr>
+<tr>
+<td>0x0A</td>
+<td><code>0xA00</code> (<code>type &lt;&lt; 8</code>) - pure flag</td>
+</tr>
+<tr>
+<td>0x0F</td>
+<td><code>0xF00</code> (<code>type &lt;&lt; 8</code>) - pure flag</td>
+</tr>
+<tr>
+<td>0x14</td>
+<td><code>0x1400</code> (<code>type &lt;&lt; 8</code>) - pure flag</td>
+</tr>
+</tbody>
+</table>
+  <p>Both call sites (<code>FUN_8002541C</code> streaming-walker and <code>FUN_80020224</code> descriptor walker) <strong>OR all returns into one accumulator</strong> and return that union, so the FLAG sentinels become high bits in the streaming-walker's "what was in this stream" summary value:</p>
+<pre><code>return_value &amp; 0x00FF  = bit per data-bearing asset type seen
+return_value &amp; 0xFF00  = bit per FLAG-type marker seen</code></pre>
+</section>
+
+<section class="doc-section" id="why-flag-types-exist">
+  <h2>Why FLAG types exist</h2>
+  <p>The FLAG cases let the dispatcher accept chunks whose <code>type_byte</code> falls outside the data-bearing range without aborting the streaming walk. The data bytes are still skipped by the walker (<code>advance = 4 + (size &amp; ~3)</code>), but the dispatcher never reads them. So FLAG chunks act as <strong>stream-level out-of-band markers</strong> - any code that calls <code>FUN_8002541C</code> and looks at the returned bitfield can detect that "this stream contained a <code>0x14</code>-typed marker chunk" without that marker carrying a parsed asset.</p>
+  <p>Where the markers are consumed is open; possibly by code that reads past the streaming terminator (the <a href="data-field.html">DATA_FIELD trailer</a>).</p>
+</section>
+
+<section class="doc-section" id="assettype-rust-enum">
+  <h2><code>AssetType</code> Rust enum</h2>
+<pre><code>pub enum AssetType {
+    Tim,        // 0
+    TimList,    // 1
+    Tmd,        // 2
+    Man,        // 3
+    Mes,        // 4
+    Move,       // 5
+    Anm,        // 6
+    Vdf,        // 7
+    Sin,        // 8
+    Tmd2,       // 9
+    Move2,      // 0xB
+    Flag(u8),   // 0xA, 0xF, 0x14
+    Unknown(u8),
+}</code></pre>
+</section>
+
+<section class="doc-section" id="where-the-dispatcher-actually-gets-called">
+  <h2>Where the dispatcher actually gets called</h2>
+  <p>In retail SCUS, only <code>FUN_8002541C</code>'s 0x14 (DATA_FIELD) branch reaches the dispatcher <em>from inside <code>SCUS_942.54</code></em>. The other static call site is <code>FUN_80020224</code> - a descriptor-pair walker with zero static xrefs in SCUS. It IS called at runtime from the town/field overlay (<code>FUN_801D6704</code> → <code>0x801D6B0C</code> with <code>a0 = 0</code>); see <a href="asset-descriptor.html">asset descriptor</a>.</p>
+</section>
+

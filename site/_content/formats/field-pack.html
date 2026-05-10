@@ -1,0 +1,218 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; field-pack format</div>
+  <h1>Field-pack format</h1>
+  <p class="lede">Magic <code>0x01059B84</code> followed by a 97-entry strict schema preceding packed TIMs/TMDs. Four PROT entries match the signature today. Detector + dispatch: <code>crates/asset/src/field_pack.rs</code>.</p>
+</header>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>[preamble - variable size, content shape unknown]
+[u32 LE = 0x01059B84]                  &lt;- MAGIC
+[97 × u32 LE - schema table, 388 bytes - byte-identical across all field-packs]
+[asset region - packed TIMs / TMDs, in some files]</code></pre>
+  <p>The schema slot offsets cover <code>[0x60..0x16651]</code> (≈ 91 KB of logical layout). They are anchored on <code>slots[0] == 0x60</code> and <code>slots[96] == 0x16651</code> and are byte-identical across every field-pack file (MD5 <code>edcfdf1575889d63d2077c396089d7f3</code>). The schema is therefore a STATIC abstract layout, not per-file metadata.</p>
+</section>
+
+<section class="doc-section" id="what-the-four-entries-look-like">
+  <h2>What the four entries look like</h2>
+<table>
+<thead><tr>
+<th>PROT</th>
+<th>preamble</th>
+<th>schema</th>
+<th>asset region</th>
+<th>TIMs / TMDs in tim_scan / tmd_scan</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0002_gameover_data</code></td>
+<td>234 KB</td>
+<td>388 B</td>
+<td>5.7 KB</td>
+<td>2 TIMs + several TMDs</td>
+</tr>
+<tr>
+<td><code>0003_town01</code></td>
+<td>233 KB</td>
+<td>388 B</td>
+<td>362 KB</td>
+<td>5 TIMs + 2 TMDs</td>
+</tr>
+<tr>
+<td><code>0004_town01</code></td>
+<td>227 KB</td>
+<td>388 B</td>
+<td>226 KB</td>
+<td>5 TIMs + 1 TMD</td>
+</tr>
+<tr>
+<td><code>0005_town01</code></td>
+<td>0 B</td>
+<td>388 B</td>
+<td>166 KB</td>
+<td>none - schema-indexed data only</td>
+</tr>
+</tbody>
+</table>
+  <p><code>0005_town01</code> is the odd one out: the magic sits at offset 0 and there are no packed TIMs/TMDs after the schema. The simplest explanation is that this entry holds the canonical schema-indexed data block on its own - likely a default template that scene-specific entries override piecewise.</p>
+</section>
+
+<section class="doc-section" id="slot-size-clusters">
+  <h2>Slot-size clusters</h2>
+  <p>Because the schema is byte-identical across every instance, slots that share the same <code>slot[i+1] - slot[i]</code> are the <strong>same kind of record</strong>. Run <code>asset field-pack &lt;PATH&gt; --groups</code> to surface the clusters; the bucket structure on the canonical schema is:</p>
+<table>
+<thead><tr>
+<th>Bucket size (bytes)</th>
+<th>Count</th>
+<th>Likely interpretation</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x2088</code> (8328)</td>
+<td>5</td>
+<td>Large blobs (TIM-page-like) at slots 1, 2, 3, 30, 41 - matches the 5-TIM count in <code>0003_town01</code> / <code>0004_town01</code></td>
+</tr>
+<tr>
+<td><code>0x1010</code> (4112)</td>
+<td>2</td>
+<td>Medium records at slots 42, 43</td>
+</tr>
+<tr>
+<td><code>0x810</code> (2064)</td>
+<td>1</td>
+<td>One large record at slot 94</td>
+</tr>
+<tr>
+<td><code>0x610</code> (1552)</td>
+<td>1</td>
+<td>Slot 57</td>
+</tr>
+<tr>
+<td><code>0x510</code> (1296)</td>
+<td>1</td>
+<td>Slot 91</td>
+</tr>
+<tr>
+<td><code>0x490</code> (1168)</td>
+<td>1</td>
+<td>Slot 83</td>
+</tr>
+<tr>
+<td><code>0x410</code> (1040)</td>
+<td>6</td>
+<td>Medium-records cluster at slots 4, 32, 44, 45, 61, 66</td>
+</tr>
+<tr>
+<td><code>0x340</code> (832)</td>
+<td>1</td>
+<td>Slot 26</td>
+</tr>
+<tr>
+<td><code>0x310</code> (784)</td>
+<td>2</td>
+<td>Slots 35, 72</td>
+</tr>
+<tr>
+<td><code>0x218</code> (536)</td>
+<td>21</td>
+<td>NPC-record cluster at slots 5..25 (uniform stride; strong signal of a tabular array)</td>
+</tr>
+<tr>
+<td><code>0x210</code> (528)</td>
+<td>12</td>
+<td>Smaller record cluster</td>
+</tr>
+<tr>
+<td><code>0x190</code> (400)</td>
+<td>1</td>
+<td>Slot 70</td>
+</tr>
+<tr>
+<td><code>0x150</code> (336)</td>
+<td>1</td>
+<td>Slot 80</td>
+</tr>
+<tr>
+<td><code>0x130</code> (304)</td>
+<td>2</td>
+<td>Slots 54, 82</td>
+</tr>
+<tr>
+<td><code>0x110</code> (272)</td>
+<td>17</td>
+<td>Dialog-trigger / event-region cluster</td>
+</tr>
+<tr>
+<td><code>0x100</code> (256)</td>
+<td>3</td>
+<td>Slots 56, 65, 67</td>
+</tr>
+<tr>
+<td><code>0xD0</code> (208)</td>
+<td>2</td>
+<td>Slots 29, 89</td>
+</tr>
+<tr>
+<td><code>0x90</code> (144)</td>
+<td>16</td>
+<td>Collision-box-sized cluster</td>
+</tr>
+<tr>
+<td><code>0x1</code></td>
+<td>1</td>
+<td>Slot 0 - likely a single-byte flag/type marker</td>
+</tr>
+</tbody>
+</table>
+  <p>The three big clusters (21 × 0x218, 17 × 0x110, 16 × 0x90) are arrays of fixed-size records - exactly the shape a field scene uses for NPC slots, event triggers, and hit regions. Five 0x2088 blobs match the empirical TIM count in the two town variants.</p>
+</section>
+
+<section class="doc-section" id="why-the-magic-isn-t-load-bearing">
+  <h2>Why the magic isn't load-bearing</h2>
+  <p>A scan of <code>SCUS_942.54</code> and every captured overlay (dialog, town, battle action, menu, the 0896 / 0897 / battle-action clusters) for either the <code>LUI</code>+<code>ADDIU/ORI</code> immediate pair that synthesises <code>0x01059B84</code> or the byte sequence <code>84 9B 05 01</code> returns zero hits. The runtime never compares against this magic.</p>
+  <p>That rules out a magic-checked format loader. The most likely interpretation is that field-pack is a build-time layout artefact - the schema describes the in-RAM shape that per-scene code reads at hard-coded slot offsets, and the magic is a sanity marker the disc mastering left behind (or the dev tooling stamped) rather than a runtime parser anchor.</p>
+  <p>Per-slot interpretation therefore depends on locating the consumer - per-scene code in a field/town overlay that reads from the slot offsets. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_field_pack_magic.py"><code>ghidra/scripts/find_field_pack_magic.py</code></a> for the scan that established the magic isn't referenced, and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_field_pack_consumers.py"><code>ghidra/scripts/find_field_pack_consumers.py</code></a> for the consumer-search complement.</p>
+</section>
+
+<section class="doc-section" id="scene-transition-consumer">
+  <h2>Scene-transition consumer</h2>
+  <p>The confirmed scene-transition caller of <code>FUN_8001f7c0</code> (scene asset loader) is <code>FUN_801D6704</code> (overlay 0897, <code>801d6ae8</code>):</p>
+<pre><code>; a0 = _DAT_1f8003ec (DMA read buffer)
+; a1 = 0x80084548   (scene name table)
+; a2 = _DAT_80084540 (current scene pointer, from s4-8)
+; a3 = 0
+jal   0x8001f7c0
+_clear a3</code></pre>
+  <p>After the load, <code>FUN_801D6704</code> at <code>801d6b0c</code> calls <code>FUN_80020224</code> (descriptor-pair walker), which iterates the asset descriptor table at <code>_DAT_8007B85C</code> and dispatches each entry through <code>FUN_8001F05C</code> (asset type dispatcher).</p>
+  <p>The 97-slot field-pack data is consumed at <strong>static offsets</strong> - there is no slot-iteration loop in the captured code. The byte-identical schema confirms it: the consumer treats the buffer as a fixed in-RAM layout template and reads NPC/event/collision slots by hard-coded index, not by walking the offset table. Per-NPC and per-event slot handlers are called indirectly through the descriptor table; their specific entry points require capturing a full scene-init execution trace (not yet available in the overlay dumps).</p>
+</section>
+
+<section class="doc-section" id="mednafen-state-diff-observations">
+  <h2>Mednafen-state diff observations</h2>
+  <p>A prior diff over the engine RAM range <code>0x801C0000..0x80200000</code> lit up a 9 KB region at <code>0x801F69D8..0x801F8F02</code> that toggled between two different MIPS-code overlays - different scenes load different per-area code into the same slot. The first 16 bytes match the standard PSX function-prologue shape (<code>addiu sp,sp,-N</code>, <code>sw s1,N(sp)</code>, <code>lui s1,0x801F</code>, <code>ori s1,s1,...</code>), confirming the slot is an MIPS overlay rather than a data buffer. The field-pack consumer (per-slot reader) is one of the candidates for what lives there; pinning down which routine in the overlay reads which schema slot still requires a writer-search pass through the captured overlay programs.</p>
+  <h3>Town residency reference</h3>
+  <p>The mednafen save corpus includes one town-resident state (CDNAME label <code>town0c</code>, scene index <code>0x15</code> - the first town save in the corpus). Cross-scene RAM diffs against any field save (e.g. one captured in <code>map01</code>) surface the per-town overlay payload + scene-bundle pool layout for <code>town0c</code> specifically. <strong><code>town0c</code> is NOT one of the four PROT entries that match the field-pack magic</strong> (those live in the <code>town01</code> block: <code>0002_gameover_data</code>, <code>0003_town01</code>, <code>0004_town01</code>, <code>0005_town01</code>). Pinning the field-pack preamble → slot mapping needs an additional save inside the <code>town01</code> block specifically; <code>town0c</code> serves as a generic "town residency" reference but does not carry the field-pack data on its own. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> and the [<code>town01_save_documents_active_scene_label</code>] disc-gated test for the recorded scene index + label.</p>
+</section>
+
+<section class="doc-section" id="tooling">
+  <h2>Tooling</h2>
+<pre><code>asset field-pack &lt;PATH&gt;                # show schema + slot sizes
+asset field-pack &lt;PATH&gt; --all-slots    # all 97 slot offsets/sizes
+asset field-pack &lt;PATH&gt; --groups       # cluster slots by size (semantic index)
+asset field-pack-scan &lt;DIR&gt;            # find every field-pack in a PROT dir</code></pre>
+  <h3>Rust API</h3>
+  <p><code>legaia_asset::field_pack::FieldPack</code> exposes typed accessors:</p>
+<pre><code>// Classify a slot by index.
+let kind: Option&lt;SlotKind&gt; = fp.slot_kind(i);
+
+// Iterate all 97 slots with structural classification + bytes.
+// Bytes are non-empty only when magic_offset == 0 (entry 0005_town01).
+for (kind, bytes) in fp.iter_slots(buf) {
+    // kind: SlotKind::{TypeFlag, TimPage, NpcRecord, EventTrigger,
+    //                   CollisionBox, CompactRecord, MediumRecord,
+    //                   SingleRecord, LastSlot}
+}</code></pre>
+  <p><code>SlotKind</code> is derived from the slot's byte size and covers the major structural clusters identified in the size table above.  Per-slot interpretation beyond size-clustering is deferred pending a consumer trace (see "Why the magic isn't load-bearing" above).</p>
+  <p>The detector is reliable for classification today; per-slot interpretation is bracketed by the cluster table above and pending a per-scene consumer trace for the final mapping.</p>
+</section>
+

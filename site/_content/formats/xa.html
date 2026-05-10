@@ -1,0 +1,117 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; xa-adpcm streams</div>
+  <h1>XA-ADPCM streams</h1>
+  <p class="lede">CD-XA Mode 2 Form 2 audio sectors carrying the cutscene voice / BGM tracks. On-disc filenames are <code>XA1.XA</code> / <code>XA2.XA</code> / etc. (one or more per release).</p>
+</header>
+
+<section class="doc-section" id="sector-layout">
+  <h2>Sector layout</h2>
+  <p>Each on-disc XA sector is the standard PSX 2352-byte raw layout:</p>
+<pre><code>+0x000  12 B  sync (00 + 10x FF + 00)
++0x00C   4 B  header (MM SS FF mode)
++0x010   8 B  CD-XA subheader (4 fields + duplicated copy):
+                  file_no, ch_no, submode, coding_info
++0x018  2304 B  user data (18 sound groups × 128 B audio)
+              - 0x14 trailing bytes are padding
++0x92C   4 B  EDC</code></pre>
+  <p>Submode bits relevant for audio detection:</p>
+<table>
+<thead><tr>
+<th>bit</th>
+<th>meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x04</code></td>
+<td>AUDIO</td>
+</tr>
+<tr>
+<td><code>0x20</code></td>
+<td>FORM2</td>
+</tr>
+</tbody>
+</table>
+  <p>Coding-info bits:</p>
+<table>
+<thead><tr>
+<th>bits</th>
+<th>meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>0 (<code>0x01</code>)</td>
+<td>stereo (vs mono)</td>
+</tr>
+<tr>
+<td>2..=3</td>
+<td>sample rate (<code>00</code> = 37.8 kHz, <code>01</code> = 18.9 kHz)</td>
+</tr>
+<tr>
+<td>4..=5</td>
+<td>bits/sample (<code>00</code> = 4-bit, <code>01</code> = 8-bit)</td>
+</tr>
+</tbody>
+</table>
+  <p>The 18 sound groups inside the user data are 128-byte CD-XA ADPCM blocks; see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/lib.rs">the lib doc-comment</a> for the per-block layout (8 sound units, 28 lines × 4 bytes).</p>
+</section>
+
+<section class="doc-section" id="non-standard-interleave-what-it-is-and-isn-t">
+  <h2>"Non-standard interleave" - what it is and isn't</h2>
+  <p>The earliest extracted-XA tooling truncated each on-disc sector to 2048 bytes (Form 1 mode), which silently:</p>
+  <ol class="bullets">
+    <li><strong>Dropped 276 bytes per sector</strong> of audio (Form 2 user data is 2324 B vs Form 1's 2048 B).</li>
+    <li><strong>Collapsed every channel of the multiplexed stream into a single shuffled byte sequence</strong>, because the per-sector <code>(file_no, ch_no)</code> subheader was discarded.</li>
+  </ol>
+  <p>The result was a stream where only ~10 % of 128-byte sound groups passed the standard XA validation rule <code>bytes 8..16 == bytes 0..8</code>. That's the "non-standard interleave" shorthand from earlier doc revisions - <strong>not</strong> a bespoke Legaia muxing scheme, just Form-1-truncation damage.</p>
+  <p>The fix lives in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a> (function <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>demux_disc_range</code></a>). It reads raw 2352-byte sectors, parses each subheader, filters to <code>AUDIO + FORM2</code>, and splits the audio data into one buffer per <code>(file_no, ch_no)</code> tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.</p>
+  <p>The <code>xa demux-disc</code> subcommand drives this end-to-end:</p>
+<pre><code>./target/release/xa demux-disc \
+    "/path/to/Legend of Legaia (USA).bin" \
+    --lba &lt;ISO9660-LBA-of-XA1.XA&gt; \
+    --size &lt;directory-entry-size&gt; \
+    --out extracted/xa_demux</code></pre>
+  <p>One WAV lands per <code>(file_no, ch_no)</code> channel in <code>extracted/xa_demux/</code>.</p>
+</section>
+
+<section class="doc-section" id="what-the-older-extracted-xa-xa-files-contain">
+  <h2>What the older <code>extracted/XA/*.XA</code> files contain</h2>
+  <p>If the tree on disk has a populated <code>extracted/XA/</code> directory from a pre-fix extraction, those files are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. They should be deleted and re-extracted via <code>xa demux-disc</code> (or via the top-level <code>legaia-extract</code> once it integrates the new path).</p>
+</section>
+
+<section class="doc-section" id="what-s-still-open">
+  <h2>What's still open</h2>
+  <ul class="bullets">
+    <li><strong>Top-level extract integration.</strong> <code>legaia-extract</code> doesn't yet call <code>xa demux-disc</code>. Cutscene audio works end-to-end via the standalone <code>xa</code> binary; the unified pipeline still emits the legacy Form-1 bytes.</li>
+    <li><strong>8-bit ADPCM mode.</strong> Detected (<code>coding_info</code> bit), unimplemented in the decoder. Most music in the corpus is 4-bit, so this hasn't blocked anything observed.</li>
+    <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name → expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that's reversed, the WAV → cutscene assignment is manual.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="provenance">
+  <h2>Provenance</h2>
+<table>
+<thead><tr>
+<th>Subject</th>
+<th>Source</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Mode 2 / Form 2 sector layout</td>
+<td>PSX BIOS docs + <code>legaia-iso::raw</code></td>
+</tr>
+<tr>
+<td>Subheader interpretation</td>
+<td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/demux.rs"><code>crates/xa/src/demux.rs</code></a></td>
+</tr>
+<tr>
+<td>4-bit ADPCM filter coefficients</td>
+<td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/src/lib.rs"><code>crates/xa/src/lib.rs</code></a></td>
+</tr>
+<tr>
+<td>Form-1-truncation diagnosis</td>
+<td>direct comparison: 90 % of 128-byte groups in <code>extracted/XA/*.XA</code> failed the <code>bytes 8..16 == bytes 0..8</code> invariant before the demuxer was added.</td>
+</tr>
+</tbody>
+</table>
+</section>
+

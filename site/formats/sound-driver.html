@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sound-driver paths - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; sound-driver path-string cluster</div>
+  <h1>Sound-driver path-string cluster</h1>
+  <p class="lede">The SCUS string cluster at RAM <code>0x8007B380</code> (file offset <code>0x6BB80</code>) holds the file extensions the sound subsystem appends to scene-asset paths. The dispatch chain <em>into</em> these formats is fully traced; the byte-level layout of the individual files is still TBD.</p>
+</header>
+
+<section class="doc-section" id="cluster-layout">
+  <h2>Cluster layout</h2>
+<table>
+<thead><tr>
+<th>Offset</th>
+<th>Bytes</th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>0x8007B380</code></td>
+<td>12 bytes</td>
+<td>Per-extension flag/mode metadata table: <code>00 01 FF FF FF FF 00 00 00 02 00 00</code>.</td>
+</tr>
+<tr>
+<td><code>0x8007B38C</code></td>
+<td><code>"sound\"</code></td>
+<td>Path prefix for streaming-asset loads.</td>
+</tr>
+<tr>
+<td><code>0x8007B394</code></td>
+<td><code>".spk"</code></td>
+<td>SPU sample bank.</td>
+</tr>
+<tr>
+<td><code>0x8007B39C</code></td>
+<td><code>".LZS"</code></td>
+<td>Compressed wrapper (per-file).</td>
+</tr>
+<tr>
+<td><code>0x8007B3A4</code></td>
+<td>8 bytes</td>
+<td>Two 4-byte mode descriptors: <code>00 00 00 00</code> and <code>03 02 03 00 03 05 03 00</code>. Indexed by <code>FUN_8001EBEC</code> to pick which extension a given mode uses.</td>
+</tr>
+<tr>
+<td><code>0x8007B3AC</code></td>
+<td><code>"bse.dat"</code></td>
+<td>Master sound-bank file name (loaded once at sound-init).</td>
+</tr>
+<tr>
+<td><code>0x8007B3B4</code></td>
+<td><code>".dpk"</code></td>
+<td>Per-scene sound pack - the format <code>FUN_8001FA88</code> loads.</td>
+</tr>
+<tr>
+<td><code>0x8007B3BC</code></td>
+<td><code>".MAP"</code></td>
+<td>Sound bank map (PsyQ SoundArtist output).</td>
+</tr>
+<tr>
+<td><code>0x8007B3C4</code></td>
+<td><code>".PCH"</code></td>
+<td>Patch / instrument data (PsyQ output).</td>
+</tr>
+<tr>
+<td><code>0x8007B3CC</code></td>
+<td><code>".LZS"</code></td>
+<td>Duplicate, fallback.</td>
+</tr>
+<tr>
+<td><code>0x8007B3D4</code></td>
+<td><code>".pac"</code></td>
+<td>Per-scene generic pack.</td>
+</tr>
+<tr>
+<td><code>0x8007B3DC</code></td>
+<td><code>"STR"</code></td>
+<td>Streaming audio (raw PSX <code>.STR</code> containers).</td>
+</tr>
+</tbody>
+</table>
+</section>
+
+<section class="doc-section" id="consumers">
+  <h2>Consumers</h2>
+  <p>Three SCUS functions touch the cluster (located via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/ghidra/scripts/find_sound_path_builders.py"><code>ghidra/scripts/find_sound_path_builders.py</code></a>):</p>
+<table>
+<thead><tr>
+<th>Function</th>
+<th>Role</th>
+<th>Touch points</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>FUN_8001FA88</code></td>
+<td><strong>Sound subsystem init / <code>.dpk</code> loader.</strong> Allocates a 0x1800-byte buffer at <code>_DAT_8007B8D0</code>. Loads <code>bse.dat</code> via the path-based opener. Then assembles <code>h:\main\bg\domepack\&lt;name&gt;.dpk</code> (template at <code>0x800105C8</code> + extension at <code>0x8007B3B4</code>) and opens it.</td>
+<td><code>0x8007B3AC</code> (<code>bse.dat</code>), <code>0x8007B3B4</code> (<code>.dpk</code>)</td>
+</tr>
+<tr>
+<td><code>FUN_8001FC00</code></td>
+<td><strong>Streaming-asset loader.</strong> Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer.</td>
+<td><code>0x8007B38C</code> (<code>sound\</code>)</td>
+</tr>
+<tr>
+<td><code>FUN_8001EBEC</code></td>
+<td><strong>Mode-aware extension dispatcher.</strong> Reads <code>_DAT_8007B824</code> as a mode index, then uses the small per-mode tables at <code>0x8007B3A4</code> / <code>0x8007B3A8</code> to pick which file-extension entry to hit.</td>
+<td><code>0x8007B3A4</code>, <code>0x8007B3A8</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+
+<section class="doc-section" id="dev-build-vs-retail-build-paths">
+  <h2>Dev-build vs retail-build paths</h2>
+  <p>Both <code>FUN_8001FA88</code> and <code>FUN_8001FC00</code> carry a <code>_DAT_8007B8C2</code> (debug-flag) carve-out:</p>
+  <ul class="bullets">
+    <li><strong>Dev branch</strong> (<code>_DAT_8007B8C2 != 0</code>) loads sound data via PROT indices. <code>FUN_8001FA88</code>'s dev branch loads index <code>0x37A</code> (= <code>sound_data2</code>) plus <code>param_1 + 5</code> for per-scene variations, via the index-based loader (<code>FUN_8003EB98</code>).</li>
+    <li><strong>Retail branch</strong> (<code>_DAT_8007B8C2 == 0</code>) loads via dev-style paths through the path-based opener (<code>FUN_8003E6BC</code>), which resolves <code>h:\main\bg\domepack\…</code> into the appropriate PROT entry through the CDNAME-driven name map.</li>
+  </ul>
+  <p>Both paths land at the same files; only the indirection differs. The same dev/retail split appears in <a href="../subsystems/asset-loader.html"><code>FUN_800255B8</code></a>, so it's a pattern that repeats across asset-loading subsystems.</p>
+</section>
+
+<section class="doc-section" id="what-s-left-to-format-spec">
+  <h2>What's left to format-spec</h2>
+  <p>The byte-level layouts of the individual files (<code>.MAP</code> / <code>.PCH</code> / <code>.spk</code> / <code>.dpk</code> / <code>.pac</code>) are still TBD. With consumers identified, the next move is to read the body of <code>FUN_8001FA88</code> (specifically the field accesses on <code>_DAT_8007B8D0</code> after the path-based opener returns) for the <code>.dpk</code> byte layout - <code>_DAT_8007B8D0 + 2</code> is read as a <code>ushort</code> and used as a divisor (almost certainly a record count).</p>
+  <p>The eventual home is a <code>crates/sound</code> companion to <code>crates/vab</code>.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/sound-driver' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

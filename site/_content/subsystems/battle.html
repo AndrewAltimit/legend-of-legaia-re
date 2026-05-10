@@ -2,6 +2,7 @@
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle</div>
   <h1>Battle subsystem</h1>
   <p class="lede">The battle overlay carries the battle scene loader, the per-actor action state machine, and the <a href="effect-vm.html">effect VM cluster</a>. Loaded at RAM <code>0x801CE818</code> - the same load slot as the town overlay, so battle and town never coexist in memory.</p>
+  <p class="hint">This page is the RE-side reference: scene loader, action SM keys, ctx struct, actor table, and the per-frame helpers. For the clean-room engine port (BattleSession, HUD, runner, SFX, equipment), see <a href="engine.html">engine reimplementation</a>.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -66,6 +67,7 @@
     <li>The <a href="effect-vm.html">effect VM cluster</a> (which handles per-effect spawn/render but doesn't drive actor decisions).</li>
     <li>The <a href="move-vm.html">move-table VM</a> (which drives Tactical Arts inputs and per-action keyframe scheduling - a layer below this one).</li>
   </ul>
+  <p>The full state-band breakdown lives on <a href="battle-action.html">battle action FSM</a>.</p>
 </section>
 
 <section class="doc-section" id="ctx-struct">
@@ -162,7 +164,6 @@
     <dt>Function</dt><dd><code>FUN_8003FB10</code></dd>
   </dl>
   <p>Decides whether a queued action can proceed for the active actor. Sub-dispatches on <code>actor[+0x9A8]</code> (the queued-action byte) into 16+ handler arms; each arm consults a mix of per-actor state, the current target's record at <code>0x80084708 + tgt*0x414</code>, the global ability bitmask via <code>FUN_800431D0</code>, and the <code>0x8007BD10</code> actor-type table to gate the action with a 16-bit return code (action-OK, blocked, requires-target-flag, etc.).</p>
-  <p>Engine reimpl wires this between the move VM and the per-actor state machine <code>FUN_801E295C</code>.</p>
 </section>
 
 <section class="doc-section" id="character-record">
@@ -174,6 +175,7 @@
       <tr><td><code>+0x13C</code></td><td>u8 spell-list count</td></tr>
       <tr><td><code>+0x13D..+0x160</code></td><td>u8 spell IDs (variable-length; up to 36)</td></tr>
       <tr><td><code>+0x161..+0x184</code></td><td>u8 parallel spell-level / experience array</td></tr>
+      <tr><td><code>+0x185..+0x195</code></td><td>Displayed-skills list (count-prefixed; head-insert on item-use)</td></tr>
       <tr><td><code>+0x196..+0x19D</code></td><td>u8 equipment slot bytes (8 slots; weapon, armour, accessories)</td></tr>
       <tr><td><code>+0x141</code>-ish</td><td>Character name string (used by <code>FUN_80036044</code> <code>0xC1</code> text-escape)</td></tr>
       <tr><td><code>+0x2B0..+0x37F</code></td><td>Active spell-slot array (stride <code>0x14</code>)</td></tr>
@@ -219,7 +221,6 @@
       <tr><td>Petrified</td><td><code>8</code></td><td>until cured</td><td>Skip turn entirely</td></tr>
     </tbody>
   </table>
-  <p>Implementation: <code>crates/engine-vm/src/status_effects.rs</code>. The per-tick <code>StatusEvent</code> stream feeds back into the engine's HUD pipeline; engines call <code>World::tick_status_effects</code> once per round and consume <code>StatusEffectTracker::drain_events()</code> for log lines.</p>
 </section>
 
 <section class="doc-section" id="ap-gauge">
@@ -237,126 +238,6 @@
       <tr><td><code>0x1B..=0x32</code></td><td>1</td><td>per-character art body</td></tr>
     </tbody>
   </table>
-  <p>Implementation: <code>crates/engine-core/src/ap_gauge.rs</code>. The <code>World</code> carries a <code>[ApGauge; 3]</code> (one per party slot); engines call <code>World::reset_party_ap</code> at turn start.</p>
-</section>
-
-<section class="doc-section" id="battle-stats">
-  <h2>Battle stat aggregator</h2>
-  <p>Clean-room port of <code>FUN_80042558</code>. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4&times;u32 mask, then folds in status-effect modifiers (Burned reduces ATK by ~12.5%, Confused halves accuracy, Asleep / Stunned / Petrified zero evasion and block actions, Silenced / Petrified block Magic).</p>
-  <p>Implementation: <code>crates/engine-core/src/battle_stats.rs</code>. The pure function <code>compute_battle_stats(record, table, statuses, modifiers) -&gt; BattleStats</code> is deterministic and side-effect-free - engines call it once per turn-start.</p>
-</section>
-
-<section class="doc-section" id="items">
-  <h2>Item catalog</h2>
-  <p>Typed catalogue of inventory items the battle / field menu consults. Each entry has an <code>ItemEffect</code> describing the side-effect (Heal / Cure / Revive / Stat-up / Spirit-up / Capture / Escape / Damage / KeyItem). The vanilla catalog ships 19 entries covering every category.</p>
-  <p><code>apply_effect(effect, &amp;TargetSnapshot) -&gt; ItemOutcome</code> is the pure resolver. <code>World::use_item(item_id, target_slot)</code> wraps that resolver and folds the outcome back into world state - HP / MP gains capped at the actor's max values, <code>StatusEffectTracker::cure</code> / <code>cure_all</code> clears status, <code>ApGauge::refund</code> handles Spirit-restore items.</p>
-  <p>Implementation: <code>crates/engine-core/src/items.rs</code>; world wiring at <code>World::use_item</code> + <code>World::set_character_max_mp</code>.</p>
-</section>
-
-<section class="doc-section" id="round">
-  <h2>Battle round lifecycle</h2>
-  <p>Per-round bookkeeping that ties the pure-code subsystems above into a single <code>BattleRound</code> orchestrator:</p>
-  <ul>
-    <li><code>BattleRound::begin(&amp;mut world, &amp;[StatRecord; 8], &amp;EquipmentTable, &amp;StatusModifiers)</code> resets every party AP gauge, recomputes per-slot <code>BattleStats</code> through <code>compute_battle_stats</code>, and writes the resolved attack / UDF / LDF back into <code>World::battle_attack</code> / <code>battle_defense_split</code> so the strike resolver picks them up.</li>
-    <li><code>BattleRound::end(&amp;mut world)</code> ticks every actor's status, folds Burned / Poisoned tick damage into <code>BattleActor::hp</code>, and returns the count of actors that died from tick damage this round.</li>
-    <li>The returned <code>BattleRound</code> carries per-slot <code>action_blocked</code> / <code>magic_blocked</code> arrays the action validator filters command input against (Asleep / Stunned / Petrified actors lose action; Silenced / Petrified actors lose Magic).</li>
-  </ul>
-  <p>Implementation: <code>crates/engine-core/src/battle_round.rs</code>.</p>
-</section>
-
-<section class="doc-section" id="anim-runtime">
-  <h2>Per-actor animation runtime</h2>
-  <p>Centralised per-actor animation orchestration that wraps <code>legaia_anm::AnimPlayer</code> for the keyframe-driven case (the bulk of retail ANM data) and surfaces a <code>Host::on_opaque_record</code> hook for the kinds whose interpreter is overlay-resident. <code>AnimRuntime::with_slots(N)</code> manages a fixed pool indexed by actor id; <code>play(actor, record, bone_count)</code> classifies the record by header byte and routes into either the keyframe path or the opaque path with the same <code>actor[+0x68] = 100</code> initial counter the retail dispatcher uses.</p>
-  <p>Per tick the runtime emits an <code>AnimEvent</code> stream (<code>PoseUpdated</code> / <code>OpaqueTick</code> / <code>Finished</code> / <code>Replaced</code>) so engines drive renderer / SFX side effects without polling per-actor state. When the overlay capture for the <code>actor[+0x4C]</code> dispatcher lands, the only change required is filling the <code>Host::on_opaque_record</code> body with the real per-kind dispatch.</p>
-  <p>Implementation: <code>crates/engine-vm/src/anim_vm.rs</code>.</p>
-</section>
-
-<section class="doc-section" id="battle-runner">
-  <h2>Battle command runner</h2>
-  <p>Sits between the player-input layer and the action state machine plus the <code>BattleRound</code> orchestrator. One <code>BattleRunner</code> per battle session; engines feed it raw player commands per turn and call its lifecycle methods to bracket each round.</p>
-  <ul>
-    <li><strong>Per-turn input &rarr; action queue.</strong> Commands are accumulated until the player commits the turn; <code>commit_turn</code> runs the queue through <code>resolve_action_queue</code> so Miracle / Super expansion happens on the engine side, before the SM sees a single byte.</li>
-    <li><strong>AP gating.</strong> <code>push_command</code> consults the active party member's <code>ApGauge</code> before admitting the next byte - failure surfaces a typed <code>OutOfAp</code> error. <code>pop_command</code> / <code>pop_chained_art</code> refund the cost cleanly.</li>
-    <li><strong>Turn lifecycle.</strong> Engines call <code>begin_round</code> at turn start (delegates to <code>BattleRound::begin</code> for AP reset + stat recompute) and <code>end_round</code> at turn end (delegates to <code>BattleRound::end</code> for tick damage drainage).</li>
-    <li><strong>Per-slot buffers.</strong> Each party slot has its own command buffer + chained-art list; switching <code>active_party_slot</code> preserves the inactive slots' state for cross-character chaining.</li>
-  </ul>
-  <p>The runner is the <strong>input &rarr; queue</strong> half of the battle pipeline; the SM tick itself runs through the existing <code>step_battle</code> loop. Implementation: <code>crates/engine-core/src/battle_runner.rs</code>.</p>
-</section>
-
-<section class="doc-section" id="battle-hud">
-  <h2>Battle HUD model</h2>
-  <p>Renderer-agnostic UI state for the in-battle screen. Holds per-slot HP / MP / AP / status-icon state plus a queue of damage popups and battle-event log lines. <code>engine-render</code>'s <code>battle_hud_draws_for</code> turns one of these into a <code>Vec&lt;TextDraw&gt;</code> for the GPU pipeline; engines that render via a different path (web / terminal) read the same struct directly.</p>
-  <p>The HUD is fed by <code>World</code> events:</p>
-  <ul>
-    <li><code>BattleEvent::ApplyArtStrike</code> &rarr; <code>push_damage</code> / <code>push_heal</code> (per-strike popup with a fade timer; <code>frames_remaining</code> ticks down each frame).</li>
-    <li><code>StatusEvent::TickDamage</code> / <code>Cleared</code> &rarr; <code>sync_status</code> (replaces the slot's icon list from the <code>StatusEffectTracker</code>).</li>
-    <li><code>BattleRound::begin</code> / <code>end</code> &rarr; <code>sync_slot</code> (refreshes HP / MP / AP per round).</li>
-  </ul>
-  <p>Damage popups carry a 60-frame default lifetime and an <code>alpha()</code> helper for fade-out renders. The log column rings the most recent N entries (default 6, matching the retail scrolling-log column) and the renderer maps <code>LogAccent</code> variants to colours: white = neutral, blue = party, red = monster, yellow = highlight (crit / level up / status applied), green = heal / cure.</p>
-  <p>Implementation: <code>crates/engine-core/src/battle_hud.rs</code>; renderer side: <code>battle_hud_draws_for</code> + <code>HudSlotView</code> / <code>HudPopupView</code> / <code>HudLogView</code> in <code>engine-render</code>.</p>
-</section>
-
-<section class="doc-section" id="sfx">
-  <h2>SFX bank + scheduler</h2>
-  <p>Maps battle / field cue IDs (the <code>kind</code> byte the art-record <code>HitCue</code> / overlay scripts emit) to per-cue <code>SfxEntry</code> descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward <code>ScheduledCue</code>-like requests through <code>SfxScheduler</code> which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.</p>
-  <ul>
-    <li>Cue <code>0x1A</code> - generic "play sound" hit cue; the catalog typically maps this to per-strike weapon impact tones.</li>
-    <li>Cue <code>0x4C</code> - hit-effect visual (no sound on its own; engines that fold the visual into a synced sound use this slot).</li>
-    <li>Cues <code>0x80..=0xFE</code> - reserved per-character or per-art SFX IDs (the retail engine indexes from the per-actor <code>+0x9C0</code> table).</li>
-  </ul>
-  <p><code>SfxBank::play_one_shot</code> delegates to the existing <code>VabBank::play_note</code> for tone lookup, pitch math, and ADSR setup; the scheduler is a frame-driven queue that returns an <code>SfxFireBatch</code> per <code>tick_frame</code> call so engines can dispatch through the same <code>VabBank</code> they already wired for the BGM sequencer.</p>
-  <p>Implementation: <code>crates/engine-audio/src/sfx.rs</code>.</p>
-</section>
-
-<section class="doc-section" id="inventory-use">
-  <h2>Inventory item-use session</h2>
-  <p>State machine that drives the "open inventory &rarr; pick item &rarr; pick target &rarr; use it" flow shared between the field menu and the battle command menu. Engines own a single <code>InventoryUseSession</code> for the lifetime of the inventory screen; per-frame they push input events and drain <code>InventoryUseEvent</code>s to forward into render / sound / world side-effects.</p>
-  <pre class="code-block">Browsing(item_cursor)
-   &darr; Confirm        &uarr; Cancel
-TargetSelect(target_cursor)
-   &darr; Confirm        &uarr; Cancel
-Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
-                       the next inventory open</pre>
-  <p>The session filters items by <code>InventoryContext</code> (battle vs field - <code>usable_in_battle</code> / <code>usable_in_field</code> from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved <code>ItemOutcome</code> into the engine's world state via <code>World::use_item</code>. Implementation: <code>crates/engine-core/src/inventory_use.rs</code>.</p>
-</section>
-
-<section class="doc-section" id="battle-session">
-  <h2>Battle session orchestrator</h2>
-  <p><code>BattleSession</code> composes the runner, round, HUD, and status tracker into a single phase-driven SM. Engines drive a battle frame as <code>session.tick(world, input)</code>; the session forwards admissible inputs to the runner, drains world events into the HUD, and runs the post-round bookkeeping (status tick, death check, wipe detection).</p>
-  <pre class="code-block">Idle &rarr; RoundIntro &rarr; CommandInput &rarr; Resolve
-                                            &darr;
-                                       RoundOutro &rarr; (Victory|Defeat|Escaped) terminal
-                                            |
-                                            &rarr; loop back to RoundIntro</pre>
-  <ul>
-    <li><strong>RoundIntro</strong> - encounter banner; auto-advances after <code>intro_frames</code> (default 60) or on Cross.</li>
-    <li><strong>CommandInput</strong> - D-pad queues <code>Command</code> bytes on the active party slot's buffer; Square presses Spirit; Triangle cycles slots; Start commits.</li>
-    <li><strong>Resolve</strong> - runner is <code>Committed</code>; the action SM consumes the resolved queue. The session drains <code>World::pending_battle_events</code> into HUD popups + log + emitted <code>SessionEvent</code>s.</li>
-    <li><strong>RoundOutro</strong> - runs <code>BattleRound::end</code> for tick damage, re-syncs HUD, checks party / monster wipe and routes to a terminal phase or loops to RoundIntro.</li>
-  </ul>
-  <p>The orchestrator is renderer-agnostic. Engines render <code>session.hud</code> via <code>engine-render::battle_hud_draws_for</code> - the HUD's <code>slot_views</code> / <code>popup_views</code> / <code>log_views</code> helpers produce plain-data rows that engines feed into the renderer's <code>HudSlotView::from_plain</code> constructor.</p>
-  <h3>CommandInput sub-phase: target picker</h3>
-  <p>During <code>CommandInput</code> the session has two sub-phases: <code>SubPhase::CommandSelect</code> (input drives the command queue) and <code>SubPhase::TargetPick</code> (input drives a <code>TargetPickerSession</code> cursor). Engines call <code>BattleSession::open_target_picker(world, kind, actor_slot, pending_command, &amp;mut events)</code> when the player picks an action that needs a target; the session builds the picker's <code>SlotState</code> arrays from live <code>BattleActor::hp</code> values and forwards subsequent input to the picker until it resolves. Resolution surfaces as typed <code>SessionEvent</code> outcomes: <code>TargetConfirmed { target_slot }</code>, <code>TargetSweepConfirmed</code>, or <code>TargetCancelled</code>; sweep targets (<code>AllEnemies</code> / <code>AllAllies</code> / <code>Self_</code>) resolve immediately during <code>open_target_picker</code>. <code>cancel_target_picker</code> provides an explicit drop path for the buffered command.</p>
-  <p>Implementation: <code>crates/engine-core/src/battle_session.rs</code>. Smoke-tested via the new <code>legaia-engine battle</code> subcommand.</p>
-  <h3>Target picker &harr; runner wiring</h3>
-  <p><code>BattleSession::push_command_with_target(world, cmd, kind, actor_slot)</code> is the top-level API engines drive when a command needs a target. The session charges AP up-front, opens the picker via <code>open_target_picker_mut</code>, and stashes the command in <code>pending_target_command</code>. When the picker resolves, <code>maybe_close_picker_with_world</code> writes the resolved slot to <code>BattleActor::active_target</code> (the field the action SM reads at strike time via <code>host.actor(actor_slot).active_target</code>) and admits the buffered command into the runner queue without re-charging AP. Sweep targets write the <code>0xFF</code> sentinel; cancellation drops the buffered command without admitting it. <code>BattleRunner::push_no_ap(slot, cmd)</code> is the post-confirm admit path.</p>
-</section>
-
-<section class="doc-section" id="cutscene-routing">
-  <h2>CDNAME &rarr; MV STR routing</h2>
-  <p><code>engine_core::scene::cutscene_str_for(scene_label) -&gt; Option&lt;&amp;'static str&gt;</code> resolves an <code>op*</code> / <code>edteien</code> CDNAME label to its paired <code>MOV/MVn.STR</code> filename. The disc carries 6 STR files (<code>MV1.STR..MV6.STR</code>); the heuristic mapping covers all 6:</p>
-  <table class="data-table">
-    <thead><tr><th>CDNAME label</th><th>STR file</th></tr></thead>
-    <tbody>
-      <tr><td><code>opdeene</code></td><td><code>MOV/MV1.STR</code></td></tr>
-      <tr><td><code>opstati</code></td><td><code>MOV/MV2.STR</code></td></tr>
-      <tr><td><code>opkorout</code></td><td><code>MOV/MV3.STR</code></td></tr>
-      <tr><td><code>opurud</code></td><td><code>MOV/MV4.STR</code></td></tr>
-      <tr><td><code>opmap01</code></td><td><code>MOV/MV5.STR</code></td></tr>
-      <tr><td><code>edteien</code></td><td><code>MOV/MV6.STR</code></td></tr>
-    </tbody>
-  </table>
-  <p>The remaining <code>ed*</code> scenes (<code>edbylon</code>, <code>edbalden</code>, <code>edlast</code>, <code>edretoin</code>, <code>edkorout</code>, <code>edbubu</code>, <code>eddoman</code>, <code>edson</code>, <code>edstati3</code>) are dialogue-actor-overlay driven and have no FMV. <code>cutscene_label_for_str(filename)</code> is the inverse (case-insensitive on basename). The exact retail mapping table lives in the cutscene overlay; once captured, the lookup function should consult the captured map. The <code>legaia-engine play</code> and <code>play-window</code> subcommands auto-resolve the STR file when the user passes <code>--scene &lt;op*|edteien&gt;</code> and the extracted root contains the matching MV file.</p>
 </section>
 
 <section class="doc-section" id="encounter-trigger-runtime">
@@ -370,7 +251,7 @@ Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
       <tr><td><code>0x80083000..0x80084000</code></td><td>~600 B</td><td>Scene-bundle / sound-pool: encounter formation + BGM resolution</td></tr>
     </tbody>
   </table>
-  <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out. Codified in <code>crates/engine-core::capture_observations::encounter_trigger</code>; a disc-gated test in <code>crates/mednafen/tests/real_saves.rs</code> (<code>encounter_trigger_diff_loads_battle_overlay</code>) exercises the real save bytes.</p>
+  <p>The active scene-name table at <code>0x80084540</code> is <strong>identical</strong> between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out.</p>
 </section>
 
 <section class="doc-section" id="captured-stat-growth">
@@ -387,40 +268,10 @@ Done(ItemOutcome)    &larr; terminal; engines re-construct the session for
       <tr><td>Level-up</td><td><code>+0x130</code></td><td><code>0x02 &rarr; 0x03</code></td><td>rank counter (+1)</td></tr>
     </tbody>
   </table>
-  <p>The retail per-Seru per-level lookup table that drives these increments is <strong>not</strong> in <code>SCUS_942.54</code>. A writer-search across the captured <code>magic_level_up</code> overlay returned negative for code-side <code>sb</code>/<code>sh</code> writes targeting the documented record offsets, and the "Seru struct +0x74 pointer dereference" hypothesis isn't supported by the current capture set - the <code>+0x74</code> reads in the captured overlay surface a 32-bit battle-state flag the SCUS-side handler <code>FUN_800480D8</code> writes with the constant <code>0x80808080</code>, not a stat-grant pointer. The grant table either lives in a still-uncaptured overlay (battle-data init or the Seru-equip path) or is encoded inline in a Seru PROT entry the current capture set doesn't surface. Engines populate one captured observation at a time via <code>LevelUpTracker::with_observed_curve(slot, &amp;observations::vahn_mc8_to_mc9())</code>; <code>LevelUpObservation::to_curve</code> emits the per-level average inside the observed range and falls back to the default outside it. Implementation: <code>crates/engine-core/src/levelup.rs</code>.</p>
+  <p>The retail per-Seru per-level lookup table that drives these increments is <strong>not</strong> in <code>SCUS_942.54</code>. A writer-search across the captured <code>magic_level_up</code> overlay returned negative for code-side <code>sb</code>/<code>sh</code> writes targeting the documented record offsets. The grant table either lives in a still-uncaptured overlay (battle-data init or the Seru-equip path) or is encoded inline in a Seru PROT entry the current capture set doesn't surface.</p>
 </section>
 
-<section class="doc-section" id="monster-catalog">
-  <h2>Monster catalog &amp; formation tables</h2>
-  <p>Engine-side representation of the per-formation monster set the encounter-system trigger resolves into. <code>MonsterDef</code> carries id + name + HP / MP / ATK / UDF / LDF / accuracy / evasion / EXP yield / gold drop / optional drop-item id + drop-rate; <code>MonsterCatalog</code> is the id-keyed lookup. <code>FormationDef</code> holds 1..=4 <code>FormationSlot</code> entries (monster_id + level_offset) plus an optional display label; <code>FormationTable</code> is the formation-id-keyed lookup.</p>
-  <p>Vanilla constructors ship the early-game roster: ~20 monster entries spanning Goblin / Wolf / Bandit / Slime / Skeleton / Killer Bee / Lizard Man / Mole / Spike Mole / Stone Golem / Goblin King / Drake Wyrm and 14 formations covering single, pair, triple, and boss variants. <code>default_early_encounter_table(scene)</code> is a convenience constructor that produces a goblin-majority weighted table for outskirts-style scenes.</p>
-  <p>Engines install the table at boot via <code>World::set_formation_table(table, catalog)</code>; the encounter session's <code>EncounterRoll</code> carries the resolved <code>formation_id</code> which the engine looks up against the table to materialise concrete monster slot definitions for the battle scene loader.</p>
-  <p>Implementation: <code>crates/engine-core/src/monster_catalog.rs</code>.</p>
-</section>
-
-<section class="doc-section" id="spells">
-  <h2>Spell catalog &amp; cast resolver</h2>
-  <p>Mirrors the shape of the existing item catalog: typed <code>SpellDef</code> entries keyed by spell id, plus a pure <code>cast_spell(def, target_slot, &amp;SpellSnapshot) -&gt; SpellOutcome</code> resolver. The catalog's <code>vanilla()</code> constructor pre-populates ~17 entries covering the canonical retail families:</p>
-  <ul>
-    <li><strong>Healing</strong> - Heal (60), Heal All (60 each), Mega Heal (200), Refresh (CureAll), Vital (Revive 50%).</li>
-    <li><strong>Offensive elemental</strong> - Flame, Burning Heat, Aqua, Thunder Bolt, Wind, Ice, Crash. Damage formula: <code>caster_mag * base_power / 8 - target_mdef</code>, multiplied 1.5x against an element the target's <code>ElementMask</code> declares as a weakness, floor-clamped at 1.</li>
-    <li><strong>Buff / debuff</strong> - Power Up / Defense Up / Speed Up apply a <code>Buff</code> outcome with positive magnitude; Power Down emits a negative-magnitude debuff. Engines fold these into per-actor stat overlays for <code>turns</code> turns.</li>
-    <li><strong>Capture &amp; escape</strong> - Reseal returns a <code>CaptureRoll</code> outcome (engines roll the actual capture against monster HP) and Warp returns <code>Escape</code>.</li>
-  </ul>
-  <p>The resolver's failure modes are typed: <code>NotEnoughMp</code> when the gauge can't cover the cost, <code>DeadTarget</code> when an offensive spell hits a corpse, <code>NoChange</code> when a heal targets full HP or revive targets an alive actor.</p>
-  <p>Implementation: <code>crates/engine-core/src/spells.rs</code>. <code>SpellCatalog::mp_cost</code> + <code>is_capture</code> mirror the existing <code>BattleActionHost</code> hooks so engines can install the catalog as the canonical source.</p>
-</section>
-
-<section class="doc-section" id="equip-session">
-  <h2>Equipment session</h2>
-  <p>State machine for the field menu's Equip screen and the shop-buy-then-equip flow. Drives the player from "browse character &rarr; pick slot &rarr; pick item &rarr; confirm swap" to a final <code>EquipOutcome</code>; on commit the session writes the new equip id into the character's <code>StatRecord</code> and re-runs <code>compute_battle_stats</code> so the world's resolved attack / UDF / LDF stays in sync.</p>
-  <pre class="code-block">SlotPicker(cursor) &rarr; ItemPicker(slot, cursor) &rarr; Confirm(slot, item, Yes/No)
-                                                         |
-                                                         &rarr; Done(Committed | Cancelled)</pre>
-  <ul>
-    <li><strong>SlotPicker</strong> - Up/Down cycles the 8 equipment slots; Cross opens the item picker; Circle exits with <code>Cancelled</code>.</li>
-    <li><strong>ItemPicker</strong> - filtered to items targeting the active slot; engines that wire real per-item slot data from disc override <code>items_for_slot</code>. Cursor moves emit <code>CursorMoved { state: ItemPicker, &hellip; }</code>; Cross enters Confirm; Circle bounces back.</li>
-    <li><strong>Confirm</strong> - Yes/No prompt with a stat preview (<code>preview_stats</code> reflects what the post-swap stats would be). Cross-Yes commits; Cross-No or Circle returns to ItemPicker.</li>
-  </ul>
-  <p>Commit is atomic: the new item id is written, the old item id (if any) is restored to inventory, and <code>compute_battle_stats</code> recomputes the resolved row through the equipment + active-status + status-modifiers pipeline. Implementation: <code>crates/engine-core/src/equip_session.rs</code>; smoke-tested via <code>legaia-engine equip</code>.</p>
+<section class="doc-section" id="engine-port-pointer">
+  <h2>The engine port</h2>
+  <p>The clean-room engine ports the battle stack as a layered set of pure-data sessions and orchestrators (<code>BattleSession</code> / <code>BattleRunner</code> / <code>BattleRound</code> / <code>BattleHud</code>, the <code>compute_battle_stats</code> aggregator, the item / spell / equipment / monster / formation catalogs, and the <code>StatusEffectTracker</code> / <code>ApGauge</code> models). The full crate-by-crate breakdown lives on the <a href="engine.html#phase3">engine reimplementation</a> page; see the Phase 3 section for the catalogue.</p>
 </section>

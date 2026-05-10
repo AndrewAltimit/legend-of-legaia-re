@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Legaia LZS - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia lzs compression</div>
+  <h1>Legaia LZS compression</h1>
+  <p class="lede">Reverse-engineered byte-for-byte from <code>FUN_8001A55C</code>. Implementation: <code>crates/lzs/src/lib.rs</code>.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>A standard LZSS variant with three Legaia-specific choices:</p>
+  <ul class="bullets">
+    <li><strong>4096-byte sliding ring buffer</strong>, initialised to zero.</li>
+    <li><strong>Initial write position 0xFEE</strong> (3054).</li>
+    <li><strong>Control byte: 8 bits, LSB-first.</strong></li>
+  </ul>
+</section>
+
+<section class="doc-section" id="pseudocode">
+  <h2>Pseudocode</h2>
+<pre><code>let mut window = [0u8; 4096];
+let mut window_pos = 0xFEE;
+let mut control = 0u32;
+
+while !done {
+    if (control &amp; 0x100) == 0 {
+        control = (input[src] as u32) | 0xFF00;
+        src += 1;
+    }
+    if (control &amp; 1) != 0 {
+        // LITERAL: copy 1 byte
+        let v = input[src]; src += 1;
+        out.push(v);
+        window[window_pos] = v;
+        window_pos = (window_pos + 1) &amp; 0xFFF;
+    } else {
+        // BACK-REF: 2 bytes encode (12-bit absolute window position, 4-bit length-3)
+        let b0 = input[src] as u32;
+        let b1 = input[src + 1] as u32;
+        src += 2;
+        let base = b0 | ((b1 &amp; 0xF0) &lt;&lt; 4);
+        let len = (b1 &amp; 0x0F) + 3;
+        for n in 0..len {
+            let v = window[(base + n as u32) as usize &amp; 0xFFF];
+            out.push(v);
+            window[window_pos] = v;
+            window_pos = (window_pos + 1) &amp; 0xFFF;
+        }
+    }
+    control &gt;&gt;= 1;
+}</code></pre>
+  <p>The <code>0xFF00</code> mask above is the trick that lets the control register tell the decoder when to refill: every shift right pulls a <code>1</code> bit into bit 8, and after 8 shifts bit 8 reaches the test position and triggers a refill from <code>input[src]</code>.</p>
+</section>
+
+<section class="doc-section" id="container-format">
+  <h2>Container format</h2>
+  <p><code>crates/lzs::parse_container</code> handles the multi-section <code>player.lzs</code>-style wrapper used by some PROT entries - a length-prefixed array of independently-compressed sections concatenated together.</p>
+</section>
+
+<section class="doc-section" id="decompresses-without-error-is-not-a-validity-signal">
+  <h2>"Decompresses without error" is not a validity signal</h2>
+  <p>The 4096-byte ring buffer initialises to zeros, so most random inputs decode without error to a zero-padded output of plausible length. Always magic-check the <em>decoded</em> output before treating an LZS-decode result as a hit. The decoder offers a <code>tracked</code> mode that returns end-of-stream offsets and overrun bits so callers can apply strict gates.</p>
+</section>
+
+<section class="doc-section" id="where-lzs-is-consumed">
+  <h2>Where LZS is consumed</h2>
+  <p>The asset-type dispatcher (<code>FUN_8001F05C</code>) calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html"><code>asset-descriptor.md</code></a>) are also recognised by <code>crates/lzs</code>.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/lzs' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

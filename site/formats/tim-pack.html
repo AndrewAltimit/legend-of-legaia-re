@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standalone TIM-pack - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; standalone tim-pack format</div>
+  <h1>Standalone TIM-pack format</h1>
+  <p class="lede">A multi-TIM container used by certain standalone PROT entries. Distinct from the <a href="pack.html">pack format</a> used inside streaming chunks.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>Implementation: <code>crates/prot/src/timpack.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="header-8-bytes">
+  <h2>Header (8 bytes)</h2>
+<pre><code>u8  magic_lo            // arbitrary
+u8  magic_hi            // arbitrary
+u8  count               // &lt; 0x10
+u8  marker              // == 0x01
+u32 (offset table starts here, count entries)</code></pre>
+  <p>The <code>byte[3] == 0x01</code> byte is the magic discriminator; <code>byte[2]</code> is the count (limited to <code>&lt;16</code>, hence the cap). The detection function <code>is_tim_pack</code> checks both.</p>
+</section>
+
+<section class="doc-section" id="offset-table">
+  <h2>Offset table</h2>
+  <p>Each table entry is a <code>u32</code> word index, decoded as:</p>
+<pre><code>byte_offset = word_index * 4 + 4</code></pre>
+  <p>The <code>+4</code> is the difference from the <a href="pack.html">pack format</a>: this format adds a constant offset, suggesting the offsets are relative to the END of the count word rather than the start of the pack.</p>
+</section>
+
+<section class="doc-section" id="item-type-detection">
+  <h2>Item type detection</h2>
+  <p><code>detected_ext(item)</code> returns <code>"TIM"</code> if the first byte is <code>0x10</code> (PSX TIM magic), else <code>"BIN"</code>.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/tim-pack' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

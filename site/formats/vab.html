@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VAB sound bank - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; vab sound bank</div>
+  <h1>VAB sound bank</h1>
+  <p class="lede">Sony's standard <code>VABp</code>-magic instrument bank format. Programs (up to 128) × tones (up to 16 per program) point into SPU-ADPCM voice bodies. Implementation: <code>crates/vab</code> (header parser + extractor + ADPCM decoder, sharing F0/F1 filter constants with <code>crates/xa</code>).</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p>The format itself is documented externally; the Legaia-specific notes are:</p>
+  <ul class="bullets">
+    <li>The dominant on-disc carrier is the <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> shape - the VAB body is preceded by a 4-byte chunk0 header. <code>crates/vab::parse_header(buf, offset)</code> accepts a starting offset so callers can skip the wrapper.</li>
+    <li>A bulk scan finds 1191 <code>VABp</code> headers across 239 PROT entries. Top: <code>0889_sound_data2</code> (207), <code>0891_level_up</code> (206), <code>0890_sound_data2</code> (203) - multi-bank archives. The <code>vab_01</code> cluster (1072..1194) is the standard distributed-bank layout: 120 entries with 1–3 banks each.</li>
+    <li>Block names from CDNAME can be misleading; trust the <code>VABp</code> magic rather than the surrounding cluster name.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="api">
+  <h2>API</h2>
+<pre><code>use legaia_vab::parse_header;
+let header = parse_header(buf, offset)?;
+println!("VAB v{} ps={} ts={}", header.version, header.ps, header.ts);</code></pre>
+  <p>For bulk extraction of every VAB and per-program WAV files, see the <code>vab</code> CLI documented in <a href="../tooling/extraction.html"><code>tooling/extraction.md</code></a>.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/vab' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

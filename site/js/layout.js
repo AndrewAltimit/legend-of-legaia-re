@@ -26,12 +26,24 @@ const NAV = [
       { href: 'subsystems/index.html',          text: 'Subsystems index',         key: 'subsystems/index' },
       { href: 'subsystems/boot.html',           text: 'Boot path',                key: 'subsystems/boot' },
       { href: 'subsystems/asset-loader.html',   text: 'Asset loader',             key: 'subsystems/asset-loader' },
+      // Runtime VMs
       { href: 'subsystems/script-vm.html',      text: 'Field / event VM',         key: 'subsystems/script-vm' },
       { href: 'subsystems/actor-vm.html',       text: 'Actor / sprite VM',        key: 'subsystems/actor-vm' },
       { href: 'subsystems/move-vm.html',        text: 'Move-table VM',            key: 'subsystems/move-vm' },
+      { href: 'subsystems/motion-vm.html',      text: 'Motion VM',                key: 'subsystems/motion-vm' },
       { href: 'subsystems/effect-vm.html',      text: 'Effect VM',                key: 'subsystems/effect-vm' },
+      // Battle
       { href: 'subsystems/battle.html',         text: 'Battle',                   key: 'subsystems/battle' },
       { href: 'subsystems/battle-action.html',  text: 'Battle action FSM',        key: 'subsystems/battle-action' },
+      { href: 'subsystems/battle-formulas.html',text: 'Battle formulas',          key: 'subsystems/battle-formulas' },
+      // Per-domain runtime
+      { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
+      { href: 'subsystems/save-screen.html',    text: 'Save screen',              key: 'subsystems/save-screen' },
+      { href: 'subsystems/shop.html',           text: 'Shop',                     key: 'subsystems/shop' },
+      { href: 'subsystems/inn.html',            text: 'Inn',                      key: 'subsystems/inn' },
+      { href: 'subsystems/level-up.html',       text: 'Level-up',                 key: 'subsystems/level-up' },
+      { href: 'subsystems/cutscene.html',       text: 'Cutscene (STR)',           key: 'subsystems/cutscene' },
+      // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
       { href: 'subsystems/engine.html',         text: 'Engine port plan',         key: 'subsystems/engine' },
@@ -40,13 +52,49 @@ const NAV = [
   {
     label: 'formats',
     items: [
-      { href: 'formats/index.html',             text: 'Formats index',            key: 'formats/index' },
+      { href: 'formats/index.html',                  text: 'Formats index',            key: 'formats/index' },
+      // Disc + container layer
+      { href: 'formats/disc.html',                   text: 'PSX disc geometry',        key: 'formats/disc' },
+      { href: 'formats/prot.html',                   text: 'PROT.DAT TOC',             key: 'formats/prot' },
+      { href: 'formats/cdname.html',                 text: 'CDNAME.TXT name map',      key: 'formats/cdname' },
+      { href: 'formats/dmy.html',                    text: 'DMY.DAT (dev fixtures)',   key: 'formats/dmy' },
+      // Compression + dispatch
+      { href: 'formats/lzs.html',                    text: 'Legaia LZS',               key: 'formats/lzs' },
+      { href: 'formats/asset-type.html',             text: 'Asset type dispatcher',    key: 'formats/asset-type' },
+      { href: 'formats/asset-descriptor.html',       text: 'Asset descriptor',         key: 'formats/asset-descriptor' },
+      { href: 'formats/data-field.html',             text: 'DATA_FIELD streaming',     key: 'formats/data-field' },
+      { href: 'formats/pack.html',                   text: 'Pack format',              key: 'formats/pack' },
+      { href: 'formats/tim-pack.html',               text: 'TIM-pack',                 key: 'formats/tim-pack' },
+      { href: 'formats/field-pack.html',             text: 'Field-pack',               key: 'formats/field-pack' },
+      { href: 'formats/effect.html',                 text: 'Effect bundles',           key: 'formats/effect' },
+      { href: 'formats/scene-bundles.html',          text: 'Scene bundles',            key: 'formats/scene-bundles' },
+      // Per-asset
+      { href: 'formats/tim.html',                    text: 'PSX TIM',                  key: 'formats/tim' },
+      { href: 'formats/tmd.html',                    text: 'Legaia TMD',               key: 'formats/tmd' },
+      { href: 'formats/vab.html',                    text: 'VAB sound bank',           key: 'formats/vab' },
+      { href: 'formats/seq.html',                    text: 'PsyQ SEQ',                 key: 'formats/seq' },
+      { href: 'formats/xa.html',                     text: 'XA-ADPCM',                 key: 'formats/xa' },
+      { href: 'formats/mes.html',                    text: 'MES dialog',               key: 'formats/mes' },
+      { href: 'formats/anm.html',                    text: 'ANM animation',            key: 'formats/anm' },
+      { href: 'formats/mdt.html',                    text: 'MDT move table',           key: 'formats/mdt' },
+      { href: 'formats/art-data.html',               text: 'Art data',                 key: 'formats/art-data' },
+      { href: 'formats/dialog-font.html',            text: 'Dialog font',              key: 'formats/dialog-font' },
+      // Auxiliary
+      { href: 'formats/sound-driver.html',           text: 'Sound-driver paths',       key: 'formats/sound-driver' },
+      { href: 'formats/pochi.html',                  text: 'Pochi-filler',             key: 'formats/pochi' },
+      { href: 'formats/mips-overlay.html',           text: 'MIPS overlay code',        key: 'formats/mips-overlay' },
+      { href: 'formats/overlay-ptr-table.html',      text: 'Overlay ptr-table code',   key: 'formats/overlay-ptr-table' },
+      { href: 'formats/navmesh.html',                text: 'Navmesh / region table',   key: 'formats/navmesh' },
     ],
   },
   {
     label: 'tooling',
     items: [
-      { href: 'tooling/index.html',             text: 'Tooling index',            key: 'tooling/index' },
+      { href: 'tooling/index.html',                  text: 'Tooling index',            key: 'tooling/index' },
+      { href: 'tooling/extraction.html',             text: 'Extraction CLIs',          key: 'tooling/extraction' },
+      { href: 'tooling/ghidra.html',                 text: 'Ghidra in Docker',         key: 'tooling/ghidra' },
+      { href: 'tooling/overlay-capture.html',        text: 'Overlay capture',          key: 'tooling/overlay-capture' },
+      { href: 'tooling/mednafen-automation.html',    text: 'Mednafen automation',      key: 'tooling/mednafen-automation' },
     ],
   },
   {

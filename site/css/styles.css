@@ -1313,3 +1313,33 @@ kbd {
 @media (max-width: 540px) {
   .search-overlay { padding-top: 4vh; }
 }
+
+/* ---- inline SVG figures (architecture / overlay diagrams) ---- */
+.vm-graph,
+.overlay-strip {
+  margin: 1.75rem 0;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 4px;
+  padding: 1rem 1rem 0.75rem;
+}
+.vm-graph svg,
+.overlay-strip svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+.vm-graph figcaption,
+.overlay-strip figcaption {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-family: var(--font-body);
+}
+.vm-graph figcaption code,
+.overlay-strip figcaption code {
+  font-size: 0.85em;
+}

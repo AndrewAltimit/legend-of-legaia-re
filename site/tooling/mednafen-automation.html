@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mednafen automation - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; mednafen automation</div>
+  <h1>Mednafen automation</h1>
+  <p class="lede">A scriptable substitute for mednafen's interactive memory-watchpoint debugger. The toolkit treats each <code>.mc{0..9}</code> save state as a frozen RAM snapshot, and uses pairwise diffs + targeted bisection to surface where the runtime wrote between snapshots - the watchpoint-equivalent answer without needing a live emulator session.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>Overview</h2>
+  <p><code>crates/mednafen</code> provides the parser library + the <code>mednafen-state</code> CLI; <code>scripts/mednafen/</code> contains the orchestrator scripts and the declarative scenario manifest.</p>
+</section>
+
+<section class="doc-section" id="why-scripted-snapshots-not-real-breakpoints">
+  <h2>Why scripted snapshots, not real breakpoints?</h2>
+  <p>Mednafen's PSX module ships with a TUI debugger that supports memory breakpoints, register stepping, and code tracing. None of those have a scriptable interface - every debugger interaction is keyboard-driven inside the running window. PCSX-Redux has a Lua scripting API but requires running its own emulator process per session.</p>
+  <p>For most reverse-engineering work the interactive debugger is overkill. What we usually want is <em>"between this point and that point, what addresses got written?"</em>. Save-state diffs answer exactly that: take a state before, take one after, diff the RAM. Any byte that changed was written by code that ran in the gap. Cluster the changes into contiguous regions and you have a ranked list of structures to look up writers for in Ghidra.</p>
+</section>
+
+<section class="doc-section" id="the-save-states">
+  <h2>The save states</h2>
+  <p>The user's <code>~/.mednafen/mcs/</code> directory holds 10 save states for the retail US disc, each captured at a specific gameplay moment:</p>
+<table>
+<thead><tr>
+<th>Slot</th>
+<th>Label</th>
+<th>Description</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>mc0</td>
+<td>town_rim_elm</td>
+<td>Rim Elm (CDNAME <code>town0c</code>, scene index <code>0x15</code>) - town residency</td>
+</tr>
+<tr>
+<td>mc1</td>
+<td>pre_encounter</td>
+<td>Walking the field (<code>map01</code>), one step before encounter trigger</td>
+</tr>
+<tr>
+<td>mc2</td>
+<td>post_encounter</td>
+<td>Battle just initiated (encounter triggered from <code>map01</code>)</td>
+</tr>
+<tr>
+<td>mc3</td>
+<td>battle_drake_castle</td>
+<td>Battle in Drake Castle (<code>dolk</code>, scene index <code>0x3C</code>)</td>
+</tr>
+<tr>
+<td>mc4</td>
+<td>pre_fire_book</td>
+<td>Battle command menu, about to use Fire Book I on Vahn (<code>dolk</code>)</td>
+</tr>
+<tr>
+<td>mc5</td>
+<td>post_fire_book</td>
+<td>Battle, Fire Book I just used on Vahn - Hyper Art learned</td>
+</tr>
+<tr>
+<td>mc6</td>
+<td>battle_anim_strike</td>
+<td>Performing a somersault on an enemy (active animation)</td>
+</tr>
+<tr>
+<td>mc7</td>
+<td>pre_steal</td>
+<td>Battle frame: goblin about to steal an item from the party</td>
+</tr>
+<tr>
+<td>mc8</td>
+<td>magic_level_up</td>
+<td>Magic-rank level-up banner active</td>
+</tr>
+<tr>
+<td>mc9</td>
+<td>char_level_up</td>
+<td>Character level-up banner active (after magic-rank up)</td>
+</tr>
+</tbody>
+</table>
+  <p>Pairwise pairings of interest:</p>
+  <ul class="bullets">
+    <li><strong>mc1 ↔ mc2</strong> - encounter trigger. The 133 KB battle overlay loads</li>
+  </ul>
+  <p>into <code>0x801CE808..0x801F3818</code>; the actor pointer table at <code>0x801C9370+</code> populates with stride <code>0x60</code>; the active scene index at <code>0x80084540</code> does NOT change. Codified in <code>engine_core::capture_observations::encounter_trigger</code>.</p>
+  <ul class="bullets">
+    <li><strong>mc4 ↔ mc5</strong> - Fire Book I usage on Vahn. Inside Vahn's character</li>
+  </ul>
+  <p>record (<code>0x80084708 + 0x414</code>) exactly one 3-byte cluster differs (<code>+0x185..+0x188</code>: <code>01 0C 00 → 02 03 0C</code>). Pattern is a length-prefixed list growing by one entry. Codified in <code>engine_core::capture_observations::vahn_fire_book_use</code>.</p>
+  <ul class="bullets">
+    <li><strong>mc7 ↔ mc8 ↔ mc9</strong> - stat-growth + magic-rank-up triplet. Loading mc7</li>
+  </ul>
+  <p>and waiting ~5-10 s plays out the steal animation, then mc8's magic-rank up fires, then mc9's character level-up fires. Pinned in <code>engine_core::levelup::observations::vahn_mc8_to_mc9</code>.</p>
+  <ul class="bullets">
+    <li><strong>mc0 ↔ mc1</strong> - town-vs-field RAM-layout reference. mc0 is the only</li>
+  </ul>
+  <p>town-resident state in the corpus.</p>
+  <p>Slot → label → watchpoint mapping is declared in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> and consumed by the <code>mednafen-state watch</code> subcommand.</p>
+</section>
+
+<section class="doc-section" id="quick-reference">
+  <h2>Quick reference</h2>
+  <h3>List the manifest</h3>
+<pre><code>target/release/mednafen-state scenarios --manifest scripts/mednafen/scenarios.toml</code></pre>
+  <h3>Inspect one save's section table</h3>
+<pre><code>target/release/mednafen-state info \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0"</code></pre>
+  <p>Prints the indexed sections (<code>MAIN</code>, <code>GPU</code>, <code>SPU</code>, <code>CDC</code>, <code>MDEC</code>, <code>DMA</code>, <code>TIMER</code>, <code>MDFNRINP</code>, <code>BIOS_HASH</code>, <code>MDFNDRIVE_00000000</code>) with sub-entry sizes, the resolved CPU PC if present, and the 2 MiB main-RAM offset.</p>
+  <h3>Slice a PSX-virtual-address window</h3>
+<pre><code>target/release/mednafen-state extract \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc4" \
+    --start 0x801C0000 --end 0x80200000 --out /tmp/battle_overlay.bin</code></pre>
+  <p>This is the structured replacement for <code>scripts/extract-mednafen-overlay.py</code> - same anchor-based fallback when the structured <code>MainRAM.data8</code> lookup misses, plus a MIPS-shape sanity check.</p>
+  <h3>Diff two saves in the overlay window</h3>
+<pre><code>target/release/mednafen-state diff \
+    "$HOME/.mednafen/mcs/...mc1" \
+    "$HOME/.mednafen/mcs/...mc2" \
+    --start 0x801C0000 --end 0x80200000 --top 8</code></pre>
+  <p>Output:</p>
+<pre><code>[diff] mc1 &lt;-&gt; mc2
+[diff] window 0x801C0000..0x80200000  merge_gap=16  min_changed=4
+[diff] 20 regions, 10029 bytes changed total
+[diff] top 8 by bytes_changed:
+       start           end     changed   left -&gt; right (16 bytes)
+    0x801F69D8  0x801F8F02   8631       90FFBD27... -&gt; 147B1F80...
+    0x801FFC28  0x801FFFBE    542       C42B0880... -&gt; FFFFFFFF...
+    0x801CDB50  0x801CDCD9     89       08000100... -&gt; 06000C00...
+    ...</code></pre>
+  <p>The largest region (<code>0x801F69D8..0x801F8F02</code>, 8631 bytes) is a 9 KB overlay window the area-load wrote into - that's the new scene's code or data. The smaller regions are scattered global-state updates.</p>
+  <h3>Pairwise diff against the whole manifest</h3>
+<pre><code>scripts/mednafen/auto-capture.sh</code></pre>
+  <p>For every scenario, runs all configured <code>[scenarios.watchpoints]</code> against each <code>diff_against</code> sister state, writes per-scenario JSON to <code>/tmp/legaia_watch_&lt;label&gt;.json</code>, and prints a one-line summary per watchpoint.</p>
+  <h3>Bisect for a transition</h3>
+<pre><code>scripts/mednafen/watchpoint-bisect.py \
+    --addr 0x8007B888 mc0 mc1 mc2 mc3</code></pre>
+  <p>Walks the four save states in order; reports the first one in which the target address transitions to the "bad" predicate (default: nonzero). Output reports either <code>BracketedAt { before_idx, after_idx }</code> (the gap between two adjacent states bracketed the write), <code>AlreadyBadFromStart</code> (the address was already populated in mc0), or <code>NeverBecameBad</code>.</p>
+  <h3>Trace one address across many states</h3>
+<pre><code>scripts/mednafen/watchpoint-bisect.py --addr 0x8007BAC8 --trace mc0 mc1 mc2 mc3 mc4 mc5</code></pre>
+  <p>Prints the u32 value at <code>0x8007BAC8</code> in each state - useful when you want to <em>see</em> the value evolve before deciding what predicate to bisect on.</p>
+  <h3>Walk every scenario through extraction</h3>
+<pre><code>scripts/mednafen/state-walk.sh --import</code></pre>
+  <p>For every scenario in the manifest, slices its overlay window into <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> and (with <code>--import</code>) imports it as a labelled program in the Ghidra container via <code>scripts/import-overlay-named.sh</code>. One command, all 10 scenarios staged.</p>
+</section>
+
+<section class="doc-section" id="workflow-patterns">
+  <h2>Workflow patterns</h2>
+  <h3>"Find what writes to X" between two known points</h3>
+  <ol class="bullets">
+    <li>Pick a <code>(before, after)</code> pair that brackets the suspected write</li>
+  </ol>
+  <p>(e.g. mc4 = battle intro, mc6 = mid-animation).</p>
+  <ol class="bullets">
+    <li>Run `mednafen-state diff before.mc after.mc --start &lt;region&gt;</li>
+  </ol>
+  <p>--end &lt;region+N&gt;`.</p>
+  <ol class="bullets">
+    <li>The largest region in the output is the candidate. Note its address.</li>
+    <li>In Ghidra, search for stores to that address in the relevant overlay</li>
+  </ol>
+  <p>(Search → For Direct References, or <code>find_lui_writers.py</code> for LUI+ADDIU pairs).</p>
+  <ol class="bullets">
+    <li>The writer function is what to dump and document.</li>
+  </ol>
+  <h3>"When did X become populated?" with progressive states</h3>
+  <ol class="bullets">
+    <li>Take save states at progressive points during a sequence.</li>
+    <li><code>watchpoint-bisect.py --addr X save0 save1 save2 ...</code></li>
+    <li>The reported <code>BracketedAt { i, j }</code> says "between save i and save j</li>
+  </ol>
+  <p>the write happened". Tighten with more saves between i and j if needed (record an .mcm movie that replays the same scripted action to add intermediate frames).</p>
+  <h3>"Diff the same scene at two camera angles"</h3>
+  <p>When the user has two saves that differ only in camera or cursor state, the diff naturally surfaces the camera/cursor-state addresses. Useful for finding <code>cursor_x</code> / <code>cursor_y</code> style globals that show up nowhere in static analysis.</p>
+</section>
+
+<section class="doc-section" id="recording-new-scenarios">
+  <h2>Recording new scenarios</h2>
+  <p>Mednafen movie files (<code>.mcm</code>) record bit-exact controller input from frame 0. Replaying them produces deterministic emulator state at every frame.</p>
+  <ol class="bullets">
+    <li>Boot mednafen with the disc image.</li>
+    <li>Play to the point you want recording to start.</li>
+    <li><code>Shift+F5</code> starts recording.</li>
+    <li>Play through the sequence (open menu, trigger battle, etc.).</li>
+    <li><code>Shift+F5</code> again to stop. The .mcm lands in <code>~/.mednafen/mcm/</code>.</li>
+  </ol>
+  <p>Replay deterministically with:</p>
+<pre><code>scripts/mednafen/run-mednafen.sh disc.bin --state mc1 --movie movie.mcm</code></pre>
+  <p>To capture a state at a specific frame, replay up to that frame, hit <code>F5</code> to save into a free slot, then <code>F7</code> to load it back later. Repeat for multiple frames during the same scripted action. The resulting save slots are interchangeable with the manifest.</p>
+</section>
+
+<section class="doc-section" id="the-scenarios-manifest">
+  <h2>The scenarios manifest</h2>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> declares every scenario, its overlay slice, its watchpoint regions, and its <code>diff_against</code> sister-slot list. The schema:</p>
+<pre><code>[defaults]
+filename_pattern = "Legend of Legaia (USA).&lt;HASH&gt;.mc{slot}"
+
+[[scenarios]]
+slot = 1
+label = "pre_encounter"
+description = "Walking the field, one step before an encounter triggers (`map01`)"
+topics = ["encounter table base", "field state", "navmesh"]
+diff_against = [2, 3]
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios.watchpoints]]
+label = "battle_overlay_window"
+start = 0x801CE808
+end = 0x801F3818
+hint = "133 KB battle overlay. Loaded between mc1 (field) and mc2 (battle)."</code></pre>
+  <p><code>mednafen-state watch &lt;label&gt;</code> runs the scenario's watchpoints against each <code>diff_against</code> sister, writing a per-scenario JSON report.</p>
+</section>
+
+<section class="doc-section" id="adding-a-new-scenario">
+  <h2>Adding a new scenario</h2>
+  <ol class="bullets">
+    <li>Capture a save state in mednafen at the moment you care about (<code>F5</code></li>
+  </ol>
+  <p>in a free slot 0..9, or another slot if you free one up).</p>
+  <ol class="bullets">
+    <li>Add a <code>[[scenarios]]</code> block to <code>scripts/mednafen/scenarios.toml</code> with</li>
+  </ol>
+  <p>the slot index, a short label, and a description.</p>
+  <ol class="bullets">
+    <li>Optionally add <code>[[scenarios.watchpoints]]</code> blocks for regions you</li>
+  </ol>
+  <p>suspect carry the writes the scenario should surface.</p>
+  <ol class="bullets">
+    <li>Optionally add <code>diff_against = [...]</code> listing sister scenarios for</li>
+  </ol>
+  <p>the auto-capture pass to compare against.</p>
+  <ol class="bullets">
+    <li>Run <code>target/release/mednafen-state watch &lt;label&gt;</code> to see what's in</li>
+  </ol>
+  <p>the watch regions.</p>
+</section>
+
+<section class="doc-section" id="cross-links">
+  <h2>Cross-links</h2>
+  <ul class="bullets">
+    <li><a href="overlay-capture.html"><code>overlay-capture.md</code></a> - how the resulting overlay</li>
+  </ul>
+  <p>slices get imported into Ghidra and analysed.</p>
+  <ul class="bullets">
+    <li><a href="extraction.html"><code>extraction.md</code></a> - disc-side extraction; runs upstream</li>
+  </ul>
+  <p>of save-state work.</p>
+  <ul class="bullets">
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/README.md"><code>crates/mednafen/README.md</code></a> - the</li>
+  </ul>
+  <p>crate's API contract.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'tooling/mednafen-automation' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

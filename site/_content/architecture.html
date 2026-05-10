@@ -150,5 +150,80 @@
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>. The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths; the engine's <code>Camera</code> ticks it via <code>Camera::tick_script</code>. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>. The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
+
+  <figure class="vm-graph">
+    <svg viewBox="0 0 880 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vm-graph-title">
+      <title id="vm-graph-title">Runtime VM call graph</title>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#58c4b3"/>
+        </marker>
+        <marker id="arrow-soft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#636b76"/>
+        </marker>
+      </defs>
+      <style>
+        .vm-box { fill: #131922; stroke: #58c4b3; stroke-width: 1.5; rx: 4; ry: 4; }
+        .vm-box-soft { fill: #131922; stroke: #2a323e; stroke-width: 1.2; rx: 4; ry: 4; }
+        .vm-title { font: 600 13px 'JetBrains Mono', monospace; fill: #c9d1d9; }
+        .vm-sub   { font: 11px 'JetBrains Mono', monospace; fill: #8b949e; }
+        .vm-edge  { stroke: #58c4b3; stroke-width: 1.5; fill: none; }
+        .vm-edge-soft { stroke: #636b76; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
+        .vm-label { font: 11px 'Inter', sans-serif; fill: #c9d1d9; }
+        .vm-band  { font: 10px 'Inter', sans-serif; fill: #636b76; letter-spacing: 0.06em; text-transform: uppercase; }
+      </style>
+
+      <text x="20" y="22" class="vm-band">Per-frame scene tick</text>
+      <rect x="280" y="36" width="320" height="58" class="vm-box"/>
+      <text x="296" y="58" class="vm-title">Field / event VM</text>
+      <text x="296" y="76" class="vm-sub">FUN_801DE840 - 43 opcodes (town overlay)</text>
+      <text x="296" y="89" class="vm-sub">drives NPC movement, dialog, story flags</text>
+
+      <path class="vm-edge" d="M440 94 L440 156" marker-end="url(#arrow)"/>
+      <text x="448" y="120" class="vm-label">op 0x22 EXEC_MOVE</text>
+      <text x="448" y="135" class="vm-label">→ FUN_800204F8 stages a move record</text>
+
+      <text x="20" y="180" class="vm-band">Per-actor frame tick</text>
+      <rect x="280" y="156" width="320" height="58" class="vm-box"/>
+      <text x="296" y="178" class="vm-title">Actor tick</text>
+      <text x="296" y="196" class="vm-sub">FUN_80021DF4 - physics + anim per actor</text>
+      <text x="296" y="209" class="vm-sub">steps the move VM each frame</text>
+
+      <path class="vm-edge" d="M440 214 L440 274" marker-end="url(#arrow)"/>
+      <text x="448" y="240" class="vm-label">step move VM for active actor</text>
+
+      <text x="20" y="298" class="vm-band">Per-actor opcode dispatch</text>
+      <rect x="200" y="274" width="280" height="58" class="vm-box"/>
+      <text x="216" y="296" class="vm-title">Move-table VM</text>
+      <text x="216" y="314" class="vm-sub">FUN_80023070 - 71 opcodes (SCUS)</text>
+      <text x="216" y="327" class="vm-sub">JT 0x80010778 - drives Tactical Arts</text>
+
+      <path class="vm-edge" d="M480 303 L520 303" marker-end="url(#arrow)"/>
+      <rect x="520" y="274" width="280" height="58" class="vm-box"/>
+      <text x="536" y="296" class="vm-title">Move VM extension</text>
+      <text x="536" y="314" class="vm-sub">FUN_801D362C - 61 sub-ops (overlay)</text>
+      <text x="536" y="327" class="vm-sub">JT 0x801CE868 - reached via op 0x2F</text>
+
+      <text x="20" y="370" class="vm-band">Independent per-actor / per-slot drivers</text>
+      <rect x="40" y="384" width="240" height="58" class="vm-box-soft"/>
+      <text x="56" y="406" class="vm-title">Actor / sprite VM</text>
+      <text x="56" y="424" class="vm-sub">FUN_801D6628 - 13 opcodes</text>
+      <text x="56" y="437" class="vm-sub">title-screen overlay (0971)</text>
+
+      <rect x="320" y="384" width="240" height="58" class="vm-box-soft"/>
+      <text x="336" y="406" class="vm-title">Motion VM</text>
+      <text x="336" y="424" class="vm-sub">FUN_8003774C - 6 opcodes</text>
+      <text x="336" y="437" class="vm-sub">NPC pathing, camera follow</text>
+
+      <rect x="600" y="384" width="240" height="58" class="vm-box-soft"/>
+      <text x="616" y="406" class="vm-title">Effect VM</text>
+      <text x="616" y="424" class="vm-sub">FUN_801E0088 walker (battle)</text>
+      <text x="616" y="437" class="vm-sub">32 master + 128 child slots</text>
+
+      <path class="vm-edge-soft" d="M280 413 L320 413" marker-end="url(#arrow-soft)"/>
+      <text x="284" y="408" class="vm-label" style="font-size:9px;fill:#636b76">share actor model</text>
+    </svg>
+    <figcaption>Field VM drives the scene; per-actor ticks step the move VM; the move VM jumps into an overlay extension via op <code>0x2F</code>. Actor / motion / effect VMs run independently but bind to the same actor records.</figcaption>
+  </figure>
 </section>

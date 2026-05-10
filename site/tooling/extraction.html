@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Extraction CLIs - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; asset extraction</div>
+  <h1>Asset extraction</h1>
+  <p class="lede">Tools for extracting assets from a user-supplied disc image. Per the project's clean-room model, no Sony bytes ship in this repo - the user runs the extraction tools against their own disc.</p>
+</header>
+
+<section class="doc-section" id="top-level-pipeline">
+  <h2>Top-level pipeline</h2>
+  <p><code>legaia-extract</code> (in <code>crates/extract</code>) drives the full pipeline:</p>
+<pre><code>./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></pre>
+  <p>The pipeline runs verify → disc → PROT → categorize → streaming-format extract → TIM → PNG. Use <code>--skip-png</code> to skip the slowest step; <code>--skip-verify</code> to skip the SHA verification.</p>
+  <p>Output lands in <code>./extracted/</code> (gitignored):</p>
+<pre><code>extracted/
+├── PROT.DAT                       - raw archive copy
+├── CDNAME.TXT                     - entry name map
+├── SCUS_942.54                    - executable
+├── PROT/                          - per-PROT-entry files (1232 entries, named via CDNAME)
+│   ├── categorize.json            - per-class breakdown
+│   └── ####_&lt;name&gt;.BIN
+├── streaming/                     - DATA_FIELD streaming sub-assets
+│   └── ####_&lt;name&gt;/chunk##_&lt;TYPE&gt;/####.tim
+├── tim_scan/                      - every TIM byte-pattern hit
+├── tmd_scan/                      - every TMD byte-pattern hit
+└── images/                        - TIM-to-PNG conversions</code></pre>
+</section>
+
+<section class="doc-section" id="per-stage-tools">
+  <h2>Per-stage tools</h2>
+  <p>When you want to drive a single stage:</p>
+  <h3>Disc → files (<code>disc-extract</code>)</h3>
+<pre><code>disc-extract --bin /path/to/disc.bin --out extracted/</code></pre>
+  <p>Walks ISO9660 and writes every file. See <a href="../formats/disc.html">disc + ISO9660</a>.</p>
+  <h3>PROT.DAT → entries (<code>prot-extract</code>)</h3>
+<pre><code>prot-extract --in extracted/PROT.DAT --cdname extracted/CDNAME.TXT --out extracted/PROT/</code></pre>
+  <p>Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. See <a href="../formats/prot.html">PROT TOC</a>.</p>
+  <h3>LZS decode (<code>lzs-decode</code>)</h3>
+<pre><code>lzs-decode raw --size N &lt;file&gt;          # standalone LZS body
+lzs-decode container &lt;file&gt;             # multi-section player.lzs container</code></pre>
+  <p>See <a href="../formats/lzs.html">LZS compression</a>.</p>
+  <h3>TIM → PNG (<code>tim</code>)</h3>
+<pre><code>tim convert &lt;file&gt; --out &lt;out_dir&gt;</code></pre>
+  <h3>TMD analysis (<code>tmd</code>)</h3>
+<pre><code>tmd info        &lt;file&gt;            # header + object table
+tmd dump-obj    &lt;file&gt; --out &lt;prefix&gt;     # OBJ-with-faces export
+tmd validate-prims &lt;DIR&gt;          # bulk-walk every prim group, sanity-check</code></pre>
+  <h3>VAB extraction (<code>vab</code>)</h3>
+<pre><code>vab info &lt;file&gt; [--offset 0xN]
+vab extract &lt;file&gt; --out &lt;out_dir&gt;     # WAV per program × tone
+vab play &lt;file&gt; --offset 0xN --sample N --rate Hz</code></pre>
+  <h3>Sub-asset extraction (<code>asset</code>)</h3>
+  <p>The format-aware extractor:</p>
+<pre><code>asset categorize     &lt;DIR&gt; [--out categorize.json]    # per-class breakdown
+asset extract        &lt;file&gt; --out &lt;out_dir&gt;           # streaming-format chunks → individual files
+asset stream         &lt;file&gt;                           # walk DATA_FIELD chunks, no extraction
+asset describe       &lt;file&gt;                           # asset-descriptor walk
+asset effect-bundle  &lt;file&gt;
+asset tmd-scan       &lt;DIR&gt;                            # bulk byte-search for TMD magic
+asset tim-scan       &lt;DIR&gt;                            # bulk byte-search for TIM magic</code></pre>
+  <h3>MES dialog (<code>mes</code>)</h3>
+<pre><code>mes info     &lt;file&gt;
+mes disasm   &lt;file&gt;
+mes json     &lt;file&gt;</code></pre>
+  <h3>Move tables (<code>mdt</code>)</h3>
+<pre><code>mdt classify &lt;file&gt;                       # detect runtime-buffer vs flat-record layout
+mdt records  &lt;file&gt; --limit 8
+mdt slots    &lt;file&gt; --limit 8</code></pre>
+</section>
+
+<section class="doc-section" id="disc-gated-tests">
+  <h2>Disc-gated tests</h2>
+  <p>Two integration tests touch a real disc and only run when <code>LEGAIA_DISC_BIN</code> points at a valid <code>.bin</code>:</p>
+  <ul class="bullets">
+    <li><code>crates/iso/tests/disc_pipeline.rs</code> - disc walk, file count, key file SHA-256s.</li>
+    <li><code>crates/extract/tests/validation_suite.rs</code> - full pipeline, PROT entry count, sub-asset totals, TIM round-trip.</li>
+  </ul>
+<pre><code>LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace</code></pre>
+  <p>Without the env var, both tests <strong>skip and pass</strong> - that's intentional, so CI works without redistributing Sony data. Don't change that gating.</p>
+</section>
+
+<section class="doc-section" id="asset-viewer">
+  <h2>Asset viewer</h2>
+  <p>Once assets are extracted, browse them interactively:</p>
+<pre><code># Single TIM
+asset-viewer tim extracted/PROT/tim/&lt;entry&gt;.TIM
+
+# A Legaia TMD as a 3D mesh (auto-rotating)
+asset-viewer tmd extracted/streaming/&lt;entry&gt;/chunk##_TMD/####.tmd
+
+# Directory of TMDs (N/P/PgDn/PgUp to cycle)
+asset-viewer tmd extracted/streaming
+
+# Battle bundle (paired TIMs auto-loaded for correct CLUTs)
+asset-viewer tmd extracted/streaming/&lt;character&gt; --bundle battle
+
+# A VAB sample
+asset-viewer vab extracted/PROT/&lt;entry&gt;.BIN --offset 0xN --sample N
+
+# PROT entry browser (auto-detects format per entry)
+asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT</code></pre>
+  <p>See <a href="../subsystems/engine.html"><code>subsystems/engine.md</code></a> for the engine port architecture.</p>
+</section>
+
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'tooling/extraction' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>
