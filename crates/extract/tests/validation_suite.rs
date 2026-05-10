@@ -4,7 +4,7 @@
 //! that change the extraction outcome on the NA disc.
 //!
 //! Set `LEGAIA_DISC_BIN` to the absolute path of a Mode2/2352 .bin to enable
-//! these tests. Without it, tests print a one-line skip notice and pass —
+//! these tests. Without it, tests print a one-line skip notice and pass -
 //! mirroring the convention in `crates/iso/tests/disc_pipeline.rs`.
 
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ use legaia_prot::archive::Archive;
 const EXPECTED_PROT_ENTRIES: usize = 1232;
 
 /// Class breakdown from `categorize::classify` over every PROT entry.
-/// Order doesn't matter — the test asserts each `(class_name, count)` pair.
+/// Order doesn't matter - the test asserts each `(class_name, count)` pair.
 ///
 /// Re-pinned 2026-05 after the prot crate's TOC math fix. Earlier values
 /// (effect_bundle=503, field_pack=124, stage_geometry=561, etc.) were all
@@ -48,7 +48,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // sectors of zeros dominate the byte histogram.
     ("mostly_zeros", 101),
     // `overlay_data_blob` covers mid-entropy data with >= 18 % printable
-    // ASCII — overlay string tables and mixed-text dumps with no clearer
+    // ASCII - overlay string tables and mixed-text dumps with no clearer
     // signal. Drains the stragglers that used to live in `unknown_other`.
     ("overlay_data_blob", 27),
     ("overlay_ptr_table", 42),
@@ -69,7 +69,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // 0x800 + 4`). One PROT entry.
     ("vab_multi_bank", 1),
     // `zero_sector_high_entropy` covers files with >= 2 sectors of leading
-    // zeros followed by a high-entropy body — characteristic of cutscene /
+    // zeros followed by a high-entropy body - characteristic of cutscene /
     // XA audio fragments. Four PROT entries.
     ("zero_sector_high_entropy", 4),
     // Residual buckets after every newer detector has had a pass.
@@ -101,7 +101,7 @@ const PINNED_ENTRY: (u32, u64) = (148, 172_032); // entry 148 = retock
 /// total of [`MIN_REAL_DECODE_BYTES`]).
 const EXPECTED_LZS_CONTAINERS_STRICT: usize = 33;
 
-/// Constant matching `lzs-decode`'s MIN_REAL_DECODE_BYTES — kept in sync
+/// Constant matching `lzs-decode`'s MIN_REAL_DECODE_BYTES - kept in sync
 /// to prove the validation suite checks the same thing the audit tool does.
 const MIN_REAL_DECODE_BYTES: usize = 256;
 
@@ -196,8 +196,8 @@ fn validation_suite_full_pipeline() {
         {
             stream_hits += 1;
             // Count sub-assets across both single-asset chunks (TIM 0x00,
-            // TMD2 0x09, MOVE2 0x0B — each = 1 sub-asset) and pack chunks
-            // (TimList 0x01, Tmd 0x02 — expanded via pack walker).
+            // TMD2 0x09, MOVE2 0x0B - each = 1 sub-asset) and pack chunks
+            // (TimList 0x01, Tmd 0x02 - expanded via pack walker).
             for chunk in &s.chunks {
                 let t = AssetType::from_byte(chunk.type_byte);
                 match t {
@@ -274,7 +274,7 @@ fn validation_suite_full_pipeline() {
     // Validate (a) the detector fires, (b) the leading TMD parses end-to-end via
     // the regular `legaia_tmd::parse` API, and (c) the streaming tail produces at
     // least one valid chunk header. Replaces an earlier "expand TIM pack" smoke
-    // test that mismatched the entry's actual on-disc shape — pre-fix,
+    // test that mismatched the entry's actual on-disc shape - pre-fix,
     // categorize.json-driven assumptions for entry 148 ascribed it to standard
     // DATA_FIELD streaming with a TIM_LIST pack chunk, but post-fix scan-stream
     // shows entry 148's TIM_LIST chunk holds a *single* TIM (not a pack).

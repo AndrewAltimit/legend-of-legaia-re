@@ -129,7 +129,7 @@ fn probe(input: &PathBuf) -> Result<()> {
                     i, s.byte_offset, s.size
                 );
             }
-            // Try decompressing each — only success if every section decodes
+            // Try decompressing each - only success if every section decodes
             for (i, sec) in c.sections.iter().enumerate() {
                 let body = &raw[sec.byte_offset as usize..];
                 match legaia_lzs::decompress(body, sec.size as usize) {
@@ -209,7 +209,7 @@ fn audit(dir: &PathBuf, tsv: Option<&PathBuf>) -> Result<()> {
             Err(_) => continue,
         };
         // First try strict; if that rejects, see if lenient parses anything
-        // non-trivial — that bucket is "real LZS-shaped data with non-standard
+        // non-trivial - that bucket is "real LZS-shaped data with non-standard
         // section layout" (e.g., music_01).
         let strict = legaia_lzs::decompress_container_strict(&raw);
         let lenient_total = legaia_lzs::decompress_container(&raw)

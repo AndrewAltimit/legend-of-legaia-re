@@ -3,11 +3,11 @@
 //! Drives a synthetic World through every row of the field menu:
 //!
 //! 1. Open the field menu via `FieldMenuSession::new`
-//! 2. Confirm a row (`tick` with `cross`) — phase becomes Suspended
+//! 2. Confirm a row (`tick` with `cross`) - phase becomes Suspended
 //! 3. Build the matching `FieldMenuSubsession` from the world
 //! 4. Tick the sub-session through a happy / cancel path
 //! 5. Apply the outcome (where defined) back onto the world
-//! 6. Call `FieldMenuSession::resume(false)` — phase returns to Browsing
+//! 6. Call `FieldMenuSession::resume(false)` - phase returns to Browsing
 //!
 //! Mirrors the dispatch flow in `legaia-engine-shell::play-window` so the
 //! plumbing is verified without spinning a wgpu surface.
@@ -89,7 +89,7 @@ fn field_menu_status_row_routes_through_status_subsession() {
     let mut menu = open_field_menu_at(FieldMenuRow::Status);
     let mut sub = build(FieldMenuRow::Status, &world, &OptionsState::default());
     assert!(matches!(sub, FieldMenuSubsession::Status(_)));
-    // Press Circle to cancel out — sub completes.
+    // Press Circle to cancel out - sub completes.
     sub.tick_pad_edge(PadButton::Circle.mask());
     assert!(sub.is_done());
     let _ = menu.resume(false);
@@ -137,7 +137,7 @@ fn field_menu_items_row_drains_to_inventory_session() {
     let mut menu = open_field_menu_at(FieldMenuRow::Items);
     let mut sub = build(FieldMenuRow::Items, &world, &OptionsState::default());
     if let FieldMenuSubsession::Items(s) = &sub {
-        // Player has one item (Healing Leaf) — filtered list should be 1.
+        // Player has one item (Healing Leaf) - filtered list should be 1.
         assert_eq!(s.filtered_items.len(), 1);
     } else {
         panic!("expected Items sub");
@@ -241,7 +241,7 @@ fn apply_spell_outcome_zeroes_caster_mp_after_heal() {
     hms.hp_cur = 1;
     world.roster.members[1].set_hp_mp_sp(hms);
     // Give member 0 a spell list with one heal spell (id 0x07 = Spark Arrow,
-    // but we want a heal — use 0x05 / 0x09 / 0x0E from the vanilla catalog
+    // but we want a heal - use 0x05 / 0x09 / 0x0E from the vanilla catalog
     // depending on what's heal). The vanilla catalog's first heal-effect
     // spell ID can be found via SpellCatalog::vanilla.iter, but for the
     // test we just install a known-heal id 0x09 in the spell list.
@@ -277,7 +277,7 @@ fn apply_arts_outcome_writes_through_chain_library() {
     let mut library = ChainLibrary::new();
     let sub = build(FieldMenuRow::Arts, &world, &OptionsState::default());
     if let FieldMenuSubsession::Arts(editor) = sub {
-        // Cancelled path — `apply_outcome` returns Ok with no mutation.
+        // Cancelled path - `apply_outcome` returns Ok with no mutation.
         let _ = apply_arts_outcome(editor, &mut library);
         assert_eq!(library.total_count(), 0);
     } else {

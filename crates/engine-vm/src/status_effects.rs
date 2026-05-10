@@ -45,7 +45,7 @@ impl StatusKind {
     /// Resolve a [`StatusKind`] from an art-record `EnemyEffect`. Returns
     /// `None` for [`EnemyEffect::None`] and unknown bytes outside the
     /// catalogued range. The retail consumer in the battle SM does the
-    /// same — unknown bytes are dropped with no side-effect.
+    /// same - unknown bytes are dropped with no side-effect.
     pub fn from_enemy_effect(eff: EnemyEffect) -> Option<Self> {
         match eff {
             EnemyEffect::None => None,
@@ -62,7 +62,7 @@ impl StatusKind {
     }
 
     /// Default duration in turns for this kind. The retail engine uses
-    /// per-status duration tables — these defaults match the most common
+    /// per-status duration tables - these defaults match the most common
     /// observed value across the catalogued enemy attack scripts.
     pub fn default_duration(self) -> u8 {
         match self {
@@ -181,7 +181,7 @@ impl StatusEffectTracker {
             .unwrap_or(&[])
     }
 
-    /// Apply a new status condition. Idempotent — applying the same kind
+    /// Apply a new status condition. Idempotent - applying the same kind
     /// twice refreshes the timer to whichever is longer.
     pub fn apply(&mut self, slot: u8, kind: StatusKind) {
         self.apply_with_duration(slot, kind, kind.default_duration())

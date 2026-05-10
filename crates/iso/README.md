@@ -9,11 +9,11 @@ strips that wrapper and exposes a clean ISO9660 view.
 
 ## What it provides
 
-- `raw::RawDisc` — sector-addressed reader. `read_sector(lba)` returns the
+- `raw::RawDisc` - sector-addressed reader. `read_sector(lba)` returns the
   2048-byte user payload only; the caller never sees raw 2352-byte sectors.
-- `iso9660` — primary volume descriptor + directory walker. Yields
+- `iso9660` - primary volume descriptor + directory walker. Yields
   `(name, lba, size)` tuples for every file on the disc.
-- `region` — TCRF-derived heuristics for identifying which retail build
+- `region` - TCRF-derived heuristics for identifying which retail build
   (USA / JP / EU / debug) you're holding.
 
 The single binary, `disc-extract`, drives all of the above.
@@ -42,7 +42,7 @@ LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test -p legaia-iso
 
 ## See also
 
-- [`docs/formats/disc.md`](../../docs/formats/disc.md) — Mode2/2352 layout
+- [`docs/formats/disc.md`](../../docs/formats/disc.md) - Mode2/2352 layout
   and the iso9660 primary volume descriptor.
-- [`docs/reference/builds.md`](../../docs/reference/builds.md) — TCRF
+- [`docs/reference/builds.md`](../../docs/reference/builds.md) - TCRF
   region table.

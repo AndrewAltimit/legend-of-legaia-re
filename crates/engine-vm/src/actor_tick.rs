@@ -1,8 +1,8 @@
-//! Per-actor physics tick — clean-room port of `FUN_80021DF4`.
+//! Per-actor physics tick - clean-room port of `FUN_80021DF4`.
 //!
 //! `FUN_8002519C` walks the per-frame actor list and calls this function on
 //! every active record. The dispatcher is **not** an "animation interpreter"
-//! the way [`legaia_anm::AnimPlayer`] is — it advances per-actor position /
+//! the way [`legaia_anm::AnimPlayer`] is - it advances per-actor position /
 //! velocity / acceleration state, emits a positional sound cue when the
 //! dispatch byte selects the SFX-emitter variant, and (only for the keyframe
 //! dispatch byte) writes the interpolated pose into the renderer's output
@@ -13,7 +13,7 @@
 //! The dispatch byte at `actor[+0x5A]` (see [`anim_vm::DispatchByte`]) selects
 //! a layered set of side-effects:
 //!
-//! 1. **Common pre-update** — runs unconditionally. Drains the per-frame
+//! 1. **Common pre-update** - runs unconditionally. Drains the per-frame
 //!    timer at `+0x54` and the rotation accumulator at `+0x22`.
 //! 2. **Keyframe accel** (dispatch `2` / `6`). Adds `+0xC0..+0xCA` * scalars
 //!    >> 6 into the shake envelopes at `+0xB4..+0xC8`.
@@ -28,7 +28,7 @@
 //!    `+0x80..+0x84` into `+0x24..+0x28`, runs the trig-LUT-driven
 //!    world-position update via [`apply_world_rotation`], and accumulates
 //!    the camera-shake envelopes at `+0x72 / +0x78 / +0x7A`.
-//! 6. **Common late-update** — caps the envelopes, kicks the move VM,
+//! 6. **Common late-update** - caps the envelopes, kicks the move VM,
 //!    fires the per-arm render event (line draws for `4`, scene-graph
 //!    triangle for `7`), and for dispatch `6` writes the keyframe pose.
 //!
@@ -41,7 +41,7 @@
 //!   decompiled C reference for each arm.
 //! - **Out of scope.** Bit-exact MIPS-cycle behaviour (the retail dispatcher
 //!   leans on the `1F800380`-region scratchpad register file for nearly
-//!   every multiply-add — we use straight i64 multiplication and a single
+//!   every multiply-add - we use straight i64 multiplication and a single
 //!   round-down shift, which matches the source's `>> 6` / `>> 18` when
 //!   neither operand is `i32::MIN`). The trig-LUT contents are supplied by
 //!   the caller via [`apply_world_rotation`].
@@ -49,7 +49,7 @@
 //! The dispatcher reads many of these fields at different widths from
 //! different arms (e.g. `+0xB8` is read as `i32` by the SFX-emitter arm and
 //! as `i16` by the keyframe arm). Both views are kept in sync via the
-//! `path_active` (i32) and `kf_shake[2]` (i16) fields — touching either
+//! `path_active` (i32) and `kf_shake[2]` (i16) fields - touching either
 //! field via the public API keeps the other in lockstep.
 
 use crate::anim_vm::DispatchByte;
@@ -74,7 +74,7 @@ impl TickScalars {
         }
     }
 
-    /// `frame_delta * speed` — the multiplier the dispatcher applies in
+    /// `frame_delta * speed` - the multiplier the dispatcher applies in
     /// nearly every arm.
     pub fn product(self) -> u32 {
         u32::from(self.frame_delta) * u32::from(self.speed)
@@ -120,89 +120,89 @@ impl ListenerState {
 /// `Default + Copy` so tests can build instances directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActorPhysics {
-    /// `+0x10` — actor status flags. Bits the dispatcher tests:
-    /// - `0x00008` — kill-on-next-tick.
-    /// - `0x00002` — needs un-link from sprite list.
-    /// - `0x10000` — emitter "stop" request (PathAlt arm clears it).
+    /// `+0x10` - actor status flags. Bits the dispatcher tests:
+    /// - `0x00008` - kill-on-next-tick.
+    /// - `0x00002` - needs un-link from sprite list.
+    /// - `0x10000` - emitter "stop" request (PathAlt arm clears it).
     pub status_flags: u32,
-    /// `+0x14 / +0x16 / +0x18` — world-space position.
+    /// `+0x14 / +0x16 / +0x18` - world-space position.
     pub world_x: i16,
     pub world_y: i16,
     pub world_z: i16,
-    /// `+0x22` — rotation accumulator.
+    /// `+0x22` - rotation accumulator.
     pub rotation_accum: u16,
-    /// `+0x24..+0x28` — motion accumulators.
+    /// `+0x24..+0x28` - motion accumulators.
     pub motion_x: i16,
     pub motion_y: i16,
     pub motion_z: i16,
-    /// `+0x2A` — secondary spin accumulator.
+    /// `+0x2A` - secondary spin accumulator.
     pub spin_a: i16,
-    /// `+0x3C / +0x3E / +0x40` — per-axis world-space rotation factors
+    /// `+0x3C / +0x3E / +0x40` - per-axis world-space rotation factors
     /// folded into world position via the trig LUTs.
     pub rot_factor_x: i16,
     pub rot_factor_y: i16,
     pub rot_factor_z: i16,
-    /// `+0x4C` — keyframe-record output pointer. Non-zero = the keyframe
+    /// `+0x4C` - keyframe-record output pointer. Non-zero = the keyframe
     /// arm should write a pose. Used as a presence gate, not dereferenced.
     pub record_ptr: usize,
-    /// `+0x52` — render flags (bit `0x400` enables the spline arm's extra
+    /// `+0x52` - render flags (bit `0x400` enables the spline arm's extra
     /// render call).
     pub render_flags: u16,
-    /// `+0x54` — countdown timer. Common pre-update drains it.
+    /// `+0x54` - countdown timer. Common pre-update drains it.
     pub timer: i16,
-    /// `+0x56` — non-zero kicks the move VM (`FUN_800204F8`).
+    /// `+0x56` - non-zero kicks the move VM (`FUN_800204F8`).
     pub move_vm_kick: i16,
-    /// `+0x5A` — dispatch byte the tick reads at the start.
+    /// `+0x5A` - dispatch byte the tick reads at the start.
     pub dispatch_byte: u16,
-    /// `+0x68 / +0x6A` — zoom envelope (clamped at `0x100`).
+    /// `+0x68 / +0x6A` - zoom envelope (clamped at `0x100`).
     pub zoom: i16,
     pub zoom_rate: i16,
-    /// `+0x72` — camera-shake envelope (clamped to `0..=15000`).
+    /// `+0x72` - camera-shake envelope (clamped to `0..=15000`).
     pub shake_envelope: i16,
-    /// `+0x78 / +0x7A` — secondary shake / focal envelopes.
+    /// `+0x78 / +0x7A` - secondary shake / focal envelopes.
     pub focal_envelope: i16,
     pub anim_z_bias: i16,
-    /// `+0x80..+0x84` — per-axis acceleration vector.
+    /// `+0x80..+0x84` - per-axis acceleration vector.
     pub accel: [i16; 3],
-    /// `+0x86` — visibility flags. Bit `0x2000` triggers the un-link helper.
+    /// `+0x86` - visibility flags. Bit `0x2000` triggers the un-link helper.
     pub visibility_flags: u16,
-    /// `+0x90 / +0x92 / +0x94` — emitter / path target tuple.
+    /// `+0x90 / +0x92 / +0x94` - emitter / path target tuple.
     pub path_pos: [i16; 3],
-    /// `+0x96 / +0x98 / +0x9A` — emitter / path velocity tuple.
+    /// `+0x96 / +0x98 / +0x9A` - emitter / path velocity tuple.
     pub path_vel: [i16; 3],
-    /// `+0x9C` — path step counter / state machine register.
+    /// `+0x9C` - path step counter / state machine register.
     pub path_state: i32,
-    /// `+0xA0 / +0xA4 / +0xA8` — listener-distance bound checks.
+    /// `+0xA0 / +0xA4 / +0xA8` - listener-distance bound checks.
     pub range_z_low: i32,
     pub range_x_high: i32,
     pub range_z_high: i32,
-    /// `+0xAC` — SFX bank index.
+    /// `+0xAC` - SFX bank index.
     pub sfx_bank_index: i32,
-    /// `+0xB0 / +0xB2` — SsAPI channel + bank-row index.
+    /// `+0xB0 / +0xB2` - SsAPI channel + bank-row index.
     pub sfx_channel: i16,
     pub sfx_bank_row: i16,
-    /// `+0xB4..+0xBA` — keyframe shake envelopes (4 lanes of i16). Only
+    /// `+0xB4..+0xBA` - keyframe shake envelopes (4 lanes of i16). Only
     /// the keyframe arms (dispatch `2` / `6`) read these; the SFX emitter
     /// arm aliases the same bytes via `release_pending` (`+0xB4` as i32)
     /// and `path_active` (`+0xB8` as i32).
     pub kf_shake: [i16; 4],
-    /// `+0xB4` (i32 view) — SFX emitter "key-on done, release pending"
+    /// `+0xB4` (i32 view) - SFX emitter "key-on done, release pending"
     /// flag. Set to `1` when the emitter has issued a key-on through the
     /// SsAPI; cleared to `0` when the channel is released. Aliases
     /// `kf_shake[0..2]` in the retail layout.
     pub release_pending: i32,
-    /// `+0xB8` (i32 view) — SFX emitter ramp-active flag (PathAlt arm
+    /// `+0xB8` (i32 view) - SFX emitter ramp-active flag (PathAlt arm
     /// only). Aliases `kf_shake[2..4]`. Use [`set_path_active`] /
     /// [`set_kf_shake_lane2`] to keep both views in sync.
     pub path_active: i32,
-    /// `+0xBC` — PathAlt ramp counter.
+    /// `+0xBC` - PathAlt ramp counter.
     pub ramp_counter: i32,
-    /// `+0xC0..+0xCA` — keyframe accelerator vector (5 lanes of i16).
+    /// `+0xC0..+0xCA` - keyframe accelerator vector (5 lanes of i16).
     pub kf_accel: [i16; 5],
-    /// `+0xC0` (i32 view) — same bytes as `kf_accel[0..2]`. The PathAlt
+    /// `+0xC0` (i32 view) - same bytes as `kf_accel[0..2]`. The PathAlt
     /// arm reads it as the ramp duration.
     pub ramp_duration: i32,
-    /// `+0xC4..+0xCC` — spline-arm draw bbox.
+    /// `+0xC4..+0xCC` - spline-arm draw bbox.
     pub spline_halfwidth: i16,
     pub spline_step1: i16,
     pub spline_step2: i16,
@@ -211,9 +211,9 @@ pub struct ActorPhysics {
     pub spline_step_y: i16,
     pub spline_step_z: i16,
     pub spline_step_w: i16,
-    /// `+0xC6` — damp arm ramp counter.
+    /// `+0xC6` - damp arm ramp counter.
     pub damp_ramp: i16,
-    /// `+0xD0` — frame-pace accelerator (common pre-update reads this).
+    /// `+0xD0` - frame-pace accelerator (common pre-update reads this).
     pub frame_pace: i16,
     /// Bone count for the keyframe pose write (retail reads
     /// `**actor[+0x44]`; engines populate this directly).
@@ -365,7 +365,7 @@ pub fn tick_actor(
     out
 }
 
-/// Common pre-update — drains the per-frame timer at `+0x54` and the
+/// Common pre-update - drains the per-frame timer at `+0x54` and the
 /// rotation accumulator at `+0x22`. Runs unconditionally.
 pub fn common_pre_update(p: &mut ActorPhysics, s: TickScalars) {
     let dec = (i32::from(s.frame_delta) * i32::from(s.speed)) as i16;
@@ -374,7 +374,7 @@ pub fn common_pre_update(p: &mut ActorPhysics, s: TickScalars) {
     p.rotation_accum = p.rotation_accum.wrapping_add(bump as u16);
 }
 
-/// Keyframe-acceleration update — dispatch `2` / `6`.
+/// Keyframe-acceleration update - dispatch `2` / `6`.
 pub fn keyframe_accel_update(p: &mut ActorPhysics, s: TickScalars) {
     let prod = i64::from(s.product());
     for lane in 0..4 {
@@ -388,7 +388,7 @@ pub fn keyframe_accel_update(p: &mut ActorPhysics, s: TickScalars) {
     }
 }
 
-/// Positional SFX emitter — dispatch `5`.
+/// Positional SFX emitter - dispatch `5`.
 pub fn path_alt_update(
     p: &mut ActorPhysics,
     s: TickScalars,
@@ -550,7 +550,7 @@ pub fn path_alt_update(
     }
 }
 
-/// Path arm — dispatch `3`. Adds three-axis velocity into `+0x90..+0x94`,
+/// Path arm - dispatch `3`. Adds three-axis velocity into `+0x90..+0x94`,
 /// advances `+0x68` (zoom) with clamp at `0x100`, and increments the path
 /// state machine at `+0x9C`.
 ///
@@ -578,7 +578,7 @@ pub fn path_update(p: &mut ActorPhysics, s: TickScalars) -> bool {
     }
 }
 
-/// Default-movement arm — dispatch byte ≠ `5`. Folds `accel` * scalar into
+/// Default-movement arm - dispatch byte ≠ `5`. Folds `accel` * scalar into
 /// `motion_x..motion_z`, runs the rotation step, and accumulates the
 /// shake / focal envelopes.
 pub fn default_movement_update(p: &mut ActorPhysics, s: TickScalars) {
@@ -645,7 +645,7 @@ pub fn apply_world_rotation(
     p.world_z = p.world_z.saturating_add(dz as i16);
 }
 
-/// Common late-update — every dispatch byte. Caps the envelopes, emits the
+/// Common late-update - every dispatch byte. Caps the envelopes, emits the
 /// per-arm render event, optionally fires the move-VM kick, and (only for
 /// dispatch `6` with a present record pointer) emits the keyframe pose.
 pub fn common_late_update(

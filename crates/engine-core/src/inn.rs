@@ -1,4 +1,4 @@
-//! Inn UI state — rest confirmation and party HP / MP restore.
+//! Inn UI state - rest confirmation and party HP / MP restore.
 //!
 //! `InnSession` is installed on [`crate::menu_runtime::MenuRuntime`] by
 //! `open_inn` before the menu VM enters `InnConfirm`. On confirmation the

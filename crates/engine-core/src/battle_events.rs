@@ -12,37 +12,37 @@ use crate::art_strike::ArtStrikeOutcome;
 use legaia_engine_vm::battle_action::{BattleEndCause, Pose};
 
 /// One side-effect the battle action state machine requested this frame.
-/// Variants mirror the `BattleActionHost` callbacks one-to-one — see
+/// Variants mirror the `BattleActionHost` callbacks one-to-one - see
 /// [`legaia_engine_vm::battle_action::BattleActionHost`] for the per-state
 /// citation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BattleEvent {
-    /// `BattleActionHost::pose` — actor pose change.
+    /// `BattleActionHost::pose` - actor pose change.
     Pose { actor_id: u8, pose: Pose },
-    /// `BattleActionHost::ui_element` — battle UI element scheduler.
+    /// `BattleActionHost::ui_element` - battle UI element scheduler.
     /// `mode == 0` spawns / resets, `mode == 1` terminates.
     UiElement { effect_id: u8, mode: u8 },
-    /// `BattleActionHost::camera_bounds` — recompute camera framing.
+    /// `BattleActionHost::camera_bounds` - recompute camera framing.
     CameraBounds,
-    /// `BattleActionHost::party_setup` — per-party-slot init hook
+    /// `BattleActionHost::party_setup` - per-party-slot init hook
     /// (`FUN_801EED1C` in retail).
     PartySetup { actor_slot: u8 },
-    /// `BattleActionHost::monster_setup` — per-monster-slot init hook
+    /// `BattleActionHost::monster_setup` - per-monster-slot init hook
     /// (`FUN_801E7320` in retail).
     MonsterSetup { actor_slot: u8 },
-    /// `BattleActionHost::recompute_battle_order` — rebuild the
+    /// `BattleActionHost::recompute_battle_order` - rebuild the
     /// initiative ordering.
     RecomputeBattleOrder,
-    /// `BattleActionHost::load_capture_archive` — load monster-capture
+    /// `BattleActionHost::load_capture_archive` - load monster-capture
     /// archive (`func_0x8003EAE4(0, idx)` in retail).
     LoadCaptureArchive { idx: u8 },
-    /// `BattleActionHost::spell_anim_trigger` — start a one-shot spell
+    /// `BattleActionHost::spell_anim_trigger` - start a one-shot spell
     /// animation.
     SpellAnimTrigger { party_slot: u8, spell_id: u8 },
-    /// `BattleActionHost::spell_anim_sustain` — sustained anim during
+    /// `BattleActionHost::spell_anim_sustain` - sustained anim during
     /// spell cast / hold.
     SpellAnimSustain { actor_id: u8, anim_id: u8 },
-    /// `BattleActionHost::apply_damage` — damage / heal application
+    /// `BattleActionHost::apply_damage` - damage / heal application
     /// primitive. The state machine surfaces this; engines compute and
     /// apply the actual HP/MP delta.
     ApplyDamage {
@@ -51,7 +51,7 @@ pub enum BattleEvent {
         target_slot: u8,
         party_slot: u8,
     },
-    /// `BattleActionHost::apply_art_strike` — Tactical-Art strike outcome.
+    /// `BattleActionHost::apply_art_strike` - Tactical-Art strike outcome.
     /// The state machine resolved the per-strike values from the active
     /// art record; the world's host impl converted them into the concrete
     /// HP delta + status flag + SFX schedule via
@@ -63,20 +63,20 @@ pub enum BattleEvent {
         strike_index: u8,
         outcome: ArtStrikeOutcome,
     },
-    /// `BattleActionHost::screen_shake` — kick the camera.
+    /// `BattleActionHost::screen_shake` - kick the camera.
     ScreenShake { magnitude: u16 },
-    /// `BattleActionHost::ramp_brightness` — ramp brightness toward a
+    /// `BattleActionHost::ramp_brightness` - ramp brightness toward a
     /// target percentage (used by SummonSustain / MagicCaptureFade).
     RampBrightness { target_pct: u8 },
-    /// `BattleActionHost::battle_end` — battle is ending; engines unload
+    /// `BattleActionHost::battle_end` - battle is ending; engines unload
     /// the battle overlay.
     BattleEnd { cause: BattleEndCause },
-    /// `World::notify_art_used` — a character's Tactical Art use count
+    /// `World::notify_art_used` - a character's Tactical Art use count
     /// crossed the learn threshold for the first time. Engines display a
     /// HUD banner; the art is already marked learned in
     /// `World::tactical_arts` when this fires.
     TacticalArtLearned { char_id: u8, art_id: u8 },
-    /// `World::apply_battle_xp` — a character's XP crossed a level threshold.
+    /// `World::apply_battle_xp` - a character's XP crossed a level threshold.
     /// HP/MP maxima have already been bumped in the roster record and the live
     /// `BattleActor` mirror when this fires.
     LevelUp {
@@ -157,11 +157,11 @@ impl BattleEvent {
 /// `dmg = base_attack * 2 - target_def`, clamped to `>=1` so attacks
 /// never deal zero (battle progress would otherwise stall).
 ///
-/// Inputs are `BattleActor::param` slot reads — engines pass the right
+/// Inputs are `BattleActor::param` slot reads - engines pass the right
 /// stats. Returns the damage to apply via `BattleActor::hp -= dmg`.
 pub fn basic_damage(attacker_atk: i32, target_def: i32, variance_rng: u32) -> u16 {
     let raw = (attacker_atk * 2).saturating_sub(target_def);
-    // ±12.5% variance — same magnitude as the retail variance roll.
+    // ±12.5% variance - same magnitude as the retail variance roll.
     let var_pct = (variance_rng % 25) as i32 - 12;
     let scaled = raw + (raw * var_pct / 100);
     let clamped = scaled.max(1);

@@ -8,7 +8,7 @@ XA-ADPCM audio from the `XA*.XA` files on disc. The engine drives it through gam
 
 | Index | Name | param | next |
 |---|---|---|---|
-| 26 | `STR` (`StrInit`) | `0x80A` | — |
+| 26 | `STR` (`StrInit`) | `0x80A` | - |
 | 27 | `STR MODE` (`StrMode`) | `0x000` | `ConfigInit` |
 
 `StrInit` (index 26) bootstraps the cutscene: opens the STR stream, initialises the MDEC hardware
@@ -30,16 +30,16 @@ a 20-byte header, followed by 2028 bytes of compressed bitstream payload:
 
 ```text
 Offset  Bytes  Field
-0x000   2      magic            — 0x0160 = video sector; any other value = non-video, skip silently
-0x002   2      chunk_number     — 0-indexed position of this sector within the frame
-0x004   2      chunks_per_frame — total sectors needed to complete this frame
-0x006   2      frame_number     — sequential, 0-based, wraps at 0xFFFF
-0x008   4      bs_data_size     — total bitstream bytes across all chunks for this frame
-0x00C   2      width            — frame width in pixels (multiple of 16)
-0x00E   2      height           — frame height in pixels (multiple of 16)
-0x010   2      bs_version       — 2 (BS v2 only in Legaia)
-0x012   2      quantize_scale   — per-frame quantization scale, 0..63
-0x014   2028   bs_data          — compressed bitstream payload chunk
+0x000   2      magic            - 0x0160 = video sector; any other value = non-video, skip silently
+0x002   2      chunk_number     - 0-indexed position of this sector within the frame
+0x004   2      chunks_per_frame - total sectors needed to complete this frame
+0x006   2      frame_number     - sequential, 0-based, wraps at 0xFFFF
+0x008   4      bs_data_size     - total bitstream bytes across all chunks for this frame
+0x00C   2      width            - frame width in pixels (multiple of 16)
+0x00E   2      height           - frame height in pixels (multiple of 16)
+0x010   2      bs_version       - 2 (BS v2 only in Legaia)
+0x012   2      quantize_scale   - per-frame quantization scale, 0..63
+0x014   2028   bs_data          - compressed bitstream payload chunk
 ```
 
 Multi-chunk frames: `StrFrameAssembler` accumulates sector payloads in arrival order. When
@@ -62,12 +62,12 @@ Clean-room port; source: PSX-SPX §MDEC Decompression.
 
 Each 8×8 block decodes its DC coefficient first, then AC coefficients until an EOB token.
 
-**DC coefficient** — luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). The
+**DC coefficient** - luma and chroma use separate VLC tables (PSX-SPX Tables B.12 / B.13). The
 table gives a size in bits; that many sign-extended bits follow as the delta value. DC is
 delta-coded: each block's DC is the previous block's DC plus the delta, per-component
 (Cr/Cb/Y0-Y3 each have independent running state).
 
-**AC coefficients** — MPEG-1 Table B.14 (run/level pairs). Each entry gives `(run, level)`: skip
+**AC coefficients** - MPEG-1 Table B.14 (run/level pairs). Each entry gives `(run, level)`: skip
 `run` zero coefficients, then insert `level`. Escape sequences carry a 6-bit run + 8-bit signed
 level directly. The EOB code (`run == 64`) ends the block.
 

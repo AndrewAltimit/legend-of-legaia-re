@@ -15,7 +15,7 @@ use legaia_mes::Format as MesFormat;
 
 /// Build a Records-format `SceneMes` carrying one message: the bytes
 /// `'h' 'i' 0x00`. Records format is the easiest to hand-roll because the
-/// record offsets are explicit — no offset table to build.
+/// record offsets are explicit - no offset table to build.
 fn synthetic_scene_mes_one_message(message: &[u8]) -> SceneMes {
     // Records format: each record begins with `0x44 0x78` and runs until
     // the next marker. Embed one record at offset 0.
@@ -45,7 +45,7 @@ fn field_op_3f_opens_dialog_and_panel_emits_glyphs() {
     let bc = [0x3F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     world.load_field_record(&bc);
 
-    // Step once — opcode 0x3F should fire `open_dialog`, which writes a
+    // Step once - opcode 0x3F should fire `open_dialog`, which writes a
     // request to `world.current_dialog`.
     let _ = world.step_field();
     let req = world

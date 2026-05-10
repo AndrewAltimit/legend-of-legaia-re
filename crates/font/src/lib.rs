@@ -7,7 +7,7 @@
 //! [`docs/formats/dialog-font.md`](../../../docs/formats/dialog-font.md) for
 //! provenance.
 //!
-//! No Sony bytes live in this crate — it only knows how to interpret the
+//! No Sony bytes live in this crate - it only knows how to interpret the
 //! extracted artifacts.
 
 #![forbid(unsafe_code)]
@@ -33,7 +33,7 @@ pub const ROWS: u32 = 14;
 pub const FIRST_CHAR: u8 = 0x20;
 /// Inter-character spacing added by the runtime, see SCUS docs.
 pub const INTER_GLYPH_PAD: u8 = 1;
-/// Newline byte in dialog strings — the runtime advances Y by `LINE_HEIGHT`
+/// Newline byte in dialog strings - the runtime advances Y by `LINE_HEIGHT`
 /// and resets X to the start of the line.
 pub const NEWLINE: u8 = 0x7C;
 /// Y advance per newline in the runtime renderer (mirrors the dialog
@@ -96,7 +96,7 @@ impl Font {
         let font_dir = root.join("font");
         if !font_dir.is_dir() {
             bail!(
-                "no `font/` dir under {} — run `legaia-extract` first",
+                "no `font/` dir under {} - run `legaia-extract` first",
                 root.display()
             );
         }
@@ -126,14 +126,14 @@ impl Font {
         })
     }
 
-    /// Build a placeholder font with no Sony bytes — every glyph cell is a
+    /// Build a placeholder font with no Sony bytes - every glyph cell is a
     /// solid white rect, every printable char has a fixed advance. Useful
     /// for engines that don't have the extracted atlas yet (e.g. CI smoke
     /// runs, or end-users who haven't run `font-extract`); HUD text renders
     /// as visible white blocks instead of crashing.
     ///
     /// Engines should prefer [`Font::load_from_extracted`] when the atlas
-    /// is available — the placeholder is purely a fallback.
+    /// is available - the placeholder is purely a fallback.
     pub fn placeholder() -> Self {
         let atlas_w = COLS * GLYPH_W;
         let atlas_h = ROWS * GLYPH_H;
@@ -219,7 +219,7 @@ impl Font {
     /// Try to load the runtime escape table from
     /// `<extracted>/font/dialog_font_metadata.json`. Returns `None` when
     /// the metadata file is missing or doesn't contain an `escape_table`
-    /// field — engines that don't need substitution can ignore this.
+    /// field - engines that don't need substitution can ignore this.
     pub fn load_escape_table(extracted_root: impl AsRef<Path>) -> Result<Option<EscapeTable>> {
         let path = extracted_root
             .as_ref()
@@ -254,7 +254,7 @@ impl Font {
     ///
     /// Newline byte (`0x7C`) advances the cursor down one line and resets X.
     /// Escape sequences (`0xCE`, `0xCF`) are recognized but their argument
-    /// byte is consumed without rendering — the runtime substitution table
+    /// byte is consumed without rendering - the runtime substitution table
     /// is host-side state we don't model here.
     pub fn layout(&self, text: &[u8]) -> Layout {
         let mut glyphs = Vec::new();
@@ -276,7 +276,7 @@ impl Font {
                 }
                 // 0xCE = inline-escape (variable / string substitution),
                 // 0xCF = color-change. Both consume the next byte. The
-                // runtime substitution is host-side — we just skip the
+                // runtime substitution is host-side - we just skip the
                 // operand here so the pen doesn't pretend to render it.
                 0xCE | 0xCF if i < text.len() => {
                     i += 1;
@@ -325,9 +325,9 @@ impl Font {
     /// (runs of non-space bytes) that would overflow the current line are
     /// pushed to the next line. Existing newlines (`0x7C`) are honoured.
     /// Single words longer than the box width are emitted as-is on their
-    /// own line — no mid-word breaking.
+    /// own line - no mid-word breaking.
     ///
-    /// Mirrors the field VM's pre-layout pass at SCUS `FUN_80036044` —
+    /// Mirrors the field VM's pre-layout pass at SCUS `FUN_80036044` -
     /// engines that drive the dialog renderer's per-line measure step use
     /// this to feed pre-wrapped glyph streams to [`Font::layout`].
     pub fn layout_wrapped(&self, text: &[u8], box_width_px: u32) -> Layout {
@@ -435,7 +435,7 @@ fn parse_widths_csv(path: &Path) -> Result<[u8; 256]> {
             continue;
         }
         // CSV columns: char_hex, char_dec, char_repr, width_px.
-        // char_repr can contain commas (it's quoted in the CSV) — split on the
+        // char_repr can contain commas (it's quoted in the CSV) - split on the
         // last comma to get the width and use the first comma to get char_hex.
         let first_comma = line
             .find(',')
@@ -490,7 +490,7 @@ pub fn extracted_font_dir(root: impl AsRef<Path>) -> PathBuf {
 /// `advance_px` (how many pixels to move the pen after the substitution),
 /// and a `y_offset` for the substitution's baseline.
 ///
-/// Format on disc: 38 × 4-byte entries — `(i16 string_id, u8 advance_px,
+/// Format on disc: 38 × 4-byte entries - `(i16 string_id, u8 advance_px,
 /// i8 y_offset)`. Loaded from
 /// `extracted/font/dialog_font_metadata.json` produced by `font-extract`.
 #[derive(Debug, Clone)]
@@ -541,7 +541,7 @@ impl EscapeTable {
         Ok(Self { entries })
     }
 
-    /// Look up an entry by index — `byte` is the operand of `0xCE`.
+    /// Look up an entry by index - `byte` is the operand of `0xCE`.
     pub fn entry(&self, byte: u8) -> Option<&EscapeEntry> {
         self.entries.get(byte as usize)
     }
@@ -636,7 +636,7 @@ mod tests {
     #[test]
     fn wrap_breaks_at_word_boundary() {
         let f = synthetic_for_tests();
-        // "AA AAAA" — synthetic widths give A,B,...,Z width 6 (b - 0x20 + 1)
+        // "AA AAAA" - synthetic widths give A,B,...,Z width 6 (b - 0x20 + 1)
         // ... actually let's use a wide letter to force wrap.
         // The synthetic font widths are deterministic but varied; just
         // assert the wrapped output contains a NEWLINE that wasn't in
@@ -682,7 +682,7 @@ mod tests {
         let f = synthetic_for_tests();
         let layout = f.layout(&[b'A', 0x05, 0x10, b'B']);
         assert_eq!(layout.glyphs.len(), 2);
-        // 0x05 / 0x10 don't advance the pen — B sits right after A.
+        // 0x05 / 0x10 don't advance the pen - B sits right after A.
         assert_eq!(layout.glyphs[1].dst_x, f.advance_of(b'A') as i32);
     }
 

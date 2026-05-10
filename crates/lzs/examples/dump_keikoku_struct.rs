@@ -33,7 +33,7 @@ fn main() {
         println!("  0x{:02X}  ({:>4})", b, c);
     }
 
-    // Gaps between non-zero positions — look for periodicity
+    // Gaps between non-zero positions - look for periodicity
     let mut gaps: BTreeMap<usize, usize> = BTreeMap::new();
     for w in nz.windows(2) {
         let g = w[1].0 - w[0].0;

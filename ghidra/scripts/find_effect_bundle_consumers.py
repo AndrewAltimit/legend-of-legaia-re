@@ -4,15 +4,15 @@
 # Find consumers of the effect-bundle data structure in the battle overlay.
 #
 # Background: PROT entries that use the 0x02018B0C / 28-entry-schema effect
-# bundle format have an overlay-resident consumer — zero references to the
+# bundle format have an overlay-resident consumer - zero references to the
 # magic word or the buffer pointers exist in SCUS_942.54 or in non-battle
 # overlays. Once a battle overlay is imported (see scripts/import_overlay.sh
 # pointed at /tmp/legaia_overlay_battle.bin), this script locates:
 #
-#   1. The init/registration function (entry 0x801DE914 — called by SCUS
+#   1. The init/registration function (entry 0x801DE914 - called by SCUS
 #      FUN_800520F0 case 0xe).
 #   2. Every other function that reads the registered-effects table at
-#      _DAT_8007BD30 — these are the per-frame walkers / triggers.
+#      _DAT_8007BD30 - these are the per-frame walkers / triggers.
 #
 # Output: prints each containing function with its size and a brief disasm
 # of the LUI+LW pair that loads the address.
@@ -70,7 +70,7 @@ def scan():
                     imm = imm_obj[0].getValue() & 0xFFFF
                     base_reg = str(imm_obj[1])
                 else:
-                    # addiu rt, rs, imm — operand 2 is the imm
+                    # addiu rt, rs, imm - operand 2 is the imm
                     imm = insn.getOpObjects(2)[0].getValue() & 0xFFFF
                     base_reg = insn.getDefaultOperandRepresentation(1)
                 if base_reg in last_lui:

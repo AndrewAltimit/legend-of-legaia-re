@@ -8,10 +8,10 @@ into 16-bit PCM, then writes a standard WAV file.
 
 ## Sound group layout (128 bytes, 4-bit mode)
 
-- bytes 0..16 — 8 sound-unit parameters, each repeated twice for error
+- bytes 0..16 - 8 sound-unit parameters, each repeated twice for error
   detection: `[su0..su7, su0..su7]`. Each parameter byte =
   `(filter << 4) | range`, with filter ∈ 0..=3 and range ∈ 0..=12.
-- bytes 16..128 — 28 lines × 4 bytes per line of sample nibbles.
+- bytes 16..128 - 28 lines × 4 bytes per line of sample nibbles.
   Within a line, byte k holds:
     * low nibble  = sound unit `k` sample
     * high nibble = sound unit `k+4` sample

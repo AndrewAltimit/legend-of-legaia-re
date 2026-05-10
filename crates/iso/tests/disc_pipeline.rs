@@ -73,7 +73,7 @@ fn pipeline_against_real_disc() {
     let actual_hash = sha256_file(&bin).expect("hashing .bin");
     assert_eq!(
         actual_hash, KNOWN_BIN_SHA256,
-        ".bin SHA-256 mismatch — your dump may have been produced with different \
+        ".bin SHA-256 mismatch - your dump may have been produced with different \
          tooling or is a different region. Update KNOWN_BIN_SHA256 in this test \
          if you intend to support a new dump."
     );

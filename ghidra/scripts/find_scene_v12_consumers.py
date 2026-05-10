@@ -72,7 +72,7 @@ for ins in listing.getInstructions(True):
                 )
             )
 
-# Filter to functions that have BOTH a +2 and a +6 lh/lhu load — those
+# Filter to functions that have BOTH a +2 and a +6 lh/lhu load - those
 # are much higher-confidence v12 consumers (the header has constants at
 # both offsets).
 by_func = {}

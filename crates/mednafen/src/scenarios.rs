@@ -47,7 +47,7 @@ pub struct Scenario {
     pub label: String,
     /// Human-readable description.
     pub description: String,
-    /// Topics this scenario informs (free-text labels — e.g.
+    /// Topics this scenario informs (free-text labels - e.g.
     /// `["scene_bundle preamble", "navmesh"]`).
     #[serde(default)]
     pub topics: Vec<String>,

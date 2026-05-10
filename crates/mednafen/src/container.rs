@@ -11,7 +11,7 @@
 //! Each top-level section:
 //!     [32-byte name, NUL-padded]
 //!     [4-byte LE size of the section body]
-//!     [body of `size` bytes — sequence of sub-entries]
+//!     [body of `size` bytes - sequence of sub-entries]
 //!
 //! Each sub-entry:
 //!     [1-byte name length N]
@@ -24,7 +24,7 @@
 //! `MAIN` carrying main RAM). Walking the section table linearly from the
 //! header is unreliable because the raw RAM contents include false-positive
 //! "names". Instead, this module parses sections lazily by scanning the
-//! payload for an exact name match — both fast (single linear scan) and
+//! payload for an exact name match - both fast (single linear scan) and
 //! immune to byte-aliasing inside large opaque sections.
 
 use anyhow::{Context, Result, bail};
@@ -158,7 +158,7 @@ impl SaveState {
                 ]) as usize;
                 let body_offset = size_off + 4;
                 if body_offset + body_len > self.payload.len() || body_len > 4 * 1024 * 1024 {
-                    // Possible false positive — keep scanning past this hit.
+                    // Possible false positive - keep scanning past this hit.
                     pos = abs + SECTION_NAME_LEN;
                     continue;
                 }
@@ -188,7 +188,7 @@ impl SaveState {
         Some(&self.payload[e.value_offset..e.value_offset + e.value_len])
     }
 
-    /// 2 MiB of PSX main RAM — index `0` corresponds to `0x80000000`.
+    /// 2 MiB of PSX main RAM - index `0` corresponds to `0x80000000`.
     /// Tries the structured `MAIN.MainRAM.data8` path first; falls back to
     /// the SCUS-anchor heuristic if the structured path doesn't pan out.
     pub fn main_ram(&self) -> Result<&[u8]> {

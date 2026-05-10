@@ -3,7 +3,7 @@
 //! A *trace* is a deterministic record of the GTE register state before
 //! and after each operation. Engines use traces to:
 //!
-//!   1. Validate the [`Gte`] emulator against captured retail RAM dumps —
+//!   1. Validate the [`Gte`] emulator against captured retail RAM dumps -
 //!      "after running RTPT with these registers, MAC1 should be X".
 //!   2. Round-trip the emulator: run a sequence of ops, snapshot, replay,
 //!      assert no divergence.
@@ -258,7 +258,7 @@ pub struct TraceStep {
 
 impl TraceStep {
     /// Try to parse `self.op` back to a [`CopOp`]. Returns `None` for
-    /// strings outside the canonical set (custom op names — engines that
+    /// strings outside the canonical set (custom op names - engines that
     /// use those skip via [`Cop2Trace::replay_skipping_unknown`]).
     pub fn as_op(&self) -> Option<CopOp> {
         match self.op.as_str() {
@@ -376,7 +376,7 @@ impl Cop2Trace {
             step.before.restore(&mut gte);
             // Re-run the op.
             let Some(op) = step.as_op() else {
-                // Unknown op name — skip this step rather than fail.
+                // Unknown op name - skip this step rather than fail.
                 continue;
             };
             // The op itself charges cycles via `begin_op`; no extra
@@ -396,7 +396,7 @@ impl Cop2Trace {
         out
     }
 
-    /// Replay strict — replays every step and panics on the first divergence.
+    /// Replay strict - replays every step and panics on the first divergence.
     /// Useful for tests where the expected outcome is "no mismatches at all".
     pub fn replay_strict(&self) -> Result<(), StepMismatch> {
         match self.replay().into_iter().next() {
@@ -504,7 +504,7 @@ fn run_op(gte: &mut Gte, op: CopOp) {
             gte.intpl();
         }
         CopOp::Mvmva => {
-            // MVMVA needs explicit selection bits — engines that record
+            // MVMVA needs explicit selection bits - engines that record
             // an MVMVA step should manually push the step rather than rely
             // on the recorder's defaults. We use (rot, V0, trans, true,
             // true) as the canonical "RT * V0 + TR with shift+lm" form.

@@ -1,18 +1,18 @@
 //! PSX CD-XA ADPCM decoder.
 //!
 //! Decodes raw 128-byte sound groups (the format Legaia ships in
-//! `extracted/XA/*.XA` — CD-XA Mode2/Form2 sector subheaders stripped) into
+//! `extracted/XA/*.XA` - CD-XA Mode2/Form2 sector subheaders stripped) into
 //! PCM 16-bit samples, then writes a WAV file.
 //!
 //! ## Sound group layout (128 bytes)
 //!
 //! For 4-bit ADPCM (the most common XA mode):
 //!
-//! - bytes 0..16 — 8 sound-unit parameters, each repeated twice for error
+//! - bytes 0..16 - 8 sound-unit parameters, each repeated twice for error
 //!   detection. Layout: `[su0,su1,su2,su3, su4,su5,su6,su7, su0..su7 again]`.
 //!   Each parameter byte = `(filter << 4) | range` where filter ∈ 0..=3 and
 //!   range ∈ 0..=12.
-//! - bytes 16..128 — 28 lines × 4 bytes per line of sample nibbles. Within
+//! - bytes 16..128 - 28 lines × 4 bytes per line of sample nibbles. Within
 //!   a line, byte k holds:
 //!     * low nibble = sound unit `k` sample
 //!     * high nibble = sound unit `k+4` sample
@@ -50,7 +50,7 @@
 //! Legaia-specific muxing scheme that hasn't been reverse-engineered yet.
 //!
 //! Until that's resolved, this decoder produces audible-but-glitched output
-//! on real Legaia files — invalid groups emit silence to keep timing stable.
+//! on real Legaia files - invalid groups emit silence to keep timing stable.
 //! For purely synthetic / standard-XA test vectors the decoder is correct.
 //!
 //! ## Stereo interleave
@@ -123,7 +123,7 @@ pub struct DecodeReport {
 ///
 /// Groups with malformed parameters (filter > 3, or the bytes 8..16 that
 /// should redundantly mirror bytes 0..8 don't match) are treated as skipped
-/// stream interleave / padding — they contribute 28 silent samples per unit
+/// stream interleave / padding - they contribute 28 silent samples per unit
 /// to keep timing intact, and increment `n_groups_skipped` in the report.
 /// This is the same behavior the PSX SPU exhibits: it doesn't crash on bad
 /// XA, it just emits the previously-decoded output.
@@ -308,7 +308,7 @@ impl StreamingDecoder {
     /// number of complete groups decoded (including silently-skipped
     /// groups).
     ///
-    /// Channel mode + sample rate stay fixed for the decoder lifetime —
+    /// Channel mode + sample rate stay fixed for the decoder lifetime -
     /// callers that need to switch mid-stream allocate a new decoder.
     pub fn feed(&mut self, bytes: &[u8], out: &mut Vec<i16>) -> Result<usize> {
         let mut buf: Vec<u8> = std::mem::take(&mut self.leftover);
@@ -357,7 +357,7 @@ impl StreamingDecoder {
         self.opts.sample_rate
     }
 
-    /// Current leftover-byte count (0..=127). Useful for diagnostics —
+    /// Current leftover-byte count (0..=127). Useful for diagnostics -
     /// a healthy XA stream feeds whole groups so this is usually 0.
     pub fn pending_bytes(&self) -> usize {
         self.leftover.len()
@@ -370,7 +370,7 @@ mod streaming_tests {
 
     fn synth_silent_group() -> Vec<u8> {
         // Filter 0, range 0 across all 8 sound units, plus zero sample
-        // nibbles — yields silence and validates cleanly.
+        // nibbles - yields silence and validates cleanly.
         vec![0u8; SOUND_GROUP_BYTES]
     }
 
@@ -399,12 +399,12 @@ mod streaming_tests {
         };
         let mut decoder = StreamingDecoder::new(opts);
         let mut pcm = Vec::new();
-        // Feed 64 bytes — half a group, no output yet.
+        // Feed 64 bytes - half a group, no output yet.
         decoder.feed(&one_group[..64], &mut pcm).unwrap();
         assert_eq!(decoder.groups_consumed(), 0);
         assert_eq!(decoder.pending_bytes(), 64);
         assert!(pcm.is_empty());
-        // Feed remaining 64 — completes the group.
+        // Feed remaining 64 - completes the group.
         decoder.feed(&one_group[64..], &mut pcm).unwrap();
         assert_eq!(decoder.groups_consumed(), 1);
         assert_eq!(decoder.pending_bytes(), 0);
@@ -511,7 +511,7 @@ mod tests {
         // Two-group buffer: group 0 valid, group 1 has a filter > 3.
         let mut buf = vec![0u8; 2 * SOUND_GROUP_BYTES];
         // group 0: all-zero params, all-zero data → valid silence.
-        // group 1: corrupt — filter nibble for SU0 is 0xC.
+        // group 1: corrupt - filter nibble for SU0 is 0xC.
         buf[SOUND_GROUP_BYTES] = 0xC0;
         let (samples, report) = decode(&buf, DecodeOptions::default()).unwrap();
         assert_eq!(report.n_groups, 2);

@@ -3,7 +3,7 @@
 //! Each entry pins a concrete byte-level finding from a `mednafen-state diff`
 //! between two save states in the `~/.mednafen/mcs/` corpus. These observations
 //! are the authoritative source-of-truth for runtime memory layout that isn't
-//! reachable through static analysis of `SCUS_942.54` alone — they bracket
+//! reachable through static analysis of `SCUS_942.54` alone - they bracket
 //! what the engine knows is happening at runtime so that downstream consumers
 //! (parsers, runtime hosts, integration tests) can assert against pinned
 //! offsets instead of re-deriving them from raw saves.
@@ -40,16 +40,17 @@ impl ByteDelta {
     }
 }
 
-/// Encounter-trigger observation captured from `mc1` (pre-encounter, walking
-/// `map01`) → `mc2` (battle just initiated, same `map01` scene).
+/// Encounter-trigger observation captured from a pre/post save pair: one
+/// frame walking the `map01` field scene, then one frame with battle just
+/// initiated (same `map01` scene).
 ///
 /// Findings:
 ///
 /// - The 133 KB MIPS / data window at `0x801CE808..0x801F3818` differs
-///   wholesale between mc1 and mc2 — this is the **battle overlay** loaded
-///   on encounter trigger. The rounded extent (`0x801CE800..0x801F4000`,
-///   ~150 KB) is the canonical battle-overlay residency window for the
-///   current corpus.
+///   wholesale between the pre-encounter and post-encounter saves - this
+///   is the **battle overlay** loaded on encounter trigger. The rounded
+///   extent (`0x801CE800..0x801F4000`, ~150 KB) is the canonical
+///   battle-overlay residency window for the current corpus.
 /// - The 8-slot battle actor pointer table populates at `0x801C9370+` with
 ///   stride `0x60` between adjacent slot headers (the empty-actor sentinel
 ///   `0x20A1 0580` flips to a per-monster pointer + control word).
@@ -61,7 +62,7 @@ impl ByteDelta {
 /// transition: when crossing the boundary, the battle overlay is loaded
 /// into `OVERLAY_WINDOW`, and the actor pool fills `ACTOR_POOL_WINDOW`.
 pub mod encounter_trigger {
-    /// Battle overlay residency window (post-trigger). The mc1↔mc2 diff
+    /// Battle overlay residency window (post-trigger). The pre/post diff
     /// surfaces 133 KB of changed bytes inside this range, with no changes
     /// outside it (within the wider `0x801C0000..0x80200000` overlay
     /// region after stripping the actor-pool / scene-bundle deltas).
@@ -72,19 +73,19 @@ pub mod encounter_trigger {
     /// to the stride) carrying actor pointer + control word at offset 0.
     pub const ACTOR_POOL_WINDOW: (u32, u32) = (0x801C9370, 0x801C9900);
 
-    /// Active scene-name table. Encounter trigger does NOT change this —
+    /// Active scene-name table. Encounter trigger does NOT change this -
     /// the scene index stays equal to the field scene that triggered.
     pub const SCENE_NAME_TABLE_ADDR: u32 = 0x80084540;
 
     /// Approximate byte-count change in the overlay window between an
-    /// equivalent (mc1, mc2) pair. Used for scoping assertions; tolerate
-    /// ±10% drift across captures.
+    /// equivalent pre-encounter / post-encounter save pair. Used for
+    /// scoping assertions; tolerate ±10% drift across captures.
     pub const OVERLAY_BYTES_CHANGED_REF: usize = 133_086;
 
     /// Approximate byte-count change in the actor-pool window between an
-    /// equivalent (mc1, mc2) pair. Captured from the wider
-    /// `0x801C9300..0x801CA000` window; the narrower `ACTOR_POOL_WINDOW`
-    /// captures a subset.
+    /// equivalent pre-encounter / post-encounter save pair. Captured from
+    /// the wider `0x801C9300..0x801CA000` window; the narrower
+    /// `ACTOR_POOL_WINDOW` captures a subset.
     pub const ACTOR_POOL_BYTES_CHANGED_REF: usize = 200;
 
     /// Slot stride between adjacent battle-actor pool entries.
@@ -94,16 +95,17 @@ pub mod encounter_trigger {
     pub const ACTOR_POOL_SLOT_COUNT: usize = 8;
 }
 
-/// Vahn / Fire-Book-I observation captured from `mc4` (battle command menu
-/// parked on Fire Book I) → `mc5` (Fire Book I just used on Vahn).
+/// Vahn / Fire-Book-I observation captured from a pre/post save pair: one
+/// frame with the battle command menu parked on Fire Book I, then one frame
+/// after Fire Book I has just been used on Vahn.
 ///
 /// **Finding (pinned).** Inside Vahn's character record (`0x80084708..+0x414`)
-/// exactly one byte region differs between mc4 and mc5: a 3-byte cluster at
-/// `+0x185..+0x188`.
+/// exactly one byte region differs between the two saves: a 3-byte cluster
+/// at `+0x185..+0x188`.
 ///
 /// ```text
-/// mc4: +0x185 = 0x01   +0x186 = 0x0C   +0x187 = 0x00
-/// mc5: +0x185 = 0x02   +0x186 = 0x03   +0x187 = 0x0C
+/// pre:  +0x185 = 0x01   +0x186 = 0x0C   +0x187 = 0x00
+/// post: +0x185 = 0x02   +0x186 = 0x03   +0x187 = 0x0C
 /// ```
 ///
 /// **Interpretation (inferred).** The byte at `+0x185` reads as a length
@@ -116,13 +118,13 @@ pub mod encounter_trigger {
 /// **Caveat.** The user's reported in-game action (Fire Book I usage to
 /// learn a Hyper Art) suggests the post-event state should encode a new
 /// learned art. The inserted byte value `0x03` does not match any of the
-/// retail learned-art constants (those occupy the `0x1B..=0x32` range —
+/// retail learned-art constants (those occupy the `0x1B..=0x32` range -
 /// see `legaia_art::tables`). Two consistent interpretations remain:
 ///
 /// 1. The 3-byte cluster is a transient command-history buffer that the
 ///    item-use animation populated, unrelated to the permanent Hyper-Art
 ///    flag; the actual Hyper-Art learn write lives at a different offset
-///    not surfaced by mc4↔mc5 (e.g. a global story-flag word at
+///    not surfaced by the pre/post diff (e.g. a global story-flag word at
 ///    `_DAT_1F80_0394` or a mask field outside the character record).
 /// 2. The cluster is the per-character recent-action buffer the runtime
 ///    pre-fills before the Fire Book animation plays.
@@ -134,7 +136,7 @@ pub mod encounter_trigger {
 ///
 /// **Reader resolved (2026-05-10).** Grep across the captured menu
 /// overlays (`overlay_menu_801d33d8.txt`, `overlay_save_ui_*`,
-/// `overlay_shop_save_*` — all the same overlay, different captures)
+/// `overlay_shop_save_*` - all the same overlay, different captures)
 /// found exactly one reader cluster at `0x801D4440..0x801D44A4`:
 ///
 /// ```text
@@ -156,12 +158,12 @@ pub mod encounter_trigger {
 /// the loop, but the on-record array fits 16 bytes (the gap to the
 /// equipment-slot field at +0x196), so [`MAX_DISPLAYED_SKILLS`] is 16.
 ///
-/// The Fire Book mc4 → mc5 transition (`count: 1 → 2`, `ids[0]: 0x0C →
-/// 0x03`, `ids[1]: 0x00 → 0x0C`) is a head-insert into this list — i.e.
+/// The pre/post Fire Book I transition (`count: 1 → 2`, `ids[0]: 0x0C →
+/// 0x03`, `ids[1]: 0x00 → 0x0C`) is a head-insert into this list - i.e.
 /// the menu's displayed-skill roster grew by one new entry. Engines that
 /// want a typed view should use [`legaia_save::character::CharacterRecord::displayed_skills`].
 ///
-/// No `sb`/`sh` writers to `+0x185` exist in any captured overlay — the
+/// No `sb`/`sh` writers to `+0x185` exist in any captured overlay - the
 /// learn writer lives in an overlay we haven't dumped (likely the item-use
 /// path of the battle-action overlay, accessed via the menu rather than
 /// the action SM).
@@ -185,12 +187,12 @@ pub mod vahn_fire_book_use {
     pub const AFTER: [u8; 3] = [0x02, 0x03, 0x0C];
 
     /// Address of the menu-overlay reader's leading instruction (`lbu
-    /// t2,0x185(t2)`) — the loop that surfaces the displayed-skill list.
+    /// t2,0x185(t2)`) - the loop that surfaces the displayed-skill list.
     pub const MENU_READER_ADDR: u32 = 0x801D4440;
 
     /// Address of the menu-overlay function the reader belongs to.
     /// Same address shows up across `overlay_menu_*`, `overlay_save_ui_*`,
-    /// and `overlay_shop_save_*` dumps — they're identical copies of the
+    /// and `overlay_shop_save_*` dumps - they're identical copies of the
     /// menu overlay function.
     pub const MENU_OVERLAY_FN: u32 = 0x801D33D8;
 
@@ -262,7 +264,7 @@ mod tests {
             1
         );
         // Pre-event entry at position 0 (`0x0C`) appears at position 1
-        // post-event — consistent with insertion at the front.
+        // post-event - consistent with insertion at the front.
         assert_eq!(vahn_fire_book_use::AFTER[2], vahn_fire_book_use::BEFORE[1]);
     }
 }

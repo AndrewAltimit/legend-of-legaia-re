@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Formats — legend-of-legaia-re</title>
+  <title>Formats - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -32,7 +32,7 @@
     </a>
     <a class="card" id="cdname" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/cdname.md" target="_blank" rel="noopener">
       <div class="card-title">CDNAME.TXT name map</div>
-      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. Some labels are misleading (vab_01, move_program_no) — verify against the loader-call constant or magic bytes.</div>
+      <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. Some labels are misleading (vab_01, move_program_no) - verify against the loader-call constant or magic bytes.</div>
     </a>
   </div>
 </section>
@@ -42,7 +42,7 @@
   <div class="card-grid">
     <a class="card" id="lzs" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/lzs.md" target="_blank" rel="noopener">
       <div class="card-title">Legaia LZS</div>
-      <div class="card-body">Custom LZSS decoder reverse-engineered from <code>FUN_8001A55C</code>. 4096-byte ring buffer, zero-init. "Decompresses without error" is not a validity signal — always magic-check the decoded output.</div>
+      <div class="card-body">Custom LZSS decoder reverse-engineered from <code>FUN_8001A55C</code>. 4096-byte ring buffer, zero-init. "Decompresses without error" is not a validity signal - always magic-check the decoded output.</div>
     </a>
     <a class="card" id="asset-type" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/asset-type.md" target="_blank" rel="noopener">
       <div class="card-title">Asset type dispatcher</div>
@@ -68,11 +68,11 @@
     </a>
     <a class="card" id="tmd" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/tmd.md" target="_blank" rel="noopener">
       <div class="card-title">Legaia TMD</div>
-      <div class="card-body">Custom PSX TMD variant — magic <code>0x80000002</code>. Object pointers are byte offsets relative to header end. Primitives use a custom 8-byte group header + per-mode descriptor table at <code>DAT_8007326C</code>.</div>
+      <div class="card-body">Custom PSX TMD variant - magic <code>0x80000002</code>. Object pointers are byte offsets relative to header end. Primitives use a custom 8-byte group header + per-mode descriptor table at <code>DAT_8007326C</code>.</div>
     </a>
     <a class="card" id="vab" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/vab.md" target="_blank" rel="noopener">
       <div class="card-title">VAB sound bank</div>
-      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live in battle_data / level_up — vab_01 is misleading.</div>
+      <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live in battle_data / level_up - vab_01 is misleading.</div>
     </a>
     <a class="card" id="seq" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/seq.md" target="_blank" rel="noopener">
       <div class="card-title">PsyQ SEQ</div>
@@ -88,14 +88,14 @@
     </a>
     <a class="card" id="anm" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/anm.md" target="_blank" rel="noopener">
       <div class="card-title">ANM animation</div>
-      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. The per-actor anim tick is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (4732 bytes) — best modelled as a layered pipeline rather than a per-opcode jump table. The keyframe pose decoder (dispatch byte <code>0x06</code>) is ported to <code>legaia_anm::AnimPlayer</code>; the per-arm physics (position / velocity / acceleration math, the positional SFX emitter for <code>0x05</code>, path interpolation for <code>0x03</code>, render submissions for <code>0x04</code> / <code>0x07</code>) is ported in <code>engine_vm::actor_tick</code>. See actor-vm.html for the full per-arm breakdown.</div>
+      <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. The per-actor anim tick is <code>FUN_80021DF4</code> in <code>SCUS_942.54</code> (4732 bytes) - best modelled as a layered pipeline rather than a per-opcode jump table. The keyframe pose decoder (dispatch byte <code>0x06</code>) is ported to <code>legaia_anm::AnimPlayer</code>; the per-arm physics (position / velocity / acceleration math, the positional SFX emitter for <code>0x05</code>, path interpolation for <code>0x03</code>, render submissions for <code>0x04</code> / <code>0x07</code>) is ported in <code>engine_vm::actor_tick</code>. See actor-vm.html for the full per-arm breakdown.</div>
     </a>
     <a class="card" id="mdt" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/mdt.md" target="_blank" rel="noopener">
-      <div class="card-title">MDT — move tables</div>
-      <div class="card-body">Tactical Arts move records. Both layouts parse cleanly; the consumer is <code>FUN_800204F8</code>. The runtime <code>MOVE</code> base (<code>_DAT_8007B888</code>) is sourced per-scene from descriptor[4] (type 0x05 = Move) of every CDNAME block's slot-1 PROT entry (a <code>scene_asset_table</code>) — not from a single boot-time PROT entry.</div>
+      <div class="card-title">MDT - move tables</div>
+      <div class="card-body">Tactical Arts move records. Both layouts parse cleanly; the consumer is <code>FUN_800204F8</code>. The runtime <code>MOVE</code> base (<code>_DAT_8007B888</code>) is sourced per-scene from descriptor[4] (type 0x05 = Move) of every CDNAME block's slot-1 PROT entry (a <code>scene_asset_table</code>) - not from a single boot-time PROT entry.</div>
     </a>
     <a class="card" id="art-data" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/art-data.md" target="_blank" rel="noopener">
-      <div class="card-title">Art data — Tactical Arts records</div>
+      <div class="card-title">Art data - Tactical Arts records</div>
       <div class="card-body">Per-character art records (Vahn <code>0x80160EFC</code> / Noa <code>0x80176998</code> / Gala <code>0x8018BA54</code>; PROT entry <code>0x05C4</code>). 40-field schema: command sequence, action constant, power bytes (UDF / LDF + alt-range with floater/short misses), hit timing, special / hit effect cues, status effects, repeat-frame replay. Action Constants 0x00–0x32, Learned Art Constant slots (with character-specific holes), Art Anim Data slot table, Miracle / Super Art trigger tables. <code>crates/art</code>.</div>
     </a>
   </div>

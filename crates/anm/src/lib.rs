@@ -1,4 +1,4 @@
-//! Legaia ANM (asset type 0x06) — animation pack container.
+//! Legaia ANM (asset type 0x06) - animation pack container.
 //!
 //! ## Format (in RAM, post-load)
 //!
@@ -10,7 +10,7 @@
 //! ...record bytes, packed back-to-back...
 //! ```
 //!
-//! The byte offsets in the table are *relative to the payload base* —
+//! The byte offsets in the table are *relative to the payload base* -
 //! same as the count u32 itself. Record `i` lives at
 //! `payload[byte_offset[i] .. byte_offset[i+1]]`, with the last record
 //! extending to the payload end.
@@ -22,10 +22,10 @@
 //! before the payload:
 //!
 //! ```text
-//! +0x00  back_ptr        (RAM ptr — usually base - 0xC or similar)
+//! +0x00  back_ptr        (RAM ptr - usually base - 0xC or similar)
 //! +0x04  forward_ptr     (RAM ptr to next allocation)
-//! +0x08  forward_ptr_2   (RAM ptr — sometimes 0)
-//! +0x0C  expanded_size   (u32 — total allocated bytes including the
+//! +0x08  forward_ptr_2   (RAM ptr - sometimes 0)
+//! +0x0C  expanded_size   (u32 - total allocated bytes including the
 //!                         preamble's worth of slack? exact convention
 //!                         TBC; in observed dumps it's `payload_size`)
 //! +0x10  -- payload starts here --
@@ -41,9 +41,9 @@
 //!
 //! ```text
 //! u16 a       // varies (e.g. 0x0A, 0x06, 0x02)
-//! u16 b       // varies (e.g. 0x1E, 0x14, 0x28) — likely frame count
+//! u16 b       // varies (e.g. 0x1E, 0x14, 0x28) - likely frame count
 //! u16 marker1 // = 0x080C in every record observed
-//! u16 marker2 // = 0x0002 (or 0x0004) — sub-format selector
+//! u16 marker2 // = 0x0002 (or 0x0004) - sub-format selector
 //! ```
 //!
 //! For records consumed via animation opcode `0x06` (the bulk of retail
@@ -55,16 +55,16 @@
 //!
 //! ```text
 //! +0..+8                     header (a, b, marker1, marker2)
-//! +8..+(8 + 8*N)             per-bone OUTPUT slots — written by the tick
+//! +8..+(8 + 8*N)             per-bone OUTPUT slots - written by the tick
 //!                             (8 bytes per bone: packed pos+rot deltas)
-//! +(8 + 8*N)..+(8 + 32*N)    per-bone KEYFRAME data — read by the tick
+//! +(8 + 8*N)..+(8 + 32*N)    per-bone KEYFRAME data - read by the tick
 //!                             (24 bytes per bone = 12 little-endian i16
 //!                              shorts: src_pos.xyz, dst_pos.xyz,
 //!                              src_rot.xyz, dst_rot.xyz)
 //! ```
 //!
 //! The tick reads the 12 shorts, multiplies the `(dst - src)` deltas by
-//! `actor[+0x22]` (the per-actor interpolation factor — driven from the
+//! `actor[+0x22]` (the per-actor interpolation factor - driven from the
 //! field-VM frame counter), and writes the resulting 8 packed bytes back
 //! into the OUTPUT slots. See [`KeyframeReader`] for the typed accessor.
 //!
@@ -113,7 +113,7 @@ pub const RECORD_HEADER_SIZE: usize = 8;
 pub const RECORD_MARKER_1: u16 = 0x080C;
 
 /// Observed values of the flag/variant u16 at record header `+6..+8`.
-/// Not constant — looks like a sub-format selector. Title+town corpus:
+/// Not constant - looks like a sub-format selector. Title+town corpus:
 /// `0x0002` (78%) and `0x0004` (22%).
 pub const RECORD_FLAG_VALUES: &[u16] = &[0x0002, 0x0004];
 
@@ -273,14 +273,14 @@ pub fn parse(payload: &[u8]) -> Result<AnmPack> {
 /// One record's parsed common header.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct RecordHeader {
-    /// First u16 — varies (3..14 observed). Possibly a record kind / opcode.
+    /// First u16 - varies (3..14 observed). Possibly a record kind / opcode.
     pub a: u16,
-    /// Second u16 — varies (typically a small count, 0..40). Likely the
+    /// Second u16 - varies (typically a small count, 0..40). Likely the
     /// frame count or duration of the animation.
     pub b: u16,
-    /// Fixed format marker — `RECORD_MARKER_1` in every observed record.
+    /// Fixed format marker - `RECORD_MARKER_1` in every observed record.
     pub marker_1: u16,
-    /// Variant/flag selector — `0x0002` or `0x0004` observed.
+    /// Variant/flag selector - `0x0002` or `0x0004` observed.
     pub flag: u16,
     /// `true` iff `marker_1 == RECORD_MARKER_1`.
     pub marker_ok: bool,
@@ -317,7 +317,7 @@ pub fn record_bytes<'a>(payload: &'a [u8], rec: &RecordRange) -> &'a [u8] {
     &payload[rec.offset..rec.offset + rec.size]
 }
 
-/// Per-bone keyframe entry — the 24-byte block the actor tick reads for
+/// Per-bone keyframe entry - the 24-byte block the actor tick reads for
 /// each bone. Twelve `i16` shorts: source pose (pos.xyz + rot.xyz) plus
 /// target pose. The runtime computes `(dst - src) * factor` to drive the
 /// interpolation between the two poses.
@@ -390,7 +390,7 @@ impl BoneKeyframe {
 pub struct KeyframeReader<'a> {
     /// Backing record bytes (full record including header).
     record: &'a [u8],
-    /// Bone count — supplied by the caller (the actor tick reads this
+    /// Bone count - supplied by the caller (the actor tick reads this
     /// from the mesh context).
     bone_count: usize,
     /// Byte offset where the keyframe table begins.
@@ -474,7 +474,7 @@ impl<'a> KeyframeReader<'a> {
 /// bytes after the 8-byte common header).
 ///
 /// The per-record bytecode interpreter is not statically reachable in
-/// `SCUS_942.54` — `FUN_80024CFC` is the public entry point but it just
+/// `SCUS_942.54` - `FUN_80024CFC` is the public entry point but it just
 /// stows the per-record bytecode pointer in `actor[+0x4C]` and lets a
 /// per-frame actor tick consume it (the actual dispatcher hasn't been
 /// captured yet). Until then, this histogram surfaces the byte
@@ -621,7 +621,7 @@ mod tests {
     fn rejects_offset_inside_table() {
         let mut buf = Vec::new();
         buf.extend_from_slice(&1u32.to_le_bytes()); // count = 1
-        buf.extend_from_slice(&4u32.to_le_bytes()); // offset = 4 — points INTO table
+        buf.extend_from_slice(&4u32.to_le_bytes()); // offset = 4 - points INTO table
         buf.extend_from_slice(&[0xAA; 16]);
         assert!(parse(&buf).is_err());
     }

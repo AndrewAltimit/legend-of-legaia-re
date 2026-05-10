@@ -1,6 +1,6 @@
 //! Smoke test that loads the real extracted dialog font from
 //! `extracted/font/` if present. Skips and passes when the artifacts aren't
-//! on disk — same gating pattern as the disc-dependent integration tests so
+//! on disk - same gating pattern as the disc-dependent integration tests so
 //! CI doesn't need redistributed Sony bytes.
 
 use legaia_font::{COLS, Font, GLYPH_H, GLYPH_W, LINE_HEIGHT, ROWS};
@@ -22,7 +22,7 @@ fn extracted_root() -> Option<PathBuf> {
 #[test]
 fn loads_real_extracted_font_or_skips() {
     let Some(root) = extracted_root() else {
-        eprintln!("extracted/font not present — skipping");
+        eprintln!("extracted/font not present - skipping");
         return;
     };
     let font = Font::load_from_extracted(&root).expect("load extracted font");

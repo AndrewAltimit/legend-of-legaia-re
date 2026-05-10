@@ -3,7 +3,7 @@
 //! `FUN_801D6628` lives in the title-screen / field overlay loaded into the
 //! `0x801C0000+` window at runtime (see `docs/tooling/overlay-capture.md`). It is
 //! the first script VM identified in retail Legaia. It is small (612 bytes,
-//! 13 opcodes, 68 callers) and well-bounded — the smallest target we have for
+//! 13 opcodes, 68 callers) and well-bounded - the smallest target we have for
 //! a runtime-faithful port.
 //!
 //! ## Bytecode layout
@@ -12,8 +12,8 @@
 //!
 //! ```text
 //!   byte 0:  opcode
-//!   byte 1:  operand_b — typically an actor id
-//!   bytes 2-3: operand_w — little-endian u16, typically a packed (x, y)
+//!   byte 1:  operand_b - typically an actor id
+//!   bytes 2-3: operand_w - little-endian u16, typically a packed (x, y)
 //! ```
 //!
 //! Execution stops on opcode `0x00`. Opcodes outside the `1..=0xD` valid range
@@ -50,14 +50,14 @@
 //!   y =  operand_w       & 0xFF
 //! ```
 //!
-//! Note the `0x1FE` mask — `x` is even-aligned at 9-bit precision. This matches
+//! Note the `0x1FE` mask - `x` is even-aligned at 9-bit precision. This matches
 //! how the runtime quantises actor positions in field coordinates.
 //!
 //! ## Clean-room boundary
 //!
 //! No bytes from `SCUS_942.54` or any overlay live in this crate. The Ghidra
 //! decompilation is the *spec*, not source. The `Host` trait abstracts every
-//! call the original made into the SCUS sprite engine — implementations of
+//! call the original made into the SCUS sprite engine - implementations of
 //! that trait belong to the engine layer.
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
@@ -84,7 +84,7 @@ pub const INSN_SIZE: usize = 4;
 /// Decoded instruction.
 ///
 /// `opcode` is kept as the raw byte rather than the [`Opcode`] enum so that
-/// reserved-range / out-of-range bytes round-trip identically — the runtime
+/// reserved-range / out-of-range bytes round-trip identically - the runtime
 /// treats `0x0B`..`0xFF` the same as `0x07` (no-op fall-through).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Insn {
@@ -197,10 +197,10 @@ impl std::error::Error for VmError {}
 ///
 /// Each method documents the SCUS function it replaces. Implementations live
 /// in the engine layer (eventually `crates/engine-core` or a sibling) and are
-/// free to back actors with whatever data structure makes sense — the VM
+/// free to back actors with whatever data structure makes sense - the VM
 /// itself never inspects actor state, only invokes these queries.
 pub trait Host {
-    /// Equivalent of `FUN_80035334(actor_id)` — does this actor currently
+    /// Equivalent of `FUN_80035334(actor_id)` - does this actor currently
     /// have an active sprite/state?
     fn actor_exists(&self, actor_id: u8) -> bool;
 
@@ -213,30 +213,30 @@ pub trait Host {
     /// (extracted asset, scene config, ...) and not from the executable.
     fn default_position(&self, actor_id: u8) -> Position;
 
-    /// Equivalent of `FUN_800326ac(actor_id, table_entry_ptr)` — spawn the
+    /// Equivalent of `FUN_800326ac(actor_id, table_entry_ptr)` - spawn the
     /// actor at its default position. Called when [`actor_exists`] returns
     /// `false` and we need the actor to come into existence.
     ///
     /// [`actor_exists`]: Host::actor_exists
     fn spawn(&mut self, actor_id: u8, default_position: Position);
 
-    /// Equivalent of `FUN_800357fc(actor_id, x, y)` — snap actor position.
+    /// Equivalent of `FUN_800357fc(actor_id, x, y)` - snap actor position.
     fn set_position(&mut self, actor_id: u8, position: Position);
 
-    /// Equivalent of `FUN_800358c0(actor_id, x, y)` — start a motion / glide
+    /// Equivalent of `FUN_800358c0(actor_id, x, y)` - start a motion / glide
     /// to the supplied position.
     fn start_motion(&mut self, actor_id: u8, target: Position);
 
-    /// Equivalent of `FUN_80035978(actor_id)` — delete the sprite associated
+    /// Equivalent of `FUN_80035978(actor_id)` - delete the sprite associated
     /// with this actor.
     fn delete_sprite(&mut self, actor_id: u8);
 
-    /// Equivalent of `FUN_80035a4c()` — tick whatever global sprite-system
+    /// Equivalent of `FUN_80035a4c()` - tick whatever global sprite-system
     /// state advances per VM `GlobalUpdate` instruction.
     fn global_update(&mut self);
 
-    /// Equivalent of `FUN_800319a8(actor_id)` — trigger the actor's effect
-    /// (visual flash / ripple / spawn sound — the original handler is in the
+    /// Equivalent of `FUN_800319a8(actor_id)` - trigger the actor's effect
+    /// (visual flash / ripple / spawn sound - the original handler is in the
     /// effect subsystem, undecoded so far).
     fn actor_effect(&mut self, actor_id: u8);
 
@@ -263,7 +263,7 @@ pub trait Host {
 
     /// Read the motion target used by `EffectMotion`.
     ///
-    /// In the original, this is `(subobj[+0xA], subobj[+0xC])` — the same
+    /// In the original, this is `(subobj[+0xA], subobj[+0xC])` - the same
     /// pair tested in [`Host::snap_clear_condition`]. Returning `None` skips
     /// the effect+motion entirely (the original branched out via
     /// `beq a2, zero, ...` on a null subobj pointer).
@@ -303,7 +303,7 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
     let packed = insn.packed_position();
 
     match insn.opcode {
-        // 0x01 — SpawnDefault.
+        // 0x01 - SpawnDefault.
         // Ensure actor exists, snap to its default position, then conditionally
         // clear field20 based on subobj equality.
         0x01 => {
@@ -316,7 +316,7 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
                 host.clear_field_20(actor_id);
             }
         }
-        // 0x02 — SpawnAt: ensure actor exists, snap to packed operand_w.
+        // 0x02 - SpawnAt: ensure actor exists, snap to packed operand_w.
         0x02 => {
             let default = host.default_position(actor_id);
             if !host.actor_exists(actor_id) {
@@ -324,25 +324,25 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
             }
             host.set_position(actor_id, packed);
         }
-        // 0x03 — SetField1d: write low byte of operand_w to actor field1d.
+        // 0x03 - SetField1d: write low byte of operand_w to actor field1d.
         // Original: `*(char *)(iVar4 + 0x1d) = (char)*puVar6`, where puVar6
-        // is the u16 at bytes 2..4 — so the WRITTEN byte is bytes[2], not
+        // is the u16 at bytes 2..4 - so the WRITTEN byte is bytes[2], not
         // operand_b.
         0x03 if host.actor_exists(actor_id) => {
             host.set_field_1d(actor_id, (insn.operand_w & 0xFF) as u8);
         }
-        // 0x04 — DeleteSprite: unconditional delete (no exists check).
+        // 0x04 - DeleteSprite: unconditional delete (no exists check).
         0x04 => host.delete_sprite(actor_id),
-        // 0x05 — GlobalUpdate: tick global sprite system, ignore operands.
+        // 0x05 - GlobalUpdate: tick global sprite system, ignore operands.
         0x05 => host.global_update(),
-        // 0x06 — ClearField20: only act if actor exists.
+        // 0x06 - ClearField20: only act if actor exists.
         0x06 if host.actor_exists(actor_id) => host.clear_field_20(actor_id),
-        // 0x07 — Nop. (Case 7 explicitly falls through to the default in the
+        // 0x07 - Nop. (Case 7 explicitly falls through to the default in the
         // original switch.)
         0x07 => {}
-        // 0x08 — Effect: unconditional actor effect.
+        // 0x08 - Effect: unconditional actor effect.
         0x08 => host.actor_effect(actor_id),
-        // 0x09 — MotionAt: ensure actor exists, motion to packed operand_w
+        // 0x09 - MotionAt: ensure actor exists, motion to packed operand_w
         // (or to default position if operand_w == 0).
         0x09 => {
             let default = host.default_position(actor_id);
@@ -352,7 +352,7 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
             let target = if insn.operand_w == 0 { default } else { packed };
             host.start_motion(actor_id, target);
         }
-        // 0x0A — EffectMotion: capture subobj-derived target, fire effect,
+        // 0x0A - EffectMotion: capture subobj-derived target, fire effect,
         // respawn (overwrites position with default), then motion to target.
         // No-op if the actor (or its subobj target) is missing.
         0x0A => {
@@ -362,7 +362,7 @@ fn execute<H: Host>(host: &mut H, insn: Insn) {
                 host.start_motion(actor_id, target);
             }
         }
-        // 0x0B..=0xFF — reserved / out-of-range; runtime falls through.
+        // 0x0B..=0xFF - reserved / out-of-range; runtime falls through.
         _ => {}
     }
 }
@@ -508,7 +508,7 @@ mod tests {
     fn spawn_default_when_actor_missing_runs_full_sequence() {
         let mut host = RecHost::default();
         host.defaults.insert(7, Position::new(100, 50));
-        // Don't insert into existing_actors — exists check returns false.
+        // Don't insert into existing_actors - exists check returns false.
         let bc = program(&[Insn {
             opcode: 0x01,
             operand_b: 7,
@@ -583,14 +583,14 @@ mod tests {
     fn set_field_1d_writes_operand_w_low_byte_only_when_actor_exists() {
         let mut host = RecHost::default();
         host.existing_actors.insert(5);
-        // operand_w = 0xFFAB — low byte 0xAB is what gets written.
+        // operand_w = 0xFFAB - low byte 0xAB is what gets written.
         let bc = program(&[
             Insn {
                 opcode: 0x03,
                 operand_b: 5,
                 operand_w: 0xFFAB,
             },
-            // Same opcode targeting a missing actor — should be a no-op.
+            // Same opcode targeting a missing actor - should be a no-op.
             Insn {
                 opcode: 0x03,
                 operand_b: 6,
@@ -605,7 +605,7 @@ mod tests {
                 Event::Exists(5),
                 Event::SetField1d(5, 0xAB),
                 Event::Exists(6),
-                // No SetField1d for actor 6 — exists returned false.
+                // No SetField1d for actor 6 - exists returned false.
             ]
         );
     }

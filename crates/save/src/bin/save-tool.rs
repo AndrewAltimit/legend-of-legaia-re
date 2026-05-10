@@ -1,4 +1,4 @@
-//! `save-tool` — read PSX memory-card images, surface Legaia save
+//! `save-tool` - read PSX memory-card images, surface Legaia save
 //! blocks, and parse the per-character record region.
 
 use std::path::PathBuf;
@@ -55,7 +55,7 @@ enum Cmd {
         block: Option<u8>,
         #[arg(long, default_value_t = 0)]
         offset: usize,
-        /// Number of characters to read (default 5 — Legaia's max party).
+        /// Number of characters to read (default 5 - Legaia's max party).
         #[arg(long, default_value_t = 5)]
         count: usize,
     },

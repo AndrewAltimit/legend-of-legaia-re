@@ -1,4 +1,4 @@
-//! "Truncated DATA_FIELD streaming" detector — sister of
+//! "Truncated DATA_FIELD streaming" detector - sister of
 //! [`crate::parse_streaming`] for the case where the leading chunks decode
 //! cleanly but the **last** chunk's declared size walks past EOF (no
 //! terminator chunk on disc).
@@ -24,7 +24,7 @@
 //! the parser walks off the buffer end on the final chunk's declared size.
 //! Real PROT entries matching this layout (`0157_rikuroa`, `0228_station`,
 //! `0373_taiku`) carry a per-scene secondary table in the trailing chunk
-//! whose declared `size` exceeds the remaining file by 4–66 KB — the
+//! whose declared `size` exceeds the remaining file by 4–66 KB - the
 //! runtime extends the chunk via streaming DMA continuation rather than
 //! consuming a literal terminator on disc.
 //!
@@ -80,7 +80,7 @@ pub fn detect(buf: &[u8]) -> Option<DataFieldTruncated> {
         return None;
     }
 
-    // The streaming parser stops *before* consuming the partial chunk —
+    // The streaming parser stops *before* consuming the partial chunk -
     // `bytes_consumed` lands at the start of the final header. Read it
     // manually and verify it walks past EOF.
     let pos = report.bytes_consumed;
@@ -92,20 +92,20 @@ pub fn detect(buf: &[u8]) -> Option<DataFieldTruncated> {
     let type_byte = ((header >> 24) & 0xFF) as u8;
     let size = header & 0x00FF_FFFF;
 
-    // The final chunk's type must also be known — otherwise this is just
+    // The final chunk's type must also be known - otherwise this is just
     // a busted streaming buffer with garbage in the middle.
     if matches!(AssetType::from_byte(type_byte), AssetType::Unknown(_)) {
         return None;
     }
     if size == 0 {
-        // Terminator — streaming would have completed cleanly. Shouldn't
+        // Terminator - streaming would have completed cleanly. Shouldn't
         // happen because `report.terminated == false`, but guard anyway.
         return None;
     }
 
     let body_end = pos + 4 + size as usize;
     if body_end <= buf.len() {
-        // Fits — wouldn't be the truncated case.
+        // Fits - wouldn't be the truncated case.
         return None;
     }
 

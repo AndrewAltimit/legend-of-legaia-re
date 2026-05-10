@@ -11,7 +11,7 @@
 //! What this does NOT model:
 //!
 //! - Pitch modulation, noise mode, FM. None of these are used by Legaia
-//!   (verified against the libspu calls in the SCUS dumps — `SpuSetPitch`
+//!   (verified against the libspu calls in the SCUS dumps - `SpuSetPitch`
 //!   is the only pitch path, `SpuSetVoiceAttr` writes only sample addr +
 //!   ADSR + volume).
 //!
@@ -21,7 +21,7 @@
 //! presets covering the 9 standard PSX modes plus Off. Routing is
 //! per-voice: set [`Voice::reverb_send`] to opt a voice into the wet
 //! signal (libspu `SpuSetVoiceReverb` analogue). The retail SPU's
-//! register-level reverb topology is not reproduced — the goal is a
+//! register-level reverb topology is not reproduced - the goal is a
 //! perceptible echo tail for Spirit Arts, not bit-accuracy.
 //!
 //! See `docs/subsystems/audio.md` "engine-audio model" for the consumer.
@@ -54,7 +54,7 @@ pub struct Spu {
     /// with `reverb_send = true` route their output through this; the wet
     /// signal is mixed back into the master in [`Spu::tick`].
     pub reverb: Reverb,
-    /// Last raw `reverb_mode` value written by libspu — preserved for
+    /// Last raw `reverb_mode` value written by libspu - preserved for
     /// debugging / tooling. The active mode in the [`Reverb`] processor
     /// is set via [`Spu::set_reverb_mode`].
     pub reverb_mode_raw: u32,
@@ -106,7 +106,7 @@ impl Spu {
         self.reverb.set_mode(mode);
     }
 
-    /// libspu `SpuCommonAttr.reverb` analogue — accepts the raw mode byte
+    /// libspu `SpuCommonAttr.reverb` analogue - accepts the raw mode byte
     /// and updates both the live processor and the bookkeeping register.
     pub fn write_reverb_mode_byte(&mut self, raw: u8) {
         self.reverb_mode_raw = raw as u32;

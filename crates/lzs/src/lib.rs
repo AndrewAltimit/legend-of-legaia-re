@@ -12,7 +12,7 @@
 //!     * copy `length` bytes out of the ring buffer starting at that position;
 //!       each emitted byte is also stored at the current write position, which
 //!       advances mod 4096.
-//! - The decompressed output size is supplied externally — there is no length
+//! - The decompressed output size is supplied externally - there is no length
 //!   prefix or end-of-stream marker.
 //!
 //! `.lzs` *files* are containers: a small u32 header table where pairs at
@@ -29,7 +29,7 @@ pub fn decompress(input: &[u8], expected_output_size: usize) -> Result<Vec<u8>> 
 }
 
 /// Same as [`decompress`] but also returns the number of input bytes consumed.
-/// Useful for validating container sections — a section that consumes more
+/// Useful for validating container sections - a section that consumes more
 /// input bytes than the gap to the next section's offset is mis-parsed.
 pub fn decompress_tracked(input: &[u8], expected_output_size: usize) -> Result<(Vec<u8>, usize)> {
     let mut window = [0u8; WINDOW_SIZE];
@@ -166,7 +166,7 @@ pub fn decompress_container(file: &[u8]) -> Result<Vec<Vec<u8>>> {
 
 /// Decompress every section while validating that each section's input
 /// consumption stays within its gap to the next section's offset. Returns
-/// `Err` if any section overruns or fails to decode — i.e., the file
+/// `Err` if any section overruns or fails to decode - i.e., the file
 /// parsed as a container heuristically but isn't actually a real one.
 ///
 /// Use this to avoid the false-positive trap where the loose
@@ -241,7 +241,7 @@ mod tests {
     fn strict_container_rejects_overrun() {
         // Build a fake container header where section 0 claims to decode
         // 100 bytes but only has 4 input bytes before section 1's offset.
-        // The greedy decoder will read past — strict must reject.
+        // The greedy decoder will read past - strict must reject.
         let mut file = Vec::new();
         // meta: [0, 0]
         file.extend_from_slice(&0u32.to_le_bytes());

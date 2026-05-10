@@ -9,13 +9,13 @@ pick patterns the font shares with random TIM data.
 
 This script tries three search strategies in order:
 
-1. **Direct slice match** — original strategy. Picks 64-byte slices from
+1. **Direct slice match** - original strategy. Picks 64-byte slices from
    regions known to carry glyph data.
-2. **Glyph-row signature match** — extract the 8-byte row signatures
+2. **Glyph-row signature match** - extract the 8-byte row signatures
    for each character cell, search every PROT entry for a long run of
    consecutive matching rows. Survives any byte-level permutation that
    keeps the row layout intact.
-3. **LZS-decompressed match** — for entries the static categorizer marks
+3. **LZS-decompressed match** - for entries the static categorizer marks
    as `LzsContainer` or `Pochi*` filler (most common font carriers in
    the disc layout), LZS-decompress and re-run the slice search against
    the decoded bytes. Requires the `lzs-decode` binary on `PATH` (built
@@ -39,7 +39,7 @@ PROT_DIR = EXTRACTED / "PROT"
 
 
 def slice_probes(font_bytes: bytes) -> list[tuple[int, bytes]]:
-    """Build slice-match probes — fixed offsets, fixed length."""
+    """Build slice-match probes - fixed offsets, fixed length."""
     candidates = [
         (0x600, 64),
         (0x1000, 64),
@@ -68,7 +68,7 @@ def glyph_row_probes(font_bytes: bytes) -> list[tuple[int, bytes]]:
     starting at character byte 0x20 (so cell index `c` corresponds to
     char byte `c+0x20` in the dialog stream). We pick a row of 4 cells
     that all carry heavy data: 'M' (0x4D), 'N' (0x4E), 'O' (0x4F),
-    'P' (0x50) — middle-of-row capital letters.
+    'P' (0x50) - middle-of-row capital letters.
     """
     PAGE_BYTES_PER_ROW = 128
     CELL_BYTES_W = 8
@@ -164,7 +164,7 @@ def main() -> int:
     else:
         print("no raw hits.")
 
-    # LZS pass — best-effort, requires lzs-decode on PATH.
+    # LZS pass - best-effort, requires lzs-decode on PATH.
     if not shutil.which("lzs-decode"):
         print("\nskipping LZS pass: `lzs-decode` not on PATH (build via `cargo build -p legaia-lzs --release` and add target/release to PATH)")
         return 0 if raw_hits else 1
@@ -202,7 +202,7 @@ def main() -> int:
     if raw_hits or lzs_hits:
         return 0
     print(
-        "\nno match in either pass — font is likely uploaded by an overlay-resident\n"
+        "\nno match in either pass - font is likely uploaded by an overlay-resident\n"
         "routine that copies from a buffer the static analysis hasn't classified yet.\n"
         "See docs/formats/dialog-font.md for the trace path."
     )

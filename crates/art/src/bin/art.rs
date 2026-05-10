@@ -1,12 +1,12 @@
-//! `art` CLI — inspect art tables, decode raw RAM bytes, dry-run trigger logic.
+//! `art` CLI - inspect art tables, decode raw RAM bytes, dry-run trigger logic.
 //!
 //! Subcommands:
 //!
-//! - `art tables`            — print per-character art-name + learned-art-slot tables.
-//! - `art constants`         — print the full action-constant table.
-//! - `art parse <PATH>`      — best-effort parse of a raw art record from a binary blob.
-//! - `art miracle <character> <commands>` — try a Miracle Art trigger from a command string.
-//! - `art super <character> <queue-bytes>`  — try a Super Art trigger from queue bytes.
+//! - `art tables`            - print per-character art-name + learned-art-slot tables.
+//! - `art constants`         - print the full action-constant table.
+//! - `art parse <PATH>`      - best-effort parse of a raw art record from a binary blob.
+//! - `art miracle <character> <commands>` - try a Miracle Art trigger from a command string.
+//! - `art super <character> <queue-bytes>`  - try a Super Art trigger from queue bytes.
 //!
 //! Examples:
 //! ```text

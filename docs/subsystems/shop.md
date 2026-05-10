@@ -1,7 +1,7 @@
 # Shop Subsystem
 
 Covers the buy / sell / quantity / confirm flow used whenever the player enters a
-town shop. The shop UI lives inside the **menu overlay** — the same 129-function
+town shop. The shop UI lives inside the **menu overlay** - the same 129-function
 binary that hosts the save screen, inn, and status screens. No separate shop
 overlay exists.
 
@@ -63,11 +63,11 @@ Mutable state for one open shop interaction. Installed on
 | `pending_is_buying` | `bool` | `true` = buy, `false` = sell |
 
 Key methods:
-- `select_buy_item(cursor)` — set `pending_item_id` from buy list cursor
-- `select_sell_item(cursor, sell_items)` — set `pending_item_id` from player inventory
-- `set_quantity(slot)` — `pending_quantity = slot + 1`
-- `try_buy(world_money) -> Option<(item_id, qty, gold_delta)>` — validates affordability; `gold_delta` is negative
-- `try_sell(held_count) -> Option<(item_id, qty, gold_delta)>` — clamps to held quantity; `gold_delta` is positive
+- `select_buy_item(cursor)` - set `pending_item_id` from buy list cursor
+- `select_sell_item(cursor, sell_items)` - set `pending_item_id` from player inventory
+- `set_quantity(slot)` - `pending_quantity = slot + 1`
+- `try_buy(world_money) -> Option<(item_id, qty, gold_delta)>` - validates affordability; `gold_delta` is negative
+- `try_sell(held_count) -> Option<(item_id, qty, gold_delta)>` - clamps to held quantity; `gold_delta` is positive
 
 ## Buy-list render layout
 
@@ -77,15 +77,15 @@ row rendered at a fixed vertical stride:
 
 | Element | X offset (px) | Y stride (px) | Notes |
 |---|---|---|---|
-| Cursor `>` | +0 | — | Drawn only on the selected row |
+| Cursor `>` | +0 | - | Drawn only on the selected row |
 | Item name | +20 (`0x14`) | +14 (`0x0E`) per row | `func_0x80036888` |
 | Price | +112 (`0x70`) | same row | `func_0x80034b78`, 6-digit field |
 | Gold footer | +0 | below last row | `func_0x80034b78`, 8-digit field |
 
 Row colour logic (retail `_DAT_8007b454` palette index):
-- **White** — normal affordable item.
-- **Dim** — item is unaffordable (`price > gold`) or held count exceeds 98.
-- **Blue** — item has an "equipped-comparison" flag set.
+- **White** - normal affordable item.
+- **Dim** - item is unaffordable (`price > gold`) or held count exceeds 98.
+- **Blue** - item has an "equipped-comparison" flag set.
 
 The quantity-selector sub-screen (`FUN_801d5510`) uses the same 14 px line
 height, showing "Have N [item]" + "How many will you buy?" + a quantity×price
@@ -107,7 +107,7 @@ confirmed constants. The cost prompt and Yes/No cursor are rendered in
 - **Quantity cap.** Retail enforces a max held count of 98 per item before
   dimming additional buy attempts; the current port allows unlimited stacking.
 - **Mode-select panel.** The Buy / Sell / Quit selector (`FUN_801d4868`) uses
-  x+20 for text, 14 px line height — same constants as the item list.
+  x+20 for text, 14 px line height - same constants as the item list.
 
 ## Relationship to `legaia_save`
 

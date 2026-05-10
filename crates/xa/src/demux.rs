@@ -123,7 +123,7 @@ impl ChannelStream {
 ///
 /// Sectors with a corrupt subheader (the redundant copy doesn't match)
 /// are skipped silently. Non-audio sectors (data / video / EOF markers)
-/// are also skipped — they're the muxing scaffolding around the audio.
+/// are also skipped - they're the muxing scaffolding around the audio.
 pub fn demux_disc_range(
     disc: &mut RawDisc,
     start_lba: u32,

@@ -1,4 +1,4 @@
-//! Action validator — clean-room port of `FUN_8003fb10`.
+//! Action validator - clean-room port of `FUN_8003fb10`.
 //!
 //! The retail battle / menu UI calls this routine before committing a player
 //! choice ("can party member N use this item / spell on slot M?"). It reads
@@ -34,7 +34,7 @@
 /// One validation request.
 #[derive(Debug, Clone, Copy)]
 pub struct ValidationRequest {
-    /// Outer dispatch arm — `param_1` in the retail signature. Selects which
+    /// Outer dispatch arm - `param_1` in the retail signature. Selects which
     /// validation rule fires. The retail switch table accepts up to 0x83;
     /// values past 0x83 (other than the named arms) decode to "always
     /// invalid."
@@ -50,7 +50,7 @@ pub struct ValidationRequest {
 /// Snapshot of the per-slot stats the validator reads. The host provides one
 /// of these per call; the validator never reads through indirect pointers.
 ///
-/// `hp_max == 0` is the "no record at this slot" sentinel — the validator
+/// `hp_max == 0` is the "no record at this slot" sentinel - the validator
 /// treats it as "always invalid" for that slot.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SlotStats {
@@ -69,7 +69,7 @@ pub struct SlotStats {
 
 /// Cap thresholds the level-up / stat-boost item validator (arm 6) compares
 /// against. The actual retail compares stats to literal `999` / `9999` /
-/// `0x118` / `0x270F` — engines that want different caps override here.
+/// `0x118` / `0x270F` - engines that want different caps override here.
 #[derive(Debug, Clone, Copy)]
 pub struct StatCaps {
     pub hp_max_cap: u16, // 9999 = 0x270F retail
@@ -102,23 +102,23 @@ impl Default for StatCaps {
 /// distinct `cap_*` fields to avoid baking offsets into the validator.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CapStats {
-    /// `+0x6CC` — HP-max-style stat (compared against `hp_max_cap`).
+    /// `+0x6CC` - HP-max-style stat (compared against `hp_max_cap`).
     pub stat_hp_max: u16,
-    /// `+0x6DA` — paired with `stat_a_cap`.
+    /// `+0x6DA` - paired with `stat_a_cap`.
     pub stat_a: u16,
-    /// `+0x6E0` — `stat_b_cap`.
+    /// `+0x6E0` - `stat_b_cap`.
     pub stat_b: u16,
-    /// `+0x6E2` — `stat_c_cap`.
+    /// `+0x6E2` - `stat_c_cap`.
     pub stat_c: u16,
-    /// `+0x6D0` — MP-max-style; compared against `stat_d_cap` (yes, the
-    /// retail mapping is asymmetric — mp_max ends up against stat_d in the
+    /// `+0x6D0` - MP-max-style; compared against `stat_d_cap` (yes, the
+    /// retail mapping is asymmetric - mp_max ends up against stat_d in the
     /// arm-6 walker, not against `mp_max_cap`).
     pub stat_d: u16,
-    /// `+0x6D8` — `anim_cap`.
+    /// `+0x6D8` - `anim_cap`.
     pub stat_anim: u16,
-    /// `+0x6DC` — `stat_e_cap`.
+    /// `+0x6DC` - `stat_e_cap`.
     pub stat_e: u16,
-    /// `+0x6DE` — `stat_e_cap` (final fall-through).
+    /// `+0x6DE` - `stat_e_cap` (final fall-through).
     pub stat_f: u16,
 }
 
@@ -127,7 +127,7 @@ pub struct CapStats {
 /// [`ActionValidatorHost::in_battle`]).
 pub trait ActionValidatorHost {
     /// Read HP / MP / status for `slot`. Returning `None` means the slot is
-    /// unoccupied — the validator treats this as "invalid target".
+    /// unoccupied - the validator treats this as "invalid target".
     fn slot_stats(&self, slot: u8) -> Option<SlotStats>;
 
     /// Cap-stat snapshot for `slot` (arm 6 only). Returning `None` collapses
@@ -155,7 +155,7 @@ pub trait ActionValidatorHost {
         i
     }
 
-    /// `_DAT_8007B83C == 0x15` — the "we're inside a battle" gate. Drives
+    /// `_DAT_8007B83C == 0x15` - the "we're inside a battle" gate. Drives
     /// arm 3 / arm 8's two-path branch. Default `false`.
     fn in_battle(&self) -> bool {
         false
@@ -167,14 +167,14 @@ pub trait ActionValidatorHost {
         0
     }
 
-    /// `FUN_8003CE64(flag_id)` — the system-flag query at `_DAT_80086D70`.
+    /// `FUN_8003CE64(flag_id)` - the system-flag query at `_DAT_80086D70`.
     /// Returns true when bit `flag_id` is set. Arm 0x80 queries 5; arm 0x81
     /// queries 6. Default `false`.
     fn system_flag_test(&self, _flag_id: u8) -> bool {
         false
     }
 
-    /// `FUN_80046898()` — the item-count / capture-shop validator. Arm 0x82
+    /// `FUN_80046898()` - the item-count / capture-shop validator. Arm 0x82
     /// returns whatever this returns directly. Default `0`.
     fn external_validator(&mut self) -> u32 {
         0
@@ -361,7 +361,7 @@ pub fn validate<H: ActionValidatorHost + ?Sized>(host: &mut H, req: ValidationRe
             *host.target_valid_bits() = 7;
             true
         }
-        // Arms 0xB / 0xC / 0xD: per-slot exact-match — only valid when
+        // Arms 0xB / 0xC / 0xD: per-slot exact-match - only valid when
         // `slot == arm - 0xB` (slots 0/1/2). Sets the bitmask to that single
         // slot bit.
         0x0B..=0x0D => {
@@ -1014,7 +1014,7 @@ mod tests {
     #[test]
     fn arm_81_uses_distinct_flags() {
         let mut h = TestHost::with_slots(8);
-        h.story_flags = 0x100000; // arm 0x80 only — 0x81 ignores this.
+        h.story_flags = 0x100000; // arm 0x80 only - 0x81 ignores this.
         assert!(validate(
             &mut h,
             ValidationRequest {

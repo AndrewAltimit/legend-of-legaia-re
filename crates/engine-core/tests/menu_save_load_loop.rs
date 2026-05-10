@@ -36,7 +36,7 @@ struct SaveFlowHost<'a> {
     serialised: Vec<u8>,
     /// State byte the host wants ctx to take next frame (separate from
     /// ctx.state because step()'s default arm doesn't allow the host to
-    /// directly mutate state — we patch ctx.state outside step()).
+    /// directly mutate state - we patch ctx.state outside step()).
     next_state: Option<u8>,
 }
 
@@ -122,7 +122,7 @@ fn menu_save_flow_serialises_world_party() {
     }
     assert_eq!(ctx.state, MenuState::SavePickSlot.as_byte());
 
-    // Cross on SavePickSlot — captures the save bytes.
+    // Cross on SavePickSlot - captures the save bytes.
     step(
         &mut host,
         &mut ctx,

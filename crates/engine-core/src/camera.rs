@@ -1,15 +1,15 @@
 //! Per-scene camera controller.
 //!
 //! Consumes the field-VM op-`0x45` event stream (Configure / Save / Load /
-//! Apply — see [`crate::field_events::FieldEvent`]) and projects a target
+//! Apply - see [`crate::field_events::FieldEvent`]) and projects a target
 //! actor's world position into a screen-space view. Engines plug the result
 //! into [`legaia_engine_render`] each frame.
 //!
 //! Two layers:
 //!
-//! - [`CameraState`] (in [`crate::world`]) — the raw scratch the field VM
+//! - [`CameraState`] (in [`crate::world`]) - the raw scratch the field VM
 //!   reads / writes. Holds the most recent op-`0x45` payloads.
-//! - [`Camera`] (here) — the *runtime* camera. Reads `CameraState`, layers
+//! - [`Camera`] (here) - the *runtime* camera. Reads `CameraState`, layers
 //!   in a follow target, and exposes a `(eye, look_at)` pair plus a yaw /
 //!   pitch the renderer can use to build a view matrix.
 //!
@@ -22,18 +22,18 @@ use crate::field_events::FieldEvent;
 use crate::world::World;
 use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
 
-/// Camera mode — controls how the camera derives its `eye` from the
+/// Camera mode - controls how the camera derives its `eye` from the
 /// world / scene state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CameraMode {
-    /// Follow a specific actor slot (default — slot 0 = player).
+    /// Follow a specific actor slot (default - slot 0 = player).
     #[default]
     Follow,
-    /// Held at the last `Apply` payload — engine expects the field VM to
+    /// Held at the last `Apply` payload - engine expects the field VM to
     /// keep ticking it via op `0x45`. Useful for cutscenes that pre-bake
     /// camera paths.
     Cinematic,
-    /// Static — no per-frame motion. Useful for menus, title screen.
+    /// Static - no per-frame motion. Useful for menus, title screen.
     Static,
 }
 
@@ -64,7 +64,7 @@ pub struct Camera {
     /// Internal motion-VM state used for cinematic / scripted paths. Driven
     /// by [`Camera::tick_script`].
     pub motion_state: MotionState,
-    /// Latest cinematic target — set when an op `0x45` apply event fires.
+    /// Latest cinematic target - set when an op `0x45` apply event fires.
     pub motion_target: MotionTarget,
 }
 
@@ -151,7 +151,7 @@ impl Camera {
     }
 
     /// Per-frame tick. Reads the world to update `eye` / `look_at` based on
-    /// `mode`. Pure function over the world — engines call after
+    /// `mode`. Pure function over the world - engines call after
     /// [`World::tick`] each frame.
     ///
     /// [`World::tick`]: crate::world::World::tick
@@ -177,14 +177,14 @@ impl Camera {
                 }
             }
             CameraMode::Static | CameraMode::Cinematic => {
-                // No per-frame motion — keep eye/look_at at whatever the last
+                // No per-frame motion - keep eye/look_at at whatever the last
                 // event configured.
             }
         }
     }
 
     /// Drive the cinematic motion script for one tick. Optional layer above
-    /// [`Camera::tick`] — engines that want to pre-bake camera paths upload
+    /// [`Camera::tick`] - engines that want to pre-bake camera paths upload
     /// motion-VM bytecode and call this each frame.
     pub fn tick_script(&mut self, bytecode: &[u8]) -> StepResult {
         step(&mut self.motion_state, self.motion_target, bytecode)

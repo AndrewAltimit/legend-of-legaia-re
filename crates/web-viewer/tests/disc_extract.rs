@@ -1,6 +1,6 @@
 //! Verify the WASM viewer's in-memory disc walker can extract PROT.DAT from
 //! a real Mode2/2352 disc image. Skipped (passes) when LEGAIA_DISC_BIN is unset
-//! — same gating pattern as `crates/iso/tests/disc_pipeline.rs`.
+//! - same gating pattern as `crates/iso/tests/disc_pipeline.rs`.
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -48,7 +48,7 @@ fn extract_prot_dat_from_real_disc() {
     );
 
     // Count entries that have a parseable TMD via the scene_tmd_stream
-    // detector — should be the ~148 scene_tmd_stream entries documented.
+    // detector - should be the ~148 scene_tmd_stream entries documented.
     let mut tmd_count = 0;
     let mut total_tris: usize = 0;
     let mut total_verts: usize = 0;

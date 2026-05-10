@@ -70,10 +70,10 @@ pub struct ParsedArtRecord {
 /// Best-effort decode of the opening section of an art record.
 ///
 /// Reads:
-/// 1. Command sequence — bytes `1..=4` until a `0` terminator (max 16
+/// 1. Command sequence - bytes `1..=4` until a `0` terminator (max 16
 ///    commands as a defensive cap; real arts have ≤ 16).
-/// 2. Action constant — single byte, must be in `0x1B..=0x32`.
-/// 3. Animation index — single byte (`anim_index`).
+/// 2. Action constant - single byte, must be in `0x1B..=0x32`.
+/// 3. Animation index - single byte (`anim_index`).
 ///
 /// Everything past field (3) is left in `tail` for callers that have more
 /// detailed knowledge (e.g. parser for a specific PROT entry whose layout
@@ -100,7 +100,7 @@ pub fn parse_record(bytes: &[u8]) -> Result<ParsedArtRecord, ParseError> {
         };
         commands.push(cmd);
         if commands.len() >= cmd_cap {
-            // Reached defensive cap without terminator — assume the
+            // Reached defensive cap without terminator - assume the
             // sequence ends here.
             break;
         }

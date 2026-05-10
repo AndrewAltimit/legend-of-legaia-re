@@ -1,14 +1,14 @@
 //! Per-scene encounter-table registry.
 //!
 //! Each retail field scene carries its own `battle_data` PROT-entry payload
-//! that holds the encounter table — formation ids + weights + trigger rate +
+//! that holds the encounter table - formation ids + weights + trigger rate +
 //! per-scene tweaks. The exact on-disc offset of the table inside
 //! `0865_battle_data` (a 15.99 MB TIM-pack-shaped bundle) is not yet pinned;
 //! the runtime resolver lives in an overlay slice that reads through a
 //! pointer populated at scene-load time. Cracking it requires a
 //! `mednafen-state diff` over the encounter-state RAM window
 //! (`0x801C9300..0x801CA000`) on a save-state pair captured immediately
-//! before vs. immediately after a battle trigger — see the
+//! before vs. immediately after a battle trigger - see the
 //! `crates/mednafen` toolkit and `scripts/mednafen/scenarios.toml`.
 //!
 //! Until the disc-side resolver lands, this registry lets engines compose
@@ -28,7 +28,7 @@
 //!   register it as an exact-label match; this becomes the source of truth
 //!   for that label and ignores the substring fallbacks.
 //!
-//! Pure data — no Vfs / disc / world coupling. Compose from the engine
+//! Pure data - no Vfs / disc / world coupling. Compose from the engine
 //! shell once the per-scene tables are known.
 
 use crate::encounter::EncounterTable;
@@ -118,8 +118,9 @@ impl EncounterRegistry {
 
 /// Vanilla scene-pattern registry the engine ships at boot.
 ///
-/// Mirrors the early-game encounter mix observed during the mc1 → mc3 area
-/// transitions. Towns and world-map scenes are explicitly suppressed; field
+/// Mirrors the early-game encounter mix observed across the captured area-
+/// transition save pairs. Towns and world-map scenes are explicitly
+/// suppressed; field
 /// scenes (containing `"map"`, `"outskirts"`, `"forest"`, `"cave"`,
 /// `"snake"` etc.) get the default early-encounter table.
 pub fn vanilla_encounter_registry() -> EncounterRegistry {
@@ -248,7 +249,7 @@ mod tests {
     #[test]
     fn vanilla_registry_falls_through_when_no_match() {
         let r = vanilla_encounter_registry();
-        // No pattern, no default — None.
+        // No pattern, no default - None.
         assert!(r.resolve("xxx_unknown_scene").is_none());
     }
 

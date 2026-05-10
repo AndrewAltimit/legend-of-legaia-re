@@ -1,10 +1,10 @@
-//! "Scene asset table" detector — the canonical 7-typed-asset bundle shape.
+//! "Scene asset table" detector - the canonical 7-typed-asset bundle shape.
 //!
 //! ### Provenance
 //!
 //! Round-21 cluster characterisation (2026-05-04) found that **80 PROT entries
 //! lead with the literal 4-byte `07 00 00 00`** and decode as
-//! `parse_player_lzs(buf, 7)`-style descriptor tables — a fixed 7-asset
+//! `parse_player_lzs(buf, 7)`-style descriptor tables - a fixed 7-asset
 //! bundle whose descriptor types form the canonical scene-asset sequence
 //! `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` = `(1, 2, 3, 4, 5, 6, 7)`.
 //!
@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! +0x00   u32  count = 7              ; literal `07 00 00 00`
-//! +0x04   u32  meta1                  ; varies — not a file-relative offset
+//! +0x04   u32  meta1                  ; varies - not a file-relative offset
 //! +0x08   7 × (u32 type_size, u32 data_offset)
 //!                                     ; each pair packs `(type<<24)|size`
 //!                                     ; first descriptor's `data_offset` = 0x40
@@ -30,13 +30,13 @@
 //! | `(10, 2, 3, 4, 5, 6, 7)`       | 1     | Leading `Flag(0xA)` sentinel. |
 //! | `(1, 2, 3, 4, 6, 7, 0x14)`     | 1     | Skips Move. |
 //!
-//! All tuples consist of legal asset-type bytes ∈ `{0x00..=0x14}` — none
+//! All tuples consist of legal asset-type bytes ∈ `{0x00..=0x14}` - none
 //! contain unknown types. The first descriptor's `data_offset` is **always**
 //! `0x40` (= `8 + 7*8`, the byte after the header).
 //!
 //! ### Detection strategy
 //!
-//! Strict structural check — no LZS-decode requirement, so the detector
+//! Strict structural check - no LZS-decode requirement, so the detector
 //! captures both the LZS-payload variants and the raw-payload variants
 //! uniformly:
 //!
@@ -51,7 +51,7 @@
 //! ### Coverage impact
 //!
 //! Promotes 80 entries to `Class::SceneAssetTable`. Of those, 26 were
-//! previously classed `lzs_container` (with `n=1` — a coincidental match
+//! previously classed `lzs_container` (with `n=1` - a coincidental match
 //! because the `n=1` branch only validated the *first* descriptor), 43 were
 //! `unknown_high_entropy`, and 11 were `unknown_other`. Net named-format
 //! coverage change: **+54 entries** (the 26 lzs_container ones were already
@@ -64,18 +64,18 @@ use serde::Serialize;
 
 use crate::AssetType;
 
-/// Literal lead u32 — `07 00 00 00`.
+/// Literal lead u32 - `07 00 00 00`.
 const HEADER_COUNT: u32 = 7;
 
-/// `8 + 7 * 8` — the byte after the descriptor table.
+/// `8 + 7 * 8` - the byte after the descriptor table.
 const HEADER_END: u32 = 8 + (HEADER_COUNT * 8);
 
-/// Per-asset size cap. Real entries top out at ~3 MB — 4 MB leaves headroom.
+/// Per-asset size cap. Real entries top out at ~3 MB - 4 MB leaves headroom.
 const MAX_ASSET_SIZE: u32 = 4 * 1024 * 1024;
 
 /// Cap on the magnitude of `data_offset` for descriptors past the first.
 /// **Important:** descriptor offsets past the first are *not* file-relative
-/// byte offsets — they reference positions within a runtime-allocated
+/// byte offsets - they reference positions within a runtime-allocated
 /// decompression buffer (the loader's working RAM). Empirically these top
 /// out around 0x80000 (512 KB). 16 MB is a defensive cap that rejects
 /// pointer-shaped values like `0x801C0000` while accepting all real scene
@@ -98,7 +98,7 @@ impl SceneAssetTable {
     ///
     /// In every observed scene with a `scene_asset_table` shape, the Move
     /// descriptor is at index 4. Each per-scene CDNAME block's
-    /// `slot+1` PROT entry sources that scene's per-area `move.mdt` —
+    /// `slot+1` PROT entry sources that scene's per-area `move.mdt` -
     /// this is what populates `_DAT_8007B888` (the move-table base
     /// pointer read by `FUN_800204F8`) when the scene loads.
     pub fn move_descriptor(&self) -> Option<&DescriptorRecord> {
@@ -236,14 +236,14 @@ mod tests {
 
     #[test]
     fn detects_variant_with_flag_sentinel() {
-        // (1, 3, 4, 5, 6, 7, 0x14) — 7 entries observed in the corpus.
+        // (1, 3, 4, 5, 6, 7, 0x14) - 7 entries observed in the corpus.
         let buf = synth([1, 3, 4, 5, 6, 7, 0x14], 0x10000);
         assert!(detect(&buf).is_some());
     }
 
     #[test]
     fn detects_leading_flag_variant() {
-        // (10, 2, 3, 4, 5, 6, 7) — 1 entry observed.
+        // (10, 2, 3, 4, 5, 6, 7) - 1 entry observed.
         let buf = synth([10, 2, 3, 4, 5, 6, 7], 0x10000);
         assert!(detect(&buf).is_some());
     }
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn rejects_oversized_asset() {
         let mut buf = synth([1, 2, 3, 4, 5, 6, 7], 0x10000);
-        // Set descriptor[0].size to 0x00FF_FFFF — exceeds the 4 MB cap.
+        // Set descriptor[0].size to 0x00FF_FFFF - exceeds the 4 MB cap.
         let big = (1u32 << 24) | 0x00FF_FFFF;
         buf[8..12].copy_from_slice(&big.to_le_bytes());
         assert!(detect(&buf).is_none());
@@ -294,7 +294,7 @@ mod tests {
         // exceed the file length (e.g. izumi.BIN is 96 KB but desc[2].off is
         // 0x228be = 141 KB).
         let mut buf = synth([1, 2, 3, 4, 5, 6, 7], 0x100);
-        // Patch descriptor[6].data_offset to a 256 KB value — well past the
+        // Patch descriptor[6].data_offset to a 256 KB value - well past the
         // 256-byte file but within MAX_RUNTIME_OFFSET.
         buf[8 + 6 * 8 + 4..8 + 6 * 8 + 8].copy_from_slice(&0x0004_0000u32.to_le_bytes());
         assert!(detect(&buf).is_some());

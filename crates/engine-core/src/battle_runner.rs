@@ -15,7 +15,7 @@
 //!    SM sees a single byte.
 //! 2. **AP gating.** [`BattleRunner::push_command`] consults the active
 //!    party member's [`crate::ap_gauge::ApGauge`] before admitting the
-//!    next byte — failure surfaces a [`BattleRunnerError::OutOfAp`].
+//!    next byte - failure surfaces a [`BattleRunnerError::OutOfAp`].
 //! 3. **Turn lifecycle.** Engines call [`BattleRunner::begin_round`] at
 //!    turn start and [`BattleRunner::end_round`] at turn end; the runner
 //!    delegates to [`crate::battle_round::BattleRound`] which resets AP,
@@ -25,7 +25,7 @@
 //!    arts with insufficient AP / blocked by status / unknown to the
 //!    character are rejected before they reach the SM.
 //!
-//! No SM ticking happens here — engines tick the SM through their existing
+//! No SM ticking happens here - engines tick the SM through their existing
 //! `step_battle` loop. The runner is the **input → queue** half of the
 //! pipeline.
 
@@ -238,7 +238,7 @@ impl BattleRunner {
         Some(art)
     }
 
-    /// Commit the turn — resolve every party slot's queue through
+    /// Commit the turn - resolve every party slot's queue through
     /// [`resolve_action_queue`] (Miracle + Super expansion) and stash the
     /// result. Switches into `Committed` state.
     ///
@@ -474,14 +474,14 @@ mod tests {
 
         let mut ap0 = ap_gauge(4);
         r.push_command(&mut ap0, Command::Right).unwrap();
-        // Switch to slot 1 — buffer is empty.
+        // Switch to slot 1 - buffer is empty.
         r.set_active_party_slot(1).unwrap();
         assert!(r.current_buffer().is_empty());
 
         let mut ap1 = ap_gauge(4);
         r.push_command(&mut ap1, Command::Down).unwrap();
         assert_eq!(r.current_buffer(), &[Command::Down]);
-        // Switch back — slot 0's buffer is preserved.
+        // Switch back - slot 0's buffer is preserved.
         r.set_active_party_slot(0).unwrap();
         assert_eq!(r.current_buffer(), &[Command::Right]);
     }

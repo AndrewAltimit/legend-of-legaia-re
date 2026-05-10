@@ -38,7 +38,7 @@
 //! bytes 2..16: 14 nibble pairs, low nibble first = 28 4-bit samples
 //! ```
 //!
-//! Shares the F0/F1 filter constants with [`legaia_xa`] — the algorithm is
+//! Shares the F0/F1 filter constants with [`legaia_xa`] - the algorithm is
 //! identical to XA-ADPCM, only the block packaging differs.
 
 use anyhow::{Result, bail};

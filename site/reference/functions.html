@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Key functions — legend-of-legaia-re</title>
+  <title>Key functions - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -25,97 +25,97 @@
     <div class="fnref-block">
       <h3>Boot + asset loader</h3>
       <ul class="fnref-list">
-        <li><code>FUN_8003E4E8</code> — boot-time TOC loader; reads first 3 sectors of PROT.DAT into <code>0x801C70F0</code></li>
-        <li><code>FUN_8003E8A8</code> — LBA resolver against the in-RAM TOC</li>
-        <li><code>FUN_8003E6BC</code> — path-based file opener (<code>data\battle\efect.dat</code> etc.)</li>
-        <li><code>FUN_8001F05C</code> — asset-type dispatcher</li>
-        <li><code>FUN_80020224</code> — descriptor-pair walker</li>
-        <li><code>FUN_8002541C</code> — streaming-asset driver</li>
+        <li><code>FUN_8003E4E8</code> - boot-time TOC loader; reads first 3 sectors of PROT.DAT into <code>0x801C70F0</code></li>
+        <li><code>FUN_8003E8A8</code> - LBA resolver against the in-RAM TOC</li>
+        <li><code>FUN_8003E6BC</code> - path-based file opener (<code>data\battle\efect.dat</code> etc.)</li>
+        <li><code>FUN_8001F05C</code> - asset-type dispatcher</li>
+        <li><code>FUN_80020224</code> - descriptor-pair walker</li>
+        <li><code>FUN_8002541C</code> - streaming-asset driver</li>
       </ul>
     </div>
 
     <div class="fnref-block">
       <h3>Game VMs</h3>
       <ul class="fnref-list">
-        <li><code>FUN_801D6628</code> — actor / sprite VM (13 opcodes, JT at <code>0x801CED70</code>)</li>
-        <li><code>FUN_80023070</code> — move-table VM (71 opcodes, JT at <code>0x80010778</code>)</li>
-        <li><code>FUN_801D362C</code> — move-VM extension (61 sub-opcodes via op <code>0x2F</code>)</li>
-        <li><code>FUN_801DE840</code> — field / event script VM (43 ops, switch at <code>0x801E00F4</code>)</li>
-        <li><code>FUN_800204F8</code> — move-buffer setup (Tactical Arts)</li>
-        <li><code>FUN_80021DF4</code> — per-frame actor tick</li>
+        <li><code>FUN_801D6628</code> - actor / sprite VM (13 opcodes, JT at <code>0x801CED70</code>)</li>
+        <li><code>FUN_80023070</code> - move-table VM (71 opcodes, JT at <code>0x80010778</code>)</li>
+        <li><code>FUN_801D362C</code> - move-VM extension (61 sub-opcodes via op <code>0x2F</code>)</li>
+        <li><code>FUN_801DE840</code> - field / event script VM (43 ops, switch at <code>0x801E00F4</code>)</li>
+        <li><code>FUN_800204F8</code> - move-buffer setup (Tactical Arts)</li>
+        <li><code>FUN_80021DF4</code> - per-frame actor tick</li>
       </ul>
     </div>
 
     <div class="fnref-block">
       <h3>Renderer + GTE</h3>
       <ul class="fnref-list">
-        <li><code>FUN_8002735C</code> — Legaia TMD renderer (60 GTE ops)</li>
-        <li><code>FUN_80026B4C</code> — TMD validate + register</li>
-        <li><code>FUN_800268DC</code> — TMD pointer fixup</li>
-        <li><code>0x80010778</code> — move-VM jump table</li>
-        <li><code>DAT_8007326C</code> — per-mode primitive descriptor table</li>
-        <li><code>0x801CE868</code> — move-VM extension JT</li>
-        <li><code>0x800EB654</code> — battle context struct (pointed to by <code>_DAT_8007BD24</code>)</li>
+        <li><code>FUN_8002735C</code> - Legaia TMD renderer (60 GTE ops)</li>
+        <li><code>FUN_80026B4C</code> - TMD validate + register</li>
+        <li><code>FUN_800268DC</code> - TMD pointer fixup</li>
+        <li><code>0x80010778</code> - move-VM jump table</li>
+        <li><code>DAT_8007326C</code> - per-mode primitive descriptor table</li>
+        <li><code>0x801CE868</code> - move-VM extension JT</li>
+        <li><code>0x800EB654</code> - battle context struct (pointed to by <code>_DAT_8007BD24</code>)</li>
       </ul>
     </div>
 
     <div class="fnref-block">
       <h3>Battle</h3>
       <ul class="fnref-list">
-        <li><code>FUN_801E295C</code> — battle action state machine (16 KB)</li>
-        <li><code>FUN_801D0748</code> — battle / level-up main tick; sub-states 0x1E/0x32/0x6E/0xFE</li>
-        <li><code>FUN_801D388C</code> — battle animation dispatcher; switch on animation_type (0..0x31+)</li>
-        <li><code>FUN_801D5854</code> — battle actor pose driver; GTE transform per pose_id (~30 call sites from the action SM)</li>
-        <li><code>FUN_801D8DE8</code> — UI element ID mapper (3 KB, 75 callers)</li>
-        <li><code>FUN_801DA6B4</code> — battle actor display-state controller; opacity + pose flags for alive actors</li>
-        <li><code>FUN_801DB81C</code> — next-valid-target scan; <code>actor[+0x14C] != 0</code> &amp; no death/stone</li>
-        <li><code>FUN_801ED710</code> — records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
-        <li><code>FUN_800520F0</code> — battle scene loader</li>
-        <li><code>FUN_8004E2F0</code> — battle range / line-of-sight</li>
-        <li><code>FUN_80054CB0</code> — monster init</li>
-        <li><code>FUN_80042558</code> — per-frame stat aggregator</li>
-        <li><code>FUN_8003FB10</code> — action validator</li>
-        <li><code>FUN_800431D0</code> — ability bitmask read</li>
-        <li><code>0x801C9370</code> — 8-actor pointer table (party 0&ndash;2, monsters 3&ndash;7); actor HP at <code>+0x14C</code></li>
+        <li><code>FUN_801E295C</code> - battle action state machine (16 KB)</li>
+        <li><code>FUN_801D0748</code> - battle / level-up main tick; sub-states 0x1E/0x32/0x6E/0xFE</li>
+        <li><code>FUN_801D388C</code> - battle animation dispatcher; switch on animation_type (0..0x31+)</li>
+        <li><code>FUN_801D5854</code> - battle actor pose driver; GTE transform per pose_id (~30 call sites from the action SM)</li>
+        <li><code>FUN_801D8DE8</code> - UI element ID mapper (3 KB, 75 callers)</li>
+        <li><code>FUN_801DA6B4</code> - battle actor display-state controller; opacity + pose flags for alive actors</li>
+        <li><code>FUN_801DB81C</code> - next-valid-target scan; <code>actor[+0x14C] != 0</code> &amp; no death/stone</li>
+        <li><code>FUN_801ED710</code> - records / stats screen renderer (battles, escapes, play-time, max-hits)</li>
+        <li><code>FUN_800520F0</code> - battle scene loader</li>
+        <li><code>FUN_8004E2F0</code> - battle range / line-of-sight</li>
+        <li><code>FUN_80054CB0</code> - monster init</li>
+        <li><code>FUN_80042558</code> - per-frame stat aggregator</li>
+        <li><code>FUN_8003FB10</code> - action validator</li>
+        <li><code>FUN_800431D0</code> - ability bitmask read</li>
+        <li><code>0x801C9370</code> - 8-actor pointer table (party 0&ndash;2, monsters 3&ndash;7); actor HP at <code>+0x14C</code></li>
       </ul>
     </div>
 
     <div class="fnref-block">
       <h3>Menu overlay</h3>
       <ul class="fnref-list">
-        <li><code>FUN_801DD35C</code> — top-level menu dispatcher (12 KB, 134 outgoing)</li>
-        <li><code>FUN_801D33D8</code> — submenu rendering loop</li>
-        <li><code>FUN_801E1C1C</code> — shared menu-element renderer</li>
-        <li><code>FUN_801CF650</code> — equipment stat aggregator; reads 5 slots at char <code>+0x196</code>, sums into <code>DAT_801EF08C&ndash;09C</code></li>
-        <li><code>FUN_801DD0C0</code> — item category / slot validity check</li>
+        <li><code>FUN_801DD35C</code> - top-level menu dispatcher (12 KB, 134 outgoing)</li>
+        <li><code>FUN_801D33D8</code> - submenu rendering loop</li>
+        <li><code>FUN_801E1C1C</code> - shared menu-element renderer</li>
+        <li><code>FUN_801CF650</code> - equipment stat aggregator; reads 5 slots at char <code>+0x196</code>, sums into <code>DAT_801EF08C&ndash;09C</code></li>
+        <li><code>FUN_801DD0C0</code> - item category / slot validity check</li>
       </ul>
     </div>
 
     <div class="fnref-block">
       <h3>Audio (PsyQ)</h3>
       <ul class="fnref-list">
-        <li><code>FUN_8001FA88</code> — sound init / .dpk loader</li>
-        <li><code>FUN_8001FC00</code> — streaming-asset loader (sound\)</li>
-        <li><code>FUN_8001EBEC</code> — mode-aware ext dispatcher</li>
-        <li><code>FUN_800243F0</code> — BGM lookup (PROT-relative)</li>
-        <li><code>FUN_8003E104</code> — monster.snd loader</li>
-        <li><code>0x80061-0x80067</code> — libsnd SsAPI sequencer cluster</li>
-        <li><code>0x80068-0x6D</code> — libspu SPU control cluster</li>
-        <li><code>FUN_80069B18</code> — SPU DMA transfer state machine</li>
+        <li><code>FUN_8001FA88</code> - sound init / .dpk loader</li>
+        <li><code>FUN_8001FC00</code> - streaming-asset loader (sound\)</li>
+        <li><code>FUN_8001EBEC</code> - mode-aware ext dispatcher</li>
+        <li><code>FUN_800243F0</code> - BGM lookup (PROT-relative)</li>
+        <li><code>FUN_8003E104</code> - monster.snd loader</li>
+        <li><code>0x80061-0x80067</code> - libsnd SsAPI sequencer cluster</li>
+        <li><code>0x80068-0x6D</code> - libspu SPU control cluster</li>
+        <li><code>FUN_80069B18</code> - SPU DMA transfer state machine</li>
       </ul>
     </div>
 
     <div class="fnref-block">
       <h3>BIOS + libapi</h3>
       <ul class="fnref-list">
-        <li><code>0x80056678</code> — <code>EnterCriticalSection</code></li>
-        <li><code>0x80056688</code> — <code>ExitCriticalSection</code></li>
-        <li><code>0x80056658</code> — <code>TestEvent</code></li>
-        <li><code>0x8006B844</code> — <code>WaitEvent</code></li>
-        <li><code>0x80057024</code> — <code>memmove</code></li>
-        <li><code>0x8005ACAC</code> — <code>memset</code></li>
-        <li><code>0x8005E540</code> — <code>memcpy</code></li>
-        <li><code>0x80056698+</code> stride 0x10 — BIOS B-vector thunk cluster</li>
+        <li><code>0x80056678</code> - <code>EnterCriticalSection</code></li>
+        <li><code>0x80056688</code> - <code>ExitCriticalSection</code></li>
+        <li><code>0x80056658</code> - <code>TestEvent</code></li>
+        <li><code>0x8006B844</code> - <code>WaitEvent</code></li>
+        <li><code>0x80057024</code> - <code>memmove</code></li>
+        <li><code>0x8005ACAC</code> - <code>memset</code></li>
+        <li><code>0x8005E540</code> - <code>memcpy</code></li>
+        <li><code>0x80056698+</code> stride 0x10 - BIOS B-vector thunk cluster</li>
       </ul>
     </div>
   </div>
@@ -125,7 +125,7 @@
   <h2>Full reference</h2>
   <p>Every function above (and ~50 more) is described in detail with provenance citations in the markdown doc:</p>
   <p><a class="cta" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/functions.md" target="_blank" rel="noopener">docs/reference/functions.md →</a></p>
-  <p>Per-function dumps (Ghidra disassembly + decompile) live under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> in the repo (gitignored — Sony-derived). Overlay-specific dumps are prefixed <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code>.</p>
+  <p>Per-function dumps (Ghidra disassembly + decompile) live under <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> in the repo (gitignored - Sony-derived). Overlay-specific dumps are prefixed <code>overlay_&lt;label&gt;_&lt;addr&gt;.txt</code>.</p>
 </section>
 
 </main>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Boot path — legend-of-legaia-re</title>
+  <title>Boot path - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -20,13 +20,13 @@
 
 <section class="doc-section" id="how-it-works">
   <h2>How it works</h2>
-  <p>Almost every PSX game has a built-in archive that bundles the small files together so the disc can stream them efficiently. Legaia's archive is <code>PROT.DAT</code>, and it has its own table of contents (TOC) &mdash; a list saying "entry N starts at sector S and is L bytes long". Before the game can do <em>anything</em>, it has to read that table into RAM. That's job one.</p>
+  <p>Almost every PSX game has a built-in archive that bundles the small files together so the disc can stream them efficiently. Legaia's archive is <code>PROT.DAT</code>, and it has its own table of contents (TOC) - a list saying "entry N starts at sector S and is L bytes long". Before the game can do <em>anything</em>, it has to read that table into RAM. That's job one.</p>
 
-  <p>Job two is wiring up a small <em>asset-type dispatcher</em>. The PROT entries don't all hold the same kind of data &mdash; some are textures, some are 3D meshes, some are dialog blobs, some are animation containers. Each entry's first byte is a type tag, and there's a single function that reads that tag and routes the bytes to the right per-format parser. Once the dispatcher's helper tables are populated, every later "load this entry" call works.</p>
+  <p>Job two is wiring up a small <em>asset-type dispatcher</em>. The PROT entries don't all hold the same kind of data - some are textures, some are 3D meshes, some are dialog blobs, some are animation containers. Each entry's first byte is a type tag, and there's a single function that reads that tag and routes the bytes to the right per-format parser. Once the dispatcher's helper tables are populated, every later "load this entry" call works.</p>
 
-  <p>Job three: the boot code reaches a top-level <strong>game-mode state machine</strong>. This is a 28-entry table where each slot is a function pointer for one major mode of the game &mdash; boot, title, field, battle, world map, menu, cutscene, etc. The mode pointer changes whenever the game transitions; the per-frame loop just calls "whatever the current mode's handler says". The title-screen overlay is loaded next, and the actor VM inside it starts ticking the splash animation.</p>
+  <p>Job three: the boot code reaches a top-level <strong>game-mode state machine</strong>. This is a 28-entry table where each slot is a function pointer for one major mode of the game - boot, title, field, battle, world map, menu, cutscene, etc. The mode pointer changes whenever the game transitions; the per-frame loop just calls "whatever the current mode's handler says". The title-screen overlay is loaded next, and the actor VM inside it starts ticking the splash animation.</p>
 
-  <p>One important quirk: the script that drives every running script &mdash; the <em>field VM</em> &mdash; is <strong>not</strong> in the main executable. It lives in a RAM overlay loaded from the disc when you enter a town or field map. That's why the boot path here is so short: most of the gameplay code isn't in <code>SCUS_942.54</code> at all.</p>
+  <p>One important quirk: the script that drives every running script - the <em>field VM</em> - is <strong>not</strong> in the main executable. It lives in a RAM overlay loaded from the disc when you enter a town or field map. That's why the boot path here is so short: most of the gameplay code isn't in <code>SCUS_942.54</code> at all.</p>
 </section>
 
 <section class="doc-section" id="toc-loader">
@@ -38,7 +38,7 @@
     <dt>Called from</dt><dd><code>FUN_8003EFE8</code> and <code>FUN_8003F08C</code> at boot</dd>
   </dl>
 
-  <p>The on-disc TOC and the in-RAM TOC have <strong>different strides</strong> &mdash; the on-disc-to-in-RAM transformation runs once at boot, but its function hasn't been reversed yet. See the <a href="../formats/index.html">PROT.DAT format spec</a> for the byte layout.</p>
+  <p>The on-disc TOC and the in-RAM TOC have <strong>different strides</strong> - the on-disc-to-in-RAM transformation runs once at boot, but its function hasn't been reversed yet. See the <a href="../formats/index.html">PROT.DAT format spec</a> for the byte layout.</p>
 
   <p>After the TOC is in RAM, two resolvers are usable:</p>
   <table>
@@ -59,12 +59,12 @@
     <dt>Encoding</dt><dd><code>type_and_size</code> packs the type byte in the high 8 bits, size in the low 24 bits</dd>
   </dl>
 
-  <p>Every TIM, TMD, MES, ANM, etc. is reached through this one function. The boot path doesn't call it itself &mdash; it just makes sure the buffer pointers it writes to are valid. <code>FUN_80020224</code> (the asset descriptor walker) is one of the dispatcher's two static call sites and is invoked from the town overlay's <code>FUN_801D6704</code> (MAIN_INIT) at runtime. See <a href="asset-loader.html">Asset loader</a> for the full story.</p>
+  <p>Every TIM, TMD, MES, ANM, etc. is reached through this one function. The boot path doesn't call it itself - it just makes sure the buffer pointers it writes to are valid. <code>FUN_80020224</code> (the asset descriptor walker) is one of the dispatcher's two static call sites and is invoked from the town overlay's <code>FUN_801D6704</code> (MAIN_INIT) at runtime. See <a href="asset-loader.html">Asset loader</a> for the full story.</p>
 </section>
 
 <section class="doc-section" id="game-mode">
   <h2>Game-mode state machine</h2>
-  <p>The 28-mode state machine table at <code>0x8007078C</code> is the top-level "what is the game doing" dispatcher. Each entry is a <code>(handler_addr, &hellip;)</code> tuple corresponding to a major mode &mdash; boot, title, field, battle, world map, menu, cutscene, and so on.</p>
+  <p>The 28-mode state machine table at <code>0x8007078C</code> is the top-level "what is the game doing" dispatcher. Each entry is a <code>(handler_addr, &hellip;)</code> tuple corresponding to a major mode - boot, title, field, battle, world map, menu, cutscene, and so on.</p>
 
   <p>The script VM that drives every running script is <strong>not</strong> in <code>SCUS_942.54</code>. It lives in RAM overlays at <code>0x801C0000+</code>, loaded on demand:</p>
 

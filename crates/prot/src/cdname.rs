@@ -41,7 +41,7 @@ pub fn block_for(map: &IndexMap, entry_index: u32) -> Option<&str> {
 /// Resolve a scene/block name to its `[start, end_exclusive)` PROT-entry
 /// index range. Returns `None` if `name` isn't declared in the map. The
 /// upper bound is the next-declared block's start (or `u32::MAX` if it's
-/// the last block — caller should clamp to actual archive size).
+/// the last block - caller should clamp to actual archive size).
 ///
 /// Used by the asset viewer's `--scene <NAME>` flag to assemble the bundle
 /// of PROT entries that comprise one field/town scene (matches what the

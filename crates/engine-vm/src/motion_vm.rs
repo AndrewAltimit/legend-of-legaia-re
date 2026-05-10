@@ -21,7 +21,7 @@
 //!
 //! When the high bit is set, the VM resolves a target actor before applying
 //! the body. `0xF8` resolves to "this actor" (the retail engine reads
-//! `_DAT_8007c364` — current player ptr), `0xFB` follows a linked list at
+//! `_DAT_8007c364` - current player ptr), `0xFB` follows a linked list at
 //! `_DAT_8007c34c` looking for a matching record-class signature, and any
 //! other id linearly scans the actor list at `_DAT_8007c354` matching against
 //! the actor's id field at `+0x14`.
@@ -74,7 +74,7 @@ pub struct MotionState {
     /// Yaw / Y rotation in 12-bit fixed-point (units of `0x1000` = full turn).
     /// Mutated by op 0x4C `FaceTarget` and consumed by the renderer.
     pub yaw: u16,
-    /// Per-script accumulator at retail `actor[0x15]` — number of speed
+    /// Per-script accumulator at retail `actor[0x15]` - number of speed
     /// units already consumed for the current opcode body.
     pub op_accum: u16,
     /// Bytecode-buffer cursor at retail `actor[0x25]` (byte offset).
@@ -85,18 +85,18 @@ pub struct MotionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MotionOp {
-    /// `0x37` — translate along Y axis at per-frame speed.
+    /// `0x37` - translate along Y axis at per-frame speed.
     TranslateY = 0x37,
-    /// `0x38` — rotate yaw toward absolute angle (not yet implemented).
+    /// `0x38` - rotate yaw toward absolute angle (not yet implemented).
     RotateToAngle = 0x38,
-    /// `0x41` — translate along X axis at per-frame speed.
+    /// `0x41` - translate along X axis at per-frame speed.
     TranslateX = 0x41,
-    /// `0x43` — no-op (tick consumed, no mutation).
+    /// `0x43` - no-op (tick consumed, no mutation).
     NoOp = 0x43,
-    /// `0x47` — move actor's (X, Z) toward the target's (X, Z). Used by NPC
+    /// `0x47` - move actor's (X, Z) toward the target's (X, Z). Used by NPC
     /// pursue / camera-follow scripts.
     MoveTowardTarget = 0x47,
-    /// `0x4C` — face the target (yaw rotates to bearing). Sub-modes
+    /// `0x4C` - face the target (yaw rotates to bearing). Sub-modes
     /// 0x85 / 0x8E / 0x8F gate which component is rotated.
     FaceTarget = 0x4C,
 }
@@ -368,7 +368,7 @@ mod tests {
         let t = tgt(0, 7, 0);
         // 0x37 TranslateY without target byte (no high bit).
         let bc = [0x37];
-        // First step: move 2 units (clamped — speed > dy).
+        // First step: move 2 units (clamped - speed > dy).
         assert_eq!(step(&mut s, t, &bc), StepResult::Done);
         assert_eq!(s.world_y, 7);
     }
@@ -378,7 +378,7 @@ mod tests {
         let mut s = st(0, 0, 3);
         let t = tgt(5, 0, 5);
         let bc = [0x47];
-        // First step: x += 3, z += 3 — yields, PC stays on op.
+        // First step: x += 3, z += 3 - yields, PC stays on op.
         assert_eq!(step(&mut s, t, &bc), StepResult::Yield);
         assert_eq!((s.world_x, s.world_z), (3, 3));
         assert_eq!(s.pc, 0);

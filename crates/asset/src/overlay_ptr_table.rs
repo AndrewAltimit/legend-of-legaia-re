@@ -14,11 +14,11 @@
 //! kind of disc-resident overlay code blob, but with a function/jump-table
 //! header at the start instead of a `addiu sp, sp, -X` prologue. Examples:
 //!
-//! - `0938_xxx_dat.BIN` — 5-pointer table at `[0x801F6AA4..=0x801F71F8]`,
+//! - `0938_xxx_dat.BIN` - 5-pointer table at `[0x801F6AA4..=0x801F71F8]`,
 //!   then `addiu sp, sp, -0x48 / lui v0, 0x0808 / lw a0, -0x42DC(v0)` at
 //!   offset 0x14 (the table's end). The pointers index into this same blob.
-//! - `0907_xxx_dat.BIN` — leads with the ASCII string `"Hell's Music"`,
-//!   then a jump table — a dance-minigame song record.
+//! - `0907_xxx_dat.BIN` - leads with the ASCII string `"Hell's Music"`,
+//!   then a jump table - a dance-minigame song record.
 //!
 //! ### Layout
 //!
@@ -30,7 +30,7 @@
 //! +(N+1)*4  ...           ; first non-pointer u32 (typically MIPS code or data)
 //! ```
 //!
-//! The cluster has a long tail of variants — some monotonic (sorted entry
+//! The cluster has a long tail of variants - some monotonic (sorted entry
 //! tables), some with repeating values (switch dispatch tables where many
 //! cases share a default handler), some with a small alphabet of distinct
 //! values (3-handler vtables).
@@ -42,7 +42,7 @@
 //! 3. The byte after the run isn't itself another overlay pointer (the
 //!    walker stops naturally on the first miss; this is enforced by
 //!    construction).
-//! 4. We don't require monotonicity — switch dispatch tables legitimately
+//! 4. We don't require monotonicity - switch dispatch tables legitimately
 //!    contain repeating handler addresses.
 //!
 //! These three checks together produce **zero overlap with already-named
@@ -57,19 +57,19 @@
 //!
 //! ### Format meaning
 //!
-//! Same family as `mips_overlay` — runtime-loaded code blobs that the engine
+//! Same family as `mips_overlay` - runtime-loaded code blobs that the engine
 //! pages into the `0x801C0000+` window. The pointer table at the start is
 //! either:
 //!
-//! - A **function entry-point table** (small, monotonic — one slot per
+//! - A **function entry-point table** (small, monotonic - one slot per
 //!   public function in the overlay).
-//! - A **switch dispatch table** (larger, repeating — emitted by the C
+//! - A **switch dispatch table** (larger, repeating - emitted by the C
 //!   compiler for `switch(x)` over a dense integer range).
 //! - A **vtable** for a per-mode actor type.
 //!
 //! Each can be Ghidra-imported via `scripts/bulk-import-overlays.sh` once
 //! the load address is determined (the first pointer's high bits give a
-//! strong hint — most cluster around `0x801F6Axx`).
+//! strong hint - most cluster around `0x801F6Axx`).
 //!
 //! See `docs/formats/overlay-ptr-table.md` for the spec.
 
@@ -95,7 +95,7 @@ pub struct OverlayPtrTable {
     /// Number of consecutive overlay pointers at the start.
     pub count: usize,
     /// First pointer (smallest in monotonic tables; otherwise just the first
-    /// slot — useful as a load-address hint).
+    /// slot - useful as a load-address hint).
     pub first_ptr: u32,
     /// Last pointer in the table.
     pub last_ptr: u32,
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn detects_dispatch_table_with_repeating_handlers() {
         // Switch table: 8 slots, only 3 distinct handlers (most cases default
-        // to one). Still a valid hit — we don't require monotonicity.
+        // to one). Still a valid hit - we don't require monotonicity.
         let buf = ptr_table(
             &[
                 0x801F_84B0,
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn caps_run_at_64_pointers() {
-        // 70 valid pointers — detector should stop at 64.
+        // 70 valid pointers - detector should stop at 64.
         let mut ptrs: Vec<u32> = Vec::new();
         for i in 0..70 {
             ptrs.push(0x801F_6000 + i * 4);
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn rejects_buffer_smaller_than_min_run() {
-        // Three valid pointers, then EOF — must reject.
+        // Three valid pointers, then EOF - must reject.
         let mut buf = Vec::new();
         for i in 0..3 {
             buf.extend_from_slice(&(0x801F_6000u32 + i * 4).to_le_bytes());
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn high_byte_at_overlay_lower_bound_accepted() {
-        // 0x801C_0000 is the lower bound — should be inclusive.
+        // 0x801C_0000 is the lower bound - should be inclusive.
         let buf = ptr_table(
             &[0x801C_0000, 0x801C_0010, 0x801C_0020, 0x801C_0030],
             0x4000,

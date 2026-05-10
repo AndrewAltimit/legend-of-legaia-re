@@ -44,7 +44,7 @@
 //!
 //! `Seq::parse(buf)` validates the header and returns a fully-decoded
 //! [`Seq`] with an event vector. The vector preserves source order and
-//! original delta-times — engines feed it into a tick-based player; see
+//! original delta-times - engines feed it into a tick-based player; see
 //! `legaia-engine-audio::Sequencer` for the runtime side.
 
 #![forbid(unsafe_code)]
@@ -58,7 +58,7 @@ pub const SEQ_MAGIC: [u8; 4] = *b"pQES";
 /// Header length for the standard PsyQ SEQ shape (u16 BE version).
 pub const HEADER_LEN: usize = 0x0D;
 
-/// Header length for the Legaia variant (u32 BE version — 2 extra bytes
+/// Header length for the Legaia variant (u32 BE version - 2 extra bytes
 /// before the PPQN word). Real disc SEQ files use this shape; synthetic
 /// test fixtures use [`HEADER_LEN`].
 pub const HEADER_LEN_LEGAIA: usize = HEADER_LEN + 2;
@@ -107,18 +107,18 @@ pub enum ChannelMessage {
 /// Meta event (status `0xFF`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum MetaMessage {
-    /// `0xFF 0x2F 0x00` — End-of-Track. Always the final event.
+    /// `0xFF 0x2F 0x00` - End-of-Track. Always the final event.
     EndOfTrack,
-    /// `0xFF 0x51 0x03` — Tempo change (microseconds per quarter note).
+    /// `0xFF 0x51 0x03` - Tempo change (microseconds per quarter note).
     SetTempo { us_per_qn: u32 },
-    /// `0xFF 0x58 0x04` — Time signature.
+    /// `0xFF 0x58 0x04` - Time signature.
     TimeSignature {
         numerator: u8,
         denominator_pow2: u8,
         clocks_per_metronome: u8,
         thirty_seconds_per_quarter: u8,
     },
-    /// `0xFF 0x59 0x02` — Key signature.
+    /// `0xFF 0x59 0x02` - Key signature.
     KeySignature { sharps: i8, minor: u8 },
     /// Any other meta event we surface as raw bytes so engines can
     /// table-dispatch when needed.
@@ -160,12 +160,12 @@ impl Seq {
         Ok(Self { header, events })
     }
 
-    /// Sum of every delta — total length of the sequence in PPQN ticks.
+    /// Sum of every delta - total length of the sequence in PPQN ticks.
     pub fn total_ticks(&self) -> u64 {
         self.events.iter().map(|e| e.delta as u64).sum()
     }
 
-    /// Histogram of channel/meta event types — useful for inspection.
+    /// Histogram of channel/meta event types - useful for inspection.
     pub fn event_summary(&self) -> EventSummary {
         let mut s = EventSummary::default();
         for ev in &self.events {
@@ -254,7 +254,7 @@ pub fn parse_header_with_len(buf: &[u8]) -> Result<(Header, usize)> {
             HEADER_LEN_LEGAIA,
         ));
     }
-    // PsyQ-doc shape — u16 version at +4..+6.
+    // PsyQ-doc shape - u16 version at +4..+6.
     let version = u16::from_be_bytes([buf[4], buf[5]]);
     let ppqn = u16::from_be_bytes([buf[6], buf[7]]);
     let tempo_us_per_qn = u24_be(&buf[8..11]);
@@ -319,7 +319,7 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
         let body = match status_byte {
             0xFF => {
                 // Meta event. PsyQ libsnd preserves running status across
-                // meta events (real Legaia SEQ data relies on this — the
+                // meta events (real Legaia SEQ data relies on this - the
                 // strict-MIDI behaviour of clearing running status here
                 // would cause a "running status with no prior" error on
                 // the byte stream immediately after a meta).
@@ -340,7 +340,7 @@ fn parse_events(stream: &[u8]) -> Result<Vec<Event>> {
                 EventBody::Meta(meta)
             }
             0xF0 | 0xF7 => {
-                // SysEx — not used by libsnd; parse-and-skip so we don't
+                // SysEx - not used by libsnd; parse-and-skip so we don't
                 // explode on unknown payloads but warn loudly via Other meta.
                 running_status = None;
                 let (length, lvlq) = read_vlq(stream, pos)?;
@@ -429,7 +429,7 @@ fn decode_meta(kind: u8, payload: &[u8]) -> Result<MetaMessage> {
         0x51 => {
             // Standard MIDI SetTempo is exactly 3 bytes (u24 BE us/qn).
             // Real Legaia SEQ data sometimes carries longer 0x51 payloads
-            // — likely PsyQ-specific extensions (loop markers / mark
+            // - likely PsyQ-specific extensions (loop markers / mark
             // events). Surface those as `Other` rather than failing the
             // whole-track decode.
             if payload.len() == 3 {
@@ -444,7 +444,7 @@ fn decode_meta(kind: u8, payload: &[u8]) -> Result<MetaMessage> {
             }
         }
         0x58 => {
-            // Same tolerance as 0x51 — accept the canonical 4-byte form
+            // Same tolerance as 0x51 - accept the canonical 4-byte form
             // and surface anything else as `Other`.
             if payload.len() != 4 {
                 return Ok(MetaMessage::Other {
@@ -565,7 +565,7 @@ mod tests {
             }
             _ => panic!(),
         }
-        // Running-status NoteOn with vel=0 — semantic NoteOff but emitted as
+        // Running-status NoteOn with vel=0 - semantic NoteOff but emitted as
         // NoteOn so engines can table-dispatch identically.
         match &seq.events[2].body {
             EventBody::Channel {

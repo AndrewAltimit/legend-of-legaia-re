@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; save screen</div>
   <h1>Save Screen</h1>
-  <p class="lede">The save-slot selection and write flow used whenever the game persists progress to the PSX memory card. Lives inside the <strong>menu overlay</strong> (same 129-function binary as shop, inn, and status screens &mdash; not a separate overlay). Outer dispatcher: <code>FUN_801DC6B4</code> (856 bytes). Sources: <code>overlay_save_ui_select.bin</code> and <code>overlay_save_ui_saving.bin</code> mednafen captures (mc1/mc2), both confirmed as the menu overlay by function-address identity.</p>
+  <p class="lede">The save-slot selection and write flow used whenever the game persists progress to the PSX memory card. Lives inside the <strong>menu overlay</strong> (same 129-function binary as shop, inn, and status screens - not a separate overlay). Outer dispatcher: <code>FUN_801DC6B4</code> (856 bytes). Sources: <code>overlay_save_ui_select.bin</code> and <code>overlay_save_ui_saving.bin</code> mednafen captures (slot-select and writing-in-progress states), both confirmed as the menu overlay by function-address identity.</p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -22,22 +22,22 @@
 
 <section class="doc-section" id="key-functions">
   <h2>Key functions</h2>
-  <h3><code>FUN_801DAEF4</code> &mdash; save-slot selector (sub-screens 0x1 / 0x2)</h3>
+  <h3><code>FUN_801DAEF4</code> - save-slot selector (sub-screens 0x1 / 0x2)</h3>
   <p>Runs an actor VM with bytecode at <code>&amp;DAT_801E4E30</code> (slot-select menu), waits on <code>_DAT_8007BB80 != 0</code> (menu-active flag), calls <code>FUN_801DD35C(1, 1)</code> to confirm selection, and clears <code>DAT_801E46A4</code> on return. Each step calls <code>FUN_80031D00</code> (text-actor tick / MES advance).</p>
 
-  <h3><code>FUN_801DAFD4</code> &mdash; slot confirm + saving in progress</h3>
+  <h3><code>FUN_801DAFD4</code> - slot confirm + saving in progress</h3>
   <p>Runs the 3-item slot scrolling list via <code>FUN_801D688C(&amp;DAT_801E46BC, 3, 1)</code>. On slot 1 confirmed: validates against the save-block existence table at <code>&amp;DAT_80084140 + slot * 2 + 0x1818</code> (byte 0 = slot present, byte 1 = slot valid), then advances <code>DAT_801E46A4</code> to <code>0x1E</code> (the write sub-screen). On slot 2: cancel SFX. Slot 0 routes to the card-full/error sub-screen (<code>0x1B</code>).</p>
 
   <h3>Sub-screen pointer table at <code>0x801E4F40</code></h3>
   <table>
     <thead><tr><th>ID</th><th>Address</th><th>Function</th></tr></thead>
     <tbody>
-      <tr><td><code>0x1</code></td><td><code>0x801E4F44</code></td><td><code>FUN_801DAEF4</code> &mdash; slot selector</td></tr>
+      <tr><td><code>0x1</code></td><td><code>0x801E4F44</code></td><td><code>FUN_801DAEF4</code> - slot selector</td></tr>
       <tr><td><code>0x2</code></td><td><code>0x801E4F48</code></td><td>Save entry (from menu)</td></tr>
       <tr><td><code>0x4</code></td><td><code>0x801E4F50</code></td><td>Post-save return path</td></tr>
-      <tr><td><code>0x19</code></td><td>&mdash;</td><td>Load-from-slot path</td></tr>
-      <tr><td><code>0x1B</code></td><td>&mdash;</td><td>Card-full / error screen</td></tr>
-      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td>Actual write sub-screen (story_flags + inventory write path &mdash; not yet dumped)</td></tr>
+      <tr><td><code>0x19</code></td><td>-</td><td>Load-from-slot path</td></tr>
+      <tr><td><code>0x1B</code></td><td>-</td><td>Card-full / error screen</td></tr>
+      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td>Actual write sub-screen (story_flags + inventory write path - not yet dumped)</td></tr>
     </tbody>
   </table>
 </section>

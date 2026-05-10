@@ -13,7 +13,7 @@
 //! | SCUS / SLUS / SCPS-* (NA-pack) | North America | `SCUS_942.54` |
 //! | SCES / SLES                     | Europe        | `SCES_017.52` |
 //! | SLPS / SLPM / SCPS / SIPS       | Japan         | `SLPS_015.00` |
-//! | other                           | Unknown       | — |
+//! | other                           | Unknown       | - |
 //!
 //! Note: SCPS overlaps NA and JP catalogs (Sony released some "Special"
 //! titles under SCPS in both regions). We treat SCPS as Japan since SCUS

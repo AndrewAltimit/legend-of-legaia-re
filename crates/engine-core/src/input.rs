@@ -214,7 +214,7 @@ impl InputState {
     }
 }
 
-/// Action mapping at a higher level than raw pad bits — what the field VM
+/// Action mapping at a higher level than raw pad bits - what the field VM
 /// and menu code typically want to ask. The retail engine has comparable
 /// helpers in the input dispatcher; see `FUN_8001822c` in
 /// `docs/reference/functions.md`.
@@ -444,7 +444,7 @@ mod tests {
         let a = FieldActions::new(&s);
         assert!(a.confirm());
         assert!(!a.cancel());
-        // Hold — confirm fires only on the press edge.
+        // Hold - confirm fires only on the press edge.
         s.set_pad(PadButton::Cross.mask());
         let a = FieldActions::new(&s);
         assert!(!a.confirm());

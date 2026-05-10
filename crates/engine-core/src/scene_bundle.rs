@@ -158,7 +158,7 @@ impl ExtractedDescriptor {
 /// bytes.
 ///
 /// Descriptors 1..6 are surfaced for completeness but `payload_start` /
-/// `payload_end` are zeroed — the retail loader resolves them inside its
+/// `payload_end` are zeroed - the retail loader resolves them inside its
 /// per-scene working buffer that the on-disc bytes don't fully populate
 /// (see the asset-loader subsystem doc). Engines that need those payloads
 /// drive the streaming loader chain (`tim.dat` / `move.mdt`) instead of
@@ -172,7 +172,7 @@ pub fn walk_descriptors(bundle: &BundleSource) -> Vec<ExtractedDescriptor> {
         let asset_type = d.asset_type();
         let (payload_start, payload_end) = if i == 0 {
             let start = (table_offset as u32 + d.data_offset) as usize;
-            // The runtime LZS-decompresses the payload at runtime — its
+            // The runtime LZS-decompresses the payload at runtime - its
             // on-disc length isn't the descriptor.size; that's the
             // post-decompression size. We expose `start` only.
             (start, start)
@@ -195,7 +195,7 @@ pub fn walk_descriptors(bundle: &BundleSource) -> Vec<ExtractedDescriptor> {
 /// the decoder consumed.
 ///
 /// Descriptor 0 is the only descriptor with a reliably file-resident
-/// payload — the dispatcher LZS-decodes it in place, then walks the
+/// payload - the dispatcher LZS-decodes it in place, then walks the
 /// per-mesh descriptor chain in the resulting buffer. See
 /// [`docs/formats/asset-type.md`] for the LZS-vs-raw decision.
 ///
@@ -226,7 +226,7 @@ pub fn extract_descriptor_0_lzs(bundle: &BundleSource) -> Result<(Vec<u8>, usize
 /// neighbours.
 ///
 /// The asset-loader chain pulls **every** TIM in the scene's CDNAME block
-/// into VRAM before any TMD is rendered — that's what binds CLUTs that
+/// into VRAM before any TMD is rendered - that's what binds CLUTs that
 /// scatter across PROT entries (see `docs/subsystems/asset-loader.md`
 /// CLUT-data scattering section).
 ///
@@ -236,7 +236,7 @@ pub fn extract_descriptor_0_lzs(bundle: &BundleSource) -> Result<(Vec<u8>, usize
 /// the software VRAM at the TIM's framebuffer coordinates.
 ///
 /// Scope: scans every entry in `scene.entries`, runs the TIM detector at
-/// every byte offset (cheap — TIM magic is `0x10` + four-byte header).
+/// every byte offset (cheap - TIM magic is `0x10` + four-byte header).
 pub fn scene_tim_layout(scene: &Scene) -> Result<Vec<TimLocation>> {
     let mut out = Vec::new();
     for entry in &scene.entries {
@@ -260,7 +260,7 @@ pub fn scene_tim_layout(scene: &Scene) -> Result<Vec<TimLocation>> {
 /// asset-loader's "load every TIM in this scene before drawing TMDs"
 /// pre-pass.
 ///
-/// The framebuffer coordinates aren't surfaced here — they live inside
+/// The framebuffer coordinates aren't surfaced here - they live inside
 /// the TIM header proper. Engines parse with [`legaia_tim::parse`] at
 /// `entry_bytes[offset..]` to get `fb_x` / `fb_y` / `clut_fb_x` /
 /// `clut_fb_y` for the VRAM upload.
@@ -276,7 +276,7 @@ pub struct TimLocation {
     pub byte_len: usize,
 }
 
-/// Where the TIM was found — raw entry bytes vs. a post-LZS slice.
+/// Where the TIM was found - raw entry bytes vs. a post-LZS slice.
 /// Currently we only emit `Raw`; LZS sub-paths can be added later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimKind {
@@ -353,7 +353,7 @@ mod tests {
             buf.extend_from_slice(&data_off.to_le_bytes());
             data_off += payload_size;
         }
-        // Pad / pack payloads — 7 * 0x100 = 0x700 bytes after the header.
+        // Pad / pack payloads - 7 * 0x100 = 0x700 bytes after the header.
         buf.resize(header_end as usize + (7 * payload_size as usize), 0);
         // Tail-pad to the requested total_size for entropy coverage.
         if total_size > buf.len() {
@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(xs.len(), 7);
         // Descriptor 0 has a real file-relative offset.
         assert_eq!(xs[0].payload_start, 0x40);
-        // Descriptors 1..6 carry runtime-buffer offsets — payload range is
+        // Descriptors 1..6 carry runtime-buffer offsets - payload range is
         // zeroed.
         for (i, x) in xs.iter().enumerate().skip(1) {
             assert_eq!(x.payload_start, 0, "desc[{i}] should have no file range");

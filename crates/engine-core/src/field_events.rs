@@ -1,7 +1,7 @@
 //! Event queue emitted by the field VM through the world's `FieldHost`
 //! implementation.
 //!
-//! Most field-VM opcodes only have meaningful side-effects in the host —
+//! Most field-VM opcodes only have meaningful side-effects in the host -
 //! BGM dispatch lives in audio, dialog opens a UI overlay, money / inventory
 //! / party manipulation update game state. The retail engine called into
 //! its loader / audio / UI layers directly; in the clean-room port we route
@@ -17,7 +17,7 @@
 use legaia_engine_vm::field::CameraParam;
 
 /// One side-effect the field VM requested this frame. Variants mirror the
-/// `FieldHost` callbacks one-to-one — see [`legaia_engine_vm::field::FieldHost`]
+/// `FieldHost` callbacks one-to-one - see [`legaia_engine_vm::field::FieldHost`]
 /// for the per-opcode citation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldEvent {
@@ -78,7 +78,7 @@ pub enum FieldEvent {
     CounterUpdate { op0: u8 },
     /// Effect-anim trigger (op cluster around 0x32 / 0x4E).
     EffectAnimTrigger { arg: u8 },
-    /// Field-VM op 0x36 (scene fade) — the host returned this fade was
+    /// Field-VM op 0x36 (scene fade) - the host returned this fade was
     /// applied. `op0_word` / `op1_word` are the raw 16-bit operands so
     /// engines can re-decode mode bits.
     SceneFade { op0_word: u16, op1_word: u16 },
@@ -92,7 +92,7 @@ pub enum FieldEvent {
         world_z: u16,
         is_player: bool,
     },
-    /// Field-VM op 0x2C (exec_move) — the move-table consumer.
+    /// Field-VM op 0x2C (exec_move) - the move-table consumer.
     ExecMove { move_id: u8 },
 }
 

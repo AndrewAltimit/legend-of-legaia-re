@@ -37,7 +37,7 @@
 //!
 //! Legaia saves embed the runtime state at fixed offsets within each
 //! block. The character record region begins at the offset documented
-//! in [`docs/subsystems/battle.md`] — *the exact offset within the
+//! in [`docs/subsystems/battle.md`] - *the exact offset within the
 //! save block hasn't been pinned yet*; this module surfaces the block
 //! boundaries and lets callers slice as documentation evolves.
 
@@ -99,7 +99,7 @@ impl DirEntry {
     }
 }
 
-/// One discovered save block — start frame + every chained continuation.
+/// One discovered save block - start frame + every chained continuation.
 #[derive(Debug, Clone, Serialize)]
 pub struct SaveBlock {
     /// First block index (1..=15).
@@ -327,7 +327,7 @@ pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x66F;
 /// `CHARACTER_RECORD_SIZE` = 0x414 used in `crates/save/src/character.rs`).
 ///
 /// Confirmed by observing Vahn at `game+0x66F`, Noa at `game+0xA83`,
-/// Gala at `game+0xE97`, Terra at `game+0x12AB` — all at 0x414-byte intervals.
+/// Gala at `game+0xE97`, Terra at `game+0x12AB` - all at 0x414-byte intervals.
 pub const RETAIL_CHAR_RECORD_STRIDE: usize = 0x414;
 
 /// Extract raw character record bytes from a retail SC save block.

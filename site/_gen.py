@@ -32,7 +32,7 @@ def html_template(title: str, depth: int, active_key: str, body: str, extra_head
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{title} — legend-of-legaia-re</title>
+  <title>{title} - legend-of-legaia-re</title>
   <link rel="icon" href="{favicon}" type="image/svg+xml">
   <link rel="stylesheet" href="{css}">
   {extra_head}

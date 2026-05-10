@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Subsystems — legend-of-legaia-re</title>
+  <title>Subsystems - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -15,12 +15,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; subsystems</div>
   <h1>Subsystems</h1>
-  <p class="lede">How Legaia's engine actually works under the hood. Each card is a self-contained page on one subsystem &mdash; what it does, where its code lives, and how it connects to the rest. Start with <a href="boot.html">Boot path</a> if you're new to the project.</p>
+  <p class="lede">How Legaia's engine actually works under the hood. Each card is a self-contained page on one subsystem - what it does, where its code lives, and how it connects to the rest. Start with <a href="boot.html">Boot path</a> if you're new to the project.</p>
 </header>
 
 <section class="doc-section" id="overview">
   <h2>The shape of the engine</h2>
-  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries &mdash; about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand: title screen, town, battle, menu. Two of the runtime VMs (the field/event VM and the effect VM) live in those overlays.</p>
+  <p>Legaia is a fairly typical late-90s PSX RPG engine, but with a twist: most of the gameplay logic doesn't live in the main executable. <code>SCUS_942.54</code> contains the boot path, low-level I/O, the asset dispatcher, the move-table VM, the motion VM, and the audio / renderer libraries - about half the runtime. The other half lives in <strong>RAM overlays</strong> that the disc loads on demand: title screen, town, battle, menu. Two of the runtime VMs (the field/event VM and the effect VM) live in those overlays.</p>
   <p>The list below groups subsystems by what layer of the engine they sit at.</p>
 </section>
 
@@ -40,7 +40,7 @@
 
 <section class="doc-section" id="vms">
   <h2>The five runtime VMs</h2>
-  <p>Legaia's runtime is driven by five independent VMs that all talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine &mdash; different shape, same architectural role. They serve different layers of the engine and were almost certainly written by different members of the dev team.</p>
+  <p>Legaia's runtime is driven by five independent VMs that all talk to one shared actor model. Four are clean bytecode dispatchers (actor / move-table / motion / field-event); the fifth (effect) is a per-slot state machine - different shape, same architectural role. They serve different layers of the engine and were almost certainly written by different members of the dev team.</p>
   <div class="card-grid">
     <a class="card" href="actor-vm.html">
       <div class="card-title">Actor / sprite VM</div>
@@ -98,7 +98,7 @@
     </a>
     <a class="card" href="battle-action.html">
       <div class="card-title">Battle action FSM</div>
-      <div class="card-body">The 47-state machine inside <code>FUN_801E295C</code> &mdash; the layer between &ldquo;player picked Attack&rdquo; and &ldquo;HP has been deducted.&rdquo; Two-level dispatch: action category (party byte) plus execution phase (ctx byte).</div>
+      <div class="card-body">The 47-state machine inside <code>FUN_801E295C</code> - the layer between &ldquo;player picked Attack&rdquo; and &ldquo;HP has been deducted.&rdquo; Two-level dispatch: action category (party byte) plus execution phase (ctx byte).</div>
     </a>
     <a class="card" href="battle-formulas.html">
       <div class="card-title">Battle formulas</div>
@@ -146,7 +146,7 @@
     </div>
     <div class="card">
       <div class="card-title">Tactical Arts chain editor</div>
-      <div class="card-body"><code>engine-core::tactical_arts_editor</code>: <code>ChainLibrary</code> stores up to 8 saved chains per character (3..=7-byte sequences, retail-faithful caps). <code>ChainEditor</code> drives the menu-side editor &mdash; <code>Browsing &rarr; Editing &rarr; Naming &rarr; Done</code> &mdash; emitting typed events for each direction push, pop, and commit. Engines feed picks back to <code>BattleRunner::push_chained_art</code> at battle start.</div>
+      <div class="card-body"><code>engine-core::tactical_arts_editor</code>: <code>ChainLibrary</code> stores up to 8 saved chains per character (3..=7-byte sequences, retail-faithful caps). <code>ChainEditor</code> drives the menu-side editor - <code>Browsing &rarr; Editing &rarr; Naming &rarr; Done</code> - emitting typed events for each direction push, pop, and commit. Engines feed picks back to <code>BattleRunner::push_chained_art</code> at battle start.</div>
     </div>
     <div class="card">
       <div class="card-title">Save format LGSF v2</div>
@@ -162,7 +162,7 @@
     </div>
     <div class="card">
       <div class="card-title">Field-menu sub-session dispatcher</div>
-      <div class="card-body"><code>engine-core::field_menu_dispatch::FieldMenuSubsession</code> wires every <code>FieldMenuRow</code> selection to its real session: <code>InventoryUseSession</code>, <code>EquipSession</code>, <code>SpellMenuSession</code>, <code>ChainEditor</code>, <code>StatusScreenSession</code>, <code>SaveSelectSession</code>, <code>OptionsSession</code>. <code>build(row, world, options, slots, library, catalog, table)</code> constructs the matching session from world state; <code>tick_pad_edge(pressed)</code> routes edge-triggered pad input. Apply helpers (<code>apply_equip_outcome</code>, <code>apply_inventory_outcome</code>, <code>apply_spell_outcome</code>, <code>apply_arts_outcome</code>) drain finished sub-sessions back into <code>World</code>. <code>play-window</code>'s <code>BootUiState::FieldMenu</code> uses this — Cross on a row pushes the right session, control returns to <code>FieldMenuSession::resume</code> when the sub finishes.</div>
+      <div class="card-body"><code>engine-core::field_menu_dispatch::FieldMenuSubsession</code> wires every <code>FieldMenuRow</code> selection to its real session: <code>InventoryUseSession</code>, <code>EquipSession</code>, <code>SpellMenuSession</code>, <code>ChainEditor</code>, <code>StatusScreenSession</code>, <code>SaveSelectSession</code>, <code>OptionsSession</code>. <code>build(row, world, options, slots, library, catalog, table)</code> constructs the matching session from world state; <code>tick_pad_edge(pressed)</code> routes edge-triggered pad input. Apply helpers (<code>apply_equip_outcome</code>, <code>apply_inventory_outcome</code>, <code>apply_spell_outcome</code>, <code>apply_arts_outcome</code>) drain finished sub-sessions back into <code>World</code>. <code>play-window</code>'s <code>BootUiState::FieldMenu</code> uses this - Cross on a row pushes the right session, control returns to <code>FieldMenuSession::resume</code> when the sub finishes.</div>
     </div>
     <div class="card">
       <div class="card-title">Status screen</div>

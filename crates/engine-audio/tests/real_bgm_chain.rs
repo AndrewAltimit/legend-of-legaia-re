@@ -42,7 +42,7 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
         cdname::block_range_for_name(&map, "music_01").expect("music_01 block in CDNAME");
 
     // Walk the music_01 block until we find an entry that holds both pBAV
-    // and pQES — that's a single-entry VAB+SEQ pair.
+    // and pQES - that's a single-entry VAB+SEQ pair.
     let mut chosen: Option<(u32, Vec<u8>, usize, usize)> = None;
     for idx in start..end {
         let entry = archive.entries[idx as usize].clone();
@@ -100,7 +100,7 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
 
     let mut sequencer = Sequencer::new(seq, bank);
     // Drive 200 ms of music. Real SEQ tempos sit around 120 BPM
-    // (500_000 us/qn) — 200 ms is enough for at least one ProgramChange
+    // (500_000 us/qn) - 200 ms is enough for at least one ProgramChange
     // + NoteOn to fire.
     for _ in 0..40 {
         sequencer.tick_us(&mut spu, 5_000.0);
@@ -114,7 +114,7 @@ fn real_seq_vab_chain_renders_through_spu_without_panic() {
     eprintln!("[real-bgm] post-render max |sample| = {max_abs}");
     // Acceptance bar: SEQ + VAB parse without panic, the sequencer ticks,
     // the SPU renders 1024 samples without panic. Whether those samples
-    // are audible depends on real-game program/tone routing — the
+    // are audible depends on real-game program/tone routing - the
     // synthetic chain test asserts non-silence with a known-amplitude
     // VAG; here the real SEQ may take a measure or two of silent rests
     // before NoteOn, so the bar is correctness-of-wiring.

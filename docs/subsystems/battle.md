@@ -6,9 +6,9 @@ The battle overlay (`0898_xxx_dat`) carries the battle scene loader, the per-act
 
 11-case state machine. Notable cases:
 
-- **Case 6** — loads the `befect_data` bundle (PROT 0x369–0x36B).
-- **Case 0xE** — initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
-- **Case 0xFF** — dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
+- **Case 6** - loads the `befect_data` bundle (PROT 0x369–0x36B).
+- **Case 0xE** - initialises the runtime [effect 2-pack wrapper](../formats/effect.md) via `FUN_801DE914`. Also fires for the field-VM op `0x3E` warp/interact path on the system context.
+- **Case 0xFF** - dispatches the side-band streaming-effect handler `0x801F17F8` for `summon.dat` / `readef.dat`.
 
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
 
@@ -18,9 +18,9 @@ The `asset-viewer battle-scene` subcommand drives the engine-side composite end-
 
 16 KB / 4099 instructions / 155 outgoing calls. The action-execution dispatcher: it takes the player's selected action and runs it to completion across multiple frames.
 
-`_DAT_8007BD24` is a **pointer** to the active battle context struct (typed `int*` in the decompile output). The pointer itself is resolved at battle entry; `*_DAT_8007BD24` = `0x800EB654` for the captured battle. The action state machine accesses fields as `(*_DAT_8007BD24)[N]` — i.e. byte N of the pointed-to struct.
+`_DAT_8007BD24` is a **pointer** to the active battle context struct (typed `int*` in the decompile output). The pointer itself is resolved at battle entry; `*_DAT_8007BD24` = `0x800EB654` for the captured battle. The action state machine accesses fields as `(*_DAT_8007BD24)[N]` - i.e. byte N of the pointed-to struct.
 
-The outer dispatch is `switch((*_DAT_8007BD24)[7])` — byte +0x07 of the ctx struct, which holds the **active action ID** for the currently-resolving party action slot. (Byte +0x06 holds the parallel ID for the monster action slot; only one is non-`0xFF` at a time.) The inner dispatch is `switch(actor[+0x1DE])` — the per-actor **action sub-state** (windup → execute → recover-style staging within each action).
+The outer dispatch is `switch((*_DAT_8007BD24)[7])` - byte +0x07 of the ctx struct, which holds the **active action ID** for the currently-resolving party action slot. (Byte +0x06 holds the parallel ID for the monster action slot; only one is non-`0xFF` at a time.) The inner dispatch is `switch(actor[+0x1DE])` - the per-actor **action sub-state** (windup → execute → recover-style staging within each action).
 
 Action IDs surfaced from save-state captures:
 
@@ -28,18 +28,18 @@ Action IDs surfaced from save-state captures:
 |---|---|
 | `0x20` | Special move / capture (different sub-states) |
 | `0x28` | Action-menu cursor active (player still selecting) |
-| `0x35` | Magic — summon |
+| `0x35` | Magic - summon |
 | `0x47` | Spirit |
 | `0x50` | Martial-arts directional input mode |
 
-The function reads battle actor pointers via `(&DAT_801C9370)[ctx[0x13]]` (resolves the active actor via `ctx[0x13]` = actor slot index, then indexes the 8-slot pointer table). It guards on `_DAT_800846C0 != 2` (game-state check). The global pointer `_DAT_8007BD24` plays the same role as the field-VM context pointer — this is a state machine, not a bytecode VM, but it shares the field VM's "context-pointer-as-VM-state" idiom.
+The function reads battle actor pointers via `(&DAT_801C9370)[ctx[0x13]]` (resolves the active actor via `ctx[0x13]` = actor slot index, then indexes the 8-slot pointer table). It guards on `_DAT_800846C0 != 2` (game-state check). The global pointer `_DAT_8007BD24` plays the same role as the field-VM context pointer - this is a state machine, not a bytecode VM, but it shares the field VM's "context-pointer-as-VM-state" idiom.
 
 Distinct from:
 - The [field/event script VM](script-vm.md) (which doesn't run in battle).
 - The [effect VM cluster](effect-vm.md) (which handles per-effect spawn/render but doesn't drive actor decisions).
-- The [move-table VM](move-vm.md) (which drives Tactical Arts inputs and per-action keyframe scheduling — a layer below this one).
+- The [move-table VM](move-vm.md) (which drives Tactical Arts inputs and per-action keyframe scheduling - a layer below this one).
 
-Found via the `overlay_battle_action.bin` import (mc8 save state with action menu open). Dumped as `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`. The 78-function inventory of the battle overlay is in `overlay_battle_action_inventory.txt` (top 80 dumped). All 6 captured battle modes (summon / special-move / martial-arts-input / spirit / action / capture) load identical battle overlay code — only data buffers (actor table at `0x801C9370`, ctx struct at `0x800EB654`, GPU OT lists, audio scratch) differ between captures.
+Found via the `overlay_battle_action.bin` import (a save state captured with the action menu open). Dumped as `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`. The 78-function inventory of the battle overlay is in `overlay_battle_action_inventory.txt` (top 80 dumped). All 6 captured battle modes (summon / special-move / martial-arts-input / spirit / action / capture) load identical battle overlay code - only data buffers (actor table at `0x801C9370`, ctx struct at `0x800EB654`, GPU OT lists, audio scratch) differ between captures.
 
 ## Battle context struct
 
@@ -51,10 +51,10 @@ The active battle context lives at `0x800EB654` (resolved at battle entry; the g
 | `+0x06` | u8 | Monster-slot active action ID (or `0xFF` if no monster action queued). |
 | `+0x07` | u8 | Party-slot active action ID (or `0xFF`). The outer `switch((*_DAT_8007BD24)[7])` in `FUN_801E295C` keys on this. |
 | `+0x09` | u8 | Turn / phase counter. |
-| `+0x13` | u8 | Active-actor slot index — used to look up the actor pointer via `(&DAT_801C9370)[ctx[0x13]]`. |
-| `+0x14..+0x17` | u8 × 4 | Per-action parameter bytes (target slot, sub-action, etc. — varies by action ID at +0x07). |
+| `+0x13` | u8 | Active-actor slot index - used to look up the actor pointer via `(&DAT_801C9370)[ctx[0x13]]`. |
+| `+0x14..+0x17` | u8 × 4 | Per-action parameter bytes (target slot, sub-action, etc. - varies by action ID at +0x07). |
 | `+0x18..+0x1B` | u8 × 4 | More action params (dir/elem byte at +0x18, second target at +0x1A, etc.). |
-| `+0x1D` | u8 | Action context flag — `0x03` for summon and capture; `0x00` otherwise. |
+| `+0x1D` | u8 | Action context flag - `0x03` for summon and capture; `0x00` otherwise. |
 | `+0x29..+0x2D` | string | Active spell/move icon glyph (`0xCE 0x14 0x20 'G' 'i' 'm' 'a' 'r' 'd' …`). |
 | `+0xA9..+0xEC` | text | Battle dialog buffer (`"Vahn won the battle!|Gained …Experience and …G."`). |
 | `+0x6D6..` | u8 × N | The action state machine's "PC offset" / sub-state cursor (read by `*(byte*)(ctx + 0x6D6)`). |
@@ -77,7 +77,7 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
 | `+0x4A` | u8 | Magic-slot count. |
 | `+0x4C` | int* | Magic-slot list pointer (each entry is `[byte type, …]`). |
-| `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max — three-way mirror layout. |
+| `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
 | `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
 | `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
 | `+0x1EF..+0x1F3` | u8 | Magic-resistance per element (5 elements). |
@@ -100,15 +100,15 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 
 ## Stat aggregator (`FUN_80042558`)
 
-Per-frame helper that walks the 3 active party members (stride `0x414` — see [character record layout](#character-record-layout)) and:
+Per-frame helper that walks the 3 active party members (stride `0x414` - see [character record layout](#character-record-layout)) and:
 
 1. Caps each character's stats at `0x3E7` (999, the in-game stat ceiling).
 2. ORs the character's "active abilities" 16-byte block at `+0xF4..0x100` into a global 4×u32 bitmask at `0x80074358..0x80074368`. This is the "currently-active accessory effects" register read by every other game system.
 3. For each character, calls `FUN_800432BC` / `FUN_80042DBC` to add/remove temporary spells per the active spell-slot layout at `+0x2B0`.
 
-The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` — `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from the action validator (`FUN_8003FB10`) and most damage / status code paths, so a clean-room port models it as `BattleState::ability_active(u8) -> bool`.
+The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counter" / "regen" / "magic up" indicators and what tells the battle dispatcher to apply post-hit effects. The read-side primitive is `FUN_800431D0(bit_id) -> bool` - `(&DAT_80074358)[bit_id >> 5] & (1 << (bit_id & 0x1F))`. It's a 6-instruction hot helper cited from the action validator (`FUN_8003FB10`) and most damage / status code paths, so a clean-room port models it as `BattleState::ability_active(u8) -> bool`.
 
-`FUN_800349EC` and `FUN_80035EA8` are the HP / MP threshold UI classifiers — given a character index they compare current vs max and return one of `2` (dead/zero) / `6` (low) / `7` (warn) / `9` (healthy). The dialog renderer keys text colour on the result.
+`FUN_800349EC` and `FUN_80035EA8` are the HP / MP threshold UI classifiers - given a character index they compare current vs max and return one of `2` (dead/zero) / `6` (low) / `7` (warn) / `9` (healthy). The dialog renderer keys text colour on the result.
 
 `FUN_8003FB10` is the **action validator** that decides whether a queued action can proceed for the active actor. It sub-dispatches on `actor[+0x9A8]` (the queued-action byte) into 16+ handler arms; each arm consults a mix of per-actor state, the current target's record at `0x80084708 + tgt*0x414`, the global ability bitmask via `FUN_800431D0`, and the `0x8007BD10` actor-type table to gate the action with a 16-bit return code (action-OK, blocked, requires-target-flag, etc.). Engine reimpl wires this between the move VM and the per-actor state machine `FUN_801E295C`.
 
@@ -116,9 +116,9 @@ The 4-u32 global ability bitmask is what tells the renderer to draw "auto-counte
 
 Two SCUS-side archive loaders feed the battle state. Their record-walk helpers:
 
-- `FUN_800536BC` — copies records of stride `0x1C` from the archive into runtime layout, applying delta fixups to 6 of the 7 u32 fields (offset → absolute pointer pattern: `record[+0x18..0x30]`).
-- `FUN_80053898` — bubble-sort over the 7-u32-stride records keyed on parallel byte arrays.
-- `FUN_80053B9C` — copies short-array records into the per-slot UI buffer at `iVar1 + 0x894 + slot*0x1E0`, OR-ing `0x8000` into each entry (the "active" flag).
+- `FUN_800536BC` - copies records of stride `0x1C` from the archive into runtime layout, applying delta fixups to 6 of the 7 u32 fields (offset → absolute pointer pattern: `record[+0x18..0x30]`).
+- `FUN_80053898` - bubble-sort over the 7-u32-stride records keyed on parallel byte arrays.
+- `FUN_80053B9C` - copies short-array records into the per-slot UI buffer at `iVar1 + 0x894 + slot*0x1E0`, OR-ing `0x8000` into each entry (the "active" flag).
 
 Both archive loaders interact with the battle character / monster slots via the 8-actor table at `0x801C9370`.
 
@@ -134,17 +134,17 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x196..+0x19D` | u8 equipment slot bytes (8 slots; weapon, armour, accessories). |
 | `+0x141`-ish | Character name string (used by the `FUN_80036044` `0xC1` text-escape). |
 | `+0x2B0..+0x37F` | Active spell-slot array (stride `0x14`, up to N entries). Populated by `FUN_80042DBC` from the spell list. |
-| `+0xF4..0x100` | "Active abilities" 16-byte block — OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
+| `+0xF4..0x100` | "Active abilities" 16-byte block - OR'd into the global 4×u32 bitmask at `0x80074358..0x80074368` by `FUN_80042558`. |
 | `+0x104..0x110` | HP / MP / SP triplets (cur, max stored as separate u16s). |
-| `+0x10E` | u8 — written on level-up (delta `+8` for Vahn slot in the captured pre→post pair). Likely max-HP byte component or stat-derived rank. |
+| `+0x10E` | u8 - written on level-up (delta `+8` for Vahn slot in the captured pre→post pair). Likely max-HP byte component or stat-derived rank. |
 | `+0x11A` | Stat-cap field (clamped to `0x3E7`). |
-| `+0x11C..+0x122` | Six adjacent stat bytes (paired) — incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
-| `+0x130` | u8 — incremented by `+1` on level-up (rank-style counter, e.g. number of times leveled). |
+| `+0x11C..+0x122` | Six adjacent stat bytes (paired) - incremented by small deltas (`+1..+4`) on level-up. Likely the per-stat rank table consumed by the level-up apply path. |
+| `+0x130` | u8 - incremented by `+1` on level-up (rank-style counter, e.g. number of times leveled). |
 | `+0x161..+0x184` | u8 spell-level array (one byte per spell id; stride matches spell list). Magic-rank up writes here (delta `+1` per learned spell). |
 
-**Level-up captured deltas (Vahn, mc8 → mc9).** Diff captured via `mednafen-state` shows the per-character side-effects of a single character-level event:
+**Level-up captured deltas (Vahn, pre/post a single character-level event).** Diff captured via `mednafen-state` shows the per-character side-effects:
 
-| Offset | Width | mc8 → mc9 | Interpretation |
+| Offset | Width | Pre → Post | Interpretation |
 |---|---|---|---|
 | `+0x00` | u8 | `0x4F` → `0x73` (79 → 115) | Possibly raw level byte / per-character XP-derived counter. |
 | `+0x04..+0x06` | u16 LE | `0x016D` → `0x02DA` (365 → 730) | XP word delta (+365). Matches the published level-up XP curves. |
@@ -152,13 +152,13 @@ Stride `0x414` bytes per character, base `0x80084708` (so character `n` lives at
 | `+0x11C..+0x122` | 6× u8 | `67/1C/13/10/16/0B` → `6B/20/15/12/1A/0F` | Per-stat increments (`+4 +4 +2 +2 +4 +4`). |
 | `+0x130` | u8 | `0x02` → `0x03` | Rank counter. |
 
-Noa and Gala records are byte-identical between mc8 and mc9 — the level-up event in this capture pair is for Vahn alone.
+Noa and Gala records are byte-identical across the same pair - the level-up event in this capture pair is for Vahn alone.
 
-**Magic-rank up captured deltas (Vahn, mc7 → mc8).** Diff over the same record range surfaces a strict subset of the level-up footprint, focused on the spell-level table:
+**Magic-rank up captured deltas (Vahn, pre/post a single magic-rank-up event).** Diff over the same record range surfaces a strict subset of the level-up footprint, focused on the spell-level table:
 
-| Offset | Width | mc7 → mc8 | Interpretation |
+| Offset | Width | Pre → Post | Interpretation |
 |---|---|---|---|
-| `+0x08` | u8 | `0x30` → `0x3C` (+12) | Flag word — specific bit TBD. |
+| `+0x08` | u8 | `0x30` → `0x3C` (+12) | Flag word - specific bit TBD. |
 | `+0x9C` | u8 | `0x09` → `0x0A` (+1) | Magic-rank mirror. |
 | `+0x10A` | u8 | `0x1B` → `0x11` (-10) | TBD (transient battle state, possibly post-strike). |
 | `+0x161` | u8 | `0x02` → `0x03` (+1) | Spell-level byte (`+0x161..+0x184` array). Confirms magic-rank up writes here. |
@@ -169,21 +169,21 @@ Noa and Gala records are byte-identical between mc8 and mc9 — the level-up eve
 
 ## Hottest battle utility (`FUN_801D8DE8`)
 
-3 KB / 77 incoming refs. The single most-cited battle helper — likely a per-actor utility that every state arm bottoms out into.
+3 KB / 77 incoming refs. The single most-cited battle helper - likely a per-actor utility that every state arm bottoms out into.
 
 ## Weapon / effect trail builder (`FUN_80048310` + `FUN_800485BC`)
 
-Visual-only helpers that build the swept geometry behind a moving battle actor (sword trails, dash plumes, particle ribbons). `FUN_80048310` iterates the 16-slot per-actor frame buffer at `actor[+0x68]`, copies vertex triplets from the per-actor pose pool at `gp[0xa0c] + 0x6f4` (stride `0xC`), and calls `FUN_800485BC` twice — once for the outline, once for the base — blending two endpoint colours over N steps via a `0..N` gradient loop.
+Visual-only helpers that build the swept geometry behind a moving battle actor (sword trails, dash plumes, particle ribbons). `FUN_80048310` iterates the 16-slot per-actor frame buffer at `actor[+0x68]`, copies vertex triplets from the per-actor pose pool at `gp[0xa0c] + 0x6f4` (stride `0xC`), and calls `FUN_800485BC` twice - once for the outline, once for the base - blending two endpoint colours over N steps via a `0..N` gradient loop.
 
 `FUN_800485BC` is a 275-instruction quad-strip emitter. It looks up the actor pose from `*(int*)(0x801C9370 + actor[+0x5A]*4) + 0x34/+0x38` (re-confirms the battle actor pointer table), reads sin/cos LUTs at `_DAT_8007B81C` / `_DAT_8007B7F8` keyed on `actor[+0x26] * 0xFFF`, runs each vertex through `FUN_800195A8` for GTE projection, and drops `0x3B808080` (GP0 G3 textured-quad) packets into the OT.
 
-These are pure rendering helpers — no gameplay state changes. Engine reimpl can defer them until visuals matter.
+These are pure rendering helpers - no gameplay state changes. Engine reimpl can defer them until visuals matter.
 
 ## Inventory (`crates/asset` page-banked layout)
 
 Battle reads inventory through the same page-banked structure the field VM's op `0x3B` `SET_ITEM_COUNT` writes: 16 entries × 16-bit per page × 0x414-byte stride. The page index is the high nibble of the slot byte; the entry index is the low nibble.
 
-The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 0x80085918)` — adjacent to the fourth-flag-bank bitfield at `DAT_80086D70` (see [field VM](script-vm.md) → "fourth flag bank"). The field VM's op `0x4C` sub-3 sub-2 zeros the entire region.
+The page-banked inventory state lives in the 512-byte region at `[0x80085718 .. 0x80085918)` - adjacent to the fourth-flag-bank bitfield at `DAT_80086D70` (see [field VM](script-vm.md) → "fourth flag bank"). The field VM's op `0x4C` sub-3 sub-2 zeros the entire region.
 
 ## Status effects
 
@@ -223,13 +223,13 @@ Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap
 
 Clean-room port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Burned reduces ATK by ~12.5%, Confused halves accuracy, Asleep / Stunned / Petrified zero evasion and block actions, Silenced / Petrified block Magic).
 
-Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free — engines call it once per turn-start.
+Implementation: [`crates/engine-core::battle_stats`](../../crates/engine-core/src/battle_stats.rs). The pure function `compute_battle_stats(record, table, statuses, modifiers) -> BattleStats` is deterministic and side-effect-free - engines call it once per turn-start.
 
 ## Item catalog
 
 Typed catalogue of inventory items the battle / field menu consults. Each entry has an `ItemEffect` describing the side-effect (Heal / Cure / Revive / Stat-up / Spirit-up / Capture / Escape / Damage / KeyItem). The vanilla catalog ships 19 entries covering every category.
 
-`apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver — engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
+`apply_effect(effect, &TargetSnapshot) -> ItemOutcome` is the pure resolver - engines fold each `ItemOutcome` into world state through whatever runtime path they have for HP / status / AP / inventory.
 
 Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
 
@@ -284,7 +284,7 @@ Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.r
 
 State machine that drives the "open inventory → pick item → pick target → use it" flow shared between the field menu and the battle command menu. Engines own a single `InventoryUseSession` for the lifetime of the inventory screen; per-frame they push input events and drain `InventoryUseEvent`s.
 
-Filters items by `InventoryContext` (battle vs field — `usable_in_battle` / `usable_in_field` from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved `ItemOutcome` into the engine's world state via `World::use_item`.
+Filters items by `InventoryContext` (battle vs field - `usable_in_battle` / `usable_in_field` from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved `ItemOutcome` into the engine's world state via `World::use_item`.
 
 Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-core/src/inventory_use.rs).
 
@@ -316,16 +316,16 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 | `SingleAllyOrSelf` | Any alive party slot, including the actor. |
 | `DeadAlly` | One fallen party slot (Revive / Resurrection). |
 | `AnyAlly` | Any party slot, alive or dead. |
-| `AllEnemies` / `AllAllies` | Sweep target — auto-confirm. |
-| `Self_` | The actor itself — auto-confirm. |
+| `AllEnemies` / `AllAllies` | Sweep target - auto-confirm. |
+| `Self_` | The actor itself - auto-confirm. |
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`crates/engine-core::target_picker`](../../crates/engine-core/src/target_picker.rs).
 
 `BattleSession::push_command_with_target(world, cmd, kind, actor_slot)` is the wiring API engines drive when a command needs a target. The session charges AP up-front, opens the picker, and stashes the command in `pending_target_command`. When the picker resolves, `maybe_close_picker_with_world` writes the resolved slot to `BattleActor::active_target` (the field the action SM reads at strike time via `host.actor(actor_slot).active_target`) and admits the buffered command into the runner queue without re-charging AP. Sweep targets write a `0xFF` sentinel; cancellation drops the command without admitting it. Engines that already have a `&World` borrow at picker-open time use [`open_target_picker`]; engines that need the same active-target write at open-time (sweep / self) call [`open_target_picker_mut`].
 
-## Encounter trigger — runtime memory layout
+## Encounter trigger - runtime memory layout
 
-The `mc1` (pre-encounter walking `map01`) → `mc2` (battle just initiated, same `map01` scene) save pair pins the runtime memory layout of an encounter trigger. The `mednafen-state diff` over `0x801C0000..0x80200000` surfaces:
+A pre/post encounter save pair (one frame walking the `map01` field scene; the next frame with battle just initiated, same `map01` scene) pins the runtime memory layout of an encounter trigger. The `mednafen-state diff` over `0x801C0000..0x80200000` surfaces:
 
 | Range | Bytes changed | What it is |
 |---|---:|---|
@@ -333,27 +333,27 @@ The `mc1` (pre-encounter walking `map01`) → `mc2` (battle just initiated, same
 | `0x801C9370..0x801C9900` | ~200-500 B | 8-slot battle actor pointer table; stride `0x60` per slot |
 | `0x80083000..0x80084000` | ~600 B | Scene-bundle / sound-pool: encounter formation + BGM resolution |
 
-The active scene-name table at `0x80084540` (CDNAME label + scene index) is **identical** between mc1 and mc2 — the battle is layered on top of the field scene rather than swapping it out. Engines that drive the field-to-battle transition therefore preserve the active-scene state and only resolve the formation + battle overlay.
+The active scene-name table at `0x80084540` (CDNAME label + scene index) is **identical** between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out. Engines that drive the field-to-battle transition therefore preserve the active-scene state and only resolve the formation + battle overlay.
 
 Codified as constants in [`crates/engine-core::capture_observations::encounter_trigger`](../../crates/engine-core/src/capture_observations.rs); a disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`encounter_trigger_diff_loads_battle_overlay`) exercises the real save bytes.
 
 ## Captured stat-growth observations
 
-The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../tooling/mednafen-automation.md)) over `mc7..mc9` pins the per-byte footprint of a magic-rank-up + character-level-up event for Vahn (party slot 0). The observed deltas inside Vahn's character record at `0x80084708` (stride `0x414`):
+The `mednafen-state diff` toolkit ([`docs/tooling/mednafen-automation.md`](../tooling/mednafen-automation.md)) over a magic-rank-up + character-level-up save triplet pins the per-byte footprint for Vahn (party slot 0). The observed deltas inside Vahn's character record at `0x80084708` (stride `0x414`):
 
 | Event | Offset | Before → After | Interpretation |
 |---|---|---|---|
-| mc7 → mc8 (magic-rank up) | `+0x08` | `0x30 → 0x3C` | flag word low byte (+12) |
-| mc7 → mc8 | `+0x9C` | `0x09 → 0x0A` | magic-rank counter (+1) |
-| mc7 → mc8 | `+0x10A` | `0x1B → 0x11` | low byte of `mp_max` (cast cost spent) |
-| mc7 → mc8 | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |
-| mc8 → mc9 (level-up, 4-level jump) | `+0x00` | `0x4F → 0x73` | unconfirmed (jump +0x24 doesn't match a single-level granularity) |
-| mc8 → mc9 | `+0x04..+0x06` | `0x016D → 0x02DA` | u16 LE XP delta (+365) |
-| mc8 → mc9 | `+0x10E` | `0x3A → 0x42` | low byte of `sp_max` (Spirit, +8) |
-| mc8 → mc9 | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
-| mc8 → mc9 | `+0x130` | `0x02 → 0x03` | rank counter (+1) |
+| Magic-rank up (pre → post) | `+0x08` | `0x30 → 0x3C` | flag word low byte (+12) |
+| Magic-rank up | `+0x9C` | `0x09 → 0x0A` | magic-rank counter (+1) |
+| Magic-rank up | `+0x10A` | `0x1B → 0x11` | low byte of `mp_max` (cast cost spent) |
+| Magic-rank up | `+0x161` | `0x02 → 0x03` | spell-level array (`spell_levels[0]` +1) |
+| Level-up, 4-level jump (pre → post) | `+0x00` | `0x4F → 0x73` | unconfirmed (jump +0x24 doesn't match a single-level granularity) |
+| Level-up | `+0x04..+0x06` | `0x016D → 0x02DA` | u16 LE XP delta (+365) |
+| Level-up | `+0x10E` | `0x3A → 0x42` | low byte of `sp_max` (Spirit, +8) |
+| Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
+| Level-up | `+0x130` | `0x02 → 0x03` | rank counter (+1) |
 
-The retail per-Seru per-level lookup table that drives these increments is not in `SCUS_942.54`; the writer lives in the level-up overlay (already captured) and the table base is referenced through a pointer at `Seru struct +0x74`. A writer-search across the captured overlay is the next step toward a true per-character `StatGrowthCurve::PerLevel` vector.
+The retail per-Seru per-level lookup table that drives these increments is **not** in `SCUS_942.54`. A writer-search across the captured `magic_level_up` overlay returned negative for code-side `sb`/`sh` writes targeting the documented record offsets, and the "Seru struct +0x74 pointer dereference" hypothesis isn't supported by the current capture set - the `+0x74` reads in the captured overlay surface a 32-bit battle-state flag the SCUS-side handler `FUN_800480D8` writes with the constant `0x80808080`, not a stat-grant pointer. The grant table either lives in a still-uncaptured overlay (battle-data init or the Seru-equip path) or is encoded inline in a Seru PROT entry the current capture set doesn't surface. The next step toward a true per-character `StatGrowthCurve::PerLevel` vector is a runtime-watchpoint trace during a level-up, not another static grep.
 
 Engines populate one captured observation at a time via:
 
@@ -377,7 +377,7 @@ let tracker = LevelUpTracker::new().with_observed_curve(0, &obs);
 | `opmap01` | `MOV/MV5.STR` | World map opening |
 | `edteien` | `MOV/MV6.STR` | Garden ending FMV |
 
-`cutscene_label_for_str(filename)` is the inverse (case-insensitive on the basename so `mv1.str` and `MOV/MV1.STR` both round-trip). The remaining `ed*` scenes (`edbylon`, `edbalden`, `edlast`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`) are dialogue-actor-overlay driven and have no FMV. The exact retail mapping table lives in the cutscene overlay (not yet captured) — when it lands, the lookup function should be updated to consult the captured map. The `legaia-engine play` and `play-window` subcommands auto-resolve the STR file when the user passes `--scene <op*|edteien>` and the extracted root contains the matching MV file.
+`cutscene_label_for_str(filename)` is the inverse (case-insensitive on the basename so `mv1.str` and `MOV/MV1.STR` both round-trip). The remaining `ed*` scenes (`edbylon`, `edbalden`, `edlast`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`) are dialogue-actor-overlay driven and have no FMV. The exact retail mapping table lives in the cutscene overlay (not yet captured) - when it lands, the lookup function should be updated to consult the captured map. The `legaia-engine play` and `play-window` subcommands auto-resolve the STR file when the user passes `--scene <op*|edteien>` and the extracted root contains the matching MV file.
 
 ## Equipment catalog
 

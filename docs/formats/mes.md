@@ -11,7 +11,7 @@ Container format for Legaia's dialog text. Two on-disc variants share an offset 
 
 Both share a header → offset table → bytecode body shape.
 
-### Compact variant — fixed header layout
+### Compact variant - fixed header layout
 
 ```
 +0x00   u32 LE = 0x00000404       ; magic
@@ -26,7 +26,7 @@ Both share a header → offset table → bytecode body shape.
 +0x5A   u32  ?                    ; pre-table header dword
 +0x5E   u16  ?                    ; pre-table header word
 +0x60   u16  ?                    ; pre-table header word
-+0x62   u24 LE [N]                ; offset table — 3 bytes per entry, up to 0x56 entries
++0x62   u24 LE [N]                ; offset table - 3 bytes per entry, up to 0x56 entries
 ...
 +0xC8   bytecode region starts here
 ```
@@ -41,7 +41,7 @@ The Records format has no fixed header. The parser identifies record boundaries
 by scanning for recurring `0x44 0x78` marker pairs (at least 4 hits required).
 Each marker starts a variable-stride record; the inter-record contents are
 the bytecode and any embedded header fields. Full per-record structure is not
-yet reversed — capture a town or field overlay to observe how the runtime
+yet reversed - capture a town or field overlay to observe how the runtime
 parses this variant.
 
 ## Bytecode encoding
@@ -52,7 +52,7 @@ Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#f
 |---|---|---|
 | `0x00..0x1E` | 1 | End-of-message / line terminator. The walker stops here. |
 | `0x1F..0x5D` | 1 | Single-byte glyph (font tile index). |
-| `0x5E XX` | 2 | **Alias** — the substitution expander rewrites this in-place to `0xCE (XX-0x2D)`. |
+| `0x5E XX` | 2 | **Alias** - the substitution expander rewrites this in-place to `0xCE (XX-0x2D)`. |
 | `0x5F..0xBF` | 1 | Single-byte glyph. |
 | `0xC0 XX` | 2 | 2-byte wide glyph (no substitution). |
 | `0xC1 XX` | 2 | Substitute character name. Reads name from save record at `0x80084708 + XX*0x414`; XX = 99 means "current party leader" (`DAT_80084597`). |
@@ -64,15 +64,15 @@ Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#f
 | `0xC7 XX` | 2 | Substitute terrain / quest name from `DAT_80073F24 + XX*8`. |
 | `0xC8..0xCD XX` | 2 | 2-byte wide glyph (stride only). |
 | `0xCE XX` | 2 | Spacing op. The width-measure increments the glyph counter without emitting; the renderer uses `XX` as a horizontal offset. |
-| `0xCF XX` | 2 | Skip 2 bytes (passthrough — `XX` is rendered alone, not paired with the `0xCF` prefix). |
+| `0xCF XX` | 2 | Skip 2 bytes (passthrough - `XX` is rendered alone, not paired with the `0xCF` prefix). |
 | `0xD0..0xFE` | 1 | Single-byte glyph. |
-| `0xFF` | 1 | **Alias** — the substitution expander rewrites this to `0xCF`. |
+| `0xFF` | 1 | **Alias** - the substitution expander rewrites this to `0xCF`. |
 
 The "is this a substitution opcode?" gate in `FUN_80036044` is the integer test `(byte + 0x40) < 8`, which catches `0xC0..0xC7`. Within that range the cases `0xC1..0xC5` and `0xC7` are explicit; `0xC0` and `0xC6` fall through to "no substitution" (still 2-byte stride).
 
 ## Interpreter functions
 
-### `FUN_8003CA38` — glyph stride walker
+### `FUN_8003CA38` - glyph stride walker
 
 16-instruction primitive that returns the count of bytes (= glyphs) until the next terminator. The classification logic is just:
 
@@ -89,15 +89,15 @@ int FUN_8003CA38(byte *p) {
 
 Used by the dialog window pager to compute line lengths cheaply.
 
-### `FUN_80036044` — text width measurement
+### `FUN_80036044` - text width measurement
 
-Walks the bytecode and returns total width. Adds the substitution dispatch on top of the stride walker — for each `0xC1..0xC5` or `0xC7` byte, it follows the substitution pointer into the corresponding name table and recursively walks that string's width too. Calls itself implicitly by re-running the same `(byte > 0x1F)` loop on the substituted string.
+Walks the bytecode and returns total width. Adds the substitution dispatch on top of the stride walker - for each `0xC1..0xC5` or `0xC7` byte, it follows the substitution pointer into the corresponding name table and recursively walks that string's width too. Calls itself implicitly by re-running the same `(byte > 0x1F)` loop on the substituted string.
 
-### `FUN_80036888` — text renderer
+### `FUN_80036888` - text renderer
 
 The actual draw loop. Same byte classification, but emits glyphs into the text-actor buffer and forwards spacing ops to the cursor advancer. Calls [`FUN_80036514`](#fun_80036514--substitution-expander) at the start to expand substitutions into a working buffer.
 
-### `FUN_80036514` — substitution expander
+### `FUN_80036514` - substitution expander
 
 Reads source bytecode from `param_2` and writes expanded bytecode to `param_1`. Two input-time aliases are normalised:
 
@@ -108,9 +108,9 @@ Reads source bytecode from `param_2` and writes expanded bytecode to `param_1`. 
 
 Then it walks the input and inlines `0xC1..0xC5` / `0xC7` substitutions: each substitution opcode is replaced by the bytes of the substituted name, copied character-by-character.
 
-## Dialog window pager — `FUN_801D84D0`
+## Dialog window pager - `FUN_801D84D0`
 
-Lives in the dialog overlay (mc4 capture). Distinct from the byte-level interpreter — this is the per-frame state machine that pages text on input. 26 outer states (`_DAT_801F2734`, range `0..0x19`) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in `_DAT_801F3540[line]` (16-line buffer at `0x801F3580`). Test `(byte & 0x7F) < 0x20` is used to detect line terminators (catches both `0x00..0x1F` and `0x80..0x9F`).
+Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (`_DAT_801F2734`, range `0..0x19`) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in `_DAT_801F3540[line]` (16-line buffer at `0x801F3580`). Test `(byte & 0x7F) < 0x20` is used to detect line terminators (catches both `0x00..0x1F` and `0x80..0x9F`).
 
 The crate-level Rust port of this pager lives in [`crates/engine-vm`](../../crates/engine-vm/README.md) as the dialog-window state machine.
 
@@ -130,6 +130,6 @@ mes stats-all  <PATH>             # event-type histogram across every message
 
 ## Related
 
-- [`dialog-font.md`](dialog-font.md) — proportional dialog font in VRAM.
-- [`reference/functions.md`](../reference/functions.md) — all four interpreter functions plus `FUN_8001FD44` (dialog opener).
-- [`subsystems/script-vm.md`](../subsystems/script-vm.md) — script VM op `0x3F` calls the dialog opener.
+- [`dialog-font.md`](dialog-font.md) - proportional dialog font in VRAM.
+- [`reference/functions.md`](../reference/functions.md) - all four interpreter functions plus `FUN_8001FD44` (dialog opener).
+- [`subsystems/script-vm.md`](../subsystems/script-vm.md) - script VM op `0x3F` calls the dialog opener.

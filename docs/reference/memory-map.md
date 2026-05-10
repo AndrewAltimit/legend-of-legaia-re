@@ -3,10 +3,10 @@
 PSX RAM is 2 MB total at KSEG0 base `0x80000000`. Legaia's runtime layout:
 
 ```
-0x80000000 — 0x8000FFFF    BIOS scratchpad area (kernel + thread state)
-0x80010000 — 0x800FFFFF    SCUS_942.54 code + data (~960 KB)
-0x80100000 — 0x801BFFFF    runtime data buffers (asset slabs, character struct, save state)
-0x801C0000 — 0x801FFFFF    overlay window (256 KB, see "Overlays" below)
+0x80000000 - 0x8000FFFF    BIOS scratchpad area (kernel + thread state)
+0x80010000 - 0x800FFFFF    SCUS_942.54 code + data (~960 KB)
+0x80100000 - 0x801BFFFF    runtime data buffers (asset slabs, character struct, save state)
+0x801C0000 - 0x801FFFFF    overlay window (256 KB, see "Overlays" below)
 0x80200000+                 extended overlay region
 ```
 
@@ -22,7 +22,7 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 | `0x80084594` | u8 | Party member count. |
 | `0x80084598` | u8[] | Party member IDs (sorted insertion, cap 4). |
 | `0x80084628` | i16 | Set by op 0x4C nibble-8 sub-8. |
-| `0x80086D70` | u8[32] | **Fourth flag bank** — 256-bit bitfield, accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))`. |
+| `0x80086D70` | u8[32] | **Fourth flag bank** - 256-bit bitfield, accessed via SET / CLEAR / TEST `(idx >> 3, 0x80 >> (idx & 7))`. |
 | `0x80087AF8` | u32 | Result of `FUN_80020224` descriptor walker, set by town-overlay MAIN INIT. |
 | `0x800845DC` | (mirror of `_DAT_80084570`) | Snapshot written by op 0x4C nibble-E sub-E. |
 | `0x800845A4` | u32 | Party-money / XP bank. |
@@ -57,7 +57,7 @@ Plus the PSX-specific scratchpad at `0x1F800000-0x1F8003FF` (1 KB) which Legaia 
 
 | Address | Purpose |
 |---|---|
-| `0x801C70F0` | In-RAM PROT TOC — populated at boot by `FUN_8003E4E8`. Different stride from on-disc. |
+| `0x801C70F0` | In-RAM PROT TOC - populated at boot by `FUN_8003E4E8`. Different stride from on-disc. |
 | `0x801C6EA4` | Current world / scene struct pointer. |
 | `0x801C6460` | 64-entry × u16 scratchpad slot table. Written by op 0x4C nibble-C sub-A; adjusted by sub-B / sub-C. |
 | `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). |
@@ -104,7 +104,7 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 
 ## Overlay window (`0x801C0000+`)
 
-The 256 KB overlay window is shared between several runtime overlays — only one is loaded at any time. See [`tooling/overlay-capture.md`](../tooling/overlay-capture.md) for the per-overlay capture protocol and [`subsystems/boot.md`](../subsystems/boot.md) for which overlay loads when.
+The 256 KB overlay window is shared between several runtime overlays - only one is loaded at any time. See [`tooling/overlay-capture.md`](../tooling/overlay-capture.md) for the per-overlay capture protocol and [`subsystems/boot.md`](../subsystems/boot.md) for which overlay loads when.
 
 | RAM range | Overlay | Subsystems |
 |---|---|---|

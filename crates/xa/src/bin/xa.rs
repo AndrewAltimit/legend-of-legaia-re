@@ -116,7 +116,7 @@ fn demux_disc(bin: &Path, lba: u32, size: u32, out_dir: &Path, prefix: Option<&s
         .with_context(|| format!("demux {} @ LBA {} size {}", bin.display(), lba, size))?;
     if streams.is_empty() {
         bail!(
-            "no audio sectors found at LBA {} (size {} bytes) — not a CD-XA stream?",
+            "no audio sectors found at LBA {} (size {} bytes) - not a CD-XA stream?",
             lba,
             size
         );

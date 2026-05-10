@@ -1,6 +1,6 @@
 # legaia-mdt
 
-`move.mdt` — the runtime "move" buffer that holds character animation
+`move.mdt` - the runtime "move" buffer that holds character animation
 and attack-move data (Tactical Arts).
 
 ## Where the data lives
@@ -10,7 +10,7 @@ via `FUN_800255b8`, which reads the PROT entry indexed by
 `_DAT_80084540 + 4` into `_DAT_8007b85c` and raw-copies it into a
 freshly-allocated buffer at `_DAT_8007b888`. The asset dispatcher
 (`FUN_8001f05c` case `0x05`, `s_move_malloc_err`) writes the same global
-when it fires, but no streaming chunk of type 5 exists in retail — that
+when it fires, but no streaming chunk of type 5 exists in retail - that
 branch is never taken in practice. The MOVE2 sibling
 (`_DAT_8007b840`, dispatcher case `0x0B`) holds moves with id > `0x3FF`.
 

@@ -336,7 +336,7 @@ pub const TABLE: [ModeEntry; 28] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandlerResult {
     /// Stay in the current mode for another frame (the retail "loop"
-    /// pattern — most "MODE" handlers do this).
+    /// pattern - most "MODE" handlers do this).
     Continue,
     /// Transition to the table's `next` entry. If `next` is `None` the
     /// driver leaves the current mode unchanged (matching the retail
@@ -381,7 +381,7 @@ impl ModeHandler for NoopHandler {}
 ///   `SpawnAt` opcode, with positions arranged on a horizontal line. Returns
 ///   `Done` so the driver advances to the table's next mode.
 /// - `MainMode`: ticks the world (positions advance via the move VM). When
-///   the host signals `Cross` (just-pressed), returns `GoTo(MapdispInit)` —
+///   the host signals `Cross` (just-pressed), returns `GoTo(MapdispInit)` -
 ///   the canonical "select party" → "enter map" transition. Otherwise
 ///   `Continue`.
 /// - Other modes: no-op `Continue`.
@@ -496,7 +496,7 @@ impl ModeDriver {
         input: &InputState,
     ) -> HandlerResult {
         // Keep the World's scene-mode in sync each frame. Cheap and
-        // idempotent — the World's tick path keys off it.
+        // idempotent - the World's tick path keys off it.
         world.mode = self.current.scene_mode();
         let r = host.run(self.current, world, input);
         // Always tick the World after the handler, so a Continue runs the
@@ -600,7 +600,7 @@ mod tests {
                 }
             }
         }
-        // MainMode has next=ConfigInit — transition should land there.
+        // MainMode has next=ConfigInit - transition should land there.
         let mut d = ModeDriver::new(GameMode::MainMode);
         let mut h = DoneOnce { ticked: false };
         let mut w = World::default();
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn handler_done_no_op_when_next_is_none() {
-        // ConfigInit has next=None — Done should leave the mode unchanged.
+        // ConfigInit has next=None - Done should leave the mode unchanged.
         struct AlwaysDone;
         impl ModeHandler for AlwaysDone {
             fn run(&mut self, _: GameMode, _: &mut World, _: &InputState) -> HandlerResult {
@@ -649,7 +649,7 @@ mod tests {
         let mut h = TitleHandler::new(4);
         let mut w = World::default();
         let input = InputState::new();
-        // First tick: MainInit spawns actors and reports Done — driver
+        // First tick: MainInit spawns actors and reports Done - driver
         // advances to MainInit's next entry (which is None per the table,
         // so we stay in MainInit). The actors should still be live.
         let r = d.tick(&mut h, &mut w, &input);

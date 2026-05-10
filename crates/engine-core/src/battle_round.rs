@@ -1,9 +1,9 @@
-//! Per-round battle lifecycle — wires the pure-code subsystems
+//! Per-round battle lifecycle - wires the pure-code subsystems
 //! (`ap_gauge`, `battle_stats`, `legaia_engine_vm::status_effects`,
 //! `items`) into the actor / battle-action chain.
 //!
 //! A "round" in retail Legaia is one full pass through the turn-order
-//! list — each actor either acts or has their action skipped because of
+//! list - each actor either acts or has their action skipped because of
 //! a status effect. The retail engine threads three operations across
 //! that round boundary:
 //!
@@ -17,7 +17,7 @@
 //! `World` API so engines call `BattleRound::begin(&mut world, ...)` at
 //! turn start and `BattleRound::end(&mut world)` at turn end. The `World`
 //! struct already carries the ApGauge / StatusEffectTracker /
-//! ItemCatalog state — `BattleRound` is the orchestrator that drives
+//! ItemCatalog state - `BattleRound` is the orchestrator that drives
 //! them in retail order.
 
 use crate::battle_stats::{
@@ -38,14 +38,14 @@ pub struct BattleRound {
     /// party; 3..8 are monsters). Slots without a registered actor
     /// have the default zero-stats.
     pub stats: [BattleStats; 8],
-    /// `true` for slots whose actor is asleep / stunned / petrified —
+    /// `true` for slots whose actor is asleep / stunned / petrified -
     /// used by the action validator to filter out command input.
     pub action_blocked: [bool; 8],
     /// `true` for slots whose actor is silenced or petrified.
     pub magic_blocked: [bool; 8],
 }
 
-/// Per-slot input the engine passes into [`BattleRound::begin`] —
+/// Per-slot input the engine passes into [`BattleRound::begin`] -
 /// the retail equivalent of reading the character record + equipment
 /// table.
 #[derive(Debug, Clone, Default)]
@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn end_round_ticks_status_and_returns_zero_when_no_deaths() {
         let mut world = world_with_party();
-        // Slot 0 with full HP — nothing dies this round.
+        // Slot 0 with full HP - nothing dies this round.
         if let Some(a) = world.actors.get_mut(0) {
             a.battle.hp = 100;
             a.battle.max_hp = 100;
@@ -258,7 +258,7 @@ mod tests {
             a.battle.hp = 5;
             a.battle.max_hp = 100;
         }
-        // Apply Poisoned — drains hp/8 per tick = 12 → kills the actor.
+        // Apply Poisoned - drains hp/8 per tick = 12 → kills the actor.
         // (max_hp 100, so burned would only do 6; use Poisoned current_hp/8 = 0
         // which won't kill, fall back to Burned with low max_hp.)
         // Burned drain is max_hp / 16 = 6 → kills the 5-HP actor.

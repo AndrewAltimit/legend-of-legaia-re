@@ -47,7 +47,7 @@ The `0xFF00` mask above is the trick that lets the control register tell the dec
 
 ## Container format
 
-`crates/lzs::parse_container` handles the multi-section `player.lzs`-style wrapper used by some PROT entries — a length-prefixed array of independently-compressed sections concatenated together.
+`crates/lzs::parse_container` handles the multi-section `player.lzs`-style wrapper used by some PROT entries - a length-prefixed array of independently-compressed sections concatenated together.
 
 ## "Decompresses without error" is not a validity signal
 

@@ -99,7 +99,7 @@ fn encounter_trigger_resolves_to_formation_def() {
     // Force a triggering step.
     let triggered = w.on_field_step();
     assert!(triggered, "fully-saturated rate should always trigger");
-    // Tick the transition timer — `transition_frames=0` means the
+    // Tick the transition timer - `transition_frames=0` means the
     // session moves Idle → Transition → Triggered after one tick.
     w.tick_encounter();
     let roll = w.drain_encounter_formation().expect("triggered formation");
@@ -320,7 +320,7 @@ fn target_picker_wiring_writes_active_target_and_admits_buffered_command() {
     );
     assert!(ok, "command should admit");
     assert_eq!(s.sub_phase(), SubPhase::TargetPick);
-    // Cross — confirm target. Wiring writes `active_target` and admits
+    // Cross - confirm target. Wiring writes `active_target` and admits
     // the buffered command into the runner queue.
     let confirm = SessionInput {
         cross: true,
@@ -344,7 +344,7 @@ fn target_picker_wiring_writes_active_target_and_admits_buffered_command() {
         )
     });
     assert!(pushed, "buffered command should auto-admit on confirm");
-    // Active-target write — the picker confirmed monster slot 0 (the first
+    // Active-target write - the picker confirmed monster slot 0 (the first
     // alive enemy). The active_target byte is the *row-relative* slot
     // index emitted by `PickerOutcome::Single` (so `0` here, even though
     // the absolute battle-actor slot is 3).
@@ -405,7 +405,7 @@ fn target_picker_cancel_drops_buffered_command_keeps_runner_empty() {
         )
     });
     assert!(cancelled);
-    // Runner buffer empty — cancellation drops the buffered command.
+    // Runner buffer empty - cancellation drops the buffered command.
     assert!(s.runner.current_buffer().is_empty());
 }
 
@@ -494,7 +494,7 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
     bs.begin_round(&mut w);
     assert_eq!(bs.phase(), BattlePhase::RoundIntro);
 
-    // End the encounter (skip the action SM — the runner is already
+    // End the encounter (skip the action SM - the runner is already
     // exercised in unit tests).
     w.end_encounter_battle();
 

@@ -1,4 +1,4 @@
-/* main.js — site interactions: scroll-spy, copy buttons, search.
+/* main.js - site interactions: scroll-spy, copy buttons, search.
  * Loaded AFTER layout.js, so the DOM injected by injectLayout() is in place.
  */
 

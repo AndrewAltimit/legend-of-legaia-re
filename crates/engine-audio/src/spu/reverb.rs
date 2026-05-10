@@ -4,7 +4,7 @@
 //! a configurable work-buffer size at the bottom of SPU RAM. This module
 //! ships a simplified equivalent: a per-channel circular delay buffer with
 //! a single feedback tap and a wet/dry mix. The presets in
-//! [`ReverbMode::params`] are tuned to *sound* like the retail modes — they
+//! [`ReverbMode::params`] are tuned to *sound* like the retail modes - they
 //! are not byte-equivalent to the SPU register layout (the retail mode
 //! parameters are documented in libspu docs but require the original
 //! SPU's specific topology to reproduce exactly).
@@ -25,7 +25,7 @@ use std::collections::VecDeque;
 /// enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReverbMode {
-    /// Reverb disabled — voices with `reverb_send` produce no echo.
+    /// Reverb disabled - voices with `reverb_send` produce no echo.
     Off,
     /// Small room.
     Room,
@@ -58,7 +58,7 @@ pub struct ReverbParams {
 
 impl ReverbMode {
     /// Resolve parameter triple. Numbers are tuned by ear against the retail
-    /// modes — perceptual match, not bit-exact.
+    /// modes - perceptual match, not bit-exact.
     pub fn params(self) -> ReverbParams {
         // 44.1 kHz internal rate. 1 ms ≈ 44 samples; 100 ms ≈ 4410.
         match self {
@@ -134,7 +134,7 @@ impl ReverbMode {
     }
 }
 
-/// Stereo reverb processor — one delay buffer per channel.
+/// Stereo reverb processor - one delay buffer per channel.
 #[derive(Debug, Clone)]
 pub struct Reverb {
     pub mode: ReverbMode,
@@ -245,7 +245,7 @@ mod tests {
         }
         // First delay echo is non-zero.
         assert!(peak_per_delay[0] > 0);
-        // The tail decays — second / third echoes are smaller than the
+        // The tail decays - second / third echoes are smaller than the
         // first.
         assert!(peak_per_delay[1] <= peak_per_delay[0]);
         assert!(peak_per_delay[2] <= peak_per_delay[1]);

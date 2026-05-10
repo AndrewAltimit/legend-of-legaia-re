@@ -23,7 +23,7 @@ legaia-xa = { path = "../xa" }
 legaia-vab = { path = "../vab" }
 legaia-seq = { path = "../seq" }
 
-# WebAudio deps — pulled in on all wasm32 builds; only wired up when
+# WebAudio deps - pulled in on all wasm32 builds; only wired up when
 # audio-webaudio feature is enabled (gates the webaudio module).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

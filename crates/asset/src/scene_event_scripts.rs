@@ -1,4 +1,4 @@
-//! "Scene event-scripts only" detector — sister of
+//! "Scene event-scripts only" detector - sister of
 //! [`crate::scene_scripted_asset_table`] for the case where the prescript
 //! exists but no canonical 7-asset table follows at the next sector boundary.
 //!
@@ -23,7 +23,7 @@
 //! * [`crate::scene_scripted_asset_table`] runs first; it claims the cases
 //!   where a canonical `[u32 count=7][7 × descriptor]` asset table sits at
 //!   the next 0x800-aligned offset past the prescript.
-//! * This detector catches the rest — the prescript is present, but the
+//! * This detector catches the rest - the prescript is present, but the
 //!   payload after it isn't a canonical asset table. The post-prescript
 //!   bulk is some other asset bundle layout (per-scene secondary header,
 //!   format not yet reversed).
@@ -36,7 +36,7 @@
 //!
 //! ### Format meaning
 //!
-//! The prescript records are field-VM (`FUN_801DE840`) event scripts — the
+//! The prescript records are field-VM (`FUN_801DE840`) event scripts - the
 //! same per-frame bytecode shape used by [`crate::scene_scripted_asset_table`]
 //! (the sentinel is the field VM's "frame divider" opcode). The records
 //! likely encode: scene-enter triggers, NPC dialogue scripts, cut-scene
@@ -54,7 +54,7 @@ const MAX_PRESCRIPT_COUNT: u16 = 4096;
 /// arbitrary `[count][offsets]`-style data by chance.
 const MIN_PRESCRIPT_COUNT: u16 = 3;
 
-/// Field-VM frame divider opcode — `0xFFFF 0x0000` little-endian.
+/// Field-VM frame divider opcode - `0xFFFF 0x0000` little-endian.
 const FRAME_OPENER: u32 = 0x0000_FFFF;
 
 /// Required minimum fraction of records that open with [`FRAME_OPENER`].

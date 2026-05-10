@@ -1,10 +1,10 @@
 # Builds + region data
 
-External research from TCRF (`https://tcrf.net/Legend_of_Legaia`), GameHacking.org, and GameFAQs save-state guides — distilled into the technical bits useful for cross-region testing and runtime validation.
+External research from TCRF (`https://tcrf.net/Legend_of_Legaia`), GameHacking.org, and GameFAQs save-state guides - distilled into the technical bits useful for cross-region testing and runtime validation.
 
 ## Region enum
 
-`legaia_prot::Region` captures the three retail regions. `ProtIndex` carries this as metadata — the TOC formula and CDNAME layout are region-agnostic.
+`legaia_prot::Region` captures the three retail regions. `ProtIndex` carries this as metadata - the TOC formula and CDNAME layout are region-agnostic.
 
 | `Region` variant | Product codes | Notes |
 |---|---|---|
@@ -17,11 +17,11 @@ External research from TCRF (`https://tcrf.net/Legend_of_Legaia`), GameHacking.o
 
 ## Developer attribution
 
-- **Prokion** (also styled "Procyon" — appears in Japanese as ぷろきおん) is the primary studio.
+- **Prokion** (also styled "Procyon" - appears in Japanese as ぷろきおん) is the primary studio.
 - **Contrail** is co-credited.
 - Publisher: SCEI (JP), SCEA (US), SCEE (EU).
 
-This explains the dev paths visible in `SCUS_942.54` strings (`H:\PROT\FIELD\<stage>\tim.dat` etc.) — Sony PsyQ on a Windows host with `H:` mapped to the project tree.
+This explains the dev paths visible in `SCUS_942.54` strings (`H:\PROT\FIELD\<stage>\tim.dat` etc.) - Sony PsyQ on a Windows host with `H:` mapped to the project tree.
 
 ## Known builds
 
@@ -51,9 +51,9 @@ Two distinct flags in the same RAM page:
 | Flag | NA address | JP address | Effect |
 |---|---|---|---|
 | `_DAT_8007B8C2` | `0x8007B8C2` | (build-shifted by 0x1B90) | Dev/retail loader-path flag. Read by 26 SCUS functions. Controls `h:\PROT\FIELD\<stage>\…` dev-path branch in `FUN_800255B8` (and 25 sister branches in other loaders). |
-| `_DAT_8007B98F` | `0x8007B98F` | `0x8007D51F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C` — the GameShark byte-write `8007B98F 0001` makes the LE word non-zero (`0x01000000`), enabling every debug branch with one check. |
+| `_DAT_8007B98F` | `0x8007B98F` | `0x8007D51F` | In-game debug menu enable. Accessed as the high byte of the word at `0x8007B98C` - the GameShark byte-write `8007B98F 0001` makes the LE word non-zero (`0x01000000`), enabling every debug branch with one check. |
 
-Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE — TCRF GameShark codes prove both flags are runtime-writable.
+Both have **zero static writers in `SCUS_942.54`**. The writers must live in an unswept overlay or come from external POKE - TCRF GameShark codes prove both flags are runtime-writable.
 
 The 0x1B90-byte build shift between JP and NA addresses is consistent with same-data, different-binary-layout. Implies the JP and NA executables have the same RAM-resident layout, just relocated.
 
@@ -71,17 +71,17 @@ Once `_DAT_8007B98F` is set, these button combos are live. Dispatcher: `FUN_8001
 
 `FUN_8001822C` per-frame:
 - Reads BIOS pad data at `0x800840F8`, builds 32-bit button mask `_DAT_8007B850`.
-- `if (_DAT_8007B98C == 0) _DAT_8007B850 &= 0xFFFF` — the upper 16 bits (controller 2 / debug bindings) are stripped when debug is OFF. **This is the master gate.**
+- `if (_DAT_8007B98C == 0) _DAT_8007B850 &= 0xFFFF` - the upper 16 bits (controller 2 / debug bindings) are stripped when debug is OFF. **This is the master gate.**
 - Then a large block guarded by `if (_DAT_8007B98C != 0)` handles the button combos above.
 
 GameShark D-code globals:
-- `DAT_8007B7C0` — previous-frame button mask (so `D007B7C0 XXXX` D-codes mean "wait for the user to press XXXX").
-- `_DAT_8007B874 = mask & ~prev` — newly pressed this frame (edge detection).
-- `DAT_8007B7C4 = mask ^ prev` — buttons that changed.
+- `DAT_8007B7C0` - previous-frame button mask (so `D007B7C0 XXXX` D-codes mean "wait for the user to press XXXX").
+- `_DAT_8007B874 = mask & ~prev` - newly pressed this frame (edge detection).
+- `DAT_8007B7C4 = mask ^ prev` - buttons that changed.
 
 ## Camera control axes
 
-The debug coordinate overlay uses cinematography axis names — useful as a string-search anchor for finding the camera-debug renderer:
+The debug coordinate overlay uses cinematography axis names - useful as a string-search anchor for finding the camera-debug renderer:
 
 ```
 VX (truck), VY (pedestal), VZ (zoom)
@@ -96,8 +96,8 @@ These exact strings appear in the executable as debug-overlay text.
 
 | Block range | Likely contents |
 |---|---|
-| 0..864 | Stage / field entries (towns, dungeons, world maps, cutscenes) — keyed by map name |
-| 865..868 | `battle_data` — battle subsystem core |
+| 0..864 | Stage / field entries (towns, dungeons, world maps, cutscenes) - keyed by map name |
+| 865..868 | `battle_data` - battle subsystem core |
 | 869 | `monster_data` |
 | 870..871 | `sound_data` |
 | 872..875 | `befect_data` (battle effects) |
@@ -107,13 +107,13 @@ These exact strings appear in the executable as debug-overlay text.
 | 893 | `monster_se` (monster sound effects) |
 | 894 | `card_data` (menu / inventory UI) |
 | 895..896 | `bat_back_dat` (battle backgrounds) |
-| 897..971 | `xxx_dat` — mini-game cluster |
+| 897..971 | `xxx_dat` - mini-game cluster |
 | 972..973 | `move_program_no` |
 | 974..979 | `other_game` |
 | 980..989 | `monster_test` (debug fixture) |
 | 990..1071 | `music_test` / `music_01` (sequence + bank data) |
 | 1072..1194 | `vab_01` (VAB instrument banks) |
-| 1195..1232 | `other1`/4/5/6/7 — minigame fields |
+| 1195..1232 | `other1`/4/5/6/7 - minigame fields |
 
 ## Dispatch RAM addresses (GameHacking.org)
 
@@ -123,8 +123,8 @@ PSX RAM (KSEG0, `0x80000000` base). Useful as runtime-tracing anchors.
 |---|---|
 | `0x80084540` | Current map ID (writable; "Map Modifier" / "View Credits" use this) |
 | `0x8007B6F4` | "Small maps" debug mode flag |
-| `0x8007B7C0` | Debug-dispatch trigger — selects which menu/state is active |
-| `0x8007B450` | Debug-dispatch parameter slot — sub-action within the trigger's mode |
+| `0x8007B7C0` | Debug-dispatch trigger - selects which menu/state is active |
+| `0x8007B450` | Debug-dispatch parameter slot - sub-action within the trigger's mode |
 | `0x800422F4` | "Force item quantity 99 on pickup/buy" flag |
 
 The `0x8007B7C0` + `0x8007B450` pair forms a built-in menu/debug-action dispatcher. Sample parameter values when trigger == `0x0100`:
@@ -155,7 +155,7 @@ Each mini-game gets its own ~64 KB slab of upper RAM, loaded fresh when entered.
 
 ## Character struct
 
-Stride: **0x414 bytes (1044)**. Confirmed by file-offset deltas in ePSXe save states (Vahn / Noa / Gala). 4 slots (Vahn / Noa / Gala / Terra-the-wolf) gives a party-data block of ~4096 bytes — exactly one PSX RAM page.
+Stride: **0x414 bytes (1044)**. Confirmed by file-offset deltas in ePSXe save states (Vahn / Noa / Gala). 4 slots (Vahn / Noa / Gala / Terra-the-wolf) gives a party-data block of ~4096 bytes - exactly one PSX RAM page.
 
 Layout (relative to Level offset, all `u16` LE unless noted):
 
@@ -199,7 +199,7 @@ Armors:                                0x43-0x57
 Boots:                                 0x58+
 ```
 
-ID `0x12` is "empty wp. for Noa" and `0x52` is "empty wp. for Vahn" — the inventory has reserved-but-empty slots.
+ID `0x12` is "empty wp. for Noa" and `0x52` is "empty wp. for Vahn" - the inventory has reserved-but-empty slots.
 
 ## Move tables (Tactical Arts)
 
@@ -236,5 +236,5 @@ Useful as fixtures for validating extractors:
 
 - **Unused enemies**: index 78 ("Comm") and 140 ("Evil Bat") in the monster table.
 - **Unused items**: "Something Good" (sells for 50,000G) and an unnamed accessory (forces Seru-only encounters).
-- **Placeholder battle background**: a graphic containing `ぷろきおん` in hiragana — loaded when a real battle background is missing.
+- **Placeholder battle background**: a graphic containing `ぷろきおん` in hiragana - loaded when a real battle background is missing.
 - **Placeholder music**: tracks copied from Alundra (Zazan battle theme) and Wild ARMs (battle theme) sit in the SEQ/VAB data.

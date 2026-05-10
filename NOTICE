@@ -3,8 +3,8 @@ legend-of-legaia-re
 
 This project is dual-licensed at the user's option under either:
 
-  * The Unlicense (public-domain dedication) — see LICENSE
-  * The MIT License                            — see LICENSE-MIT
+  * The Unlicense (public-domain dedication) - see LICENSE
+  * The MIT License                            - see LICENSE-MIT
 
 These licenses cover ONLY the original work in this repository: the Rust
 source code, build scripts, analysis tooling, and documentation authored

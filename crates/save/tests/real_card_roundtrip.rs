@@ -16,7 +16,7 @@
 //!   `~/.mednafen/sav/Legend of Legaia (USA).<hash>.0.mcr`
 //!
 //! Skips silently when the file isn't present. Doesn't gate on
-//! `LEGAIA_DISC_BIN` — the memory card isn't disc data.
+//! `LEGAIA_DISC_BIN` - the memory card isn't disc data.
 
 use std::path::PathBuf;
 

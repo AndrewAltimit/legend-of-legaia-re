@@ -1,23 +1,23 @@
 //! Per-character Seru-magic learning + capture session.
 //!
 //! In Legaia, magic ("Spirit Magic" / "Seru Magic") is learned by
-//! capturing **Seru** — small Ra-Seru attached to monsters. Each
+//! capturing **Seru** - small Ra-Seru attached to monsters. Each
 //! captured Seru contributes points toward a per-character spell list.
 //! Once a Seru's contribution crosses the per-character per-spell
 //! threshold, the spell is added to the character's learned list.
 //!
 //! ## Components
 //!
-//! - [`SeruDef`] — one entry in the master Seru registry. Maps a Seru id
+//! - [`SeruDef`] - one entry in the master Seru registry. Maps a Seru id
 //!   to which spell (id) it teaches and how many capture points each
 //!   capture grants.
-//! - [`SeruRegistry`] — full master table. Engines build at startup.
-//! - [`SeruCaptureLog`] — per-character running totals. Engines persist
+//! - [`SeruRegistry`] - full master table. Engines build at startup.
+//! - [`SeruCaptureLog`] - per-character running totals. Engines persist
 //!   this in the save file (LGSF v2 carries it).
-//! - [`record_capture`] — pure resolver: takes a registry, log, and
+//! - [`record_capture`] - pure resolver: takes a registry, log, and
 //!   capture event; returns the resulting [`CaptureOutcome`] with the
 //!   list of new spells learned this capture.
-//! - [`SeruCaptureSession`] — UI-facing state machine driving the
+//! - [`SeruCaptureSession`] - UI-facing state machine driving the
 //!   "Genocide Crystal succeeded → captured Seru: <name>" → "<X> learned
 //!   <spell>!" → close popup flow.
 
@@ -286,7 +286,7 @@ pub struct LearnEvent {
 /// for any character that crosses the threshold this capture.
 ///
 /// The retail engine awards capture points to all eligible characters in
-/// the active party — the same Seru capture teaches whichever main
+/// the active party - the same Seru capture teaches whichever main
 /// characters the player has currently. We follow that convention.
 pub fn record_capture(
     registry: &SeruRegistry,
@@ -334,7 +334,7 @@ pub fn record_capture(
 pub enum CaptureState {
     /// Capture roll succeeded; popup shown for `frames_remaining` frames.
     Capturing { frames_remaining: u16, seru_id: u16 },
-    /// One or more characters learned a spell — display banner per learn
+    /// One or more characters learned a spell - display banner per learn
     /// in turn. `index` is the current banner being shown.
     Announcing { index: usize, frames_remaining: u16 },
     /// Session finished.

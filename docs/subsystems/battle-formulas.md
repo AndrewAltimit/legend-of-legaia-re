@@ -2,9 +2,9 @@
 
 Damage, MP-cost, and stat-cap math used by the [battle action state machine](battle-action.md). Lives in the battle overlay (`0898`); the central damage-application primitive is `FUN_800402F4`.
 
-## Damage application primitive — `FUN_800402F4`
+## Damage application primitive - `FUN_800402F4`
 
-`ghidra/scripts/funcs/800402f4.txt` (7,904 bytes / 1,976 instructions, no static caller in `SCUS_942.54` — the battle overlay calls it indirectly).
+`ghidra/scripts/funcs/800402f4.txt` (7,904 bytes / 1,976 instructions, no static caller in `SCUS_942.54` - the battle overlay calls it indirectly).
 
 Signature, after Ghidra type promotion:
 
@@ -21,7 +21,7 @@ Before the switch, the function fills four local 8-pointer arrays (one entry per
 | Local | Actor offset | Meaning |
 |---|---|---|
 | `local_90[i]` | `+0x14C` | Current HP |
-| `local_30[i]` | `+0x14E` | (paired with HP — likely a saved/working copy) |
+| `local_30[i]` | `+0x14E` | (paired with HP - likely a saved/working copy) |
 | `local_50[i]` | `+0x150` | Current MP |
 | `local_70[i]` | `+0x152` | (paired with MP) |
 
@@ -29,7 +29,7 @@ In the **debug** branch (when the condition at `0x80040314` selects), the loop i
 
 Cited in `ghidra/scripts/funcs/800402f4.txt` lines 22-87 (release setup), 1986-2034 (decomp).
 
-### Selector 0 — basic damage (Attack / item / generic spell)
+### Selector 0 - basic damage (Attack / item / generic spell)
 
 Lines 2037-2043:
 
@@ -50,7 +50,7 @@ Reads:
 2. Result is capped at `DAT_8007655C[sub_index]` for party slots 0..2. The cap table is 6 halfwords (twelve bytes) and represents per-character damage caps.
 3. The capped value is then handed to a downstream applicator (the case body keeps writing it back into the actor record at `+0x14C`).
 
-### Selector 9 — accuracy / evasion roll
+### Selector 9 - accuracy / evasion roll
 
 Lines 2730-2774. The pattern:
 
@@ -66,7 +66,7 @@ if (target_evasion < roll) {
 }
 ```
 
-`+0x168` is the **accuracy/evasion** halfword in the actor record (one stat field shared by both rolls — caster's at attacker actor, target's at defender actor). The roll is `rand % (caster + target)` so the **hit probability** is `caster / (caster + target)`. Standard JRPG-flat-roll model.
+`+0x168` is the **accuracy/evasion** halfword in the actor record (one stat field shared by both rolls - caster's at attacker actor, target's at defender actor). The roll is `rand % (caster + target)` so the **hit probability** is `caster / (caster + target)`. Standard JRPG-flat-roll model.
 
 ### Stat-buff selectors (1..7)
 
@@ -78,14 +78,14 @@ Hit one halfword per call:
 |---|---|
 | `+0x158` | ATK |
 | `+0x15A` | DEF |
-| `+0x15C` | (one of MAG / SPR / AGL — order not yet pinned) |
+| `+0x15C` | (one of MAG / SPR / AGL - order not yet pinned) |
 | `+0x15E` | |
 | `+0x160` | |
 | `+0x162` | |
 | `+0x168` | accuracy/evasion (see selector 9) |
 | `+0x16A` | (paired with accuracy) |
 
-The stat semantics need a runtime trace to disambiguate — capturing actor record bytes before/after a known buff (e.g. Power Up) would resolve the pairing.
+The stat semantics need a runtime trace to disambiguate - capturing actor record bytes before/after a known buff (e.g. Power Up) would resolve the pairing.
 
 ## Spirit damage formula
 
@@ -101,7 +101,7 @@ This is hard-coded per Spirit super-art and bypasses `FUN_800402F4`. The `_DAT_8
 
 ## MP cost & ability-bit modifiers
 
-From battle-action.md state `0x28` (Magic / Item — cast begin):
+From battle-action.md state `0x28` (Magic / Item - cast begin):
 
 ```text
 base_mp_cost = spell_table[spell_id].mp_cost;       // entry +3 from spell record
@@ -121,7 +121,7 @@ The character record is documented to have stat fields at `+0x100..+0x110` and a
 
 ## RNG primitive
 
-`FUN_80056798()` is the in-game RNG. It's the standard PsyQ `rand()` pattern (same shape as the libc `rand()` PsyQ provides — 32-bit LCG with multiplier `1103515245` and increment `12345`, return value `(seed >> 16) & 0x7FFF`). The cliff-notes:
+`FUN_80056798()` is the in-game RNG. It's the standard PsyQ `rand()` pattern (same shape as the libc `rand()` PsyQ provides - 32-bit LCG with multiplier `1103515245` and increment `12345`, return value `(seed >> 16) & 0x7FFF`). The cliff-notes:
 
 ```c
 int FUN_80056798(void) {
@@ -132,11 +132,11 @@ int FUN_80056798(void) {
 
 (Confirmed: see `ghidra/scripts/funcs/80056798.txt`.) Range: 0..32767. For damage variance the battle code typically uses `roll % (cap)` so distribution skew at small cap values is fine.
 
-The seed (`DAT_8007AE5C`) initialises from the boot timer — for deterministic playback the engine must seed it from the same source, otherwise replay tests will diverge.
+The seed (`DAT_8007AE5C`) initialises from the boot timer - for deterministic playback the engine must seed it from the same source, otherwise replay tests will diverge.
 
-## Engine-side mirror — `engine-vm::battle_formulas`
+## Engine-side mirror - `engine-vm::battle_formulas`
 
-The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch — that lives in `engine-vm::battle_action` next to the state machine.
+The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the formulas above as pure functions. It's deliberately *not* trying to reproduce `FUN_800402F4`'s entire selector-dispatch - that lives in `engine-vm::battle_action` next to the state machine.
 
 | Function | Provenance |
 |---|---|
@@ -146,10 +146,10 @@ The clean-room Rust module `crates/engine-vm/src/battle_formulas.rs` ports the f
 | `psyq_rand_step` | `ghidra/scripts/funcs/80056798.txt` |
 | `damage_cap_for_party_slot` | this doc, selector 0 above (`DAT_8007655C` table) |
 
-The unit tests there pin the documented formulas as fixtures — a future runtime trace can then add comparison cases without touching the formula bodies.
+The unit tests there pin the documented formulas as fixtures - a future runtime trace can then add comparison cases without touching the formula bodies.
 
 ## What's still open
 
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
 - **Stat-field semantics inside the actor record at `+0x158..+0x16A`.** The buff order in selectors 1..7 implies an ordering, but mapping each halfword to ATK / DEF / MAG / SPR / AGL / LUCK requires capturing actor records before / after each buff spell. Mednafen save state diff is the unblock.
-- **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) — a few new-game saves with different early-game characters resolve it.
+- **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.

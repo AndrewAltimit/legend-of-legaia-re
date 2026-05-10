@@ -62,7 +62,7 @@ fn main() {
         println!("  {:>6} leading FF bytes  ({:>3} files)", n, c);
     }
 
-    // Sample a few entries — show first-non-FF byte offset and the next 32 bytes after it.
+    // Sample a few entries - show first-non-FF byte offset and the next 32 bytes after it.
     println!("\nfirst 5 samples (showing first non-FF region):");
     for (name, sz, _) in hits.iter().take(5) {
         let raw = std::fs::read(dir.join(name)).unwrap();

@@ -1,6 +1,6 @@
 # Asset extraction
 
-Tools for extracting assets from a user-supplied disc image. Per the project's clean-room model, no Sony bytes ship in this repo — the user runs the extraction tools against their own disc.
+Tools for extracting assets from a user-supplied disc image. Per the project's clean-room model, no Sony bytes ship in this repo - the user runs the extraction tools against their own disc.
 
 ## Top-level pipeline
 
@@ -16,17 +16,17 @@ Output lands in `./extracted/` (gitignored):
 
 ```
 extracted/
-├── PROT.DAT                       — raw archive copy
-├── CDNAME.TXT                     — entry name map
-├── SCUS_942.54                    — executable
-├── PROT/                          — per-PROT-entry files (1232 entries, named via CDNAME)
-│   ├── categorize.json            — per-class breakdown
+├── PROT.DAT                       - raw archive copy
+├── CDNAME.TXT                     - entry name map
+├── SCUS_942.54                    - executable
+├── PROT/                          - per-PROT-entry files (1232 entries, named via CDNAME)
+│   ├── categorize.json            - per-class breakdown
 │   └── ####_<name>.BIN
-├── streaming/                     — DATA_FIELD streaming sub-assets
+├── streaming/                     - DATA_FIELD streaming sub-assets
 │   └── ####_<name>/chunk##_<TYPE>/####.tim
-├── tim_scan/                      — every TIM byte-pattern hit
-├── tmd_scan/                      — every TMD byte-pattern hit
-└── images/                        — TIM-to-PNG conversions
+├── tim_scan/                      - every TIM byte-pattern hit
+├── tmd_scan/                      - every TMD byte-pattern hit
+└── images/                        - TIM-to-PNG conversions
 ```
 
 ## Per-stage tools
@@ -114,14 +114,14 @@ mdt slots    <file> --limit 8
 
 Two integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` points at a valid `.bin`:
 
-- `crates/iso/tests/disc_pipeline.rs` — disc walk, file count, key file SHA-256s.
-- `crates/extract/tests/validation_suite.rs` — full pipeline, PROT entry count, sub-asset totals, TIM round-trip.
+- `crates/iso/tests/disc_pipeline.rs` - disc walk, file count, key file SHA-256s.
+- `crates/extract/tests/validation_suite.rs` - full pipeline, PROT entry count, sub-asset totals, TIM round-trip.
 
 ```bash
 LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace
 ```
 
-Without the env var, both tests **skip and pass** — that's intentional, so CI works without redistributing Sony data. Don't change that gating.
+Without the env var, both tests **skip and pass** - that's intentional, so CI works without redistributing Sony data. Don't change that gating.
 
 ## Asset viewer
 

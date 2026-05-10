@@ -14,7 +14,7 @@
 //!    - is monotonically non-decreasing.
 //! 4. Every record is at least `RECORD_HEADER_SIZE` (8) bytes.
 //! 5. **Every record's `marker_1` u16 at `+4..+6` equals `0x080C`.** This is
-//!    the load-bearing signature — it's been observed identical across all 93
+//!    the load-bearing signature - it's been observed identical across all 93
 //!    ANM records in two independent overlay captures.
 //!
 //! The marker check is what makes this detector zero-false-positive: random
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn rejects_too_short_record() {
-        // count=1, offset = table_end (= 8). Record body is just 4 bytes —
+        // count=1, offset = table_end (= 8). Record body is just 4 bytes -
         // shorter than RECORD_HEADER_SIZE. Detector must reject.
         let mut buf = vec![];
         buf.extend_from_slice(&1u32.to_le_bytes());
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn accepts_alternate_flag() {
         // ANM headers observed with flag = 0x0002 OR 0x0004. The detector
-        // only checks marker_1, not flag — so flag = 0x0004 should still fire.
+        // only checks marker_1, not flag - so flag = 0x0004 should still fire.
         let mut buf = synthetic(&[&[0; 16]]);
         let off = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize;
         buf[off + 6] = 0x04;

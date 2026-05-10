@@ -1,4 +1,4 @@
-//! World-map controller — camera state and top-view debug toggle.
+//! World-map controller - camera state and top-view debug toggle.
 //!
 //! Mirrors the globals and input logic documented from `FUN_801E76D4`
 //! (overlay_world_map.bin). One instance lives on [`crate::world::World`]
@@ -24,7 +24,7 @@
 //!
 //! `ghidra/scripts/funcs/801e76d4.txt` (decompiled from `overlay_world_map.bin`).
 
-/// Top-view camera control — live when `view_mode != 0`.
+/// Top-view camera control - live when `view_mode != 0`.
 ///
 /// Pad bit masks mirror `FUN_801E76D4`'s literal constants.
 const CAM_X_DEC: u16 = 0x1000; // left
@@ -69,7 +69,7 @@ impl WorldMapController {
 
     /// Tick one frame. `pad_current` is the full 16-bit pad word for this
     /// frame; `pad_held` is the bits that are newly pressed (not held from
-    /// the previous frame — equivalent to the retail `_DAT_8007B874` mask).
+    /// the previous frame - equivalent to the retail `_DAT_8007B874` mask).
     ///
     /// Returns `true` if the view mode was toggled this frame.
     pub fn tick(&mut self, pad_current: u16, pad_held: u16) -> bool {
@@ -84,7 +84,7 @@ impl WorldMapController {
             toggled = true;
         }
 
-        // Top-view camera controls — only active when not in normal-walk mode.
+        // Top-view camera controls - only active when not in normal-walk mode.
         if self.view_mode != 0 {
             if pad_current & CAM_X_DEC != 0 {
                 self.camera_x -= 8;

@@ -7,14 +7,14 @@
 //! The picker is parameterised on a [`TargetKind`] that constrains valid
 //! targets:
 //!
-//! - [`TargetKind::SingleEnemy`] — one alive monster slot
-//! - [`TargetKind::SingleAlly`] — one alive party slot (excluding self)
-//! - [`TargetKind::SingleAllyOrSelf`] — any alive party slot
-//! - [`TargetKind::DeadAlly`] — one fallen party slot (Resurrection)
-//! - [`TargetKind::AnyAlly`] — any party slot, alive or dead
-//! - [`TargetKind::AllEnemies`] — sweep target, no cursor; immediate confirm
-//! - [`TargetKind::AllAllies`] — sweep target, no cursor; immediate confirm
-//! - [`TargetKind::Self_` — the actor itself; immediate confirm
+//! - [`TargetKind::SingleEnemy`] - one alive monster slot
+//! - [`TargetKind::SingleAlly`] - one alive party slot (excluding self)
+//! - [`TargetKind::SingleAllyOrSelf`] - any alive party slot
+//! - [`TargetKind::DeadAlly`] - one fallen party slot (Resurrection)
+//! - [`TargetKind::AnyAlly`] - any party slot, alive or dead
+//! - [`TargetKind::AllEnemies`] - sweep target, no cursor; immediate confirm
+//! - [`TargetKind::AllAllies`] - sweep target, no cursor; immediate confirm
+//! - [`TargetKind::Self_` - the actor itself; immediate confirm
 //!
 //! The cursor moves left/right between valid candidates; up/down (where
 //! the kind allows) flips between the party row and the monster row.
@@ -43,11 +43,11 @@ pub enum TargetKind {
     DeadAlly,
     /// One party slot, alive or dead.
     AnyAlly,
-    /// All enemies — auto-confirm.
+    /// All enemies - auto-confirm.
     AllEnemies,
-    /// All allies — auto-confirm.
+    /// All allies - auto-confirm.
     AllAllies,
-    /// The actor itself — auto-confirm.
+    /// The actor itself - auto-confirm.
     Self_,
 }
 
@@ -100,11 +100,11 @@ pub enum PickerState {
 pub enum PickerOutcome {
     /// One slot was confirmed.
     Single { slot: u8, row: CursorRow },
-    /// All enemies / allies / self — sweep target.
+    /// All enemies / allies / self - sweep target.
     Sweep { row: CursorRow },
     /// Player cancelled.
     Cancelled,
-    /// No valid target existed when the picker opened — auto-cancel.
+    /// No valid target existed when the picker opened - auto-cancel.
     NoCandidates,
 }
 
@@ -175,7 +175,7 @@ pub struct TargetPickerSession {
 
 impl TargetPickerSession {
     /// Construct a new picker for `kind`. `actor_slot` is the party-row
-    /// index (0..=2) of the action's owner — used to skip-self for
+    /// index (0..=2) of the action's owner - used to skip-self for
     /// [`TargetKind::SingleAlly`]. `party` and `monsters` describe slot
     /// occupancy + alive state.
     pub fn new(
@@ -201,7 +201,7 @@ impl TargetPickerSession {
             let row = if self.kind == TargetKind::AllEnemies {
                 CursorRow::Enemy
             } else {
-                // AllAllies / Self_ — both party-row.
+                // AllAllies / Self_ - both party-row.
                 CursorRow::Ally
             };
             // Sanity: ensure at least one valid target exists. For Self_,
@@ -346,7 +346,7 @@ impl TargetPickerSession {
         .then_some(())
         .map(|_| true)
         .unwrap_or_else(|| {
-            // The dummy match above always returns false — but we want to
+            // The dummy match above always returns false - but we want to
             // future-proof: allow row switching if the kind picks both.
             // None of the current variants do, so this is effectively false.
             let _ = from;

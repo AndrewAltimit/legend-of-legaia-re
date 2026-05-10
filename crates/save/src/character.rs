@@ -56,7 +56,7 @@ pub struct HpMpSp {
     pub sp_max: u16,
 }
 
-/// Equipment-slot bytes at `+0x196..0x19D`. 8 slots — typically
+/// Equipment-slot bytes at `+0x196..0x19D`. 8 slots - typically
 /// (weapon, armour, helmet, ring, accessory_1..3, currency-slot).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EquipmentSlots {
@@ -91,7 +91,7 @@ impl Default for SpellList {
     }
 }
 
-/// Displayed-skill list at `+0x185..+0x196` — the menu's spell / Hyper Art
+/// Displayed-skill list at `+0x185..+0x196` - the menu's spell / Hyper Art
 /// display roster the per-character menu overlay (`FUN_801D33D8`) reads on
 /// each frame.
 ///
@@ -126,7 +126,7 @@ impl Default for DisplayedSkillList {
 
 // --- Top-level character record -------------------------------------------
 
-/// One character's runtime state — 0x414 bytes.
+/// One character's runtime state - 0x414 bytes.
 ///
 /// The struct exposes the documented fields as typed getters / setters
 /// while keeping the full raw byte buffer in [`raw`]. Use [`parse`] to
@@ -301,9 +301,10 @@ impl CharacterRecord {
 
     /// Cumulative XP at `+0x04..+0x06` (u16 LE).
     ///
-    /// Pinned by the mc7 → mc8 → mc9 save-state diff: a level-up event at
-    /// L9 → L10 grew the value at this offset by `+365`, exactly the per-
-    /// level XP increment for L9→10 in the retail XP table at
+    /// Pinned by the captured magic-rank-up + character-level-up save
+    /// triplet: the level-up event at L9 → L10 grew the value at this
+    /// offset by `+365`, exactly the per-level XP increment for L9→10
+    /// in the retail XP table at
     /// `SCUS_942.54 0x8007123C`. Returns the cumulative XP value the engine
     /// can feed into [`crate::level_for_cumulative_xp`] to derive the
     /// character level.
@@ -316,7 +317,7 @@ impl CharacterRecord {
         self.raw[0x04..0x06].copy_from_slice(&xp.to_le_bytes());
     }
 
-    /// Typed snapshot of every documented field — convenient for JSON
+    /// Typed snapshot of every documented field - convenient for JSON
     /// dumps. Fields not in [`Snapshot`] still pass through `write` via
     /// the underlying [`Self::raw`] buffer.
     pub fn snapshot(&self) -> Snapshot {
@@ -339,7 +340,7 @@ impl CharacterRecord {
 
 /// JSON-friendly snapshot of every documented character-record field.
 /// Round-trip is via [`CharacterRecord::write`] from the underlying
-/// raw bytes — this struct is for diagnostics, not serialisation.
+/// raw bytes - this struct is for diagnostics, not serialisation.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Snapshot {
     /// Active-abilities bitfield at `+0xF4`.
@@ -364,7 +365,7 @@ pub struct Snapshot {
 
 // --- Party wrapper --------------------------------------------------------
 
-/// A roster of N character records — wraps the per-character offsets
+/// A roster of N character records - wraps the per-character offsets
 /// computed from a base address (`0x80084708 + n * 0x414` in retail, but
 /// the typed crate doesn't bake that in; engines hold the records however
 /// they like).
@@ -508,7 +509,7 @@ mod tests {
     #[test]
     fn typed_setters_preserve_untouched_bytes() {
         // Fill the record with a non-zero pattern, then write only ONE
-        // typed field — every other byte must survive unchanged.
+        // typed field - every other byte must survive unchanged.
         let mut buf = vec![0xCC; CHARACTER_RECORD_SIZE];
         // Pre-zero the byte we'll write through so the comparison is clean.
         buf[0x11A] = 0;
@@ -526,14 +527,15 @@ mod tests {
         }
     }
 
-    /// The Fire Book I capture (mc4 → mc5) showed Vahn's record changing
-    /// at `+0x185..+0x188` from `[0x01, 0x0C, 0x00]` to `[0x02, 0x03, 0x0C]`.
-    /// The typed accessor must read those exact bytes back as the same
-    /// list shape (count + head-inserted ID).
+    /// The Fire Book I capture pair (battle command menu parked on Fire
+    /// Book I → Fire Book I just used on Vahn) shows Vahn's record
+    /// changing at `+0x185..+0x188` from `[0x01, 0x0C, 0x00]` to
+    /// `[0x02, 0x03, 0x0C]`. The typed accessor must read those exact
+    /// bytes back as the same list shape (count + head-inserted ID).
     #[test]
     fn displayed_skills_reads_fire_book_capture_pattern() {
         let mut r = CharacterRecord::zeroed();
-        // Pre-event (mc4): count=1, ids=[0x0C, ...].
+        // Pre-event: count=1, ids=[0x0C, ...].
         r.raw[0x185] = 0x01;
         r.raw[0x186] = 0x0C;
         let before = r.displayed_skills();
@@ -541,7 +543,7 @@ mod tests {
         assert_eq!(before.ids[0], 0x0C);
         assert_eq!(before.ids[1], 0x00);
 
-        // Post-event (mc5): count=2, ids=[0x03, 0x0C, ...] (head insert).
+        // Post-event: count=2, ids=[0x03, 0x0C, ...] (head insert).
         r.raw[0x185] = 0x02;
         r.raw[0x186] = 0x03;
         r.raw[0x187] = 0x0C;

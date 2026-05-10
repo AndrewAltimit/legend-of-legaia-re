@@ -16,7 +16,7 @@
 //! Renderer-agnostic. Engines drive [`FieldMenuSession::tick`] each frame
 //! with a [`FieldMenuInput`] bundle and consume the returned
 //! [`FieldMenuEvent`] stream. The session emits an [`FieldMenuOutcome`] on
-//! Done — the shell's job is to push the matching sub-session, then call
+//! Done - the shell's job is to push the matching sub-session, then call
 //! [`FieldMenuSession::resume`] when control returns.
 
 /// One menu row.
@@ -102,7 +102,7 @@ pub enum FieldMenuPhase {
     /// Player confirmed a row; shell pushes the sub-session and engines call
     /// [`FieldMenuSession::resume`] when control returns.
     Suspended { row: FieldMenuRow },
-    /// Player cancelled out (Circle on Browsing) — shell closes the menu.
+    /// Player cancelled out (Circle on Browsing) - shell closes the menu.
     Done(FieldMenuOutcome),
 }
 
@@ -153,7 +153,7 @@ pub enum FieldMenuEvent {
 pub struct FieldMenuSession {
     phase: FieldMenuPhase,
     mask: FieldMenuRowMask,
-    /// Optional gold count to display in the corner. Plain data — engines
+    /// Optional gold count to display in the corner. Plain data - engines
     /// pass it through and the renderer view uses it.
     pub money: u32,
     /// Optional play-time-seconds for the corner badge.
@@ -283,7 +283,7 @@ impl FieldMenuSession {
     }
 
     /// Sub-session finished and shell hands control back. The caller chooses
-    /// whether to drop back into Browsing (the default — most sub-sessions
+    /// whether to drop back into Browsing (the default - most sub-sessions
     /// are "do a thing then return to the menu") or close the menu entirely
     /// (e.g. Save → Continue, where the shell wants the field gameplay back).
     pub fn resume(&mut self, close: bool) -> Vec<FieldMenuEvent> {

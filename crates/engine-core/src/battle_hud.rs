@@ -1,4 +1,4 @@
-//! Battle HUD model — renderer-agnostic UI state for the in-battle screen.
+//! Battle HUD model - renderer-agnostic UI state for the in-battle screen.
 //!
 //! Holds per-slot HP / MP / AP / status-icon state plus a queue of damage
 //! popups and battle-event log lines. The `engine-render` crate's
@@ -58,7 +58,7 @@ pub struct BattleSlotHud {
     /// `true` for party slots (0..2). Drives row colour: party rows are
     /// rendered in white, monster rows in pale red.
     pub is_party: bool,
-    /// `true` when `liveness != 0` — actor is up. Dead actors get a
+    /// `true` when `liveness != 0` - actor is up. Dead actors get a
     /// "K.O." overlay and zero-bar HP gauge.
     pub alive: bool,
     pub hp: u16,
@@ -179,7 +179,7 @@ pub struct DamagePopup {
     pub status: Option<StatusKind>,
     /// Frames left before the popup expires.
     pub frames_remaining: u16,
-    /// Total lifetime — used by the renderer to compute the fade alpha.
+    /// Total lifetime - used by the renderer to compute the fade alpha.
     pub frames_total: u16,
 }
 
@@ -247,13 +247,13 @@ pub struct LogLine {
 pub enum LogAccent {
     /// Default white.
     Neutral,
-    /// Pale blue — party action.
+    /// Pale blue - party action.
     Party,
-    /// Pale red — monster action.
+    /// Pale red - monster action.
     Monster,
-    /// Yellow — critical hit, level up, status applied.
+    /// Yellow - critical hit, level up, status applied.
     Highlight,
-    /// Green — heal / cure.
+    /// Green - heal / cure.
     Heal,
 }
 
@@ -267,7 +267,7 @@ pub struct BattleHud {
     /// Battle event log (ring buffer, oldest first).
     pub log: Vec<LogLine>,
     /// Maximum log lines retained. Older lines fall off the front when a
-    /// new line is pushed past this cap. Default 6 — matches the retail
+    /// new line is pushed past this cap. Default 6 - matches the retail
     /// 6-line scrolling log column.
     pub log_capacity: usize,
 }
@@ -306,7 +306,7 @@ impl BattleHud {
         s.mp_max = info.mp_max;
         if let Some(ap) = info.ap {
             // "Filled" in HUD terms is the amount of AP committed to the
-            // queue this turn — `ceiling - current` (spent so far).
+            // queue this turn - `ceiling - current` (spent so far).
             let ceiling = ap.ceiling();
             s.ap_filled = ceiling.saturating_sub(ap.current_ap);
             s.ap_max = ceiling;
@@ -390,7 +390,7 @@ impl BattleHud {
             p.frames_remaining = p.frames_remaining.saturating_sub(1);
         }
         // Re-prune in case the saturating_sub above dropped any to zero
-        // (kept above zero before, zero now — render once more then drop
+        // (kept above zero before, zero now - render once more then drop
         // on the next tick).
         self.popups.len()
     }
@@ -409,7 +409,7 @@ impl BattleHud {
     }
 
     /// Build a sequence of plain [`SlotView`]s suitable for handing to
-    /// `engine-render::battle_hud_draws_for`. Owned data — engines that
+    /// `engine-render::battle_hud_draws_for`. Owned data - engines that
     /// want zero-copy can iterate `iter_active()` and build their own
     /// view structs.
     pub fn slot_views(&self) -> Vec<SlotView> {
@@ -459,7 +459,7 @@ impl BattleHud {
     }
 }
 
-/// Plain HUD slot view — owned strings + bytes, no renderer types.
+/// Plain HUD slot view - owned strings + bytes, no renderer types.
 /// Engines convert into `legaia_engine_render::HudSlotView` trivially:
 /// the field shapes match by name.
 #[derive(Debug, Clone)]
@@ -800,7 +800,7 @@ mod tests {
                 ap: None,
             },
         );
-        // Slot 1 untouched — should not appear.
+        // Slot 1 untouched - should not appear.
         let views = hud.slot_views();
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].slot, 0);

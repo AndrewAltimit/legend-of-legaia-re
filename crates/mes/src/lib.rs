@@ -21,21 +21,21 @@
 //! See [`docs/formats/mes.md`](../../../docs/formats/mes.md) for the full
 //! per-byte table. Summary:
 //!
-//! - `0x00..0x1E` — end-of-message (loop terminator in the byte walker).
-//! - `0x1F..0x5D`, `0x5F..0xBF` (excl. `0xC0..0xCF`), `0xD0..0xFE` —
+//! - `0x00..0x1E` - end-of-message (loop terminator in the byte walker).
+//! - `0x1F..0x5D`, `0x5F..0xBF` (excl. `0xC0..0xCF`), `0xD0..0xFE` -
 //!   single-byte glyph indices.
-//! - `0x5E XX` — input alias for `0xCE (XX-0x2D)`. Normalized in the
+//! - `0x5E XX` - input alias for `0xCE (XX-0x2D)`. Normalized in the
 //!   iterator.
-//! - `0xC0`, `0xC6`, `0xC8..0xCD` — 2-byte wide glyphs.
-//! - `0xC1 XX` — substitute character name.
-//! - `0xC2 XX` / `0xC4 XX` — substitute item name.
-//! - `0xC3 XX` — substitute magic name.
-//! - `0xC5 XX` — substitute spell name.
-//! - `0xC7 XX` — substitute quest / terrain name.
-//! - `0xCE XX` — spacing op (width-only, no glyph).
-//! - `0xCF XX` — skip 2 bytes (`XX` is rendered alone).
-//! - `0xFF` — input alias for `0xCF`. Normalized in the iterator.
-//! - `0x80..0x9F` — surfaced as [`Token::Control`]: the per-byte SCUS
+//! - `0xC0`, `0xC6`, `0xC8..0xCD` - 2-byte wide glyphs.
+//! - `0xC1 XX` - substitute character name.
+//! - `0xC2 XX` / `0xC4 XX` - substitute item name.
+//! - `0xC3 XX` - substitute magic name.
+//! - `0xC5 XX` - substitute spell name.
+//! - `0xC7 XX` - substitute quest / terrain name.
+//! - `0xCE XX` - spacing op (width-only, no glyph).
+//! - `0xCF XX` - skip 2 bytes (`XX` is rendered alone).
+//! - `0xFF` - input alias for `0xCF`. Normalized in the iterator.
+//! - `0x80..0x9F` - surfaced as [`Token::Control`]: the per-byte SCUS
 //!   walker treats these as glyphs, but the dialog window pager
 //!   `FUN_801D84D0` tests `(byte & 0x7F) < 0x20` to halt on them. Most
 //!   likely page-break / wait-for-input markers. Surface them so callers
@@ -102,7 +102,7 @@ pub fn detect_format(buf: &[u8]) -> Option<Format> {
 }
 
 /// 16-byte runtime header inside a [`Format::Compact`] blob at offset
-/// `0x28`. Runtime patches these on load — for static parsing we just
+/// `0x28`. Runtime patches these on load - for static parsing we just
 /// expose the raw values.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct RuntimeHeader {
@@ -139,7 +139,7 @@ pub mod compact {
 }
 
 /// Detect format and parse what we can. Always returns `Ok` with whatever
-/// fields could be filled — the structure is partial by design.
+/// fields could be filled - the structure is partial by design.
 pub fn parse(buf: &[u8]) -> Result<MesBlob> {
     let format = detect_format(buf).ok_or_else(|| {
         anyhow::anyhow!(
@@ -230,13 +230,13 @@ pub enum Token {
     /// Variable substitution: opcode byte `0xC1..=0xC5` or `0xC7`,
     /// followed by an index into the corresponding name table. Stride 2.
     Substitute { kind: SubstituteOpcode, arg: u8 },
-    /// `0xCE XX` — spacing op. The renderer applies horizontal offset
+    /// `0xCE XX` - spacing op. The renderer applies horizontal offset
     /// without emitting a glyph. Also produced by the input alias
     /// `0x5E XX` (rewritten by the substitution expander to
     /// `0xCE (XX-0x2D)`); the iterator does that normalisation
     /// transparently.
     Spacing(u8),
-    /// `0xCF XX` — skip 2 bytes. The `0xFF` input alias for `0xCF` is
+    /// `0xCF XX` - skip 2 bytes. The `0xFF` input alias for `0xCF` is
     /// normalised in the iterator (the synthetic arg byte is `0`).
     SkipTwo(u8),
     /// Bytes `0x80..=0x9F`. The per-byte SCUS walker treats these as
@@ -253,21 +253,21 @@ pub enum Token {
 /// Tag for [`Token::Substitute`] / [`MesEvent::Substitute`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum SubstituteOpcode {
-    /// `0xC1 XX` — substitute character name. Records live at
+    /// `0xC1 XX` - substitute character name. Records live at
     /// `0x80084708 + XX*0x414`; `XX = 99` resolves to the current party
     /// leader (`DAT_80084597`).
     CharacterName,
-    /// `0xC2 XX` — substitute item name from `PTR_DAT_8007436C[XX*3]`.
+    /// `0xC2 XX` - substitute item name from `PTR_DAT_8007436C[XX*3]`.
     ItemName,
-    /// `0xC3 XX` — substitute magic name from `PTR_s_Magic_800754D0[XX*3]`.
+    /// `0xC3 XX` - substitute magic name from `PTR_s_Magic_800754D0[XX*3]`.
     MagicName,
-    /// `0xC4 XX` — substitute item name (different consumer site than
+    /// `0xC4 XX` - substitute item name (different consumer site than
     /// `0xC2`; same `PTR_DAT_8007436C` table).
     ItemNameAlt,
-    /// `0xC5 XX` — substitute spell name from 2D table at
+    /// `0xC5 XX` - substitute spell name from 2D table at
     /// `DAT_80075EC4`, keyed by `(XX>>6, XX&0x3F)`.
     SpellName,
-    /// `0xC7 XX` — substitute terrain / quest name from
+    /// `0xC7 XX` - substitute terrain / quest name from
     /// `DAT_80073F24 + XX*8`.
     QuestName,
 }
@@ -409,13 +409,13 @@ fn classify_byte(op: u8, buf: &[u8], pos: usize) -> Token {
             None => Token::Truncated(op),
         },
 
-        // 0xCE XX — spacing op.
+        // 0xCE XX - spacing op.
         0xCE => match buf.get(pos + 1) {
             Some(&arg) => Token::Spacing(arg),
             None => Token::Truncated(op),
         },
 
-        // 0xCF XX — skip 2 bytes.
+        // 0xCF XX - skip 2 bytes.
         0xCF => match buf.get(pos + 1) {
             Some(&arg) => Token::SkipTwo(arg),
             None => Token::Truncated(op),

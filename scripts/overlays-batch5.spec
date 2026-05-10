@@ -1,4 +1,4 @@
-# Batch-5 mednafen save-state captures — 2026-05-09
+# Batch-5 mednafen save-state captures - 2026-05-09
 #
 # Six new slots covering area-loading transitions and an in-battle art
 # performance, captured during the fifth post-#26 batch. Use to extract

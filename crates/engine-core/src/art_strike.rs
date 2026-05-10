@@ -20,7 +20,7 @@
 //!
 //! ## Outputs
 //!
-//! [`ArtStrikeOutcome`] is plain data — engines apply each field through
+//! [`ArtStrikeOutcome`] is plain data - engines apply each field through
 //! whatever runtime path they have for HP/status/SFX.
 
 use legaia_art::power::{PowerByte, PowerTarget};
@@ -28,7 +28,7 @@ use legaia_art::record::{EnemyEffect, HitCue};
 use legaia_engine_vm::battle_action::ArtStrikeInfo;
 use legaia_engine_vm::battle_formulas::art_strike_damage_default;
 
-/// Concrete side-effects an [`ArtStrikeInfo`] produces. Plain data —
+/// Concrete side-effects an [`ArtStrikeInfo`] produces. Plain data -
 /// engines fold each field into their runtime in whatever order they like.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ArtStrikeOutcome {
@@ -41,7 +41,7 @@ pub struct ArtStrikeOutcome {
     pub enemy_effect: EnemyEffect,
     /// Audio / visual cues scheduled for this strike. Each entry tells the
     /// engine "play `kind` at `timing_frames` after strike-start." The
-    /// retail engine fires these inline during the strike anim — engines
+    /// retail engine fires these inline during the strike anim - engines
     /// that compute their own anim timing can ignore the timing field.
     pub cues: Vec<ScheduledCue>,
     /// Whether the art's `power` byte indicated an "alt-range" hit (misses
@@ -72,7 +72,7 @@ impl ScheduledCue {
         self.kind == 0x1A
     }
 
-    /// `true` if the cue is a hit-effect (visible flash / damage popup) —
+    /// `true` if the cue is a hit-effect (visible flash / damage popup) -
     /// kind `0x4C`.
     pub fn is_hit_effect(&self) -> bool {
         self.kind == 0x4C
@@ -91,13 +91,13 @@ impl From<HitCue> for ScheduledCue {
 /// Compute the [`ArtStrikeOutcome`] for one strike.
 ///
 /// The damage formula is
-/// [`legaia_engine_vm::battle_formulas::art_strike_damage_default`] —
+/// [`legaia_engine_vm::battle_formulas::art_strike_damage_default`] -
 /// `damage = max(1, attack × multiplier / 16 - defense)`. The multiplier
 /// is read from `info.power.multiplier` after [`PowerByte::from_byte`]
 /// decoding; "no damage" power bytes (terminator slots) yield
 /// `damage = None`.
 ///
-/// The `cues` list pulls from `info.hit_cue` when present — at most one
+/// The `cues` list pulls from `info.hit_cue` when present - at most one
 /// cue per strike. The retail art format reserves up to four hit cues per
 /// art, with the cue index implicitly matching the strike index. If the
 /// caller needs all cues across multiple strikes, run [`apply_art_strike`]

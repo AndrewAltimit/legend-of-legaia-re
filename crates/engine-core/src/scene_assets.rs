@@ -1,4 +1,4 @@
-//! Per-scene typed asset snapshot — the runtime view of a CDNAME block once
+//! Per-scene typed asset snapshot - the runtime view of a CDNAME block once
 //! it's been loaded by [`crate::scene::Scene::load`].
 //!
 //! Bridges the gap between the on-disc per-CDNAME-block layout and the
@@ -23,7 +23,7 @@ use crate::scene_bundle;
 
 /// One TIM image the scene exposes for VRAM upload. Mirrors the runtime
 /// asset-loader's "load every TIM in this scene before drawing TMDs"
-/// pre-pass — the asset chain pulls every TIM in the scene's CDNAME block
+/// pre-pass - the asset chain pulls every TIM in the scene's CDNAME block
 /// into VRAM up front so cross-entry CLUT references resolve.
 #[derive(Debug, Clone, Copy)]
 pub struct SceneTim {
@@ -56,10 +56,10 @@ pub struct SceneTmd {
 /// `text_id` to a bytecode slice without re-parsing.
 ///
 /// Two formats coexist (see [`docs/formats/mes.md`]):
-/// - [`MesFormat::Compact`] — 0x404 magic + 16-byte runtime header at
+/// - [`MesFormat::Compact`] - 0x404 magic + 16-byte runtime header at
 ///   `0x28` + offset table from `0x62..0xC8` (3-byte little-endian
 ///   offsets). Bytecode lives past the table at `0xC8`.
-/// - [`MesFormat::Records`] — variable-stride records marked by
+/// - [`MesFormat::Records`] - variable-stride records marked by
 ///   `0x44 0x78` (per-record byte counts inferred from neighbouring
 ///   markers).
 #[derive(Debug, Clone)]
@@ -71,10 +71,10 @@ pub struct SceneMes {
     /// Owned blob bytes (the slice the offset table indexes into).
     pub bytes: Vec<u8>,
     pub format: MesFormat,
-    /// `Compact` only — 3-byte LE offset table from `0x62..0xC8`,
+    /// `Compact` only - 3-byte LE offset table from `0x62..0xC8`,
     /// rebuilt as 32-bit values. `None` for `Records`.
     pub offset_table: Option<Vec<u32>>,
-    /// `Records` only — record-start offsets (where each `0x44 0x78`
+    /// `Records` only - record-start offsets (where each `0x44 0x78`
     /// marker lives). Empty for `Compact`.
     pub record_offsets: Vec<usize>,
 }
@@ -95,14 +95,14 @@ impl SceneMes {
     }
 
     /// Borrow the bytecode slice starting at `text_id`'s offset. Slice runs
-    /// to the buffer end — the iterator stops at the first
+    /// to the buffer end - the iterator stops at the first
     /// [`legaia_mes::Token::EndOfMessage`].
     pub fn message_bytes(&self, text_id: u16) -> Option<&[u8]> {
         let off = self.message_offset(text_id)?;
         self.bytes.get(off..)
     }
 
-    /// Number of messages — table length for `Compact`, marker count for
+    /// Number of messages - table length for `Compact`, marker count for
     /// `Records`.
     pub fn message_count(&self) -> usize {
         match self.format {
@@ -125,23 +125,23 @@ pub struct SceneAssets {
     pub scene_name: String,
     /// PROT-entry range `[start, end)` of the CDNAME block.
     pub block_range: (u32, u32),
-    /// Decoded descriptor-0 payload (`TIM_LIST`) — LZS-decompressed bytes
+    /// Decoded descriptor-0 payload (`TIM_LIST`) - LZS-decompressed bytes
     /// from the scene's bundle entry. `None` if the scene has no bundle
     /// or the decode failed.
     pub tim_list_decoded: Option<Vec<u8>>,
-    /// Every TIM the scene exposes, across all entries (raw bytes — does
+    /// Every TIM the scene exposes, across all entries (raw bytes - does
     /// not include TIMs that live inside the LZS-decoded `tim_list_decoded`
     /// buffer; engines that need those run [`legaia_asset::tim_scan`] over
     /// the decoded blob).
     pub tims: Vec<SceneTim>,
     /// Every TMD in the scene's entries.
     pub tmds: Vec<SceneTmd>,
-    /// Best-fit MES container — the first `Compact`-magic hit wins; if none
+    /// Best-fit MES container - the first `Compact`-magic hit wins; if none
     /// is found, the largest `Records`-format candidate is kept (Records
     /// detection has no fixed magic, so it can false-positive on entropy
-    /// data — preferring Compact avoids that).
+    /// data - preferring Compact avoids that).
     pub mes: Option<SceneMes>,
-    /// PROT entries the scene block tags as `Class::SeqContainer` — BGM
+    /// PROT entries the scene block tags as `Class::SeqContainer` - BGM
     /// source bytes, addressable by id via the scene's [`block_range`].
     pub seq_entries: Vec<u32>,
     /// PROT entries that carry a SEQ blob at a non-zero offset (typically
@@ -153,7 +153,7 @@ pub struct SceneAssets {
     /// PROT entries with VAB headers (sound banks).
     pub vab_entries: Vec<u32>,
     /// Per-record event-script bytecode. Each entry is one record's bytes
-    /// verbatim (no frame-divider sentinel stripping — that happens in
+    /// verbatim (no frame-divider sentinel stripping - that happens in
     /// [`crate::world::World::load_field_record`]).
     pub event_records: Vec<Vec<u8>>,
 }
@@ -194,7 +194,7 @@ impl SceneAssets {
                 Class::SceneVabStream => vab_entries.push(entry.idx),
                 _ => {}
             }
-            // Search for pQES magic past offset 0 — most retail SEQ data
+            // Search for pQES magic past offset 0 - most retail SEQ data
             // lives inside `scene_vab_stream` chunk wrappers, not at the
             // entry start. Entries already classified as `SeqContainer`
             // are tracked separately above.
@@ -285,14 +285,14 @@ impl SceneAssets {
 ///
 /// Legaia SEQ data uses a u32 BE version field (rather than the u16 BE
 /// PsyQ-doc form), so the validation reads 4 reserved/version bytes
-/// before the PPQN word — see [`legaia_seq::parse_header`] for the
+/// before the PPQN word - see [`legaia_seq::parse_header`] for the
 /// canonical reader.
 fn find_seq_magic(buf: &[u8]) -> Option<usize> {
     const MAGIC: &[u8; 4] = b"pQES";
     if buf.len() < MAGIC.len() + 1 {
         return None;
     }
-    // Cap the scan to a sensible budget — SEQ-wrapped entries are
+    // Cap the scan to a sensible budget - SEQ-wrapped entries are
     // typically small (< 256 KB). Anything past 4 MB is almost certainly
     // not a real wrapper.
     let scan_end = buf.len().min(4 * 1024 * 1024);
@@ -312,14 +312,14 @@ fn validate_seq_header(buf: &[u8]) -> bool {
     if buf.len() < 15 {
         return false;
     }
-    // u32 BE version path — the Legaia shape.
+    // u32 BE version path - the Legaia shape.
     let v32 = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
     let ppqn32 = u16::from_be_bytes([buf[8], buf[9]]);
     let tempo32_nz = buf[10] != 0 || buf[11] != 0 || buf[12] != 0;
     if v32 == 1 && ppqn32 > 0 && tempo32_nz {
         return true;
     }
-    // u16 BE version fallback — synthetic / standard PsyQ shape.
+    // u16 BE version fallback - synthetic / standard PsyQ shape.
     let v16 = u16::from_be_bytes([buf[4], buf[5]]);
     let ppqn16 = u16::from_be_bytes([buf[6], buf[7]]);
     let tempo16_nz = buf[8] != 0 || buf[9] != 0 || buf[10] != 0;
@@ -355,7 +355,7 @@ fn try_extract_mes(entry: &SceneEntry) -> Option<SceneMes> {
     let bytes = entry.bytes.as_ref();
     let blob = legaia_mes::parse(bytes).ok()?;
     let format = blob.format;
-    // Records detector matches any 2-byte 0x44 0x78 in the buffer — too
+    // Records detector matches any 2-byte 0x44 0x78 in the buffer - too
     // permissive for the scene-sweep use case unless we apply a minimum.
     // Require at least 4 marker hits before considering a Records-format
     // candidate (most real MES containers carry dozens).
@@ -380,7 +380,7 @@ fn try_extract_mes(entry: &SceneEntry) -> Option<SceneMes> {
     })
 }
 
-/// Detect format-only — bypasses [`legaia_mes::parse`] for the cheaper
+/// Detect format-only - bypasses [`legaia_mes::parse`] for the cheaper
 /// pre-check used by [`pick_best_mes`].
 #[allow(dead_code)]
 fn looks_like_records(buf: &[u8]) -> bool {
@@ -469,7 +469,7 @@ mod tests {
             bytes: Arc::new(mes_bytes),
         }]);
         let assets = SceneAssets::build(&scene);
-        // Offset table covers 0x62..0xC8 — 102 bytes / 3 = 34 entries.
+        // Offset table covers 0x62..0xC8 - 102 bytes / 3 = 34 entries.
         // Indexing past 34 falls off the end of the table.
         assert!(assets.mes_message_bytes(34).is_none());
         assert!(assets.mes_message_bytes(100).is_none());
@@ -477,7 +477,7 @@ mod tests {
 
     #[test]
     fn rejects_records_with_too_few_markers() {
-        // Only 2 markers — below the 4-marker minimum, should not be
+        // Only 2 markers - below the 4-marker minimum, should not be
         // accepted as a Records MES.
         let mut buf = vec![0u8; 256];
         buf[10] = 0x44;

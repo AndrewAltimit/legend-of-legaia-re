@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-watchpoint-bisect.py — given an address that should be zero in a "before"
+watchpoint-bisect.py - given an address that should be zero in a "before"
 state and non-zero in an "after" state, walk an ordered list of save states
 and report the first one in which it transitions.
 

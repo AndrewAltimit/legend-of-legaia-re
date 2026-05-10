@@ -19,7 +19,7 @@ export class LegaiaRuntime {
      * audio started successfully, `false` otherwise (e.g. blocked by the
      * browser before any interaction or on a platform without WebAudio).
      *
-     * Idempotent — calling a second time replaces the existing backend.
+     * Idempotent - calling a second time replaces the existing backend.
      */
     audio_init(): boolean;
     /**
@@ -59,7 +59,7 @@ export class LegaiaRuntime {
      */
     menu_is_open(): boolean;
     /**
-     * Read the menu's current label (e.g. "STATUS", "SAVE — PICK SLOT")
+     * Read the menu's current label (e.g. "STATUS", "SAVE - PICK SLOT")
      * for HUD rendering.
      */
     menu_label(): string;
@@ -88,7 +88,7 @@ export class LegaiaViewer {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * JSON-encoded summary of the current entry — class label, byte size,
+     * JSON-encoded summary of the current entry - class label, byte size,
      * MES record count (if any), SEQ presence (if any), VAB presence
      * (if any). The JS side parses this and shows it in the inspector
      * panel without needing N round-trips for each individual field.

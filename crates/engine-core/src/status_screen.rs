@@ -4,13 +4,13 @@
 //! slots / element ranks. Engines pre-build a [`StatusSnapshot`] per
 //! party member from their record and feed it through the session;
 //! cursor input cycles between active party members. The session never
-//! reads a record itself — it stays renderer-agnostic and engine-engine
+//! reads a record itself - it stays renderer-agnostic and engine-engine
 //! decoupled.
 //!
 //! ## States
 //!
-//! - [`StatusPhase::Browsing`] — viewing a character's panel; L1/R1 cycle.
-//! - [`StatusPhase::Done`] — Circle/Start cancelled out, shell closes.
+//! - [`StatusPhase::Browsing`] - viewing a character's panel; L1/R1 cycle.
+//! - [`StatusPhase::Done`] - Circle/Start cancelled out, shell closes.
 
 use crate::input::PadButton;
 

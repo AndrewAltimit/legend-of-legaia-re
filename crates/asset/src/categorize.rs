@@ -3,7 +3,7 @@
 //! Tries every known parser against a buffer; if none match, falls back to
 //! statistical features (entropy, byte distribution, leading-zero run).
 //!
-//! The point isn't to get every entry right — it's to shrink the
+//! The point isn't to get every entry right - it's to shrink the
 //! "uncategorized" pile so we can see clusters worth reversing next.
 
 use serde::Serialize;
@@ -31,11 +31,11 @@ pub enum Class {
     TimPassthrough,
     /// Parses as a DATA_FIELD streaming container (FUN_8002541c 0x14 branch).
     DataFieldStreaming,
-    /// Sister of [`Class::DataFieldStreaming`] — leading chunks parse cleanly
+    /// Sister of [`Class::DataFieldStreaming`] - leading chunks parse cleanly
     /// (all known types, all magic-OK) but the final chunk's declared `size`
     /// walks past EOF without a terminator. Real PROT entries (`0157_rikuroa`,
     /// `0228_station`, `0373_taiku`) carry a per-scene secondary table whose
-    /// declared size exceeds the on-disc body — the runtime extends the chunk
+    /// declared size exceeds the on-disc body - the runtime extends the chunk
     /// via streaming DMA continuation rather than a literal terminator.
     /// See [`crate::data_field_truncated`].
     DataFieldTruncated,
@@ -48,46 +48,46 @@ pub enum Class {
     /// Contains a stage-geometry table (12-byte fixed prefix + 8-byte
     /// payload at 20-byte stride). See [`crate::stage_geom`].
     StageGeometry,
-    /// Field-pack container — 4-byte magic + 97-entry schema followed by
+    /// Field-pack container - 4-byte magic + 97-entry schema followed by
     /// packed TIMs and TMDs. See [`crate::field_pack`].
     FieldPack,
-    /// Effect-bundle container — magic `0x02018B0C` + constant header words +
+    /// Effect-bundle container - magic `0x02018B0C` + constant header words +
     /// 28-entry schema followed by packed TMD primitive groups + TIMs.
     /// See [`crate::effect_bundle`].
     EffectBundle,
-    /// PsyQ SEQ sequenced-music file — leads with the 4-byte ASCII magic
+    /// PsyQ SEQ sequenced-music file - leads with the 4-byte ASCII magic
     /// `pQES` (0x70 0x51 0x45 0x53) followed by a 9-byte header. Drives the
     /// SsAPI sequencer at runtime. See [`docs/formats/seq.md`].
     SeqContainer,
-    /// Legaia ANM animation pack — `[u32 count][u32 offset[count]][records...]`
+    /// Legaia ANM animation pack - `[u32 count][u32 offset[count]][records...]`
     /// where every record's `+4..+6` u16 equals `0x080C` (the per-record
     /// marker_1). 8/8 hits across the title + town overlay corpus carry the
     /// marker, so the detector is zero-false-positive against random data.
     /// See [`docs/formats/anm.md`].
     AnmContainer,
-    /// `[u32 size][bare TMD][streaming chunks]` — a streaming-format variant
+    /// `[u32 size][bare TMD][streaming chunks]` - a streaming-format variant
     /// where the first asset is a Legaia TMD without a typed chunk header.
     /// See [`crate::scene_tmd_stream`].
     SceneTmdStream,
-    /// `[u32 claimed_total][TMD magic][TMD flags=0][nobj]` — a TMD-fronted
+    /// `[u32 claimed_total][TMD magic][TMD flags=0][nobj]` - a TMD-fronted
     /// resource where the prefix u32 claims a total size *larger than the
     /// on-disc bytes*. The on-disc file is a prefix of a logical TMD whose
     /// remainder is supplied by the runtime (streaming tail elsewhere or
-    /// zero-fill). Sister to [`Class::SceneTmdStream`] — captures the
+    /// zero-fill). Sister to [`Class::SceneTmdStream`] - captures the
     /// truncated subset that detector intentionally rejects.
     /// See [`crate::tmd_size_prefix`].
     TmdSizePrefix,
-    /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` —
+    /// `[u32 chunk0_header (type=0x00, size=N)][VABp sound bank][...]` -
     /// a streaming-format variant where the leading chunk is a Sony VAB
     /// instrument bank instead of a TMD. The single largest distributed
     /// VAB carrier in the corpus (200+ entries). See [`crate::scene_vab_stream`].
     SceneVabStream,
-    /// Strict 8-word v12 header — `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]` — used
+    /// Strict 8-word v12 header - `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]` - used
     /// by 97 scene-named PROT entries (one per scene). Format meaning open;
     /// likely candidates are per-scene navmesh / collision / event-trigger
     /// data. See [`crate::scene_v12_table`].
     SceneV12Table,
-    /// Canonical 7-asset scene bundle — leads with `07 00 00 00`, then 7
+    /// Canonical 7-asset scene bundle - leads with `07 00 00 00`, then 7
     /// descriptor pairs (`(type<<24)|size, data_offset`) covering the
     /// `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` asset sequence. 80 PROT
     /// entries match. See [`crate::scene_asset_table`].
@@ -99,37 +99,37 @@ pub enum Class {
     /// holds the standard 7-asset scene bundle. 77 PROT entries match.
     /// See [`crate::scene_scripted_asset_table`].
     SceneScriptedAssetTable,
-    /// `[u16 count][u16 offsets[count]][record bodies]` — same prescript
+    /// `[u16 count][u16 offsets[count]][record bodies]` - same prescript
     /// shape as [`Class::SceneScriptedAssetTable`] but the post-prescript
     /// payload is **not** a canonical scene-asset-table. Detected when at
     /// least 50 % of records open with the field-VM frame sentinel
     /// `0xFFFF 0x0000`. ~20 PROT entries match. See
     /// [`crate::scene_event_scripts`].
     SceneEventScripts,
-    /// MIPS code blob — the static disc copy of a runtime overlay. Leads
+    /// MIPS code blob - the static disc copy of a runtime overlay. Leads
     /// with `addiu sp, sp, -X` (a function prologue) and a plausible MIPS
-    /// follow-up instruction. 22 PROT entries match — all in the `0901..=0969`
+    /// follow-up instruction. 22 PROT entries match - all in the `0901..=0969`
     /// `xxx_dat` cluster. See [`crate::mips_overlay`].
     MipsOverlay,
-    /// Sister cluster to [`Class::MipsOverlay`] — MIPS overlay code blob
+    /// Sister cluster to [`Class::MipsOverlay`] - MIPS overlay code blob
     /// that leads with a function/jump-table header (4-64 consecutive u32
     /// values, each in the `0x801C0000..=0x801FFFFF` overlay window) instead
-    /// of a `addiu sp, sp, -X` prologue. 42 PROT entries match — all in the
+    /// of a `addiu sp, sp, -X` prologue. 42 PROT entries match - all in the
     /// `0900..=0968` `xxx_dat` cluster. See [`crate::overlay_ptr_table`].
     OverlayPtrTable,
     /// "pochi"-fill placeholder: the first 1926 bytes are the ASCII pattern
     /// `pochipochipochi...\r\n` (Japanese dev fill, "ポチ" = generic dog name)
     /// with `0x1A` (DOS EOF) at offset `0x786`. Marks an unused / reserved PROT
-    /// slot. Found at consistent offsets within each scene CDNAME block —
+    /// slot. Found at consistent offsets within each scene CDNAME block -
     /// scenes reserve N asset slots but only fill some, leaving the rest as
     /// dev-fill. Distinct from data: post-prefix bytes are scratch / leftover.
     PochiFiller,
-    /// Multi-bank VAB archive — `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
+    /// Multi-bank VAB archive - `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
     /// with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
     /// cluster's multi-bank sound archive (206 VABp entries).
     /// See [`crate::vab_multi_bank`].
     VabMultiBank,
-    /// Monster / actor SPU sound bank — `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
+    /// Monster / actor SPU sound bank - `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
     /// All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).
     /// Sourced from `h:\mpack\monster.snd` loaded by `FUN_8003E104` at battle start.
     MonsterSoundBank,
@@ -289,7 +289,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // PsyQ SEQ — `pQES` magic + version `0x0001` + non-zero PPQN + non-zero
+    // PsyQ SEQ - `pQES` magic + version `0x0001` + non-zero PPQN + non-zero
     // tempo. Specific 4-byte signature with structural follow-up so a
     // chance-match on the magic alone won't fire.
     if buf.len() >= 13
@@ -309,7 +309,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // ANM container — strict structural detector that requires every
+    // ANM container - strict structural detector that requires every
     // record's `marker_1` u16 to equal 0x080C. Runs early so the more
     // permissive structural heuristics (TimPack / lzs_container) don't
     // claim ANM payloads first.
@@ -359,7 +359,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // Sister of `data_field_streaming` — leading chunks decode cleanly but
+    // Sister of `data_field_streaming` - leading chunks decode cleanly but
     // the final chunk's declared size walks past EOF without a terminator.
     // Strict structural detector: requires >= 3 leading chunks, all known
     // types and magic-OK, plus a partial trailing chunk with a known type.
@@ -377,7 +377,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // MIPS overlay-code blob — leads with `addiu sp, sp, -X`. Specific
+    // MIPS overlay-code blob - leads with `addiu sp, sp, -X`. Specific
     // 4-byte signature with no overlap against any other detector. Runs early
     // so we don't waste time on heavier structural checks.
     if crate::mips_overlay::detect(buf).is_some() {
@@ -392,7 +392,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // Sister of `mips_overlay` — leads with a 4–64 u32 run, each in the
+    // Sister of `mips_overlay` - leads with a 4–64 u32 run, each in the
     // overlay window. Strict structural detector with no overlap against
     // any other class.
     if crate::overlay_ptr_table::detect(buf).is_some() {
@@ -407,7 +407,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // Scripted scene-asset-table — `[u16 prescript][bodies][pad][scene_asset_table]`.
+    // Scripted scene-asset-table - `[u16 prescript][bodies][pad][scene_asset_table]`.
     // Runs before plain `scene_asset_table` because the script-prefixed
     // variant is strictly more specific.
     if crate::scene_scripted_asset_table::detect(buf).is_some() {
@@ -422,7 +422,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // 7-asset scene table — leads with `07 00 00 00`, then 7 descriptor pairs.
+    // 7-asset scene table - leads with `07 00 00 00`, then 7 descriptor pairs.
     // Strict structural detector (no LZS-decode requirement) so it captures
     // both the LZS-payload and raw-payload variants uniformly. Runs before
     // lzs_container so the 26 entries that previously matched as `n=1`
@@ -458,7 +458,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // v12 strict-magic header — `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]`. This
+    // v12 strict-magic header - `[N+4, 0x12, 0, 0x14, ?, N, 0, N+2]`. This
     // outer-shape header at offset 0 is more authoritative than fieldpack
     // magic that may appear deeper in the file (e.g. `0002_gameover_data.BIN`
     // has v12 at offset 0 and a fieldpack-shaped region at 0x39800).
@@ -475,7 +475,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     }
 
     // Field-pack: magic + 97-entry schema. Detect before TimPack /
-    // stage_geometry / lzs_container — fieldpack files often satisfy
+    // stage_geometry / lzs_container - fieldpack files often satisfy
     // weaker heuristics, so the most-specific signature wins.
     if crate::field_pack::detect(buf).is_some() {
         return mk(
@@ -489,7 +489,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // Effect-bundle: same logic as field-pack — strict-schema detector
+    // Effect-bundle: same logic as field-pack - strict-schema detector
     // gates this before the weaker heuristics.
     if crate::effect_bundle::detect(buf).is_some() {
         return mk(
@@ -503,9 +503,9 @@ pub fn classify(buf: &[u8]) -> FileReport {
         );
     }
 
-    // TMD-prefixed scene stream — `[u32 size][bare TMD][streaming chunks]`.
+    // TMD-prefixed scene stream - `[u32 size][bare TMD][streaming chunks]`.
     // Strict structural detector (TMD magic at +4, sane nobj, in-bounds size
-    // prefix, walkable streaming tail) — runs before the weaker LZS-container
+    // prefix, walkable streaming tail) - runs before the weaker LZS-container
     // and stage-geometry heuristics so the most-specific schema wins.
     if let Some(s) = crate::scene_tmd_stream::detect(buf) {
         let mut report = mk(
@@ -521,7 +521,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // TMD-with-size-prefix — sister of `scene_tmd_stream` for the truncated
+    // TMD-with-size-prefix - sister of `scene_tmd_stream` for the truncated
     // case (claimed_total > on-disc len). Runs immediately after
     // `scene_tmd_stream` so any complete-on-disc TMD-stream files are claimed
     // by the more permissive sister detector first.
@@ -539,7 +539,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // VAB-prefixed scene stream — same outer wrapper as scene_tmd_stream, but
+    // VAB-prefixed scene stream - same outer wrapper as scene_tmd_stream, but
     // chunk0 carries a Sony VAB sound bank (`VABp` magic at +4). Strict
     // structural detector validates the magic + version + ps/ts counts.
     if let Some(s) = crate::scene_vab_stream::detect(buf) {
@@ -556,7 +556,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
         return report;
     }
 
-    // Multi-bank VAB archive — `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
+    // Multi-bank VAB archive - `[u32 reserved=0][u32 count][u32 sector_nums[count]]`
     // with VABp magic at `sector_nums[0] * 0x800 + 4`. Covers the level_up
     // cluster (206 VABp entries). Runs after scene_vab_stream so the more
     // common streaming wrapper claims its entries first.
@@ -621,7 +621,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     }
 
     // Stage-geometry table (Cluster A successor). One run of >= 4
-    // consecutive records is enough — the 12-byte signature is too
+    // consecutive records is enough - the 12-byte signature is too
     // specific to coincide.
     let geom_tables = crate::stage_geom::scan(buf);
     if let Some(largest) = geom_tables.iter().max_by_key(|t| t.records) {
@@ -721,7 +721,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
 /// - Byte 0x786: `0x1A` (DOS EOF marker).
 /// - Bytes 0x787..end: scratch / leftover data (sometimes non-zero).
 ///
-/// We don't validate the full prefix byte-by-byte — checking the first 5
+/// We don't validate the full prefix byte-by-byte - checking the first 5
 /// bytes for `"pochi"` plus the magic at 0x786 is enough to be specific
 /// (no real format starts with 5 ASCII letters and then has 0x1A at exactly
 /// that offset).
@@ -826,7 +826,7 @@ mod tests {
         // Sparse-but-real tables (< 75% zeros) must stay below the
         // mostly_zeros threshold so they get reverse-engineered.
         let mut buf = vec![0u8; 1024];
-        // 512 non-zero bytes scattered = 50% zeros — below 75% threshold.
+        // 512 non-zero bytes scattered = 50% zeros - below 75% threshold.
         for i in 0..512 {
             buf[i * 2] = 0xAA;
         }
@@ -859,7 +859,7 @@ mod tests {
     #[test]
     fn rejects_seq_with_wrong_version() {
         let mut buf = b"pQES".to_vec();
-        buf.extend_from_slice(&[0x00, 0x02]); // version 2 — not the SsAPI shape
+        buf.extend_from_slice(&[0x00, 0x02]); // version 2 - not the SsAPI shape
         buf.resize(128, 0);
         let r = classify(&buf);
         assert_ne!(r.class, Class::SeqContainer);
@@ -889,7 +889,7 @@ mod tests {
     #[test]
     fn low_entropy_repetitive() {
         // 4096-byte buffer at ~50% zeros (below the 75% MostlyZeros gate)
-        // with a 4-symbol alphabet — low entropy but real content.
+        // with a 4-symbol alphabet - low entropy but real content.
         let mut buf = vec![0u8; 4096];
         // Alternate 0x00 / (1,2,3 cycling) every other byte → 50% zeros.
         for i in 0..2048 {

@@ -1,7 +1,7 @@
 # legaia-seq
 
 PsyQ **SEQ** sequence-file parser. SEQ is the file format Sony's `libsnd`
-SsAPI sequencer (`SsSeqOpen`/`SsSeqPlay`) consumes — a thin MIDI variant
+SsAPI sequencer (`SsSeqOpen`/`SsSeqPlay`) consumes - a thin MIDI variant
 with a 13-byte header.
 
 ## Scope
@@ -20,6 +20,6 @@ with a 13-byte header.
 
 ## See also
 
-- [`docs/formats/seq.md`](../../docs/formats/seq.md) — byte-level reference.
-- [`docs/subsystems/audio.md`](../../docs/subsystems/audio.md) — how the
+- [`docs/formats/seq.md`](../../docs/formats/seq.md) - byte-level reference.
+- [`docs/subsystems/audio.md`](../../docs/subsystems/audio.md) - how the
   PsyQ audio stack composes (libcd → XA + libsnd → SEQ + libspu → SPU).

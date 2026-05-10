@@ -1,4 +1,4 @@
-//! `legaia-art` — Tactical Arts data system.
+//! `legaia-art` - Tactical Arts data system.
 //!
 //! ## What this crate models
 //!
@@ -10,11 +10,11 @@
 //!
 //! Three layers compose at runtime:
 //!
-//! 1. **Action queue** — a flat sequence of [`ActionConstant`] values built
+//! 1. **Action queue** - a flat sequence of [`ActionConstant`] values built
 //!    from player input + queued character actions for the current turn.
-//! 2. **Art records** — per-character binary records describing damage,
+//! 2. **Art records** - per-character binary records describing damage,
 //!    animation, hit timing, and effects for each art. See [`ArtRecord`].
-//! 3. **Trigger tables** — [`MiracleArt`] (command-string → replacement) and
+//! 3. **Trigger tables** - [`MiracleArt`] (command-string → replacement) and
 //!    [`SuperArt`] (find/replace on the action queue) lookups that mutate the
 //!    action queue before damage resolution.
 //!
@@ -28,7 +28,7 @@
 //! for the binary record layout, multiplier encoding, and full table
 //! citations.
 //!
-//! The constants in [`tables`] are *retail* — no in-engine guesses. If a
+//! The constants in [`tables`] are *retail* - no in-engine guesses. If a
 //! field has not been pinned down for a given character, that slot is `None`
 //! rather than fabricated.
 

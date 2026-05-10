@@ -6,7 +6,7 @@
 #
 # UID/GID resolution order:
 #   1. `USER_ID` / `GROUP_ID` env vars in this shell (or `.env` at the project
-#      root — docker compose auto-reads it).
+#      root - docker compose auto-reads it).
 #   2. Default `1000:1000` (matches the base image's `ubuntu` account on
 #      most Linux hosts).
 #

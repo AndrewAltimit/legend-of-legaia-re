@@ -8,12 +8,12 @@
 # Ghidra project DB (per-user, contains analysed Sony executable).
 /ghidra/projects/
 
-# Ghidra analysis outputs — regenerable from the project DB and contain
+# Ghidra analysis outputs - regenerable from the project DB and contain
 # Sony-derived code/strings (decompiled C, disassembly, extracted path
 # strings, function inventories). CLAUDE.md: "no decompressed Sony bytes
 # (text strings, sample data, decompiled-C dumps with literal data) get
 # checked in". The .py / .lua / .sh tooling under ghidra/scripts/ IS
-# committed — it's the original analysis tooling, not Sony output.
+# committed - it's the original analysis tooling, not Sony output.
 /ghidra/scripts/funcs/
 /ghidra/scripts/*.csv
 /ghidra/scripts/*.json
@@ -21,7 +21,7 @@
 /ghidra/scripts/*.log
 /ghidra/import.log
 
-# Disc images, dumps, and PSX executables — defensive: extracted/ already
+# Disc images, dumps, and PSX executables - defensive: extracted/ already
 # covers the canonical paths, but stop a stray drop into the repo root.
 *.bin
 *.iso
@@ -40,7 +40,7 @@
 # User-local overlay sweep spec (path/label pairs; example committed as .example).
 scripts/overlays.spec
 
-# WASM build output — tracked in the repo so the site works without a local rebuild.
+# WASM build output - tracked in the repo so the site works without a local rebuild.
 # Regenerate via scripts/build-wasm.sh when crates/web-viewer or its deps change.
 # site/wasm/.gitignore allows only the specific artifacts needed by viewer.html.
 

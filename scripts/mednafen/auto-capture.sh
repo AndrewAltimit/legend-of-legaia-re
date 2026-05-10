@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# auto-capture.sh — for every scenario, run all configured watchpoints
+# auto-capture.sh - for every scenario, run all configured watchpoints
 # against its `diff_against` sister states and write per-scenario JSON
 # reports to /tmp/legaia_watch_<label>.json.
 #

@@ -8,11 +8,11 @@
 //! a [`SpellOutcome`].
 //!
 //! The retail engine threads spell casts through:
-//!   - `BattleActionHost::spell_mp_cost(id)` — MP gate (already exposed).
-//!   - `BattleActionHost::is_capture_spell(id)` — Capture branch flag.
-//!   - `BattleActionHost::spell_anim_trigger(party_slot, spell_id)` —
+//!   - `BattleActionHost::spell_mp_cost(id)` - MP gate (already exposed).
+//!   - `BattleActionHost::is_capture_spell(id)` - Capture branch flag.
+//!   - `BattleActionHost::spell_anim_trigger(party_slot, spell_id)` -
 //!     fires `BattleEvent::SpellAnimTrigger`.
-//!   - `BattleActionHost::apply_damage(...)` — for offensive spells.
+//!   - `BattleActionHost::apply_damage(...)` - for offensive spells.
 //!
 //! Engines that already drive their own per-spell anim list don't need
 //! this catalog; it's a *minimum-viable* spell system that can be wired
@@ -100,7 +100,7 @@ pub enum SpellTarget {
     /// Every ally.
     AllAllies,
     /// Single enemy. **Default** because most spells in retail have this
-    /// shape — engines can override per spell.
+    /// shape - engines can override per spell.
     #[default]
     OneEnemy,
     /// Every enemy.
@@ -117,7 +117,7 @@ pub enum BuffStat {
     Defense,
     Accuracy,
     Evasion,
-    /// Speed / initiative — folds into turn-order recompute.
+    /// Speed / initiative - folds into turn-order recompute.
     Speed,
     /// Magic attack scalar.
     MagicAttack,
@@ -515,11 +515,11 @@ pub enum SpellOutcome {
         targets: Vec<(u8, u16)>,
         element: SpellElement,
     },
-    /// Heal — single target.
+    /// Heal - single target.
     Heal { target: u8, amount: u16 },
-    /// Heal — multi target.
+    /// Heal - multi target.
     MultiHeal { targets: Vec<(u8, u16)> },
-    /// Cure — `removed` is the count of statuses cleared.
+    /// Cure - `removed` is the count of statuses cleared.
     Cure { target: u8, removed: u8 },
     /// Revive with the resolved HP value.
     Revive { target: u8, hp: u16 },
@@ -532,7 +532,7 @@ pub enum SpellOutcome {
     },
     /// Capture-spell hit. Engines roll the actual capture vs. monster HP.
     CaptureRoll { target: u8, hit_pct: u8 },
-    /// Escape spell — caster fled the encounter.
+    /// Escape spell - caster fled the encounter.
     Escape,
     /// Cast was rolled but produced no effect.
     Failed { reason: SpellFailReason },
@@ -592,7 +592,7 @@ pub fn cast_spell(spell: &SpellDef, target_slot: u8, snap: &SpellSnapshot) -> Sp
         }
         SpellEffect::HealAll { amount } => {
             // Caller resolves multi-heal by calling `cast_spell` with each
-            // ally snapshot — surfacing the heal amount the formula uses.
+            // ally snapshot - surfacing the heal amount the formula uses.
             if !snap.target_alive {
                 return SpellOutcome::Failed {
                     reason: SpellFailReason::DeadTarget,
@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn cast_damage_spell_clamps_floor_at_one() {
-        // Target has more defense than caster has magic — formula goes
+        // Target has more defense than caster has magic - formula goes
         // negative; the floor clamps it to 1.
         let snap = SpellSnapshot {
             caster_mag: 1,
@@ -851,7 +851,7 @@ mod tests {
             target_hp_max: 100,
             ..Default::default()
         };
-        let s = vanilla_spell(0x14); // Vital — hp_pct: 50
+        let s = vanilla_spell(0x14); // Vital - hp_pct: 50
         let outcome = cast_spell(&s, 1, &snap);
         match outcome {
             SpellOutcome::Revive { target, hp } => {

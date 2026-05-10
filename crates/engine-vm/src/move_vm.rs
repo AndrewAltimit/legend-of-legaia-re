@@ -2,7 +2,7 @@
 //! `SCUS_942.54`) and `FUN_801D362C` (extension VM in the town overlay).
 //!
 //! See `docs/subsystems/move-vm.md` for the byte-level reference. The VM drives
-//! per-actor animation, motion, and combat moves (Tactical Arts) — distinct
+//! per-actor animation, motion, and combat moves (Tactical Arts) - distinct
 //! from the actor / sprite VM in [`super`] and the field / event VM in
 //! [`super::field`]. It is invoked every frame from the actor tick
 //! (`FUN_80021DF4`) on a per-actor "move buffer" that the field VM's `EXEC_MOVE`
@@ -31,7 +31,7 @@
 //!   (`FUN_801D362C` in the town overlay), with 61 sub-opcodes
 //!   (`0x00..=0x3C`). The sub-opcode is the u16 at `op[1]`.
 //!
-//! Both are wired through the [`MoveHost`] trait — extension sub-handlers that
+//! Both are wired through the [`MoveHost`] trait - extension sub-handlers that
 //! don't fit a clean Rust idiom are hooked through `host.ext_*` callbacks.
 //!
 //! ## Clean-room boundary
@@ -40,7 +40,7 @@
 //! decompilation at `ghidra/scripts/funcs/80023070.txt` and
 //! `ghidra/scripts/funcs/overlay_0897_801d362c.txt` are the *spec*, not source.
 //! The [`MoveHost`] trait abstracts every call the original made into the
-//! engine layer — implementations live in `crates/engine-core` (or wherever
+//! engine layer - implementations live in `crates/engine-core` (or wherever
 //! the actor pool is modeled).
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
@@ -51,117 +51,117 @@
 ///
 /// Field naming uses the byte-offset convention from `docs/subsystems/move-vm.md`
 /// to keep the link to the decompilation explicit. Engines free to back this
-/// with whatever data structure makes sense — the VM mutates this struct
+/// with whatever data structure makes sense - the VM mutates this struct
 /// directly and dispatches side effects through [`MoveHost`].
 #[derive(Debug, Clone, Default)]
 pub struct ActorState {
-    /// `+0x10` — actor flag word. Bit `0x8` set by op 0x08 HALT;
+    /// `+0x10` - actor flag word. Bit `0x8` set by op 0x08 HALT;
     /// bits `0x2` (op 0x3A/0x3B), `0x1000` (op 0x0A KEYFRAME_LOAD),
     /// `0x10000` and `0x40000000` (composite control word) toggled by various.
     pub flags: u32,
-    /// `+0x14` — world X.
+    /// `+0x14` - world X.
     pub world_x: i16,
-    /// `+0x16` — world Y.
+    /// `+0x16` - world Y.
     pub world_y: i16,
-    /// `+0x18` — world Z.
+    /// `+0x18` - world Z.
     pub world_z: i16,
-    /// `+0x22` — Y-rotation accumulator (cleared by op 0x3D).
+    /// `+0x22` - Y-rotation accumulator (cleared by op 0x3D).
     pub y_rot: i16,
-    /// `+0x24` — render bank 0.
+    /// `+0x24` - render bank 0.
     pub render_24: i16,
-    /// `+0x26` — render bank 1 (op 0x06 / 0x39 / 0x05).
+    /// `+0x26` - render bank 1 (op 0x06 / 0x39 / 0x05).
     pub render_26: i16,
-    /// `+0x28` — render bank 2.
+    /// `+0x28` - render bank 2.
     pub render_28: i16,
-    /// `+0x2A` — Y mirror (kept in sync with [`world_y`] for collision).
+    /// `+0x2A` - Y mirror (kept in sync with [`world_y`] for collision).
     pub world_y_mirror: i16,
-    /// `+0x3C` — animation bank slot 0 (op 0x00, written `v << 3`).
+    /// `+0x3C` - animation bank slot 0 (op 0x00, written `v << 3`).
     pub anim_3c: i16,
-    /// `+0x3E` — animation bank slot 1.
+    /// `+0x3E` - animation bank slot 1.
     pub anim_3e: i16,
-    /// `+0x40` — animation bank slot 2.
+    /// `+0x40` - animation bank slot 2.
     pub anim_40: i16,
-    /// `+0x42` — generic per-actor scalar (op 0x10).
+    /// `+0x42` - generic per-actor scalar (op 0x10).
     pub field_42: u16,
-    /// `+0x50` — midpoint blend / sub-state byte. Set by ext op 0x0C and
+    /// `+0x50` - midpoint blend / sub-state byte. Set by ext op 0x0C and
     /// incremented by ext op 0x0D; consumed as the 4th argument to the
     /// `FUN_801E45BC` midpoint helper from ext ops 0x0E / 0x12.
     pub field_50: u16,
-    /// `+0x52` — control word written by op 0x15 (the `0x400` bit additionally
+    /// `+0x52` - control word written by op 0x15 (the `0x400` bit additionally
     /// clears `flags & 0x80`).
     pub field_52: u16,
-    /// `+0x54` — wait/timer accumulator (op 0x09 sets `v << 3`; ticked down
+    /// `+0x54` - wait/timer accumulator (op 0x09 sets `v << 3`; ticked down
     /// elsewhere). Setting non-zero ends the per-frame interpreter loop.
     pub wait_timer: i16,
-    /// `+0x56` — move-table sub-state (cleared by ops 0x13 / 0x42).
+    /// `+0x56` - move-table sub-state (cleared by ops 0x13 / 0x42).
     pub move_substate: i16,
-    /// `+0x5A` — move sub-mode marker (set to 2/4/6/7 by various ops).
+    /// `+0x5A` - move sub-mode marker (set to 2/4/6/7 by various ops).
     pub move_submode: i16,
-    /// `+0x5C` — anim-loop counter (cleared by op 0x3C SCRATCH_WRITE).
+    /// `+0x5C` - anim-loop counter (cleared by op 0x3C SCRATCH_WRITE).
     pub field_5c: i16,
-    /// `+0x62` — local flag bank (16 bits). AND/OR by 0x31/0x32.
+    /// `+0x62` - local flag bank (16 bits). AND/OR by 0x31/0x32.
     pub local_flags: u16,
-    /// `+0x68` — generic slot.
+    /// `+0x68` - generic slot.
     pub field_68: i16,
-    /// `+0x6A` — generic slot (op 0x44, written `v << 3`).
+    /// `+0x6A` - generic slot (op 0x44, written `v << 3`).
     pub field_6a: i16,
-    /// `+0x6C` — keyframe count (op 0x0A, byte slot).
+    /// `+0x6C` - keyframe count (op 0x0A, byte slot).
     pub keyframe_count: u8,
-    /// `+0x6D` — face / body rotation index (cleared by ext op 0x02; written
+    /// `+0x6D` - face / body rotation index (cleared by ext op 0x02; written
     /// by op 0x21).
     pub face_rotation: u8,
-    /// `+0x70` — **the move-VM PC, in u16 units**.
+    /// `+0x70` - **the move-VM PC, in u16 units**.
     pub pc: i16,
-    /// `+0x72` — generic slot (op 0x0E).
+    /// `+0x72` - generic slot (op 0x0E).
     pub field_72: u16,
-    /// `+0x74` — composite control word (op 0x0C builds it; op 0x33 clears
+    /// `+0x74` - composite control word (op 0x0C builds it; op 0x33 clears
     /// bit `0x40000000`).
     pub field_74: u32,
-    /// `+0x78` — generic slot (op 0x0C).
+    /// `+0x78` - generic slot (op 0x0C).
     pub field_78: u16,
-    /// `+0x7A` — generic slot (op 0x12).
+    /// `+0x7A` - generic slot (op 0x12).
     pub field_7a: u16,
-    /// `+0x80` — animation bank 2 slot 0 (op 0x04, `v << 3`).
+    /// `+0x80` - animation bank 2 slot 0 (op 0x04, `v << 3`).
     pub anim_80: i16,
-    /// `+0x82` — animation bank 2 slot 1.
+    /// `+0x82` - animation bank 2 slot 1.
     pub anim_82: i16,
-    /// `+0x84` — animation bank 2 slot 2.
+    /// `+0x84` - animation bank 2 slot 2.
     pub anim_84: i16,
-    /// `+0x86` — composite slot bits (set by ext op 0x10/0x11/0x15/0x16).
+    /// `+0x86` - composite slot bits (set by ext op 0x10/0x11/0x15/0x16).
     pub field_86: u16,
-    /// `+0x88` — saved PC for op 0x18/0x19 jump-back loop.
+    /// `+0x88` - saved PC for op 0x18/0x19 jump-back loop.
     pub field_88: u16,
-    /// `+0x8A` — saved PC for op 0x1A/0x1B jump-back loop.
+    /// `+0x8A` - saved PC for op 0x1A/0x1B jump-back loop.
     pub field_8a: u16,
-    /// `+0x8C` — counter for op 0x18/0x19.
+    /// `+0x8C` - counter for op 0x18/0x19.
     pub field_8c: u16,
-    /// `+0x8E` — counter for op 0x1A/0x1B.
+    /// `+0x8E` - counter for op 0x1A/0x1B.
     pub field_8e: u16,
-    /// `+0x90` — tween source 0 (op 0x37 absolute, 0x35/0x2D add).
+    /// `+0x90` - tween source 0 (op 0x37 absolute, 0x35/0x2D add).
     pub tween_src_x: i16,
-    /// `+0x92` — tween source 1.
+    /// `+0x92` - tween source 1.
     pub tween_src_y: i16,
-    /// `+0x94` — tween source 2.
+    /// `+0x94` - tween source 2.
     pub tween_src_z: i16,
-    /// `+0x96` — tween scale 0 (op 0x2E `v << 3`, 0x29 absolute).
+    /// `+0x96` - tween scale 0 (op 0x2E `v << 3`, 0x29 absolute).
     pub tween_scale_x: i16,
-    /// `+0x98` — tween scale 1.
+    /// `+0x98` - tween scale 1.
     pub tween_scale_y: i16,
-    /// `+0x9A` — tween scale 2.
+    /// `+0x9A` - tween scale 2.
     pub tween_scale_z: i16,
-    /// `+0x9C` — keyframe gate / index (op 0x2C sets to 1; op 0x30 clears).
+    /// `+0x9C` - keyframe gate / index (op 0x2C sets to 1; op 0x30 clears).
     pub field_9c: i32,
-    /// `+0x9E` — keyframe descriptor word.
+    /// `+0x9E` - keyframe descriptor word.
     pub field_9e: u16,
-    /// `+0xA0..0xA6` — keyframe buffer descriptor (op 0x2C).
+    /// `+0xA0..0xA6` - keyframe buffer descriptor (op 0x2C).
     pub keyframe_desc: [u16; 4],
-    /// `+0xA8` — heap or inline keyframe pointer / value (op 0x2C / 0x26).
+    /// `+0xA8` - heap or inline keyframe pointer / value (op 0x2C / 0x26).
     pub field_a8: i32,
-    /// `+0xAC..0xCA` — per-frame anim slot block. Modeled as a flat array
+    /// `+0xAC..0xCA` - per-frame anim slot block. Modeled as a flat array
     /// addressable by byte-offset for opcodes that touch deep into it.
     /// Indices are in u16 units relative to `+0xAC`.
     pub anim_block: [u16; 16],
-    /// `+0xCA` — duration slot (op 0x1C, `v << 3`).
+    /// `+0xCA` - duration slot (op 0x1C, `v << 3`).
     pub field_ca: u16,
 }
 
@@ -197,7 +197,7 @@ pub enum StepResult {
     /// Loop break: `0x09` WAIT_SET seeded the wait timer; further opcodes are
     /// deferred to the next frame.
     Wait,
-    /// Out-of-range opcode (`>= 0x47`) — the original dispatcher's bound check
+    /// Out-of-range opcode (`>= 0x47`) - the original dispatcher's bound check
     /// fails and the loop epilogue exits.
     EndOfBuffer { opcode: u16 },
     /// The handler is recognized but not yet implemented in this port.
@@ -414,32 +414,32 @@ pub trait MoveHost {
         (0, 0)
     }
 
-    /// Op 0x16 STUB. The original's `FUN_80024C80` is a pure `jr ra` — a
+    /// Op 0x16 STUB. The original's `FUN_80024C80` is a pure `jr ra` - a
     /// no-op the VM only calls to mirror dispatch. Default impl is a no-op.
     fn stub_16(&mut self, _state: &mut ActorState, _arg: i16) {}
 
-    /// Op 0x17 — `func_0x801f30c4(actor, op[1])`. Overlay-resident effect
+    /// Op 0x17 - `func_0x801f30c4(actor, op[1])`. Overlay-resident effect
     /// trigger (the actual handler isn't yet decompiled). Default no-op.
     fn ext_17(&mut self, _state: &mut ActorState, _arg: i16) {}
 
-    /// Op 0x1D — write `DAT_8007B6DE = op[1]`. A single-byte global slot.
+    /// Op 0x1D - write `DAT_8007B6DE = op[1]`. A single-byte global slot.
     /// Hosts model their own global state; default impl ignores.
     fn global_write_1d(&mut self, _value: u16) {}
 
-    /// Op 0x20 — `(*gp[0x714])(actor, op[1], op[2])`. Indirect call through
+    /// Op 0x20 - `(*gp[0x714])(actor, op[1], op[2])`. Indirect call through
     /// an SDK-style vtable. The function is not yet identified. Default no-op.
     fn ext_20(&mut self, _state: &mut ActorState, _arg0: i16, _arg1: i16) {}
 
-    /// Op 0x21 — `DAT_8007BE60 + face_id*12` write. The original maintains a
+    /// Op 0x21 - `DAT_8007BE60 + face_id*12` write. The original maintains a
     /// `12 * N`-byte table indexed by face id. The VM passes the decoded
     /// face_id + the four u16s + final i32. Default no-op.
     fn face_rotation_setup(&mut self, _face_id: u8, _params: [u16; 4], _target: i32) {}
 
-    /// Op 0x25 — `FUN_80021B04`. Spawns a child actor at the slot given by
+    /// Op 0x25 - `FUN_80021B04`. Spawns a child actor at the slot given by
     /// `op[1]`. Default no-op (engine-side actor pool).
     fn spawn_child(&mut self, _state: &mut ActorState, _slot: i16) {}
 
-    /// Op 0x2C — heap allocation for the keyframe buffer.
+    /// Op 0x2C - heap allocation for the keyframe buffer.
     /// `bytes` is `w * h * 2` from the encoded params. Original calls
     /// `FUN_80017888(0, bytes)` to allocate. Returns the heap pointer (or
     /// `0` to indicate "use the inline buffer").
@@ -447,21 +447,21 @@ pub trait MoveHost {
         0
     }
 
-    /// Op 0x2C — initialize the keyframe descriptor at `&actor + 0xA0`.
+    /// Op 0x2C - initialize the keyframe descriptor at `&actor + 0xA0`.
     /// Original calls `FUN_8005842C(descriptor_ptr, buffer_ptr)`. Default
     /// no-op.
     fn keyframe_init(&mut self, _state: &mut ActorState, _buffer_ptr: i32) {}
 
-    /// Op 0x30 — release the keyframe buffer if heap-allocated. Default
+    /// Op 0x30 - release the keyframe buffer if heap-allocated. Default
     /// no-op (FUN_800583C8 in the original).
     fn keyframe_free(&mut self, _state: &mut ActorState, _buffer_ptr: i32) {}
 
-    /// Op 0x40 — `FUN_80058490(local_30_block, op[5], op[6])`. Where
+    /// Op 0x40 - `FUN_80058490(local_30_block, op[5], op[6])`. Where
     /// `local_30_block` is a 4-word stack array populated from `op[1..5]`.
     /// Default no-op.
     fn func58490(&mut self, _block: [u16; 4], _arg0: i16, _arg1: i16) {}
 
-    /// Multiplier byte read by op 0x0A KEYFRAME_LOAD — `DAT_1F80037D`.
+    /// Multiplier byte read by op 0x0A KEYFRAME_LOAD - `DAT_1F80037D`.
     /// Default 0x100 (a sane multiplier; the original is initialized at boot).
     fn keyframe_curve_multiplier(&self) -> u8 {
         0x10
@@ -481,17 +481,17 @@ pub trait MoveHost {
         ext_default_dispatch(self, state, sub_opcode, operand)
     }
 
-    /// Extension sub-op 0x01 — `func_0x8001a068(fmt, x, y, z)` — debug print
+    /// Extension sub-op 0x01 - `func_0x8001a068(fmt, x, y, z)` - debug print
     /// of world coords. Default no-op.
     fn ext_debug_world(&mut self, _x: i16, _y: i16, _z: i16) {}
 
-    /// Extension sub-op 0x05 / 0x30 — `func_0x80056798()` — opaque, returns
+    /// Extension sub-op 0x05 / 0x30 - `func_0x80056798()` - opaque, returns
     /// the size to advance by. Default returns `default_arm()`.
     fn ext_func56798(&mut self, _state: &mut ActorState) -> MoveExtResult {
         MoveExtResult::default_arm()
     }
 
-    /// Extension sub-op 0x0E — `FUN_801E45BC(out_xy, sub_a, sub_b, mode)` —
+    /// Extension sub-op 0x0E - `FUN_801E45BC(out_xy, sub_a, sub_b, mode)` -
     /// computes a midpoint-style position; the VM passes the three i16
     /// triples plus the mode word read from `actor[+0x50]`. Default no-op
     /// (the VM still writes the result fields if the host returns them).
@@ -505,7 +505,7 @@ pub trait MoveHost {
     ) {
     }
 
-    /// Extension sub-op 0x13 / 0x14 — `func_0x8003CE64(flag_index)` — query
+    /// Extension sub-op 0x13 / 0x14 - `func_0x8003CE64(flag_index)` - query
     /// the fourth-flag-bank bitfield (`DAT_80086D70`). Returns 0 if clear,
     /// non-zero otherwise. The VM uses the result to decide between the
     /// fall-through and predicate-skip arms.
@@ -513,69 +513,69 @@ pub trait MoveHost {
         0
     }
 
-    /// Extension sub-op 0x1C — `func_0x8003CE08(flag_index)` — set a bit in
+    /// Extension sub-op 0x1C - `func_0x8003CE08(flag_index)` - set a bit in
     /// the fourth-flag-bank.
     fn ext_set_flag_bank(&mut self, _flag_index: i16) {}
 
-    /// Extension sub-op 0x1D — `func_0x8003CE34(flag_index)` — clear a bit
+    /// Extension sub-op 0x1D - `func_0x8003CE34(flag_index)` - clear a bit
     /// in the fourth-flag-bank.
     fn ext_clear_flag_bank(&mut self, _flag_index: i16) {}
 
-    /// Extension sub-op 0x29 — `func_0x8003C5F0(0, &DAT_1F80035C[idx], 2,
-    /// current, -value, ticks)` — schedules a per-frame ramp of a scratchpad
+    /// Extension sub-op 0x29 - `func_0x8003C5F0(0, &DAT_1F80035C[idx], 2,
+    /// current, -value, ticks)` - schedules a per-frame ramp of a scratchpad
     /// slot. Default no-op.
     fn ext_scratchpad_ramp(&mut self, _slot_index: i16, _target: i16, _ticks: i16) {}
 
-    /// Extension sub-op 0x29 immediate path — direct write to scratchpad
+    /// Extension sub-op 0x29 immediate path - direct write to scratchpad
     /// slot. The VM only fires this when `ticks == 0`.
     fn ext_scratchpad_write(&mut self, _slot_index: i16, _value: i16) {}
 
-    /// Extension sub-op 0x2C — `FUN_801D31B0(actor, op)` — overlay-resident
+    /// Extension sub-op 0x2C - `FUN_801D31B0(actor, op)` - overlay-resident
     /// helper. Default no-op.
     fn ext_func801d31b0(&mut self, _state: &mut ActorState, _operand: &[u16]) {}
 
-    /// Extension sub-op 0x2E — `func_0x80059010(...)` and friends — emits
+    /// Extension sub-op 0x2E - `func_0x80059010(...)` and friends - emits
     /// a packet onto the GP0 OT (the PSX render-list ring). Default no-op.
     fn ext_emit_ot_packet(&mut self, _operand: &[u16]) {}
 
-    /// Extension sub-op 0x2F — `_DAT_8007B9D8 = (i32) op[1]`. A globally-
+    /// Extension sub-op 0x2F - `_DAT_8007B9D8 = (i32) op[1]`. A globally-
     /// shared 32-bit slot. Default no-op.
     fn ext_set_8007b9d8(&mut self, _value: i32) {}
 
-    /// Extension sub-op 0x3A — `func_0x80019B28(z1, x1, z2, x2)` — angle
+    /// Extension sub-op 0x3A - `func_0x80019B28(z1, x1, z2, x2)` - angle
     /// computation between the actor's world coords and the player's. The
     /// VM stores the result at `op[op[1] + 3]`. Default returns 0.
     fn ext_compute_angle(&self, _state: &ActorState) -> u16 {
         0
     }
 
-    /// Extension sub-op 0x3B — read `_DAT_8007B898 + 0x22` triple via
+    /// Extension sub-op 0x3B - read `_DAT_8007B898 + 0x22` triple via
     /// `func_0x8003D064`. Returns the resolved actor index. Default returns
     /// `None` (no party member).
     fn ext_party_member_lookup(&self, _slot: i16) -> Option<[i16; 3]> {
         None
     }
 
-    /// Extension sub-op 0x3C — fade colour write. When `ticks == 0`, writes
+    /// Extension sub-op 0x3C - fade colour write. When `ticks == 0`, writes
     /// the three colour bytes immediately to scratchpad globals; non-zero
     /// schedules a ramp. The VM passes both branches through this hook so
     /// hosts can model whichever is convenient. PC += 6.
     fn ext_fade_color(&mut self, _rgb: [u8; 3], _ticks: u16) {}
 
-    /// Extension sub-op 0x18/0x19/0x1A — three world-derived writes to a
+    /// Extension sub-op 0x18/0x19/0x1A - three world-derived writes to a
     /// shared 0x14-byte struct at `iVar16 - 0x7FF7C008` (offset-resolved by
     /// `*op[1] * 0x14`). Hosts model the table; the VM passes index + the
     /// 5 u16 values written. Default no-op.
     fn ext_world_struct_write(&mut self, _index: i16, _values: [i16; 5]) {}
 
-    /// Extension sub-op 0x17 — initial / configuration write to the same
+    /// Extension sub-op 0x17 - initial / configuration write to the same
     /// struct as `ext_world_struct_write`. 5 u16 values from operand+6..16.
     fn ext_world_struct_init(&mut self, _index: i16, _values: [i16; 5]) {}
 
     /// Read 4 bytes from the move-VM 16-slot scratch table at
     /// `&DAT_801F3498`. Each slot is 8 bytes wide; `dword_off` is `0` or
     /// `4`. Used by ext sub-ops 0x26 / 0x32 / 0x35 (load) and 0x12 / 0x28
-    /// (read-modify-write). Default impl returns 0 — hosts that care
+    /// (read-modify-write). Default impl returns 0 - hosts that care
     /// about cross-actor save/restore override this.
     fn move_slot_load_u32(&self, _slot: u16, _dword_off: u8) -> u32 {
         0
@@ -599,7 +599,7 @@ pub trait MoveHost {
 
     /// Read the move-VM global predicate at `&DAT_801F22F4` (set by ext
     /// sub-op 0x08, cleared by 0x09). Sub-ops 0x0A / 0x0B branch on it.
-    /// Default returns 0 — equivalent to "predicate is false / never set"
+    /// Default returns 0 - equivalent to "predicate is false / never set"
     /// (sub-op 0x0A skips, sub-op 0x0B falls through).
     fn move_global_predicate_get(&self) -> u32 {
         0
@@ -618,7 +618,7 @@ pub trait MoveHost {
     /// Write the move-VM global counter. Used by ext sub-ops 0x0F / 0x10.
     fn move_global_counter_set(&mut self, _value: u16) {}
 
-    /// Player position read from `_DAT_8007C364 + 0x14..+0x1A` — a 3 × i16
+    /// Player position read from `_DAT_8007C364 + 0x14..+0x1A` - a 3 × i16
     /// triple. Used by ext sub-op 0x2A (world position lerp toward player)
     /// and the bbox-vs-player tests at 0x06 / 0x07 / 0x36 / 0x39. Default
     /// returns the origin (engine-vm test hosts override).
@@ -626,14 +626,14 @@ pub trait MoveHost {
         [0, 0, 0]
     }
 
-    /// Map fixed-origin pair `(_DAT_80089118, _DAT_80089120)` — the (x, z)
+    /// Map fixed-origin pair `(_DAT_80089118, _DAT_80089120)` - the (x, z)
     /// origin used by ext sub-op 0x24 (world position lerp toward fixed
     /// map origin). Default returns `(0, 0)`.
     fn move_fixed_origin_xz(&self) -> (i32, i32) {
         (0, 0)
     }
 
-    /// Read `_DAT_1F800393` — a u8 scratchpad slot used by ext sub-op 0x23
+    /// Read `_DAT_1F800393` - a u8 scratchpad slot used by ext sub-op 0x23
     /// as the numerator of a 12.0 fixed-point ramp ratio against the
     /// operand-supplied denominator. Default returns 0 (the lerp becomes
     /// a no-op).
@@ -641,7 +641,7 @@ pub trait MoveHost {
         0
     }
 
-    /// Read `_DAT_8007C348` — the axis offset used by ext sub-ops 0x36 / 0x37
+    /// Read `_DAT_8007C348` - the axis offset used by ext sub-ops 0x36 / 0x37
     /// for the `0x8E - axis` threshold predicate. Default returns 0 (so the
     /// threshold collapses to `op[2] < 0x8E` / `op[2] > 0x8E`).
     fn move_axis_threshold(&self) -> i16 {
@@ -650,7 +650,7 @@ pub trait MoveHost {
 
     /// Read a u16 from the actor's move-bytecode buffer at the given absolute
     /// word offset (`actor[+0x48][word_off]`). Used by ext sub-ops 0x1B (copy
-    /// loop) and 0x1E (read-modify-write). Default returns 0 — hosts that
+    /// loop) and 0x1E (read-modify-write). Default returns 0 - hosts that
     /// model the move buffer (e.g. engine-core's `World`) override.
     fn move_bytecode_read_u16(&self, _word_off: usize) -> u16 {
         0
@@ -668,7 +668,7 @@ pub trait MoveHost {
 ///
 /// The original SCUS implementation uses signed-integer division with
 /// fixed-point scaling by `0x100` and the `0x60 / 0x100 = 60/256` segment
-/// multiplier — the result space is effectively degrees in 0..360 (= 0x168).
+/// multiplier - the result space is effectively degrees in 0..360 (= 0x168).
 fn rgb_to_hsv(r: i32, g: i32, b: i32) -> (i32, i32, i32) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
@@ -735,29 +735,29 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
     let op_w = |i: usize| -> u16 { operand.get(i).copied().unwrap_or(0) };
 
     match sub_opcode {
-        // 0x00 — falls into default arm (size 1).
+        // 0x00 - falls into default arm (size 1).
         0x00 => MoveExtResult::default_arm(),
 
-        // 0x01 — `func_0x8001a068("EFC %d %d %d", x, y, z)` debug print.
+        // 0x01 - `func_0x8001a068("EFC %d %d %d", x, y, z)` debug print.
         // Original sets `iVar16 = 0x20000` then breaks (size = 2).
         0x01 => {
             host.ext_debug_world(state.world_x, state.world_y, state.world_z);
             MoveExtResult::with_size(2)
         }
 
-        // 0x02 — clear face_rotation. Default-arm size.
+        // 0x02 - clear face_rotation. Default-arm size.
         0x02 => {
             state.face_rotation = 0;
             MoveExtResult::default_arm()
         }
 
-        // 0x03 — clear flags bit 0x1000.
+        // 0x03 - clear flags bit 0x1000.
         0x03 => {
             state.flags &= !0x1000;
             MoveExtResult::default_arm()
         }
 
-        // 0x04 — write actor world XYZ into the operand slot at u16-index
+        // 0x04 - write actor world XYZ into the operand slot at u16-index
         // `op[2] + 3`. The "self-modifying" pattern stores a copy of the
         // current world coords into the move-bytecode itself; the absolute
         // word offset is `state.pc + op[2] + 3`. 3 consecutive writes for
@@ -770,10 +770,10 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x05 — opaque func56798().
+        // 0x05 - opaque func56798().
         0x05 => host.ext_func56798(state),
 
-        // 0x06 / 0x07 — bbox-vs-player test. The original canonicalises the
+        // 0x06 / 0x07 - bbox-vs-player test. The original canonicalises the
         // box in-place by swapping `op_w(2)/(4)` if `op_w(4) < op_w(2)`, then
         // tests whether the player position falls inside `[(xa-0x40)/0x80,
         // (xb+0x40)/0x80]` × `[(za-0x40)/0x80, (zb+0x40)/0x80]`. 0x06 means
@@ -782,7 +782,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // the operand stream from here (it's a read-only slice), so the port
         // forwards the predicate to the host: `move_player_world_xyz` returns
         // the player position. If the host reports the origin (the default
-        // impl), the test always reads "outside the box" — so we model 0x06
+        // impl), the test always reads "outside the box" - so we model 0x06
         // as a skip (size 7) and 0x07 as a continue (default-arm). Hosts
         // that surface real player coords get the right behavior.
         0x06 | 0x07 => {
@@ -817,22 +817,22 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x08 — `DAT_801F22F4 = 1` (set move-VM global predicate).
+        // 0x08 - `DAT_801F22F4 = 1` (set move-VM global predicate).
         0x08 => {
             host.move_global_predicate_set(1);
             MoveExtResult::default_arm()
         }
 
-        // 0x09 — `DAT_801F22F4 = 0` (clear).
+        // 0x09 - `DAT_801F22F4 = 0` (clear).
         0x09 => {
             host.move_global_predicate_set(0);
             MoveExtResult::default_arm()
         }
 
-        // 0x0A — predicate gate: if `DAT_801F22F4 != 0` falls into default
+        // 0x0A - predicate gate: if `DAT_801F22F4 != 0` falls into default
         // (size 1, advance and continue); else returns size 3 (skip a 3-u16
         // payload). Per the dump's `iVar16 = 3; if (DAT_801f22f4 != 0)
-        // goto LAB_801d38c8; ...; default:` shape — `LAB_801d38c8` is the
+        // goto LAB_801d38c8; ...; default:` shape - `LAB_801d38c8` is the
         // default-arm label, and the fall-through hits `iVar16 << 0x10 break`
         // with `iVar16 = 3`.
         0x0A => {
@@ -843,7 +843,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x0B — opposite predicate (skip when set).
+        // 0x0B - opposite predicate (skip when set).
         0x0B => {
             if host.move_global_predicate_get() == 0 {
                 MoveExtResult::default_arm()
@@ -852,19 +852,19 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x0C — `actor[+0x50] = op_w(2)` (set midpoint blend / sub-state).
+        // 0x0C - `actor[+0x50] = op_w(2)` (set midpoint blend / sub-state).
         0x0C => {
             state.field_50 = op_w(2);
             MoveExtResult::default_arm()
         }
 
-        // 0x0D — `actor[+0x50] += op_w(2)` (additive variant).
+        // 0x0D - `actor[+0x50] += op_w(2)` (additive variant).
         0x0D => {
             state.field_50 = state.field_50.wrapping_add(op_w(2));
             MoveExtResult::default_arm()
         }
 
-        // 0x0E — midpoint position calc + write to actor world.
+        // 0x0E - midpoint position calc + write to actor world.
         // Reads param_2 + 4/6/8 (a) + 10/12/14 (off) + 16/18/20 (b). The
         // midpoint helper consumes `actor[+0x50]` (the blend amount set by
         // ext ops 0x0C/0x0D). Original returns `iVar16 = 0xb0000` → size 11
@@ -884,13 +884,13 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(11)
         }
 
-        // 0x0F — `DAT_801F22F6 = 0` (clear move-VM global counter).
+        // 0x0F - `DAT_801F22F6 = 0` (clear move-VM global counter).
         0x0F => {
             host.move_global_counter_set(0);
             MoveExtResult::default_arm()
         }
 
-        // 0x10 — wrap `DAT_801F22F6` mod 16, capture low byte into
+        // 0x10 - wrap `DAT_801F22F6` mod 16, capture low byte into
         // `actor.field_86` (preserving the high byte), then increment the
         // counter. Per the original:
         //   if (0xf < c) c = 0;
@@ -908,7 +908,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x11 — save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
+        // 0x11 - save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
         // the scratch slot indexed by `actor.field_86 & 0xFF`. Same shape
         // as sub-op 0x25 but the slot index comes from the cycle counter
         // updated by sub-ops 0x0F / 0x10 instead of an operand u16.
@@ -921,12 +921,12 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x12 — slot-indexed midpoint variant of 0x0E. Reads
+        // 0x12 - slot-indexed midpoint variant of 0x0E. Reads
         // `actor[+0x86] & 0xFF` as a slot index, loads `slot.x/y/z` from the
         // 16-slot scratch table at `&DAT_801F3498`, then computes
         //   actor.world.{x,y,z} = op[2/3/4] + (slot.{x,y,z} + op[5/6/7]) / 2
         // before passing through the same midpoint helper as 0x0E. The
-        // operand layout is `(op[2..4]=offset, op[5..7]=b)` — `a` comes from
+        // operand layout is `(op[2..4]=offset, op[5..7]=b)` - `a` comes from
         // the slot, not from the bytecode. Original returns `iVar16 =
         // 0x80000` → size 8 (opcode + sub-op + 6 operand u16s).
         0x12 => {
@@ -948,7 +948,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(8)
         }
 
-        // 0x13 / 0x14 — flag-bank predicate tests against the fourth flag
+        // 0x13 / 0x14 - flag-bank predicate tests against the fourth flag
         // bank `DAT_80086D70` (via `func_0x8003CE64`). op_w(2) = flag index.
         // Both jump to the shared `LAB_801D4830` epilogue: returns 1 when
         // `predicate != 0`, else 4. 0x13 falls through unconditionally
@@ -969,7 +969,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x15 / 0x16 — set a flag bit on actor.flags (mask 0x800000 / 0x200000).
+        // 0x15 / 0x16 - set a flag bit on actor.flags (mask 0x800000 / 0x200000).
         0x15 => {
             state.flags |= 0x800000;
             MoveExtResult::default_arm()
@@ -979,7 +979,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x17 — world-struct init. op_w(2) = idx (param_2+4); op_w(3..7) = 5 vals.
+        // 0x17 - world-struct init. op_w(2) = idx (param_2+4); op_w(3..7) = 5 vals.
         0x17 => {
             let idx = op_w(2) as i16;
             let vals = [
@@ -992,7 +992,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             host.ext_world_struct_init(idx, vals);
             MoveExtResult::default_arm()
         }
-        // 0x18/0x19/0x1A — world-struct write variants. Same op_w(2) = idx.
+        // 0x18/0x19/0x1A - world-struct write variants. Same op_w(2) = idx.
         0x18..=0x1A => {
             let idx = op_w(2) as i16;
             let vals = [
@@ -1006,10 +1006,10 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x1B — in-bytecode copy loop. For `i in 0..op[4]`:
+        // 0x1B - in-bytecode copy loop. For `i in 0..op[4]`:
         //   buffer[state.pc + op[3] + i + 5] = buffer[state.pc + op[2] + i + 5]
         // The base offset of 5 (= u16-index 5) targets the operand region
-        // *past* the count word — the bytecode following this instruction
+        // *past* the count word - the bytecode following this instruction
         // is treated as an inline scratch buffer indexed by op[2]/op[3].
         // Falls into default-arm regardless of the count.
         0x1B => {
@@ -1025,7 +1025,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x1C / 0x1D — set / clear flag bank. op_w(2) = flag index.
+        // 0x1C / 0x1D - set / clear flag bank. op_w(2) = flag index.
         0x1C => {
             host.ext_set_flag_bank(op_w(2) as i16);
             MoveExtResult::with_size(3)
@@ -1035,7 +1035,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(3)
         }
 
-        // 0x1E — in-place add: `buffer[state.pc + op[2] + 4] += op[3]`.
+        // 0x1E - in-place add: `buffer[state.pc + op[2] + 4] += op[3]`.
         // Read-modify-write of a single u16 inside the move bytecode.
         // Wrapping i16 add per the original `*(short *)(...) + *(short *)(...)`.
         0x1E => {
@@ -1046,7 +1046,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x1F / 0x20 — HSV-space color ramp on `actor[+0xa0]` (sub-op 0x1F)
+        // 0x1F / 0x20 - HSV-space color ramp on `actor[+0xa0]` (sub-op 0x1F)
         // or `actor[+0xa4]` (sub-op 0x20). The packed u32 holds an RGB triple:
         // R = byte 0, G = byte 1, B = byte 2 (bit 24-31 reserved).
         //
@@ -1058,9 +1058,9 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         //   4. HSV→RGB via FUN_8001a6c8 (which clamps each output to 0..0xF8).
         //   5. Re-pack `puVar14[0] = R | G<<8 | B<<16`.
         //
-        // Returns default_arm() (size 1) — the bytecode operand stream is
+        // Returns default_arm() (size 1) - the bytecode operand stream is
         // re-interpreted as outer opcode 0x1F / 0x20 on the next dispatch
-        // (intentional self-modifying layout — see also sub-ops 0x04/0x1B/0x1E).
+        // (intentional self-modifying layout - see also sub-ops 0x04/0x1B/0x1E).
         0x1F | 0x20 => {
             let kd_offset = if sub_opcode == 0x1F { 0 } else { 2 };
             let lo = state.keyframe_desc[kd_offset];
@@ -1088,7 +1088,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x21 — `actor.anim_3c..40 += op_w(2..4)`.
+        // 0x21 - `actor.anim_3c..40 += op_w(2..4)`.
         0x21 => {
             state.anim_3c = state.anim_3c.wrapping_add(op_w(2) as i16);
             state.anim_3e = state.anim_3e.wrapping_add(op_w(3) as i16);
@@ -1096,7 +1096,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x22 — `actor.world += op_w(2..4)`.
+        // 0x22 - `actor.world += op_w(2..4)`.
         0x22 => {
             state.world_x = state.world_x.wrapping_add(op_w(2) as i16);
             state.world_y = state.world_y.wrapping_add(op_w(3) as i16);
@@ -1104,7 +1104,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x23 — animation lerp toward target world coords using the
+        // 0x23 - animation lerp toward target world coords using the
         // scratchpad ramp counter at `_DAT_1F800393`. Per the dump:
         //   t = (DAT_1F800393 << 12) / op[5];                  // 12.0 ratio
         //   anim_3c -= (anim_3c * t) >> 12;                     // remove old
@@ -1137,14 +1137,14 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x24 / 0x2A — fixed-point lerp on actor world coords. Both share
+        // 0x24 / 0x2A - fixed-point lerp on actor world coords. Both share
         // the per-axis form `actor[axis] = op[axis] + ((target - op[axis]) *
         // op[axis_t]) >> 12`. The Y axis always lerps toward player.world_y
         // (with operand `op_w(3)` as base, `op_w(6)` as t). The X axis and
         // Z axis differ by sub-op:
-        //   0x24 — uses `(_DAT_80089118, _DAT_80089120)` map origin: target
+        //   0x24 - uses `(_DAT_80089118, _DAT_80089120)` map origin: target
         //          = `-(op + origin)` (i.e. fixed map-relative anchor).
-        //   0x2A — uses `(player.world_x, player.world_z)`.
+        //   0x2A - uses `(player.world_x, player.world_z)`.
         //
         // Operand layout: op_w(2,3,4) = base x/y/z; op_w(5)=t_x, op_w(6)=t_y,
         // op_w(7)=t_z (each scaled by `>> 12`).
@@ -1176,7 +1176,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x25 — save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
+        // 0x25 - save `actor[+0x14..+0x1C]` (world coords + Y mirror) into
         // the 16-slot scratch table at `&DAT_801F3498`. Each slot is 8 bytes:
         // `slot[0..4] = (world_x:u16, world_y:u16)`,
         // `slot[4..8] = (world_z:u16, world_y_mirror:u16)`.
@@ -1189,7 +1189,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x26 — load 8 bytes from the scratch slot back into
+        // 0x26 - load 8 bytes from the scratch slot back into
         // `actor[+0x14..+0x1C]`.
         0x26 => {
             let slot = op_w(2);
@@ -1202,7 +1202,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x27 — save the three tween-source u16s `actor[+0x90..+0x96]` into
+        // 0x27 - save the three tween-source u16s `actor[+0x90..+0x96]` into
         // the slot's first 6 bytes (slot[0/2/4] = tween_src_x/y/z).
         0x27 => {
             let slot = op_w(2);
@@ -1212,7 +1212,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x28 — load 3 × u16 from the slot, scale `+0x92/+0x94` by
+        // 0x28 - load 3 × u16 from the slot, scale `+0x92/+0x94` by
         // `op_w(3)/op_w(4)` (with `>> 12` fixed-point shift), and clamp the
         // scaled outputs to `[-0xFF, 0xFF]`. Returns size 5 when the third
         // result needs the upper-bound branch (mirroring the original
@@ -1253,7 +1253,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x31 — save `actor[+0x24..+0x2C]` (the three render banks +
+        // 0x31 - save `actor[+0x24..+0x2C]` (the three render banks +
         // `+0x2A` Y mirror) into the slot.
         0x31 => {
             let slot = op_w(2);
@@ -1264,7 +1264,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x32 — load 8 bytes from the slot back into the render-bank
+        // 0x32 - load 8 bytes from the slot back into the render-bank
         // section at `+0x24..+0x2C`.
         0x32 => {
             let slot = op_w(2);
@@ -1277,21 +1277,21 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x34 — save `actor[+0x72]` (`field_72`) into slot[0..2].
+        // 0x34 - save `actor[+0x72]` (`field_72`) into slot[0..2].
         0x34 => {
             let slot = op_w(2);
             host.move_slot_save_u16(slot, 0, state.field_72);
             MoveExtResult::default_arm()
         }
 
-        // 0x35 — load slot[0..2] into `actor[+0x72]`.
+        // 0x35 - load slot[0..2] into `actor[+0x72]`.
         0x35 => {
             let slot = op_w(2);
             state.field_72 = host.move_slot_load_u16(slot, 0);
             MoveExtResult::default_arm()
         }
 
-        // 0x29 — scratchpad ramp or immediate write. op_w(2)=slot,
+        // 0x29 - scratchpad ramp or immediate write. op_w(2)=slot,
         // op_w(3)=target, op_w(4)=ticks.
         0x29 => {
             let slot = op_w(2) as i16;
@@ -1305,7 +1305,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x2B — `actor[+0xB4..+0xBC] = op_w(2..6)`. Writes 4 u16 anim-block
+        // 0x2B - `actor[+0xB4..+0xBC] = op_w(2..6)`. Writes 4 u16 anim-block
         // slots (`anim_block_u16` at byte-off 8/10/12/14 = `+0xB4/B6/B8/BA`).
         // Per the dump, the dispatcher's default-arm closes the case after
         // the writes; engines treating the sub-op as a 5-u16 instruction
@@ -1318,13 +1318,13 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x2C — overlay sub-routine.
+        // 0x2C - overlay sub-routine.
         0x2C => {
             host.ext_func801d31b0(state, operand);
             MoveExtResult::default_arm()
         }
 
-        // 0x2D — additive variant of 0x2B.
+        // 0x2D - additive variant of 0x2B.
         // `actor[+0xB4..+0xBC] += op_w(2..6)`. Wrapping add per the
         // `*(short *)` semantics in the original.
         0x2D => {
@@ -1336,22 +1336,22 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x2E — emit OT packet.
+        // 0x2E - emit OT packet.
         0x2E => {
             host.ext_emit_ot_packet(operand);
             MoveExtResult::with_size(2)
         }
 
-        // 0x2F — write `_DAT_8007B9D8`. op_w(2) = the i16 value.
+        // 0x2F - write `_DAT_8007B9D8`. op_w(2) = the i16 value.
         0x2F => {
             host.ext_set_8007b9d8(op_w(2) as i16 as i32);
             MoveExtResult::default_arm()
         }
 
-        // 0x30 — opaque func56798 (same as 0x05).
+        // 0x30 - opaque func56798 (same as 0x05).
         0x30 => host.ext_func56798(state),
 
-        // 0x33 — `actor[+0xC0..+0xC8] += op_w(2..6)` (4 i16 anim-block slots
+        // 0x33 - `actor[+0xC0..+0xC8] += op_w(2..6)` (4 i16 anim-block slots
         // at byte-off 20/22/24/26 = `+0xC0/C2/C4/C6`). Wrapping add per the
         // `*(short *) +` semantics in the original.
         0x33 => {
@@ -1363,8 +1363,8 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x36 / 0x37 — axis threshold against `0x8E - DAT_8007C348`.
-        // 0x38 / 0x39 — squared-distance to the player.
+        // 0x36 / 0x37 - axis threshold against `0x8E - DAT_8007C348`.
+        // 0x38 / 0x39 - squared-distance to the player.
         // All four predicates funnel through `LAB_801D4830`: returns 1 when
         // the predicate is true, else 4 (skip a 3-u16 follow-up payload).
         //
@@ -1375,7 +1375,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
         //
         // dx/dz are `actor.world - player.world`. The default `MoveHost`
         // returns the origin for the player, so engines that don't model
-        // the player position get "actor at the origin offset" — close
+        // the player position get "actor at the origin offset" - close
         // enough for static unit tests; real hosts override.
         0x36..=0x39 => {
             let v = op_w(2) as i16 as i32;
@@ -1402,7 +1402,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x3A — angle to player. Original:
+        // 0x3A - angle to player. Original:
         //   sVar9 = *(short*)(param_2 + 4);
         //   uVar6 = func_0x80019B28(actor.z, actor.x, player.z, player.x);
         //   *(short*)(param_2 + sVar9*2 + 6) = uVar6;
@@ -1418,7 +1418,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::default_arm()
         }
 
-        // 0x3B — party-member position lookup. Original:
+        // 0x3B - party-member position lookup. Original:
         //   puVar15 = (short*)(param_2 + op_w(3)*2 + 8);
         //   *puVar15 = puVar15[1] = puVar15[2] = 0;
         //   func_0x8003D064(_DAT_8007B898 + 0x22, &local, ...);
@@ -1446,8 +1446,8 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             }
         }
 
-        // 0x3C — fade colour. op_w(2,3,4) = r/g/b (low bytes), op_w(5)=ticks.
-        // The original reads `*(undefined1 *)(param_2 + 4)` etc — that's the
+        // 0x3C - fade colour. op_w(2,3,4) = r/g/b (low bytes), op_w(5)=ticks.
+        // The original reads `*(undefined1 *)(param_2 + 4)` etc - that's the
         // low byte of u16-index 2. op_w returns u16, so we cast to u8.
         0x3C => {
             let r = op_w(2) as u8;
@@ -1458,7 +1458,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
             MoveExtResult::with_size(6)
         }
 
-        // Anything `>= 0x3D` is reserved / unknown — treat as default arm
+        // Anything `>= 0x3D` is reserved / unknown - treat as default arm
         // since the original switch had no entries past 0x3C and would land
         // in `default:` (size 1 + iVar16 << 16, treated as fall-through here).
         _ => MoveExtResult::default_arm(),
@@ -1472,7 +1472,7 @@ fn ext_default_dispatch<H: MoveHost + ?Sized>(
 /// the current u16-word offset.
 ///
 /// Returns a [`StepResult`] describing the outcome. The dispatcher loop is
-/// the caller's responsibility — the move VM's outer loop in the original
+/// the caller's responsibility - the move VM's outer loop in the original
 /// was just "step until break".
 pub fn step<H: MoveHost + ?Sized>(
     host: &mut H,
@@ -1487,7 +1487,7 @@ pub fn step<H: MoveHost + ?Sized>(
         return StepResult::EndOfBuffer { opcode };
     }
 
-    // Operand reader — pure function over the bytecode slice, doesn't borrow
+    // Operand reader - pure function over the bytecode slice, doesn't borrow
     // `state`. Out-of-range reads return 0 (matching the original's reliance
     // on the move buffer being correctly sized for each opcode).
     let read = |i: usize| -> u16 { bytecode.get(pc_start + i).copied().unwrap_or(0) };
@@ -1498,7 +1498,7 @@ pub fn step<H: MoveHost + ?Sized>(
     let mut size: i16;
 
     match opcode {
-        // 0x00 — ANIM_BANK_SET. size 4.
+        // 0x00 - ANIM_BANK_SET. size 4.
         // actor[+0x3C..+0x40] = op[1..3] << 3.
         0x00 => {
             state.anim_3c = (read(1) as i16).wrapping_shl(3);
@@ -1506,7 +1506,7 @@ pub fn step<H: MoveHost + ?Sized>(
             state.anim_40 = (read(3) as i16).wrapping_shl(3);
             size = 4;
         }
-        // 0x01 — WORLD_ADD. size 4.
+        // 0x01 - WORLD_ADD. size 4.
         0x01 => {
             let v1 = read(1) as i16;
             let v2 = read(2) as i16;
@@ -1517,12 +1517,12 @@ pub fn step<H: MoveHost + ?Sized>(
             state.world_z = state.world_z.wrapping_add(v3);
             size = 4;
         }
-        // 0x02 — BANK_SET_98. size 2. actor[+0x98] = op[1] << 3.
+        // 0x02 - BANK_SET_98. size 2. actor[+0x98] = op[1] << 3.
         0x02 => {
             state.tween_scale_y = (read(1) as i16).wrapping_shl(3);
             size = 2;
         }
-        // 0x03 — WORLD_ROTATE_ADD. size 2. Sin/cos rotated add into world XZ.
+        // 0x03 - WORLD_ROTATE_ADD. size 2. Sin/cos rotated add into world XZ.
         0x03 => {
             let v1 = read(1) as i16;
             let (sin_v, cos_v) = host.rotation_lut(state.tween_scale_x as u16 & 0xFFF);
@@ -1534,26 +1534,26 @@ pub fn step<H: MoveHost + ?Sized>(
             state.world_z = state.world_z.wrapping_add(dz as i16);
             size = 2;
         }
-        // 0x04 — ANIM_BANK_2. size 4.
+        // 0x04 - ANIM_BANK_2. size 4.
         0x04 => {
             state.anim_80 = (read(1) as i16).wrapping_shl(3);
             state.anim_82 = (read(2) as i16).wrapping_shl(3);
             state.anim_84 = (read(3) as i16).wrapping_shl(3);
             size = 4;
         }
-        // 0x05 — RENDER_BANK_ADD. size 4.
+        // 0x05 - RENDER_BANK_ADD. size 4.
         0x05 => {
             state.render_24 = state.render_24.wrapping_add(read(1) as i16);
             state.render_26 = state.render_26.wrapping_add(read(2) as i16);
             state.render_28 = state.render_28.wrapping_add(read(3) as i16);
             size = 4;
         }
-        // 0x06 — WRITE_26. size 2.
+        // 0x06 - WRITE_26. size 2.
         0x06 => {
             state.render_26 = read(1) as i16;
             size = 2;
         }
-        // 0x07 — WORLD_SET. size 4.
+        // 0x07 - WORLD_SET. size 4.
         0x07 => {
             state.world_x = read(1) as i16;
             state.world_y = read(2) as i16;
@@ -1561,19 +1561,19 @@ pub fn step<H: MoveHost + ?Sized>(
             state.world_z = read(3) as i16;
             size = 4;
         }
-        // 0x08 — HALT. size 0, ends loop.
+        // 0x08 - HALT. size 0, ends loop.
         0x08 => {
             state.flags |= 0x8;
             outcome = StepResult::Halt;
             size = 0;
         }
-        // 0x09 — WAIT_SET. size 2, ends loop.
+        // 0x09 - WAIT_SET. size 2, ends loop.
         0x09 => {
             state.wait_timer = (read(1) as i16).wrapping_shl(3);
             outcome = StepResult::Wait;
             size = 2;
         }
-        // 0x0A — KEYFRAME_LOAD. variable size = 3 + count*3.
+        // 0x0A - KEYFRAME_LOAD. variable size = 3 + count*3.
         0x0A => {
             state.flags |= 0x1000;
             let header_op2 = read(2);
@@ -1603,7 +1603,7 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             state.local_flags = 0;
         }
-        // 0x0B — DefaultBreak: drops out of switch with size 0; the original
+        // 0x0B - DefaultBreak: drops out of switch with size 0; the original
         // skipped the size set, and the epilogue still ran (no PC advance).
         0x0B => {
             // No change to PC; runtime continues the loop unless a prior
@@ -1611,7 +1611,7 @@ pub fn step<H: MoveHost + ?Sized>(
             // on the caller to detect a no-progress loop if it cares.
             size = 0;
         }
-        // 0x0C — composite control word build. size 6.
+        // 0x0C - composite control word build. size 6.
         0x0C => {
             let v1 = read(1) as i16 as i32;
             let v2 = read(2) as i16 as i32;
@@ -1624,37 +1624,37 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_78 = read(5);
             size = 6;
         }
-        // 0x0D — write tween_src_x = op[1] << 3. size 2.
+        // 0x0D - write tween_src_x = op[1] << 3. size 2.
         0x0D => {
             state.tween_src_x = (read(1) as i16).wrapping_shl(3);
             size = 2;
         }
-        // 0x0E — write field_72 = op[1]. size 2.
+        // 0x0E - write field_72 = op[1]. size 2.
         0x0E => {
             state.field_72 = read(1);
             size = 2;
         }
-        // 0x0F — write tween_src_y = op[1] << 3.
+        // 0x0F - write tween_src_y = op[1] << 3.
         0x0F => {
             state.tween_src_y = (read(1) as i16).wrapping_shl(3);
             size = 2;
         }
-        // 0x10 — write field_42.
+        // 0x10 - write field_42.
         0x10 => {
             state.field_42 = read(1);
             size = 2;
         }
-        // 0x11 — write tween_src_z = op[1] << 3.
+        // 0x11 - write tween_src_z = op[1] << 3.
         0x11 => {
             state.tween_src_z = (read(1) as i16).wrapping_shl(3);
             size = 2;
         }
-        // 0x12 — write field_7a.
+        // 0x12 - write field_7a.
         0x12 => {
             state.field_7a = read(1);
             size = 2;
         }
-        // 0x13 — sub-mode init (16 ops mostly write the descriptor area).
+        // 0x13 - sub-mode init (16 ops mostly write the descriptor area).
         0x13 => {
             state.move_submode = 2;
             state.move_substate = 4;
@@ -1666,7 +1666,7 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 0x10;
         }
-        // 0x14 — write four `anim_block` slots `<< 3`. size 5.
+        // 0x14 - write four `anim_block` slots `<< 3`. size 5.
         0x14 => {
             for i in 0..4 {
                 let v = (read(1 + i) as i16).wrapping_shl(3);
@@ -1674,7 +1674,7 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 5;
         }
-        // 0x15 — write field_52, with the 0x400 bit additionally clearing
+        // 0x15 - write field_52, with the 0x400 bit additionally clearing
         // flags & 0x80.
         0x15 => {
             let v = read(1);
@@ -1684,23 +1684,23 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 2;
         }
-        // 0x16 — STUB. size 2. Calls FUN_80024C80 which is just `jr ra`.
+        // 0x16 - STUB. size 2. Calls FUN_80024C80 which is just `jr ra`.
         0x16 => {
             host.stub_16(state, read(1) as i16);
             size = 2;
         }
-        // 0x17 — overlay-resident extension. size 2.
+        // 0x17 - overlay-resident extension. size 2.
         0x17 => {
             host.ext_17(state, read(1) as i16);
             size = 2;
         }
-        // 0x18 — save current PC into field_88, then field_8c = op[1].
+        // 0x18 - save current PC into field_88, then field_8c = op[1].
         0x18 => {
             state.field_88 = state.pc as u16;
             state.field_8c = read(1);
             size = 2;
         }
-        // 0x19 — counter-decrement loop (for 0x18 setup).
+        // 0x19 - counter-decrement loop (for 0x18 setup).
         0x19 => {
             let next = state.field_8c.wrapping_sub(1);
             if (state.field_8c & 0x4000) == 0 {
@@ -1716,7 +1716,7 @@ pub fn step<H: MoveHost + ?Sized>(
                 return StepResult::Advance;
             }
         }
-        // 0x1A / 0x1B — second loop pair.
+        // 0x1A / 0x1B - second loop pair.
         0x1A => {
             state.field_8a = state.pc as u16;
             state.field_8e = read(1);
@@ -1736,17 +1736,17 @@ pub fn step<H: MoveHost + ?Sized>(
                 return StepResult::Advance;
             }
         }
-        // 0x1C — write field_ca = op[1] << 3.
+        // 0x1C - write field_ca = op[1] << 3.
         0x1C => {
             state.field_ca = (read(1) as i16).wrapping_shl(3) as u16;
             size = 2;
         }
-        // 0x1D — global write.
+        // 0x1D - global write.
         0x1D => {
             host.global_write_1d(read(1));
             size = 2;
         }
-        // 0x1E — write 7 anim_block slots. size 8.
+        // 0x1E - write 7 anim_block slots. size 8.
         0x1E => {
             state.move_submode = 4;
             for (n, off) in [
@@ -1762,7 +1762,7 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 8;
         }
-        // 0x1F — write 7 anim_block slots with merged descriptor. size 8.
+        // 0x1F - write 7 anim_block slots with merged descriptor. size 8.
         0x1F => {
             // Merges current low byte of `+0x9E` into op[1].
             let merged = (state.field_9e & 0xFF) | read(1);
@@ -1779,12 +1779,12 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 8;
         }
-        // 0x20 — vtable thunk. size 3.
+        // 0x20 - vtable thunk. size 3.
         0x20 => {
             host.ext_20(state, read(1) as i16, read(2) as i16);
             size = 3;
         }
-        // 0x21 — face rotation setup. size 7.
+        // 0x21 - face rotation setup. size 7.
         0x21 => {
             let face_id = read(1) as u8;
             state.face_rotation = face_id;
@@ -1793,11 +1793,11 @@ pub fn step<H: MoveHost + ?Sized>(
             host.face_rotation_setup(face_id, params, target);
             size = 7;
         }
-        // 0x22 — epilogue shortcut (size 1, like the default break path).
+        // 0x22 - epilogue shortcut (size 1, like the default break path).
         0x22 => {
             size = 1;
         }
-        // 0x23 — table write. size 0xD.
+        // 0x23 - table write. size 0xD.
         0x23 => {
             state.move_submode = 2;
             state.move_substate = 4;
@@ -1819,7 +1819,7 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 0xD;
         }
-        // 0x24 — anim_block additive. size 3.
+        // 0x24 - anim_block additive. size 3.
         0x24 => {
             let v1 = read(1) as i16;
             let v2 = read(2) as i16;
@@ -1830,47 +1830,47 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 3;
         }
-        // 0x25 — child-actor spawn dispatch. size 2.
+        // 0x25 - child-actor spawn dispatch. size 2.
         0x25 => {
             host.spawn_child(state, read(1) as i16);
             size = 2;
         }
-        // 0x26 — write 4 anim_block slots. size 5.
+        // 0x26 - write 4 anim_block slots. size 5.
         0x26 => {
             for (n, off) in [(1, 0xFCu16), (2, 0xFE), (3, 0x00), (4, 0x02)] {
                 state.anim_block_u16_set(off as usize, read(n));
             }
             size = 5;
         }
-        // 0x27 — write 2 anim_block slots. size 3.
+        // 0x27 - write 2 anim_block slots. size 3.
         0x27 => {
             state.anim_block_u16_set(0x04, read(1));
             state.anim_block_u16_set(0x06, read(2));
             size = 3;
         }
-        // 0x28 — additive scale Z. size 2.
+        // 0x28 - additive scale Z. size 2.
         0x28 => {
             state.tween_scale_z = state.tween_scale_z.wrapping_add(read(1) as i16);
             size = 2;
         }
-        // 0x29 — write tween_scale_x = op[1] (no shift). size 2.
+        // 0x29 - write tween_scale_x = op[1] (no shift). size 2.
         0x29 => {
             state.tween_scale_x = read(1) as i16;
             size = 2;
         }
-        // 0x2A — write tween_scale_z = op[1] << 3. size 2.
+        // 0x2A - write tween_scale_z = op[1] << 3. size 2.
         0x2A => {
             state.tween_scale_z = (read(1) as i16).wrapping_shl(3);
             size = 2;
         }
-        // 0x2B — TWEEN_ABS_TRIPLE. size 4.
+        // 0x2B - TWEEN_ABS_TRIPLE. size 4.
         0x2B => {
             state.tween_src_x = read(1) as i16;
             state.tween_src_y = read(2) as i16;
             state.tween_src_z = read(3) as i16;
             size = 4;
         }
-        // 0x2C — KEY_BUFFER_ALLOC. size 5.
+        // 0x2C - KEY_BUFFER_ALLOC. size 5.
         0x2C => {
             for (n, slot) in [(1usize, 0usize), (2, 1), (3, 2), (4, 3)] {
                 state.keyframe_desc[slot] = read(n);
@@ -1889,21 +1889,21 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_9c = 1;
             size = 5;
         }
-        // 0x2D — WORLD_INC_VARIANT. size 4.
+        // 0x2D - WORLD_INC_VARIANT. size 4.
         0x2D => {
             state.tween_src_x = state.tween_src_x.wrapping_add(read(1) as i16);
             state.tween_src_y = state.tween_src_y.wrapping_add(read(2) as i16);
             state.tween_src_z = state.tween_src_z.wrapping_add(read(3) as i16);
             size = 4;
         }
-        // 0x2E — TWEEN_SCALE_SET. size 4.
+        // 0x2E - TWEEN_SCALE_SET. size 4.
         0x2E => {
             state.tween_scale_x = (read(1) as i16).wrapping_shl(3);
             state.tween_scale_y = (read(2) as i16).wrapping_shl(3);
             state.tween_scale_z = (read(3) as i16).wrapping_shl(3);
             size = 4;
         }
-        // 0x2F — overlay extension dispatch.
+        // 0x2F - overlay extension dispatch.
         0x2F => {
             let sub = read(1);
             // Build an operand window; the extension VM walks `param_2 = op`,
@@ -1917,29 +1917,29 @@ pub fn step<H: MoveHost + ?Sized>(
             let result = host.ext_dispatch(state, sub, window);
             size = result.size_u16;
         }
-        // 0x30 — KEY_BUFFER_FREE. ends the loop epilogue but advances by 1.
+        // 0x30 - KEY_BUFFER_FREE. ends the loop epilogue but advances by 1.
         0x30 => {
             host.keyframe_free(state, state.field_a8);
             state.field_9c = 0;
             // Original goto-jumps to caseD_22 (size 1, then bVar3 stays true).
             size = 1;
         }
-        // 0x31 — LFLAG_AND. size 2.
+        // 0x31 - LFLAG_AND. size 2.
         0x31 => {
             state.local_flags &= read(1);
             size = 2;
         }
-        // 0x32 — LFLAG_OR. size 2.
+        // 0x32 - LFLAG_OR. size 2.
         0x32 => {
             state.local_flags |= read(1);
             size = 2;
         }
-        // 0x33 — clear bit 0x40000000 in field_74. size 1.
+        // 0x33 - clear bit 0x40000000 in field_74. size 1.
         0x33 => {
             state.field_74 &= !0x4000_0000u32;
             size = 1;
         }
-        // 0x34 — TWEEN_SETUP. size 9.
+        // 0x34 - TWEEN_SETUP. size 9.
         0x34 => {
             state.anim_block_u16_set(0x00, read(1)); // +0xAC
             state.anim_block_u16_set(0x04, read(2)); // +0xB0
@@ -1948,18 +1948,18 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_9c = read(5) as i16 as i32;
             state.field_a8 = read(6) as i16 as i32;
             state.anim_block_u16_set(0xF8, read(7));
-            // Original writes `(int) op[8]` at +0xA8 — we update field_a8 too
+            // Original writes `(int) op[8]` at +0xA8 - we update field_a8 too
             // since the slot overlaps; for the test surface we treat it as
             // the 32-bit value.
             size = 9;
         }
-        // 0x35 — WORLD_INC_VARIANT2. size 3.
+        // 0x35 - WORLD_INC_VARIANT2. size 3.
         0x35 => {
             state.tween_src_x = state.tween_src_x.wrapping_add(read(1) as i16);
             state.tween_src_y = state.tween_src_y.wrapping_add(read(2) as i16);
             size = 3;
         }
-        // 0x36 — TWEEN_DURATION_SET. size 3.
+        // 0x36 - TWEEN_DURATION_SET. size 3.
         0x36 => {
             state.tween_scale_y = (read(1) as i16).wrapping_shl(3);
             state.tween_scale_z = (read(2) as i16).wrapping_shl(3);
@@ -1967,36 +1967,36 @@ pub fn step<H: MoveHost + ?Sized>(
             state.anim_block_u16_set(0x0E, 0);
             size = 3;
         }
-        // 0x37 — WORLD_SET_VARIANT2. size 3.
+        // 0x37 - WORLD_SET_VARIANT2. size 3.
         0x37 => {
             state.tween_src_x = read(1) as i16;
             state.tween_src_y = read(2) as i16;
             size = 3;
         }
-        // 0x38 — B2_ADD. size 2.
+        // 0x38 - B2_ADD. size 2.
         0x38 => {
             let cur = state.anim_block_u16(0x06) as i16;
             state.anim_block_u16_set(0x06, cur.wrapping_add(read(1) as i16) as u16);
             size = 2;
         }
-        // 0x39 — RENDER_BANK_SET (absolute). size 4.
+        // 0x39 - RENDER_BANK_SET (absolute). size 4.
         0x39 => {
             state.render_24 = read(1) as i16;
             state.render_26 = read(2) as i16;
             state.render_28 = read(3) as i16;
             size = 4;
         }
-        // 0x3A — flags |= 2. size 1.
+        // 0x3A - flags |= 2. size 1.
         0x3A => {
             state.flags |= 2;
             size = 1;
         }
-        // 0x3B — flags &= ~2. size 1.
+        // 0x3B - flags &= ~2. size 1.
         0x3B => {
             state.flags &= !2u32;
             size = 1;
         }
-        // 0x3C — SCRATCH_WRITE. size 2 (the original branches out via the
+        // 0x3C - SCRATCH_WRITE. size 2 (the original branches out via the
         // alloc-on-first-use path; we keep the simple shape and leave the
         // alloc-call to the host via keyframe_alloc).
         0x3C => {
@@ -2019,34 +2019,34 @@ pub fn step<H: MoveHost + ?Sized>(
             state.anim_block_u16_set(0x18, state.pc as u16); // mirror +0xCC = pc
             size = 2 + count.max(0) as i16 * 6;
         }
-        // 0x3D — anim interpolate. size 3 (variable sub-loops in original).
+        // 0x3D - anim interpolate. size 3 (variable sub-loops in original).
         0x3D => {
             state.y_rot = 0;
             state.anim_block_u16_set(0x1A, state.pc as u16); // +0xCE = pc
             size = 3 + (read(2) as i16).max(0) * 6;
         }
-        // 0x3E — write +0x22. size 2.
+        // 0x3E - write +0x22. size 2.
         0x3E => {
             state.y_rot = read(1) as i16;
             size = 2;
         }
-        // 0x3F — write anim_block +0xD0 slot. size 2.
+        // 0x3F - write anim_block +0xD0 slot. size 2.
         0x3F => {
             state.anim_block_u16_set(0x1C, read(1));
             size = 2;
         }
-        // 0x40 — call FUN_80058490. size 7.
+        // 0x40 - call FUN_80058490. size 7.
         0x40 => {
             let block = [read(1), read(2), read(3), read(4)];
             host.func58490(block, read(5) as i16, read(6) as i16);
             size = 7;
         }
-        // 0x41 — write anim_block +0xB2 slot. size 2.
+        // 0x41 - write anim_block +0xB2 slot. size 2.
         0x41 => {
             state.anim_block_u16_set(0x06, read(1));
             size = 2;
         }
-        // 0x42 — anim_block init variant. size 0xF.
+        // 0x42 - anim_block init variant. size 0xF.
         0x42 => {
             state.move_substate = 4;
             state.move_submode = 2;
@@ -2065,19 +2065,19 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 0xF;
         }
-        // 0x43 — `actor[+0x86] |= 0x2000`. size 1.
+        // 0x43 - `actor[+0x86] |= 0x2000`. size 1.
         0x43 => {
             state.field_86 |= 0x2000;
             size = 1;
         }
-        // 0x44 — triplet write. size 4.
+        // 0x44 - triplet write. size 4.
         0x44 => {
             state.field_9e = read(1);
             state.field_68 = read(2) as i16;
             state.field_6a = (read(3) as i16).wrapping_shl(3);
             size = 4;
         }
-        // 0x45 — anim_block + sub_mode = 7. size 8.
+        // 0x45 - anim_block + sub_mode = 7. size 8.
         0x45 => {
             state.move_submode = 7;
             for (n, off) in [
@@ -2093,7 +2093,7 @@ pub fn step<H: MoveHost + ?Sized>(
             }
             size = 8;
         }
-        // 0x46 — TWEEN_INIT. size 4.
+        // 0x46 - TWEEN_INIT. size 4.
         0x46 => {
             state.tween_src_z = state.tween_src_x;
             state.tween_scale_x = state.tween_src_y;
@@ -2142,14 +2142,14 @@ pub fn run_until_break<H: MoveHost + ?Sized>(
 /// inspect the `HALT` flag bit on return.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActorTickOutcome {
-    /// `wait_timer >= 0` — the VM was not entered this frame. The retail
+    /// `wait_timer >= 0` - the VM was not entered this frame. The retail
     /// `bgez` at `0x80022B9C` skips the move-VM call. Engines run their
     /// post-tick work normally; the actor is just animating in place.
     Waiting,
     /// VM ran and exited via `0x08` HALT (`actor.flags & 0x8` set). Retail
     /// branches to its halt-handler at `0x80023040` after seeing this bit.
     Halted,
-    /// VM ran and exited via `0x09` WAIT_SET — the wait timer has been
+    /// VM ran and exited via `0x09` WAIT_SET - the wait timer has been
     /// re-seeded; further opcodes deferred to next frame.
     WaitSeeded,
     /// VM ran past the bytecode buffer (out-of-range opcode `>= 0x47`).
@@ -2169,15 +2169,15 @@ pub enum ActorTickOutcome {
 ///
 /// Retail behaviour:
 ///
-/// 1. Pre-tick (caller's responsibility — see [`decrement_wait_timer`]):
+/// 1. Pre-tick (caller's responsibility - see [`decrement_wait_timer`]):
 ///    `actor[+0x54] -= delta` (delta is the product of two scratchpad
 ///    speed scalars).
 /// 2. **Move-VM gate**: `if (wait_timer >= 0) skip; else run VM`. The retail
 ///    bgez at 0x80022B9C is the canonical gate.
 /// 3. After the VM call: `if (actor.flags & 0x8) goto halt-handler`.
 ///
-/// Engines compose their per-frame work around this — pre-move integration,
-/// post-move animation/render — and gate the move-VM step through this
+/// Engines compose their per-frame work around this - pre-move integration,
+/// post-move animation/render - and gate the move-VM step through this
 /// function so the wait-timer + HALT semantics stay faithful to retail.
 ///
 /// This is a thin port: the heavy per-frame work (animation interpolation,
@@ -2227,8 +2227,8 @@ pub fn actor_tick<H: MoveHost + ?Sized>(
 /// ```
 ///
 /// where the two factors are scratchpad speed scalars (per-actor anim speed
-/// × global frame-rate compensation). Engines compute their own `delta` —
-/// however they expose those scalars — and pass it here.
+/// × global frame-rate compensation). Engines compute their own `delta` -
+/// however they expose those scalars - and pass it here.
 ///
 /// The cast back to `i16` matches retail's `*(ushort *)(param_1 + 0x54)
 /// = ...` write-back; the wraparound is intentional and the move-VM gate
@@ -2537,7 +2537,7 @@ mod tests {
     fn op2c_alloc_path_calls_host_when_w_ge_0x11() {
         let mut host = TestHost::default();
         let mut state = ActorState::new();
-        // [op, count_x, count_y, w, h] — w=0x11, h=4, bytes = 0x11*4*2 = 136.
+        // [op, count_x, count_y, w, h] - w=0x11, h=4, bytes = 0x11*4*2 = 136.
         let bc = program(&[0x2C, 1, 2, 0x11, 4]);
         let r = step(&mut host, &mut state, &bc);
         assert_eq!(r, StepResult::Advance);
@@ -2742,7 +2742,7 @@ mod tests {
     fn op2f_subop_2b_writes_anim_block_b4_through_ba() {
         let mut host = TestHost::default();
         let mut state = ActorState::new();
-        // [0x2F, 0x2B, w0, w1, w2, w3] — writes to +0xB4/B6/B8/BA.
+        // [0x2F, 0x2B, w0, w1, w2, w3] - writes to +0xB4/B6/B8/BA.
         let bc = program(&[0x2F, 0x2B, 0x1111, 0x2222, 0x3333, 0x4444]);
         step(&mut host, &mut state, &bc);
         assert_eq!(state.anim_block_u16(8), 0x1111);
@@ -3143,7 +3143,7 @@ mod tests {
         let bc = program(&[0x06, 99, 0x08]); // WRITE_26, HALT
         let r = actor_tick(&mut host, &mut state, &bc, 16);
         assert_eq!(r, ActorTickOutcome::Waiting);
-        // VM was not entered — render_26 unchanged, no HALT flag.
+        // VM was not entered - render_26 unchanged, no HALT flag.
         assert_eq!(state.render_26, 0);
         assert_eq!(state.flags & 0x8, 0);
         assert_eq!(state.pc, 0);
@@ -3206,7 +3206,7 @@ mod tests {
         assert_eq!(r, ActorTickOutcome::BudgetExhausted);
     }
 
-    /// Composed bytecode walks several explicit-size opcodes — WORLD_SET,
+    /// Composed bytecode walks several explicit-size opcodes - WORLD_SET,
     /// FACE_ROTATION, ext sub 0x1C (set-flag-bank, size 3), then HALT.
     /// `run_until_break` should exit at HALT with all per-op state changes
     /// applied. Avoids the default-arm sub-ops whose `size_u16 = 1`
@@ -3219,10 +3219,10 @@ mod tests {
         let mut state = ActorState::new();
 
         // Bytecode:
-        // op 0x07 1 2 3                       — WORLD_SET (size 4)
-        // op 0x21 7 100 200 300 400 0x8000   — face rotation (size 7)
-        // op 0x2F sub 0x1C 42                 — ext set_flag_bank (size 3)
-        // op 0x08                              — HALT (size 0)
+        // op 0x07 1 2 3                       - WORLD_SET (size 4)
+        // op 0x21 7 100 200 300 400 0x8000   - face rotation (size 7)
+        // op 0x2F sub 0x1C 42                 - ext set_flag_bank (size 3)
+        // op 0x08                              - HALT (size 0)
         let bc = program(&[
             0x07, 1, 2, 3, // WORLD_SET
             0x21, 7, 100, 200, 300, 400, 0x8000, // FACE_ROT
@@ -3590,8 +3590,8 @@ mod tests {
 
     #[test]
     fn hsv_to_rgb_segment_dispatch_matches_each_arm() {
-        // V = 0xFF, S = 0xFF — picks the segment based on H.
-        // Segment 0 (H=0): (V, t, p) — pure red.
+        // V = 0xFF, S = 0xFF - picks the segment based on H.
+        // Segment 0 (H=0): (V, t, p) - pure red.
         let (r, g, b) = hsv_to_rgb(0, 0xFF, 0xFF);
         assert!(r >= 0xF0 && g <= 1 && b <= 1, "segment 0 ≈ pure red");
         // Segment 2 (H=0x78=120 deg): green.

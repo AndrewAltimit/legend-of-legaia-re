@@ -1,6 +1,6 @@
 //! Hunt for hero meshes: character-shaped TMDs sorted by vertex count.
 //!
-//! Heroes have more detail than NPCs/monsters — typically 400-800 verts vs
+//! Heroes have more detail than NPCs/monsters - typically 400-800 verts vs
 //! ~100-300 for NPCs. Filter to height/horizontal > 1.5 (character-shape)
 //! and show the top-N by vertex count.
 //!
@@ -49,7 +49,7 @@ fn main() -> Result<()> {
 
     hits.sort_by_key(|h| std::cmp::Reverse(h.0));
     println!(
-        "{} character-shaped TMDs total — top {} by vertex count:",
+        "{} character-shaped TMDs total - top {} by vertex count:",
         hits.len(),
         top_n
     );

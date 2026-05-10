@@ -4,7 +4,7 @@
 //! offsets without panicking.
 //!
 //! This test catches whole-chain regressions that per-class unit tests
-//! miss — it's the smoke that proves `SceneHost::open_extracted` →
+//! miss - it's the smoke that proves `SceneHost::open_extracted` →
 //! `load_scene` → `SceneAssets::build` → `mes_message_bytes` /
 //! `bgm_seq_bytes` / `tmds` all produce well-formed payloads on real
 //! disc data.
@@ -115,7 +115,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
         // by `SceneAssets::build` and the BGM resolver.
         //
         // We also probe `seq_in_stream_entries` because most retail BGM
-        // entries have a `[u32 chunk0 type=0][VAB][chunk1][SEQ]` layout —
+        // entries have a `[u32 chunk0 type=0][VAB][chunk1][SEQ]` layout -
         // chunk0 holds a VAB whose header sits at +4, even though the
         // entry's primary classification is the SEQ-bearing stream. The
         // classifier promotes such entries to `SceneVabStream`, but
@@ -127,7 +127,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
         let mut probed_idxs: std::collections::HashSet<u32> = std::collections::HashSet::new();
         // The VAB header magic on disc is the four-byte sequence
         // `0x70 0x42 0x41 0x56`, i.e. ASCII `pBAV`. Read as a little-endian
-        // u32 it spells `0x5641_4270` — Sony's `VABp` mnemonic — but the
+        // u32 it spells `0x5641_4270` - Sony's `VABp` mnemonic - but the
         // on-disc byte order is the LE-decoded form. Compare bytes against
         // `b"pBAV"`, not `b"VABp"`.
         const VAB_MAGIC_BYTES: &[u8; 4] = b"pBAV";
@@ -154,7 +154,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
             counters.0 += 1; // vab_magic_ok
             // Header-only parse: verifies magic + version + ps/ts/vs counts.
             // The full `parse` walks the program table + tone records + VAG
-            // sample table — but on disc many `scene_vab_stream` entries are
+            // sample table - but on disc many `scene_vab_stream` entries are
             // *split-stream* VABs whose VAG sample bodies live in subsequent
             // PROT entries (`fsize > buf.len()`), so a strict full parse
             // legitimately fails for ~25% of entries. The header is enough
@@ -174,7 +174,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
             scenes_with_vab += 1;
             total_vab_entries += assets.vab_entries.len();
             // Probe the first 2 entries per scene to keep walltime
-            // bounded — coverage across hundreds of scenes is ample.
+            // bounded - coverage across hundreds of scenes is ample.
             for &vab_idx in assets.vab_entries.iter().take(2) {
                 if !probed_idxs.insert(vab_idx) {
                     continue;
@@ -196,7 +196,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
                 continue;
             }
             let bytes = host.index.entry_bytes(seq_idx).expect("read SEQ entry");
-            // Only a VAB header at chunk0 (+4) qualifies — raw SEQ at 0 doesn't
+            // Only a VAB header at chunk0 (+4) qualifies - raw SEQ at 0 doesn't
             // carry a VAB and shouldn't count.
             if bytes.len() >= 8 && &bytes[4..8] == VAB_MAGIC_BYTES {
                 if scenes_with_vab == 0 || !assets.vab_entries.contains(&seq_idx) {
@@ -257,7 +257,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
     );
     assert!(total_tmds > 1000, "total TMDs too low: {total_tmds}");
     assert!(scenes_with_seq > 0, "no SEQ-bearing scenes detected");
-    // MES is rarer per scene — many scenes are pure asset bundles. The
+    // MES is rarer per scene - many scenes are pure asset bundles. The
     // important property is "we found *some* dialog containers and they
     // resolve to non-empty bytes".
     assert!(scenes_with_mes > 0, "no MES-bearing scenes detected");
@@ -279,7 +279,7 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
     );
     assert_eq!(
         vab_parse_bad, 0,
-        "{vab_parse_bad} VAB entries failed legaia_vab::parse — chunk-header offset math regressed?"
+        "{vab_parse_bad} VAB entries failed legaia_vab::parse - chunk-header offset math regressed?"
     );
     assert!(
         sample_vab.is_some(),
@@ -312,7 +312,7 @@ fn scene_host_resolves_bgm_bytes_for_ids_in_block() {
             continue;
         }
         tried += 1;
-        // Probe BGM ids 0..16 — the typical scene-local range.
+        // Probe BGM ids 0..16 - the typical scene-local range.
         for id in 0..16u16 {
             if let Ok(Some(bytes)) = host.bgm_seq_bytes(id) {
                 assert!(bytes.len() >= 4);

@@ -4,7 +4,7 @@ Per-character record schema for Legend of Legaia.
 
 ## Scope
 
-The 0x414-byte character record at runtime address `0x80084708 + n * 0x414` —
+The 0x414-byte character record at runtime address `0x80084708 + n * 0x414` -
 typed accessors for every documented field, a round-trip-safe `parse` /
 `write` pair that preserves every untouched byte, and a `Party` wrapper for
 N-character rosters.
@@ -41,9 +41,9 @@ assert_eq!(r.hp_mp_sp(), r2.hp_mp_sp());
   more character records plus runtime globals (party leader, inventory,
   story flags, current scene). Once captured it lands as a sibling
   module here.
-- The page-banked inventory at `[0x80085718..0x80085918)` — that's
+- The page-banked inventory at `[0x80085718..0x80085918)` - that's
   global state, not per-character.
 
 ## Reference
 
-[`docs/subsystems/battle.md` — Character record layout](../../docs/subsystems/battle.md#character-record-layout).
+[`docs/subsystems/battle.md` - Character record layout](../../docs/subsystems/battle.md#character-record-layout).

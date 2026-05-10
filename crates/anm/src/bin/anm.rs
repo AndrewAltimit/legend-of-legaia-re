@@ -84,7 +84,7 @@ enum Cmd {
     /// Scan one or more ANM files and list every record whose size is NOT
     /// consistent with the `8 + 32*N` keyframe-table layout. These are
     /// records whose per-frame bytecode interpreter is distinct from the
-    /// keyframe tick at `FUN_80021DF4` — candidates for the overlay-resident
+    /// keyframe tick at `FUN_80021DF4` - candidates for the overlay-resident
     /// dispatcher at `actor[+0x4C]`.
     ///
     /// Files that fail to parse as ANM are silently skipped, so you can
@@ -150,7 +150,7 @@ fn keyframes(path: &Path, record: usize, bones: Option<usize>, with_preamble: bo
         Some(n) => n,
         None => KeyframeReader::infer_bone_count(bytes.len()).ok_or_else(|| {
             anyhow::anyhow!(
-                "record size {} doesn't fit `8 + 32*N` — pass --bones to override",
+                "record size {} doesn't fit `8 + 32*N` - pass --bones to override",
                 bytes.len()
             )
         })?,
@@ -394,7 +394,7 @@ fn scan_non_keyframe(paths: &[PathBuf], with_preamble: bool, show_histogram: boo
                 if body == 0 {
                     "empty body".to_string()
                 } else {
-                    format!("body {} bytes — not a multiple of 32", body)
+                    format!("body {} bytes - not a multiple of 32", body)
                 }
             };
             match hdr {

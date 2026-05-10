@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PSX RAM map — legend-of-legaia-re</title>
+  <title>PSX RAM map - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   <style>
@@ -69,17 +69,17 @@
   <div class="memmap" id="memmap">
     <div class="memmap-section-head">BIOS / OS area</div>
     <div class="memmap-row" data-key="bios">
-      <span class="memmap-addr">0x80000000 — 0x8000FFFF</span>
+      <span class="memmap-addr">0x80000000 - 0x8000FFFF</span>
       <span class="memmap-label">PSX BIOS workspace, kernel TCB, exception vectors</span>
     </div>
 
     <div class="memmap-section-head">SCUS_942.54 (the game executable)</div>
     <div class="memmap-row" data-key="scus-text">
-      <span class="memmap-addr">0x80010000 — 0x8005FFFF</span>
+      <span class="memmap-addr">0x80010000 - 0x8005FFFF</span>
       <span class="memmap-label">SCUS code (.text + libsnd / libspu / libcd / libapi)</span>
     </div>
     <div class="memmap-row" data-key="scus-data">
-      <span class="memmap-addr">0x80060000 — 0x8007FFFF</span>
+      <span class="memmap-addr">0x80060000 - 0x8007FFFF</span>
       <span class="memmap-label">SCUS .rodata + .data (jump tables, global state)</span>
     </div>
 
@@ -93,7 +93,7 @@
       <span class="memmap-label">Character record array (stride 0x414)</span>
     </div>
     <div class="memmap-row" data-key="ability-bitmask">
-      <span class="memmap-addr">0x80074358 — 0x80074367</span>
+      <span class="memmap-addr">0x80074358 - 0x80074367</span>
       <span class="memmap-label">4×u32 active-ability bitmask</span>
     </div>
     <div class="memmap-row" data-key="prot-toc">
@@ -107,7 +107,7 @@
 
     <div class="memmap-section-head">Heap + scratch</div>
     <div class="memmap-row" data-key="heap">
-      <span class="memmap-addr">0x80080000 — 0x801BFFFF</span>
+      <span class="memmap-addr">0x80080000 - 0x801BFFFF</span>
       <span class="memmap-label">Game heap (asset buffers, runtime state, dialog buffer)</span>
     </div>
     <div class="memmap-row" data-key="battle-ctx">
@@ -117,15 +117,15 @@
 
     <div class="memmap-section-head">Runtime overlay window</div>
     <div class="memmap-row" data-key="overlay-low">
-      <span class="memmap-addr">0x801C0000 — 0x801CFFFF</span>
+      <span class="memmap-addr">0x801C0000 - 0x801CFFFF</span>
       <span class="memmap-label">Overlay header / shared dispatch region</span>
     </div>
     <div class="memmap-row" data-key="overlay-mid">
-      <span class="memmap-addr">0x801D0000 — 0x801EFFFF</span>
+      <span class="memmap-addr">0x801D0000 - 0x801EFFFF</span>
       <span class="memmap-label">Overlay code (varies by game mode: title / town / battle / menu)</span>
     </div>
     <div class="memmap-row" data-key="overlay-extended">
-      <span class="memmap-addr">0x801F0000 — 0x80205FFF</span>
+      <span class="memmap-addr">0x801F0000 - 0x80205FFF</span>
       <span class="memmap-label">Extended overlay region (used by 256 KB town overlay)</span>
     </div>
 
@@ -145,7 +145,7 @@
   <h2>Notes</h2>
   <ul>
     <li>The overlay window holds <em>different code</em> depending on which game mode is active. Static analysis only sees what's loaded at the time of capture. The repo has separate overlay imports for: title screen (0971), town (0897), battle (0898), menu, options/0896.</li>
-    <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to in-heap structs. The battle context at <code>0x8007BD24</code> is the canonical example — Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
+    <li>Several globals that look like data ("DAT_xxxxx" in Ghidra) are actually pointers to in-heap structs. The battle context at <code>0x8007BD24</code> is the canonical example - Ghidra types it as <code>int*</code>, code accesses it as <code>(*ptr)[N]</code>.</li>
     <li>The PROT TOC at <code>0x801C70F0</code> is loaded from disc at boot. Sam's earlier TOC math used a wrong offset (<code>toc[p+5]-toc[p+2]</code> instead of <code>toc[p+5]-toc[p+3]+4</code>); fixing it shifted classification of hundreds of entries.</li>
   </ul>
 </section>
@@ -198,7 +198,7 @@ const DETAILS = {
   },
   'overlay-mid': {
     title: 'Overlay code',
-    body: `<p>Where the actual game-mode code lives. Title overlay (0971), town overlay (0897, the largest at ~190 KB containing the field VM), battle overlay (0898 with the battle action state machine), menu overlay (the inventory / equip / spell screens). Different overlays are mutually exclusive — battle and town never coexist.</p>`
+    body: `<p>Where the actual game-mode code lives. Title overlay (0971), town overlay (0897, the largest at ~190 KB containing the field VM), battle overlay (0898 with the battle action state machine), menu overlay (the inventory / equip / spell screens). Different overlays are mutually exclusive - battle and town never coexist.</p>`
   },
   'overlay-extended': {
     title: 'Extended overlay region',

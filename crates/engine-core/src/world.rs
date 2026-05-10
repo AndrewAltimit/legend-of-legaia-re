@@ -9,13 +9,13 @@
 //! ## Why a single composite
 //!
 //! In the retail runtime, "an actor" is a 0xCB-byte record holding everything
-//! all four VMs read/write — world position, anim banks, flags, render bank,
+//! all four VMs read/write - world position, anim banks, flags, render bank,
 //! per-action queue, etc. Splitting that across four crates would force
 //! engines to keep four parallel index tables in sync. The composite pattern
 //! here keeps the per-VM `ActorState` structs intact (clean-room boundary
 //! preserved) but lets one struct own them.
 //!
-//! Engines that want a different layout — say, ECS storage — should
+//! Engines that want a different layout - say, ECS storage - should
 //! implement the VM `Host` traits themselves; this is the default.
 
 use crate::battle_events::BattleEvent;
@@ -45,7 +45,7 @@ pub const MAX_ACTORS: usize = 64;
 pub const MOVE_VM_BUDGET: usize = 4096;
 
 /// One queued fade request. Move-VM ext sub-op 0x3C writes either an
-/// immediate fade (`ticks == 0`) or a ramp (`ticks > 0`) — engines drain
+/// immediate fade (`ticks == 0`) or a ramp (`ticks > 0`) - engines drain
 /// `pending_fade` each frame to drive the screen overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FadeRequest {
@@ -60,13 +60,13 @@ pub enum SceneMode {
     /// Title / no scene. Only the actor VM and effect pool are live.
     #[default]
     Title,
-    /// Field / town scene — field VM drives event flow.
+    /// Field / town scene - field VM drives event flow.
     Field,
-    /// Battle scene — battle action state machine runs over the actor table.
+    /// Battle scene - battle action state machine runs over the actor table.
     Battle,
-    /// Cutscene mode — actor VM runs but no field/battle dispatch.
+    /// Cutscene mode - actor VM runs but no field/battle dispatch.
     Cutscene,
-    /// World-map mode — `WorldMapController` drives camera and entity ticks.
+    /// World-map mode - `WorldMapController` drives camera and entity ticks.
     WorldMap,
 }
 
@@ -142,7 +142,7 @@ pub struct Actor {
     pub field_1d: u8,
     pub field_20: u16,
 
-    /// `subobj` snap-clear condition flag — engine sets this when the actor's
+    /// `subobj` snap-clear condition flag - engine sets this when the actor's
     /// subobj is in the "snap to anchor" configuration. Read by actor VM op
     /// `SpawnDefault`.
     pub snap_clear: bool,
@@ -152,7 +152,7 @@ pub struct Actor {
     /// pointer).
     pub motion_target: Option<ActorVmPosition>,
 
-    /// Last-frame effect spawn — engine wires whatever rendering / sound
+    /// Last-frame effect spawn - engine wires whatever rendering / sound
     /// flash it has. We just record the actor id for inspection.
     pub last_effect: u32,
 
@@ -177,7 +177,7 @@ pub struct Actor {
     pub pose_frame: Option<PoseFrame>,
 
     /// Index into `SceneResources::tmds` for this actor's bound mesh.
-    /// `None` means no TMD is bound — the actor has no visible 3D model.
+    /// `None` means no TMD is bound - the actor has no visible 3D model.
     /// Set via [`World::set_actor_tmd_binding`].
     pub tmd_binding: Option<usize>,
 }
@@ -201,7 +201,7 @@ impl Actor {
 /// LUTs / RNG state used by the move-VM ports.
 ///
 /// The `Host` trait impls live on a thin `WorldHost<'_>` borrow to keep
-/// borrow-checker complexity manageable — see [`World::with_host`].
+/// borrow-checker complexity manageable - see [`World::with_host`].
 pub struct World {
     pub mode: SceneMode,
     pub actors: Vec<Actor>,
@@ -210,7 +210,7 @@ pub struct World {
     /// Script catalog for the effect VM. Populated at battle-enter time
     /// from PROT 873 (`efect.dat`) pack1 data via
     /// [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
-    /// An empty catalog is safe — `BattleHostImpl::ui_element` spawns
+    /// An empty catalog is safe - `BattleHostImpl::ui_element` spawns
     /// nothing until a real catalog is wired. Set via
     /// [`crate::scene::SceneHost::set_effect_catalog`].
     pub effect_catalog: vm::effect_vm::EffectCatalog,
@@ -224,7 +224,7 @@ pub struct World {
     /// Current field-VM PC. Updated by `tick()` based on the StepResult.
     pub field_pc: usize,
     /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
-    /// vec means "no active move" — the move VM is not ticked for that
+    /// vec means "no active move" - the move VM is not ticked for that
     /// actor. Set via [`World::set_move_bytecode`].
     pub move_bytecode: Vec<Vec<u16>>,
     /// Move-VM global predicate at `_DAT_801F22F4` (set by ext sub-op 0x08,
@@ -237,50 +237,50 @@ pub struct World {
     /// by ext sub-ops 0x11 / 0x12 / 0x25 / 0x27 / 0x28 / 0x31 / 0x32 / 0x34
     /// / 0x35 to checkpoint world coords + tween state per actor / animation.
     pub move_slot_table: [[u8; 8]; 16],
-    /// Move-VM axis offset at `_DAT_8007C348` — used by ext sub-ops 0x36 / 0x37
+    /// Move-VM axis offset at `_DAT_8007C348` - used by ext sub-ops 0x36 / 0x37
     /// for the `0x8E - axis` threshold predicate. Engines write per-scene.
     pub move_axis_threshold: i16,
-    /// Move-VM scratchpad ramp ratio numerator at `_DAT_1F800393` — used by
+    /// Move-VM scratchpad ramp ratio numerator at `_DAT_1F800393` - used by
     /// ext sub-op 0x23 (anim-bank lerp) as the numerator of a 12.0 fixed-point
     /// ratio against the operand-supplied denominator.
     pub move_ramp_ratio: u8,
-    /// Fixed map origin pair at `(_DAT_80089118, _DAT_80089120)` — used by ext
+    /// Fixed map origin pair at `(_DAT_80089118, _DAT_80089120)` - used by ext
     /// sub-op 0x24 (world position lerp toward fixed map origin).
     pub map_origin_xz: (i32, i32),
-    /// Player actor slot — when `Some(slot)`, ext sub-ops 0x06 / 0x07 / 0x2A
+    /// Player actor slot - when `Some(slot)`, ext sub-ops 0x06 / 0x07 / 0x2A
     /// / 0x36 / 0x39 read `actors[slot].move_state.world_{x,y,z}` as the
     /// player position. `None` falls back to the origin (default impl).
     pub player_actor_slot: Option<u8>,
-    /// Party-member actor slots — `party_actor_slots[i] = Some(actor_slot)`
+    /// Party-member actor slots - `party_actor_slots[i] = Some(actor_slot)`
     /// resolves move-VM ext sub-op 0x3B (`ext_party_member_lookup`) to the
     /// world-coords of the actor at that slot. Default empty (the lookup
     /// returns `None`, which forces sub-op 0x3B's "skip" path).
     pub party_actor_slots: Vec<Option<u8>>,
-    /// Last fade colour requested by move-VM ext sub-op 0x3C — engines
+    /// Last fade colour requested by move-VM ext sub-op 0x3C - engines
     /// drain this each frame to drive the screen fade. `None` when no
     /// fade is pending.
     pub pending_fade: Option<FadeRequest>,
-    /// Move-VM `_DAT_8007B9D8` — globally-shared 32-bit slot written by ext
+    /// Move-VM `_DAT_8007B9D8` - globally-shared 32-bit slot written by ext
     /// sub-op 0x2F. Engines read this on whatever frame-tick they want.
     pub move_dat_8007b9d8: i32,
-    /// Move-VM 16-slot scratchpad ramp targets at `_DAT_1F80035C` — used by
+    /// Move-VM 16-slot scratchpad ramp targets at `_DAT_1F80035C` - used by
     /// ext sub-op 0x29 (per-frame ramp / immediate write). Stored as i16
     /// pairs (target, current); engines apply per-frame interpolation.
     pub scratchpad_targets: [i16; 16],
-    /// Shared system flag bank at `_DAT_80086D70` — bitfield read / written
+    /// Shared system flag bank at `_DAT_80086D70` - bitfield read / written
     /// by:
     /// - field VM high-byte default routes 0x5x / 0x6x / 0x7x
     ///   (`system_flag_set` / `system_flag_clear` / `system_flag_test`)
     /// - move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D
     ///   (`ext_query_flag_bank` / `ext_set_flag_bank` / `ext_clear_flag_bank`)
     ///
-    /// Lazily grown on write — the field VM's opcode-encoded idx ranges over
+    /// Lazily grown on write - the field VM's opcode-encoded idx ranges over
     /// `0..=0x87FF`, so a fixed 256-bit array is too small.
     pub system_flags: Vec<u8>,
-    /// Field-VM `extra_flags` register read by op 0x42 mode 0 — a 32-bit
+    /// Field-VM `extra_flags` register read by op 0x42 mode 0 - a 32-bit
     /// auxiliary flag word (origin TBD; treated as scene-local state).
     pub extra_flags: u32,
-    /// Field-VM `screen_mode` register read by op 0x42 mode 1 — packed mode
+    /// Field-VM `screen_mode` register read by op 0x42 mode 1 - packed mode
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
     /// against `screen_mode_table`).
     pub screen_mode: u32,
@@ -295,7 +295,7 @@ pub struct World {
     /// Sin LUT used by move-VM op `0x03`. Engines populate from extracted
     /// asset data; default is empty (returns zero).
     pub sin_lut: Vec<i16>,
-    /// Cos LUT — same shape as `sin_lut`.
+    /// Cos LUT - same shape as `sin_lut`.
     pub cos_lut: Vec<i16>,
 
     /// Battle-action helper tables. Engines populate per scene.
@@ -305,7 +305,7 @@ pub struct World {
     pub range_table: std::collections::HashMap<(u8, u8), u16>,
     /// Per-slot weapon attack used by [`art_strike::apply_art_strike`] to
     /// compute Tactical-Art damage. Engines populate from the active
-    /// character record's weapon power. Default zero — un-populated slots
+    /// character record's weapon power. Default zero - un-populated slots
     /// produce floor-clamped damage (`= 1`).
     pub battle_attack: [u16; 8],
     /// Per-slot defense facing the strike. The retail engine selects UDF
@@ -319,7 +319,7 @@ pub struct World {
     /// distinguish UDF / LDF can leave this `None`.
     pub battle_defense_split: [Option<(u16, u16)>; 8],
 
-    /// "Previous action cleared" gate — toggled by the engine when an
+    /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
     pub prev_action_cleared: bool,
     /// "Sound bank ready" gate.
@@ -331,7 +331,7 @@ pub struct World {
     /// Last-issued battle-end cause (for inspection / engine side-effects).
     pub battle_end: Option<BattleEndCause>,
 
-    /// Persistent per-character roster — populated by [`World::load_party`]
+    /// Persistent per-character roster - populated by [`World::load_party`]
     /// and written back by [`World::save_party`]. Each record is the
     /// 0x414-byte struct documented in `docs/subsystems/battle.md`. The
     /// in-battle `BattleActor` slots mirror HP / MP from this; everything
@@ -340,15 +340,14 @@ pub struct World {
     pub roster: legaia_save::Party,
 
     /// Pending field-VM scene transition (`scene_transition(map_id)` was
-    /// called this frame). Drained by [`crate::scene::SceneHost::tick`]
-    /// — when `Some(map_id)`, the host resolves the map id to a scene
-    /// name, loads it, and reinitialises the field VM. `None` between
-    /// transitions.
+    /// called this frame). Drained by [`crate::scene::SceneHost::tick`]:
+    /// when `Some(map_id)`, the host resolves the map id to a scene name,
+    /// loads it, and reinitialises the field VM. `None` between transitions.
     pub pending_scene_transition: Option<u8>,
 
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
-    /// Mirror of the `FieldHost` callbacks — see [`FieldEvent`] for the
+    /// Mirror of the `FieldHost` callbacks - see [`FieldEvent`] for the
     /// per-variant citation.
     ///
     /// [`FieldEvent`]: crate::field_events::FieldEvent
@@ -367,7 +366,7 @@ pub struct World {
     /// corresponding `Bgm` event.
     pub current_bgm: Option<u16>,
 
-    /// Active dialog request — populated by the field-VM op 0x3F handler,
+    /// Active dialog request - populated by the field-VM op 0x3F handler,
     /// cleared by the engine after the user dismisses the box. The MES
     /// renderer reads `text_id` + `inline`; the world-coords + depth feed
     /// the box placement.
@@ -390,7 +389,7 @@ pub struct World {
     /// can re-key this to their own inventory model.
     pub inventory: std::collections::HashMap<u8, u8>,
 
-    /// Last camera state snapshot — filled by `camera_save`, applied by
+    /// Last camera state snapshot - filled by `camera_save`, applied by
     /// `camera_apply` / `camera_load`. Engines that draw a camera read
     /// this between frames.
     pub camera_state: CameraState,
@@ -439,7 +438,7 @@ pub struct World {
     /// drive a battle round. See [`legaia_engine_vm::status_effects`].
     pub status_effects: vm::status_effects::StatusEffectTracker,
 
-    /// Per-character AP gauge — drives Tactical-Arts command input.
+    /// Per-character AP gauge - drives Tactical-Arts command input.
     /// Index 0..=2 maps to party slots; engines call
     /// [`crate::ap_gauge::ApGauge::reset_for_turn`] at turn start and
     /// [`crate::ap_gauge::ApGauge::charge_spirit`] when the player
@@ -458,7 +457,7 @@ pub struct World {
     /// character record at battle init.
     pub character_max_mp: Vec<u16>,
 
-    /// Active encounter session — bracketed transition + grace machine for
+    /// Active encounter session - bracketed transition + grace machine for
     /// step-driven random battles. `Some` when an encounter table is
     /// installed; `None` in scenes where encounters are disabled
     /// (towns / cutscenes / world-map). Engines call
@@ -479,7 +478,7 @@ pub struct World {
     /// hydrate one back into the editor on load.
     pub saved_chains: Vec<legaia_save::SavedChainRecord>,
 
-    /// Per-character Seru capture log — drives the post-battle "spell
+    /// Per-character Seru capture log - drives the post-battle "spell
     /// learned!" banner and the in-menu spell list. Pure data; saved
     /// through [`legaia_save::SaveExtV2::per_char`].
     pub seru_log: crate::seru_learning::SeruCaptureLog,
@@ -490,12 +489,12 @@ pub struct World {
     /// Persisted in [`legaia_save::SaveExtV2::play_time_seconds`].
     pub play_time_seconds: u32,
 
-    /// Optional formation table — engines install this at boot via
+    /// Optional formation table - engines install this at boot via
     /// [`World::set_formation_table`] so triggered encounters can resolve
     /// their `formation_id` into concrete monster slot definitions.
     pub formation_table: crate::monster_catalog::FormationTable,
 
-    /// Optional monster catalog — paired with `formation_table`. Engines
+    /// Optional monster catalog - paired with `formation_table`. Engines
     /// look up [`crate::monster_catalog::MonsterDef`] by id when
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
@@ -639,7 +638,7 @@ impl World {
         std::mem::take(&mut self.pending_battle_events)
     }
 
-    /// Apply the gameplay-state side of a single battle event — currently
+    /// Apply the gameplay-state side of a single battle event - currently
     /// `ApplyArtStrike` (subtracts the resolved damage from the target's
     /// `BattleActor::hp`, clamping at zero, and records the enemy effect on
     /// the target's `pending_status`). Engines that want both the visual
@@ -647,7 +646,7 @@ impl World {
     /// drained from [`Self::drain_battle_events`].
     ///
     /// Returns `Some((target_slot, hp_after))` for events that changed HP,
-    /// `None` otherwise — useful for HUD popups that want the post-hit HP.
+    /// `None` otherwise - useful for HUD popups that want the post-hit HP.
     pub fn fold_battle_event(&mut self, event: &BattleEvent) -> Option<(u8, u16)> {
         match event {
             BattleEvent::ApplyArtStrike {
@@ -658,7 +657,7 @@ impl World {
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage {
                         target.battle.hp = target.battle.hp.saturating_sub(dmg);
-                        // Damage clears Asleep on the target (matches retail —
+                        // Damage clears Asleep on the target (matches retail -
                         // the enemy wakes when hit).
                         self.status_effects.on_damaged(*target_slot);
                     }
@@ -677,7 +676,7 @@ impl World {
         }
     }
 
-    /// Step every actor's status effects forward one turn — folds the
+    /// Step every actor's status effects forward one turn - folds the
     /// tick-damage into `BattleActor::hp` and emits per-status events.
     /// Called by engines once per battle round.
     pub fn tick_status_effects(&mut self) {
@@ -779,7 +778,7 @@ impl World {
     }
 
     /// Set per-slot character max MP (mirrors `char_record[+0x140]`
-    /// from the save record). Engines call this once per scene init —
+    /// from the save record). Engines call this once per scene init -
     /// usually from `set_character_record_for_slot`. Unset slots default
     /// to `0`, which makes [`Self::use_item`] treat MP healing as a
     /// no-op for that slot.
@@ -808,7 +807,7 @@ impl World {
         }
     }
 
-    /// Set the per-slot generic defense — used when no UDF / LDF split is
+    /// Set the per-slot generic defense - used when no UDF / LDF split is
     /// configured for the slot.
     pub fn set_battle_defense(&mut self, slot: u8, def: u16) {
         if let Some(s) = self.battle_defense.get_mut(slot as usize) {
@@ -977,7 +976,7 @@ impl World {
     /// dispatcher in retail consumes the sentinel as a record-start marker
     /// rather than an opcode (the high bit + low-7-bits 0x7F would otherwise
     /// hit the "UNFIND INDICATION" default arm). The exact dispatcher prelude
-    /// hasn't been fully traced, so this skip is heuristic — revise once
+    /// hasn't been fully traced, so this skip is heuristic - revise once
     /// `FUN_801DE840`'s outer loop is captured.
     pub fn load_field_record(&mut self, record_bytes: &[u8]) {
         const FRAME_DIVIDER: [u8; 4] = [0xFF, 0xFF, 0x00, 0x00];
@@ -1066,7 +1065,7 @@ impl World {
         let mut per_char: Vec<(u8, legaia_save::CharSaveExt)> = Vec::new();
         for slot in 0..party.members.len() as u8 {
             let mut ce = legaia_save::CharSaveExt::default();
-            // Learned arts: derive from TacticalArtsTracker — bit i is
+            // Learned arts: derive from TacticalArtsTracker - bit i is
             // set when art id i has crossed the learn threshold.
             for art_id in 0..32u8 {
                 if self.tactical_arts.is_learned(slot, art_id) {
@@ -1075,7 +1074,7 @@ impl World {
             }
             // Spells: the per-character learned spell list from the seru log.
             ce.spells = self.seru_log.learned_spells(slot).to_vec();
-            // Seru captures: walk the ext mirror — fall back to empty for
+            // Seru captures: walk the ext mirror - fall back to empty for
             // characters that haven't captured anything yet.
             if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
                 ce.seru_captures = src.seru_captures.clone();
@@ -1114,7 +1113,7 @@ impl World {
                 self.inventory.insert(id, count);
             }
         }
-        // V2 ext block — repopulate engine-side trackers.
+        // V2 ext block - repopulate engine-side trackers.
         self.play_time_seconds = sf.ext_v2.play_time_seconds;
         self.saved_chains = sf.ext_v2.saved_chains.clone();
         self.per_char_ext = sf.ext_v2.per_char.clone();
@@ -1131,7 +1130,7 @@ impl World {
             }
             // Re-seed the seru log's learned-spells list. We synthesise
             // a placeholder seru_id for each spell since the save layer
-            // only persists the spell ids — engines can rebuild the
+            // only persists the spell ids - engines can rebuild the
             // capture-points totals from the saved seru_captures pairs.
             for &spell_id in &ce.spells {
                 // seru_id is unknown without the registry; use spell_id
@@ -1172,7 +1171,7 @@ impl World {
     /// spawns actors. Wires:
     ///
     /// - `actor.tmd_binding = slot_idx` (direct 1:1 ordering: the retail
-    ///   `FUN_8001E890` loop registers TMDs in pack offset-table order —
+    ///   `FUN_8001E890` loop registers TMDs in pack offset-table order -
     ///   actor K → TMD slot K).
     /// - `actor.active_animation` seeded from ANM record 0 (idle) when an
     ///   ANM pack is present for that slot.
@@ -1217,7 +1216,7 @@ impl World {
     ///
     /// Writes the host's `move_bytecode_write_u16` calls (issued by ext
     /// sub-ops 0x04 / 0x1B / 0x1E / 0x36) back to `world.move_bytecode[slot]`
-    /// after step completes — see the `MoveVmHostImpl` deferred-writes map.
+    /// after step completes - see the `MoveVmHostImpl` deferred-writes map.
     pub fn step_move_vm(&mut self, slot: usize, bytecode: &[u16]) -> vm::move_vm::StepResult {
         let mut host = MoveVmHostImpl {
             world: self,
@@ -1296,7 +1295,7 @@ impl World {
     ///
     /// Returns `true` when the registry resolved a non-empty table and
     /// installed it, `false` when no rule matched (or the resolved table
-    /// has `trigger_rate_q8 == 0` — in which case the session is
+    /// has `trigger_rate_q8 == 0` - in which case the session is
     /// installed-but-quiet so the engine can still call `on_field_step`
     /// without nil checks).
     ///
@@ -1403,8 +1402,8 @@ impl World {
     /// `None`.
     ///
     /// Order of operations:
-    ///  1. Effect pool tick — runs every frame regardless of mode.
-    ///  2. Per-actor move-VM tick — only for actors with bytecode loaded.
+    ///  1. Effect pool tick - runs every frame regardless of mode.
+    ///  2. Per-actor move-VM tick - only for actors with bytecode loaded.
     ///  3. Mode-specific VM:
     ///     - `Battle`     → battle-action state machine step.
     ///     - `Field`      → field-VM step (or no-op if no bytecode loaded).
@@ -1415,7 +1414,7 @@ impl World {
         self.tick_effects();
         self.tick_move_vms();
         self.tick_actors();
-        // Tick art-learned banner countdown — clear when it reaches zero.
+        // Tick art-learned banner countdown - clear when it reaches zero.
         if let Some(banner) = &mut self.current_art_banner {
             if banner.frames_remaining > 0 {
                 banner.frames_remaining -= 1;
@@ -1441,7 +1440,7 @@ impl World {
         }
     }
 
-    /// Per-actor move-VM tick — clean port of `FUN_80021DF4` (lines
+    /// Per-actor move-VM tick - clean port of `FUN_80021DF4` (lines
     /// `80022B94..80022BBC`).
     ///
     /// Two-phase: (1) pre-tick decrement the per-actor `wait_timer` by the
@@ -1513,7 +1512,7 @@ impl World {
     }
 
     /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`
-    /// with the supplied opcode `budget`. Returns the typed outcome —
+    /// with the supplied opcode `budget`. Returns the typed outcome -
     /// engines route `Halted` to their halt-handler, `EndOfBuffer` to "clear
     /// the move", `Pending` to a debug log.
     pub fn actor_tick_at(
@@ -1589,7 +1588,7 @@ impl World {
         self.battle_ctx = vm::battle_action::BattleActionCtx::new();
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
         self.battle_end = None;
-        // Effect pool is reused across scenes — reset to a fresh instance
+        // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
     }
@@ -1604,7 +1603,7 @@ impl World {
     /// override this helper).
     ///
     /// Mirrors the retail `FUN_80021DF4` per-frame actor tick's "draw
-    /// sprite at world position" pre-pass — the actual GPU upload happens
+    /// sprite at world position" pre-pass - the actual GPU upload happens
     /// in `legaia_engine_render` against the supplied atlas.
     pub fn collect_sprite_requests(&self) -> Vec<ActorSpriteRequest> {
         self.actors
@@ -1628,7 +1627,7 @@ impl World {
             .collect()
     }
 
-    /// Set the sprite frame for the actor at `slot`. Idempotent — passing
+    /// Set the sprite frame for the actor at `slot`. Idempotent - passing
     /// `None` removes the frame so the actor stops rendering as a sprite.
     pub fn set_actor_sprite(&mut self, slot: u8, frame: Option<SpriteFrame>) {
         if let Some(actor) = self.actors.get_mut(slot as usize) {
@@ -1930,7 +1929,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     }
 
     // `ext_dispatch` uses the default trait impl, which routes through
-    // `self` — so sub-op handlers see the world-backed callbacks above.
+    // `self` - so sub-op handlers see the world-backed callbacks above.
 }
 
 // --- effect VM host --------------------------------------------------------
@@ -1975,7 +1974,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.screen_mode
     }
 
-    // Shared system flag bank — same fourth-flag-bank at `_DAT_80086D70`
+    // Shared system flag bank - same fourth-flag-bank at `_DAT_80086D70`
     // that move-VM ext sub-ops 0x13 / 0x14 / 0x1C / 0x1D query, plus the
     // 0x5x / 0x6x / 0x7x default-route opcodes.
     fn system_flag_set(&mut self, idx: u16) {
@@ -1997,7 +1996,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     fn bgm(&mut self, text_id: u16, sub_op: u8) {
         // Sub-ops 1 (start field BGM) and 9 (queue) are the cases that
         // pin a "currently playing" id. Other sub-ops are control words
-        // (pause / stop / volume / etc.) — we still surface the event so
+        // (pause / stop / volume / etc.) - we still surface the event so
         // the engine can route them, just without overwriting current_bgm.
         if sub_op == 1 || sub_op == 9 {
             self.world.current_bgm = Some(text_id);
@@ -2179,7 +2178,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_save(&mut self) {
-        // Snapshot what we have currently — engines that model real camera
+        // Snapshot what we have currently - engines that model real camera
         // matrices can override this on a custom host wrapper. For now we
         // write a placeholder so save/load round-trip behaves.
         self.world.camera_state.saved = self.world.camera_state.loaded_payload.clone();
@@ -2657,9 +2656,9 @@ mod tests {
                 anchor_y: -8,
             }),
         );
-        // Slot 1: active but no frame — shouldn't emit.
+        // Slot 1: active but no frame - shouldn't emit.
         world.actors[1].active = true;
-        // Slot 2: frame but inactive — shouldn't emit.
+        // Slot 2: frame but inactive - shouldn't emit.
         world.set_actor_sprite(
             2,
             Some(SpriteFrame {
@@ -2729,7 +2728,7 @@ mod tests {
         assert_eq!(world.pending_scene_transition, Some(5));
     }
 
-    /// `op0 < 100` is the field_interact arm — should NOT trigger a
+    /// `op0 < 100` is the field_interact arm - should NOT trigger a
     /// scene transition.
     #[test]
     fn field_op_3e_low_op0_does_not_request_scene_transition() {
@@ -2909,7 +2908,7 @@ mod tests {
         world.actors[0].move_state.world_z = 0x9ABCu16 as i16;
         world.actors[0].move_state.world_y_mirror = 0xDEF0u16 as i16;
         world.actors[0].move_state.field_86 = 0x0003; // slot index = 3
-        // 0x2F sub-op 0x11 — save world coords into slot 3, then HALT.
+        // 0x2F sub-op 0x11 - save world coords into slot 3, then HALT.
         world.set_move_bytecode(0, Some(vec![0x002F, 0x0011, 0x0008]));
         let _ = world.step_move_vm(0, &world.move_bytecode[0].clone());
         // Verify the bytes landed in slot 3.
@@ -2928,7 +2927,7 @@ mod tests {
         world.actors[0].move_state.world_x = 100;
         world.actors[0].move_state.world_y = 200;
         world.actors[0].move_state.world_z = 50;
-        // 0x2F sub-op 0x04 — write actor world XYZ to bytecode at
+        // 0x2F sub-op 0x04 - write actor world XYZ to bytecode at
         // pc + op[2] + 3. With pc=0 and op[2]=2, target indices are 5/6/7.
         let bc = vec![
             0x002F, 0x0004, 0x0002, 0xCAFE, 0xCAFE, 0x0000, 0x0000, 0x0000,
@@ -3002,14 +3001,14 @@ mod tests {
         let mut world = World::new();
         world.actors[0].active = true;
         world.system_flag_set(42);
-        // Bytecode: 0x2F sub-op 0x13 — predicate-true → default_arm (size 1),
+        // Bytecode: 0x2F sub-op 0x13 - predicate-true → default_arm (size 1),
         // predicate-false → size 4.
         let bc = vec![0x002F, 0x0013, 42];
         world.set_move_bytecode(0, Some(bc.clone()));
         let _ = world.step_move_vm(0, &bc);
         // Predicate true → PC advanced by 1.
         assert_eq!(world.actors[0].move_state.pc, 1);
-        // Now clear and re-run — predicate false → PC += 4.
+        // Now clear and re-run - predicate false → PC += 4.
         world.system_flag_clear(42);
         world.actors[0].move_state.pc = 0;
         let _ = world.step_move_vm(0, &bc);
@@ -3020,7 +3019,7 @@ mod tests {
     fn move_vm_ext_set_flag_bank_writes_world_system_flags() {
         let mut world = World::new();
         world.actors[0].active = true;
-        // Bytecode: 0x2F sub-op 0x1C — set flag bank (idx = op_w(2)).
+        // Bytecode: 0x2F sub-op 0x1C - set flag bank (idx = op_w(2)).
         let bc = vec![0x002F, 0x001C, 100];
         world.set_move_bytecode(0, Some(bc.clone()));
         assert!(!world.system_flag_test(100));
@@ -3030,7 +3029,7 @@ mod tests {
 
     #[test]
     fn field_vm_system_flag_set_routes_to_world() {
-        // Field-VM 0x5x default-route SET — `[0x50 | nibble, idx_byte]`.
+        // Field-VM 0x5x default-route SET - `[0x50 | nibble, idx_byte]`.
         // idx encoding: `((opcode_byte & 0x8F) << 8) | idx_byte`. For raw
         // opcode 0x50, top bit clear, low nibble 0 → idx = idx_byte.
         let mut world = World::new();
@@ -3081,12 +3080,12 @@ mod tests {
 
     #[test]
     fn field_vm_extra_flags_op42_reads_world() {
-        // Op 0x42 mode=0 — host.extra_flags() & (1 << (op1 & 0x1F)) test.
+        // Op 0x42 mode=0 - host.extra_flags() & (1 << (op1 & 0x1F)) test.
         // Set bit 5 in extra_flags; op_42 with op1=5 should take the jump.
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.extra_flags = 1 << 5;
-        // [0x42, mode=0, op1=5, lo=4, hi=0] — header_size + 4 = 5 byte total
+        // [0x42, mode=0, op1=5, lo=4, hi=0] - header_size + 4 = 5 byte total
         // for skip path; jump path = pc + header_size + 2 + delta.
         world.load_field_script(vec![0x42, 0, 5, 4, 0]);
         let _ = world.tick();
@@ -3099,7 +3098,7 @@ mod tests {
     fn move_vm_ext_set_8007b9d8_writes_world_field() {
         let mut world = World::new();
         world.actors[0].active = true;
-        // 0x2F sub-op 0x2F — `_DAT_8007B9D8 = (i32) op[1]`. Note: op[1] in
+        // 0x2F sub-op 0x2F - `_DAT_8007B9D8 = (i32) op[1]`. Note: op[1] in
         // sub-op space = sub-op selector 0x2F itself, op[2] = the value.
         // Per the move_vm port, ext sub-op 0x2F passes op[1] (the sub-op
         // word's "next slot" in the operand stream).
@@ -3210,7 +3209,7 @@ mod tests {
         // No direct API to read move_player_world_xyz; verify by stepping
         // sub-op 0x39 (squared-distance "inside radius" predicate). With
         // actor 0 at origin and player at (100, _, 300), dist_sq = 100²+300² =
-        // 100000 — predicate fails for r=10 (r² = 100), passes for r=400
+        // 100000 - predicate fails for r=10 (r² = 100), passes for r=400
         // (r² = 160000).
         world.actors[0].active = true;
         // Predicate fail → PC += 4.
@@ -3726,7 +3725,7 @@ mod tests {
         world.actors[0].battle.max_hp = 300;
         world.actors[0].battle.hp = 100;
         world.set_item_catalog(crate::items::ItemCatalog::vanilla());
-        // Find the HealAll entry (id 4 in the vanilla catalog — Healing Globe).
+        // Find the HealAll entry (id 4 in the vanilla catalog - Healing Globe).
         let outcome = world.use_item(4, 0);
         assert!(matches!(
             outcome,
@@ -3921,7 +3920,7 @@ mod tests {
         use crate::encounter_registry::vanilla_encounter_registry;
         let mut world = World::new();
         let r = vanilla_encounter_registry();
-        // Install a field session, then a town session — the town call
+        // Install a field session, then a town session - the town call
         // should replace the field session even though it's quiet.
         world.install_encounter_for_scene(&r, "map01");
         assert!(world.encounter.is_some());

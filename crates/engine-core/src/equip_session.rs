@@ -38,7 +38,7 @@ pub enum EquipState {
     ItemPicker { slot: u8, cursor: u16 },
     /// "Equip <X>?" Yes/No prompt. Cross confirms; Circle abandons.
     Confirm { slot: u8, item_id: u8, cursor: u8 },
-    /// Session done — committed or aborted.
+    /// Session done - committed or aborted.
     Done(EquipOutcome),
 }
 
@@ -75,7 +75,7 @@ pub enum EquipEvent {
     EnteredConfirm { slot: u8, item_id: u8 },
     /// Player committed a swap.
     Committed { slot: u8, removed: u8, added: u8 },
-    /// Player cancelled — session terminating.
+    /// Player cancelled - session terminating.
     Cancelled,
     /// Player tried to equip an item they don't own / item filter rejected.
     InvalidConfirm,
@@ -152,7 +152,7 @@ impl EquipSession {
         matches!(self.state, EquipState::Done(_))
     }
 
-    /// Outcome — only valid when `is_done()`.
+    /// Outcome - only valid when `is_done()`.
     pub fn outcome(&self) -> Option<EquipOutcome> {
         match self.state {
             EquipState::Done(out) => Some(out),
@@ -170,7 +170,7 @@ impl EquipSession {
     /// across HashMap iteration orderings.
     pub fn items_for_slot(&self, slot: u8) -> Vec<EquipItem> {
         // Each item id encodes its target slot in the upper 3 bits of the
-        // id (slot = id >> 5). This is a placeholder rule — engines that
+        // id (slot = id >> 5). This is a placeholder rule - engines that
         // wire the real per-item slot from disc data should override
         // [`Self::items_for_slot`] (next revision will accept a closure).
         let mut out: Vec<EquipItem> = self
@@ -299,10 +299,10 @@ impl EquipSession {
                     });
                 } else if input.cross {
                     if cursor == 0 {
-                        // Confirm — commit the swap.
+                        // Confirm - commit the swap.
                         self.commit(slot, item_id);
                     } else {
-                        // No — back to item picker.
+                        // No - back to item picker.
                         self.state = EquipState::ItemPicker { slot, cursor: 0 };
                     }
                 } else if input.circle {
@@ -373,9 +373,9 @@ mod tests {
 
     fn fresh_session() -> EquipSession {
         let mut inv = HashMap::new();
-        // Item 0x05 — slot (5 >> 5) = 0; helmet-class.
+        // Item 0x05 - slot (5 >> 5) = 0; helmet-class.
         inv.insert(0x05, 1);
-        // Item 0x25 — slot 1 (0x25 >> 5 = 1)
+        // Item 0x25 - slot 1 (0x25 >> 5 = 1)
         inv.insert(0x25, 2);
         let mut eq = EquipmentTable::new();
         eq.set(

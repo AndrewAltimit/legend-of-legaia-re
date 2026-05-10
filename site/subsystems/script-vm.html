@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Field / event script VM — legend-of-legaia-re</title>
+  <title>Field / event script VM - legend-of-legaia-re</title>
   <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../css/styles.css">
   
@@ -15,7 +15,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field / event script VM</div>
   <h1>Field / event script VM</h1>
-  <p class="lede">The bytecode interpreter behind Legaia's overworld scripting &mdash; NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in the town/field overlay at <code>FUN_801DE840</code>. The largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls. <span class="status-done">All 43 opcodes ported.</span></p>
+  <p class="lede">The bytecode interpreter behind Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in the town/field overlay at <code>FUN_801DE840</code>. The largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls. <span class="status-done">All 43 opcodes ported.</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -26,7 +26,7 @@
 
   <p>One feature that distinguishes Legaia's field VM from typical event-script systems: <strong>cross-context targeting</strong>. The high bit of any opcode means "this instruction targets a <em>different</em> script context, identified by the next byte". The original script's context is preserved; the dispatch operates on the resolved one. So a cutscene script can issue "the king walks to position X" with the king's script ID as the target, without becoming the king. There are also two reserved system channels (<code>0xF8</code> and <code>0xFB</code>) for engine-wide effects.</p>
 
-  <p>Three of Legaia's flag-storage banks are exposed by clean opcode triplets: per-script local flags, global story flags (in PSX scratchpad), and ctx flag word. A fourth flag bank is hidden in the dispatcher's "default route" &mdash; opcodes whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code> get dispatched to set / clear / test handlers operating on a 256-bit bitfield, almost certainly an "engine system flags" bank.</p>
+  <p>Three of Legaia's flag-storage banks are exposed by clean opcode triplets: per-script local flags, global story flags (in PSX scratchpad), and ctx flag word. A fourth flag bank is hidden in the dispatcher's "default route" - opcodes whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code> get dispatched to set / clear / test handlers operating on a 256-bit bitfield, almost certainly an "engine system flags" bank.</p>
 
   <p>For the full opcode reference, the source markdown has the complete tables. This page summarises the structure; jump to <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> for the definitive listing.</p>
 </section>
@@ -35,11 +35,11 @@
   <h2>Function signature</h2>
   <pre><code>int FUN_801DE840(int buffer_base, int pc_offset, int ctx_ptr);</code></pre>
   <ul class="bullets">
-    <li><code>buffer_base</code> &mdash; bytecode buffer base address.</li>
-    <li><code>pc_offset</code> &mdash; current program counter, byte offset into the buffer. The function returns the new PC offset.</li>
-    <li><code>ctx_ptr</code> &mdash; script execution context (see below).</li>
+    <li><code>buffer_base</code> - bytecode buffer base address.</li>
+    <li><code>pc_offset</code> - current program counter, byte offset into the buffer. The function returns the new PC offset.</li>
+    <li><code>ctx_ptr</code> - script execution context (see below).</li>
   </ul>
-  <p>The VM is <strong>not</strong> a step-and-yield loop &mdash; each call executes from <code>pc_offset</code> until something forces a return (instruction halt, branch back, target script done). The host calls back at the next frame (or external event) with the returned PC.</p>
+  <p>The VM is <strong>not</strong> a step-and-yield loop - each call executes from <code>pc_offset</code> until something forces a return (instruction halt, branch back, target script done). The host calls back at the next frame (or external event) with the returned PC.</p>
 </section>
 
 <section class="doc-section" id="dispatch">
@@ -69,7 +69,7 @@ switch (*pc & 0x7f) {
     <thead><tr><th>ID</th><th>Resolution</th></tr></thead>
     <tbody>
       <tr><td><code>0xF8</code></td><td>Returns the cached pointer at <code>_DAT_8007C364</code> (player context)</td></tr>
-      <tr><td><code>0xFB</code></td><td>"System" channel &mdash; walks the linked list at <code>_DAT_8007C34C</code> for the entry whose <code>+0xC</code> slot holds <code>0x801DA51C</code></td></tr>
+      <tr><td><code>0xFB</code></td><td>"System" channel - walks the linked list at <code>_DAT_8007C34C</code> for the entry whose <code>+0xC</code> slot holds <code>0x801DA51C</code></td></tr>
       <tr><td>otherwise</td><td>Regular script-table index</td></tr>
     </tbody>
   </table>
@@ -90,28 +90,28 @@ switch (*pc & 0x7f) {
       <tr><td><code>+0x94</code></td><td>u32</td><td>Saved PC (set by YIELD; the dispatcher reads this on resume).</td></tr>
     </tbody>
   </table>
-  <p><code>_DAT_8007C364</code> is the <strong>player context pointer</strong> &mdash; many opcodes branch on <code>ctx_ptr == _DAT_8007C364</code> to switch behaviour. <code>_DAT_801C6EA4</code> is the current world/scene pointer.</p>
+  <p><code>_DAT_8007C364</code> is the <strong>player context pointer</strong> - many opcodes branch on <code>ctx_ptr == _DAT_8007C364</code> to switch behaviour. <code>_DAT_801C6EA4</code> is the current world/scene pointer.</p>
 </section>
 
 <section class="doc-section" id="opcode-summary">
   <h2>Opcode groups</h2>
   <p>The 43 opcodes cluster into themed groups:</p>
 
-  <h3>Shared NOPs &mdash; <code>0x21 / 0x24 / 0x25 / 0x48</code></h3>
+  <h3>Shared NOPs - <code>0x21 / 0x24 / 0x25 / 0x48</code></h3>
   <p>Four distinct opcode bytes share one handler that just advances PC by 1. Likely reserved/historical.</p>
 
-  <h3>Action &amp; control flow &mdash; <code>0x22</code>&ndash;<code>0x26</code></h3>
+  <h3>Action &amp; control flow - <code>0x22</code>&ndash;<code>0x26</code></h3>
   <table>
     <thead><tr><th>Op</th><th>Mnemonic</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td><code>0x22</code></td><td>EXEC_MOVE</td><td>Schedule move-table playback. Calls <code>FUN_800204F8</code> &mdash; the move-table consumer that <a href="../formats/index.html">crates/mdt</a> targets.</td></tr>
+      <tr><td><code>0x22</code></td><td>EXEC_MOVE</td><td>Schedule move-table playback. Calls <code>FUN_800204F8</code> - the move-table consumer that <a href="../formats/index.html">crates/mdt</a> targets.</td></tr>
       <tr><td><code>0x23</code></td><td>MOVE_TO</td><td>Teleport ctx to grid position. Player path also calls <code>func_0x80017EC8</code> (camera/scroll). NPC path sets facing and calls movement init.</td></tr>
       <tr><td><code>0x26</code></td><td>JMP_REL</td><td>Unconditional relative jump.</td></tr>
     </tbody>
   </table>
 
-  <h3>Flag-manipulation triplets &mdash; <code>0x2B</code>&ndash;<code>0x33</code></h3>
-  <p>The cleanest group &mdash; three separate 1-bit-flag banks each with set / clear / test+skip:</p>
+  <h3>Flag-manipulation triplets - <code>0x2B</code>&ndash;<code>0x33</code></h3>
+  <p>The cleanest group - three separate 1-bit-flag banks each with set / clear / test+skip:</p>
   <table>
     <thead><tr><th>Op</th><th>Mnemonic</th><th>Bank</th></tr></thead>
     <tbody>
@@ -121,19 +121,19 @@ switch (*pc & 0x7f) {
     </tbody>
   </table>
 
-  <h3>Effects, music, scene transitions &mdash; <code>0x34</code>&ndash;<code>0x36</code></h3>
+  <h3>Effects, music, scene transitions - <code>0x34</code>&ndash;<code>0x36</code></h3>
   <ul class="bullets">
-    <li><code>0x34 EFFECT</code> &mdash; nibble-dispatched (sub-0/1/2/3): colour + intensity setup, effect/sprite spawn, actor-pool capture-and-yield, 3D animation playback via <code>func_0x800252EC</code>.</li>
-    <li><code>0x35 BGM</code> &mdash; sub-dispatcher with 11 sub-ops (start, pause, resume, stop, volume, etc.).</li>
-    <li><code>0x36 SCENE_FADE</code> &mdash; reads two 16-bit operands. <code>0xFFFF</code> = wait for load flag.</li>
+    <li><code>0x34 EFFECT</code> - nibble-dispatched (sub-0/1/2/3): colour + intensity setup, effect/sprite spawn, actor-pool capture-and-yield, 3D animation playback via <code>func_0x800252EC</code>.</li>
+    <li><code>0x35 BGM</code> - sub-dispatcher with 11 sub-ops (start, pause, resume, stop, volume, etc.).</li>
+    <li><code>0x36 SCENE_FADE</code> - reads two 16-bit operands. <code>0xFFFF</code> = wait for load flag.</li>
   </ul>
 
-  <h3>Yield, sound, RPG state, dialog &mdash; <code>0x37</code>&ndash;<code>0x42</code></h3>
+  <h3>Yield, sound, RPG state, dialog - <code>0x37</code>&ndash;<code>0x42</code></h3>
   <table>
     <thead><tr><th>Op</th><th>Mnemonic</th><th>Effect</th></tr></thead>
     <tbody>
       <tr><td><code>0x37 / 41 / 47</code></td><td>YIELD family</td><td>Save PC, clear timer, set HALT flag. Player ctx propagates the halt to the caller.</td></tr>
-      <tr><td><code>0x38</code></td><td>CAM_CFG</td><td>If <code>op1 &amp; 0x7F == 0</code>: copies <code>*(short*)(0x80073F04 + (op0 &amp; 0xF) * 2)</code> into <code>ctx[+0x26]</code>. Else: halt-acquire path &mdash; same predicate as <code>0x43</code> sub-0/1/A/B; on success set HALT, save PC, mirror to caller when ctx is the player, yield with <code>resume_pc = pc + 3</code>.</td></tr>
+      <tr><td><code>0x38</code></td><td>CAM_CFG</td><td>If <code>op1 &amp; 0x7F == 0</code>: copies <code>*(short*)(0x80073F04 + (op0 &amp; 0xF) * 2)</code> into <code>ctx[+0x26]</code>. Else: halt-acquire path - same predicate as <code>0x43</code> sub-0/1/A/B; on success set HALT, save PC, mirror to caller when ctx is the player, yield with <code>resume_pc = pc + 3</code>.</td></tr>
       <tr><td><code>0x39</code></td><td>PLAY_SFX</td><td>Calls <code>func_0x8004313C()</code> then <code>func_0x800421D4(sfx_id, 1)</code>.</td></tr>
       <tr><td><code>0x3A</code></td><td>ADD_MONEY</td><td>24-bit signed delta, clamped to <code>[0, 9999999]</code>.</td></tr>
       <tr><td><code>0x3B</code></td><td>SET_ITEM_COUNT</td><td>Set inventory entry. Inventory pages of 0x414 bytes.</td></tr>
@@ -144,10 +144,10 @@ switch (*pc & 0x7f) {
     </tbody>
   </table>
 
-  <h3>ACTOR_CTRL family &mdash; <code>0x43</code></h3>
+  <h3>ACTOR_CTRL family - <code>0x43</code></h3>
   <p>22+ sub-ops, keyed on operand byte 0. Includes a halt-acquire dispatcher (sub-0/1/A/B), actor / sound / face / position cluster (sub-2 through sub-F), and an emitter setup family (sub-0x10 through sub-0x15) that dispatches into the <code>FUN_801F8xxx</code> particle/emitter cluster.</p>
 
-  <h3>Counter / camera / render / state / move-block &mdash; <code>0x44</code>&ndash;<code>0x4F</code></h3>
+  <h3>Counter / camera / render / state / move-block - <code>0x44</code>&ndash;<code>0x4F</code></h3>
   <table>
     <thead><tr><th>Op</th><th>Mnemonic</th><th>Notes</th></tr></thead>
     <tbody>
@@ -183,7 +183,7 @@ switch (*pc & 0x7f) {
 (&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp;= ~(byte)(0x80 &gt;&gt; (idx &amp; 7));
 // 0x8003CE64 (TEST):
 return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp; 7))) ? 0xFF : 0;</code></pre>
-  <p>This is a fourth flag bank, distinct from the three exposed by the explicit <code>0x2B</code>&ndash;<code>0x33</code> opcodes &mdash; likely "system" / engine-wide event flags. Effective opcode space therefore includes the explicit <code>0x21</code>&ndash;<code>0x4F</code> range <em>and</em> any byte whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code>.</p>
+  <p>This is a fourth flag bank, distinct from the three exposed by the explicit <code>0x2B</code>&ndash;<code>0x33</code> opcodes - likely "system" / engine-wide event flags. Effective opcode space therefore includes the explicit <code>0x21</code>&ndash;<code>0x4F</code> range <em>and</em> any byte whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code>.</p>
 </section>
 
 <section class="doc-section" id="bgm-table">
@@ -196,8 +196,8 @@ return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp;
 }
 _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></pre>
   <ul class="bullets">
-    <li><code>bgm_id &lt; 2000</code> &mdash; scene-local. Different scenes have different BGM at the same script ID.</li>
-    <li><code>bgm_id &ge; 2000</code> &mdash; global. Shared across scenes (cutscene / title / event music).</li>
+    <li><code>bgm_id &lt; 2000</code> - scene-local. Different scenes have different BGM at the same script ID.</li>
+    <li><code>bgm_id &ge; 2000</code> - global. Shared across scenes (cutscene / title / event music).</li>
   </ul>
   <p>The "table" <em>is</em> the <a href="../formats/index.html">CDNAME.TXT name map</a>'s per-scene block layout.</p>
 </section>
@@ -205,10 +205,10 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
 <section class="doc-section" id="cross-refs">
   <h2>Connection to other crates</h2>
   <ul class="bullets">
-    <li><strong>crates/mdt</strong> &mdash; opcode <code>0x22 EXEC_MOVE</code> drives the move-table consumer at <code>FUN_800204F8</code>. See <a href="move-vm.html">Move-table VM</a>.</li>
-    <li><strong>crates/mes</strong> &mdash; opcode <code>0x3F DIALOG</code> calls the dialog opener <code>func_0x8001FD44</code>. The bytecode inside the dialog buffer is what <code>crates/mes</code> parses.</li>
-    <li><strong>crates/anm</strong> &mdash; opcode <code>0x34</code> sub-op 3 plays 3D animations via <code>func_0x800252EC</code>.</li>
-    <li><strong>crates/engine-vm</strong> &mdash; the clean-room Rust port at <code>crates/engine-vm/src/field.rs</code>. Reuses the same <code>Host</code> trait pattern as the actor VM.</li>
+    <li><strong>crates/mdt</strong> - opcode <code>0x22 EXEC_MOVE</code> drives the move-table consumer at <code>FUN_800204F8</code>. See <a href="move-vm.html">Move-table VM</a>.</li>
+    <li><strong>crates/mes</strong> - opcode <code>0x3F DIALOG</code> calls the dialog opener <code>func_0x8001FD44</code>. The bytecode inside the dialog buffer is what <code>crates/mes</code> parses.</li>
+    <li><strong>crates/anm</strong> - opcode <code>0x34</code> sub-op 3 plays 3D animations via <code>func_0x800252EC</code>.</li>
+    <li><strong>crates/engine-vm</strong> - the clean-room Rust port at <code>crates/engine-vm/src/field.rs</code>. Reuses the same <code>Host</code> trait pattern as the actor VM.</li>
   </ul>
 </section>
 
@@ -216,8 +216,8 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
   <h2>Decompile quirks worth knowing</h2>
   <p class="hint">If you read the function dump and something doesn't add up, these are the usual suspects:</p>
   <ul class="bullets">
-    <li><strong><code>switchD_801e00f4::default()</code> is misleading.</strong> Ghidra renders the function-epilogue tail block as a synthetic function call; in the original asm, opcodes that "fall through to default" actually advance <code>param_2</code> via the <code>addiu s8, s8, N</code> instruction in the MIPS branch-delay slot of the <code>j 0x801df09c</code> jump. So <code>0x39</code>, <code>0x3B</code>, <code>0x44</code>, <code>0x4C</code> and friends DO advance the PC &mdash; just not in a way the C-level decompile makes obvious.</li>
-    <li><strong><code>LAB_801df09c</code></strong> is just <code>j 0x801e3628; move v0, s8</code> &mdash; return <code>s8</code> unchanged. Most callsites jump there with an <code>addiu s8, s8, N</code> in the delay slot of the j, supplying the per-callsite PC delta.</li>
+    <li><strong><code>switchD_801e00f4::default()</code> is misleading.</strong> Ghidra renders the function-epilogue tail block as a synthetic function call; in the original asm, opcodes that "fall through to default" actually advance <code>param_2</code> via the <code>addiu s8, s8, N</code> instruction in the MIPS branch-delay slot of the <code>j 0x801df09c</code> jump. So <code>0x39</code>, <code>0x3B</code>, <code>0x44</code>, <code>0x4C</code> and friends DO advance the PC - just not in a way the C-level decompile makes obvious.</li>
+    <li><strong><code>LAB_801df09c</code></strong> is just <code>j 0x801e3628; move v0, s8</code> - return <code>s8</code> unchanged. Most callsites jump there with an <code>addiu s8, s8, N</code> in the delay slot of the j, supplying the per-callsite PC delta.</li>
     <li><strong>0x42 mode 0 jump-take target</strong> is <code>pc + 3 + LE_u16(operand[2..4])</code> (non-extended), found via the join point <code>LAB_801e35fc</code>.</li>
   </ul>
   <p>For the exhaustive opcode reference and the full <code>0x4C</code> outer-nibble dispatcher table, see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> on GitHub.</p>

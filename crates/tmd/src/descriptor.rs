@@ -6,7 +6,7 @@
 //!
 //! 1. **Where the vertex indices are** (byte offset within the prim
 //!    payload). Triangles use one offset; quads use a different offset
-//!    derived from the same entry — see [`Descriptor::vertex_offset`].
+//!    derived from the same entry - see [`Descriptor::vertex_offset`].
 //! 2. **Which DrawPolyXX packet shape** to emit (the GTE writes one of
 //!    eight OT-packet variants, selected by entry-byte-3's low 2 bits in
 //!    combination with the triangle/quad flag bit). See
@@ -23,7 +23,7 @@
 
 use serde::Serialize;
 
-/// Per-prim packet shape — which `DrawPolyXX` SDK call the GTE emits.
+/// Per-prim packet shape - which `DrawPolyXX` SDK call the GTE emits.
 ///
 /// The PSX SDK names these `POLY_F3`, `POLY_FT3`, `POLY_G3`, `POLY_GT3`
 /// (triangles) and `POLY_F4`, `POLY_FT4`, `POLY_G4`, `POLY_GT4` (quads).
@@ -34,21 +34,21 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PacketShape {
-    /// `POLY_F3` — flat-shaded triangle.
+    /// `POLY_F3` - flat-shaded triangle.
     F3,
-    /// `POLY_FT3` — flat-shaded textured triangle.
+    /// `POLY_FT3` - flat-shaded textured triangle.
     Ft3,
-    /// `POLY_G3` — gouraud-shaded triangle.
+    /// `POLY_G3` - gouraud-shaded triangle.
     G3,
-    /// `POLY_GT3` — gouraud-shaded textured triangle.
+    /// `POLY_GT3` - gouraud-shaded textured triangle.
     Gt3,
-    /// `POLY_F4` — flat-shaded quad.
+    /// `POLY_F4` - flat-shaded quad.
     F4,
-    /// `POLY_FT4` — flat-shaded textured quad.
+    /// `POLY_FT4` - flat-shaded textured quad.
     Ft4,
-    /// `POLY_G4` — gouraud-shaded quad.
+    /// `POLY_G4` - gouraud-shaded quad.
     G4,
-    /// `POLY_GT4` — gouraud-shaded textured quad.
+    /// `POLY_GT4` - gouraud-shaded textured quad.
     Gt4,
 }
 
@@ -86,11 +86,11 @@ impl PacketShape {
 /// `DAT_8007326C` plus the triangle/quad flag bit `(flags >> 1) & 1`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Descriptor {
-    /// 0..=5 — which row of `DAT_8007326C` was selected.
+    /// 0..=5 - which row of `DAT_8007326C` was selected.
     pub table_row: u8,
-    /// Raw "byte 3" of the table entry — the OT-packet selector.
+    /// Raw "byte 3" of the table entry - the OT-packet selector.
     pub raw_byte3: u8,
-    /// Raw "byte 4" of the table entry — the base vertex-index offset
+    /// Raw "byte 4" of the table entry - the base vertex-index offset
     /// (in u16 units).
     pub raw_byte4: u8,
     /// `true` for quads (derived from the original `flags` bit), `false`
@@ -115,7 +115,7 @@ impl Descriptor {
 
         let (byte3, byte4) = TABLE[table_row as usize];
         // vertex_offset replicates the same logic as
-        // legaia_prims::vertex_offset_bytes — kept here so the descriptor
+        // legaia_prims::vertex_offset_bytes - kept here so the descriptor
         // is self-contained.
         let i_var2: u8 = if is_quad {
             match byte3 {
@@ -161,7 +161,7 @@ impl Descriptor {
 }
 
 /// The 6-row × 2-byte projection of `DAT_8007326C` actually consumed by
-/// the renderer — `(byte3, byte4)` for each row. Bytes 0,1,2,5,6,7 of each
+/// the renderer - `(byte3, byte4)` for each row. Bytes 0,1,2,5,6,7 of each
 /// 8-byte slot are unused by `FUN_8002735c`'s fast-path dispatch.
 ///
 /// Pulled from `ghidra/scripts/funcs/data_8007325c_around_DAT_8007326c.txt`:
@@ -297,7 +297,7 @@ mod tests {
     fn descriptor_matches_legaia_prims_vertex_offset() {
         // The descriptor module must agree with the older free-function
         // [`super::super::legaia_prims::vertex_offset_bytes`] on every
-        // valid flags value — they read from the same on-disc table.
+        // valid flags value - they read from the same on-disc table.
         for flags in known_flag_values() {
             let d = Descriptor::for_flags(flags).unwrap();
             let expected = super::super::legaia_prims::vertex_offset_bytes(flags).unwrap();

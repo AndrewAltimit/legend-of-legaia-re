@@ -3,7 +3,7 @@
 PSX TIM (texture image) parser and PNG exporter, plus a software model of
 the PSX VRAM frame the renderer reads from.
 
-TIM is Sony's PSX texture format. It's not Legaia-specific — this crate
+TIM is Sony's PSX texture format. It's not Legaia-specific - this crate
 follows the canonical PsyQ docs.
 
 ## File layout
@@ -41,9 +41,9 @@ Pixel widths in real pixels:
 
 ## What it provides
 
-- `parse(bytes) -> Tim` — header + CLUT + image-block parser.
-- `Tim::to_rgba8` — palette-resolve to RGBA8 for PNG.
-- `vram::Vram` — software model of PSX VRAM (1024×512 R16 framebuffer).
+- `parse(bytes) -> Tim` - header + CLUT + image-block parser.
+- `Tim::to_rgba8` - palette-resolve to RGBA8 for PNG.
+- `vram::Vram` - software model of PSX VRAM (1024×512 R16 framebuffer).
   Used by `legaia-engine-render` for per-primitive texture-page +
   CLUT-row decode in the fragment shader.
 
@@ -58,5 +58,5 @@ tim convert-dir <dir>  <out_dir>       # batch convert
 ## See also
 
 - [`docs/formats/tim.md`](../../docs/formats/tim.md)
-- [`docs/subsystems/renderer.md`](../../docs/subsystems/renderer.md) —
+- [`docs/subsystems/renderer.md`](../../docs/subsystems/renderer.md) -
   how the engine uploads TIMs into the VRAM model.

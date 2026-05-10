@@ -1,4 +1,4 @@
-//! Miracle Arts — full action-queue replacement triggered by a command match.
+//! Miracle Arts - full action-queue replacement triggered by a command match.
 //!
 //! Every character has one Miracle Art:
 //!
@@ -18,7 +18,7 @@
 //! 4. The first 4 bytes of the replacement are stored on disc with the MSB
 //!    of the high nibble set (`0x8C` / `0x8D` / `0x8E` / `0x8F`); the
 //!    runtime zeros that bit when copying into the queue. This crate
-//!    follows the runtime convention — [`MiracleArt::replacement`] is the
+//!    follows the runtime convention - [`MiracleArt::replacement`] is the
 //!    *post-mask* action constants ready to write into the queue.
 //!
 //! Source: external researcher's `Miracle Arts Data` spreadsheet.

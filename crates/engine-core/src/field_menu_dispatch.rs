@@ -13,12 +13,12 @@
 //! | Save    | [`crate::save_select::SaveSelectSession`] (Save mode) |
 //! | Config  | [`crate::options::OptionsSession`]                    |
 //!
-//! Pure plumbing — the dispatcher builds the right sub-session from
+//! Pure plumbing - the dispatcher builds the right sub-session from
 //! [`World`] state, routes per-frame pad input into it, and exposes
 //! `is_done` for the engine to call [`crate::field_menu::FieldMenuSession::resume`].
 //! Side-effects (writing equipment back to a record, casting a spell on
 //! the active party, persisting a save) are intentionally left to the
-//! engine — see [`apply_equip_outcome`] / [`apply_inventory_outcome`] /
+//! engine - see [`apply_equip_outcome`] / [`apply_inventory_outcome`] /
 //! [`apply_spell_outcome`] / [`apply_arts_outcome`] for the typed helpers.
 
 use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
@@ -212,13 +212,13 @@ pub fn apply_inventory_outcome(session: &InventoryUseSession, world: &mut World)
     let InventoryUseState::Done(_) = session.state else {
         return;
     };
-    // The session's events log includes the resolved Used { slot, .. } —
+    // The session's events log includes the resolved Used { slot, .. } -
     // engines that need the per-event detail can drain it separately.
     // For the field-menu commit we just walk the events for a Used row
     // and forward to the world via use_item, which also decrements stock.
     for ev in &session.events {
         if let crate::inventory_use::InventoryUseEvent::Used { slot, .. } = ev {
-            // Find the item id under the active item-cursor — same lookup
+            // Find the item id under the active item-cursor - same lookup
             // the session ran when it built the outcome.
             if let Some(entry) = session.current_item() {
                 world.use_item(entry.id, *slot);
@@ -285,7 +285,7 @@ pub fn active_leader_slot(world: &World) -> u8 {
 
 /// Build a [`StatusSnapshot`] for every roster member that has a non-zero
 /// max-HP. Engines whose roster carries placeholder zeros (i.e. before
-/// the slot is "claimed") will see those filtered out — matching the
+/// the slot is "claimed") will see those filtered out - matching the
 /// retail status panel which only shows the active party.
 pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
     let names = roster_names(world);
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn build_status_snapshots_skip_empty_roster_slots() {
         let mut w = fresh_world();
-        // Zero one member's max HP — they should drop out of the snapshot.
+        // Zero one member's max HP - they should drop out of the snapshot.
         let mut hms = w.roster.members[2].hp_mp_sp();
         hms.hp_max = 0;
         w.roster.members[2].set_hp_mp_sp(hms);

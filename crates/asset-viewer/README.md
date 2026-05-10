@@ -14,7 +14,7 @@ asset-viewer vab   <PROT_entry> --offset <H> --sample <N>
 asset-viewer prot  <PROT.DAT> [--cdname <CDNAME.TXT>]
 ```
 
-### `tmd` — textured 3D meshes
+### `tmd` - textured 3D meshes
 
 Renders Legaia TMDs spinning, lit by a single directional light. Uploads
 every sibling TIM into the shared software VRAM model so meshes that
@@ -22,14 +22,14 @@ reference textures across multiple VRAM pages render correctly.
 
 Useful flags:
 
-- `--bundle battle` — overlay the correct PROT 865–890 set traced from
+- `--bundle battle` - overlay the correct PROT 865–890 set traced from
   `FUN_800520f0`. Field/town/level_up bundles live in uncaptured
   overlays, so for those you may need `--vram-extra-dir` until the
   runtime asset chain is fully traced.
-- `--vram-extra-dir <dir>` — workaround for character meshes whose CLUT
+- `--vram-extra-dir <dir>` - workaround for character meshes whose CLUT
   rows live in *different* PROT entries from their TMD source.
 
-### `stage` — wireframe stage geometry
+### `stage` - wireframe stage geometry
 
 Renders the 12-byte-prefix + 8-byte u16 quad records identified by
 `legaia_asset::stage_geom`, using the `Lines` pipeline added to
@@ -37,7 +37,7 @@ Renders the 12-byte-prefix + 8-byte u16 quad records identified by
 finds candidate entries; this viewer renders one. OBJ export is
 supported via `asset stage` proper.
 
-### `prot` — PROT entry browser
+### `prot` - PROT entry browser
 
 Walks `PROT.DAT` end-to-end and pages through every entry, showing
 classifier output (TIM hits, TMD hits, scene-bundle membership) and
@@ -59,9 +59,9 @@ legaia-prot ┼─ legaia-asset ─┬─ legaia-tim ──────┐  │
 
 ## See also
 
-- [`docs/tooling/extraction.md`](../../docs/tooling/extraction.md) — how
+- [`docs/tooling/extraction.md`](../../docs/tooling/extraction.md) - how
   to populate `extracted/` first.
 - [`docs/subsystems/renderer.md`](../../docs/subsystems/renderer.md)
 - [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md)
-  — explains why `--vram-extra-dir` exists and what's blocking its
+  - explains why `--vram-extra-dir` exists and what's blocking its
   removal (overlay sweep of field/town scene-init).

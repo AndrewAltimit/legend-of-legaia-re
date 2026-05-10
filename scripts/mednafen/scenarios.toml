@@ -9,14 +9,14 @@
 
 [defaults]
 # Filename pattern for the user's mednafen saves. {slot} is replaced with
-# the slot index (0..9). The hash is mednafen's per-rom identifier — adjust
+# the slot index (0..9). The hash is mednafen's per-rom identifier - adjust
 # if you're using a different US dump.
 filename_pattern = "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{slot}"
 # Default mcs/ directory. Override at runtime via `LEGAIA_MEDNAFEN_DIR`.
 # (Left unset here so the manifest is portable.)
 
 # ----------------------------------------------------------------------
-# mc0 — Town-resident state (Rim Elm). The first town save in the corpus.
+# mc0 - Town-resident state (Rim Elm). The first town save in the corpus.
 # Scene index `0x15` / CDNAME label `town0c`. Useful for any town-context
 # diff that needs an in-town reference (NPC dialog state, town-overlay
 # residency, town-vs-field RAM-layout deltas).
@@ -52,7 +52,7 @@ end = 0x801F8F02
 hint = "9 KB MIPS-overlay slot identified earlier; town overlay populates here."
 
 # ----------------------------------------------------------------------
-# mc1 — Pre-encounter walking state (CDNAME `map01`, outskirts of Rim Elm).
+# mc1 - Pre-encounter walking state (CDNAME `map01`, outskirts of Rim Elm).
 # Save just BEFORE a step that triggers the encounter. Pair with mc2 to
 # crack the encounter-trigger write footprint (PRD §3.6 / encounter table
 # runtime).
@@ -93,7 +93,7 @@ end = 0x80120000
 hint = "Suspected per-scene navmesh window; diff mc1↔mc3 (different field scene) to see scene-data writes."
 
 # ----------------------------------------------------------------------
-# mc2 — Post-encounter battle init (CDNAME `map01`).
+# mc2 - Post-encounter battle init (CDNAME `map01`).
 # Save just AFTER battle init, same scene as mc1. Diff mc1↔mc2 surfaces
 # encounter-trigger write footprint.
 # ----------------------------------------------------------------------
@@ -124,12 +124,12 @@ hint = "8-slot actor pointer table; populated post-encounter. Slot stride observ
 label = "encounter_resolution_globals"
 start = 0x80083000
 end = 0x80084000
-hint = "Scene-bundle / sound-pool region; ~600 bytes change between mc1 and mc2 — likely encounter formation + BGM resolution."
+hint = "Scene-bundle / sound-pool region; ~600 bytes change between mc1 and mc2 - likely encounter formation + BGM resolution."
 
 # ----------------------------------------------------------------------
-# mc3 — Drake-Castle battle (CDNAME `dolk`). Steady-state battle in a
+# mc3 - Drake-Castle battle (CDNAME `dolk`). Steady-state battle in a
 # different scene than mc2; useful as the "different battle, different
-# scene" diff partner. Also the move-table boot-path scene — `dolk` block
+# scene" diff partner. Also the move-table boot-path scene - `dolk` block
 # scene index `0x3C` populates `MOVE` base at `0x800E412C`.
 # ----------------------------------------------------------------------
 [[scenarios]]
@@ -153,10 +153,10 @@ hint = "MOVE base in `dolk` is `0x800E412C` (cf. eighth post-#26 batch trace)."
 label = "battle_actor_pool"
 start = 0x801C9370
 end = 0x801C9900
-hint = "Different formation than mc2 — stride identical, contents differ."
+hint = "Different formation than mc2 - stride identical, contents differ."
 
 # ----------------------------------------------------------------------
-# mc4 — Battle in Drake Castle, command menu open, cursor parked one
+# mc4 - Battle in Drake Castle, command menu open, cursor parked one
 # input away from using "Fire Book I" on Vahn (the Hyper-Arts unlock item
 # in retail). Pair with mc5 to crack the per-character Hyper-Arts learn
 # write footprint.
@@ -191,14 +191,14 @@ end = 0x801C9900
 hint = "Battle is in progress; per-actor HP/MP at +0x14C."
 
 # ----------------------------------------------------------------------
-# mc5 — Battle in Drake Castle, Fire Book I just activated on Vahn.
+# mc5 - Battle in Drake Castle, Fire Book I just activated on Vahn.
 # Vahn's per-character Hyper-Arts list grew by one entry. Diff mc4↔mc5
 # pins the per-character Hyper-Arts learn footprint.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 5
 label = "post_fire_book"
-description = "Battle, Fire Book I just used on Vahn — Hyper Art learned (`dolk`)"
+description = "Battle, Fire Book I just used on Vahn - Hyper Art learned (`dolk`)"
 topics = ["hyper arts", "spell learning", "character record"]
 diff_against = [4, 6]
 
@@ -219,7 +219,7 @@ end = 0x80140000
 hint = "Decremented item count for Fire Book I; diff mc4↔mc5 isolates the slot."
 
 # ----------------------------------------------------------------------
-# mc6 — Performing a somersault on an enemy (animation playing).
+# mc6 - Performing a somersault on an enemy (animation playing).
 # Unchanged from prior batches.
 # ----------------------------------------------------------------------
 [[scenarios]]
@@ -246,7 +246,7 @@ end = 0x801C9700
 hint = "Per-actor +0x4C carries the anim dispatch fn pointer; diff mc3→mc6 to find it."
 
 # ----------------------------------------------------------------------
-# mc7 — Pre-event: goblin about to steal an item (battle in progress).
+# mc7 - Pre-event: goblin about to steal an item (battle in progress).
 #
 # Loading mc7 and waiting ~5-10 seconds (no input) plays out: a goblin
 # steal animation → magic-rank level-up event (mc8) → character level-up
@@ -283,7 +283,7 @@ end = 0x1F8003A0
 hint = "_DAT_1F800394 story flags. Diff to surface in-battle status writes."
 
 # ----------------------------------------------------------------------
-# mc8 — Magic level-up event firing
+# mc8 - Magic level-up event firing
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
@@ -315,7 +315,7 @@ end = 0x80085344
 hint = "Gala's character record (stride 0x414)."
 
 # ----------------------------------------------------------------------
-# mc9 — Character level-up event firing (after mc8)
+# mc9 - Character level-up event firing (after mc8)
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 9

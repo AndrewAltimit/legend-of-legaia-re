@@ -1,4 +1,4 @@
-# SEQ — PsyQ sequenced-music format
+# SEQ - PsyQ sequenced-music format
 
 PsyQ's `SsSeqOpen` / `SsSeqPlay` accepts a 13-byte-header SEQ file: a thin
 MIDI variant that names a single track with delta-time + event records.
@@ -8,7 +8,7 @@ that holds the instrument samples.
 The format is a publicly-documented PsyQ SDK shape (header layout +
 event encoding). This page describes byte order, the meaning of every
 header field, and how Sony's SsAPI sequencer consumes the event stream
-— **no Sony bytes appear here**.
+- **no Sony bytes appear here**.
 
 ## Header
 
@@ -19,7 +19,7 @@ Two header shapes coexist in the wild:
 ```text
 +0x00  u8[4]   magic   "pQES"  (0x70 0x51 0x45 0x53)
 +0x04  u16 BE  version          (typically 1)
-+0x06  u16 BE  resolution       PPQN — ticks per quarter note
++0x06  u16 BE  resolution       PPQN - ticks per quarter note
 +0x08  u24 BE  initial tempo    microseconds per quarter note
 +0x0B  u8      time-sig num     (e.g. 4)
 +0x0C  u8      time-sig denom   power of 2 (2 means /4, 3 means /8)
@@ -42,7 +42,7 @@ magic and the version word. The remaining fields shift by two bytes:
 +0x0F  ...     event stream
 ```
 
-`crates/seq::parse_header` accepts both shapes — it probes
+`crates/seq::parse_header` accepts both shapes - it probes
 `u32 BE at +4..+8 == 1` and dispatches accordingly. `HEADER_LEN` is the
 standard length; `HEADER_LEN_LEGAIA` is the variant length.
 
@@ -60,7 +60,7 @@ treat that byte as data.
 | Status range | Event              | Data bytes |
 | ------------ | ------------------ | ---------- |
 | `0x80..=0x8F`| Note Off           | 2 (key, velocity) |
-| `0x90..=0x9F`| Note On            | 2 (key, velocity) — `velocity == 0` ≡ NoteOff |
+| `0x90..=0x9F`| Note On            | 2 (key, velocity) - `velocity == 0` ≡ NoteOff |
 | `0xA0..=0xAF`| Poly Aftertouch    | 2 |
 | `0xB0..=0xBF`| Control Change     | 2 (controller, value) |
 | `0xC0..=0xCF`| Program Change     | 1 (program) |
@@ -94,7 +94,7 @@ End-of-Track is required and terminates parsing.
 `tempo` is microseconds per quarter note; `ppqn` is ticks per quarter
 note. Per-tick duration is `tempo / ppqn` microseconds, and the SsAPI
 runtime accumulates real-world time against this rate. A mid-stream
-`SetTempo` overrides for **future** events only — events that already
+`SetTempo` overrides for **future** events only - events that already
 fired at the previous tempo are unaffected.
 
 `legaia_seq::us_per_tick(tempo, ppqn)` returns the per-tick duration as
@@ -102,7 +102,7 @@ fired at the previous tempo are unaffected.
 
 ## Where the data lives
 
-SEQ payloads are loaded by the PsyQ libsnd `SsSeqOpen` family — see
+SEQ payloads are loaded by the PsyQ libsnd `SsSeqOpen` family - see
 [`subsystems/audio.md`](../subsystems/audio.md) → "Public SEQ API". On-disc,
 SEQ data lives inside the same scene-VAB-prefixed streaming containers
 described in [scene-bundles.md](scene-bundles.md). The `_DAT_8007BAC8`

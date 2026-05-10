@@ -4,7 +4,7 @@
 //! the encounter table picks a `formation_id`; the battle scene loader
 //! reads the `battle_data` PROT entries to populate per-formation slot
 //! lists with monster definitions. The retail definitions live in
-//! still-uncaptured battle overlays — until they're traced, this module
+//! still-uncaptured battle overlays - until they're traced, this module
 //! ships a vanilla in-engine catalog so the encounter → battle path can
 //! be exercised end-to-end without disc data.
 //!
@@ -15,17 +15,17 @@
 //!
 //! ## Components
 //!
-//! - [`MonsterDef`] — one monster row (HP, MP, ATK, UDF, LDF, accuracy,
+//! - [`MonsterDef`] - one monster row (HP, MP, ATK, UDF, LDF, accuracy,
 //!   evasion, EXP yield, gold drop, optional drop-item id).
-//! - [`MonsterCatalog`] — id → [`MonsterDef`] table.
-//! - [`FormationSlot`] — one occupied slot in a formation: monster id +
+//! - [`MonsterCatalog`] - id → [`MonsterDef`] table.
+//! - [`FormationSlot`] - one occupied slot in a formation: monster id +
 //!   optional level offset.
-//! - [`FormationDef`] — a formation row: 1..=4 slots (battles support up
+//! - [`FormationDef`] - a formation row: 1..=4 slots (battles support up
 //!   to 5 enemy slots; we cap at 4 so the player slot stays distinct).
-//! - [`FormationTable`] — formation_id → [`FormationDef`] map plus
+//! - [`FormationTable`] - formation_id → [`FormationDef`] map plus
 //!   reverse lookup helpers.
 //!
-//! Pure data — no Vfs / disc / world coupling. Engines call
+//! Pure data - no Vfs / disc / world coupling. Engines call
 //! [`FormationTable::formation`] with the `formation_id` from
 //! [`crate::encounter::EncounterRoll`] and feed the resulting
 //! [`FormationDef`] into their battle scene loader.

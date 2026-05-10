@@ -8,10 +8,10 @@
 //!
 //! This crate provides:
 //!
-//! - [`CharacterRecord`] — typed accessors for the documented offsets.
-//! - [`CharacterRecord::parse`] — read a 0x414-byte buffer into the struct.
-//! - [`CharacterRecord::write`] — serialise back to a 0x414-byte buffer.
-//! - [`Party`] — convenience wrapper for an N-character roster.
+//! - [`CharacterRecord`] - typed accessors for the documented offsets.
+//! - [`CharacterRecord::parse`] - read a 0x414-byte buffer into the struct.
+//! - [`CharacterRecord::write`] - serialise back to a 0x414-byte buffer.
+//! - [`Party`] - convenience wrapper for an N-character roster.
 //!
 //! Round-trip guarantee: `write(parse(buf)) == buf` for any 0x414 buffer.
 //! The struct keeps the full raw bytes alongside typed views; unknown
@@ -33,7 +33,7 @@
 //!   block format we haven't reversed yet. Once captured, that wrapper
 //!   will live in a sibling module here.
 //! - **Not** the inventory layout itself. Inventory is page-banked at
-//!   `[0x80085718..0x80085918)` — see
+//!   `[0x80085718..0x80085918)` - see
 //!   [`docs/subsystems/battle.md`](../../../docs/subsystems/battle.md#inventory)
 //!   for the page-of-16-entries × 16-bit layout. This crate covers the
 //!   per-character record only.
@@ -67,7 +67,7 @@ pub use ext::{
 pub const RETAIL_XP_CUMULATIVE: [u32; 98] = build_retail_cumulative();
 
 const fn build_retail_cumulative() -> [u32; 98] {
-    // Mirrors engine_core::levelup::retail_xp_table — kept here so the
+    // Mirrors engine_core::levelup::retail_xp_table - kept here so the
     // legaia-save crate doesn't need to depend on engine-core.
     const INCREMENTS: [u16; 98] = [
         50, 56, 62, 69, 75, 81, 87, 94, 100, 106, 113, 119, 125, 131, 138, 144, 150, 157, 163, 169,
@@ -90,7 +90,7 @@ const fn build_retail_cumulative() -> [u32; 98] {
 
 /// Cumulative XP needed to reach `level` (1..=99). `xp_for_level(1) == 0`
 /// and `xp_for_level(2) == RETAIL_XP_CUMULATIVE[0]`. Levels above 99 saturate
-/// at the L99 threshold — the table doesn't go higher.
+/// at the L99 threshold - the table doesn't go higher.
 pub fn xp_for_level(level: u8) -> u32 {
     if level <= 1 {
         return 0;

@@ -1,4 +1,4 @@
-//! "TMD-prefixed scene-stream" detector — a streaming-format variant
+//! "TMD-prefixed scene-stream" detector - a streaming-format variant
 //! that opens with a bare Legaia TMD instead of a typed chunk header.
 //!
 //! ### Layout (empirically verified across 148 PROT entries, 2026-05)
@@ -23,7 +23,7 @@
 //! This shape is dominant in scene-asset PROT entries (most `town*`, `dolk*`,
 //! `rugi*`, and similar named blocks). Pre-TOC-fix the bare-TMD prefix made
 //! many of these look like "low-entropy unknowns" because the inner streaming
-//! header was 8824+ bytes deep — the standard streaming detector starts at
+//! header was 8824+ bytes deep - the standard streaming detector starts at
 //! offset 0 and saw a non-streaming first chunk (`type_byte = 0x00` with
 //! TMD-magic content).
 
@@ -31,7 +31,7 @@ use serde::Serialize;
 
 use crate::AssetType;
 
-/// Minimum sane object count in a Legaia TMD header. Defensive bound — real
+/// Minimum sane object count in a Legaia TMD header. Defensive bound - real
 /// scene TMDs have 1-8 objects (terrain mesh + a few props).
 const MAX_TMD_OBJECTS: u32 = 64;
 
@@ -40,7 +40,7 @@ const MAX_TMD_OBJECTS: u32 = 64;
 const MAX_CHUNKS: usize = 64;
 
 /// Maximum bytes consumed by the optional streaming-tail walk. We don't need
-/// to walk forever — a few hundred KB is enough to confirm shape.
+/// to walk forever - a few hundred KB is enough to confirm shape.
 const MAX_TAIL_WALK: usize = 4 * 1024 * 1024;
 
 /// Per-chunk record in the streaming tail.
@@ -105,7 +105,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
 
     // (4) The chunk0 header packs `(type<<24) | size`, where the high byte
     //     is 0 (TIM dispatcher) and the low 24 bits give the TMD body size.
-    //     Reject if the type byte isn't 0 — that would mean a different
+    //     Reject if the type byte isn't 0 - that would mean a different
     //     dispatcher fires on the leading chunk and this isn't the variant
     //     we're trying to detect.
     let chunk0_header = read_u32_le(buf, 0)?;
@@ -127,7 +127,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
     }
 
     // (5) Walk the streaming tail starting at `4 + tmd_size`. We accept the
-    //     file even if the tail doesn't terminate cleanly — many entries
+    //     file even if the tail doesn't terminate cleanly - many entries
     //     are stored padded out to the next 0x800 sector boundary, which
     //     our walker may detect as garbage rather than a clean terminator.
     let mut tail_chunks = Vec::new();
@@ -148,7 +148,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
         let asset_type = AssetType::from_byte(type_byte);
         if matches!(asset_type, AssetType::Unknown(_)) {
             // Tail is malformed (or truncated). Stop without recording the
-            // bogus header — caller can still see how many good chunks parsed.
+            // bogus header - caller can still see how many good chunks parsed.
             break;
         }
         let size = header & 0x00FF_FFFF;
@@ -179,7 +179,7 @@ pub fn detect(buf: &[u8]) -> Option<SceneTmdStream> {
     })
 }
 
-/// Cheap presence check — used by [`crate::categorize`] before doing the
+/// Cheap presence check - used by [`crate::categorize`] before doing the
 /// full streaming-tail walk in callers that just need a yes/no.
 pub fn is_scene_tmd_stream(buf: &[u8]) -> bool {
     detect(buf).is_some()
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn rejects_nonzero_chunk0_type() {
-        // chunk0 header type byte must be 0 (TIM dispatcher) — anything else
+        // chunk0 header type byte must be 0 (TIM dispatcher) - anything else
         // is a different streaming variant we're not detecting here.
         let mut buf = synth(2, 64, &[(0x00, &[0x10; 0x100])]);
         let mut hdr = u32::from_le_bytes(buf[0..4].try_into().unwrap());

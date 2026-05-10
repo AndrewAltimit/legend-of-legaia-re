@@ -1,6 +1,6 @@
 # Mednafen movie files (`.mcm`)
 
-This directory holds optional `.mcm` movie files — bit-exact recordings of
+This directory holds optional `.mcm` movie files - bit-exact recordings of
 controller input from frame 0. Replaying a movie against the same disc
 produces deterministic emulator state at every frame; combine with the
 `-loadstate N` argument to start mid-game.
@@ -38,11 +38,11 @@ scripts/mednafen/run-mednafen.sh disc.bin --state mc1 --movie /path/to/movie.mcm
 ## Why this matters for the watchpoint workflow
 
 Save-state diffs (`mednafen-state diff`) tell you WHAT changed between two
-points. They don't tell you WHEN — only "after the user moved on with the
+points. They don't tell you WHEN - only "after the user moved on with the
 game." A replayable movie gives you a deterministic timeline: take a
 state at frame 100, replay to frame 110, take another state, diff. The
 window of code that ran is bounded to exactly 10 frames.
 
 For coarser bisection (mc1 → mc2 → mc3 → mc4 …), you don't need a movie
-— just take states at progressive points by hand and `mednafen-state
+- just take states at progressive points by hand and `mednafen-state
 bisect` against them.

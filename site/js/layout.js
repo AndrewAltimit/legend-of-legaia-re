@@ -1,4 +1,4 @@
-/* layout.js — shared layout for the multi-page site.
+/* layout.js - shared layout for the multi-page site.
  *
  * Each page calls injectLayout({ active: 'subsystems/script-vm' }).
  * This builds:

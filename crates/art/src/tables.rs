@@ -96,7 +96,7 @@ pub fn learned_art_max_slot(character: Character) -> u8 {
 }
 
 /// Total number of arts a character has learnable through the Learned Art
-/// Constant table — i.e. the count of non-empty slots in `0..=max_slot`.
+/// Constant table - i.e. the count of non-empty slots in `0..=max_slot`.
 pub fn learned_art_count(character: Character) -> usize {
     let table: &[u8] = match character {
         Character::Vahn => &VAHN_LEARNED_ART_SLOTS,
@@ -222,7 +222,7 @@ const GALA_ART_NAMES: [Option<&'static str>; 24] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Learned Art Constant — slot index → action constant byte. `0x00` marks a
+// Learned Art Constant - slot index → action constant byte. `0x00` marks a
 // hole (slot exists for some characters but not this one).
 //
 // Source: per-row tables in the researcher's "Learned Art Constant"
@@ -252,8 +252,8 @@ const VAHN_LEARNED_ART_SLOTS: [u8; 0x0F] = [
 const NOA_LEARNED_ART_SLOTS: [u8; 0x11] = [
     /* 0x00 */ 0x1B, /* Noa's Ark */
     /* 0x01 */ 0x1C, /* Hurricane Kick (3 levels share this slot) */
-    /* 0x02 */ 0x00, /* hole — Noa has no Fire Blow */
-    /* 0x03 */ 0x00, /* hole — Noa has no Tornado Flame */
+    /* 0x02 */ 0x00, /* hole - Noa has no Fire Blow */
+    /* 0x03 */ 0x00, /* hole - Noa has no Tornado Flame */
     /* 0x04 */ 0x1F, /* Vulture Blade */
     /* 0x05 */ 0x20, /* Frost Breath */
     /* 0x06 */ 0x21, /* Tempest Break */
@@ -288,7 +288,7 @@ const GALA_LEARNED_ART_SLOTS: [u8; 0x0F] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Art Anim Data — anim_index byte (Art Record +16) → animation slot name.
+// Art Anim Data - anim_index byte (Art Record +16) → animation slot name.
 // Slot 0 is always Spirit, slot 3 is always Art Starter on every character.
 // Holes are real (e.g. Vahn has no slot 0xC, Gala has no slot 9).
 //
@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn noa_learned_art_extends_to_acrobatic_blitz_and_lizard_tail() {
-        // Noa's table goes 2 slots past Vahn / Gala — Acrobatic Blitz at
+        // Noa's table goes 2 slots past Vahn / Gala - Acrobatic Blitz at
         // slot 0x0F, Lizard Tail at slot 0x10.
         assert_eq!(
             learned_art_action(Character::Noa, 0x0F),

@@ -35,7 +35,7 @@ pub mod str_sector;
 
 /// PSX quantization matrix (luma and chroma share one matrix).
 ///
-/// Source: PSX-SPX §MDEC Decompression — "Quantization Table".
+/// Source: PSX-SPX §MDEC Decompression - "Quantization Table".
 const Q_MAT: [i32; 64] = [
     2, 16, 19, 22, 26, 27, 29, 34, 16, 16, 22, 24, 27, 29, 34, 37, 19, 22, 26, 27, 29, 34, 34, 38,
     22, 22, 26, 27, 29, 34, 37, 40, 22, 26, 27, 29, 32, 35, 40, 48, 26, 27, 29, 32, 35, 40, 48, 58,
@@ -255,7 +255,7 @@ fn decode_ac(br: &mut BitReader<'_>) -> (u8, i16) {
         _ => {
             let b2 = bit!();
             if b2 == 0 {
-                // 000x... — very long codes or escape
+                // 000x... - very long codes or escape
                 decode_ac_long(br)
             } else {
                 // 001x...
@@ -391,7 +391,7 @@ fn decode_block(
 ) -> Option<[i32; 64]> {
     let mut coeffs = [0i32; 64];
 
-    // DC coefficient (no zigzag, no qs scaling — Q_MAT[0]=2, divide by 8)
+    // DC coefficient (no zigzag, no qs scaling - Q_MAT[0]=2, divide by 8)
     let dc = decode_dc_value(br, is_chroma, dc_pred)?;
     coeffs[0] = dc * Q_MAT[0]; // * 2; divide later in IDCT output
 
@@ -404,7 +404,7 @@ fn decode_block(
         let (run, level) = decode_ac(br);
         match run {
             64 => break, // EOB
-            65 => break, // decode error — emit what we have
+            65 => break, // decode error - emit what we have
             r => {
                 pos += r as usize;
                 if pos > 63 {

@@ -10,7 +10,7 @@
 //! What this catches:
 //!  - SceneHost can transition into a real field scene without panicking.
 //!  - The World tick + drain_field_events loop produces *some* observable
-//!    side-effects (BGM, dialog, move-to, scene-fade, etc.) — proving the
+//!    side-effects (BGM, dialog, move-to, scene-fade, etc.) - proving the
 //!    full chain (CDNAME → PROT → scene_scripted_asset_table → field VM →
 //!    FieldHost callbacks → event queue) is wired end-to-end.
 //!  - Descriptor 0 of the scene's asset table LZS-decodes (which is how
@@ -211,7 +211,7 @@ fn first_town_drives_scene_to_field_event_emission() {
     // Acceptance: the chain runs without panic, the asset bundle
     // resolves, descriptor 0 LZS-decodes, and the field VM ticks.
     // Whether the event queue accumulates depends on which records the
-    // scene runs first — many init-only records halt on opcode 0x00
+    // scene runs first - many init-only records halt on opcode 0x00
     // (data-shaped record bodies the SCUS dispatcher would reach via
     // the cross-context resolver, not the bytecode interpreter).
     //
@@ -228,11 +228,11 @@ fn first_town_drives_scene_to_field_event_emission() {
     // future input wiring are the next dependencies.
     assert!(
         host.world.frame > 0,
-        "no frames ticked — chain is broken before the world is even alive"
+        "no frames ticked - chain is broken before the world is even alive"
     );
     assert!(
         !step_outcomes.is_empty(),
-        "no step outcomes recorded — field_pc never advanced through any record"
+        "no step outcomes recorded - field_pc never advanced through any record"
     );
     eprintln!(
         "[first-town] chain alive: {} step outcomes, {} events",

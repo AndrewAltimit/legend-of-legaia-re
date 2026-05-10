@@ -13,13 +13,13 @@ records[]                  // per-record bodies; offsets[i+1] - offsets[i] = rec
 Each record begins with an 8-byte header:
 
 ```
-u16 a              // varies (3..14 observed) — likely record kind / opcode
-u16 b              // varies (0..40 observed) — likely frame count
+u16 a              // varies (3..14 observed) - likely record kind / opcode
+u16 b              // varies (0..40 observed) - likely frame count
 u16 marker_1       // = 0x080C in every record observed
 u16 marker_2       // = 0x0002 (78%) or 0x0004 (22%)
 ```
 
-## Per-record body — animation opcode 6
+## Per-record body - animation opcode 6
 
 For records consumed via animation opcode `0x06` (the bulk of retail ANM
 data), the body after the header is a per-bone **keyframe table**, not
@@ -30,9 +30,9 @@ mesh context. Layout:
 
 ```
 +0..+8                      header (a, b, marker_1, marker_2)
-+8..+(8 + 8*N)              per-bone OUTPUT slots — written by the tick
++8..+(8 + 8*N)              per-bone OUTPUT slots - written by the tick
                              (8 bytes per bone: packed pos+rot deltas)
-+(8 + 8*N)..+(8 + 32*N)     per-bone KEYFRAME data — read by the tick
++(8 + 8*N)..+(8 + 32*N)     per-bone KEYFRAME data - read by the tick
                              (24 bytes per bone = 12 little-endian i16
                               shorts: src_pos.xyz, dst_pos.xyz,
                               src_rot.xyz, dst_rot.xyz)
@@ -40,7 +40,7 @@ mesh context. Layout:
 
 Total record size for opcode-6 records is `8 + 32*N` bytes for `N` bones.
 The tick reads the 12 shorts, multiplies the `(dst - src)` deltas by
-`actor[+0x22]` (the per-actor interpolation factor — driven from the
+`actor[+0x22]` (the per-actor interpolation factor - driven from the
 field-VM frame counter), and writes the resulting 8 packed bytes back
 into the OUTPUT slots.
 
@@ -49,7 +49,7 @@ The bone count is supplied by the caller (the actor's mesh context owns
 it at runtime); offline tooling can use `KeyframeReader::infer_bone_count`
 to recover it from the record size when it fits the equation exactly.
 
-## Public entry point — `play_anm_by_id`
+## Public entry point - `play_anm_by_id`
 
 `FUN_80024CFC` (`play_anm_by_id(id, actor, ?)` in SCUS) is the writer
 that primes an actor for animation playback:
@@ -93,20 +93,20 @@ per-opcode handler block. Observed values:
 
 | `actor[+0x5A]` | Handler block in `FUN_80021DF4` | Status |
 |---|---|---|
-| `0x01` | (TBD) | Snap variant — pose-snap only |
+| `0x01` | (TBD) | Snap variant - pose-snap only |
 | `0x02` | shares with `0x06` at `0x80021E90..` | Per-bone keyframe-style |
 | `0x03` | `0x800226DC..` | Path / state-write variant |
 | `0x04` | `0x80022CBC..0x80022EE4` | Damp / spring-decay variant |
-| `0x05` | `0x800228B0..0x80022B80` | Path-alt — reads geometry from `actor[+0x80]` |
-| `0x06` | `0x80021EA0..0x80021FA4` | Keyframe interpolation — fully traced + ported |
+| `0x05` | `0x800228B0..0x80022B80` | Path-alt - reads geometry from `actor[+0x80]` |
+| `0x06` | `0x80021EA0..0x80021FA4` | Keyframe interpolation - fully traced + ported |
 | `0x07` | `0x80022C24..0x80022CC0` | Spline / curve-driven variant |
 
 The `crates/engine-vm` `DispatchByte` enum exposes those values as a typed
-dispatch — `DispatchByte::from_byte(actor[+0x5A])` and
+dispatch - `DispatchByte::from_byte(actor[+0x5A])` and
 `DispatchByte::handled_natively()` for the cases the keyframe pose decoder
 can drive on its own (currently only `Keyframe`).
 
-The per-arm physics tick (the part that *isn't* per-record bytecode — i.e.
+The per-arm physics tick (the part that *isn't* per-record bytecode - i.e.
 position / velocity / acceleration math, the SFX emitter at dispatch `0x05`,
 and the per-arm render submissions for `0x04` and `0x07`) is fully ported in
 [`crates/engine-vm/src/actor_tick.rs`](../../crates/engine-vm/src/actor_tick.rs).
@@ -123,8 +123,8 @@ overlay 0897) reads `actor[+0x4C]` at `801e260c` via a sub-dispatch table
 at `0x801CEF88` (routes by `opcode & 0xF`, 16 entries):
 
 1. Guard: reads `actor[+0x5C]`; skips the whole handler if ≤ 0.
-2. Calls `FUN_800204f8` (`a0 = actor`) — actor advance / move tick.
-3. Loads `s6 = actor[+0x4C]` — the ANM record pointer.
+2. Calls `FUN_800204f8` (`a0 = actor`) - actor advance / move tick.
+3. Loads `s6 = actor[+0x4C]` - the ANM record pointer.
 4. Calls `FUN_80056798` (BIOS vector `0xa0/0x2F`) while advancing the
    field VM PC by 2 in the delay slot.
 5. The 40-byte body at `801e2630..801e2670` uses `s6` and the return value
@@ -145,10 +145,10 @@ buffer at `_DAT_8007B7C8` carries a 16-byte allocator preamble before
 the payload:
 
 ```
-+0x00  back_ptr        (RAM ptr — usually base - 0xC or similar)
++0x00  back_ptr        (RAM ptr - usually base - 0xC or similar)
 +0x04  forward_ptr     (RAM ptr to next allocation)
-+0x08  forward_ptr_2   (RAM ptr — sometimes 0)
-+0x0C  expanded_size   (u32 — payload byte length)
++0x08  forward_ptr_2   (RAM ptr - sometimes 0)
++0x0C  expanded_size   (u32 - payload byte length)
 +0x10  -- payload starts here --
 ```
 

@@ -10,7 +10,7 @@
 use legaia_tmd::Tmd;
 use legaia_tmd::mesh::{Mesh, tmd_to_mesh};
 
-/// Triangle output: 7 f32s — three (x, y) screen-space pairs + 1 brightness.
+/// Triangle output: 7 f32s - three (x, y) screen-space pairs + 1 brightness.
 const FLOATS_PER_TRI: usize = 7;
 
 pub struct PreparedMesh {
@@ -74,7 +74,7 @@ pub fn render(
     // Camera setup: looking down -Z, with the model centered at origin and
     // pushed back so its bounding sphere fits the viewport. `distance` is in
     // unit-radius units (default 2.5 = camera 2.5 model-radii away). At
-    // distance < 1.0 the camera is inside the bounding sphere — that's a
+    // distance < 1.0 the camera is inside the bounding sphere - that's a
     // "fly through" view, intentional. `pan` is a view-space translation in
     // unit-radius units.
     let model_scale = 1.0 / pm.radius;
