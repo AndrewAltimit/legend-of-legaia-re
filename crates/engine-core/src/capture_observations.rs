@@ -202,6 +202,138 @@ pub mod vahn_fire_book_use {
     }
 }
 
+/// Field-pack scene asset load observation captured from a town01 (intro
+/// Rim Elm) save vs a town0c (regular Rim Elm) save. Pins the per-scene
+/// runtime RAM base of field-pack scene data and the loader chain that
+/// places it there.
+///
+/// **Loader chain (static, traced):**
+///
+/// 1. `FUN_801D6704` (overlay 0897, `801d6ae8`) is the scene-transition
+///    asset loader. It calls `FUN_8001F7C0` with
+///    `(buffer_ptr, scene_name_table=0x80084548, scene_index=0x80084540, 0)`.
+///    Then it calls `FUN_80020224` (descriptor-pair walker) which
+///    iterates the asset descriptor table at `_DAT_8007B85C` and
+///    dispatches each entry through `FUN_8001F05C` (asset type
+///    dispatcher).
+/// 2. `FUN_8001F7C0` (in `SCUS_942.54`) reads the scene asset buffer
+///    pointer from scratchpad cell `0x1F8003EC`, loads the field
+///    asset (DATA\FIELD\\&lt;scene&gt;) into that pointer's address, then
+///    loads `efect.dat` into `pointer + 0x12800`. After the load it
+///    writes `pointer + 0x12800` to `_DAT_8007B8D0` for downstream
+///    consumers.
+/// 3. The scene transition can be initiated from a dialog-event handler
+///    via `FUN_8001FD44(scene_name, sub_index)` - the dialog overlay
+///    (e.g. `FUN_801D1344`) calls
+///    `FUN_8001FD44("town01", 3)` when story-flag bit `0x04000000` is
+///    set plus a few menu-state flags. Engines see this as a scene-name
+///    write to `0x80084548` followed by an `_DAT_1F800394 |= 0x40`
+///    pending-transition flip.
+///
+/// **Per-scene RAM base (pinned):**
+///
+/// - mc2 (`town01`, scene 0x03): `_DAT_8007B8D0 = 0x8014BD30`, so the
+///   field-pack RAM base is `0x80139530` (= `0x8014BD30 - 0x12800`).
+/// - mc0 (`town0c`, scene 0x15): `_DAT_8007B8D0 = 0x800B4DF0`, base is
+///   `0x800A25F0`.
+///
+/// The per-scene base differs because the loader allocates from a heap
+/// pool. The asset descriptor table base at `_DAT_8007B85C` is
+/// **statically allocated** (= `0x8015CBD0` in both saves) and indexes
+/// into the per-scene field-pack region.
+///
+/// **Runtime layout != on-disc schema (confirmed by capture):**
+///
+/// The on-disc field-pack format (see [`legaia_asset::field_pack`])
+/// declares a 91 KB schema covering offsets `0x60..0x16651` with 97
+/// strict slots. In RAM at `base + 0x60` (where on-disc slot 0 sits) the
+/// captured bytes are post-processed GP0 GPU primitive packets, **not**
+/// the schema-shaped raw NPC / event-trigger / collision records the
+/// disc bytes encode. A loader transforms the on-disc preamble into a
+/// runtime layout that mixes:
+///
+/// - GP0-shaped primitive packets (visible at `base + 0x60`)
+/// - An auxiliary lookup / descriptor table elsewhere in the heap (the
+///   400 KB diff window at `0x800C505C..0x80139527` between mc2 and mc0
+///   is the shared scene-asset pool the loader fills before the
+///   field-pack region itself)
+/// - The descriptor table at `_DAT_8007B85C = 0x8015CBD0` whose entries
+///   point into the field-pack region above
+///
+/// Pinning the **direct** preamble-byte → runtime-RAM-cell mapping
+/// requires capturing the loader DURING the transition (a frame between
+/// "scene change requested" and "field-pack region populated"). The
+/// current single-save snapshot is post-load, so only the FINAL runtime
+/// layout is observable, not the disc-byte-to-RAM-cell projection.
+///
+/// **Magic isn't load-bearing.** Confirmed against every captured
+/// overlay and `SCUS_942.54`: no instructions compare against
+/// `0x01059B84` or its split LUI/ORI immediates. The magic is a
+/// build-time sanity marker.
+pub mod field_pack_load {
+    /// `_DAT_8007B8D0` - the loader writes `field_pack_base + 0x12800`
+    /// to this cell after asset load completes. Read this value and
+    /// subtract `0x12800` to recover the active per-scene base.
+    pub const LOAD_DEST_PLUS_OFFSET_PTR: u32 = 0x8007B8D0;
+
+    /// Offset added to the heap-allocated buffer pointer to compute the
+    /// effect-data load destination. The loader stores
+    /// `(buffer_ptr + EFFECT_OFFSET)` in [`LOAD_DEST_PLUS_OFFSET_PTR`].
+    pub const EFFECT_OFFSET: u32 = 0x12800;
+
+    /// Static asset descriptor table base. Identical across all captured
+    /// saves; `FUN_80020224` walks this table after the field-pack load.
+    pub const ASSET_DESCRIPTOR_TABLE_PTR_ADDR: u32 = 0x8007B85C;
+
+    /// Pinned value of `_DAT_8007B85C` across the captured corpus.
+    pub const ASSET_DESCRIPTOR_TABLE_PTR_VALUE: u32 = 0x8015CBD0;
+
+    /// Scratchpad cell that holds the heap-resident scene asset buffer
+    /// pointer. The loader reads this every transition.
+    pub const SCRATCHPAD_BUFFER_PTR: u32 = 0x1F8003EC;
+
+    /// Address of the static scene asset loader.
+    pub const SCENE_ASSET_LOADER_ADDR: u32 = 0x8001F7C0;
+
+    /// Address of the descriptor-pair walker.
+    pub const DESCRIPTOR_WALKER_ADDR: u32 = 0x80020224;
+
+    /// Address of the asset-type dispatcher.
+    pub const ASSET_TYPE_DISPATCHER_ADDR: u32 = 0x8001F05C;
+
+    /// Overlay-resident scene-transition orchestrator.
+    pub const SCENE_TRANSITION_ORCHESTRATOR_ADDR: u32 = 0x801D6704;
+
+    /// Static scene-transition setup function (writes the new scene
+    /// name into the scene-name table + flips `_DAT_1F800394 |= 0x40`).
+    pub const SCENE_TRANSITION_SETUP_ADDR: u32 = 0x8001FD44;
+
+    /// Scene-transition pending bit set by `FUN_8001FD44` in
+    /// `_DAT_1F800394`.
+    pub const SCENE_TRANSITION_PENDING_BIT: u32 = 0x40;
+
+    /// Field-pack RAM base for the `town01` (intro Rim Elm) save mc2.
+    /// = `0x8014BD30 - 0x12800`.
+    pub const TOWN01_BASE_MC2: u32 = 0x80139530;
+
+    /// Field-pack RAM base for the `town0c` (Rim Elm Genesis Tree) save
+    /// mc0. = `0x800B4DF0 - 0x12800`.
+    pub const TOWN0C_BASE_MC0: u32 = 0x800A25F0;
+
+    /// Recover the active per-scene field-pack RAM base from a save's
+    /// main-RAM image. Returns `None` if the load-dest pointer reads
+    /// zero (no scene loaded yet) or below `EFFECT_OFFSET`.
+    pub fn recover_base(main_ram: &[u8]) -> Option<u32> {
+        let off = (LOAD_DEST_PLUS_OFFSET_PTR - 0x80000000) as usize;
+        let bytes = main_ram.get(off..off + 4)?;
+        let raw = u32::from_le_bytes(bytes.try_into().ok()?);
+        if raw < EFFECT_OFFSET || !(0x80000000..0x80200000).contains(&raw) {
+            return None;
+        }
+        Some(raw - EFFECT_OFFSET)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,6 +382,32 @@ mod tests {
         let addr = vahn_fire_book_use::changed_addr();
         assert!(addr >= vahn_fire_book_use::VAHN_RECORD_BASE);
         assert!(addr < vahn_fire_book_use::VAHN_RECORD_BASE + 0x414);
+    }
+
+    #[test]
+    fn field_pack_recover_base_handles_zero_and_below_offset() {
+        // Empty RAM: load-dest pointer is zero, recovery should fail.
+        let zero = vec![0u8; 0x100000];
+        assert!(field_pack_load::recover_base(&zero).is_none());
+
+        // Plant the pinned mc2 value (`0x8014BD30`) at the right offset.
+        let mut ram = vec![0u8; 0x100000];
+        let off = (field_pack_load::LOAD_DEST_PLUS_OFFSET_PTR - 0x80000000) as usize;
+        ram[off..off + 4].copy_from_slice(&0x8014BD30u32.to_le_bytes());
+        let base = field_pack_load::recover_base(&ram).expect("should recover");
+        assert_eq!(base, field_pack_load::TOWN01_BASE_MC2);
+    }
+
+    #[test]
+    fn field_pack_constants_round_trip_through_recover() {
+        assert_eq!(
+            field_pack_load::TOWN01_BASE_MC2 + field_pack_load::EFFECT_OFFSET,
+            0x8014BD30
+        );
+        assert_eq!(
+            field_pack_load::TOWN0C_BASE_MC0 + field_pack_load::EFFECT_OFFSET,
+            0x800B4DF0
+        );
     }
 
     #[test]
