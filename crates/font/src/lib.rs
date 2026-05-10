@@ -17,6 +17,8 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
+pub mod builtin;
+
 /// Drawn region within each atlas cell. Source cells are 16×16 with one row
 /// and two columns of inter-glyph guard space; the actual glyph occupies the
 /// upper-left 14×15 pixels.
@@ -136,19 +138,28 @@ impl Font {
         let atlas_w = COLS * GLYPH_W;
         let atlas_h = ROWS * GLYPH_H;
         let mut atlas_rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-        // Paint each printable glyph cell as a solid white rect with a
-        // 1-pixel border so the cells visually separate. Bytes below
-        // `FIRST_CHAR` get a transparent cell.
+        // Built-in 5×7 ASCII bitmap font centred in each 14×15 cell. Bytes
+        // outside the printable ASCII range fall through to the unknown
+        // glyph (a hollow box) so non-ASCII text is still distinguishable
+        // from missing glyphs.
+        const GLYPH_PX_W: u32 = 5;
+        const GLYPH_PX_H: u32 = 7;
+        const PAD_X: u32 = (GLYPH_W - GLYPH_PX_W) / 2;
+        const PAD_Y: u32 = (GLYPH_H - GLYPH_PX_H) / 2;
         for c in FIRST_CHAR..=0xFFu8 {
             let Some((ox, oy)) = Self::glyph_origin(c) else {
                 continue;
             };
-            for dy in 0..GLYPH_H {
-                for dx in 0..GLYPH_W {
-                    // 1-pixel border — leave the perimeter of the cell
-                    // alpha=255, white, and the interior solid white too.
-                    let x = ox + dx;
-                    let y = oy + dy;
+            let g = builtin::glyph(c);
+            for row in 0..GLYPH_PX_H {
+                let bits = g[row as usize];
+                for col in 0..GLYPH_PX_W {
+                    let bit = bits >> (GLYPH_PX_W - 1 - col) & 1;
+                    if bit == 0 {
+                        continue;
+                    }
+                    let x = ox + PAD_X + col;
+                    let y = oy + PAD_Y + row;
                     let off = ((y * atlas_w + x) * 4) as usize;
                     atlas_rgba[off] = 255;
                     atlas_rgba[off + 1] = 255;

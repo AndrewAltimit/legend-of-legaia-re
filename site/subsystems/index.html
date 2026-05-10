@@ -156,6 +156,30 @@
       <div class="card-title">Dialog renderer pipeline</div>
       <div class="card-body"><code>engine-render::dialog_box_draws_for</code> takes the dialog panel's typed glyph stream + a <code>DialogBoxLayout</code> (origin / size / padding / line height / column count) and emits <code>TextDraw</code>s with per-glyph CLUT tinting via <code>dialog_clut_color</code>, greedy width-based wrap, and newline support; <code>dialog_panel_draws_for</code> is the engine-core compatibility shim.</div>
     </div>
+    <div class="card">
+      <div class="card-title">Field (pause) menu</div>
+      <div class="card-body"><code>engine-core::field_menu::FieldMenuSession</code>: seven-row pause panel (Items / Equip / Spells / Arts / Status / Save / Config) with a <code>FieldMenuRowMask</code> for per-row enable/disable; Cross enters a sub-session, the shell pushes the matching tracker, and <code>resume(close)</code> hands control back. Wired into <code>play-window</code> so Start in field opens the menu.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Status screen</div>
+      <div class="card-body"><code>engine-core::status_screen::StatusScreenSession</code>: per-character snapshot (level / XP / HP / MP / AP / six base stats / equipment list / element ranks). L1/R1 cycle through party members; the <code>StatusSnapshot</code> view is plain data so engines populate from the live record without coupling to the renderer.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Field spell menu</div>
+      <div class="card-body"><code>engine-core::spell_menu::SpellMenuSession</code>: out-of-battle casting flow (CharSelect &rarr; SpellSelect &rarr; TargetSelect). <code>is_field_usable</code> filters out battle-only effects (Damage / Capture / Escape / Buff); dead-target / Revive constraints are validated; resolution flows through the existing <code>spells::cast_spell</code> resolver and surfaces a typed <code>SpellMenuOutcome</code>.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Options &amp; key rebind</div>
+      <div class="card-body"><code>engine-core::options::OptionsSession</code>: typed <code>OptionsState</code> (BGM / SFX volume 0..=10, message speed 1..=8, vibration on/off, audio stereo/mono) with in-place editing. <code>engine-core::key_rebind::KeyRebindSession</code> drives the per-button rebind table; pressing any key in <code>AwaitingKey</code> swaps the binding into <code>input::Mapping</code> while clearing any conflicting key so two keys never report the same pad button.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Game-over panel</div>
+      <div class="card-body"><code>engine-core::game_over::GameOverSession</code>: three-row Continue/Retry/Quit panel with a fade-in counter; Continue dimmed when no save data is present. Engines invoke this on a <code>BattleSession::Defeat</code> outcome and route Continue back through <code>SaveSelectSession</code>.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Built-in fallback font</div>
+      <div class="card-body"><code>legaia_font::Font::placeholder</code> ships a hand-rolled 5&times;7 ASCII bitmap font in <code>legaia_font::builtin</code> so HUD text renders legibly even before <code>font-extract</code> populates the real dialog atlas. Printable-ASCII range plus a hollow-box unknown glyph; non-ASCII bytes still distinguish from missing glyphs.</div>
+    </div>
   </div>
 </section>
 

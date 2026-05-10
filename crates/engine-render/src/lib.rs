@@ -955,6 +955,428 @@ pub fn encounter_banner_draws_for(
     out
 }
 
+/// Plain-data row for the field-menu draw. Engines build these from
+/// `engine_core::field_menu::FieldMenuView::rows` so this crate doesn't
+/// depend on engine-core.
+pub struct FieldMenuRowView<'a> {
+    pub label: &'a str,
+    pub enabled: bool,
+}
+
+/// Build [`TextDraw`]s for the field (pause) menu panel. `cursor` is the
+/// row index; greyed-out rows render dim. The corner badges show money
+/// and the H:MM:SS play-time.
+pub fn field_menu_draws_for(
+    font: &legaia_font::Font,
+    rows: &[FieldMenuRowView<'_>],
+    cursor: u8,
+    money: u32,
+    play_time_seconds: u32,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.45, 0.45, 0.45, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+
+    let mut out = Vec::new();
+    let title = font.layout_ascii("MENU");
+    out.extend(text_draws_for(&title, pen, white));
+
+    for (i, row) in rows.iter().enumerate() {
+        let y = pen.1 + LINE_H + i as i32 * LINE_H;
+        let selected = i as u8 == cursor;
+        let color = if !row.enabled {
+            dim
+        } else if selected {
+            gold
+        } else {
+            white
+        };
+        if selected && row.enabled {
+            let cur = font.layout_ascii(">");
+            out.extend(text_draws_for(&cur, (pen.0, y), color));
+        }
+        let l = font.layout_ascii(row.label);
+        out.extend(text_draws_for(&l, (pen.0 + 14, y), color));
+    }
+
+    let foot_y = pen.1 + LINE_H + rows.len() as i32 * LINE_H + LINE_H;
+    let g = format!("{}G", money);
+    let g_l = font.layout_ascii(&g);
+    out.extend(text_draws_for(&g_l, (pen.0, foot_y), white));
+    let h = play_time_seconds / 3600;
+    let m = (play_time_seconds % 3600) / 60;
+    let s = play_time_seconds % 60;
+    let t = format!("{h:02}:{m:02}:{s:02}");
+    let t_l = font.layout_ascii(&t);
+    out.extend(text_draws_for(&t_l, (pen.0 + 110, foot_y), white));
+
+    out
+}
+
+/// One stat row for the status screen.
+pub struct StatusStatRow<'a> {
+    pub label: &'a str,
+    pub value: u32,
+}
+
+/// Plain-data view of a single character's status panel.
+pub struct StatusPanelView<'a> {
+    pub name: &'a str,
+    pub level: u8,
+    pub xp: u32,
+    pub xp_to_next: u32,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub mp: u16,
+    pub mp_max: u16,
+    pub ap: u8,
+    pub ap_max: u8,
+    pub stat_rows: &'a [StatusStatRow<'a>],
+    pub equip_rows: &'a [(&'a str, &'a str)],
+}
+
+/// Build [`TextDraw`]s for the status panel of one character. `nav_hint`
+/// is rendered in the bottom-right corner ("L1/R1: Switch  Circle: Back")
+/// and is `None` when the engine renders the hint elsewhere.
+pub fn status_screen_draws_for(
+    font: &legaia_font::Font,
+    panel: &StatusPanelView<'_>,
+    nav_hint: Option<&str>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+
+    let mut out = Vec::new();
+    let head = format!("{}  Lv.{}", panel.name, panel.level);
+    out.extend(text_draws_for(&font.layout_ascii(&head), pen, gold));
+
+    let xp_line = format!("XP {} / {}", panel.xp, panel.xp_to_next);
+    out.extend(text_draws_for(
+        &font.layout_ascii(&xp_line),
+        (pen.0, pen.1 + LINE_H),
+        white,
+    ));
+
+    let hpmp = format!(
+        "HP {:>4} / {:<4}   MP {:>3} / {:<3}   AP {:>2} / {:<2}",
+        panel.hp, panel.hp_max, panel.mp, panel.mp_max, panel.ap, panel.ap_max
+    );
+    out.extend(text_draws_for(
+        &font.layout_ascii(&hpmp),
+        (pen.0, pen.1 + LINE_H * 2),
+        white,
+    ));
+
+    for (i, sr) in panel.stat_rows.iter().enumerate() {
+        let y = pen.1 + LINE_H * 4 + i as i32 * LINE_H;
+        let line = format!("{:<8} {:>3}", sr.label, sr.value);
+        out.extend(text_draws_for(&font.layout_ascii(&line), (pen.0, y), white));
+    }
+    let after_stats_y = pen.1 + LINE_H * 4 + panel.stat_rows.len() as i32 * LINE_H + LINE_H;
+    out.extend(text_draws_for(
+        &font.layout_ascii("Equipment"),
+        (pen.0, after_stats_y),
+        gold,
+    ));
+    for (i, (slot, item)) in panel.equip_rows.iter().enumerate() {
+        let y = after_stats_y + LINE_H + i as i32 * LINE_H;
+        let line = format!("{:<10} {}", slot, item);
+        out.extend(text_draws_for(&font.layout_ascii(&line), (pen.0, y), white));
+    }
+
+    if let Some(hint) = nav_hint {
+        let after_equip_y =
+            after_stats_y + LINE_H + panel.equip_rows.len() as i32 * LINE_H + LINE_H;
+        out.extend(text_draws_for(
+            &font.layout_ascii(hint),
+            (pen.0, after_equip_y),
+            dim,
+        ));
+    }
+    out
+}
+
+/// One row in the spell-menu list.
+pub struct SpellRowView<'a> {
+    pub name: &'a str,
+    pub mp_cost: u8,
+    pub admissible: bool,
+}
+
+/// One row in the spell-menu target picker.
+pub struct SpellTargetView<'a> {
+    pub name: &'a str,
+    pub hp: u16,
+    pub hp_max: u16,
+    pub alive: bool,
+}
+
+/// Inputs for [`spell_menu_draws_for`]. Bundled so the function takes a
+/// single payload struct instead of 12 positional arguments.
+pub struct SpellMenuDrawArgs<'a> {
+    pub party_names: &'a [&'a str],
+    pub party_hp: &'a [(u16, u16)],
+    pub party_mp: &'a [(u16, u16)],
+    pub selected_caster: Option<u8>,
+    pub spells: &'a [SpellRowView<'a>],
+    pub selected_spell: Option<u8>,
+    pub targets: &'a [SpellTargetView<'a>],
+    pub selected_target: Option<u8>,
+    /// Cursor row inside the active phase column.
+    pub cursor: u8,
+    /// `0` = caster column, `1` = spell column, `2` = target column.
+    pub phase: u8,
+}
+
+/// Build [`TextDraw`]s for the field spell menu.
+pub fn spell_menu_draws_for(
+    font: &legaia_font::Font,
+    args: SpellMenuDrawArgs<'_>,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let SpellMenuDrawArgs {
+        party_names,
+        party_hp,
+        party_mp,
+        selected_caster,
+        spells,
+        selected_spell,
+        targets,
+        selected_target,
+        cursor,
+        phase,
+    } = args;
+    const LINE_H: i32 = 14;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+    let red: [f32; 4] = [1.0, 0.55, 0.55, 1.0];
+
+    let mut out = Vec::new();
+
+    out.extend(text_draws_for(&font.layout_ascii("SPELLS"), pen, gold));
+
+    // Caster column.
+    for (i, name) in party_names.iter().enumerate() {
+        let y = pen.1 + LINE_H + i as i32 * LINE_H;
+        let selected_here = phase == 0 && i as u8 == cursor;
+        let confirmed = selected_caster == Some(i as u8);
+        let (cur_hp, _) = party_hp.get(i).copied().unwrap_or((0, 0));
+        let (cur_mp, max_mp) = party_mp.get(i).copied().unwrap_or((0, 0));
+        let alive = cur_hp > 0;
+        let _ = confirmed;
+        let color = if !alive {
+            dim
+        } else if selected_here {
+            gold
+        } else {
+            white
+        };
+        if selected_here {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        }
+        let line = format!("{:<8} MP {:>3}/{:<3}", name, cur_mp, max_mp);
+        out.extend(text_draws_for(
+            &font.layout_ascii(&line),
+            (pen.0 + 14, y),
+            color,
+        ));
+    }
+
+    // Spell column (when entered).
+    if let Some(_caster) = selected_caster {
+        let col_x = pen.0 + 200;
+        for (i, sp) in spells.iter().enumerate() {
+            let y = pen.1 + LINE_H + i as i32 * LINE_H;
+            let selected_here = phase == 1 && i as u8 == cursor;
+            let _ = selected_spell;
+            let color = if !sp.admissible {
+                dim
+            } else if selected_here {
+                gold
+            } else {
+                white
+            };
+            if selected_here {
+                out.extend(text_draws_for(&font.layout_ascii(">"), (col_x, y), color));
+            }
+            let line = format!("{:<14} {:>3}MP", sp.name, sp.mp_cost);
+            out.extend(text_draws_for(
+                &font.layout_ascii(&line),
+                (col_x + 14, y),
+                color,
+            ));
+        }
+    }
+
+    // Target column (when entered).
+    if let Some(_spell) = selected_spell {
+        let col_x = pen.0 + 380;
+        for (i, t) in targets.iter().enumerate() {
+            let y = pen.1 + LINE_H + i as i32 * LINE_H;
+            let selected_here = phase == 2 && i as u8 == cursor;
+            let _ = selected_target;
+            let color = if !t.alive {
+                red
+            } else if selected_here {
+                gold
+            } else {
+                white
+            };
+            if selected_here {
+                out.extend(text_draws_for(&font.layout_ascii(">"), (col_x, y), color));
+            }
+            let line = format!("{:<8} {:>4}/{:<4}", t.name, t.hp, t.hp_max);
+            out.extend(text_draws_for(
+                &font.layout_ascii(&line),
+                (col_x + 14, y),
+                color,
+            ));
+        }
+    }
+    out
+}
+
+/// Build [`TextDraw`]s for the game-over panel.
+pub fn game_over_draws_for(
+    font: &legaia_font::Font,
+    cursor: u8,
+    continue_enabled: bool,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let red: [f32; 4] = [1.0, 0.4, 0.4, 1.0];
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.4, 0.4, 0.4, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+
+    let mut out = Vec::new();
+    out.extend(text_draws_for(&font.layout_ascii("GAME OVER"), pen, red));
+
+    let rows = ["Continue", "Retry", "Quit"];
+    for (i, row) in rows.iter().enumerate() {
+        let y = pen.1 + LINE_H * 2 + i as i32 * LINE_H;
+        let row_disabled = i == 0 && !continue_enabled;
+        let color = if row_disabled {
+            dim
+        } else if i as u8 == cursor {
+            gold
+        } else {
+            white
+        };
+        if i as u8 == cursor && !row_disabled {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        }
+        out.extend(text_draws_for(
+            &font.layout_ascii(row),
+            (pen.0 + 14, y),
+            color,
+        ));
+    }
+    out
+}
+
+/// One row in the options panel.
+pub struct OptionsRowView<'a> {
+    pub label: &'a str,
+    pub value: &'a str,
+}
+
+/// Build [`TextDraw`]s for the options screen.
+pub fn options_draws_for(
+    font: &legaia_font::Font,
+    rows: &[OptionsRowView<'_>],
+    cursor: u8,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 16;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+
+    let mut out = Vec::new();
+    out.extend(text_draws_for(&font.layout_ascii("CONFIG"), pen, gold));
+
+    for (i, row) in rows.iter().enumerate() {
+        let y = pen.1 + LINE_H * 2 + i as i32 * LINE_H;
+        let color = if i as u8 == cursor { gold } else { white };
+        if i as u8 == cursor {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        }
+        out.extend(text_draws_for(
+            &font.layout_ascii(row.label),
+            (pen.0 + 14, y),
+            color,
+        ));
+        out.extend(text_draws_for(
+            &font.layout_ascii(row.value),
+            (pen.0 + 180, y),
+            color,
+        ));
+    }
+    out.extend(text_draws_for(
+        &font.layout_ascii("Cross/Start: Save  Circle: Cancel"),
+        (
+            pen.0,
+            pen.1 + LINE_H * 2 + rows.len() as i32 * LINE_H + LINE_H,
+        ),
+        dim,
+    ));
+    out
+}
+
+/// Build [`TextDraw`]s for the key-rebind panel. Each row shows a button
+/// label paired with the currently-bound key string.
+pub fn key_rebind_draws_for(
+    font: &legaia_font::Font,
+    rows: &[(&str, &str)],
+    cursor: u8,
+    awaiting: bool,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    const LINE_H: i32 = 14;
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
+    let dim: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+
+    let mut out = Vec::new();
+    out.extend(text_draws_for(&font.layout_ascii("KEY REBIND"), pen, gold));
+
+    for (i, (button, key)) in rows.iter().enumerate() {
+        let y = pen.1 + LINE_H * 2 + i as i32 * LINE_H;
+        let selected = i as u8 == cursor;
+        let color = if selected { gold } else { white };
+        if selected {
+            out.extend(text_draws_for(&font.layout_ascii(">"), (pen.0, y), color));
+        }
+        out.extend(text_draws_for(
+            &font.layout_ascii(button),
+            (pen.0 + 14, y),
+            color,
+        ));
+        let value = if selected && awaiting { "..." } else { *key };
+        out.extend(text_draws_for(
+            &font.layout_ascii(value),
+            (pen.0 + 100, y),
+            color,
+        ));
+    }
+    out.extend(text_draws_for(
+        &font.layout_ascii("Cross: Bind  Circle: Cancel  Start: Save"),
+        (
+            pen.0,
+            pen.1 + LINE_H * 2 + rows.len() as i32 * LINE_H + LINE_H,
+        ),
+        dim,
+    ));
+    out
+}
+
 /// A wireframe line mesh: position + per-vertex RGB color, drawn as
 /// `LineList` (every pair of indices is one line segment). Unlit and
 /// depth-tested. Used by the stage-geometry viewer.
@@ -3714,5 +4136,149 @@ mod tests {
             .iter()
             .any(|d| d.color[0] >= 0.99 && d.color[1] >= 0.99);
         assert!(!any_white); // no body line.
+    }
+
+    #[test]
+    fn field_menu_draws_emit_rows_and_footer() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            FieldMenuRowView {
+                label: "Items",
+                enabled: true,
+            },
+            FieldMenuRowView {
+                label: "Equip",
+                enabled: true,
+            },
+            FieldMenuRowView {
+                label: "Save",
+                enabled: false,
+            },
+        ];
+        let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (16, 32));
+        assert!(!draws.is_empty());
+        // Selected row should produce ">" cursor glyph at the row x.
+        let any_gold = draws.iter().any(|d| d.color[1] > 0.7 && d.color[2] < 0.5);
+        assert!(any_gold);
+    }
+
+    #[test]
+    fn status_screen_draws_pack_panel() {
+        let font = legaia_font::synthetic_for_tests();
+        let stat_rows = [
+            StatusStatRow {
+                label: "STR",
+                value: 12,
+            },
+            StatusStatRow {
+                label: "DEF",
+                value: 9,
+            },
+        ];
+        let equip_rows = [("Weapon", "Bronze Sword"), ("Helmet", "(none)")];
+        let panel = StatusPanelView {
+            name: "Vahn",
+            level: 5,
+            xp: 200,
+            xp_to_next: 350,
+            hp: 60,
+            hp_max: 60,
+            mp: 24,
+            mp_max: 24,
+            ap: 0,
+            ap_max: 4,
+            stat_rows: &stat_rows,
+            equip_rows: &equip_rows,
+        };
+        let draws = status_screen_draws_for(&font, &panel, Some("L1/R1: Switch"), (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn game_over_dim_continue_when_disabled() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = game_over_draws_for(&font, 1, false, (100, 80));
+        let any_dim = draws.iter().any(|d| d.color[0] < 0.5);
+        assert!(any_dim);
+    }
+
+    #[test]
+    fn options_draws_render_rows() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            OptionsRowView {
+                label: "BGM",
+                value: "8/10",
+            },
+            OptionsRowView {
+                label: "SFX",
+                value: "8/10",
+            },
+        ];
+        let draws = options_draws_for(&font, &rows, 0, (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn key_rebind_awaiting_renders_dots() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [("Cross", "Z"), ("Circle", "S")];
+        let draws = key_rebind_draws_for(&font, &rows, 0, true, (16, 32));
+        assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn spell_menu_draws_in_each_phase() {
+        let font = legaia_font::synthetic_for_tests();
+        let names = ["Vahn", "Noa"];
+        let hp = [(60, 60), (50, 50)];
+        let mp = [(20, 24), (24, 24)];
+        let spells = [SpellRowView {
+            name: "Heal",
+            mp_cost: 4,
+            admissible: true,
+        }];
+        let targets = [SpellTargetView {
+            name: "Vahn",
+            hp: 30,
+            hp_max: 60,
+            alive: true,
+        }];
+        let names_slice: &[&str] = &names;
+        let draws = spell_menu_draws_for(
+            &font,
+            SpellMenuDrawArgs {
+                party_names: names_slice,
+                party_hp: &hp,
+                party_mp: &mp,
+                selected_caster: None,
+                spells: &spells,
+                selected_spell: None,
+                targets: &targets,
+                selected_target: None,
+                cursor: 0,
+                phase: 0,
+            },
+            (16, 32),
+        );
+        assert!(!draws.is_empty());
+        // Phase 2 with all confirmed selections renders all three columns.
+        let draws2 = spell_menu_draws_for(
+            &font,
+            SpellMenuDrawArgs {
+                party_names: names_slice,
+                party_hp: &hp,
+                party_mp: &mp,
+                selected_caster: Some(0),
+                spells: &spells,
+                selected_spell: Some(0),
+                targets: &targets,
+                selected_target: Some(0),
+                cursor: 0,
+                phase: 2,
+            },
+            (16, 32),
+        );
+        assert!(draws2.len() > draws.len());
     }
 }
