@@ -8,7 +8,7 @@
 //! `+0x10E` (Spirit-max), `+0x11C..+0x126` (six u16 stats at 2-byte stride),
 //! `+0x130` (rank counter), `+0x161..` (per-spell levels). A magic-rank-up
 //! and character-level-up save triplet for Vahn pinned the destination
-//! offsets ([`crate::levelup::observations::vahn_mc8_to_mc9`]).
+//! offsets ([`crate::levelup::observations::vahn_4_level_jump`]).
 //!
 //! The retail growth values themselves do *not* live in the level-up overlay's
 //! data section - a writer-search across the captured `overlay_magic_level_up_*`
@@ -29,7 +29,7 @@
 //!
 //! Engines wiring this module today should treat the shipped values as
 //! placeholders and override per-Seru with [`SeruStatTable::insert`]. The
-//! pinned destination offsets ([`crate::levelup::observations::vahn_mc8_to_mc9`])
+//! pinned destination offsets ([`crate::levelup::observations::vahn_4_level_jump`])
 //! still describe the *consumer* layout faithfully, so any future capture
 //! that pins the *source* table can drop into the existing API without
 //! re-shaping it.
@@ -50,7 +50,7 @@
 //! Both APIs are clean-room: no on-disc bytes, no decompiled values. The
 //! shipped `vanilla_*` constructors below are placeholder pre-balance values
 //! roughly matching the retail Vahn / Noa / Gala curves the user sees during
-//! the early game (verified by the `vahn_mc8_to_mc9` capture).
+//! the early game (verified by the legacy `vahn_4_level_jump` capture).
 
 use crate::levelup::{StatGain, StatGrowthCurve};
 use std::collections::HashMap;

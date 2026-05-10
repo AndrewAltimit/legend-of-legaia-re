@@ -288,11 +288,12 @@ impl LevelUpObservation {
 pub mod observations {
     use super::LevelUpObservation;
 
-    /// Vahn level-up captured from a pre/post save pair in the **legacy**
-    /// `mc7→mc9` corpus (rotated out when the per-character level-up
-    /// triplets shipped). Bytes are kept here as historical fact -
-    /// engines that want a Vahn observation should re-capture against
-    /// the new corpus once a Vahn-specific triplet lands.
+    /// Vahn 4-level-jump observation captured from a pre/post save pair
+    /// in the **legacy** corpus (source saves rotated out of the active
+    /// save-state corpus when the per-character level-up triplets
+    /// shipped). Bytes are kept here as historical fact - engines that
+    /// want a Vahn observation should re-capture against the active
+    /// corpus once a Vahn-specific triplet lands.
     ///
     /// Bytes mapped to per-stat deltas (from the original capture):
     /// - `+0x11C`: `0xDD → 0x03` (rolled past 0xFF - `+0x26` mod 256)
@@ -308,9 +309,9 @@ pub mod observations {
     /// - `+0x130`: `0x02 → 0x03` (+1, rank counter - not a stat)
     ///
     /// SP_max byte at `+0x10E`: `0x3A → 0x42` (+8).
-    pub fn vahn_mc8_to_mc9() -> LevelUpObservation {
+    pub fn vahn_4_level_jump() -> LevelUpObservation {
         LevelUpObservation {
-            label: "Vahn 4-level jump (legacy mc8→mc9)".into(),
+            label: "Vahn 4-level jump (legacy)".into(),
             from_level: 6,
             to_level: 10,
             hp_gained: 0, // not surfaced in the diff (record's hp_max stayed steady)
@@ -327,12 +328,11 @@ pub mod observations {
         }
     }
 
-    /// Noa level-up captured from `mc4` (pre-level-up battle frame) to
-    /// `mc7` (settled post-level-up frame). Spans Noa's `cumulative XP
-    /// 102 → 336` reward, a 4-level jump across the early-game
-    /// thresholds (L2 → L6).
+    /// Noa 4-level-jump observation captured from a pre / mid / post
+    /// save triplet at battle scene `map01`. Spans Noa's cumulative XP
+    /// `102 → 336` reward across the early-game thresholds (L2 → L6).
     ///
-    /// Settled deltas (mc4 → mc7):
+    /// Settled deltas:
     /// - HP_max: `0x96 → 0xB6` (+32) at `+0x106` (live) and `+0x11C` (record)
     /// - MP_max: `0x0A → 0x10` (+6) at `+0x10A` (live) and `+0x11E` (record)
     /// - SP_max: `0x38 → 0x60` (+40) at `+0x10E` (live only; record at
@@ -342,11 +342,11 @@ pub mod observations {
     /// - XP at `+0x004..+0x005` (u16 LE): 102 → 336 (+234, Noa's share
     ///   of the battle reward)
     ///
-    /// The phase split (mc4 → mc5 record, mc5 → mc6 live copy, mc6 → mc7
-    /// settle) is documented in [`crate::capture_observations::char_level_up`].
-    pub fn noa_mc4_to_mc7() -> LevelUpObservation {
+    /// The 3-phase write split (record write → live copy → settle) is
+    /// documented in [`crate::capture_observations::char_level_up`].
+    pub fn noa_4_level_jump() -> LevelUpObservation {
         LevelUpObservation {
-            label: "Noa 4-level jump (mc4→mc7)".into(),
+            label: "Noa 4-level jump".into(),
             from_level: 2,
             to_level: 6,
             hp_gained: 32,
@@ -362,12 +362,11 @@ pub mod observations {
         }
     }
 
-    /// Gala level-up captured from `mc7` (pre-level-up battle frame) to
-    /// `mc9` (settled post-level-up frame). Spans Gala's `cumulative XP
-    /// 140 → 394` reward, a 4-level jump across the early-game
-    /// thresholds (L3 → L7).
+    /// Gala 4-level-jump observation captured from a pre / mid / post
+    /// save triplet at battle scene `map01`. Spans Gala's cumulative XP
+    /// `140 → 394` reward across the early-game thresholds (L3 → L7).
     ///
-    /// Settled deltas (mc7 → mc9):
+    /// Settled deltas:
     /// - HP_max: `0xD2 → 0xFE` (+44) at `+0x106` (live) and `+0x11C` (record)
     /// - MP_max: `0x28 → 0x30` (+8) at `+0x10A` (live) and `+0x11E` (record)
     /// - SP_max: **no change** at `+0x10E` (Gala uses physical Tactical
@@ -376,11 +375,12 @@ pub mod observations {
     /// - Rank counter at `+0x130`: `0x01 → 0x02` (+1)
     /// - XP at `+0x004..+0x005` (u16 LE): 140 → 394 (+254, Gala's share)
     ///
-    /// The phase split (mc7 → mc8 record, mc8 → mc9 live copy) is
-    /// documented in [`crate::capture_observations::char_level_up`].
-    pub fn gala_mc7_to_mc9() -> LevelUpObservation {
+    /// The 2-phase write split (record write → live copy + settle in
+    /// one frame) is documented in
+    /// [`crate::capture_observations::char_level_up`].
+    pub fn gala_4_level_jump() -> LevelUpObservation {
         LevelUpObservation {
-            label: "Gala 4-level jump (mc7→mc9)".into(),
+            label: "Gala 4-level jump".into(),
             from_level: 3,
             to_level: 7,
             hp_gained: 44,
@@ -843,8 +843,8 @@ mod tests {
     }
 
     #[test]
-    fn vahn_mc8_to_mc9_observation_matches_capture() {
-        let obs = observations::vahn_mc8_to_mc9();
+    fn vahn_legacy_observation_matches_capture() {
+        let obs = observations::vahn_4_level_jump();
         assert_eq!(obs.from_level, 6);
         assert_eq!(obs.to_level, 10);
         assert_eq!(obs.levels_gained(), 4);
@@ -860,8 +860,8 @@ mod tests {
     }
 
     #[test]
-    fn noa_mc4_to_mc7_observation_pins_settled_deltas() {
-        let obs = observations::noa_mc4_to_mc7();
+    fn noa_observation_pins_settled_deltas() {
+        let obs = observations::noa_4_level_jump();
         assert_eq!(obs.from_level, 2);
         assert_eq!(obs.to_level, 6);
         assert_eq!(obs.levels_gained(), 4);
@@ -881,8 +881,8 @@ mod tests {
     }
 
     #[test]
-    fn gala_mc7_to_mc9_observation_pins_settled_deltas() {
-        let obs = observations::gala_mc7_to_mc9();
+    fn gala_observation_pins_settled_deltas() {
+        let obs = observations::gala_4_level_jump();
         assert_eq!(obs.from_level, 3);
         assert_eq!(obs.to_level, 7);
         assert_eq!(obs.levels_gained(), 4);

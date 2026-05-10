@@ -503,40 +503,40 @@ pub mod str_fmv_overlay {
     }
 }
 
-/// Character-level-up write-footprint observation pinned across the
-/// `mc4..=mc9` save corpus. Three saves per character span pre /
-/// during / post the level-up event:
+/// Character-level-up write-footprint observation pinned across a
+/// per-character pre / mid / post save triplet (battle scene `map01`,
+/// 4-level XP jump):
 ///
-/// | Character | Slot | Saves         | XP delta (u16 LE at `+0x004`) |
-/// |-----------|-----:|---------------|--------------------------------|
-/// | Noa       | 1    | mc4 → mc5 → mc6 → mc7 settle | `102 → 336` (+234) |
-/// | Gala      | 2    | mc7 → mc8 → mc9 (settled in mc9) | `140 → 394` (+254) |
+/// | Character | Slot | Triplet shape       | XP delta (u16 LE at `+0x004`) |
+/// |-----------|-----:|---------------------|--------------------------------|
+/// | Noa       | 1    | pre → record → live → settle | `102 → 336` (+234) |
+/// | Gala      | 2    | pre → record → live+settle | `140 → 394` (+254) |
 ///
-/// Each level-up event splits the character record write across multiple
-/// frames. For Noa the captured save-pair sequence pins:
+/// Each level-up event splits the character record write across
+/// multiple frames. For Noa the captured triplet pins three phases:
 ///
-/// 1. **Record write (`mc4 → mc5`)**. The persistent record stat window
-///    at `+0x11C..+0x12D` (9 u16 LE values), the XP at `+0x004..+0x005`,
+/// 1. **Record write**. The persistent record stat window at
+///    `+0x11C..+0x12D` (9 u16 LE values), the XP at `+0x004..+0x005`,
 ///    and the rank counter at `+0x130` are written in one frame. The
 ///    live in-battle stat copy at `+0x104..+0x11B` is unchanged at this
 ///    point.
-/// 2. **Live copy (`mc5 → mc6`)**. The live stat copy mirrors the record
-///    copy: HP_cur (`+0x104`), MP_cur (`+0x108`), and the six u16 stats at
+/// 2. **Live copy**. The live stat copy mirrors the record copy: HP_cur
+///    (`+0x104`), MP_cur (`+0x108`), and the six u16 stats at
 ///    `+0x110..+0x11B` settle to their post-level-up values. HP_max /
 ///    MP_max / SP_max in the live copy at `+0x106 / +0x10A / +0x10E`
 ///    have NOT yet been written.
-/// 3. **Settle (`mc6 → mc7`)**. The live HP_max / MP_max / SP_max settle
-///    at `+0x106 / +0x10A / +0x10E`. After this frame the live and
-///    record copies of HP_max / MP_max agree.
+/// 3. **Settle**. The live HP_max / MP_max / SP_max settle at
+///    `+0x106 / +0x10A / +0x10E`. After this frame the live and record
+///    copies of HP_max / MP_max agree.
 ///
-/// Gala's level-up sequence runs in two phases (mc7 → mc8 record, mc8 →
-/// mc9 live + settle); the Gala capture lacks a dedicated "record-only"
-/// frame, so HP_max / MP_max / SP_max in the live copy land in the
-/// `mc8 → mc9` step alongside HP_cur / MP_cur / live stats.
+/// Gala's level-up sequence runs in two phases (record → live+settle in
+/// one frame); the Gala capture lacks a dedicated "record-only" frame,
+/// so HP_max / MP_max / SP_max in the live copy land in the live-copy
+/// step alongside HP_cur / MP_cur / live stats.
 ///
 /// The pinned byte deltas live in [`crate::levelup::observations`]:
-/// - [`crate::levelup::observations::noa_mc4_to_mc7`]
-/// - [`crate::levelup::observations::gala_mc7_to_mc9`]
+/// - [`crate::levelup::observations::noa_4_level_jump`]
+/// - [`crate::levelup::observations::gala_4_level_jump`]
 ///
 /// **Per-character record bases** (verified across the captured corpus,
 /// stride `0x414`):

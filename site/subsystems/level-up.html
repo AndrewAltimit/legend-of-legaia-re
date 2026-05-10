@@ -96,28 +96,28 @@
 
 <section class="doc-section" id="captured-character-level-up">
   <h2>Captured per-character level-up footprint</h2>
-  <p>Three per-character level-up triplets in the mednafen save corpus pin the character-record write footprint of a level-up event. Each triplet captures pre / mid / post frames of a single 4-level jump:</p>
+  <p>Three per-character 4-level-jump observations have been captured from the mednafen save corpus. Each one is a settled pre&rarr;post diff over the character record window; the underlying captures are pre / mid / post save triplets at battle scene <code>map01</code>.</p>
   <table class="data-table">
-    <thead><tr><th>Character</th><th>Slot</th><th>Saves</th><th>XP <code>+0x004</code> (u16 LE)</th><th>HP_max</th><th>MP_max</th><th>SP_max</th></tr></thead>
+    <thead><tr><th>Character</th><th>Slot</th><th>XP <code>+0x004</code> (u16 LE)</th><th>HP_max</th><th>MP_max</th><th>SP_max</th></tr></thead>
     <tbody>
-      <tr><td>Vahn (legacy)</td><td>0</td><td>mc8 &rarr; mc9 (rotated out)</td><td>365 &rarr; 730</td><td>(<code>+0x126</code> wrap, +38)</td><td>+8</td><td>+8</td></tr>
-      <tr><td>Noa</td><td>1</td><td>mc4 &rarr; mc5 &rarr; mc6 &rarr; mc7</td><td>102 &rarr; 336</td><td>+32</td><td>+6</td><td><strong>+40</strong></td></tr>
-      <tr><td>Gala</td><td>2</td><td>mc7 &rarr; mc8 &rarr; mc9</td><td>140 &rarr; 394</td><td>+44</td><td>+8</td><td><strong>0</strong></td></tr>
+      <tr><td>Vahn (legacy)</td><td>0</td><td>365 &rarr; 730</td><td>(<code>+0x126</code> wrap, +38)</td><td>+8</td><td>+8</td></tr>
+      <tr><td>Noa</td><td>1</td><td>102 &rarr; 336</td><td>+32</td><td>+6</td><td><strong>+40</strong></td></tr>
+      <tr><td>Gala</td><td>2</td><td>140 &rarr; 394</td><td>+44</td><td>+8</td><td><strong>0</strong></td></tr>
     </tbody>
   </table>
-  <p>Codified in <code>engine_core::levelup::observations</code>: <code>vahn_mc8_to_mc9</code> (legacy historical fact), <code>noa_mc4_to_mc7</code>, and <code>gala_mc7_to_mc9</code>. <code>LevelUpObservation::stat_deltas</code> is an 18-byte window covering the persistent record stats at <code>+0x11C..+0x12D</code> (9 u16 LE values: HP_max, MP_max, per-stat cap = 100, six record-side stats). <code>LevelUpObservation::record_stats_u16()</code> lifts the window as <code>[u16; 9]</code>.</p>
+  <p>Codified in <code>engine_core::levelup::observations</code>: <code>vahn_4_level_jump</code> (legacy historical fact, source saves rotated out of the active corpus), <code>noa_4_level_jump</code>, and <code>gala_4_level_jump</code>. <code>LevelUpObservation::stat_deltas</code> is an 18-byte window covering the persistent record stats at <code>+0x11C..+0x12D</code> (9 u16 LE values: HP_max, MP_max, per-stat cap = 100, six record-side stats). <code>LevelUpObservation::record_stats_u16()</code> lifts the window as <code>[u16; 9]</code>.</p>
 
   <h3>Multi-frame phase split</h3>
-  <p>The level-up event splits the character-record write across multiple frames. Noa&rsquo;s capture pins three phases:</p>
+  <p>The level-up event splits the character-record write across multiple frames. Noa&rsquo;s triplet pins three phases:</p>
   <table>
-    <thead><tr><th>Phase</th><th>Save pair</th><th>Writes</th></tr></thead>
+    <thead><tr><th>Phase</th><th>Window</th><th>Writes</th></tr></thead>
     <tbody>
-      <tr><td>Record write</td><td>mc4 &rarr; mc5</td><td><code>+0x11C..+0x12D</code> (record stats), <code>+0x004</code> (XP), <code>+0x130</code> (rank counter +1)</td></tr>
-      <tr><td>Live copy</td><td>mc5 &rarr; mc6</td><td><code>+0x104..+0x11B</code> (HP_cur, MP_cur, six u16 live stats)</td></tr>
-      <tr><td>Settle</td><td>mc6 &rarr; mc7</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_max / MP_max / SP_max settle)</td></tr>
+      <tr><td>Record write</td><td>pre &rarr; mid&#x2081;</td><td><code>+0x11C..+0x12D</code> (record stats), <code>+0x004</code> (XP), <code>+0x130</code> (rank counter +1)</td></tr>
+      <tr><td>Live copy</td><td>mid&#x2081; &rarr; mid&#x2082;</td><td><code>+0x104..+0x11B</code> (HP_cur, MP_cur, six u16 live stats)</td></tr>
+      <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> (live HP_max / MP_max / SP_max settle)</td></tr>
     </tbody>
   </table>
-  <p>Gala&rsquo;s level-up runs in two phases (mc7 &rarr; mc8 record write; mc8 &rarr; mc9 live copy + settle in the same frame). Per-character record bases (Vahn <code>0x80084708</code>, Noa <code>0x80084B1C</code>, Gala <code>0x80084F30</code>, slot 3 <code>0x80085344</code>, stride <code>0x414</code>) are documented in <code>engine_core::capture_observations::char_level_up</code> with helpers <code>read_record_stats</code> / <code>read_rank_counter</code> / <code>read_xp_u16</code>. Disc-gated tests <code>noa_level_up_triplet_pins_phase_split_and_settled_deltas</code> + <code>gala_level_up_triplet_pins_phase_split_and_settled_deltas</code> in <code>crates/mednafen/tests/real_saves.rs</code> exercise both triplets end-to-end.</p>
+  <p>Gala&rsquo;s level-up runs in two phases (record write, then live copy + settle collapsed into one frame). Per-character record bases (Vahn <code>0x80084708</code>, Noa <code>0x80084B1C</code>, Gala <code>0x80084F30</code>, slot 3 <code>0x80085344</code>, stride <code>0x414</code>) are documented in <code>engine_core::capture_observations::char_level_up</code> with helpers <code>read_record_stats</code> / <code>read_rank_counter</code> / <code>read_xp_u16</code>. Disc-gated tests <code>noa_level_up_triplet_pins_phase_split_and_settled_deltas</code> + <code>gala_level_up_triplet_pins_phase_split_and_settled_deltas</code> in <code>crates/mednafen/tests/real_saves.rs</code> exercise both triplets end-to-end. The slot indices that hold each frame in the active corpus live in <code>scripts/mednafen/scenarios.toml</code>; they rotate as the corpus is re-captured for new investigations.</p>
 
   <h3>Per-character semantic findings</h3>
   <ul>

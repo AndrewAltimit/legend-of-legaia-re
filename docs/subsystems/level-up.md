@@ -68,21 +68,22 @@ The tracker supports per-slot overrides via `with_stat_gains([StatGain; 4])`.
 
 ## Captured per-character level-up footprint
 
-Three per-character level-up triplets in the mednafen save corpus pin the
-character record write footprint of a level-up event. Each triplet captures
-pre / mid / post frames of a single 4-level jump:
+Three per-character 4-level-jump observations have been captured from the
+mednafen save corpus. Each one is a settled pre→post diff over the
+character record window; the underlying captures are pre / mid / post
+save triplets at battle scene `map01`.
 
-| Character | Slot | Saves | XP at `+0x004` (u16 LE) | HP_max delta | MP_max delta | SP_max delta |
-|---|---:|---|---|---:|---:|---:|
-| Vahn (legacy) | 0 | mc8 → mc9 (rotated out) | 365 → 730 (+365) | (+0x126 wrap, +38) | +8 | +8 |
-| Noa | 1 | mc4 → mc5 → mc6 → mc7 | 102 → 336 (+234) | +32 | +6 | **+40** |
-| Gala | 2 | mc7 → mc8 → mc9 | 140 → 394 (+254) | +44 | +8 | **0** |
+| Character | Slot | XP delta (u16 LE at `+0x004`) | HP_max | MP_max | SP_max |
+|---|---:|---|---:|---:|---:|
+| Vahn (legacy) | 0 | 365 → 730 (+365) | (`+0x126` wrap, +38) | +8 | +8 |
+| Noa | 1 | 102 → 336 (+234) | +32 | +6 | **+40** |
+| Gala | 2 | 140 → 394 (+254) | +44 | +8 | **0** |
 
 Codified in [`engine_core::levelup::observations`](../../crates/engine-core/src/levelup.rs):
-- `vahn_mc8_to_mc9` (legacy historical fact - the source saves were rotated out
-  when the Noa / Gala triplets shipped).
-- `noa_mc4_to_mc7` (settled delta across Noa's 3-frame split).
-- `gala_mc7_to_mc9` (settled delta across Gala's 2-frame split).
+- `vahn_4_level_jump` (legacy historical fact - the source saves were rotated
+  out of the active corpus when the Noa / Gala triplets shipped).
+- `noa_4_level_jump` (settled delta across Noa's 3-phase split).
+- `gala_4_level_jump` (settled delta across Gala's 2-phase split).
 
 Each `LevelUpObservation::stat_deltas` is an 18-byte window covering
 `+0x11C..+0x12D` (9 u16 LE values: HP_max, MP_max, per-stat cap (always 100),
@@ -92,16 +93,20 @@ window as `[u16; 9]`.
 ### Phase split (multi-frame writes)
 
 The level-up event splits the character record write across multiple frames.
-For Noa the captured corpus pins three phases:
+For Noa the captured triplet pins three phases:
 
-| Phase | Save pair | Writes |
+| Phase | Window | Writes |
 |---|---|---|
-| Record write | mc4 → mc5 | `+0x11C..+0x12D` (record stat window), `+0x004..+0x005` (XP), `+0x130` (rank counter +1) |
-| Live copy | mc5 → mc6 | `+0x104..+0x11B` (HP_cur, MP_cur, six u16 live stats) |
-| Settle | mc6 → mc7 | `+0x106 / +0x10A / +0x10E` (live HP_max / MP_max / SP_max settle) |
+| Record write | pre → mid₁ | `+0x11C..+0x12D` (record stat window), `+0x004..+0x005` (XP), `+0x130` (rank counter +1) |
+| Live copy | mid₁ → mid₂ | `+0x104..+0x11B` (HP_cur, MP_cur, six u16 live stats) |
+| Settle | mid₂ → post | `+0x106 / +0x10A / +0x10E` (live HP_max / MP_max / SP_max settle) |
 
-Gala's level-up runs in two phases (mc7 → mc8 record write, mc8 → mc9 live
-copy + settle in the same frame).
+Gala's level-up runs in two phases (record write, then live copy + settle
+collapsed into one frame).
+
+The slot indices that hold each frame in the active corpus live in
+[`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml);
+they rotate as the corpus is re-captured for new investigations.
 
 The phase split + per-character record bases (Vahn `0x80084708`,
 Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`)

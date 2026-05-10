@@ -146,7 +146,7 @@ mod xp_tests {
     }
 
     #[test]
-    fn vahn_mc8_to_mc9_xp_pin_matches_table() {
+    fn vahn_legacy_4_level_jump_xp_pin_matches_table() {
         // Pre-grant cumulative 365 reaches level… check.
         let pre = level_for_cumulative_xp(365);
         // 50, 106, 168, 237, 312, 393… so 365 is between L6 (312) and L7 (393).

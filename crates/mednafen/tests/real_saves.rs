@@ -168,12 +168,15 @@ fn scenarios_manifest_resolves_every_save() {
 
 #[test]
 fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
-    // mc4 (pre-Noa-level-up) → mc5 (record-write frame) → mc6
-    // (live-copy frame) → mc7 (settled) spans Noa's level-up event in
-    // battle scene `map01`. Asserts (a) the multi-frame write split
-    // documented in `engine_core::capture_observations::char_level_up`,
-    // and (b) the settled byte-level deltas that
-    // `engine_core::levelup::observations::noa_mc4_to_mc7` codifies.
+    // The four save slots assigned to Noa's level-up in the manifest
+    // span pre / record-write / live-copy / settled frames at battle
+    // scene `map01`. Asserts (a) the multi-frame write split documented
+    // in `engine_core::capture_observations::char_level_up`, and (b)
+    // the settled byte-level deltas that
+    // `engine_core::levelup::observations::noa_4_level_jump` codifies.
+    //
+    // Slot indices read here from the active corpus; see
+    // `scripts/mednafen/scenarios.toml` for the current assignment.
     if !require_slot_scenes(
         "noa_level_up_triplet",
         &[(4, "map01"), (5, "map01"), (6, "map01"), (7, "map01")],
@@ -196,13 +199,13 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
     let r7 = s7.main_ram().unwrap();
 
     use legaia_engine_core::capture_observations::char_level_up;
-    use legaia_engine_core::levelup::observations::noa_mc4_to_mc7;
+    use legaia_engine_core::levelup::observations::noa_4_level_jump;
 
     let noa_record = (char_level_up::NOA_BASE, char_level_up::NOA_BASE + 0x414);
 
-    // Phase 1: mc4 → mc5 writes the persistent record stat window
-    // (+0x11C..+0x12D), XP (+0x004), and rank (+0x130). The live in-battle
-    // copy at +0x104..+0x11B is unchanged at this point.
+    // Phase 1 (pre → record-write): writes the persistent record stat
+    // window (+0x11C..+0x12D), XP (+0x004), and rank (+0x130). The live
+    // in-battle copy at +0x104..+0x11B is unchanged at this point.
     let opts = DiffOptions {
         window: noa_record,
         merge_gap: 0,
@@ -216,7 +219,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
             .regions
             .iter()
             .any(|r| record_window.contains(&r.start_addr)),
-        "phase 1 (mc4→mc5) should write into the record stat window"
+        "phase 1 (pre → record-write) should write into the record stat window"
     );
     assert!(
         phase1
@@ -233,31 +236,31 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
         "phase 1 should NOT touch the live in-battle window (+0x104..+0x11B)"
     );
 
-    // Phase 2: mc5 → mc6 writes the live in-battle copy.
+    // Phase 2 (record-write → live-copy): writes the live in-battle copy.
     let phase2 = diff_ram(r5, r6, "noa_record_write", "noa_live_copy", &opts);
     assert!(
         phase2
             .regions
             .iter()
             .any(|r| live_window.contains(&r.start_addr)),
-        "phase 2 (mc5→mc6) should write into the live in-battle window"
+        "phase 2 (record-write → live-copy) should write into the live in-battle window"
     );
 
-    // Phase 3 (settle): mc6 → mc7 settles HP_max / MP_max / SP_max in the
-    // live copy at +0x106 / +0x10A / +0x10E.
+    // Phase 3 (live-copy → settle): settles HP_max / MP_max / SP_max in
+    // the live copy at +0x106 / +0x10A / +0x10E.
     let phase3 = diff_ram(r6, r7, "noa_live_copy", "noa_settle", &opts);
     assert!(
         phase3
             .regions
             .iter()
             .any(|r| r.start_addr == char_level_up::NOA_BASE + 0x10E),
-        "phase 3 (mc6→mc7) should settle SP_max at +0x10E"
+        "phase 3 (live-copy → settle) should settle SP_max at +0x10E"
     );
 
-    // Settled deltas (mc4 → mc7) match the codified observation.
+    // Settled deltas (pre → settle) match the codified observation.
     let stats4 = char_level_up::read_record_stats(r4, char_level_up::NOA_BASE).unwrap();
     let stats7 = char_level_up::read_record_stats(r7, char_level_up::NOA_BASE).unwrap();
-    let obs = noa_mc4_to_mc7();
+    let obs = noa_4_level_jump();
     let obs_stats = obs.record_stats_u16();
     for (i, (a, b)) in stats4.iter().zip(stats7.iter()).enumerate() {
         let delta = b.wrapping_sub(*a);
@@ -273,9 +276,12 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
 
 #[test]
 fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
-    // mc7 (pre-Gala-level-up) → mc8 (record-write frame) → mc9 (settled)
-    // spans Gala's level-up event in battle scene `map01`. Mirrors the
-    // Noa test but with the Gala record at slot 2.
+    // The three save slots assigned to Gala's level-up in the manifest
+    // span pre / record-write / live-settled frames at battle scene
+    // `map01`. Mirrors the Noa test but with the Gala record at slot 2.
+    //
+    // Slot indices read here from the active corpus; see
+    // `scripts/mednafen/scenarios.toml` for the current assignment.
     if !require_slot_scenes(
         "gala_level_up_triplet",
         &[(7, "map01"), (8, "map01"), (9, "map01")],
@@ -294,7 +300,7 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
     let r9 = s9.main_ram().unwrap();
 
     use legaia_engine_core::capture_observations::char_level_up;
-    use legaia_engine_core::levelup::observations::gala_mc7_to_mc9;
+    use legaia_engine_core::levelup::observations::gala_4_level_jump;
 
     let gala_record = (char_level_up::GALA_BASE, char_level_up::GALA_BASE + 0x414);
     let opts = DiffOptions {
@@ -303,7 +309,7 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
         min_bytes_changed: 1,
     };
 
-    // Phase 1: mc7 → mc8 writes the record stat window + XP + rank.
+    // Phase 1 (pre → record-write): writes the record stat window + XP + rank.
     let record_window = char_level_up::GALA_BASE + 0x11C..char_level_up::GALA_BASE + 0x12E;
     let live_window = char_level_up::GALA_BASE + 0x104..char_level_up::GALA_BASE + 0x11C;
     let phase1 = diff_ram(r7, r8, "gala_pre", "gala_record_write", &opts);
@@ -312,7 +318,7 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
             .regions
             .iter()
             .any(|r| record_window.contains(&r.start_addr)),
-        "phase 1 (mc7→mc8) should write into the record stat window"
+        "phase 1 (pre → record-write) should write into the record stat window"
     );
     assert!(
         phase1
@@ -322,16 +328,16 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
         "phase 1 should bump the rank counter at +0x130"
     );
 
-    // Phase 2: mc8 → mc9 writes the live in-battle copy. Gala's capture
-    // collapses HP_cur/MP_cur/live-stats and HP_max/MP_max into one
-    // frame.
+    // Phase 2 (record-write → live+settle): writes the live in-battle
+    // copy. Gala's capture collapses HP_cur/MP_cur/live-stats and
+    // HP_max/MP_max into one frame.
     let phase2 = diff_ram(r8, r9, "gala_record_write", "gala_live_copy", &opts);
     assert!(
         phase2
             .regions
             .iter()
             .any(|r| live_window.contains(&r.start_addr)),
-        "phase 2 (mc8→mc9) should write into the live in-battle window"
+        "phase 2 (record-write → live+settle) should write into the live in-battle window"
     );
 
     // Gala doesn't gain SP_max from level-up (physical Tactical Arts
@@ -340,10 +346,10 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
     assert_eq!(r7[r10e_off], r8[r10e_off]);
     assert_eq!(r7[r10e_off], r9[r10e_off]);
 
-    // Settled deltas (mc7 → mc9) match the codified observation.
+    // Settled deltas (pre → live+settle) match the codified observation.
     let stats7 = char_level_up::read_record_stats(r7, char_level_up::GALA_BASE).unwrap();
     let stats9 = char_level_up::read_record_stats(r9, char_level_up::GALA_BASE).unwrap();
-    let obs = gala_mc7_to_mc9();
+    let obs = gala_4_level_jump();
     let obs_stats = obs.record_stats_u16();
     for (i, (a, b)) in stats7.iter().zip(stats9.iter()).enumerate() {
         let delta = b.wrapping_sub(*a);

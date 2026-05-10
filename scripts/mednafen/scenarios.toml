@@ -204,7 +204,7 @@ hint = "Old town01 field-pack region. In mc3 this is zeroed - the loader clears 
 #   mc7 = doubles as Gala-pre AND Noa-settle (HP_max/MP_max/SP_max
 #         settled in live copy)
 #
-# Codified deltas: `engine_core::levelup::observations::noa_mc4_to_mc7`.
+# Codified deltas: `engine_core::levelup::observations::noa_4_level_jump`.
 # Phase split documented at `engine_core::capture_observations::char_level_up`.
 # ----------------------------------------------------------------------
 [[scenarios]]
@@ -301,7 +301,7 @@ hint = "Gala's character record. Pre-event values: cumulative XP 140 at +0x004, 
 #   mc9 = live-copy / settle frame (Gala live in-battle stats applied;
 #         HP_max/MP_max settle in same frame)
 #
-# Codified deltas: `engine_core::levelup::observations::gala_mc7_to_mc9`.
+# Codified deltas: `engine_core::levelup::observations::gala_4_level_jump`.
 # Gala's level-up grants HP/MP/stats but NOT SP_max (Gala uses physical
 # Tactical Arts, not Seru magic).
 # ----------------------------------------------------------------------
@@ -355,4 +355,4 @@ hint = "Gala's SP_max at +0x10E should NOT change across the triplet (Gala uses 
 label = "stat_growth_lookup_window"
 start = 0x80120000
 end = 0x80140000
-hint = "Per-Seru stat-grant lookup region. Captured deltas exposed via `engine_core::levelup::observations::{noa_mc4_to_mc7, gala_mc7_to_mc9}`. The grant table source itself is still capture-blocked - searching this window across the triplets is part of the §2.2 hunt."
+hint = "Per-Seru stat-grant lookup region. Captured deltas exposed via `engine_core::levelup::observations::{noa_4_level_jump, gala_4_level_jump}`. The grant table source itself is still capture-blocked - searching this window across the triplets is part of the §2.2 hunt."
