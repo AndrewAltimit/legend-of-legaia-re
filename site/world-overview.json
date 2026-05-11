@@ -10,7 +10,7 @@
       "azimuth": 0,
       "zoom": 1.0
     },
-    "tmd_count": 119,
+    "tmd_count": 40,
     "world_extent": [
       16320,
       16320
@@ -37,7 +37,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 34,
+          "byte_offset": 62640,
+          "byte_end": 68972,
+          "body_bytes": 6332,
+          "nobj": 12,
+          "md5": "eb1d26a37e87"
+        }
       },
       {
         "id": 2,
@@ -54,7 +63,16 @@
         ],
         "x_enc": 91,
         "z_enc": 16,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 35,
+          "byte_offset": 68972,
+          "byte_end": 69372,
+          "body_bytes": 400,
+          "nobj": 1,
+          "md5": "593bdb0da97b"
+        }
       },
       {
         "id": 3,
@@ -71,7 +89,11 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "global_pool",
+          "global_index": 0
+        }
       },
       {
         "id": 4,
@@ -88,7 +110,11 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "global_pool",
+          "global_index": 1
+        }
       },
       {
         "id": 5,
@@ -105,7 +131,11 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "global_pool",
+          "global_index": 2
+        }
       },
       {
         "id": 6,
@@ -122,7 +152,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 36,
+          "byte_offset": 69372,
+          "byte_end": 79348,
+          "body_bytes": 9976,
+          "nobj": 14,
+          "md5": "02287f2a628b"
+        }
       },
       {
         "id": 7,
@@ -139,7 +178,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 37,
+          "byte_offset": 79348,
+          "byte_end": 82308,
+          "body_bytes": 2960,
+          "nobj": 2,
+          "md5": "fe6cd54ad555"
+        }
       },
       {
         "id": 8,
@@ -156,7 +204,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 9,
@@ -173,7 +230,16 @@
         ],
         "x_enc": 0,
         "z_enc": 115,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 10,
@@ -190,7 +256,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 11,
@@ -207,7 +282,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 12,
@@ -224,7 +308,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 13,
@@ -241,7 +334,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 14,
@@ -258,7 +360,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 15,
@@ -275,7 +386,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 16,
@@ -292,7 +412,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 17,
@@ -309,7 +438,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 18,
@@ -326,7 +464,16 @@
         ],
         "x_enc": 252,
         "z_enc": 2,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 19,
@@ -343,7 +490,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 20,
@@ -360,7 +516,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 21,
@@ -377,7 +542,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 22,
@@ -394,7 +568,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 23,
@@ -411,7 +594,16 @@
         ],
         "x_enc": 0,
         "z_enc": 205,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 24,
@@ -428,7 +620,16 @@
         ],
         "x_enc": 0,
         "z_enc": 98,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 25,
@@ -445,7 +646,16 @@
         ],
         "x_enc": 0,
         "z_enc": 76,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 26,
@@ -462,7 +672,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 27,
@@ -479,7 +698,16 @@
         ],
         "x_enc": 0,
         "z_enc": 53,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 28,
@@ -496,7 +724,16 @@
         ],
         "x_enc": 0,
         "z_enc": 53,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 29,
@@ -513,7 +750,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 30,
@@ -530,7 +776,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 31,
@@ -547,7 +802,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 32,
@@ -564,7 +828,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 33,
@@ -581,7 +854,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 34,
@@ -598,7 +880,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 35,
@@ -615,7 +906,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 36,
@@ -632,7 +932,16 @@
         ],
         "x_enc": 147,
         "z_enc": 1,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 37,
@@ -649,7 +958,16 @@
         ],
         "x_enc": 0,
         "z_enc": 52,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 38,
@@ -666,7 +984,16 @@
         ],
         "x_enc": 0,
         "z_enc": 98,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 39,
@@ -683,7 +1010,16 @@
         ],
         "x_enc": 0,
         "z_enc": 70,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 40,
@@ -700,7 +1036,16 @@
         ],
         "x_enc": 0,
         "z_enc": 52,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 41,
@@ -717,7 +1062,16 @@
         ],
         "x_enc": 0,
         "z_enc": 70,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 42,
@@ -734,7 +1088,16 @@
         ],
         "x_enc": 0,
         "z_enc": 52,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 43,
@@ -751,7 +1114,16 @@
         ],
         "x_enc": 130,
         "z_enc": 4,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 44,
@@ -768,7 +1140,16 @@
         ],
         "x_enc": 130,
         "z_enc": 4,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 45,
@@ -785,7 +1166,16 @@
         ],
         "x_enc": 130,
         "z_enc": 4,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 46,
@@ -802,7 +1192,16 @@
         ],
         "x_enc": 0,
         "z_enc": 115,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 47,
@@ -819,7 +1218,16 @@
         ],
         "x_enc": 0,
         "z_enc": 46,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 48,
@@ -836,7 +1244,16 @@
         ],
         "x_enc": 0,
         "z_enc": 52,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 49,
@@ -853,7 +1270,16 @@
         ],
         "x_enc": 0,
         "z_enc": 163,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       },
       {
         "id": 50,
@@ -870,11 +1296,386 @@
         ],
         "x_enc": 0,
         "z_enc": 96,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        }
       }
     ],
     "world_placed_count": 43,
-    "script_positioned_count": 7
+    "script_positioned_count": 7,
+    "tmd_pack": {
+      "count": 40,
+      "decompressed_bytes": 83064,
+      "records": [
+        {
+          "slot": 0,
+          "byte_offset": 164,
+          "byte_end": 3128,
+          "body_bytes": 2964,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "84dcca68ccfc"
+        },
+        {
+          "slot": 1,
+          "byte_offset": 3128,
+          "byte_end": 4040,
+          "body_bytes": 912,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "c228c8465560"
+        },
+        {
+          "slot": 2,
+          "byte_offset": 4040,
+          "byte_end": 5792,
+          "body_bytes": 1752,
+          "magic_ok": true,
+          "nobj": 2,
+          "md5": "9681bad75020"
+        },
+        {
+          "slot": 3,
+          "byte_offset": 5792,
+          "byte_end": 6504,
+          "body_bytes": 712,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0a2eddb1739d"
+        },
+        {
+          "slot": 4,
+          "byte_offset": 6504,
+          "byte_end": 7324,
+          "body_bytes": 820,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "ccb942f8964e"
+        },
+        {
+          "slot": 5,
+          "byte_offset": 7324,
+          "byte_end": 9464,
+          "body_bytes": 2140,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "6268c421f277"
+        },
+        {
+          "slot": 6,
+          "byte_offset": 9464,
+          "byte_end": 10232,
+          "body_bytes": 768,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8186b1932240"
+        },
+        {
+          "slot": 7,
+          "byte_offset": 10232,
+          "byte_end": 13036,
+          "body_bytes": 2804,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "add70b1432af"
+        },
+        {
+          "slot": 8,
+          "byte_offset": 13036,
+          "byte_end": 14312,
+          "body_bytes": 1276,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "e32e8ff8b199"
+        },
+        {
+          "slot": 9,
+          "byte_offset": 14312,
+          "byte_end": 14784,
+          "body_bytes": 472,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "fe006913a36d"
+        },
+        {
+          "slot": 10,
+          "byte_offset": 14784,
+          "byte_end": 15068,
+          "body_bytes": 284,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "3b0459979e74"
+        },
+        {
+          "slot": 11,
+          "byte_offset": 15068,
+          "byte_end": 15420,
+          "body_bytes": 352,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "ad1e77399133"
+        },
+        {
+          "slot": 12,
+          "byte_offset": 15420,
+          "byte_end": 16360,
+          "body_bytes": 940,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "efbb31de7bf7"
+        },
+        {
+          "slot": 13,
+          "byte_offset": 16360,
+          "byte_end": 17712,
+          "body_bytes": 1352,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "1dbbc7754591"
+        },
+        {
+          "slot": 14,
+          "byte_offset": 17712,
+          "byte_end": 19908,
+          "body_bytes": 2196,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "132aee678a9d"
+        },
+        {
+          "slot": 15,
+          "byte_offset": 19908,
+          "byte_end": 21496,
+          "body_bytes": 1588,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "aa7c1c80a495"
+        },
+        {
+          "slot": 16,
+          "byte_offset": 21496,
+          "byte_end": 24284,
+          "body_bytes": 2788,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "5d228770d46f"
+        },
+        {
+          "slot": 17,
+          "byte_offset": 24284,
+          "byte_end": 25348,
+          "body_bytes": 1064,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "4c841e7a0b52"
+        },
+        {
+          "slot": 18,
+          "byte_offset": 25348,
+          "byte_end": 26544,
+          "body_bytes": 1196,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "01049c15d1be"
+        },
+        {
+          "slot": 19,
+          "byte_offset": 26544,
+          "byte_end": 27608,
+          "body_bytes": 1064,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8cbd67ee0cf6"
+        },
+        {
+          "slot": 20,
+          "byte_offset": 27608,
+          "byte_end": 28804,
+          "body_bytes": 1196,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "33aed36fbc8c"
+        },
+        {
+          "slot": 21,
+          "byte_offset": 28804,
+          "byte_end": 29676,
+          "body_bytes": 872,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "3b8485004d6b"
+        },
+        {
+          "slot": 22,
+          "byte_offset": 29676,
+          "byte_end": 30204,
+          "body_bytes": 528,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "599e68aacc1e"
+        },
+        {
+          "slot": 23,
+          "byte_offset": 30204,
+          "byte_end": 32860,
+          "body_bytes": 2656,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "76d095d31d8f"
+        },
+        {
+          "slot": 24,
+          "byte_offset": 32860,
+          "byte_end": 33472,
+          "body_bytes": 612,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "48153a7d007e"
+        },
+        {
+          "slot": 25,
+          "byte_offset": 33472,
+          "byte_end": 34048,
+          "body_bytes": 576,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "7a462e519bf7"
+        },
+        {
+          "slot": 26,
+          "byte_offset": 34048,
+          "byte_end": 34632,
+          "body_bytes": 584,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "77d77d4c76dd"
+        },
+        {
+          "slot": 27,
+          "byte_offset": 34632,
+          "byte_end": 35240,
+          "body_bytes": 608,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "a7517ef52bdf"
+        },
+        {
+          "slot": 28,
+          "byte_offset": 35240,
+          "byte_end": 39632,
+          "body_bytes": 4392,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0e2f406ad4dc"
+        },
+        {
+          "slot": 29,
+          "byte_offset": 39632,
+          "byte_end": 42660,
+          "body_bytes": 3028,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "6e810249d03c"
+        },
+        {
+          "slot": 30,
+          "byte_offset": 42660,
+          "byte_end": 51752,
+          "body_bytes": 9092,
+          "magic_ok": true,
+          "nobj": 8,
+          "md5": "85be2dd7248f"
+        },
+        {
+          "slot": 31,
+          "byte_offset": 51752,
+          "byte_end": 52892,
+          "body_bytes": 1140,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "fe27c480792f"
+        },
+        {
+          "slot": 32,
+          "byte_offset": 52892,
+          "byte_end": 56360,
+          "body_bytes": 3468,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "b19251c47b6e"
+        },
+        {
+          "slot": 33,
+          "byte_offset": 56360,
+          "byte_end": 62640,
+          "body_bytes": 6280,
+          "magic_ok": true,
+          "nobj": 10,
+          "md5": "06ea405a96b2"
+        },
+        {
+          "slot": 34,
+          "byte_offset": 62640,
+          "byte_end": 68972,
+          "body_bytes": 6332,
+          "magic_ok": true,
+          "nobj": 12,
+          "md5": "eb1d26a37e87"
+        },
+        {
+          "slot": 35,
+          "byte_offset": 68972,
+          "byte_end": 69372,
+          "body_bytes": 400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "593bdb0da97b"
+        },
+        {
+          "slot": 36,
+          "byte_offset": 69372,
+          "byte_end": 79348,
+          "body_bytes": 9976,
+          "magic_ok": true,
+          "nobj": 14,
+          "md5": "02287f2a628b"
+        },
+        {
+          "slot": 37,
+          "byte_offset": 79348,
+          "byte_end": 82308,
+          "body_bytes": 2960,
+          "magic_ok": true,
+          "nobj": 2,
+          "md5": "fe6cd54ad555"
+        },
+        {
+          "slot": 38,
+          "byte_offset": 82308,
+          "byte_end": 82676,
+          "body_bytes": 368,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "fb7f6e6c976d"
+        },
+        {
+          "slot": 39,
+          "byte_offset": 82676,
+          "byte_end": 83064,
+          "body_bytes": 388,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "01e3017b64a1"
+        }
+      ]
+    }
   },
   "sebucus": {
     "kingdom": "sebucus",
@@ -887,7 +1688,7 @@
       "azimuth": 0,
       "zoom": 1.0
     },
-    "tmd_count": 119,
+    "tmd_count": 36,
     "world_extent": [
       16320,
       16320
@@ -914,7 +1715,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 33,
+          "byte_offset": 86272,
+          "byte_end": 86672,
+          "body_bytes": 400,
+          "nobj": 1,
+          "md5": "d51c3d9b1e0c"
+        }
       },
       {
         "id": 2,
@@ -931,7 +1741,16 @@
         ],
         "x_enc": 30,
         "z_enc": 30,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 33,
+          "byte_offset": 86272,
+          "byte_end": 86672,
+          "body_bytes": 400,
+          "nobj": 1,
+          "md5": "d51c3d9b1e0c"
+        }
       },
       {
         "id": 3,
@@ -948,7 +1767,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 31,
+          "byte_offset": 74820,
+          "byte_end": 84212,
+          "body_bytes": 9392,
+          "nobj": 11,
+          "md5": "dee5974fa9ea"
+        }
       },
       {
         "id": 4,
@@ -965,7 +1793,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 30,
+          "byte_offset": 70888,
+          "byte_end": 74820,
+          "body_bytes": 3932,
+          "nobj": 1,
+          "md5": "72b3280ffef2"
+        }
       },
       {
         "id": 5,
@@ -982,7 +1819,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 30,
+          "byte_offset": 70888,
+          "byte_end": 74820,
+          "body_bytes": 3932,
+          "nobj": 1,
+          "md5": "72b3280ffef2"
+        }
       },
       {
         "id": 6,
@@ -999,7 +1845,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 28,
+          "byte_offset": 64240,
+          "byte_end": 64608,
+          "body_bytes": 368,
+          "nobj": 1,
+          "md5": "45c91f45f8a2"
+        }
       },
       {
         "id": 7,
@@ -1016,7 +1871,16 @@
         ],
         "x_enc": 208,
         "z_enc": 34,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 32,
+          "byte_offset": 84212,
+          "byte_end": 86272,
+          "body_bytes": 2060,
+          "nobj": 1,
+          "md5": "6d4939581536"
+        }
       },
       {
         "id": 8,
@@ -1033,7 +1897,16 @@
         ],
         "x_enc": 0,
         "z_enc": 76,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 9,
@@ -1050,7 +1923,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 10,
@@ -1067,7 +1949,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 11,
@@ -1084,7 +1975,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 12,
@@ -1101,7 +2001,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 13,
@@ -1118,7 +2027,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 14,
@@ -1135,7 +2053,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 15,
@@ -1152,7 +2079,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 16,
@@ -1169,7 +2105,16 @@
         ],
         "x_enc": 0,
         "z_enc": 113,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 17,
@@ -1186,7 +2131,16 @@
         ],
         "x_enc": 50,
         "z_enc": 3,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 18,
@@ -1203,7 +2157,16 @@
         ],
         "x_enc": 87,
         "z_enc": 3,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 19,
@@ -1220,7 +2183,16 @@
         ],
         "x_enc": 0,
         "z_enc": 52,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 20,
@@ -1237,7 +2209,16 @@
         ],
         "x_enc": 0,
         "z_enc": 204,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 21,
@@ -1254,7 +2235,16 @@
         ],
         "x_enc": 0,
         "z_enc": 84,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 22,
@@ -1271,7 +2261,16 @@
         ],
         "x_enc": 0,
         "z_enc": 184,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       },
       {
         "id": 23,
@@ -1288,11 +2287,350 @@
         ],
         "x_enc": 0,
         "z_enc": 184,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        }
       }
     ],
     "world_placed_count": 18,
-    "script_positioned_count": 5
+    "script_positioned_count": 5,
+    "tmd_pack": {
+      "count": 36,
+      "decompressed_bytes": 93392,
+      "records": [
+        {
+          "slot": 0,
+          "byte_offset": 148,
+          "byte_end": 1428,
+          "body_bytes": 1280,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "863d097a748d"
+        },
+        {
+          "slot": 1,
+          "byte_offset": 1428,
+          "byte_end": 3064,
+          "body_bytes": 1636,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "418d6c52f3d1"
+        },
+        {
+          "slot": 2,
+          "byte_offset": 3064,
+          "byte_end": 4420,
+          "body_bytes": 1356,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "2efcbe5af4d6"
+        },
+        {
+          "slot": 3,
+          "byte_offset": 4420,
+          "byte_end": 5288,
+          "body_bytes": 868,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "db4e4014e077"
+        },
+        {
+          "slot": 4,
+          "byte_offset": 5288,
+          "byte_end": 6564,
+          "body_bytes": 1276,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0427e5a0f439"
+        },
+        {
+          "slot": 5,
+          "byte_offset": 6564,
+          "byte_end": 8044,
+          "body_bytes": 1480,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "7256c79b9028"
+        },
+        {
+          "slot": 6,
+          "byte_offset": 8044,
+          "byte_end": 13640,
+          "body_bytes": 5596,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "f96a0308297a"
+        },
+        {
+          "slot": 7,
+          "byte_offset": 13640,
+          "byte_end": 18932,
+          "body_bytes": 5292,
+          "magic_ok": true,
+          "nobj": 2,
+          "md5": "79ebd85028c8"
+        },
+        {
+          "slot": 8,
+          "byte_offset": 18932,
+          "byte_end": 24200,
+          "body_bytes": 5268,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "9e31f80a4b85"
+        },
+        {
+          "slot": 9,
+          "byte_offset": 24200,
+          "byte_end": 27544,
+          "body_bytes": 3344,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "e18e6a2072e9"
+        },
+        {
+          "slot": 10,
+          "byte_offset": 27544,
+          "byte_end": 27828,
+          "body_bytes": 284,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "6d282256139d"
+        },
+        {
+          "slot": 11,
+          "byte_offset": 27828,
+          "byte_end": 28180,
+          "body_bytes": 352,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "271bf3e642ae"
+        },
+        {
+          "slot": 12,
+          "byte_offset": 28180,
+          "byte_end": 29372,
+          "body_bytes": 1192,
+          "magic_ok": true,
+          "nobj": 2,
+          "md5": "acf8389974fb"
+        },
+        {
+          "slot": 13,
+          "byte_offset": 29372,
+          "byte_end": 32160,
+          "body_bytes": 2788,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "7e6e99d13253"
+        },
+        {
+          "slot": 14,
+          "byte_offset": 32160,
+          "byte_end": 32708,
+          "body_bytes": 548,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0ac44cdca45c"
+        },
+        {
+          "slot": 15,
+          "byte_offset": 32708,
+          "byte_end": 34984,
+          "body_bytes": 2276,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8a89ed8bc8b2"
+        },
+        {
+          "slot": 16,
+          "byte_offset": 34984,
+          "byte_end": 37824,
+          "body_bytes": 2840,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "9db00d215767"
+        },
+        {
+          "slot": 17,
+          "byte_offset": 37824,
+          "byte_end": 39388,
+          "body_bytes": 1564,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "9db1ad443308"
+        },
+        {
+          "slot": 18,
+          "byte_offset": 39388,
+          "byte_end": 40200,
+          "body_bytes": 812,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "b72e6c0c3d09"
+        },
+        {
+          "slot": 19,
+          "byte_offset": 40200,
+          "byte_end": 41656,
+          "body_bytes": 1456,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "3f7cf4c14f58"
+        },
+        {
+          "slot": 20,
+          "byte_offset": 41656,
+          "byte_end": 42056,
+          "body_bytes": 400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8f41acae5e2c"
+        },
+        {
+          "slot": 21,
+          "byte_offset": 42056,
+          "byte_end": 43840,
+          "body_bytes": 1784,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "36434fcd7c26"
+        },
+        {
+          "slot": 22,
+          "byte_offset": 43840,
+          "byte_end": 44240,
+          "body_bytes": 400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "610bada00ec0"
+        },
+        {
+          "slot": 23,
+          "byte_offset": 44240,
+          "byte_end": 44904,
+          "body_bytes": 664,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8326c22c88fd"
+        },
+        {
+          "slot": 24,
+          "byte_offset": 44904,
+          "byte_end": 46632,
+          "body_bytes": 1728,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "66e20edbd2b7"
+        },
+        {
+          "slot": 25,
+          "byte_offset": 46632,
+          "byte_end": 52716,
+          "body_bytes": 6084,
+          "magic_ok": true,
+          "nobj": 2,
+          "md5": "7055da0ef420"
+        },
+        {
+          "slot": 26,
+          "byte_offset": 52716,
+          "byte_end": 59840,
+          "body_bytes": 7124,
+          "magic_ok": true,
+          "nobj": 3,
+          "md5": "9e7665a831ae"
+        },
+        {
+          "slot": 27,
+          "byte_offset": 59840,
+          "byte_end": 64240,
+          "body_bytes": 4400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "170359ce27e8"
+        },
+        {
+          "slot": 28,
+          "byte_offset": 64240,
+          "byte_end": 64608,
+          "body_bytes": 368,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "45c91f45f8a2"
+        },
+        {
+          "slot": 29,
+          "byte_offset": 64608,
+          "byte_end": 70888,
+          "body_bytes": 6280,
+          "magic_ok": true,
+          "nobj": 10,
+          "md5": "06ea405a96b2"
+        },
+        {
+          "slot": 30,
+          "byte_offset": 70888,
+          "byte_end": 74820,
+          "body_bytes": 3932,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "72b3280ffef2"
+        },
+        {
+          "slot": 31,
+          "byte_offset": 74820,
+          "byte_end": 84212,
+          "body_bytes": 9392,
+          "magic_ok": true,
+          "nobj": 11,
+          "md5": "dee5974fa9ea"
+        },
+        {
+          "slot": 32,
+          "byte_offset": 84212,
+          "byte_end": 86272,
+          "body_bytes": 2060,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "6d4939581536"
+        },
+        {
+          "slot": 33,
+          "byte_offset": 86272,
+          "byte_end": 86672,
+          "body_bytes": 400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "d51c3d9b1e0c"
+        },
+        {
+          "slot": 34,
+          "byte_offset": 86672,
+          "byte_end": 93004,
+          "body_bytes": 6332,
+          "magic_ok": true,
+          "nobj": 12,
+          "md5": "eb1d26a37e87"
+        },
+        {
+          "slot": 35,
+          "byte_offset": 93004,
+          "byte_end": 93392,
+          "body_bytes": 388,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "01e3017b64a1"
+        }
+      ]
+    }
   },
   "karisto": {
     "kingdom": "karisto",
@@ -1305,7 +2643,7 @@
       "azimuth": 0,
       "zoom": 1.0
     },
-    "tmd_count": 119,
+    "tmd_count": 56,
     "world_extent": [
       16320,
       16320
@@ -1332,7 +2670,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 44,
+          "byte_offset": 116492,
+          "byte_end": 129660,
+          "body_bytes": 13168,
+          "nobj": 1,
+          "md5": "838cd06b60ee"
+        }
       },
       {
         "id": 2,
@@ -1349,7 +2696,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 42,
+          "byte_offset": 109760,
+          "byte_end": 110160,
+          "body_bytes": 400,
+          "nobj": 1,
+          "md5": "d51c3d9b1e0c"
+        }
       },
       {
         "id": 3,
@@ -1366,7 +2722,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 41,
+          "byte_offset": 100368,
+          "byte_end": 109760,
+          "body_bytes": 9392,
+          "nobj": 11,
+          "md5": "dee5974fa9ea"
+        }
       },
       {
         "id": 4,
@@ -1383,7 +2748,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 40,
+          "byte_offset": 96436,
+          "byte_end": 100368,
+          "body_bytes": 3932,
+          "nobj": 1,
+          "md5": "72b3280ffef2"
+        }
       },
       {
         "id": 5,
@@ -1400,7 +2774,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 45,
+          "byte_offset": 129660,
+          "byte_end": 140436,
+          "body_bytes": 10776,
+          "nobj": 1,
+          "md5": "6377d19e61fd"
+        }
       },
       {
         "id": 6,
@@ -1417,7 +2800,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 45,
+          "byte_offset": 129660,
+          "byte_end": 140436,
+          "body_bytes": 10776,
+          "nobj": 1,
+          "md5": "6377d19e61fd"
+        }
       },
       {
         "id": 7,
@@ -1434,7 +2826,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 45,
+          "byte_offset": 129660,
+          "byte_end": 140436,
+          "body_bytes": 10776,
+          "nobj": 1,
+          "md5": "6377d19e61fd"
+        }
       },
       {
         "id": 8,
@@ -1451,7 +2852,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 46,
+          "byte_offset": 140436,
+          "byte_end": 148172,
+          "body_bytes": 7736,
+          "nobj": 1,
+          "md5": "de9b4b510926"
+        }
       },
       {
         "id": 9,
@@ -1468,7 +2878,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 47,
+          "byte_offset": 148172,
+          "byte_end": 150704,
+          "body_bytes": 2532,
+          "nobj": 1,
+          "md5": "0b382c5e3734"
+        }
       },
       {
         "id": 10,
@@ -1485,7 +2904,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 48,
+          "byte_offset": 150704,
+          "byte_end": 152380,
+          "body_bytes": 1676,
+          "nobj": 1,
+          "md5": "83c8c9d875c9"
+        }
       },
       {
         "id": 11,
@@ -1502,7 +2930,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 49,
+          "byte_offset": 152380,
+          "byte_end": 153736,
+          "body_bytes": 1356,
+          "nobj": 1,
+          "md5": "cf707db84106"
+        }
       },
       {
         "id": 12,
@@ -1519,7 +2956,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 50,
+          "byte_offset": 153736,
+          "byte_end": 156724,
+          "body_bytes": 2988,
+          "nobj": 1,
+          "md5": "6bc497db7cd3"
+        }
       },
       {
         "id": 13,
@@ -1536,7 +2982,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 51,
+          "byte_offset": 156724,
+          "byte_end": 158332,
+          "body_bytes": 1608,
+          "nobj": 1,
+          "md5": "840e60f60b0b"
+        }
       },
       {
         "id": 14,
@@ -1553,7 +3008,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 52,
+          "byte_offset": 158332,
+          "byte_end": 159416,
+          "body_bytes": 1084,
+          "nobj": 1,
+          "md5": "c82014d1413b"
+        }
       },
       {
         "id": 15,
@@ -1570,7 +3034,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 52,
+          "byte_offset": 158332,
+          "byte_end": 159416,
+          "body_bytes": 1084,
+          "nobj": 1,
+          "md5": "c82014d1413b"
+        }
       },
       {
         "id": 16,
@@ -1587,7 +3060,16 @@
         ],
         "x_enc": 90,
         "z_enc": 85,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 35,
+          "byte_offset": 78828,
+          "byte_end": 81620,
+          "body_bytes": 2792,
+          "nobj": 1,
+          "md5": "8dc6af712c2e"
+        }
       },
       {
         "id": 17,
@@ -1604,7 +3086,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 39,
+          "byte_offset": 86948,
+          "byte_end": 96436,
+          "body_bytes": 9488,
+          "nobj": 14,
+          "md5": "c1fd0672e545"
+        }
       },
       {
         "id": 18,
@@ -1621,7 +3112,16 @@
         ],
         "x_enc": 127,
         "z_enc": 127,
-        "script_positioned": true
+        "script_positioned": true,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 53,
+          "byte_offset": 159416,
+          "byte_end": 162108,
+          "body_bytes": 2692,
+          "nobj": 1,
+          "md5": "0a929029b87c"
+        }
       },
       {
         "id": 19,
@@ -1638,7 +3138,16 @@
         ],
         "x_enc": 227,
         "z_enc": 55,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 54,
+          "byte_offset": 162108,
+          "byte_end": 164168,
+          "body_bytes": 2060,
+          "nobj": 1,
+          "md5": "07d24734ea20"
+        }
       },
       {
         "id": 20,
@@ -1655,7 +3164,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 21,
@@ -1672,7 +3190,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 22,
@@ -1689,7 +3216,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 23,
@@ -1706,7 +3242,16 @@
         ],
         "x_enc": 0,
         "z_enc": 115,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 24,
@@ -1723,7 +3268,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 25,
@@ -1740,7 +3294,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 26,
@@ -1757,7 +3320,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 27,
@@ -1774,7 +3346,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 28,
@@ -1791,7 +3372,16 @@
         ],
         "x_enc": 0,
         "z_enc": 80,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 29,
@@ -1808,7 +3398,16 @@
         ],
         "x_enc": 0,
         "z_enc": 85,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 30,
@@ -1825,7 +3424,16 @@
         ],
         "x_enc": 0,
         "z_enc": 101,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 31,
@@ -1842,7 +3450,16 @@
         ],
         "x_enc": 0,
         "z_enc": 85,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 32,
@@ -1859,7 +3476,16 @@
         ],
         "x_enc": 0,
         "z_enc": 85,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 33,
@@ -1876,7 +3502,16 @@
         ],
         "x_enc": 0,
         "z_enc": 204,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 34,
@@ -1893,7 +3528,16 @@
         ],
         "x_enc": 0,
         "z_enc": 46,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 35,
@@ -1910,7 +3554,16 @@
         ],
         "x_enc": 0,
         "z_enc": 54,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 36,
@@ -1927,7 +3580,16 @@
         ],
         "x_enc": 0,
         "z_enc": 46,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 37,
@@ -1944,7 +3606,16 @@
         ],
         "x_enc": 0,
         "z_enc": 184,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 38,
@@ -1961,7 +3632,16 @@
         ],
         "x_enc": 0,
         "z_enc": 184,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 39,
@@ -1978,7 +3658,16 @@
         ],
         "x_enc": 0,
         "z_enc": 84,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       },
       {
         "id": 40,
@@ -1995,10 +3684,529 @@
         ],
         "x_enc": 0,
         "z_enc": 62,
-        "script_positioned": false
+        "script_positioned": false,
+        "tmd_source": {
+          "kind": "scene_tmd_pack",
+          "pack_slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "nobj": 1,
+          "md5": "07516192e278"
+        }
       }
     ],
     "world_placed_count": 23,
-    "script_positioned_count": 17
+    "script_positioned_count": 17,
+    "tmd_pack": {
+      "count": 56,
+      "decompressed_bytes": 164556,
+      "records": [
+        {
+          "slot": 0,
+          "byte_offset": 228,
+          "byte_end": 412,
+          "body_bytes": 184,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "07516192e278"
+        },
+        {
+          "slot": 1,
+          "byte_offset": 412,
+          "byte_end": 3440,
+          "body_bytes": 3028,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "3b5fb2c69fe4"
+        },
+        {
+          "slot": 2,
+          "byte_offset": 3440,
+          "byte_end": 3988,
+          "body_bytes": 548,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0ac44cdca45c"
+        },
+        {
+          "slot": 3,
+          "byte_offset": 3988,
+          "byte_end": 8028,
+          "body_bytes": 4040,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "d3ecd1ac0e18"
+        },
+        {
+          "slot": 4,
+          "byte_offset": 8028,
+          "byte_end": 11880,
+          "body_bytes": 3852,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "92dbd123e3a0"
+        },
+        {
+          "slot": 5,
+          "byte_offset": 11880,
+          "byte_end": 17284,
+          "body_bytes": 5404,
+          "magic_ok": true,
+          "nobj": 5,
+          "md5": "65496d83b2ee"
+        },
+        {
+          "slot": 6,
+          "byte_offset": 17284,
+          "byte_end": 19972,
+          "body_bytes": 2688,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "a39e87a06639"
+        },
+        {
+          "slot": 7,
+          "byte_offset": 19972,
+          "byte_end": 23244,
+          "body_bytes": 3272,
+          "magic_ok": true,
+          "nobj": 4,
+          "md5": "42ba7d2effe1"
+        },
+        {
+          "slot": 8,
+          "byte_offset": 23244,
+          "byte_end": 25700,
+          "body_bytes": 2456,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "ff7ef6b194dc"
+        },
+        {
+          "slot": 9,
+          "byte_offset": 25700,
+          "byte_end": 26072,
+          "body_bytes": 372,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8288e833e338"
+        },
+        {
+          "slot": 10,
+          "byte_offset": 26072,
+          "byte_end": 30456,
+          "body_bytes": 4384,
+          "magic_ok": true,
+          "nobj": 4,
+          "md5": "a086b9c154af"
+        },
+        {
+          "slot": 11,
+          "byte_offset": 30456,
+          "byte_end": 35192,
+          "body_bytes": 4736,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "b55d68b8aac9"
+        },
+        {
+          "slot": 12,
+          "byte_offset": 35192,
+          "byte_end": 40172,
+          "body_bytes": 4980,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "e353053d167f"
+        },
+        {
+          "slot": 13,
+          "byte_offset": 40172,
+          "byte_end": 45208,
+          "body_bytes": 5036,
+          "magic_ok": true,
+          "nobj": 2,
+          "md5": "7a6b70ac9d37"
+        },
+        {
+          "slot": 14,
+          "byte_offset": 45208,
+          "byte_end": 51576,
+          "body_bytes": 6368,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "ad3dabd44e4d"
+        },
+        {
+          "slot": 15,
+          "byte_offset": 51576,
+          "byte_end": 53852,
+          "body_bytes": 2276,
+          "magic_ok": true,
+          "nobj": 4,
+          "md5": "8a269ec182e2"
+        },
+        {
+          "slot": 16,
+          "byte_offset": 53852,
+          "byte_end": 55624,
+          "body_bytes": 1772,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "12aed754c1f1"
+        },
+        {
+          "slot": 17,
+          "byte_offset": 55624,
+          "byte_end": 57400,
+          "body_bytes": 1776,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "70ff39de3fd7"
+        },
+        {
+          "slot": 18,
+          "byte_offset": 57400,
+          "byte_end": 63108,
+          "body_bytes": 5708,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "602f211a2287"
+        },
+        {
+          "slot": 19,
+          "byte_offset": 63108,
+          "byte_end": 63580,
+          "body_bytes": 472,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "046072473ac2"
+        },
+        {
+          "slot": 20,
+          "byte_offset": 63580,
+          "byte_end": 64056,
+          "body_bytes": 476,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "1ca0ac3daca6"
+        },
+        {
+          "slot": 21,
+          "byte_offset": 64056,
+          "byte_end": 64508,
+          "body_bytes": 452,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "2b885faa08a4"
+        },
+        {
+          "slot": 22,
+          "byte_offset": 64508,
+          "byte_end": 65480,
+          "body_bytes": 972,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "ba3ab2038c13"
+        },
+        {
+          "slot": 23,
+          "byte_offset": 65480,
+          "byte_end": 65932,
+          "body_bytes": 452,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "4aaed054d59f"
+        },
+        {
+          "slot": 24,
+          "byte_offset": 65932,
+          "byte_end": 68716,
+          "body_bytes": 2784,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "46db49ef78c8"
+        },
+        {
+          "slot": 25,
+          "byte_offset": 68716,
+          "byte_end": 69568,
+          "body_bytes": 852,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "3f6d9142686d"
+        },
+        {
+          "slot": 26,
+          "byte_offset": 69568,
+          "byte_end": 70012,
+          "body_bytes": 444,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "26fe2633e478"
+        },
+        {
+          "slot": 27,
+          "byte_offset": 70012,
+          "byte_end": 70420,
+          "body_bytes": 408,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "a2f75033bb49"
+        },
+        {
+          "slot": 28,
+          "byte_offset": 70420,
+          "byte_end": 71984,
+          "body_bytes": 1564,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "22690d1ff0af"
+        },
+        {
+          "slot": 29,
+          "byte_offset": 71984,
+          "byte_end": 73768,
+          "body_bytes": 1784,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "1c2411a54542"
+        },
+        {
+          "slot": 30,
+          "byte_offset": 73768,
+          "byte_end": 74580,
+          "body_bytes": 812,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "b72e6c0c3d09"
+        },
+        {
+          "slot": 31,
+          "byte_offset": 74580,
+          "byte_end": 74980,
+          "body_bytes": 400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "610bada00ec0"
+        },
+        {
+          "slot": 32,
+          "byte_offset": 74980,
+          "byte_end": 75644,
+          "body_bytes": 664,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8326c22c88fd"
+        },
+        {
+          "slot": 33,
+          "byte_offset": 75644,
+          "byte_end": 77100,
+          "body_bytes": 1456,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "3f7cf4c14f58"
+        },
+        {
+          "slot": 34,
+          "byte_offset": 77100,
+          "byte_end": 78828,
+          "body_bytes": 1728,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "66e20edbd2b7"
+        },
+        {
+          "slot": 35,
+          "byte_offset": 78828,
+          "byte_end": 81620,
+          "body_bytes": 2792,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "8dc6af712c2e"
+        },
+        {
+          "slot": 36,
+          "byte_offset": 81620,
+          "byte_end": 83300,
+          "body_bytes": 1680,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "1ca86a5f8650"
+        },
+        {
+          "slot": 37,
+          "byte_offset": 83300,
+          "byte_end": 86580,
+          "body_bytes": 3280,
+          "magic_ok": true,
+          "nobj": 3,
+          "md5": "cd70e9ae7887"
+        },
+        {
+          "slot": 38,
+          "byte_offset": 86580,
+          "byte_end": 86948,
+          "body_bytes": 368,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "d90d5e8236ca"
+        },
+        {
+          "slot": 39,
+          "byte_offset": 86948,
+          "byte_end": 96436,
+          "body_bytes": 9488,
+          "magic_ok": true,
+          "nobj": 14,
+          "md5": "c1fd0672e545"
+        },
+        {
+          "slot": 40,
+          "byte_offset": 96436,
+          "byte_end": 100368,
+          "body_bytes": 3932,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "72b3280ffef2"
+        },
+        {
+          "slot": 41,
+          "byte_offset": 100368,
+          "byte_end": 109760,
+          "body_bytes": 9392,
+          "magic_ok": true,
+          "nobj": 11,
+          "md5": "dee5974fa9ea"
+        },
+        {
+          "slot": 42,
+          "byte_offset": 109760,
+          "byte_end": 110160,
+          "body_bytes": 400,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "d51c3d9b1e0c"
+        },
+        {
+          "slot": 43,
+          "byte_offset": 110160,
+          "byte_end": 116492,
+          "body_bytes": 6332,
+          "magic_ok": true,
+          "nobj": 12,
+          "md5": "eb1d26a37e87"
+        },
+        {
+          "slot": 44,
+          "byte_offset": 116492,
+          "byte_end": 129660,
+          "body_bytes": 13168,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "838cd06b60ee"
+        },
+        {
+          "slot": 45,
+          "byte_offset": 129660,
+          "byte_end": 140436,
+          "body_bytes": 10776,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "6377d19e61fd"
+        },
+        {
+          "slot": 46,
+          "byte_offset": 140436,
+          "byte_end": 148172,
+          "body_bytes": 7736,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "de9b4b510926"
+        },
+        {
+          "slot": 47,
+          "byte_offset": 148172,
+          "byte_end": 150704,
+          "body_bytes": 2532,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0b382c5e3734"
+        },
+        {
+          "slot": 48,
+          "byte_offset": 150704,
+          "byte_end": 152380,
+          "body_bytes": 1676,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "83c8c9d875c9"
+        },
+        {
+          "slot": 49,
+          "byte_offset": 152380,
+          "byte_end": 153736,
+          "body_bytes": 1356,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "cf707db84106"
+        },
+        {
+          "slot": 50,
+          "byte_offset": 153736,
+          "byte_end": 156724,
+          "body_bytes": 2988,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "6bc497db7cd3"
+        },
+        {
+          "slot": 51,
+          "byte_offset": 156724,
+          "byte_end": 158332,
+          "body_bytes": 1608,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "840e60f60b0b"
+        },
+        {
+          "slot": 52,
+          "byte_offset": 158332,
+          "byte_end": 159416,
+          "body_bytes": 1084,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "c82014d1413b"
+        },
+        {
+          "slot": 53,
+          "byte_offset": 159416,
+          "byte_end": 162108,
+          "body_bytes": 2692,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "0a929029b87c"
+        },
+        {
+          "slot": 54,
+          "byte_offset": 162108,
+          "byte_end": 164168,
+          "body_bytes": 2060,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "07d24734ea20"
+        },
+        {
+          "slot": 55,
+          "byte_offset": 164168,
+          "byte_end": 164556,
+          "body_bytes": 388,
+          "magic_ok": true,
+          "nobj": 1,
+          "md5": "01e3017b64a1"
+        }
+      ]
+    }
   }
 }

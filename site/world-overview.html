@@ -29,7 +29,7 @@
     <strong>Placement table:</strong> the world-map actor positions are now extracted straight from each kingdom's bundle. The format is the type-3 &quot;Man&quot; asset (LZS-compressed slot 2 in the 7-asset table), parsed via <code>FUN_8003A1E4</code>'s walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate.
   </p>
   <p>
-    <strong>Still WIP:</strong> rendering each placement's specific TMD at its decoded world position. The per-record <code>tmd_slot</code> indexes a per-scene runtime pool whose base offset is determined when the scene loads, so the slot-to-TMD mapping needs the scene-load order to be cross-referenced before the assembled continent view lights up.
+    <strong>Slot &rarr; TMD resolved:</strong> each placement's <code>tmd_slot</code> now cross-links to the exact mesh that fills it. The scene-pool TMDs come from slot 1 of the same 7-asset bundle (type byte <code>0x02</code>) - an LZS-compressed pack with <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> layout that the runtime walks via <code>FUN_8001F05C case 2</code>, calling <code>FUN_80026b4c</code> per body to fill positions 0..count-1 of the scene's TMD pool. The offsets are in 4-byte words, mirroring <code>prot::timpack</code>. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>; every scene-slot referenced by a placement record exists inside that pack (max slots: Drake 37, Sebucus 33, Karisto 54). Placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead - Drake's three party-on-the-world-map records use globals 0/1/2.
   </p>
 </section>
 
@@ -58,10 +58,14 @@
     <div class="wo-3d-wrap">
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
-        <button id="wo-prev-mesh" type="button" disabled>&larr; prev mesh</button>
+        <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
+          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true">Top-down map</button>
+          <button id="wo-mode-mesh"  type="button" class="wo-mode" role="radio" aria-checked="false">Mesh inspector</button>
+        </span>
+        <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
-        <button id="wo-next-mesh" type="button" disabled>next mesh &rarr;</button>
-        <label style="margin-left:1rem"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
+        <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
+        <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
         <button id="wo-reset-cam" type="button">reset camera</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">drop a disc above to load world-map meshes</div>
@@ -153,6 +157,17 @@
   cursor: pointer;
 }
 .wo-canvas-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.wo-mode-group { display: inline-flex; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.wo-mode-group button.wo-mode {
+  background: var(--bg-card); color: var(--text-dim);
+  border: none; border-radius: 0;
+  padding: 0.3rem 0.7rem; font-size: 0.78rem;
+}
+.wo-mode-group button.wo-mode + button.wo-mode { border-left: 1px solid var(--border); }
+.wo-mode-group button.wo-mode.is-active {
+  background: var(--accent, #5a7ad8); color: #fff;
+  font-weight: 600;
+}
 #wo-mesh-label, .wo-hover-3d {
   font-family: var(--font-mono); font-size: 0.8rem;
   color: var(--text-dim);
@@ -243,7 +258,11 @@
   const $resetCam   = document.getElementById('wo-reset-cam');
   const $hover      = document.getElementById('wo-hover');
   const $nameList   = document.getElementById('wo-name-list');
+  const $modeWorld  = document.getElementById('wo-mode-world');
+  const $modeMesh   = document.getElementById('wo-mode-mesh');
+  const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
+  let   viewMode    = 'world';  /* 'world' (top-down assembled) | 'mesh' (single-mesh inspector) */
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -257,6 +276,8 @@
   let glRenderer = null;
   let rafId = null;
   const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
+  /* Top-down camera state (world units). Reset per-kingdom to fit the world. */
+  const worldCam = { centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000, pitch: 0 };
 
   /* ---------- Placement JSON (always available) ----------- */
   try {
@@ -301,8 +322,42 @@
     cam.panX = 0; cam.panY = 0; cam.autoRotate = true;
     $autoRot.checked = true;
   }
-  $resetCam.addEventListener('click', resetCam);
+  $resetCam.addEventListener('click', () => {
+    if (viewMode === 'world') {
+      /* Frame the whole kingdom again. */
+      const k = placements?.[currentKingdom];
+      const ext = k?.world_extent || [16320, 16320];
+      worldCam.centerX = ext[0] / 2;
+      worldCam.centerZ = ext[1] / 2;
+      worldCam.halfWidth = ext[0] / 2 + 1000;
+      worldCam.halfHeight = ext[1] / 2 + 1000;
+      worldCam.pitch = 0;
+    } else {
+      resetCam();
+    }
+  });
   $autoRot.addEventListener('change', () => { cam.autoRotate = $autoRot.checked; });
+
+  /* ---------- View-mode toggle ----------- */
+  function setViewMode(mode) {
+    if (mode !== 'world' && mode !== 'mesh') return;
+    if (mode === viewMode) return;
+    viewMode = mode;
+    $modeWorld.classList.toggle('is-active', mode === 'world');
+    $modeMesh .classList.toggle('is-active', mode === 'mesh');
+    $modeWorld.setAttribute('aria-checked', mode === 'world');
+    $modeMesh .setAttribute('aria-checked', mode === 'mesh');
+    const meshOnly = (mode === 'mesh');
+    $prev.hidden = !meshOnly;
+    $next.hidden = !meshOnly;
+    $autoRotWrap.hidden = !meshOnly;
+    /* Re-enter the active kingdom so the right path renders. */
+    selectKingdom(currentKingdom);
+  }
+  $modeWorld.addEventListener('click', () => setViewMode('world'));
+  $modeMesh .addEventListener('click', () => setViewMode('mesh'));
+  /* Default UI matches default viewMode = 'world'. */
+  $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
 
   /* ---------- Load disc + WASM ----------- */
   $loadBtn.addEventListener('click', async () => {
@@ -339,6 +394,7 @@
       $prev.disabled = false;
       $next.disabled = false;
       currentMeshIdx = 0;
+      /* selectKingdom dispatches to loadWorldView or loadMesh based on viewMode. */
       selectKingdom(currentKingdom);
     } catch (err) {
       console.error(err);
@@ -354,28 +410,156 @@
     currentMeshIdx = 0;
     updateSnapshot();
     drawScatter();
-    if (viewer && kingdomSlots[k].length > 0) {
+    if (!viewer) return;
+    if (viewMode === 'world') {
+      loadWorldView();
+    } else if (kingdomSlots[k].length > 0) {
       loadMesh();
-    } else if (viewer) {
+    } else {
       $meshLabel.textContent = `${KINGDOM_PROT[k].cdname}: no viewable TMDs`;
     }
   }
-  function loadMesh() {
-    if (!viewer) return;
-    const slots = kingdomSlots[currentKingdom];
-    if (slots.length === 0) return;
-    const slot = slots[currentMeshIdx];
-    /* Stop any prior loop + recreate canvas (WebGL context is single-shot per canvas) */
+
+  /* Freshen the canvas (WebGL context is single-shot per canvas, and we
+   * also need a clean depth buffer when switching kingdoms or modes). */
+  function freshCanvas() {
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
     if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const old = document.getElementById('wo-canvas3d');
-    if (!old) return;
+    if (!old) return null;
     const fresh = document.createElement('canvas');
     fresh.id = 'wo-canvas3d';
     fresh.className = 'viewer-canvas';
     fresh.width = old.width || 800;
     fresh.height = old.height || 600;
     old.replaceWith(fresh);
+    return fresh;
+  }
+
+  /* Assembled top-down world view. Uses the kingdom 7-asset bundle:
+   * slot 0 (TIM_LIST) -> shared VRAM, slot 1 (TMD pack) -> per-placement
+   * mesh. The pack_slot for each placement is precomputed in
+   * world-overview.json's `tmd_source` block. */
+  function loadWorldView() {
+    if (!viewer) return;
+    const k = placements?.[currentKingdom];
+    if (!k) {
+      $meshLabel.textContent = 'placement JSON missing';
+      return;
+    }
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    try {
+      glRenderer = new window.TmdRenderer(fresh);
+    } catch (err) {
+      $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
+      return;
+    }
+    /* Load kingdom bundle (TIM_LIST -> VRAM, TMD pack parsed). */
+    let packCount;
+    try {
+      packCount = viewer.set_scene_kingdom(k.prot_base);
+    } catch (err) {
+      $meshInfo.textContent = 'set_scene_kingdom failed: ' + (err.message || err);
+      return;
+    }
+    glRenderer.uploadVram(viewer.pack_vram_bytes());
+    /* Upload each unique pack mesh referenced by a placement (skip
+     * script-positioned + global-pool records - those don't source from
+     * the kingdom pack). */
+    const used = new Set();
+    const drawPlacements = [];
+    for (const p of k.placements) {
+      if (p.script_positioned) continue;
+      if (!p.tmd_source || p.tmd_source.kind !== 'scene_tmd_pack') continue;
+      const ms = p.tmd_source.pack_slot;
+      if (ms < 0 || ms >= packCount) continue;
+      if (!used.has(ms)) {
+        viewer.pack_mesh(ms);
+        const positions = viewer.pack_mesh_positions();
+        const uvs = viewer.pack_mesh_uvs();
+        const cba = viewer.pack_mesh_cba_tsb();
+        const idx = viewer.pack_mesh_indices();
+        if (positions.length > 0 && idx.length > 0) {
+          glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
+          used.add(ms);
+        }
+      }
+      if (used.has(ms)) {
+        drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
+      }
+    }
+    /* Camera frames the placement bbox (not the world bbox) - many
+     * placeholder records have placeholder coords like (64, *) that drag
+     * the world bbox out toward empty edges; framing to placements gives
+     * a tighter view. Falls back to world extent when no placements.  */
+    const ext = k.world_extent || [16320, 16320];
+    if (drawPlacements.length > 0) {
+      let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+      for (const p of drawPlacements) {
+        if (p.x < xmin) xmin = p.x;
+        if (p.x > xmax) xmax = p.x;
+        if (p.z < zmin) zmin = p.z;
+        if (p.z > zmax) zmax = p.z;
+      }
+      worldCam.centerX = (xmin + xmax) / 2;
+      worldCam.centerZ = (zmin + zmax) / 2;
+      worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + 1500;
+      worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + 1500;
+    } else {
+      worldCam.centerX = ext[0] / 2;
+      worldCam.centerZ = ext[1] / 2;
+      worldCam.halfWidth = ext[0] / 2 + 1000;
+      worldCam.halfHeight = ext[1] / 2 + 1000;
+    }
+    worldCam.pitch = 0;
+    $meshLabel.textContent =
+      `${k.cdname} - ${drawPlacements.length} placements (${used.size} unique meshes, ${packCount}-TMD pack)`;
+    $meshInfo.textContent =
+      `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
+    attachTopDownControls(fresh);
+    let last = performance.now();
+    const tick = (now) => {
+      last = now;
+      glRenderer.renderAssembled(drawPlacements, ext, worldCam);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  /* Pan / zoom controls for the top-down camera. Replaces the orbit
+   * controls in `attachCameraControls` for world-view mode. */
+  function attachTopDownControls(canvas) {
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', e => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      /* Drag right -> camera moves right (so content scrolls left).
+       * Convert pixel deltas to world units via the current camera half-extents. */
+      const sx = (worldCam.halfWidth  * 2) / canvas.width;
+      const sy = (worldCam.halfHeight * 2) / canvas.height;
+      worldCam.centerX -= dx * sx;
+      worldCam.centerZ -= dy * sy;
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const f = Math.exp(e.deltaY * 0.001);
+      worldCam.halfWidth  = Math.max(200, Math.min(20000, worldCam.halfWidth  * f));
+      worldCam.halfHeight = Math.max(200, Math.min(20000, worldCam.halfHeight * f));
+    }, { passive: false });
+  }
+  function loadMesh() {
+    if (!viewer) return;
+    const slots = kingdomSlots[currentKingdom];
+    if (slots.length === 0) return;
+    const slot = slots[currentMeshIdx];
+    const fresh = freshCanvas();
+    if (!fresh) return;
     viewer.set_slot(slot);
     const entry = allEntries[slot];
     const positions = viewer.mesh_positions();
@@ -450,12 +634,16 @@
     const k = placements[currentKingdom];
     const placed = k.world_placed_count ?? k.placements.filter(p => !p.script_positioned).length;
     const scripted = k.script_positioned_count ?? (k.placements.length - placed);
+    const packCount = k.tmd_pack ? k.tmd_pack.count : (k.tmd_count ?? '?');
+    const globalRefs = k.placements.filter(p => p.tmd_slot >= 0xF0).length;
     $statsDl.innerHTML = `
       <dt>cdname</dt>          <dd>${k.cdname || k.label}</dd>
       <dt>PROT base</dt>       <dd>${k.prot_base ?? '?'}</dd>
       <dt>records</dt>         <dd>${k.placements.length} total</dd>
       <dt>world-placed</dt>    <dd>${placed}</dd>
       <dt>script-positioned</dt><dd>${scripted}</dd>
+      <dt>TMD pack</dt>        <dd>${packCount} meshes (slot 1, type 0x02)</dd>
+      <dt>global TMD refs</dt> <dd>${globalRefs} placement(s) use the global pool (slot &ge; 0xF0)</dd>
     `;
     const counts = {};
     k.placements.forEach(p => { if (!p.script_positioned) counts[p.list] = (counts[p.list] || 0) + 1; });
@@ -519,7 +707,16 @@
       }
       if (best && bestD < 64) {
         const p = best.p;
-        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd=0x${p.tmd_slot.toString(16).padStart(2,'0').toUpperCase()}`;
+        let src = '';
+        if (p.tmd_source) {
+          if (p.tmd_source.kind === 'scene_tmd_pack') {
+            src = `  pack[${p.tmd_source.pack_slot}] nobj=${p.tmd_source.nobj} (${p.tmd_source.body_bytes}B)`;
+          } else if (p.tmd_source.kind === 'global_pool') {
+            src = `  global[${p.tmd_source.global_index}]`;
+          }
+        }
+        const slot = `0x${p.tmd_slot.toString(16).padStart(2,'0').toUpperCase()}`;
+        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd_slot=${slot}${src}`;
       } else {
         $hover.innerHTML = '&nbsp;';
       }

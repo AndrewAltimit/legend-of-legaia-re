@@ -20,6 +20,7 @@ precision highp float;
 precision highp int;
 
 uniform mat4 u_mvp;
+uniform mat4 u_model;   /* per-draw model matrix (identity for single-mesh mode) */
 
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
@@ -30,10 +31,11 @@ out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
 
 void main() {
-  v_world = a_position;
+  vec4 world_pos = u_model * vec4(a_position, 1.0);
+  v_world = world_pos.xyz;
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
-  gl_Position = u_mvp * vec4(a_position, 1.0);
+  gl_Position = u_mvp * world_pos;
 }
 `;
 
@@ -44,6 +46,10 @@ precision highp usampler2D;
 
 uniform usampler2D u_vram;
 uniform vec3 u_light;
+/* When non-zero, render transparent samples as opaque (with a tinted
+ * fallback so they're visible). Used by the assembled top-view map where
+ * CLUT collisions are expected and discarded fragments leave holes. */
+uniform int u_no_discard;
 
 in vec3 v_world;
 in vec2 v_uv;
@@ -103,9 +109,22 @@ void main() {
 
   /* PSX transparency: BGR555 == 0 with STP == 0 is "fully transparent".
    * Discard so cutout textures (grates, foliage, dialog windows) don't
-   * paint solid quads. Matches engine-render's WGSL fragment shader. */
+   * paint solid quads. Matches engine-render's WGSL fragment shader.
+   *
+   * Assembled-scene path can opt out: in the kingdom world-map view
+   * many TMDs share CLUT rows in VRAM (~40 TMDs, ~50 TIMs), so a prim's
+   * effective CLUT can be the wrong TIM's data and produce all-zero
+   * samples that would discard the whole landmark. With u_no_discard
+   * we fall back to a flat tint derived from the (cba, tsb) bits so
+   * the geometry at least registers as a coloured silhouette. */
   if (color.a <= 0.0) {
-    discard;
+    if (u_no_discard != 0) {
+      /* Deterministic-per-prim grey-blue tint from the texture-page bits. */
+      float t = float((tsb ^ cba) & 31u) / 31.0;
+      color = vec4(0.25 + 0.35 * t, 0.30 + 0.30 * t, 0.45, 1.0);
+    } else {
+      discard;
+    }
   }
 
   vec3 dx = dFdx(v_world);
@@ -126,8 +145,10 @@ class TmdRenderer {
 
     this.program = compileProgram(gl, VS_SRC, FS_SRC);
     this.locMvp     = gl.getUniformLocation(this.program, 'u_mvp');
+    this.locModel   = gl.getUniformLocation(this.program, 'u_model');
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locLight   = gl.getUniformLocation(this.program, 'u_light');
+    this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -138,6 +159,11 @@ class TmdRenderer {
     this.ctBuf  = gl.createBuffer();
     this.idxBuf = gl.createBuffer();
     this.tex    = gl.createTexture();
+    /* Per-mesh GL state for the assembled (multi-mesh world) path. Indexed
+     * by a caller-supplied meshId (typically the kingdom pack slot). Each
+     * entry holds its own VAO + buffers so we can switch meshes cheaply
+     * inside a single render frame. */
+    this.sceneMeshes = new Map();
 
     /* Allocate the VRAM texture once (R16UI 1024x512). */
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -215,7 +241,9 @@ class TmdRenderer {
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
+    gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
     gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);  /* matches WGSL light_dir.xyz */
+    gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
@@ -225,8 +253,121 @@ class TmdRenderer {
     gl.bindVertexArray(null);
   }
 
+  /* ---------- Assembled / scene-mesh path ----------------------------- */
+
+  /* Upload one TMD's geometry under a caller-supplied meshId and keep it
+   * resident on the GPU. The world-overview page uses the kingdom pack slot
+   * as the meshId, so repeated placements that share a slot share GPU buffers.
+   *
+   * Idempotent: re-upload under the same meshId overwrites. */
+  uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices) {
+    const gl = this.gl;
+    let m = this.sceneMeshes.get(meshId);
+    if (!m) {
+      m = {
+        vao: gl.createVertexArray(),
+        posBuf: gl.createBuffer(),
+        uvBuf:  gl.createBuffer(),
+        ctBuf:  gl.createBuffer(),
+        idxBuf: gl.createBuffer(),
+        indexCount: 0,
+      };
+      this.sceneMeshes.set(meshId, m);
+    }
+    gl.bindVertexArray(m.vao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locPos);
+    gl.vertexAttribPointer(this.locPos, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.uvBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locUv);
+    gl.vertexAttribPointer(this.locUv, 2, gl.UNSIGNED_BYTE, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.ctBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, cbaTsb, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locCbaTsb);
+    gl.vertexAttribIPointer(this.locCbaTsb, 2, gl.UNSIGNED_SHORT, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+    m.indexCount = indices.length;
+    gl.bindVertexArray(null);
+  }
+
+  hasSceneMesh(meshId) {
+    return this.sceneMeshes.has(meshId);
+  }
+
+  clearScene() {
+    const gl = this.gl;
+    for (const m of this.sceneMeshes.values()) {
+      gl.deleteVertexArray(m.vao);
+      gl.deleteBuffer(m.posBuf);
+      gl.deleteBuffer(m.uvBuf);
+      gl.deleteBuffer(m.ctBuf);
+      gl.deleteBuffer(m.idxBuf);
+    }
+    this.sceneMeshes.clear();
+  }
+
+  /* Render an assembled top-down scene. `placements` is an array of
+   * `{ meshId, x, z, rotY? }` records (one draw call per record). `worldExtent`
+   * is `[wx, wz]` (the full kingdom world size, e.g. [16320, 16320]). `cam`
+   * is `{ centerX, centerZ, halfWidth, halfHeight, pitch }` - `pitch=0` is
+   * a true top-down view, larger angles tilt toward the +Z horizon.
+   *
+   * No-ops when no scene meshes are registered. */
+  renderAssembled(placements, worldExtent, cam) {
+    const gl = this.gl;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    gl.viewport(0, 0, w, h);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.CULL_FACE);
+    gl.clearColor(0.04, 0.05, 0.08, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    if (this.sceneMeshes.size === 0 || placements.length === 0) return;
+
+    const vp = buildTopDownVp(w, h, worldExtent, cam);
+
+    gl.useProgram(this.program);
+    gl.uniformMatrix4fv(this.locMvp, false, vp);
+    gl.uniform3f(this.locLight, 0.5, -0.7, 0.4);
+    gl.uniform1i(this.locNoDisc, 1);  /* assembled scene: paint silhouettes instead of discarding */
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.uniform1i(this.locVram, 0);
+
+    /* Group draws by meshId so we bind each VAO once per frame. */
+    const byMesh = new Map();
+    for (const p of placements) {
+      if (!this.sceneMeshes.has(p.meshId)) continue;
+      let list = byMesh.get(p.meshId);
+      if (!list) { list = []; byMesh.set(p.meshId, list); }
+      list.push(p);
+    }
+    for (const [meshId, list] of byMesh) {
+      const m = this.sceneMeshes.get(meshId);
+      if (m.indexCount === 0) continue;
+      gl.bindVertexArray(m.vao);
+      for (const p of list) {
+        const model = placementModel(p.x, p.z, p.rotY || 0);
+        gl.uniformMatrix4fv(this.locModel, false, model);
+        gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
+      }
+    }
+    gl.bindVertexArray(null);
+  }
+
   dispose() {
     const gl = this.gl;
+    this.clearScene();
     gl.deleteProgram(this.program);
     gl.deleteVertexArray(this.vao);
     gl.deleteBuffer(this.posBuf);
@@ -236,6 +377,13 @@ class TmdRenderer {
     gl.deleteTexture(this.tex);
   }
 }
+
+const IDENTITY4 = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+]);
 
 function compileProgram(gl, vsSrc, fsSrc) {
   const vs = gl.createShader(gl.VERTEX_SHADER);
@@ -369,6 +517,106 @@ function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, v
   const P = perspective(1.2, aspect, 0.001, 100.0);
 
   return mulMat4(P, mulMat4(V, M));
+}
+
+/* Per-placement model matrix for the assembled world view.
+ *
+ * Takes a TMD-local mesh (PSX +Y down, ~tens of units across) and places it at
+ * world (x, z) with optional Y-axis rotation. Also flips Y so PSX +Y down
+ * renders as +Y up (height above the ground plane), matching `buildMvp`.
+ *
+ * x / z are world coords (0..16320 per the Man asset). World-map TMDs are
+ * tiny "flat" icons (|Z| <= ~64 in PSX units) and would render as
+ * specks against the kingdom-scale frustum, so we scale them up by
+ * `MESH_SCALE` to make landmarks legible. This is a viewer-side
+ * presentation knob, not the retail engine's behaviour - the in-game
+ * top-view debug camera is much closer to its meshes. */
+const MESH_SCALE = 6.0;
+function placementModel(x, z, rotY) {
+  const c = Math.cos(rotY), s = Math.sin(rotY);
+  const sc = MESH_SCALE;
+  /* World matrix = T_world * Ry(rotY) * S_yflip_scaled. Column-major. */
+  return new Float32Array([
+     sc * c,    0, -sc * s, 0,
+     0,       -sc,  0,      0,    /* flip Y so PSX +Y down -> world +Y up */
+     sc * s,    0,  sc * c, 0,
+     x,         0,  z,      1,
+  ]);
+}
+
+/* Top-down orthographic view-projection.
+ *
+ * Camera looks straight down (-Y) by default; `cam.pitch` tilts it toward
+ * the +Z horizon (radians, 0 = pure top-down). The visible frame is sized
+ * around (centerX, centerZ) with the requested half-extents in world units,
+ * letterboxed to fit the canvas aspect ratio.
+ *
+ * Z-up note: world coords on the ground plane are (X, Z). After Y-flip in
+ * placementModel, mesh height contributes to Y, so we keep Y as the view's
+ * vertical-clip axis when the camera tilts. */
+function buildTopDownVp(viewportW, viewportH, worldExtent, cam) {
+  const aspect = viewportW / viewportH;
+  let hw = cam.halfWidth;
+  let hh = cam.halfHeight;
+  /* Letterbox to fit. Expand the shorter axis so nothing in the requested
+   * window is clipped. */
+  if (hw / hh < aspect) hw = hh * aspect; else hh = hw / aspect;
+  /* Far plane needs to clear the world diagonal + mesh height with a
+   * generous margin so terrain at the world's edge doesn't z-clip. */
+  const wx = worldExtent[0], wz = worldExtent[1];
+  const farPad = Math.max(wx, wz) * 2 + 4096;
+
+  /* View: place camera above the center, look down (slightly tilted by
+   * `pitch`). +Y is up after placementModel's flip. */
+  const pitch = cam.pitch || 0;
+  const eyeY = Math.max(wx, wz);  /* high enough to clear any mesh height */
+  /* World-space target = (centerX, 0, centerZ). Camera position offset by
+   * pitch toward -Z so a non-zero pitch tilts the view "forward". */
+  const eyeX = cam.centerX;
+  const eyeZ = cam.centerZ - eyeY * Math.tan(pitch);
+  const target = [cam.centerX, 0, cam.centerZ];
+  const up = [0, 0, -1];  /* world -Z is "up" on screen for a top-down map */
+  const V = lookAt([eyeX, eyeY, eyeZ], target, up);
+
+  const P = ortho(-hw, hw, -hh, hh, 1.0, farPad);
+  return mulMat4(P, V);
+}
+
+/* Standard right-handed orthographic projection. Column-major. */
+function ortho(l, r, b, t, n, f) {
+  return new Float32Array([
+    2 / (r - l),         0,                   0,                   0,
+    0,                   2 / (t - b),         0,                   0,
+    0,                   0,                  -2 / (f - n),         0,
+    -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n),   1,
+  ]);
+}
+
+/* Right-handed lookAt. eye / target / up are 3-element arrays. */
+function lookAt(eye, target, up) {
+  const fx = target[0] - eye[0], fy = target[1] - eye[1], fz = target[2] - eye[2];
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  const f = [fx / fl, fy / fl, fz / fl];
+  /* s = normalize(f x up) */
+  let sx = f[1] * up[2] - f[2] * up[1];
+  let sy = f[2] * up[0] - f[0] * up[2];
+  let sz = f[0] * up[1] - f[1] * up[0];
+  const sl = Math.hypot(sx, sy, sz) || 1;
+  sx /= sl; sy /= sl; sz /= sl;
+  /* u = s x f */
+  const ux = sy * f[2] - sz * f[1];
+  const uy = sz * f[0] - sx * f[2];
+  const uz = sx * f[1] - sy * f[0];
+  /* Column-major: rows of rotation are s, u, -f; translation = -R * eye. */
+  return new Float32Array([
+     sx,  ux, -f[0], 0,
+     sy,  uy, -f[1], 0,
+     sz,  uz, -f[2], 0,
+    -(sx * eye[0] + sy * eye[1] + sz * eye[2]),
+    -(ux * eye[0] + uy * eye[1] + uz * eye[2]),
+     (f[0] * eye[0] + f[1] * eye[1] + f[2] * eye[2]),
+     1,
+  ]);
 }
 
 window.TmdRenderer = TmdRenderer;

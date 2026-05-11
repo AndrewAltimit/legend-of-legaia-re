@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
-"""Extract per-kingdom world-map placements (the "Man" asset) and write them
-to site/world-overview.json for the site's world-overview page.
+"""Extract per-kingdom world-map placements (the "Man" asset) and the
+matching scene-TMD pack, then write both to site/world-overview.json.
 
 The Man asset lives at slot index 2 (type byte 0x03) in each kingdom's
 `scene_scripted_asset_table` PROT entry. The full asset bundle's LZS stream
 is keyed at the asset-table base + slot's descriptor offset. After
 decompression, FUN_8003A1E4 reads placement records starting at offset
 0x22 of the decompressed Man buffer.
+
+Each placement's `tmd_slot` is an index into the scene's TMD pool. The
+pool is populated in load order by `FUN_80026b4c` (table base
+`0x8007C018`, next-slot counter at `0x8007B774`). For world-map kingdoms
+the scene TMDs come from slot 1 of the same 7-asset bundle, which is a
+type-0x02 "TMD pack" - `FUN_8001F05C case 2` LZS-decodes it then iterates
+its (count, word_offsets[], TMD bodies) layout calling FUN_80026b4c per
+body. The pack offsets are in 4-byte WORDS (same convention as
+`prot::timpack`). For all three retail kingdoms every scene-pool slot
+referenced by a placement record exists inside this pack (max scene slot
+< pack count). Slots with the high `>= 0xF0` sentinel reference the
+global TMD pool (party-character overlays) and aren't served by the
+kingdom pack.
 
 Records per kingdom (b + c iterable, indices a+1..total-1):
 - Drake  (PROT 85, scene `map01`): a=12, b=9, c=42 -> 50 placements
@@ -38,6 +51,7 @@ notes (resolver chain + format spec). Run from the repo root:
 from __future__ import annotations
 import argparse
 import glob
+import hashlib
 import json
 import struct
 import subprocess
@@ -100,23 +114,55 @@ def lzs_decompress(lzs_bin: Path, src: bytes, decompressed_size: int) -> bytes:
         Path(dst_path).unlink(missing_ok=True)
 
 
-def extract_man(prot_path: Path, lzs_bin: Path) -> bytes:
+def extract_slot(prot_path: Path, slot: int, expected_type: int,
+                 lzs_bin: Path) -> bytes:
+    """LZS-decompress slot `slot` of the kingdom's 7-asset table. Asserts the
+    type byte matches `expected_type` (0x03 = Man, 0x02 = TMD pack)."""
     buf = prot_path.read_bytes()
     table = find_asset_table(buf)
     if table is None:
         raise RuntimeError(f"no 7-asset table found in {prot_path}")
-    # Slot 2 = Man (type byte 0x03)
-    type_size = struct.unpack_from("<I", buf, table + 8 + 2 * 8)[0]
-    offset = struct.unpack_from("<I", buf, table + 8 + 2 * 8 + 4)[0]
+    type_size = struct.unpack_from("<I", buf, table + 8 + slot * 8)[0]
+    offset = struct.unpack_from("<I", buf, table + 8 + slot * 8 + 4)[0]
     type_byte = type_size >> 24
     size = type_size & 0xFF_FF_FF
-    if type_byte != 0x03:
+    if type_byte != expected_type:
         raise RuntimeError(
-            f"slot 2 type is 0x{type_byte:02X}, expected 0x03 (Man) in {prot_path}"
+            f"slot {slot} type is 0x{type_byte:02X}, expected 0x{expected_type:02X}"
+            f" in {prot_path}"
         )
-    src_start = table + offset
-    src = buf[src_start:]
-    return lzs_decompress(lzs_bin, src, size)
+    return lzs_decompress(lzs_bin, buf[table + offset:], size)
+
+
+def parse_tmd_pack(pack: bytes) -> list[dict]:
+    """Parse a slot-1 TMD pack as `[u32 count][u32 word_offsets[count]][TMDs]`.
+    Offsets are in 4-byte words (same convention as `prot::timpack`); the
+    dispatcher's pointer arithmetic is `puVar1 + puVar5[1]` on `uint*`.
+
+    Returns one record per TMD with magic, nobj, body byte-range, and md5."""
+    count = struct.unpack_from("<I", pack, 0)[0]
+    word_offsets = list(struct.unpack_from(f"<{count}I", pack, 4))
+    out = []
+    for k in range(count):
+        bo = word_offsets[k] * 4
+        end = (word_offsets[k + 1] * 4) if k + 1 < count else len(pack)
+        if bo + 12 > len(pack) or end > len(pack) or end <= bo:
+            out.append({"slot": k, "byte_offset": bo, "byte_end": end,
+                        "magic_ok": False, "nobj": 0, "body_bytes": 0,
+                        "md5": ""})
+            continue
+        magic, _flags, nobj = struct.unpack_from("<3I", pack, bo)
+        body = pack[bo:end]
+        out.append({
+            "slot": k,
+            "byte_offset": bo,
+            "byte_end": end,
+            "body_bytes": len(body),
+            "magic_ok": magic == 0x80000002,
+            "nobj": nobj,
+            "md5": hashlib.md5(body).hexdigest()[:12],
+        })
+    return out
 
 
 def parse_placements(man: bytes) -> dict:
@@ -205,8 +251,39 @@ def main():
             sys.exit(f"PROT entry {base:04d}_*.BIN missing under {prot_dir}.\n"
                      f"Run `target/release/legaia-extract <DISC> --out /tmp/legaia-extract` first.")
         prot_path = matches[0]
-        man = extract_man(prot_path, lzs_bin)
+        man = extract_slot(prot_path, slot=2, expected_type=0x03, lzs_bin=lzs_bin)
         parsed = parse_placements(man)
+        tmd_pack = extract_slot(prot_path, slot=1, expected_type=0x02, lzs_bin=lzs_bin)
+        tmds = parse_tmd_pack(tmd_pack)
+        # Sanity: every scene-pool slot referenced by a placement must exist
+        # in the pack. (Slots >= 0xF0 map to the global TMD pool and aren't
+        # served by this pack.)
+        ref_scene = {p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0}
+        max_ref = max(ref_scene) if ref_scene else -1
+        if max_ref >= len(tmds):
+            print(f"  WARNING: {key} references scene slot {max_ref} but pack has "
+                  f"only {len(tmds)} TMDs", file=sys.stderr)
+        # Cross-link each placement to its source TMD record (or mark global).
+        for p in parsed["placements"]:
+            slot = p["tmd_slot"]
+            if slot >= 0xF0:
+                p["tmd_source"] = {
+                    "kind": "global_pool",
+                    "global_index": slot - 0xF0,
+                }
+            elif slot < len(tmds):
+                t = tmds[slot]
+                p["tmd_source"] = {
+                    "kind": "scene_tmd_pack",
+                    "pack_slot": slot,
+                    "byte_offset": t["byte_offset"],
+                    "byte_end": t["byte_end"],
+                    "body_bytes": t["body_bytes"],
+                    "nobj": t["nobj"],
+                    "md5": t["md5"],
+                }
+            else:
+                p["tmd_source"] = {"kind": "out_of_range", "pack_slot": slot}
         # Camera centroid uses only world-positioned actors (skip the
         # script-positioned 0x7F-sentinel records).
         real = [p for p in parsed["placements"] if not p["script_positioned"]]
@@ -222,17 +299,27 @@ def main():
             "cdname": cdname,
             "prot_base": base,
             "camera": {"x": cx, "z": cz, "azimuth": 0, "zoom": 1.0},
-            "tmd_count": 119,
+            "tmd_count": len(tmds),
             "world_extent": [16320, 16320],
             "header": {"a": parsed["a"], "b": parsed["b"], "c": parsed["c"], "total": parsed["total"]},
             "placements": parsed["placements"],
             "world_placed_count": len(real),
             "script_positioned_count": parsed["script_positioned_count"],
+            "tmd_pack": {
+                "count": len(tmds),
+                "decompressed_bytes": len(tmd_pack),
+                "records": tmds,
+            },
         }
+        # Per-placement scene-slot summary
+        scene_used = sorted({p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0})
+        global_used = sorted({p["tmd_slot"] - 0xF0 for p in parsed["placements"]
+                              if p["tmd_slot"] >= 0xF0})
         print(f"{label:18s} (PROT {base}, {prot_path.name}): "
-              f"{len(parsed['placements'])} total records, "
-              f"{len(real)} world-placed, "
-              f"{parsed['script_positioned_count']} script-positioned")
+              f"{len(parsed['placements'])} records "
+              f"({len(real)} placed, {parsed['script_positioned_count']} scripted), "
+              f"pack={len(tmds)} TMDs, "
+              f"scene-slots used={scene_used}, global={global_used}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2))

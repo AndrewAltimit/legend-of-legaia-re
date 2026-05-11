@@ -57,6 +57,26 @@ enum TimSource {
     Lzs { section: usize, offset: usize },
 }
 
+/// Loaded kingdom bundle (slot 0 = TIM_LIST -> VRAM, slot 1 = TMD pack ->
+/// per-slot TMD bodies). Built by [`LegaiaViewer::set_scene_kingdom`] and
+/// consumed by the assembled top-view world-map render path.
+struct KingdomPack {
+    /// PROT entry index this pack was loaded from (for status / dedup).
+    prot_index: u32,
+    /// 1 MB software PSX VRAM filled by uploading every TIM that decodes
+    /// out of slot 0's LZS payload.
+    vram: legaia_tim::Vram,
+    /// Decompressed slot-1 payload: `[u32 count][u32 word_offsets[count]][TMDs]`.
+    pack: Vec<u8>,
+    /// Per-slot byte offset within `pack` (= `word_offsets[k] * 4`, the
+    /// runtime pointer math from `FUN_8001F05C case 2`).
+    byte_offsets: Vec<usize>,
+    /// Per-slot body end (= next slot's start, or `pack.len()` for the last).
+    byte_ends: Vec<usize>,
+    /// Currently selected pack slot for the mesh accessors.
+    cur_slot: Option<usize>,
+}
+
 #[wasm_bindgen]
 pub struct LegaiaViewer {
     /// Canvas DOM id. We re-resolve the actual `HtmlCanvasElement` and its
@@ -74,6 +94,9 @@ pub struct LegaiaViewer {
     current: usize,
     /// CLUT index to use when rendering paletted TIMs.
     clut_idx: usize,
+    /// Currently-loaded kingdom bundle (Drake/Sebucus/Karisto). Populated by
+    /// `set_scene_kingdom`; consumed by the `pack_mesh_*` accessors.
+    kingdom: Option<KingdomPack>,
 }
 
 #[wasm_bindgen]
@@ -91,6 +114,7 @@ impl LegaiaViewer {
             viewable: Vec::new(),
             current: 0,
             clut_idx: 0,
+            kingdom: None,
         })
     }
 
@@ -273,6 +297,147 @@ impl LegaiaViewer {
     pub fn set_clut(&mut self, idx: u32) -> Result<(), JsValue> {
         self.clut_idx = idx as usize;
         self.render_current()
+    }
+
+    /// Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
+    /// (TIM_LIST) into a shared VRAM, and LZS-decode slot 1 (TMD pack) for
+    /// per-slot mesh access. Returns the pack count (= number of scene-pool
+    /// TMDs available to `pack_mesh`).
+    ///
+    /// `prot_base` is the kingdom's leading PROT entry index - 85 for Drake
+    /// (`map01`), 244 for Sebucus (`map02`), 391 for Karisto (`map03`).
+    /// Either the `scene_scripted_asset_table` (PROT base) or the bare
+    /// `scene_asset_table` (PROT base+1) works; the detector finds the
+    /// 7-asset table at the first 0x800-aligned offset whose `u32_le[0] == 7`
+    /// and `descriptor[0].data_offset == 0x40`.
+    ///
+    /// Implementation mirrors `FUN_8001F05C case 2` (TMD-pack dispatch): the
+    /// pack is `[u32 count][u32 word_offsets[count]][TMD bodies]` with
+    /// offsets in 4-byte words (`puVar1 + puVar5[1]` on `uint*`). The
+    /// VRAM upload is unconditional (every TIM in slot 0 is uploaded);
+    /// per-prim filtering happens later in `pack_mesh_*`.
+    pub fn set_scene_kingdom(&mut self, prot_base: u32) -> Result<u32, JsValue> {
+        let entries = parse_prot_toc(&self.disc)
+            .ok_or_else(|| JsValue::from_str("set_scene_kingdom: no PROT TOC available"))?;
+        // Try PROT base first (scene_scripted_asset_table variant), then
+        // base+1 (bare scene_asset_table). Either carries the same 7-asset
+        // bundle for the world-map kingdoms.
+        let pack = self
+            .try_load_kingdom_at(&entries, prot_base)
+            .or_else(|_| self.try_load_kingdom_at(&entries, prot_base + 1))
+            .map_err(|e| {
+                JsValue::from_str(&format!("set_scene_kingdom({prot_base}) failed: {e}"))
+            })?;
+        let count = pack.byte_offsets.len() as u32;
+        console_log(&format!(
+            "kingdom PROT {} loaded: {} TMDs in pack ({} bytes), VRAM filled",
+            pack.prot_index,
+            count,
+            pack.pack.len()
+        ));
+        self.kingdom = Some(pack);
+        Ok(count)
+    }
+
+    /// Set the active pack-mesh slot. Subsequent `pack_mesh_*` calls source
+    /// from `pack[byte_offsets[slot]..byte_ends[slot]]`. Returns an error
+    /// when no kingdom is loaded or `slot >= pack count`.
+    pub fn pack_mesh(&mut self, slot: u32) -> Result<u32, JsValue> {
+        let k = self
+            .kingdom
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("pack_mesh: no kingdom loaded"))?;
+        let s = slot as usize;
+        if s >= k.byte_offsets.len() {
+            return Err(JsValue::from_str(&format!(
+                "pack_mesh: slot {s} >= count {}",
+                k.byte_offsets.len()
+            )));
+        }
+        k.cur_slot = Some(s);
+        Ok(slot)
+    }
+
+    /// Number of TMDs in the currently-loaded kingdom pack. 0 when no
+    /// kingdom is loaded.
+    pub fn pack_count(&self) -> u32 {
+        self.kingdom
+            .as_ref()
+            .map(|k| k.byte_offsets.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// VRAM bytes (1 MB) built from every TIM in the kingdom's slot 0
+    /// (TIM_LIST). Reuse across every `pack_mesh_*` call - the kingdom
+    /// pack's per-slot TMDs all sample from this one shared image.
+    pub fn pack_vram_bytes(&self) -> Vec<u8> {
+        self.kingdom
+            .as_ref()
+            .map(|k| k.vram.as_bytes().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Parallel to [`Self::mesh_positions`] but sources from the currently
+    /// selected kingdom pack slot.
+    pub fn pack_mesh_positions(&self) -> Vec<f32> {
+        let Some(mesh) = self.build_kingdom_mesh() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.push(p[0]);
+            out.push(p[1]);
+            out.push(p[2]);
+        }
+        out
+    }
+
+    pub fn pack_mesh_uvs(&self) -> Vec<u8> {
+        let Some(mesh) = self.build_kingdom_mesh() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.push(uv[0]);
+            out.push(uv[1]);
+        }
+        out
+    }
+
+    pub fn pack_mesh_cba_tsb(&self) -> Vec<u16> {
+        let Some(mesh) = self.build_kingdom_mesh() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.push(ct[0]);
+            out.push(ct[1]);
+        }
+        out
+    }
+
+    pub fn pack_mesh_indices(&self) -> Vec<u32> {
+        self.build_kingdom_mesh()
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    pub fn pack_mesh_bounds(&self) -> Vec<f32> {
+        let Some(mesh) = self.build_kingdom_mesh() else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        let (lo, hi) = mesh.aabb();
+        let cx = (lo[0] + hi[0]) * 0.5;
+        let cy = (lo[1] + hi[1]) * 0.5;
+        let cz = (lo[2] + hi[2]) * 0.5;
+        let dx = (hi[0] - lo[0]) * 0.5;
+        let dy = (hi[1] - lo[1]) * 0.5;
+        let dz = (hi[2] - lo[2]) * 0.5;
+        let r = (dx * dx + dy * dy + dz * dz).sqrt().max(1.0);
+        vec![cx, cy, cz, r]
     }
 
     /// True if the current entry has a parseable TMD, suitable for the 3D
@@ -758,6 +923,148 @@ impl LegaiaViewer {
         Some((tmd, tmd_buf))
     }
 
+    /// Try to load a kingdom 7-asset bundle from the PROT entry at `prot_index`.
+    /// Returns the populated [`KingdomPack`] or a human-readable error.
+    fn try_load_kingdom_at(
+        &self,
+        entries: &[EntryMeta],
+        prot_index: u32,
+    ) -> Result<KingdomPack, String> {
+        let meta = entries
+            .iter()
+            .find(|e| e.index == prot_index)
+            .ok_or_else(|| format!("PROT entry {prot_index} not in TOC"))?;
+        let off = meta.byte_offset as usize;
+        let end = (meta.byte_offset + meta.size_bytes) as usize;
+        if end > self.disc.len() {
+            return Err(format!(
+                "PROT entry {prot_index} ranges [{off}..{end}) exceed disc len {}",
+                self.disc.len()
+            ));
+        }
+        let buf = &self.disc[off..end];
+
+        // Find the 7-asset table inside the entry. We scan 0x800-aligned
+        // offsets for `[u32 count = 7]` + `descriptor[0].data_offset == 0x40`;
+        // this catches both the prescript-prefixed variant (PROT base) and
+        // the bare scene_asset_table variant (PROT base+1) without needing
+        // separate detectors.
+        let table_off = find_asset_table_offset(buf)
+            .ok_or_else(|| format!("PROT entry {prot_index}: no 7-asset table found"))?;
+        let table = &buf[table_off..];
+
+        // Slot 0 = TIM_LIST (type 0x01).
+        let slot0_ts = read_u32_le_slice(table, 8)?;
+        let slot0_off = read_u32_le_slice(table, 12)? as usize;
+        let slot0_type = (slot0_ts >> 24) as u8;
+        let slot0_size = (slot0_ts & 0x00FF_FFFF) as usize;
+        if slot0_type != 0x01 {
+            return Err(format!("slot 0 type 0x{slot0_type:02X} != 0x01 (TIM_LIST)"));
+        }
+
+        // Slot 1 = TMD pack (type 0x02).
+        let slot1_ts = read_u32_le_slice(table, 16)?;
+        let slot1_off = read_u32_le_slice(table, 20)? as usize;
+        let slot1_type = (slot1_ts >> 24) as u8;
+        let slot1_size = (slot1_ts & 0x00FF_FFFF) as usize;
+        if slot1_type != 0x02 {
+            return Err(format!("slot 1 type 0x{slot1_type:02X} != 0x02 (TMD)"));
+        }
+
+        // Each descriptor's `data_offset` is the table-relative file position
+        // of that slot's LZS-compressed payload. Decode each independently.
+        let tim_src = table
+            .get(slot0_off..)
+            .ok_or_else(|| format!("slot 0 offset 0x{slot0_off:X} out of range"))?;
+        let tim_decoded = legaia_lzs::decompress(tim_src, slot0_size)
+            .map_err(|e| format!("slot 0 LZS decode failed: {e}"))?;
+
+        let pack_src = table
+            .get(slot1_off..)
+            .ok_or_else(|| format!("slot 1 offset 0x{slot1_off:X} out of range"))?;
+        let pack = legaia_lzs::decompress(pack_src, slot1_size)
+            .map_err(|e| format!("slot 1 LZS decode failed: {e}"))?;
+
+        // Build VRAM by walking every TIM the TIM_LIST decompresses to.
+        // TIM_LIST format is `[u32 count][u32 word_offsets[count]][TIMs]`
+        // (same shape as the TMD pack but with TIM bodies). Mirror the
+        // pointer math from `FUN_8001F05C case 1` -> byte_offset = word * 4.
+        let mut vram = legaia_tim::Vram::new();
+        if tim_decoded.len() >= 4 {
+            let count = u32::from_le_bytes(tim_decoded[0..4].try_into().unwrap()) as usize;
+            let table_bytes = 4 + count * 4;
+            if tim_decoded.len() >= table_bytes {
+                for k in 0..count {
+                    let woff =
+                        u32::from_le_bytes(tim_decoded[4 + k * 4..8 + k * 4].try_into().unwrap())
+                            as usize;
+                    let bo = woff.saturating_mul(4);
+                    if bo >= tim_decoded.len() {
+                        continue;
+                    }
+                    if let Ok(tim) = legaia_tim::parse(&tim_decoded[bo..]) {
+                        vram.upload_tim(&tim);
+                    }
+                }
+            }
+        }
+
+        // Parse the TMD-pack table.
+        if pack.len() < 4 {
+            return Err("TMD pack < 4 bytes".into());
+        }
+        let count = u32::from_le_bytes(pack[0..4].try_into().unwrap()) as usize;
+        let table_bytes = 4 + count * 4;
+        if pack.len() < table_bytes {
+            return Err(format!(
+                "TMD pack header truncated (need {table_bytes}, have {})",
+                pack.len()
+            ));
+        }
+        let mut byte_offsets = Vec::with_capacity(count);
+        for k in 0..count {
+            let woff = u32::from_le_bytes(pack[4 + k * 4..8 + k * 4].try_into().unwrap()) as usize;
+            byte_offsets.push(woff.saturating_mul(4));
+        }
+        let mut byte_ends = Vec::with_capacity(count);
+        for k in 0..count {
+            byte_ends.push(byte_offsets.get(k + 1).copied().unwrap_or(pack.len()));
+        }
+
+        Ok(KingdomPack {
+            prot_index,
+            vram,
+            pack,
+            byte_offsets,
+            byte_ends,
+            cur_slot: None,
+        })
+    }
+
+    /// Build the textured mesh for the currently-selected kingdom pack slot.
+    ///
+    /// Uses the unfiltered [`legaia_tmd::mesh::tmd_to_vram_mesh`] (not the
+    /// VRAM-targeted filter the per-PROT-entry path uses). The kingdom's
+    /// TIM_LIST packs ~50 TIMs into rows 479-510, so many CLUT rows hold
+    /// data from multiple TIMs and the filter's depth-mismatch heuristic
+    /// drops almost every prim. We accept that some prims may sample
+    /// "wrong" CLUT data (whichever TIM won the last-write-wins race for
+    /// that VRAM row) in exchange for geometry coverage: the assembled
+    /// continent view is "show the kingdom's shape and colour" first,
+    /// "pixel-perfect texturing" later. A future refinement is per-TMD
+    /// targeted upload (compute the prim CBA/TSB set, upload only the
+    /// matching TIMs), which would avoid the collision but require
+    /// rebuilding VRAM per slot.
+    fn build_kingdom_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
+        let k = self.kingdom.as_ref()?;
+        let slot = k.cur_slot?;
+        let start = *k.byte_offsets.get(slot)?;
+        let end = *k.byte_ends.get(slot)?;
+        let tmd_buf = k.pack.get(start..end)?;
+        let tmd = legaia_tmd::parse(tmd_buf).ok()?;
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, tmd_buf))
+    }
+
     fn tmd_stats(&self, entry: &ViewerEntry) -> (usize, usize) {
         let off = entry.meta.byte_offset as usize;
         let end = (entry.meta.byte_offset + entry.meta.size_bytes) as usize;
@@ -867,6 +1174,32 @@ fn tim_block_targeting(tim: &legaia_tim::Tim, needs: &[PrimTarget]) -> (bool, bo
 
 fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
     a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Locate the 7-asset table inside a kingdom PROT buffer. Scans
+/// 0x800-aligned offsets for `u32_le[0] == 7` and
+/// `descriptor[0].data_offset == 0x40` (the structural signature shared by
+/// the `scene_scripted_asset_table` and bare `scene_asset_table` variants).
+fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
+    let mut off = 0usize;
+    while off + 64 <= buf.len() {
+        let count = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+        if count == 7 {
+            let d0 = u32::from_le_bytes(buf[off + 12..off + 16].try_into().unwrap());
+            if d0 == 0x40 {
+                return Some(off);
+            }
+        }
+        off += 0x800;
+    }
+    None
+}
+
+fn read_u32_le_slice(buf: &[u8], at: usize) -> Result<u32, String> {
+    let bytes = buf
+        .get(at..at + 4)
+        .ok_or_else(|| format!("read_u32 at {at} oob (len {})", buf.len()))?;
+    Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 fn resolve_canvas(canvas_id: &str) -> Result<HtmlCanvasElement, JsValue> {

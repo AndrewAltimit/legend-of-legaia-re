@@ -145,6 +145,32 @@ export class LegaiaViewer {
     mesh_uvs(): Uint8Array;
     constructor(canvas_id: string);
     next_entry(): number;
+    /**
+     * Number of TMDs in the currently-loaded kingdom pack. 0 when no
+     * kingdom is loaded.
+     */
+    pack_count(): number;
+    /**
+     * Set the active pack-mesh slot. Subsequent `pack_mesh_*` calls source
+     * from `pack[byte_offsets[slot]..byte_ends[slot]]`. Returns an error
+     * when no kingdom is loaded or `slot >= pack count`.
+     */
+    pack_mesh(slot: number): number;
+    pack_mesh_bounds(): Float32Array;
+    pack_mesh_cba_tsb(): Uint16Array;
+    pack_mesh_indices(): Uint32Array;
+    /**
+     * Parallel to [`Self::mesh_positions`] but sources from the currently
+     * selected kingdom pack slot.
+     */
+    pack_mesh_positions(): Float32Array;
+    pack_mesh_uvs(): Uint8Array;
+    /**
+     * VRAM bytes (1 MB) built from every TIM in the kingdom's slot 0
+     * (TIM_LIST). Reuse across every `pack_mesh_*` call - the kingdom
+     * pack's per-slot TMDs all sample from this one shared image.
+     */
+    pack_vram_bytes(): Uint8Array;
     prev_entry(): number;
     /**
      * Render the current entry's TMD at the given rotation into a flat
@@ -158,6 +184,26 @@ export class LegaiaViewer {
      */
     render_tmd_triangles(yaw: number, pitch: number, distance: number, pan_x: number, pan_y: number, viewport_w: number, viewport_h: number): Float32Array;
     set_clut(idx: number): void;
+    /**
+     * Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
+     * (TIM_LIST) into a shared VRAM, and LZS-decode slot 1 (TMD pack) for
+     * per-slot mesh access. Returns the pack count (= number of scene-pool
+     * TMDs available to `pack_mesh`).
+     *
+     * `prot_base` is the kingdom's leading PROT entry index - 85 for Drake
+     * (`map01`), 244 for Sebucus (`map02`), 391 for Karisto (`map03`).
+     * Either the `scene_scripted_asset_table` (PROT base) or the bare
+     * `scene_asset_table` (PROT base+1) works; the detector finds the
+     * 7-asset table at the first 0x800-aligned offset whose `u32_le[0] == 7`
+     * and `descriptor[0].data_offset == 0x40`.
+     *
+     * Implementation mirrors `FUN_8001F05C case 2` (TMD-pack dispatch): the
+     * pack is `[u32 count][u32 word_offsets[count]][TMD bodies]` with
+     * offsets in 4-byte words (`puVar1 + puVar5[1]` on `uint*`). The
+     * VRAM upload is unconditional (every TIM in slot 0 is uploaded);
+     * per-prim filtering happens later in `pack_mesh_*`.
+     */
+    set_scene_kingdom(prot_base: number): number;
     /**
      * Jump to the slot in the filtered list (NOT the PROT index). Used by
      * the dropdown / list-click UI.
@@ -203,9 +249,18 @@ export interface InitOutput {
     readonly legaiaviewer_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_new: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_next_entry: (a: number) => [number, number, number];
+    readonly legaiaviewer_pack_count: (a: number) => number;
+    readonly legaiaviewer_pack_mesh: (a: number, b: number) => [number, number, number];
+    readonly legaiaviewer_pack_mesh_bounds: (a: number) => [number, number];
+    readonly legaiaviewer_pack_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaviewer_pack_mesh_indices: (a: number) => [number, number];
+    readonly legaiaviewer_pack_mesh_positions: (a: number) => [number, number];
+    readonly legaiaviewer_pack_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_status: (a: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;

@@ -370,6 +370,88 @@ export class LegaiaViewer {
         return ret[0] >>> 0;
     }
     /**
+     * Number of TMDs in the currently-loaded kingdom pack. 0 when no
+     * kingdom is loaded.
+     * @returns {number}
+     */
+    pack_count() {
+        const ret = wasm.legaiaviewer_pack_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Set the active pack-mesh slot. Subsequent `pack_mesh_*` calls source
+     * from `pack[byte_offsets[slot]..byte_ends[slot]]`. Returns an error
+     * when no kingdom is loaded or `slot >= pack count`.
+     * @param {number} slot
+     * @returns {number}
+     */
+    pack_mesh(slot) {
+        const ret = wasm.legaiaviewer_pack_mesh(this.__wbg_ptr, slot);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    pack_mesh_bounds() {
+        const ret = wasm.legaiaviewer_pack_mesh_bounds(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    pack_mesh_cba_tsb() {
+        const ret = wasm.legaiaviewer_pack_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    pack_mesh_indices() {
+        const ret = wasm.legaiaviewer_pack_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Parallel to [`Self::mesh_positions`] but sources from the currently
+     * selected kingdom pack slot.
+     * @returns {Float32Array}
+     */
+    pack_mesh_positions() {
+        const ret = wasm.legaiaviewer_pack_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    pack_mesh_uvs() {
+        const ret = wasm.legaiaviewer_pack_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * VRAM bytes (1 MB) built from every TIM in the kingdom's slot 0
+     * (TIM_LIST). Reuse across every `pack_mesh_*` call - the kingdom
+     * pack's per-slot TMDs all sample from this one shared image.
+     * @returns {Uint8Array}
+     */
+    pack_vram_bytes() {
+        const ret = wasm.legaiaviewer_pack_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * @returns {number}
      */
     prev_entry() {
@@ -411,6 +493,34 @@ export class LegaiaViewer {
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
+    }
+    /**
+     * Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
+     * (TIM_LIST) into a shared VRAM, and LZS-decode slot 1 (TMD pack) for
+     * per-slot mesh access. Returns the pack count (= number of scene-pool
+     * TMDs available to `pack_mesh`).
+     *
+     * `prot_base` is the kingdom's leading PROT entry index - 85 for Drake
+     * (`map01`), 244 for Sebucus (`map02`), 391 for Karisto (`map03`).
+     * Either the `scene_scripted_asset_table` (PROT base) or the bare
+     * `scene_asset_table` (PROT base+1) works; the detector finds the
+     * 7-asset table at the first 0x800-aligned offset whose `u32_le[0] == 7`
+     * and `descriptor[0].data_offset == 0x40`.
+     *
+     * Implementation mirrors `FUN_8001F05C case 2` (TMD-pack dispatch): the
+     * pack is `[u32 count][u32 word_offsets[count]][TMD bodies]` with
+     * offsets in 4-byte words (`puVar1 + puVar5[1]` on `uint*`). The
+     * VRAM upload is unconditional (every TIM in slot 0 is uploaded);
+     * per-prim filtering happens later in `pack_mesh_*`.
+     * @param {number} prot_base
+     * @returns {number}
+     */
+    set_scene_kingdom(prot_base) {
+        const ret = wasm.legaiaviewer_set_scene_kingdom(this.__wbg_ptr, prot_base);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
     }
     /**
      * Jump to the slot in the filtered list (NOT the PROT index). Used by
