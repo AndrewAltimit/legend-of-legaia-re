@@ -168,9 +168,7 @@
       return arrowSvg(d, color);
     }).join('');
     const cmd = (art.command || []).join(' · ');
-    const ac = art.action_constant != null
-      ? `<span class="art-ac" title="action_constant">0x${art.action_constant.toString(16).toUpperCase().padStart(2,'0')}</span>`
-      : '';
+    const ac = art.action_constant != null;
     return `
       <article class="art-card art-card-${kind}">
         <header class="art-card-row">
@@ -178,10 +176,9 @@
           <span class="art-ap" aria-label="AP cost">${art.ap}<span class="art-ap-unit"> AP</span></span>
         </header>
         <div class="art-card-row art-card-row-sec">
-          <div class="art-arrows" aria-label="Input sequence">${arrows}</div>
-          <span class="art-command">${escapeHtml(cmd)}</span>
+          <div class="art-arrows" aria-label="Input sequence" title="${escapeHtml(cmd)}">${arrows}</div>
+          ${ac ? `<span class="art-ac" title="action_constant">0x${art.action_constant.toString(16).toUpperCase().padStart(2,'0')}</span>` : ''}
         </div>
-        ${ac ? `<div class="art-meta">${ac}</div>` : ''}
       </article>`;
   }
 

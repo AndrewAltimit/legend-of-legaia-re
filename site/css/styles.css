@@ -2481,30 +2481,16 @@ kbd {
   align-items: center;
   gap: 4px;
   min-height: 22px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
 }
 .art-arrows .ar-icon { width: 18px; height: 18px; }
-.art-command {
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  color: rgba(244,244,244,0.6);
-  text-align: right;
-  flex: 1 1 auto;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.art-meta {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.4rem;
-  padding-top: 0.25rem;
-  border-top: 1px dashed rgba(184,138,68,0.35);
-}
 .art-ac {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: rgba(244,180,26,0.7);
+  color: rgba(244,180,26,0.65);
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .arts-loading {
   color: var(--text-dim);
