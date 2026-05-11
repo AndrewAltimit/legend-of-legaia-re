@@ -1,0 +1,251 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; shops &amp; vendors</div>
+  <h1>Shops &amp; vendors</h1>
+  <p class="lede">
+    Every merchant in the game, joined to the priced inventory tables. Driven by <code>data/gamedata/shops.toml</code> + <code>items.toml</code> + <code>weapons.toml</code> + <code>armor.toml</code> + <code>accessories.toml</code> - the same curated tables the <a href="reference/gamedata.html">curated game-data</a> reference exposes through the <code>gamedata-tool</code> CLI. Click an item for its effect, category, and the data anchor that drives the reverse-engineering of the on-disc record.
+  </p>
+</header>
+
+<section class="doc-section" id="browser">
+  <h2>Vendor browser</h2>
+  <div class="shop-browser">
+    <!-- Column 1: town list -->
+    <aside class="shop-towns" id="shop-towns" aria-label="Towns">
+      <div class="shop-pane-title">Town</div>
+      <ul class="shop-list" id="shop-town-list"></ul>
+    </aside>
+
+    <!-- Column 2: vendors + inventory of the selected town -->
+    <div class="shop-middle">
+      <header class="shop-mid-head">
+        <div class="shop-pane-title" id="shop-town-name">Select a town</div>
+        <div class="shop-pane-sub"  id="shop-town-meta"></div>
+      </header>
+      <div class="shop-vendors" id="shop-vendors"></div>
+    </div>
+
+    <!-- Column 3: item detail panel -->
+    <aside class="shop-detail" id="shop-detail" aria-label="Selected item">
+      <div class="shop-pane-title">Item detail</div>
+      <div class="shop-detail-body" id="shop-detail-body">
+        <p style="color: var(--text-dim); font-size: 0.88rem;">Click any item in the inventory to see its effect, price, category, and the data anchor used to cross-validate the binary record.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="doc-section" id="data-anchors">
+  <h2>What "data anchor" means</h2>
+  <p>Each item's display panel cites a TOML key (<code>healing_leaf</code>, <code>survival_knife</code>) plus the table it lives in. Those keys are stable identifiers shared between the walkthrough-derived curated tables and the binary records being reverse-engineered:</p>
+  <ul class="bullets">
+    <li><strong>Items</strong> resolve to runtime inventory slots at <code>0x80085958+</code> (cheat-database pinned).</li>
+    <li><strong>Weapons / armor / accessories</strong> resolve to per-character equipment slots inside the <a href="formats/save-record.html">0x414-byte character record</a> (cheat-database offsets <code>+0x186</code>..<code>+0x1A1</code>).</li>
+    <li><strong>Shop inventories</strong> are still held inside the per-scene shop overlay (capture pending - see the open-work list on the <a href="index.html">home page</a>); the curated rows here are the cross-validation ground truth.</li>
+  </ul>
+  <p>The decomp narrative around buying / inn / level-up flows is on the <a href="subsystems/shop.html">Shop subsystem</a> page.</p>
+</section>
+
+<script>
+/* ------------------------------------------------------------------
+ * Shops page: three-pane interactive browser.
+ *   1) Towns list (clicks select)
+ *   2) Vendors + inventory of the selected town
+ *   3) Per-item detail panel
+ *
+ * shops.json shape (see site/_gen.py:build_gamedata_json):
+ *   { towns: [
+ *       { name, scene_label,
+ *         shops:   [ { name, merchant, phase, featured, items: [...] } ],
+ *         casino:  [ { kind:"slot",    cost_coins,   item } ],
+ *         fishing: [ { kind:"fishing", cost_points, notes, item } ]
+ *       }, ...
+ *     ] }
+ * ------------------------------------------------------------------ */
+(async function () {
+  const $towns   = document.getElementById('shop-town-list');
+  const $vendors = document.getElementById('shop-vendors');
+  const $title   = document.getElementById('shop-town-name');
+  const $meta    = document.getElementById('shop-town-meta');
+  const $detail  = document.getElementById('shop-detail-body');
+  if (!$towns || !$vendors || !$detail) return;
+
+  let payload = null;
+  try {
+    payload = await fetch('shops.json').then(r => r.json());
+  } catch (err) {
+    $vendors.innerHTML = '<p style="color:var(--text-dim)">Couldn\'t load shops.json - re-run <code>python3 site/_gen.py</code>.</p>';
+    return;
+  }
+
+  const KIND_LABELS = {
+    item:      'Item',
+    weapon:    'Weapon',
+    armor:     'Armor',
+    accessory: 'Accessory',
+    unknown:   'Unknown',
+  };
+  const KIND_TABLE = {
+    item:      'items.toml',
+    weapon:    'weapons.toml',
+    armor:     'armor.toml',
+    accessory: 'accessories.toml',
+    unknown:   '(none)',
+  };
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function renderDetail(item, ctx) {
+    const kind = item._kind || 'unknown';
+    const kindLabel = KIND_LABELS[kind] || kind;
+    const table     = KIND_TABLE[kind] || '?';
+
+    // Build a flat field list. Skip noise.
+    const skip = new Set(['_kind', 'key', 'name', 'effect', 'missing']);
+    const fields = Object.keys(item)
+      .filter(k => !skip.has(k) && item[k] !== null && item[k] !== undefined && item[k] !== '')
+      .map(k => `<tr><td class="kfn">${escapeHtml(k)}</td><td>${escapeHtml(item[k])}</td></tr>`).join('');
+
+    const ctxLine = ctx
+      ? `<div class="detail-ctx">Sold by <strong>${escapeHtml(ctx.shopName)}</strong> in <strong>${escapeHtml(ctx.town)}</strong>${ctx.phase ? ` &middot; <em>${escapeHtml(ctx.phase)}</em>` : ''}${ctx.merchant ? ` &middot; merchant ${escapeHtml(ctx.merchant)}` : ''}</div>` : '';
+
+    $detail.innerHTML = `
+      <div class="detail-kind detail-kind-${kind}">${kindLabel}</div>
+      <h3 class="detail-name">${escapeHtml(item.name)}${item.missing ? ' <span class="tag tag-stub">missing</span>' : ''}</h3>
+      ${item.effect ? `<p class="detail-effect">${escapeHtml(item.effect)}</p>` : ''}
+      ${ctxLine}
+      <div class="detail-anchor">
+        <span class="detail-anchor-label">Data anchor</span>
+        <code>${escapeHtml(table)}</code> &middot; key <code>${escapeHtml(item.key)}</code>
+      </div>
+      ${fields ? `<table class="detail-fields"><tbody>${fields}</tbody></table>` : ''}
+    `;
+  }
+
+  function renderShopItems(shop, town) {
+    const rows = shop.items.map(it => {
+      const price = it.price != null ? `${it.price.toLocaleString()} G`
+                  : it.attack ? `ATK ${it.attack}`
+                  : '';
+      const featured = shop.featured && shop.featured.includes(it.key);
+      return `<li class="ship-item ship-item-${it._kind || 'unknown'} ${featured ? 'ship-item-featured' : ''}"
+                 data-key="${escapeHtml(it.key)}">
+        <span class="ship-kind">${(KIND_LABELS[it._kind] || '?').slice(0,3).toUpperCase()}</span>
+        <span class="ship-name">${escapeHtml(it.name)}${featured ? ' <span class="ship-new">NEW</span>' : ''}</span>
+        <span class="ship-price">${price}</span>
+      </li>`;
+    }).join('');
+
+    const meta = [];
+    if (shop.merchant) meta.push(`merchant: ${escapeHtml(shop.merchant)}`);
+    if (shop.phase)    meta.push(`<em>${escapeHtml(shop.phase)}</em>`);
+    const metaLine = meta.length ? `<div class="vendor-meta">${meta.join(' &middot; ')}</div>` : '';
+
+    return `<section class="vendor">
+      <header class="vendor-head">
+        <h4>${escapeHtml(shop.name)}</h4>
+        ${metaLine}
+      </header>
+      <ul class="ship-list">${rows}</ul>
+    </section>`;
+  }
+
+  function renderCasinoItems(prizes, town) {
+    if (!prizes.length) return '';
+    const rows = prizes.map(p => `
+      <li class="ship-item ship-item-${p.item._kind || 'unknown'} ship-item-casino" data-key="${escapeHtml(p.item.key)}">
+        <span class="ship-kind">SLT</span>
+        <span class="ship-name">${escapeHtml(p.item.name)}</span>
+        <span class="ship-price">${p.cost_coins.toLocaleString()} coins</span>
+      </li>`).join('');
+    return `<section class="vendor vendor-casino">
+      <header class="vendor-head"><h4>Slot prizes</h4>
+        <div class="vendor-meta">Pay coins won on the slot machine</div></header>
+      <ul class="ship-list">${rows}</ul></section>`;
+  }
+
+  function renderFishingItems(prizes, town) {
+    if (!prizes.length) return '';
+    const rows = prizes.map(p => `
+      <li class="ship-item ship-item-${p.item._kind || 'unknown'} ship-item-fishing" data-key="${escapeHtml(p.item.key)}">
+        <span class="ship-kind">FSH</span>
+        <span class="ship-name">${escapeHtml(p.item.name)}${p.notes ? ' <span class="ship-new">*</span>' : ''}</span>
+        <span class="ship-price">${p.cost_points.toLocaleString()} pts</span>
+      </li>`).join('');
+    return `<section class="vendor vendor-fishing">
+      <header class="vendor-head"><h4>Fishing prizes</h4>
+        <div class="vendor-meta">Spend points at the pond store</div></header>
+      <ul class="ship-list">${rows}</ul></section>`;
+  }
+
+  function selectTown(idx) {
+    const t = payload.towns[idx];
+    if (!t) return;
+    $towns.querySelectorAll('li').forEach((li, i) => li.classList.toggle('active', i === idx));
+    $title.textContent = t.name;
+    const sceneLink = t.scene_label
+      ? ` &middot; CDNAME <a href="viewer.html?scene=${t.scene_label}"><code>${t.scene_label}</code></a>` : '';
+    const counts = [];
+    counts.push(`${t.shops.length} vendor${t.shops.length === 1 ? '' : 's'}`);
+    if (t.casino.length)  counts.push(`${t.casino.length} slot prize${t.casino.length === 1 ? '' : 's'}`);
+    if (t.fishing.length) counts.push(`${t.fishing.length} fishing prize${t.fishing.length === 1 ? '' : 's'}`);
+    $meta.innerHTML = counts.join(' &middot; ') + sceneLink;
+
+    $vendors.innerHTML = [
+      ...t.shops.map(s => renderShopItems(s, t.name)),
+      renderCasinoItems(t.casino,   t.name),
+      renderFishingItems(t.fishing, t.name),
+    ].join('');
+
+    // Wire item clicks.
+    $vendors.querySelectorAll('.ship-item').forEach(li => {
+      li.addEventListener('click', () => {
+        const key = li.dataset.key;
+        const vendorSection = li.closest('.vendor');
+        const shopName = vendorSection?.querySelector('h4')?.textContent || '';
+        // Find the actual item record (search shops, casino, fishing).
+        let it = null, shop = null;
+        for (const s of t.shops) {
+          const hit = s.items.find(i => i.key === key);
+          if (hit) { it = hit; shop = s; break; }
+        }
+        if (!it) for (const p of t.casino)  if (p.item.key === key) { it = p.item; shop = { name: 'Slot prize' }; break; }
+        if (!it) for (const p of t.fishing) if (p.item.key === key) { it = p.item; shop = { name: 'Fishing prize' }; break; }
+        if (!it) return;
+        renderDetail(it, {
+          town: t.name,
+          shopName: shop?.name || shopName,
+          phase: shop?.phase || null,
+          merchant: shop?.merchant || null,
+        });
+        $vendors.querySelectorAll('.ship-item.selected').forEach(el => el.classList.remove('selected'));
+        li.classList.add('selected');
+      });
+    });
+  }
+
+  // Build town list.
+  $towns.innerHTML = payload.towns.map((t, i) => `
+    <li data-idx="${i}">
+      <span class="town-name">${escapeHtml(t.name)}</span>
+      <span class="town-sub">${t.shops.length} vendor${t.shops.length === 1 ? '' : 's'}${t.casino.length || t.fishing.length ? ' +' : ''}</span>
+    </li>`).join('');
+  $towns.querySelectorAll('li').forEach(li => {
+    li.addEventListener('click', () => selectTown(parseInt(li.dataset.idx, 10)));
+  });
+
+  // Auto-select first town, or honour ?town=Rim+Elm in the URL.
+  const params = new URLSearchParams(location.search);
+  const want = params.get('town');
+  let startIdx = 0;
+  if (want) {
+    const found = payload.towns.findIndex(t => t.name === want);
+    if (found >= 0) startIdx = found;
+  }
+  selectTown(startIdx);
+})();
+</script>

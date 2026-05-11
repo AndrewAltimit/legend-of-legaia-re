@@ -5,8 +5,15 @@ Layout is shared via JS (site/js/layout.js), so each generated HTML file is
 just <head> + <main> with the page-specific content. The sidebar nav, TOC
 rail, and prev/next footer are injected at runtime by layout.js.
 
-Also writes site/search-index.json: one entry per (page, h2/h3 heading)
-plus one root entry per page. Drives the in-page search overlay.
+Also writes:
+  - site/search-index.json: one entry per (page, h2/h3 heading) plus one
+    root entry per page. Drives the in-page search overlay.
+  - site/scenes.json: curated CDNAME -> category map for the asset viewer's
+    Scene filter (Towns / Field areas / Battle / Cutscenes / Audio / Other).
+  - site/shops.json: joined shop + item + weapon + armor + accessory data
+    that the interactive shops page consumes.
+  - site/world.json: per-town summary (CDNAME labels, enemies, bosses,
+    shops, casino, fishing) for the world page.
 
 Run from the repo root:
     python3 site/_gen.py
@@ -15,11 +22,13 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CONTENT = ROOT / "_content"
+GAMEDATA = ROOT.parent / "data" / "gamedata"
 
 
 def html_template(title: str, depth: int, active_key: str, body: str, extra_head: str = "") -> str:
@@ -59,6 +68,8 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("architecture.html",          "How the layers stack",          "architecture",               "architecture.html"),
     ("quickstart.html",            "Quick start",                   "quickstart",                 "quickstart.html"),
     ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),
+    ("world.html",                 "Game world",                    "world",                      "world.html"),
+    ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
     # depth = 1
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
     ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
@@ -127,6 +138,389 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("reference/cheats.html",      "Cheat databases",               "reference/cheats",           "reference/cheats.html"),
     ("reference/gamedata.html",    "Curated game-data tables",      "reference/gamedata",         "reference/gamedata.html"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Curated CDNAME -> category map.
+#
+# Each entry pins the *first* PROT index for a CDNAME block (the value
+# of the `#define <label> N` marker). Coverage runs from each label's
+# `prot_start` to the *next* label's start - 1, inclusive. The category
+# drives the asset viewer's Scene filter; the display name is the
+# walkthrough's English town/area name where one exists.
+#
+# Categories:
+#   town       - visitable settlement (NPC dialog, shops, inn)
+#   field      - field map (dungeon / overworld pocket / mountain / cave)
+#   world_map  - world-map scenes (map01/02/03)
+#   cutscene   - op*/ed* engine cutscene scenes
+#   battle     - battle-only data blocks (battle_data, monster_data, ...)
+#   audio      - audio-only data blocks (sound_data, vab_*, music_*)
+#   system     - everything else (init, gameover, level_up, card_data, ...)
+# ---------------------------------------------------------------------------
+
+CDNAME_SCENES: list[dict] = [
+    # System / boot
+    {"label": "init_data",        "start": 0,    "category": "system",    "display": "Boot init"},
+    {"label": "gameover_data",    "start": 1,    "category": "system",    "display": "Game over"},
+    # Towns + landmark fields - Karisto continent
+    {"label": "town01",           "start": 3,    "category": "town",      "display": "Rim Elm"},
+    {"label": "town0b",           "start": 12,   "category": "town",      "display": "Town (0b)"},
+    {"label": "town0c",           "start": 21,   "category": "town",      "display": "Town (0c)"},
+    {"label": "izumi",            "start": 30,   "category": "town",      "display": "Hunter's Spring"},
+    {"label": "cave01",           "start": 38,   "category": "field",     "display": "Snowdrift Cave"},
+    {"label": "vell",             "start": 45,   "category": "town",      "display": "Drake Castle"},
+    {"label": "bylon",            "start": 52,   "category": "town",      "display": "Biron Monastery"},
+    {"label": "dolk",             "start": 60,   "category": "field",     "display": "Mist field (dolk)"},
+    {"label": "dolk2",            "start": 68,   "category": "field",     "display": "Mist field (dolk2)"},
+    {"label": "suimon",           "start": 77,   "category": "field",     "display": "Floodgate"},
+    {"label": "map01",            "start": 85,   "category": "world_map", "display": "World map (Karisto)"},
+    {"label": "garmel",           "start": 94,   "category": "field",     "display": "Field (garmel)"},
+    {"label": "vozz",             "start": 103,  "category": "field",     "display": "Voz Forest"},
+    {"label": "keikoku",          "start": 111,  "category": "field",     "display": "Ravine (keikoku)"},
+    {"label": "rikuroa2",         "start": 120,  "category": "field",     "display": "Mt. Rikuroa (upper)"},
+    {"label": "dream",            "start": 128,  "category": "field",     "display": "Dream sequence"},
+    {"label": "jiji",             "start": 137,  "category": "field",     "display": "Elder's place"},
+    {"label": "retock",           "start": 145,  "category": "field",     "display": "Field (retock)"},
+    {"label": "rikuroa",          "start": 155,  "category": "field",     "display": "Mt. Rikuroa"},
+    {"label": "geremi",           "start": 165,  "category": "town",      "display": "Jeremi"},
+    {"label": "stone",            "start": 174,  "category": "field",     "display": "Stone field"},
+    {"label": "balden",           "start": 182,  "category": "town",      "display": "Vidna"},
+    {"label": "conc",             "start": 191,  "category": "town",      "display": "Conkram"},
+    {"label": "rayman",           "start": 199,  "category": "town",      "display": "Ratayu"},
+    {"label": "ropeway",          "start": 207,  "category": "field",     "display": "Ropeway"},
+    {"label": "dohaty",           "start": 217,  "category": "field",     "display": "Dohati's Castle"},
+    {"label": "station",          "start": 226,  "category": "town",      "display": "Karisto Station"},
+    {"label": "tunnela",          "start": 235,  "category": "field",     "display": "Tunnel A"},
+    {"label": "map02",            "start": 244,  "category": "world_map", "display": "World map (Sebucus)"},
+    {"label": "tower",            "start": 254,  "category": "field",     "display": "Rogue Tower"},
+    {"label": "teien",            "start": 263,  "category": "field",     "display": "Sky Gardens"},
+    {"label": "tunnelb",          "start": 272,  "category": "field",     "display": "Tunnel B"},
+    {"label": "retockin",         "start": 281,  "category": "field",     "display": "Retock interior"},
+    {"label": "retona",           "start": 290,  "category": "field",     "display": "Mt. Letona"},
+    {"label": "jagaroom",         "start": 300,  "category": "field",     "display": "Juggernaut chamber"},
+    {"label": "tunnelc",          "start": 309,  "category": "field",     "display": "Tunnel C"},
+    {"label": "balden2",          "start": 318,  "category": "town",      "display": "Vidna (revisit)"},
+    {"label": "rayman2",          "start": 328,  "category": "town",      "display": "Ratayu (revisit)"},
+    {"label": "ropeway2",         "start": 337,  "category": "field",     "display": "Ropeway (revisit)"},
+    # Master continent
+    {"label": "town0d",           "start": 347,  "category": "town",      "display": "Sol"},
+    {"label": "son",              "start": 354,  "category": "field",     "display": "Field (son)"},
+    {"label": "concnow",          "start": 362,  "category": "field",     "display": "Conkram (Mist)"},
+    {"label": "taiku",            "start": 371,  "category": "field",     "display": "Muscle Dome"},
+    {"label": "deene",            "start": 382,  "category": "town",      "display": "Buma"},
+    {"label": "map03",            "start": 391,  "category": "world_map", "display": "World map (Master)"},
+    {"label": "doman",            "start": 399,  "category": "field",     "display": "Field (doman)"},
+    {"label": "bubu1",            "start": 407,  "category": "field",     "display": "Usha Research Center"},
+    {"label": "bubu2",            "start": 416,  "category": "field",     "display": "Usha (deeper)"},
+    {"label": "taiku2",           "start": 425,  "category": "field",     "display": "Muscle Dome (later)"},
+    {"label": "uru",              "start": 434,  "category": "field",     "display": "Uru Mais"},
+    {"label": "uru2",             "start": 444,  "category": "field",     "display": "Uru Mais (deeper)"},
+    {"label": "urudre1",          "start": 454,  "category": "field",     "display": "Uru Mais (dream 1)"},
+    {"label": "urudre2",          "start": 465,  "category": "field",     "display": "Uru Mais (dream 2)"},
+    {"label": "urudre3",          "start": 474,  "category": "field",     "display": "Uru Mais (dream 3)"},
+    {"label": "kor",              "start": 483,  "category": "field",     "display": "Field (kor)"},
+    {"label": "kor3",             "start": 492,  "category": "field",     "display": "Field (kor3)"},
+    {"label": "kor4",             "start": 501,  "category": "field",     "display": "Field (kor4)"},
+    {"label": "kor5",             "start": 509,  "category": "field",     "display": "Field (kor5)"},
+    {"label": "korb2",            "start": 517,  "category": "field",     "display": "Field (korb2)"},
+    {"label": "korb3",            "start": 524,  "category": "field",     "display": "Field (korb3)"},
+    {"label": "korout",           "start": 533,  "category": "field",     "display": "Field (korout)"},
+    {"label": "koin1",            "start": 542,  "category": "field",     "display": "Soren Camp"},
+    {"label": "koin2",            "start": 551,  "category": "field",     "display": "Field (koin2)"},
+    {"label": "koin3",            "start": 561,  "category": "field",     "display": "Field (koin3)"},
+    {"label": "koin4",            "start": 570,  "category": "field",     "display": "Field (koin4)"},
+    {"label": "koin6",            "start": 578,  "category": "field",     "display": "Field (koin6)"},
+    {"label": "juui1",            "start": 587,  "category": "field",     "display": "Juggernaut interior 1"},
+    {"label": "juui2",            "start": 596,  "category": "field",     "display": "Juggernaut interior 2"},
+    {"label": "deroa",            "start": 605,  "category": "field",     "display": "Field (deroa)"},
+    {"label": "station3",         "start": 615,  "category": "field",     "display": "Karisto Station (late)"},
+    {"label": "conc2",            "start": 623,  "category": "field",     "display": "Conkram (late)"},
+    {"label": "jou",              "start": 630,  "category": "field",     "display": "Castle"},
+    {"label": "nilboa",           "start": 637,  "category": "field",     "display": "Nivora Ravine"},
+    {"label": "nilboa2",          "start": 646,  "category": "field",     "display": "Nivora Ravine (deeper)"},
+    {"label": "jouina",           "start": 655,  "category": "field",     "display": "Castle interior A"},
+    {"label": "jouinb",           "start": 664,  "category": "field",     "display": "Castle interior B"},
+    {"label": "jouinc",           "start": 672,  "category": "field",     "display": "Castle interior C"},
+    {"label": "jouind",           "start": 680,  "category": "field",     "display": "Castle interior D"},
+    {"label": "jouine",           "start": 688,  "category": "field",     "display": "Castle interior E"},
+    {"label": "rugi",             "start": 696,  "category": "field",     "display": "Field (rugi)"},
+    {"label": "chitei2",          "start": 705,  "category": "field",     "display": "Underground Octam"},
+    {"label": "noaru",            "start": 716,  "category": "field",     "display": "Noaru Valley"},
+    {"label": "concend",          "start": 725,  "category": "field",     "display": "Conkram (final)"},
+    {"label": "conc3",            "start": 733,  "category": "field",     "display": "Conkram (epilogue)"},
+    {"label": "town0e",           "start": 741,  "category": "town",      "display": "Town (0e)"},
+    # OP cutscenes
+    {"label": "opdeene",          "start": 748,  "category": "cutscene",  "display": "Opening (Buma)"},
+    {"label": "opstati",          "start": 753,  "category": "cutscene",  "display": "Opening (station)"},
+    {"label": "opkorout",         "start": 758,  "category": "cutscene",  "display": "Opening (korout)"},
+    {"label": "opurud",           "start": 763,  "category": "cutscene",  "display": "Opening (Uru)"},
+    {"label": "opmap01",          "start": 768,  "category": "cutscene",  "display": "Opening (map)"},
+    {"label": "koin1b",           "start": 773,  "category": "field",     "display": "Soren Camp (alt)"},
+    # ED cutscenes
+    {"label": "edteien",          "start": 780,  "category": "cutscene",  "display": "Ending (Sky Gardens)"},
+    {"label": "edbylon",          "start": 785,  "category": "cutscene",  "display": "Ending (Biron)"},
+    {"label": "edbalden",         "start": 790,  "category": "cutscene",  "display": "Ending (Vidna)"},
+    {"label": "edlast",           "start": 795,  "category": "cutscene",  "display": "Ending (final)"},
+    {"label": "edretoin",         "start": 800,  "category": "cutscene",  "display": "Ending (retock)"},
+    {"label": "edkorout",         "start": 805,  "category": "cutscene",  "display": "Ending (korout)"},
+    {"label": "edbubu",           "start": 810,  "category": "cutscene",  "display": "Ending (Usha)"},
+    {"label": "eddoman",          "start": 815,  "category": "cutscene",  "display": "Ending (doman)"},
+    {"label": "edson",            "start": 820,  "category": "cutscene",  "display": "Ending (son)"},
+    {"label": "edstati3",         "start": 825,  "category": "cutscene",  "display": "Ending (station3)"},
+    # Battle data
+    {"label": "battle_data",      "start": 865,  "category": "battle",    "display": "Battle data (party/monster TMDs + textures)"},
+    {"label": "monster_data",     "start": 869,  "category": "battle",    "display": "Monster data"},
+    {"label": "sound_data",       "start": 870,  "category": "audio",     "display": "Sound data (driver outputs)"},
+    {"label": "befect_data",      "start": 872,  "category": "battle",    "display": "Battle effect data"},
+    {"label": "player_data",      "start": 876,  "category": "battle",    "display": "Player data (TMDs / arts)"},
+    {"label": "sound_data2",      "start": 877,  "category": "audio",     "display": "Sound data (dev branch)"},
+    {"label": "level_up",         "start": 891,  "category": "system",    "display": "Level-up overlay + VABs"},
+    {"label": "monster_se",       "start": 893,  "category": "audio",     "display": "Monster SFX"},
+    {"label": "card_data",        "start": 894,  "category": "system",    "display": "Card data"},
+    {"label": "bat_back_dat",     "start": 895,  "category": "battle",    "display": "Battle backgrounds"},
+    {"label": "xxx_dat",          "start": 897,  "category": "system",    "display": "Scene-scripted asset table"},
+    {"label": "move_program_no",  "start": 972,  "category": "system",    "display": "Move-program overlay"},
+    {"label": "other_game",       "start": 974,  "category": "system",    "display": "Other-game overlays"},
+    {"label": "monster_test",     "start": 980,  "category": "system",    "display": "Monster test scenes"},
+    {"label": "music_01",         "start": 990,  "category": "audio",     "display": "Music (BGM SEQs)"},
+    {"label": "vab_01",           "start": 1072, "category": "audio",     "display": "VAB sound banks"},
+    {"label": "other1",           "start": 1195, "category": "system",    "display": "Other (1)"},
+    {"label": "other4",           "start": 1200, "category": "system",    "display": "Other (4)"},
+    {"label": "other5",           "start": 1203, "category": "system",    "display": "Other (5)"},
+    {"label": "other6",           "start": 1222, "category": "system",    "display": "Other (6)"},
+    {"label": "other7",           "start": 1228, "category": "system",    "display": "Other (7)"},
+]
+
+
+def build_scenes_json() -> list[dict]:
+    """Expand CDNAME_SCENES into a sorted list with prot_end inclusive.
+
+    The last entry runs to PROT_MAX so the viewer always has coverage.
+    """
+    PROT_MAX = 1233
+    entries = sorted(CDNAME_SCENES, key=lambda s: s["start"])
+    out: list[dict] = []
+    for i, s in enumerate(entries):
+        end = entries[i + 1]["start"] - 1 if i + 1 < len(entries) else PROT_MAX
+        out.append({
+            "label": s["label"],
+            "display": s["display"],
+            "category": s["category"],
+            "prot_start": s["start"],
+            "prot_end": end,
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Gamedata aggregation (drives shops.html + world.html).
+# ---------------------------------------------------------------------------
+
+def _load_toml(name: str) -> dict:
+    p = GAMEDATA / name
+    if not p.exists():
+        return {}
+    with p.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _index_by_key(rows: list[dict], plural: str, singular: str) -> dict[str, dict]:
+    """Index rows from a TOML table-array by their `key` field, tagging origin."""
+    out: dict[str, dict] = {}
+    for r in rows:
+        if "key" not in r:
+            continue
+        rec = dict(r)
+        rec["_kind"] = singular  # one of: item / weapon / armor / accessory
+        out[r["key"]] = rec
+    return out
+
+
+def build_gamedata_json() -> tuple[dict, dict]:
+    """Build (shops_json, world_json) from data/gamedata/*.toml.
+
+    shops_json shape:
+        {
+          "towns": [
+            { "name": "Rim Elm", "scene_label": "town01",
+              "shops": [
+                { "name": "Variety Shop", "merchant": null, "phase": null,
+                  "featured": [...keys...],
+                  "items": [ <item-detail>, ... ]
+                }, ...
+              ]
+            }, ...
+          ],
+          "lookup_origin": "data/gamedata/*.toml"
+        }
+
+    world_json shape:
+        {
+          "locations": [
+            { "name": "Rim Elm", "scene_label": "town01",
+              "category": "town", "display": "Rim Elm",
+              "enemies": [...], "bosses": [...],
+              "shop_count": N, "has_casino": bool, "has_fishing": bool
+            }, ...
+          ]
+        }
+    """
+    items     = _index_by_key(_load_toml("items.toml").get("item", []),         "items",       "item")
+    weapons   = _index_by_key(_load_toml("weapons.toml").get("weapon", []),     "weapons",     "weapon")
+    armor     = _index_by_key(_load_toml("armor.toml").get("armor", []),        "armor",       "armor")
+    accs      = _index_by_key(_load_toml("accessories.toml").get("accessory", []), "accessories", "accessory")
+
+    catalog: dict[str, dict] = {}
+    catalog.update(items)
+    catalog.update(weapons)
+    catalog.update(armor)
+    catalog.update(accs)
+
+    def resolve(key: str) -> dict:
+        r = catalog.get(key)
+        if r is None:
+            return {"key": key, "name": key, "_kind": "unknown",
+                    "missing": True}
+        return r
+
+    # Reverse map: walkthrough town name -> scene label + category from
+    # the curated CDNAME map. The walkthrough's town names don't perfectly
+    # match CDNAME labels (Vidna == balden, etc.), so we hand-map.
+    TOWN_TO_SCENE = {
+        "Rim Elm":              "town01",
+        "Hunter's Spring":      "izumi",
+        "Drake Castle":         "vell",
+        "Biron Monastery":      "bylon",
+        "Wind Cave":            None,        # not a CDNAME scene we ID
+        "Jeremi":               "geremi",
+        "Vidna":                "balden",
+        "Octam":                None,        # likely town0b / town0c / town0e
+        "Underground Octam":    "chitei2",
+        "Ratayu":               "rayman",
+        "Karisto Station":      "station",
+        "Sol":                  "town0d",
+        "Buma":                 "deene",
+        "Usha Research Center": "bubu1",
+        "Soren Camp":           "koin1",
+        "Conkram":              "conc",
+    }
+
+    shops_raw = _load_toml("shops.toml").get("shop", [])
+    casino_raw = _load_toml("casino.toml")
+    slot_prizes = casino_raw.get("slot_prize", [])
+    muscle_courses = casino_raw.get("muscle_course", [])
+    fishing_raw = _load_toml("fishing.toml").get("fishing_prize", [])
+    enemies_raw = _load_toml("enemies.toml").get("enemy", [])
+    bosses_raw  = _load_toml("bosses.toml").get("boss",  [])
+
+    # Group shops by town
+    towns_to_shops: dict[str, list[dict]] = {}
+    for sh in shops_raw:
+        town = sh.get("town", "Unknown")
+        shop_record = {
+            "name":     sh.get("name") or "(shop)",
+            "merchant": sh.get("merchant"),
+            "phase":    sh.get("phase"),
+            "featured": sh.get("featured", []),
+            "items":    [resolve(k) for k in sh.get("inventory", [])],
+        }
+        towns_to_shops.setdefault(town, []).append(shop_record)
+
+    # Casino + fishing prize lists, keyed by location
+    casino_by_town: dict[str, list[dict]] = {}
+    for p in slot_prizes:
+        item = resolve(p["item"])
+        casino_by_town.setdefault(p["location"], []).append({
+            "kind": "slot",
+            "cost_coins": p.get("cost_coins"),
+            "item": item,
+        })
+
+    fishing_by_town: dict[str, list[dict]] = {}
+    for p in fishing_raw:
+        item = resolve(p["item"])
+        fishing_by_town.setdefault(p["location"], []).append({
+            "kind": "fishing",
+            "cost_points": p.get("cost_points"),
+            "notes":       p.get("notes"),
+            "item": item,
+        })
+
+    # Walkthrough's `location` strings on enemies/bosses cover a much wider
+    # taxonomy than just towns (Mt. Letona, Snowdrift Cave, ...). For the
+    # world page we surface every location that has at least one enemy.
+    all_locations: dict[str, dict] = {}
+    for e in enemies_raw:
+        loc = e.get("location") or "(unknown)"
+        for piece in [p.strip() for p in re.split(r"[,/]", loc)]:
+            if not piece:
+                continue
+            all_locations.setdefault(piece, {"enemies": [], "bosses": []})
+            all_locations[piece]["enemies"].append(e)
+    for b in bosses_raw:
+        loc = b.get("location") or "(unknown)"
+        for piece in [p.strip() for p in re.split(r"[,/]", loc)]:
+            if not piece:
+                continue
+            all_locations.setdefault(piece, {"enemies": [], "bosses": []})
+            all_locations[piece]["bosses"].append(b)
+
+    # ------ shops_json
+    shops_payload = {
+        "towns": [
+            {
+                "name":        town,
+                "scene_label": TOWN_TO_SCENE.get(town),
+                "shops":       shops_list,
+                "casino":      casino_by_town.get(town, []),
+                "fishing":     fishing_by_town.get(town, []),
+            }
+            for town, shops_list in sorted(towns_to_shops.items())
+        ],
+    }
+
+    # ------ world_json: every walkthrough location, joined w/ scene info
+    world_locations: list[dict] = []
+    for loc, agg in sorted(all_locations.items()):
+        scene_label = TOWN_TO_SCENE.get(loc)
+        scene = None
+        if scene_label:
+            for s in CDNAME_SCENES:
+                if s["label"] == scene_label:
+                    scene = {"label": s["label"], "category": s["category"],
+                             "display": s["display"]}
+                    break
+        # Enemy / boss summaries (drop bulky fields for the JSON payload)
+        def short_enemy(e: dict) -> dict:
+            return {
+                "name":    e.get("name"),
+                "element": e.get("element"),
+                "drop":    e.get("drop"),
+                "steal":   e.get("steal"),
+            }
+        def short_boss(b: dict) -> dict:
+            return {
+                "name":    b.get("name"),
+                "hp_min":  b.get("hp_min"),
+                "hp_max":  b.get("hp_max"),
+                "tournament": b.get("tournament"),
+            }
+        world_locations.append({
+            "name":        loc,
+            "scene":       scene,
+            "is_town":     loc in TOWN_TO_SCENE,
+            "enemy_count": len(agg["enemies"]),
+            "boss_count":  len(agg["bosses"]),
+            "enemies":     [short_enemy(e) for e in agg["enemies"][:40]],
+            "bosses":      [short_boss(b)  for b in agg["bosses"]],
+            "shop_count":  len(towns_to_shops.get(loc, [])),
+            "has_casino":  bool(casino_by_town.get(loc)),
+            "has_fishing": bool(fishing_by_town.get(loc)),
+        })
+
+    world_payload = {"locations": world_locations}
+    return shops_payload, world_payload
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +676,28 @@ def main() -> int:
     # Write search-index.json
     idx_path = ROOT / "search-index.json"
     idx_path.write_text(json.dumps(search_index, ensure_ascii=False, separators=(",", ":")))
+
+    # Write scenes.json (CDNAME -> category map for the asset viewer's
+    # Scene filter).
+    scenes_payload = build_scenes_json()
+    (ROOT / "scenes.json").write_text(
+        json.dumps(scenes_payload, ensure_ascii=False, separators=(",", ":"))
+    )
+
+    # Write shops.json + world.json (gamedata join for the interactive
+    # shops + world pages).
+    shops_payload, world_payload = build_gamedata_json()
+    (ROOT / "shops.json").write_text(
+        json.dumps(shops_payload, ensure_ascii=False, separators=(",", ":"))
+    )
+    (ROOT / "world.json").write_text(
+        json.dumps(world_payload, ensure_ascii=False, separators=(",", ":"))
+    )
+
     print(f"\n{written} pages written, {len(search_index)} search entries")
+    print(f"  scenes.json: {len(scenes_payload)} CDNAME blocks")
+    print(f"  shops.json:  {len(shops_payload['towns'])} towns")
+    print(f"  world.json:  {len(world_payload['locations'])} locations")
     return 0
 
 
