@@ -10,6 +10,12 @@
 # CI break should never reach `main` unless someone explicitly bypasses with
 # `--no-verify`.
 #
+# Format drift is auto-fixed: if `cargo fmt --check` fails, the hook runs
+# `cargo fmt --all` and re-stages any previously-staged .rs files that were
+# reformatted. Files with both staged AND unstaged changes are NOT auto-fixed
+# (re-staging would silently fold the unstaged diff into the commit) -- the
+# hook aborts and asks you to resolve the working-tree state first.
+#
 # Skip (in emergencies only) by exporting `LEGAIA_SKIP_PRECOMMIT=1` for one
 # command, e.g. `LEGAIA_SKIP_PRECOMMIT=1 git commit -m "..."`.
 #
@@ -46,7 +52,48 @@ if [[ "$RUST_TOUCHED" -eq 0 ]]; then
 fi
 
 printf '[pre-commit] cargo fmt --all -- --check\n'
-cargo fmt --all -- --check
+if ! cargo fmt --all -- --check; then
+    printf '[pre-commit] format drift detected -- attempting auto-fix\n'
+
+    # Collect staged .rs files (added/copied/modified/renamed).
+    staged_rs=()
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        staged_rs+=("$path")
+    done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+
+    # Refuse to auto-fix files that also have unstaged changes -- re-staging
+    # them would silently include the unstaged diff in the commit.
+    dirty=()
+    for f in "${staged_rs[@]:-}"; do
+        if ! git diff --quiet -- "$f"; then
+            dirty+=("$f")
+        fi
+    done
+    if (( ${#dirty[@]} > 0 )); then
+        printf '[pre-commit] cannot auto-fix; these staged files have unstaged changes:\n' >&2
+        printf '             %s\n' "${dirty[@]}" >&2
+        printf '[pre-commit] run `cargo fmt --all`, review the diff, and re-stage\n' >&2
+        exit 1
+    fi
+
+    cargo fmt --all
+
+    # Re-stage the originally-staged .rs files that fmt may have rewritten.
+    # `git add` is a no-op for files fmt didn't touch, so this is safe to
+    # apply to the full set.
+    if (( ${#staged_rs[@]} > 0 )); then
+        git add -- "${staged_rs[@]}"
+    fi
+
+    # Confirm fmt is clean now. If not, something is wrong (e.g. fmt
+    # disagrees with itself, or non-staged files block the check).
+    if ! cargo fmt --all -- --check; then
+        printf '[pre-commit] cargo fmt still reports drift after auto-fix\n' >&2
+        exit 1
+    fi
+    printf '[pre-commit] auto-formatted and re-staged: %d file(s)\n' "${#staged_rs[@]}"
+fi
 
 printf '[pre-commit] cargo clippy --all-targets --workspace -- -D warnings\n'
 cargo clippy --all-targets --workspace -- -D warnings

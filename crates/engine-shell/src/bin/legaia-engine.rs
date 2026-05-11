@@ -978,11 +978,7 @@ fn cmd_clut_trace(
         // sits inside a wider supplier rect.
         let matching: Vec<&TimSupplier> = suppliers
             .iter()
-            .filter(|s| {
-                s.fb_y == cy
-                    && s.fb_x <= cx
-                    && (cx + clut_w as u16) <= (s.fb_x + s.width)
-            })
+            .filter(|s| s.fb_y == cy && s.fb_x <= cx && (cx + clut_w as u16) <= (s.fb_x + s.width))
             .collect();
 
         println!(
