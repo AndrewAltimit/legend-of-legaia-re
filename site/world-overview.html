@@ -16,24 +16,31 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's world map (Drake, Sebucus, Karisto) populates a set of <strong>actor linked lists</strong> at PSX RAM <code>0x8007C34C..0x8007C36C</code>. Each actor carries a world-space <code>(X, Y, Z)</code> position at offset <code>+0x14</code>. The data on this page is extracted from save-state captures of the top-view debug mode for each kingdom &mdash; see <a href="subsystems/world-map.html">world-map subsystem</a> for the controller, view-mode toggle, and per-frame state.
+    Each kingdom's overworld is built from a set of small flat TMDs (Z &isin; [-64, +64]) placed at world coordinates by the field VM. This page renders the world-map mesh data <strong>in real-time WebGL 3D</strong> straight from your disc image. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
   </p>
 </header>
 
 <section class="doc-section" id="how-this-works">
-  <h2>What you're looking at</h2>
+  <h2>What's rendered, what's still WIP</h2>
   <p>
-    Switch between the three kingdoms below. Each marker is one placed <strong>actor</strong> in the running game state &mdash; a town entrance, an NPC, a static tile, or a system object. Colour encodes the actor's owning <strong>list head</strong>:
+    <strong>Rendered now:</strong> per-kingdom mesh inspection in 3D &mdash; load your disc, pick a kingdom, and the page cycles through every TMD in that kingdom's <code>map01/02/03</code> PROT block, rendering each one textured against the live VRAM upload pass. Camera orbits with mouse drag; scroll to zoom; WASD pans.
   </p>
-  <ul class="overview-legend">
-    <li><span class="legend-swatch swatch-list-0"></span><strong>list 0 (player / system)</strong> &mdash; head at <code>0x8007C34C</code>; player actor + system markers.</li>
-    <li><span class="legend-swatch swatch-list-1"></span><strong>list 1 (entities)</strong> &mdash; head at <code>0x8007C350</code>; NPC entries, town gateways, encounter triggers.</li>
-    <li><span class="legend-swatch swatch-list-2"></span><strong>list 2 (background)</strong> &mdash; head at <code>0x8007C354</code>; static map decorations and tiles.</li>
-    <li><span class="legend-swatch swatch-list-6"></span><strong>list 6 (extra)</strong> &mdash; head at <code>0x8007C36C</code>; late-game / overflow placements (Karisto only in the captured snapshots).</li>
-  </ul>
-  <p class="hint">
-    World coordinates are signed; the placed range is roughly <code>X &isin; [0, 16320]</code>, <code>Z &isin; [0, 16320]</code>, with <code>Y</code> as elevation (negative is higher, PSX convention). The TMD that each actor renders isn't yet wired to the marker; once the actor &rarr; mesh resolver is reverse-engineered, the dots become textured 3D meshes in the same coordinates.
+  <p>
+    <strong>Still WIP:</strong> placing all the meshes simultaneously at their world-space positions to form the assembled continent. The placement data &mdash; 27 (Drake) / 63 (Sebucus) / 110 (Karisto) actor positions extracted from save-state RAM at <code>0x8007C34C..0x8007C36C</code> &mdash; is shown as a scatter beside the 3D viewer for now. The piece blocking the assembled view is the actor-to-TMD resolver (the hop through <code>actor+0x44</code>'s animation/motion struct).
   </p>
+</section>
+
+<section class="doc-section" id="disc-load">
+  <h2>Load your disc image</h2>
+  <div class="engine-panel">
+    <div class="engine-row">
+      <label for="wo-disc-file"><strong>Disc image (.bin Mode2/2352) or PROT.DAT:</strong></label>
+      <input type="file" id="wo-disc-file" accept=".bin,.dat"
+             style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
+      <button id="wo-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
+    </div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Once loaded, every world-map TMD becomes browsable as a textured 3D mesh.</div>
+  </div>
 </section>
 
 <section class="doc-section" id="viewer">
@@ -45,32 +52,44 @@
   </div>
 
   <div class="wo-layout">
-    <div class="wo-canvas-wrap">
-      <canvas id="wo-canvas" width="720" height="720" aria-label="World overview 3D scatter"></canvas>
+    <div class="wo-3d-wrap">
+      <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
-        <label><input type="checkbox" id="wo-toggle-3d"> 3D tilt</label>
-        <label><input type="checkbox" id="wo-toggle-grid" checked> grid</label>
-        <button id="wo-reset" type="button">reset view</button>
+        <button id="wo-prev-mesh" type="button" disabled>&larr; prev mesh</button>
+        <span id="wo-mesh-label">no disc loaded</span>
+        <button id="wo-next-mesh" type="button" disabled>next mesh &rarr;</button>
+        <label style="margin-left:1rem"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
+        <button id="wo-reset-cam" type="button">reset camera</button>
       </div>
-      <div class="wo-hover" id="wo-hover" aria-live="polite">hover a marker</div>
+      <div class="wo-hover-3d" id="wo-mesh-info">drop a disc above to load world-map meshes</div>
     </div>
 
-    <aside class="wo-stats">
-      <h3>Snapshot</h3>
+    <aside class="wo-side">
+      <h3>Placement reference</h3>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">Actor positions extracted from save-state RAM at <code>0x8007C34C</code>. Dots = placements in world XZ; colour = owning list.</p>
+      <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
+      <h3 style="margin-top:1rem">Snapshot</h3>
       <dl id="wo-stats-dl"></dl>
-      <h3 style="margin-top:1.25rem">Placements by list</h3>
+      <h3 style="margin-top:1rem">Placements by list</h3>
       <ul id="wo-list-counts" class="wo-list-counts"></ul>
     </aside>
   </div>
 </section>
 
-<section class="doc-section" id="next">
-  <h2>What's next</h2>
-  <ul>
-    <li><strong>Actor &rarr; TMD resolver.</strong> Each actor references a TMD via an intermediate animation/motion struct (pointer at <code>actor+0x44</code> &mdash; not the TMD pointer table directly). Tracing that hop gives each marker its real mesh. (See <a href="https://github.com/anthropics/legend-of-legaia-re">memory note <code>project_world_map_render_state.md</code></a>.)</li>
-    <li><strong>Rotation + scale.</strong> The actor struct holds these past offset <code>+0x70</code> but the exact layout is per-subsystem; the renderer call <code>FUN_80024C88(pos_vec, render_queue, list_head)</code> takes the whole list and resolves per-actor transforms internally.</li>
-    <li><strong>Texture-mapped 3D.</strong> Once the resolver lands, the existing software TMD rasteriser in <a href="viewer.html">the asset viewer</a> can render the assembled scene textured.</li>
-  </ul>
+<section class="doc-section" id="reverse-engineering">
+  <h2>How the placement data was extracted</h2>
+  <p>
+    The page captures world-map state from top-view debug save states &mdash; the same view that <a href="subsystems/world-map.html"><code>FUN_801E76D4</code></a> enters when the debug toggle fires. Steps the extraction performs against each save state's main RAM:
+  </p>
+  <ol class="overview-steps">
+    <li>Read the active CDNAME label as ASCII at <code>0x80084548</code> and confirm it matches the expected kingdom (<code>map01</code> / <code>map02</code> / <code>map03</code>).</li>
+    <li>Walk the seven linked-list heads at <code>0x8007C34C..0x8007C36C</code>: each list starts at <code>*head_ptr</code> and chains via the actor's <code>+0x00</code> next-pointer.</li>
+    <li>For each actor, read <code>(X, Y, Z)</code> as three <code>i16</code> at <code>+0x14</code>, <code>flags</code> at <code>+0x10</code>, and the actor's id byte at <code>+0x50</code>.</li>
+    <li>Filter out zero-position entries (system actors that aren't placed in world-space).</li>
+  </ol>
+  <p>
+    Results are baked into <code>site/world-overview.json</code> so the scatter view loads instantly without needing a save state at runtime.
+  </p>
 </section>
 
 <style>
@@ -82,18 +101,8 @@
   font-family: var(--font-mono);
   border: 1px solid rgba(244, 180, 26, 0.4);
 }
-.overview-legend { list-style: none; padding: 0; margin: 0.5rem 0; }
-.overview-legend li { padding: 0.25rem 0; }
-.legend-swatch {
-  display: inline-block; width: 14px; height: 14px;
-  border-radius: 50%;
-  vertical-align: middle; margin-right: 0.5rem;
-  border: 1px solid rgba(255,255,255,0.2);
-}
-.swatch-list-0 { background: #56B6F5; }
-.swatch-list-1 { background: #79D279; }
-.swatch-list-2 { background: #C0C0C0; }
-.swatch-list-6 { background: #E07028; }
+.overview-steps { margin: 0.5rem 0 0.5rem 1.5rem; padding: 0; }
+.overview-steps li { margin: 0.35rem 0; }
 .wo-tabs {
   display: flex; gap: 0.4rem;
   margin-bottom: 0.75rem;
@@ -114,24 +123,19 @@
 }
 .wo-layout {
   display: grid; gap: 1.25rem;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   align-items: start;
 }
-@media (max-width: 900px) {
-  .wo-layout { grid-template-columns: 1fr; }
-}
-.wo-canvas-wrap {
-  display: flex; flex-direction: column; gap: 0.5rem;
-}
-#wo-canvas {
-  width: 100%; max-width: 720px;
-  aspect-ratio: 1 / 1;
+@media (max-width: 900px) { .wo-layout { grid-template-columns: 1fr; } }
+.wo-3d-wrap { display: flex; flex-direction: column; gap: 0.5rem; }
+#wo-canvas3d {
+  width: 100%; aspect-ratio: 4 / 3;
   background: #0a0a1a;
   border: 1px solid var(--border);
   display: block;
 }
 .wo-canvas-controls {
-  display: flex; gap: 1rem;
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
   font-family: var(--font-mono); font-size: 0.8rem;
   color: var(--text-dim);
 }
@@ -142,355 +146,314 @@
   font-family: var(--font-mono); font-size: 0.8rem;
   cursor: pointer;
 }
-.wo-hover {
+.wo-canvas-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+#wo-mesh-label, .wo-hover-3d {
   font-family: var(--font-mono); font-size: 0.8rem;
   color: var(--text-dim);
-  min-height: 1.4em;
 }
-.wo-stats h3 {
-  margin: 0 0 0.5rem; font-size: 0.85rem;
+.wo-side { font-size: 0.85rem; }
+.wo-side h3 {
+  margin: 0 0 0.4rem; font-size: 0.8rem;
   text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--text-dim);
 }
-.wo-stats dl {
+#wo-canvas2d {
+  width: 280px; height: 280px;
+  background: #0a0a1a;
+  border: 1px solid var(--border);
+  display: block;
+}
+.wo-side dl {
   display: grid; grid-template-columns: auto 1fr;
-  gap: 0.2rem 0.7rem;
-  font-family: var(--font-mono); font-size: 0.82rem;
+  gap: 0.2rem 0.6rem;
+  font-family: var(--font-mono); font-size: 0.78rem;
   margin: 0;
 }
-.wo-stats dt { color: var(--text-dim); }
-.wo-stats dd { margin: 0; }
+.wo-side dt { color: var(--text-dim); }
+.wo-side dd { margin: 0; }
 .wo-list-counts {
   list-style: none; padding: 0; margin: 0;
-  font-family: var(--font-mono); font-size: 0.82rem;
+  font-family: var(--font-mono); font-size: 0.78rem;
 }
-.wo-list-counts li {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.15rem 0;
-}
+.wo-list-counts li { display: flex; align-items: center; gap: 0.5rem; padding: 0.1rem 0; }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.swatch-list-0 { background: #56B6F5; }
+.swatch-list-1 { background: #79D279; }
+.swatch-list-2 { background: #C0C0C0; }
+.swatch-list-6 { background: #E07028; }
 </style>
 
+<script src="js/webgl-tmd.js"></script>
 <script>
 (async function () {
-  const canvas = document.getElementById('wo-canvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const hover = document.getElementById('wo-hover');
-  const statsDl = document.getElementById('wo-stats-dl');
-  const listCountsUl = document.getElementById('wo-list-counts');
-  const toggle3d = document.getElementById('wo-toggle-3d');
-  const toggleGrid = document.getElementById('wo-toggle-grid');
-  const resetBtn = document.getElementById('wo-reset');
-
-  let data = null;
-  try {
-    data = await fetch('world-overview.json').then(r => r.json());
-  } catch (e) {
-    statsDl.innerHTML = '<dt>error</dt><dd>could not load world-overview.json</dd>';
-    return;
-  }
-
-  const COLORS = {
-    0: '#56B6F5',  // player / system
-    1: '#79D279',  // entities
-    2: '#C0C0C0',  // background
-    3: '#9999EE',
-    4: '#EE99EE',
-    5: '#EEEE99',
-    6: '#E07028',  // extra
+  /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
+  const KINGDOM_PROT = {
+    drake:   { start: 85,  end: 93,  label: 'Drake Kingdom',   cdname: 'map01' },
+    sebucus: { start: 244, end: 253, label: 'Sebucus Islands', cdname: 'map02' },
+    karisto: { start: 391, end: 398, label: 'Karisto Kingdom', cdname: 'map03' },
   };
   const LIST_NAMES = {
     0: 'player/system', 1: 'entities', 2: 'background',
     3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
   };
+  const LIST_COLORS = { 0: '#56B6F5', 1: '#79D279', 2: '#C0C0C0', 6: '#E07028' };
 
-  /* View state -------------------------------------------------------- */
-  let currentKey = (location.hash || '#drake').slice(1);
-  if (!data[currentKey]) currentKey = 'drake';
+  /* ---------- DOM refs ----------- */
+  const $file       = document.getElementById('wo-disc-file');
+  const $loadBtn    = document.getElementById('wo-load-btn');
+  const $status     = document.getElementById('wo-status');
+  const $canvas3d   = document.getElementById('wo-canvas3d');
+  const $canvas2d   = document.getElementById('wo-canvas2d');
+  const $statsDl    = document.getElementById('wo-stats-dl');
+  const $listCounts = document.getElementById('wo-list-counts');
+  const $meshLabel  = document.getElementById('wo-mesh-label');
+  const $meshInfo   = document.getElementById('wo-mesh-info');
+  const $prev       = document.getElementById('wo-prev-mesh');
+  const $next       = document.getElementById('wo-next-mesh');
+  const $autoRot    = document.getElementById('wo-auto-rotate');
+  const $resetCam   = document.getElementById('wo-reset-cam');
 
-  const view = {
-    pan: { x: 0, y: 0 },
-    zoom: 1.0,
-    tilt: 0.0,       // 0 = top-down, 1 = tilted-3D
-    showGrid: true,
-    hoverIdx: -1,
-  };
-  function resetView() {
-    view.pan.x = 0; view.pan.y = 0; view.zoom = 1.0;
-    view.tilt = toggle3d.checked ? 1.0 : 0.0;
+  /* ---------- State ----------- */
+  let viewer = null;          /* LegaiaViewer (WASM) - created after load */
+  let wasmMod = null;
+  let allEntries = [];        /* viewer.entry_list_json output */
+  let kingdomSlots = { drake: [], sebucus: [], karisto: [] };
+  let currentKingdom = (location.hash || '#drake').slice(1);
+  if (!KINGDOM_PROT[currentKingdom]) currentKingdom = 'drake';
+  let currentMeshIdx = 0;     /* index into kingdomSlots[currentKingdom] */
+  let placements = null;      /* world-overview.json */
+  let glRenderer = null;
+  let rafId = null;
+  const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
+
+  /* ---------- Placement JSON (always available) ----------- */
+  try {
+    placements = await fetch('world-overview.json').then(r => r.json());
+  } catch (e) {
+    placements = null;
   }
-  resetView();
+  updateSnapshot();
+  drawScatter();
 
-  /* Project a (x,y,z) placement to canvas (cx, cy, depth) ------------- */
-  function project(p, viewportSize, worldExtent) {
-    // World extent (X,Z) maps to canvas viewport area.
-    const [wx, wz] = worldExtent;
-    // Center world around origin: world (8160, 8160) -> canvas center
-    const nx = (p[0] - wx/2) / (wx/2);     // -1..+1
-    const nz = (p[2] - wz/2) / (wz/2);     // -1..+1
-    const ny = -p[1] / 1200;               // map Y elevation to small offset
+  /* ---------- Camera controls ----------- */
+  function attachCameraControls(canvas) {
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; cam.autoRotate = false; $autoRot.checked = false; });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      cam.yaw   += dx * 0.01;
+      cam.pitch  = Math.max(-1.4, Math.min(1.4, cam.pitch + dy * 0.01));
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const f = Math.exp(e.deltaY * 0.001);
+      cam.distance = Math.max(0.5, Math.min(20, cam.distance * f));
+    }, { passive: false });
+    const keys = new Set();
+    window.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') return;
+      const k = e.key.toLowerCase();
+      if ('wasd'.includes(k)) keys.add(k);
+    });
+    window.addEventListener('keyup', e => {
+      const k = e.key.toLowerCase();
+      keys.delete(k);
+    });
+    return keys;
+  }
+  function resetCam() {
+    cam.yaw = 0; cam.pitch = 0.25; cam.distance = 2.5;
+    cam.panX = 0; cam.panY = 0; cam.autoRotate = true;
+    $autoRot.checked = true;
+  }
+  $resetCam.addEventListener('click', resetCam);
+  $autoRot.addEventListener('change', () => { cam.autoRotate = $autoRot.checked; });
 
-    // Apply pan + zoom
-    let sx = nx * view.zoom + view.pan.x;
-    let sy = nz * view.zoom + view.pan.y;
+  /* ---------- Load disc + WASM ----------- */
+  $loadBtn.addEventListener('click', async () => {
+    const f = $file.files[0];
+    if (!f) { $status.textContent = 'Pick a .bin or .dat file first.'; return; }
+    try {
+      $status.textContent = 'Loading WASM ...';
+      if (!wasmMod) {
+        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        await wasmMod.default();
+      }
+      $status.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB) ...`;
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      $status.textContent = 'Classifying PROT entries ...';
+      viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
+      const count = viewer.load_disc(bytes);
+      allEntries = JSON.parse(viewer.entry_list_json());
 
-    // Apply tilt: rotate around X axis (top -> oblique)
-    if (view.tilt > 0) {
-      const tilt = view.tilt * 0.6;       // max ~35deg tilt
-      const c = Math.cos(tilt), s = Math.sin(tilt);
-      const yOrig = sy;
-      sy = c * yOrig - s * ny;
-      // depth = s * yOrig + c * ny  (not strictly needed; we'll use ny for shading)
+      /* Bucket the entries per kingdom */
+      kingdomSlots = { drake: [], sebucus: [], karisto: [] };
+      for (let i = 0; i < allEntries.length; i++) {
+        const e = allEntries[i];
+        if (!e.has_tmd) continue;
+        for (const k of Object.keys(KINGDOM_PROT)) {
+          const r = KINGDOM_PROT[k];
+          if (e.prot_index >= r.start && e.prot_index <= r.end) {
+            kingdomSlots[k].push(i);
+            break;
+          }
+        }
+      }
+      const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
+      $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
+      $prev.disabled = false;
+      $next.disabled = false;
+      currentMeshIdx = 0;
+      selectKingdom(currentKingdom);
+    } catch (err) {
+      console.error(err);
+      $status.textContent = 'Load failed: ' + (err.message || err);
     }
+  });
 
-    return {
-      cx: viewportSize/2 + sx * viewportSize * 0.45,
-      cy: viewportSize/2 + sy * viewportSize * 0.45,
-      depth: p[1],
+  /* ---------- Mesh navigation ----------- */
+  function selectKingdom(k) {
+    currentKingdom = k;
+    history.replaceState(null, '', '#' + k);
+    document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === k));
+    currentMeshIdx = 0;
+    updateSnapshot();
+    drawScatter();
+    if (viewer && kingdomSlots[k].length > 0) {
+      loadMesh();
+    } else if (viewer) {
+      $meshLabel.textContent = `${KINGDOM_PROT[k].cdname}: no viewable TMDs`;
+    }
+  }
+  function loadMesh() {
+    if (!viewer) return;
+    const slots = kingdomSlots[currentKingdom];
+    if (slots.length === 0) return;
+    const slot = slots[currentMeshIdx];
+    /* Stop any prior loop + recreate canvas (WebGL context is single-shot per canvas) */
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
+    const old = document.getElementById('wo-canvas3d');
+    if (!old) return;
+    const fresh = document.createElement('canvas');
+    fresh.id = 'wo-canvas3d';
+    fresh.className = 'viewer-canvas';
+    fresh.width = old.width || 800;
+    fresh.height = old.height || 600;
+    old.replaceWith(fresh);
+    viewer.set_slot(slot);
+    const entry = allEntries[slot];
+    const positions = viewer.mesh_positions();
+    const uvs = viewer.mesh_uvs();
+    const cbaTsb = viewer.mesh_cba_tsb();
+    const indices = viewer.mesh_indices();
+    const bounds = viewer.mesh_bounds();
+    const vram = viewer.current_vram_bytes();
+    $meshLabel.textContent = `[${currentMeshIdx+1}/${kingdomSlots[currentKingdom].length}] PROT ${entry.prot_index} - ${entry.class}`;
+    $meshInfo.textContent = `${positions.length/3} verts, ${indices.length/3} tris`;
+    if (positions.length === 0 || indices.length === 0) {
+      $meshInfo.textContent += ' (no textured prims - flat-shaded TMD)';
+      return;
+    }
+    try {
+      glRenderer = new window.TmdRenderer(fresh);
+    } catch (err) {
+      $meshInfo.textContent += ' (WebGL2 init failed)';
+      return;
+    }
+    glRenderer.uploadVram(vram);
+    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
+    const center = [bounds[0], bounds[1], bounds[2]];
+    const radius = bounds[3];
+    attachCameraControls(fresh);
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (cam.autoRotate) cam.yaw += dt * 0.6;
+      glRenderer.render(cam.yaw, cam.pitch, cam.distance, cam.panX, cam.panY, center, radius);
+      rafId = requestAnimationFrame(tick);
     };
+    rafId = requestAnimationFrame(tick);
   }
+  $prev.addEventListener('click', () => {
+    if (!viewer) return;
+    const n = kingdomSlots[currentKingdom].length;
+    if (n === 0) return;
+    currentMeshIdx = (currentMeshIdx - 1 + n) % n;
+    loadMesh();
+  });
+  $next.addEventListener('click', () => {
+    if (!viewer) return;
+    const n = kingdomSlots[currentKingdom].length;
+    if (n === 0) return;
+    currentMeshIdx = (currentMeshIdx + 1) % n;
+    loadMesh();
+  });
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowRight' || e.key === 'n') $next.click();
+    else if (e.key === 'ArrowLeft' || e.key === 'p') $prev.click();
+  });
 
-  /* Draw -------------------------------------------------------------- */
-  function draw() {
-    const W = canvas.width, H = canvas.height;
-    ctx.fillStyle = '#0a0a1a';
-    ctx.fillRect(0, 0, W, H);
+  /* ---------- Tabs ----------- */
+  document.querySelectorAll('.wo-tab').forEach(btn => {
+    btn.addEventListener('click', () => selectKingdom(btn.dataset.k));
+  });
+  /* Apply initial active tab */
+  document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === currentKingdom));
 
-    const kingdom = data[currentKey];
-    const ext = kingdom.world_extent || [16320, 16320];
-
-    /* grid */
-    if (view.showGrid) {
-      ctx.strokeStyle = 'rgba(120, 130, 200, 0.18)';
-      ctx.lineWidth = 1;
-      const steps = 8;
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        // horizontal line (constant Z)
-        const a = project([0,       0, t*ext[1]], W, ext);
-        const b = project([ext[0],  0, t*ext[1]], W, ext);
-        ctx.beginPath();
-        ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy);
-        ctx.stroke();
-        // vertical line (constant X)
-        const c = project([t*ext[0], 0, 0      ], W, ext);
-        const d = project([t*ext[0], 0, ext[1] ], W, ext);
-        ctx.beginPath();
-        ctx.moveTo(c.cx, c.cy); ctx.lineTo(d.cx, d.cy);
-        ctx.stroke();
-      }
-      /* center crosshair (label position) */
-      ctx.strokeStyle = 'rgba(244,180,26,0.4)';
-      const cen = project([ext[0]/2, 0, ext[1]/2], W, ext);
-      ctx.beginPath();
-      ctx.moveTo(cen.cx - 8, cen.cy); ctx.lineTo(cen.cx + 8, cen.cy);
-      ctx.moveTo(cen.cx, cen.cy - 8); ctx.lineTo(cen.cx, cen.cy + 8);
-      ctx.stroke();
+  /* ---------- Snapshot stats + scatter ----------- */
+  function updateSnapshot() {
+    if (!placements || !placements[currentKingdom]) {
+      $statsDl.innerHTML = '<dt>data</dt><dd>placement JSON missing</dd>';
+      $listCounts.innerHTML = '';
+      return;
     }
-
-    /* placements - sort by Y so high points (negative Y) draw on top */
-    const placements = kingdom.placements.slice();
-    placements.sort((a,b) => b.pos[1] - a.pos[1]);
-
-    const projected = placements.map(p => ({
-      ...p, proj: project(p.pos, W, ext),
-    }));
-
-    for (let i = 0; i < projected.length; i++) {
-      const item = projected[i];
-      const isHover = (i === view.hoverIdx);
-      const color = COLORS[item.list] || '#FFF';
-      const baseR = isHover ? 9 : 5;
-      // Y elevation -> bigger marker
-      const elev = Math.max(0, Math.min(1, -item.pos[1] / 600));
-      const r = baseR + elev * 3;
-
-      // outer ring
-      ctx.beginPath();
-      ctx.arc(item.proj.cx, item.proj.cy, r + 1, 0, 2*Math.PI);
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fill();
-
-      // body
-      ctx.beginPath();
-      ctx.arc(item.proj.cx, item.proj.cy, r, 0, 2*Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      if (isHover) {
-        ctx.strokeStyle = '#F4B41A';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-
-    /* hover label */
-    if (view.hoverIdx >= 0 && view.hoverIdx < projected.length) {
-      const it = projected[view.hoverIdx];
-      hover.textContent =
-        `[${LIST_NAMES[it.list] || 'list ' + it.list}] ` +
-        `pos=(${it.pos[0]}, ${it.pos[1]}, ${it.pos[2]})  ` +
-        `flags=${it.flags}  id=0x${it.id.toString(16)}`;
-    } else {
-      hover.textContent = `hover a marker  -  ${kingdom.placements.length} placements in ${kingdom.label}`;
-    }
-  }
-
-  /* Stats ------------------------------------------------------------- */
-  function updateStats() {
-    const k = data[currentKey];
-    statsDl.innerHTML = `
-      <dt>label</dt>      <dd>${k.label}</dd>
-      <dt>placements</dt> <dd>${k.placements.length}</dd>
-      <dt>TMD pool</dt>   <dd>${k.tmd_count} entries</dd>
-      <dt>camera</dt>     <dd>(${k.camera.x}, ${k.camera.z})</dd>
-      <dt>azimuth</dt>    <dd>${k.camera.azimuth}</dd>
-      <dt>zoom</dt>       <dd>${k.camera.zoom}</dd>
+    const k = placements[currentKingdom];
+    $statsDl.innerHTML = `
+      <dt>cdname</dt>     <dd>${k.label}</dd>
+      <dt>placed</dt>     <dd>${k.placements.length}</dd>
+      <dt>tmds in pool</dt><dd>${k.tmd_count}</dd>
+      <dt>cam x/z</dt>    <dd>(${k.camera.x}, ${k.camera.z})</dd>
     `;
     const counts = {};
     k.placements.forEach(p => { counts[p.list] = (counts[p.list] || 0) + 1; });
-    listCountsUl.innerHTML = Object.entries(counts).sort((a,b)=>+a[0]-+b[0]).map(([li, n]) =>
+    $listCounts.innerHTML = Object.entries(counts).sort((a,b)=>+a[0]-+b[0]).map(([li, n]) =>
       `<li><span class="legend-swatch swatch-list-${li}"></span>list ${li} (${LIST_NAMES[li]||'?'}): ${n}</li>`
     ).join('');
   }
-
-  /* Hit-test for hover ----------------------------------------------- */
-  function hitTest(mx, my) {
-    const W = canvas.width;
-    const ext = data[currentKey].world_extent || [16320, 16320];
-    // canvas pixel coords are scaled
-    const rect = canvas.getBoundingClientRect();
-    const px = mx * (canvas.width / rect.width);
-    const py = my * (canvas.height / rect.height);
-
-    let bestIdx = -1, bestDist = 14*14;
-    const placements = data[currentKey].placements;
-    // (We sort for draw but hit-test in original order; since they cluster, this is fine.)
-    for (let i = 0; i < placements.length; i++) {
-      const proj = project(placements[i].pos, W, ext);
-      const dx = proj.cx - px, dy = proj.cy - py;
-      const d2 = dx*dx + dy*dy;
-      if (d2 < bestDist) { bestDist = d2; bestIdx = i; }
-    }
-    // Map original idx to sorted-draw idx? Not necessary - draw uses its own sort
-    // but we want hover to highlight the same entry. We'll just use the
-    // original index throughout and not pre-sort the draw list -> simpler.
-    return bestIdx;
-  }
-
-  /* Use original (unsorted) order everywhere ------------------------- */
-  // Rewrite draw + hitTest to use placements directly (no sort) so
-  // hoverIdx is stable.
-  function draw2() {
-    const W = canvas.width, H = canvas.height;
-    ctx.fillStyle = '#0a0a1a';
-    ctx.fillRect(0, 0, W, H);
-
-    const k = data[currentKey];
-    const ext = k.world_extent || [16320, 16320];
-
-    if (view.showGrid) {
-      ctx.strokeStyle = 'rgba(120, 130, 200, 0.18)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 8; i++) {
-        const t = i / 8;
-        const a = project([0,       0, t*ext[1]], W, ext);
-        const b = project([ext[0],  0, t*ext[1]], W, ext);
-        ctx.beginPath(); ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy); ctx.stroke();
-        const c = project([t*ext[0], 0, 0      ], W, ext);
-        const d = project([t*ext[0], 0, ext[1] ], W, ext);
-        ctx.beginPath(); ctx.moveTo(c.cx, c.cy); ctx.lineTo(d.cx, d.cy); ctx.stroke();
-      }
-      ctx.strokeStyle = 'rgba(244,180,26,0.4)';
-      const cen = project([ext[0]/2, 0, ext[1]/2], W, ext);
+  function drawScatter() {
+    if (!$canvas2d) return;
+    const ctx = $canvas2d.getContext('2d');
+    const W = $canvas2d.width, H = $canvas2d.height;
+    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
+    if (!placements || !placements[currentKingdom]) return;
+    const k = placements[currentKingdom];
+    const [wx, wz] = k.world_extent || [16320, 16320];
+    /* grid */
+    ctx.strokeStyle = 'rgba(120,130,200,0.15)';
+    for (let i = 0; i <= 8; i++) {
+      const t = i/8;
       ctx.beginPath();
-      ctx.moveTo(cen.cx - 8, cen.cy); ctx.lineTo(cen.cx + 8, cen.cy);
-      ctx.moveTo(cen.cx, cen.cy - 8); ctx.lineTo(cen.cx, cen.cy + 8);
+      ctx.moveTo(t*W, 0); ctx.lineTo(t*W, H);
+      ctx.moveTo(0, t*H); ctx.lineTo(W, t*H);
       ctx.stroke();
     }
-
-    const order = k.placements.map((_, i) => i);
-    order.sort((a, b) => k.placements[b].pos[1] - k.placements[a].pos[1]);
-    for (const i of order) {
-      const p = k.placements[i];
-      const isHover = (i === view.hoverIdx);
-      const color = COLORS[p.list] || '#FFF';
-      const proj = project(p.pos, W, ext);
-      const elev = Math.max(0, Math.min(1, -p.pos[1] / 600));
-      const r = (isHover ? 9 : 5) + elev * 3;
-      ctx.beginPath(); ctx.arc(proj.cx, proj.cy, r+1, 0, 2*Math.PI);
-      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
-      ctx.beginPath(); ctx.arc(proj.cx, proj.cy, r, 0, 2*Math.PI);
+    /* placements */
+    k.placements.forEach(p => {
+      if (p.pos[0] === 0 && p.pos[2] === 0) return;
+      const x = p.pos[0] / wx * W;
+      const y = p.pos[2] / wz * H;
+      const color = LIST_COLORS[p.list] || '#FFF';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, 2*Math.PI);
       ctx.fillStyle = color; ctx.fill();
-      if (isHover) { ctx.strokeStyle = '#F4B41A'; ctx.lineWidth = 2; ctx.stroke(); }
-    }
-
-    if (view.hoverIdx >= 0 && view.hoverIdx < k.placements.length) {
-      const it = k.placements[view.hoverIdx];
-      hover.textContent =
-        `[${LIST_NAMES[it.list] || 'list ' + it.list}] ` +
-        `pos=(${it.pos[0]}, ${it.pos[1]}, ${it.pos[2]})  ` +
-        `flags=${it.flags}  id=0x${it.id.toString(16)}`;
-    } else {
-      hover.textContent = `hover a marker  -  ${k.placements.length} placements in ${k.label}`;
-    }
-  }
-
-  /* Events ----------------------------------------------------------- */
-  canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    view.hoverIdx = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-    draw2();
-  });
-  canvas.addEventListener('mouseleave', () => { view.hoverIdx = -1; draw2(); });
-
-  let drag = null;
-  canvas.addEventListener('mousedown', (e) => {
-    drag = { startX: e.clientX, startY: e.clientY, panX: view.pan.x, panY: view.pan.y };
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!drag) return;
-    const dx = (e.clientX - drag.startX) / canvas.clientWidth * 2;
-    const dy = (e.clientY - drag.startY) / canvas.clientHeight * 2;
-    view.pan.x = drag.panX + dx;
-    view.pan.y = drag.panY + dy;
-    draw2();
-  });
-  window.addEventListener('mouseup', () => { drag = null; });
-
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const factor = Math.exp(-e.deltaY * 0.001);
-    view.zoom = Math.max(0.5, Math.min(8, view.zoom * factor));
-    draw2();
-  }, { passive: false });
-
-  toggle3d.addEventListener('change', () => { view.tilt = toggle3d.checked ? 1.0 : 0.0; draw2(); });
-  toggleGrid.addEventListener('change', () => { view.showGrid = toggleGrid.checked; draw2(); });
-  resetBtn.addEventListener('click', () => { resetView(); draw2(); });
-
-  /* Tabs ------------------------------------------------------------- */
-  document.querySelectorAll('.wo-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.wo-tab').forEach(b => b.classList.remove('is-active'));
-      btn.classList.add('is-active');
-      currentKey = btn.dataset.k;
-      history.replaceState(null, '', '#' + currentKey);
-      view.hoverIdx = -1;
-      resetView();
-      updateStats();
-      draw2();
     });
-  });
-  /* Honour deep-link */
-  const initial = document.querySelector(`.wo-tab[data-k="${currentKey}"]`);
-  if (initial) {
-    document.querySelectorAll('.wo-tab').forEach(b => b.classList.remove('is-active'));
-    initial.classList.add('is-active');
   }
-
-  updateStats();
-  draw2();
 })();
 </script>
 
