@@ -108,23 +108,103 @@ The bytes after the TMD hold packed texture and palette data. Empirically:
 
 The pool layout doesn't use standard PSX TIM image-block headers. The
 runtime presumably uses the descriptor at `u32[3..0x20]` of the entry
-header to know where to DMA each slot into VRAM. Until that descriptor's
-fields are pinned, the
+header to know where to DMA each slot into VRAM, but the descriptor
+*encoding* has not been pinned by the on-disc bytes alone. Until that
+encoding (or its runtime resolver) is reverse-engineered, the
 [`legaia_asset::battle_data_pack::probe_first_clut_run`](../../crates/asset/src/battle_data_pack.rs)
-helper just locates the first CLUT-shaped run by structural heuristic.
+helper locates the first CLUT-shaped run by structural heuristic, and
+[`legaia_asset::battle_data_pack::clut_uploads`](../../crates/asset/src/battle_data_pack.rs)
+is a documented no-op stub the engine wires into its CLUT pass so
+descriptor decoding lights up VRAM uploads without a separate
+integration step.
+
+## Pinning the descriptor: VRAM byte-match corpus
+
+The principled tool for pinning the descriptor is byte-matching: take
+each decoded record's post-TMD bytes, slide a 32-byte halfword-aligned
+window over them, and search a mednafen-captured VRAM blob for an exact
+match. Each hit yields a `(record_idx, record_offset, fb_x, fb_y)`
+tuple - a corpus of those tuples narrows the encoding.
+
+The analysis API:
+
+```rust
+let pack = battle_data_pack::parse(&prot_entry_bytes)?;
+let decoded = battle_data_pack::decode_record(&prot_entry_bytes, &pack, idx)?;
+let hits = battle_data_pack::find_clut_in_vram(&decoded, &mednafen_vram_bytes);
+for hit in &hits {
+    println!("rec_off=0x{:x} -> fb=({}, {})",
+             hit.record_byte_offset, hit.fb_x, hit.fb_y);
+}
+```
+
+The CLI driver that feeds this against a PROT entry + a list of save
+states:
+
+```bash
+mednafen-state clut-trace \
+  --pack extracted/PROT/0865_battle_data.BIN \
+  --json /tmp/clut_corpus.json \
+  ~/.mednafen/mcs/Legend\ of\ Legaia\ \(USA\).*.mc2 \
+  ~/.mednafen/mcs/Legend\ of\ Legaia\ \(USA\).*.mc6
+```
+
+### Findings from a four-save corpus
+
+Sliding the byte-match across PROT 0865 against four save states
+(`mc2` = Rim Elm town01 with NPCs, `mc3` = Izumi town, `mc4` =
+pre-battle load, `mc6` = active battle) yields:
+
+| Record | Header signature | VRAM placement (fb_x, fb_y range) |
+| ------ | ---------------- | --------------------------------- |
+| 40 (id 0x66) | `..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...` | (864, 426..433) — town only |
+| 41 (id 0x00) | `..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...` | (864, 388..507) — town only |
+| 2 (id 0x54)  | `..., 0x010000, 0x010002, 0x000000, ...`     | (768, 441) — battle only |
+| 3 (id 0x53)  | `..., 0x010000, 0x010002, 0x000000, ...`     | (768, 393..441) — battle |
+| 4 (id 0x00)  | `..., 0x010000, 0x010002, 0x000000, ...`     | (768, 385..496) — battle |
+| 5-8 (id 0x42..0x3f) | `..., 0x010000, 0x000201, 0x000000, ...` | (768, 272..310) — battle |
+| 9 (id 0x00)  | `..., 0x010000, 0x000201, 0x000000, ...`     | (768, 272..331) — battle |
+
+Consecutive record offsets step by `0x40` for each `+1` in `fb_y`,
+confirming the post-TMD pool is uploaded as a 32-halfword-wide
+(128-pixel-wide @ 4bpp) contiguous block at `(fb_x, fb_y_base)`. Within
+each header-signature cluster the per-record (fb_x, fb_y) placement is
+*not* recoverable from the on-disc bytes alone - the encoding of
+`u32[5..7]` doesn't appear to be a direct `(fb_x, fb_y)` packing.
+
+### What's *not* in the pack: the NPC palettes at row 479
+
+The four town01 NPC TMDs sample CLUTs at CBAs `0x77C8..0x77CF`, which
+decode to fb_x=128..240 at row 479. The actual 32-byte palette payloads
+at those VRAM positions in `mc2` (a town save with all four NPCs
+visible) are **not present verbatim** in any decoded battle_data record:
+
+- A direct byte-match of each row-479 slot's 32 bytes against every
+  decoded record in PROT 0865 returns zero hits.
+- An 8-byte prefix of the same slot bytes is not present in any raw
+  PROT entry (0865-0868 inclusive) or in `SCUS_942.54`.
+- The CLUT halfwords themselves form a structured hue cycle (HSV-style
+  rainbow at constant value) - consistent with a runtime *palette
+  generator* rather than an on-disc payload.
+
+So the source of the town01 NPC palettes is *external* to the
+battle_data pack. Candidates include a runtime LUT-driven palette
+generator (the hue cycle is consistent with a fixed-table lookup keyed
+by NPC index), or a pre-decoded pool we have not yet located. Closing
+the 388-prim gap requires identifying that runtime source - the
+battle_data pack alone won't supply it.
 
 ## Why this matters
 
 Town01's four NPC TMDs reference CLUT row y=479 slots x=128..240
-(CBA `0x77C8..0x77CF`). Those palettes live inside the post-TMD pool of
-one or more `battle_data` records. Without descending into this pack the
-raw TIM scanner finds zero TIMs in 0865 (the data is wrapped in this
-custom format) and the engine's targeted-upload path leaves the row
-unsupplied, dropping ~388 prims as MissingClut.
-
-The pack parser (this format) is the entry point for closing that gap.
-Once the post-TMD layout descriptor is pinned, the engine can extract
-specific CLUTs and upload them at the right VRAM coordinates.
+(CBA `0x77C8..0x77CF`). Earlier engine work assumed those palettes
+live inside the post-TMD pool of one or more `battle_data` records;
+the byte-match corpus above shows they don't. Closing the ~388-prim
+MissingClut gap therefore requires more than decoding the pack
+descriptor - it needs the runtime palette source identified
+separately. The pack parser remains the entry point for CLUTs in
+*battle* scenes (where on-disc palettes do drive the renderer) once
+the descriptor is pinned.
 
 ## CLI
 
@@ -137,6 +217,16 @@ asset battle-data-pack extracted/PROT/0865_battle_data.BIN --out /tmp/0865_recor
 
 # Bulk-scan a directory of PROT entries for this format.
 asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT
+
+# Byte-match decoded records against PSX VRAM in mednafen save states.
+# Emits one `(record, fb_x, fb_y)` row per hit; with `--json`, also
+# writes the corpus structured. Useful when reverse-engineering the
+# post-TMD descriptor.
+mednafen-state clut-trace \
+  --pack extracted/PROT/0865_battle_data.BIN \
+  --json /tmp/clut_corpus.json \
+  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc2 \
+  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc6
 ```
 
 ## Open layout questions
@@ -147,16 +237,22 @@ asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT
   TMDs back-to-back, but the offset stride hasn't been validated against
   every variant.
 
-- **Per-texture descriptor** (`u32[4]..u32[7]`): the values `0x010000`,
-  `0x010002`, `0x05040303`, `0x0b0a0906`, etc. look like packed
-  `(slot, bpp)` tuples or per-CLUT VRAM coordinates. Pinning the exact
-  encoding would let the engine compute the (fb_x, fb_y) for each CLUT
-  in the post-TMD pool and upload them directly.
+- **Per-texture descriptor** (`u32[4]..u32[7]`): the byte-match corpus
+  above shows the descriptor *encoding* doesn't map directly onto the
+  empirical `(fb_x, fb_y)` placements - records that share an identical
+  `u32[5..7]` signature still land at different VRAM coords. The
+  placement is likely *runtime-resolved*: a separate dispatch table or
+  asset-loader function consults the descriptor bytes plus the record
+  id, the current scene mode, or both. Tracing the runtime resolver
+  through an overlay sweep is the next step.
 
 - **Texture-pool block format**: image blocks in the pool don't carry
   PSX TIM headers (no leading `0x00000010` magic). The pool is a sequence
   of raw 4bpp pixel pages + 32-byte CLUTs with no per-block size field,
   so a parser needs the header descriptor to know where each block ends.
+  The byte-match corpus shows that the pool is uploaded as a contiguous
+  128-pixel-wide @ 4bpp block (stride = 64 record bytes per VRAM row),
+  but the per-block subdivision inside that span is still TBD.
 
 - **0866 / 0867 / 0868 / 0869 layouts**: PROT 0866 has the same outer
   shape as 0865 but the count u32 is zero in the canonical position -
@@ -164,6 +260,12 @@ asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT
   count + reserved preamble. 0867 / 0868 carry VAB sound banks (0867
   is more complex; 0868 + 0869 are plain VABp banks). Only 0865 (and
   the sister 0863 `edstati3` entry) match the format documented here.
+
+- **Town01 NPC palette source**: not in the battle_data pack at all
+  (see *What's not in the pack* above). The hue-cycle structure of the
+  row-479 slot bytes suggests a runtime palette generator keyed by NPC
+  slot index. Locating that generator is the actual unlock for the
+  ~388-prim MissingClut gap in town01.
 
 - **Runtime asset-loader chain**: `FUN_8001E890` is the data-field-player
   loader (see [`asset-loader.md`](../subsystems/asset-loader.md)) - it

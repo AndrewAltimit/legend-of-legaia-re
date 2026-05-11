@@ -71,13 +71,52 @@ LZS stream                  ; legaia LZS; see lzs.html</code></pre>
     <li>The first 32 bytes after the TMD form a valid 16-color RGB1555 CLUT row (verified by checking the high-transparency bit on every halfword).</li>
     <li>Larger 4bpp pixel regions follow, interspersed with more 32-byte CLUT-shaped runs.</li>
   </ul>
-  <p>The pool layout doesn't use standard PSX TIM image-block headers. The runtime presumably uses the descriptor at <code>u32[3..0x20]</code> of the entry header to know where to DMA each slot into VRAM.</p>
+  <p>The pool layout doesn't use standard PSX TIM image-block headers. The runtime presumably uses the descriptor at <code>u32[3..0x20]</code> of the entry header to know where to DMA each slot into VRAM, but the descriptor <em>encoding</em> has not been pinned by the on-disc bytes alone. Until that encoding (or its runtime resolver) is reverse-engineered, <code>legaia_asset::battle_data_pack::probe_first_clut_run</code> locates the first CLUT-shaped run by structural heuristic and <code>legaia_asset::battle_data_pack::clut_uploads</code> is a documented no-op stub that the engine wires into its CLUT pass so future descriptor decoding lights up VRAM uploads automatically.</p>
+</section>
+
+<section class="doc-section" id="pinning-the-descriptor">
+  <h2>Pinning the descriptor: VRAM byte-match corpus</h2>
+  <p>The principled tool for pinning the descriptor is byte-matching: take each decoded record's post-TMD bytes, slide a 32-byte halfword-aligned window over them, and search a mednafen-captured VRAM blob for an exact match. Each hit yields a <code>(record_idx, record_offset, fb_x, fb_y)</code> tuple - a corpus of those tuples narrows the encoding.</p>
+<pre><code>// Analysis API
+let pack = battle_data_pack::parse(&amp;prot_entry_bytes)?;
+let decoded = battle_data_pack::decode_record(&amp;prot_entry_bytes, &amp;pack, idx)?;
+let hits = battle_data_pack::find_clut_in_vram(&amp;decoded, &amp;mednafen_vram_bytes);</code></pre>
+  <p>CLI driver:</p>
+<pre><code>mednafen-state clut-trace \
+  --pack extracted/PROT/0865_battle_data.BIN \
+  --json /tmp/clut_corpus.json \
+  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc2 \
+  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc6</code></pre>
+
+  <h3>Findings from a four-save corpus</h3>
+  <p>Sliding the byte-match across PROT 0865 against four save states (<code>mc2</code> = Rim Elm town01, <code>mc3</code> = Izumi town, <code>mc4</code> = pre-battle, <code>mc6</code> = active battle) yields:</p>
+  <table>
+    <thead><tr><th>Record</th><th>Header signature</th><th>VRAM placement (fb_x, fb_y range)</th></tr></thead>
+    <tbody>
+      <tr><td>40 (id 0x66)</td><td><code>..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...</code></td><td>(864, 426..433) — town only</td></tr>
+      <tr><td>41 (id 0x00)</td><td><code>..., 0x010000, 0x0b0a0906, 0x000e0d0c, ...</code></td><td>(864, 388..507) — town only</td></tr>
+      <tr><td>2 (id 0x54)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 441) — battle only</td></tr>
+      <tr><td>3 (id 0x53)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 393..441) — battle</td></tr>
+      <tr><td>4 (id 0x00)</td><td><code>..., 0x010000, 0x010002, 0x000000, ...</code></td><td>(768, 385..496) — battle</td></tr>
+      <tr><td>5-8 (id 0x42..0x3f)</td><td><code>..., 0x010000, 0x000201, 0x000000, ...</code></td><td>(768, 272..310) — battle</td></tr>
+      <tr><td>9 (id 0x00)</td><td><code>..., 0x010000, 0x000201, 0x000000, ...</code></td><td>(768, 272..331) — battle</td></tr>
+    </tbody>
+  </table>
+  <p>Consecutive record offsets step by <code>0x40</code> for each <code>+1</code> in <code>fb_y</code>, confirming the post-TMD pool is uploaded as a 32-halfword-wide (128-pixel-wide @ 4bpp) contiguous block at <code>(fb_x, fb_y_base)</code>. Within each header-signature cluster the per-record (fb_x, fb_y) placement is <em>not</em> recoverable from the on-disc bytes alone - the encoding of <code>u32[5..7]</code> doesn't appear to be a direct <code>(fb_x, fb_y)</code> packing.</p>
+
+  <h3>What's <em>not</em> in the pack: the NPC palettes at row 479</h3>
+  <p>The four town01 NPC TMDs sample CLUTs at CBAs <code>0x77C8..0x77CF</code>, which decode to fb_x=128..240 at row 479. The actual 32-byte palette payloads at those VRAM positions in <code>mc2</code> (a town save with all four NPCs visible) are <strong>not present verbatim</strong> in any decoded battle_data record:</p>
+  <ul>
+    <li>A direct byte-match of each row-479 slot's 32 bytes against every decoded record in PROT 0865 returns zero hits.</li>
+    <li>An 8-byte prefix of the same slot bytes is not present in any raw PROT entry (0865-0868 inclusive) or in <code>SCUS_942.54</code>.</li>
+    <li>The CLUT halfwords themselves form a structured hue cycle (HSV-style rainbow at constant value) - consistent with a runtime <em>palette generator</em> rather than an on-disc payload.</li>
+  </ul>
+  <p>So the source of the town01 NPC palettes is <em>external</em> to the battle_data pack. Candidates include a runtime LUT-driven palette generator (the hue cycle is consistent with a fixed-table lookup keyed by NPC index), or a pre-decoded pool we have not yet located. Closing the 388-prim gap requires identifying that runtime source - the battle_data pack alone won't supply it.</p>
 </section>
 
 <section class="doc-section" id="why-this-matters">
   <h2>Why this matters</h2>
-  <p>Town01's four NPC TMDs reference CLUT row y=479 slots x=128..240 (CBA <code>0x77C8..0x77CF</code>). Those palettes live inside the post-TMD pool of one or more <code>battle_data</code> records. Without descending into this pack the raw TIM scanner finds zero TIMs in 0865 (the data is wrapped in this custom format) and the engine's targeted-upload path leaves the row unsupplied, dropping ~388 prims as MissingClut.</p>
-  <p>The pack parser (this format) is the entry point for closing that gap. Once the post-TMD layout descriptor is pinned, the engine can extract specific CLUTs and upload them at the right VRAM coordinates.</p>
+  <p>Town01's four NPC TMDs reference CLUT row y=479 slots x=128..240 (CBA <code>0x77C8..0x77CF</code>). Earlier engine work assumed those palettes live inside the post-TMD pool of one or more <code>battle_data</code> records; the byte-match corpus above shows they don't. Closing the ~388-prim MissingClut gap therefore requires more than decoding the pack descriptor - it needs the runtime palette source identified separately. The pack parser remains the entry point for CLUTs in <em>battle</em> scenes (where on-disc palettes do drive the renderer) once the descriptor is pinned.</p>
 </section>
 
 <section class="doc-section" id="cli">
@@ -89,16 +128,24 @@ asset battle-data-pack extracted/PROT/0865_battle_data.BIN
 asset battle-data-pack extracted/PROT/0865_battle_data.BIN --out /tmp/0865_records
 
 # Bulk-scan a directory of PROT entries for this format.
-asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT</code></pre>
+asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT
+
+# Byte-match decoded records against PSX VRAM in mednafen save states.
+mednafen-state clut-trace \
+  --pack extracted/PROT/0865_battle_data.BIN \
+  --json /tmp/clut_corpus.json \
+  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc2 \
+  ~/.mednafen/mcs/Legend\ of\ Legaia*.mc6</code></pre>
 </section>
 
 <section class="doc-section" id="open-layout-questions">
   <h2>Open layout questions</h2>
   <ul>
     <li><strong>Sub-object end offsets</strong> (<code>u32[1]</code>, <code>u32[2]</code>): meaning of the nested section pointers in records with multiple sub-meshes.</li>
-    <li><strong>Per-texture descriptor</strong> (<code>u32[4]..u32[7]</code>): the values <code>0x010000</code>, <code>0x010002</code>, <code>0x05040303</code>, <code>0x0b0a0906</code>, etc. look like packed <code>(slot, bpp)</code> tuples or per-CLUT VRAM coordinates. Pinning the exact encoding would let the engine compute the (fb_x, fb_y) for each CLUT in the post-TMD pool and upload them directly.</li>
-    <li><strong>Texture-pool block format</strong>: image blocks in the pool don't carry PSX TIM headers (no leading <code>0x00000010</code> magic). The pool is a sequence of raw 4bpp pixel pages + 32-byte CLUTs with no per-block size field, so a parser needs the header descriptor to know where each block ends.</li>
+    <li><strong>Per-texture descriptor</strong> (<code>u32[4]..u32[7]</code>): the byte-match corpus above shows the descriptor <em>encoding</em> doesn't map directly onto the empirical <code>(fb_x, fb_y)</code> placements - records that share an identical <code>u32[5..7]</code> signature still land at different VRAM coords. Likely <em>runtime-resolved</em>: a separate dispatch table or asset-loader function consults the descriptor bytes plus the record id, the current scene mode, or both.</li>
+    <li><strong>Texture-pool block format</strong>: image blocks in the pool don't carry PSX TIM headers (no leading <code>0x00000010</code> magic). The byte-match corpus shows the pool is uploaded as a contiguous 128-pixel-wide @ 4bpp block (stride = 64 record bytes per VRAM row), but the per-block subdivision inside that span is still TBD.</li>
     <li><strong>0866 / 0867 / 0868 / 0869 layouts</strong>: PROT 0866 has the same outer shape as 0865 but the count u32 is zero in the canonical position - records appear to start directly at <code>chunk0_size + 8</code> without the count + reserved preamble. 0867 / 0868 carry VAB sound banks. Only 0865 (and the sister 0863 <code>edstati3</code> entry) match the format documented here.</li>
+    <li><strong>Town01 NPC palette source</strong>: not in the battle_data pack at all (see <em>What's not in the pack</em> above). The hue-cycle structure of the row-479 slot bytes suggests a runtime palette generator keyed by NPC slot index. Locating that generator is the actual unlock for the ~388-prim MissingClut gap in town01.</li>
     <li><strong>Runtime asset-loader chain</strong>: <code>FUN_8001E890</code> is the data-field-player loader (see <a href="../subsystems/asset-loader.html">asset-loader.html</a>) - it reads <code>data\field\player.lzs</code> and registers the embedded TMDs into <code>0x8007C018 + idx*4</code> via <code>FUN_80026B4C</code>. The battle_data pack might feed into the same registry through a sister loader; tracing where the battle scene loader registers character TMDs would close the gap.</li>
   </ul>
 </section>

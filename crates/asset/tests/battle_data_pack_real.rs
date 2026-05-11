@@ -90,3 +90,38 @@ fn detects_retail_0863_edstati3_pack() {
         pack.records.len()
     );
 }
+
+/// `clut_uploads` is currently the documented no-op (the descriptor at
+/// `u32[3..0x20]` has not been pinned by the byte-match corpus - see
+/// `docs/formats/battle-data-pack.md`). Guard the contract so any
+/// future descriptor work has to explicitly update this expectation
+/// rather than silently change [`SceneResources::build_targeted`]'s
+/// CLUT pass.
+#[test]
+fn clut_uploads_is_empty_for_every_retail_0865_record() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let Some(prot_dir) = extracted_prot_dir() else {
+        eprintln!("[skip] extracted/PROT missing");
+        return;
+    };
+    let path = prot_dir.join("0865_battle_data.BIN");
+    if !path.exists() {
+        eprintln!("[skip] {} missing", path.display());
+        return;
+    }
+    let raw = std::fs::read(&path).expect("read 0865");
+    let pack = battle_data_pack::parse(&raw).expect("parse pack");
+    let mut total_uploads = 0usize;
+    for record in &pack.records {
+        let entry = battle_data_pack::decode_record(&raw, &pack, record.index)
+            .unwrap_or_else(|e| panic!("decode rec{}: {e}", record.index));
+        total_uploads += battle_data_pack::clut_uploads(&entry).len();
+    }
+    assert_eq!(
+        total_uploads, 0,
+        "clut_uploads should stay a no-op until the descriptor encoding is pinned"
+    );
+}

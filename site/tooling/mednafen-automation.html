@@ -157,6 +157,14 @@
 <pre><code>mednafen-state vram-dump ~/.mednafen/mcs/"Legend of Legaia (USA).".mc2 \
   --out vram.png --out-bin vram.bin --regs</code></pre>
   <p>Decodes the <code>&amp;GPURAM[0][0]</code> blob inside the save state's <code>GPU</code> section (1 MiB BGR555 + STP) and writes it as a 1024x512 RGBA8 PNG plus the optional raw byte blob. <code>--regs</code> adds the GPU control-register snapshot (clip rect, draw offset, texture window, texture page, display framebuffer) - the same registers the runtime is reading from at the moment of capture. Useful as a ground-truth oracle for engine-side VRAM state: pair with <code>legaia-engine info --scene &lt;name&gt; --runtime-vram vram.bin --vram-diff-png diff.png</code> for a colour-coded per-pixel diff against the engine's <code>SceneResources::build_targeted</code> output.</p>
+
+  <h3>Byte-match a battle_data pack against VRAM</h3>
+<pre><code>mednafen-state clut-trace \
+  --pack extracted/PROT/0865_battle_data.BIN \
+  --json /tmp/clut_corpus.json \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc2" \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc6"</code></pre>
+  <p>LZS-decompresses every record in the named battle_data pack, slides a 32-byte halfword-aligned window past each record's embedded TMD, and searches the save state's VRAM for an exact byte match. Each hit is one <code>(record_idx, record_offset, fb_x, fb_y)</code> tuple - the corpus narrows the encoding of the per-record post-TMD descriptor at <code>u32[3..0x20]</code>. See <a href="../formats/battle-data-pack.html">battle-data-pack.html</a> for the analysis methodology and findings.</p>
 </section>
 
 <section class="doc-section" id="workflow-patterns">

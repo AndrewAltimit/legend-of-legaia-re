@@ -189,6 +189,24 @@ state: pair with `legaia-engine info --scene <name> --runtime-vram
 vram.bin --vram-diff-png diff.png` for a colour-coded per-pixel diff
 against the engine's `SceneResources::build_targeted` output.
 
+### Byte-match a battle_data pack against VRAM
+
+```bash
+mednafen-state clut-trace \
+  --pack extracted/PROT/0865_battle_data.BIN \
+  --json /tmp/clut_corpus.json \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc2" \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc6"
+```
+
+LZS-decompresses every record in the named battle_data pack, slides a
+32-byte halfword-aligned window past each record's embedded TMD, and
+searches the save state's VRAM for an exact byte match. Each hit is one
+`(record_idx, record_offset, fb_x, fb_y)` tuple - the corpus narrows
+the encoding of the per-record post-TMD descriptor at `u32[3..0x20]`.
+See [`docs/formats/battle-data-pack.md`](../formats/battle-data-pack.md)
+for the analysis methodology and findings.
+
 ## Workflow patterns
 
 ### "Find what writes to X" between two known points
