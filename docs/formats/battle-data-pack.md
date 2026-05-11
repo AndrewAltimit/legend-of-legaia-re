@@ -190,12 +190,13 @@ battle_data record:
 So the source of the town01 NPC palettes is *external* to the
 battle_data pack. The full picture is documented in
 [`npc-palette.md`](npc-palette.md): row 479 is populated by plain PSX
-TIMs that live inside the scene's PROT entries (e.g. `0006_town01.BIN
-@ 0x1ee4c` for town01), wrapped in a 4-byte chunk-header prefix
-(type 0x20) and uploaded through the standard asset-dispatch
-LoadImage path. The engine's targeted-upload CLUT pass picks them up
-naturally with merge-zeros semantics so multiple scene-pack TIMs
-targeting the same row coexist.
+TIMs that live inside the scene's [`scene_tmd_stream`](scene-bundles.md)
+PROT entries (e.g. `0006_town01.BIN @ 0x1ee4c` for town01), wrapped
+in a type-0x01 chunk header and uploaded by `FUN_8001FE70` during
+battle init (field/town scene-load does not touch them). The
+engine's targeted-upload CLUT pass picks them up naturally with
+merge-zeros semantics so multiple scene-pack TIMs targeting the same
+row coexist.
 
 ## Why this matters
 
@@ -265,10 +266,12 @@ mednafen-state clut-trace \
   the sister 0863 `edstati3` entry) match the format documented here.
 
 - **Town01 NPC palette source**: not in the battle_data pack — the
-  CLUTs are plain PSX TIMs in town01's own PROT entries (e.g.
-  `0006_town01.BIN @ 0x1ee4c`). Each is wrapped in a 4-byte
-  chunk-header prefix (type 0x20). The engine's targeted-upload CLUT
-  pass picks them up via `legaia_asset::tim_scan` and uploads them
+  CLUTs are plain PSX TIMs in town01's own
+  [`scene_tmd_stream`](scene-bundles.md) PROT entries (e.g.
+  `0006_town01.BIN @ 0x1ee4c`). Each is wrapped in a type-0x01 chunk
+  header that `FUN_8001FE70` dispatches during battle init (field /
+  town scene-load does not upload them). The engine's targeted-upload
+  CLUT pass picks them up via `legaia_asset::tim_scan` and uploads them
   with merge-zeros semantics so the "full" (slots 0..14) and "partial"
   (slots 0..7) variants coexist. See [`npc-palette.md`](npc-palette.md).
 

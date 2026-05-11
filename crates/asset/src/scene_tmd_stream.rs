@@ -6,19 +6,43 @@
 //! ```text
 //! +0x00          u32 chunk0_header   ; (type=0x00 << 24) | size
 //! +0x04          Legaia TMD          ; magic 0x80000002, fills `size` bytes
-//! +0x04 + size   streaming chunks    ; standard FUN_8002541c-style chunks
-//!                                    ; until terminator OR end-of-file
+//! +0x04 + size   streaming chunks    ; specialised FUN_8001fe70-style
+//!                                    ; chunks until terminator OR EOF
 //! ```
 //!
 //! The chunk0 header looks like a standard streaming `(type << 24) | size`
-//! with `type = 0x00` (= TIM dispatcher), but the payload is a Legaia TMD
-//! (magic `0x80000002`). The runtime presumably uses a specialized loader
-//! that knows the leading chunk is a TMD; the standard streaming walker
-//! accepts the file structurally but flags `magic_ok = false`.
+//! with `type = 0x00`, but the payload is a Legaia TMD (magic
+//! `0x80000002`). The retail loader for this shape is the battle scene
+//! loader (`FUN_800520F0`) which calls `FUN_8001FE70` to walk the entry -
+//! see [`battle_tim_chunks`] for the walker contract. `FUN_8001FE70` reads
+//! chunk0 as `[TMD body size][TMD body]`, then enters a per-chunk loop in
+//! the streaming tail where:
 //!
-//! After the leading TMD the layout matches standard DATA_FIELD streaming,
-//! so each subsequent chunk goes through the asset-type dispatcher
-//! (`FUN_8001f05c`) normally.
+//! - `type byte = 0x01` -> upload TIM payload via `LoadImage`
+//! - `type byte = 0x02` -> stop the loop
+//! - any other type -> skip silently (advance and continue)
+//!
+//! This is a different type-byte semantic than `FUN_8001F05C` uses (where
+//! `type = 0x01` means `TIM_LIST` and would attempt to parse the payload
+//! as a `(count, offsets[count], TIMs)` pack). Calling the standard
+//! `FUN_8002541C` streaming walker on a scene_tmd_stream entry would
+//! crash or upload garbage, which is why the runtime uses the specialised
+//! `FUN_8001FE70` walker for these. See [`docs/formats/scene-bundles.md`]
+//! for the format index and [`docs/subsystems/asset-loader.md`] for the
+//! caller chain.
+//!
+//! ### Two-list continuation
+//!
+//! Some scene_tmd_stream files (e.g. `0006_town01.BIN` at offsets
+//! `0x3840`, `0xba64`, `0x16c24`, `0x1ee48`) carry a *second* set of
+//! type-0x01 TIM chunks that sit past the first terminator separated by
+//! a zero-padded gap. `FUN_8001FE70` stops at the first terminator, so
+//! these post-terminator chunks are NOT processed by the standard
+//! battle-init walk; they're left for an alternate dispatch path whose
+//! caller is not yet pinned. [`battle_tim_chunks`] reports both
+//! `WalkSource::Tail` (inside `FUN_8001FE70`'s reach) and
+//! `WalkSource::Continuation` (post-terminator) hits so engine ports
+//! can choose whether to upload one or both halves.
 //!
 //! This shape is dominant in scene-asset PROT entries (most `town*`, `dolk*`,
 //! `rugi*`, and similar named blocks). Pre-TOC-fix the bare-TMD prefix made
@@ -185,6 +209,153 @@ pub fn is_scene_tmd_stream(buf: &[u8]) -> bool {
     detect(buf).is_some()
 }
 
+/// Where a battle TIM chunk was found relative to the
+/// `FUN_8001FE70`-walked tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum WalkSource {
+    /// Inside `FUN_8001FE70`'s reach - this chunk is uploaded by the
+    /// battle-init dispatch when the entry is loaded.
+    Tail,
+    /// After the first terminator. `FUN_8001FE70` exits before reaching
+    /// these chunks; their consumer is not yet pinned, but the bytes are
+    /// reachable as a continuation list (matching size + alignment to the
+    /// in-tail chunks).
+    Continuation,
+}
+
+/// One type-0x01 TIM upload chunk identified inside a scene_tmd_stream
+/// entry. The walker emulates `FUN_8001FE70` (the battle-init scene
+/// dispatch) on the streaming tail, then continues past the first
+/// terminator to surface any continuation lists.
+#[derive(Debug, Clone, Serialize)]
+pub struct BattleTimChunk {
+    /// Byte offset of the 4-byte chunk header (the `(type<<24)|size` word)
+    /// within the buffer.
+    pub header_offset: usize,
+    /// Byte offset of the chunk payload (= `header_offset + 4`). Equals
+    /// the file offset of the inner PSX TIM magic.
+    pub payload_offset: usize,
+    /// Payload byte length (from the chunk header's low-24-bit size field).
+    pub payload_len: usize,
+    /// Whether `FUN_8001FE70` would dispatch this chunk during battle init.
+    pub source: WalkSource,
+}
+
+/// Walk a scene_tmd_stream buffer in the same shape as `FUN_8001FE70`
+/// (the battle scene loader's per-PROT walker) and report every type-0x01
+/// TIM upload chunk. Continuation chunks past the first terminator are
+/// also reported with `source = WalkSource::Continuation` so engine
+/// callers can opt into / out of uploading them.
+///
+/// Returns an empty `Vec` if the buffer doesn't match the scene_tmd_stream
+/// shape. Use [`detect`] first if you want a cheaper structural gate.
+pub fn battle_tim_chunks(buf: &[u8]) -> Vec<BattleTimChunk> {
+    let Some(stream) = detect(buf) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut hit_first_terminator = false;
+
+    // FUN_8001FE70 walks: advance by `(size & ~3) + 4` from the previous
+    // chunk header, read new header, dispatch on type byte. The first
+    // chunk it sees is the chunk0 header (= the leading TMD), so the
+    // advance lands directly on `4 + tmd_size` (= `stream.tail_end` of the
+    // in-tail walk we already ran via `detect`).
+    walk_chunks(buf, 4 + stream.tmd_size, |off, header| {
+        let size = (header & 0x00FF_FFFF) as usize;
+        let type_byte = ((header >> 24) & 0xFF) as u8;
+        if size == 0 {
+            // Zero-size header = terminator. FUN_8001FE70 exits its
+            // `while (uVar2 != 0)` test here.
+            hit_first_terminator = true;
+            return ChunkWalk::Stop;
+        }
+        if type_byte == 0x02 {
+            // Type-0x02 = explicit terminator. FUN_8001FE70 sets uVar2=0
+            // after reading this header.
+            hit_first_terminator = true;
+            return ChunkWalk::Stop;
+        }
+        if type_byte == 0x01 {
+            let payload_offset = off + 4;
+            if payload_offset + size <= buf.len() {
+                out.push(BattleTimChunk {
+                    header_offset: off,
+                    payload_offset,
+                    payload_len: size,
+                    source: WalkSource::Tail,
+                });
+            }
+        }
+        ChunkWalk::Advance(size)
+    });
+
+    // Continuation: past the first terminator, scan word-aligned for the
+    // same `(0x01<<24)|size` shape with the standard `[TIM magic at +4]`
+    // gate. We don't walk chunks formally because the bytes between
+    // terminator and the next list are zero padding (no chunk headers
+    // anywhere in that gap). Matching by magic-of-payload is the cheapest
+    // and most robust gate.
+    if hit_first_terminator {
+        let mut off = round_up_4(stream.tail_end);
+        while off + 8 <= buf.len() {
+            let header = match read_u32_le(buf, off) {
+                Some(v) => v,
+                None => break,
+            };
+            let type_byte = ((header >> 24) & 0xFF) as u8;
+            let size = (header & 0x00FF_FFFF) as usize;
+            if type_byte == 0x01 && size >= 32 && off + 4 + size <= buf.len() {
+                let payload_magic = read_u32_le(buf, off + 4).unwrap_or(0);
+                if payload_magic == 0x0000_0010 {
+                    out.push(BattleTimChunk {
+                        header_offset: off,
+                        payload_offset: off + 4,
+                        payload_len: size,
+                        source: WalkSource::Continuation,
+                    });
+                    off += 4 + ((size + 3) & !3);
+                    continue;
+                }
+            }
+            off += 4;
+        }
+    }
+
+    out
+}
+
+enum ChunkWalk {
+    Advance(usize),
+    Stop,
+}
+
+fn walk_chunks<F>(buf: &[u8], mut cur: usize, mut visit: F)
+where
+    F: FnMut(usize, u32) -> ChunkWalk,
+{
+    let mut step = 0usize;
+    while step < MAX_CHUNKS && cur + 4 <= buf.len() {
+        let Some(header) = read_u32_le(buf, cur) else {
+            break;
+        };
+        match visit(cur, header) {
+            ChunkWalk::Stop => break,
+            ChunkWalk::Advance(size) => {
+                cur = match cur.checked_add(4 + ((size + 3) & !3)) {
+                    Some(v) => v,
+                    None => break,
+                };
+            }
+        }
+        step += 1;
+    }
+}
+
+fn round_up_4(v: usize) -> usize {
+    (v + 3) & !3
+}
+
 fn read_u32_le(buf: &[u8], off: usize) -> Option<u32> {
     Some(u32::from_le_bytes(buf.get(off..off + 4)?.try_into().ok()?))
 }
@@ -333,5 +504,108 @@ mod tests {
         let r = detect(truncated).expect("truncated tail should still parse");
         assert_eq!(r.tail_chunks.len(), 2);
         assert!(!r.tail_terminated);
+    }
+
+    /// Build a "town01-shaped" two-list scene_tmd_stream: leading TMD,
+    /// then `tail_count` type-0x01 TIM chunks, zero-size terminator,
+    /// `gap` bytes of zero padding, then `cont_count` more type-0x01
+    /// chunks after the terminator. Each TIM payload is a 16-byte stub
+    /// starting with the PSX TIM magic so the continuation-list gate
+    /// (which checks payload magic) recognises it.
+    fn synth_two_list(tail_count: usize, gap: usize, cont_count: usize) -> Vec<u8> {
+        // TIM payload: `[u32 0x10][12 bytes filler]` = 16 bytes.
+        let tim_payload: Vec<u8> = {
+            let mut v = Vec::with_capacity(16);
+            v.extend_from_slice(&0x0000_0010u32.to_le_bytes());
+            v.extend_from_slice(&[0u8; 12]);
+            v
+        };
+        // The payload size we declare must clear the continuation gate's
+        // `size >= 32` floor, even though the payload itself is only 16
+        // bytes long. Pad the chunk body to 32 bytes.
+        let chunk_body: Vec<u8> = {
+            let mut v = Vec::with_capacity(32);
+            v.extend_from_slice(&tim_payload);
+            v.extend_from_slice(&[0u8; 16]);
+            v
+        };
+        let tail_chunks: Vec<(u8, &[u8])> = (0..tail_count)
+            .map(|_| (0x01, chunk_body.as_slice()))
+            .collect();
+        let mut buf = synth(2, 64, &tail_chunks);
+        // Pad to gap.
+        buf.extend(std::iter::repeat_n(0u8, gap));
+        // Continuation chunks.
+        for _ in 0..cont_count {
+            let header = (0x01u32 << 24) | (chunk_body.len() as u32 & 0x00FF_FFFF);
+            buf.extend_from_slice(&header.to_le_bytes());
+            buf.extend_from_slice(&chunk_body);
+        }
+        buf
+    }
+
+    #[test]
+    fn battle_tim_chunks_finds_in_tail() {
+        let buf = synth_two_list(2, 0, 0);
+        let chunks = battle_tim_chunks(&buf);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks.iter().all(|c| c.source == WalkSource::Tail));
+        for c in &chunks {
+            assert_eq!(c.payload_len, 32);
+            assert_eq!(c.payload_offset, c.header_offset + 4);
+        }
+    }
+
+    #[test]
+    fn battle_tim_chunks_finds_continuation() {
+        let buf = synth_two_list(2, 0x100, 2);
+        let chunks = battle_tim_chunks(&buf);
+        assert_eq!(chunks.len(), 4);
+        let tail = chunks
+            .iter()
+            .filter(|c| c.source == WalkSource::Tail)
+            .count();
+        let cont = chunks
+            .iter()
+            .filter(|c| c.source == WalkSource::Continuation)
+            .count();
+        assert_eq!(tail, 2);
+        assert_eq!(cont, 2);
+    }
+
+    #[test]
+    fn battle_tim_chunks_empty_for_non_scene_stream() {
+        let buf = vec![0u8; 1024];
+        assert!(battle_tim_chunks(&buf).is_empty());
+    }
+
+    #[test]
+    fn battle_tim_chunks_stops_at_type_02_terminator() {
+        // A type-0x02 chunk also terminates FUN_8001FE70's tail walk;
+        // chunks after it should NOT be reported as Tail.
+        let mut buf = synth(2, 64, &[(0x01, &[0u8; 32]), (0x02, &[0u8; 0])]);
+        // Append a stray type-0x01 chunk past the type-0x02 terminator.
+        // No padding gap here, so it should be reachable by the
+        // continuation pass.
+        let header = (0x01u32 << 24) | 32u32;
+        buf.extend_from_slice(&header.to_le_bytes());
+        // payload: TIM magic + filler.
+        buf.extend_from_slice(&0x0000_0010u32.to_le_bytes());
+        buf.extend_from_slice(&[0u8; 28]);
+        let chunks = battle_tim_chunks(&buf);
+        let tail: Vec<_> = chunks
+            .iter()
+            .filter(|c| c.source == WalkSource::Tail)
+            .collect();
+        let cont: Vec<_> = chunks
+            .iter()
+            .filter(|c| c.source == WalkSource::Continuation)
+            .collect();
+        assert_eq!(tail.len(), 1, "only the pre-type-0x02 chunk is in-tail");
+        assert_eq!(
+            cont.len(),
+            1,
+            "post-terminator chunk surfaces in continuation"
+        );
     }
 }

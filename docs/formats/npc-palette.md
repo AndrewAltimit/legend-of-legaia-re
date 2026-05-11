@@ -2,8 +2,8 @@
 
 PSX field/town NPC TMDs commonly sample CLUT cells along row 479. The
 data is **plain PSX TIMs** sitting inside the scene's PROT entries,
-uploaded to VRAM by the standard asset-dispatch path (no special
-"hue-ramp generator" function exists).
+uploaded to VRAM by the [`FUN_8001FE70`](../subsystems/asset-loader.md)
+battle-init walker (no special "hue-ramp generator" function exists).
 
 ## Layout
 
@@ -17,12 +17,15 @@ own row-479 TIMs with the NPC palettes for that scene.
 
 ## How the TIMs sit on disc
 
-Within a scene's PROT entries (e.g. `0006_town01.BIN`), each row-479
-TIM is preceded by a 4-byte chunk-header prefix in the asset
-descriptor stream, then the standard PSX TIM:
+Within a scene's [`scene_tmd_stream`](scene-bundles.md) PROT entries
+(e.g. `0006_town01.BIN`), each row-479 TIM lives inside a type-`0x01`
+streaming chunk in the entry's tail. The chunk header is a `(type <<
+24) | size` u32:
 
 ```
-+0x00: u32 chunk header  (e.g. 0x01008220 = type 0x20)
++0x00: u32 chunk header  bytes 20 82 00 01 -> LE u32 0x01008220
+                         type byte = 0x01 (high byte) -> "upload TIM"
+                         payload size = 0x008220 (low 24 bits) = 33312
 +0x04: u32 TIM magic     0x00000010
 +0x08: u32 TIM flags     0x00000008 (4bpp + CLUT)
 +0x0C: u32 block size    0x0000020C  (CLUT block: 12 hdr + 512 data)
@@ -34,9 +37,27 @@ descriptor stream, then the standard PSX TIM:
 +...:  standard TIM image block (typically a 256×256 4bpp at fb_x=832)
 ```
 
+The `0x20` leading byte (file order) is the **low byte of the chunk
+size field**, not a type. The type byte in `FUN_8001FE70`'s walker
+convention is the **high byte of the LE u32** (= `0x01`). This is
+the same byte-packing the standard asset-type dispatcher uses (see
+[`asset-type.md`](asset-type.md)), but `FUN_8001FE70` gives `type =
+0x01` a different semantic than `FUN_8001F05C` does - here it means
+"upload payload as a single PSX TIM via `LoadImage`", not
+"`TIM_LIST` pack". Calling the standard `FUN_8002541C` streaming
+walker on these chunks would dispatch to `FUN_8001F05C` case 1 and
+attempt to parse the payload as a `[count + offsets + TIMs]` pack,
+which fails (the first payload u32 is the TIM magic `0x10` = 16
+which would be read as a 16-entry pack count).
+
 `legaia_asset::tim_scan` detects these via the inner TIM magic at
 offset +4 from the chunk header; it does not need to interpret the
-type-0x20 wrapper.
+`FUN_8001FE70` wrapper. The structured walker that *does* recognise
+the wrapper is
+[`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs)
+- it reports every type-0x01 chunk and tags whether the chunk sits
+inside `FUN_8001FE70`'s reach (`WalkSource::Tail`) or past the first
+terminator in a continuation list (`WalkSource::Continuation`).
 
 ## Multi-TIM CLUT merge
 
@@ -61,13 +82,46 @@ palette anchor).
 
 ## What retail's dispatcher does instead
 
-The exact retail dispatch order (and which subset of the row-479 TIMs
-get uploaded for a given scene-mode) is not yet pinned. Empirically,
-mednafen save states captured mid-tutorial-battle in town01 hold the
-specific bytes from `0006_town01 @ 0x1ee4c` at row 479 — meaning the
-retail engine ends up with one specific "full" variant. The merge
-strategy in the engine port produces a functionally equivalent
-fully-populated row but not necessarily byte-identical to retail.
+The retail engine uploads these TIMs only during **battle init**, via
+the `FUN_800520F0` → `FUN_8001FA88` → `FUN_8001FE70` chain. The
+field / town scene loader does NOT touch them. Empirically:
+
+- mednafen captures inside town01 (no battle entered yet) have VRAM
+  row 479 fb_x=0..256 entirely zero.
+- mednafen captures mid-battle (or post-battle, since PSX VRAM is
+  persistent across scene transitions) have row 479 populated.
+
+`FUN_8001FE70` walks the streaming tail until it hits either a
+zero-size chunk header or a type-0x02 chunk; for every type-0x01
+chunk along the way it calls `LoadImage(payload)` to DMA the TIM to
+VRAM. The walker stops at the first terminator. Files with the
+two-list shape (`0006_town01.BIN` has chunks at `0x3840`, `0xba64`,
+then a zero-padded gap, then `0x16c24`, `0x1ee48`) leave the
+continuation list past the terminator unreached by the standard
+battle-init dispatch. Whether a separate code path picks them up
+later is not pinned; the bytes are reachable as
+`WalkSource::Continuation` in the engine helper, and the in-tail
+chunks alone supply the same `(fb_y, fb_x)` regions, so the
+continuation list may be cold-loaded only by an alternate scenario
+(e.g. NPC variants seen in specific scripted events).
+
+## Engine port: field-mode vs battle-mode dispatch
+
+`SceneResources::build_targeted_with_options(..., kind:
+SceneLoadKind::Field)` mimics retail's lazy upload by excluding
+every `scene_tmd_stream` PROT entry's type-0x01 TIM chunks. The
+trade-off is that field NPCs whose CBA points at row 479 slots
+128..240 (= 97 prims each across town01's four field-intersection
+NPC TMDs) drop through the renderer's filter. The retail engine
+renders them only because `battle_data` (PROT 865..869) is
+pre-loaded at boot and supplies those specific slots; that
+preload-at-boot is not yet wired in the engine port.
+
+`SceneLoadKind::Battle` (the legacy default of `build_targeted`)
+uploads every type-0x01 chunk eagerly, which inflates VRAM compared
+to retail's field state but keeps the field NPC prims renderable
+out of the box. The town01 keep ratio is 99.3% in battle mode and
+~0% in field mode under disc-gated regression tests.
 
 ## Cross-save corroboration
 

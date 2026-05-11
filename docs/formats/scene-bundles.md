@@ -4,13 +4,13 @@ Four related shapes account for the dominant per-scene asset layouts on the disc
 
 ## scene_tmd_stream - bare-TMD prefix
 
-The dominant scene-asset layout. Implementation: `crates/asset/src/scene_tmd_stream.rs`. ~12% of all PROT entries match.
+The dominant scene-asset layout. Implementation: `crates/asset/src/scene_tmd_stream.rs`. ~12% of all PROT entries match. Walked by `FUN_8001FE70` (the battle-init custom walker) - **not** by `FUN_8002541C` / `FUN_8001F05C` despite the chunk-header packing matching the standard format.
 
 ```text
 +0x00          u32 chunk0_header   ; (type=0x00 << 24) | size
 +0x04          Legaia TMD          ; magic 0x80000002, fills `size` bytes
-+0x04 + size   streaming chunks    ; standard DATA_FIELD chunks until terminator
-                                   ; OR end-of-file
++0x04 + size   streaming chunks    ; FUN_8001FE70-style tail until
+                                   ; terminator OR end-of-file
 ```
 
 Strict structural detection:
@@ -22,6 +22,35 @@ Strict structural detection:
 6. TMD body size (low 24 bits of chunk0 header) is 4-aligned and at least `12 + nobj * 28`; `4 + size <= buf.len()`.
 7. Streaming tail at offset `4 + tmd_size` walks at least one valid chunk header OR a terminator.
 
+### Streaming tail - `FUN_8001FE70` walker
+
+Past the leading TMD, each chunk is `[u32 header][payload]` with header packed as `(type << 24) | (size & 0x00FFFFFF)`. The retail walker (`FUN_8001FE70`, called from `FUN_800520F0` battle scene loader) dispatches:
+
+| Type byte | Action |
+|---|---|
+| `0x01` | Upload payload as a single PSX TIM via `FUN_800198E0` (LoadImage). |
+| `0x02` | Stop the walk (terminator). |
+| any other | Skip silently (advance to next chunk). |
+| size = 0 | Stop the walk (zero-size header is the canonical terminator). |
+
+The type-byte semantics differ from the standard `FUN_8001F05C` dispatcher: there `type = 0x01` means `TIM_LIST` (a `[count + offsets + TIMs]` pack), but here it means "single bare TIM". So although the chunk-header packing is identical, calling `FUN_8002541C` on a `scene_tmd_stream` entry would mis-dispatch and crash. The runtime knows to use `FUN_8001FE70` for these entries.
+
+### Two-list continuation
+
+Some entries (e.g. `0006_town01.BIN`) carry a second set of type-0x01 chunks past the first terminator, separated by a zero-padded gap:
+
+```text
++0x3840   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
++0xba64   type=0x01 TIM chunk  (in FUN_8001FE70's reach)
++0x13c88  terminator (zero-size header)
++0x13c8c..0x16c23: zero padding
++0x16c24  type=0x01 TIM chunk  (continuation - past terminator)
++0x1ee48  type=0x01 TIM chunk  (continuation - past terminator)
++0x2706c  terminator
+```
+
+`FUN_8001FE70` exits at the first terminator (`0x13c88` here), so the continuation list isn't visited by the standard battle-init dispatch. The consumer for the continuation is not yet pinned; the bytes are reachable as `WalkSource::Continuation` in [`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) and the in-tail chunks alone supply the same `(fb_y, fb_x)` regions, so the continuation may be a cold-loaded scenario variant.
+
 Reading:
 
 ```rust
@@ -31,6 +60,13 @@ if let Some(s) = scene_tmd_stream::detect(&buf) {
     for chunk in &s.tail_chunks {
         // each chunk is (type, size, payload) per data-field.md
     }
+}
+
+// Surface every type-0x01 TIM upload chunk - both in-tail and continuation.
+for c in scene_tmd_stream::battle_tim_chunks(&buf) {
+    // c.payload_offset is the inner PSX TIM magic offset.
+    // c.source distinguishes Tail (FUN_8001FE70-reachable) from
+    // Continuation (past the first terminator).
 }
 ```
 

@@ -30,10 +30,66 @@
 //! stays backward-compatible.
 
 use anyhow::Result;
-use legaia_asset::{anm_detect, battle_data_pack, tim_scan, tmd_scan};
+use legaia_asset::{anm_detect, battle_data_pack, scene_tmd_stream, tim_scan, tmd_scan};
 use legaia_tim::Vram;
 
 use crate::scene::Scene;
+
+/// Which retail dispatch path the engine is mimicking when it builds a
+/// scene's VRAM pre-pass. Controls whether scene_tmd_stream PROT entries
+/// (slots that the retail battle-scene loader processes via
+/// `FUN_8001FE70`) contribute their type-0x01 TIM upload chunks to the
+/// engine-side VRAM.
+///
+/// In retail, field/town scene-load does NOT touch these entries -
+/// they're battle-only character meshes. Battle-init loads them. The
+/// engine port has historically uploaded them on every scene build
+/// because the field NPC TMDs sample CLUTs they carry; matching retail's
+/// lazy dispatch means accepting that those NPCs drop prims in field
+/// mode until the player's first battle has primed VRAM.
+///
+/// See [`docs/formats/scene-bundles.md`] (`scene_tmd_stream`) and
+/// [`docs/subsystems/asset-loader.md`] for the runtime caller chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneLoadKind {
+    /// Mimic the retail field / town scene loader: skip every
+    /// scene_tmd_stream PROT entry's type-0x01 TIM upload chunks. These
+    /// chunks are reserved for battle-init dispatch and are absent from
+    /// VRAM in retail town saves (e.g. mc1-mc7 captures in town01 carry
+    /// row 479 fb_x=0..256 = zero). The trade-off is a lower textured
+    /// prim keep ratio for field NPCs whose CBA points at row 479 - the
+    /// retail engine renders those NPCs only because the CLUT halfwords
+    /// for slots 128..240 are pre-loaded at boot from `battle_data`
+    /// (PROT 865..869), a path the engine port hasn't fully wired yet.
+    Field,
+    /// Mimic the retail battle scene loader: include the in-tail
+    /// `FUN_8001FE70` type-0x01 chunks AND any post-terminator
+    /// continuation chunks. This is the "upload everything that looks
+    /// like a TIM" pass that the engine port has historically used as
+    /// its `build_targeted` default.
+    Battle,
+}
+
+/// Options forwarded to [`SceneResources::build_targeted_with_options`].
+/// Kept in a struct so future build-time switches (e.g. "include the
+/// post-terminator continuation list but not the in-tail one", or
+/// "preserve VRAM from the previous scene") can be added without
+/// breaking the API.
+#[derive(Debug, Clone, Copy)]
+pub struct BuildOptions {
+    /// Whether the build mimics field-mode or battle-mode dispatch.
+    /// Defaults to [`SceneLoadKind::Battle`] in [`BuildOptions::default`]
+    /// so legacy `build_targeted` calls behave the same as before.
+    pub kind: SceneLoadKind,
+}
+
+impl Default for BuildOptions {
+    fn default() -> Self {
+        Self {
+            kind: SceneLoadKind::Battle,
+        }
+    }
+}
 
 /// One TMD model the scene exposes, paired with its parsed structure.
 ///
@@ -230,9 +286,31 @@ impl SceneResources {
     ///
     /// See [`legaia_tmd::vram_targeted::build_vram_targeted_from_buffers`]
     /// for the per-TIM block-arbitration rule.
+    ///
+    /// This convenience method calls
+    /// [`SceneResources::build_targeted_with_options`] with
+    /// [`BuildOptions::default`] - i.e. it includes scene_tmd_stream
+    /// PROT entries' type-0x01 TIM upload chunks in the upload set. For
+    /// retail-field-parity dispatch (where those chunks are NOT uploaded
+    /// at field load time), pass `BuildOptions { kind:
+    /// SceneLoadKind::Field }` to [`build_targeted_with_options`].
+    ///
+    /// [`build_targeted_with_options`]: SceneResources::build_targeted_with_options
     pub fn build_targeted(
         scene: &Scene,
         shared_scenes: &[&Scene],
+    ) -> Result<(Self, legaia_tmd::vram_targeted::VramUploadStats)> {
+        Self::build_targeted_with_options(scene, shared_scenes, BuildOptions::default())
+    }
+
+    /// Same as [`SceneResources::build_targeted`] but with explicit
+    /// [`BuildOptions`] - lets the caller distinguish field-mode (skip
+    /// scene_tmd_stream battle TIM chunks) from battle-mode (include
+    /// them). See [`SceneLoadKind`] for the semantics.
+    pub fn build_targeted_with_options(
+        scene: &Scene,
+        shared_scenes: &[&Scene],
+        options: BuildOptions,
     ) -> Result<(Self, legaia_tmd::vram_targeted::VramUploadStats)> {
         let mut tmds = Vec::new();
         let mut anm_packs = Vec::new();
@@ -325,58 +403,89 @@ impl SceneResources {
         // entry - many battle / level-up bundles wrap their character
         // TIM bank in an LZS container, so a raw-only scan misses
         // them and leaves the dropping CLUT rows unsupplied.
+        //
+        // When `options.kind == SceneLoadKind::Field`, scene_tmd_stream
+        // PROT entries (the dominant scene-asset layout - leading TMD +
+        // streaming tail) have their type-0x01 TIM upload chunks
+        // excluded. Those chunks are dispatched by `FUN_8001FE70` (the
+        // battle scene loader's per-PROT walker), not by any field /
+        // town load path. See [`docs/formats/scene-bundles.md`].
         let mut tim_bufs: Vec<Vec<u8>> = Vec::new();
         let mut tim_parse_failures = 0usize;
-        let collect_tim_bufs =
-            |s: &Scene, tim_bufs: &mut Vec<Vec<u8>>, tim_parse_failures: &mut usize| {
-                for entry in &s.entries {
-                    let bytes: &[u8] = &entry.bytes;
-                    let scan = tim_scan::scan_entry(bytes);
-                    for (source, hit) in &scan.hits {
-                        let src: &[u8] = match source {
-                            tim_scan::Source::Raw => bytes,
-                            tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
-                        };
-                        let end = hit.offset + hit.byte_len;
-                        if end > src.len() {
-                            continue;
-                        }
-                        let payload = &src[hit.offset..end];
-                        if legaia_tim::parse(payload).is_ok() {
-                            tim_bufs.push(payload.to_vec());
-                        } else {
-                            *tim_parse_failures += 1;
-                        }
+        let kind = options.kind;
+        let collect_tim_bufs = |s: &Scene,
+                                tim_bufs: &mut Vec<Vec<u8>>,
+                                tim_parse_failures: &mut usize| {
+            for entry in &s.entries {
+                let bytes: &[u8] = &entry.bytes;
+                // Skip-set: payload offsets of scene_tmd_stream
+                // type-0x01 TIM chunks. Only populated when the
+                // build is field-mode AND the entry is shaped like
+                // a scene_tmd_stream.
+                let battle_tim_payload_skips: Vec<usize> = if matches!(kind, SceneLoadKind::Field) {
+                    scene_tmd_stream::battle_tim_chunks(bytes)
+                        .iter()
+                        .map(|c| c.payload_offset)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let scan = tim_scan::scan_entry(bytes);
+                for (source, hit) in &scan.hits {
+                    let src: &[u8] = match source {
+                        tim_scan::Source::Raw => bytes,
+                        tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
+                    };
+                    let end = hit.offset + hit.byte_len;
+                    if end > src.len() {
+                        continue;
                     }
-                    // battle_data pack: rescan decompressed record bytes
-                    // for any TIM headers. The post-TMD region inside
-                    // each record holds the character textures + CLUTs;
-                    // most retail records don't tag their texture pool
-                    // with the standard TIM magic, but the few that do
-                    // (or future records that gain it) are now reachable.
-                    if let Some(pack) = battle_data_pack::detect(bytes) {
-                        for record in &pack.records {
-                            let Ok(decoded) =
-                                battle_data_pack::decode_record(bytes, &pack, record.index)
-                            else {
+                    // Field-mode: drop TIMs whose offset matches one
+                    // of the scene_tmd_stream battle TIM chunks. The
+                    // scanner walks raw entry bytes and the skip
+                    // set is in raw-buffer coordinates, so only the
+                    // `Source::Raw` arm needs the filter.
+                    if matches!(source, tim_scan::Source::Raw)
+                        && battle_tim_payload_skips.contains(&hit.offset)
+                    {
+                        continue;
+                    }
+                    let payload = &src[hit.offset..end];
+                    if legaia_tim::parse(payload).is_ok() {
+                        tim_bufs.push(payload.to_vec());
+                    } else {
+                        *tim_parse_failures += 1;
+                    }
+                }
+                // battle_data pack: rescan decompressed record bytes
+                // for any TIM headers. The post-TMD region inside
+                // each record holds the character textures + CLUTs;
+                // most retail records don't tag their texture pool
+                // with the standard TIM magic, but the few that do
+                // (or future records that gain it) are now reachable.
+                if let Some(pack) = battle_data_pack::detect(bytes) {
+                    for record in &pack.records {
+                        let Ok(decoded) =
+                            battle_data_pack::decode_record(bytes, &pack, record.index)
+                        else {
+                            continue;
+                        };
+                        for hit in tim_scan::scan_buffer(&decoded.bytes) {
+                            let end = hit.offset + hit.byte_len;
+                            if end > decoded.bytes.len() {
                                 continue;
-                            };
-                            for hit in tim_scan::scan_buffer(&decoded.bytes) {
-                                let end = hit.offset + hit.byte_len;
-                                if end > decoded.bytes.len() {
-                                    continue;
-                                }
-                                let payload = &decoded.bytes[hit.offset..end];
-                                if legaia_tim::parse(payload).is_ok() {
-                                    tim_bufs.push(payload.to_vec());
-                                } else {
-                                    *tim_parse_failures += 1;
-                                }
+                            }
+                            let payload = &decoded.bytes[hit.offset..end];
+                            if legaia_tim::parse(payload).is_ok() {
+                                tim_bufs.push(payload.to_vec());
+                            } else {
+                                *tim_parse_failures += 1;
                             }
                         }
                     }
                 }
-            };
+            }
+        };
         for shared in shared_scenes {
             collect_tim_bufs(shared, &mut tim_bufs, &mut tim_parse_failures);
         }

@@ -54,6 +54,21 @@
   <p>Two cases call <code>FUN_8003E104(monster_idx, slot, dst_buf)</code> to populate slots 7 and 8 with the active battle's monster sound banks - the per-monster body of <code>h:\mpack\monster.snd</code>. Each monster has a <code>(start_lba, end_lba+1)</code> entry pair in the TOC at <code>0x801C8980 - 0x10</code>. See <a href="audio.html">Audio</a> &rarr; "Monster sound bank" for the full loader contract.</p>
 
   <p class="hint">The asset-viewer's <code>--bundle battle</code> mode mirrors this loader's PROT 865&ndash;890 set so character meshes have the right CLUT bindings.</p>
+
+  <h3>Per-PROT walker (<code>FUN_8001FE70</code>)</h3>
+  <p>One battle-scene state (in <code>FUN_800513F0</code>, around <code>0x80051A50</code>) calls <code>FUN_8001FA88(scene_base + slot, 0, dst_buf)</code> to load a per-scene PROT entry into the working buffer, then <code>FUN_8001FE70(dst_buf)</code> to walk its chunk list. The walker is the dispatch path for the <a href="../formats/scene-bundles.html">scene_tmd_stream</a> layout - leading TMD body followed by streaming chunks - and is <em>different</em> from the standard <code>FUN_8002541C</code> streaming walker:</p>
+  <ul class="bullets">
+    <li>First chunk: read <code>chunk0_header = u32 LE</code> at offset 0. Low 24 bits = TMD body size. Round up to 32-byte alignment, allocate a buffer of that size at <code>_DAT_8007B864</code>, copy the TMD body in via <code>FUN_8003D26C</code>.</li>
+    <li>Loop: advance by <code>(prev_size &amp; ~3) + 4</code> to the next chunk header. Read <code>header</code>; if <code>header &amp; 0xFFFFFF == 0</code>, exit (terminator). Otherwise:
+      <ul class="bullets">
+        <li>If <code>(header &gt;&gt; 24) == 0x01</code> -&gt; call <code>FUN_800198E0(payload_ptr)</code> (LoadImage).</li>
+        <li>If <code>(header &gt;&gt; 24) == 0x02</code> -&gt; exit (explicit terminator).</li>
+        <li>Other types are skipped silently (the loop advances without uploading).</li>
+      </ul>
+    </li>
+    <li>Returns once the terminator is hit. The <code>FUN_80026B4C</code> TMD register call that follows hooks the parsed TMD into the per-scene mesh pointer table at <code>0x8007C018 + idx*4</code>.</li>
+  </ul>
+  <p>This is the path that uploads field NPC palettes to VRAM row 479 - they're plain PSX TIMs wrapped in type-0x01 chunks, dispatched only during battle init. See <a href="../formats/npc-palette.html">npc-palette.html</a> for the cross-save corroboration and <a href="../formats/scene-bundles.html">scene-bundles.html</a> &rarr; "Streaming tail" for the type-byte table.</p>
 </section>
 
 <section class="doc-section" id="field-loader">
@@ -113,6 +128,14 @@
   <h3>Field-shared CDNAME blocks</h3>
   <p><code>FIELD_SHARED_BLOCKS = ["init_data", "player_data"]</code> is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. <code>player_data</code> (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; <code>init_data</code> (PROT 0) holds shared UI / sprite tiles. <code>SceneHost::enter_field_scene</code> passes these to <code>build_targeted</code> so the player TMD survives every town / dungeon transition without being re-loaded per scene.</p>
   <p>The legacy <code>SceneResources::build</code> (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer <code>build_targeted</code> for production scene loads. The asset-viewer's <code>--vram-extra-dir</code> flag remains the manual workaround for browsing extracted <code>tim_scan/</code> dirs that aren't tied to a CDNAME scene.</p>
+
+  <h3>Field vs battle dispatch (<code>SceneLoadKind</code>)</h3>
+  <p><code>SceneResources::build_targeted_with_options(scene, shared, BuildOptions { kind })</code> lets callers pick the dispatch path the build mimics:</p>
+  <ul class="bullets">
+    <li><code>SceneLoadKind::Battle</code> (legacy default of <code>build_targeted</code>): uploads every TIM the scanner finds, including the type-0x01 chunks inside <code>scene_tmd_stream</code> PROT entries that <code>FUN_8001FE70</code> would walk during battle init. Town01 keep ratio: 99.3% under disc-gated test.</li>
+    <li><code>SceneLoadKind::Field</code>: skips those chunks - mirrors retail's lazy upload (field/town entry does NOT touch them; the bytes only land in VRAM after the player's first battle). Town01 keep ratio: ~0% because field NPC TMDs lose their row 479 CLUT support. The retail engine renders those NPCs only because <code>battle_data</code> slots 128..240 are pre-loaded at boot from PROT 865..869 - a path the engine port hasn't fully wired.</li>
+  </ul>
+  <p>The legacy default preserves backward compatibility; switching <code>enter_field_scene</code> to field mode is a follow-up that requires wiring <code>battle_data</code> pre-load first (see the "Known gap" section below).</p>
 
   <h3>Diagnosing missing CLUTs</h3>
   <p>To find which PROT entry provides a missing CLUT row, run:</p>

@@ -10,6 +10,19 @@ Two cases call `FUN_8003E104(monster_idx, slot, dst_buf)` to populate slots 7 an
 
 The asset-viewer's `--bundle battle` mode mirrors this loader's PROT 865–890 set so character meshes have the right CLUT bindings.
 
+### Per-PROT walker (`FUN_8001FE70`)
+
+One battle-scene state (in `FUN_800513F0`, around `0x80051a50`) calls `FUN_8001FA88(scene_base + slot, 0, dst_buf)` to load a per-scene PROT entry into the working buffer, then `FUN_8001FE70(dst_buf)` to walk its chunk list. The walker is the dispatch path for the [`scene_tmd_stream`](../formats/scene-bundles.md) layout - leading TMD body followed by streaming chunks - and is *different* from the standard `FUN_8002541C` streaming walker:
+
+- First chunk: read `chunk0_header = u32 LE` at offset 0. Low 24 bits = TMD body size. Round up to 32-byte alignment, allocate a buffer of that size at `_DAT_8007B864`, copy the TMD body in via `FUN_8003D26C`.
+- Loop: advance by `(prev_size & ~3) + 4` to the next chunk header. Read `header`; if `header & 0xFFFFFF == 0`, exit (terminator). Otherwise:
+  - If `(header >> 24) == 0x01` -> call `FUN_800198E0(payload_ptr)` (LoadImage).
+  - If `(header >> 24) == 0x02` -> exit (explicit terminator).
+  - Other types are skipped silently (the loop advances without uploading).
+- Returns once the terminator is hit. The `FUN_80026B4C` TMD register call that follows hooks the parsed TMD into the per-scene mesh pointer table at `0x8007C018 + idx*4`.
+
+This is the path that uploads field NPC palettes to VRAM row 479 - they're plain PSX TIMs wrapped in type-0x01 chunks, dispatched only during battle init. See [`docs/formats/npc-palette.md`](../formats/npc-palette.md) for the cross-save corroboration and [`docs/formats/scene-bundles.md`](../formats/scene-bundles.md#streaming-tail---fun_8001fe70-walker) for the type-byte table.
+
 ## Field / town scene loader (`FUN_8001F7C0` + `FUN_800255B8`)
 
 The town/field scene-init chain. Builds paths under `DATA\FIELD\` and `h:\PROT\FIELD\<scene>\`. Each scene reserves **six file types** in CDNAME's per-scene block, and the loader walks the [scene asset table](../formats/scene-bundles.md) at the leading PROT entry to pull each file in turn.
@@ -53,6 +66,15 @@ This matches what the retail field loader does (DMA only the texture bytes the c
 ### Field-shared CDNAME blocks
 
 `FIELD_SHARED_BLOCKS = ["init_data", "player_data"]` is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. `player_data` (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)`; `init_data` (PROT 0) holds shared UI / sprite tiles. `SceneHost::enter_field_scene` passes these to `build_targeted` so the player TMD survives every town / dungeon transition without being re-loaded per scene.
+
+### Field vs battle dispatch (`SceneLoadKind`)
+
+`SceneResources::build_targeted_with_options(scene, shared, BuildOptions { kind })` lets callers pick the dispatch path the build mimics:
+
+- `SceneLoadKind::Battle` (legacy default of `build_targeted`): uploads every TIM the scanner finds, including the type-0x01 chunks inside `scene_tmd_stream` PROT entries that `FUN_8001FE70` would walk during battle init. Town01 keep ratio: 99.3% under disc-gated test.
+- `SceneLoadKind::Field`: skips those chunks - mirrors retail's lazy upload (field/town entry does NOT touch them; the bytes only land in VRAM after the player's first battle). Town01 keep ratio: ~0% because field NPC TMDs lose their row 479 CLUT support. The retail engine renders those NPCs only because `battle_data` slots 128..240 are pre-loaded at boot from PROT 865..869 - a path the engine port hasn't fully wired.
+
+The legacy default preserves backward compatibility; switching `enter_field_scene` to field mode is a follow-up that requires wiring `battle_data` pre-load first (see the "Known gap" section below).
 
 The legacy [`SceneResources::build`](../../crates/engine-core/src/scene_resources.rs) (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer `build_targeted` for production scene loads. The asset-viewer's `--vram-extra-dir` flag remains the manual workaround for browsing extracted `tim_scan/` dirs that aren't tied to a CDNAME scene.
 
