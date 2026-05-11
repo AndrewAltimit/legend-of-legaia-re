@@ -1,0 +1,175 @@
+# Sol Tower (CDNAME `town0d`) - floor layout and side-quest catalog.
+#
+# The Sol scene is structurally a tower with one floor per level (B2 .. F7
+# plus the roof). Each floor hosts a mix of vendors (covered by shops.toml),
+# minigames (covered by casino.toml), and named side-quests that aren't
+# bound to any of the existing tables - those live here.
+#
+# Used by the site's minigames + world pages, and by the decomp side as
+# ground-truth labels for NPC scripts inside the town0d field-VM bundle.
+
+[meta]
+scene_label = "town0d"
+display_name = "Sol"
+prot_block_start = 347
+notes = """
+Sol is a vertical structure with a B2 basement reachable via a service
+elevator. The Genesis Tree Seedling side-quest plants the basement; the
+Mary's Diary -> Roof Monk -> Art-grant chain bookends the tower; Gaza
+fights the party in the Warrior's Square (B2) under a strict set of
+unlock conditions documented below.
+"""
+
+# ---- Floor map ----
+
+[[floor]]
+key = "b2"
+name = "B2 - Basement"
+sections = [
+    { name = "Library",          notes = "Hidden 'Mary's Diary' item - give to monk on Roof to learn an Art." },
+    { name = "Warrior's Square", notes = "Gaza boss fight. Unlock = defeat Songi in Noaru Valley + Vahn has every Art + Meta is at level 9." },
+    { name = "Genesis Plot",     notes = "Plant the Genesis Tree Seedling received from Old Deez on the Roof." },
+]
+
+[[floor]]
+key = "b1"
+name = "B1 - Control Room"
+sections = [
+    { name = "Control Room", notes = "Story-only - 'There's nothing important here anymore' after the main event." },
+]
+
+[[floor]]
+key = "f1"
+name = "F1 - Entry"
+sections = [
+    { name = "Items Shop 1", notes = "Front entrance (back entrance is on F3)." },
+    { name = "Inn",          cost_gold = 200 },
+    { name = "Tower exit" },
+]
+
+[[floor]]
+key = "f2"
+name = "F2 - Arms"
+sections = [
+    { name = "Arms Shop 1" },
+    { name = "Sol's Diner", notes = "Permanently closed: 'It's always closed.'" },
+]
+
+[[floor]]
+key = "f3"
+name = "F3 - Items back-entrance"
+sections = [
+    { name = "Items Shop 1 (back entrance)" },
+]
+
+[[floor]]
+key = "f4"
+name = "F4 - Muscle Dome floor"
+sections = [
+    { name = "Inn",                  cost_gold = 280 },
+    { name = "Jazz Club",            notes = "Reunites Cara & Grantes after delivering the Music Score." },
+    { name = "Muscle Dome",          notes = "Arena minigame - Beginner / Expert / Master courses." },
+    { name = "Muscle Dome Counter",  notes = "Exchange Muscle Dome / Baka Fighter / slot coins for prizes (see casino.toml)." },
+]
+
+[[floor]]
+key = "f5"
+name = "F5 - Entertainment"
+sections = [
+    { name = "Sol Fever Disco",  notes = "Noa dance-contest minigame. Gold Card required." },
+    { name = "Sol Broadway",     notes = "Gala-led theatrical production - free entry on completion." },
+]
+
+[[floor]]
+key = "f6"
+name = "F6 - Workshop"
+sections = [
+    { name = "Bakery",        notes = "Sells Soru Bread at retail (6000 G) - cheaper at Muscle Dome counter (100 coins)." },
+    { name = "Items Shop 2",  notes = "Tucked inside the Bakery." },
+    { name = "Arms Shop 2" },
+    { name = "Warehouse",     notes = "Life Grail is sold here at a negotiable 40000-90000 G." },
+]
+
+[[floor]]
+key = "f7"
+name = "F7 - Community"
+sections = [
+    { name = "Community Hall" },
+    { name = "Sol Cafe" },
+    { name = "Sol Dayschool" },
+]
+
+[[floor]]
+key = "roof"
+name = "Roof"
+sections = [
+    { name = "Old Deez",  notes = "Leader of Sol Tower's temple. Gives the Genesis Tree Seedling." },
+    { name = "Roof Monk", notes = "Accepts Mary's Diary and teaches Vahn an Art in return." },
+    { name = "Gaza fight (alt)", notes = "Second Gaza encounter on the Roof, ~20000-22000 HP." },
+]
+
+# ---- Sol-specific side-quests not handled elsewhere ----
+
+[[side_quest]]
+key = "marys_diary"
+name = "Mary's Diary"
+chain = [
+    "Pick up Mary's Diary in the Sol Tower Library (B2).",
+    "Bring it to the monk on the Roof.",
+    "Receive an Art (Vahn).",
+]
+reward_item = "marys_diary"
+notes = "Acts as both a quest item and the source of an Art."
+
+[[side_quest]]
+key = "music_score"
+name = "Music Score / Jazz Club reunion"
+chain = [
+    "Cara in Buma hands over the Music Score (her love song to Grantes).",
+    "Bring the Music Score to the piano player in Sol Tower's Jazz Club (F4).",
+    "Grantes hands over the Soren Flute (calls a Soren at Mt. Dhini).",
+]
+reward_item = "soren_flute"
+notes = "Quiet side-quest with mechanical follow-on: the Soren Flute unlocks Mt. Dhini traversal."
+
+[[side_quest]]
+key = "sol_fever_disco"
+name = "Sol Fever Disco"
+chain = [
+    "Buy the Gold Card from the Muscle Dome counter (50 coins).",
+    "Enter Sol Fever Disco on F5.",
+    "Win the Noa dance contest (two rounds).",
+]
+reward = "10000 G + Swimsuit"
+reward_item = "swimsuit"
+notes = "Round-by-round button sequence isn't documented externally."
+
+[[side_quest]]
+key = "sol_broadway"
+name = "Sol Broadway"
+chain = [
+    "Visit Sol Broadway on F5 with Gala in the party.",
+    "Complete the theatrical sequence.",
+]
+reward = "Free entry to subsequent shows."
+notes = "No item or money reward."
+
+[[side_quest]]
+key = "genesis_tree"
+name = "Genesis Tree Seedling"
+chain = [
+    "Speak to Old Deez on the Roof to receive the Genesis Tree Seedling.",
+    "Plant it in the Sol Tower basement (B2 Genesis Plot).",
+]
+notes = "Triggers the post-Sol Tower exit event."
+
+[[side_quest]]
+key = "warriors_square"
+name = "Warrior's Square (Gaza)"
+chain = [
+    "Beat Songi in Noaru Valley.",
+    "Teach Vahn every Art (regular + Hyper unlocks).",
+    "Bring Meta to level 9.",
+    "Descend to B2 Warrior's Square to challenge Gaza.",
+]
+notes = "Optional fight; Gaza has roughly 24000-25000 HP."

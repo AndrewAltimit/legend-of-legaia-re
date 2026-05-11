@@ -1,8 +1,15 @@
 # Casino prizes + Muscle Dome courses.
 #
-# Two slot-machine prize tables exist (Vidna + Sol), and three Muscle
-# Dome arena courses (Beginner / Expert / Master) each with an ordered
-# enemy line-up + reward.
+# Two prize-exchange tables (Vidna casino + Sol Tower Muscle Dome counter),
+# three Muscle Dome arena courses (Beginner / Expert / Master), the Baka
+# Fighter rock-paper-scissors minigame round table, and the Muscle Paradise
+# "Chicken King" easter egg.
+#
+# Note on `location` strings:
+#   "Vidna" - Vidna town casino prize counter
+#   "Sol"   - Sol Tower F4 Muscle Dome prize-exchange counter (NOT the slot
+#             machine itself, which only pays out coins). The exchange
+#             accepts coins earned via Muscle Dome / Baka Fighter / slots.
 
 [[slot_prize]]
 location = "Vidna"
@@ -36,6 +43,11 @@ cost_coins = 80
 
 [[slot_prize]]
 location = "Vidna"
+item = "speed_elixir"
+cost_coins = 80
+
+[[slot_prize]]
+location = "Vidna"
 item = "phoenix"
 cost_coins = 50
 
@@ -54,7 +66,7 @@ location = "Vidna"
 item = "light_lure"
 cost_coins = 2
 
-# ---- Sol slot prizes ----
+# ---- Sol Tower Muscle Dome counter prizes ----
 
 [[slot_prize]]
 location = "Sol"
@@ -118,11 +130,19 @@ item = "gold_card"
 cost_coins = 50
 
 # ---- Muscle Dome courses ----
+#
+# Each course is a fixed enemy sequence with a flat entry fee + clear reward
+# in coins. `restrictions` captures the equipment / item / magic gating
+# enforced at course entry. `[[muscle_dome_enemy]]` rows under each course
+# carry element + level tags where the game annotates them.
 
 [[muscle_dome_course]]
+key = "beginner"
 name = "Beginner"
 entry_fee = 100
 reward_coins = 818
+restrictions = ["No equipment", "No items"]
+allowed = ["Magic", "Accessories"]
 enemies = [
     "Red Piura",
     "Skeleton",
@@ -134,10 +154,23 @@ enemies = [
     "Xain",
 ]
 
+[[muscle_dome_enemy]]
+course = "beginner"
+name = "Gola Gola"
+element = "Fire"
+
+[[muscle_dome_enemy]]
+course = "beginner"
+name = "Viguro Lv2"
+element = "Thunder"
+
 [[muscle_dome_course]]
+key = "expert"
 name = "Expert"
 entry_fee = 100
 reward_coins = 1532
+restrictions = ["No equipment", "No items"]
+allowed = ["Magic", "Accessories"]
 enemies = [
     "Black Piura",
     "High Gomboo",
@@ -149,11 +182,20 @@ enemies = [
     "Xain",
 ]
 
+[[muscle_dome_enemy]]
+course = "expert"
+name = "Aluru"
+element = "Light"
+
 [[muscle_dome_course]]
+key = "master"
 name = "Master"
 entry_fee = 100
 reward_coins = 13856
 reward_first_clear = "war_god_icon"
+reward_first_clear_requires = "Jette must be defeated in Absolute Fortress before the War God Icon is awarded."
+restrictions = ["No equipment", "No items", "No magic"]
+allowed = ["Accessories"]
 enemies = [
     "Ironman",
     "Viguro Lv2",
@@ -169,6 +211,31 @@ enemies = [
     "Zora",
     "Jette",
 ]
+
+[[muscle_dome_enemy]]
+course = "master"
+name = "Viguro Lv2"
+element = "Thunder"
+
+# ---- Muscle Paradise easter egg ----
+
+[[muscle_paradise_secret]]
+key = "chicken_king"
+name = "Chicken King"
+trigger = "Run from the first battle in all three Muscle Dome difficulty levels."
+reward = "chicken_king"
+notes = "Reward is the Chicken King accessory."
+
+# ---- Baka Fighter ----
+#
+# Rock-paper-scissors variant: each round shows a button sequence the
+# player must reproduce on the controller. Complete all 14 rounds to
+# claim the coin reward.
+
+[baka_fighter_meta]
+reward_coins = 460
+rounds = 14
+rules = "Reproduce the on-screen button sequence under a time pressure - like rock-paper-scissors with life meters."
 
 [[baka_fighter]]
 round = 1

@@ -66,11 +66,14 @@ docker compose up -d ghidra</code></pre>
 
 <section class="doc-section" id="the-lui-addiu-gotcha">
   <h2>The LUI+ADDIU gotcha</h2>
+  <aside class="notice warn">
+    <div class="notice-title">Ghidra's reference manager misses LUI+ADDIU pairs</div>
+    Direct xref queries for an address return zero results even when the address is heavily referenced via the standard MIPS two-instruction-form-a-32-bit-constant idiom. Use <code>ghidra/scripts/find_lui_writers.py</code> with narrowed <code>LO</code>/<code>HI</code> any time a static address looks "uncalled".
+  </aside>
   <p>MIPS forms 32-bit constants from two 16-bit immediates:</p>
 <pre><code>lui   r1, 0x801C       ; r1 = 0x801C0000
 addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
-  <p><strong>Ghidra's reference manager does NOT auto-resolve this combination across instructions.</strong> A direct query "give me xrefs to <code>0x801C70F0</code>" returns zero results, even when the address is heavily used.</p>
-  <p>Workaround: <code>ghidra/scripts/find_lui_writers.py</code> walks instructions, tracks per-register LUI immediates, and flags <code>addiu</code> / load / store offsets that combine with a tracked LUI to land in a target range. Use it any time you suspect a static address is being missed.</p>
+  <p>Workaround: <code>ghidra/scripts/find_lui_writers.py</code> walks instructions, tracks per-register LUI immediates, and flags <code>addiu</code> / load / store offsets that combine with a tracked LUI to land in a target range.</p>
 <pre><code>docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54 -noanalysis \
     -postScript /scripts/find_lui_writers.py</code></pre>

@@ -1870,3 +1870,253 @@ kbd {
 .overlay-strip figcaption code {
   font-size: 0.85em;
 }
+
+/* -------------------------------------------------------------------------
+ * Minigames page primitives.
+ * Sol Tower floor cards, course / quest cards, slot prize tables, Baka
+ * Fighter button rows, enemy element tags.
+ * ------------------------------------------------------------------------- */
+.floor-sections {
+  list-style: none;
+  margin: 0.4rem 0 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.floor-sections li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.floor-sections li:last-child { border-bottom: 0; }
+.floor-section {
+  color: var(--text);
+  font-weight: 500;
+  margin-right: 0.35rem;
+}
+.floor-note {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  margin-top: 0.15rem;
+}
+
+/* Side-quest + secret cards */
+.quest-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-card);
+  padding: 0.9rem 1.1rem;
+  margin: 0.6rem 0;
+  border-radius: 4px;
+}
+.quest-head h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--text);
+  font-size: 1.0rem;
+}
+.quest-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.quest-steps li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  align-items: baseline;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.step-num {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  text-align: right;
+  padding-right: 0.5rem;
+}
+.quest-reward,
+.quest-trigger {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  margin-top: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+.quest-notes {
+  margin-top: 0.5rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Slot prize tables */
+.prize-table {
+  margin: 0.8rem 0 1.4rem 0;
+}
+.prize-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+.prize-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+.ship-info {
+  display: grid;
+  gap: 0.15rem;
+}
+.ship-effect {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.ship-note {
+  color: var(--partial);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+/* Muscle Dome course cards */
+.course-card {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  padding: 1rem 1.2rem;
+  margin: 0.8rem 0;
+  border-radius: 4px;
+}
+.course-card.course-beginner { border-left: 3px solid var(--done); }
+.course-card.course-expert   { border-left: 3px solid var(--partial); }
+.course-card.course-master   { border-left: 3px solid var(--open); }
+.course-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.course-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.1rem;
+}
+.course-meta {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.tile-tag-restrict {
+  color: var(--open);
+  border-color: var(--open);
+}
+.tile-tag-reward {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.course-rules {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin: 0.4rem 0 0.7rem 0;
+}
+.course-enemies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.course-enemies li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.course-enemies li:last-child { border-bottom: 0; }
+.enemy-no {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  min-width: 1.4rem;
+}
+.enemy-name {
+  color: var(--text);
+  flex: 1;
+}
+.enemy-elem,
+.enemy-lv {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.05em 0.4em;
+  border-radius: 0.3em;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim);
+}
+.enemy-elem-fire    { color: #ff8a65; border-color: #5a3326; }
+.enemy-elem-water   { color: #6ec1ff; border-color: #1f3b59; }
+.enemy-elem-earth   { color: #c8a472; border-color: #4a3a25; }
+.enemy-elem-wind    { color: #9adc83; border-color: #2c4a26; }
+.enemy-elem-thunder { color: #ffd95a; border-color: #5a4520; }
+.enemy-elem-light   { color: #fff3b3; border-color: #5a5230; }
+.enemy-elem-dark    { color: #b89eff; border-color: #4d3a78; }
+.enemy-elem-evil    { color: #ff7aa8; border-color: #5a2a3a; }
+.first-clear {
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+.first-clear strong { color: var(--accent); }
+
+/* Baka Fighter button glyphs */
+.baka-table { width: 100%; }
+.baka-round {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  text-align: right;
+  width: 4rem;
+}
+.baka-buttons { padding: 0.4rem 0.6rem; }
+.baka-notes {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+.btn {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.12em 0.55em;
+  margin-right: 0.18em;
+  border-radius: 0.35em;
+  border: 1px solid var(--border-hi);
+  color: var(--text);
+  background: var(--bg-raised);
+  min-width: 1.6em;
+  text-align: center;
+}
+.btn-square { color: #ff7aa8; border-color: #5a2a3a; }
+.btn-x      { color: #6ec1ff; border-color: #1f3b59; }
+.btn-o      { color: #ff8a65; border-color: #5a3326; }
+
+/* Hero card for minigames */
+.hero-card.hero-minigames::before { border-left-color: #c8a472; }
+.hero-card.hero-minigames:hover::before { border-left-color: var(--accent); }

@@ -1,8 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia lzs compression</div>
-  <h1>Legaia LZS compression</h1>
+  <h1>Legaia LZS compression <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">Reverse-engineered byte-for-byte from <code>FUN_8001A55C</code>. Implementation: <code>crates/lzs/src/lib.rs</code>.</p>
 </header>
+
+<aside class="notice warn">
+  <div class="notice-title">Decompresses without error is not a validity signal</div>
+  The 4096-byte ring buffer initialises to zeros, so most random inputs decode without error to plausible-looking zero-padded output. Always magic-check the <em>decoded</em> bytes before treating an LZS-decode result as a hit. The decoder's <code>tracked</code> mode returns end-of-stream offsets and overrun bits so callers can apply strict gates.
+</aside>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
@@ -53,11 +58,6 @@ while !done {
 <section class="doc-section" id="container-format">
   <h2>Container format</h2>
   <p><code>crates/lzs::parse_container</code> handles the multi-section <code>player.lzs</code>-style wrapper used by some PROT entries - a length-prefixed array of independently-compressed sections concatenated together.</p>
-</section>
-
-<section class="doc-section" id="decompresses-without-error-is-not-a-validity-signal">
-  <h2>"Decompresses without error" is not a validity signal</h2>
-  <p>The 4096-byte ring buffer initialises to zeros, so most random inputs decode without error to a zero-padded output of plausible length. Always magic-check the <em>decoded</em> output before treating an LZS-decode result as a hit. The decoder offers a <code>tracked</code> mode that returns end-of-stream offsets and overrun bits so callers can apply strict gates.</p>
 </section>
 
 <section class="doc-section" id="where-lzs-is-consumed">

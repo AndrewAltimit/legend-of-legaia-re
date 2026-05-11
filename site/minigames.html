@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minigames - legend-of-legaia-re</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; minigames</div>
+  <h1>Minigames &amp; Sol Tower</h1>
+  <p class="lede">
+    Coin-economy minigames, prize-exchange counters, and the side-quest chains layered through Sol Tower (CDNAME <code>town0d</code>). Driven by <code>data/gamedata/casino.toml</code> + <code>data/gamedata/sol_tower.toml</code>, joined against the item / weapon / armor / accessory tables so every prize resolves to its effect text. The <a href="world.html">world</a> and <a href="shops.html">shops</a> pages already surface part of this data; this page is where the full picture lives.
+  </p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>What's here</h2>
+  <div class="card-grid">
+    <a class="card" href="#sol-tower">
+      <div class="card-title">Sol Tower map</div>
+      <div class="card-body">Floor-by-floor layout, B2 through Roof, plus the named side-quest chains - Mary's Diary, the Music Score reunion, Sol Fever Disco, Sol Broadway, the Genesis Tree, and the Warrior's Square Gaza fight.</div>
+    </a>
+    <a class="card" href="#slot-machines">
+      <div class="card-title">Slot machines</div>
+      <div class="card-body">Vidna casino + Sol Tower Muscle Dome prize counter. The two locations carry different prize ladders - the Sol counter exchanges Muscle Dome / Baka Fighter / slot coins for high-value items capped at the 100,000-coin Earth Egg.</div>
+    </a>
+    <a class="card" href="#muscle-dome">
+      <div class="card-title">Muscle Dome</div>
+      <div class="card-body">Three difficulty courses (Beginner / Expert / Master) with fixed enemy lineups, escalating clear rewards, and gated equipment / item / magic rules. Master's War God Icon first-clear is conditional on Jette's defeat.</div>
+    </a>
+    <a class="card" href="#baka-fighter">
+      <div class="card-title">Baka Fighter</div>
+      <div class="card-body">Rock-paper-scissors with life meters: 14 rounds of escalating button sequences. Round 5 is Xain, Round 14 is Songi. Full-clear pays 460 coins.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="sol-tower">
+  <h2>Sol Tower</h2>
+  <p>Vertical structure with a B2 basement reached by service elevator. Each floor hosts a mix of vendors, the major minigames, and a handful of side-quests that don't fit anywhere else in the gamedata schema. The <a href="viewer.html?scene=town0d">asset viewer</a> can be pre-filtered to this scene.</p>
+  <div class="tile-grid" id="sol-tower-floors">
+    <!-- Filled from minigames.json/sol_tower.floors -->
+  </div>
+
+  <h3 id="side-quests">Side-quest chains</h3>
+  <p>Sol Tower is the hub for several multi-step quests that thread back through other towns. Each row is the sequence of beats; rewards reference items in the curated tables.</p>
+  <div id="sol-tower-side-quests">
+    <!-- Filled from minigames.json/sol_tower.side_quests -->
+  </div>
+</section>
+
+<section class="doc-section" id="slot-machines">
+  <h2>Slot machines &amp; prize counters</h2>
+  <div class="hint">
+    The <strong>Sol</strong> rows below are the Muscle Dome prize-exchange counter on F4, <em>not</em> the slot machine itself - the slot machine only pays out coins. The same coin pool funds Muscle Dome entry fees, Baka Fighter games, and counter purchases.
+  </div>
+  <div id="slot-machines"></div>
+</section>
+
+<section class="doc-section" id="muscle-dome">
+  <h2>Muscle Dome courses</h2>
+  <p>Three fixed-progression arenas. Entry fee is a flat 100 coins. Restrictions are enforced at course entry - Beginner and Expert disable equipment and items but allow magic; Master adds a magic ban. Accessories are always permitted.</p>
+  <div id="muscle-dome"></div>
+
+  <h3 id="muscle-paradise-secrets">Muscle Paradise secrets</h3>
+  <div id="muscle-secrets"></div>
+</section>
+
+<section class="doc-section" id="baka-fighter">
+  <h2>Baka Fighter</h2>
+  <p>Rock-paper-scissors variant with life meters. Each round shows a button sequence the player must reproduce. Completing all 14 rounds pays out coins.</p>
+  <div id="baka-fighter-meta" class="notice"></div>
+  <div id="baka-fighter-rounds"></div>
+</section>
+
+<section class="doc-section" id="decomp">
+  <h2>What this means for decomp</h2>
+  <ul class="bullets">
+    <li>The casino + Sol Tower data are <em>ground-truth labels</em> for the field-VM bundle inside the <code>town0d</code> CDNAME block. Once the Sol overlay is captured, every entry on this page is a cross-validation target for the parsed NPC scripts, shop tables, and event triggers.</li>
+    <li>The Muscle Dome <code>encounter</code> records are likely a sequence of <a href="formats/encounter.html">encounter records</a> with the existing <code>[3 reserved][count: u8][monster_ids: u8[count]]</code> shape, except chained per-course. The <code>muscle_dome_enemy</code> element tags pin which monster IDs should carry the elemental override.</li>
+    <li>Baka Fighter round patterns are the input expectation for the per-round timer routine. The button-token set (<code>Square</code> / <code>X</code> / <code>O</code>) maps to the PSX controller's primary action buttons; the field-VM probably dispatches via a per-round bytecode block.</li>
+    <li>The Master Course "first clear after Jette" gate is a story-flag check, not a runtime check on Jette's HP - so the relevant story flag lives in the field-VM flag banks (one of the three 32-bit / 256-bit banks documented on <a href="subsystems/script-vm.html">the script-VM page</a>).</li>
+  </ul>
+  <p>For schema and library access see the <a href="reference/gamedata.html#casino--muscle-dome">curated game-data reference</a>.</p>
+</section>
+
+<script>
+/* ------------------------------------------------------------------
+ * Minigames page hydration.
+ * Loads minigames.json (see site/_gen.py:build_gamedata_json) and
+ * renders four self-contained sections.
+ * ------------------------------------------------------------------ */
+(async function () {
+  let p = null;
+  try {
+    p = await fetch('minigames.json').then(r => r.json());
+  } catch (e) {
+    document.getElementById('sol-tower-floors').innerHTML =
+      '<p style="color:var(--text-dim)">Couldn\'t load minigames.json - re-run <code>python3 site/_gen.py</code>.</p>';
+    return;
+  }
+
+  const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+  ));
+
+  /* ---- Sol Tower floors ---- */
+  const $floors = document.getElementById('sol-tower-floors');
+  if ($floors && p.sol_tower && p.sol_tower.floors) {
+    $floors.innerHTML = p.sol_tower.floors.map(f => {
+      const sections = (f.sections || []).map(s => {
+        const cost = s.cost_gold ? ` <span class="tile-tag">${s.cost_gold} G</span>` : '';
+        const note = s.notes ? `<div class="floor-note">${escapeHtml(s.notes)}</div>` : '';
+        return `<li><span class="floor-section">${escapeHtml(s.name)}</span>${cost}${note}</li>`;
+      }).join('');
+      return `
+        <article class="tile tile-has-scene">
+          <header class="tile-head">
+            <h3 class="tile-title">${escapeHtml(f.name)}</h3>
+          </header>
+          <ul class="floor-sections">${sections}</ul>
+        </article>`;
+    }).join('');
+  }
+
+  /* ---- Side-quest chains ---- */
+  const $sq = document.getElementById('sol-tower-side-quests');
+  if ($sq && p.sol_tower && p.sol_tower.side_quests) {
+    $sq.innerHTML = p.sol_tower.side_quests.map(q => {
+      const steps = (q.chain || []).map((s, i) =>
+        `<li><span class="step-num">${i + 1}</span><span>${escapeHtml(s)}</span></li>`
+      ).join('');
+      const itemRow = q.reward_item && q.reward_item.name && !q.reward_item.missing
+        ? `<div class="quest-reward"><span class="tile-key">Item</span><span><code>${escapeHtml(q.reward_item.key)}</code> &middot; ${escapeHtml(q.reward_item.name)}</span></div>`
+        : '';
+      const rewardLine = q.reward
+        ? `<div class="quest-reward"><span class="tile-key">Reward</span><span>${escapeHtml(q.reward)}</span></div>`
+        : '';
+      const notes = q.notes ? `<div class="quest-notes">${escapeHtml(q.notes)}</div>` : '';
+      return `
+        <section class="quest-card">
+          <header class="quest-head">
+            <h4>${escapeHtml(q.name)}</h4>
+          </header>
+          <ol class="quest-steps">${steps}</ol>
+          ${rewardLine}
+          ${itemRow}
+          ${notes}
+        </section>`;
+    }).join('');
+  }
+
+  /* ---- Slot machines ---- */
+  const $slots = document.getElementById('slot-machines');
+  if ($slots && p.slot_machines) {
+    $slots.innerHTML = p.slot_machines.map(s => {
+      const rows = s.prizes.map(pr => {
+        const kindCls = pr.item._kind ? `ship-item-${pr.item._kind}` : '';
+        const cost = pr.cost_coins != null ? `${pr.cost_coins.toLocaleString()} coins` : '-';
+        const effect = pr.item.effect ? `<div class="ship-effect">${escapeHtml(pr.item.effect)}</div>` : '';
+        const note = pr.notes ? `<div class="ship-note">${escapeHtml(pr.notes)}</div>` : '';
+        return `
+          <li class="ship-item ${kindCls}">
+            <span class="ship-kind">${escapeHtml(pr.item._kind || '?')}</span>
+            <div class="ship-info">
+              <span class="ship-name">${escapeHtml(pr.item.name || pr.item.key || 'unknown')}</span>
+              ${effect}${note}
+            </div>
+            <span class="ship-price">${cost}</span>
+          </li>`;
+      }).join('');
+      return `
+        <section class="prize-table">
+          <header class="prize-head">
+            <h3>${escapeHtml(s.location)}</h3>
+            <span class="vendor-meta">${s.prizes.length} prize${s.prizes.length === 1 ? '' : 's'}</span>
+          </header>
+          <ul class="ship-list">${rows}</ul>
+        </section>`;
+    }).join('');
+  }
+
+  /* ---- Muscle Dome courses ---- */
+  const $md = document.getElementById('muscle-dome');
+  if ($md && p.muscle_dome) {
+    $md.innerHTML = p.muscle_dome.map(c => {
+      const enemies = c.enemies.map((e, i) => {
+        const tag = e.element ? ` <span class="enemy-elem enemy-elem-${e.element.toLowerCase()}">${escapeHtml(e.element)}</span>` : '';
+        const lv  = e.level   ? ` <span class="enemy-lv">Lv ${e.level}</span>` : '';
+        return `<li><span class="enemy-no">${i + 1}</span><span class="enemy-name">${escapeHtml(e.name)}</span>${tag}${lv}</li>`;
+      }).join('');
+      const restrictions = (c.restrictions || []).map(r => `<span class="tile-tag tile-tag-restrict">${escapeHtml(r)}</span>`).join('');
+      const allowed      = (c.allowed || []).map(a => `<span class="tile-tag">${escapeHtml(a)}</span>`).join('');
+      const firstClear = c.reward_first_clear
+        ? `<div class="first-clear">
+             <strong>First clear:</strong>
+             <code>${escapeHtml(c.reward_first_clear)}</code>
+             ${c.reward_first_clear_item && c.reward_first_clear_item.name ? `&middot; ${escapeHtml(c.reward_first_clear_item.name)}` : ''}
+             ${c.reward_first_clear_requires ? `<div class="hint">${escapeHtml(c.reward_first_clear_requires)}</div>` : ''}
+           </div>`
+        : '';
+      return `
+        <article class="course-card course-${escapeHtml(c.key)}">
+          <header class="course-head">
+            <h3>${escapeHtml(c.name)}</h3>
+            <div class="course-meta">
+              <span class="tile-tag">${c.entry_fee} coin entry</span>
+              <span class="tile-tag tile-tag-reward">${c.reward_coins.toLocaleString()} coin reward</span>
+            </div>
+          </header>
+          <div class="course-rules">
+            ${restrictions}${allowed}
+          </div>
+          <ol class="course-enemies">${enemies}</ol>
+          ${firstClear}
+        </article>`;
+    }).join('');
+  }
+
+  /* ---- Muscle Paradise secrets ---- */
+  const $secrets = document.getElementById('muscle-secrets');
+  if ($secrets && p.secrets) {
+    $secrets.innerHTML = p.secrets.map(s => {
+      const item = s.reward_item && !s.reward_item.missing
+        ? `<div class="quest-reward"><span class="tile-key">Reward</span><span>${escapeHtml(s.reward_item.name || s.reward_item.key)}</span></div>`
+        : '';
+      return `
+        <section class="quest-card">
+          <header class="quest-head"><h4>${escapeHtml(s.name)}</h4></header>
+          <div class="quest-trigger"><span class="tile-key">Trigger</span><span>${escapeHtml(s.trigger || '')}</span></div>
+          ${item}
+          ${s.notes ? `<div class="quest-notes">${escapeHtml(s.notes)}</div>` : ''}
+        </section>`;
+    }).join('');
+  }
+
+  /* ---- Baka Fighter ---- */
+  const $bm = document.getElementById('baka-fighter-meta');
+  if ($bm && p.baka_fighter && p.baka_fighter.meta && p.baka_fighter.meta.reward_coins != null) {
+    const meta = p.baka_fighter.meta;
+    $bm.innerHTML = `
+      <div class="notice-title">Full clear pays ${meta.reward_coins.toLocaleString()} coins</div>
+      <div>${escapeHtml(meta.rules || '')}</div>`;
+  }
+  const $br = document.getElementById('baka-fighter-rounds');
+  if ($br && p.baka_fighter && p.baka_fighter.rounds) {
+    $br.innerHTML = `
+      <table class="baka-table">
+        <thead><tr><th>Round</th><th>Buttons</th><th>Notes</th></tr></thead>
+        <tbody>
+          ${p.baka_fighter.rounds.map(r => `
+            <tr>
+              <td class="baka-round">${r.round}</td>
+              <td class="baka-buttons">${r.buttons.map(b => `<span class="btn btn-${b.toLowerCase().replace(/[^a-z0-9]/g,'')}">${escapeHtml(b)}</span>`).join(' ')}</td>
+              <td class="baka-notes">${r.notes ? escapeHtml(r.notes) : ''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+})();
+</script>
+
+</main>
+</div>
+<script src="js/layout.js"></script>
+<script>injectLayout({ active: 'minigames' });</script>
+<script src="js/main.js"></script>
+</body>
+</html>

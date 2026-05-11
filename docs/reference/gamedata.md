@@ -47,6 +47,7 @@ data/gamedata/
   bosses.toml         - boss HP estimates (sanity-check data)
   shops.toml          - per-town shop inventories with item-key references
   casino.toml         - Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter
+  sol_tower.toml      - Sol Tower floor map + side-quest chains
   fishing.toml        - Vidna/Buma fishing pond prizes
   characters.toml     - Vahn / Noa / Gala affinities and weapon classes
 ```
@@ -113,6 +114,38 @@ asserts every drop/steal target exists in the item tables.
 One `[[shop]]` per merchant. Inventories reference item keys; the
 `gamedata-tool shop <town>` CLI joins those keys against the four
 item tables and prints a fully-priced inventory.
+
+### Casino + Muscle Dome
+
+`casino.toml` carries three concept families:
+
+- `[[slot_prize]]` rows for the Vidna casino counter and the Sol
+  Tower Muscle Dome prize-exchange counter (`location = "Sol"`
+  is the F4 counter, *not* the slot machine itself - slot machines
+  only pay coins).
+- `[[muscle_dome_course]]` rows (Beginner / Expert / Master) with
+  enemy lists, entry fee, clear reward, and `restrictions` /
+  `allowed` arrays capturing the equipment / item / magic gating.
+  Master Course's `reward_first_clear = "war_god_icon"` requires
+  Jette to have been defeated in Absolute Fortress.
+- `[[muscle_dome_enemy]]` rows annotate specific enemies with
+  `element` / `level` overrides for the Dome encounter table
+  (e.g. Beginner's Gola Gola is Fire-elemental, Master's
+  Viguro is Thunder Lv. 2).
+- `[baka_fighter_meta]` records the all-rounds-clear reward
+  (`reward_coins = 460`) and the rule sketch. Per-round button
+  sequences live as `[[baka_fighter]]` rows.
+- `[[muscle_paradise_secret]]` records the Chicken King easter
+  egg ("run from the first battle in all three difficulties").
+
+### Sol Tower
+
+`sol_tower.toml` is location-scoped data that doesn't fit any of
+the type-scoped tables: a per-floor map (`[[floor]]` rows with
+named sections) and the side-quest chains (`[[side_quest]]` rows
+with ordered step lists and reward pointers). The
+`scene_label = "town0d"` ties the data back to the CDNAME map in
+`site/_gen.py` and the field-VM bundle.
 
 ## Cross-validation invariants
 

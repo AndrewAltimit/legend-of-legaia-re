@@ -1,8 +1,13 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; cdname.txt - entry name map</div>
-  <h1>CDNAME.TXT - entry name map</h1>
+  <h1>CDNAME.TXT - entry name map <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">A plain-text file at the disc root that maps PROT.DAT entry indices to human-readable names. One C-style <code>#define</code> per line:</p>
 </header>
+
+<aside class="notice warn">
+  <div class="notice-title">Block names can be misleading</div>
+  A block name describes the developer's organisation, not necessarily the runtime semantics of every entry inside. <code>0972/0973_move_program_no</code> doesn't match the <code>move.mdt</code> consumer layout; <code>xxx_dat</code> holds overlay code; large clusters can be reordered post-name-assignment. When the block name conflicts with the bytes, trust the bytes. Re-derive structure from the leading magic and the loader-call constant in SCUS, not from the CDNAME label.
+</aside>
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
@@ -28,14 +33,13 @@
 </section>
 
 <section class="doc-section" id="block-names-can-be-misleading">
-  <h2>Block names can be misleading</h2>
-  <p>A block name describes the developer's organisation, not necessarily the runtime semantics of every entry inside the block. Several caveats are worth remembering:</p>
+  <h2>Block-name gotchas, catalogued</h2>
+  <p>Concrete cases where the label and the bytes disagree:</p>
   <ul class="bullets">
     <li>The <code>vab_01</code> cluster (1072..1194) really does carry VAB headers - 119 of 123 entries match the <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> shape, the standard distributed-bank layout.</li>
     <li>The <code>0972/0973_move_program_no</code> entries are flat 128-byte record arrays that <strong>don't</strong> match the <code>move.mdt</code> runtime buffer layout the consumer expects (see <a href="mdt.html">MDT</a>) - same name, different structure.</li>
     <li>The <code>xxx_dat</code> block (901..969) holds runtime overlay code blobs (see <a href="mips-overlay.html">MIPS overlay</a> and <a href="overlay-ptr-table.html">overlay pointer-table</a>).</li>
   </ul>
-  <p>When the block name conflicts with what the bytes actually look like, trust the bytes. Re-derive structure from the leading magic + the loader-call constant in SCUS, not from the CDNAME label.</p>
 </section>
 
 <section class="doc-section" id="per-scene-asset-reservations">

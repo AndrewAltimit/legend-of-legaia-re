@@ -70,6 +70,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),
     ("world.html",                 "Game world",                    "world",                      "world.html"),
     ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
+    ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
     # depth = 1
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
     ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
@@ -409,7 +410,12 @@ def build_gamedata_json() -> tuple[dict, dict]:
     shops_raw = _load_toml("shops.toml").get("shop", [])
     casino_raw = _load_toml("casino.toml")
     slot_prizes = casino_raw.get("slot_prize", [])
-    muscle_courses = casino_raw.get("muscle_course", [])
+    muscle_courses = casino_raw.get("muscle_dome_course", [])
+    muscle_enemy_tags = casino_raw.get("muscle_dome_enemy", [])
+    baka_fighter_meta = casino_raw.get("baka_fighter_meta", {})
+    baka_fighter_rounds = casino_raw.get("baka_fighter", [])
+    muscle_secrets = casino_raw.get("muscle_paradise_secret", [])
+    sol_tower_raw = _load_toml("sol_tower.toml")
     fishing_raw = _load_toml("fishing.toml").get("fishing_prize", [])
     enemies_raw = _load_toml("enemies.toml").get("enemy", [])
     bosses_raw  = _load_toml("bosses.toml").get("boss",  [])
@@ -520,7 +526,93 @@ def build_gamedata_json() -> tuple[dict, dict]:
         })
 
     world_payload = {"locations": world_locations}
-    return shops_payload, world_payload
+
+    # ------ minigames_json: a single payload that drives the minigames page.
+    # Joins the casino + sol_tower tables, resolves item references against
+    # the unified catalog so the page renders effects without a second fetch.
+    def resolve_or_none(key):
+        r = catalog.get(key)
+        if r is None:
+            return {"key": key, "name": key, "_kind": "unknown", "missing": True}
+        return r
+
+    # Group enemy element tags by (course_key, name) for quick lookup.
+    enemy_tag_by_course: dict[str, dict[str, dict]] = {}
+    for tag in muscle_enemy_tags:
+        enemy_tag_by_course.setdefault(tag["course"], {})[tag["name"]] = tag
+
+    muscle_dome_payload = []
+    for course in muscle_courses:
+        course_key = course.get("key") or course.get("name", "").lower()
+        enriched_enemies = []
+        for enemy_name in course.get("enemies", []):
+            tag = enemy_tag_by_course.get(course_key, {}).get(enemy_name, {})
+            enriched_enemies.append({
+                "name": enemy_name,
+                "element": tag.get("element"),
+                "level":   tag.get("level"),
+            })
+        muscle_dome_payload.append({
+            "key":             course_key,
+            "name":            course.get("name"),
+            "entry_fee":       course.get("entry_fee"),
+            "reward_coins":    course.get("reward_coins"),
+            "restrictions":    course.get("restrictions", []),
+            "allowed":         course.get("allowed", []),
+            "enemies":         enriched_enemies,
+            "reward_first_clear":          course.get("reward_first_clear"),
+            "reward_first_clear_item":     resolve_or_none(course["reward_first_clear"]) if course.get("reward_first_clear") else None,
+            "reward_first_clear_requires": course.get("reward_first_clear_requires"),
+        })
+
+    slot_payload_by_loc: dict[str, list[dict]] = {}
+    for p in slot_prizes:
+        slot_payload_by_loc.setdefault(p["location"], []).append({
+            "cost_coins": p.get("cost_coins"),
+            "notes":      p.get("notes"),
+            "item":       resolve_or_none(p["item"]),
+        })
+
+    secrets_payload = []
+    for s in muscle_secrets:
+        secrets_payload.append({
+            "key":     s.get("key"),
+            "name":    s.get("name"),
+            "trigger": s.get("trigger"),
+            "notes":   s.get("notes"),
+            "reward_item": resolve_or_none(s["reward"]) if s.get("reward") else None,
+        })
+
+    side_quests_payload = []
+    for sq in sol_tower_raw.get("side_quest", []):
+        side_quests_payload.append({
+            "key":         sq.get("key"),
+            "name":        sq.get("name"),
+            "chain":       sq.get("chain", []),
+            "reward":      sq.get("reward"),
+            "reward_item": resolve_or_none(sq["reward_item"]) if sq.get("reward_item") else None,
+            "notes":       sq.get("notes"),
+        })
+
+    minigames_payload = {
+        "muscle_dome":     muscle_dome_payload,
+        "slot_machines":   [
+            {"location": loc, "prizes": prizes}
+            for loc, prizes in sorted(slot_payload_by_loc.items())
+        ],
+        "baka_fighter": {
+            "meta":   baka_fighter_meta,
+            "rounds": baka_fighter_rounds,
+        },
+        "secrets":      secrets_payload,
+        "sol_tower":    {
+            "meta":        sol_tower_raw.get("meta", {}),
+            "floors":      sol_tower_raw.get("floor", []),
+            "side_quests": side_quests_payload,
+        },
+    }
+
+    return shops_payload, world_payload, minigames_payload
 
 
 # ---------------------------------------------------------------------------
@@ -684,20 +776,27 @@ def main() -> int:
         json.dumps(scenes_payload, ensure_ascii=False, separators=(",", ":"))
     )
 
-    # Write shops.json + world.json (gamedata join for the interactive
-    # shops + world pages).
-    shops_payload, world_payload = build_gamedata_json()
+    # Write shops.json + world.json + minigames.json (gamedata join for the
+    # interactive shops / world / minigames pages).
+    shops_payload, world_payload, minigames_payload = build_gamedata_json()
     (ROOT / "shops.json").write_text(
         json.dumps(shops_payload, ensure_ascii=False, separators=(",", ":"))
     )
     (ROOT / "world.json").write_text(
         json.dumps(world_payload, ensure_ascii=False, separators=(",", ":"))
     )
+    (ROOT / "minigames.json").write_text(
+        json.dumps(minigames_payload, ensure_ascii=False, separators=(",", ":"))
+    )
 
     print(f"\n{written} pages written, {len(search_index)} search entries")
-    print(f"  scenes.json: {len(scenes_payload)} CDNAME blocks")
-    print(f"  shops.json:  {len(shops_payload['towns'])} towns")
-    print(f"  world.json:  {len(world_payload['locations'])} locations")
+    print(f"  scenes.json:    {len(scenes_payload)} CDNAME blocks")
+    print(f"  shops.json:     {len(shops_payload['towns'])} towns")
+    print(f"  world.json:     {len(world_payload['locations'])} locations")
+    print(f"  minigames.json: {len(minigames_payload['muscle_dome'])} courses, "
+          f"{sum(len(s['prizes']) for s in minigames_payload['slot_machines'])} slot prizes, "
+          f"{len(minigames_payload['baka_fighter']['rounds'])} baka rounds, "
+          f"{len(minigames_payload['sol_tower']['floors'])} sol-tower floors")
     return 0
 
 

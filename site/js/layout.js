@@ -26,6 +26,7 @@ const NAV = [
       { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
+      { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
     ],
   },
   {
