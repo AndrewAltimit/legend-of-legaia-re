@@ -100,6 +100,66 @@ enum Cmd {
         #[arg(long, action = clap::ArgAction::SetTrue)]
         no_targeted: bool,
     },
+    /// Trace dropped CLUT references in a scene. Builds the scene's
+    /// [`SceneResources`] with the default shared-block overlay, walks
+    /// every TMD prim that drops as `MissingClut`, and reports which
+    /// PROT entries on the disc carry a TIM whose CLUT block would
+    /// supply each unique row. Use to discover which CDNAME blocks the
+    /// engine needs to keep resident to lift the prim keep ratio.
+    ///
+    /// Optional `--runtime-vram <PATH>` cross-checks each missing row
+    /// against the runtime VRAM ground truth (mednafen-state vram-dump
+    /// --out-bin). Rows that are non-zero in the runtime VRAM but
+    /// missing in the engine are the actionable gap.
+    ClutTrace {
+        /// CDNAME scene name (e.g. `town01`, `dolk`, `cave01`).
+        #[arg(long)]
+        scene: String,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from
+        /// a `.bin` disc image. When provided, `--extracted-root` is
+        /// ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Optional runtime VRAM blob captured from a save state. When
+        /// provided, the trace marks each missing row as "supplied in
+        /// runtime VRAM" or "absent everywhere" - the former is where
+        /// the engine's loader chain is incomplete.
+        #[arg(long)]
+        runtime_vram: Option<PathBuf>,
+        /// Maximum number of PROT entries to report per missing CLUT row
+        /// (multiple TIMs across the disc can supply the same row).
+        #[arg(long, default_value_t = 4)]
+        max_sources: usize,
+    },
+    /// Compare engine VRAM (built from the scene's targeted asset
+    /// upload) against a runtime VRAM blob captured from a mednafen
+    /// save state. Reports per-64x64-tile overlap and writes a
+    /// colour-coded diff PNG (greyscale = exact match, blue = both
+    /// non-zero but different, red = runtime-only, green = engine-only).
+    VramOracle {
+        /// CDNAME scene name (e.g. `town01`).
+        #[arg(long)]
+        scene: String,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from
+        /// a `.bin` disc image.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Required: 1 MiB BGR555 LE VRAM blob from a save state.
+        #[arg(long)]
+        runtime_vram: PathBuf,
+        /// Optional: write a 1024x512 RGBA8 colour-coded diff PNG.
+        #[arg(long)]
+        diff_png: Option<PathBuf>,
+        /// Print per-tile (64x64) overlap counts instead of just bands.
+        #[arg(long, default_value_t = false)]
+        tiles: bool,
+    },
     /// List every distinct scene name the CDNAME map exposes, with the
     /// PROT entry range each one covers.
     ListScenes {
@@ -464,6 +524,34 @@ fn main() -> Result<()> {
             extracted_root,
             disc,
         } => cmd_list_scenes(&extracted_root, disc.as_deref()),
+        Cmd::ClutTrace {
+            scene,
+            extracted_root,
+            disc,
+            runtime_vram,
+            max_sources,
+        } => cmd_clut_trace(
+            &scene,
+            &extracted_root,
+            disc.as_deref(),
+            runtime_vram.as_deref(),
+            max_sources,
+        ),
+        Cmd::VramOracle {
+            scene,
+            extracted_root,
+            disc,
+            runtime_vram,
+            diff_png,
+            tiles,
+        } => cmd_vram_oracle(
+            &scene,
+            &extracted_root,
+            disc.as_deref(),
+            &runtime_vram,
+            diff_png.as_deref(),
+            tiles,
+        ),
         Cmd::Play {
             scene,
             extracted_root,
@@ -732,6 +820,373 @@ fn cmd_info(
             eprintln!("warning: --vram-diff-png requires --runtime-vram; skipping diff");
         }
     }
+    Ok(())
+}
+
+/// Walk a scene's TMD pool, locate every primitive that drops as
+/// `MissingClut`, and report which PROT entries on the disc carry a TIM
+/// whose CLUT block lands at the missing row. Optional runtime VRAM
+/// cross-check distinguishes "row absent from the engine but present at
+/// runtime" (engine loader gap) from "row absent from runtime too"
+/// (mesh references unreachable CLUT - likely a parser issue).
+fn cmd_clut_trace(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    runtime_vram: Option<&Path>,
+    max_sources: usize,
+) -> Result<()> {
+    use legaia_asset::tim_scan;
+    use legaia_tim::vram::PrimTextureStatus;
+    use std::collections::BTreeMap;
+
+    let index = open_index_from_args(extracted_root, disc)?;
+    let scene =
+        Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
+
+    let mut shared_scenes: Vec<Scene> = Vec::new();
+    for name in FIELD_SHARED_BLOCKS {
+        if let Ok(s) = Scene::load(&index, name) {
+            shared_scenes.push(s);
+        }
+    }
+    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+    let (resources, _upload_stats) = SceneResources::build_targeted(&scene, &shared_refs)?;
+
+    println!("scene '{}'", scene.name);
+    println!(
+        "  shared blocks loaded: {:?}",
+        shared_scenes
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+    );
+    println!(
+        "  TMDs: {}  TIMs uploaded: {}",
+        resources.tmds.len(),
+        resources.tim_count
+    );
+
+    // Group dropped prims by (cba, depth). Multiple prims in multiple TMDs
+    // often share the same CLUT row; we only need to find the supplier
+    // once per unique row.
+    let mut dropped: BTreeMap<(u16, u8), DroppedClut> = BTreeMap::new();
+    for rtmd in &resources.tmds {
+        for obj in &rtmd.tmd.objects {
+            let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+                &rtmd.raw,
+                obj.primitives_byte_offset,
+                obj.primitives_byte_size,
+            );
+            for g in &groups {
+                for prim in &g.prims {
+                    if prim.uvs.is_empty() {
+                        continue;
+                    }
+                    let depth = match (prim.tsb >> 7) & 0x3 {
+                        0 => 4u8,
+                        1 => 8,
+                        _ => continue, // 16bpp / direct: no CLUT to be missing
+                    };
+                    let status = resources
+                        .vram
+                        .prim_texture_status(prim.cba, prim.tsb, &prim.uvs);
+                    if let PrimTextureStatus::MissingClut { .. } = status {
+                        let entry = dropped.entry((prim.cba, depth)).or_default();
+                        entry.prim_count += 1;
+                        entry.tmd_locations.insert((rtmd.entry_idx, rtmd.offset));
+                    }
+                }
+            }
+        }
+    }
+
+    if dropped.is_empty() {
+        println!("  no MissingClut drops detected in this scene");
+        return Ok(());
+    }
+
+    let runtime_bytes = match runtime_vram {
+        Some(p) => Some(
+            std::fs::read(p).with_context(|| format!("read runtime VRAM blob {}", p.display()))?,
+        ),
+        None => None,
+    };
+    if let Some(b) = &runtime_bytes
+        && b.len() != 1024 * 512 * 2
+    {
+        anyhow::bail!("runtime VRAM size {} != 1 MiB (1024*512*2)", b.len());
+    }
+
+    // Pre-scan every PROT entry once: collect (entry_idx, cba_fb_x,
+    // cba_fb_y, depth). One pass through the disc; subsequent lookups
+    // are cheap.
+    println!("  scanning PROT corpus for CLUT suppliers ...");
+    let mut suppliers: Vec<TimSupplier> = Vec::new();
+    for idx in 0..index.entry_count() as u32 {
+        let Ok(bytes) = index.entry_bytes(idx) else {
+            continue;
+        };
+        for hit in tim_scan::scan_buffer(&bytes) {
+            let Ok(tim) = legaia_tim::parse(&bytes[hit.offset..hit.offset + hit.byte_len]) else {
+                continue;
+            };
+            let Some(clut) = tim.clut.as_ref() else {
+                continue;
+            };
+            suppliers.push(TimSupplier {
+                entry_idx: idx,
+                offset: hit.offset,
+                fb_x: clut.fb_x,
+                fb_y: clut.fb_y,
+                width: clut.w,
+                bpp: hit.bpp,
+            });
+        }
+    }
+    println!(
+        "  scanned {} PROT entries, found {} TIMs with CLUT blocks",
+        index.entry_count(),
+        suppliers.len()
+    );
+
+    // For each unique missing (cba, depth) report what we found.
+    println!();
+    println!(
+        "  {} unique missing CLUT row(s) across the scene's TMDs:",
+        dropped.len()
+    );
+    let mut supplier_entries: BTreeMap<u32, BTreeMap<&str, ()>> = BTreeMap::new();
+    let mut shared_block_recommend: BTreeMap<&'static str, u32> = BTreeMap::new();
+    for ((cba, depth), info) in &dropped {
+        let cx = (cba & 0x3F) * 16;
+        let cy = (cba >> 6) & 0x1FF;
+        let clut_w: usize = match depth {
+            4 => 16,
+            8 => 256,
+            _ => 0,
+        };
+        let in_runtime = match runtime_bytes.as_ref() {
+            Some(b) => row_has_data(b, cx as usize, cy as usize, clut_w),
+            None => false,
+        };
+
+        // Match by rectangle CONTAINMENT - a TIM CLUT block covers the
+        // missing slot if its (fb_x, fb_y, width, 1) rect contains
+        // (cx, cy). PSX games commonly pack 16 distinct 4bpp palettes
+        // into one 256-wide CLUT block, so the CBA's 16-pixel slot
+        // sits inside a wider supplier rect.
+        let matching: Vec<&TimSupplier> = suppliers
+            .iter()
+            .filter(|s| {
+                s.fb_y == cy
+                    && s.fb_x <= cx
+                    && (cx + clut_w as u16) <= (s.fb_x + s.width)
+            })
+            .collect();
+
+        println!(
+            "    cba=0x{:04X} depth={}bpp clut@({:4},{:3}) prims={:4} tmds={:2} runtime_has_row={}",
+            cba,
+            depth,
+            cx,
+            cy,
+            info.prim_count,
+            info.tmd_locations.len(),
+            in_runtime
+        );
+        if matching.is_empty() {
+            println!("      ! no PROT entry on disc supplies this row");
+        } else {
+            for s in matching.iter().take(max_sources) {
+                let scene_name = index.scene_for_index(s.entry_idx).unwrap_or("?");
+                supplier_entries
+                    .entry(s.entry_idx)
+                    .or_default()
+                    .insert(scene_name, ());
+                if let Some(static_name) = known_scene_block_for(scene_name) {
+                    *shared_block_recommend.entry(static_name).or_default() += 1;
+                }
+                println!(
+                    "      supplier: PROT {:4} ({}) off=0x{:06X} clut_w={} bpp={}",
+                    s.entry_idx, scene_name, s.offset, s.width, s.bpp
+                );
+            }
+            if matching.len() > max_sources {
+                println!(
+                    "      ... {} more supplier(s) suppressed",
+                    matching.len() - max_sources
+                );
+            }
+        }
+    }
+
+    println!();
+    println!("  PROT entries the engine would need to keep resident:");
+    for (entry, scenes) in &supplier_entries {
+        let scene_list = scenes.keys().copied().collect::<Vec<_>>().join(", ");
+        println!("    PROT {entry:4} (scene blocks: {scene_list})");
+    }
+
+    if !shared_block_recommend.is_empty() {
+        println!();
+        println!("  recommended FIELD_SHARED_BLOCKS additions (by supplier hit count):");
+        for (name, hits) in &shared_block_recommend {
+            println!("    \"{name}\"   (supplies {hits} missing row(s))");
+        }
+    }
+
+    Ok(())
+}
+
+/// Map a free-form CDNAME scene label to a stable shared-block name
+/// the engine knows how to load. Conservative: only return a name if it
+/// matches one of the well-known shared blocks we'd actually pin into
+/// VRAM, not a per-scene town/field block.
+fn known_scene_block_for(scene_name: &str) -> Option<&'static str> {
+    match scene_name {
+        "init_data" => Some("init_data"),
+        "player_data" => Some("player_data"),
+        "battle_data" => Some("battle_data"),
+        "befect_data" => Some("befect_data"),
+        "sound_data" => Some("sound_data"),
+        "sound_data2" => Some("sound_data2"),
+        "gameover_data" => Some("gameover_data"),
+        "card_data" => Some("card_data"),
+        _ => None,
+    }
+}
+
+#[derive(Default)]
+struct DroppedClut {
+    prim_count: usize,
+    tmd_locations: std::collections::BTreeSet<(u32, usize)>,
+}
+
+struct TimSupplier {
+    entry_idx: u32,
+    offset: usize,
+    fb_x: u16,
+    fb_y: u16,
+    width: u16,
+    bpp: u32,
+}
+
+/// True when any of the next `w` 16-bit words starting at `(x, y)` in
+/// the 1 MiB BGR555 LE blob are non-zero. Used by `cmd_clut_trace` to
+/// decide whether the runtime captured this CLUT row.
+fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
+    const VW: usize = 1024;
+    const VH: usize = 512;
+    if y >= VH {
+        return false;
+    }
+    let row_start = (y * VW + x) * 2;
+    let end = ((x + w).min(VW) * 2) + y * VW * 2;
+    let end = end.min(blob.len());
+    if row_start >= end {
+        return false;
+    }
+    let mut i = row_start;
+    while i + 1 < end {
+        if blob[i] != 0 || blob[i + 1] != 0 {
+            return true;
+        }
+        i += 2;
+    }
+    false
+}
+
+/// Side-by-side compare of engine VRAM (built via the scene's targeted
+/// upload) against a runtime VRAM blob from a save state. Reports the
+/// per-band overlap and per-tile (64x64) diff if `tiles` is set; writes
+/// the colour-coded diff PNG when `diff_png` is provided.
+fn cmd_vram_oracle(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    runtime_vram: &Path,
+    diff_png: Option<&Path>,
+    tiles: bool,
+) -> Result<()> {
+    let index = open_index_from_args(extracted_root, disc)?;
+    let scene =
+        Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
+
+    let mut shared_scenes: Vec<Scene> = Vec::new();
+    for name in FIELD_SHARED_BLOCKS {
+        if let Ok(s) = Scene::load(&index, name) {
+            shared_scenes.push(s);
+        }
+    }
+    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+    let (resources, _) = SceneResources::build_targeted(&scene, &shared_refs)?;
+
+    let engine_bytes = vram_to_le_bytes(&resources.vram);
+    let runtime_bytes = std::fs::read(runtime_vram)
+        .with_context(|| format!("read runtime VRAM blob {}", runtime_vram.display()))?;
+    if runtime_bytes.len() != engine_bytes.len() {
+        anyhow::bail!(
+            "runtime VRAM size {} != expected {} (1 MiB BGR555)",
+            runtime_bytes.len(),
+            engine_bytes.len()
+        );
+    }
+
+    let report = vram_coverage_report(&engine_bytes, &runtime_bytes);
+    println!(
+        "scene '{}'  vs runtime {}",
+        scene.name,
+        runtime_vram.display()
+    );
+    print_vram_coverage(&report);
+
+    if tiles {
+        println!("  per-64x64-tile coverage (runtime non-zero / engine non-zero / overlap):");
+        const W: usize = 1024;
+        const H: usize = 512;
+        for ty in 0..(H / 64) {
+            for tx in 0..(W / 64) {
+                let mut rt = 0u32;
+                let mut en = 0u32;
+                let mut ov = 0u32;
+                for dy in 0..64 {
+                    let y = ty * 64 + dy;
+                    for dx in 0..64 {
+                        let x = tx * 64 + dx;
+                        let off = (y * W + x) * 2;
+                        let rw = u16::from_le_bytes([runtime_bytes[off], runtime_bytes[off + 1]]);
+                        let ew = u16::from_le_bytes([engine_bytes[off], engine_bytes[off + 1]]);
+                        if rw != 0 {
+                            rt += 1;
+                        }
+                        if ew != 0 {
+                            en += 1;
+                        }
+                        if rw != 0 && ew != 0 {
+                            ov += 1;
+                        }
+                    }
+                }
+                if rt > 0 || en > 0 {
+                    println!(
+                        "    tile ({:>3},{:>3})  rt={:5}  en={:5}  ov={:5}",
+                        tx * 64,
+                        ty * 64,
+                        rt,
+                        en,
+                        ov
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(p) = diff_png {
+        write_vram_diff_png(p, &engine_bytes, &runtime_bytes)?;
+        println!("[ok] wrote VRAM diff PNG to {}", p.display());
+    }
+
     Ok(())
 }
 

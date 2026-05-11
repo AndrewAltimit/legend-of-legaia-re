@@ -99,6 +99,18 @@
   <h3>Field-shared CDNAME blocks</h3>
   <p><code>FIELD_SHARED_BLOCKS = ["init_data", "player_data"]</code> is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. <code>player_data</code> (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; <code>init_data</code> (PROT 0) holds shared UI / sprite tiles. <code>SceneHost::enter_field_scene</code> passes these to <code>build_targeted</code> so the player TMD survives every town / dungeon transition without being re-loaded per scene.</p>
   <p>The legacy <code>SceneResources::build</code> (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer <code>build_targeted</code> for production scene loads. The asset-viewer's <code>--vram-extra-dir</code> flag remains the manual workaround for browsing extracted <code>tim_scan/</code> dirs that aren't tied to a CDNAME scene.</p>
+
+  <h3>Diagnosing missing CLUTs</h3>
+  <p>To find which PROT entry provides a missing CLUT row, run:</p>
+  <pre><code>asset clut-finder &lt;vram_x&gt; &lt;vram_y&gt; --extracted-root extracted</code></pre>
+  <p>This walks <code>extracted/tim_scan/&lt;entry&gt;/*.tim</code> and reports every TIM whose CLUT covers the requested VRAM cell.</p>
+  <p>For scene-level diagnostics straight off the disc image (no extracted tree required), <code>legaia-engine clut-trace --scene &lt;name&gt; --disc &lt;bin&gt;</code> walks every dropping <code>MissingClut</code> prim in a CDNAME scene, groups by <code>(cba, depth)</code>, and reports the suppliers found across the whole PROT corpus by <strong>rectangle containment</strong>. Pair with <code>--runtime-vram &lt;bin&gt;</code> (mednafen save state captured via <code>mednafen-state vram-dump --out-bin</code>) to mark which missing rows are populated at runtime (engine loader gap) vs absent everywhere (mesh references unreachable CLUT - likely needs a sub-pack walker port).</p>
+
+  <h3>Known gap: character CLUTs inside <code>battle_data</code> packs</h3>
+  <p>The four town01 NPC TMDs at field intersections drop ~97 prims each as <code>MissingClut</code>, all pointing at CLUT row y=479 slots x=128..240 (<code>CBA = 0x77C8..0x77CF</code>). The wider 256x1 CLUT block on that row IS supplied by ~289 TIMs across the corpus, but the 16-pixel slots they need (x=128..240) sit in <code>battle_data</code> (PROT 865..869) which the retail engine pre-loads at boot via the character-TIM bank inside a custom pack format. The current <code>tim_scan::scan_entry</code> walks raw bytes + LZS-decompressed sections but does not descend into the streaming TIM_LIST chunks + nested pack layout <code>battle_data</code> uses, so the engine never sees those 128..240 slots. Tracking the gap rather than inflating <code>FIELD_SHARED_BLOCKS</code>: a future port of the player / battle-actor asset chain (<code>FUN_8001E890</code> and friends) is the correct fix.</p>
+
+  <h3>VRAM oracle (engine vs runtime)</h3>
+  <p><code>legaia-engine vram-oracle --scene &lt;name&gt; --disc &lt;bin&gt; --runtime-vram &lt;bin&gt;</code> rebuilds the scene's targeted VRAM and reports per-band overlap counts (top half / texpage primary / texpage CLUTs) against the runtime ground truth. <code>--diff-png &lt;path&gt;</code> writes a 1024x512 colour-coded RGBA8 diff (red = runtime-only / gap, green = engine-only / extras, blue = both non-zero with different content, greyscale = exact match). <code>--tiles</code> adds a 64x64 tile-by-tile breakdown so a specific page region's coverage can be inspected.</p>
 </section>
 
 <section class="doc-section" id="bgm-lookup">

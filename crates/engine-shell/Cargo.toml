@@ -14,6 +14,7 @@ clap.workspace = true
 log = "0.4"
 env_logger = "0.11"
 legaia-art = { path = "../art" }
+legaia-asset = { path = "../asset" }
 legaia-cheats = { path = "../cheats" }
 legaia-engine-core = { path = "../engine-core" }
 legaia-engine-audio = { path = "../engine-audio" }

@@ -64,6 +64,16 @@ asset clut-finder <vram_x> <vram_y> --extracted-root extracted
 
 This walks `extracted/tim_scan/<entry>/*.tim` and reports every TIM whose CLUT (or image, with `--clut-only` off) covers the requested VRAM cell. The output gives `(entry, tim, kind, fbx, fby, w, h)` rows so the user can pick the matching entry directory and pass it via `--vram-extra-dir`. This is the principled discovery step before adding a viewer overlay.
 
+For scene-level diagnostics that don't need a pre-extracted tree, `legaia-engine clut-trace --scene <name> --disc <bin>` walks every dropping `MissingClut` prim in a CDNAME scene, identifies the unique missing CLUT rows (by `(cba, depth)`), and reports the suppliers found across the whole PROT corpus by **rectangle containment** (PSX TIMs commonly pack 16 distinct 16-entry 4bpp palettes into one 256-wide CLUT block, so a CBA's 16-pixel slot sits inside a wider supplier rect). Pair with `--runtime-vram <bin>` (mednafen save state captured via `mednafen-state vram-dump --out-bin`) to mark which missing rows are populated at runtime (engine loader gap) vs absent everywhere (mesh references unreachable CLUT - likely needs a sub-pack walker port).
+
+### Known gap: character CLUTs inside `battle_data` packs
+
+The four town01 NPC TMDs at field intersections drop ~97 prims each as `MissingClut`, all pointing at CLUT row y=479 slots x=128..240 (`CBA = 0x77C8..0x77CF`). The wider 256x1 CLUT block on that row IS supplied by ~289 TIMs across the corpus, but the 16-pixel slots they need (x=128..240) sit in `battle_data` (PROT 865..869) which the retail engine pre-loads at boot via the character-TIM bank inside a custom pack format. The current `tim_scan::scan_entry` walks raw bytes + LZS-decompressed sections but does not descend into the streaming TIM_LIST chunks + nested pack layout `battle_data` uses, so the engine never sees those 128..240 slots. Tracking the gap rather than inflating `FIELD_SHARED_BLOCKS`: a future port of the player / battle-actor asset chain (`FUN_8001E890` and friends) is the correct fix; once the pack walker lands, the relevant battle_data slot can be added to `FIELD_SHARED_BLOCKS` and the 388-prim gap on town01 closes.
+
+### VRAM oracle (engine vs runtime)
+
+`legaia-engine vram-oracle --scene <name> --disc <bin> --runtime-vram <bin>` rebuilds the scene's targeted VRAM and reports per-band overlap counts (top half / texpage primary / texpage CLUTs) against the runtime ground truth. `--diff-png <path>` writes the same colour-coded RGBA8 diff as `info --vram-diff-png` (red = runtime-only / gap, green = engine-only / extras, blue = both non-zero with different content, greyscale = exact match). `--tiles` adds a 64x64 tile-by-tile breakdown so a specific page-X region's coverage can be inspected. The runtime VRAM blob comes from `mednafen-state vram-dump <save> --out-bin`.
+
 ## Music / SFX selection (BGM lookup)
 
 Documented under the [field VM](script-vm.md) → "BGM lookup table" section. The short version: the BGM ID is a PROT-relative offset, not a literal table lookup. `FUN_800243F0` resolves `bgm_id < 2000` to the scene-local PROT slot at `_DAT_80084540 + 6 + bgm_id`, and `bgm_id >= 2000` to the global pool at `_DAT_8007BC64 + bgm_id - 2000`. The "BGM table" *is* the [CDNAME.TXT](../formats/cdname.md) per-scene block layout.

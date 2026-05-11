@@ -1295,6 +1295,7 @@ dependencies = [
  "env_logger",
  "glam",
  "legaia-art",
+ "legaia-asset",
  "legaia-cheats",
  "legaia-engine-audio",
  "legaia-engine-core",
