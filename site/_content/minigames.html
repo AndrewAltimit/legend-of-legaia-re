@@ -1,3 +1,32 @@
+<!-- PS1 controller-button sprite. Hidden; referenced via <use href="#btn-*">.
+     Source: site/img/ps1-buttons.svg (inlined so the gradient fill resolves
+     in the same document). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="display:none" aria-hidden="true">
+  <defs>
+    <radialGradient id="ps1BtnGrad" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#5a5a5a"/>
+      <stop offset="60%" stop-color="#242424"/>
+      <stop offset="100%" stop-color="#111111"/>
+    </radialGradient>
+  </defs>
+  <symbol id="btn-triangle" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <polygon points="0,-14 -14,10 14,10" fill="none" stroke="#2DCCA7" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="btn-square" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <rect x="-12" y="-12" width="24" height="24" rx="2.5" fill="none" stroke="#DF74A6" stroke-width="4.5" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="btn-circle" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <circle cx="0" cy="0" r="13.5" fill="none" stroke="#D84B4B" stroke-width="4.5"/>
+  </symbol>
+  <symbol id="btn-cross" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <path d="M -12 -12 L 12 12 M 12 -12 L -12 12" fill="none" stroke="#7798D4" stroke-width="4.5" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; minigames</div>
   <h1>Minigames &amp; Sol Tower</h1>
@@ -237,6 +266,23 @@
   }
   const $br = document.getElementById('baka-fighter-rounds');
   if ($br && p.baka_fighter && p.baka_fighter.rounds) {
+    // Map data tokens (Square / X / O / Triangle) to sprite symbol ids.
+    // The data uses "Square" / "X" / "O" (no triangle so far); leave room
+    // for triangle in case a future round adds it.
+    const BTN_SYMBOL = {
+      square:   'btn-square',
+      x:        'btn-cross',
+      cross:    'btn-cross',
+      o:        'btn-circle',
+      circle:   'btn-circle',
+      triangle: 'btn-triangle',
+    };
+    function buttonIcon(token) {
+      const key = token.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const sym = BTN_SYMBOL[key];
+      if (!sym) return `<span class="btn">${escapeHtml(token)}</span>`;
+      return `<svg class="btn-icon" viewBox="-30 -30 60 60" role="img" aria-label="${escapeHtml(token)}"><use href="#${sym}"/></svg>`;
+    }
     $br.innerHTML = `
       <table class="baka-table">
         <thead><tr><th>Round</th><th>Buttons</th><th>Notes</th></tr></thead>
@@ -244,7 +290,7 @@
           ${p.baka_fighter.rounds.map(r => `
             <tr>
               <td class="baka-round">${r.round}</td>
-              <td class="baka-buttons">${r.buttons.map(b => `<span class="btn btn-${b.toLowerCase().replace(/[^a-z0-9]/g,'')}">${escapeHtml(b)}</span>`).join(' ')}</td>
+              <td class="baka-buttons">${r.buttons.map(buttonIcon).join('')}</td>
               <td class="baka-notes">${r.notes ? escapeHtml(r.notes) : ''}</td>
             </tr>`).join('')}
         </tbody>

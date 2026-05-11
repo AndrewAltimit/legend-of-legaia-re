@@ -2112,7 +2112,8 @@ kbd {
 }
 .first-clear strong { color: var(--accent); }
 
-/* Baka Fighter button glyphs */
+/* Baka Fighter button glyphs - PS1 controller icons via SVG sprite
+ * (`site/img/ps1-buttons.svg`, inlined into the minigames page). */
 .baka-table { width: 100%; }
 .baka-round {
   font-family: var(--font-mono);
@@ -2120,12 +2121,23 @@ kbd {
   text-align: right;
   width: 4rem;
 }
-.baka-buttons { padding: 0.4rem 0.6rem; }
+.baka-buttons {
+  padding: 0.4rem 0.6rem;
+  white-space: nowrap;
+}
 .baka-notes {
   color: var(--text-dim);
   font-style: italic;
   font-size: 0.85rem;
 }
+.btn-icon {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.2rem;
+}
+/* Fallback used only if a token doesn't map to a sprite symbol. */
 .btn {
   display: inline-block;
   font-family: var(--font-mono);
@@ -2140,9 +2152,6 @@ kbd {
   min-width: 1.6em;
   text-align: center;
 }
-.btn-square { color: #ff7aa8; border-color: #5a2a3a; }
-.btn-x      { color: #6ec1ff; border-color: #1f3b59; }
-.btn-o      { color: #ff8a65; border-color: #5a3326; }
 
 /* Hero card for minigames */
 .hero-card.hero-minigames::before { border-left-color: #c8a472; }
