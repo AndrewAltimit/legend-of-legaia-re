@@ -281,7 +281,7 @@
       const key = token.toLowerCase().replace(/[^a-z0-9]/g, '');
       const sym = BTN_SYMBOL[key];
       if (!sym) return `<span class="btn">${escapeHtml(token)}</span>`;
-      return `<svg class="btn-icon" viewBox="-30 -30 60 60" role="img" aria-label="${escapeHtml(token)}"><use href="#${sym}"/></svg>`;
+      return `<svg class="btn-icon" role="img" aria-label="${escapeHtml(token)}"><use href="#${sym}"/></svg>`;
     }
     $br.innerHTML = `
       <table class="baka-table">
