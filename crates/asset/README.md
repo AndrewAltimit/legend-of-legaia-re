@@ -34,6 +34,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 | `overlay_ptr_table` | Sister format: pointer tables that index into overlays. |
 | `effect_bundle` | `efect.dat` and friends - magic `0x02018B0C`. |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
+| `battle_data_pack` | `battle_data` pack: streaming preamble + 12-byte record table + per-record LZS streams. |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. |
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`. |
@@ -56,6 +57,7 @@ asset tmd-scan         <input>            # locate embedded TMDs
 asset stage / stage-scan
 asset field-pack / field-pack-scan
 asset effect-bundle / effect-bundle-scan
+asset battle-data-pack / battle-data-pack-scan
 asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
 asset validate                            # cross-check detector coverage
 ```

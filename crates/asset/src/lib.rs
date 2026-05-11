@@ -16,6 +16,7 @@ use anyhow::{Result, bail};
 use serde::Serialize;
 
 pub mod anm_detect;
+pub mod battle_data_pack;
 pub mod categorize;
 pub mod data_field_truncated;
 pub mod effect_bundle;

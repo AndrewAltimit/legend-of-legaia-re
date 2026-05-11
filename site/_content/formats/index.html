@@ -63,6 +63,10 @@
       <div class="card-title">Field-pack format</div>
       <div class="card-body">Magic <code>0x01059B84</code>. 4 PROT entries share a byte-identical 97-entry static schema. Consumer is <code>FUN_801D6704</code> (overlay 0897); slots are read at hard-coded offsets.</div>
     </a>
+    <a class="card" href="battle-data-pack.html">
+      <div class="card-title">Battle-data pack</div>
+      <div class="card-body">Custom 16 MB-ish container for the <code>battle_data</code> block (PROT 0865 + sister <code>edstati3</code>). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>.</div>
+    </a>
   </div>
 </section>
 

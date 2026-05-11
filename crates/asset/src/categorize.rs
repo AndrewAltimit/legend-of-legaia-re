@@ -129,6 +129,13 @@ pub enum Class {
     /// cluster's multi-bank sound archive (206 VABp entries).
     /// See [`crate::vab_multi_bank`].
     VabMultiBank,
+    /// `battle_data` pack - `[u32 chunk0_header][...][u32 count][u32 reserved]
+    /// [Record[count]]` followed by a `0x800`-aligned data section of
+    /// `[u32 dec_size][LZS stream]` entries. Each decompressed entry holds
+    /// a 32-byte header, a Legaia TMD, and a texture/CLUT pool. Used by
+    /// the `battle_data` CDNAME block (PROT 0865) and some other character
+    /// bundles (e.g. `edstati3`). See [`crate::battle_data_pack`].
+    BattleDataPack,
     /// Monster / actor SPU sound bank - `[u32 format=2][u16 spu_addrs[256]][ADPCM...]`.
     /// All 256 u16 address-table entries have bit 15 set (>= 0x8000 = active slot).
     /// Sourced from `h:\mpack\monster.snd` loaded by `FUN_8003E104` at battle start.
@@ -178,6 +185,7 @@ impl Class {
             Class::OverlayPtrTable => "overlay_ptr_table",
             Class::PochiFiller => "pochi_filler",
             Class::VabMultiBank => "vab_multi_bank",
+            Class::BattleDataPack => "battle_data_pack",
             Class::MonsterSoundBank => "monster_sound_bank",
             Class::ZeroSectorHighEntropy => "zero_sector_high_entropy",
             Class::OverlayDataBlob => "overlay_data_blob",
@@ -449,6 +457,24 @@ pub fn classify(buf: &[u8]) -> FileReport {
     if crate::scene_event_scripts::detect(buf).is_some() {
         return mk(
             Class::SceneEventScripts,
+            size,
+            head,
+            first_u32,
+            entropy_bits,
+            leading_zeros,
+            zero_fraction,
+        );
+    }
+
+    // Battle-data pack - `[chunk0 header][...][count + records][data section]`
+    // with LZS-compressed records carrying TMDs. The detector is strict
+    // (count fits, every non-sentinel record's dec_size prefix is in range,
+    // data_base self-corrects to the right sector boundary) so it claims
+    // entries before weaker shape heuristics fire on them. Multi-megabyte
+    // files only - skip the detector for small entries to avoid wasted work.
+    if buf.len() >= 0x10000 && crate::battle_data_pack::detect(buf).is_some() {
+        return mk(
+            Class::BattleDataPack,
             size,
             head,
             first_u32,

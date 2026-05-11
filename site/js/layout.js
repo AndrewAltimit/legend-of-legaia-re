@@ -66,6 +66,7 @@ const NAV = [
       { href: 'formats/pack.html',                   text: 'Pack format',              key: 'formats/pack' },
       { href: 'formats/tim-pack.html',               text: 'TIM-pack',                 key: 'formats/tim-pack' },
       { href: 'formats/field-pack.html',             text: 'Field-pack',               key: 'formats/field-pack' },
+      { href: 'formats/battle-data-pack.html',       text: 'Battle-data pack',         key: 'formats/battle-data-pack' },
       { href: 'formats/effect.html',                 text: 'Effect bundles',           key: 'formats/effect' },
       { href: 'formats/scene-bundles.html',          text: 'Scene bundles',            key: 'formats/scene-bundles' },
       // Per-asset
