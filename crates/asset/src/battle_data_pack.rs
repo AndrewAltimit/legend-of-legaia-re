@@ -404,6 +404,217 @@ fn looks_clut_like(bytes: &[u8]) -> bool {
     nonzero >= 12 && high_clear >= 12 && distinct.len() >= 8
 }
 
+/// VRAM width in pixels (= halfword units) used by `find_clut_in_vram`.
+/// Matches `legaia_tim::Vram::WIDTH` and `legaia_mednafen::gpu::VRAM_WIDTH`
+/// without taking a runtime dep.
+pub const VRAM_WIDTH: usize = 1024;
+/// VRAM height in pixels.
+pub const VRAM_HEIGHT: usize = 512;
+/// VRAM byte size (1024 * 512 * 2).
+pub const VRAM_BYTES: usize = VRAM_WIDTH * VRAM_HEIGHT * 2;
+/// One CLUT-row width in halfwords (4bpp palette = 16 entries).
+pub const CLUT_ROW_HALFWORDS: usize = 16;
+/// One CLUT-row width in bytes.
+pub const CLUT_ROW_BYTES: usize = CLUT_ROW_HALFWORDS * 2;
+
+/// One match between a CLUT-shaped run inside a decoded `battle_data` record
+/// and a 32-byte window in PSX VRAM. Used by `find_clut_in_vram` to build a
+/// corpus of `(record, VRAM coord)` pairs from which the post-TMD descriptor
+/// at `u32[3..0x20]` can be reverse-engineered.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ClutVramMatch {
+    /// Byte offset within the decoded record where the matching 32 bytes start.
+    pub record_byte_offset: usize,
+    /// VRAM coordinate of the match. `fb_x` is the pixel column (= halfword
+    /// column) and `fb_y` is the pixel row.
+    pub fb_x: u16,
+    pub fb_y: u16,
+}
+
+impl ClutVramMatch {
+    /// VRAM byte offset of the match (= `(fb_y * 1024 + fb_x) * 2`).
+    pub fn vram_byte_offset(&self) -> usize {
+        ((self.fb_y as usize) * VRAM_WIDTH + (self.fb_x as usize)) * 2
+    }
+}
+
+/// Slide a halfword-aligned 32-byte window across `decoded` (skipping any
+/// known TMD body), keep windows that pass [`looks_clut_like`], and look
+/// each one up in `vram_bytes` as an exact byte match.
+///
+/// Returns one [`ClutVramMatch`] per `(record_offset, vram_position)` pair.
+/// A single CLUT-shaped window may match multiple VRAM positions (the
+/// runtime can upload the same palette to several CLUT rows when several
+/// 4bpp prims share it). Callers that want a unique mapping should
+/// post-filter on the VRAM coord range they expect.
+///
+/// `vram_bytes` must be exactly [`VRAM_BYTES`] long (1 MiB). The search is
+/// bounded to halfword-aligned VRAM offsets within rows that have at least
+/// 16 contiguous halfwords past the candidate `x` (i.e. `fb_x + 16 <=
+/// 1024`) so a CLUT row never wraps to the next row.
+///
+/// **Why this matters:** the post-TMD region of each battle_data record
+/// holds the character's textures + CLUTs but has no standard TIM headers,
+/// so we can't infer `(fb_x, fb_y)` from the bytes themselves. By byte-
+/// matching CLUT-shaped runs against retail VRAM captured mid-scene, we
+/// build a corpus of `(record_idx, header_u32s, fb_xy)` pairs - enough to
+/// reverse-engineer the descriptor encoding at the record header's
+/// `u32[3..0x20]`.
+pub fn find_clut_in_vram(decoded: &DecodedEntry, vram_bytes: &[u8]) -> Vec<ClutVramMatch> {
+    if vram_bytes.len() != VRAM_BYTES {
+        return Vec::new();
+    }
+    let buf = &decoded.bytes;
+    // Don't bother scanning inside the embedded TMD body - the CLUT-like
+    // heuristic gets too many false positives on UV / normal data inside
+    // the TMD's primitive groups. Start at the byte right after the TMD
+    // (or at offset 0x20 if no TMD was located).
+    let start = match decoded.tmd_range.as_ref() {
+        Some(rng) => rng.end,
+        None => 0x20.min(buf.len()),
+    };
+    let aligned_start = (start + 1) & !1;
+
+    // Precompute a row-by-row halfword view of VRAM so the substring
+    // search can be done per row (each candidate CLUT row spans 16
+    // halfwords in a single VRAM row).
+    let mut hits = Vec::new();
+    let mut off = aligned_start;
+    while off + CLUT_ROW_BYTES <= buf.len() {
+        let window = &buf[off..off + CLUT_ROW_BYTES];
+        if looks_clut_like(window) {
+            // Search every VRAM row for the exact byte sequence. We scan
+            // each row independently so a 32-byte match can't straddle
+            // two VRAM rows (the PSX never stores a CLUT row across the
+            // 1024-pixel boundary).
+            for row in 0..VRAM_HEIGHT {
+                let row_off = row * VRAM_WIDTH * 2;
+                let row_bytes = &vram_bytes[row_off..row_off + VRAM_WIDTH * 2];
+                let mut start_col = 0;
+                while start_col + CLUT_ROW_BYTES <= row_bytes.len() {
+                    if let Some(rel) = find_at_step2(&row_bytes[start_col..], window) {
+                        let col = start_col + rel;
+                        debug_assert!(col.is_multiple_of(2));
+                        let fb_x = (col / 2) as u16;
+                        let fb_y = row as u16;
+                        hits.push(ClutVramMatch {
+                            record_byte_offset: off,
+                            fb_x,
+                            fb_y,
+                        });
+                        start_col = col + 2;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        off += 2;
+    }
+    hits
+}
+
+/// Find `needle` inside `haystack` starting at an even offset (halfword
+/// alignment). Returns the byte offset of the first hit, or `None`.
+fn find_at_step2(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return None;
+    }
+    let last = haystack.len() - needle.len();
+    let mut i = 0;
+    while i <= last {
+        if haystack[i..i + needle.len()] == *needle {
+            return Some(i);
+        }
+        i += 2;
+    }
+    None
+}
+
+/// Read the eight u32s of the record header (offsets `0x00..0x20`). When
+/// the buffer is too short, missing words are reported as `0`.
+pub fn record_header_u32s(decoded: &DecodedEntry) -> [u32; 8] {
+    let mut out = [0u32; 8];
+    for (i, word) in out.iter_mut().enumerate() {
+        let off = i * 4;
+        if off + 4 <= decoded.bytes.len() {
+            *word = u32::from_le_bytes(
+                decoded.bytes[off..off + 4]
+                    .try_into()
+                    .expect("4-byte slice"),
+            );
+        }
+    }
+    out
+}
+
+/// One CLUT row a `battle_data` record claims to contribute to VRAM,
+/// paired with the record-relative byte offset of the 32 BGR555 bytes
+/// and the (fb_x, fb_y) destination. Returned by [`clut_uploads`].
+#[derive(Debug, Clone, Copy)]
+pub struct ClutUpload {
+    /// VRAM column (in halfwords / 16bpp pixels).
+    pub fb_x: u16,
+    /// VRAM row.
+    pub fb_y: u16,
+    /// Offset within the decoded record where the 32 BGR555 bytes live.
+    pub record_byte_offset: usize,
+}
+impl ClutUpload {
+    /// Slice the 32 CLUT bytes out of a decoded record. Returns `None`
+    /// when the entry's `record_byte_offset` extends past the buffer.
+    pub fn bytes<'a>(&self, decoded: &'a DecodedEntry) -> Option<&'a [u8]> {
+        let end = self.record_byte_offset + CLUT_ROW_BYTES;
+        if end > decoded.bytes.len() {
+            return None;
+        }
+        Some(&decoded.bytes[self.record_byte_offset..end])
+    }
+}
+
+/// Decode the post-TMD descriptor at `u32[3..0x20]` of a `battle_data`
+/// record header into `(fb_x, fb_y, record_offset)` triples ready for
+/// synthetic-CLUT VRAM upload. Empty when the descriptor encoding can't
+/// be applied with confidence to this record.
+///
+/// ### Empirical findings (status)
+///
+/// The descriptor *encoding* has not yet been pinned. The corpus
+/// methodology behind this function is to byte-match 32-byte windows
+/// from each decoded record against PSX VRAM captured mid-scene with a
+/// mednafen save state - the `mednafen-state clut-trace` CLI drives it,
+/// and the pure analysis API is [`find_clut_in_vram`]. Across the four
+/// retail saves bundled with our analysis fixtures (`mc2` = Rim Elm
+/// town01, `mc3` = Izumi town, `mc4` = pre-battle, `mc6` = battle), the
+/// corpus shows:
+///
+/// - The post-TMD pool of each retail PROT 0865 record byte-matches
+///   into VRAM as a *texture* contribution at known (fb_x, fb_y) bases:
+///   PROT 0865 record 41 maps to `fb_x=864, fb_y≈383..507` in town
+///   saves, record 40 to `fb_x=864, fb_y≈426..433`, and the battle-only
+///   records 4-9 to `fb_x=768`.
+/// - The 32-byte halfword runs that *do* land at standard CLUT
+///   coordinates (e.g. row 479 slots 8..14 - the CBAs town01 NPC TMDs
+///   sample) are **not present verbatim** in any decoded battle_data
+///   record. The same bytes do not appear (even as an 8-byte prefix)
+///   in any other raw PROT entry or in `SCUS_942.54`. Their source is
+///   external to the battle_data pack - likely a runtime palette
+///   generator (the procedural hue cycle observed at row 479 slots 8-14
+///   in town saves), or a pre-decoded pool we have not yet located.
+///
+/// As a result, returning a confident `(fb_x, fb_y)` per record is not
+/// possible from the on-disc bytes alone. This function returns an empty
+/// vector for now. The shape of the API is stable: when the descriptor
+/// encoding (or its runtime resolver) is reverse-engineered, only the
+/// body of this function changes and every caller in [`SceneResources`]
+/// picks up the upload automatically.
+///
+/// See [`docs/formats/battle-data-pack.md`] for the full corpus
+/// methodology and findings.
+pub fn clut_uploads(_decoded: &DecodedEntry) -> Vec<ClutUpload> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,5 +730,119 @@ mod tests {
         h |= 0x05_00_00_00;
         buf[0..4].copy_from_slice(&h.to_le_bytes());
         assert!(detect(&buf).is_none());
+    }
+
+    /// Build a CLUT-shaped 32-byte window: 16 BGR555 halfwords spanning a
+    /// hue cycle, all with the high-transparency bit clear.
+    fn fake_clut(seed: u16) -> [u8; CLUT_ROW_BYTES] {
+        let mut out = [0u8; CLUT_ROW_BYTES];
+        for i in 0..16u16 {
+            // Build a unique-ish BGR555 value (high bit 0 -> not STP).
+            let val = (seed.wrapping_add(i * 17)) & 0x7FFF | (i << 5);
+            out[(i as usize) * 2..(i as usize) * 2 + 2].copy_from_slice(&val.to_le_bytes());
+        }
+        out
+    }
+
+    #[test]
+    fn find_clut_in_vram_finds_exact_match() {
+        // Synth a decoded entry whose post-TMD pool starts at offset 0x40
+        // and holds one CLUT-shaped row. Pad with bytes that fail the
+        // CLUT shape heuristic so we only get hits from the placed window.
+        let clut = fake_clut(0x1234);
+        let mut bytes = vec![0u8; 0x80];
+        // Pad bytes around the CLUT with all-STP halfwords (high bit set)
+        // so the scanner doesn't see neighboring shifted windows as
+        // CLUT-shaped.
+        for chunk in bytes.chunks_exact_mut(2) {
+            chunk.copy_from_slice(&0x8000u16.to_le_bytes());
+        }
+        bytes[0x40..0x40 + CLUT_ROW_BYTES].copy_from_slice(&clut);
+        let entry = DecodedEntry {
+            record: Record {
+                index: 0,
+                on_disc_size: 0,
+                id: 0,
+                data_offset: 0,
+            },
+            bytes,
+            tmd_range: Some(0x20..0x40),
+        };
+        // Build a VRAM with the same 32-byte sequence at fb=(100, 50).
+        // Surround with all-STP padding so the search doesn't find
+        // shifted matches around our placement.
+        let mut vram = vec![0u8; VRAM_BYTES];
+        for chunk in vram.chunks_exact_mut(2) {
+            chunk.copy_from_slice(&0x8000u16.to_le_bytes());
+        }
+        let off = (50 * VRAM_WIDTH + 100) * 2;
+        vram[off..off + CLUT_ROW_BYTES].copy_from_slice(&clut);
+        let hits = find_clut_in_vram(&entry, &vram);
+        // The shifted-window search produces multiple overlapping hits
+        // when the CLUT-shaped run is wider than 32 bytes. The canonical
+        // anchor (record offset 0x40 → fb=(100, 50)) must be present.
+        let canonical = hits
+            .iter()
+            .find(|m| m.fb_x == 100 && m.fb_y == 50 && m.record_byte_offset == 0x40);
+        assert!(canonical.is_some(), "missing canonical hit; got {:?}", hits);
+        assert_eq!(canonical.unwrap().vram_byte_offset(), off);
+    }
+
+    #[test]
+    fn find_clut_in_vram_skips_short_vram() {
+        let entry = DecodedEntry {
+            record: Record {
+                index: 0,
+                on_disc_size: 0,
+                id: 0,
+                data_offset: 0,
+            },
+            bytes: vec![0u8; 0x80],
+            tmd_range: Some(0x20..0x40),
+        };
+        // VRAM too small - should return empty.
+        assert!(find_clut_in_vram(&entry, &[0u8; 1024]).is_empty());
+    }
+
+    #[test]
+    fn clut_uploads_returns_empty_until_descriptor_is_pinned() {
+        // The current implementation is the documented no-op: the
+        // descriptor encoding at `u32[3..0x20]` has not been pinned by
+        // the byte-match corpus. This test guards the contract so
+        // callers in `SceneResources::build_targeted` keep building.
+        let entry = DecodedEntry {
+            record: Record {
+                index: 0,
+                on_disc_size: 0,
+                id: 0x42,
+                data_offset: 0,
+            },
+            bytes: vec![0u8; 0x80],
+            tmd_range: Some(0x20..0x40),
+        };
+        assert!(clut_uploads(&entry).is_empty());
+    }
+
+    #[test]
+    fn record_header_u32s_reads_eight_words() {
+        let mut bytes = vec![0u8; 0x40];
+        for i in 0..8u32 {
+            let off = (i as usize) * 4;
+            bytes[off..off + 4].copy_from_slice(&(i * 0x11).to_le_bytes());
+        }
+        let entry = DecodedEntry {
+            record: Record {
+                index: 0,
+                on_disc_size: 0,
+                id: 0,
+                data_offset: 0,
+            },
+            bytes,
+            tmd_range: None,
+        };
+        let h = record_header_u32s(&entry);
+        for (i, w) in h.iter().enumerate() {
+            assert_eq!(*w, (i as u32) * 0x11);
+        }
     }
 }

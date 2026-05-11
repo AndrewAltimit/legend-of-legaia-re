@@ -384,10 +384,43 @@ impl SceneResources {
         collect_tim_bufs(scene, &mut tim_bufs, &mut tim_parse_failures);
         let tim_count = tim_bufs.len();
 
-        let (vram, upload_stats) = legaia_tmd::vram_targeted::build_vram_targeted_from_buffers(
+        let (mut vram, upload_stats) = legaia_tmd::vram_targeted::build_vram_targeted_from_buffers(
             tim_bufs.iter().map(|v| v.as_slice()),
             &needs,
         );
+
+        // Synthetic CLUT pass: for every `battle_data` pack entry in the
+        // scene's CDNAME block (and any shared block), surface CLUT-row
+        // contributions whose post-TMD descriptor places them at a
+        // specific `(fb_x, fb_y)` in VRAM. The descriptor decoding is
+        // currently a no-op (see `battle_data_pack::clut_uploads`), so
+        // this loop produces no uploads until the encoding is pinned.
+        // Wiring is in place so future descriptor work lights up
+        // immediately without touching SceneResources.
+        let apply_clut_uploads = |s: &Scene, vram: &mut Vram| {
+            for entry in &s.entries {
+                let bytes: &[u8] = &entry.bytes;
+                let Some(pack) = battle_data_pack::detect(bytes) else {
+                    continue;
+                };
+                for record in &pack.records {
+                    let Ok(decoded) = battle_data_pack::decode_record(bytes, &pack, record.index)
+                    else {
+                        continue;
+                    };
+                    for upload in battle_data_pack::clut_uploads(&decoded) {
+                        let Some(row_bytes) = upload.bytes(&decoded) else {
+                            continue;
+                        };
+                        vram.write_clut_row(upload.fb_x, upload.fb_y, row_bytes);
+                    }
+                }
+            }
+        };
+        for shared in shared_scenes {
+            apply_clut_uploads(shared, &mut vram);
+        }
+        apply_clut_uploads(scene, &mut vram);
 
         Ok((
             Self {

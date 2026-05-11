@@ -126,6 +126,25 @@ impl Vram {
         self.write_words(img.fb_x, img.fb_y, img.fb_w, img.h, &words);
     }
 
+    /// Write a single row of 16-bit words at `(fb_x, fb_y)` from raw bytes.
+    /// Bytes must come in little-endian halfword pairs (BGR555 + STP).
+    /// Pixels past `VRAM_WIDTH` / `VRAM_HEIGHT` are clipped silently.
+    ///
+    /// Used by engine consumers that source CLUT halfwords from a buffer
+    /// that doesn't carry the standard TIM CLUT header (e.g. the
+    /// `legaia_asset::battle_data_pack` post-TMD pool, where palettes
+    /// live as a bare 32-byte run inside an LZS-decompressed record).
+    pub fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        let halfwords: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        self.write_words(fb_x, fb_y, halfwords.len() as u16, 1, &halfwords);
+    }
+
     /// Write `w * h` 16-bit words into VRAM starting at `(x, y)`.
     /// Pixels falling outside `[0..VRAM_WIDTH) × [0..VRAM_HEIGHT)` are skipped.
     fn write_words(&mut self, x: u16, y: u16, w: u16, h: u16, src: &[u16]) {
@@ -526,5 +545,30 @@ mod tests {
             &bytes[0..8],
             &[0xAA, 0xAA, 0xBB, 0xBB, 0xCC, 0xCC, 0xDD, 0xDD]
         );
+    }
+
+    #[test]
+    fn write_clut_row_writes_halfwords_at_fbxy() {
+        let mut vram = Vram::new();
+        // 16 BGR555 halfwords spanning 0x0001..0x0010.
+        let mut bytes = [0u8; 32];
+        for i in 0..16u16 {
+            bytes[(i as usize) * 2..(i as usize) * 2 + 2].copy_from_slice(&(i + 1).to_le_bytes());
+        }
+        vram.write_clut_row(128, 479, &bytes);
+        for i in 0..16u16 {
+            assert_eq!(vram.pixel(128 + i as usize, 479), i + 1);
+        }
+        // Adjacent pixels stay zero.
+        assert_eq!(vram.pixel(127, 479), 0);
+        assert_eq!(vram.pixel(144, 479), 0);
+    }
+
+    #[test]
+    fn write_clut_row_skips_empty_input() {
+        let mut vram = Vram::new();
+        // Sanity: no panic, no writes.
+        vram.write_clut_row(0, 0, &[]);
+        assert_eq!(vram.pixel(0, 0), 0);
     }
 }

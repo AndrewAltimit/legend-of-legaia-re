@@ -28,6 +28,7 @@ mednafen-state bisect --addr ADDR SAVE...
 mednafen-state trace  --addr ADDR SAVE...
 mednafen-state watch LABEL [--manifest PATH]
 mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs]
+mednafen-state clut-trace --pack PROT_ENTRY SAVE... [--json PATH --include-tmd-body]
 mednafen-state scenarios [--manifest PATH]
 ```
 

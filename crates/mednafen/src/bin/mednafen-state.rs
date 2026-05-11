@@ -126,6 +126,30 @@ enum Cmd {
         #[arg(long, default_value = "scripts/mednafen/scenarios.toml")]
         manifest: PathBuf,
     },
+    /// Byte-match decoded `battle_data` pack records against a save state's
+    /// VRAM to pin the post-TMD CLUT-pool descriptor at record `u32[3..0x20]`.
+    /// For every decoded record, slide a 32-byte halfword-aligned window past
+    /// the embedded TMD body and search VRAM for an exact match; print one
+    /// row per `(record, VRAM coord)` hit so the descriptor encoding can be
+    /// reverse-engineered from the corpus. Optional `--json` writes the same
+    /// data structured.
+    ClutTrace {
+        /// PROT entry to decode as a battle_data pack (e.g. 0865_battle_data.BIN).
+        #[arg(long)]
+        pack: PathBuf,
+        /// One or more mednafen save states whose VRAM should be matched
+        /// against the decoded records.
+        saves: Vec<PathBuf>,
+        /// Write the full corpus to a JSON file alongside the stdout summary.
+        #[arg(long)]
+        json: Option<PathBuf>,
+        /// Skip CLUT-shaped windows that land inside the embedded TMD body
+        /// (default; matches the analysis methodology). When set, also scan
+        /// the TMD body for windows that happen to look CLUT-shaped - useful
+        /// for double-checking the TMD-end heuristic.
+        #[arg(long, default_value_t = false)]
+        include_tmd_body: bool,
+    },
 }
 
 fn parse_addr(s: &str) -> Result<u32, String> {
@@ -187,6 +211,12 @@ fn main() -> Result<()> {
             regs,
         } => cmd_vram_dump(&save, &out, out_bin.as_deref(), regs),
         Cmd::Scenarios { manifest } => cmd_scenarios(&manifest),
+        Cmd::ClutTrace {
+            pack,
+            saves,
+            json,
+            include_tmd_body,
+        } => cmd_clut_trace(&pack, &saves, json.as_deref(), include_tmd_body),
     }
 }
 
@@ -518,6 +548,150 @@ fn cmd_vram_dump(save: &Path, out: &Path, out_bin: Option<&Path>, regs: bool) ->
         println!("[regs] display_v_range = {:?}", r.display_v_range);
         println!("[regs] display_off     = {:?}", r.display_off);
         println!("[regs] display_mode_raw= {:?}", r.display_mode_raw);
+    }
+    Ok(())
+}
+
+fn cmd_clut_trace(
+    pack_path: &Path,
+    saves: &[PathBuf],
+    json_out: Option<&Path>,
+    include_tmd_body: bool,
+) -> Result<()> {
+    use legaia_asset::battle_data_pack;
+
+    let pack_bytes = std::fs::read(pack_path)
+        .with_context(|| format!("reading PROT entry {}", pack_path.display()))?;
+    let pack = battle_data_pack::parse(&pack_bytes)
+        .with_context(|| format!("parsing {} as battle_data pack", pack_path.display()))?;
+
+    println!(
+        "[pack] {}  records={}  data_base=0x{:x}",
+        pack_path.display(),
+        pack.records.len(),
+        pack.data_base
+    );
+
+    // Decode every record once.
+    struct DecodedRecord {
+        record_idx: usize,
+        record_id: u32,
+        decoded: battle_data_pack::DecodedEntry,
+    }
+    let mut decoded_records = Vec::new();
+    for r in &pack.records {
+        match battle_data_pack::decode_record(&pack_bytes, &pack, r.index) {
+            Ok(d) => decoded_records.push(DecodedRecord {
+                record_idx: r.index,
+                record_id: r.id,
+                decoded: d,
+            }),
+            Err(e) => {
+                eprintln!("[warn] record {} decode failed: {}", r.index, e);
+            }
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    struct CorpusEntry {
+        save_state: String,
+        record_idx: usize,
+        record_id: u32,
+        header_u32s: [String; 8],
+        record_byte_offset: usize,
+        tmd_end: Option<usize>,
+        post_tmd_offset: Option<usize>,
+        fb_x: u16,
+        fb_y: u16,
+        vram_byte_offset: usize,
+    }
+    let mut corpus = Vec::new();
+    let mut total_hits = 0usize;
+
+    println!(
+        "{:<32} {:>5} {:>5} {:>10} {:>7} {:>7} {:>7}  header[0..8]",
+        "save_state", "rec", "id", "rec_off", "post_off", "fb_x", "fb_y"
+    );
+    println!("{}", "-".repeat(120));
+
+    for save in saves {
+        let s = SaveState::from_path(save)
+            .with_context(|| format!("loading save state {}", save.display()))?;
+        let gpu = PsxGpu::new(&s);
+        let Some(vram) = gpu.vram_bytes() else {
+            eprintln!("[skip] {} has no GPU.&GPURAM[0][0]", save.display());
+            continue;
+        };
+        let save_label = save
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string();
+
+        for rec in &decoded_records {
+            let matches = if include_tmd_body {
+                // Construct a fake DecodedEntry that lies about tmd_range so
+                // find_clut_in_vram scans the whole record.
+                let phony = battle_data_pack::DecodedEntry {
+                    record: rec.decoded.record,
+                    bytes: rec.decoded.bytes.clone(),
+                    tmd_range: None,
+                };
+                battle_data_pack::find_clut_in_vram(&phony, vram)
+            } else {
+                battle_data_pack::find_clut_in_vram(&rec.decoded, vram)
+            };
+            let header = battle_data_pack::record_header_u32s(&rec.decoded);
+            let tmd_end = rec.decoded.tmd_range.as_ref().map(|r| r.end);
+            for m in &matches {
+                total_hits += 1;
+                let post_tmd_offset = tmd_end.map(|end| m.record_byte_offset.saturating_sub(end));
+                println!(
+                    "{:<32} {:>5} 0x{:02x} 0x{:08x} {:>7} {:>7} {:>7}  {}",
+                    save_label,
+                    rec.record_idx,
+                    rec.record_id,
+                    m.record_byte_offset,
+                    post_tmd_offset
+                        .map(|p| format!("0x{:x}", p))
+                        .unwrap_or_else(|| "-".into()),
+                    m.fb_x,
+                    m.fb_y,
+                    header
+                        .iter()
+                        .map(|w| format!("{:08x}", w))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+                corpus.push(CorpusEntry {
+                    save_state: save_label.clone(),
+                    record_idx: rec.record_idx,
+                    record_id: rec.record_id,
+                    header_u32s: header.map(|w| format!("0x{:08x}", w)),
+                    record_byte_offset: m.record_byte_offset,
+                    tmd_end,
+                    post_tmd_offset,
+                    fb_x: m.fb_x,
+                    fb_y: m.fb_y,
+                    vram_byte_offset: m.vram_byte_offset(),
+                });
+            }
+        }
+    }
+    println!();
+    println!(
+        "[done] {} match(es) across {} save state(s) and {} record(s)",
+        total_hits,
+        saves.len(),
+        decoded_records.len()
+    );
+
+    if let Some(path) = json_out {
+        let json = serde_json::to_string_pretty(&corpus)
+            .with_context(|| "encoding corpus JSON".to_string())?;
+        std::fs::write(path, json)
+            .with_context(|| format!("writing JSON to {}", path.display()))?;
+        println!("[ok] wrote corpus to {}", path.display());
     }
     Ok(())
 }
