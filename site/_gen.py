@@ -38,6 +38,7 @@ WIDE_PAGES: set[str] = {
     "shops",
     "world",
     "minigames",
+    "arts",
     "viewer",
     "architecture",
 }
@@ -84,6 +85,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("world.html",                 "Game world",                    "world",                      "world.html"),
     ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
     ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
+    ("arts.html",                  "Tactical Arts",                 "arts",                       "arts.html"),
     # depth = 1
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),
     ("subsystems/boot.html",       "Boot path",                     "subsystems/boot",            "subsystems/boot.html"),
@@ -670,6 +672,47 @@ def build_gamedata_json() -> tuple[dict, dict]:
 
 
 # ---------------------------------------------------------------------------
+# Arts payload (drives arts.html).
+#
+# Per-character grouping by kind (regular / hyper / super / miracle), preserving
+# the order rows appear in arts.toml so the page mirrors the curated layout.
+# ---------------------------------------------------------------------------
+
+ARTS_CHARACTERS: list[str] = ["Vahn", "Noa", "Gala"]
+ARTS_KINDS: list[str] = ["regular", "hyper", "super", "miracle"]
+
+
+def build_arts_json() -> dict:
+    arts_raw = _load_toml("arts.toml").get("arts", [])
+    by_char: dict[str, dict[str, list[dict]]] = {
+        c: {k: [] for k in ARTS_KINDS} for c in ARTS_CHARACTERS
+    }
+    for a in arts_raw:
+        ch = a.get("character")
+        kd = a.get("kind")
+        if ch not in by_char or kd not in by_char[ch]:
+            continue
+        by_char[ch][kd].append({
+            "name":            a.get("name"),
+            "kind":            kd,
+            "ap":              a.get("ap"),
+            "command":         a.get("command", []),
+            "directions":      a.get("directions", []),
+            "action_constant": a.get("action_constant"),
+        })
+    return {
+        "characters": [
+            {
+                "name":         ch,
+                "arts_by_kind": by_char[ch],
+                "total":        sum(len(v) for v in by_char[ch].values()),
+            }
+            for ch in ARTS_CHARACTERS
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Search-index extraction
 # ---------------------------------------------------------------------------
 
@@ -843,6 +886,11 @@ def main() -> int:
         json.dumps(minigames_payload, ensure_ascii=False, separators=(",", ":"))
     )
 
+    arts_payload = build_arts_json()
+    (ROOT / "arts.json").write_text(
+        json.dumps(arts_payload, ensure_ascii=False, separators=(",", ":"))
+    )
+
     print(f"\n{written} pages written, {len(search_index)} search entries")
     print(f"  scenes.json:    {len(scenes_payload)} CDNAME blocks")
     print(f"  shops.json:     {len(shops_payload['towns'])} towns")
@@ -851,6 +899,8 @@ def main() -> int:
           f"{sum(len(s['prizes']) for s in minigames_payload['slot_machines'])} slot prizes, "
           f"{len(minigames_payload['baka_fighter']['rounds'])} baka rounds, "
           f"{len(minigames_payload['sol_tower']['floors'])} sol-tower floors")
+    print(f"  arts.json:      {sum(c['total'] for c in arts_payload['characters'])} arts across "
+          f"{len(arts_payload['characters'])} characters")
     return 0
 
 

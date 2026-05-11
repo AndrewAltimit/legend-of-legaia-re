@@ -2277,3 +2277,236 @@ kbd {
 /* Hero card for minigames */
 .hero-card.hero-minigames::before { border-left-color: #c8a472; }
 .hero-card.hero-minigames:hover::before { border-left-color: var(--accent); }
+
+/* ============================================================ */
+/* Tactical Arts page                                            */
+/* ------------------------------------------------------------- */
+/* SVG arrow tile - referenced from arts.html and arts-legend.   */
+.ar-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Legend block at the top of the arts page. */
+.arts-legend {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  gap: 1.5rem;
+  padding: 1rem 1.1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+@media (max-width: 720px) {
+  .arts-legend { grid-template-columns: 1fr; }
+}
+.arts-legend-block { display: flex; flex-direction: column; gap: 0.55rem; }
+.arts-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.arts-legend-row strong { color: var(--text); }
+.arts-legend-note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+.arts-legend-note-dim { color: var(--text-dim); }
+.arts-legend-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.arts-legend-table th,
+.arts-legend-table td {
+  padding: 0.18rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.arts-legend-table thead th {
+  color: var(--text-dim);
+  font-weight: 600;
+  border-bottom-color: var(--border-hi);
+}
+.arts-legend-table td:first-child {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+/* Character tab strip. */
+.arts-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.2rem;
+  flex-wrap: wrap;
+}
+.arts-tab {
+  appearance: none;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55rem 1.1rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.arts-tab:hover {
+  background: var(--bg-card-hi);
+  border-color: var(--border-hi);
+}
+.arts-tab[aria-selected="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-hi);
+}
+.arts-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Per-character header and per-kind sections. */
+.arts-char-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  margin: 0.4rem 0 1.4rem;
+}
+.arts-char-header h2 { margin: 0; }
+.arts-char-total {
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+.art-kind-section {
+  margin: 0 0 1.7rem;
+  padding: 0;
+}
+.art-kind-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0 0 0.9rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border);
+}
+.art-kind-head h3 { margin: 0; }
+.art-kind-count {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.04rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--border-hi);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.art-kind-note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* Per-art card grid. Card styling lifted from the PSX dialog window:
+ * dark blue gradient, gold border, name in white, AP in orange. */
+.art-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.7rem;
+}
+.art-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem 0.8rem 0.65rem;
+  background: linear-gradient(180deg, #1B1E75 0%, #121558 50%, #0C0E45 100%);
+  border: 2px solid #B88A44;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px #222, 0 1px 0 rgba(0,0,0,0.25);
+  color: #F4F4F4;
+}
+.art-card-hyper { border-color: #d6a45a; box-shadow: inset 0 0 0 1px #222, 0 0 6px rgba(244,180,26,0.12); }
+.art-card-super { border-color: #e0b86a; }
+.art-card-miracle {
+  border-color: #f4b41a;
+  box-shadow: inset 0 0 0 1px #222, 0 0 10px rgba(244,180,26,0.25);
+}
+.art-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.art-card-row-sec {
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+.art-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #F4F4F4;
+  text-shadow: 2px 2px 0 #111;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+.art-ap {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #E07028;
+  text-shadow: 2px 2px 0 #111;
+  white-space: nowrap;
+}
+.art-ap-unit {
+  font-size: 0.72rem;
+  color: #E07028;
+  opacity: 0.85;
+  margin-left: 0.15em;
+}
+.art-arrows {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+}
+.art-arrows .ar-icon { width: 18px; height: 18px; }
+.art-command {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: rgba(244,244,244,0.6);
+  text-align: right;
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.art-meta {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  padding-top: 0.25rem;
+  border-top: 1px dashed rgba(184,138,68,0.35);
+}
+.art-ac {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: rgba(244,180,26,0.7);
+  letter-spacing: 0.02em;
+}
+.arts-loading {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}

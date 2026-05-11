@@ -27,6 +27,7 @@ const NAV = [
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
+      { href: 'arts.html',                      text: 'Tactical Arts',            key: 'arts' },
     ],
   },
   {
