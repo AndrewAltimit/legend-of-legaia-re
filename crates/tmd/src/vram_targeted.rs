@@ -324,11 +324,19 @@ where
             vram.upload_tim_partial(tim, true, false);
         }
     }
-    // Pass 2: CLUT blocks. Always last so palette rows survive any
-    // image upload that brushed the bottom of a texture page.
+    // Pass 2: CLUT blocks with merge-zeros semantics. Always last so
+    // palette rows survive any image upload that brushed the bottom of
+    // a texture page. Multiple scene-pack TIMs frequently target the
+    // same CLUT row, each populating a different subset of the 16-color
+    // slots (the remaining slots on disc are filler zeros); merge mode
+    // preserves earlier non-zero entries when a later TIM's slot is
+    // empty, producing the union of all per-TIM contributions. See the
+    // `town01` regression: 7 row-479 TIMs in entries 6..9 split into
+    // "full" (slots 0..14) and "partial" (slots 0..7) - the last-write-
+    // wins ordering would drop slots 8..14 entirely.
     for (tim, &(_, upload_clut)) in parsed.iter().zip(&decisions) {
         if upload_clut {
-            vram.upload_tim_partial(tim, false, true);
+            vram.upload_tim_partial_opts(tim, false, true, true);
         }
     }
 

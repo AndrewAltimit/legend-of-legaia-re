@@ -46,6 +46,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`tim-pack.md`](docs/formats/tim-pack.md) | `prot::timpack` for some standalone PROT entries. `byte_offset = word_index*4 + 4`. |
 | [`field-pack.md`](docs/formats/field-pack.md) | Magic `0x01059B84`. Legaia-specific TIM/TMD bundle. |
 | [`battle-data-pack.md`](docs/formats/battle-data-pack.md) | Custom 16MB container for `battle_data` (PROT 0865) + `edstati3`. Streaming preamble + 12-byte record table + per-record LZS streams that decompress to `[32-byte header + Legaia TMD + texture pool]`. |
+| [`npc-palette.md`](docs/formats/npc-palette.md) | Row-479 NPC CLUTs (`fb_x=0..256, fb_y=479`). Plain PSX TIMs in scene PROT entries; engine uploads them via the targeted-upload CLUT pass with merge-zeros semantics so multiple scene-pack TIMs targeting the same row can coexist (full slots 0..14 + partial slots 0..7). |
 | [`effect.md`](docs/formats/effect.md) | Magic `0x02018B0C` (efect.dat). 2-pack wrapper: sprite anims + effect scripts. |
 | **Sub-assets** | |
 | [`tim.md`](docs/formats/tim.md) | PSX TIM. |

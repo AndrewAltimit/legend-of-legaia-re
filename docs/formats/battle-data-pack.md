@@ -176,8 +176,8 @@ each header-signature cluster the per-record (fb_x, fb_y) placement is
 
 The four town01 NPC TMDs sample CLUTs at CBAs `0x77C8..0x77CF`, which
 decode to fb_x=128..240 at row 479. The actual 32-byte palette payloads
-at those VRAM positions in `mc2` (a town save with all four NPCs
-visible) are **not present verbatim** in any decoded battle_data record:
+at those VRAM positions are **not present verbatim** in any decoded
+battle_data record:
 
 - A direct byte-match of each row-479 slot's 32 bytes against every
   decoded record in PROT 0865 returns zero hits.
@@ -188,11 +188,14 @@ visible) are **not present verbatim** in any decoded battle_data record:
   generator* rather than an on-disc payload.
 
 So the source of the town01 NPC palettes is *external* to the
-battle_data pack. Candidates include a runtime LUT-driven palette
-generator (the hue cycle is consistent with a fixed-table lookup keyed
-by NPC index), or a pre-decoded pool we have not yet located. Closing
-the 388-prim gap requires identifying that runtime source - the
-battle_data pack alone won't supply it.
+battle_data pack. The full picture is documented in
+[`npc-palette.md`](npc-palette.md): row 479 is populated by plain PSX
+TIMs that live inside the scene's PROT entries (e.g. `0006_town01.BIN
+@ 0x1ee4c` for town01), wrapped in a 4-byte chunk-header prefix
+(type 0x20) and uploaded through the standard asset-dispatch
+LoadImage path. The engine's targeted-upload CLUT pass picks them up
+naturally with merge-zeros semantics so multiple scene-pack TIMs
+targeting the same row coexist.
 
 ## Why this matters
 
@@ -261,11 +264,13 @@ mednafen-state clut-trace \
   is more complex; 0868 + 0869 are plain VABp banks). Only 0865 (and
   the sister 0863 `edstati3` entry) match the format documented here.
 
-- **Town01 NPC palette source**: not in the battle_data pack at all
-  (see *What's not in the pack* above). The hue-cycle structure of the
-  row-479 slot bytes suggests a runtime palette generator keyed by NPC
-  slot index. Locating that generator is the actual unlock for the
-  ~388-prim MissingClut gap in town01.
+- **Town01 NPC palette source**: not in the battle_data pack — the
+  CLUTs are plain PSX TIMs in town01's own PROT entries (e.g.
+  `0006_town01.BIN @ 0x1ee4c`). Each is wrapped in a 4-byte
+  chunk-header prefix (type 0x20). The engine's targeted-upload CLUT
+  pass picks them up via `legaia_asset::tim_scan` and uploads them
+  with merge-zeros semantics so the "full" (slots 0..14) and "partial"
+  (slots 0..7) variants coexist. See [`npc-palette.md`](npc-palette.md).
 
 - **Runtime asset-loader chain**: `FUN_8001E890` is the data-field-player
   loader (see [`asset-loader.md`](../subsystems/asset-loader.md)) - it

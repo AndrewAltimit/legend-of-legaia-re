@@ -91,12 +91,18 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
         100.0 * keep_ratio
     );
 
-    // Floor: the targeted-upload + relaxed-depth-threshold combination
-    // currently keeps ~78% of town01 textured prims. Anything below
-    // 60% indicates a regression in the prim-filter / targeted-upload
-    // pipeline.
+    // Floor: the targeted-upload CLUT pass uses merge-zeros semantics
+    // (`Vram::upload_tim_partial_opts(..., merge_clut_zeros: true)`) so
+    // multiple scene-pack TIMs that target the same CLUT row but each
+    // populate a different subset of the 16-color slots can coexist.
+    // For town01 specifically, 7 row-479 TIMs across entries 6..9 split
+    // into "full" (slots 0..14) and "partial" (slots 0..7); without
+    // merge mode the partials' zero entries clobber the full uploads
+    // and the keep ratio drops back to 78.6%. Anything below 90% here
+    // indicates a regression in the prim-filter / targeted-upload
+    // pipeline or the merge semantics.
     assert!(
-        keep_ratio >= 0.60,
+        keep_ratio >= 0.90,
         "town01 targeted prim keep ratio dropped to {:.1}% (kept={} of textured={})",
         100.0 * keep_ratio,
         total_kept,

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Row-479 NPC CLUTs - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; row-479 NPC CLUTs</div>
+  <h1>NPC CLUTs at VRAM row 479</h1>
+  <p class="lede">PSX field/town NPC TMDs commonly sample CLUT cells along row 479. The data is <strong>plain PSX TIMs</strong> sitting inside the scene's PROT entries, uploaded to VRAM by the standard asset-dispatch path. There is no special "hue-ramp generator" function; static analysis returned zero hits because there was nothing to find. Implementation: <code>crates/tim/src/vram.rs</code> (merge-zeros CLUT upload) + <code>crates/tmd/src/vram_targeted.rs</code> (targeted dispatch).</p>
+</header>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+  <p>Each contributing TIM has a CLUT block with <code>(fb_x, fb_y, w, h) = (0, 479, 256, 1)</code> &mdash; a 256-color row spanning fb_x=0..256, which carves into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field NPC TMDs sample these slots via CBA cells <code>0x77C0..0x77CF</code>.</p>
+  <p>The actual contents are <strong>scene-specific</strong>: each town/area embeds its own row-479 TIMs with the NPC palettes for that scene. Town01, town0b, town0c, town0d share one palette set (the human-villager NPCs); balden, bubu1, urudre1, nilboa, chitei2 each have their own.</p>
+</section>
+
+<section class="doc-section" id="on-disc-layout">
+  <h2>How the TIMs sit on disc</h2>
+  <p>Within a scene's PROT entries (e.g. <code>0006_town01.BIN</code>), each row-479 TIM is preceded by a 4-byte chunk-header prefix in the asset descriptor stream, then the standard PSX TIM:</p>
+<pre><code>+0x00: u32 chunk header  (e.g. 0x01008220 = type 0x20)
++0x04: u32 TIM magic     0x00000010
++0x08: u32 TIM flags     0x00000008 (4bpp + CLUT)
++0x0C: u32 block size    0x0000020C  (CLUT block: 12 hdr + 512 data)
++0x10: u16 fb_x = 0
++0x12: u16 fb_y = 479
++0x14: u16 num_colors = 256
++0x16: u16 num_cluts = 1
++0x18: 512 bytes of CLUT data (256 BGR555 halfwords)
++...:  standard TIM image block (typically a 256x256 4bpp at fb_x=832)</code></pre>
+  <p><code>legaia_asset::tim_scan</code> detects these via the inner TIM magic at offset +4 from the chunk header; it does not need to interpret the type-0x20 wrapper.</p>
+</section>
+
+<section class="doc-section" id="multi-tim-clut-merge">
+  <h2>Multi-TIM CLUT merge</h2>
+  <p>Each town typically has <strong>multiple</strong> row-479 TIMs spread across several PROT entries (e.g. town01 entries 6..9 carry 7 such TIMs). Some are "full" (slots 0..14 populated), others are "partial" (slots 0..7 only, remaining slots padded with <code>0x0000</code> on disc). All target the same VRAM cells, producing a CLUT race.</p>
+  <p>The engine's targeted-upload CLUT pass at <code>legaia_tmd::vram_targeted::build_vram_targeted_from_buffers</code> runs the CLUT block second (after image blocks) and uses <strong>merge-zeros semantics</strong>: a halfword of <code>0x0000</code> in a later upload does not overwrite a non-zero halfword from an earlier upload. The net effect is the union of every contributing TIM's non-zero slots, which yields a fully populated palette row.</p>
+  <p>Without merge semantics, the partial TIMs' trailing zeros clobber the full TIMs' slots 8..14 and the town01 prim keep-ratio collapses from 99.3% to 78.6% (the four "field intersection" NPC TMDs lose their palette anchor).</p>
+</section>
+
+<section class="doc-section" id="retail-dispatch">
+  <h2>What retail's dispatcher does instead</h2>
+  <p>The exact retail dispatch order (and which subset of the row-479 TIMs get uploaded for a given scene-mode) is not yet pinned. Empirically, mednafen save states captured mid-tutorial-battle in town01 hold the specific bytes from <code>0006_town01 @ 0x1ee4c</code> at row 479 &mdash; meaning the retail engine ends up with one specific "full" variant. The merge strategy in the engine port produces a functionally equivalent fully-populated row but not necessarily byte-identical to retail.</p>
+</section>
+
+<section class="doc-section" id="cross-save">
+  <h2>Cross-save corroboration</h2>
+  <p>The <code>mednafen-state vram-dump</code> CLI extracts the raw 1 MiB VRAM blob. Row 479 starts at byte offset <code>0xEF800</code> (= <code>479 * 2048</code>). Slicing 32 bytes at <code>0xEF800 + slot * 32</code> gives one CLUT slot. See <a href="../tooling/mednafen-automation.html">mednafen-automation.html</a>.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/npc-palette' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

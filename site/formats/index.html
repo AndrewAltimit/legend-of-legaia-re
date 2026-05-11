@@ -81,6 +81,10 @@
       <div class="card-title">Battle-data pack</div>
       <div class="card-body">Custom 16 MB-ish container for the <code>battle_data</code> block (PROT 0865 + sister <code>edstati3</code>). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>.</div>
     </a>
+    <a class="card" href="npc-palette.html">
+      <div class="card-title">Row-479 NPC CLUTs</div>
+      <div class="card-body">Plain PSX TIMs in scene PROT entries with CLUT block at <code>(fb_x=0, fb_y=479, w=256, h=1)</code>. Engine uploads them via the targeted-upload CLUT pass with merge-zeros semantics so multiple scene-pack TIMs targeting the same row coexist (full slots 0..14 + partial slots 0..7).</div>
+    </a>
   </div>
 </section>
 

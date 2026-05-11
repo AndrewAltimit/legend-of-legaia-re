@@ -106,8 +106,31 @@ impl Vram {
     /// symmetric case (`upload_clut = false`) covers CLUT blocks
     /// landing on top of someone else's texture page.
     pub fn upload_tim_partial(&mut self, tim: &Tim, upload_image: bool, upload_clut: bool) {
+        self.upload_tim_partial_opts(tim, upload_image, upload_clut, false);
+    }
+
+    /// Like [`Self::upload_tim_partial`] but with optional **merge** semantics
+    /// for the CLUT block: when `merge_clut_zeros` is set, CLUT halfwords
+    /// equal to `0x0000` skip the underlying VRAM cell instead of clobbering
+    /// it. Used by the targeted upload to handle scenes where multiple TIMs
+    /// target the same CLUT row but each only populates a subset of the
+    /// 16-color slots (the remaining entries on disc are filler zeros).
+    /// Without merge mode, the last TIM in iteration order wins and any
+    /// slot it leaves zero erases earlier uploads. Image blocks always
+    /// overwrite, since image data legitimately contains `0x0000` pixels.
+    pub fn upload_tim_partial_opts(
+        &mut self,
+        tim: &Tim,
+        upload_image: bool,
+        upload_clut: bool,
+        merge_clut_zeros: bool,
+    ) {
         if upload_clut && let Some(clut) = tim.clut.as_ref() {
-            self.write_words(clut.fb_x, clut.fb_y, clut.w, clut.h, &clut.entries);
+            if merge_clut_zeros {
+                self.write_words_merge_zeros(clut.fb_x, clut.fb_y, clut.w, clut.h, &clut.entries);
+            } else {
+                self.write_words(clut.fb_x, clut.fb_y, clut.w, clut.h, &clut.entries);
+            }
         }
         if !upload_image {
             return;
@@ -165,6 +188,36 @@ impl Vram {
                     return;
                 }
                 self.pixels[dy * VRAM_WIDTH + dx] = src[src_idx];
+            }
+        }
+    }
+
+    /// Like [`Self::write_words`] but `0x0000` source halfwords are skipped
+    /// instead of overwriting. Used by CLUT merge uploads where multiple
+    /// scene-pack TIMs share the same CLUT row but each only populates a
+    /// subset of the 16-color slots.
+    fn write_words_merge_zeros(&mut self, x: u16, y: u16, w: u16, h: u16, src: &[u16]) {
+        let x0 = x as usize;
+        let y0 = y as usize;
+        for row in 0..h as usize {
+            let dy = y0 + row;
+            if dy >= VRAM_HEIGHT {
+                break;
+            }
+            for col in 0..w as usize {
+                let dx = x0 + col;
+                if dx >= VRAM_WIDTH {
+                    break;
+                }
+                let src_idx = row * w as usize + col;
+                if src_idx >= src.len() {
+                    return;
+                }
+                let val = src[src_idx];
+                if val == 0 {
+                    continue;
+                }
+                self.pixels[dy * VRAM_WIDTH + dx] = val;
             }
         }
     }

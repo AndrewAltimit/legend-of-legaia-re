@@ -47,6 +47,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Effect bundles](effect.md) | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [Field-pack format](field-pack.md) | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
 | [Battle-data pack](battle-data-pack.md) | Custom 16 MB-ish container for the `battle_data` block (PROT 0865 + sister `edstati3`). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to `[header + Legaia TMD + texture pool]`. |
+| [Row-479 NPC CLUTs](npc-palette.md) | Plain PSX TIMs in scene PROT entries with CLUT block at `(fb_x=0, fb_y=479, w=256, h=1)`. Engine uploads via the targeted-upload CLUT pass with merge-zeros semantics — multiple scene-pack TIMs targeting the same row coexist (full slots 0..14 + partial slots 0..7). |
 | [Per-scene primitive scratch buffer](navmesh.md) | Documented negative finding — `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 | [Encounter record](encounter.md) | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Pointer installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
 | [STR FMV table](str-fmv-table.md) | In-RAM compact table the cutscene / MDEC overlay uses to look up `MV*.STR` files. Six 24-byte entries at `0x801CAE40`: filename + libcd BCD MSF + size. |

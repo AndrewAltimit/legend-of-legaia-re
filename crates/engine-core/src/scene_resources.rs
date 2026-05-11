@@ -422,6 +422,12 @@ impl SceneResources {
         }
         apply_clut_uploads(scene, &mut vram);
 
+        // Row-479 NPC CLUTs are now uploaded via the normal targeted
+        // upload path with CLUT merge-zeros semantics (see
+        // `legaia_tmd::vram_targeted`). Previously a hardcoded canonical
+        // hue-ramp was painted here unconditionally; that paint was from
+        // an unknown scene and over-rendered every town.
+
         Ok((
             Self {
                 vram,
