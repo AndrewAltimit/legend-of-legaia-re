@@ -49,7 +49,27 @@ The same filter is wired into engine-side scene loads through `ResolvedTmd::buil
 
 `SceneHost::enter_field_scene` calls `build_targeted` with the field shared blocks by default; the legacy `SceneResources::build` / `build_with_shared` paths remain for tests and engines that want the unfiltered upload for diagnostic purposes.
 
+The TIM scan walks both raw entry bytes and any LZS-decompressed sections (via `legaia_asset::tim_scan::scan_entry`), so battle / level-up bundles that pack their character TIMs inside an LZS container don't need a raw-byte fallback path.
+
 `legaia-engine info --scene <name> --tmd-stats` reports per-TMD `kept / miss_clut / depth_mm / miss_page` counts so future regressions in the targeted-upload pipeline are visible without firing up the windowed viewer. `--vram-png` / `--vram-bin` write the engine VRAM as a 1024x512 PNG / raw BGR555 blob; `--runtime-vram <bin>` (paired with `mednafen-state vram-dump --out-bin`) reports per-region pixel-coverage statistics against the runtime ground truth, and `--vram-diff-png` writes a colour-coded diff (red = runtime has, engine missing; green = engine extras; blue = both populated but different).
+
+#### Two-pass upload ordering
+
+Inside `build_vram_targeted_from_buffers` the targeted upload now runs in two passes:
+
+1. **Image pass** writes every useful TIM image block (image overlaps a mesh's tex page region AND does NOT overlap another mesh's CLUT row).
+2. **CLUT pass** writes every useful TIM CLUT block (CLUT overlaps a mesh's CLUT row), unconditionally with respect to image-page collisions.
+
+Earlier versions filtered CLUT uploads with a `clut_collides_page` suppression that dropped legitimate palette rows whenever *any* mesh's UV bbox happened to brush the CLUT row's y-coordinate. The town01 character TMDs hit this: their 256-pixel-wide palette at y=479 overlapped a separate scene mesh's texture-page rectangle, so the CLUT upload was suppressed and 388 prims dropped as `MissingClut`. Splitting into image-then-CLUT order keeps the palette rows that PSX games place on the bottom of texture pages coherent without the per-prim heuristic.
+
+#### CLUT-trace + VRAM-oracle diagnostics
+
+Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:
+
+- `legaia-engine clut-trace --scene <name> --disc <bin> [--runtime-vram <bin>]` walks every dropping `MissingClut` prim, groups by `(cba, depth)`, and reports which PROT entries on the disc carry a TIM whose CLUT block covers each missing row (by rectangle containment - the standard PSX pattern packs 16 distinct 16-entry palettes into one 256-wide row, so a CBA's 16-pixel slot sits inside a wider supplier block). The `--runtime-vram` cross-check distinguishes "row absent from engine but present at runtime" (engine loader gap) from "row absent from runtime too" (mesh references unreachable CLUT - likely a parser-side issue, or a CLUT loaded by an unported sub-pack walker).
+- `legaia-engine vram-oracle --scene <name> --disc <bin> --runtime-vram <bin> [--diff-png <path>] [--tiles]` rebuilds the scene's engine VRAM and reports per-band overlap counts plus an optional 64x64-tile breakdown. The `--diff-png` is a 1024x512 colour-coded diff (greyscale = exact match, blue = both non-zero but different, red = runtime-only, green = engine-only) - same encoding as the `info --vram-diff-png` output, exposed as a dedicated comparison surface.
+
+These work without any pre-extracted `tim_scan/` tree - they operate straight off `PROT.DAT` + `CDNAME.TXT` (extracted-root or in-place disc image).
 
 ### CLUT-depth-mismatch threshold
 

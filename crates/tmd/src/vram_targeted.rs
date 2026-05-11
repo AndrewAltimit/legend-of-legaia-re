@@ -148,8 +148,11 @@ pub fn build_vram_targeted(dirs: &[&Path], needs: &[PrimTarget]) -> (Vram, VramU
             },
         );
     }
-    let mut vram = Vram::new();
-    let mut stats = VramUploadStats::default();
+    // Materialise once - we need two passes (images, then CLUTs) for
+    // the same dual-use-row reason documented on
+    // `build_vram_targeted_from_buffers`.
+    let mut tims: Vec<legaia_tim::Tim> = Vec::new();
+    let mut total = 0usize;
     for dir in dirs {
         let Ok(rd) = std::fs::read_dir(dir) else {
             continue;
@@ -162,10 +165,20 @@ pub fn build_vram_targeted(dirs: &[&Path], needs: &[PrimTarget]) -> (Vram, VramU
             let Ok(buf) = std::fs::read(&p) else {
                 continue;
             };
-            let Ok(tim) = legaia_tim::parse(&buf) else {
-                continue;
-            };
-            stats.total_tims += 1;
+            total += 1;
+            if let Ok(tim) = legaia_tim::parse(&buf) {
+                tims.push(tim);
+            }
+        }
+    }
+
+    let mut stats = VramUploadStats {
+        total_tims: total,
+        ..Default::default()
+    };
+    let decisions: Vec<(bool, bool)> = tims
+        .iter()
+        .map(|tim| {
             let img = &tim.image;
             let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
             let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));
@@ -174,22 +187,33 @@ pub fn build_vram_targeted(dirs: &[&Path], needs: &[PrimTarget]) -> (Vram, VramU
             let img_collides_clut = needs.iter().any(|t| rects_overlap(img_rect, t.clut));
             let clut_useful =
                 clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.clut)));
-            let clut_collides_page =
-                clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.page)));
 
-            let upload_image = img_useful && !img_collides_clut;
-            let upload_clut = clut_useful && !clut_collides_page;
-            if !upload_image && !upload_clut {
-                continue;
-            }
-            vram.upload_tim_partial(&tim, upload_image, upload_clut);
-            stats.uploaded_tims += 1;
-            match (upload_image, upload_clut) {
-                (true, true) => stats.uploaded_both += 1,
-                (true, false) => stats.uploaded_image_only += 1,
-                (false, true) => stats.uploaded_clut_only += 1,
-                _ => {}
-            }
+            (img_useful && !img_collides_clut, clut_useful)
+        })
+        .collect();
+
+    let mut vram = Vram::new();
+    for (tim, &(upload_image, _)) in tims.iter().zip(&decisions) {
+        if upload_image {
+            vram.upload_tim_partial(tim, true, false);
+        }
+    }
+    for (tim, &(_, upload_clut)) in tims.iter().zip(&decisions) {
+        if upload_clut {
+            vram.upload_tim_partial(tim, false, true);
+        }
+    }
+
+    for &(upload_image, upload_clut) in &decisions {
+        if !upload_image && !upload_clut {
+            continue;
+        }
+        stats.uploaded_tims += 1;
+        match (upload_image, upload_clut) {
+            (true, true) => stats.uploaded_both += 1,
+            (true, false) => stats.uploaded_image_only += 1,
+            (false, true) => stats.uploaded_clut_only += 1,
+            _ => {}
         }
     }
     (vram, stats)
@@ -209,10 +233,36 @@ pub fn build_vram_from_dirs(dirs: &[&Path]) -> (Vram, usize) {
 /// already-loaded TIM byte slices (e.g. from `tim_scan::scan_buffer`
 /// hits inside a PROT entry) instead of walking the filesystem, so an
 /// engine driving the scene-asset chain doesn't need on-disk
-/// intermediates. Same per-block "upload image iff useful AND not
-/// colliding with someone else's CLUT" logic as the directory variant.
+/// intermediates.
 ///
 /// Returns the populated VRAM + per-block statistics.
+///
+/// ## Upload ordering
+///
+/// Done in two passes to keep the dual-use lower rows of texture pages
+/// (where PSX games place 16-packed 4bpp palettes - typically y=479,
+/// y=480, y=500) coherent:
+///
+/// 1. **Image pass** uploads every TIM image block whose region
+///    overlaps a mesh's sampled texture page. The `img_collides_clut`
+///    check still suppresses image uploads that would land directly on
+///    another mesh's CLUT row (preventing the rainbow-noise symptom).
+/// 2. **CLUT pass** uploads every TIM CLUT block whose row overlaps a
+///    mesh's referenced CLUT row, *unconditionally* with respect to
+///    image-page collisions. CLUTs sit in the last 16-32 rows of VRAM
+///    where PSX games leave the texture pages empty by design - the
+///    bytes serve a dual purpose (image storage + palette storage). If
+///    an image upload happened to land on those rows in pass 1, the
+///    CLUT pass overwrites them with the canonical palette data.
+///
+/// Earlier versions did a single pass with a `clut_collides_page`
+/// suppression check; that dropped legitimate CLUT uploads when *any*
+/// mesh's UV bbox happened to brush a CLUT row (typical in town /
+/// field scenes where one mesh samples deep into a 256x256 page while
+/// another mesh stores its palette on the bottom row of the same
+/// page). Cf. the `town01` regression: 4 character TMDs dropped 388
+/// prims because their packed palettes at row 479 lost the upload
+/// race to image rectangles that brushed the same row.
 pub fn build_vram_targeted_from_buffers<'a, I>(
     tim_bufs: I,
     needs: &[PrimTarget],
@@ -236,27 +286,56 @@ where
         }
         return (vram, stats);
     }
-    for buf in tim_bufs {
-        stats.total_tims += 1;
-        let Ok(tim) = legaia_tim::parse(buf) else {
-            continue;
-        };
-        let img = &tim.image;
-        let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
-        let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));
 
-        let img_useful = needs.iter().any(|t| rects_overlap(img_rect, t.page));
-        let img_collides_clut = needs.iter().any(|t| rects_overlap(img_rect, t.clut));
-        let clut_useful = clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.clut)));
-        let clut_collides_page =
-            clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.page)));
+    // Materialise once so we can do two passes over the same set.
+    let parsed: Vec<legaia_tim::Tim> = tim_bufs
+        .into_iter()
+        .filter_map(|buf| {
+            stats.total_tims += 1;
+            legaia_tim::parse(buf).ok()
+        })
+        .collect();
 
-        let upload_image = img_useful && !img_collides_clut;
-        let upload_clut = clut_useful && !clut_collides_page;
+    // Pre-compute decisions per TIM so the stats reflect what actually
+    // happens after both passes, not the intermediate state.
+    let decisions: Vec<(bool, bool)> = parsed
+        .iter()
+        .map(|tim| {
+            let img = &tim.image;
+            let img_rect = (img.fb_x, img.fb_y, img.fb_w, img.h);
+            let clut_rect = tim.clut.as_ref().map(|c| (c.fb_x, c.fb_y, c.w, c.h));
+
+            let img_useful = needs.iter().any(|t| rects_overlap(img_rect, t.page));
+            let img_collides_clut = needs.iter().any(|t| rects_overlap(img_rect, t.clut));
+            let clut_useful =
+                clut_rect.is_some_and(|r| needs.iter().any(|t| rects_overlap(r, t.clut)));
+
+            let upload_image = img_useful && !img_collides_clut;
+            // CLUT uploads no longer suppressed by page collisions:
+            // CLUT bytes always win the upload race in pass 2.
+            let upload_clut = clut_useful;
+            (upload_image, upload_clut)
+        })
+        .collect();
+
+    // Pass 1: image blocks.
+    for (tim, &(upload_image, _)) in parsed.iter().zip(&decisions) {
+        if upload_image {
+            vram.upload_tim_partial(tim, true, false);
+        }
+    }
+    // Pass 2: CLUT blocks. Always last so palette rows survive any
+    // image upload that brushed the bottom of a texture page.
+    for (tim, &(_, upload_clut)) in parsed.iter().zip(&decisions) {
+        if upload_clut {
+            vram.upload_tim_partial(tim, false, true);
+        }
+    }
+
+    for &(upload_image, upload_clut) in &decisions {
         if !upload_image && !upload_clut {
             continue;
         }
-        vram.upload_tim_partial(&tim, upload_image, upload_clut);
         stats.uploaded_tims += 1;
         match (upload_image, upload_clut) {
             (true, true) => stats.uploaded_both += 1,
@@ -265,6 +344,7 @@ where
             _ => {}
         }
     }
+
     (vram, stats)
 }
 
@@ -387,5 +467,44 @@ mod tests {
         assert_eq!(stats.uploaded_both, 1);
         // CLUT entry [0] visible.
         assert_eq!(vram.pixel(0, 100), 0x1000);
+    }
+
+    /// Regression for the town01 case. TIM A's image at (0, 0) covers
+    /// a 256x256 region; TIM B's CLUT lives at (16, 100) (dual-use
+    /// "palette row at the bottom of a texture page" layout common in
+    /// PSX games). A different mesh references a texture page rect
+    /// that crosses y=100 (so collides with TIM B's CLUT row coordinate
+    /// in rect terms), AND another mesh's prim references the CLUT
+    /// row TIM B supplies. Pre-fix, this combination dropped TIM B's
+    /// CLUT upload entirely because of the spurious `clut_collides_page`
+    /// check. Post-fix, the 2-pass upload writes images first then
+    /// CLUTs unconditionally, so TIM B's palette survives.
+    #[test]
+    fn from_buffers_clut_survives_when_another_prims_page_crosses_it() {
+        let tim_b = tim_4bpp_at(/*img*/ 64, 64, /*clut*/ 16, 100);
+        let needs = vec![
+            // Mesh X samples TIM B's palette.
+            PrimTarget {
+                clut: (16, 100, 16, 1),
+                page: (64, 64, 1, 1),
+            },
+            // Mesh Y samples some other tex page whose vertical
+            // extent crosses y=100. Pre-fix, the engine would refuse
+            // to upload TIM B's CLUT block because `(16, 100, 16, 1)`
+            // overlaps `(0, 0, 256, 200)`.
+            PrimTarget {
+                clut: (0, 200, 16, 1),
+                page: (0, 0, 256, 200),
+            },
+        ];
+        let (vram, stats) = build_vram_targeted_from_buffers([tim_b.as_slice()], &needs);
+        assert_eq!(stats.total_tims, 1);
+        assert_eq!(stats.uploaded_tims, 1);
+        // TIM B's CLUT entry [0] must survive at (16, 100).
+        assert_eq!(
+            vram.pixel(16, 100),
+            0x1000,
+            "CLUT row must not be suppressed by an unrelated page collision"
+        );
     }
 }

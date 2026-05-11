@@ -146,6 +146,17 @@ impl ResolvedAnm {
 /// `fb=(704, 0)` and `fb=(704, 256)`. `player_data` (PROT 876) holds
 /// the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with
 /// CLUT at `(0, 500)`.
+///
+/// The four town-NPC character TMDs that drop ~97 prims each on
+/// town01 reference CLUT row y=479 slots at x=128..240 (CBAs
+/// `0x77C8..0x77CF`). The 256x1 palette block that owns those slots
+/// lives inside `battle_data` (PROT 865..869), packed inside a custom
+/// container the raw TIM scanner doesn't descend into. The retail
+/// engine reaches them through `FUN_8001E890`'s data-field-player
+/// chain. Until that loader is ported, those rows stay unsupplied -
+/// document the gap in `docs/subsystems/asset-loader.md` rather than
+/// inflate `FIELD_SHARED_BLOCKS` with a block whose payload the
+/// current scanner can't reach.
 pub const FIELD_SHARED_BLOCKS: &[&str] = &["init_data", "player_data"];
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
@@ -271,17 +282,28 @@ impl SceneResources {
         }
 
         // Pass 3: walk every TIM hit (across both shared and scene
-        // entries) and feed the targeted builder.
+        // entries) and feed the targeted builder. The scan walks both
+        // raw entry bytes AND any LZS-decompressed sections inside the
+        // entry - many battle / level-up bundles wrap their character
+        // TIM bank in an LZS container, so a raw-only scan misses
+        // them and leaves the dropping CLUT rows unsupplied.
         let mut tim_bufs: Vec<Vec<u8>> = Vec::new();
         let mut tim_parse_failures = 0usize;
         let collect_tim_bufs =
             |s: &Scene, tim_bufs: &mut Vec<Vec<u8>>, tim_parse_failures: &mut usize| {
                 for entry in &s.entries {
                     let bytes: &[u8] = &entry.bytes;
-                    for hit in tim_scan::scan_buffer(bytes) {
-                        let payload = &bytes[hit.offset..hit.offset + hit.byte_len];
-                        // Validate the TIM parses; otherwise drop early so
-                        // the targeted builder doesn't have to retry.
+                    let scan = tim_scan::scan_entry(bytes);
+                    for (source, hit) in &scan.hits {
+                        let src: &[u8] = match source {
+                            tim_scan::Source::Raw => bytes,
+                            tim_scan::Source::Lzs(idx) => scan.lzs_sections[*idx].as_slice(),
+                        };
+                        let end = hit.offset + hit.byte_len;
+                        if end > src.len() {
+                            continue;
+                        }
+                        let payload = &src[hit.offset..end];
                         if legaia_tim::parse(payload).is_ok() {
                             tim_bufs.push(payload.to_vec());
                         } else {
