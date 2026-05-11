@@ -167,6 +167,7 @@
       <div class="viewer-list-pane" id="viewer-list-pane" style="display: none;">
         <div class="viewer-list-toolbar">
           <select id="scene-filter" title="Filter by scene category">
+            <option value="">All scenes</option>
             <option value="town">Towns</option>
             <option value="field">Field areas</option>
             <option value="world_map">World map</option>
@@ -174,7 +175,6 @@
             <option value="cutscene">Cutscenes (op*/ed*)</option>
             <option value="audio">Audio (VAB / SEQ)</option>
             <option value="system">System / overlays</option>
-            <option value="">All scenes</option>
           </select>
         </div>
         <div class="viewer-list-toolbar">
@@ -512,12 +512,14 @@
     const indices   = viewer.mesh_indices();
     const bounds    = viewer.mesh_bounds();
     if (positions.length === 0 || indices.length === 0) {
-      console.warn('TMD has no textured triangles; falling back to flat-shaded');
-      status.textContent = 'TMD has no textured prims; flat-shaded fallback.';
+      /* Flat-shaded TMDs are normal data on PSX (background props,
+       * untextured geometry) - not an error. Keep the dev-side debug
+       * trace, but don't yell in the user's console. */
+      console.debug('TMD has no textured prims (flat-shaded render).');
       startFlatTmdLoop();
       return;
     }
-    console.log(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
+    console.debug(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
     glRenderer.uploadVram(vramBytes);
     glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
 
