@@ -31,11 +31,24 @@ CONTENT = ROOT / "_content"
 GAMEDATA = ROOT.parent / "data" / "gamedata"
 
 
+# Pages that benefit from breaking out of the prose reading-width cap.
+# Multi-pane interactive surfaces; everything else (format / subsystem /
+# tooling / reference) stays narrow for readability.
+WIDE_PAGES: set[str] = {
+    "shops",
+    "world",
+    "minigames",
+    "viewer",
+    "architecture",
+}
+
+
 def html_template(title: str, depth: int, active_key: str, body: str, extra_head: str = "") -> str:
     css = "../" * depth + "css/styles.css"
     layout_js = "../" * depth + "js/layout.js"
     main_js = "../" * depth + "js/main.js"
     favicon = "../" * depth + "img/favicon.svg"
+    content_cls = "content wide-page" if active_key in WIDE_PAGES else "content"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -49,7 +62,7 @@ def html_template(title: str, depth: int, active_key: str, body: str, extra_head
 <body>
 <a class="skip-link" href="#content">Skip to content</a>
 <div class="app">
-<main class="content" id="content">
+<main class="{content_cls}" id="content">
 {body}
 </main>
 </div>

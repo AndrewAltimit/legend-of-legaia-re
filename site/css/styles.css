@@ -373,6 +373,13 @@ hr {
   min-width: 0;
 }
 
+/* Wide-mode for multi-pane interactive pages (shops, world, minigames,
+ * viewer, architecture). Prose / reference / format pages stay narrow
+ * for readability. */
+.content.wide-page {
+  max-width: 1480px;
+}
+
 @media (max-width: 720px) {
   .content { padding: 1.4rem 1.2rem 3rem; }
 }
@@ -1577,19 +1584,30 @@ kbd {
 
 .shop-browser {
   display: grid;
-  grid-template-columns: 220px 1fr 320px;
-  gap: 0.85rem;
+  grid-template-columns: 240px minmax(0, 1fr) minmax(320px, 420px);
+  gap: 1rem;
   margin: 1rem 0 1.5rem;
   min-height: 540px;
 }
 
 @media (max-width: 1280px) {
-  .shop-browser { grid-template-columns: 200px 1fr; }
+  .shop-browser { grid-template-columns: 220px minmax(0, 1fr); }
   .shop-detail  { grid-column: 1 / -1; }
 }
 @media (max-width: 720px) {
   .shop-browser { grid-template-columns: 1fr; }
   .shop-towns   { max-height: 220px; }
+}
+
+/* Shops + minigames `.ship-kind` chips need a wider kind column when
+ * "accessory" / "weapon" labels are spelled out instead of clipped. */
+.shop-middle .ship-item,
+.prize-table .ship-item {
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+}
+.shop-middle .ship-kind,
+.prize-table .ship-kind {
+  white-space: nowrap;
 }
 
 .shop-towns,
@@ -1954,7 +1972,16 @@ kbd {
   line-height: 1.5;
 }
 
-/* Slot prize tables */
+/* Slot prize tables. Grid template + kind nowrap are shared with the
+ * shops middle pane - see the .shop-middle .ship-item rule above. */
+.prize-table .ship-item {
+  align-items: start;
+  padding: 0.5rem 0.55rem;
+}
+.prize-table .ship-kind {
+  align-self: start;
+  margin-top: 0.15rem;
+}
 .prize-table {
   margin: 0.8rem 0 1.4rem 0;
 }

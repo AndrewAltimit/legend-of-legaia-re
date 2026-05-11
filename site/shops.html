@@ -11,7 +11,7 @@
 <body>
 <a class="skip-link" href="#content">Skip to content</a>
 <div class="app">
-<main class="content" id="content">
+<main class="content wide-page" id="content">
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; shops &amp; vendors</div>
   <h1>Shops &amp; vendors</h1>
@@ -148,7 +148,7 @@
       const featured = shop.featured && shop.featured.includes(it.key);
       return `<li class="ship-item ship-item-${it._kind || 'unknown'} ${featured ? 'ship-item-featured' : ''}"
                  data-key="${escapeHtml(it.key)}">
-        <span class="ship-kind">${(KIND_LABELS[it._kind] || '?').slice(0,3).toUpperCase()}</span>
+        <span class="ship-kind">${(KIND_LABELS[it._kind] || 'Unknown').toUpperCase()}</span>
         <span class="ship-name">${escapeHtml(it.name)}${featured ? ' <span class="ship-new">NEW</span>' : ''}</span>
         <span class="ship-price">${price}</span>
       </li>`;
@@ -172,7 +172,7 @@
     if (!prizes.length) return '';
     const rows = prizes.map(p => `
       <li class="ship-item ship-item-${p.item._kind || 'unknown'} ship-item-casino" data-key="${escapeHtml(p.item.key)}">
-        <span class="ship-kind">SLT</span>
+        <span class="ship-kind">SLOT</span>
         <span class="ship-name">${escapeHtml(p.item.name)}</span>
         <span class="ship-price">${p.cost_coins.toLocaleString()} coins</span>
       </li>`).join('');
@@ -186,7 +186,7 @@
     if (!prizes.length) return '';
     const rows = prizes.map(p => `
       <li class="ship-item ship-item-${p.item._kind || 'unknown'} ship-item-fishing" data-key="${escapeHtml(p.item.key)}">
-        <span class="ship-kind">FSH</span>
+        <span class="ship-kind">FISH</span>
         <span class="ship-name">${escapeHtml(p.item.name)}${p.notes ? ' <span class="ship-new">*</span>' : ''}</span>
         <span class="ship-price">${p.cost_points.toLocaleString()} pts</span>
       </li>`).join('');

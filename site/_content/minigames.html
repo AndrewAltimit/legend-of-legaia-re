@@ -154,7 +154,7 @@
         const note = pr.notes ? `<div class="ship-note">${escapeHtml(pr.notes)}</div>` : '';
         return `
           <li class="ship-item ${kindCls}">
-            <span class="ship-kind">${escapeHtml(pr.item._kind || '?')}</span>
+            <span class="ship-kind">${escapeHtml((pr.item._kind || 'unknown').toUpperCase())}</span>
             <div class="ship-info">
               <span class="ship-name">${escapeHtml(pr.item.name || pr.item.key || 'unknown')}</span>
               ${effect}${note}
