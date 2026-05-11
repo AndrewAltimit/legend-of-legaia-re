@@ -9,6 +9,9 @@
 //!   trace      Trace a u32 across a sequence of save states.
 //!   watch      Run all watchpoints for a scenario from `scenarios.toml`
 //!              against its sister states.
+//!   vram-dump  Extract the 1 MiB GPU VRAM and write it as a 1024x512 PNG
+//!              (+ optional .bin) so engine-side runtime-VRAM comparisons
+//!              have a ground-truth reference.
 //!   scenarios  List the scenarios known to the manifest.
 //!
 //! See `docs/tooling/mednafen-automation.md`.
@@ -16,9 +19,10 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use legaia_mednafen::{
-    SaveState, ScenarioManifest, bisect,
+    PsxGpu, SaveState, ScenarioManifest, VRAM_HEIGHT, VRAM_WIDTH, bisect,
     diff::{DiffOptions, diff_ram, sort_by_size},
     extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE, ram_slice},
+    gpu::{nonzero_rows, vram_to_rgba8},
     psx::PsxMain,
 };
 use std::path::{Path, PathBuf};
@@ -100,6 +104,23 @@ enum Cmd {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+    /// Extract the 1 MiB GPU VRAM from a save state and write it as a
+    /// 1024x512 RGBA8 PNG (BGR555 + STP-as-alpha). Optionally also writes
+    /// the raw byte blob to `--out-bin`. Mirrors the encoding used by
+    /// `tmd vram-dump` so engine-side comparisons line up.
+    VramDump {
+        save: PathBuf,
+        /// Output PNG path.
+        #[arg(long, default_value = "vram.png")]
+        out: PathBuf,
+        /// Optional raw 1 MiB BGR555 little-endian dump.
+        #[arg(long)]
+        out_bin: Option<PathBuf>,
+        /// Print the GPU control-register snapshot (clip rect, draw
+        /// offset, texture window, texture page) alongside the dump.
+        #[arg(long)]
+        regs: bool,
+    },
     /// List the scenarios known to the manifest.
     Scenarios {
         #[arg(long, default_value = "scripts/mednafen/scenarios.toml")]
@@ -159,6 +180,12 @@ fn main() -> Result<()> {
             manifest,
             json,
         } => cmd_watch(&label, &manifest, json.as_deref()),
+        Cmd::VramDump {
+            save,
+            out,
+            out_bin,
+            regs,
+        } => cmd_vram_dump(&save, &out, out_bin.as_deref(), regs),
         Cmd::Scenarios { manifest } => cmd_scenarios(&manifest),
     }
 }
@@ -447,6 +474,61 @@ fn cmd_watch(label: &str, manifest_path: &Path, json: Option<&Path>) -> Result<(
         std::fs::write(p, serde_json::to_string_pretty(&all_results)?)?;
         println!("[ok] wrote {}", p.display());
     }
+    Ok(())
+}
+
+fn cmd_vram_dump(save: &Path, out: &Path, out_bin: Option<&Path>, regs: bool) -> Result<()> {
+    let s = SaveState::from_path(save)?;
+    let gpu = PsxGpu::new(&s);
+    let bytes = gpu
+        .vram_bytes()
+        .ok_or_else(|| anyhow::anyhow!("save state has no GPU.&GPURAM[0][0] entry"))?;
+    let rgba = vram_to_rgba8(bytes);
+    write_png(out, &rgba, VRAM_WIDTH as u32, VRAM_HEIGHT as u32)
+        .with_context(|| format!("writing PNG to {}", out.display()))?;
+    println!(
+        "[ok] wrote {} ({}x{} BGR555 + STP-as-alpha, {} non-zero rows of {})",
+        out.display(),
+        VRAM_WIDTH,
+        VRAM_HEIGHT,
+        nonzero_rows(bytes),
+        VRAM_HEIGHT,
+    );
+    if let Some(bin) = out_bin {
+        std::fs::write(bin, bytes)
+            .with_context(|| format!("writing raw VRAM to {}", bin.display()))?;
+        println!(
+            "[ok] wrote raw VRAM to {} ({} bytes)",
+            bin.display(),
+            bytes.len()
+        );
+    }
+    if regs {
+        let r = gpu.regs();
+        println!("[regs] clip            = {:?}", r.clip);
+        println!("[regs] draw_offset     = {:?}", r.draw_offset);
+        println!(
+            "[regs] tex_window      = {:?}  (mask_x, mask_y, off_x, off_y)",
+            r.tex_window
+        );
+        println!("[regs] tex_page (x,y)  = {:?}", r.tex_page);
+        println!("[regs] tex_mode        = {:?}", r.tex_mode);
+        println!("[regs] display_fb      = {:?}", r.display_fb);
+        println!("[regs] display_h_range = {:?}", r.display_h_range);
+        println!("[regs] display_v_range = {:?}", r.display_v_range);
+        println!("[regs] display_off     = {:?}", r.display_off);
+        println!("[regs] display_mode_raw= {:?}", r.display_mode_raw);
+    }
+    Ok(())
+}
+
+fn write_png(out: &Path, rgba: &[u8], w: u32, h: u32) -> Result<()> {
+    let f = std::fs::File::create(out)?;
+    let bw = std::io::BufWriter::new(f);
+    let mut enc = png::Encoder::new(bw, w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(rgba)?;
     Ok(())
 }
 

@@ -95,7 +95,10 @@
 <section class="doc-section" id="clut-scattering">
   <h2>CLUT-data scattering</h2>
   <p>Many character meshes reference CLUT (palette) rows that live in <strong>different PROT entries</strong> from their TMD source. The runtime asset chain stitches them together - the loader puts the relevant TIMs into VRAM before the TMD is rendered.</p>
-  <p>The asset-viewer's <code>--vram-extra-dir</code> flag is the workaround until the chain is fully traced for every scene type. Battle is fully traced; field, town, and level-up still rely on the workaround.</p>
+  <p>Engines drive this from <code>SceneResources::build_targeted</code>: parse every TMD in the scene's CDNAME block, collect the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes sample), then walk every TIM and decide per-block whether to upload it - suppressing the image block when it would land on a CLUT row another mesh references, and vice-versa. Matches the retail field loader's "DMA only the texture bytes the current scene's meshes need" pattern and avoids the 4bpp-vs-256-wide CLUT collisions that previously dropped 80%+ of textured prims through the prim filter. See <a href="renderer.html">renderer &rarr; Engine-side targeted upload + shared blocks</a> for the engine-side wiring.</p>
+  <h3>Field-shared CDNAME blocks</h3>
+  <p><code>FIELD_SHARED_BLOCKS = ["init_data", "player_data"]</code> is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. <code>player_data</code> (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM <code>fb=(768, 0)</code> with CLUT at <code>(0, 500)</code>; <code>init_data</code> (PROT 0) holds shared UI / sprite tiles. <code>SceneHost::enter_field_scene</code> passes these to <code>build_targeted</code> so the player TMD survives every town / dungeon transition without being re-loaded per scene.</p>
+  <p>The legacy <code>SceneResources::build</code> (no shared blocks, unfiltered upload) is preserved for tests + diagnostic surfaces; engines should prefer <code>build_targeted</code> for production scene loads. The asset-viewer's <code>--vram-extra-dir</code> flag remains the manual workaround for browsing extracted <code>tim_scan/</code> dirs that aren't tied to a CDNAME scene.</p>
 </section>
 
 <section class="doc-section" id="bgm-lookup">

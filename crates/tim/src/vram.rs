@@ -221,17 +221,25 @@ impl Vram {
             };
         }
         // Depth-mismatch check: if a 4bpp prim's CLUT row is filled far
-        // past its 16-entry palette window (e.g. it's actually a 256-entry
-        // 8bpp palette from a different TIM), the first 16 entries are an
-        // arbitrary slice of a wide gradient and the prim renders as
-        // rainbow stripes. Count the populated run length so the diagnostic
-        // can tell the user how wide the row actually is.
+        // past what 16 separate 4bpp palettes (= 256 entries) could
+        // occupy, the first 16 entries are an arbitrary slice of a wide
+        // gradient and the prim renders as rainbow stripes. Count the
+        // populated run length so the diagnostic can tell the user how
+        // wide the row actually is.
+        //
+        // Legaia character TIMs commonly pack 16 distinct 16-entry
+        // palettes into a single 256-wide row (the prim's CBA low 6 bits
+        // pick which palette to use). So the depth-mismatch threshold
+        // is `clut_w * 16` for 4bpp (= 256-wide row legitimate) and
+        // proportional for 8bpp. Anything past that is a real mismatch.
         if clut_w != 0 && clut_w < 256 {
-            let populated_width = self.row_populated_width(cx, cy, 256) as u16;
-            // If well over the prim's expected width is filled, treat as a
-            // depth mismatch. We allow a little slack (factor of 2) since
-            // some 4bpp palettes pack two 16-entry CLUTs in a 32-wide row.
-            if populated_width as usize > clut_w * 2 {
+            let populated_width = self.row_populated_width(cx, cy, VRAM_WIDTH) as u16;
+            let max_legitimate_width = match depth_bits {
+                4 => clut_w * 16, // 16 distinct 16-entry palettes per row
+                8 => clut_w * 2,  // 8bpp has 1 palette per row; 2x slack for stray pixels
+                _ => clut_w,
+            };
+            if populated_width as usize > max_legitimate_width {
                 return PrimTextureStatus::ClutDepthMismatch {
                     row: (cba >> 6) & 0x1FF,
                     populated_width,
@@ -398,13 +406,21 @@ mod tests {
         // Both populated -> keep.
         vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
         assert!(vram.prim_has_texture_data(cba, tsb, &uvs));
-        // Both populated, but CLUT row extends far past 16 entries (= the
-        // wrong-depth TIM is supplying it as an 8bpp palette) -> drop, the
-        // 4bpp prim would render the first 16 of a 256-colour gradient.
-        let mut vram3 = Vram::new();
-        vram3.write_words(0, 64, 256, 1, &[0x1234; 256]);
-        vram3.write_words(64, 0, 4, 16, &[0x4567; 64]);
-        assert!(!vram3.prim_has_texture_data(cba, tsb, &uvs));
+        // Both populated, and CLUT row is exactly 256 wide for a 4bpp prim:
+        // this is the standard multi-palette layout (16 distinct 16-entry
+        // palettes per row, picked by the prim's CBA low 6 bits) so it's
+        // KEPT - not a depth mismatch.
+        let mut vram_multi = Vram::new();
+        vram_multi.write_words(0, 64, 256, 1, &[0x1234; 256]);
+        vram_multi.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert!(vram_multi.prim_has_texture_data(cba, tsb, &uvs));
+        // CLUT row extends *past* 256 entries (= image data has spilled
+        // onto the palette row from some other TIM upload) -> drop, the
+        // 4bpp prim would index into junk pixels.
+        let mut vram_spill = Vram::new();
+        vram_spill.write_words(0, 64, 600, 1, &[0x1234; 600]);
+        vram_spill.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert!(!vram_spill.prim_has_texture_data(cba, tsb, &uvs));
     }
 
     #[test]
@@ -439,9 +455,12 @@ mod tests {
             PrimTextureStatus::Ok
         );
 
-        // (4) CLUT row is 256 wide for a 4bpp prim -> ClutDepthMismatch.
+        // (4) CLUT row populated *past* 16 4bpp palettes' worth (256
+        // entries) for a 4bpp prim -> ClutDepthMismatch. Image data
+        // from a different TIM has spilled onto this CLUT row, so the
+        // 4bpp lookup would index into pixel data.
         let mut vram = Vram::new();
-        vram.write_words(0, 64, 256, 1, &[0x1234; 256]);
+        vram.write_words(0, 64, 600, 1, &[0x1234; 600]);
         vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
         match vram.prim_texture_status(cba, tsb, &uvs) {
             PrimTextureStatus::ClutDepthMismatch {
@@ -450,11 +469,23 @@ mod tests {
                 expected_width,
             } => {
                 assert_eq!(row, 64);
-                assert_eq!(populated_width, 256);
+                assert_eq!(populated_width, 600);
                 assert_eq!(expected_width, 16);
             }
             other => panic!("expected ClutDepthMismatch, got {:?}", other),
         }
+
+        // (5) CLUT row exactly 256 wide for a 4bpp prim is *legitimate*
+        // multi-palette (16 distinct 16-entry palettes packed in one
+        // row, picked by CBA low 6 bits). Must NOT trigger depth
+        // mismatch - this is Legaia's standard character-TIM layout.
+        let mut vram = Vram::new();
+        vram.write_words(0, 64, 256, 1, &[0x1234; 256]);
+        vram.write_words(64, 0, 4, 16, &[0x4567; 64]);
+        assert_eq!(
+            vram.prim_texture_status(cba, tsb, &uvs),
+            PrimTextureStatus::Ok
+        );
     }
 
     #[test]

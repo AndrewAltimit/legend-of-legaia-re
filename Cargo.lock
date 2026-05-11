@@ -1301,6 +1301,7 @@ dependencies = [
  "legaia-engine-render",
  "legaia-font",
  "legaia-mdec",
+ "legaia-mednafen",
  "legaia-prot",
  "legaia-save",
  "legaia-seq",
@@ -1308,6 +1309,7 @@ dependencies = [
  "legaia-tmd",
  "legaia-vab",
  "log",
+ "png",
  "winit",
 ]
 
@@ -1409,6 +1411,7 @@ dependencies = [
  "flate2",
  "legaia-asset",
  "legaia-engine-core",
+ "png",
  "serde",
  "serde_json",
  "toml",

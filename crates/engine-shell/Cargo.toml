@@ -26,5 +26,7 @@ legaia-tim = { path = "../tim" }
 legaia-tmd = { path = "../tmd" }
 legaia-font = { path = "../font" }
 legaia-mdec = { path = "../mdec" }
+legaia-mednafen = { path = "../mednafen" }
 glam.workspace = true
+png = "0.17"
 winit = "0.30"

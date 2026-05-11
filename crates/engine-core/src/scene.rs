@@ -936,11 +936,30 @@ impl SceneHost {
         self.world.load_field_record(&record_bytes);
         // Pre-bind actor ↔ TMD/ANM resources so they survive the first
         // field-VM actor-spawn opcode (see `World::init_scene_animations`).
-        if let Some(scene) = self.scene.as_ref()
-            && let Ok(res) = crate::scene_resources::SceneResources::build(scene)
-        {
-            self.world.init_scene_animations(&res);
-            self.resources = Some(res);
+        //
+        // Uses [`SceneResources::build_targeted`] so the per-TIM image /
+        // CLUT block decisions match the retail field loader: 4bpp
+        // character meshes' multi-palette CLUT rows survive the upload
+        // instead of being clobbered by another mesh's image data
+        // landing on the same VRAM row (the "depth-mismatch" failure
+        // mode that previously dropped 80%+ of textured prims at the
+        // engine's prim filter).
+        if let Some(scene) = self.scene.as_ref() {
+            // The shared blocks the retail field engine keeps resident
+            // across scene transitions (player TMD + shared UI atlas).
+            let mut shared_scenes: Vec<Scene> = Vec::new();
+            for name in crate::scene_resources::FIELD_SHARED_BLOCKS {
+                if let Ok(s) = Scene::load(&self.index, name) {
+                    shared_scenes.push(s);
+                }
+            }
+            let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+            if let Ok((res, _stats)) =
+                crate::scene_resources::SceneResources::build_targeted(scene, &shared_refs)
+            {
+                self.world.init_scene_animations(&res);
+                self.resources = Some(res);
+            }
         }
         // Drain any pending transition the previous scene left behind.
         self.world.pending_scene_transition = None;

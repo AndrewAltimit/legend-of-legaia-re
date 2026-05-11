@@ -153,6 +153,10 @@
   <h3>Walk every scenario through extraction</h3>
 <pre><code>scripts/mednafen/state-walk.sh --import</code></pre>
   <p>For every scenario in the manifest, slices its overlay window into <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> and (with <code>--import</code>) imports it as a labelled program in the Ghidra container via <code>scripts/import-overlay-named.sh</code>. One command, all 10 scenarios staged.</p>
+  <h3>Dump the runtime GPU VRAM as a PNG</h3>
+<pre><code>mednafen-state vram-dump ~/.mednafen/mcs/"Legend of Legaia (USA).".mc2 \
+  --out vram.png --out-bin vram.bin --regs</code></pre>
+  <p>Decodes the <code>&amp;GPURAM[0][0]</code> blob inside the save state's <code>GPU</code> section (1 MiB BGR555 + STP) and writes it as a 1024x512 RGBA8 PNG plus the optional raw byte blob. <code>--regs</code> adds the GPU control-register snapshot (clip rect, draw offset, texture window, texture page, display framebuffer) - the same registers the runtime is reading from at the moment of capture. Useful as a ground-truth oracle for engine-side VRAM state: pair with <code>legaia-engine info --scene &lt;name&gt; --runtime-vram vram.bin --vram-diff-png diff.png</code> for a colour-coded per-pixel diff against the engine's <code>SceneResources::build_targeted</code> output.</p>
 </section>
 
 <section class="doc-section" id="workflow-patterns">
