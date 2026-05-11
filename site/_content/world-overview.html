@@ -358,6 +358,20 @@
       $status.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB) ...`;
       const bytes = new Uint8Array(await f.arrayBuffer());
       $status.textContent = 'Classifying PROT entries ...';
+      /* CRITICAL: replace the canvas before constructing the viewer.
+       *
+       * `load_disc` ends with `render_current()`, which for any TIM-only
+       * entry calls `getContext("2d")` on the canvas. If the canvas was
+       * previously bound to webgl2 (a prior disc load, or any
+       * loadWorldView()/loadMesh() that ran in this session), that 2D
+       * context request returns null and `load_disc` throws with
+       * "no 2d context...".
+       *
+       * Wiping any pre-existing GL renderer + replacing the canvas with
+       * a fresh DOM element gives load_disc a clean 2D-capable surface.
+       * The WebGL2 context is rebound later by loadWorldView() /
+       * loadMesh() on the fresh canvas. */
+      freshCanvas();
       viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
       const count = viewer.load_disc(bytes);
       allEntries = JSON.parse(viewer.entry_list_json());

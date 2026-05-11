@@ -243,9 +243,14 @@ impl LegaiaViewer {
             viewable.len()
         ));
         self.viewable = viewable;
-        if !self.viewable.is_empty() {
-            self.render_current()?;
-        }
+        // Don't render here - the JS side decides which canvas surface
+        // (2D blit vs WebGL2 mesh viewer vs assembled world map) is
+        // active and calls the matching accessor. Rendering at load time
+        // unconditionally requested a 2D context, which failed when the
+        // canvas had been WebGL2-bound by a prior session in the same
+        // page lifetime ("no 2d context (canvas was already bound to
+        // webgl...)" - the world-overview page hits this any time the
+        // user reloads a disc after entering the top-down or mesh view).
         Ok(self.viewable.len() as u32)
     }
 
