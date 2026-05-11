@@ -424,7 +424,8 @@ def build_gamedata_json() -> tuple[dict, dict]:
     casino_raw = _load_toml("casino.toml")
     slot_prizes = casino_raw.get("slot_prize", [])
     muscle_courses = casino_raw.get("muscle_dome_course", [])
-    muscle_enemy_tags = casino_raw.get("muscle_dome_enemy", [])
+    muscle_bosses_raw = casino_raw.get("muscle_dome_boss", [])
+    muscle_rounds_raw = casino_raw.get("muscle_dome_round", [])
     baka_fighter_meta = casino_raw.get("baka_fighter_meta", {})
     baka_fighter_rounds = casino_raw.get("baka_fighter", [])
     muscle_secrets = casino_raw.get("muscle_paradise_secret", [])
@@ -549,21 +550,60 @@ def build_gamedata_json() -> tuple[dict, dict]:
             return {"key": key, "name": key, "_kind": "unknown", "missing": True}
         return r
 
-    # Group enemy element tags by (course_key, name) for quick lookup.
-    enemy_tag_by_course: dict[str, dict[str, dict]] = {}
-    for tag in muscle_enemy_tags:
-        enemy_tag_by_course.setdefault(tag["course"], {})[tag["name"]] = tag
+    # Build a lookup from boss-slug -> normalised boss record. Each Seru carries
+    # an array of `seru_levels`; monster/boss kinds have stats at top-level.
+    boss_by_key: dict[str, dict] = {}
+    for b in muscle_bosses_raw:
+        key = b.get("key")
+        if not key:
+            continue
+        boss_by_key[key] = {
+            "key":         key,
+            "name":        b.get("name"),
+            "kind":        b.get("kind"),
+            "romaji":      b.get("romaji"),
+            "script":      b.get("script"),
+            "element":     b.get("element"),
+            "weakness":    b.get("weakness", []),
+            "strength":    b.get("strength", []),
+            "hp":          b.get("hp"),
+            "mp":          b.get("mp"),
+            "atk":         b.get("atk"),
+            "udf":         b.get("udf"),
+            "ldf":         b.get("ldf"),
+            "intelligence": b.get("intelligence"),
+            "spd":         b.get("spd"),
+            "agl":         b.get("agl"),
+            "exp":         b.get("exp"),
+            "gold":        b.get("gold"),
+            "location":    b.get("location"),
+            "steal":       b.get("steal"),
+            "steal_chance": b.get("steal_chance"),
+            "drop":        b.get("drop"),
+            "drop_chance": b.get("drop_chance"),
+            "attacks":     b.get("attacks", []),
+            "immune_to":   b.get("immune_to", []),
+            "courses":     b.get("courses", []),
+            "wiki_path":   b.get("wiki_path"),
+            "seru_levels": b.get("seru_level", []),
+        }
+
+    # Group rounds by course_key for ordered roster output.
+    rounds_by_course: dict[str, list[dict]] = {}
+    for r in muscle_rounds_raw:
+        rounds_by_course.setdefault(r["course_key"], []).append(r)
+    for cs in rounds_by_course.values():
+        cs.sort(key=lambda x: x.get("round", 0))
 
     muscle_dome_payload = []
     for course in muscle_courses:
         course_key = course.get("key") or course.get("name", "").lower()
-        enriched_enemies = []
-        for enemy_name in course.get("enemies", []):
-            tag = enemy_tag_by_course.get(course_key, {}).get(enemy_name, {})
-            enriched_enemies.append({
-                "name": enemy_name,
-                "element": tag.get("element"),
-                "level":   tag.get("level"),
+        roster = []
+        for r in rounds_by_course.get(course_key, []):
+            roster.append({
+                "round":       r.get("round"),
+                "boss_key":    r.get("boss_key"),
+                "seru_level":  r.get("seru_level"),
             })
         muscle_dome_payload.append({
             "key":             course_key,
@@ -572,7 +612,7 @@ def build_gamedata_json() -> tuple[dict, dict]:
             "reward_coins":    course.get("reward_coins"),
             "restrictions":    course.get("restrictions", []),
             "allowed":         course.get("allowed", []),
-            "enemies":         enriched_enemies,
+            "roster":          roster,
             "reward_first_clear":          course.get("reward_first_clear"),
             "reward_first_clear_item":     resolve_or_none(course["reward_first_clear"]) if course.get("reward_first_clear") else None,
             "reward_first_clear_requires": course.get("reward_first_clear_requires"),
@@ -609,6 +649,7 @@ def build_gamedata_json() -> tuple[dict, dict]:
 
     minigames_payload = {
         "muscle_dome":     muscle_dome_payload,
+        "bosses":          boss_by_key,
         "slot_machines":   [
             {"location": loc, "prizes": prizes}
             for loc, prizes in sorted(slot_payload_by_loc.items())

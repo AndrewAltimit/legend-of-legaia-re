@@ -124,14 +124,23 @@ item tables and prints a fully-priced inventory.
   is the F4 counter, *not* the slot machine itself - slot machines
   only pay coins).
 - `[[muscle_dome_course]]` rows (Beginner / Expert / Master) with
-  enemy lists, entry fee, clear reward, and `restrictions` /
-  `allowed` arrays capturing the equipment / item / magic gating.
-  Master Course's `reward_first_clear = "war_god_icon"` requires
-  Jette to have been defeated in Absolute Fortress.
-- `[[muscle_dome_enemy]]` rows annotate specific enemies with
-  `element` / `level` overrides for the Dome encounter table
-  (e.g. Beginner's Gola Gola is Fire-elemental, Master's
-  Viguro is Thunder Lv. 2).
+  entry fee, clear reward, and `restrictions` / `allowed` arrays
+  capturing the equipment / item / magic gating. Master Course's
+  `reward_first_clear = "war_god_icon"` requires Jette to have
+  been defeated in Absolute Fortress. The flat `enemies = [...]`
+  field is the encounter-order roster as plain strings.
+- `[[muscle_dome_round]]` rows pin the round-by-round assignment
+  for each course as a normalised `(course_key, round, boss_key,
+  seru_level)` table. Beginner and Expert have 8 rows each;
+  Master has 13 rows (the longest progression).
+- `[[muscle_dome_boss]]` rows hold the full per-enemy stat block
+  (HP / MP / ATK / UDF / LDF / `intelligence` / SPD / AGL / XP /
+  `gold`), drop and steal items with chance percentages, attack
+  list, immunity tags, element + weakness/strength arrays, plus
+  `wiki_path` for provenance back to the Fandom source. Seru
+  enemies (`kind = "seru"`) carry their Lv1 / Lv2 / Lv3 stats as
+  nested `[[muscle_dome_boss.seru_level]]` blocks; the round
+  table's `seru_level` field selects which block applies.
 - `[baka_fighter_meta]` records the all-rounds-clear reward
   (`reward_coins = 460`) and the rule sketch. Per-round button
   sequences live as `[[baka_fighter]]` rows.

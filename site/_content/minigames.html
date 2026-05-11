@@ -99,7 +99,7 @@
   <h2>What this means for decomp</h2>
   <ul class="bullets">
     <li>The casino + Sol Tower data are <em>ground-truth labels</em> for the field-VM bundle inside the <code>town0d</code> CDNAME block. Once the Sol overlay is captured, every entry on this page is a cross-validation target for the parsed NPC scripts, shop tables, and event triggers.</li>
-    <li>The Muscle Dome <code>encounter</code> records are likely a sequence of <a href="formats/encounter.html">encounter records</a> with the existing <code>[3 reserved][count: u8][monster_ids: u8[count]]</code> shape, except chained per-course. The <code>muscle_dome_enemy</code> element tags pin which monster IDs should carry the elemental override.</li>
+    <li>The Muscle Dome <code>encounter</code> records are likely a sequence of <a href="formats/encounter.html">encounter records</a> with the existing <code>[3 reserved][count: u8][monster_ids: u8[count]]</code> shape, except chained per-course. The <code>[[muscle_dome_round]]</code> table pins each round's monster slot, and <code>[[muscle_dome_boss]]</code> records the per-monster stats (HP / MP / ATK / UDF / LDF / INT / SPD / AGL / XP / G) and drop tables that should ground-truth the binary enemy records once the Sol Tower overlay is captured.</li>
     <li>Baka Fighter round patterns are the input expectation for the per-round timer routine. The button-token set (<code>Square</code> / <code>X</code> / <code>O</code>) maps to the PSX controller's primary action buttons; the field-VM probably dispatches via a per-round bytecode block.</li>
     <li>The Master Course "first clear after Jette" gate is a story-flag check, not a runtime check on Jette's HP - so the relevant story flag lives in the field-VM flag banks (one of the three 32-bit / 256-bit banks documented on <a href="subsystems/script-vm.html">the script-VM page</a>).</li>
   </ul>
@@ -202,14 +202,101 @@
     }).join('');
   }
 
-  /* ---- Muscle Dome courses ---- */
+  /* ---- Muscle Dome courses ----
+   * Each round is a clickable row that expands an inline detail panel
+   * with the enemy's full stats (HP / MP / ATK / UDF / LDF / INT / SPD /
+   * AGL / XP / G), drops, attacks, and wiki provenance link. Seru rounds
+   * render the level-appropriate stat block from `seru_level`.
+   */
+  const bosses = (p.bosses || {});
+
+  function statRow(label, value) {
+    if (value == null) return '';
+    return `<div class="stat-cell"><span class="stat-label">${label}</span><span class="stat-value">${value.toLocaleString()}</span></div>`;
+  }
+
+  function pickStatBlock(boss, level) {
+    if (boss.kind !== 'seru') return boss;
+    const levels = boss.seru_levels || [];
+    if (!levels.length) return boss;
+    const match = levels.find(l => l.level === (level || 1));
+    return match || levels[0];
+  }
+
+  function elementChip(elem) {
+    if (!elem) return '';
+    return `<span class="enemy-elem enemy-elem-${elem.toLowerCase()}">${escapeHtml(elem)}</span>`;
+  }
+
+  function dropLine(label, name, chance) {
+    if (!name) return '';
+    const pct = chance != null ? ` <span class="drop-chance">${chance}%</span>` : '';
+    return `<div class="drop-row"><span class="drop-key">${label}</span><span class="drop-value">${escapeHtml(name)}${pct}</span></div>`;
+  }
+
+  function bossDetail(boss, level) {
+    if (!boss) return '<div class="boss-missing">No stats recorded for this slot.</div>';
+    const stats = pickStatBlock(boss, level);
+    const lvLabel = boss.kind === 'seru' && stats.level
+      ? ` <span class="enemy-lv">Lv ${stats.level}</span>` : '';
+    const elem = boss.element || (boss.kind === 'seru' ? null : null);
+    const elemChips = []
+      .concat(elem ? [`<span class="enemy-elem enemy-elem-${elem.toLowerCase()}">${escapeHtml(elem)}</span>`] : [])
+      .concat((boss.strength || []).map(e => `<span class="enemy-elem enemy-elem-${e}" title="resistant">${escapeHtml(e)} +</span>`))
+      .concat((boss.weakness || []).map(e => `<span class="enemy-elem enemy-elem-${e}" title="weak">${escapeHtml(e)} −</span>`));
+    const attacks = (stats.attacks || boss.attacks || []);
+    const immune  = (boss.immune_to || []);
+    const wiki = boss.wiki_path
+      ? `<a class="boss-wiki" href="https://legaia.fandom.com/wiki/${encodeURI(boss.wiki_path)}" target="_blank" rel="noopener">wiki source &rarr;</a>` : '';
+    return `
+      <div class="boss-detail">
+        <header class="boss-head">
+          <h4>${escapeHtml(boss.name)}${lvLabel}</h4>
+          <div class="boss-tags">${elemChips.join('')}</div>
+        </header>
+        ${boss.romaji ? `<div class="boss-romaji">${escapeHtml(boss.romaji)}${boss.script ? ` &middot; <span class="boss-script">${escapeHtml(boss.script)}</span>` : ''}</div>` : ''}
+        <div class="stat-grid">
+          ${statRow('HP', stats.hp)}
+          ${statRow('MP', stats.mp)}
+          ${statRow('ATK', stats.atk)}
+          ${statRow('UDF', stats.udf)}
+          ${statRow('LDF', stats.ldf)}
+          ${statRow('INT', stats.intelligence)}
+          ${statRow('SPD', stats.spd)}
+          ${statRow('AGL', stats.agl)}
+          ${statRow('XP',  stats.exp)}
+          ${statRow('Gold', stats.gold)}
+        </div>
+        ${attacks.length ? `<div class="boss-attacks"><span class="boss-key">Attacks</span><span>${attacks.map(a => `<span class="atk-chip">${escapeHtml(a)}</span>`).join('')}</span></div>` : ''}
+        ${immune.length  ? `<div class="boss-immune"><span class="boss-key">Immune</span><span>${immune.map(i => `<span class="atk-chip atk-immune">${escapeHtml(i)}</span>`).join('')}</span></div>` : ''}
+        ${dropLine('Steal', stats.steal || boss.steal, stats.steal_chance != null ? stats.steal_chance : boss.steal_chance)}
+        ${dropLine('Drop',  stats.drop  || boss.drop,  stats.drop_chance  != null ? stats.drop_chance  : boss.drop_chance)}
+        ${stats.location || boss.location ? `<div class="drop-row"><span class="drop-key">Found</span><span>${escapeHtml(stats.location || boss.location)}</span></div>` : ''}
+        ${wiki}
+      </div>`;
+  }
+
   const $md = document.getElementById('muscle-dome');
   if ($md && p.muscle_dome) {
     $md.innerHTML = p.muscle_dome.map(c => {
-      const enemies = c.enemies.map((e, i) => {
-        const tag = e.element ? ` <span class="enemy-elem enemy-elem-${e.element.toLowerCase()}">${escapeHtml(e.element)}</span>` : '';
-        const lv  = e.level   ? ` <span class="enemy-lv">Lv ${e.level}</span>` : '';
-        return `<li><span class="enemy-no">${i + 1}</span><span class="enemy-name">${escapeHtml(e.name)}</span>${tag}${lv}</li>`;
+      const rows = (c.roster || []).map(r => {
+        const boss = bosses[r.boss_key] || null;
+        const displayName = boss
+          ? (boss.kind === 'seru' && r.seru_level && r.seru_level > 1 ? `${boss.name} Lv${r.seru_level}` : boss.name)
+          : r.boss_key;
+        const elem = boss && boss.element;
+        const tag = elem ? ` ${elementChip(elem)}` : '';
+        const kind = boss ? boss.kind : '';
+        return `
+          <li class="enemy-row enemy-row-${kind}" data-course="${escapeHtml(c.key)}" data-round="${r.round}" data-boss="${escapeHtml(r.boss_key)}" data-level="${r.seru_level || ''}">
+            <button class="enemy-toggle" type="button" aria-expanded="false">
+              <span class="enemy-no">${r.round}</span>
+              <span class="enemy-name">${escapeHtml(displayName)}</span>
+              ${tag}
+              <span class="enemy-caret" aria-hidden="true">&rsaquo;</span>
+            </button>
+            <div class="enemy-detail" hidden></div>
+          </li>`;
       }).join('');
       const restrictions = (c.restrictions || []).map(r => `<span class="tile-tag tile-tag-restrict">${escapeHtml(r)}</span>`).join('');
       const allowed      = (c.allowed || []).map(a => `<span class="tile-tag">${escapeHtml(a)}</span>`).join('');
@@ -233,10 +320,33 @@
           <div class="course-rules">
             ${restrictions}${allowed}
           </div>
-          <ol class="course-enemies">${enemies}</ol>
+          <ol class="course-enemies">${rows}</ol>
           ${firstClear}
         </article>`;
     }).join('');
+
+    // Wire up click-to-expand: lazily populate the detail panel only when
+    // the row is first opened so a course with 13 rows doesn't pay the cost
+    // up front for entries the user never inspects.
+    $md.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.enemy-toggle');
+      if (!btn) return;
+      const row = btn.parentElement;
+      const detail = row.querySelector('.enemy-detail');
+      const wasOpen = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', wasOpen ? 'false' : 'true');
+      if (wasOpen) {
+        detail.hidden = true;
+        return;
+      }
+      if (!detail.dataset.loaded) {
+        const boss  = bosses[row.dataset.boss] || null;
+        const level = row.dataset.level ? parseInt(row.dataset.level, 10) : null;
+        detail.innerHTML = bossDetail(boss, level);
+        detail.dataset.loaded = '1';
+      }
+      detail.hidden = false;
+    });
   }
 
   /* ---- Muscle Paradise secrets ---- */

@@ -2064,15 +2064,133 @@ kbd {
   gap: 0.25rem;
 }
 .course-enemies li {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
+  padding: 0;
   border-bottom: 1px dashed var(--border);
   color: var(--text-muted);
   font-size: 0.9rem;
 }
 .course-enemies li:last-child { border-bottom: 0; }
+.enemy-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.3rem;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  transition: background-color 90ms ease;
+}
+.enemy-toggle:hover,
+.enemy-toggle:focus-visible { background: var(--bg-elev); outline: none; }
+.enemy-caret {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 1rem;
+  transition: transform 120ms ease;
+}
+.enemy-toggle[aria-expanded="true"] .enemy-caret { transform: rotate(90deg); color: var(--accent); }
+.enemy-row-boss .enemy-name { font-weight: 600; }
+.enemy-row-seru .enemy-name { font-style: italic; }
+.enemy-detail {
+  margin: 0.2rem 0.3rem 0.6rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text-muted);
+}
+.boss-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.boss-head h4 { margin: 0; color: var(--text); font-size: 1rem; }
+.boss-tags { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.boss-romaji {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin-bottom: 0.45rem;
+}
+.boss-script { font-family: var(--font-mono); }
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 0.3rem;
+  margin: 0.4rem 0 0.5rem;
+}
+.stat-cell {
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem 0.45rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+}
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.stat-value {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.boss-attacks,
+.boss-immune,
+.drop-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.88rem;
+}
+.boss-key,
+.drop-key {
+  flex: 0 0 4.5rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.atk-chip {
+  display: inline-block;
+  margin: 0 0.25rem 0.25rem 0;
+  padding: 0.05em 0.45em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.3em;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+.atk-immune { color: var(--text-dim); border-style: dashed; }
+.drop-chance {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.boss-wiki {
+  display: inline-block;
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.boss-wiki:hover { color: var(--accent); }
+.boss-missing {
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 0.3rem 0;
+}
 .enemy-no {
   color: var(--text-dim);
   font-family: var(--font-mono);
@@ -2095,14 +2213,17 @@ kbd {
   border: 1px solid var(--border-hi);
   color: var(--text-dim);
 }
-.enemy-elem-fire    { color: #ff8a65; border-color: #5a3326; }
-.enemy-elem-water   { color: #6ec1ff; border-color: #1f3b59; }
-.enemy-elem-earth   { color: #c8a472; border-color: #4a3a25; }
-.enemy-elem-wind    { color: #9adc83; border-color: #2c4a26; }
-.enemy-elem-thunder { color: #ffd95a; border-color: #5a4520; }
-.enemy-elem-light   { color: #fff3b3; border-color: #5a5230; }
-.enemy-elem-dark    { color: #b89eff; border-color: #4d3a78; }
-.enemy-elem-evil    { color: #ff7aa8; border-color: #5a2a3a; }
+.enemy-elem-fire      { color: #ff8a65; border-color: #5a3326; }
+.enemy-elem-water     { color: #6ec1ff; border-color: #1f3b59; }
+.enemy-elem-earth     { color: #c8a472; border-color: #4a3a25; }
+.enemy-elem-wind      { color: #9adc83; border-color: #2c4a26; }
+.enemy-elem-thunder,
+.enemy-elem-lightning { color: #ffd95a; border-color: #5a4520; }
+.enemy-elem-light     { color: #fff3b3; border-color: #5a5230; }
+.enemy-elem-dark      { color: #b89eff; border-color: #4d3a78; }
+.enemy-elem-evil      { color: #ff7aa8; border-color: #5a2a3a; }
+.enemy-elem-normal,
+.enemy-elem-none      { color: var(--text-dim); }
 .first-clear {
   margin-top: 0.7rem;
   padding-top: 0.6rem;
