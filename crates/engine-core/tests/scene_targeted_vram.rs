@@ -91,12 +91,14 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
         100.0 * keep_ratio
     );
 
-    // Floor: the targeted-upload + relaxed-depth-threshold combination
-    // currently keeps ~78% of town01 textured prims. Anything below
-    // 60% indicates a regression in the prim-filter / targeted-upload
-    // pipeline.
+    // Floor: with the boot-time hue-ramp at row 479 painted into VRAM
+    // by `legaia_asset::npc_palette::apply_global_hue_ramp`, the
+    // targeted-upload + relaxed-depth-threshold combination keeps
+    // ~99% of town01 textured prims. Anything below 90% indicates a
+    // regression in the prim-filter / targeted-upload pipeline (or a
+    // loss of the npc_palette wiring).
     assert!(
-        keep_ratio >= 0.60,
+        keep_ratio >= 0.90,
         "town01 targeted prim keep ratio dropped to {:.1}% (kept={} of textured={})",
         100.0 * keep_ratio,
         total_kept,

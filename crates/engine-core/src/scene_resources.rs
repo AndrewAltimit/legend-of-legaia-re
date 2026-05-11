@@ -30,7 +30,7 @@
 //! stays backward-compatible.
 
 use anyhow::Result;
-use legaia_asset::{anm_detect, battle_data_pack, tim_scan, tmd_scan};
+use legaia_asset::{anm_detect, battle_data_pack, npc_palette, tim_scan, tmd_scan};
 use legaia_tim::Vram;
 
 use crate::scene::Scene;
@@ -422,6 +422,17 @@ impl SceneResources {
         }
         apply_clut_uploads(scene, &mut vram);
 
+        // Boot-time global hue ramp at row 479. The retail runtime
+        // materialises this 15-slot palette in RAM at `0x800F19xx`
+        // (presumably during early game-executable init) and DMAs it
+        // into VRAM, where it persists across every non-battle scene
+        // transition. The CLUT bytes don't exist as static data on
+        // disc - the generator code is in `SCUS_942.54` or an overlay
+        // but has not yet been pinned - so the engine paints them in
+        // verbatim from a corpus-confirmed capture. See
+        // `legaia_asset::npc_palette` for the bytes + tests.
+        npc_palette::apply_global_hue_ramp(&mut vram);
+
         Ok((
             Self {
                 vram,
@@ -569,6 +580,10 @@ impl SceneResources {
             &mut 0usize,
         );
 
+        // Boot-time global hue ramp at row 479 - same shape as in
+        // [`SceneResources::build_targeted`]. See `legaia_asset::npc_palette`.
+        npc_palette::apply_global_hue_ramp(&mut vram);
+
         Ok(Self {
             vram,
             tim_count,
@@ -656,6 +671,32 @@ mod tests {
         assert_eq!(res.tim_count, 0);
         assert_eq!(res.tim_parse_failures, 0);
         assert!(res.tmds.is_empty());
+    }
+
+    #[test]
+    fn build_installs_global_hue_ramp_at_row_479() {
+        // An empty scene should still paint the boot-time hue ramp into
+        // VRAM - the retail runtime treats it as persistent state and
+        // the engine's scene-build pre-pass mirrors that.
+        let scene = make_scene(vec![]);
+        let res = SceneResources::build(&scene).unwrap();
+        // Slot 8 (fb_x=128, fb_y=479) is the town01 NPC anchor.
+        let want = &legaia_asset::npc_palette::GLOBAL_HUE_RAMP_ROW_479[8];
+        let bytes = res.vram.as_bytes();
+        let row_off = 479 * 1024 * 2;
+        let x_off = 128 * 2;
+        assert_eq!(&bytes[row_off + x_off..row_off + x_off + 32], &want[..]);
+    }
+
+    #[test]
+    fn build_targeted_installs_global_hue_ramp_at_row_479() {
+        let scene = make_scene(vec![]);
+        let (res, _) = SceneResources::build_targeted(&scene, &[]).unwrap();
+        let want = &legaia_asset::npc_palette::GLOBAL_HUE_RAMP_ROW_479[8];
+        let bytes = res.vram.as_bytes();
+        let row_off = 479 * 1024 * 2;
+        let x_off = 128 * 2;
+        assert_eq!(&bytes[row_off + x_off..row_off + x_off + 32], &want[..]);
     }
 
     #[test]

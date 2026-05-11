@@ -17,84 +17,15 @@
 
 <section class="doc-section" id="the-save-states">
   <h2>The save states</h2>
-  <p>The user's <code>~/.mednafen/mcs/</code> directory holds 10 save states for the retail US disc, each captured at a specific gameplay moment:</p>
-<table>
-<thead><tr>
-<th>Slot</th>
-<th>Label</th>
-<th>Description</th>
-</tr></thead>
-<tbody>
-<tr>
-<td>mc0</td>
-<td>town_rim_elm</td>
-<td>Rim Elm (CDNAME <code>town0c</code>, scene index <code>0x15</code>) - town residency</td>
-</tr>
-<tr>
-<td>mc1</td>
-<td>pre_encounter</td>
-<td>Walking the field (<code>map01</code>), one step before encounter trigger</td>
-</tr>
-<tr>
-<td>mc2</td>
-<td>post_encounter</td>
-<td>Battle just initiated (encounter triggered from <code>map01</code>)</td>
-</tr>
-<tr>
-<td>mc3</td>
-<td>battle_drake_castle</td>
-<td>Battle in Drake Castle (<code>dolk</code>, scene index <code>0x3C</code>)</td>
-</tr>
-<tr>
-<td>mc4</td>
-<td>pre_fire_book</td>
-<td>Battle command menu, about to use Fire Book I on Vahn (<code>dolk</code>)</td>
-</tr>
-<tr>
-<td>mc5</td>
-<td>post_fire_book</td>
-<td>Battle, Fire Book I just used on Vahn - Hyper Art learned</td>
-</tr>
-<tr>
-<td>mc6</td>
-<td>battle_anim_strike</td>
-<td>Performing a somersault on an enemy (active animation)</td>
-</tr>
-<tr>
-<td>mc7</td>
-<td>pre_steal</td>
-<td>Battle frame: goblin about to steal an item from the party</td>
-</tr>
-<tr>
-<td>mc8</td>
-<td>magic_level_up</td>
-<td>Magic-rank level-up banner active</td>
-</tr>
-<tr>
-<td>mc9</td>
-<td>char_level_up</td>
-<td>Character level-up banner active (after magic-rank up)</td>
-</tr>
-</tbody>
-</table>
-  <p>Pairwise pairings of interest:</p>
+  <p>The toolkit operates on mednafen <code>.mc{0..9}</code> save states stored under <code>~/.mednafen/mcs/</code>. Each save is a frozen RAM snapshot at a specific gameplay moment - the slot number itself is ephemeral, so the toolkit identifies scenarios by <strong>label</strong> rather than slot index.</p>
+  <p>Slot → label → watchpoint mapping is declared in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> and consumed by the <code>mednafen-state watch</code> subcommand. Sister-state pairings (e.g. "pre-encounter ↔ post-encounter", "pre-rank-up ↔ post-rank-up") are the primary unit of analysis: the diff between a pair surfaces every RAM region touched in the gap between the two captures.</p>
+  <p>Capture conventions:</p>
   <ul class="bullets">
-    <li><strong>mc1 ↔ mc2</strong> - encounter trigger. The 133 KB battle overlay loads</li>
+    <li>One save per scenario keeps diffs interpretable. A single state capturing two gameplay events at once (e.g. <em>both</em> the encounter trigger <em>and</em> a level-up) widens the diff window and forces the reader to disentangle two unrelated write streams.</li>
+    <li>Town-resident, field-resident, battle-intro, and battle-active states are usually each worth keeping in the corpus - the engine pipeline maintains distinct RAM layouts across those modes.</li>
+    <li>Save before <em>and</em> after any one-shot event you want to study (item use, magic-rank-up, character level-up, scene transition). The two states are then a diff pair.</li>
   </ul>
-  <p>into <code>0x801CE808..0x801F3818</code>; the actor pointer table at <code>0x801C9370+</code> populates with stride <code>0x60</code>; the active scene index at <code>0x80084540</code> does NOT change. Codified in <code>engine_core::capture_observations::encounter_trigger</code>.</p>
-  <ul class="bullets">
-    <li><strong>mc4 ↔ mc5</strong> - Fire Book I usage on Vahn. Inside Vahn's character</li>
-  </ul>
-  <p>record (<code>0x80084708 + 0x414</code>) exactly one 3-byte cluster differs (<code>+0x185..+0x188</code>: <code>01 0C 00 → 02 03 0C</code>). Pattern is a length-prefixed list growing by one entry. Codified in <code>engine_core::capture_observations::vahn_fire_book_use</code>.</p>
-  <ul class="bullets">
-    <li><strong>mc7 ↔ mc8 ↔ mc9</strong> - stat-growth + magic-rank-up triplet. Loading mc7</li>
-  </ul>
-  <p>and waiting ~5-10 s plays out the steal animation, then mc8's magic-rank up fires, then mc9's character level-up fires. Pinned in <code>engine_core::levelup::observations::vahn_mc8_to_mc9</code>.</p>
-  <ul class="bullets">
-    <li><strong>mc0 ↔ mc1</strong> - town-vs-field RAM-layout reference. mc0 is the only</li>
-  </ul>
-  <p>town-resident state in the corpus.</p>
-  <p>Slot → label → watchpoint mapping is declared in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> and consumed by the <code>mednafen-state watch</code> subcommand.</p>
+  <p>The committed manifest carries the slot ↔ label mapping for the canonical corpus; user-managed slots may differ.</p>
 </section>
 
 <section class="doc-section" id="quick-reference">
@@ -103,21 +34,20 @@
 <pre><code>target/release/mednafen-state scenarios --manifest scripts/mednafen/scenarios.toml</code></pre>
   <h3>Inspect one save's section table</h3>
 <pre><code>target/release/mednafen-state info \
-    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0"</code></pre>
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;SLOT&gt;"</code></pre>
   <p>Prints the indexed sections (<code>MAIN</code>, <code>GPU</code>, <code>SPU</code>, <code>CDC</code>, <code>MDEC</code>, <code>DMA</code>, <code>TIMER</code>, <code>MDFNRINP</code>, <code>BIOS_HASH</code>, <code>MDFNDRIVE_00000000</code>) with sub-entry sizes, the resolved CPU PC if present, and the 2 MiB main-RAM offset.</p>
   <h3>Slice a PSX-virtual-address window</h3>
 <pre><code>target/release/mednafen-state extract \
-    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc4" \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;SLOT&gt;" \
     --start 0x801C0000 --end 0x80200000 --out /tmp/battle_overlay.bin</code></pre>
   <p>This is the structured replacement for <code>scripts/extract-mednafen-overlay.py</code> - same anchor-based fallback when the structured <code>MainRAM.data8</code> lookup misses, plus a MIPS-shape sanity check.</p>
   <h3>Diff two saves in the overlay window</h3>
 <pre><code>target/release/mednafen-state diff \
-    "$HOME/.mednafen/mcs/...mc1" \
-    "$HOME/.mednafen/mcs/...mc2" \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;BEFORE&gt;" \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;AFTER&gt;" \
     --start 0x801C0000 --end 0x80200000 --top 8</code></pre>
-  <p>Output:</p>
-<pre><code>[diff] mc1 &lt;-&gt; mc2
-[diff] window 0x801C0000..0x80200000  merge_gap=16  min_changed=4
+  <p>Sample output (for a pair bracketing a field → battle transition):</p>
+<pre><code>[diff] window 0x801C0000..0x80200000  merge_gap=16  min_changed=4
 [diff] 20 regions, 10029 bytes changed total
 [diff] top 8 by bytes_changed:
        start           end     changed   left -&gt; right (16 bytes)
@@ -131,16 +61,16 @@
   <p>For every scenario, runs all configured <code>[scenarios.watchpoints]</code> against each <code>diff_against</code> sister state, writes per-scenario JSON to <code>/tmp/legaia_watch_&lt;label&gt;.json</code>, and prints a one-line summary per watchpoint.</p>
   <h3>Bisect for a transition</h3>
 <pre><code>scripts/mednafen/watchpoint-bisect.py \
-    --addr 0x8007B888 mc0 mc1 mc2 mc3</code></pre>
-  <p>Walks the four save states in order; reports the first one in which the target address transitions to the "bad" predicate (default: nonzero). Output reports either <code>BracketedAt { before_idx, after_idx }</code> (the gap between two adjacent states bracketed the write), <code>AlreadyBadFromStart</code> (the address was already populated in mc0), or <code>NeverBecameBad</code>.</p>
+    --addr 0x8007B888 &lt;save1&gt; &lt;save2&gt; &lt;save3&gt; &lt;save4&gt;</code></pre>
+  <p>Walks the named save states in order; reports the first one in which the target address transitions to the "bad" predicate (default: nonzero). Output reports either <code>BracketedAt { before_idx, after_idx }</code> (the gap between two adjacent states bracketed the write), <code>AlreadyBadFromStart</code> (the address was already populated in the first state), or <code>NeverBecameBad</code>.</p>
   <h3>Trace one address across many states</h3>
-<pre><code>scripts/mednafen/watchpoint-bisect.py --addr 0x8007BAC8 --trace mc0 mc1 mc2 mc3 mc4 mc5</code></pre>
+<pre><code>scripts/mednafen/watchpoint-bisect.py --addr 0x8007BAC8 --trace &lt;save1&gt; &lt;save2&gt; ...</code></pre>
   <p>Prints the u32 value at <code>0x8007BAC8</code> in each state - useful when you want to <em>see</em> the value evolve before deciding what predicate to bisect on.</p>
   <h3>Walk every scenario through extraction</h3>
 <pre><code>scripts/mednafen/state-walk.sh --import</code></pre>
-  <p>For every scenario in the manifest, slices its overlay window into <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> and (with <code>--import</code>) imports it as a labelled program in the Ghidra container via <code>scripts/import-overlay-named.sh</code>. One command, all 10 scenarios staged.</p>
+  <p>For every scenario in the manifest, slices its overlay window into <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> and (with <code>--import</code>) imports it as a labelled program in the Ghidra container via <code>scripts/import-overlay-named.sh</code>. One command, all scenarios staged.</p>
   <h3>Dump the runtime GPU VRAM as a PNG</h3>
-<pre><code>mednafen-state vram-dump ~/.mednafen/mcs/"Legend of Legaia (USA).".mc2 \
+<pre><code>mednafen-state vram-dump ~/.mednafen/mcs/"Legend of Legaia (USA)."*".&lt;SLOT&gt;" \
   --out vram.png --out-bin vram.bin --regs</code></pre>
   <p>Decodes the <code>&amp;GPURAM[0][0]</code> blob inside the save state's <code>GPU</code> section (1 MiB BGR555 + STP) and writes it as a 1024x512 RGBA8 PNG plus the optional raw byte blob. <code>--regs</code> adds the GPU control-register snapshot (clip rect, draw offset, texture window, texture page, display framebuffer) - the same registers the runtime is reading from at the moment of capture. Useful as a ground-truth oracle for engine-side VRAM state: pair with <code>legaia-engine info --scene &lt;name&gt; --runtime-vram vram.bin --vram-diff-png diff.png</code> for a colour-coded per-pixel diff against the engine's <code>SceneResources::build_targeted</code> output.</p>
 
@@ -148,8 +78,8 @@
 <pre><code>mednafen-state clut-trace \
   --pack extracted/PROT/0865_battle_data.BIN \
   --json /tmp/clut_corpus.json \
-  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc2" \
-  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc6"</code></pre>
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".&lt;TOWN_SLOT&gt;" \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".&lt;BATTLE_SLOT&gt;"</code></pre>
   <p>LZS-decompresses every record in the named battle_data pack, slides a 32-byte halfword-aligned window past each record's embedded TMD, and searches the save state's VRAM for an exact byte match. Each hit is one <code>(record_idx, record_offset, fb_x, fb_y)</code> tuple - the corpus narrows the encoding of the per-record post-TMD descriptor at <code>u32[3..0x20]</code>. See <a href="../formats/battle-data-pack.html">battle-data-pack.html</a> for the analysis methodology and findings.</p>
 </section>
 
@@ -157,13 +87,9 @@
   <h2>Workflow patterns</h2>
   <h3>"Find what writes to X" between two known points</h3>
   <ol class="bullets">
-    <li>Pick a <code>(before, after)</code> pair that brackets the suspected write</li>
+    <li>Pick a <code>(before, after)</code> save-state pair that brackets the suspected write (e.g. a battle-intro state and a mid-animation state from the same encounter).</li>
+    <li>Run <code>mednafen-state diff before.mc after.mc --start &lt;region&gt; --end &lt;region+N&gt;</code>.</li>
   </ol>
-  <p>(e.g. mc4 = battle intro, mc6 = mid-animation).</p>
-  <ol class="bullets">
-    <li>Run `mednafen-state diff before.mc after.mc --start &lt;region&gt;</li>
-  </ol>
-  <p>--end &lt;region+N&gt;`.</p>
   <ol class="bullets">
     <li>The largest region in the output is the candidate. Note its address.</li>
     <li>In Ghidra, search for stores to that address in the relevant overlay</li>
@@ -194,7 +120,7 @@
     <li><code>Shift+F5</code> again to stop. The .mcm lands in <code>~/.mednafen/mcm/</code>.</li>
   </ol>
   <p>Replay deterministically with:</p>
-<pre><code>scripts/mednafen/run-mednafen.sh disc.bin --state mc1 --movie movie.mcm</code></pre>
+<pre><code>scripts/mednafen/run-mednafen.sh disc.bin --state &lt;slot&gt; --movie movie.mcm</code></pre>
   <p>To capture a state at a specific frame, replay up to that frame, hit <code>F5</code> to save into a free slot, then <code>F7</code> to load it back later. Repeat for multiple frames during the same scripted action. The resulting save slots are interchangeable with the manifest.</p>
 </section>
 
@@ -219,7 +145,7 @@ end = 0x80200000
 label = "battle_overlay_window"
 start = 0x801CE808
 end = 0x801F3818
-hint = "133 KB battle overlay. Loaded between mc1 (field) and mc2 (battle)."</code></pre>
+hint = "133 KB battle overlay. Loaded between the pre-encounter and post-encounter sister states."</code></pre>
   <p><code>mednafen-state watch &lt;label&gt;</code> runs the scenario's watchpoints against each <code>diff_against</code> sister, writing a per-scenario JSON report.</p>
 </section>
 

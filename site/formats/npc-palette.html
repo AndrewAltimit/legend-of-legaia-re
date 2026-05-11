@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global hue-ramp palette - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; global hue-ramp palette</div>
+  <h1>Global hue-ramp palette at VRAM row 479</h1>
+  <p class="lede">The retail Legaia engine maintains a 15-slot CLUT "rainbow ramp" at VRAM <code>(fb_x=0..240, fb_y=479)</code>. The ramp is materialised in main RAM at <code>0x800F19xx</code> during early engine init, DMA'd into VRAM, and then relied on as <strong>persistent state</strong> by every non-battle scene. Field and town NPC TMDs sample the lower half of the ramp via CBA cells <code>0x77C8..0x77CF</code> (row 479 slots 8..15); sprite and effect prims sample the upper half. Implementation: <code>crates/asset/src/npc_palette.rs</code>.</p>
+</header>
+
+<section class="doc-section" id="layout">
+  <h2>Layout</h2>
+<pre><code>fb_x   slot   peak  shape
+   0     0      20   hue wheel at 5-bit peak intensity = 20 (very bright)
+  16     1      19
+  32     2      17
+  48     3      16
+  64     4      15
+  80     5      13
+  96     6      12
+ 112     7      11
+ 128     8       9   &lt;-- town/field NPC anchor: CBA 0x77C8
+ 144     9       8       CBA 0x77C9
+ 160    10       6       CBA 0x77CA
+ 176    11       5       CBA 0x77CB
+ 192    12       4       CBA 0x77CC
+ 208    13       2       CBA 0x77CD
+ 224    14       1       CBA 0x77CE
+ 240    --       0   intentionally left empty (CBA 0x77CF)</code></pre>
+  <p>Each 16-pixel slot holds a 16-entry CLUT in BGR555:</p>
+  <ul>
+    <li>Entry 0 is the canonical <code>0x0000</code> (transparent black).</li>
+    <li>Entries 1..15 traverse a HSV-style hue cycle (B &rarr; C &rarr; G &rarr; Y &rarr; R &rarr; M &rarr; B) in 5-bit color space, at a fixed peak value per slot.</li>
+    <li>Peak values across the 15 active slots form a smooth descending ramp <code>[20, 19, 17, 16, 15, 13, 12, 11, 9, 8, 6, 5, 4, 2, 1]</code>.</li>
+  </ul>
+  <p>The exact runtime generator (the MIPS function that writes the bytes into <code>0x800F19xx</code>) has not been pinned - see <em>Open questions</em> below.</p>
+</section>
+
+<section class="doc-section" id="why-this-matters">
+  <h2>Why this matters</h2>
+  <p>Town01's NPC TMDs reference CBA cells that fall on row 479 slots 8..14. The 32-byte CLUT payloads at those VRAM positions are <strong>absent from disc</strong>: a brute-force scan of every PROT entry and <code>SCUS_942.54</code> for the canonical slot-8 byte sequence returns zero hits, and even an 8-byte prefix isn't found anywhere on disc. Without those CLUT rows the engine's targeted-upload pre-pass drops every textured prim that samples them as <code>MissingClut</code>, costing roughly 21 percentage points of the town01 prim-keep ratio (78.6% without the ramp vs. 99.3% with it).</p>
+  <p>Because the bytes are stable across every retail save state we have access to (the only saves where row 479 differs are battle scenes, which overwrite the row with battle-overlay content), the engine's clean-room scene-build pre-pass can paint the ramp in verbatim from a corpus-confirmed capture. The Rust API is:</p>
+<pre><code>use legaia_asset::npc_palette;
+npc_palette::apply_global_hue_ramp(&amp;mut vram);</code></pre>
+  <p><code>SceneResources::build</code> and <code>SceneResources::build_targeted</code> both call this at the end of every scene-build pre-pass, so consumers get the ramp for free.</p>
+</section>
+
+<section class="doc-section" id="cross-save-corroboration">
+  <h2>Cross-save corroboration</h2>
+  <p>The hue ramp is verifiable from any pair of retail save states the mednafen toolkit can read. Across the bundled corpus, row 479 fb_x=0..240 hashes identically for every non-battle save and differs only in battle scenes (where the row is repurposed by the battle overlay). Slots 17..19, 52..53, and 56..63 of the same row stay zero across all saves; slots 20..51 are per-scene palettes that fall outside this module's scope.</p>
+  <p>The CLI for reproducing the corroboration is in <a href="../tooling/mednafen-automation.html">mednafen-automation.html</a> - extract VRAM with <code>mednafen-state vram-dump --out-bin</code>, slice row 479 at byte offset <code>0xEFE00</code>, and hash 32-byte windows at 16-pixel stride.</p>
+</section>
+
+<section class="doc-section" id="open-questions">
+  <h2>Open questions</h2>
+  <ul>
+    <li><strong>Writer location</strong>: static analysis sweeps every imported program (<code>SCUS_942.54</code> plus the captured overlays) for any LUI+ADDIU / load / store pair whose effective address lands in <code>0x800F1800..0x800F1B00</code> and returns zero hits. That rules out direct absolute addressing; the writer accesses the staging buffer through an indirect base pointer (e.g. via <code>$gp</code>, via a struct field, or via a pointer stored in another global). Pinning the function requires either a watchpoint-style RAM diff across a very-early-boot save state pair (currently unavailable) or a decompilation pass over the init code that runs before the title screen.</li>
+    <li><strong>Generator algorithm</strong>: the 15-entry hue sequence is suspiciously non-uniform - per-segment sample counts are <code>2, 3, 2, 3, 3, 2</code> and positions don't fit any of the obvious closed-form distributions. The slots are likely not scaled copies of one base table either; the peak progression <code>(9 &rarr; 8 &rarr; 6 &rarr; 5 &rarr; 4 &rarr; 2 &rarr; 1)</code> skips intermediate values (7 and 3) in a way that breaks <code>slot[N] = slot[0] * peak[N] / peak[0]</code>. The algorithm probably operates segment-by-segment in 5-bit space with integer rounding rules we haven't reconstructed yet.</li>
+    <li><strong>Slot 15</strong>: row 479 fb_x=240 stays zero in every retail save. A 4bpp prim that addresses CBA <code>0x77CF</code> therefore samples a transparent palette in retail too - either those prims are culled by a different path in the renderer (e.g. early-out on all-zero CLUT) or they're tolerated as rendering errors.</li>
+    <li><strong>Upper slots in non-battle scenes</strong>: slots 16, 54, 55 also hold globally-stable content. These are outside the active "ramp" but appear to be installed by the same init code. Folding them in is a follow-up.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'formats/npc-palette' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>

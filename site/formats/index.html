@@ -81,6 +81,10 @@
       <div class="card-title">Battle-data pack</div>
       <div class="card-body">Custom 16 MB-ish container for the <code>battle_data</code> block (PROT 0865 + sister <code>edstati3</code>). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>.</div>
     </a>
+    <a class="card" href="npc-palette.html">
+      <div class="card-title">Global hue-ramp palette (row 479)</div>
+      <div class="card-body">15-slot CLUT ramp at <code>(fb_x=0..240, fb_y=479)</code>. Runtime stages in RAM at <code>0x800F19xx</code> and DMAs to VRAM during early init. Town/field NPCs sample slots 8..14 via CBA <code>0x77C8..0x77CF</code>. Bytes captured verbatim - generator MIPS still uncovered.</div>
+    </a>
   </div>
 </section>
 

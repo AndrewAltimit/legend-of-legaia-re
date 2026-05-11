@@ -28,44 +28,34 @@ in Ghidra.
 
 ## The save states
 
-The user's `~/.mednafen/mcs/` directory holds 10 save states for the
-retail US disc, each captured at a specific gameplay moment:
-
-| Slot | Label                | Description                                                       |
-|------|----------------------|-------------------------------------------------------------------|
-| mc0  | town_rim_elm         | Rim Elm (CDNAME `town0c`, scene index `0x15`) - town residency    |
-| mc1  | pre_encounter        | Walking the field (`map01`), one step before encounter trigger    |
-| mc2  | post_encounter       | Battle just initiated (encounter triggered from `map01`)          |
-| mc3  | battle_drake_castle  | Battle in Drake Castle (`dolk`, scene index `0x3C`)               |
-| mc4  | pre_fire_book        | Battle command menu, about to use Fire Book I on Vahn (`dolk`)    |
-| mc5  | post_fire_book       | Battle, Fire Book I just used on Vahn - Hyper Art learned         |
-| mc6  | battle_anim_strike   | Performing a somersault on an enemy (active animation)            |
-| mc7  | pre_steal            | Battle frame: goblin about to steal an item from the party        |
-| mc8  | magic_level_up       | Magic-rank level-up banner active                                 |
-| mc9  | char_level_up        | Character level-up banner active (after magic-rank up)            |
-
-Pairwise pairings of interest:
-
-- **mc1 ↔ mc2** - encounter trigger. The 133 KB battle overlay loads
-  into `0x801CE808..0x801F3818`; the actor pointer table at
-  `0x801C9370+` populates with stride `0x60`; the active scene index at
-  `0x80084540` does NOT change. Codified in
-  `engine_core::capture_observations::encounter_trigger`.
-- **mc4 ↔ mc5** - Fire Book I usage on Vahn. Inside Vahn's character
-  record (`0x80084708 + 0x414`) exactly one 3-byte cluster differs
-  (`+0x185..+0x188`: `01 0C 00 → 02 03 0C`). Pattern is a length-prefixed
-  list growing by one entry. Codified in
-  `engine_core::capture_observations::vahn_fire_book_use`.
-- **mc7 ↔ mc8 ↔ mc9** - stat-growth + magic-rank-up triplet. Loading mc7
-  and waiting ~5-10 s plays out the steal animation, then mc8's
-  magic-rank up fires, then mc9's character level-up fires. Pinned in
-  `engine_core::levelup::observations::vahn_mc8_to_mc9`.
-- **mc0 ↔ mc1** - town-vs-field RAM-layout reference. mc0 is the only
-  town-resident state in the corpus.
+The toolkit operates on mednafen `.mc{0..9}` save states stored under
+`~/.mednafen/mcs/`. Each save is a frozen RAM snapshot at a specific
+gameplay moment - the slot number itself is ephemeral, so the
+toolkit identifies scenarios by **label** rather than slot index.
 
 Slot → label → watchpoint mapping is declared in
 [`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml)
-and consumed by the `mednafen-state watch` subcommand.
+and consumed by the `mednafen-state watch` subcommand. Sister-state
+pairings (e.g. "pre-encounter ↔ post-encounter", "pre-rank-up ↔
+post-rank-up") are the primary unit of analysis: the diff between a
+pair surfaces every RAM region touched in the gap between the two
+captures.
+
+Capture conventions:
+
+- One save per scenario keeps diffs interpretable. A single state
+  capturing two gameplay events at once (e.g. *both* the encounter
+  trigger *and* a level-up) widens the diff window and forces the
+  reader to disentangle two unrelated write streams.
+- Town-resident, field-resident, battle-intro, and battle-active
+  states are usually each worth keeping in the corpus - the engine
+  pipeline maintains distinct RAM layouts across those modes.
+- Save before *and* after any one-shot event you want to study
+  (item use, magic-rank-up, character level-up, scene transition).
+  The two states are then a diff pair.
+
+The committed manifest carries the slot ↔ label mapping for the
+canonical corpus; user-managed slots may differ.
 
 ## Quick reference
 
@@ -79,7 +69,7 @@ target/release/mednafen-state scenarios --manifest scripts/mednafen/scenarios.to
 
 ```bash
 target/release/mednafen-state info \
-    "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0"
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.<SLOT>"
 ```
 
 Prints the indexed sections (`MAIN`, `GPU`, `SPU`, `CDC`, `MDEC`, `DMA`,
@@ -90,7 +80,7 @@ sizes, the resolved CPU PC if present, and the 2 MiB main-RAM offset.
 
 ```bash
 target/release/mednafen-state extract \
-    "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc4" \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.<SLOT>" \
     --start 0x801C0000 --end 0x80200000 --out /tmp/battle_overlay.bin
 ```
 
@@ -103,15 +93,14 @@ check.
 
 ```bash
 target/release/mednafen-state diff \
-    "$HOME/.mednafen/mcs/...mc1" \
-    "$HOME/.mednafen/mcs/...mc2" \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.<BEFORE>" \
+    "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.<AFTER>" \
     --start 0x801C0000 --end 0x80200000 --top 8
 ```
 
-Output:
+Sample output (for a pair bracketing a field → battle transition):
 
 ```text
-[diff] mc1 <-> mc2
 [diff] window 0x801C0000..0x80200000  merge_gap=16  min_changed=4
 [diff] 20 regions, 10029 bytes changed total
 [diff] top 8 by bytes_changed:
@@ -141,19 +130,20 @@ watchpoint.
 
 ```bash
 scripts/mednafen/watchpoint-bisect.py \
-    --addr 0x8007B888 mc0 mc1 mc2 mc3
+    --addr 0x8007B888 <save1> <save2> <save3> <save4>
 ```
 
-Walks the four save states in order; reports the first one in which the
-target address transitions to the "bad" predicate (default: nonzero).
-Output reports either `BracketedAt { before_idx, after_idx }` (the gap
-between two adjacent states bracketed the write), `AlreadyBadFromStart`
-(the address was already populated in mc0), or `NeverBecameBad`.
+Walks the named save states in order; reports the first one in which
+the target address transitions to the "bad" predicate (default:
+nonzero). Output reports either `BracketedAt { before_idx, after_idx }`
+(the gap between two adjacent states bracketed the write),
+`AlreadyBadFromStart` (the address was already populated in the first
+state), or `NeverBecameBad`.
 
 ### Trace one address across many states
 
 ```bash
-scripts/mednafen/watchpoint-bisect.py --addr 0x8007BAC8 --trace mc0 mc1 mc2 mc3 mc4 mc5
+scripts/mednafen/watchpoint-bisect.py --addr 0x8007BAC8 --trace <save1> <save2> ...
 ```
 
 Prints the u32 value at `0x8007BAC8` in each state - useful when you
@@ -167,15 +157,15 @@ scripts/mednafen/state-walk.sh --import
 ```
 
 For every scenario in the manifest, slices its overlay window into
-`/tmp/legaia_overlay_<label>.bin` and (with `--import`) imports it as a
-labelled program in the Ghidra container via
-`scripts/import-overlay-named.sh`. One command, all 10 scenarios staged.
+`/tmp/legaia_overlay_<label>.bin` and (with `--import`) imports it as
+a labelled program in the Ghidra container via
+`scripts/import-overlay-named.sh`. One command, all scenarios staged.
 
 ### Dump the runtime GPU VRAM as a PNG
 
 ```bash
 mednafen-state vram-dump \
-  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc2" \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".<SLOT>" \
   --out vram.png --out-bin vram.bin --regs
 ```
 
@@ -195,8 +185,8 @@ against the engine's `SceneResources::build_targeted` output.
 mednafen-state clut-trace \
   --pack extracted/PROT/0865_battle_data.BIN \
   --json /tmp/clut_corpus.json \
-  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc2" \
-  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".mc6"
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".<TOWN_SLOT>" \
+  ~/.mednafen/mcs/"Legend of Legaia (USA)."*".<BATTLE_SLOT>"
 ```
 
 LZS-decompresses every record in the named battle_data pack, slides a
@@ -211,8 +201,9 @@ for the analysis methodology and findings.
 
 ### "Find what writes to X" between two known points
 
-1. Pick a `(before, after)` pair that brackets the suspected write
-   (e.g. mc4 = battle intro, mc6 = mid-animation).
+1. Pick a `(before, after)` save-state pair that brackets the
+   suspected write (e.g. a battle-intro state and a mid-animation
+   state from the same encounter).
 2. Run `mednafen-state diff before.mc after.mc --start <region>
    --end <region+N>`.
 3. The largest region in the output is the candidate. Note its address.
@@ -252,7 +243,7 @@ frame.
 Replay deterministically with:
 
 ```bash
-scripts/mednafen/run-mednafen.sh disc.bin --state mc1 --movie movie.mcm
+scripts/mednafen/run-mednafen.sh disc.bin --state <slot> --movie movie.mcm
 ```
 
 To capture a state at a specific frame, replay up to that frame, hit `F5`
@@ -285,7 +276,7 @@ end = 0x80200000
 label = "battle_overlay_window"
 start = 0x801CE808
 end = 0x801F3818
-hint = "133 KB battle overlay. Loaded between mc1 (field) and mc2 (battle)."
+hint = "133 KB battle overlay. Loaded between the pre-encounter and post-encounter sister states."
 ```
 
 `mednafen-state watch <label>` runs the scenario's watchpoints against

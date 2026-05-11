@@ -22,6 +22,7 @@ pub mod data_field_truncated;
 pub mod effect_bundle;
 pub mod field_pack;
 pub mod mips_overlay;
+pub mod npc_palette;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod scene_asset_table;

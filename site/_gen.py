@@ -94,6 +94,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/tim-pack.html",      "Standalone TIM-pack",           "formats/tim-pack",           "formats/tim-pack.html"),
     ("formats/field-pack.html",    "Field-pack format",             "formats/field-pack",         "formats/field-pack.html"),
     ("formats/battle-data-pack.html","Battle-data pack",             "formats/battle-data-pack",   "formats/battle-data-pack.html"),
+    ("formats/npc-palette.html",   "Global hue-ramp palette",       "formats/npc-palette",        "formats/npc-palette.html"),
     ("formats/effect.html",        "Effect bundles",                "formats/effect",             "formats/effect.html"),
     ("formats/scene-bundles.html", "Scene bundles",                 "formats/scene-bundles",      "formats/scene-bundles.html"),
     ("formats/tim.html",           "PSX TIM",                       "formats/tim",                "formats/tim.html"),
