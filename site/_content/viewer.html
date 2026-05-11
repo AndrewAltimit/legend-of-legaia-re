@@ -155,14 +155,14 @@
       <div class="viewer-list-pane" id="viewer-list-pane" style="display: none;">
         <div class="viewer-list-toolbar">
           <select id="scene-filter" title="Filter by scene category">
-            <option value="">All scenes</option>
-            <option value="town">Towns</option>
+            <option value="town" selected>Towns</option>
             <option value="field">Field areas</option>
             <option value="world_map">World map</option>
             <option value="battle">Battle data</option>
             <option value="cutscene">Cutscenes (op*/ed*)</option>
             <option value="audio">Audio (VAB / SEQ)</option>
             <option value="system">System / overlays</option>
+            <option value="">All scenes</option>
           </select>
         </div>
         <div class="viewer-list-toolbar">
@@ -172,7 +172,7 @@
         </div>
         <div class="viewer-list-toolbar" style="font-size: 0.78rem;">
           <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
-            <input type="checkbox" id="tmd-filter"> 3D only
+            <input type="checkbox" id="tmd-filter" checked> 3D only
           </label>
           <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
             <input type="checkbox" id="textured-toggle" checked> textured
@@ -679,6 +679,17 @@
               prepareEntrySwitch();
               viewer.set_slot(slot);
             }
+          }
+        } else {
+          /* No deep-link: snap to a known-good first-impression entry.
+           * PROT 185 (balden = Vidna) is a fully textured townscape - it
+           * showcases the renderer well. Fall through silently if it's
+           * not in the viewable list (e.g. user loaded a non-disc file). */
+          const DEFAULT_PROT = 185;
+          const slot = allEntries.findIndex(e => e.prot_index === DEFAULT_PROT);
+          if (slot >= 0) {
+            prepareEntrySwitch();
+            viewer.set_slot(slot);
           }
         }
 
