@@ -1,0 +1,2253 @@
+{
+  "drake": {
+    "kingdom": "drake",
+    "label": "map01",
+    "camera": {
+      "x": -8832,
+      "z": -8832,
+      "azimuth": 0,
+      "zoom": 368
+    },
+    "tmd_count": 119,
+    "world_extent": [
+      16320,
+      16320
+    ],
+    "placements": [
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -128,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 0
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          3904,
+          -420,
+          11712
+        ],
+        "flags": "0x090a0880",
+        "id": 42
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -256,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 0
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2624,
+          0,
+          2624
+        ],
+        "flags": "0x00000000",
+        "id": 67
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -214,
+          10432
+        ],
+        "flags": "0x00244882",
+        "id": 47
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -192,
+          8996
+        ],
+        "flags": "0x00244880",
+        "id": 69
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -192,
+          10432
+        ],
+        "flags": "0x00244880",
+        "id": 70
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -299,
+          9468
+        ],
+        "flags": "0x00244880",
+        "id": 65
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -299,
+          10432
+        ],
+        "flags": "0x00244880",
+        "id": 48
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -242,
+          9868
+        ],
+        "flags": "0x00244880",
+        "id": 66
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -242,
+          10432
+        ],
+        "flags": "0x00244880",
+        "id": 63
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          9152,
+          -214,
+          10288
+        ],
+        "flags": "0x00244880",
+        "id": 48
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          3904,
+          -420,
+          11712
+        ],
+        "flags": "0x08044880",
+        "id": 68
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x08820880",
+        "id": 13
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x08c20880",
+        "id": 14
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x09820880",
+        "id": 15
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x09820880",
+        "id": 16
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x09820880",
+        "id": 17
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x08820880",
+        "id": 18
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x08820880",
+        "id": 19
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 20
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x08808880",
+        "id": 9
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          12352,
+          -1,
+          3008
+        ],
+        "flags": "0x08808880",
+        "id": 8
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "flags": "0x08808881",
+        "id": 11
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7296,
+          -192,
+          8000
+        ],
+        "flags": "0x08008880",
+        "id": 0
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6976,
+          -192,
+          8256
+        ],
+        "flags": "0x08008880",
+        "id": 10
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          9152,
+          -96,
+          10432
+        ],
+        "flags": "0x08808880",
+        "id": 6
+      }
+    ]
+  },
+  "sebucus": {
+    "kingdom": "sebucus",
+    "label": "map02",
+    "camera": {
+      "x": -7936,
+      "z": -9344,
+      "azimuth": 0,
+      "zoom": 368
+    },
+    "tmd_count": 119,
+    "world_extent": [
+      16320,
+      16320
+    ],
+    "placements": [
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -128,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 0
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          4032,
+          -1,
+          11712
+        ],
+        "flags": "0x090a0880",
+        "id": 42
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2624,
+          0,
+          2624
+        ],
+        "flags": "0x00000000",
+        "id": 25
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4220,
+          -340,
+          7484
+        ],
+        "flags": "0x00044882",
+        "id": 14
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4068,
+          0,
+          7240
+        ],
+        "flags": "0x00844880",
+        "id": 48
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4358,
+          -156,
+          7392
+        ],
+        "flags": "0x00844880",
+        "id": 23
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4123,
+          -192,
+          7276
+        ],
+        "flags": "0x00844880",
+        "id": 12
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4030,
+          -54,
+          7447
+        ],
+        "flags": "0x00844880",
+        "id": 30
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4160,
+          -228,
+          7368
+        ],
+        "flags": "0x00844880",
+        "id": 29
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4304,
+          -164,
+          7484
+        ],
+        "flags": "0x00844880",
+        "id": 4
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4141,
+          -226,
+          7348
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4066,
+          -200,
+          7484
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4150,
+          -236,
+          7404
+        ],
+        "flags": "0x00844880",
+        "id": 1
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4282,
+          -236,
+          7442
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4158,
+          -336,
+          7420
+        ],
+        "flags": "0x00844880",
+        "id": 34
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4102,
+          -334,
+          7484
+        ],
+        "flags": "0x00844880",
+        "id": 31
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4136,
+          -292,
+          7376
+        ],
+        "flags": "0x00844880",
+        "id": 2
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4220,
+          -340,
+          7484
+        ],
+        "flags": "0x00844880",
+        "id": 6
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4160,
+          -310,
+          7394
+        ],
+        "flags": "0x00844880",
+        "id": 5
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4104,
+          -310,
+          7484
+        ],
+        "flags": "0x00844880",
+        "id": 13
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4160,
+          -340,
+          7424
+        ],
+        "flags": "0x00844880",
+        "id": 15
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4220,
+          -328,
+          7484
+        ],
+        "flags": "0x00844880",
+        "id": 16
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4032,
+          -1,
+          11712
+        ],
+        "flags": "0x08044880",
+        "id": 24
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -168,
+          16320
+        ],
+        "flags": "0x08420880",
+        "id": 34
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -168,
+          16320
+        ],
+        "flags": "0x08420880",
+        "id": 35
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "flags": "0x28220881",
+        "id": 36
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "flags": "0x28220881",
+        "id": 37
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "flags": "0x28220881",
+        "id": 38
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          10688,
+          -48,
+          9408
+        ],
+        "flags": "0x08420880",
+        "id": 39
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          10368,
+          -72,
+          4416
+        ],
+        "flags": "0x08620880",
+        "id": 40
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7872,
+          -24,
+          6208
+        ],
+        "flags": "0x08008880",
+        "id": 1
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7488,
+          -24,
+          6336
+        ],
+        "flags": "0x08008880",
+        "id": 1
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7744,
+          -24,
+          6592
+        ],
+        "flags": "0x08008880",
+        "id": 1
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          4160,
+          -1,
+          7488
+        ],
+        "flags": "0x08808881",
+        "id": 0
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6592,
+          -48,
+          7488
+        ],
+        "flags": "0x08008881",
+        "id": 29
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7360,
+          -48,
+          7616
+        ],
+        "flags": "0x08008881",
+        "id": 6
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7872,
+          -1,
+          7616
+        ],
+        "flags": "0x08008881",
+        "id": 5
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8256,
+          -48,
+          7616
+        ],
+        "flags": "0x08008881",
+        "id": 4
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8640,
+          -1,
+          7616
+        ],
+        "flags": "0x08008881",
+        "id": 3
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          9024,
+          -48,
+          7616
+        ],
+        "flags": "0x08008881",
+        "id": 2
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6848,
+          -48,
+          7872
+        ],
+        "flags": "0x08008881",
+        "id": 7
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          11776,
+          -96,
+          8032
+        ],
+        "flags": "0x08008881",
+        "id": 32
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6592,
+          -1,
+          8384
+        ],
+        "flags": "0x08008881",
+        "id": 8
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6848,
+          -48,
+          8896
+        ],
+        "flags": "0x08008881",
+        "id": 9
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7360,
+          -48,
+          9152
+        ],
+        "flags": "0x08008881",
+        "id": 10
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7872,
+          -1,
+          9152
+        ],
+        "flags": "0x08008881",
+        "id": 11
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8384,
+          -1,
+          9152
+        ],
+        "flags": "0x08008881",
+        "id": 12
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8896,
+          -48,
+          9152
+        ],
+        "flags": "0x08008881",
+        "id": 13
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          9280,
+          -1,
+          9152
+        ],
+        "flags": "0x08008881",
+        "id": 14
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          9664,
+          -1,
+          9152
+        ],
+        "flags": "0x08008881",
+        "id": 15
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          10176,
+          -48,
+          9408
+        ],
+        "flags": "0x08008881",
+        "id": 16
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          10432,
+          -48,
+          9920
+        ],
+        "flags": "0x08008881",
+        "id": 17
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          10688,
+          -48,
+          10432
+        ],
+        "flags": "0x08008881",
+        "id": 18
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          11200,
+          -48,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 19
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          11712,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 20
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          12224,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 21
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          12736,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 22
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          13248,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 23
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          13760,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 24
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          14272,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 25
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          14784,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 26
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          15296,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 27
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          15808,
+          -1,
+          10688
+        ],
+        "flags": "0x08008881",
+        "id": 28
+      }
+    ]
+  },
+  "karisto": {
+    "kingdom": "karisto",
+    "label": "map03",
+    "camera": {
+      "x": -7936,
+      "z": -9088,
+      "azimuth": 0,
+      "zoom": 368
+    },
+    "tmd_count": 119,
+    "world_extent": [
+      16320,
+      16320
+    ],
+    "placements": [
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -8,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 7
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -533,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 38
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -192,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 40
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -64,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 41
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          4672,
+          -96,
+          9024
+        ],
+        "flags": "0x090a0880",
+        "id": 42
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -128,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 0
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -384,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 44
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -456,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 0
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          0,
+          -200,
+          0
+        ],
+        "flags": "0x00000000",
+        "id": 251
+      },
+      {
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2624,
+          0,
+          2624
+        ],
+        "flags": "0x00000000",
+        "id": 10
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4664,
+          -128,
+          9702
+        ],
+        "flags": "0x00044882",
+        "id": 8
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -684,
+          2416
+        ],
+        "flags": "0x00044882",
+        "id": 9
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -900,
+          3440
+        ],
+        "flags": "0x08044882",
+        "id": 10
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8137,
+          -357,
+          1895
+        ],
+        "flags": "0x02844888",
+        "id": 9
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8153,
+          -481,
+          1892
+        ],
+        "flags": "0x02844888",
+        "id": 251
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8139,
+          -478,
+          1963
+        ],
+        "flags": "0x00844888",
+        "id": 10
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8028,
+          -483,
+          2024
+        ],
+        "flags": "0x00844880",
+        "id": 18
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -376,
+          2032
+        ],
+        "flags": "0x00844880",
+        "id": 19
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8266,
+          -492,
+          1932
+        ],
+        "flags": "0x00844880",
+        "id": 35
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8314,
+          -496,
+          2211
+        ],
+        "flags": "0x00844880",
+        "id": 26
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -399,
+          2056
+        ],
+        "flags": "0x00844880",
+        "id": 27
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8263,
+          -406,
+          1866
+        ],
+        "flags": "0x00844880",
+        "id": 32
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8354,
+          -510,
+          2174
+        ],
+        "flags": "0x00844880",
+        "id": 999
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -419,
+          2080
+        ],
+        "flags": "0x00844880",
+        "id": 2
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8164,
+          -516,
+          2040
+        ],
+        "flags": "0x00844880",
+        "id": 3
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -429,
+          2096
+        ],
+        "flags": "0x00844880",
+        "id": 17
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8168,
+          -522,
+          2062
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8176,
+          -525,
+          2026
+        ],
+        "flags": "0x00844880",
+        "id": 33
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8172,
+          -444,
+          2082
+        ],
+        "flags": "0x00844880",
+        "id": 999
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8383,
+          -531,
+          2085
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8182,
+          -534,
+          2180
+        ],
+        "flags": "0x00844880",
+        "id": 251
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -537,
+          2144
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8180,
+          -464,
+          2154
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -543,
+          2160
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8152,
+          -474,
+          2278
+        ],
+        "flags": "0x00844880",
+        "id": 92
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8262,
+          -549,
+          2106
+        ],
+        "flags": "0x00844880",
+        "id": 26
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8288,
+          -484,
+          2116
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8293,
+          -490,
+          2161
+        ],
+        "flags": "0x00844880",
+        "id": 2
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8158,
+          -495,
+          2102
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8194,
+          -562,
+          2181
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8198,
+          -566,
+          2248
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8283,
+          -569,
+          2315
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8200,
+          -573,
+          2182
+        ],
+        "flags": "0x00844880",
+        "id": 32
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8204,
+          -522,
+          2132
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8158,
+          -580,
+          2174
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8156,
+          -534,
+          2285
+        ],
+        "flags": "0x00844880",
+        "id": 14
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8210,
+          -588,
+          2290
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8281,
+          -546,
+          2180
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8168,
+          -552,
+          2286
+        ],
+        "flags": "0x00844880",
+        "id": 28
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -600,
+          2288
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8296,
+          -604,
+          2358
+        ],
+        "flags": "0x00844880",
+        "id": 999
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8294,
+          -570,
+          2230
+        ],
+        "flags": "0x00844880",
+        "id": 21
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -576,
+          2312
+        ],
+        "flags": "0x00844880",
+        "id": 13
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -582,
+          2320
+        ],
+        "flags": "0x00844880",
+        "id": 34
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8224,
+          -620,
+          2314
+        ],
+        "flags": "0x00844880",
+        "id": 4
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8275,
+          -624,
+          2349
+        ],
+        "flags": "0x00844880",
+        "id": 11
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8302,
+          -600,
+          2332
+        ],
+        "flags": "0x00844880",
+        "id": 48
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8230,
+          -632,
+          2352
+        ],
+        "flags": "0x00844880",
+        "id": 12
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8246,
+          -636,
+          2400
+        ],
+        "flags": "0x00844880",
+        "id": 0
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8212,
+          -640,
+          2346
+        ],
+        "flags": "0x00844880",
+        "id": 13
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8236,
+          -644,
+          2376
+        ],
+        "flags": "0x00844880",
+        "id": 14
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8256,
+          -656,
+          2392
+        ],
+        "flags": "0x00844880",
+        "id": 15
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8261,
+          -662,
+          2389
+        ],
+        "flags": "0x00844880",
+        "id": 6
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8242,
+          -660,
+          2398
+        ],
+        "flags": "0x00844880",
+        "id": 2
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          8263,
+          -676,
+          2419
+        ],
+        "flags": "0x00844880",
+        "id": 5
+      },
+      {
+        "list": 1,
+        "layer": "entities",
+        "pos": [
+          4672,
+          -96,
+          9024
+        ],
+        "flags": "0x08044880",
+        "id": 20
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8256,
+          -900,
+          2424
+        ],
+        "flags": "0x28220881",
+        "id": 26
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -124,
+          16320
+        ],
+        "flags": "0x08420880",
+        "id": 27
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "flags": "0x28220881",
+        "id": 28
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "flags": "0x28220881",
+        "id": 29
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "flags": "0x28020880",
+        "id": 30
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "flags": "0x28020880",
+        "id": 31
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "flags": "0x28020880",
+        "id": 32
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 33
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 34
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 35
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 36
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 37
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 38
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 39
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 40
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          -124,
+          16320
+        ],
+        "flags": "0x08020880",
+        "id": 41
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "flags": "0x28221880",
+        "id": 42
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "flags": "0x28220880",
+        "id": 43
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          12800,
+          -192,
+          7104
+        ],
+        "flags": "0x08420880",
+        "id": 44
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6336,
+          -49,
+          2368
+        ],
+        "flags": "0x08008881",
+        "id": 24
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7104,
+          -1,
+          2496
+        ],
+        "flags": "0x08008881",
+        "id": 20
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          7616,
+          -48,
+          2496
+        ],
+        "flags": "0x08008881",
+        "id": 21
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8128,
+          -48,
+          2496
+        ],
+        "flags": "0x08008881",
+        "id": 22
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8640,
+          -48,
+          2496
+        ],
+        "flags": "0x08008881",
+        "id": 23
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6592,
+          -49,
+          2752
+        ],
+        "flags": "0x08008881",
+        "id": 19
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          6080,
+          -49,
+          3264
+        ],
+        "flags": "0x08008881",
+        "id": 18
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          448,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 7
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          960,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 8
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          1472,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 9
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          1984,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 10
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          2496,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 11
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          3008,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 12
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          3520,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 13
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          4032,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 14
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          4544,
+          -1,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 15
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          5056,
+          -48,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 16
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          5568,
+          -48,
+          3520
+        ],
+        "flags": "0x08008881",
+        "id": 17
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          4672,
+          -96,
+          9664
+        ],
+        "flags": "0x08808881",
+        "id": 1
+      },
+      {
+        "list": 2,
+        "layer": "background",
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "flags": "0x08808880",
+        "id": 0
+      },
+      {
+        "list": 6,
+        "layer": "extra",
+        "pos": [
+          2112,
+          -48,
+          10816
+        ],
+        "flags": "0x08808880",
+        "id": 5
+      },
+      {
+        "list": 6,
+        "layer": "extra",
+        "pos": [
+          8192,
+          -96,
+          9088
+        ],
+        "flags": "0x08008880",
+        "id": 6
+      },
+      {
+        "list": 6,
+        "layer": "extra",
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "flags": "0x08808880",
+        "id": 7
+      },
+      {
+        "list": 6,
+        "layer": "extra",
+        "pos": [
+          11200,
+          -192,
+          9280
+        ],
+        "flags": "0x08008880",
+        "id": 8
+      },
+      {
+        "list": 6,
+        "layer": "extra",
+        "pos": [
+          11840,
+          -96,
+          6848
+        ],
+        "flags": "0x08008880",
+        "id": 0
+      }
+    ]
+  }
+}

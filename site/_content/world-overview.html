@@ -1,0 +1,481 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
+  <h1>World overview <span class="badge-wip">work in progress</span></h1>
+  <p class="lede">
+    Each kingdom's world map (Drake, Sebucus, Karisto) populates a set of <strong>actor linked lists</strong> at PSX RAM <code>0x8007C34C..0x8007C36C</code>. Each actor carries a world-space <code>(X, Y, Z)</code> position at offset <code>+0x14</code>. The data on this page is extracted from save-state captures of the top-view debug mode for each kingdom &mdash; see <a href="subsystems/world-map.html">world-map subsystem</a> for the controller, view-mode toggle, and per-frame state.
+  </p>
+</header>
+
+<section class="doc-section" id="how-this-works">
+  <h2>What you're looking at</h2>
+  <p>
+    Switch between the three kingdoms below. Each marker is one placed <strong>actor</strong> in the running game state &mdash; a town entrance, an NPC, a static tile, or a system object. Colour encodes the actor's owning <strong>list head</strong>:
+  </p>
+  <ul class="overview-legend">
+    <li><span class="legend-swatch swatch-list-0"></span><strong>list 0 (player / system)</strong> &mdash; head at <code>0x8007C34C</code>; player actor + system markers.</li>
+    <li><span class="legend-swatch swatch-list-1"></span><strong>list 1 (entities)</strong> &mdash; head at <code>0x8007C350</code>; NPC entries, town gateways, encounter triggers.</li>
+    <li><span class="legend-swatch swatch-list-2"></span><strong>list 2 (background)</strong> &mdash; head at <code>0x8007C354</code>; static map decorations and tiles.</li>
+    <li><span class="legend-swatch swatch-list-6"></span><strong>list 6 (extra)</strong> &mdash; head at <code>0x8007C36C</code>; late-game / overflow placements (Karisto only in the captured snapshots).</li>
+  </ul>
+  <p class="hint">
+    World coordinates are signed; the placed range is roughly <code>X &isin; [0, 16320]</code>, <code>Z &isin; [0, 16320]</code>, with <code>Y</code> as elevation (negative is higher, PSX convention). The TMD that each actor renders isn't yet wired to the marker; once the actor &rarr; mesh resolver is reverse-engineered, the dots become textured 3D meshes in the same coordinates.
+  </p>
+</section>
+
+<section class="doc-section" id="viewer">
+  <h2>Viewer</h2>
+  <div class="wo-tabs" role="tablist">
+    <button class="wo-tab is-active" data-k="drake"   role="tab">Drake Kingdom</button>
+    <button class="wo-tab"           data-k="sebucus" role="tab">Sebucus Islands</button>
+    <button class="wo-tab"           data-k="karisto" role="tab">Karisto Kingdom</button>
+  </div>
+
+  <div class="wo-layout">
+    <div class="wo-canvas-wrap">
+      <canvas id="wo-canvas" width="720" height="720" aria-label="World overview 3D scatter"></canvas>
+      <div class="wo-canvas-controls">
+        <label><input type="checkbox" id="wo-toggle-3d"> 3D tilt</label>
+        <label><input type="checkbox" id="wo-toggle-grid" checked> grid</label>
+        <button id="wo-reset" type="button">reset view</button>
+      </div>
+      <div class="wo-hover" id="wo-hover" aria-live="polite">hover a marker</div>
+    </div>
+
+    <aside class="wo-stats">
+      <h3>Snapshot</h3>
+      <dl id="wo-stats-dl"></dl>
+      <h3 style="margin-top:1.25rem">Placements by list</h3>
+      <ul id="wo-list-counts" class="wo-list-counts"></ul>
+    </aside>
+  </div>
+</section>
+
+<section class="doc-section" id="next">
+  <h2>What's next</h2>
+  <ul>
+    <li><strong>Actor &rarr; TMD resolver.</strong> Each actor references a TMD via an intermediate animation/motion struct (pointer at <code>actor+0x44</code> &mdash; not the TMD pointer table directly). Tracing that hop gives each marker its real mesh. (See <a href="https://github.com/anthropics/legend-of-legaia-re">memory note <code>project_world_map_render_state.md</code></a>.)</li>
+    <li><strong>Rotation + scale.</strong> The actor struct holds these past offset <code>+0x70</code> but the exact layout is per-subsystem; the renderer call <code>FUN_80024C88(pos_vec, render_queue, list_head)</code> takes the whole list and resolves per-actor transforms internally.</li>
+    <li><strong>Texture-mapped 3D.</strong> Once the resolver lands, the existing software TMD rasteriser in <a href="viewer.html">the asset viewer</a> can render the assembled scene textured.</li>
+  </ul>
+</section>
+
+<style>
+.badge-wip {
+  font-size: 0.55em; vertical-align: middle;
+  padding: 0.2em 0.6em; border-radius: 3px;
+  background: rgba(244, 180, 26, 0.15);
+  color: #F4B41A;
+  font-family: var(--font-mono);
+  border: 1px solid rgba(244, 180, 26, 0.4);
+}
+.overview-legend { list-style: none; padding: 0; margin: 0.5rem 0; }
+.overview-legend li { padding: 0.25rem 0; }
+.legend-swatch {
+  display: inline-block; width: 14px; height: 14px;
+  border-radius: 50%;
+  vertical-align: middle; margin-right: 0.5rem;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.swatch-list-0 { background: #56B6F5; }
+.swatch-list-1 { background: #79D279; }
+.swatch-list-2 { background: #C0C0C0; }
+.swatch-list-6 { background: #E07028; }
+.wo-tabs {
+  display: flex; gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+}
+.wo-tab {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.9rem;
+  font-family: var(--font-mono); font-size: 0.85rem;
+  cursor: pointer;
+}
+.wo-tab.is-active {
+  background: rgba(244,180,26,0.18);
+  border-color: rgba(244,180,26,0.6);
+  color: #F4B41A;
+}
+.wo-layout {
+  display: grid; gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .wo-layout { grid-template-columns: 1fr; }
+}
+.wo-canvas-wrap {
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+#wo-canvas {
+  width: 100%; max-width: 720px;
+  aspect-ratio: 1 / 1;
+  background: #0a0a1a;
+  border: 1px solid var(--border);
+  display: block;
+}
+.wo-canvas-controls {
+  display: flex; gap: 1rem;
+  font-family: var(--font-mono); font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.wo-canvas-controls button {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.6rem;
+  font-family: var(--font-mono); font-size: 0.8rem;
+  cursor: pointer;
+}
+.wo-hover {
+  font-family: var(--font-mono); font-size: 0.8rem;
+  color: var(--text-dim);
+  min-height: 1.4em;
+}
+.wo-stats h3 {
+  margin: 0 0 0.5rem; font-size: 0.85rem;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.wo-stats dl {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.7rem;
+  font-family: var(--font-mono); font-size: 0.82rem;
+  margin: 0;
+}
+.wo-stats dt { color: var(--text-dim); }
+.wo-stats dd { margin: 0; }
+.wo-list-counts {
+  list-style: none; padding: 0; margin: 0;
+  font-family: var(--font-mono); font-size: 0.82rem;
+}
+.wo-list-counts li {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+</style>
+
+<script>
+(async function () {
+  const canvas = document.getElementById('wo-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const hover = document.getElementById('wo-hover');
+  const statsDl = document.getElementById('wo-stats-dl');
+  const listCountsUl = document.getElementById('wo-list-counts');
+  const toggle3d = document.getElementById('wo-toggle-3d');
+  const toggleGrid = document.getElementById('wo-toggle-grid');
+  const resetBtn = document.getElementById('wo-reset');
+
+  let data = null;
+  try {
+    data = await fetch('world-overview.json').then(r => r.json());
+  } catch (e) {
+    statsDl.innerHTML = '<dt>error</dt><dd>could not load world-overview.json</dd>';
+    return;
+  }
+
+  const COLORS = {
+    0: '#56B6F5',  // player / system
+    1: '#79D279',  // entities
+    2: '#C0C0C0',  // background
+    3: '#9999EE',
+    4: '#EE99EE',
+    5: '#EEEE99',
+    6: '#E07028',  // extra
+  };
+  const LIST_NAMES = {
+    0: 'player/system', 1: 'entities', 2: 'background',
+    3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
+  };
+
+  /* View state -------------------------------------------------------- */
+  let currentKey = (location.hash || '#drake').slice(1);
+  if (!data[currentKey]) currentKey = 'drake';
+
+  const view = {
+    pan: { x: 0, y: 0 },
+    zoom: 1.0,
+    tilt: 0.0,       // 0 = top-down, 1 = tilted-3D
+    showGrid: true,
+    hoverIdx: -1,
+  };
+  function resetView() {
+    view.pan.x = 0; view.pan.y = 0; view.zoom = 1.0;
+    view.tilt = toggle3d.checked ? 1.0 : 0.0;
+  }
+  resetView();
+
+  /* Project a (x,y,z) placement to canvas (cx, cy, depth) ------------- */
+  function project(p, viewportSize, worldExtent) {
+    // World extent (X,Z) maps to canvas viewport area.
+    const [wx, wz] = worldExtent;
+    // Center world around origin: world (8160, 8160) -> canvas center
+    const nx = (p[0] - wx/2) / (wx/2);     // -1..+1
+    const nz = (p[2] - wz/2) / (wz/2);     // -1..+1
+    const ny = -p[1] / 1200;               // map Y elevation to small offset
+
+    // Apply pan + zoom
+    let sx = nx * view.zoom + view.pan.x;
+    let sy = nz * view.zoom + view.pan.y;
+
+    // Apply tilt: rotate around X axis (top -> oblique)
+    if (view.tilt > 0) {
+      const tilt = view.tilt * 0.6;       // max ~35deg tilt
+      const c = Math.cos(tilt), s = Math.sin(tilt);
+      const yOrig = sy;
+      sy = c * yOrig - s * ny;
+      // depth = s * yOrig + c * ny  (not strictly needed; we'll use ny for shading)
+    }
+
+    return {
+      cx: viewportSize/2 + sx * viewportSize * 0.45,
+      cy: viewportSize/2 + sy * viewportSize * 0.45,
+      depth: p[1],
+    };
+  }
+
+  /* Draw -------------------------------------------------------------- */
+  function draw() {
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    const kingdom = data[currentKey];
+    const ext = kingdom.world_extent || [16320, 16320];
+
+    /* grid */
+    if (view.showGrid) {
+      ctx.strokeStyle = 'rgba(120, 130, 200, 0.18)';
+      ctx.lineWidth = 1;
+      const steps = 8;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        // horizontal line (constant Z)
+        const a = project([0,       0, t*ext[1]], W, ext);
+        const b = project([ext[0],  0, t*ext[1]], W, ext);
+        ctx.beginPath();
+        ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy);
+        ctx.stroke();
+        // vertical line (constant X)
+        const c = project([t*ext[0], 0, 0      ], W, ext);
+        const d = project([t*ext[0], 0, ext[1] ], W, ext);
+        ctx.beginPath();
+        ctx.moveTo(c.cx, c.cy); ctx.lineTo(d.cx, d.cy);
+        ctx.stroke();
+      }
+      /* center crosshair (label position) */
+      ctx.strokeStyle = 'rgba(244,180,26,0.4)';
+      const cen = project([ext[0]/2, 0, ext[1]/2], W, ext);
+      ctx.beginPath();
+      ctx.moveTo(cen.cx - 8, cen.cy); ctx.lineTo(cen.cx + 8, cen.cy);
+      ctx.moveTo(cen.cx, cen.cy - 8); ctx.lineTo(cen.cx, cen.cy + 8);
+      ctx.stroke();
+    }
+
+    /* placements - sort by Y so high points (negative Y) draw on top */
+    const placements = kingdom.placements.slice();
+    placements.sort((a,b) => b.pos[1] - a.pos[1]);
+
+    const projected = placements.map(p => ({
+      ...p, proj: project(p.pos, W, ext),
+    }));
+
+    for (let i = 0; i < projected.length; i++) {
+      const item = projected[i];
+      const isHover = (i === view.hoverIdx);
+      const color = COLORS[item.list] || '#FFF';
+      const baseR = isHover ? 9 : 5;
+      // Y elevation -> bigger marker
+      const elev = Math.max(0, Math.min(1, -item.pos[1] / 600));
+      const r = baseR + elev * 3;
+
+      // outer ring
+      ctx.beginPath();
+      ctx.arc(item.proj.cx, item.proj.cy, r + 1, 0, 2*Math.PI);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fill();
+
+      // body
+      ctx.beginPath();
+      ctx.arc(item.proj.cx, item.proj.cy, r, 0, 2*Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      if (isHover) {
+        ctx.strokeStyle = '#F4B41A';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    /* hover label */
+    if (view.hoverIdx >= 0 && view.hoverIdx < projected.length) {
+      const it = projected[view.hoverIdx];
+      hover.textContent =
+        `[${LIST_NAMES[it.list] || 'list ' + it.list}] ` +
+        `pos=(${it.pos[0]}, ${it.pos[1]}, ${it.pos[2]})  ` +
+        `flags=${it.flags}  id=0x${it.id.toString(16)}`;
+    } else {
+      hover.textContent = `hover a marker  -  ${kingdom.placements.length} placements in ${kingdom.label}`;
+    }
+  }
+
+  /* Stats ------------------------------------------------------------- */
+  function updateStats() {
+    const k = data[currentKey];
+    statsDl.innerHTML = `
+      <dt>label</dt>      <dd>${k.label}</dd>
+      <dt>placements</dt> <dd>${k.placements.length}</dd>
+      <dt>TMD pool</dt>   <dd>${k.tmd_count} entries</dd>
+      <dt>camera</dt>     <dd>(${k.camera.x}, ${k.camera.z})</dd>
+      <dt>azimuth</dt>    <dd>${k.camera.azimuth}</dd>
+      <dt>zoom</dt>       <dd>${k.camera.zoom}</dd>
+    `;
+    const counts = {};
+    k.placements.forEach(p => { counts[p.list] = (counts[p.list] || 0) + 1; });
+    listCountsUl.innerHTML = Object.entries(counts).sort((a,b)=>+a[0]-+b[0]).map(([li, n]) =>
+      `<li><span class="legend-swatch swatch-list-${li}"></span>list ${li} (${LIST_NAMES[li]||'?'}): ${n}</li>`
+    ).join('');
+  }
+
+  /* Hit-test for hover ----------------------------------------------- */
+  function hitTest(mx, my) {
+    const W = canvas.width;
+    const ext = data[currentKey].world_extent || [16320, 16320];
+    // canvas pixel coords are scaled
+    const rect = canvas.getBoundingClientRect();
+    const px = mx * (canvas.width / rect.width);
+    const py = my * (canvas.height / rect.height);
+
+    let bestIdx = -1, bestDist = 14*14;
+    const placements = data[currentKey].placements;
+    // (We sort for draw but hit-test in original order; since they cluster, this is fine.)
+    for (let i = 0; i < placements.length; i++) {
+      const proj = project(placements[i].pos, W, ext);
+      const dx = proj.cx - px, dy = proj.cy - py;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestDist) { bestDist = d2; bestIdx = i; }
+    }
+    // Map original idx to sorted-draw idx? Not necessary - draw uses its own sort
+    // but we want hover to highlight the same entry. We'll just use the
+    // original index throughout and not pre-sort the draw list -> simpler.
+    return bestIdx;
+  }
+
+  /* Use original (unsorted) order everywhere ------------------------- */
+  // Rewrite draw + hitTest to use placements directly (no sort) so
+  // hoverIdx is stable.
+  function draw2() {
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    const k = data[currentKey];
+    const ext = k.world_extent || [16320, 16320];
+
+    if (view.showGrid) {
+      ctx.strokeStyle = 'rgba(120, 130, 200, 0.18)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        const a = project([0,       0, t*ext[1]], W, ext);
+        const b = project([ext[0],  0, t*ext[1]], W, ext);
+        ctx.beginPath(); ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy); ctx.stroke();
+        const c = project([t*ext[0], 0, 0      ], W, ext);
+        const d = project([t*ext[0], 0, ext[1] ], W, ext);
+        ctx.beginPath(); ctx.moveTo(c.cx, c.cy); ctx.lineTo(d.cx, d.cy); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(244,180,26,0.4)';
+      const cen = project([ext[0]/2, 0, ext[1]/2], W, ext);
+      ctx.beginPath();
+      ctx.moveTo(cen.cx - 8, cen.cy); ctx.lineTo(cen.cx + 8, cen.cy);
+      ctx.moveTo(cen.cx, cen.cy - 8); ctx.lineTo(cen.cx, cen.cy + 8);
+      ctx.stroke();
+    }
+
+    const order = k.placements.map((_, i) => i);
+    order.sort((a, b) => k.placements[b].pos[1] - k.placements[a].pos[1]);
+    for (const i of order) {
+      const p = k.placements[i];
+      const isHover = (i === view.hoverIdx);
+      const color = COLORS[p.list] || '#FFF';
+      const proj = project(p.pos, W, ext);
+      const elev = Math.max(0, Math.min(1, -p.pos[1] / 600));
+      const r = (isHover ? 9 : 5) + elev * 3;
+      ctx.beginPath(); ctx.arc(proj.cx, proj.cy, r+1, 0, 2*Math.PI);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(proj.cx, proj.cy, r, 0, 2*Math.PI);
+      ctx.fillStyle = color; ctx.fill();
+      if (isHover) { ctx.strokeStyle = '#F4B41A'; ctx.lineWidth = 2; ctx.stroke(); }
+    }
+
+    if (view.hoverIdx >= 0 && view.hoverIdx < k.placements.length) {
+      const it = k.placements[view.hoverIdx];
+      hover.textContent =
+        `[${LIST_NAMES[it.list] || 'list ' + it.list}] ` +
+        `pos=(${it.pos[0]}, ${it.pos[1]}, ${it.pos[2]})  ` +
+        `flags=${it.flags}  id=0x${it.id.toString(16)}`;
+    } else {
+      hover.textContent = `hover a marker  -  ${k.placements.length} placements in ${k.label}`;
+    }
+  }
+
+  /* Events ----------------------------------------------------------- */
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    view.hoverIdx = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    draw2();
+  });
+  canvas.addEventListener('mouseleave', () => { view.hoverIdx = -1; draw2(); });
+
+  let drag = null;
+  canvas.addEventListener('mousedown', (e) => {
+    drag = { startX: e.clientX, startY: e.clientY, panX: view.pan.x, panY: view.pan.y };
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    const dx = (e.clientX - drag.startX) / canvas.clientWidth * 2;
+    const dy = (e.clientY - drag.startY) / canvas.clientHeight * 2;
+    view.pan.x = drag.panX + dx;
+    view.pan.y = drag.panY + dy;
+    draw2();
+  });
+  window.addEventListener('mouseup', () => { drag = null; });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.001);
+    view.zoom = Math.max(0.5, Math.min(8, view.zoom * factor));
+    draw2();
+  }, { passive: false });
+
+  toggle3d.addEventListener('change', () => { view.tilt = toggle3d.checked ? 1.0 : 0.0; draw2(); });
+  toggleGrid.addEventListener('change', () => { view.showGrid = toggleGrid.checked; draw2(); });
+  resetBtn.addEventListener('click', () => { resetView(); draw2(); });
+
+  /* Tabs ------------------------------------------------------------- */
+  document.querySelectorAll('.wo-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.wo-tab').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      currentKey = btn.dataset.k;
+      history.replaceState(null, '', '#' + currentKey);
+      view.hoverIdx = -1;
+      resetView();
+      updateStats();
+      draw2();
+    });
+  });
+  /* Honour deep-link */
+  const initial = document.querySelector(`.wo-tab[data-k="${currentKey}"]`);
+  if (initial) {
+    document.querySelectorAll('.wo-tab').forEach(b => b.classList.remove('is-active'));
+    initial.classList.add('is-active');
+  }
+
+  updateStats();
+  draw2();
+})();
+</script>
