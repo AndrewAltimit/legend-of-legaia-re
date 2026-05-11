@@ -33,11 +33,19 @@ const EXPECTED_PROT_ENTRIES: usize = 1232;
 /// byte-match the live battle save's loaded buffers).
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("all_zeros", 1),
+    // `battle_data_pack` claims PROT 0865 (`battle_data` block) plus the
+    // 0863 `edstati3` entry that shares the same trailer-table shape.
+    // Both used to fall through to `lzs_container` because the trailer
+    // happens to satisfy a player.lzs-style descriptor walk.
+    ("battle_data_pack", 2),
     ("data_field_streaming", 26),
     ("data_field_truncated", 4),
     ("effect_bundle", 1),
     ("field_pack", 2),
-    ("lzs_container", 42),
+    // `lzs_container` ticked 42 → 40 once `battle_data_pack` claimed the
+    // two pack-shaped entries that opportunistically satisfied the
+    // weaker LZS-descriptor heuristic.
+    ("lzs_container", 40),
     ("mips_overlay", 22),
     // `monster_sound_bank` matches `h:\mpack\monster.snd` (`[u32 format=2]
     // [u16 spu_addrs[256]][ADPCM]`, every slot bit-15 set). One PROT entry.

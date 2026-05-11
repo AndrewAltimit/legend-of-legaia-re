@@ -30,7 +30,7 @@
 //! stays backward-compatible.
 
 use anyhow::Result;
-use legaia_asset::{anm_detect, tim_scan, tmd_scan};
+use legaia_asset::{anm_detect, battle_data_pack, tim_scan, tmd_scan};
 use legaia_tim::Vram;
 
 use crate::scene::Scene;
@@ -147,16 +147,22 @@ impl ResolvedAnm {
 /// the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with
 /// CLUT at `(0, 500)`.
 ///
-/// The four town-NPC character TMDs that drop ~97 prims each on
-/// town01 reference CLUT row y=479 slots at x=128..240 (CBAs
-/// `0x77C8..0x77CF`). The 256x1 palette block that owns those slots
-/// lives inside `battle_data` (PROT 865..869), packed inside a custom
-/// container the raw TIM scanner doesn't descend into. The retail
-/// engine reaches them through `FUN_8001E890`'s data-field-player
-/// chain. Until that loader is ported, those rows stay unsupplied -
-/// document the gap in `docs/subsystems/asset-loader.md` rather than
-/// inflate `FIELD_SHARED_BLOCKS` with a block whose payload the
-/// current scanner can't reach.
+/// `battle_data` (PROT 865..869) holds the character / monster TMDs
+/// the retail engine pre-loads at battle scene init. Town NPCs reuse
+/// some of these TMDs and their CLUTs live in VRAM row y=479 slots
+/// x=128..240. The records are wrapped in a per-record LZS stream
+/// that the raw TIM/TMD scanner can't see -
+/// [`legaia_asset::battle_data_pack`] now decompresses them, but the
+/// post-TMD texture/CLUT layout inside each decoded record is
+/// partially TBD (the layout descriptor at `u32[3..0x20]` of the
+/// 32-byte header isn't fully pinned). Adding `battle_data` to the
+/// default shared set inflates the targeted-upload "needs" set with
+/// CBA/TSB regions whose textures aren't yet reachable, which pushes
+/// the town01 prim keep ratio down. Callers that want the embedded
+/// TMDs in the registered pool (for battle-scene rendering once the
+/// post-TMD layout is reversed) can pass `"battle_data"` explicitly
+/// to [`SceneResources::build_with_shared`] /
+/// [`SceneResources::build_targeted`]. See [`docs/formats/battle-data-pack.md`].
 pub const FIELD_SHARED_BLOCKS: &[&str] = &["init_data", "player_data"];
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
@@ -233,7 +239,11 @@ impl SceneResources {
         let mut shared_tmd_count = 0usize;
 
         // Pass 1: parse every TMD and ANM from shared + scene so we know
-        // exactly what VRAM regions the meshes will sample.
+        // exactly what VRAM regions the meshes will sample. For PROT
+        // entries shaped like a `battle_data` pack (PROT 0865 and similar),
+        // also LZS-decompress every record and pull the embedded TMDs out
+        // of the inner payloads - the raw TMD scanner can't see those
+        // because the pack wraps each record in an LZS stream.
         let parse_scene_tmds_anms = |s: &Scene,
                                      tmds: &mut Vec<ResolvedTmd>,
                                      anm_packs: &mut Vec<ResolvedAnm>,
@@ -263,6 +273,34 @@ impl SceneResources {
                             pack,
                             payload,
                         });
+                    }
+                }
+                // battle_data pack: per-record LZS decompression exposes
+                // embedded TMDs the raw scanner can't reach.
+                if let Some(pack) = battle_data_pack::detect(bytes) {
+                    for record in &pack.records {
+                        let Ok(decoded) =
+                            battle_data_pack::decode_record(bytes, &pack, record.index)
+                        else {
+                            continue;
+                        };
+                        let Some(rng) = decoded.tmd_range else {
+                            continue;
+                        };
+                        let Some(tmd_bytes) = decoded.bytes.get(rng.clone()) else {
+                            continue;
+                        };
+                        let payload = tmd_bytes.to_vec();
+                        if let Ok(tmd) = legaia_tmd::parse(&payload) {
+                            tmds.push(ResolvedTmd {
+                                entry_idx: entry.idx,
+                                offset: rng.start,
+                                byte_len: payload.len(),
+                                tmd,
+                                raw: payload,
+                            });
+                            *tmd_count += 1;
+                        }
                     }
                 }
             }
@@ -308,6 +346,33 @@ impl SceneResources {
                             tim_bufs.push(payload.to_vec());
                         } else {
                             *tim_parse_failures += 1;
+                        }
+                    }
+                    // battle_data pack: rescan decompressed record bytes
+                    // for any TIM headers. The post-TMD region inside
+                    // each record holds the character textures + CLUTs;
+                    // most retail records don't tag their texture pool
+                    // with the standard TIM magic, but the few that do
+                    // (or future records that gain it) are now reachable.
+                    if let Some(pack) = battle_data_pack::detect(bytes) {
+                        for record in &pack.records {
+                            let Ok(decoded) =
+                                battle_data_pack::decode_record(bytes, &pack, record.index)
+                            else {
+                                continue;
+                            };
+                            for hit in tim_scan::scan_buffer(&decoded.bytes) {
+                                let end = hit.offset + hit.byte_len;
+                                if end > decoded.bytes.len() {
+                                    continue;
+                                }
+                                let payload = &decoded.bytes[hit.offset..end];
+                                if legaia_tim::parse(payload).is_ok() {
+                                    tim_bufs.push(payload.to_vec());
+                                } else {
+                                    *tim_parse_failures += 1;
+                                }
+                            }
                         }
                     }
                 }
@@ -405,6 +470,41 @@ impl SceneResources {
                             pack,
                             payload,
                         });
+                    }
+                }
+                // battle_data pack: pull every embedded TMD out of the
+                // LZS-decoded records. Also rescan each record's bytes
+                // for any standard TIM blocks - records whose texture
+                // pool uses the standard TIM magic become reachable.
+                if let Some(pack) = battle_data_pack::detect(bytes) {
+                    for record in &pack.records {
+                        let Ok(decoded) =
+                            battle_data_pack::decode_record(bytes, &pack, record.index)
+                        else {
+                            continue;
+                        };
+                        for hit in tim_scan::scan_buffer(&decoded.bytes) {
+                            let payload = &decoded.bytes[hit.offset..hit.offset + hit.byte_len];
+                            if let Ok(tim) = legaia_tim::parse(payload) {
+                                vram.upload_tim(&tim);
+                                *tim_count += 1;
+                            } else {
+                                *tim_parse_failures += 1;
+                            }
+                        }
+                        if let Some(rng) = decoded.tmd_range.clone() {
+                            let payload = decoded.bytes[rng.clone()].to_vec();
+                            if let Ok(tmd) = legaia_tmd::parse(&payload) {
+                                tmds.push(ResolvedTmd {
+                                    entry_idx: entry.idx,
+                                    offset: rng.start,
+                                    byte_len: payload.len(),
+                                    tmd,
+                                    raw: payload,
+                                });
+                                *tmd_count += 1;
+                            }
+                        }
                     }
                 }
             }

@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_asset::{
-    AssetType, DecodeMode, Descriptor, categorize, decode, effect_bundle, field_pack,
-    parse_player_lzs, parse_streaming, stage_geom, tim_scan, tmd_scan, validate,
+    AssetType, DecodeMode, Descriptor, battle_data_pack, categorize, decode, effect_bundle,
+    field_pack, parse_player_lzs, parse_streaming, stage_geom, tim_scan, tmd_scan, validate,
 };
 use legaia_prot::cdname;
 
@@ -244,6 +244,29 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         only_hits: bool,
     },
+    /// Inspect a single PROT entry as a battle_data pack: list the record
+    /// table, LZS-decode each record, and report which records hold a
+    /// Legaia TMD. With `--out`, dumps the decompressed payload of every
+    /// record to disk for downstream inspection.
+    BattleDataPack {
+        input: PathBuf,
+        /// Optional output directory; written as `rec<NN>_id<HH>.bin` per
+        /// record (decoded bytes; TMD at offset 0x20 when present).
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Bulk-scan a directory of PROT entries for the battle_data pack format.
+    /// Reports per-entry record count, decoded-payload total, and the number
+    /// of records that hold a recognizable Legaia TMD.
+    BattleDataPackScan {
+        dir: PathBuf,
+        /// CDNAME.TXT for nicer entry titles. Optional.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// Print only entries that match.
+        #[arg(long, default_value_t = true)]
+        only_hits: bool,
+    },
     /// Targeted validation: walk PROT entries that correspond to the first
     /// entry of each named CDNAME block. Each is tested with strict layout
     /// and (when applicable) magic checks.
@@ -327,6 +350,12 @@ fn main() -> Result<()> {
         } => field_pack_one(&input, all_slots, groups),
         Cmd::FieldPackScan { dir, only_hits } => field_pack_scan(&dir, only_hits),
         Cmd::EffectBundle { input, all_slots } => effect_bundle_one(&input, all_slots),
+        Cmd::BattleDataPack { input, out } => battle_data_pack_one(&input, out.as_deref()),
+        Cmd::BattleDataPackScan {
+            dir,
+            cdname,
+            only_hits,
+        } => battle_data_pack_scan(&dir, cdname.as_deref(), only_hits),
         Cmd::EffectBundleScan { dir, only_hits } => effect_bundle_scan(&dir, only_hits),
         Cmd::Validate {
             dir,
@@ -2205,6 +2234,131 @@ fn effect_bundle_scan(dir: &Path, only_hits: bool) -> Result<()> {
     println!(
         "{} of {} entries match the effect-bundle signature",
         hits, total
+    );
+    Ok(())
+}
+
+fn battle_data_pack_one(input: &Path, out: Option<&Path>) -> Result<()> {
+    let raw = std::fs::read(input)?;
+    let pack = battle_data_pack::parse(&raw)?;
+    println!("file       : {}", input.display());
+    println!("file size  : {} bytes (0x{:x})", raw.len(), raw.len());
+    println!(
+        "table_offset: 0x{:x}, record_count: {}, data_base: 0x{:x}",
+        pack.table_offset, pack.record_count, pack.data_base
+    );
+    println!(
+        "{:>3} {:>4} {:>10} {:>10} {:>10} {:>6}",
+        "rec", "id", "on_disc_sz", "data_off", "dec_size", "tmd"
+    );
+    let mut tmds = 0usize;
+    let mut total_decoded = 0usize;
+    if let Some(out) = out {
+        std::fs::create_dir_all(out)?;
+    }
+    for r in &pack.records {
+        let entry = battle_data_pack::decode_record(&raw, &pack, r.index);
+        match entry {
+            Ok(e) => {
+                let dec_size = e.bytes.len();
+                let tmd_tag = match &e.tmd_range {
+                    Some(rng) => {
+                        tmds += 1;
+                        format!("{}..{}", rng.start, rng.end)
+                    }
+                    None => "-".into(),
+                };
+                println!(
+                    "{:>3} 0x{:02x} 0x{:08x} 0x{:08x} {:>10} {:>6}",
+                    r.index, r.id, r.on_disc_size, r.data_offset, dec_size, tmd_tag
+                );
+                total_decoded += dec_size;
+                if let Some(out_dir) = out {
+                    let fname = format!("rec{:03}_id{:02x}.bin", r.index, r.id);
+                    std::fs::write(out_dir.join(fname), &e.bytes)?;
+                }
+            }
+            Err(err) => {
+                println!(
+                    "{:>3} 0x{:02x} 0x{:08x} 0x{:08x} FAIL: {}",
+                    r.index, r.id, r.on_disc_size, r.data_offset, err
+                );
+            }
+        }
+    }
+    println!();
+    println!(
+        "{} records / {} bytes decompressed / {} TMDs found",
+        pack.records.len(),
+        total_decoded,
+        tmds
+    );
+    Ok(())
+}
+
+fn battle_data_pack_scan(dir: &Path, cdname_path: Option<&Path>, only_hits: bool) -> Result<()> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    entries.sort();
+
+    let names = match cdname_path {
+        Some(p) => Some(cdname::parse(p)?),
+        None => None,
+    };
+
+    println!(
+        "{:<32}  {:>7}  {:>10}  {:>5}  notes",
+        "entry", "records", "dec_bytes", "tmds"
+    );
+    println!("{}", "-".repeat(80));
+    let mut total_hits = 0usize;
+    let mut total_recs = 0usize;
+    let mut total_tmds = 0usize;
+    for path in &entries {
+        let raw = std::fs::read(path)?;
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let display_name = display_name_for(&stem, names.as_ref());
+        match battle_data_pack::detect(&raw) {
+            Some(pack) => {
+                let mut dec_bytes = 0usize;
+                let mut tmds = 0usize;
+                for r in &pack.records {
+                    if let Ok(e) = battle_data_pack::decode_record(&raw, &pack, r.index) {
+                        dec_bytes += e.bytes.len();
+                        if e.tmd_range.is_some() {
+                            tmds += 1;
+                        }
+                    }
+                }
+                println!(
+                    "{:<32}  {:>7}  {:>10}  {:>5}",
+                    display_name,
+                    pack.records.len(),
+                    dec_bytes,
+                    tmds
+                );
+                total_hits += 1;
+                total_recs += pack.records.len();
+                total_tmds += tmds;
+            }
+            None => {
+                if !only_hits {
+                    println!("{:<32}  {:>7}  {:>10}  {:>5}", display_name, "-", "-", "-");
+                }
+            }
+        }
+    }
+    println!();
+    println!(
+        "{} entries match, {} records, {} TMDs found",
+        total_hits, total_recs, total_tmds
     );
     Ok(())
 }
