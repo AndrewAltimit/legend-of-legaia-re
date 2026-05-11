@@ -1,58 +1,44 @@
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; global hue-ramp palette</div>
-  <h1>Global hue-ramp palette at VRAM row 479</h1>
-  <p class="lede">The retail Legaia engine maintains a 15-slot CLUT "rainbow ramp" at VRAM <code>(fb_x=0..240, fb_y=479)</code>. The ramp is materialised in main RAM at <code>0x800F19xx</code> during early engine init, DMA'd into VRAM, and then relied on as <strong>persistent state</strong> by every non-battle scene. Field and town NPC TMDs sample the lower half of the ramp via CBA cells <code>0x77C8..0x77CF</code> (row 479 slots 8..15); sprite and effect prims sample the upper half. Implementation: <code>crates/asset/src/npc_palette.rs</code>.</p>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; row-479 NPC CLUTs</div>
+  <h1>NPC CLUTs at VRAM row 479</h1>
+  <p class="lede">PSX field/town NPC TMDs commonly sample CLUT cells along row 479. The data is <strong>plain PSX TIMs</strong> sitting inside the scene's PROT entries, uploaded to VRAM by the standard asset-dispatch path. There is no special "hue-ramp generator" function; static analysis returned zero hits because there was nothing to find. Implementation: <code>crates/tim/src/vram.rs</code> (merge-zeros CLUT upload) + <code>crates/tmd/src/vram_targeted.rs</code> (targeted dispatch).</p>
 </header>
 
 <section class="doc-section" id="layout">
   <h2>Layout</h2>
-<pre><code>fb_x   slot   peak  shape
-   0     0      20   hue wheel at 5-bit peak intensity = 20 (very bright)
-  16     1      19
-  32     2      17
-  48     3      16
-  64     4      15
-  80     5      13
-  96     6      12
- 112     7      11
- 128     8       9   &lt;-- town/field NPC anchor: CBA 0x77C8
- 144     9       8       CBA 0x77C9
- 160    10       6       CBA 0x77CA
- 176    11       5       CBA 0x77CB
- 192    12       4       CBA 0x77CC
- 208    13       2       CBA 0x77CD
- 224    14       1       CBA 0x77CE
- 240    --       0   intentionally left empty (CBA 0x77CF)</code></pre>
-  <p>Each 16-pixel slot holds a 16-entry CLUT in BGR555:</p>
-  <ul>
-    <li>Entry 0 is the canonical <code>0x0000</code> (transparent black).</li>
-    <li>Entries 1..15 traverse a HSV-style hue cycle (B &rarr; C &rarr; G &rarr; Y &rarr; R &rarr; M &rarr; B) in 5-bit color space, at a fixed peak value per slot.</li>
-    <li>Peak values across the 15 active slots form a smooth descending ramp <code>[20, 19, 17, 16, 15, 13, 12, 11, 9, 8, 6, 5, 4, 2, 1]</code>.</li>
-  </ul>
-  <p>The exact runtime generator (the MIPS function that writes the bytes into <code>0x800F19xx</code>) has not been pinned - see <em>Open questions</em> below.</p>
+  <p>Each contributing TIM has a CLUT block with <code>(fb_x, fb_y, w, h) = (0, 479, 256, 1)</code> &mdash; a 256-color row spanning fb_x=0..256, which carves into sixteen 16-color slots (slot N at fb_x = N*16..N*16+16). Field NPC TMDs sample these slots via CBA cells <code>0x77C0..0x77CF</code>.</p>
+  <p>The actual contents are <strong>scene-specific</strong>: each town/area embeds its own row-479 TIMs with the NPC palettes for that scene. Town01, town0b, town0c, town0d share one palette set (the human-villager NPCs); balden, bubu1, urudre1, nilboa, chitei2 each have their own.</p>
 </section>
 
-<section class="doc-section" id="why-this-matters">
-  <h2>Why this matters</h2>
-  <p>Town01's NPC TMDs reference CBA cells that fall on row 479 slots 8..14. The 32-byte CLUT payloads at those VRAM positions are <strong>absent from disc</strong>: a brute-force scan of every PROT entry and <code>SCUS_942.54</code> for the canonical slot-8 byte sequence returns zero hits, and even an 8-byte prefix isn't found anywhere on disc. Without those CLUT rows the engine's targeted-upload pre-pass drops every textured prim that samples them as <code>MissingClut</code>, costing roughly 21 percentage points of the town01 prim-keep ratio (78.6% without the ramp vs. 99.3% with it).</p>
-  <p>Because the bytes are stable across every retail save state we have access to (the only saves where row 479 differs are battle scenes, which overwrite the row with battle-overlay content), the engine's clean-room scene-build pre-pass can paint the ramp in verbatim from a corpus-confirmed capture. The Rust API is:</p>
-<pre><code>use legaia_asset::npc_palette;
-npc_palette::apply_global_hue_ramp(&amp;mut vram);</code></pre>
-  <p><code>SceneResources::build</code> and <code>SceneResources::build_targeted</code> both call this at the end of every scene-build pre-pass, so consumers get the ramp for free.</p>
+<section class="doc-section" id="on-disc-layout">
+  <h2>How the TIMs sit on disc</h2>
+  <p>Within a scene's PROT entries (e.g. <code>0006_town01.BIN</code>), each row-479 TIM is preceded by a 4-byte chunk-header prefix in the asset descriptor stream, then the standard PSX TIM:</p>
+<pre><code>+0x00: u32 chunk header  (e.g. 0x01008220 = type 0x20)
++0x04: u32 TIM magic     0x00000010
++0x08: u32 TIM flags     0x00000008 (4bpp + CLUT)
++0x0C: u32 block size    0x0000020C  (CLUT block: 12 hdr + 512 data)
++0x10: u16 fb_x = 0
++0x12: u16 fb_y = 479
++0x14: u16 num_colors = 256
++0x16: u16 num_cluts = 1
++0x18: 512 bytes of CLUT data (256 BGR555 halfwords)
++...:  standard TIM image block (typically a 256x256 4bpp at fb_x=832)</code></pre>
+  <p><code>legaia_asset::tim_scan</code> detects these via the inner TIM magic at offset +4 from the chunk header; it does not need to interpret the type-0x20 wrapper.</p>
 </section>
 
-<section class="doc-section" id="cross-save-corroboration">
+<section class="doc-section" id="multi-tim-clut-merge">
+  <h2>Multi-TIM CLUT merge</h2>
+  <p>Each town typically has <strong>multiple</strong> row-479 TIMs spread across several PROT entries (e.g. town01 entries 6..9 carry 7 such TIMs). Some are "full" (slots 0..14 populated), others are "partial" (slots 0..7 only, remaining slots padded with <code>0x0000</code> on disc). All target the same VRAM cells, producing a CLUT race.</p>
+  <p>The engine's targeted-upload CLUT pass at <code>legaia_tmd::vram_targeted::build_vram_targeted_from_buffers</code> runs the CLUT block second (after image blocks) and uses <strong>merge-zeros semantics</strong>: a halfword of <code>0x0000</code> in a later upload does not overwrite a non-zero halfword from an earlier upload. The net effect is the union of every contributing TIM's non-zero slots, which yields a fully populated palette row.</p>
+  <p>Without merge semantics, the partial TIMs' trailing zeros clobber the full TIMs' slots 8..14 and the town01 prim keep-ratio collapses from 99.3% to 78.6% (the four "field intersection" NPC TMDs lose their palette anchor).</p>
+</section>
+
+<section class="doc-section" id="retail-dispatch">
+  <h2>What retail's dispatcher does instead</h2>
+  <p>The exact retail dispatch order (and which subset of the row-479 TIMs get uploaded for a given scene-mode) is not yet pinned. Empirically, mednafen save states captured mid-tutorial-battle in town01 hold the specific bytes from <code>0006_town01 @ 0x1ee4c</code> at row 479 &mdash; meaning the retail engine ends up with one specific "full" variant. The merge strategy in the engine port produces a functionally equivalent fully-populated row but not necessarily byte-identical to retail.</p>
+</section>
+
+<section class="doc-section" id="cross-save">
   <h2>Cross-save corroboration</h2>
-  <p>The hue ramp is verifiable from any pair of retail save states the mednafen toolkit can read. Across the bundled corpus, row 479 fb_x=0..240 hashes identically for every non-battle save and differs only in battle scenes (where the row is repurposed by the battle overlay). Slots 17..19, 52..53, and 56..63 of the same row stay zero across all saves; slots 20..51 are per-scene palettes that fall outside this module's scope.</p>
-  <p>The CLI for reproducing the corroboration is in <a href="../tooling/mednafen-automation.html">mednafen-automation.html</a> - extract VRAM with <code>mednafen-state vram-dump --out-bin</code>, slice row 479 at byte offset <code>0xEFE00</code>, and hash 32-byte windows at 16-pixel stride.</p>
-</section>
-
-<section class="doc-section" id="open-questions">
-  <h2>Open questions</h2>
-  <ul>
-    <li><strong>Writer location</strong>: static analysis sweeps every imported program (<code>SCUS_942.54</code> plus the captured overlays) for any LUI+ADDIU / load / store pair whose effective address lands in <code>0x800F1800..0x800F1B00</code> and returns zero hits. That rules out direct absolute addressing; the writer accesses the staging buffer through an indirect base pointer (e.g. via <code>$gp</code>, via a struct field, or via a pointer stored in another global). Pinning the function requires either a watchpoint-style RAM diff across a very-early-boot save state pair (currently unavailable) or a decompilation pass over the init code that runs before the title screen.</li>
-    <li><strong>Generator algorithm</strong>: the 15-entry hue sequence is suspiciously non-uniform - per-segment sample counts are <code>2, 3, 2, 3, 3, 2</code> and positions don't fit any of the obvious closed-form distributions. The slots are likely not scaled copies of one base table either; the peak progression <code>(9 &rarr; 8 &rarr; 6 &rarr; 5 &rarr; 4 &rarr; 2 &rarr; 1)</code> skips intermediate values (7 and 3) in a way that breaks <code>slot[N] = slot[0] * peak[N] / peak[0]</code>. The algorithm probably operates segment-by-segment in 5-bit space with integer rounding rules we haven't reconstructed yet.</li>
-    <li><strong>Slot 15</strong>: row 479 fb_x=240 stays zero in every retail save. A 4bpp prim that addresses CBA <code>0x77CF</code> therefore samples a transparent palette in retail too - either those prims are culled by a different path in the renderer (e.g. early-out on all-zero CLUT) or they're tolerated as rendering errors.</li>
-    <li><strong>Upper slots in non-battle scenes</strong>: slots 16, 54, 55 also hold globally-stable content. These are outside the active "ramp" but appear to be installed by the same init code. Folding them in is a follow-up.</li>
-  </ul>
+  <p>The <code>mednafen-state vram-dump</code> CLI extracts the raw 1 MiB VRAM blob. Row 479 starts at byte offset <code>0xEF800</code> (= <code>479 * 2048</code>). Slicing 32 bytes at <code>0xEF800 + slot * 32</code> gives one CLUT slot. See <a href="../tooling/mednafen-automation.html">mednafen-automation.html</a>.</p>
 </section>

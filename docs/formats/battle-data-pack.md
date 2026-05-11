@@ -189,14 +189,13 @@ battle_data record:
 
 So the source of the town01 NPC palettes is *external* to the
 battle_data pack. The full picture is documented in
-[`npc-palette.md`](npc-palette.md): row 479 actually carries a
-*global* 15-slot hue ramp (slots 0..14 at fb_x=0..240) that the
-runtime stages in RAM at `0x800F19xx` and DMAs to VRAM during early
-init. The ramp is bit-identical across every non-battle retail save
-state, persists across scene transitions, and is overwritten only by
-battle scenes. Town01 NPC TMDs sample the lower half of that ramp.
-The engine paints those bytes in verbatim from a corpus-confirmed
-capture via [`legaia_asset::npc_palette`](../../crates/asset/src/npc_palette.rs).
+[`npc-palette.md`](npc-palette.md): row 479 is populated by plain PSX
+TIMs that live inside the scene's PROT entries (e.g. `0006_town01.BIN
+@ 0x1ee4c` for town01), wrapped in a 4-byte chunk-header prefix
+(type 0x20) and uploaded through the standard asset-dispatch
+LoadImage path. The engine's targeted-upload CLUT pass picks them up
+naturally with merge-zeros semantics so multiple scene-pack TIMs
+targeting the same row coexist.
 
 ## Why this matters
 
@@ -265,16 +264,13 @@ mednafen-state clut-trace \
   is more complex; 0868 + 0869 are plain VABp banks). Only 0865 (and
   the sister 0863 `edstati3` entry) match the format documented here.
 
-- **Town01 NPC palette source**: not in the battle_data pack at all -
-  it's a *global* 15-slot hue-wheel ramp at row 479 (slots 0..14) that
-  the runtime materialises in RAM at `0x800F19xx` during early init.
-  See [`npc-palette.md`](npc-palette.md). The engine paints the ramp
-  in verbatim via [`legaia_asset::npc_palette::apply_global_hue_ramp`]
-  (../../crates/asset/src/npc_palette.rs); the MIPS function that
-  generates the bytes is still uncovered (no LUI+ADDIU pair landing
-  in the `0x800F1800..0x800F1B00` window in any of the imported
-  programs, which says the writer accesses the buffer through an
-  indirect base pointer rather than a direct absolute address).
+- **Town01 NPC palette source**: not in the battle_data pack — the
+  CLUTs are plain PSX TIMs in town01's own PROT entries (e.g.
+  `0006_town01.BIN @ 0x1ee4c`). Each is wrapped in a 4-byte
+  chunk-header prefix (type 0x20). The engine's targeted-upload CLUT
+  pass picks them up via `legaia_asset::tim_scan` and uploads them
+  with merge-zeros semantics so the "full" (slots 0..14) and "partial"
+  (slots 0..7) variants coexist. See [`npc-palette.md`](npc-palette.md).
 
 - **Runtime asset-loader chain**: `FUN_8001E890` is the data-field-player
   loader (see [`asset-loader.md`](../subsystems/asset-loader.md)) - it

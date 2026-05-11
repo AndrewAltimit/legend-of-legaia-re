@@ -91,12 +91,16 @@ fn town01_targeted_upload_keeps_majority_of_textured_prims() {
         100.0 * keep_ratio
     );
 
-    // Floor: with the boot-time hue-ramp at row 479 painted into VRAM
-    // by `legaia_asset::npc_palette::apply_global_hue_ramp`, the
-    // targeted-upload + relaxed-depth-threshold combination keeps
-    // ~99% of town01 textured prims. Anything below 90% indicates a
-    // regression in the prim-filter / targeted-upload pipeline (or a
-    // loss of the npc_palette wiring).
+    // Floor: the targeted-upload CLUT pass uses merge-zeros semantics
+    // (`Vram::upload_tim_partial_opts(..., merge_clut_zeros: true)`) so
+    // multiple scene-pack TIMs that target the same CLUT row but each
+    // populate a different subset of the 16-color slots can coexist.
+    // For town01 specifically, 7 row-479 TIMs across entries 6..9 split
+    // into "full" (slots 0..14) and "partial" (slots 0..7); without
+    // merge mode the partials' zero entries clobber the full uploads
+    // and the keep ratio drops back to 78.6%. Anything below 90% here
+    // indicates a regression in the prim-filter / targeted-upload
+    // pipeline or the merge semantics.
     assert!(
         keep_ratio >= 0.90,
         "town01 targeted prim keep ratio dropped to {:.1}% (kept={} of textured={})",
