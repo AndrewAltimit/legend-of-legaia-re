@@ -1,2253 +1,2004 @@
 {
   "drake": {
     "kingdom": "drake",
-    "label": "map01",
+    "label": "Drake Kingdom",
+    "cdname": "map01",
+    "prot_base": 85,
     "camera": {
-      "x": -8832,
-      "z": -8832,
+      "x": 1192,
+      "z": 6877,
       "azimuth": 0,
-      "zoom": 368
+      "zoom": 1.0
     },
     "tmd_count": 119,
     "world_extent": [
       16320,
       16320
     ],
+    "header": {
+      "a": 12,
+      "b": 9,
+      "c": 42,
+      "total": 63
+    },
     "placements": [
       {
+        "id": 1,
+        "name": "テルマ",
+        "tmd_slot": 34,
+        "flag": 11,
+        "flags": "0x0B",
         "list": 0,
         "layer": "player/system",
-        "pos": [
-          0,
-          -128,
-          0
-        ],
-        "flags": "0x00000000",
-        "id": 0
-      },
-      {
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          3904,
-          -420,
-          11712
-        ],
-        "flags": "0x090a0880",
-        "id": 42
-      },
-      {
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          0,
-          -256,
-          0
-        ],
-        "flags": "0x00000000",
-        "id": 0
-      },
-      {
-        "list": 0,
-        "layer": "player/system",
-        "pos": [
-          2624,
-          0,
-          2624
-        ],
-        "flags": "0x00000000",
-        "id": 67
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -214,
-          10432
-        ],
-        "flags": "0x00244882",
-        "id": 47
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -192,
-          8996
-        ],
-        "flags": "0x00244880",
-        "id": 69
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -192,
-          10432
-        ],
-        "flags": "0x00244880",
-        "id": 70
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -299,
-          9468
-        ],
-        "flags": "0x00244880",
-        "id": 65
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -299,
-          10432
-        ],
-        "flags": "0x00244880",
-        "id": 48
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -242,
-          9868
-        ],
-        "flags": "0x00244880",
-        "id": 66
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -242,
-          10432
-        ],
-        "flags": "0x00244880",
-        "id": 63
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          9152,
-          -214,
-          10288
-        ],
-        "flags": "0x00244880",
-        "id": 48
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          3904,
-          -420,
-          11712
-        ],
-        "flags": "0x08044880",
-        "id": 68
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x08820880",
-        "id": 13
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x08c20880",
-        "id": 14
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x09820880",
-        "id": 15
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x09820880",
-        "id": 16
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x09820880",
-        "id": 17
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x08820880",
-        "id": 18
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -84,
-          16320
-        ],
-        "flags": "0x08820880",
-        "id": 19
-      },
-      {
-        "list": 2,
-        "layer": "background",
         "pos": [
           16320,
           0,
           16320
         ],
-        "flags": "0x28220880",
-        "id": 20
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 2,
+        "name": "イベント屋",
+        "tmd_slot": 35,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          11712,
+          0,
+          2112
+        ],
+        "x_enc": 91,
+        "z_enc": 16,
+        "script_positioned": false
+      },
+      {
+        "id": 3,
+        "name": "分離ヴァン",
+        "tmd_slot": 240,
+        "flag": 2,
+        "flags": "0x02",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           16320,
-          -84,
+          0,
           16320
         ],
-        "flags": "0x08808880",
-        "id": 9
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          12352,
-          -1,
-          3008
-        ],
-        "flags": "0x08808880",
-        "id": 8
-      },
-      {
-        "list": 2,
-        "layer": "background",
+        "id": 4,
+        "name": "分離ノア",
+        "tmd_slot": 241,
+        "flag": 9,
+        "flags": "0x09",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           16320,
-          -84,
+          0,
           16320
         ],
-        "flags": "0x08808881",
-        "id": 11
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 5,
+        "name": "分離ガラ",
+        "tmd_slot": 242,
+        "flag": 16,
+        "flags": "0x10",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7296,
-          -192,
-          8000
+          16320,
+          0,
+          16320
         ],
-        "flags": "0x08008880",
-        "id": 0
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 6,
+        "name": "ソーン",
+        "tmd_slot": 36,
+        "flag": 14,
+        "flags": "0x0E",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          6976,
-          -192,
-          8256
+          16320,
+          0,
+          16320
         ],
-        "flags": "0x08008880",
-        "id": 10
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 7,
+        "name": "赤ちゃん",
+        "tmd_slot": 37,
+        "flag": 15,
+        "flags": "0x0F",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          9152,
-          -96,
-          10432
+          16320,
+          0,
+          16320
         ],
-        "flags": "0x08808880",
-        "id": 6
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 8,
+        "name": "カマーンソーン族",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 9,
+        "name": "リムエルム",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          14784
+        ],
+        "x_enc": 0,
+        "z_enc": 115,
+        "script_positioned": false
+      },
+      {
+        "id": 10,
+        "name": "ドルク南",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 11,
+        "name": "ドルク北",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 12,
+        "name": "リクロア山北",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 13,
+        "name": "リクロア山南",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 14,
+        "name": "ふきだまりの洞窟",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 15,
+        "name": "ヴェルルの森",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 16,
+        "name": "ヴォズズの森北",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 17,
+        "name": "ヴォズズの森南",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 18,
+        "name": "ノア外出",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16000,
+          0,
+          320
+        ],
+        "x_enc": 252,
+        "z_enc": 2,
+        "script_positioned": false
+      },
+      {
+        "id": 19,
+        "name": "バイロン北西",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 20,
+        "name": "バイロン南",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 21,
+        "name": "バイロン北東",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 22,
+        "name": "じじいの洞窟",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 23,
+        "name": "ノアへ移動",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          9984
+        ],
+        "x_enc": 0,
+        "z_enc": 205,
+        "script_positioned": false
+      },
+      {
+        "id": 24,
+        "name": "ドルク川消失",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          12608
+        ],
+        "x_enc": 0,
+        "z_enc": 98,
+        "script_positioned": false
+      },
+      {
+        "id": 25,
+        "name": "亀",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          9792
+        ],
+        "x_enc": 0,
+        "z_enc": 76,
+        "script_positioned": false
+      },
+      {
+        "id": 26,
+        "name": "旅人の泉",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          10304
+        ],
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
+      },
+      {
+        "id": 27,
+        "name": "水門西",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          6848
+        ],
+        "x_enc": 0,
+        "z_enc": 53,
+        "script_positioned": false
+      },
+      {
+        "id": 28,
+        "name": "水門東",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          6848
+        ],
+        "x_enc": 0,
+        "z_enc": 53,
+        "script_positioned": false
+      },
+      {
+        "id": 29,
+        "name": "渓谷１内",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 30,
+        "name": "渓谷１外",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 31,
+        "name": "渓谷２内",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 32,
+        "name": "渓谷２外",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 33,
+        "name": "渓谷３内",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 34,
+        "name": "渓谷３外",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 35,
+        "name": "渓谷４内",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 36,
+        "name": "渓谷４外",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          2560,
+          0,
+          192
+        ],
+        "x_enc": 147,
+        "z_enc": 1,
+        "script_positioned": false
+      },
+      {
+        "id": 37,
+        "name": "リムエルムにバリア",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          6720
+        ],
+        "x_enc": 0,
+        "z_enc": 52,
+        "script_positioned": false
+      },
+      {
+        "id": 38,
+        "name": "リクロア山で木が復活",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          12608
+        ],
+        "x_enc": 0,
+        "z_enc": 98,
+        "script_positioned": false
+      },
+      {
+        "id": 39,
+        "name": "バイロン寺院炎上",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          9024
+        ],
+        "x_enc": 0,
+        "z_enc": 70,
+        "script_positioned": false
+      },
+      {
+        "id": 40,
+        "name": "ヴォズズで木が復活",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          6720
+        ],
+        "x_enc": 0,
+        "z_enc": 52,
+        "script_positioned": false
+      },
+      {
+        "id": 41,
+        "name": "ガーメル城が崩壊",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          9024
+        ],
+        "x_enc": 0,
+        "z_enc": 70,
+        "script_positioned": false
+      },
+      {
+        "id": 42,
+        "name": "墜落",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          6720
+        ],
+        "x_enc": 0,
+        "z_enc": 52,
+        "script_positioned": false
+      },
+      {
+        "id": 43,
+        "name": "Ｄ",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          384,
+          0,
+          576
+        ],
+        "x_enc": 130,
+        "z_enc": 4,
+        "script_positioned": false
+      },
+      {
+        "id": 44,
+        "name": "Ｕ",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          384,
+          0,
+          576
+        ],
+        "x_enc": 130,
+        "z_enc": 4,
+        "script_positioned": false
+      },
+      {
+        "id": 45,
+        "name": "Ｘ",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          384,
+          0,
+          576
+        ],
+        "x_enc": 130,
+        "z_enc": 4,
+        "script_positioned": false
+      },
+      {
+        "id": 46,
+        "name": "生物城",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          14784
+        ],
+        "x_enc": 0,
+        "z_enc": 115,
+        "script_positioned": false
+      },
+      {
+        "id": 47,
+        "name": "オープニング",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          5952
+        ],
+        "x_enc": 0,
+        "z_enc": 46,
+        "script_positioned": false
+      },
+      {
+        "id": 48,
+        "name": "体験版でヴァンが行く",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          6720
+        ],
+        "x_enc": 0,
+        "z_enc": 52,
+        "script_positioned": false
+      },
+      {
+        "id": 49,
+        "name": "ヴァン走る",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          4608
+        ],
+        "x_enc": 0,
+        "z_enc": 163,
+        "script_positioned": false
+      },
+      {
+        "id": 50,
+        "name": "テルマの採点",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          64,
+          0,
+          12352
+        ],
+        "x_enc": 0,
+        "z_enc": 96,
+        "script_positioned": false
       }
-    ]
+    ],
+    "world_placed_count": 43,
+    "script_positioned_count": 7
   },
   "sebucus": {
     "kingdom": "sebucus",
-    "label": "map02",
+    "label": "Sebucus Islands",
+    "cdname": "map02",
+    "prot_base": 244,
     "camera": {
-      "x": -7936,
-      "z": -9344,
+      "x": 1824,
+      "z": 8202,
       "azimuth": 0,
-      "zoom": 368
+      "zoom": 1.0
     },
     "tmd_count": 119,
     "world_extent": [
       16320,
       16320
     ],
+    "header": {
+      "a": 33,
+      "b": 8,
+      "c": 16,
+      "total": 57
+    },
     "placements": [
       {
+        "id": 1,
+        "name": "フラグ",
+        "tmd_slot": 33,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -128,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 0
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 2,
+        "name": "イベント屋",
+        "tmd_slot": 33,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
-          4032,
-          -1,
-          11712
+          3904,
+          0,
+          3904
         ],
-        "flags": "0x090a0880",
-        "id": 42
+        "x_enc": 30,
+        "z_enc": 30,
+        "script_positioned": false
       },
       {
+        "id": 3,
+        "name": "ＳＤ獣車",
+        "tmd_slot": 31,
+        "flag": 9,
+        "flags": "0x09",
         "list": 0,
         "layer": "player/system",
         "pos": [
-          2624,
+          16320,
           0,
-          2624
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 25
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 1,
-        "layer": "entities",
+        "id": 4,
+        "name": "ＳＤ客車",
+        "tmd_slot": 30,
+        "flag": 11,
+        "flags": "0x0B",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          4220,
-          -340,
-          7484
-        ],
-        "flags": "0x00044882",
-        "id": 14
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4068,
+          16320,
           0,
-          7240
-        ],
-        "flags": "0x00844880",
-        "id": 48
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4358,
-          -156,
-          7392
-        ],
-        "flags": "0x00844880",
-        "id": 23
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4123,
-          -192,
-          7276
-        ],
-        "flags": "0x00844880",
-        "id": 12
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4030,
-          -54,
-          7447
-        ],
-        "flags": "0x00844880",
-        "id": 30
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4160,
-          -228,
-          7368
-        ],
-        "flags": "0x00844880",
-        "id": 29
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4304,
-          -164,
-          7484
-        ],
-        "flags": "0x00844880",
-        "id": 4
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4141,
-          -226,
-          7348
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4066,
-          -200,
-          7484
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4150,
-          -236,
-          7404
-        ],
-        "flags": "0x00844880",
-        "id": 1
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4282,
-          -236,
-          7442
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4158,
-          -336,
-          7420
-        ],
-        "flags": "0x00844880",
-        "id": 34
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4102,
-          -334,
-          7484
-        ],
-        "flags": "0x00844880",
-        "id": 31
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4136,
-          -292,
-          7376
-        ],
-        "flags": "0x00844880",
-        "id": 2
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4220,
-          -340,
-          7484
-        ],
-        "flags": "0x00844880",
-        "id": 6
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4160,
-          -310,
-          7394
-        ],
-        "flags": "0x00844880",
-        "id": 5
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4104,
-          -310,
-          7484
-        ],
-        "flags": "0x00844880",
-        "id": 13
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4160,
-          -340,
-          7424
-        ],
-        "flags": "0x00844880",
-        "id": 15
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4220,
-          -328,
-          7484
-        ],
-        "flags": "0x00844880",
-        "id": 16
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4032,
-          -1,
-          11712
-        ],
-        "flags": "0x08044880",
-        "id": 24
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -168,
           16320
         ],
-        "flags": "0x08420880",
-        "id": 34
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 5,
+        "name": "ＳＤ客車２",
+        "tmd_slot": 30,
+        "flag": 11,
+        "flags": "0x0B",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           16320,
-          -168,
+          0,
           16320
         ],
-        "flags": "0x08420880",
-        "id": 35
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 6,
+        "name": "看板１",
+        "tmd_slot": 28,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           16320,
-          -228,
+          0,
           16320
         ],
-        "flags": "0x28220881",
-        "id": 36
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -228,
-          16320
-        ],
-        "flags": "0x28220881",
-        "id": 37
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -228,
-          16320
-        ],
-        "flags": "0x28220881",
-        "id": 38
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          10688,
-          -48,
-          9408
-        ],
-        "flags": "0x08420880",
-        "id": 39
-      },
-      {
-        "list": 2,
-        "layer": "background",
+        "id": 7,
+        "name": "釣り場看板",
+        "tmd_slot": 32,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           10368,
-          -72,
+          0,
           4416
         ],
-        "flags": "0x08620880",
-        "id": 40
+        "x_enc": 208,
+        "z_enc": 34,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 8,
+        "name": "亀",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7872,
-          -24,
-          6208
+          64,
+          0,
+          9792
         ],
-        "flags": "0x08008880",
-        "id": 1
+        "x_enc": 0,
+        "z_enc": 76,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 9,
+        "name": "ばばあの洞窟",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7488,
-          -24,
-          6336
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008880",
-        "id": 1
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 10,
+        "name": "ジェレミ",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7744,
-          -24,
-          6592
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008880",
-        "id": 1
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 11,
+        "name": "バルデンヌ",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          4160,
-          -1,
-          7488
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08808881",
-        "id": 0
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 12,
+        "name": "レイマン",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          6592,
-          -48,
-          7488
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 29
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 13,
+        "name": "ストーンヘンジ",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7360,
-          -48,
-          7616
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 6
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 14,
+        "name": "レトック南",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7872,
-          -1,
-          7616
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 5
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 15,
+        "name": "レトック西",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          8256,
-          -48,
-          7616
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 4
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 16,
+        "name": "ドハティ城",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          8640,
-          -1,
-          7616
+          64,
+          0,
+          14528
         ],
-        "flags": "0x08008881",
-        "id": 3
+        "x_enc": 0,
+        "z_enc": 113,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 17,
+        "name": "創世樹４再生イベント",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          9024,
-          -48,
-          7616
+          6464,
+          0,
+          448
         ],
-        "flags": "0x08008881",
-        "id": 2
+        "x_enc": 50,
+        "z_enc": 3,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          6848,
-          -48,
-          7872
-        ],
-        "flags": "0x08008881",
-        "id": 7
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          11776,
-          -96,
-          8032
-        ],
-        "flags": "0x08008881",
-        "id": 32
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          6592,
-          -1,
-          8384
-        ],
-        "flags": "0x08008881",
-        "id": 8
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          6848,
-          -48,
-          8896
-        ],
-        "flags": "0x08008881",
-        "id": 9
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          7360,
-          -48,
-          9152
-        ],
-        "flags": "0x08008881",
-        "id": 10
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          7872,
-          -1,
-          9152
-        ],
-        "flags": "0x08008881",
-        "id": 11
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          8384,
-          -1,
-          9152
-        ],
-        "flags": "0x08008881",
-        "id": 12
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          8896,
-          -48,
-          9152
-        ],
-        "flags": "0x08008881",
-        "id": 13
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          9280,
-          -1,
-          9152
-        ],
-        "flags": "0x08008881",
-        "id": 14
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          9664,
-          -1,
-          9152
-        ],
-        "flags": "0x08008881",
-        "id": 15
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          10176,
-          -48,
-          9408
-        ],
-        "flags": "0x08008881",
-        "id": 16
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          10432,
-          -48,
-          9920
-        ],
-        "flags": "0x08008881",
-        "id": 17
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          10688,
-          -48,
-          10432
-        ],
-        "flags": "0x08008881",
-        "id": 18
-      },
-      {
-        "list": 2,
-        "layer": "background",
+        "id": 18,
+        "name": "創世樹５再生イベント",
+        "tmd_slot": 0,
+        "flag": 1,
+        "flags": "0x01",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           11200,
-          -48,
-          10688
+          0,
+          448
         ],
-        "flags": "0x08008881",
-        "id": 19
+        "x_enc": 87,
+        "z_enc": 3,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 19,
+        "name": "ドハティ城の崩壊イベント",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          11712,
-          -1,
-          10688
+          64,
+          0,
+          6720
         ],
-        "flags": "0x08008881",
-        "id": 20
+        "x_enc": 0,
+        "z_enc": 52,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 20,
+        "name": "★風来獣車発進",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          12224,
-          -1,
-          10688
+          64,
+          0,
+          9856
         ],
-        "flags": "0x08008881",
-        "id": 21
+        "x_enc": 0,
+        "z_enc": 204,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 21,
+        "name": "全体フラグ立てる",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          12736,
-          -1,
-          10688
+          64,
+          0,
+          10816
         ],
-        "flags": "0x08008881",
-        "id": 22
+        "x_enc": 0,
+        "z_enc": 84,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 22,
+        "name": "★風来獣車ＩＮセブクス",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          13248,
-          -1,
-          10688
+          64,
+          0,
+          7296
         ],
-        "flags": "0x08008881",
-        "id": 23
+        "x_enc": 0,
+        "z_enc": 184,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 23,
+        "name": "★風来獣車ＯＵＴセブクス",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          13760,
-          -1,
-          10688
+          64,
+          0,
+          7296
         ],
-        "flags": "0x08008881",
-        "id": 24
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          14272,
-          -1,
-          10688
-        ],
-        "flags": "0x08008881",
-        "id": 25
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          14784,
-          -1,
-          10688
-        ],
-        "flags": "0x08008881",
-        "id": 26
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          15296,
-          -1,
-          10688
-        ],
-        "flags": "0x08008881",
-        "id": 27
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          15808,
-          -1,
-          10688
-        ],
-        "flags": "0x08008881",
-        "id": 28
+        "x_enc": 0,
+        "z_enc": 184,
+        "script_positioned": false
       }
-    ]
+    ],
+    "world_placed_count": 18,
+    "script_positioned_count": 5
   },
   "karisto": {
     "kingdom": "karisto",
-    "label": "map03",
+    "label": "Karisto Kingdom",
+    "cdname": "map03",
+    "prot_base": 391,
     "camera": {
-      "x": -7936,
-      "z": -9088,
+      "x": 1118,
+      "z": 9705,
       "azimuth": 0,
-      "zoom": 368
+      "zoom": 1.0
     },
     "tmd_count": 119,
     "world_extent": [
       16320,
       16320
     ],
+    "header": {
+      "a": 25,
+      "b": 20,
+      "c": 21,
+      "total": 66
+    },
     "placements": [
       {
+        "id": 1,
+        "name": "大空城",
+        "tmd_slot": 44,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -8,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 7
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 2,
+        "name": "イベント屋",
+        "tmd_slot": 42,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -533,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 38
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 3,
+        "name": "ＳＤ獣車",
+        "tmd_slot": 41,
+        "flag": 7,
+        "flags": "0x07",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -192,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 40
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 4,
+        "name": "ＳＤ客車",
+        "tmd_slot": 40,
+        "flag": 10,
+        "flags": "0x0A",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -64,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 41
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 5,
+        "name": "大空城のかげ",
+        "tmd_slot": 45,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
-          4672,
-          -96,
-          9024
+          16320,
+          0,
+          16320
         ],
-        "flags": "0x090a0880",
-        "id": 42
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 6,
+        "name": "大空城のかげ１",
+        "tmd_slot": 45,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -128,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 0
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 7,
+        "name": "大空城のかげ２",
+        "tmd_slot": 45,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -384,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 44
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 8,
+        "name": "大空城本体",
+        "tmd_slot": 46,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -456,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 0
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 9,
+        "name": "大空城のかけら",
+        "tmd_slot": 47,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
+          16320,
           0,
-          -200,
-          0
+          16320
         ],
-        "flags": "0x00000000",
-        "id": 251
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
+        "id": 10,
+        "name": "岩のかけら０",
+        "tmd_slot": 48,
+        "flag": 0,
+        "flags": "0x00",
         "list": 0,
         "layer": "player/system",
         "pos": [
-          2624,
+          16320,
           0,
-          2624
-        ],
-        "flags": "0x00000000",
-        "id": 10
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4664,
-          -128,
-          9702
-        ],
-        "flags": "0x00044882",
-        "id": 8
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -684,
-          2416
-        ],
-        "flags": "0x00044882",
-        "id": 9
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -900,
-          3440
-        ],
-        "flags": "0x08044882",
-        "id": 10
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8137,
-          -357,
-          1895
-        ],
-        "flags": "0x02844888",
-        "id": 9
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8153,
-          -481,
-          1892
-        ],
-        "flags": "0x02844888",
-        "id": 251
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8139,
-          -478,
-          1963
-        ],
-        "flags": "0x00844888",
-        "id": 10
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8028,
-          -483,
-          2024
-        ],
-        "flags": "0x00844880",
-        "id": 18
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -376,
-          2032
-        ],
-        "flags": "0x00844880",
-        "id": 19
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8266,
-          -492,
-          1932
-        ],
-        "flags": "0x00844880",
-        "id": 35
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8314,
-          -496,
-          2211
-        ],
-        "flags": "0x00844880",
-        "id": 26
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -399,
-          2056
-        ],
-        "flags": "0x00844880",
-        "id": 27
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8263,
-          -406,
-          1866
-        ],
-        "flags": "0x00844880",
-        "id": 32
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8354,
-          -510,
-          2174
-        ],
-        "flags": "0x00844880",
-        "id": 999
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -419,
-          2080
-        ],
-        "flags": "0x00844880",
-        "id": 2
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8164,
-          -516,
-          2040
-        ],
-        "flags": "0x00844880",
-        "id": 3
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -429,
-          2096
-        ],
-        "flags": "0x00844880",
-        "id": 17
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8168,
-          -522,
-          2062
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8176,
-          -525,
-          2026
-        ],
-        "flags": "0x00844880",
-        "id": 33
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8172,
-          -444,
-          2082
-        ],
-        "flags": "0x00844880",
-        "id": 999
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8383,
-          -531,
-          2085
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8182,
-          -534,
-          2180
-        ],
-        "flags": "0x00844880",
-        "id": 251
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -537,
-          2144
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8180,
-          -464,
-          2154
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -543,
-          2160
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8152,
-          -474,
-          2278
-        ],
-        "flags": "0x00844880",
-        "id": 92
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8262,
-          -549,
-          2106
-        ],
-        "flags": "0x00844880",
-        "id": 26
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8288,
-          -484,
-          2116
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8293,
-          -490,
-          2161
-        ],
-        "flags": "0x00844880",
-        "id": 2
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8158,
-          -495,
-          2102
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8194,
-          -562,
-          2181
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8198,
-          -566,
-          2248
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8283,
-          -569,
-          2315
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8200,
-          -573,
-          2182
-        ],
-        "flags": "0x00844880",
-        "id": 32
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8204,
-          -522,
-          2132
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8158,
-          -580,
-          2174
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8156,
-          -534,
-          2285
-        ],
-        "flags": "0x00844880",
-        "id": 14
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8210,
-          -588,
-          2290
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8281,
-          -546,
-          2180
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8168,
-          -552,
-          2286
-        ],
-        "flags": "0x00844880",
-        "id": 28
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -600,
-          2288
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8296,
-          -604,
-          2358
-        ],
-        "flags": "0x00844880",
-        "id": 999
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8294,
-          -570,
-          2230
-        ],
-        "flags": "0x00844880",
-        "id": 21
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -576,
-          2312
-        ],
-        "flags": "0x00844880",
-        "id": 13
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -582,
-          2320
-        ],
-        "flags": "0x00844880",
-        "id": 34
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8224,
-          -620,
-          2314
-        ],
-        "flags": "0x00844880",
-        "id": 4
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8275,
-          -624,
-          2349
-        ],
-        "flags": "0x00844880",
-        "id": 11
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8302,
-          -600,
-          2332
-        ],
-        "flags": "0x00844880",
-        "id": 48
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8230,
-          -632,
-          2352
-        ],
-        "flags": "0x00844880",
-        "id": 12
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8246,
-          -636,
-          2400
-        ],
-        "flags": "0x00844880",
-        "id": 0
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8212,
-          -640,
-          2346
-        ],
-        "flags": "0x00844880",
-        "id": 13
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8236,
-          -644,
-          2376
-        ],
-        "flags": "0x00844880",
-        "id": 14
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8256,
-          -656,
-          2392
-        ],
-        "flags": "0x00844880",
-        "id": 15
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8261,
-          -662,
-          2389
-        ],
-        "flags": "0x00844880",
-        "id": 6
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8242,
-          -660,
-          2398
-        ],
-        "flags": "0x00844880",
-        "id": 2
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          8263,
-          -676,
-          2419
-        ],
-        "flags": "0x00844880",
-        "id": 5
-      },
-      {
-        "list": 1,
-        "layer": "entities",
-        "pos": [
-          4672,
-          -96,
-          9024
-        ],
-        "flags": "0x08044880",
-        "id": 20
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          8256,
-          -900,
-          2424
-        ],
-        "flags": "0x28220881",
-        "id": 26
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -124,
           16320
         ],
-        "flags": "0x08420880",
-        "id": 27
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -228,
-          16320
-        ],
-        "flags": "0x28220881",
-        "id": 28
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -228,
-          16320
-        ],
-        "flags": "0x28220881",
-        "id": 29
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -400,
-          16320
-        ],
-        "flags": "0x28020880",
-        "id": 30
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -400,
-          16320
-        ],
-        "flags": "0x28020880",
-        "id": 31
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -400,
-          16320
-        ],
-        "flags": "0x28020880",
-        "id": 32
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 33
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 34
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 35
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 36
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 37
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 38
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 39
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -5200,
-          16320
-        ],
-        "flags": "0x28220880",
-        "id": 40
-      },
-      {
-        "list": 2,
-        "layer": "background",
-        "pos": [
-          16320,
-          -124,
-          16320
-        ],
-        "flags": "0x08020880",
-        "id": 41
-      },
-      {
-        "list": 2,
-        "layer": "background",
+        "id": 11,
+        "name": "岩のかけら１",
+        "tmd_slot": 49,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           16320,
           0,
           16320
         ],
-        "flags": "0x28221880",
-        "id": 42
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 12,
+        "name": "バルコニー",
+        "tmd_slot": 50,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           16320,
           0,
           16320
         ],
-        "flags": "0x28220880",
-        "id": 43
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 13,
+        "name": "橋のパーツ縁付き",
+        "tmd_slot": 51,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 14,
+        "name": "橋のパーツ",
+        "tmd_slot": 52,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 15,
+        "name": "橋のパーツ１",
+        "tmd_slot": 52,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 16,
+        "name": "大空城後地",
+        "tmd_slot": 35,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          11584,
+          0,
+          10944
+        ],
+        "x_enc": 90,
+        "z_enc": 85,
+        "script_positioned": false
+      },
+      {
+        "id": 17,
+        "name": "レクタス",
+        "tmd_slot": 39,
+        "flag": 5,
+        "flags": "0x05",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 18,
+        "name": "パラシュ",
+        "tmd_slot": 53,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "x_enc": 127,
+        "z_enc": 127,
+        "script_positioned": true
+      },
+      {
+        "id": 19,
+        "name": "釣り場看板",
+        "tmd_slot": 54,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
           12800,
-          -192,
+          0,
           7104
         ],
-        "flags": "0x08420880",
-        "id": 44
+        "x_enc": 227,
+        "z_enc": 55,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 20,
+        "name": "★獣車駅",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          6336,
-          -49,
-          2368
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 24
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 21,
+        "name": "★コル",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7104,
-          -1,
-          2496
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 20
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 22,
+        "name": "★ブブゴルド",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          7616,
-          -48,
-          2496
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 21
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 23,
+        "name": "★ニルボア",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          8128,
-          -48,
-          2496
+          64,
+          0,
+          14784
         ],
-        "flags": "0x08008881",
-        "id": 22
+        "x_enc": 0,
+        "z_enc": 115,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 24,
+        "name": "★ドーマン研究所",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          8640,
-          -48,
-          2496
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 23
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 25,
+        "name": "★ウルメイス",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          6592,
-          -49,
-          2752
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 19
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 26,
+        "name": "★ディーネさん",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          6080,
-          -49,
-          3264
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 18
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 27,
+        "name": "★コンクラム",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          448,
-          -1,
-          3520
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 7
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 28,
+        "name": "★ジッツ地底宮",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          960,
-          -1,
-          3520
+          64,
+          0,
+          10304
         ],
-        "flags": "0x08008881",
-        "id": 8
+        "x_enc": 0,
+        "z_enc": 80,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 29,
+        "name": "大空城落下",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          1472,
-          -1,
-          3520
+          64,
+          0,
+          10944
         ],
-        "flags": "0x08008881",
-        "id": 9
+        "x_enc": 0,
+        "z_enc": 85,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 30,
+        "name": "駅上空の大空城",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          1984,
-          -1,
-          3520
+          64,
+          0,
+          12992
         ],
-        "flags": "0x08008881",
-        "id": 10
+        "x_enc": 0,
+        "z_enc": 101,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 31,
+        "name": "創世樹６再生演出",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          2496,
-          -1,
-          3520
+          64,
+          0,
+          10944
         ],
-        "flags": "0x08008881",
-        "id": 11
+        "x_enc": 0,
+        "z_enc": 85,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 32,
+        "name": "創世樹７再生演出",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          3008,
-          -1,
-          3520
+          64,
+          0,
+          10944
         ],
-        "flags": "0x08008881",
-        "id": 12
+        "x_enc": 0,
+        "z_enc": 85,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 33,
+        "name": "★デーネからソーンへ",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          3520,
-          -1,
-          3520
+          64,
+          0,
+          9856
         ],
-        "flags": "0x08008881",
-        "id": 13
+        "x_enc": 0,
+        "z_enc": 204,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 34,
+        "name": "★パラ",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          4032,
-          -1,
-          3520
+          64,
+          0,
+          5952
         ],
-        "flags": "0x08008881",
-        "id": 14
+        "x_enc": 0,
+        "z_enc": 46,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 35,
+        "name": "ヒルポナス崩壊後",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          4544,
-          -1,
-          3520
+          64,
+          0,
+          6976
         ],
-        "flags": "0x08008881",
-        "id": 15
+        "x_enc": 0,
+        "z_enc": 54,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 36,
+        "name": "★列車暴走中",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          5056,
-          -48,
-          3520
+          64,
+          0,
+          5952
         ],
-        "flags": "0x08008881",
-        "id": 16
+        "x_enc": 0,
+        "z_enc": 46,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 37,
+        "name": "★風来獣車ＩＮカリスト",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          5568,
-          -48,
-          3520
+          64,
+          0,
+          7296
         ],
-        "flags": "0x08008881",
-        "id": 17
+        "x_enc": 0,
+        "z_enc": 184,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 38,
+        "name": "★風来獣車ＯＵＴカリスト",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          4672,
-          -96,
-          9664
+          64,
+          0,
+          7296
         ],
-        "flags": "0x08808881",
-        "id": 1
+        "x_enc": 0,
+        "z_enc": 184,
+        "script_positioned": false
       },
       {
-        "list": 2,
-        "layer": "background",
+        "id": 39,
+        "name": "★デロアにおかえり",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          8528,
-          -96,
-          13344
-        ],
-        "flags": "0x08808880",
-        "id": 0
-      },
-      {
-        "list": 6,
-        "layer": "extra",
-        "pos": [
-          2112,
-          -48,
+          64,
+          0,
           10816
         ],
-        "flags": "0x08808880",
-        "id": 5
+        "x_enc": 0,
+        "z_enc": 84,
+        "script_positioned": false
       },
       {
-        "list": 6,
-        "layer": "extra",
+        "id": 40,
+        "name": "デバッグ用サンプルイベント",
+        "tmd_slot": 0,
+        "flag": 0,
+        "flags": "0x00",
+        "list": 0,
+        "layer": "player/system",
         "pos": [
-          8192,
-          -96,
-          9088
+          64,
+          0,
+          8000
         ],
-        "flags": "0x08008880",
-        "id": 6
-      },
-      {
-        "list": 6,
-        "layer": "extra",
-        "pos": [
-          8528,
-          -96,
-          13344
-        ],
-        "flags": "0x08808880",
-        "id": 7
-      },
-      {
-        "list": 6,
-        "layer": "extra",
-        "pos": [
-          11200,
-          -192,
-          9280
-        ],
-        "flags": "0x08008880",
-        "id": 8
-      },
-      {
-        "list": 6,
-        "layer": "extra",
-        "pos": [
-          11840,
-          -96,
-          6848
-        ],
-        "flags": "0x08008880",
-        "id": 0
+        "x_enc": 0,
+        "z_enc": 62,
+        "script_positioned": false
       }
-    ]
+    ],
+    "world_placed_count": 23,
+    "script_positioned_count": 17
   }
 }

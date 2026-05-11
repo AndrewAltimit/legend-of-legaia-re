@@ -12,7 +12,10 @@
     <strong>Rendered now:</strong> per-kingdom mesh inspection in 3D &mdash; load your disc, pick a kingdom, and the page cycles through every TMD in that kingdom's <code>map01/02/03</code> PROT block, rendering each one textured against the live VRAM upload pass. Camera orbits with mouse drag; scroll to zoom; WASD pans.
   </p>
   <p>
-    <strong>Still WIP:</strong> placing all the meshes simultaneously at their world-space positions to form the assembled continent. The placement data &mdash; 27 (Drake) / 63 (Sebucus) / 110 (Karisto) actor positions extracted from save-state RAM at <code>0x8007C34C..0x8007C36C</code> &mdash; is shown as a scatter beside the 3D viewer for now. The piece blocking the assembled view is the actor-to-TMD resolver (the hop through <code>actor+0x44</code>'s animation/motion struct).
+    <strong>Placement table:</strong> the world-map actor positions are now extracted straight from each kingdom's bundle. The format is the type-3 &quot;Man&quot; asset (LZS-compressed slot 2 in the 7-asset table), parsed via <code>FUN_8003A1E4</code>'s walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate.
+  </p>
+  <p>
+    <strong>Still WIP:</strong> rendering each placement's specific TMD at its decoded world position. The per-record <code>tmd_slot</code> indexes a per-scene runtime pool whose base offset is determined when the scene loads, so the slot-to-TMD mapping needs the scene-load order to be cross-referenced before the assembled continent view lights up.
   </p>
 </section>
 
@@ -51,13 +54,16 @@
     </div>
 
     <aside class="wo-side">
-      <h3>Placement reference</h3>
-      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">Actor positions extracted from save-state RAM at <code>0x8007C34C</code>. Dots = placements in world XZ; colour = owning list.</p>
+      <h3>Placement scatter</h3>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">World positions parsed from each kingdom's type-3 &quot;Man&quot; asset. Hover a dot for the location's in-game name.</p>
       <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
+      <div id="wo-hover" class="wo-hover-2d">&nbsp;</div>
       <h3 style="margin-top:1rem">Snapshot</h3>
       <dl id="wo-stats-dl"></dl>
       <h3 style="margin-top:1rem">Placements by list</h3>
       <ul id="wo-list-counts" class="wo-list-counts"></ul>
+      <h3 style="margin-top:1rem">Named locations</h3>
+      <ul id="wo-name-list" class="wo-name-list"></ul>
     </aside>
   </div>
 </section>
@@ -162,11 +168,34 @@
   font-family: var(--font-mono); font-size: 0.78rem;
 }
 .wo-list-counts li { display: flex; align-items: center; gap: 0.5rem; padding: 0.1rem 0; }
-.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .swatch-list-0 { background: #56B6F5; }
 .swatch-list-1 { background: #79D279; }
 .swatch-list-2 { background: #C0C0C0; }
 .swatch-list-6 { background: #E07028; }
+.wo-hover-2d {
+  min-height: 1.4em;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  font-family: var(--font-mono); font-size: 0.74rem;
+  color: var(--text-dim);
+  background: rgba(20, 22, 38, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wo-name-list {
+  list-style: none; padding: 0; margin: 0;
+  max-height: 320px; overflow-y: auto;
+  font-family: var(--font-mono); font-size: 0.74rem;
+}
+.wo-name-list li {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.1rem 0;
+  border-bottom: 1px dotted rgba(120,130,200,0.1);
+}
+.wo-name-list .wo-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wo-name-list .wo-coord { color: var(--text-dim); font-size: 0.72rem; }
 </style>
 
 <script src="js/webgl-tmd.js"></script>
@@ -198,6 +227,9 @@
   const $next       = document.getElementById('wo-next-mesh');
   const $autoRot    = document.getElementById('wo-auto-rotate');
   const $resetCam   = document.getElementById('wo-reset-cam');
+  const $hover      = document.getElementById('wo-hover');
+  const $nameList   = document.getElementById('wo-name-list');
+  let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -393,30 +425,47 @@
   document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === currentKingdom));
 
   /* ---------- Snapshot stats + scatter ----------- */
+
   function updateSnapshot() {
     if (!placements || !placements[currentKingdom]) {
       $statsDl.innerHTML = '<dt>data</dt><dd>placement JSON missing</dd>';
       $listCounts.innerHTML = '';
+      if ($nameList) $nameList.innerHTML = '';
       return;
     }
     const k = placements[currentKingdom];
+    const placed = k.world_placed_count ?? k.placements.filter(p => !p.script_positioned).length;
+    const scripted = k.script_positioned_count ?? (k.placements.length - placed);
     $statsDl.innerHTML = `
-      <dt>cdname</dt>     <dd>${k.label}</dd>
-      <dt>placed</dt>     <dd>${k.placements.length}</dd>
-      <dt>tmds in pool</dt><dd>${k.tmd_count}</dd>
-      <dt>cam x/z</dt>    <dd>(${k.camera.x}, ${k.camera.z})</dd>
+      <dt>cdname</dt>          <dd>${k.cdname || k.label}</dd>
+      <dt>PROT base</dt>       <dd>${k.prot_base ?? '?'}</dd>
+      <dt>records</dt>         <dd>${k.placements.length} total</dd>
+      <dt>world-placed</dt>    <dd>${placed}</dd>
+      <dt>script-positioned</dt><dd>${scripted}</dd>
     `;
     const counts = {};
-    k.placements.forEach(p => { counts[p.list] = (counts[p.list] || 0) + 1; });
+    k.placements.forEach(p => { if (!p.script_positioned) counts[p.list] = (counts[p.list] || 0) + 1; });
     $listCounts.innerHTML = Object.entries(counts).sort((a,b)=>+a[0]-+b[0]).map(([li, n]) =>
       `<li><span class="legend-swatch swatch-list-${li}"></span>list ${li} (${LIST_NAMES[li]||'?'}): ${n}</li>`
     ).join('');
+    if ($nameList) {
+      const named = k.placements
+        .filter(p => !p.script_positioned && p.name && p.name.trim())
+        .slice(0, 60);
+      $nameList.innerHTML = named.map(p =>
+        `<li><span class="legend-swatch swatch-list-${p.list}"></span><span class="wo-name">${escapeHtml(p.name)}</span> <span class="wo-coord">(${p.pos[0]}, ${p.pos[2]})</span></li>`
+      ).join('');
+    }
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
   function drawScatter() {
     if (!$canvas2d) return;
     const ctx = $canvas2d.getContext('2d');
     const W = $canvas2d.width, H = $canvas2d.height;
     ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
+    scatterDots = [];
     if (!placements || !placements[currentKingdom]) return;
     const k = placements[currentKingdom];
     const [wx, wz] = k.world_extent || [16320, 16320];
@@ -431,14 +480,37 @@
     }
     /* placements */
     k.placements.forEach(p => {
-      if (p.pos[0] === 0 && p.pos[2] === 0) return;
+      if (p.script_positioned) return;
       const x = p.pos[0] / wx * W;
       const y = p.pos[2] / wz * H;
       const color = LIST_COLORS[p.list] || '#FFF';
       ctx.beginPath();
       ctx.arc(x, y, 3, 0, 2*Math.PI);
       ctx.fillStyle = color; ctx.fill();
+      scatterDots.push({ x, y, p });
     });
+  }
+
+  /* Hover tooltip over the scatter */
+  if ($canvas2d) {
+    $canvas2d.addEventListener('mousemove', ev => {
+      const rect = $canvas2d.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) * ($canvas2d.width / rect.width);
+      const my = (ev.clientY - rect.top) * ($canvas2d.height / rect.height);
+      let best = null, bestD = Infinity;
+      for (const d of scatterDots) {
+        const dx = d.x - mx, dy = d.y - my;
+        const r2 = dx*dx + dy*dy;
+        if (r2 < bestD) { bestD = r2; best = d; }
+      }
+      if (best && bestD < 64) {
+        const p = best.p;
+        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd=0x${p.tmd_slot.toString(16).padStart(2,'0').toUpperCase()}`;
+      } else {
+        $hover.innerHTML = '&nbsp;';
+      }
+    });
+    $canvas2d.addEventListener('mouseleave', () => { $hover.innerHTML = '&nbsp;'; });
   }
 })();
 </script>
