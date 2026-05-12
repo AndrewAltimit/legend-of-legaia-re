@@ -16,23 +16,23 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld is built from a set of small flat TMDs (Z &isin; [-64, +64]) placed at world coordinates by the field VM. This page renders the world-map mesh data <strong>in real-time WebGL 3D</strong> straight from your disc image. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
+    Each kingdom's overworld combines (a) a continent terrain mesh built at runtime as ~10,000 textured polygons in a GPU primitive pool and (b) a sparse set of landmark TMDs (towns, dungeons, NPCs) placed at world coordinates from the kingdom's bundle. This page renders both <strong>in real-time WebGL 3D</strong> &mdash; the landmark TMDs straight from your disc image; the continent terrain (currently) from a top-view mednafen save state, until the continent generator is fully reversed. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
   </p>
 </header>
 
 <section class="doc-section" id="how-this-works">
-  <h2>What's rendered, what's still WIP</h2>
+  <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>In-game top-down view:</strong> upload a mednafen <code>.mc[N]</code> save state captured in the world-map debug top-view (slots 1 / 2 / 3 = Drake / Sebucus / Karisto for many of our recordings) and the page extracts the GPU framebuffer straight out of the save state's VRAM section. That framebuffer is what the game actually renders: the full kingdom continent composed of ~10,000 textured polygons per frame from the kingdom's TIM pack + tile-mesh data. No disc image required for this path - the save state already holds the rendered pixels.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. This renders the landmark layer (~43 buildings/dungeons/NPCs for Drake) but <em>not</em> the continent terrain beneath it &mdash; the continent is built at runtime by a generator we haven't fully reversed.
   </p>
   <p>
-    <strong>Mesh inspector + placement scatter:</strong> if you load a disc image, you can also browse the per-kingdom TMD pack one mesh at a time (Mesh inspector mode) or see all decoded actor placements as a 3D scatter (Placement scatter mode). The placement walker mirrors <code>FUN_8003A1E4</code>'s record reader and pulls Shift-JIS location names + <code>(tmd_slot, x, z)</code> coordinates from each kingdom's type-3 &quot;Man&quot; asset.
+    <strong>Framebuffer (save state):</strong> until the continent generator is reversed, the only way to see the full overworld is to upload a mednafen <code>.mc[N]</code> save state captured while the world-map debug top-view is active. The page then extracts either the rendered GPU framebuffer straight out of VRAM (fast, pixel-accurate, fixed 320&times;240) or replays the live primitive pool (~10,000 textured POLY_FT4 packets, pan/zoom in WebGL2). No disc image required for this path. Tracking the generator RE in <a href="subsystems/world-map.html">world-map subsystem</a>.
   </p>
   <p>
-    <strong>Placement table:</strong> the world-map actor positions are now extracted straight from each kingdom's bundle. The format is the type-3 &quot;Man&quot; asset (LZS-compressed slot 2 in the 7-asset table), parsed via <code>FUN_8003A1E4</code>'s walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate.
+    <strong>Mesh inspector:</strong> with a disc loaded, browse the per-kingdom TMD pack one mesh at a time (orbit camera, auto-rotate).
   </p>
   <p>
-    <strong>Slot &rarr; TMD resolved:</strong> each placement's <code>tmd_slot</code> now cross-links to the exact mesh that fills it. The scene-pool TMDs come from slot 1 of the same 7-asset bundle (type byte <code>0x02</code>) - an LZS-compressed pack with <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> layout that the runtime walks via <code>FUN_8001F05C case 2</code>, calling <code>FUN_80026b4c</code> per body to fill positions 0..count-1 of the scene's TMD pool. The offsets are in 4-byte words, mirroring <code>prot::timpack</code>. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>; every scene-slot referenced by a placement record exists inside that pack (max slots: Drake 37, Sebucus 33, Karisto 54). Placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead - Drake's three party-on-the-world-map records use globals 0/1/2.
+    <strong>Placement table:</strong> the world-map actor positions baked into <code>site/world-overview.json</code> are parsed from each kingdom's type-3 &quot;Man&quot; asset via <code>FUN_8003A1E4</code>'s record walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate. Each placement's <code>tmd_slot</code> resolves into the kingdom pack (max slot Drake 37, Sebucus 33, Karisto 54); placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead.
   </p>
 </section>
 
@@ -45,7 +45,7 @@
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
       <button id="wo-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
     </div>
-    <div class="viewer-status" id="wo-status">No disc loaded. Once loaded, every world-map TMD becomes browsable as a textured 3D mesh.</div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Load a disc and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required for that view.</div>
   </div>
 </section>
 
@@ -62,9 +62,9 @@
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
         <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
-          <button id="wo-mode-savestate" type="button" class="wo-mode is-active" role="radio" aria-checked="true">In-game top-view</button>
-          <button id="wo-mode-world"     type="button" class="wo-mode" role="radio" aria-checked="false">Placement scatter</button>
-          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false">Mesh inspector</button>
+          <button id="wo-mode-world"     type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Disc image only. Landmark TMDs from the kingdom bundle placed at their world coordinates. Continent terrain not yet reversed.">Assembled scene (disc)</button>
+          <button id="wo-mode-savestate" type="button" class="wo-mode" role="radio" aria-checked="false" title="Requires a top-view debug save state. Pulls the full rendered continent + landmarks straight from VRAM.">Framebuffer (save state)</button>
+          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false" title="Disc image only. Browse the per-kingdom TMD pack one mesh at a time.">Mesh inspector</button>
         </span>
         <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
@@ -83,12 +83,12 @@
         </span>
         <span id="wo-ss-status" style="font-size:0.75rem; color: var(--text-dim);">no save state loaded</span>
       </div>
-      <div class="wo-hover-3d" id="wo-mesh-info">Upload a top-view save state above (e.g. mednafen <code>.mc1</code>) and click Load to see the kingdom rendered as the game draws it</div>
+      <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D &mdash; or switch to <em>Framebuffer (save state)</em> to view the full continent pulled from a mednafen <code>.mc[N]</code> save.</div>
     </div>
 
     <aside class="wo-side">
-      <h3>Placement scatter</h3>
-      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">World positions parsed from each kingdom's type-3 &quot;Man&quot; asset. Hover a dot for the location's in-game name.</p>
+      <h3>Top-down placement map</h3>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">2D minimap of every world-placed actor. Always available &mdash; baked from the disc into <code>world-overview.json</code>. Hover a dot for the location's in-game name.</p>
       <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
       <div id="wo-hover" class="wo-hover-2d">&nbsp;</div>
       <h3 style="margin-top:1rem">Snapshot</h3>
@@ -288,7 +288,7 @@
   let   primReplay   = null;   /* PrimReplayRenderer instance (created lazily) */
   const replayCam    = { centerX: 160, centerY: 120, zoom: 3 };
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
-  let   viewMode    = 'savestate';  /* 'savestate' (in-game framebuffer) | 'world' (assembled scatter 3D) | 'mesh' (single TMD) */
+  let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'savestate' (framebuffer / prim replay from .mcN) | 'mesh' (single TMD) */
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -314,10 +314,12 @@
   updateSnapshot();
   drawScatter();
 
-  /* Render the savestate-mode placeholder text on first paint so the
-   * canvas isn't an empty black square while waiting for a save state.
-   * Calls into drawSavestate which is hoisted (function declaration). */
-  queueMicrotask(() => drawSavestate());
+  /* Render a "load a disc" placeholder on first paint so the canvas
+   * isn't an empty black square. Default mode is 'world' (assembled scene
+   * from disc); if the user has no disc yet, drawWorldPlaceholder() draws
+   * a friendly hint. drawWorldPlaceholder is hoisted as a function
+   * declaration. */
+  queueMicrotask(() => drawWorldPlaceholder());
 
   /* ---------- Camera controls ----------- */
   function attachCameraControls(canvas) {
@@ -393,9 +395,13 @@
   $modeSavestate.addEventListener('click', () => setViewMode('savestate'));
   $modeWorld    .addEventListener('click', () => setViewMode('world'));
   $modeMesh     .addEventListener('click', () => setViewMode('mesh'));
-  /* Default UI matches default viewMode = 'savestate'. */
+  /* Default UI matches default viewMode = 'world' (assembled scene from
+   * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
+   * (used by the top-down camera); the savestate file-picker bar is
+   * hidden until the user clicks the "Framebuffer (save state)" mode. */
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
-  $resetCam.hidden = true;
+  $resetCam.hidden = false;
+  $ssBar.style.display = 'none';
 
   /* ---------- Save state framebuffer + prim-pool extraction ----------- */
   /* Cached per-kingdom data so switching tabs after one upload re-shows
@@ -470,6 +476,29 @@
   }
   $ssModeFb    .addEventListener('click', () => setSsRenderMode('fb'));
   $ssModeReplay.addEventListener('click', () => setSsRenderMode('replay'));
+
+  /* Empty-state placeholder painted on first load when no disc has been
+   * uploaded yet (the default mode is 'world' but loadWorldView() needs
+   * the WASM viewer + a disc). Also used as a soft fallback when the
+   * user clicks "Assembled scene (disc)" without a disc loaded. */
+  function drawWorldPlaceholder() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (primReplay) { primReplay.dispose(); primReplay = null; }
+    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    const ctx = fresh.getContext('2d');
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, fresh.width, fresh.height);
+    ctx.fillStyle = '#888'; ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load a disc image above to render this kingdom\'s assembled scene.', fresh.width / 2, fresh.height / 2 - 18);
+    ctx.fillStyle = '#666';
+    ctx.fillText('No save state required for this view.', fresh.width / 2, fresh.height / 2 + 4);
+    ctx.fillText('(Switch to "Framebuffer (save state)" to view the full continent.)', fresh.width / 2, fresh.height / 2 + 22);
+    $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - waiting for disc`;
+    $meshInfo.innerHTML = 'Load a disc image above to see the kingdom\'s landmark TMDs assembled in 3D &mdash; or switch to <em>Framebuffer (save state)</em> to view the full continent pulled from a mednafen <code>.mc[N]</code> save.';
+  }
 
   function drawSavestate() {
     /* Always start by stopping any prior rAF / disposing the prim renderer. */
@@ -626,7 +655,13 @@
       drawSavestate();
       return;
     }
-    if (!viewer) return;
+    if (!viewer) {
+      /* No disc loaded yet. Both 'world' and 'mesh' modes need the WASM
+       * viewer + a parsed PROT TOC. Show the friendly placeholder so the
+       * canvas doesn't sit empty until the user uploads a disc. */
+      drawWorldPlaceholder();
+      return;
+    }
     if (viewMode === 'world') {
       loadWorldView();
     } else if (kingdomSlots[k].length > 0) {
