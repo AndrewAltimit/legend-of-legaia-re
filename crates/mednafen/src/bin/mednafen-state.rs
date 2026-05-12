@@ -150,6 +150,46 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         include_tmd_body: bool,
     },
+    /// Walk the live PSX GPU prim pool out of a save state's main RAM,
+    /// cluster POLY_FT4 packets into unique tile signatures
+    /// (`clut + tpage + sorted UVs`), and search a RAM-window for byte
+    /// sequences matching those signatures. Reports stride statistics for
+    /// each window so a per-tile source-data table emerges as a
+    /// fixed-stride match cluster. The 139 KB region
+    /// `0x801913F5..0x801B5FD0` and the 91 KB region
+    /// `0x8016E44C..0x80184BD0` are the prime suspects for the
+    /// world-map continent terrain's per-tile descriptor table - both
+    /// scanned by default.
+    PrimTrace {
+        save: PathBuf,
+        /// Pool start address (kuseg). Default = `0x800AD400`
+        /// (`prim_pool::POOL_BASE_DEFAULT`).
+        #[arg(long, value_parser = parse_addr, default_value = "0x800AD400")]
+        pool_base: u32,
+        /// Pool end address (exclusive). Default = `0x80102000`.
+        #[arg(long, value_parser = parse_addr, default_value = "0x80102000")]
+        pool_end: u32,
+        /// Additional `<start>:<end>` RAM windows to search for tile
+        /// fingerprints. May be supplied multiple times. The two
+        /// default candidate regions (`0x80190000:0x801B6000` for the
+        /// 139 KB region, `0x8016E000:0x80185000` for the 91 KB region)
+        /// are always scanned in addition to whatever the user adds.
+        #[arg(long, value_parser = parse_window)]
+        window: Vec<(u32, u32)>,
+        /// How many top tile signatures to report (sorted by hit count).
+        #[arg(long, default_value_t = 16)]
+        top: usize,
+        /// Scan the FULL 2 MiB main RAM for cluster-#0's fingerprint(s),
+        /// reporting every hit's address. Use this to discover where the
+        /// source data actually lives when the default windows come up
+        /// empty.
+        #[arg(long, default_value_t = false)]
+        scan_all_ram: bool,
+        /// Write the full analysis as JSON to this path (stdout still
+        /// prints a summary).
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
 }
 
 fn parse_addr(s: &str) -> Result<u32, String> {
@@ -160,6 +200,18 @@ fn parse_addr(s: &str) -> Result<u32, String> {
         s.parse::<u32>()
     };
     parsed.map_err(|e| format!("bad address '{s}': {e}"))
+}
+
+fn parse_window(s: &str) -> Result<(u32, u32), String> {
+    let (a, b) = s
+        .split_once(':')
+        .ok_or_else(|| format!("expected `<start>:<end>`, got '{s}'"))?;
+    let lo = parse_addr(a)?;
+    let hi = parse_addr(b)?;
+    if hi <= lo {
+        return Err(format!("window end <= start in '{s}'"));
+    }
+    Ok((lo, hi))
 }
 
 fn main() -> Result<()> {
@@ -217,6 +269,23 @@ fn main() -> Result<()> {
             json,
             include_tmd_body,
         } => cmd_clut_trace(&pack, &saves, json.as_deref(), include_tmd_body),
+        Cmd::PrimTrace {
+            save,
+            pool_base,
+            pool_end,
+            window,
+            top,
+            scan_all_ram,
+            json,
+        } => cmd_prim_trace(
+            &save,
+            pool_base,
+            pool_end,
+            &window,
+            top,
+            scan_all_ram,
+            json.as_deref(),
+        ),
     }
 }
 
@@ -741,6 +810,318 @@ fn cmd_scenarios(manifest_path: &Path) -> Result<()> {
                 wp.label, wp.start, wp.end, wp.hint
             );
         }
+    }
+    Ok(())
+}
+
+/// Default RAM windows to scan for tile-signature matches. Both come from
+/// the documented mc1↔mc2 diff regions that lack any known format marker
+/// and are sized in the same ballpark as ~10k POLY_FT4 records.
+const DEFAULT_WINDOWS: &[(u32, u32)] = &[
+    (0x80190000, 0x801B6000), // 144 KB, contains 0x801913F5..0x801B5FD0
+    (0x8016E000, 0x80185000), // 92 KB,  contains 0x8016E44C..0x80184BD0
+];
+
+fn cmd_prim_trace(
+    save_path: &Path,
+    pool_base: u32,
+    pool_end: u32,
+    extra_windows: &[(u32, u32)],
+    top: usize,
+    scan_all_ram: bool,
+    json_out: Option<&Path>,
+) -> Result<()> {
+    use legaia_mednafen::{prim_pool, source_hunt};
+    use serde::Serialize;
+
+    if pool_end <= pool_base {
+        bail!("pool_end <= pool_base");
+    }
+    let save = SaveState::from_path(save_path)?;
+    let ram = save.main_ram()?;
+    let pool_lo = (pool_base - PSX_RAM_KSEG0) as usize;
+    let pool_hi = (pool_end - PSX_RAM_KSEG0) as usize;
+    if pool_hi > ram.len() {
+        bail!("pool end past end of main RAM");
+    }
+    let pool = &ram[pool_lo..pool_hi];
+
+    // 1) Walk pool + topology check.
+    let topology = prim_pool::chain_topology(pool, pool_base);
+    let prims = prim_pool::decode(pool, pool_base);
+    let mut counts: std::collections::HashMap<&'static str, usize> =
+        std::collections::HashMap::new();
+    for p in &prims {
+        let key: &'static str = match p {
+            prim_pool::Prim::PolyFt4 { .. } => "POLY_FT4",
+            prim_pool::Prim::PolyGt4 { .. } => "POLY_GT4",
+            prim_pool::Prim::PolyFt3 { .. } => "POLY_FT3",
+            prim_pool::Prim::PolyGt3 { .. } => "POLY_GT3",
+            prim_pool::Prim::Sprt16 { .. } => "SPRT_16",
+            prim_pool::Prim::Sprt8 { .. } => "SPRT_8",
+        };
+        *counts.entry(key).or_insert(0) += 1;
+    }
+
+    println!("[prim-trace] save  {}", save_path.display());
+    println!(
+        "[prim-trace] pool  0x{pool_base:08X}..0x{pool_end:08X} ({} KB)",
+        pool.len() / 1024
+    );
+    println!("[prim-trace] {} accepted prims", prims.len());
+    let mut count_pairs: Vec<(&str, usize)> = counts.iter().map(|(k, v)| (*k, *v)).collect();
+    count_pairs.sort_by_key(|b| std::cmp::Reverse(b.1));
+    for (k, v) in &count_pairs {
+        println!("    {k:<10} {v}");
+    }
+    println!(
+        "[topology] {} tagged prims, {} chain head(s), {} terminator(s), {} linked",
+        topology.total_tags,
+        topology.heads.len(),
+        topology.terminators,
+        topology.linked
+    );
+    if !topology.heads.is_empty() {
+        let first = topology.heads[0];
+        let head_addr = pool_base + first as u32;
+        println!(
+            "[topology] first chain head at pool-offset 0x{first:X} (kuseg 0x{head_addr:08X})"
+        );
+    }
+
+    // 2) Tile signature clustering.
+    let sigs = prim_pool::tile_signatures(&prims);
+    println!(
+        "[tiles] {} unique POLY_FT4 (clut,tpage,uvs) clusters",
+        sigs.len()
+    );
+    for (i, s) in sigs.iter().take(top).enumerate() {
+        println!(
+            "  #{:<3} clut=0x{:04X} tpage=0x{:04X} uvs={:?}  hits={}",
+            i, s.clut, s.tpage, s.uvs, s.count
+        );
+    }
+
+    // 3) Search the default + user windows.
+    let mut all_windows: Vec<(u32, u32)> = DEFAULT_WINDOWS.to_vec();
+    all_windows.extend(extra_windows);
+
+    #[derive(Serialize)]
+    struct ClusterReport {
+        cluster_index: usize,
+        clut: u16,
+        tpage: u16,
+        uvs: [(u8, u8); 4],
+        count_in_pool: usize,
+        windows: Vec<WindowHit>,
+    }
+    #[derive(Serialize)]
+    struct WindowHit {
+        window_start: u32,
+        window_end: u32,
+        match_count: usize,
+        dominant_gap: Option<usize>,
+        dominant_gap_share: f64,
+        gap_histogram: Vec<(usize, usize)>,
+        first_addrs: Vec<u32>,
+    }
+    #[derive(Serialize)]
+    struct PooledReport {
+        window_start: u32,
+        window_end: u32,
+        total_matches: usize,
+        dominant_gap: Option<usize>,
+        dominant_gap_share: f64,
+        gap_histogram: Vec<(usize, usize)>,
+    }
+    #[derive(Serialize)]
+    struct TraceReport {
+        save: String,
+        pool_base: u32,
+        pool_end: u32,
+        prim_count: usize,
+        unique_signatures: usize,
+        topology_heads: usize,
+        topology_terminators: usize,
+        top_clusters: Vec<ClusterReport>,
+        pooled: Vec<PooledReport>,
+    }
+
+    let mut top_clusters = Vec::new();
+    let mut pooled_reports = Vec::new();
+
+    for &(ws, we) in &all_windows {
+        let wlo = (ws - PSX_RAM_KSEG0) as usize;
+        let whi = (we - PSX_RAM_KSEG0) as usize;
+        if whi > ram.len() {
+            eprintln!("[warn] window 0x{ws:08X}..0x{we:08X} extends past main RAM, clamping");
+        }
+        let win = &ram[wlo..whi.min(ram.len())];
+        println!(
+            "[search] window 0x{ws:08X}..0x{we:08X} ({} KB)",
+            win.len() / 1024
+        );
+        let fp_labels = ["rich", "packet", "uv+clut", "uv+tpage", "clut+tpage"];
+        // Pooled scan: union of every cluster's hits in this window, per
+        // fingerprint shape.
+        let mut union_offsets_by_fp: Vec<Vec<usize>> = vec![Vec::new(); fp_labels.len()];
+        for (i, s) in sigs.iter().take(top).enumerate() {
+            for (fp_idx, fp) in s.fingerprints.iter().enumerate() {
+                let offs = source_hunt::search(win, fp);
+                union_offsets_by_fp[fp_idx].extend(offs.iter().copied());
+                let stride = source_hunt::stride(&offs);
+                if stride.match_count == 0 {
+                    continue;
+                }
+                let first_addrs: Vec<u32> = offs.iter().take(6).map(|o| ws + *o as u32).collect();
+                let dom = stride
+                    .dominant_gap
+                    .map(|g| format!("stride {g}"))
+                    .unwrap_or_else(|| {
+                        format!("mixed (top {:.0}%)", stride.dominant_gap_share * 100.0)
+                    });
+                println!(
+                    "    cluster #{i:<3} clut=0x{:04X} tpage=0x{:04X}  fp={:<8} matches={}  {dom}  first={:?}",
+                    s.clut, s.tpage, fp_labels[fp_idx], stride.match_count, first_addrs
+                );
+                if (i == 0 || stride.dominant_gap.is_some())
+                    && (fp_idx <= 1 || stride.match_count >= 10)
+                {
+                    let wh = WindowHit {
+                        window_start: ws,
+                        window_end: we,
+                        match_count: stride.match_count,
+                        dominant_gap: stride.dominant_gap,
+                        dominant_gap_share: stride.dominant_gap_share,
+                        gap_histogram: stride.gap_histogram.clone(),
+                        first_addrs,
+                    };
+                    if let Some(existing) = top_clusters
+                        .iter_mut()
+                        .find(|c: &&mut ClusterReport| c.cluster_index == i)
+                    {
+                        existing.windows.push(wh);
+                    } else {
+                        top_clusters.push(ClusterReport {
+                            cluster_index: i,
+                            clut: s.clut,
+                            tpage: s.tpage,
+                            uvs: s.uvs,
+                            count_in_pool: s.count,
+                            windows: vec![wh],
+                        });
+                    }
+                }
+            }
+        }
+        // For pooled stride we use the richest fingerprint shape that had any hits.
+        let union_offsets = union_offsets_by_fp
+            .iter()
+            .find(|v| !v.is_empty())
+            .cloned()
+            .unwrap_or_default();
+        for (fp_idx, label) in fp_labels.iter().enumerate() {
+            let n = union_offsets_by_fp[fp_idx].len();
+            if n > 0 {
+                println!("    pooled  fp={label:<8} union_matches={n}");
+            }
+        }
+        let pooled = source_hunt::pooled_stride(std::slice::from_ref(&union_offsets));
+        println!(
+            "    pooled  matches={}  dominant_gap={:?}  share={:.0}%",
+            pooled.match_count,
+            pooled.dominant_gap,
+            pooled.dominant_gap_share * 100.0
+        );
+        if !pooled.gap_histogram.is_empty() {
+            let topgaps: Vec<String> = pooled
+                .gap_histogram
+                .iter()
+                .take(4)
+                .map(|(g, c)| format!("{g}({c})"))
+                .collect();
+            println!("    pooled  top gaps: {}", topgaps.join(" "));
+        }
+        pooled_reports.push(PooledReport {
+            window_start: ws,
+            window_end: we,
+            total_matches: pooled.match_count,
+            dominant_gap: pooled.dominant_gap,
+            dominant_gap_share: pooled.dominant_gap_share,
+            gap_histogram: pooled.gap_histogram,
+        });
+        // Per-window stride autocorrelation. The dominant record stride
+        // of a structured region jumps out as a score significantly
+        // above the ~1/256 noise floor.
+        let strides = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64];
+        let auto = source_hunt::autocorr_strides(win, &strides);
+        let top: Vec<String> = auto
+            .iter()
+            .take(4)
+            .map(|s| format!("{}:{:.3}", s.stride, s.score))
+            .collect();
+        println!("    autocorr top: {}", top.join(" "));
+    }
+
+    if scan_all_ram {
+        println!("[scan-all-ram] searching full 2 MiB main RAM for top-{top} cluster fingerprints");
+        let fp_labels = ["rich", "packet", "uv+clut", "uv+tpage", "clut+tpage"];
+        // Hide pool window matches - those are self-matches inside the
+        // live prim packets, not source data.
+        let pool_lo = (pool_base - PSX_RAM_KSEG0) as usize;
+        let pool_hi = (pool_end - PSX_RAM_KSEG0) as usize;
+        for (i, s) in sigs.iter().take(top).enumerate() {
+            for (fp_idx, fp) in s.fingerprints.iter().enumerate() {
+                if fp.len() < 4 {
+                    continue; // skip too-noisy short fingerprints
+                }
+                let all_offs = source_hunt::search(ram, fp);
+                let non_pool_offs: Vec<usize> = all_offs
+                    .into_iter()
+                    .filter(|o| !(pool_lo..pool_hi).contains(o))
+                    .collect();
+                if non_pool_offs.is_empty() {
+                    continue;
+                }
+                let first: Vec<u32> = non_pool_offs
+                    .iter()
+                    .take(6)
+                    .map(|o| PSX_RAM_KSEG0 + *o as u32)
+                    .collect();
+                let stride = source_hunt::stride(&non_pool_offs);
+                let dom = stride
+                    .dominant_gap
+                    .map(|g| format!("stride {g}"))
+                    .unwrap_or_else(|| {
+                        format!("mixed (top {:.0}%)", stride.dominant_gap_share * 100.0)
+                    });
+                println!(
+                    "  cluster #{i:<3} clut=0x{:04X} tpage=0x{:04X} fp={:<10} matches={} (excl pool) {dom}  first={:?}",
+                    s.clut,
+                    s.tpage,
+                    fp_labels[fp_idx],
+                    non_pool_offs.len(),
+                    first
+                );
+            }
+        }
+    }
+
+    if let Some(path) = json_out {
+        let report = TraceReport {
+            save: save_path.display().to_string(),
+            pool_base,
+            pool_end,
+            prim_count: prims.len(),
+            unique_signatures: sigs.len(),
+            topology_heads: topology.heads.len(),
+            topology_terminators: topology.terminators,
+            top_clusters,
+            pooled: pooled_reports,
+        };
+        let json = serde_json::to_string_pretty(&report)?;
+        std::fs::write(path, json).with_context(|| format!("writing {}", path.display()))?;
+        println!("[json] wrote {}", path.display());
     }
     Ok(())
 }

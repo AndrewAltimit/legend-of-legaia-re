@@ -128,6 +128,215 @@ pub fn decode(pool: &[u8], pool_base: u32) -> Vec<Prim> {
     decode_in(pool, pool_base, &mut Vec::new())
 }
 
+/// One in-pool tag record: byte offset within the pool buffer + the
+/// decoded chain-tag fields. Useful for walking the OT-link graph.
+#[derive(Debug, Clone, Copy)]
+pub struct TagRec {
+    /// Byte offset of the tag word inside the pool buffer.
+    pub offset: usize,
+    /// Number of payload words this tag advertises (high byte of word 0).
+    pub length: u8,
+    /// Kuseg-stripped 24-bit "next packet" pointer.
+    pub next_addr: u32,
+}
+
+/// Walk every tag that produces an accepted primitive and return its
+/// chain-tag fields. The output is in pool-offset order (ascending).
+pub fn decode_tags(pool: &[u8], pool_base: u32) -> Vec<TagRec> {
+    let pool_lo = pool_base & 0x00FF_FFFF;
+    let pool_hi = pool_lo + pool.len() as u32;
+    let mut consumed = vec![false; pool.len() / 4];
+    let mut out = Vec::new();
+    let n_words = pool.len() / 4;
+    for w in 0..n_words {
+        if consumed[w] {
+            continue;
+        }
+        let i = w * 4;
+        if i + 8 > pool.len() {
+            break;
+        }
+        let tag = read_u32(pool, i);
+        let length = ((tag >> 24) & 0xFF) as usize;
+        let next_addr = tag & 0x00FF_FFFF;
+        if !(1..=12).contains(&length) {
+            continue;
+        }
+        if next_addr != 0x00FF_FFFF && !(pool_lo..pool_hi).contains(&next_addr) {
+            continue;
+        }
+        let payload_end = i + 4 + length * 4;
+        if payload_end > pool.len() {
+            continue;
+        }
+        let cmd_word = read_u32(pool, i + 4);
+        let cmd = ((cmd_word >> 24) & 0xFF) as u8;
+        let (kind_ok, prim) = decode_packet(pool, i, cmd, length);
+        if !kind_ok {
+            continue;
+        }
+        if prim.is_some() {
+            for k in 0..=length {
+                let cw = w + k;
+                if cw < consumed.len() {
+                    consumed[cw] = true;
+                }
+            }
+            out.push(TagRec {
+                offset: i,
+                length: length as u8,
+                next_addr,
+            });
+        }
+    }
+    out
+}
+
+/// Result of finding the chain head (the tag that no other tag's `next_addr`
+/// points at) in a pool buffer. `heads` is the set of head candidates - in a
+/// well-formed pool there's exactly one. `terminators` is the count of tags
+/// whose `next_addr == 0xFFFFFF` (chain tails). `linked` is the number of
+/// tags that ARE referenced by some other tag's `next_addr`.
+#[derive(Debug, Clone)]
+pub struct ChainTopology {
+    pub total_tags: usize,
+    pub heads: Vec<usize>,
+    pub terminators: usize,
+    pub linked: usize,
+}
+
+/// Identify the chain head(s) of an OT-linked prim pool.
+///
+/// The OT layout is: every accepted-prim tag has a `next_addr` pointing at
+/// the next tag in chain order, or `0xFFFFFF` for the tail. The head is the
+/// unique tag whose offset doesn't appear in any other tag's `next_addr`.
+/// Used to verify `POOL_BASE_DEFAULT` is correctly placed: if the head's
+/// pool-offset is 0, the pool starts exactly at `pool_base`; otherwise the
+/// real pool starts at `pool_base + head_offset`.
+pub fn chain_topology(pool: &[u8], pool_base: u32) -> ChainTopology {
+    let tags = decode_tags(pool, pool_base);
+    let pool_lo = pool_base & 0x00FF_FFFF;
+    let mut linked_offsets: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut terminators = 0usize;
+    for t in &tags {
+        if t.next_addr == 0x00FF_FFFF {
+            terminators += 1;
+            continue;
+        }
+        let next_off = t.next_addr.wrapping_sub(pool_lo) as usize;
+        linked_offsets.insert(next_off);
+    }
+    let mut heads = Vec::new();
+    for t in &tags {
+        if !linked_offsets.contains(&t.offset) {
+            heads.push(t.offset);
+        }
+    }
+    ChainTopology {
+        total_tags: tags.len(),
+        heads,
+        terminators,
+        linked: linked_offsets.len(),
+    }
+}
+
+/// One unique "tile type" found by clustering POLY_FT4 packets by their
+/// texture-immutable fingerprint: the `(clut, tpage, sorted uvs)` tuple.
+/// `count` is how many tiles in this frame share this fingerprint - tile
+/// types reused 100+ times across the continent terrain are the prime
+/// candidates for a per-tile descriptor table in source data.
+#[derive(Debug, Clone, Serialize)]
+pub struct TileSignature {
+    pub clut: u16,
+    pub tpage: u16,
+    /// UVs in their packet-order tuple `[(u0,v0),(u1,v1),(u2,v2),(u3,v3)]`.
+    /// Sorted lexicographically across the four vertices to make rotated
+    /// copies of the same tile collapse into one cluster.
+    pub uvs: [(u8, u8); 4],
+    pub count: usize,
+    /// Multiple candidate byte fingerprints, ordered from richest to
+    /// poorest. The search picks the first one that hits in a window
+    /// and reports stride. Variants:
+    ///
+    /// 0. **Rich**: full 12 bytes `[u0,v0,u1,v1,u2,v2,u3,v3,clut,tpage]`.
+    /// 1. **Packet-template**: 8 bytes `[u0,v0,clut.lo,clut.hi,u_diag,v_diag,tpage.lo,tpage.hi]`
+    ///    matching the layout of the two halfword-packed UV+CLUT and
+    ///    UV+TPAGE words from the live FT4 packet.
+    /// 2. **UV+CLUT-only**: 4 bytes `[u0,v0,clut.lo,clut.hi]`.
+    /// 3. **UV+TPAGE-only**: 4 bytes `[u_diag,v_diag,tpage.lo,tpage.hi]`.
+    /// 4. **UV-only**: 2 bytes `[u_min,v_min]` of the lex-min vertex.
+    pub fingerprints: Vec<Vec<u8>>,
+}
+
+/// Cluster POLY_FT4 prims by `(clut, tpage, sorted uvs)`. Output sorted by
+/// descending count. The continent terrain is ~10k POLY_FT4 per frame, but
+/// reuses a small number of source tile descriptors - this clustering
+/// surfaces the per-tile palette directly.
+pub fn tile_signatures(prims: &[Prim]) -> Vec<TileSignature> {
+    use std::collections::HashMap;
+    type TileKey = (u16, u16, [(u8, u8); 4]);
+    let mut bucket: HashMap<TileKey, usize> = HashMap::new();
+    for p in prims {
+        if let Prim::PolyFt4 {
+            clut, tpage, uvs, ..
+        } = p
+        {
+            let mut sorted = *uvs;
+            sorted.sort_by_key(|&(u, v)| ((u as u32) << 8) | v as u32);
+            *bucket.entry((*clut, *tpage, sorted)).or_insert(0) += 1;
+        }
+    }
+    let mut out: Vec<TileSignature> = bucket
+        .into_iter()
+        .map(|((clut, tpage, uvs), count)| {
+            // 0: Rich 12-byte fingerprint.
+            let mut rich = Vec::with_capacity(12);
+            for (u, v) in &uvs {
+                rich.push(*u);
+                rich.push(*v);
+            }
+            rich.extend_from_slice(&clut.to_le_bytes());
+            rich.extend_from_slice(&tpage.to_le_bytes());
+            // 1: Packet-template (FT4's uv0+clut word followed by uv-diag+tpage word).
+            // `uvs[0]` is the lex-min vertex; the diagonal-opposite vertex
+            // shares the orthogonal coords of the FT4's emit order, which
+            // is `uvs[3]` for a fully-sorted square tile.
+            let mut packet = Vec::with_capacity(8);
+            packet.push(uvs[0].0);
+            packet.push(uvs[0].1);
+            packet.extend_from_slice(&clut.to_le_bytes());
+            packet.push(uvs[3].0);
+            packet.push(uvs[3].1);
+            packet.extend_from_slice(&tpage.to_le_bytes());
+            // 2: UV+CLUT only (4 bytes).
+            let mut uv_clut = Vec::with_capacity(4);
+            uv_clut.push(uvs[0].0);
+            uv_clut.push(uvs[0].1);
+            uv_clut.extend_from_slice(&clut.to_le_bytes());
+            // 3: UV+TPAGE only (4 bytes).
+            let mut uv_tpage = Vec::with_capacity(4);
+            uv_tpage.push(uvs[3].0);
+            uv_tpage.push(uvs[3].1);
+            uv_tpage.extend_from_slice(&tpage.to_le_bytes());
+            // 4: CLUT+TPAGE pair only (4 bytes), useful for locating
+            // a per-frame tile palette table when the source's per-tile
+            // record stores texpage/clut together.
+            let mut ct = Vec::with_capacity(4);
+            ct.extend_from_slice(&clut.to_le_bytes());
+            ct.extend_from_slice(&tpage.to_le_bytes());
+            TileSignature {
+                clut,
+                tpage,
+                uvs,
+                count,
+                fingerprints: vec![rich, packet, uv_clut, uv_tpage, ct],
+            }
+        })
+        .collect();
+    out.sort_by_key(|b| std::cmp::Reverse(b.count));
+    out
+}
+
 fn decode_in(pool: &[u8], pool_base: u32, _scratch: &mut Vec<u8>) -> Vec<Prim> {
     let pool_lo = pool_base & 0x00FF_FFFF;
     let pool_hi = pool_lo + pool.len() as u32;
