@@ -44,6 +44,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 |---|---|
 | [DATA_FIELD streaming](data-field.md) | `[type, size, data]` chunk stream consumed by `FUN_8002541C` |
 | [Scene bundles](scene-bundles.md) | Scene-prefixed wrappers (`scene_tmd_stream`, `scene_vab_stream`, `scene_v12_table`, `scene_asset_table`) - the dominant per-scene asset shapes |
+| [scene_v12_table](scene-v12-table.md) | Per-scene container with a runtime-fixup header + inline record table + event-script prescript at sector offset `0x800`. 97 PROT entries (one per scene). |
 | [Effect bundles](effect.md) | Both the on-disc bundle (magic `0x02018B0C`) and the runtime 2-pack wrapper used by `efect.dat` |
 | [Field-pack format](field-pack.md) | Magic `0x01059B84` plus a 97-entry strict schema preceding packed TIMs/TMDs |
 | [Battle-data pack](battle-data-pack.md) | Custom 16 MB-ish container for the `battle_data` block (PROT 0865 + sister `edstati3`). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to `[header + Legaia TMD + texture pool]`. |
