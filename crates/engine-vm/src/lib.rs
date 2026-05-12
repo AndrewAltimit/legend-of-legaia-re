@@ -79,6 +79,7 @@ pub mod motion_vm;
 pub mod move_vm;
 pub mod status_effects;
 pub mod world_map;
+pub mod world_map_draw_vm;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;
