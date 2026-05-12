@@ -42,6 +42,7 @@ export const legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
 export const legaiaviewer_prev_entry: (a: number) => [number, number, number];
 export const legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
 export const legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
+export const legaiaviewer_save_state_prim_replay: (a: number, b: number, c: number) => [number, number, number, number];
 export const legaiaviewer_set_clut: (a: number, b: number) => [number, number];
 export const legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
 export const legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];

@@ -201,6 +201,39 @@ export class LegaiaViewer {
      * `scene_v12_table` at PROT base+8 - both still being characterised).
      */
     save_state_framebuffer(save_state_bytes: Uint8Array): Uint8Array;
+    /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
+     * bit 1 = raw texture (skip color modulation). JS computes the model-view
+     * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
+     */
+    save_state_prim_replay(save_state_bytes: Uint8Array): Uint8Array;
     set_clut(idx: number): void;
     /**
      * Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
@@ -278,6 +311,7 @@ export interface InitOutput {
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly legaiaviewer_save_state_prim_replay: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];

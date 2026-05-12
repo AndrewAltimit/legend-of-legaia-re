@@ -445,6 +445,214 @@ impl LegaiaViewer {
         vec![cx, cy, cz, r]
     }
 
+    /// Decode the live PSX GPU primitive pool out of a mednafen save state
+    /// and return per-vertex attribute arrays for replay in WebGL2 against
+    /// the save state's VRAM.
+    ///
+    /// Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+    /// (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+    /// top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+    /// POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+    /// triangles in screen-space.
+    ///
+    /// Return layout (single packed `Vec<u8>`, little-endian, in this order):
+    ///
+    /// ```text
+    /// [u16 vram_width = 1024]
+    /// [u16 vram_height = 512]
+    /// [u32 vram_byte_len = 1048576]
+    /// [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+    /// [u16 screen_w]
+    /// [u16 screen_h]
+    /// [u32 vertex_count]
+    /// [Vertex; vertex_count]   ; struct, 14 bytes each:
+    ///     i16 x, i16 y
+    ///     u8  u, u8 v
+    ///     u16 cba, u16 tsb
+    ///     u8  r, u8 g, u8 b, u8 flags
+    /// ```
+    ///
+    /// `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
+    /// bit 1 = raw texture (skip color modulation). JS computes the model-view
+    /// matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
+    pub fn save_state_prim_replay(&self, save_state_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+        let save = legaia_mednafen::container::SaveState::from_compressed(&save_state_bytes)
+            .map_err(|e| JsValue::from_str(&format!("parse save state: {e}")))?;
+        let gpu = legaia_mednafen::gpu::PsxGpu::new(&save);
+        let vram = gpu
+            .vram_bytes()
+            .ok_or_else(|| JsValue::from_str("save state has no GPU/VRAM section"))?;
+        let regs = gpu.regs();
+        let dot_clock_div = match regs.display_mode_raw.unwrap_or(0) & 0x07 {
+            0 => 10,
+            1 => 8,
+            2 => 5,
+            3 => 4,
+            _ => 7,
+        };
+        let screen_w = match regs.display_h_range {
+            Some((hs, he)) => (he.saturating_sub(hs) / dot_clock_div).clamp(256, 640) as u16,
+            None => 320,
+        };
+        let screen_h = match regs.display_v_range {
+            Some((vs, ve)) => ve.saturating_sub(vs).max(224) as u16,
+            None => 240,
+        };
+        // Slice the prim pool out of main RAM (kuseg-relative).
+        let ram = save
+            .main_ram()
+            .map_err(|e| JsValue::from_str(&format!("read main RAM: {e}")))?;
+        let pool_start_kuseg = legaia_mednafen::prim_pool::POOL_BASE_DEFAULT;
+        let pool_end_kuseg = 0x80102000u32;
+        let pool_lo = (pool_start_kuseg - 0x8000_0000) as usize;
+        let pool_hi = (pool_end_kuseg - 0x8000_0000) as usize;
+        let pool = &ram[pool_lo..pool_hi.min(ram.len())];
+        let prims = legaia_mednafen::prim_pool::decode(pool, pool_start_kuseg);
+
+        // Build vertex array. Two triangles per quad prim. Three vertices
+        // for tri prims (zero-area duplicate to keep stride uniform).
+        // Sprites expand to a quad based on their fixed cmd-byte size.
+        let mut verts: Vec<u8> = Vec::with_capacity(prims.len() * 14 * 6);
+        let push_vertex = |verts: &mut Vec<u8>,
+                           x: i16,
+                           y: i16,
+                           u: u8,
+                           v: u8,
+                           cba: u16,
+                           tsb: u16,
+                           color: [u8; 3],
+                           flags: u8| {
+            verts.extend_from_slice(&x.to_le_bytes());
+            verts.extend_from_slice(&y.to_le_bytes());
+            verts.push(u);
+            verts.push(v);
+            verts.extend_from_slice(&cba.to_le_bytes());
+            verts.extend_from_slice(&tsb.to_le_bytes());
+            verts.extend_from_slice(&color);
+            verts.push(flags);
+        };
+        let flags_for = |cmd: u8| -> u8 {
+            let mut f = 0u8;
+            if cmd & 0x02 != 0 {
+                f |= 0x01;
+            } // semi-transparent
+            if cmd & 0x01 != 0 {
+                f |= 0x02;
+            } // raw texture
+            f
+        };
+        for p in &prims {
+            match *p {
+                legaia_mednafen::prim_pool::Prim::PolyFt4 {
+                    cmd,
+                    color,
+                    verts: v,
+                    uvs,
+                    clut,
+                    tpage,
+                } => {
+                    let fl = flags_for(cmd);
+                    // PSX winding: (v0, v1, v2) + (v1, v3, v2)
+                    for &i in &[0usize, 1, 2, 1, 3, 2] {
+                        push_vertex(
+                            &mut verts, v[i].0, v[i].1, uvs[i].0, uvs[i].1, clut, tpage, color, fl,
+                        );
+                    }
+                }
+                legaia_mednafen::prim_pool::Prim::PolyGt4 {
+                    cmd,
+                    colors,
+                    verts: v,
+                    uvs,
+                    clut,
+                    tpage,
+                } => {
+                    let fl = flags_for(cmd);
+                    for &i in &[0usize, 1, 2, 1, 3, 2] {
+                        push_vertex(
+                            &mut verts, v[i].0, v[i].1, uvs[i].0, uvs[i].1, clut, tpage, colors[i],
+                            fl,
+                        );
+                    }
+                }
+                legaia_mednafen::prim_pool::Prim::PolyFt3 {
+                    cmd,
+                    color,
+                    verts: v,
+                    uvs,
+                    clut,
+                    tpage,
+                } => {
+                    let fl = flags_for(cmd);
+                    for i in 0..3 {
+                        push_vertex(
+                            &mut verts, v[i].0, v[i].1, uvs[i].0, uvs[i].1, clut, tpage, color, fl,
+                        );
+                    }
+                    // Pad to 6-vertex stride so JS can stream draw as TRIANGLES.
+                    for i in 0..3 {
+                        push_vertex(
+                            &mut verts, v[i].0, v[i].1, uvs[i].0, uvs[i].1, clut, tpage, color, fl,
+                        );
+                    }
+                }
+                legaia_mednafen::prim_pool::Prim::PolyGt3 {
+                    cmd,
+                    colors,
+                    verts: v,
+                    uvs,
+                    clut,
+                    tpage,
+                } => {
+                    let fl = flags_for(cmd);
+                    for i in 0..3 {
+                        push_vertex(
+                            &mut verts, v[i].0, v[i].1, uvs[i].0, uvs[i].1, clut, tpage, colors[i],
+                            fl,
+                        );
+                    }
+                    for i in 0..3 {
+                        push_vertex(
+                            &mut verts, v[i].0, v[i].1, uvs[i].0, uvs[i].1, clut, tpage, colors[i],
+                            fl,
+                        );
+                    }
+                }
+                legaia_mednafen::prim_pool::Prim::Sprt16 {
+                    cmd,
+                    color,
+                    pos,
+                    uv,
+                    clut,
+                } => {
+                    sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, 16);
+                }
+                legaia_mednafen::prim_pool::Prim::Sprt8 {
+                    cmd,
+                    color,
+                    pos,
+                    uv,
+                    clut,
+                } => {
+                    sprite_to_quad(&mut verts, cmd, color, pos, uv, clut, 8);
+                }
+            }
+        }
+        let vertex_count = (verts.len() / 14) as u32;
+
+        // Pack the output buffer.
+        let mut out = Vec::with_capacity(2 + 2 + 4 + vram.len() + 2 + 2 + 4 + verts.len());
+        out.extend_from_slice(&1024u16.to_le_bytes()); // vram_width
+        out.extend_from_slice(&512u16.to_le_bytes()); // vram_height
+        out.extend_from_slice(&(vram.len() as u32).to_le_bytes());
+        out.extend_from_slice(vram);
+        out.extend_from_slice(&screen_w.to_le_bytes());
+        out.extend_from_slice(&screen_h.to_le_bytes());
+        out.extend_from_slice(&vertex_count.to_le_bytes());
+        out.extend_from_slice(&verts);
+        Ok(out)
+    }
+
     /// Parse a mednafen save state and return the GPU's currently-displayed
     /// framebuffer as an RGBA8 byte buffer + dimensions.
     ///
@@ -1255,6 +1463,56 @@ fn tim_block_targeting(tim: &legaia_tim::Tim, needs: &[PrimTarget]) -> (bool, bo
 
 fn rects_overlap(a: (u16, u16, u16, u16), b: (u16, u16, u16, u16)) -> bool {
     a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Expand a fixed-size PSX sprite (8x8 or 16x16) into the same 6-vertex
+/// quad layout we use for poly prims. Sprites are top-left + (u, v) =
+/// top-left of the texture rect with implicit width/height.
+fn sprite_to_quad(
+    verts: &mut Vec<u8>,
+    cmd: u8,
+    color: [u8; 3],
+    pos: (i16, i16),
+    uv: (u8, u8),
+    clut: u16,
+    size: i16,
+) {
+    let mut flags = 0u8;
+    if cmd & 0x02 != 0 {
+        flags |= 0x01;
+    }
+    if cmd & 0x01 != 0 {
+        flags |= 0x02;
+    }
+    // Sprites don't carry their own tpage word - they inherit from the
+    // global GP0 `DrawMode` state (cmd 0xE1). The save state doesn't
+    // expose a tracked tpage at prim-time, so we leave tsb=0 here; the
+    // shader treats tsb=0 as "use sprite UV directly". CLUT is honoured
+    // via the cba field.
+    let tsb = 0u16;
+    let (x, y) = pos;
+    let (u, v) = uv;
+    let x1 = x.saturating_add(size);
+    let y1 = y.saturating_add(size);
+    let u1 = u.saturating_add(size as u8);
+    let v1 = v.saturating_add(size as u8);
+    // Two tris: (x0,y0)(x1,y0)(x0,y1) + (x1,y0)(x1,y1)(x0,y1)
+    let push = |verts: &mut Vec<u8>, x: i16, y: i16, u: u8, v: u8| {
+        verts.extend_from_slice(&x.to_le_bytes());
+        verts.extend_from_slice(&y.to_le_bytes());
+        verts.push(u);
+        verts.push(v);
+        verts.extend_from_slice(&clut.to_le_bytes());
+        verts.extend_from_slice(&tsb.to_le_bytes());
+        verts.extend_from_slice(&color);
+        verts.push(flags);
+    };
+    push(verts, x, y, u, v);
+    push(verts, x1, y, u1, v);
+    push(verts, x, y1, u, v1);
+    push(verts, x1, y, u1, v);
+    push(verts, x1, y1, u1, v1);
+    push(verts, x, y1, u, v1);
 }
 
 /// Locate the 7-asset table inside a kingdom PROT buffer. Scans

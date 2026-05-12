@@ -516,6 +516,51 @@ export class LegaiaViewer {
         return v2;
     }
     /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
+     * bit 1 = raw texture (skip color modulation). JS computes the model-view
+     * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
+     * @param {Uint8Array} save_state_bytes
+     * @returns {Uint8Array}
+     */
+    save_state_prim_replay(save_state_bytes) {
+        const ptr0 = passArray8ToWasm0(save_state_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_save_state_prim_replay(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
      * @param {number} idx
      */
     set_clut(idx) {
@@ -749,7 +794,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 411, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 427, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

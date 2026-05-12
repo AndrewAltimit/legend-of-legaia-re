@@ -31,6 +31,7 @@ pub mod container;
 pub mod diff;
 pub mod extract;
 pub mod gpu;
+pub mod prim_pool;
 pub mod psx;
 pub mod scenarios;
 

@@ -73,10 +73,14 @@
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-canvas-controls" id="wo-savestate-bar">
-        <label for="wo-ss-file"><strong>Top-view save state (mednafen <code>.mc[N]</code> file):</strong></label>
+        <label for="wo-ss-file"><strong>Top-view save state:</strong></label>
         <input type="file" id="wo-ss-file" accept=".mc0,.mc1,.mc2,.mc3,.mc4,.mc5,.mc6,.mc7,.mc8,.mc9"
                style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.75rem;">
-        <button id="wo-ss-load" type="button">Load &amp; render</button>
+        <button id="wo-ss-load" type="button">Load</button>
+        <span class="wo-mode-group" style="margin-left:0.5rem" role="radiogroup" aria-label="Render style">
+          <button id="wo-ss-mode-fb"     type="button" class="wo-mode is-active" role="radio" aria-checked="true" title="Pull the rendered framebuffer directly from VRAM">Framebuffer</button>
+          <button id="wo-ss-mode-replay" type="button" class="wo-mode"            role="radio" aria-checked="false" title="Decode the live GPU primitive pool (~5000 textured polygons) and replay through WebGL2 — pan/zoom">Prim replay</button>
+        </span>
         <span id="wo-ss-status" style="font-size:0.75rem; color: var(--text-dim);">no save state loaded</span>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Upload a top-view save state above (e.g. mednafen <code>.mc1</code>) and click Load to see the kingdom rendered as the game draws it</div>
@@ -239,6 +243,7 @@
 </style>
 
 <script src="js/webgl-tmd.js"></script>
+<script src="js/webgl-prim-replay.js"></script>
 <script>
 (async function () {
   /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
@@ -273,10 +278,15 @@
   const $modeWorld  = document.getElementById('wo-mode-world');
   const $modeMesh   = document.getElementById('wo-mode-mesh');
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
-  const $ssBar      = document.getElementById('wo-savestate-bar');
-  const $ssFile     = document.getElementById('wo-ss-file');
-  const $ssLoad     = document.getElementById('wo-ss-load');
-  const $ssStatus   = document.getElementById('wo-ss-status');
+  const $ssBar       = document.getElementById('wo-savestate-bar');
+  const $ssFile      = document.getElementById('wo-ss-file');
+  const $ssLoad      = document.getElementById('wo-ss-load');
+  const $ssStatus    = document.getElementById('wo-ss-status');
+  const $ssModeFb    = document.getElementById('wo-ss-mode-fb');
+  const $ssModeReplay= document.getElementById('wo-ss-mode-replay');
+  let   ssRenderMode = 'fb';   /* 'fb' = blit framebuffer | 'replay' = re-rasterise prim pool */
+  let   primReplay   = null;   /* PrimReplayRenderer instance (created lazily) */
+  const replayCam    = { centerX: 160, centerY: 120, zoom: 3 };
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'savestate';  /* 'savestate' (in-game framebuffer) | 'world' (assembled scatter 3D) | 'mesh' (single TMD) */
 
@@ -387,10 +397,11 @@
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
   $resetCam.hidden = true;
 
-  /* ---------- Save state framebuffer extraction ----------- */
-  /* Cached per-kingdom RGBA + dimensions so the user can switch tabs
-   * after loading one save state and re-see the previously-rendered
-   * image without re-uploading. Keyed by `currentKingdom`. */
+  /* ---------- Save state framebuffer + prim-pool extraction ----------- */
+  /* Cached per-kingdom data so switching tabs after one upload re-shows
+   * the previously-rendered image without re-uploading. Keyed by
+   * `currentKingdom`. Each entry: { fb: {w, h, rgba}, replay: {vram,
+   * vertexBytes, screenW, screenH}, filename }. */
   const ssCache = {};
   $ssLoad.addEventListener('click', async () => {
     const f = $ssFile.files[0];
@@ -402,57 +413,148 @@
         await wasmMod.default();
       }
       if (!viewer) {
-        /* Construct a placeholder viewer so we can call the static method.
-         * The save-state path doesn't need a disc loaded. */
         const fresh = freshCanvas();
         if (!fresh) return;
         viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
       }
       $ssStatus.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)...`;
       const bytes = new Uint8Array(await f.arrayBuffer());
-      const out = viewer.save_state_framebuffer(bytes);
-      const w = out[0] | (out[1] << 8);
-      const h = out[2] | (out[3] << 8);
-      const rgba = new Uint8ClampedArray(out.buffer, out.byteOffset + 4, w * h * 4);
-      ssCache[currentKingdom] = { w, h, rgba: new Uint8ClampedArray(rgba), filename: f.name };
-      $ssStatus.textContent = `${currentKingdom}: ${w}x${h} framebuffer from ${f.name}`;
+      /* Always extract both views so the user can toggle freely. */
+      const fbOut = viewer.save_state_framebuffer(bytes);
+      const fbW = fbOut[0] | (fbOut[1] << 8);
+      const fbH = fbOut[2] | (fbOut[3] << 8);
+      const fbRgba = new Uint8ClampedArray(fbOut.buffer, fbOut.byteOffset + 4, fbW * fbH * 4);
+      const replayOut = viewer.save_state_prim_replay(bytes);
+      const dv = new DataView(replayOut.buffer, replayOut.byteOffset, replayOut.byteLength);
+      let p = 0;
+      const vramW = dv.getUint16(p, true); p += 2;
+      const vramH = dv.getUint16(p, true); p += 2;
+      const vramLen = dv.getUint32(p, true); p += 4;
+      const vram = new Uint8Array(replayOut.buffer, replayOut.byteOffset + p, vramLen); p += vramLen;
+      const screenW = dv.getUint16(p, true); p += 2;
+      const screenH = dv.getUint16(p, true); p += 2;
+      const vertexCount = dv.getUint32(p, true); p += 4;
+      const vertexBytes = new Uint8Array(replayOut.buffer, replayOut.byteOffset + p, vertexCount * 14);
+      ssCache[currentKingdom] = {
+        fb: { w: fbW, h: fbH, rgba: new Uint8ClampedArray(fbRgba) },
+        replay: {
+          vram: new Uint8Array(vram),                /* clone so the wasm buffer can be freed */
+          vertexBytes: new Uint8Array(vertexBytes),
+          screenW, screenH, vertexCount,
+          vramW, vramH,
+        },
+        filename: f.name,
+      };
+      $ssStatus.textContent =
+        `${currentKingdom}: ${fbW}x${fbH} framebuffer + ${vertexCount} replay verts (~${Math.round(vertexCount/6)} prims) from ${f.name}`;
+      /* Center the replay camera on the framebuffer's centre. */
+      replayCam.centerX = screenW / 2;
+      replayCam.centerY = screenH / 2;
       drawSavestate();
     } catch (err) {
       console.error(err);
       $ssStatus.textContent = 'Failed: ' + (err.message || err);
     }
   });
+
+  /* Sub-mode toggle (framebuffer blit vs prim replay) */
+  function setSsRenderMode(mode) {
+    if (mode !== 'fb' && mode !== 'replay') return;
+    if (mode === ssRenderMode) return;
+    ssRenderMode = mode;
+    $ssModeFb    .classList.toggle('is-active', mode === 'fb');
+    $ssModeReplay.classList.toggle('is-active', mode === 'replay');
+    $ssModeFb    .setAttribute('aria-checked', mode === 'fb');
+    $ssModeReplay.setAttribute('aria-checked', mode === 'replay');
+    drawSavestate();
+  }
+  $ssModeFb    .addEventListener('click', () => setSsRenderMode('fb'));
+  $ssModeReplay.addEventListener('click', () => setSsRenderMode('replay'));
+
   function drawSavestate() {
+    /* Always start by stopping any prior rAF / disposing the prim renderer. */
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (primReplay) { primReplay.dispose(); primReplay = null; }
+    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const fresh = freshCanvas();
     if (!fresh) return;
-    const ctx = fresh.getContext('2d');
-    const W = fresh.width, H = fresh.height;
-    ctx.fillStyle = '#0a0a1a';
-    ctx.fillRect(0, 0, W, H);
     const entry = ssCache[currentKingdom];
     if (!entry) {
+      const ctx = fresh.getContext('2d');
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(0, 0, fresh.width, fresh.height);
       ctx.fillStyle = '#888'; ctx.font = '14px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('Upload this kingdom\'s top-view save state (mednafen .mcN file)', W / 2, H / 2 - 8);
-      ctx.fillText('then click Load & render', W / 2, H / 2 + 12);
+      ctx.fillText('Upload this kingdom\'s top-view save state (mednafen .mcN file)', fresh.width / 2, fresh.height / 2 - 8);
+      ctx.fillText('then click Load', fresh.width / 2, fresh.height / 2 + 12);
       return;
     }
-    /* Render to an offscreen canvas at native size, then draw scaled into
-     * the visible one (preserves pixel-perfect look at integer zooms). */
-    const off = document.createElement('canvas');
-    off.width = entry.w; off.height = entry.h;
-    off.getContext('2d').putImageData(new ImageData(entry.rgba, entry.w, entry.h), 0, 0);
-    /* Letterbox to fit canvas, integer-scale up. */
-    const scale = Math.min(W / entry.w, H / entry.h);
-    const dw = Math.floor(entry.w * scale);
-    const dh = Math.floor(entry.h * scale);
-    const dx = Math.floor((W - dw) / 2);
-    const dy = Math.floor((H - dh) / 2);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(off, dx, dy, dw, dh);
-    $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - in-game top-down view (${entry.w}x${entry.h})`;
-    $meshInfo.textContent =
-      `From save state ${entry.filename}. This is exactly what the game renders in its debug top-view mode - composed of ~10,000 textured polygons per frame from the kingdom's TIM pack + scene tile-mesh data.`;
+    if (ssRenderMode === 'fb') {
+      const ctx = fresh.getContext('2d');
+      const W = fresh.width, H = fresh.height;
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(0, 0, W, H);
+      const off = document.createElement('canvas');
+      off.width = entry.fb.w; off.height = entry.fb.h;
+      off.getContext('2d').putImageData(new ImageData(entry.fb.rgba, entry.fb.w, entry.fb.h), 0, 0);
+      const scale = Math.min(W / entry.fb.w, H / entry.fb.h);
+      const dw = Math.floor(entry.fb.w * scale);
+      const dh = Math.floor(entry.fb.h * scale);
+      const dx = Math.floor((W - dw) / 2);
+      const dy = Math.floor((H - dh) / 2);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, dx, dy, dw, dh);
+      $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - in-game top-down view (${entry.fb.w}x${entry.fb.h})`;
+      $meshInfo.textContent =
+        `From save state ${entry.filename}. Direct blit of the GPU framebuffer captured in VRAM. Click "Prim replay" to re-rasterise the live primitive pool via WebGL2.`;
+    } else {
+      /* Prim replay path. */
+      try {
+        primReplay = new window.PrimReplayRenderer(fresh);
+      } catch (err) {
+        $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
+        return;
+      }
+      const r = entry.replay;
+      /* Fit the replay camera to the framebuffer aspect ratio: scale up so
+       * the 320x240 PSX output fills the visible canvas. */
+      const zoom = Math.max(1, Math.min(fresh.width / r.screenW, fresh.height / r.screenH));
+      replayCam.zoom = zoom;
+      primReplay.uploadVram(r.vram);
+      primReplay.uploadVertices(r.vertexBytes, r.screenW, r.screenH);
+      attachPrimReplayControls(fresh);
+      const tick = () => {
+        primReplay.render(replayCam);
+        rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
+      $meshLabel.textContent =
+        `${KINGDOM_PROT[currentKingdom].cdname} - prim-pool replay (${r.vertexCount} verts, ${Math.round(r.vertexCount/6)} prims)`;
+      $meshInfo.textContent =
+        `Live PSX GPU primitive pool decoded from ${entry.filename} and replayed through WebGL2. ` +
+        `Drag to pan, scroll to zoom. Pixel-perfect equivalent to the framebuffer view but pan/zoomable.`;
+    }
+  }
+
+  /* Pan + zoom for the prim-replay camera. */
+  function attachPrimReplayControls(canvas) {
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', e => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      replayCam.centerX -= dx / replayCam.zoom;
+      replayCam.centerY -= dy / replayCam.zoom;
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const f = Math.exp(-e.deltaY * 0.001);
+      replayCam.zoom = Math.max(0.5, Math.min(20, replayCam.zoom * f));
+    }, { passive: false });
   }
 
   /* ---------- Load disc + WASM ----------- */
