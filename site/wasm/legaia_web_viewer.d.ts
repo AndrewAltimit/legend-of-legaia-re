@@ -183,6 +183,24 @@ export class LegaiaViewer {
      * no triangles.
      */
     render_tmd_triangles(yaw: number, pitch: number, distance: number, pan_x: number, pan_y: number, viewport_w: number, viewport_h: number): Float32Array;
+    /**
+     * Parse a mednafen save state and return the GPU's currently-displayed
+     * framebuffer as an RGBA8 byte buffer + dimensions.
+     *
+     * Layout of the returned `Vec<u8>`:
+     * `[u16 width, u16 height, RGBA8 pixels...]` packed little-endian. JS
+     * reads the leading 4 bytes for the dimensions and then wraps the rest
+     * in an `ImageData` to blit into a 2D canvas.
+     *
+     * This is the in-game top-down world-map view: the game's renderer has
+     * already composed the ~10,000 textured polygons that form the kingdom
+     * terrain, and the result is sitting in VRAM at the display-area
+     * offset. We just read it back. Source-mesh reconstruction is a separate
+     * follow-up (the live PSX GPU prim-pool sits around `0x800AD408` and
+     * the underlying mesh / tilemap data lives in the kingdom's
+     * `scene_v12_table` at PROT base+8 - both still being characterised).
+     */
+    save_state_framebuffer(save_state_bytes: Uint8Array): Uint8Array;
     set_clut(idx: number): void;
     /**
      * Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
@@ -259,6 +277,7 @@ export interface InitOutput {
     readonly legaiaviewer_pack_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_prev_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_render_tmd_triangles: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+    readonly legaiaviewer_save_state_framebuffer: (a: number, b: number, c: number) => [number, number, number, number];
     readonly legaiaviewer_set_clut: (a: number, b: number) => [number, number];
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];

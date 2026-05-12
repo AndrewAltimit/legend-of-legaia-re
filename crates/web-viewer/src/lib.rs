@@ -445,6 +445,82 @@ impl LegaiaViewer {
         vec![cx, cy, cz, r]
     }
 
+    /// Parse a mednafen save state and return the GPU's currently-displayed
+    /// framebuffer as an RGBA8 byte buffer + dimensions.
+    ///
+    /// Layout of the returned `Vec<u8>`:
+    /// `[u16 width, u16 height, RGBA8 pixels...]` packed little-endian. JS
+    /// reads the leading 4 bytes for the dimensions and then wraps the rest
+    /// in an `ImageData` to blit into a 2D canvas.
+    ///
+    /// This is the in-game top-down world-map view: the game's renderer has
+    /// already composed the ~10,000 textured polygons that form the kingdom
+    /// terrain, and the result is sitting in VRAM at the display-area
+    /// offset. We just read it back. Source-mesh reconstruction is a separate
+    /// follow-up (the live PSX GPU prim-pool sits around `0x800AD408` and
+    /// the underlying mesh / tilemap data lives in the kingdom's
+    /// `scene_v12_table` at PROT base+8 - both still being characterised).
+    pub fn save_state_framebuffer(&self, save_state_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+        let save = legaia_mednafen::container::SaveState::from_compressed(&save_state_bytes)
+            .map_err(|e| JsValue::from_str(&format!("parse save state: {e}")))?;
+        let gpu = legaia_mednafen::gpu::PsxGpu::new(&save);
+        let vram = gpu
+            .vram_bytes()
+            .ok_or_else(|| JsValue::from_str("save state has no GPU/VRAM section"))?;
+        let regs = gpu.regs();
+        // Display-area X/Y inside VRAM (defaults if regs absent: top-left).
+        let (fb_x, fb_y) = regs.display_fb.unwrap_or((0, 0));
+        // Display window width is derived from horizontal range; the standard
+        // PSX 320x224 / 384x240 dot-clocks land around (608..3168) ~= 320 wide
+        // at 7MHz, or (488..3288) ~= 384 wide at 5MHz, divided by the clock
+        // ticks per pixel. Mednafen records `HorizStart/HorizEnd` in dot-clock
+        // ticks. The simplest robust extraction is to compute the active
+        // pixel count via the difference, falling back to 320x240 if the
+        // registers are missing.
+        let dot_clock_div = match regs.display_mode_raw.unwrap_or(0) & 0x07 {
+            0 => 10, // 256
+            1 => 8,  // 320
+            2 => 5,  // 512
+            3 => 4,  // 640
+            _ => 7,  // 384 (mode bit 6)
+        };
+        let width = match (regs.display_h_range, regs.display_mode_raw) {
+            (Some((hs, he)), _) => {
+                let span = he.saturating_sub(hs);
+                (span / dot_clock_div).clamp(256, 640) as u16
+            }
+            _ => 320,
+        };
+        let height = match (regs.display_v_range, regs.display_mode_raw) {
+            (Some((vs, ve)), _) => (ve.saturating_sub(vs) as u16).max(224),
+            _ => 240,
+        };
+        let w = width as usize;
+        let h = height as usize;
+        let mut out = Vec::with_capacity(4 + w * h * 4);
+        out.push((width & 0xFF) as u8);
+        out.push((width >> 8) as u8);
+        out.push((height & 0xFF) as u8);
+        out.push((height >> 8) as u8);
+        // VRAM is 1024×512 BGR555 (2 bytes/pixel). Crop the (fb_x, fb_y)
+        // window. Wrap around the right edge if necessary (PSX VRAM is
+        // logically a torus on the X axis at 1024 pixels).
+        for row in 0..h {
+            let vy = (fb_y as usize + row) & 0x1FF;
+            for col in 0..w {
+                let vx = (fb_x as usize + col) & 0x3FF;
+                let off = (vy * 1024 + vx) * 2;
+                let word = u16::from_le_bytes([vram[off], vram[off + 1]]);
+                let [r, g, b, _a] = legaia_mednafen::gpu::bgr555_to_rgba8(word);
+                out.push(r);
+                out.push(g);
+                out.push(b);
+                out.push(0xFF); // opaque
+            }
+        }
+        Ok(out)
+    }
+
     /// True if the current entry has a parseable TMD, suitable for the 3D
     /// rendering path. JS uses this to decide whether to switch to the 3D
     /// render loop instead of the TIM blit.

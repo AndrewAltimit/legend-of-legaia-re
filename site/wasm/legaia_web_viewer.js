@@ -486,6 +486,36 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Parse a mednafen save state and return the GPU's currently-displayed
+     * framebuffer as an RGBA8 byte buffer + dimensions.
+     *
+     * Layout of the returned `Vec<u8>`:
+     * `[u16 width, u16 height, RGBA8 pixels...]` packed little-endian. JS
+     * reads the leading 4 bytes for the dimensions and then wraps the rest
+     * in an `ImageData` to blit into a 2D canvas.
+     *
+     * This is the in-game top-down world-map view: the game's renderer has
+     * already composed the ~10,000 textured polygons that form the kingdom
+     * terrain, and the result is sitting in VRAM at the display-area
+     * offset. We just read it back. Source-mesh reconstruction is a separate
+     * follow-up (the live PSX GPU prim-pool sits around `0x800AD408` and
+     * the underlying mesh / tilemap data lives in the kingdom's
+     * `scene_v12_table` at PROT base+8 - both still being characterised).
+     * @param {Uint8Array} save_state_bytes
+     * @returns {Uint8Array}
+     */
+    save_state_framebuffer(save_state_bytes) {
+        const ptr0 = passArray8ToWasm0(save_state_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_save_state_framebuffer(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
      * @param {number} idx
      */
     set_clut(idx) {
@@ -719,7 +749,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 360, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 411, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

@@ -1502,6 +1502,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-vm",
  "legaia-lzs",
+ "legaia-mednafen",
  "legaia-mes",
  "legaia-prot",
  "legaia-seq",

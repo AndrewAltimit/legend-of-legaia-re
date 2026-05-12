@@ -23,7 +23,10 @@
 <section class="doc-section" id="how-this-works">
   <h2>What's rendered, what's still WIP</h2>
   <p>
-    <strong>Rendered now:</strong> per-kingdom mesh inspection in 3D &mdash; load your disc, pick a kingdom, and the page cycles through every TMD in that kingdom's <code>map01/02/03</code> PROT block, rendering each one textured against the live VRAM upload pass. Camera orbits with mouse drag; scroll to zoom; WASD pans.
+    <strong>In-game top-down view:</strong> upload a mednafen <code>.mc[N]</code> save state captured in the world-map debug top-view (slots 1 / 2 / 3 = Drake / Sebucus / Karisto for many of our recordings) and the page extracts the GPU framebuffer straight out of the save state's VRAM section. That framebuffer is what the game actually renders: the full kingdom continent composed of ~10,000 textured polygons per frame from the kingdom's TIM pack + tile-mesh data. No disc image required for this path - the save state already holds the rendered pixels.
+  </p>
+  <p>
+    <strong>Mesh inspector + placement scatter:</strong> if you load a disc image, you can also browse the per-kingdom TMD pack one mesh at a time (Mesh inspector mode) or see all decoded actor placements as a 3D scatter (Placement scatter mode). The placement walker mirrors <code>FUN_8003A1E4</code>'s record reader and pulls Shift-JIS location names + <code>(tmd_slot, x, z)</code> coordinates from each kingdom's type-3 &quot;Man&quot; asset.
   </p>
   <p>
     <strong>Placement table:</strong> the world-map actor positions are now extracted straight from each kingdom's bundle. The format is the type-3 &quot;Man&quot; asset (LZS-compressed slot 2 in the 7-asset table), parsed via <code>FUN_8003A1E4</code>'s walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate.
@@ -59,16 +62,24 @@
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
         <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
-          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true">Top-down map</button>
-          <button id="wo-mode-mesh"  type="button" class="wo-mode" role="radio" aria-checked="false">Mesh inspector</button>
+          <button id="wo-mode-savestate" type="button" class="wo-mode is-active" role="radio" aria-checked="true">In-game top-view</button>
+          <button id="wo-mode-world"     type="button" class="wo-mode" role="radio" aria-checked="false">Placement scatter</button>
+          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false">Mesh inspector</button>
         </span>
         <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
-        <button id="wo-reset-cam" type="button">reset camera</button>
+        <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
-      <div class="wo-hover-3d" id="wo-mesh-info">drop a disc above to load world-map meshes</div>
+      <div class="wo-canvas-controls" id="wo-savestate-bar">
+        <label for="wo-ss-file"><strong>Top-view save state (mednafen <code>.mc[N]</code> file):</strong></label>
+        <input type="file" id="wo-ss-file" accept=".mc0,.mc1,.mc2,.mc3,.mc4,.mc5,.mc6,.mc7,.mc8,.mc9"
+               style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.75rem;">
+        <button id="wo-ss-load" type="button">Load &amp; render</button>
+        <span id="wo-ss-status" style="font-size:0.75rem; color: var(--text-dim);">no save state loaded</span>
+      </div>
+      <div class="wo-hover-3d" id="wo-mesh-info">Upload a top-view save state above (e.g. mednafen <code>.mc1</code>) and click Load to see the kingdom rendered as the game draws it</div>
     </div>
 
     <aside class="wo-side">
@@ -258,11 +269,16 @@
   const $resetCam   = document.getElementById('wo-reset-cam');
   const $hover      = document.getElementById('wo-hover');
   const $nameList   = document.getElementById('wo-name-list');
+  const $modeSavestate = document.getElementById('wo-mode-savestate');
   const $modeWorld  = document.getElementById('wo-mode-world');
   const $modeMesh   = document.getElementById('wo-mode-mesh');
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
+  const $ssBar      = document.getElementById('wo-savestate-bar');
+  const $ssFile     = document.getElementById('wo-ss-file');
+  const $ssLoad     = document.getElementById('wo-ss-load');
+  const $ssStatus   = document.getElementById('wo-ss-status');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
-  let   viewMode    = 'world';  /* 'world' (top-down assembled) | 'mesh' (single-mesh inspector) */
+  let   viewMode    = 'savestate';  /* 'savestate' (in-game framebuffer) | 'world' (assembled scatter 3D) | 'mesh' (single TMD) */
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -287,6 +303,11 @@
   }
   updateSnapshot();
   drawScatter();
+
+  /* Render the savestate-mode placeholder text on first paint so the
+   * canvas isn't an empty black square while waiting for a save state.
+   * Calls into drawSavestate which is hoisted (function declaration). */
+  queueMicrotask(() => drawSavestate());
 
   /* ---------- Camera controls ----------- */
   function attachCameraControls(canvas) {
@@ -340,24 +361,99 @@
 
   /* ---------- View-mode toggle ----------- */
   function setViewMode(mode) {
-    if (mode !== 'world' && mode !== 'mesh') return;
+    if (!['savestate', 'world', 'mesh'].includes(mode)) return;
     if (mode === viewMode) return;
     viewMode = mode;
-    $modeWorld.classList.toggle('is-active', mode === 'world');
-    $modeMesh .classList.toggle('is-active', mode === 'mesh');
-    $modeWorld.setAttribute('aria-checked', mode === 'world');
-    $modeMesh .setAttribute('aria-checked', mode === 'mesh');
+    $modeSavestate.classList.toggle('is-active', mode === 'savestate');
+    $modeWorld    .classList.toggle('is-active', mode === 'world');
+    $modeMesh     .classList.toggle('is-active', mode === 'mesh');
+    $modeSavestate.setAttribute('aria-checked', mode === 'savestate');
+    $modeWorld    .setAttribute('aria-checked', mode === 'world');
+    $modeMesh     .setAttribute('aria-checked', mode === 'mesh');
     const meshOnly = (mode === 'mesh');
+    const ssOnly   = (mode === 'savestate');
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
+    $resetCam.hidden = ssOnly;
+    $ssBar.style.display = ssOnly ? '' : 'none';
     /* Re-enter the active kingdom so the right path renders. */
     selectKingdom(currentKingdom);
   }
-  $modeWorld.addEventListener('click', () => setViewMode('world'));
-  $modeMesh .addEventListener('click', () => setViewMode('mesh'));
-  /* Default UI matches default viewMode = 'world'. */
+  $modeSavestate.addEventListener('click', () => setViewMode('savestate'));
+  $modeWorld    .addEventListener('click', () => setViewMode('world'));
+  $modeMesh     .addEventListener('click', () => setViewMode('mesh'));
+  /* Default UI matches default viewMode = 'savestate'. */
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
+  $resetCam.hidden = true;
+
+  /* ---------- Save state framebuffer extraction ----------- */
+  /* Cached per-kingdom RGBA + dimensions so the user can switch tabs
+   * after loading one save state and re-see the previously-rendered
+   * image without re-uploading. Keyed by `currentKingdom`. */
+  const ssCache = {};
+  $ssLoad.addEventListener('click', async () => {
+    const f = $ssFile.files[0];
+    if (!f) { $ssStatus.textContent = 'Pick a .mc[N] file first.'; return; }
+    try {
+      $ssStatus.textContent = 'Loading WASM ...';
+      if (!wasmMod) {
+        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        await wasmMod.default();
+      }
+      if (!viewer) {
+        /* Construct a placeholder viewer so we can call the static method.
+         * The save-state path doesn't need a disc loaded. */
+        const fresh = freshCanvas();
+        if (!fresh) return;
+        viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
+      }
+      $ssStatus.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)...`;
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const out = viewer.save_state_framebuffer(bytes);
+      const w = out[0] | (out[1] << 8);
+      const h = out[2] | (out[3] << 8);
+      const rgba = new Uint8ClampedArray(out.buffer, out.byteOffset + 4, w * h * 4);
+      ssCache[currentKingdom] = { w, h, rgba: new Uint8ClampedArray(rgba), filename: f.name };
+      $ssStatus.textContent = `${currentKingdom}: ${w}x${h} framebuffer from ${f.name}`;
+      drawSavestate();
+    } catch (err) {
+      console.error(err);
+      $ssStatus.textContent = 'Failed: ' + (err.message || err);
+    }
+  });
+  function drawSavestate() {
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    const ctx = fresh.getContext('2d');
+    const W = fresh.width, H = fresh.height;
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+    const entry = ssCache[currentKingdom];
+    if (!entry) {
+      ctx.fillStyle = '#888'; ctx.font = '14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('Upload this kingdom\'s top-view save state (mednafen .mcN file)', W / 2, H / 2 - 8);
+      ctx.fillText('then click Load & render', W / 2, H / 2 + 12);
+      return;
+    }
+    /* Render to an offscreen canvas at native size, then draw scaled into
+     * the visible one (preserves pixel-perfect look at integer zooms). */
+    const off = document.createElement('canvas');
+    off.width = entry.w; off.height = entry.h;
+    off.getContext('2d').putImageData(new ImageData(entry.rgba, entry.w, entry.h), 0, 0);
+    /* Letterbox to fit canvas, integer-scale up. */
+    const scale = Math.min(W / entry.w, H / entry.h);
+    const dw = Math.floor(entry.w * scale);
+    const dh = Math.floor(entry.h * scale);
+    const dx = Math.floor((W - dw) / 2);
+    const dy = Math.floor((H - dh) / 2);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, dx, dy, dw, dh);
+    $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - in-game top-down view (${entry.w}x${entry.h})`;
+    $meshInfo.textContent =
+      `From save state ${entry.filename}. This is exactly what the game renders in its debug top-view mode - composed of ~10,000 textured polygons per frame from the kingdom's TIM pack + scene tile-mesh data.`;
+  }
 
   /* ---------- Load disc + WASM ----------- */
   $loadBtn.addEventListener('click', async () => {
@@ -424,6 +520,10 @@
     currentMeshIdx = 0;
     updateSnapshot();
     drawScatter();
+    if (viewMode === 'savestate') {
+      drawSavestate();
+      return;
+    }
     if (!viewer) return;
     if (viewMode === 'world') {
       loadWorldView();
