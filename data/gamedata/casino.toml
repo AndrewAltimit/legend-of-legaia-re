@@ -1,8 +1,15 @@
 # Casino prizes + Muscle Dome courses.
 #
-# Two slot-machine prize tables exist (Vidna + Sol), and three Muscle
-# Dome arena courses (Beginner / Expert / Master) each with an ordered
-# enemy line-up + reward.
+# Two prize-exchange tables (Vidna casino + Sol Tower Muscle Dome counter),
+# three Muscle Dome arena courses (Beginner / Expert / Master), the Baka
+# Fighter rock-paper-scissors minigame round table, and the Muscle Paradise
+# "Chicken King" easter egg.
+#
+# Note on `location` strings:
+#   "Vidna" - Vidna town casino prize counter
+#   "Sol"   - Sol Tower F4 Muscle Dome prize-exchange counter (NOT the slot
+#             machine itself, which only pays out coins). The exchange
+#             accepts coins earned via Muscle Dome / Baka Fighter / slots.
 
 [[slot_prize]]
 location = "Vidna"
@@ -36,6 +43,11 @@ cost_coins = 80
 
 [[slot_prize]]
 location = "Vidna"
+item = "speed_elixir"
+cost_coins = 80
+
+[[slot_prize]]
+location = "Vidna"
 item = "phoenix"
 cost_coins = 50
 
@@ -54,7 +66,7 @@ location = "Vidna"
 item = "light_lure"
 cost_coins = 2
 
-# ---- Sol slot prizes ----
+# ---- Sol Tower Muscle Dome counter prizes ----
 
 [[slot_prize]]
 location = "Sol"
@@ -118,11 +130,19 @@ item = "gold_card"
 cost_coins = 50
 
 # ---- Muscle Dome courses ----
+#
+# Each course is a fixed enemy sequence with a flat entry fee + clear reward
+# in coins. `restrictions` captures the equipment / item / magic gating
+# enforced at course entry. The per-round roster lives in
+# `[[muscle_dome_round]]` below; per-enemy stats in `[[muscle_dome_boss]]`.
 
 [[muscle_dome_course]]
+key = "beginner"
 name = "Beginner"
 entry_fee = 100
 reward_coins = 818
+restrictions = ["No equipment", "No items"]
+allowed = ["Magic", "Accessories"]
 enemies = [
     "Red Piura",
     "Skeleton",
@@ -135,9 +155,12 @@ enemies = [
 ]
 
 [[muscle_dome_course]]
+key = "expert"
 name = "Expert"
 entry_fee = 100
 reward_coins = 1532
+restrictions = ["No equipment", "No items"]
+allowed = ["Magic", "Accessories"]
 enemies = [
     "Black Piura",
     "High Gomboo",
@@ -150,10 +173,14 @@ enemies = [
 ]
 
 [[muscle_dome_course]]
+key = "master"
 name = "Master"
 entry_fee = 100
 reward_coins = 13856
 reward_first_clear = "war_god_icon"
+reward_first_clear_requires = "Jette must be defeated in Absolute Fortress before the War God Icon is awarded."
+restrictions = ["No equipment", "No items", "No magic"]
+allowed = ["Accessories"]
 enemies = [
     "Ironman",
     "Viguro Lv2",
@@ -169,6 +196,26 @@ enemies = [
     "Zora",
     "Jette",
 ]
+
+# ---- Muscle Paradise easter egg ----
+
+[[muscle_paradise_secret]]
+key = "chicken_king"
+name = "Chicken King"
+trigger = "Run from the first battle in all three Muscle Dome difficulty levels."
+reward = "chicken_king"
+notes = "Reward is the Chicken King accessory."
+
+# ---- Baka Fighter ----
+#
+# Rock-paper-scissors variant: each round shows a button sequence the
+# player must reproduce on the controller. Complete all 14 rounds to
+# claim the coin reward.
+
+[baka_fighter_meta]
+reward_coins = 460
+rounds = 14
+rules = "Reproduce the on-screen button sequence under a time pressure - like rock-paper-scissors with life meters."
 
 [[baka_fighter]]
 round = 1
@@ -227,3 +274,834 @@ buttons = ["X", "X", "Square", "Square", "X", "X", "O", "O"]
 round = 14
 buttons = ["Square", "Square", "X", "O", "O", "O", "X"]
 notes = "Songi"
+
+# ---- Muscle Dome roster (full stats + per-round assignments) ----
+#
+# Stats sourced from the Legaia fandom wiki (linked via `wiki_path`).
+# Confidence is "Inferred" pending direct binary RE of enemy records.
+# `seru_level` rows expose progressive Lv1/Lv2/Lv3 stats for Seru enemies;
+# the per-round `seru_level` field below selects which level appears.
+
+[[muscle_dome_boss]]
+key = "red_piura"
+name = "Red Piura"
+kind = "monster"
+script = "赤ピウラ, Aka Piura"
+wiki_path = "Red_Piura_(Monster)"
+courses = ["beginner"]
+hp = 75
+mp = 0
+atk = 27
+udf = 34
+ldf = 30
+intelligence = 18
+spd = 26
+agl = 48
+exp = 32
+gold = 0
+location = "Snowdrift Cave"
+steal = "Healing Leaf"
+steal_chance = 30
+drop = "Healing Leaf"
+drop_chance = 5
+attacks = ["Physical attack with drill hands"]
+
+[[muscle_dome_boss]]
+key = "skeleton"
+name = "Skeleton"
+kind = "monster"
+wiki_path = "Skeleton_(Monster)"
+courses = ["beginner"]
+weakness = ["light"]
+strength = ["dark"]
+hp = 99
+mp = 13
+atk = 30
+udf = 48
+ldf = 40
+intelligence = 14
+spd = 38
+agl = 99
+exp = 59
+gold = 22
+steal = "Incense"
+steal_chance = 30
+drop = "Magic Leaf"
+drop_chance = 5
+
+[[muscle_dome_boss]]
+key = "drake_ghost"
+name = "Drake Ghost"
+kind = "monster"
+script = "ドルクゴースト, Doruku Gōsuto"
+wiki_path = "Drake_Ghost_(Monster)"
+courses = ["beginner"]
+weakness = ["light"]
+strength = ["dark"]
+hp = 130
+mp = 40
+atk = 48
+udf = 40
+ldf = 52
+intelligence = 27
+spd = 24
+agl = 90
+exp = 65
+gold = 25
+location = "Drake Castle"
+steal = "Power Elixir"
+steal_chance = 30
+drop = "Door of Light"
+drop_chance = 6
+attacks = ["Windhash"]
+
+[[muscle_dome_boss]]
+key = "caruban"
+name = "Caruban"
+kind = "boss"
+romaji = "Karubanusu"
+script = "カルバヌス,"
+wiki_path = "Caruban_(Legend_of_Legaia_Boss)"
+courses = ["beginner", "expert", "master"]
+weakness = ["water"]
+strength = ["fire"]
+hp = 1024
+mp = 300
+atk = 66
+udf = 70
+ldf = 63
+intelligence = 55
+spd = 42
+agl = 98
+exp = 750
+gold = 450
+location = "Mt. Rikuroa"
+steal = "Wonder Elixir"
+steal_chance = 30
+drop = "Healing Bloom"
+drop_chance = 100
+attacks = ["Bite", "Claw slashes", "Fire Breath", "Flap"]
+
+[[muscle_dome_boss]]
+key = "gola_gola"
+name = "Gola Gola"
+kind = "seru"
+wiki_path = "Gola_Gola_(Seru)"
+courses = ["beginner"]
+element = "fire"
+weakness = ["water"]
+
+[[muscle_dome_boss.seru_level]]
+level = 1
+hp = 728
+mp = 140
+atk = 163
+udf = 234
+ldf = 186
+intelligence = 114
+spd = 97
+agl = 52
+exp = 720
+gold = 250
+location = "Fire Path"
+steal = "Healing Fruit"
+steal_chance = 30
+drop = "Healing Berry"
+drop_chance = 5
+attacks = ["Rolling Flare"]
+absorb_pct = 15
+
+[[muscle_dome_boss.seru_level]]
+level = 2
+hp = 2050
+mp = 200
+atk = 250
+udf = 234
+ldf = 186
+intelligence = 302
+spd = 192
+agl = 82
+exp = 2520
+gold = 781
+location = "Dohati's Castle, Rogue's Tower"
+steal = "Magic Leaf"
+steal_chance = 30
+drop = "Healing Fruit"
+drop_chance = 14
+attacks = ["Rolling Flare"]
+absorb_pct = 25
+
+[[muscle_dome_boss.seru_level]]
+level = 3
+hp = 2400
+mp = 280
+atk = 268
+udf = 376
+ldf = 300
+intelligence = 345
+spd = 209
+agl = 100
+exp = 2970
+gold = 1031
+location = "Bio Castle"
+steal = "Magic Fruit"
+steal_chance = 30
+drop = "Magic Fruit"
+drop_chance = 10
+attacks = ["Rolling Flare"]
+absorb_pct = 35
+
+[[muscle_dome_boss]]
+key = "zeto"
+name = "Zeto"
+kind = "boss"
+romaji = "Zetō (Xetau)"
+script = "ゼトー,"
+wiki_path = "Zeto_(Legend_of_Legaia_Boss)"
+courses = ["beginner", "master"]
+weakness = ["fire"]
+strength = ["water"]
+hp = 5000
+mp = 512
+atk = 108
+udf = 165
+ldf = 133
+intelligence = 146
+spd = 66
+agl = 240
+exp = 2250
+gold = 2000
+location = "Zeto's Dungeon"
+steal = "Wonder Elixir"
+steal_chance = 30
+drop = "Silver Compass"
+drop_chance = 5
+attacks = ["Big Wave", "Call Wave", "Multi-hit physical combo", "Poisonous Bubbles"]
+immune_to = ["Confusion"]
+
+[[muscle_dome_boss]]
+key = "viguro"
+name = "Viguro"
+kind = "seru"
+wiki_path = "Viguro_(Seru)"
+courses = ["beginner", "master"]
+element = "lightning"
+
+[[muscle_dome_boss.seru_level]]
+level = 1
+hp = 1280
+mp = 160
+atk = 105
+udf = 110
+ldf = 88
+intelligence = 76
+spd = 73
+agl = 98
+exp = 1125
+gold = 375
+location = "East Voz Forest"
+steal = "Wonder Elixir"
+steal_chance = 30
+drop = "Golden Compass"
+drop_chance = 5
+attacks = ["Thunder Break"]
+absorb_pct = 10
+
+[[muscle_dome_boss.seru_level]]
+level = 2
+hp = 1280
+mp = 200
+atk = 150
+udf = 150
+ldf = 120
+intelligence = 219
+spd = 108
+agl = 128
+exp = 1155
+gold = 312
+location = "Ratayu, Mt. Letona, Dohati's Castle"
+steal = "Healing Fruit"
+steal_chance = 30
+drop = "Healing Fruit"
+drop_chance = 15
+attacks = ["Thunder Break"]
+absorb_pct = 15
+
+[[muscle_dome_boss.seru_level]]
+level = 3
+hp = 3020
+mp = 300
+atk = 125
+udf = 370
+ldf = 296
+intelligence = 230
+spd = 163
+agl = 198
+exp = 3600
+gold = 937
+location = "Bio Castle"
+steal = "Healing Berry"
+steal_chance = 30
+drop = "Healing Berry"
+drop_chance = 12
+attacks = ["Thunder Burst"]
+absorb_pct = 35
+
+[[muscle_dome_boss]]
+key = "xain"
+name = "Xain"
+kind = "boss"
+romaji = "Buruterio"
+script = "ブルテリオ,"
+wiki_path = "Xain_(Legend_of_Legaia_Boss)"
+courses = ["beginner", "expert", "master"]
+weakness = ["wind"]
+strength = ["earth"]
+hp = 9511
+mp = 0
+atk = 218
+udf = 255
+ldf = 203
+intelligence = 68
+spd = 82
+agl = 96
+exp = 4500
+gold = 2000
+location = "Fire Path"
+steal = "Wonder Elixir"
+steal_chance = 30
+drop = "Wind Book II"
+drop_chance = 100
+attacks = ["Bloody Horns", "Bull Charge", "Multi-hit physical combo", "Terio Punch"]
+immune_to = ["Annihilation", "Confusion"]
+
+[[muscle_dome_boss]]
+key = "black_piura"
+name = "Black Piura"
+kind = "monster"
+wiki_path = "Black_Piura_(Monster)"
+courses = ["expert"]
+hp = 85
+mp = 0
+atk = 30
+udf = 36
+ldf = 32
+intelligence = 27
+spd = 30
+agl = 60
+exp = 47
+gold = 0
+location = "Snowdrift Cave"
+steal = "Healing Flower"
+steal_chance = 30
+drop = "Healing Leaf"
+drop_chance = 8
+attacks = ["Physical attack with drill hands"]
+
+[[muscle_dome_boss]]
+key = "high_gomboo"
+name = "High Gomboo"
+kind = "monster"
+script = "ハイゴンブー, Hai Gonbū"
+wiki_path = "High_Gomboo_(Monster)"
+courses = ["expert"]
+weakness = ["wind"]
+strength = ["earth"]
+hp = 710
+mp = 25
+atk = 151
+udf = 278
+ldf = 222
+intelligence = 150
+spd = 138
+agl = 138
+exp = 810
+gold = 250
+location = "Sebucus Islands"
+steal = "Healing Berry"
+steal_chance = 30
+drop = "Healing Fruit"
+drop_chance = 11
+attacks = ["Power Up", "Steal"]
+
+[[muscle_dome_boss]]
+key = "dark_ogre"
+name = "Dark Ogre"
+kind = "monster"
+script = "ダークオウガ, Dākuouga"
+wiki_path = "Dark_Ogre_(Monster)"
+courses = ["expert"]
+weakness = ["water"]
+strength = ["fire"]
+hp = 3350
+mp = 140
+atk = 390
+udf = 394
+ldf = 314
+intelligence = 248
+spd = 201
+agl = 120
+exp = 2610
+gold = 859
+steal = "Fury Boost"
+steal_chance = 30
+drop = "Power Elixir"
+drop_chance = 10
+
+[[muscle_dome_boss]]
+key = "gold_bison"
+name = "Gold Bison"
+kind = "monster"
+script = "アイアンマン, Gorudobaison"
+wiki_path = "Gold_Bison_(Monster)"
+courses = ["expert", "master"]
+weakness = ["wind"]
+strength = ["earth"]
+hp = 3800
+mp = 0
+atk = 441
+udf = 424
+ldf = 338
+intelligence = 330
+spd = 195
+agl = 101
+exp = 2610
+gold = 1875
+steal = "Healing Berry"
+steal_chance = 30
+drop = "Healing Berry"
+drop_chance = 15
+
+[[muscle_dome_boss]]
+key = "ironman"
+name = "Ironman"
+kind = "monster"
+wiki_path = "Ironman_(Monster)"
+courses = ["expert", "master"]
+hp = 2300
+mp = 200
+atk = 350
+udf = 420
+ldf = 340
+intelligence = 360
+spd = 120
+agl = 160
+steal = "Life Water"
+steal_chance = 5
+drop = "Power Water"
+drop_chance = 5
+
+[[muscle_dome_boss]]
+key = "aluru"
+name = "Aluru"
+kind = "seru"
+wiki_path = "Aluru_(Seru)"
+courses = ["expert"]
+element = "light"
+weakness = ["dark"]
+
+[[muscle_dome_boss.seru_level]]
+level = 1
+hp = 1028
+mp = 150
+atk = 210
+udf = 238
+ldf = 190
+intelligence = 225
+spd = 152
+agl = 86
+exp = 1238
+gold = 368
+location = "Dohati's Castle, Sol Tower"
+steal = "Healing Fruit"
+steal_chance = 30
+drop = "Power Elixir"
+drop_chance = 5
+attacks = ["Aluru Cannon"]
+absorb_pct = 10
+
+[[muscle_dome_boss.seru_level]]
+level = 2
+hp = 1100
+mp = 200
+atk = 250
+udf = 240
+ldf = 192
+intelligence = 225
+spd = 154
+agl = 100
+exp = 1575
+gold = 525
+location = "Nivora Ravine"
+steal = "Magic Leaf"
+steal_chance = 30
+drop = "Healing Berry"
+drop_chance = 5
+attacks = ["Aluru Cannon", "Rolling Crash"]
+absorb_pct = 25
+
+[[muscle_dome_boss.seru_level]]
+level = 3
+hp = 2228
+mp = 250
+atk = 290
+udf = 410
+ldf = 328
+intelligence = 321
+spd = 215
+agl = 130
+exp = 3015
+gold = 937
+location = "Bio Castle"
+steal = "Magic Fruit"
+steal_chance = 30
+drop = "Healing Fruit"
+drop_chance = 10
+attacks = ["Aluru Cannon", "Rolling Crash"]
+absorb_pct = 35
+
+[[muscle_dome_boss]]
+key = "berserker"
+name = "Berserker"
+kind = "boss"
+romaji = "Sekiasu"
+script = "セキアス,"
+wiki_path = "Berserker_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = ["wind"]
+strength = ["earth"]
+hp = 5000
+mp = 850
+atk = 161
+udf = 172
+ldf = 172
+intelligence = 201
+spd = 77
+agl = 111
+exp = 2500
+gold = 1667
+location = "Jeremi (Sky Gardens)"
+steal = "Wonder Elixir"
+steal_chance = 30
+drop = "Fire Book II"
+drop_chance = 100
+attacks = ["Multi-hit physical combo", "Poisonous Gas", "Spore Gas", "Stone Circle"]
+
+[[muscle_dome_boss]]
+key = "dohati"
+name = "Dohati"
+kind = "boss"
+romaji = "(Dohatey)"
+script = "ドハティ"
+wiki_path = "Dohati_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = ["light"]
+strength = ["dark"]
+hp = 17200
+mp = 0
+atk = 212
+udf = 248
+ldf = 197
+intelligence = 177
+spd = 102
+agl = 98
+exp = 9000
+gold = 8000
+location = "Dohati's Castle"
+steal = "Wonder Elixir"
+steal_chance = 30
+drop = "Mettle Armband"
+drop_chance = 38
+attacks = ["Chaos Breath", "Multi-hit physical combo"]
+immune_to = ["Annihilation", "Confusion"]
+
+[[muscle_dome_boss]]
+key = "lu_delilas"
+name = "Lu Delilas"
+kind = "boss"
+romaji = "Ru Derira (Le Derilla)"
+script = "ル・デリラ,"
+wiki_path = "Lu_Delilas_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = []
+strength = ["thunder"]
+hp = 9500
+mp = 500
+atk = 99
+udf = 197
+ldf = 214
+intelligence = 150
+spd = 165
+agl = 200
+exp = 11250
+gold = 7500
+location = "Nivora Ravine"
+steal = "Magic Water"
+steal_chance = 30
+drop = "Wind Book III"
+drop_chance = 100
+attacks = ["Plasma Strike", "7-hit physical combo"]
+immune_to = ["Annihilation", "Confusion"]
+
+[[muscle_dome_boss]]
+key = "che_delilas"
+name = "Che Delilas"
+kind = "boss"
+romaji = "Che Derira (Ce Derilla)"
+script = "チェ・デリラ,"
+wiki_path = "Che_Delilas_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = ["wind"]
+strength = ["earth"]
+hp = 12000
+mp = 500
+atk = 220
+udf = 284
+ldf = 249
+intelligence = 100
+spd = 105
+agl = 100
+exp = 11250
+gold = 7500
+location = "Nivora Ravine"
+steal = "Wisdom Water"
+steal_chance = 30
+drop = "Thunder Book III"
+drop_chance = 100
+attacks = ["3-hit physical combo", "Megaton Press"]
+immune_to = ["Annihilation", "Confusion"]
+
+[[muscle_dome_boss]]
+key = "gi_delilas"
+name = "Gi Delilas"
+kind = "boss"
+romaji = "Gi Derira (Gea Derilla)"
+script = "ギ・デリラ,"
+wiki_path = "Gi_Delilas_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = ["water"]
+strength = ["fire"]
+hp = 10000
+mp = 500
+atk = 160
+udf = 288
+ldf = 274
+intelligence = 172
+spd = 141
+agl = 168
+exp = 11250
+gold = 7500
+location = "Nivora Ravine"
+steal = "Swift Water"
+steal_chance = 30
+drop = "Fire Book III"
+drop_chance = 100
+attacks = ["Blazing Slash", "6-hit physical combo"]
+immune_to = ["Annihilation", "Confusion"]
+
+[[muscle_dome_boss]]
+key = "zora"
+name = "Zora"
+kind = "boss"
+romaji = "Zora (Xolla)"
+script = "ゾラ,"
+wiki_path = "Zora_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = ["light"]
+strength = ["dark"]
+hp = 22422
+mp = 2000
+atk = 252
+udf = 360
+ldf = 287
+intelligence = 302
+spd = 164
+agl = 148
+exp = 11250
+gold = 7500
+location = "Zora's Floating Castle"
+steal = "Swift Water"
+steal_chance = 30
+attacks = ["Dark Typhoon", "5-hit physical combo", "Glare"]
+immune_to = ["Annihilation", "Confusion"]
+
+[[muscle_dome_boss]]
+key = "jette"
+name = "Jette"
+kind = "boss"
+romaji = "Jittsu"
+script = "ジッツ,"
+wiki_path = "Jette_(Legend_of_Legaia_Boss)"
+courses = ["master"]
+weakness = ["light"]
+strength = ["dark"]
+hp = 34567
+mp = 1000
+atk = 222
+udf = 360
+ldf = 287
+intelligence = 250
+spd = 274
+agl = 198
+exp = 12750
+gold = 10000
+location = "Jette's Absolute Fortress"
+steal = "Wisdom Water"
+steal_chance = 30
+drop = "Miracle Water"
+drop_chance = 40
+attacks = ["Clone", "Multi-hit physical combo", "Shadow Break"]
+immune_to = ["Annihilation", "Confusion"]
+
+# ---- Muscle Dome per-round roster ----
+# Replaces the older muscle_dome_enemy element-tag array.
+# Each row maps a course_key + round to a boss_key in muscle_dome_boss.
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 1
+boss_key = "red_piura"
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 2
+boss_key = "skeleton"
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 3
+boss_key = "drake_ghost"
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 4
+boss_key = "caruban"
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 5
+boss_key = "gola_gola"
+seru_level = 1
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 6
+boss_key = "zeto"
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 7
+boss_key = "viguro"
+seru_level = 2
+
+[[muscle_dome_round]]
+course_key = "beginner"
+round = 8
+boss_key = "xain"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 1
+boss_key = "black_piura"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 2
+boss_key = "high_gomboo"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 3
+boss_key = "dark_ogre"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 4
+boss_key = "gold_bison"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 5
+boss_key = "ironman"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 6
+boss_key = "caruban"
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 7
+boss_key = "aluru"
+seru_level = 1
+
+[[muscle_dome_round]]
+course_key = "expert"
+round = 8
+boss_key = "xain"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 1
+boss_key = "ironman"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 2
+boss_key = "viguro"
+seru_level = 2
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 3
+boss_key = "gold_bison"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 4
+boss_key = "caruban"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 5
+boss_key = "zeto"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 6
+boss_key = "berserker"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 7
+boss_key = "xain"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 8
+boss_key = "dohati"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 9
+boss_key = "lu_delilas"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 10
+boss_key = "che_delilas"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 11
+boss_key = "gi_delilas"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 12
+boss_key = "zora"
+
+[[muscle_dome_round]]
+course_key = "master"
+round = 13
+boss_key = "jette"

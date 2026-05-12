@@ -203,12 +203,24 @@ row coexist.
 Town01's four NPC TMDs reference CLUT row y=479 slots x=128..240
 (CBA `0x77C8..0x77CF`). Earlier engine work assumed those palettes
 live inside the post-TMD pool of one or more `battle_data` records;
-the byte-match corpus above shows they don't. Closing the ~388-prim
-MissingClut gap therefore requires more than decoding the pack
-descriptor - it needs the runtime palette source identified
-separately. The pack parser remains the entry point for CLUTs in
-*battle* scenes (where on-disc palettes do drive the renderer) once
-the descriptor is pinned.
+the byte-match corpus above shows they don't. The real source is
+the matching `scene_tmd_stream` entries in town01's own CDNAME
+block, dispatched only at battle init (see [`npc-palette.md`](npc-palette.md)).
+Retail field saves carry row 479 = zero, so the prims that drop as
+`MissingClut` under a "battle-style upload everything" build are
+prims for meshes retail field mode wouldn't render either.
+
+The engine port models this via
+[`SceneResources::SceneLoadKind`](../../crates/engine-core/src/scene_resources.rs):
+`Field` excludes both the leading TMD and the type-0x01 TIMs from
+every `scene_tmd_stream` entry plus all `battle_data` records (the
+pack is battle-init resident, not part of field VRAM). The pack
+parser remains the entry point for CLUTs in *battle* scenes (where
+on-disc palettes do drive the renderer) once the descriptor is
+pinned;
+[`SceneResources::build_battle_boot_vram`](../../crates/engine-core/src/scene_resources.rs)
+exposes the wired API and surfaces any standard-TIM textures the
+pack does carry today.
 
 ## CLI
 

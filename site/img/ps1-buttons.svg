@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="display:none" aria-hidden="true">
+  <title>PlayStation controller button glyphs</title>
+  <defs>
+    <radialGradient id="ps1BtnGrad" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#5a5a5a"/>
+      <stop offset="60%" stop-color="#242424"/>
+      <stop offset="100%" stop-color="#111111"/>
+    </radialGradient>
+  </defs>
+
+  <symbol id="btn-triangle" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <polygon points="0,-14 -14,10 14,10" fill="none" stroke="#2DCCA7" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </symbol>
+
+  <symbol id="btn-square" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <rect x="-12" y="-12" width="24" height="24" rx="2.5" fill="none" stroke="#DF74A6" stroke-width="4.5" stroke-linejoin="round"/>
+  </symbol>
+
+  <symbol id="btn-circle" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <circle cx="0" cy="0" r="13.5" fill="none" stroke="#D84B4B" stroke-width="4.5"/>
+  </symbol>
+
+  <symbol id="btn-cross" viewBox="-30 -30 60 60">
+    <circle cx="0" cy="0" r="30" fill="url(#ps1BtnGrad)"/>
+    <path d="M -12 -12 L 12 12 M 12 -12 L -12 12" fill="none" stroke="#7798D4" stroke-width="4.5" stroke-linecap="round"/>
+  </symbol>
+</svg>

@@ -21,6 +21,17 @@ const NAV = [
     ],
   },
   {
+    label: 'explore',
+    items: [
+      { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
+      { href: 'world.html',                     text: 'Game world',               key: 'world' },
+      { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
+      { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
+      { href: 'arts.html',                      text: 'Tactical Arts',            key: 'arts' },
+      { href: 'world-overview.html',            text: 'World overview (3D)',      key: 'world-overview' },
+    ],
+  },
+  {
     label: 'subsystems',
     items: [
       { href: 'subsystems/index.html',          text: 'Subsystems index',         key: 'subsystems/index' },
@@ -109,12 +120,6 @@ const NAV = [
       { href: 'reference/memory-map.html',      text: 'PSX RAM map',              key: 'reference/memory-map' },
       { href: 'reference/cheats.html',          text: 'Cheat databases',          key: 'reference/cheats' },
       { href: 'reference/gamedata.html',        text: 'Curated game-data tables', key: 'reference/gamedata' },
-    ],
-  },
-  {
-    label: 'interactive',
-    items: [
-      { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
     ],
   },
 ];

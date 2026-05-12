@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; per-scene primitive scratch buffer</div>
-  <h1>Per-scene primitive scratch buffer at <code>0x80108EA4</code></h1>
+  <h1>Per-scene primitive scratch buffer at <code>0x80108EA4</code> <span class="tag tag-partial">Inferred</span></h1>
   <p class="lede">The 1700-byte cluster at <code>0x80108EA4..0x80109550</code> that differs across area-load saves is <strong>not</strong> a 24-byte stride navmesh. It's a per-scene scratch buffer the renderer fills with assembled GPU primitive data on scene entry — the contents shape varies by scene because the buffer holds whatever the per-scene pre-fill writes for that scene's billboard / decoration / sprite set.</p>
 </header>
 

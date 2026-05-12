@@ -36,37 +36,40 @@ use legaia_tim::Vram;
 use crate::scene::Scene;
 
 /// Which retail dispatch path the engine is mimicking when it builds a
-/// scene's VRAM pre-pass. Controls whether scene_tmd_stream PROT entries
-/// (slots that the retail battle-scene loader processes via
-/// `FUN_8001FE70`) contribute their type-0x01 TIM upload chunks to the
-/// engine-side VRAM.
+/// scene's VRAM pre-pass. Controls whether scene_tmd_stream PROT
+/// entries (the battle-only character mesh + texture chunks that
+/// `FUN_8001FE70` walks at battle init) contribute to the engine-side
+/// VRAM **and** to the parsed TMD pool.
 ///
-/// In retail, field/town scene-load does NOT touch these entries -
-/// they're battle-only character meshes. Battle-init loads them. The
-/// engine port has historically uploaded them on every scene build
-/// because the field NPC TMDs sample CLUTs they carry; matching retail's
-/// lazy dispatch means accepting that those NPCs drop prims in field
-/// mode until the player's first battle has primed VRAM.
+/// In retail, field / town scene-load does NOT call `FUN_8001FE70`;
+/// the leading TMD inside a scene_tmd_stream entry goes to the battle
+/// character TMD register (`_DAT_8007B864`) and its type-0x01 chunks
+/// upload battle character textures (CLUT row 479 fb_x=128..240).
+/// Both are absent from VRAM in retail town saves (e.g. captures in
+/// town01 carry row 479 fb_x=0..256 = zero) - the retail engine
+/// simply never renders those meshes from a field scene.
 ///
 /// See [`docs/formats/scene-bundles.md`] (`scene_tmd_stream`) and
 /// [`docs/subsystems/asset-loader.md`] for the runtime caller chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SceneLoadKind {
     /// Mimic the retail field / town scene loader: skip every
-    /// scene_tmd_stream PROT entry's type-0x01 TIM upload chunks. These
-    /// chunks are reserved for battle-init dispatch and are absent from
-    /// VRAM in retail town saves (e.g. mc1-mc7 captures in town01 carry
-    /// row 479 fb_x=0..256 = zero). The trade-off is a lower textured
-    /// prim keep ratio for field NPCs whose CBA points at row 479 - the
-    /// retail engine renders those NPCs only because the CLUT halfwords
-    /// for slots 128..240 are pre-loaded at boot from `battle_data`
-    /// (PROT 865..869), a path the engine port hasn't fully wired yet.
+    /// scene_tmd_stream PROT entry's contributions to the build -
+    /// both the leading TMD (a battle character mesh that retail
+    /// stores in the battle character TMD register, never rendered
+    /// from field scenes) and its type-0x01 TIM upload chunks (the
+    /// CLUTs / textures that mesh samples). With both filtered out
+    /// the field-mode VRAM matches retail town saves, and the parsed
+    /// TMD pool drops to "field NPC + terrain meshes only" so the
+    /// prim filter doesn't drag down the keep ratio with battle
+    /// meshes it can't texture.
     Field,
-    /// Mimic the retail battle scene loader: include the in-tail
-    /// `FUN_8001FE70` type-0x01 chunks AND any post-terminator
-    /// continuation chunks. This is the "upload everything that looks
-    /// like a TIM" pass that the engine port has historically used as
-    /// its `build_targeted` default.
+    /// Mimic the retail battle scene loader: include the leading TMD
+    /// AND the in-tail `FUN_8001FE70` type-0x01 chunks AND any
+    /// post-terminator continuation chunks. This is the "upload
+    /// everything that looks like a TIM and parse every embedded
+    /// TMD" pass that the engine port has historically used as its
+    /// `build_targeted` default.
     Battle,
 }
 
@@ -169,6 +172,20 @@ impl ResolvedTmd {
     }
 }
 
+/// Diagnostic counts returned alongside [`SceneResources::build_battle_boot_vram`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BattleBootStats {
+    /// Number of detected battle_data packs across the input scenes.
+    pub packs: usize,
+    /// Number of records walked across all detected packs.
+    pub records: usize,
+    /// Number of standard-PSX-TIM texture pools uploaded to the boot VRAM.
+    pub tims_uploaded: usize,
+    /// Number of CLUT rows uploaded via `battle_data_pack::clut_uploads`
+    /// (currently zero until the descriptor encoding is pinned).
+    pub cluts_uploaded: usize,
+}
+
 /// One ANM pack found in the scene's CDNAME block.
 #[derive(Clone)]
 pub struct ResolvedAnm {
@@ -204,22 +221,30 @@ impl ResolvedAnm {
 /// CLUT at `(0, 500)`.
 ///
 /// `battle_data` (PROT 865..869) holds the character / monster TMDs
-/// the retail engine pre-loads at battle scene init. Town NPCs reuse
-/// some of these TMDs and their CLUTs live in VRAM row y=479 slots
-/// x=128..240. The records are wrapped in a per-record LZS stream
-/// that the raw TIM/TMD scanner can't see -
-/// [`legaia_asset::battle_data_pack`] now decompresses them, but the
-/// post-TMD texture/CLUT layout inside each decoded record is
-/// partially TBD (the layout descriptor at `u32[3..0x20]` of the
-/// 32-byte header isn't fully pinned). Adding `battle_data` to the
-/// default shared set inflates the targeted-upload "needs" set with
-/// CBA/TSB regions whose textures aren't yet reachable, which pushes
-/// the town01 prim keep ratio down. Callers that want the embedded
-/// TMDs in the registered pool (for battle-scene rendering once the
-/// post-TMD layout is reversed) can pass `"battle_data"` explicitly
-/// to [`SceneResources::build_with_shared`] /
-/// [`SceneResources::build_targeted`]. See [`docs/formats/battle-data-pack.md`].
+/// the retail engine loads at battle scene init via the
+/// `FUN_8001E890` chain. It is NOT in the field shared set: the
+/// byte-match corpus shows the row-479 NPC palettes that town01's
+/// scene_tmd_stream entries reference don't appear in any
+/// battle_data record (the corpus did pin record-pool placements at
+/// `fb_x=768` and `fb_x=864`, but those are battle character
+/// textures, not field-NPC CLUTs).
+///
+/// Engines that want battle_data resident before they enter a
+/// battle scene can build a separate boot VRAM with
+/// [`SceneResources::build_battle_boot_vram`] and merge it with the
+/// field scene's VRAM at battle-init time. See
+/// [`docs/formats/battle-data-pack.md`] for the corpus methodology
+/// and [`docs/subsystems/asset-loader.md`] for the dispatch
+/// boundaries between field and battle.
 pub const FIELD_SHARED_BLOCKS: &[&str] = &["init_data", "player_data"];
+
+/// CDNAME blocks the retail engine pre-loads before any battle
+/// scene fires: the per-character TMDs + texture pools inside
+/// `battle_data` (PROT 865..869). Pair with
+/// [`SceneResources::build_battle_boot_vram`] (or pass through to
+/// [`SceneResources::build_targeted_with_options`] as a shared
+/// block) when an engine wants the boot VRAM populated.
+pub const BATTLE_BOOT_BLOCKS: &[&str] = &["battle_data"];
 
 /// Per-scene runtime resources: VRAM populated from every TIM in the
 /// CDNAME block, plus a parsed TMD pool, plus a count of how many TIMs
@@ -322,23 +347,37 @@ impl SceneResources {
         // also LZS-decompress every record and pull the embedded TMDs out
         // of the inner payloads - the raw TMD scanner can't see those
         // because the pack wraps each record in an LZS stream.
+        //
+        // Field-mode dispatch (`SceneLoadKind::Field`) excludes every TMD
+        // from a `scene_tmd_stream`-shaped entry: those meshes are battle
+        // character meshes routed by `FUN_8001FE70` into the battle
+        // character TMD register, never rendered from field / town
+        // scenes. Without this skip, the parsed TMD pool drags the prim
+        // filter down to ~0% in field mode because all those meshes
+        // sample CLUT rows whose TIM uploads (also battle-only) are
+        // already correctly skipped.
+        let kind = options.kind;
         let parse_scene_tmds_anms = |s: &Scene,
                                      tmds: &mut Vec<ResolvedTmd>,
                                      anm_packs: &mut Vec<ResolvedAnm>,
                                      tmd_count: &mut usize| {
             for entry in &s.entries {
                 let bytes: &[u8] = &entry.bytes;
-                for hit in tmd_scan::scan_buffer(bytes) {
-                    let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
-                    if let Ok(tmd) = legaia_tmd::parse(&payload) {
-                        tmds.push(ResolvedTmd {
-                            entry_idx: entry.idx,
-                            offset: hit.offset,
-                            byte_len: hit.byte_len,
-                            tmd,
-                            raw: payload,
-                        });
-                        *tmd_count += 1;
+                let skip_scene_tmd_stream = matches!(kind, SceneLoadKind::Field)
+                    && scene_tmd_stream::is_scene_tmd_stream(bytes);
+                if !skip_scene_tmd_stream {
+                    for hit in tmd_scan::scan_buffer(bytes) {
+                        let payload = bytes[hit.offset..hit.offset + hit.byte_len].to_vec();
+                        if let Ok(tmd) = legaia_tmd::parse(&payload) {
+                            tmds.push(ResolvedTmd {
+                                entry_idx: entry.idx,
+                                offset: hit.offset,
+                                byte_len: hit.byte_len,
+                                tmd,
+                                raw: payload,
+                            });
+                            *tmd_count += 1;
+                        }
                     }
                 }
                 if let Some(det) = anm_detect::detect(bytes) {
@@ -354,7 +393,13 @@ impl SceneResources {
                     }
                 }
                 // battle_data pack: per-record LZS decompression exposes
-                // embedded TMDs the raw scanner can't reach.
+                // embedded TMDs the raw scanner can't reach. Field mode
+                // skips these too - the pack's meshes are battle
+                // characters loaded by the retail engine's battle-init
+                // path, not by field / town scene-load.
+                if matches!(kind, SceneLoadKind::Field) {
+                    continue;
+                }
                 if let Some(pack) = battle_data_pack::detect(bytes) {
                     for record in &pack.records {
                         let Ok(decoded) =
@@ -412,7 +457,6 @@ impl SceneResources {
         // town load path. See [`docs/formats/scene-bundles.md`].
         let mut tim_bufs: Vec<Vec<u8>> = Vec::new();
         let mut tim_parse_failures = 0usize;
-        let kind = options.kind;
         let collect_tim_bufs = |s: &Scene,
                                 tim_bufs: &mut Vec<Vec<u8>>,
                                 tim_parse_failures: &mut usize| {
@@ -463,6 +507,11 @@ impl SceneResources {
                 // most retail records don't tag their texture pool
                 // with the standard TIM magic, but the few that do
                 // (or future records that gain it) are now reachable.
+                // Field mode skips this entirely - battle_data is
+                // battle-init resident, not part of field VRAM.
+                if matches!(kind, SceneLoadKind::Field) {
+                    continue;
+                }
                 if let Some(pack) = battle_data_pack::detect(bytes) {
                     for record in &pack.records {
                         let Ok(decoded) =
@@ -501,11 +550,11 @@ impl SceneResources {
         // Synthetic CLUT pass: for every `battle_data` pack entry in the
         // scene's CDNAME block (and any shared block), surface CLUT-row
         // contributions whose post-TMD descriptor places them at a
-        // specific `(fb_x, fb_y)` in VRAM. The descriptor decoding is
-        // currently a no-op (see `battle_data_pack::clut_uploads`), so
-        // this loop produces no uploads until the encoding is pinned.
-        // Wiring is in place so future descriptor work lights up
-        // immediately without touching SceneResources.
+        // specific `(fb_x, fb_y)` in VRAM. Skipped in field mode -
+        // battle_data lives in battle-init VRAM, not field VRAM. The
+        // descriptor decoding is currently a no-op (see
+        // `battle_data_pack::clut_uploads`); when it's pinned this
+        // loop lights up automatically for battle-mode callers.
         let apply_clut_uploads = |s: &Scene, vram: &mut Vram| {
             for entry in &s.entries {
                 let bytes: &[u8] = &entry.bytes;
@@ -526,10 +575,12 @@ impl SceneResources {
                 }
             }
         };
-        for shared in shared_scenes {
-            apply_clut_uploads(shared, &mut vram);
+        if matches!(kind, SceneLoadKind::Battle) {
+            for shared in shared_scenes {
+                apply_clut_uploads(shared, &mut vram);
+            }
+            apply_clut_uploads(scene, &mut vram);
         }
-        apply_clut_uploads(scene, &mut vram);
 
         // Row-479 NPC CLUTs are now uploaded via the normal targeted
         // upload path with CLUT merge-zeros semantics (see
@@ -693,6 +744,71 @@ impl SceneResources {
             shared_tim_count,
             shared_tmd_count,
         })
+    }
+
+    /// Build a "battle boot VRAM" from the `battle_data` CDNAME block
+    /// (PROT 865..869). The returned VRAM holds every standard-TIM-
+    /// shaped contribution the engine can recover from inside the
+    /// per-record LZS streams - the texture pools wrapped in PSX TIM
+    /// magic - plus any future `clut_uploads()` placements the pack
+    /// reverse-engineer surfaces.
+    ///
+    /// The retail engine performs an equivalent pre-pass via the
+    /// `FUN_8001E890` chain when the player approaches a battle
+    /// transition. Wiring the same data into the engine port lets
+    /// battle-mode scene builds see battle character textures + CLUTs
+    /// without having to redo the parse on every transition.
+    ///
+    /// Returns an empty VRAM when `battle_data` isn't in the index or
+    /// none of its records carry standard-TIM-magic texture pools.
+    /// `tmd_count` mirrors the parsed-TMD count for diagnostics. The
+    /// stable contract: every byte this writes corresponds to a real
+    /// retail VRAM write - no synthetic CLUT painting, no placeholder
+    /// data.
+    ///
+    /// See [`docs/subsystems/asset-loader.md`] for the dispatch
+    /// boundaries and [`BATTLE_BOOT_BLOCKS`] for the block list.
+    pub fn build_battle_boot_vram(battle_data_scenes: &[&Scene]) -> (Vram, BattleBootStats) {
+        let mut vram = Vram::new();
+        let mut stats = BattleBootStats::default();
+        for scene in battle_data_scenes {
+            for entry in &scene.entries {
+                let bytes: &[u8] = &entry.bytes;
+                let Some(pack) = battle_data_pack::detect(bytes) else {
+                    continue;
+                };
+                stats.packs += 1;
+                for record in &pack.records {
+                    let Ok(decoded) = battle_data_pack::decode_record(bytes, &pack, record.index)
+                    else {
+                        continue;
+                    };
+                    stats.records += 1;
+                    // Standard-TIM-shaped textures inside the record.
+                    for hit in tim_scan::scan_buffer(&decoded.bytes) {
+                        let end = hit.offset + hit.byte_len;
+                        if end > decoded.bytes.len() {
+                            continue;
+                        }
+                        let payload = &decoded.bytes[hit.offset..end];
+                        if let Ok(tim) = legaia_tim::parse(payload) {
+                            vram.upload_tim(&tim);
+                            stats.tims_uploaded += 1;
+                        }
+                    }
+                    // Pinned descriptor placements (no-op until
+                    // `battle_data_pack::clut_uploads` is wired).
+                    for upload in battle_data_pack::clut_uploads(&decoded) {
+                        let Some(row_bytes) = upload.bytes(&decoded) else {
+                            continue;
+                        };
+                        vram.write_clut_row(upload.fb_x, upload.fb_y, row_bytes);
+                        stats.cluts_uploaded += 1;
+                    }
+                }
+            }
+        }
+        (vram, stats)
     }
 
     /// Look up a TMD by its `(entry_idx, offset)` coordinates. Useful when
@@ -883,5 +999,31 @@ mod tests {
             0x5555,
             "scene must win slot collision"
         );
+    }
+
+    #[test]
+    fn build_battle_boot_vram_empty_when_no_battle_data() {
+        // Synthesize a scene that doesn't carry a battle_data pack -
+        // the boot builder must return an empty stats and a fresh
+        // VRAM, never crash.
+        let scene = make_scene(vec![SceneEntry {
+            idx: 0,
+            class: Class::UnknownOther,
+            bytes: Arc::new(synth_tim_16bpp(0, 0)),
+        }]);
+        let (vram, stats) = SceneResources::build_battle_boot_vram(&[&scene]);
+        assert_eq!(stats.packs, 0);
+        assert_eq!(stats.records, 0);
+        assert_eq!(stats.tims_uploaded, 0);
+        assert_eq!(stats.cluts_uploaded, 0);
+        // VRAM is fresh / zero everywhere.
+        assert_eq!(vram.pixel(0, 0), 0);
+    }
+
+    #[test]
+    fn build_battle_boot_vram_no_scenes() {
+        let (vram, stats) = SceneResources::build_battle_boot_vram(&[]);
+        assert_eq!(stats.packs, 0);
+        assert_eq!(vram.pixel(0, 0), 0);
     }
 }

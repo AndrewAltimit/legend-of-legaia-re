@@ -937,13 +937,12 @@ impl SceneHost {
         // Pre-bind actor ↔ TMD/ANM resources so they survive the first
         // field-VM actor-spawn opcode (see `World::init_scene_animations`).
         //
-        // Uses [`SceneResources::build_targeted`] so the per-TIM image /
-        // CLUT block decisions match the retail field loader: 4bpp
-        // character meshes' multi-palette CLUT rows survive the upload
-        // instead of being clobbered by another mesh's image data
-        // landing on the same VRAM row (the "depth-mismatch" failure
-        // mode that previously dropped 80%+ of textured prims at the
-        // engine's prim filter).
+        // Uses [`SceneResources::build_targeted_with_options`] with
+        // `SceneLoadKind::Field` so the per-TIM image / CLUT block
+        // decisions match the retail field loader: only field /
+        // terrain / NPC meshes contribute, scene_tmd_stream battle
+        // character meshes (loaded by `FUN_8001FE70` at battle init)
+        // and battle_data records (`FUN_8001E890` chain) are excluded.
         if let Some(scene) = self.scene.as_ref() {
             // The shared blocks the retail field engine keeps resident
             // across scene transitions (player TMD + shared UI atlas).
@@ -955,7 +954,13 @@ impl SceneHost {
             }
             let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
             if let Ok((res, _stats)) =
-                crate::scene_resources::SceneResources::build_targeted(scene, &shared_refs)
+                crate::scene_resources::SceneResources::build_targeted_with_options(
+                    scene,
+                    &shared_refs,
+                    crate::scene_resources::BuildOptions {
+                        kind: crate::scene_resources::SceneLoadKind::Field,
+                    },
+                )
             {
                 self.world.init_scene_animations(&res);
                 self.resources = Some(res);

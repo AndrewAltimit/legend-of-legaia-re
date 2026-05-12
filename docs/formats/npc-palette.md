@@ -109,19 +109,24 @@ continuation list may be cold-loaded only by an alternate scenario
 
 `SceneResources::build_targeted_with_options(..., kind:
 SceneLoadKind::Field)` mimics retail's lazy upload by excluding
-every `scene_tmd_stream` PROT entry's type-0x01 TIM chunks. The
-trade-off is that field NPCs whose CBA points at row 479 slots
-128..240 (= 97 prims each across town01's four field-intersection
-NPC TMDs) drop through the renderer's filter. The retail engine
-renders them only because `battle_data` (PROT 865..869) is
-pre-loaded at boot and supplies those specific slots; that
-preload-at-boot is not yet wired in the engine port.
+every `scene_tmd_stream` PROT entry's contributions entirely - both
+the leading TMD (`FUN_8001FE70` writes it to the battle character
+TMD register `_DAT_8007B864`, never drawn from a field scene) and
+its type-0x01 TIM chunks (which upload the CLUTs and textures that
+same mesh samples). With both filtered out the field-mode VRAM
+matches retail town saves (row 479 fb_x=0..256 = zero) and the
+parsed TMD pool excludes the battle character meshes that would
+otherwise fail the prim filter en masse for sampling missing CLUT
+rows. `SceneHost::enter_field_scene` uses `Field` as its kind so
+the engine port matches the retail dispatch boundary.
 
 `SceneLoadKind::Battle` (the legacy default of `build_targeted`)
-uploads every type-0x01 chunk eagerly, which inflates VRAM compared
-to retail's field state but keeps the field NPC prims renderable
-out of the box. The town01 keep ratio is 99.3% in battle mode and
-~0% in field mode under disc-gated regression tests.
+uploads every type-0x01 chunk eagerly and parses every embedded
+TMD, which inflates VRAM compared to retail's field state but
+keeps every battle character mesh renderable for tests + diagnostic
+surfaces. The town01 keep ratio is 99.3% in battle mode and 100%
+(0/0; battle character meshes excluded) in field mode under
+disc-gated regression tests.
 
 ## Cross-save corroboration
 

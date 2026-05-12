@@ -57,6 +57,16 @@
 .viewer-list .li-idx { color: var(--accent); font-weight: 500; }
 .viewer-list .li-meta { color: var(--text-muted); }
 .viewer-list .li-class { color: var(--text); font-size: 0.72rem; }
+.viewer-list .li-scene { color: var(--text-dim); font-family: var(--font-mono); }
+
+.scene-hint {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  background: var(--bg-raised);
+}
 
 .viewer-host {
   border: 1px solid var(--border);
@@ -135,7 +145,7 @@
 <body>
 <a class="skip-link" href="#content">Skip to content</a>
 <div class="app">
-<main class="content" id="content">
+<main class="content wide-page" id="content">
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
@@ -156,13 +166,25 @@
       <!-- Sidebar: filtered list of viewable entries -->
       <div class="viewer-list-pane" id="viewer-list-pane" style="display: none;">
         <div class="viewer-list-toolbar">
+          <select id="scene-filter" title="Filter by scene category">
+            <option value="town" selected>Towns</option>
+            <option value="field">Field areas</option>
+            <option value="world_map">World map</option>
+            <option value="battle">Battle data</option>
+            <option value="cutscene">Cutscenes (op*/ed*)</option>
+            <option value="audio">Audio (VAB / SEQ)</option>
+            <option value="system">System / overlays</option>
+            <option value="">All scenes</option>
+          </select>
+        </div>
+        <div class="viewer-list-toolbar">
           <select id="class-filter" title="Filter by classification">
-            <option value="">all viewable</option>
+            <option value="">all classes</option>
           </select>
         </div>
         <div class="viewer-list-toolbar" style="font-size: 0.78rem;">
           <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
-            <input type="checkbox" id="tmd-filter"> 3D only
+            <input type="checkbox" id="tmd-filter" checked> 3D only
           </label>
           <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; color: var(--text-muted);">
             <input type="checkbox" id="textured-toggle" checked> textured
@@ -172,6 +194,7 @@
           <input type="number" id="jump-input" placeholder="PROT idx" min="0" max="9999">
           <button id="jump-btn" type="button" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.5rem; font-family: inherit; font-size: 0.78rem; cursor: pointer;">go</button>
         </div>
+        <div id="scene-hint" class="scene-hint"></div>
         <ul class="viewer-list" id="viewer-list"></ul>
       </div>
 
@@ -236,6 +259,8 @@
   const listPane = document.getElementById('viewer-list-pane');
   const list = document.getElementById('viewer-list');
   const classFilter = document.getElementById('class-filter');
+  const sceneFilter = document.getElementById('scene-filter');
+  const sceneHint   = document.getElementById('scene-hint');
   const jumpInput = document.getElementById('jump-input');
   const jumpBtn = document.getElementById('jump-btn');
 
@@ -246,6 +271,30 @@
   let visibleSlots = [];    /* indices into allEntries that match current filter */
   let rafId = null;          /* current 3D loop's requestAnimationFrame id */
   let glRenderer = null;     /* TmdRenderer (WebGL) - created lazily */
+
+  /* Scene-category map. Loaded once from scenes.json (curated CDNAME map in
+   * site/_gen.py). Each entry covers an inclusive PROT-index range and tags
+   * it with a category (town / field / world_map / cutscene / battle /
+   * audio / system) plus a display name. */
+  let scenes = [];
+  function sceneForProt(idx) {
+    /* Linear scan - scenes is short (~120 entries). Could binary-search
+     * but the cost is negligible compared to the per-entry tim_scan
+     * the WASM viewer already does on load. */
+    for (const s of scenes) {
+      if (idx >= s.prot_start && idx <= s.prot_end) return s;
+    }
+    return null;
+  }
+
+  /* Best-effort scenes.json load. If it fails (file not generated yet) the
+   * scene filter quietly degrades - the All-scenes option still works. */
+  fetch('scenes.json').then(r => r.ok ? r.json() : []).then(s => {
+    scenes = s || [];
+    /* If a previous load already populated the list, re-run the filter
+     * now that scenes is known. */
+    if (allEntries.length > 0) rebuildList();
+  }).catch(() => { scenes = []; });
 
   /* Shared camera state across both render paths. Persists across entries
    * so a user who orbits to a particular angle stays there as they navigate. */
@@ -463,12 +512,14 @@
     const indices   = viewer.mesh_indices();
     const bounds    = viewer.mesh_bounds();
     if (positions.length === 0 || indices.length === 0) {
-      console.warn('TMD has no textured triangles; falling back to flat-shaded');
-      status.textContent = 'TMD has no textured prims; flat-shaded fallback.';
+      /* Flat-shaded TMDs are normal data on PSX (background props,
+       * untextured geometry) - not an error. Keep the dev-side debug
+       * trace, but don't yell in the user's console. */
+      console.debug('TMD has no textured prims (flat-shaded render).');
       startFlatTmdLoop();
       return;
     }
-    console.log(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
+    console.debug(`[textured] ${positions.length / 3} verts, ${indices.length / 3} tris, vram ${vramBytes.length} bytes`);
     glRenderer.uploadVram(vramBytes);
     glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
 
@@ -534,18 +585,45 @@
   }
 
   function rebuildList() {
-    const filter = classFilter.value;
+    const classF = classFilter.value;
+    const sceneF = sceneFilter.value;
     const onlyTmd = document.getElementById('tmd-filter')?.checked;
     visibleSlots = allEntries
       .map((e, i) => i)
-      .filter(i => (!filter || allEntries[i].class === filter)
-                && (!onlyTmd || allEntries[i].has_tmd));
+      .filter(i => {
+        const e = allEntries[i];
+        if (classF && e.class !== classF) return false;
+        if (onlyTmd && !e.has_tmd) return false;
+        if (sceneF) {
+          const s = sceneForProt(e.prot_index);
+          if (!s || s.category !== sceneF) return false;
+        }
+        return true;
+      });
+
+    /* Update the in-pane hint with a one-line summary of what's visible. */
+    if (sceneHint) {
+      if (sceneF && scenes.length > 0) {
+        const labels = new Set();
+        for (const slot of visibleSlots) {
+          const s = sceneForProt(allEntries[slot].prot_index);
+          if (s) labels.add(s.display);
+        }
+        const sample = [...labels].slice(0, 3).join(', ');
+        const more   = labels.size > 3 ? ` +${labels.size - 3}` : '';
+        sceneHint.textContent = `${visibleSlots.length} entries · ${sample}${more}`;
+      } else {
+        sceneHint.textContent = `${visibleSlots.length} entries`;
+      }
+    }
 
     list.innerHTML = visibleSlots.map(i => {
       const e = allEntries[i];
       const dims = e.bpp ? `${e.w}×${e.h}` : '-';
       const tag = e.has_tmd ? '<span style="color:var(--accent)">3D</span> · ' : '';
-      return `<li data-slot="${i}"><span class="li-idx">${e.prot_index}</span><span class="li-meta">${tag}${e.class}<br><span class="li-class">${dims}</span></span></li>`;
+      const scene = sceneForProt(e.prot_index);
+      const sceneTag = scene ? `<span class="li-scene">${scene.label}</span>` : '';
+      return `<li data-slot="${i}"><span class="li-idx">${e.prot_index}</span><span class="li-meta">${tag}${e.class}<br><span class="li-class">${dims}${scene ? ' &middot; ' + sceneTag : ''}</span></span></li>`;
     }).join('');
 
     list.querySelectorAll('li').forEach(li => {
@@ -560,7 +638,7 @@
 
   function populateClassFilter(entries) {
     const classes = [...new Set(entries.map(e => e.class))].sort();
-    classFilter.innerHTML = '<option value="">all viewable (' + entries.length + ')</option>'
+    classFilter.innerHTML = '<option value="">all classes (' + entries.length + ')</option>'
       + classes.map(c => {
         const n = entries.filter(e => e.class === c).length;
         return `<option value="${c}">${c} (${n})</option>`;
@@ -588,7 +666,45 @@
       if (count > 0) {
         allEntries = JSON.parse(viewer.entry_list_json());
         populateClassFilter(allEntries);
+
+        /* Honour ?scene=<label> deep-links from the world / shops pages.
+         * Falls back to the default sceneFilter selection (Towns). */
+        const params = new URLSearchParams(location.search);
+        const wantScene = params.get('scene');
+        if (wantScene && scenes.length > 0) {
+          const hit = scenes.find(s => s.label === wantScene);
+          if (hit) {
+            sceneFilter.value = hit.category;
+          }
+        }
+
         rebuildList();
+
+        /* If a deep-link scene was requested, snap to its first PROT
+         * entry that's actually viewable. */
+        if (wantScene && scenes.length > 0) {
+          const hit = scenes.find(s => s.label === wantScene);
+          if (hit) {
+            const slot = allEntries.findIndex(e =>
+              e.prot_index >= hit.prot_start && e.prot_index <= hit.prot_end);
+            if (slot >= 0) {
+              prepareEntrySwitch();
+              viewer.set_slot(slot);
+            }
+          }
+        } else {
+          /* No deep-link: snap to a known-good first-impression entry.
+           * PROT 185 (balden = Vidna) is a fully textured townscape - it
+           * showcases the renderer well. Fall through silently if it's
+           * not in the viewable list (e.g. user loaded a non-disc file). */
+          const DEFAULT_PROT = 185;
+          const slot = allEntries.findIndex(e => e.prot_index === DEFAULT_PROT);
+          if (slot >= 0) {
+            prepareEntrySwitch();
+            viewer.set_slot(slot);
+          }
+        }
+
         listPane.style.display = 'flex';
         controls.style.display = 'flex';
         status.textContent = `Loaded: ${f.name} - ${count} viewable entries.`;
@@ -598,6 +714,7 @@
       }
 
       classFilter.addEventListener('change', rebuildList);
+      sceneFilter.addEventListener('change', rebuildList);
       const tmdFilter = document.getElementById('tmd-filter');
       if (tmdFilter) tmdFilter.addEventListener('change', rebuildList);
       const texturedToggle = document.getElementById('textured-toggle');

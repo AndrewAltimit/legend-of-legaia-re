@@ -370,6 +370,88 @@ export class LegaiaViewer {
         return ret[0] >>> 0;
     }
     /**
+     * Number of TMDs in the currently-loaded kingdom pack. 0 when no
+     * kingdom is loaded.
+     * @returns {number}
+     */
+    pack_count() {
+        const ret = wasm.legaiaviewer_pack_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Set the active pack-mesh slot. Subsequent `pack_mesh_*` calls source
+     * from `pack[byte_offsets[slot]..byte_ends[slot]]`. Returns an error
+     * when no kingdom is loaded or `slot >= pack count`.
+     * @param {number} slot
+     * @returns {number}
+     */
+    pack_mesh(slot) {
+        const ret = wasm.legaiaviewer_pack_mesh(this.__wbg_ptr, slot);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    pack_mesh_bounds() {
+        const ret = wasm.legaiaviewer_pack_mesh_bounds(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    pack_mesh_cba_tsb() {
+        const ret = wasm.legaiaviewer_pack_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    pack_mesh_indices() {
+        const ret = wasm.legaiaviewer_pack_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Parallel to [`Self::mesh_positions`] but sources from the currently
+     * selected kingdom pack slot.
+     * @returns {Float32Array}
+     */
+    pack_mesh_positions() {
+        const ret = wasm.legaiaviewer_pack_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    pack_mesh_uvs() {
+        const ret = wasm.legaiaviewer_pack_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * VRAM bytes (1 MB) built from every TIM in the kingdom's slot 0
+     * (TIM_LIST). Reuse across every `pack_mesh_*` call - the kingdom
+     * pack's per-slot TMDs all sample from this one shared image.
+     * @returns {Uint8Array}
+     */
+    pack_vram_bytes() {
+        const ret = wasm.legaiaviewer_pack_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * @returns {number}
      */
     prev_entry() {
@@ -404,6 +486,81 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Parse a mednafen save state and return the GPU's currently-displayed
+     * framebuffer as an RGBA8 byte buffer + dimensions.
+     *
+     * Layout of the returned `Vec<u8>`:
+     * `[u16 width, u16 height, RGBA8 pixels...]` packed little-endian. JS
+     * reads the leading 4 bytes for the dimensions and then wraps the rest
+     * in an `ImageData` to blit into a 2D canvas.
+     *
+     * This is the in-game top-down world-map view: the game's renderer has
+     * already composed the ~10,000 textured polygons that form the kingdom
+     * terrain, and the result is sitting in VRAM at the display-area
+     * offset. We just read it back. Source-mesh reconstruction is a separate
+     * follow-up (the live PSX GPU prim-pool sits around `0x800AD408` and
+     * the underlying mesh / tilemap data lives in the kingdom's
+     * `scene_v12_table` at PROT base+8 - both still being characterised).
+     * @param {Uint8Array} save_state_bytes
+     * @returns {Uint8Array}
+     */
+    save_state_framebuffer(save_state_bytes) {
+        const ptr0 = passArray8ToWasm0(save_state_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_save_state_framebuffer(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
+     * bit 1 = raw texture (skip color modulation). JS computes the model-view
+     * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
+     * @param {Uint8Array} save_state_bytes
+     * @returns {Uint8Array}
+     */
+    save_state_prim_replay(save_state_bytes) {
+        const ptr0 = passArray8ToWasm0(save_state_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_save_state_prim_replay(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
      * @param {number} idx
      */
     set_clut(idx) {
@@ -411,6 +568,34 @@ export class LegaiaViewer {
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
+    }
+    /**
+     * Open a world-map kingdom's 7-asset bundle, LZS-decode slot 0
+     * (TIM_LIST) into a shared VRAM, and LZS-decode slot 1 (TMD pack) for
+     * per-slot mesh access. Returns the pack count (= number of scene-pool
+     * TMDs available to `pack_mesh`).
+     *
+     * `prot_base` is the kingdom's leading PROT entry index - 85 for Drake
+     * (`map01`), 244 for Sebucus (`map02`), 391 for Karisto (`map03`).
+     * Either the `scene_scripted_asset_table` (PROT base) or the bare
+     * `scene_asset_table` (PROT base+1) works; the detector finds the
+     * 7-asset table at the first 0x800-aligned offset whose `u32_le[0] == 7`
+     * and `descriptor[0].data_offset == 0x40`.
+     *
+     * Implementation mirrors `FUN_8001F05C case 2` (TMD-pack dispatch): the
+     * pack is `[u32 count][u32 word_offsets[count]][TMD bodies]` with
+     * offsets in 4-byte words (`puVar1 + puVar5[1]` on `uint*`). The
+     * VRAM upload is unconditional (every TIM in slot 0 is uploaded);
+     * per-prim filtering happens later in `pack_mesh_*`.
+     * @param {number} prot_base
+     * @returns {number}
+     */
+    set_scene_kingdom(prot_base) {
+        const ret = wasm.legaiaviewer_set_scene_kingdom(this.__wbg_ptr, prot_base);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
     }
     /**
      * Jump to the slot in the filtered list (NOT the PROT index). Used by
@@ -609,7 +794,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 349, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 427, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

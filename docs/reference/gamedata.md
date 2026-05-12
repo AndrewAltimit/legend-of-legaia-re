@@ -47,6 +47,7 @@ data/gamedata/
   bosses.toml         - boss HP estimates (sanity-check data)
   shops.toml          - per-town shop inventories with item-key references
   casino.toml         - Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter
+  sol_tower.toml      - Sol Tower floor map + side-quest chains
   fishing.toml        - Vidna/Buma fishing pond prizes
   characters.toml     - Vahn / Noa / Gala affinities and weapon classes
 ```
@@ -113,6 +114,47 @@ asserts every drop/steal target exists in the item tables.
 One `[[shop]]` per merchant. Inventories reference item keys; the
 `gamedata-tool shop <town>` CLI joins those keys against the four
 item tables and prints a fully-priced inventory.
+
+### Casino + Muscle Dome
+
+`casino.toml` carries three concept families:
+
+- `[[slot_prize]]` rows for the Vidna casino counter and the Sol
+  Tower Muscle Dome prize-exchange counter (`location = "Sol"`
+  is the F4 counter, *not* the slot machine itself - slot machines
+  only pay coins).
+- `[[muscle_dome_course]]` rows (Beginner / Expert / Master) with
+  entry fee, clear reward, and `restrictions` / `allowed` arrays
+  capturing the equipment / item / magic gating. Master Course's
+  `reward_first_clear = "war_god_icon"` requires Jette to have
+  been defeated in Absolute Fortress. The flat `enemies = [...]`
+  field is the encounter-order roster as plain strings.
+- `[[muscle_dome_round]]` rows pin the round-by-round assignment
+  for each course as a normalised `(course_key, round, boss_key,
+  seru_level)` table. Beginner and Expert have 8 rows each;
+  Master has 13 rows (the longest progression).
+- `[[muscle_dome_boss]]` rows hold the full per-enemy stat block
+  (HP / MP / ATK / UDF / LDF / `intelligence` / SPD / AGL / XP /
+  `gold`), drop and steal items with chance percentages, attack
+  list, immunity tags, element + weakness/strength arrays, plus
+  `wiki_path` for provenance back to the Fandom source. Seru
+  enemies (`kind = "seru"`) carry their Lv1 / Lv2 / Lv3 stats as
+  nested `[[muscle_dome_boss.seru_level]]` blocks; the round
+  table's `seru_level` field selects which block applies.
+- `[baka_fighter_meta]` records the all-rounds-clear reward
+  (`reward_coins = 460`) and the rule sketch. Per-round button
+  sequences live as `[[baka_fighter]]` rows.
+- `[[muscle_paradise_secret]]` records the Chicken King easter
+  egg ("run from the first battle in all three difficulties").
+
+### Sol Tower
+
+`sol_tower.toml` is location-scoped data that doesn't fit any of
+the type-scoped tables: a per-floor map (`[[floor]]` rows with
+named sections) and the side-quest chains (`[[side_quest]]` rows
+with ordered step lists and reward pointers). The
+`scene_label = "town0d"` ties the data back to the CDNAME map in
+`site/_gen.py` and the field-VM bundle.
 
 ## Cross-validation invariants
 

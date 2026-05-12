@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>World overview (3D) - legend-of-legaia-re</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content wide-page" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
+  <h1>World overview <span class="badge-wip">work in progress</span></h1>
+  <p class="lede">
+    Each kingdom's overworld is built from a set of small flat TMDs (Z &isin; [-64, +64]) placed at world coordinates by the field VM. This page renders the world-map mesh data <strong>in real-time WebGL 3D</strong> straight from your disc image. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
+  </p>
+</header>
+
+<section class="doc-section" id="how-this-works">
+  <h2>What's rendered, what's still WIP</h2>
+  <p>
+    <strong>In-game top-down view:</strong> upload a mednafen <code>.mc[N]</code> save state captured in the world-map debug top-view (slots 1 / 2 / 3 = Drake / Sebucus / Karisto for many of our recordings) and the page extracts the GPU framebuffer straight out of the save state's VRAM section. That framebuffer is what the game actually renders: the full kingdom continent composed of ~10,000 textured polygons per frame from the kingdom's TIM pack + tile-mesh data. No disc image required for this path - the save state already holds the rendered pixels.
+  </p>
+  <p>
+    <strong>Mesh inspector + placement scatter:</strong> if you load a disc image, you can also browse the per-kingdom TMD pack one mesh at a time (Mesh inspector mode) or see all decoded actor placements as a 3D scatter (Placement scatter mode). The placement walker mirrors <code>FUN_8003A1E4</code>'s record reader and pulls Shift-JIS location names + <code>(tmd_slot, x, z)</code> coordinates from each kingdom's type-3 &quot;Man&quot; asset.
+  </p>
+  <p>
+    <strong>Placement table:</strong> the world-map actor positions are now extracted straight from each kingdom's bundle. The format is the type-3 &quot;Man&quot; asset (LZS-compressed slot 2 in the 7-asset table), parsed via <code>FUN_8003A1E4</code>'s walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate.
+  </p>
+  <p>
+    <strong>Slot &rarr; TMD resolved:</strong> each placement's <code>tmd_slot</code> now cross-links to the exact mesh that fills it. The scene-pool TMDs come from slot 1 of the same 7-asset bundle (type byte <code>0x02</code>) - an LZS-compressed pack with <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> layout that the runtime walks via <code>FUN_8001F05C case 2</code>, calling <code>FUN_80026b4c</code> per body to fill positions 0..count-1 of the scene's TMD pool. The offsets are in 4-byte words, mirroring <code>prot::timpack</code>. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>; every scene-slot referenced by a placement record exists inside that pack (max slots: Drake 37, Sebucus 33, Karisto 54). Placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead - Drake's three party-on-the-world-map records use globals 0/1/2.
+  </p>
+</section>
+
+<section class="doc-section" id="disc-load">
+  <h2>Load your disc image</h2>
+  <div class="engine-panel">
+    <div class="engine-row">
+      <label for="wo-disc-file"><strong>Disc image (.bin Mode2/2352) or PROT.DAT:</strong></label>
+      <input type="file" id="wo-disc-file" accept=".bin,.dat"
+             style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
+      <button id="wo-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
+    </div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Once loaded, every world-map TMD becomes browsable as a textured 3D mesh.</div>
+  </div>
+</section>
+
+<section class="doc-section" id="viewer">
+  <h2>Viewer</h2>
+  <div class="wo-tabs" role="tablist">
+    <button class="wo-tab is-active" data-k="drake"   role="tab">Drake Kingdom</button>
+    <button class="wo-tab"           data-k="sebucus" role="tab">Sebucus Islands</button>
+    <button class="wo-tab"           data-k="karisto" role="tab">Karisto Kingdom</button>
+  </div>
+
+  <div class="wo-layout">
+    <div class="wo-3d-wrap">
+      <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
+      <div class="wo-canvas-controls">
+        <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
+          <button id="wo-mode-savestate" type="button" class="wo-mode is-active" role="radio" aria-checked="true">In-game top-view</button>
+          <button id="wo-mode-world"     type="button" class="wo-mode" role="radio" aria-checked="false">Placement scatter</button>
+          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false">Mesh inspector</button>
+        </span>
+        <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
+        <span id="wo-mesh-label">no disc loaded</span>
+        <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
+        <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
+        <button id="wo-reset-cam" type="button" hidden>reset camera</button>
+      </div>
+      <div class="wo-canvas-controls" id="wo-savestate-bar">
+        <label for="wo-ss-file"><strong>Top-view save state:</strong></label>
+        <input type="file" id="wo-ss-file" accept=".mc0,.mc1,.mc2,.mc3,.mc4,.mc5,.mc6,.mc7,.mc8,.mc9"
+               style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.75rem;">
+        <button id="wo-ss-load" type="button">Load</button>
+        <span class="wo-mode-group" style="margin-left:0.5rem" role="radiogroup" aria-label="Render style">
+          <button id="wo-ss-mode-fb"     type="button" class="wo-mode is-active" role="radio" aria-checked="true" title="Pull the rendered framebuffer directly from VRAM">Framebuffer</button>
+          <button id="wo-ss-mode-replay" type="button" class="wo-mode"            role="radio" aria-checked="false" title="Decode the live GPU primitive pool (~5000 textured polygons) and replay through WebGL2 — pan/zoom">Prim replay</button>
+        </span>
+        <span id="wo-ss-status" style="font-size:0.75rem; color: var(--text-dim);">no save state loaded</span>
+      </div>
+      <div class="wo-hover-3d" id="wo-mesh-info">Upload a top-view save state above (e.g. mednafen <code>.mc1</code>) and click Load to see the kingdom rendered as the game draws it</div>
+    </div>
+
+    <aside class="wo-side">
+      <h3>Placement scatter</h3>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">World positions parsed from each kingdom's type-3 &quot;Man&quot; asset. Hover a dot for the location's in-game name.</p>
+      <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
+      <div id="wo-hover" class="wo-hover-2d">&nbsp;</div>
+      <h3 style="margin-top:1rem">Snapshot</h3>
+      <dl id="wo-stats-dl"></dl>
+      <h3 style="margin-top:1rem">Placements by list</h3>
+      <ul id="wo-list-counts" class="wo-list-counts"></ul>
+      <h3 style="margin-top:1rem">Named locations</h3>
+      <ul id="wo-name-list" class="wo-name-list"></ul>
+    </aside>
+  </div>
+</section>
+
+<section class="doc-section" id="reverse-engineering">
+  <h2>How the placement data was extracted</h2>
+  <p>
+    The page captures world-map state from top-view debug save states &mdash; the same view that <a href="subsystems/world-map.html"><code>FUN_801E76D4</code></a> enters when the debug toggle fires. Steps the extraction performs against each save state's main RAM:
+  </p>
+  <ol class="overview-steps">
+    <li>Read the active CDNAME label as ASCII at <code>0x80084548</code> and confirm it matches the expected kingdom (<code>map01</code> / <code>map02</code> / <code>map03</code>).</li>
+    <li>Walk the seven linked-list heads at <code>0x8007C34C..0x8007C36C</code>: each list starts at <code>*head_ptr</code> and chains via the actor's <code>+0x00</code> next-pointer.</li>
+    <li>For each actor, read <code>(X, Y, Z)</code> as three <code>i16</code> at <code>+0x14</code>, <code>flags</code> at <code>+0x10</code>, and the actor's id byte at <code>+0x50</code>.</li>
+    <li>Filter out zero-position entries (system actors that aren't placed in world-space).</li>
+  </ol>
+  <p>
+    Results are baked into <code>site/world-overview.json</code> so the scatter view loads instantly without needing a save state at runtime.
+  </p>
+</section>
+
+<style>
+.badge-wip {
+  font-size: 0.55em; vertical-align: middle;
+  padding: 0.2em 0.6em; border-radius: 3px;
+  background: rgba(244, 180, 26, 0.15);
+  color: #F4B41A;
+  font-family: var(--font-mono);
+  border: 1px solid rgba(244, 180, 26, 0.4);
+}
+.overview-steps { margin: 0.5rem 0 0.5rem 1.5rem; padding: 0; }
+.overview-steps li { margin: 0.35rem 0; }
+.wo-tabs {
+  display: flex; gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+}
+.wo-tab {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.9rem;
+  font-family: var(--font-mono); font-size: 0.85rem;
+  cursor: pointer;
+}
+.wo-tab.is-active {
+  background: rgba(244,180,26,0.18);
+  border-color: rgba(244,180,26,0.6);
+  color: #F4B41A;
+}
+.wo-layout {
+  display: grid; gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  align-items: start;
+}
+@media (max-width: 900px) { .wo-layout { grid-template-columns: 1fr; } }
+.wo-3d-wrap { display: flex; flex-direction: column; gap: 0.5rem; }
+#wo-canvas3d {
+  width: 100%; aspect-ratio: 4 / 3;
+  background: #0a0a1a;
+  border: 1px solid var(--border);
+  display: block;
+}
+.wo-canvas-controls {
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.wo-canvas-controls button {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.6rem;
+  font-family: var(--font-mono); font-size: 0.8rem;
+  cursor: pointer;
+}
+.wo-canvas-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.wo-mode-group { display: inline-flex; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.wo-mode-group button.wo-mode {
+  background: var(--bg-card); color: var(--text-dim);
+  border: none; border-radius: 0;
+  padding: 0.3rem 0.7rem; font-size: 0.78rem;
+}
+.wo-mode-group button.wo-mode + button.wo-mode { border-left: 1px solid var(--border); }
+.wo-mode-group button.wo-mode.is-active {
+  background: var(--accent, #5a7ad8); color: #fff;
+  font-weight: 600;
+}
+#wo-mesh-label, .wo-hover-3d {
+  font-family: var(--font-mono); font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.wo-side { font-size: 0.85rem; }
+.wo-side h3 {
+  margin: 0 0 0.4rem; font-size: 0.8rem;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+#wo-canvas2d {
+  width: 280px; height: 280px;
+  background: #0a0a1a;
+  border: 1px solid var(--border);
+  display: block;
+}
+.wo-side dl {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  font-family: var(--font-mono); font-size: 0.78rem;
+  margin: 0;
+}
+.wo-side dt { color: var(--text-dim); }
+.wo-side dd { margin: 0; }
+.wo-list-counts {
+  list-style: none; padding: 0; margin: 0;
+  font-family: var(--font-mono); font-size: 0.78rem;
+}
+.wo-list-counts li { display: flex; align-items: center; gap: 0.5rem; padding: 0.1rem 0; }
+.legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.swatch-list-0 { background: #56B6F5; }
+.swatch-list-1 { background: #79D279; }
+.swatch-list-2 { background: #C0C0C0; }
+.swatch-list-6 { background: #E07028; }
+.wo-hover-2d {
+  min-height: 1.4em;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  font-family: var(--font-mono); font-size: 0.74rem;
+  color: var(--text-dim);
+  background: rgba(20, 22, 38, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wo-name-list {
+  list-style: none; padding: 0; margin: 0;
+  max-height: 320px; overflow-y: auto;
+  font-family: var(--font-mono); font-size: 0.74rem;
+}
+.wo-name-list li {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.1rem 0;
+  border-bottom: 1px dotted rgba(120,130,200,0.1);
+}
+.wo-name-list .wo-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wo-name-list .wo-coord { color: var(--text-dim); font-size: 0.72rem; }
+</style>
+
+<script src="js/webgl-tmd.js"></script>
+<script src="js/webgl-prim-replay.js"></script>
+<script>
+(async function () {
+  /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
+  const KINGDOM_PROT = {
+    drake:   { start: 85,  end: 93,  label: 'Drake Kingdom',   cdname: 'map01' },
+    sebucus: { start: 244, end: 253, label: 'Sebucus Islands', cdname: 'map02' },
+    karisto: { start: 391, end: 398, label: 'Karisto Kingdom', cdname: 'map03' },
+  };
+  const LIST_NAMES = {
+    0: 'player/system', 1: 'entities', 2: 'background',
+    3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
+  };
+  const LIST_COLORS = { 0: '#56B6F5', 1: '#79D279', 2: '#C0C0C0', 6: '#E07028' };
+
+  /* ---------- DOM refs ----------- */
+  const $file       = document.getElementById('wo-disc-file');
+  const $loadBtn    = document.getElementById('wo-load-btn');
+  const $status     = document.getElementById('wo-status');
+  const $canvas3d   = document.getElementById('wo-canvas3d');
+  const $canvas2d   = document.getElementById('wo-canvas2d');
+  const $statsDl    = document.getElementById('wo-stats-dl');
+  const $listCounts = document.getElementById('wo-list-counts');
+  const $meshLabel  = document.getElementById('wo-mesh-label');
+  const $meshInfo   = document.getElementById('wo-mesh-info');
+  const $prev       = document.getElementById('wo-prev-mesh');
+  const $next       = document.getElementById('wo-next-mesh');
+  const $autoRot    = document.getElementById('wo-auto-rotate');
+  const $resetCam   = document.getElementById('wo-reset-cam');
+  const $hover      = document.getElementById('wo-hover');
+  const $nameList   = document.getElementById('wo-name-list');
+  const $modeSavestate = document.getElementById('wo-mode-savestate');
+  const $modeWorld  = document.getElementById('wo-mode-world');
+  const $modeMesh   = document.getElementById('wo-mode-mesh');
+  const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
+  const $ssBar       = document.getElementById('wo-savestate-bar');
+  const $ssFile      = document.getElementById('wo-ss-file');
+  const $ssLoad      = document.getElementById('wo-ss-load');
+  const $ssStatus    = document.getElementById('wo-ss-status');
+  const $ssModeFb    = document.getElementById('wo-ss-mode-fb');
+  const $ssModeReplay= document.getElementById('wo-ss-mode-replay');
+  let   ssRenderMode = 'fb';   /* 'fb' = blit framebuffer | 'replay' = re-rasterise prim pool */
+  let   primReplay   = null;   /* PrimReplayRenderer instance (created lazily) */
+  const replayCam    = { centerX: 160, centerY: 120, zoom: 3 };
+  let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
+  let   viewMode    = 'savestate';  /* 'savestate' (in-game framebuffer) | 'world' (assembled scatter 3D) | 'mesh' (single TMD) */
+
+  /* ---------- State ----------- */
+  let viewer = null;          /* LegaiaViewer (WASM) - created after load */
+  let wasmMod = null;
+  let allEntries = [];        /* viewer.entry_list_json output */
+  let kingdomSlots = { drake: [], sebucus: [], karisto: [] };
+  let currentKingdom = (location.hash || '#drake').slice(1);
+  if (!KINGDOM_PROT[currentKingdom]) currentKingdom = 'drake';
+  let currentMeshIdx = 0;     /* index into kingdomSlots[currentKingdom] */
+  let placements = null;      /* world-overview.json */
+  let glRenderer = null;
+  let rafId = null;
+  const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
+  /* Top-down camera state (world units). Reset per-kingdom to fit the world. */
+  const worldCam = { centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000, pitch: 0 };
+
+  /* ---------- Placement JSON (always available) ----------- */
+  try {
+    placements = await fetch('world-overview.json').then(r => r.json());
+  } catch (e) {
+    placements = null;
+  }
+  updateSnapshot();
+  drawScatter();
+
+  /* Render the savestate-mode placeholder text on first paint so the
+   * canvas isn't an empty black square while waiting for a save state.
+   * Calls into drawSavestate which is hoisted (function declaration). */
+  queueMicrotask(() => drawSavestate());
+
+  /* ---------- Camera controls ----------- */
+  function attachCameraControls(canvas) {
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; cam.autoRotate = false; $autoRot.checked = false; });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      cam.yaw   += dx * 0.01;
+      cam.pitch  = Math.max(-1.4, Math.min(1.4, cam.pitch + dy * 0.01));
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const f = Math.exp(e.deltaY * 0.001);
+      cam.distance = Math.max(0.5, Math.min(20, cam.distance * f));
+    }, { passive: false });
+    const keys = new Set();
+    window.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') return;
+      const k = e.key.toLowerCase();
+      if ('wasd'.includes(k)) keys.add(k);
+    });
+    window.addEventListener('keyup', e => {
+      const k = e.key.toLowerCase();
+      keys.delete(k);
+    });
+    return keys;
+  }
+  function resetCam() {
+    cam.yaw = 0; cam.pitch = 0.25; cam.distance = 2.5;
+    cam.panX = 0; cam.panY = 0; cam.autoRotate = true;
+    $autoRot.checked = true;
+  }
+  $resetCam.addEventListener('click', () => {
+    if (viewMode === 'world') {
+      /* Frame the whole kingdom again. */
+      const k = placements?.[currentKingdom];
+      const ext = k?.world_extent || [16320, 16320];
+      worldCam.centerX = ext[0] / 2;
+      worldCam.centerZ = ext[1] / 2;
+      worldCam.halfWidth = ext[0] / 2 + 1000;
+      worldCam.halfHeight = ext[1] / 2 + 1000;
+      worldCam.pitch = 0;
+    } else {
+      resetCam();
+    }
+  });
+  $autoRot.addEventListener('change', () => { cam.autoRotate = $autoRot.checked; });
+
+  /* ---------- View-mode toggle ----------- */
+  function setViewMode(mode) {
+    if (!['savestate', 'world', 'mesh'].includes(mode)) return;
+    if (mode === viewMode) return;
+    viewMode = mode;
+    $modeSavestate.classList.toggle('is-active', mode === 'savestate');
+    $modeWorld    .classList.toggle('is-active', mode === 'world');
+    $modeMesh     .classList.toggle('is-active', mode === 'mesh');
+    $modeSavestate.setAttribute('aria-checked', mode === 'savestate');
+    $modeWorld    .setAttribute('aria-checked', mode === 'world');
+    $modeMesh     .setAttribute('aria-checked', mode === 'mesh');
+    const meshOnly = (mode === 'mesh');
+    const ssOnly   = (mode === 'savestate');
+    $prev.hidden = !meshOnly;
+    $next.hidden = !meshOnly;
+    $autoRotWrap.hidden = !meshOnly;
+    $resetCam.hidden = ssOnly;
+    $ssBar.style.display = ssOnly ? '' : 'none';
+    /* Re-enter the active kingdom so the right path renders. */
+    selectKingdom(currentKingdom);
+  }
+  $modeSavestate.addEventListener('click', () => setViewMode('savestate'));
+  $modeWorld    .addEventListener('click', () => setViewMode('world'));
+  $modeMesh     .addEventListener('click', () => setViewMode('mesh'));
+  /* Default UI matches default viewMode = 'savestate'. */
+  $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
+  $resetCam.hidden = true;
+
+  /* ---------- Save state framebuffer + prim-pool extraction ----------- */
+  /* Cached per-kingdom data so switching tabs after one upload re-shows
+   * the previously-rendered image without re-uploading. Keyed by
+   * `currentKingdom`. Each entry: { fb: {w, h, rgba}, replay: {vram,
+   * vertexBytes, screenW, screenH}, filename }. */
+  const ssCache = {};
+  $ssLoad.addEventListener('click', async () => {
+    const f = $ssFile.files[0];
+    if (!f) { $ssStatus.textContent = 'Pick a .mc[N] file first.'; return; }
+    try {
+      $ssStatus.textContent = 'Loading WASM ...';
+      if (!wasmMod) {
+        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        await wasmMod.default();
+      }
+      if (!viewer) {
+        const fresh = freshCanvas();
+        if (!fresh) return;
+        viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
+      }
+      $ssStatus.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)...`;
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      /* Always extract both views so the user can toggle freely. */
+      const fbOut = viewer.save_state_framebuffer(bytes);
+      const fbW = fbOut[0] | (fbOut[1] << 8);
+      const fbH = fbOut[2] | (fbOut[3] << 8);
+      const fbRgba = new Uint8ClampedArray(fbOut.buffer, fbOut.byteOffset + 4, fbW * fbH * 4);
+      const replayOut = viewer.save_state_prim_replay(bytes);
+      const dv = new DataView(replayOut.buffer, replayOut.byteOffset, replayOut.byteLength);
+      let p = 0;
+      const vramW = dv.getUint16(p, true); p += 2;
+      const vramH = dv.getUint16(p, true); p += 2;
+      const vramLen = dv.getUint32(p, true); p += 4;
+      const vram = new Uint8Array(replayOut.buffer, replayOut.byteOffset + p, vramLen); p += vramLen;
+      const screenW = dv.getUint16(p, true); p += 2;
+      const screenH = dv.getUint16(p, true); p += 2;
+      const vertexCount = dv.getUint32(p, true); p += 4;
+      const vertexBytes = new Uint8Array(replayOut.buffer, replayOut.byteOffset + p, vertexCount * 14);
+      ssCache[currentKingdom] = {
+        fb: { w: fbW, h: fbH, rgba: new Uint8ClampedArray(fbRgba) },
+        replay: {
+          vram: new Uint8Array(vram),                /* clone so the wasm buffer can be freed */
+          vertexBytes: new Uint8Array(vertexBytes),
+          screenW, screenH, vertexCount,
+          vramW, vramH,
+        },
+        filename: f.name,
+      };
+      $ssStatus.textContent =
+        `${currentKingdom}: ${fbW}x${fbH} framebuffer + ${vertexCount} replay verts (~${Math.round(vertexCount/6)} prims) from ${f.name}`;
+      /* Center the replay camera on the framebuffer's centre. */
+      replayCam.centerX = screenW / 2;
+      replayCam.centerY = screenH / 2;
+      drawSavestate();
+    } catch (err) {
+      console.error(err);
+      $ssStatus.textContent = 'Failed: ' + (err.message || err);
+    }
+  });
+
+  /* Sub-mode toggle (framebuffer blit vs prim replay) */
+  function setSsRenderMode(mode) {
+    if (mode !== 'fb' && mode !== 'replay') return;
+    if (mode === ssRenderMode) return;
+    ssRenderMode = mode;
+    $ssModeFb    .classList.toggle('is-active', mode === 'fb');
+    $ssModeReplay.classList.toggle('is-active', mode === 'replay');
+    $ssModeFb    .setAttribute('aria-checked', mode === 'fb');
+    $ssModeReplay.setAttribute('aria-checked', mode === 'replay');
+    drawSavestate();
+  }
+  $ssModeFb    .addEventListener('click', () => setSsRenderMode('fb'));
+  $ssModeReplay.addEventListener('click', () => setSsRenderMode('replay'));
+
+  function drawSavestate() {
+    /* Always start by stopping any prior rAF / disposing the prim renderer. */
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (primReplay) { primReplay.dispose(); primReplay = null; }
+    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    const entry = ssCache[currentKingdom];
+    if (!entry) {
+      const ctx = fresh.getContext('2d');
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(0, 0, fresh.width, fresh.height);
+      ctx.fillStyle = '#888'; ctx.font = '14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('Upload this kingdom\'s top-view save state (mednafen .mcN file)', fresh.width / 2, fresh.height / 2 - 8);
+      ctx.fillText('then click Load', fresh.width / 2, fresh.height / 2 + 12);
+      return;
+    }
+    if (ssRenderMode === 'fb') {
+      const ctx = fresh.getContext('2d');
+      const W = fresh.width, H = fresh.height;
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(0, 0, W, H);
+      const off = document.createElement('canvas');
+      off.width = entry.fb.w; off.height = entry.fb.h;
+      off.getContext('2d').putImageData(new ImageData(entry.fb.rgba, entry.fb.w, entry.fb.h), 0, 0);
+      const scale = Math.min(W / entry.fb.w, H / entry.fb.h);
+      const dw = Math.floor(entry.fb.w * scale);
+      const dh = Math.floor(entry.fb.h * scale);
+      const dx = Math.floor((W - dw) / 2);
+      const dy = Math.floor((H - dh) / 2);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, dx, dy, dw, dh);
+      $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - in-game top-down view (${entry.fb.w}x${entry.fb.h})`;
+      $meshInfo.textContent =
+        `From save state ${entry.filename}. Direct blit of the GPU framebuffer captured in VRAM. Click "Prim replay" to re-rasterise the live primitive pool via WebGL2.`;
+    } else {
+      /* Prim replay path. */
+      try {
+        primReplay = new window.PrimReplayRenderer(fresh);
+      } catch (err) {
+        $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
+        return;
+      }
+      const r = entry.replay;
+      /* Fit the replay camera to the framebuffer aspect ratio: scale up so
+       * the 320x240 PSX output fills the visible canvas. */
+      const zoom = Math.max(1, Math.min(fresh.width / r.screenW, fresh.height / r.screenH));
+      replayCam.zoom = zoom;
+      primReplay.uploadVram(r.vram);
+      primReplay.uploadVertices(r.vertexBytes, r.screenW, r.screenH);
+      attachPrimReplayControls(fresh);
+      const tick = () => {
+        primReplay.render(replayCam);
+        rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
+      $meshLabel.textContent =
+        `${KINGDOM_PROT[currentKingdom].cdname} - prim-pool replay (${r.vertexCount} verts, ${Math.round(r.vertexCount/6)} prims)`;
+      $meshInfo.textContent =
+        `Live PSX GPU primitive pool decoded from ${entry.filename} and replayed through WebGL2. ` +
+        `Drag to pan, scroll to zoom. Pixel-perfect equivalent to the framebuffer view but pan/zoomable.`;
+    }
+  }
+
+  /* Pan + zoom for the prim-replay camera. */
+  function attachPrimReplayControls(canvas) {
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', e => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      replayCam.centerX -= dx / replayCam.zoom;
+      replayCam.centerY -= dy / replayCam.zoom;
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const f = Math.exp(-e.deltaY * 0.001);
+      replayCam.zoom = Math.max(0.5, Math.min(20, replayCam.zoom * f));
+    }, { passive: false });
+  }
+
+  /* ---------- Load disc + WASM ----------- */
+  $loadBtn.addEventListener('click', async () => {
+    const f = $file.files[0];
+    if (!f) { $status.textContent = 'Pick a .bin or .dat file first.'; return; }
+    try {
+      $status.textContent = 'Loading WASM ...';
+      if (!wasmMod) {
+        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        await wasmMod.default();
+      }
+      $status.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB) ...`;
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      $status.textContent = 'Classifying PROT entries ...';
+      /* CRITICAL: replace the canvas before constructing the viewer.
+       *
+       * `load_disc` ends with `render_current()`, which for any TIM-only
+       * entry calls `getContext("2d")` on the canvas. If the canvas was
+       * previously bound to webgl2 (a prior disc load, or any
+       * loadWorldView()/loadMesh() that ran in this session), that 2D
+       * context request returns null and `load_disc` throws with
+       * "no 2d context...".
+       *
+       * Wiping any pre-existing GL renderer + replacing the canvas with
+       * a fresh DOM element gives load_disc a clean 2D-capable surface.
+       * The WebGL2 context is rebound later by loadWorldView() /
+       * loadMesh() on the fresh canvas. */
+      freshCanvas();
+      viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
+      const count = viewer.load_disc(bytes);
+      allEntries = JSON.parse(viewer.entry_list_json());
+
+      /* Bucket the entries per kingdom */
+      kingdomSlots = { drake: [], sebucus: [], karisto: [] };
+      for (let i = 0; i < allEntries.length; i++) {
+        const e = allEntries[i];
+        if (!e.has_tmd) continue;
+        for (const k of Object.keys(KINGDOM_PROT)) {
+          const r = KINGDOM_PROT[k];
+          if (e.prot_index >= r.start && e.prot_index <= r.end) {
+            kingdomSlots[k].push(i);
+            break;
+          }
+        }
+      }
+      const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
+      $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
+      $prev.disabled = false;
+      $next.disabled = false;
+      currentMeshIdx = 0;
+      /* selectKingdom dispatches to loadWorldView or loadMesh based on viewMode. */
+      selectKingdom(currentKingdom);
+    } catch (err) {
+      console.error(err);
+      $status.textContent = 'Load failed: ' + (err.message || err);
+    }
+  });
+
+  /* ---------- Mesh navigation ----------- */
+  function selectKingdom(k) {
+    currentKingdom = k;
+    history.replaceState(null, '', '#' + k);
+    document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === k));
+    currentMeshIdx = 0;
+    updateSnapshot();
+    drawScatter();
+    if (viewMode === 'savestate') {
+      drawSavestate();
+      return;
+    }
+    if (!viewer) return;
+    if (viewMode === 'world') {
+      loadWorldView();
+    } else if (kingdomSlots[k].length > 0) {
+      loadMesh();
+    } else {
+      $meshLabel.textContent = `${KINGDOM_PROT[k].cdname}: no viewable TMDs`;
+    }
+  }
+
+  /* Freshen the canvas (WebGL context is single-shot per canvas, and we
+   * also need a clean depth buffer when switching kingdoms or modes). */
+  function freshCanvas() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
+    const old = document.getElementById('wo-canvas3d');
+    if (!old) return null;
+    const fresh = document.createElement('canvas');
+    fresh.id = 'wo-canvas3d';
+    fresh.className = 'viewer-canvas';
+    fresh.width = old.width || 800;
+    fresh.height = old.height || 600;
+    old.replaceWith(fresh);
+    return fresh;
+  }
+
+  /* Assembled top-down world view. Uses the kingdom 7-asset bundle:
+   * slot 0 (TIM_LIST) -> shared VRAM, slot 1 (TMD pack) -> per-placement
+   * mesh. The pack_slot for each placement is precomputed in
+   * world-overview.json's `tmd_source` block. */
+  function loadWorldView() {
+    if (!viewer) return;
+    const k = placements?.[currentKingdom];
+    if (!k) {
+      $meshLabel.textContent = 'placement JSON missing';
+      return;
+    }
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    try {
+      glRenderer = new window.TmdRenderer(fresh);
+    } catch (err) {
+      $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
+      return;
+    }
+    /* Load kingdom bundle (TIM_LIST -> VRAM, TMD pack parsed). */
+    let packCount;
+    try {
+      packCount = viewer.set_scene_kingdom(k.prot_base);
+    } catch (err) {
+      $meshInfo.textContent = 'set_scene_kingdom failed: ' + (err.message || err);
+      return;
+    }
+    glRenderer.uploadVram(viewer.pack_vram_bytes());
+    /* Upload each unique pack mesh referenced by a placement (skip
+     * script-positioned + global-pool records - those don't source from
+     * the kingdom pack). */
+    const used = new Set();
+    const drawPlacements = [];
+    for (const p of k.placements) {
+      if (p.script_positioned) continue;
+      if (!p.tmd_source || p.tmd_source.kind !== 'scene_tmd_pack') continue;
+      const ms = p.tmd_source.pack_slot;
+      if (ms < 0 || ms >= packCount) continue;
+      if (!used.has(ms)) {
+        viewer.pack_mesh(ms);
+        const positions = viewer.pack_mesh_positions();
+        const uvs = viewer.pack_mesh_uvs();
+        const cba = viewer.pack_mesh_cba_tsb();
+        const idx = viewer.pack_mesh_indices();
+        if (positions.length > 0 && idx.length > 0) {
+          glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
+          used.add(ms);
+        }
+      }
+      if (used.has(ms)) {
+        drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
+      }
+    }
+    /* Camera frames the placement bbox (not the world bbox) - many
+     * placeholder records have placeholder coords like (64, *) that drag
+     * the world bbox out toward empty edges; framing to placements gives
+     * a tighter view. Falls back to world extent when no placements.  */
+    const ext = k.world_extent || [16320, 16320];
+    if (drawPlacements.length > 0) {
+      let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+      for (const p of drawPlacements) {
+        if (p.x < xmin) xmin = p.x;
+        if (p.x > xmax) xmax = p.x;
+        if (p.z < zmin) zmin = p.z;
+        if (p.z > zmax) zmax = p.z;
+      }
+      worldCam.centerX = (xmin + xmax) / 2;
+      worldCam.centerZ = (zmin + zmax) / 2;
+      worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + 1500;
+      worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + 1500;
+    } else {
+      worldCam.centerX = ext[0] / 2;
+      worldCam.centerZ = ext[1] / 2;
+      worldCam.halfWidth = ext[0] / 2 + 1000;
+      worldCam.halfHeight = ext[1] / 2 + 1000;
+    }
+    worldCam.pitch = 0;
+    $meshLabel.textContent =
+      `${k.cdname} - ${drawPlacements.length} placements (${used.size} unique meshes, ${packCount}-TMD pack)`;
+    $meshInfo.textContent =
+      `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
+    attachTopDownControls(fresh);
+    let last = performance.now();
+    const tick = (now) => {
+      last = now;
+      glRenderer.renderAssembled(drawPlacements, ext, worldCam);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  /* Pan / zoom controls for the top-down camera. Replaces the orbit
+   * controls in `attachCameraControls` for world-view mode. */
+  function attachTopDownControls(canvas) {
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', e => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      /* Drag right -> camera moves right (so content scrolls left).
+       * Convert pixel deltas to world units via the current camera half-extents. */
+      const sx = (worldCam.halfWidth  * 2) / canvas.width;
+      const sy = (worldCam.halfHeight * 2) / canvas.height;
+      worldCam.centerX -= dx * sx;
+      worldCam.centerZ -= dy * sy;
+    });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const f = Math.exp(e.deltaY * 0.001);
+      worldCam.halfWidth  = Math.max(200, Math.min(20000, worldCam.halfWidth  * f));
+      worldCam.halfHeight = Math.max(200, Math.min(20000, worldCam.halfHeight * f));
+    }, { passive: false });
+  }
+  function loadMesh() {
+    if (!viewer) return;
+    const slots = kingdomSlots[currentKingdom];
+    if (slots.length === 0) return;
+    const slot = slots[currentMeshIdx];
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    viewer.set_slot(slot);
+    const entry = allEntries[slot];
+    const positions = viewer.mesh_positions();
+    const uvs = viewer.mesh_uvs();
+    const cbaTsb = viewer.mesh_cba_tsb();
+    const indices = viewer.mesh_indices();
+    const bounds = viewer.mesh_bounds();
+    const vram = viewer.current_vram_bytes();
+    $meshLabel.textContent = `[${currentMeshIdx+1}/${kingdomSlots[currentKingdom].length}] PROT ${entry.prot_index} - ${entry.class}`;
+    $meshInfo.textContent = `${positions.length/3} verts, ${indices.length/3} tris`;
+    if (positions.length === 0 || indices.length === 0) {
+      $meshInfo.textContent += ' (no textured prims - flat-shaded TMD)';
+      return;
+    }
+    try {
+      glRenderer = new window.TmdRenderer(fresh);
+    } catch (err) {
+      $meshInfo.textContent += ' (WebGL2 init failed)';
+      return;
+    }
+    glRenderer.uploadVram(vram);
+    glRenderer.uploadMesh(positions, uvs, cbaTsb, indices);
+    const center = [bounds[0], bounds[1], bounds[2]];
+    const radius = bounds[3];
+    attachCameraControls(fresh);
+    let last = performance.now();
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (cam.autoRotate) cam.yaw += dt * 0.6;
+      glRenderer.render(cam.yaw, cam.pitch, cam.distance, cam.panX, cam.panY, center, radius);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+  $prev.addEventListener('click', () => {
+    if (!viewer) return;
+    const n = kingdomSlots[currentKingdom].length;
+    if (n === 0) return;
+    currentMeshIdx = (currentMeshIdx - 1 + n) % n;
+    loadMesh();
+  });
+  $next.addEventListener('click', () => {
+    if (!viewer) return;
+    const n = kingdomSlots[currentKingdom].length;
+    if (n === 0) return;
+    currentMeshIdx = (currentMeshIdx + 1) % n;
+    loadMesh();
+  });
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowRight' || e.key === 'n') $next.click();
+    else if (e.key === 'ArrowLeft' || e.key === 'p') $prev.click();
+  });
+
+  /* ---------- Tabs ----------- */
+  document.querySelectorAll('.wo-tab').forEach(btn => {
+    btn.addEventListener('click', () => selectKingdom(btn.dataset.k));
+  });
+  /* Apply initial active tab */
+  document.querySelectorAll('.wo-tab').forEach(b => b.classList.toggle('is-active', b.dataset.k === currentKingdom));
+
+  /* ---------- Snapshot stats + scatter ----------- */
+
+  function updateSnapshot() {
+    if (!placements || !placements[currentKingdom]) {
+      $statsDl.innerHTML = '<dt>data</dt><dd>placement JSON missing</dd>';
+      $listCounts.innerHTML = '';
+      if ($nameList) $nameList.innerHTML = '';
+      return;
+    }
+    const k = placements[currentKingdom];
+    const placed = k.world_placed_count ?? k.placements.filter(p => !p.script_positioned).length;
+    const scripted = k.script_positioned_count ?? (k.placements.length - placed);
+    const packCount = k.tmd_pack ? k.tmd_pack.count : (k.tmd_count ?? '?');
+    const globalRefs = k.placements.filter(p => p.tmd_slot >= 0xF0).length;
+    $statsDl.innerHTML = `
+      <dt>cdname</dt>          <dd>${k.cdname || k.label}</dd>
+      <dt>PROT base</dt>       <dd>${k.prot_base ?? '?'}</dd>
+      <dt>records</dt>         <dd>${k.placements.length} total</dd>
+      <dt>world-placed</dt>    <dd>${placed}</dd>
+      <dt>script-positioned</dt><dd>${scripted}</dd>
+      <dt>TMD pack</dt>        <dd>${packCount} meshes (slot 1, type 0x02)</dd>
+      <dt>global TMD refs</dt> <dd>${globalRefs} placement(s) use the global pool (slot &ge; 0xF0)</dd>
+    `;
+    const counts = {};
+    k.placements.forEach(p => { if (!p.script_positioned) counts[p.list] = (counts[p.list] || 0) + 1; });
+    $listCounts.innerHTML = Object.entries(counts).sort((a,b)=>+a[0]-+b[0]).map(([li, n]) =>
+      `<li><span class="legend-swatch swatch-list-${li}"></span>list ${li} (${LIST_NAMES[li]||'?'}): ${n}</li>`
+    ).join('');
+    if ($nameList) {
+      const named = k.placements
+        .filter(p => !p.script_positioned && p.name && p.name.trim())
+        .slice(0, 60);
+      $nameList.innerHTML = named.map(p =>
+        `<li><span class="legend-swatch swatch-list-${p.list}"></span><span class="wo-name">${escapeHtml(p.name)}</span> <span class="wo-coord">(${p.pos[0]}, ${p.pos[2]})</span></li>`
+      ).join('');
+    }
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function drawScatter() {
+    if (!$canvas2d) return;
+    const ctx = $canvas2d.getContext('2d');
+    const W = $canvas2d.width, H = $canvas2d.height;
+    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
+    scatterDots = [];
+    if (!placements || !placements[currentKingdom]) return;
+    const k = placements[currentKingdom];
+    const [wx, wz] = k.world_extent || [16320, 16320];
+    /* grid */
+    ctx.strokeStyle = 'rgba(120,130,200,0.15)';
+    for (let i = 0; i <= 8; i++) {
+      const t = i/8;
+      ctx.beginPath();
+      ctx.moveTo(t*W, 0); ctx.lineTo(t*W, H);
+      ctx.moveTo(0, t*H); ctx.lineTo(W, t*H);
+      ctx.stroke();
+    }
+    /* placements */
+    k.placements.forEach(p => {
+      if (p.script_positioned) return;
+      const x = p.pos[0] / wx * W;
+      const y = p.pos[2] / wz * H;
+      const color = LIST_COLORS[p.list] || '#FFF';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, 2*Math.PI);
+      ctx.fillStyle = color; ctx.fill();
+      scatterDots.push({ x, y, p });
+    });
+  }
+
+  /* Hover tooltip over the scatter */
+  if ($canvas2d) {
+    $canvas2d.addEventListener('mousemove', ev => {
+      const rect = $canvas2d.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) * ($canvas2d.width / rect.width);
+      const my = (ev.clientY - rect.top) * ($canvas2d.height / rect.height);
+      let best = null, bestD = Infinity;
+      for (const d of scatterDots) {
+        const dx = d.x - mx, dy = d.y - my;
+        const r2 = dx*dx + dy*dy;
+        if (r2 < bestD) { bestD = r2; best = d; }
+      }
+      if (best && bestD < 64) {
+        const p = best.p;
+        let src = '';
+        if (p.tmd_source) {
+          if (p.tmd_source.kind === 'scene_tmd_pack') {
+            src = `  pack[${p.tmd_source.pack_slot}] nobj=${p.tmd_source.nobj} (${p.tmd_source.body_bytes}B)`;
+          } else if (p.tmd_source.kind === 'global_pool') {
+            src = `  global[${p.tmd_source.global_index}]`;
+          }
+        }
+        const slot = `0x${p.tmd_slot.toString(16).padStart(2,'0').toUpperCase()}`;
+        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd_slot=${slot}${src}`;
+      } else {
+        $hover.innerHTML = '&nbsp;';
+      }
+    });
+    $canvas2d.addEventListener('mouseleave', () => { $hover.innerHTML = '&nbsp;'; });
+  }
+})();
+</script>
+
+</main>
+</div>
+<script src="js/layout.js"></script>
+<script>injectLayout({ active: 'world-overview' });</script>
+<script src="js/main.js"></script>
+</body>
+</html>

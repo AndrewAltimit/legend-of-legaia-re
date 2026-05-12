@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; legaia tmd (3d mesh)</div>
-  <h1>Legaia TMD (3D mesh)</h1>
+  <h1>Legaia TMD (3D mesh) <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">Legaia uses a custom variant of Sony's PSX TMD format. Magic is <code>0x80000002</code> instead of the standard <code>0x00000041</code>; pointer fields are byte-relative offsets that the runtime patches to absolute addresses on load. Implementation: <code>crates/tmd/src/lib.rs</code> + <code>crates/tmd/src/legaia_prims.rs</code>. Reverser context: <code>ghidra/scripts/funcs/{80026B4C, 800268DC, 8001F05C, 8002735C}.txt</code>.</p>
 </header>
 
