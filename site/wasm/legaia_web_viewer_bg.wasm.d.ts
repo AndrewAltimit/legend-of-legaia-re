@@ -47,6 +47,7 @@ export const legaiaviewer_set_clut: (a: number, b: number) => [number, number];
 export const legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
 export const legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
 export const legaiaviewer_status: (a: number) => [number, number];
+export const legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
 export const wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

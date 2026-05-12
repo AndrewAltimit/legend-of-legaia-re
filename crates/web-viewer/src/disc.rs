@@ -157,6 +157,13 @@ pub fn extract_cdname_txt(disc: &[u8]) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
+/// Walk a Mode2/2352 disc image and return the bytes of the SCUS_942.54
+/// executable (the retail NA build's main `.EXE`). The semicolon-version
+/// suffix used by ISO9660 is already stripped by [`parse_iso_record`].
+pub fn extract_scus(disc: &[u8]) -> Option<Vec<u8>> {
+    extract_root_file(disc, "SCUS_942.54")
+}
+
 /// Parse the PROT.DAT TOC and return a vector of entry locations within `buf`.
 /// The header lives at file offset 0x000 or 0x800; layout (matching
 /// `legaia-prot::archive::detect_header`):

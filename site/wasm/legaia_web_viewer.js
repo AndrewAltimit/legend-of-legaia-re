@@ -516,33 +516,6 @@ export class LegaiaViewer {
         return v2;
     }
     /**
-     * Decode the live PSX GPU primitive pool out of a mednafen save state
-     * and return per-vertex attribute arrays for replay in WebGL2 against
-     * the save state's VRAM.
-     *
-     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
-     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
-     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
-     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
-     * triangles in screen-space.
-     *
-     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
-     *
-     * ```text
-     * [u16 vram_width = 1024]
-     * [u16 vram_height = 512]
-     * [u32 vram_byte_len = 1048576]
-     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
-     * [u16 screen_w]
-     * [u16 screen_h]
-     * [u32 vertex_count]
-     * [Vertex; vertex_count]   ; struct, 14 bytes each:
-     *     i16 x, i16 y
-     *     u8  u, u8 v
-     *     u16 cba, u16 tsb
-     *     u8  r, u8 g, u8 b, u8 flags
-     * ```
-     *
      * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
      * bit 1 = raw texture (skip color modulation). JS computes the model-view
      * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
@@ -619,6 +592,59 @@ export class LegaiaViewer {
         let deferred1_1;
         try {
             const ret = wasm.legaiaviewer_status(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * JSON dump of the world-map quick-travel menu parsed out of
+     * `SCUS_942.54` at disc-load time. Returns `null` if no disc was
+     * loaded as a Mode2/2352 image (raw PROT.DAT paths skip SCUS).
+     *
+     * Shape:
+     * ```json
+     * { "names": [..16 strings..],
+     *   "placements": [{ "index": u32, "name_idx": u8,
+     *                    "discovery_flag": u8, "scene_id": u16,
+     *                    "menu_x": u8, "menu_y": u8 }, ...] }
+     * ```
+     * @returns {string}
+     */
+    worldmap_menu_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_worldmap_menu_json(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -794,7 +820,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 427, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 429, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

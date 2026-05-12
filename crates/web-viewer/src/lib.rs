@@ -9,9 +9,10 @@ pub mod disc;
 pub mod runtime;
 pub mod tmd3d;
 
-use disc::{EntryMeta, extract_prot_dat, parse_prot_toc};
+use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
 use legaia_asset::tim_scan;
+use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -97,6 +98,10 @@ pub struct LegaiaViewer {
     /// Currently-loaded kingdom bundle (Drake/Sebucus/Karisto). Populated by
     /// `set_scene_kingdom`; consumed by the `pack_mesh_*` accessors.
     kingdom: Option<KingdomPack>,
+    /// World-map landmark menu (16 names + ~20 placement records) parsed from
+    /// `SCUS_942.54` at load time. Only populated when a full disc image is
+    /// loaded (raw PROT.DAT / single TIM paths leave this `None`).
+    worldmap_menu: Option<worldmap_menu::WorldmapMenu>,
 }
 
 #[wasm_bindgen]
@@ -115,6 +120,7 @@ impl LegaiaViewer {
             current: 0,
             clut_idx: 0,
             kingdom: None,
+            worldmap_menu: None,
         })
     }
 
@@ -125,12 +131,30 @@ impl LegaiaViewer {
         self.viewable.clear();
         self.current = 0;
 
+        self.worldmap_menu = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
                 bytes.len() / 1024 / 1024,
                 extracted.len() / 1024 / 1024
             ));
+            // Best-effort parse of the world-map menu out of SCUS_942.54.
+            // Failures are silent: the user might be loading a region build
+            // that ships a differently-named executable, and the rest of the
+            // viewer still works without the menu overlay.
+            if let Some(scus) = extract_scus(&bytes) {
+                match worldmap_menu::parse_scus(&scus) {
+                    Ok(menu) => {
+                        console_log(&format!(
+                            "Parsed world-map menu: {} names, {} placements",
+                            menu.names.len(),
+                            menu.placements.len()
+                        ));
+                        self.worldmap_menu = Some(menu);
+                    }
+                    Err(e) => console_log(&format!("worldmap_menu::parse_scus skipped: {e}")),
+                }
+            }
             extracted
         } else if parse_prot_toc(&bytes).is_some() {
             console_log("Loading bytes as raw PROT.DAT");
@@ -472,6 +496,25 @@ impl LegaiaViewer {
     ///     u8  r, u8 g, u8 b, u8 flags
     /// ```
     ///
+    /// JSON dump of the world-map quick-travel menu parsed out of
+    /// `SCUS_942.54` at disc-load time. Returns `null` if no disc was
+    /// loaded as a Mode2/2352 image (raw PROT.DAT paths skip SCUS).
+    ///
+    /// Shape:
+    /// ```json
+    /// { "names": [..16 strings..],
+    ///   "placements": [{ "index": u32, "name_idx": u8,
+    ///                    "discovery_flag": u8, "scene_id": u16,
+    ///                    "menu_x": u8, "menu_y": u8 }, ...] }
+    /// ```
+    pub fn worldmap_menu_json(&self) -> String {
+        match &self.worldmap_menu {
+            Some(menu) => serde_json::to_string(menu)
+                .unwrap_or_else(|e| format!("{{\"error\":\"serialize failed: {e}\"}}")),
+            None => "null".to_string(),
+        }
+    }
+
     /// `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
     /// bit 1 = raw texture (skip color modulation). JS computes the model-view
     /// matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).

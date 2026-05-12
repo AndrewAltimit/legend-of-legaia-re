@@ -202,33 +202,6 @@ export class LegaiaViewer {
      */
     save_state_framebuffer(save_state_bytes: Uint8Array): Uint8Array;
     /**
-     * Decode the live PSX GPU primitive pool out of a mednafen save state
-     * and return per-vertex attribute arrays for replay in WebGL2 against
-     * the save state's VRAM.
-     *
-     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
-     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
-     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
-     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
-     * triangles in screen-space.
-     *
-     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
-     *
-     * ```text
-     * [u16 vram_width = 1024]
-     * [u16 vram_height = 512]
-     * [u32 vram_byte_len = 1048576]
-     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
-     * [u16 screen_w]
-     * [u16 screen_h]
-     * [u32 vertex_count]
-     * [Vertex; vertex_count]   ; struct, 14 bytes each:
-     *     i16 x, i16 y
-     *     u8  u, u8 v
-     *     u16 cba, u16 tsb
-     *     u8  r, u8 g, u8 b, u8 flags
-     * ```
-     *
      * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
      * bit 1 = raw texture (skip color modulation). JS computes the model-view
      * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
@@ -264,6 +237,47 @@ export class LegaiaViewer {
      * JSON status string: PROT index, class name, dims, current slot.
      */
     status(): string;
+    /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * JSON dump of the world-map quick-travel menu parsed out of
+     * `SCUS_942.54` at disc-load time. Returns `null` if no disc was
+     * loaded as a Mode2/2352 image (raw PROT.DAT paths skip SCUS).
+     *
+     * Shape:
+     * ```json
+     * { "names": [..16 strings..],
+     *   "placements": [{ "index": u32, "name_idx": u8,
+     *                    "discovery_flag": u8, "scene_id": u16,
+     *                    "menu_x": u8, "menu_y": u8 }, ...] }
+     * ```
+     */
+    worldmap_menu_json(): string;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -316,6 +330,7 @@ export interface InitOutput {
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_status: (a: number) => [number, number];
+    readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

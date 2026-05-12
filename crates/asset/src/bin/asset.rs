@@ -293,6 +293,18 @@ enum Cmd {
         #[arg(long, default_value_t = true)]
         only_hits: bool,
     },
+    /// Parse the world-map quick-travel menu out of a `SCUS_942.54`
+    /// executable: the 16-entry landmark name table at `DAT_80073B18`
+    /// plus the 6-byte placement records at `DAT_80073A98`. Prints either
+    /// a human-readable table or the same JSON shape the web viewer
+    /// consumes (with `--json`).
+    WorldmapMenu {
+        /// Path to `SCUS_942.54` (typically `extracted/SCUS_942.54`).
+        scus: PathBuf,
+        /// Emit machine-readable JSON instead of the formatted table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Targeted validation: walk PROT entries that correspond to the first
     /// entry of each named CDNAME block. Each is tested with strict layout
     /// and (when applicable) magic checks.
@@ -393,6 +405,7 @@ fn main() -> Result<()> {
             cdname,
             only_hits,
         } => scene_v12_scan(&dir, cdname.as_deref(), only_hits),
+        Cmd::WorldmapMenu { scus, json } => worldmap_menu_cmd(&scus, json),
         Cmd::Validate {
             dir,
             cdname,
@@ -758,6 +771,43 @@ fn parse_hex_u32(s: &str) -> std::result::Result<u32, String> {
         .or_else(|| s.strip_prefix("0X"))
         .unwrap_or(s);
     u32::from_str_radix(s, 16).map_err(|e| e.to_string())
+}
+
+fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
+    let bytes = std::fs::read(scus)?;
+    let menu = legaia_asset::worldmap_menu::parse_scus(&bytes)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&menu)?);
+        return Ok(());
+    }
+    println!(
+        "World-map quick-travel menu  ({} names, {} placement records)\n",
+        menu.names.len(),
+        menu.placements.len(),
+    );
+    println!("Names (DAT_80073B18, stride 0x20):");
+    for (i, name) in menu.names.iter().enumerate() {
+        let used = menu.placements.iter().any(|p| (p.name_idx as usize) == i);
+        let tag = if used { "  " } else { "* " };
+        println!("  {tag}[0x{i:02X}] {name:?}");
+    }
+    println!("* = not referenced by any placement record (cutscene-only).\n");
+    println!(
+        "Placements (DAT_80073A98, stride 6; terminator byte0=0xFF):\n  \
+         idx flag scene_id  menu_xy   name"
+    );
+    for p in &menu.placements {
+        let name = menu
+            .names
+            .get(p.name_idx as usize)
+            .map(|s| s.as_str())
+            .unwrap_or("<?>");
+        println!(
+            "   {:>2}  0x{:02X}  0x{:04X}   ({:3}, {:3})  {}",
+            p.index, p.discovery_flag, p.scene_id, p.menu_x, p.menu_y, name
+        );
+    }
+    Ok(())
 }
 
 fn validate_blocks(

@@ -36,6 +36,7 @@ pub mod tim_scan;
 pub mod tmd_scan;
 pub mod tmd_size_prefix;
 pub mod vab_multi_bank;
+pub mod worldmap_menu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssetType {
