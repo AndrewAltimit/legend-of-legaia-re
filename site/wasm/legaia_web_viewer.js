@@ -670,6 +670,76 @@ export class LegaiaViewer {
         return ret[0] >>> 0;
     }
     /**
+     * Per-body inventory of the slot-4 wireframe, as a JSON string.
+     * Used by the inspector panel to show which bodies are present.
+     * Returns `"[]"` when slot 4 can't be decoded.
+     * @param {number} prot_base
+     * @returns {string}
+     */
+    slot4_body_inventory_json(prot_base) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_slot4_body_inventory_json(this.__wbg_ptr, prot_base);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Bounding box of every non-zero record in the kingdom's slot-4
+     * wireframe, as `[xmin, zmin, xmax, zmax]` (i32). Useful for
+     * re-framing the top-down camera when the overlay is toggled on.
+     * Empty vec when slot 4 can't be decoded.
+     * @param {number} prot_base
+     * @returns {Int32Array}
+     */
+    slot4_wireframe_bounds(prot_base) {
+        const ret = wasm.legaiaviewer_slot4_wireframe_bounds(this.__wbg_ptr, prot_base);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Decode the slot-4 world-map overlay wireframe for the kingdom at
+     * `prot_base` and return a packed line-segment list for top-down
+     * rendering.
+     *
+     * The wireframe is the dev-menu top-view overlay - coastline curves
+     * (Drake body 12 = 1200-vertex outline) and the ±32K world-boundary
+     * frame (Drake body 13). Loaded verbatim into RAM at `0x8011A664`
+     * for Drake; format is fully reversed (see
+     * [`docs/formats/world-map-overlay.md`]).
+     *
+     * Output layout (single packed `Vec<u8>`, little-endian):
+     *
+     * ```text
+     * [u32 line_count]
+     * [Line; line_count]   ; struct, 10 bytes each:
+     *     u8  body_index
+     *     u8  group_index_low   ; group_index = (low | (high << 8))
+     *     u8  group_index_high
+     *     u8  _pad
+     *     i16 x0
+     *     i16 z0
+     *     i16 x1
+     *     i16 z1
+     * ```
+     *
+     * Returns an empty buffer when slot 4 is missing or fails to parse.
+     * The JS-side renderer assigns per-body colors based on `body_index`.
+     * @param {number} prot_base
+     * @returns {Uint8Array}
+     */
+    slot4_wireframe_lines(prot_base) {
+        const ret = wasm.legaiaviewer_slot4_wireframe_lines(this.__wbg_ptr, prot_base);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * JSON status string: PROT index, class name, dims, current slot.
      * @returns {string}
      */
@@ -1023,6 +1093,11 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
+function getArrayI32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayU16FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
@@ -1057,6 +1132,14 @@ function getFloat32ArrayMemory0() {
         cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
     }
     return cachedFloat32ArrayMemory0;
+}
+
+let cachedInt32ArrayMemory0 = null;
+function getInt32ArrayMemory0() {
+    if (cachedInt32ArrayMemory0 === null || cachedInt32ArrayMemory0.byteLength === 0) {
+        cachedInt32ArrayMemory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -1222,6 +1305,7 @@ function __wbg_finalize_init(instance, module) {
     wasmModule = module;
     cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
+    cachedInt32ArrayMemory0 = null;
     cachedUint16ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;

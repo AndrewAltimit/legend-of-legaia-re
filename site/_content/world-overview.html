@@ -21,7 +21,7 @@
     <strong>Placement table:</strong> the world-map actor positions baked into <code>site/world-overview.json</code> are parsed from each kingdom's type-3 &quot;Man&quot; asset via <code>FUN_8003A1E4</code>'s record walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate. Each placement's <code>tmd_slot</code> resolves into the kingdom pack (max slot Drake 37, Sebucus 33, Karisto 54); placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead. Drake additionally surfaces 12 live-RAM actor placements via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a>: each world-map actor's <code>mesh_head[+0x44]</code> chain is walked to find the containing TMD via backward magic-word search, then mapped to a slot index. The result is baked into <code>site/world-overview-live.json</code>; the viewer overlays those placements on top of the MAN entities so the bridge towers, gates, small castle, and other actor-positioned features render correctly.
   </p>
   <p>
-    <strong>What about slot 4?</strong> Each kingdom bundle's slot 4 (type byte <code>0x05</code>, ~32 KB) was a logical candidate for the bulk continent geometry. It IS world-map data and we&apos;ve fully decoded it (see the <a href="formats/world-map-overlay.html">world-map overlay outlines</a> format doc), but it turns out to hold the <em>dev-menu top-view wireframe</em> &mdash; coastline curves (Drake body 12 = 1200-vertex outline) and the &plusmn;32K world-boundary frame (body 13), not the textured ground tiles. The data is loaded verbatim into RAM at <code>0x8011A664</code> with zero per-byte diffs, but ~4000 vertices across all 15 sub-bodies is far below the ~17000+ vertex positions the textured continent in the GPU prim pool would need. So slot 4 is ruled out as the bulk-terrain source; the strongest remaining hypothesis is a procedural sibling of the horizon emitter <code>FUN_801D7EA0</code> reached from the per-frame world-map tick <code>FUN_80016444</code>.
+    <strong>What about slot 4?</strong> Each kingdom bundle's slot 4 (type byte <code>0x05</code>, ~32 KB) was a logical candidate for the bulk continent geometry. It IS world-map data and we&apos;ve fully decoded it (see the <a href="formats/world-map-overlay.html">world-map overlay outlines</a> format doc), but it turns out to hold the <em>dev-menu top-view wireframe</em> &mdash; coastline curves (Drake body 12 = 1200-vertex outline) and the &plusmn;32K world-boundary frame (body 13), not the textured ground tiles. The data is loaded verbatim into RAM at <code>0x8011A664</code> with zero per-byte diffs, but ~4000 vertices across all 15 sub-bodies is far below the ~17000+ vertex positions the textured continent in the GPU prim pool would need. So slot 4 is ruled out as the bulk-terrain source. The new <em>show slot-4 wireframe</em> checkbox in the Assembled-scene mode overlays these contours on top of the textured landmarks (Drake 15 bodies / Sebucus 16 / Karisto 16; ~3870 line segments for Drake) &mdash; useful for visually confirming the landmark TMDs sit inside the right coastal areas. The strongest remaining hypothesis for the bulk continent terrain is a procedural sibling of the horizon emitter <code>FUN_801D7EA0</code> reached from the per-frame world-map tick <code>FUN_80016444</code>; see <a href="subsystems/world-map.html#bulk-continent-terrain-emitter-investigation">world-map subsystem &sect; emitter investigation</a>.
   </p>
 </section>
 
@@ -59,6 +59,7 @@
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
+        <label style="margin-left:1rem" id="wo-wireframe-wrap" hidden title="Overlay the kingdom's slot-4 dev-menu wireframe (coastline + world boundary frame) on top of the assembled landmarks. Disc image required."><input type="checkbox" id="wo-wireframe-toggle"> show slot-4 wireframe</label>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-canvas-controls" id="wo-savestate-bar">
@@ -285,6 +286,8 @@
   const $modeWorld  = document.getElementById('wo-mode-world');
   const $modeMesh   = document.getElementById('wo-mode-mesh');
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
+  const $wireWrap    = document.getElementById('wo-wireframe-wrap');
+  const $wireToggle  = document.getElementById('wo-wireframe-toggle');
   const $ssBar       = document.getElementById('wo-savestate-bar');
   const $ssFile      = document.getElementById('wo-ss-file');
   const $ssLoad      = document.getElementById('wo-ss-load');
@@ -308,6 +311,12 @@
   let placements = null;      /* world-overview.json */
   let glRenderer = null;
   let rafId = null;
+  /* Cache of per-kingdom slot-4 wireframe line buffers + bounds, parsed
+   * lazily by maybeLoadWireframe(). Keyed by `currentKingdom`. */
+  const wireframeCache = {};
+  /* User toggle: overlay the slot-4 wireframe on top of the assembled
+   * landmarks. Only meaningful in viewMode === 'world'. */
+  let wireframeEnabled = false;
   const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
   /* Top-down camera state (world units). Reset per-kingdom to fit the world. */
   const worldCam = { centerX: 8160, centerZ: 8160, halfWidth: 9000, halfHeight: 9000, pitch: 0 };
@@ -391,9 +400,11 @@
     $modeMesh     .setAttribute('aria-checked', mode === 'mesh');
     const meshOnly = (mode === 'mesh');
     const ssOnly   = (mode === 'savestate');
+    const worldOnly = (mode === 'world');
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
+    $wireWrap.hidden = !worldOnly;
     $resetCam.hidden = ssOnly;
     $ssBar.style.display = ssOnly ? '' : 'none';
     /* Re-enter the active kingdom so the right path renders. */
@@ -407,8 +418,22 @@
    * (used by the top-down camera); the savestate file-picker bar is
    * hidden until the user clicks the "Framebuffer (save state)" mode. */
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
+  $wireWrap.hidden = false;
   $resetCam.hidden = false;
   $ssBar.style.display = 'none';
+
+  /* Wireframe toggle. When the disc is loaded and the kingdom's slot-4
+   * lines haven't been decoded yet, the load happens lazily inside
+   * loadWorldView(). */
+  $wireToggle.addEventListener('change', () => {
+    wireframeEnabled = $wireToggle.checked;
+    /* If we're in 'world' mode and the renderer is already running,
+     * the per-frame tick will pick up the new state. We still need to
+     * fetch the line buffer if it hasn't been cached yet. */
+    if (wireframeEnabled && viewer && viewMode === 'world') {
+      maybeLoadWireframe(currentKingdom);
+    }
+  });
 
   /* ---------- Save state framebuffer + prim-pool extraction ----------- */
   /* Cached per-kingdom data so switching tabs after one upload re-shows
@@ -786,13 +811,62 @@
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
+    /* A fresh canvas means a fresh TmdRenderer; force the wireframe to
+     * re-upload on next frame even when the host-side buffer is cached. */
+    if (wireframeCache[currentKingdom]) {
+      wireframeCache[currentKingdom].uploaded = false;
+    }
+    /* If the user already toggled the wireframe on, decode it now so the
+     * first frame paints the overlay. Otherwise defer until the toggle
+     * fires. */
+    if (wireframeEnabled) maybeLoadWireframe(currentKingdom);
     let last = performance.now();
     const tick = (now) => {
       last = now;
       glRenderer.renderAssembled(drawPlacements, ext, worldCam);
+      if (wireframeEnabled) {
+        const cache = wireframeCache[currentKingdom];
+        if (cache && cache.lines) {
+          if (!cache.uploaded) {
+            glRenderer.uploadWireframeLines(cache.lines);
+            cache.uploaded = true;
+          }
+          glRenderer.renderWireframe(ext, worldCam);
+        }
+      }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
+  }
+
+  /* Decode slot-4 wireframe lines for the active kingdom if not cached.
+   * The Rust accessor returns 4 bytes of line_count + 12 bytes per line;
+   * the JS-side renderer expands those into colored line segments. */
+  function maybeLoadWireframe(k) {
+    if (!viewer) return;
+    if (wireframeCache[k] && wireframeCache[k].lines) return;
+    const base = KINGDOM_PROT[k].start;
+    try {
+      const bytes = viewer.slot4_wireframe_lines(base);
+      if (!bytes || bytes.length < 4) {
+        wireframeCache[k] = { lines: null, lineCount: 0 };
+        return;
+      }
+      /* Clone the wasm-side buffer so its backing memory can be freed
+       * by the wasm garbage collector. */
+      const buf = new Uint8Array(bytes);
+      const lineCount = new DataView(buf.buffer, buf.byteOffset, 4).getUint32(0, true);
+      let inventory = [];
+      try {
+        inventory = JSON.parse(viewer.slot4_body_inventory_json(base));
+      } catch (e) { inventory = []; }
+      wireframeCache[k] = { lines: buf, lineCount, inventory, uploaded: false };
+      $meshInfo.textContent =
+        `slot-4 wireframe: ${lineCount} line segments across ${inventory.length} bodies`;
+    } catch (e) {
+      console.warn('slot4_wireframe_lines:', e);
+      wireframeCache[k] = { lines: null, lineCount: 0 };
+    }
   }
 
   /* Pan / zoom controls for the top-down camera. Replaces the orbit

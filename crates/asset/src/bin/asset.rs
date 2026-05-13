@@ -305,6 +305,26 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Decode one slot of a kingdom-bundle PROT entry (map01 / map02 / map03).
+    ///
+    /// Locates the 7-asset table, LZS-decodes the requested slot, and prints
+    /// a structural summary. When `slot=4` (world-map overlay outlines), also
+    /// dumps the per-body inventory. Optional `--out` writes the raw decoded
+    /// bytes; optional `--wireframe-obj` writes the slot-4 wireframe as a
+    /// Wavefront OBJ for inspection in any 3D viewer.
+    KingdomSlot {
+        /// Path to a kingdom PROT entry buffer (e.g. `extracted/PROT/0085_xxx.BIN`).
+        input: PathBuf,
+        /// Slot index (0..7). Slot 4 = world-map overlay outlines.
+        #[arg(long, default_value_t = 4)]
+        slot: u8,
+        /// Write the raw decoded bytes to this path.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// When `slot=4`: write a Wavefront OBJ of the wireframe (lines only).
+        #[arg(long)]
+        wireframe_obj: Option<PathBuf>,
+    },
     /// Targeted validation: walk PROT entries that correspond to the first
     /// entry of each named CDNAME block. Each is tested with strict layout
     /// and (when applicable) magic checks.
@@ -406,6 +426,12 @@ fn main() -> Result<()> {
             only_hits,
         } => scene_v12_scan(&dir, cdname.as_deref(), only_hits),
         Cmd::WorldmapMenu { scus, json } => worldmap_menu_cmd(&scus, json),
+        Cmd::KingdomSlot {
+            input,
+            slot,
+            out,
+            wireframe_obj,
+        } => kingdom_slot_cmd(&input, slot, out.as_deref(), wireframe_obj.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -807,6 +833,135 @@ fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
             p.index, p.discovery_flag, p.scene_id, p.menu_x, p.menu_y, name
         );
     }
+    Ok(())
+}
+
+fn kingdom_slot_cmd(
+    input: &Path,
+    slot: u8,
+    out: Option<&Path>,
+    wireframe_obj: Option<&Path>,
+) -> Result<()> {
+    use legaia_asset::{kingdom_bundle, world_map_overlay};
+
+    let buf = std::fs::read(input)?;
+    let bundle = kingdom_bundle::parse(&buf).ok_or_else(|| {
+        anyhow::anyhow!("no 7-asset table found at any 0x800-aligned offset in {input:?}")
+    })?;
+    println!("PROT entry: {} bytes", buf.len());
+    println!("Asset table at 0x{:X}", bundle.table_offset);
+    println!();
+    println!(
+        "{:<5}  {:<8}  {:>12}  {:>10}  {:>10}",
+        "Slot", "Type", "Declared size", "Data off", "Decoded"
+    );
+    println!("{}", "-".repeat(64));
+    for s in &bundle.slots {
+        let decoded_n = match &s.decoded {
+            Ok(b) => b.len() as i64,
+            Err(_) => -1,
+        };
+        let decoded_str = if decoded_n >= 0 {
+            format!("{decoded_n} OK")
+        } else {
+            "(LZS err)".to_string()
+        };
+        println!(
+            "{:<5}  0x{:02X}    {:>12}   0x{:08X}  {:>10}",
+            s.index, s.type_byte, s.declared_size, s.data_offset, decoded_str
+        );
+    }
+    println!();
+
+    let target = bundle
+        .slots
+        .iter()
+        .find(|s| s.index == slot)
+        .ok_or_else(|| anyhow::anyhow!("slot {slot} not present"))?;
+    let bytes = match &target.decoded {
+        Ok(b) => b.clone(),
+        Err(e) => anyhow::bail!("slot {slot}: LZS decode failed: {e}"),
+    };
+    println!(
+        "Selected slot {slot}: type 0x{:02X}, {} decoded bytes",
+        target.type_byte,
+        bytes.len()
+    );
+
+    if let Some(path) = out {
+        std::fs::write(path, &bytes)?;
+        println!("  wrote raw decoded bytes -> {path:?}");
+    }
+
+    if slot == 4 {
+        match world_map_overlay::parse(&bytes) {
+            Ok(parsed) => {
+                println!();
+                println!("World-map overlay outlines: {} bodies", parsed.bodies.len());
+                println!(
+                    "{:<6}  {:>6}  {:>6}  {:>5}  {:>4}  {:>6}  {:>9}",
+                    "Body", "ca", "cb", "kind", "flag", "recs", "non-zero"
+                );
+                println!("{}", "-".repeat(60));
+                for b in &parsed.bodies {
+                    let nz = b
+                        .records
+                        .iter()
+                        .filter(|r| !(r.x == 0 && r.y == 0 && r.z == 0))
+                        .count();
+                    println!(
+                        "{:<6}  {:>6}  {:>6}  {:>5}  {:>2},{}  {:>6}  {:>9}",
+                        b.index,
+                        b.count_a,
+                        b.count_b,
+                        b.kind,
+                        b.flag_a,
+                        b.flag_b,
+                        b.records.len(),
+                        nz
+                    );
+                }
+                if let Some((xmin, zmin, xmax, zmax)) = world_map_overlay::xz_bounds(&parsed) {
+                    println!(
+                        "\nTop-down (X-Z) bounds (non-zero records): \
+                         x = {xmin}..{xmax}, z = {zmin}..{zmax}"
+                    );
+                }
+                if let Some(obj_path) = wireframe_obj {
+                    let opts = world_map_overlay::WireframeOptions::default();
+                    let lines = world_map_overlay::top_down_lines(&parsed, &opts);
+                    write_wireframe_obj(obj_path, &lines)?;
+                    println!("  wrote {} line segments -> {obj_path:?}", lines.len());
+                }
+            }
+            Err(e) => {
+                println!("\nslot 4 parse failed: {e}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Write a wireframe-only Wavefront OBJ (X-Z plane, vertices use Y=0).
+/// Each line becomes two vertices + one `l` directive. OBJ indices start
+/// at 1.
+fn write_wireframe_obj(
+    path: &Path,
+    lines: &[legaia_asset::world_map_overlay::WireframeLine],
+) -> Result<()> {
+    let mut s = String::new();
+    s.push_str("# slot-4 wireframe (top-down X-Z)\n");
+    s.push_str(&format!("# {} line segments\n", lines.len()));
+    for l in lines {
+        s.push_str(&format!("v {} 0 {}\n", l.x0, l.z0));
+        s.push_str(&format!("v {} 0 {}\n", l.x1, l.z1));
+    }
+    for (i, _) in lines.iter().enumerate() {
+        let a = 2 * i + 1;
+        let b = 2 * i + 2;
+        s.push_str(&format!("l {a} {b}\n"));
+    }
+    std::fs::write(path, s)?;
     Ok(())
 }
 

@@ -56,29 +56,82 @@ strictly greater; the last body extends to end-of-decoded-payload.
 Total body size is always `8 + count_a * count_b * 8 + 8`. The math
 fits all 15 of Drake's bodies exactly.
 
-### Drake body inventory (reference)
+### Per-kingdom body inventory
 
-| Body | count_a | count_b | kind | Size | What the points look like top-down |
-|---|---|---|---|---|---|
-| 0 | 10 | 20 | 1 | 1616 | Inner contour, ~200 vertices |
-| 1 | 10 | 20 | 1 | 1616 | Sister contour to body 0 |
-| 2 | 10 | 30 | 1 | 2416 | Inner contour, ~300 vertices |
-| 3 | 2 | 30 | 2 | 496 | Polyline, X stepping with `(0, 0, 0, 0)` pad records between |
-| 4 | 2 | 20 | 2 | 336 | Polyline (20 vertices stepping in X by 256 units, fixed Y/Z) |
-| 5 | 10 | 30 | 2 | 2416 | Inner contour (25 unique of 30 groups) |
-| 6 | 10 | 26 | 2 | 2096 | Inner contour |
-| 7 | 10 | 30 | 2 | 2416 | Inner contour (25 unique of 30 groups) |
-| 8 | 10 | 3 | 2 | 256 | 3 IDENTICAL groups of 10 records (reserved/padding) |
-| 9 | 12 | 30 | 2 | 2896 | Mid-density feature |
-| 10 | 12 | 30 | 2 | 2896 | Mid-density feature |
-| 11 | 12 | 10 | 2 | 976 | Small feature |
-| 12 | 10 | 120 | 2 | 9616 | **Continent coastline** - 120 segments × 10 sub-points |
-| 13 | 14 | 15 | 4 | 1696 | **World-map boundary frame** at ±32K (perimeter only) |
-| 14 | 2 | 30 | 2 | 496 | Polyline |
+Drake = 15 bodies; Sebucus = 16; Karisto = 16. The `flag_a` byte is
+`0` for all the `kind = 1` and most `kind = 2` bodies; it flips to `1`
+for the `kind = 4` boundary-frame bodies in every kingdom and also for
+one anomalous `kind = 2` body (Karisto body 10, `count_a=10` /
+`count_b=5`), so the simple "`flag_a` = is-boundary" rule doesn't hold
+universally. Whether it selects a draw mode or modifies the count
+interpretation is still open.
 
-The `flag_a` byte is 1 for body 13 (the boundary frame) and 0 for
-every other Drake body. Whether `flag_a` selects between draw modes
-or just modifies the count interpretation is not pinned down.
+#### Drake (`map01`, PROT 0085)
+
+| Body | count_a | count_b | kind | flag_a | records | Notes |
+|---|---|---|---|---|---|---|
+| 0 | 10 | 20 | 1 | 0 | 200 | Inner contour, ~200 vertices |
+| 1 | 10 | 20 | 1 | 0 | 200 | Sister contour to body 0 |
+| 2 | 10 | 30 | 1 | 0 | 300 | Inner contour, ~300 vertices |
+| 3 | 2 | 30 | 2 | 0 | 60 | Polyline, X stepping with `(0, 0, 0, 0)` pad records between |
+| 4 | 2 | 20 | 2 | 0 | 40 | Polyline (20 vertices stepping in X by 256 units, fixed Y/Z) |
+| 5 | 10 | 30 | 2 | 0 | 300 | Inner contour (25 unique of 30 groups) |
+| 6 | 10 | 26 | 2 | 0 | 260 | Inner contour |
+| 7 | 10 | 30 | 2 | 0 | 300 | Inner contour (25 unique of 30 groups) |
+| 8 | 10 | 3 | 2 | 0 | 30 | 3 IDENTICAL groups of 10 records (reserved/padding) |
+| 9 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
+| 10 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
+| 11 | 12 | 10 | 2 | 0 | 120 | Small feature |
+| 12 | 10 | 120 | 2 | 0 | 1200 | **Continent coastline** - 120 segments × 10 sub-points |
+| 13 | 14 | 15 | 4 | 1 | 210 | **World-map boundary frame** at ±32K (perimeter only) |
+| 14 | 2 | 30 | 2 | 0 | 60 | Polyline |
+
+#### Sebucus (`map02`, PROT 0244)
+
+| Body | count_a | count_b | kind | flag_a | records | Notes |
+|---|---|---|---|---|---|---|
+| 0 | 10 | 20 | 1 | 0 | 200 | Inner contour (matches Drake body 0) |
+| 1 | 10 | 20 | 1 | 0 | 200 | Inner contour (matches Drake body 1) |
+| 2 | 10 | 30 | 1 | 0 | 300 | Inner contour (matches Drake body 2) |
+| 3 | 2 | 30 | 2 | 0 | 60 | Polyline (matches Drake body 3) |
+| 4 | 10 | 30 | 2 | 0 | 300 | Inner contour |
+| 5 | 10 | 26 | 2 | 0 | 260 | Inner contour |
+| 6 | 10 | 30 | 2 | 0 | 300 | Inner contour |
+| 7 | 10 | 3 | 2 | 0 | 30 | 3 IDENTICAL groups (reserved/padding) |
+| 8 | 11 | 30 | 4 | 1 | 330 | Boundary-style frame |
+| 9 | 11 | 15 | 4 | 1 | 165 | Boundary-style frame |
+| 10 | 1 | 30 | 4 | 1 | 30 | Single-strand boundary marker |
+| 11 | 1 | 15 | 4 | 1 | 15 | Single-strand boundary marker |
+| 12 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
+| 13 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
+| 14 | 12 | 10 | 2 | 0 | 120 | Small feature |
+| 15 | 10 | 30 | 2 | 0 | 300 | Inner contour |
+
+#### Karisto (`map03`, PROT 0391)
+
+| Body | count_a | count_b | kind | flag_a | records | Notes |
+|---|---|---|---|---|---|---|
+| 0 | 10 | 20 | 1 | 0 | 200 | Inner contour |
+| 1 | 10 | 20 | 1 | 0 | 200 | Inner contour |
+| 2 | 10 | 30 | 1 | 0 | 300 | Inner contour |
+| 3 | 1 | 15 | 2 | 0 | 15 | Single-strand contour |
+| 4 | 14 | 15 | 4 | 1 | 210 | Boundary frame (mirrors Drake body 13) |
+| 5 | 14 | 15 | 4 | 1 | 210 | Boundary frame |
+| 6 | 11 | 30 | 4 | 1 | 330 | Boundary-style |
+| 7 | 11 | 15 | 4 | 1 | 165 | Boundary-style |
+| 8 | 1 | 15 | 4 | 1 | 15 | Single-strand boundary marker |
+| 9 | 1 | 30 | 4 | 1 | 30 | Single-strand boundary marker |
+| 10 | 10 | 5 | 2 | 1 | 50 | Small feature |
+| 11 | 10 | 15 | 4 | 1 | 150 | Boundary-style |
+| 12 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
+| 13 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
+| 14 | 12 | 10 | 2 | 0 | 120 | Small feature |
+| 15 | 10 | 30 | 2 | 0 | 300 | Inner contour |
+
+Across all three kingdoms, the leading three bodies (`kind=1`,
+`count_a=10`, `count_b=20/20/30`) are byte-identical templates -
+they're the same generic inner-contour shape installed at the front
+of each slot. The kingdom-specific data lives in the trailing bodies.
 
 ## RAM layout
 
@@ -120,8 +173,10 @@ than the standard TMD renderer (which would have used the type
 
 ## Tooling
 
-| Script | Role |
+| Tool | Role |
 |---|---|
+| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4 --wireframe-obj <out>.obj` | Engine-side decoder: parses the bundle, dumps the per-body inventory, writes the wireframe as a Wavefront OBJ (line segments only). Available for slots 0..6 (slot 4 is the wireframe; the others print structural summaries). |
+| `legaia_asset::world_map_overlay::parse` + `top_down_lines` | Rust API consumed by the [world overview web viewer](../../site/world-overview.html) (`LegaiaViewer::slot4_wireframe_lines`). |
 | `scripts/decode_slot4_subbodies.py` | Per-body hex dump + header parse + grid-hypothesis analysis; OBJ export per body. |
 | `scripts/slot4_to_obj.py` | Combined OBJ writer (polys / lines / points modes). |
 | `scripts/slot4_topdown_png.py` | Top-down PGM/PNG renderer of the point cloud (X-Z plane). |
@@ -130,13 +185,15 @@ than the standard TMD renderer (which would have used the type
 ## Open questions
 
 1. **`kind = 1, 2, 4` semantic.** Not yet tied to a draw-mode or
-   sub-format. Body 13 (kind = 4) is the only `kind != 2` body that
-   spans the full ±32K bounds; could be a "boundary" tag.
+   sub-format. `kind = 4` correlates strongly with `flag_a = 1`
+   across all three kingdoms (every `kind = 4` body has `flag_a = 1`)
+   and those bodies plot as world-boundary frames at ±32K /
+   large-perimeter rings - but the reverse doesn't hold (Karisto body
+   10 is `kind = 2` with `flag_a = 1`), so `(kind, flag_a)` together
+   select more than a simple "border-strand" toggle.
 2. **Per-record 4th `int16` column (`attr`).** Always 0 for body 4,
    has 22 distinct values across 300 records in body 5, 214 distinct
    values in body 12. Probably packs `(tpage, clut)` or a zone-id;
    depends on the consumer.
 3. **Per-body kind→draw routine mapping.** Needs Ghidra capture of the
    consumer (likely in the `world_map_top` overlay).
-4. **Whether Sebucus/Karisto slot 4 share the same per-body kind
-   counts** or have kingdom-specific layouts.
