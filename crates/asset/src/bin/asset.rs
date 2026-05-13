@@ -365,6 +365,12 @@ enum Cmd {
         /// Polyline-construction mode. `row` connects each group's
         /// records in order (matches the WebGL world-overview viewer).
         /// `col` connects each record-slot's value across groups.
+        /// `pairs` emits each consecutive pair of records as one line
+        /// segment (so `count_a = 10` becomes 5 segments per group);
+        /// useful for the slot-4 contour-pair hypothesis.
+        /// `grid` draws the body as a `count_a` x `count_b` heightfield
+        /// quad mesh (both row and column edges) - the most likely
+        /// topology for slot-4 body 12.
         /// `points` is topology-free - one dot per record, no line
         /// segments at all. Use `points` for raw-data validation.
         #[arg(long, default_value = "row")]
@@ -951,8 +957,10 @@ fn slot4_png_cmd(
     let mode = match style {
         "row" => world_map_overlay::PolylineMode::RowMajor,
         "col" => world_map_overlay::PolylineMode::ColumnMajor,
+        "pairs" => world_map_overlay::PolylineMode::PairWise,
+        "grid" => world_map_overlay::PolylineMode::Grid,
         "points" => world_map_overlay::PolylineMode::RowMajor, // mode ignored in points-only path
-        other => anyhow::bail!("--style must be row|col|points (got {other})"),
+        other => anyhow::bail!("--style must be row|col|pairs|grid|points (got {other})"),
     };
     let points_only = style == "points";
 

@@ -221,6 +221,19 @@ pub enum PolylineMode {
     /// the records trace `count_a` parallel "scan lines" across the
     /// continent.
     ColumnMajor,
+    /// Pair-wise: every two consecutive records form one line segment.
+    /// With `count_a = 10` that's 5 segments per group. Hypothesis for
+    /// the slot-4 contour bodies (12/13): each group is `count_a / 2`
+    /// independent edge pairs, not a chained polyline.
+    PairWise,
+    /// Quad-mesh grid: each body is a `count_a` x `count_b` vertex grid
+    /// (record `[g * count_a + k]` is the `(k, g)` cell). Draws both
+    /// row edges (`(k, g) -> (k + 1, g)`) and column edges
+    /// (`(k, g) -> (k, g + 1)`). Matches the slot-4 body-12 layout
+    /// where consecutive groups share fixed X-bands across `count_a / 2`
+    /// vertex pairs and Y varies as terrain elevation - i.e. the body
+    /// is a coarse heightfield mesh along the continent.
+    Grid,
 }
 
 /// Top-down wireframe-line emission options.
@@ -298,6 +311,81 @@ pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Wiref
                     let strand: Vec<Slot4Record> =
                         (0..cb).map(|g| body.records[g * ca + k]).collect();
                     emit_polyline(&mut out, body.index as u8, k as u16, &strand, opts);
+                }
+            }
+            PolylineMode::PairWise => {
+                if ca < 2 {
+                    continue;
+                }
+                for (g, group) in body.groups().enumerate() {
+                    for pair in group.chunks_exact(2) {
+                        let a = pair[0];
+                        let b = pair[1];
+                        if opts.strip_zero_records
+                            && a.x == 0
+                            && a.y == 0
+                            && a.z == 0
+                            && b.x == 0
+                            && b.y == 0
+                            && b.z == 0
+                        {
+                            continue;
+                        }
+                        if a.x == b.x && a.z == b.z {
+                            continue;
+                        }
+                        out.push(WireframeLine {
+                            body_index: body.index as u8,
+                            group_index: g as u16,
+                            x0: a.x,
+                            z0: a.z,
+                            x1: b.x,
+                            z1: b.z,
+                        });
+                    }
+                }
+            }
+            PolylineMode::Grid => {
+                if ca < 2 && cb < 2 {
+                    continue;
+                }
+                let is_zero = |r: &Slot4Record| r.x == 0 && r.y == 0 && r.z == 0;
+                let push =
+                    |out: &mut Vec<WireframeLine>, g: usize, a: Slot4Record, b: Slot4Record| {
+                        if opts.strip_zero_records && (is_zero(&a) || is_zero(&b)) {
+                            return;
+                        }
+                        if a.x == b.x && a.z == b.z {
+                            return;
+                        }
+                        out.push(WireframeLine {
+                            body_index: body.index as u8,
+                            group_index: g as u16,
+                            x0: a.x,
+                            z0: a.z,
+                            x1: b.x,
+                            z1: b.z,
+                        });
+                    };
+                // Row edges: (k, g) -> (k+1, g)
+                if ca >= 2 {
+                    for g in 0..cb {
+                        for k in 0..ca - 1 {
+                            let a = body.records[g * ca + k];
+                            let b = body.records[g * ca + k + 1];
+                            push(&mut out, g, a, b);
+                        }
+                    }
+                }
+                // Column edges: (k, g) -> (k, g+1)
+                if cb >= 2 {
+                    for g in 0..cb - 1 {
+                        for k in 0..ca {
+                            let a = body.records[g * ca + k];
+                            let b = body.records[(g + 1) * ca + k];
+                            push(&mut out, g, a, b);
+                        }
+                    }
                 }
             }
         }

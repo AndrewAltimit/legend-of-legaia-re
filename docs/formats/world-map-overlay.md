@@ -175,7 +175,7 @@ than the standard TMD renderer (which would have used the type
 
 | Tool | Role |
 |---|---|
-| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Engine-side standalone PNG renderer. `--style row|col|points` toggles between row-major polylines, column-major (record-slot-as-strand) polylines, and a topology-free point cloud. `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <ram-dump>.bin` renders a previously-dumped slot-4 payload (e.g. from PCSX-Redux live RAM). |
+| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Engine-side standalone PNG renderer. `--style row\|col\|pairs\|grid\|points` toggles between row-major polylines, column-major (record-slot-as-strand) polylines, pair-wise edges (every two records = one segment), heightfield-grid quad-mesh wireframe, and a topology-free point cloud. `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <ram-dump>.bin` renders a previously-dumped slot-4 payload (e.g. from PCSX-Redux live RAM). |
 | `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4 --wireframe-obj <out>.obj` | Per-body inventory dump + Wavefront-line OBJ export. Available for slots 0..6. |
 | `legaia_asset::world_map_overlay::parse` + `top_down_lines` / `record_points` | Rust API consumed by the [world overview web viewer](../../site/world-overview.html) (`LegaiaViewer::slot4_wireframe_lines`). |
 | `scripts/pcsx-redux/run_dump_slot4.sh` + `autorun_dump_slot4.lua` | PCSX-Redux closed-loop autorun: loads a save state, waits for the kingdom to settle, dumps the live slot-4 RAM region (32304 / 26964 / 24444 bytes) to `slot4_ram_<kingdom>.bin`, quits. Same pattern as the existing world-map probes. |
@@ -207,6 +207,40 @@ python3 scripts/pcsx-redux/diff_slot4_ram_vs_disc.py \
     --style points --out /tmp/disc.png
 ```
 
+## Topology hypothesis
+
+Drake body 12 (`count_a=10`, `count_b=120`, `kind=2`) is the largest
+contour body in any kingdom and was used to probe the per-group record
+layout. Walking group 0 reveals records pair up at fixed X-bands:
+
+```text
+r0  (-22016, -1280)   r1  (-14848,     0)   <- band 0, low/high X
+r2  (-18965,  -512)   r3  (-14872, -1024)   <- band 1
+r4  (-19179,   256)   r5  (-15080,     0)   <- band 2
+r6  (-10759,  -512)   r7   (-5898,  -512)   <- band 3
+r8  (-11001,   512)   r9   (-6134,   256)   <- band 4
+```
+
+Group 0 and group 1 are byte-identical except for r8/r9's Z values -
+consecutive groups are differential updates to a shared topology. The
+records are therefore a `count_a x count_b` grid of vertices forming a
+heightfield strip, **not** a chained polyline. Three rendering
+candidates are wired into the CLI:
+
+- `--style pairs` - each group emits `count_a / 2` independent edge
+  pairs (`(r0,r1), (r2,r3), ...`); 120 z-stride groups × 5 edges per
+  group = 600 line segments;
+- `--style grid` - emits both row edges (`(k, g) -> (k + 1, g)`) and
+  column edges (`(k, g) -> (k, g + 1)`); shows the heightfield as a
+  quad-mesh wireframe;
+- `--style points` - topology-free; matches the visible structure most
+  closely and is the recommended raw-validation lens.
+
+None of `row`, `col`, `pairs`, or `grid` cleanly reproduce the dev-menu
+top-view's continent silhouette by itself, so the runtime consumer
+likely encodes more than one draw mode (probably keyed off `kind` /
+`flag_a`).
+
 ## Open questions
 
 1. **`kind = 1, 2, 4` semantic.** Not yet tied to a draw-mode or
@@ -218,7 +252,9 @@ python3 scripts/pcsx-redux/diff_slot4_ram_vs_disc.py \
    select more than a simple "border-strand" toggle.
 2. **Per-record 4th `int16` column (`attr`).** Always 0 for body 4,
    has 22 distinct values across 300 records in body 5, 214 distinct
-   values in body 12. Probably packs `(tpage, clut)` or a zone-id;
-   depends on the consumer.
+   values in body 12. Body 12 attr-values cluster at `±1280, ±1792,
+   1793, ±1281, ±1025` - which look like packed `(high_byte = facing,
+   low_byte = sub-id)` tags rather than indices. Depends on the
+   consumer.
 3. **Per-body kind→draw routine mapping.** Needs Ghidra capture of the
    consumer (likely in the `world_map_top` overlay).
