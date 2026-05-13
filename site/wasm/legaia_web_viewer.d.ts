@@ -88,6 +88,30 @@ export class LegaiaViewer {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Number of TMDs in the currently-loaded continent pack. 0 when no
+     * continent pack was found for this kingdom.
+     */
+    continent_pack_count(): number;
+    /**
+     * Select the active continent pack slot. Parallel to `pack_mesh` but
+     * operates on the continent pack.
+     */
+    continent_pack_mesh(slot: number): number;
+    continent_pack_mesh_bounds(): Float32Array;
+    continent_pack_mesh_cba_tsb(): Uint16Array;
+    continent_pack_mesh_indices(): Uint32Array;
+    continent_pack_mesh_positions(): Float32Array;
+    continent_pack_mesh_uvs(): Uint8Array;
+    /**
+     * VRAM bytes (1 MB) built from the continent pack's slot 0. Distinct from
+     * the landmark VRAM since the two packs ship independent TIM_LISTs.
+     */
+    continent_pack_vram_bytes(): Uint8Array;
+    /**
+     * PROT index the continent pack was loaded from (0 when none).
+     */
+    continent_prot_index(): number;
+    /**
      * JSON-encoded summary of the current entry - class label, byte size,
      * MES record count (if any), SEQ presence (if any), VAB presence
      * (if any). The JS side parses this and shows it in the inspector
@@ -299,6 +323,15 @@ export interface InitOutput {
     readonly legaiaruntime_open_menu: (a: number) => void;
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
     readonly legaiaruntime_tick: (a: number) => bigint;
+    readonly legaiaviewer_continent_pack_count: (a: number) => number;
+    readonly legaiaviewer_continent_pack_mesh: (a: number, b: number) => [number, number, number];
+    readonly legaiaviewer_continent_pack_mesh_bounds: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_indices: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_positions: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_continent_prot_index: (a: number) => number;
     readonly legaiaviewer_current_entry_info_json: (a: number) => [number, number];
     readonly legaiaviewer_current_has_tmd: (a: number) => number;
     readonly legaiaviewer_current_index: (a: number) => number;
