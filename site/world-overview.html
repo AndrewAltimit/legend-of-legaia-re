@@ -23,7 +23,7 @@
 <section class="doc-section" id="how-this-works">
   <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Landmark pack counts: <strong>Drake 40 / Sebucus 36 / Karisto 56</strong>. The bulk-continent TMD pack &mdash; a SECOND 7-asset table at offset +8/+9 of each kingdom's PROT bundle (Drake PROT 0093 = 70 TMDs; Sebucus PROT 0253 = 43; Karisto's offset still TBD) &mdash; is now also loaded and uploaded as <code>cont_&lt;slot&gt;</code> scene meshes at world origin. The complete actor &rarr; continent-TMD mapping is TBD, so continent TMDs all stamp at <code>(0, 0)</code> for now &mdash; visible proof the geometry is on disc, awaiting placement data to spread them across the world.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Landmark pack counts: <strong>Drake 40 / Sebucus 36 / Karisto 56</strong>. This renders the landmark layer (~43 buildings/dungeons/NPCs for Drake) but <em>not</em> the continent terrain beneath it &mdash; the bulk continent source is still TBD. Each kingdom's PROT block has additional 7-asset tables at +8/+9 (Drake PROT 0093 = 70 TMDs, Sebucus PROT 0253 = 43) but visual inspection confirmed those hold sub-scenes (arena, town interiors) rather than the world-map continent; the viewer exposes them through <code>continent_pack_*</code> for inspection but doesn't draw them in this view.
   </p>
   <p>
     <strong>Framebuffer (save state):</strong> until the continent generator is reversed, the only way to see the full overworld is to upload a mednafen <code>.mc[N]</code> save state captured while the world-map debug top-view is active. The page then extracts either the rendered GPU framebuffer straight out of VRAM (fast, pixel-accurate, fixed 320&times;240) or replays the live primitive pool (~10,000 textured POLY_FT4 packets, pan/zoom in WebGL2). No disc image required for this path. Tracking the generator RE in <a href="subsystems/world-map.html">world-map subsystem</a>.
@@ -768,41 +768,17 @@
         drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
       }
     }
-    /* Upload every TMD in the bulk-continent pack (slot +N of the kingdom
-     * bundle - Drake +8 = 70 TMDs, Sebucus +9 = 43; Karisto's offset not
-     * yet pinned so its count is 0). Each TMD is uploaded as `cont_<slot>`
-     * and stamped at world origin: the continent TMDs carry their own
-     * world coords in their TMD-local vertices, so a (0, 0) placement
-     * means "draw the mesh where its vertices already say." The runtime
-     * scene loader resolves these from `actor[+0x44]` chains; the
-     * complete actor->TMD-slot mapping is still TBD, so we surface every
-     * available continent TMD here for visual validation. */
+    /* The kingdom's PROT block contains a SECOND 7-asset table at
+     * offset +8/+9 (Drake PROT 0093 = 70 TMDs, Sebucus PROT 0253 = 43).
+     * Visual inspection showed that pack carries OTHER SUB-SCENES of the
+     * kingdom (battle arena interior, town overhead views, etc.), NOT
+     * the world-map continent terrain. We leave the WASM accessors
+     * (`continent_pack_*` on LegaiaViewer) exposed for future scene
+     * inspection but skip auto-rendering here - it would just stamp
+     * unrelated geometry at world origin. The actual bulk-continent
+     * source remains TBD. */
     const continentCount = viewer.continent_pack_count();
     const continentProt = viewer.continent_prot_index();
-    let continentDrawCount = 0;
-    if (continentCount > 0) {
-      for (let cs = 0; cs < continentCount; cs++) {
-        const meshId = `cont_${cs}`;
-        try {
-          viewer.continent_pack_mesh(cs);
-        } catch (_) { continue; }
-        const positions = viewer.continent_pack_mesh_positions();
-        const uvs = viewer.continent_pack_mesh_uvs();
-        const cba = viewer.continent_pack_mesh_cba_tsb();
-        const idx = viewer.continent_pack_mesh_indices();
-        if (positions.length === 0 || idx.length === 0) continue;
-        glRenderer.uploadSceneMesh(meshId, positions, uvs, cba, idx);
-        drawPlacements.push({ meshId, x: 0, z: 0 });
-        continentDrawCount++;
-      }
-      /* Continent pack ships its own TIM_LIST - merge it into VRAM so
-       * the continent TMDs sample their textures. Last-write-wins
-       * across the two packs; rows that don't overlap stay clean. */
-      const contVram = viewer.continent_pack_vram_bytes();
-      if (contVram.length > 0) {
-        glRenderer.uploadVram(contVram);
-      }
-    }
     /* Camera frames the placement bbox (not the world bbox) - many
      * placeholder records have placeholder coords like (64, *) that drag
      * the world bbox out toward empty edges; framing to placements gives
@@ -827,13 +803,11 @@
       worldCam.halfHeight = ext[1] / 2 + 1000;
     }
     worldCam.pitch = 0;
-    const totalPlacements = drawPlacements.length;
-    const landmarkPlacements = totalPlacements - continentDrawCount;
-    const contLabel = continentCount > 0
-      ? ` + ${continentCount}-TMD continent pack (PROT ${continentProt}, ${continentDrawCount} drawn at origin)`
-      : ' (no continent pack found yet for this kingdom)';
+    const secondaryLabel = continentCount > 0
+      ? ` (+${continentCount}-TMD secondary pack at PROT ${continentProt}, not drawn)`
+      : '';
     $meshLabel.textContent =
-      `${k.cdname} - ${landmarkPlacements} landmark placements (${used.size} unique meshes, ${packCount}-TMD landmark pack)${contLabel}`;
+      `${k.cdname} - ${drawPlacements.length} landmark placements (${used.size} unique meshes, ${packCount}-TMD pack)${secondaryLabel}`;
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
