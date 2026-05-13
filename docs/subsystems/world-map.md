@@ -147,7 +147,7 @@ reach the world-map render tick:
 The `a0` arg controls whether `FUN_80016444` skips its early
 `FUN_8005FB84` block (Mode 13 skips it; the default handler runs
 it). Both reach the world-map render branch deeper in the function,
-so the terrain emitter can fire from any of the 14 modes that route
+so the horizon emitter can fire from any of the 14 modes that route
 through `FUN_80016444` whenever the submode register holds `2`.
 
 ### `FUN_80016444` - SCUS world-map render tick (1352 bytes)
@@ -201,14 +201,59 @@ The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter
 across 224 iters). Vertex coordinates project via the cos table, so
 the rendered output rotates with the camera angle - consistent with
 a horizon / sky / animated-background plane, not a fixed continent
-mesh. The bulk-continent POLY_FT4 chain (`~5000 prims` per the
-prim-pool decoder) likely involves additional emitters that are
-still to be identified.
+mesh. The bulk continent POLY_FT4 chain in the prim pool is produced
+by other emitters reached through the [actor-list render passes](#per-frame-render-pass-iterator---fun_8002519c).
 
 The function is called by direct `jal` from SCUS - it does not need
 function-pointer dispatch. Ghidra's reference manager misses the
 cross-program call when sweeping the overlay alone; sweep SCUS to
 surface the caller.
+
+### Per-frame render-pass iterator - `FUN_8002519c`
+
+Five times per frame, `FUN_80016444` invokes the SCUS-resident actor-list
+iterator `FUN_8002519c` (328 bytes) against five linked-list heads at
+`_DAT_8007C34C..._DAT_8007C36C`. Each list is one render pass. The
+iterator walks the chain and per node:
+
+```c
+for (node = *(list_head); node != NULL; node = node->next) {
+    if (node->flags & 0x8) {
+        if (node->flags & 0x200) {
+            // already-emitted path: skip the heavy work
+        } else if (node->fn == &FUN_80021df4) {
+            // standard per-frame actor tick
+            ...
+        }
+    } else {
+        ((void (*)(void *))node->fn)(node);   // jalr node->fn
+    }
+    // mark `flags |= 0x200` to dedupe in case the list is walked again
+}
+```
+
+Per-actor record layout consumed by the iterator:
+
+| Offset | Type | Role |
+|---|---|---|
+| `+0x00` | `actor *` | Next pointer (singly linked list, `NULL` terminates). |
+| `+0x0C` | `void (*)(actor *)` | Tick function (the entry point `jalr` calls). |
+| `+0x10` | `u32` | Flags; bit `0x8` selects the early-return path, bit `0x200` is the "already-emitted this frame" guard. |
+| `+0x14` | `u32` | Saved next-pc copy used by the early-return path. |
+| `+0x18` | `u16` | Halfword count exposed at `+0x20` for the early-return path. |
+| `+0x44` | `chain *` | Optional prim-chain head; freed via `FUN_80017b94` when bit `0x800` is set. |
+| `+0x48` | `u8 *` | Move-VM bytecode base (for actors whose tick is `FUN_80021df4`). |
+| `+0x70` | `u16` | Move-VM PC in halfword units; the actual byte offset is `2 * actor[+0x70]`. |
+
+Standard tick functions observed in the world-map render passes:
+
+| Tick function | Where | Role |
+|---|---|---|
+| `FUN_80021DF4` (SCUS) | per-frame actor tick | Steps the move VM via `FUN_80023070(actor)`. The eight actors in list `_DAT_8007C350` use this tick. |
+| `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and overlay helper `FUN_801D79E8`. The fourteen actors in list `_DAT_8007C354` use this tick. |
+| `FUN_801E76D4` (world_map overlay) | world-map controller | Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render. |
+| `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
+| `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 
@@ -246,3 +291,4 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 | `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
 | `_DAT_801F3528` | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |
 | `_DAT_8007BCD0..D8` | Three contiguous u32 globals that `FUN_801D1344` reads and forwards as the gate-setter's scale / step / OT-layer params. |
+| `_DAT_8007C34C..0x36C` | Seven actor-list heads consumed by `FUN_8002519c`. `_DAT_8007C34C` / `_DAT_8007C350` / `_DAT_8007C354` / `_DAT_8007C358` / `_DAT_8007C35C` / `_DAT_8007C360` / `_DAT_8007C36C` correspond to the five world-map render passes that `FUN_80016444` issues per frame plus two scratch heads. |

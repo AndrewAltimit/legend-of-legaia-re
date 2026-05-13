@@ -1,15 +1,11 @@
-//! Disc-gated smoke test: walk the real move-VM bytecode for the world
-//! map (PROT entry 0085 = `map01`) through the `world_map_draw_vm` port
-//! and assert that:
+//! Disc-gated smoke test: walk a real PROT block through the
+//! `world_map_draw_vm` port and assert the dispatch table parses every
+//! byte we encounter without hitting an out-of-range opcode.
 //!
-//!  - The 0x2F-escape stream parses end-to-end without an out-of-range
-//!    sub-op (i.e. our advance-count table is right for every byte we
-//!    actually see in retail).
-//!  - At least one sub-op of each continent-render class
-//!    (`slab_uv_set` / `draw_continent` / `gpu_draw_mode`) fires.
-//!  - The number of `draw_continent` invocations is non-trivial (the
-//!    real bytecode draws the continent every few instructions per
-//!    frame).
+//! PROT 0085 (`map01`) is the closest disc-resident analogue to the
+//! world-map VM bytecode shape, although the bytecode there is event-
+//! script flavoured (zero continent-render sub-ops) - the test verifies
+//! the dispatcher walks it cleanly, not that any specific sub-op fires.
 //!
 //! Skips silently when `extracted/PROT/0085_map01.BIN` is missing -
 //! same convention as the rest of the disc-gated suite.
@@ -32,7 +28,7 @@ fn map01_prot() -> Option<PathBuf> {
 struct CountingHost {
     n_slab_set: usize,
     n_slab_inc: usize,
-    n_draw: usize,
+    n_strip: usize,
     n_draw_mode: usize,
 }
 
@@ -43,8 +39,8 @@ impl WorldMapDrawHost for CountingHost {
     fn slab_uv_inc(&mut self, _args: [u16; 4]) {
         self.n_slab_inc += 1;
     }
-    fn draw_continent(&mut self, _args: [u16; 5]) {
-        self.n_draw += 1;
+    fn emit_strip(&mut self, _args: [u16; 5]) {
+        self.n_strip += 1;
     }
     fn gpu_draw_mode(&mut self, _args: [u16; 11]) {
         self.n_draw_mode += 1;
@@ -72,25 +68,23 @@ fn world_map_draw_vm_walks_real_map01_bytecode() {
         summary.steps_walked, summary.final_pc, summary.terminated_out_of_range
     );
     eprintln!(
-        "[smoke] slab_set={} slab_inc={} draw_continent={} draw_mode={}",
-        host.n_slab_set, host.n_slab_inc, host.n_draw, host.n_draw_mode
+        "[smoke] slab_set={} slab_inc={} strip={} draw_mode={}",
+        host.n_slab_set, host.n_slab_inc, host.n_strip, host.n_draw_mode
     );
 
     // PROT 0085 has an asset/init table at +0x800; the walker recognises
-    // some of it as world-map VM bytecode (the layout uses the same
-    // opcode space) until it hits the first non-VM region. We just need
-    // a non-zero walk to prove `step` + `canonical_size` round-trip on
-    // real bytes - any positive number of steps demonstrates the
-    // dispatch table is correct.
+    // some of it as VM bytecode (the layout uses the same opcode space)
+    // until it hits the first non-VM region. A positive number of steps
+    // is sufficient evidence that `step` + `canonical_size` round-trip
+    // on real bytes.
     assert!(
         summary.steps_walked > 0,
         "expected at least one VM step on real map01 bytecode"
     );
 
-    // No continent-render ops are expected in PROT 0085 - that block
-    // carries world-map control/event bytecode (72 `[2F 00 NN 00]`
-    // move-VM hits across the file, none of which are sub-op 0x2C).
-    // The actual continent-draw bytecode lives elsewhere; tracking
-    // that down is an open follow-up (see
-    // `project_continent_terrain_generator_status` memory).
+    // No scrolling-strip ops (0x2B..0x2E) are expected in PROT 0085 -
+    // that block carries event-script-flavoured bytecode and zero
+    // `[2F 00 2C 00]` patterns. The strip emitter is invoked at
+    // runtime from contexts (dialog, cutscene, scrolling text panels)
+    // whose bytecode is constructed in RAM, not stored in PROT.
 }

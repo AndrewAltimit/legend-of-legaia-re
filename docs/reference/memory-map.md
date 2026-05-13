@@ -121,9 +121,8 @@ patching an instruction. Useful Ghidra anchors.
 | `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). |
 | `0x8007C018` | TMD pointer table (`idx * 4` stride). Written by `FUN_80026B4C`. |
 | `0x8007C348` | u32 | Free-list LIFO stack pointer for the actor allocator. |
-| `0x8007C354` | Actor linked-list head. |
+| `0x8007C34C..0x36C` | u32[7] | Actor-list slot table consumed by `FUN_8002519c`. Seven linked-list heads at strides of 4 bytes (`+0x00`/`+0x04`/`+0x08`/`+0x0C`/`+0x10`/`+0x14`/`+0x20`). `FUN_80016444` walks five of them per frame as separate render passes; per-node entry-point is `node[+0x0C]` invoked via `jalr`. `_DAT_8007C354` and `_DAT_8007C364` are also read by `func_0x8003C83C` for the `0xF8`/`0xFB` motion-VM channel lookups (same list, two consumers). |
 | `0x8007C364` | Player context pointer. |
-| `0x8007C34C` | Linked-list head for `func_0x8003C83C`'s `0xFB` lookup. |
 | `0x8007326C` | TMD per-mode descriptor table (8-byte stride × 6 entries). |
 | `0x8007A940` | SsAPI per-note pitch / per-voice volume exponential lookup table (read by `FUN_80066E50` / `FUN_80067550`). |
 | `0x801CD2B8` | SsAPI 16-bit slot-allocation bitmap. Bit `i` = sequencer slot `i` allocated. |

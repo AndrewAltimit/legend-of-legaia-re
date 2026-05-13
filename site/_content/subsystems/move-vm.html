@@ -31,7 +31,7 @@
   <ul class="bullets">
     <li>Field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code>, which finds the move record for <code>move_id</code> and stages it into the actor at <code>actor[+0x48]</code> (buffer base) / <code>actor[+0x70]</code> (PC).</li>
     <li>Actor tick (<code>FUN_80021DF4</code>, per frame) and actor spawn (<code>FUN_80021B04</code>, one-shot) both call <code>FUN_80023070(actor)</code> to step the move buffer.</li>
-    <li>Move-VM opcode <code>0x2F</code> calls <code>FUN_801D362C(actor, opcode_ptr)</code> for scene-specific extension opcodes that live in the town overlay.</li>
+    <li>Move-VM opcode <code>0x2F</code> calls <code>FUN_801D362C(actor, opcode_ptr)</code> for overlay-defined extension opcodes. The same dispatcher exists in many overlays (town, world-map and its variants, dialog, cutscene) at the same RAM address; each overlay supplies its own JT contents.</li>
     <li>The motion VM runs alongside but doesn't share opcodes - it consumes a separate per-actor "motion buffer" through the <code>0xF8</code>/<code>0xFB</code> system-channel idiom.</li>
   </ul>
 </section>
@@ -109,7 +109,7 @@ goto v0;                                                  // computed jump</code
       <tr><td><code>0x08</code></td><td>HALT</td><td><code>actor[+0x10] |= 0x8</code>. Sets <code>bVar3 = false</code> so the dispatcher exits without advancing PC.</td></tr>
       <tr><td><code>0x09</code></td><td>WAIT_SET</td><td><code>actor[+0x54] = v1 &lt;&lt; 3</code>. Wait timer; <code>FUN_80021DF4</code> ticks it down each frame.</td></tr>
       <tr><td><code>0x16</code></td><td>STUB</td><td>Calls <code>FUN_80024C80</code> - body is a pure <code>jr ra</code>. Pure no-op.</td></tr>
-      <tr><td><code>0x2F</code></td><td>OVERLAY_EXT</td><td>Escape to <code>FUN_801D362C</code> (town overlay): 16-bit sub-opcode, JT at <code>0x801CE868</code>, 61 entries.</td></tr>
+      <tr><td><code>0x2F</code></td><td>OVERLAY_EXT</td><td>Escape to <code>FUN_801D362C</code>: 16-bit sub-opcode, JT at <code>0x801CE868</code>, 61 entries. Dispatcher resides in many overlays (town, world-map, dialog, cutscene) at the same RAM address; each supplies its own JT contents.</td></tr>
     </tbody>
   </table>
 

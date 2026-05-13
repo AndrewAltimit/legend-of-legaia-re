@@ -78,7 +78,7 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
       <tr><td><code>FUN_80025F2C</code></td><td>Mode 13 (MAPDSIP MODE) &mdash; field/world-map display per-frame handler.</td><td><code>FUN_8001698C</code> &rarr; <code>func_0x801CE850</code> (overlay entry) &rarr; <code>FUN_80016444(0)</code>.</td></tr>
     </tbody>
   </table>
-  <p>The <code>a0</code> arg controls whether <code>FUN_80016444</code> skips its early <code>FUN_8005FB84</code> block (Mode 13 skips it; the default handler runs it). Both reach the world-map render branch deeper in the function, so the terrain emitter can fire from any of the 14 modes that route through <code>FUN_80016444</code> whenever the submode register holds <code>2</code>.</p>
+  <p>The <code>a0</code> arg controls whether <code>FUN_80016444</code> skips its early <code>FUN_8005FB84</code> block (Mode 13 skips it; the default handler runs it). Both reach the world-map render branch deeper in the function, so the horizon emitter can fire from any of the 14 modes that route through <code>FUN_80016444</code> whenever the submode register holds <code>2</code>.</p>
 
   <h3><code>FUN_80016444</code> &mdash; SCUS world-map render tick (1352 bytes)</h3>
   <p>Entry: <code>(submode_flag)</code>. Iterates the world-map render passes for one frame. The pipeline includes a gated direct call into the overlay-resident POLY_FT4 emitter:</p>
@@ -111,8 +111,36 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
         iVar11++;
     } while (iVar11 &lt; 0xE4);              // 224 iterations
 }</code></pre>
-  <p><code>_DAT_8007B81C</code> is the cos lookup table (see the <a href="../reference/memory-map.html">memory map</a>). The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter across 224 iters). Vertex coordinates project via the cos table, so the rendered output rotates with the camera angle &mdash; consistent with a horizon / sky / animated-background plane, not a fixed continent mesh. The bulk-continent POLY_FT4 chain (~5000 prims per the prim-pool decoder) likely involves additional emitters that are still to be identified.</p>
+  <p><code>_DAT_8007B81C</code> is the cos lookup table (see the <a href="../reference/memory-map.html">memory map</a>). The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter across 224 iters). Vertex coordinates project via the cos table, so the rendered output rotates with the camera angle &mdash; consistent with a horizon / sky / animated-background plane, not a fixed continent mesh. The bulk continent POLY_FT4 chain in the prim pool is produced by other emitters reached through the actor-list render passes documented below.</p>
   <p>The function is called by direct <code>jal</code> from SCUS &mdash; it does not need function-pointer dispatch. Ghidra's reference manager misses the cross-program call when sweeping the overlay alone; sweep SCUS to surface the caller.</p>
+
+  <h3>Per-frame render-pass iterator &mdash; <code>FUN_8002519c</code></h3>
+  <p>Five times per frame, <code>FUN_80016444</code> invokes the SCUS-resident actor-list iterator <code>FUN_8002519c</code> (328 bytes) against five linked-list heads at <code>_DAT_8007C34C..._DAT_8007C36C</code>. Each list is one render pass. The iterator walks the chain and per node either takes an early-return path (when bit <code>0x8</code> of <code>node[+0x10]</code> is set) or calls the tick function at <code>node[+0xC]</code> via <code>jalr</code>.</p>
+  <p>Per-actor record layout consumed by the iterator:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Type</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td><code>actor *</code></td><td>Next pointer (singly linked list, <code>NULL</code> terminates).</td></tr>
+      <tr><td><code>+0x0C</code></td><td><code>void (*)(actor *)</code></td><td>Tick function (the entry point <code>jalr</code> calls).</td></tr>
+      <tr><td><code>+0x10</code></td><td><code>u32</code></td><td>Flags; bit <code>0x8</code> selects the early-return path, bit <code>0x200</code> is the &quot;already-emitted this frame&quot; guard.</td></tr>
+      <tr><td><code>+0x14</code></td><td><code>u32</code></td><td>Saved next-pc copy used by the early-return path.</td></tr>
+      <tr><td><code>+0x18</code></td><td><code>u16</code></td><td>Halfword count exposed at <code>+0x20</code> for the early-return path.</td></tr>
+      <tr><td><code>+0x44</code></td><td><code>chain *</code></td><td>Optional prim-chain head; freed via <code>FUN_80017b94</code> when bit <code>0x800</code> is set.</td></tr>
+      <tr><td><code>+0x48</code></td><td><code>u8 *</code></td><td>Move-VM bytecode base (for actors whose tick is <code>FUN_80021df4</code>).</td></tr>
+      <tr><td><code>+0x70</code></td><td><code>u16</code></td><td>Move-VM PC in halfword units; the actual byte offset is <code>2 * actor[+0x70]</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>Standard tick functions observed in the world-map render passes:</p>
+  <table>
+    <thead><tr><th>Tick function</th><th>Where</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80021DF4</code> (SCUS)</td><td>per-frame actor tick</td><td>Steps the move VM via <code>FUN_80023070(actor)</code>. The eight actors in list <code>_DAT_8007C350</code> use this tick.</td></tr>
+      <tr><td><code>FUN_8003BC08</code> (SCUS)</td><td>per-actor tick</td><td>Calls the motion VM (<code>FUN_8003774C</code>), move-buffer setup (<code>FUN_800204F8</code>), and overlay helper <code>FUN_801D79E8</code>. The fourteen actors in list <code>_DAT_8007C354</code> use this tick.</td></tr>
+      <tr><td><code>FUN_801E76D4</code> (world_map overlay)</td><td>world-map controller</td><td>Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render.</td></tr>
+      <tr><td><code>FUN_801DA51C</code> (world_map overlay)</td><td>per-entity tick</td><td>5-state SM on <code>entity[+0x8A]</code>.</td></tr>
+      <tr><td><code>FUN_801D1344</code> (world_map overlay)</td><td>horizon gate-arm wrapper</td><td>See the gate-arm chain below.</td></tr>
+    </tbody>
+  </table>
 
   <h3>Gate-arm chain &mdash; <code>FUN_801D1344</code> &rarr; <code>FUN_801D8258</code></h3>
   <p>The one-shot gate <code>_DAT_801F351C</code> is armed by a 40-byte trigger function called from a 1332-byte parameter-prep wrapper:</p>

@@ -1,11 +1,20 @@
-//! World-map drawing-script VM, ported from `FUN_801D362C`.
+//! Overlay-resident move-VM extension dispatcher (`FUN_801D362C`).
 //!
-//! `FUN_801D362C` lives in the world-map overlay (one copy per flavour:
-//! `overlay_world_map`, `overlay_world_map_top`, `overlay_world_map_walk`).
-//! It is the dispatch loop reached from the move-VM (`FUN_80023070`) when
-//! the outer move-VM opcode is `0x2F` (overlay extension). The world-map
-//! drawing-script VM walks one inner sub-opcode and returns an advance
+//! `FUN_801D362C` is the dispatcher reached from the move-VM
+//! (`FUN_80023070`) when the outer move-VM opcode is `0x2F` (overlay
+//! extension). It walks one inner sub-opcode and returns an advance
 //! count (in u16 halfwords) that the move-VM adds to its PC.
+//!
+//! The same function exists in **many** overlays at the same RAM
+//! address (`overlay_world_map`, `overlay_world_map_top`,
+//! `overlay_world_map_walk`, `overlay_0897` field, `overlay_dialog_mc4`,
+//! `overlay_dialog_typing`, `overlay_cutscene_dialogue`,
+//! `overlay_cutscene_mapview`); each overlay supplies its own
+//! contents in the 61-entry JT at `0x801CE868`. This file ports the
+//! `overlay_world_map` flavour - the JT-advance counts here are
+//! derived from that overlay's handlers. Other overlays share most
+//! advance counts (the JT structure is the same) but may dispatch to
+//! different sub-handler bodies.
 //!
 //! ## Bytecode layout
 //!
@@ -31,17 +40,28 @@
 //! there - typically a default-next branch hint used by ops 0x13 /
 //! 0x14 (the conditional-skip ops that `j 0x801d4838`).
 //!
-//! ## Continent-render opcodes
+//! ## Scrolling-strip opcodes (sub-ops 0x2B..0x2E)
 //!
-//! The four sub-opcodes that drive the per-scanline POLY_FT4 emitter
-//! (`FUN_801D31B0`) are decoded precisely:
+//! Four sub-opcodes drive the per-scanline POLY_FT4 strip emitter
+//! `FUN_801D31B0` and its slab/UV/GPU-mode state:
 //!
 //! | sub-op | role                                                          | size |
 //! | ------ | ------------------------------------------------------------- | ---- |
 //! | 0x2B   | Set slab UV bounds: writes `op[2..5]` to `slab[+0x18..+0x1E]` | 6    |
-//! | 0x2C   | Draw continent: invokes the per-scanline emitter              | 7    |
+//! | 0x2C   | Invoke per-scanline POLY_FT4 strip emitter (`FUN_801D31B0`)   | 7    |
 //! | 0x2D   | Increment slab UV bounds by `op[2..5]`                        | 6    |
 //! | 0x2E   | Build GP0 TPage/CLUT packet from `op[2..]`                    | 13   |
+//!
+//! `FUN_801D31B0` is shared across many overlays (dialog, cutscene,
+//! 0897 field, world-map) - it is **not** a continent-specific
+//! function. The 832-byte body emits horizontal POLY_FT4 strips
+//! parameterised by the slab descriptor at `actor[+0x9C]` (UV bounds,
+//! tpage, clut, line height). Dialog overlays use it for scrolling
+//! text-strip backgrounds; the world-map overlay variant has been
+//! observed mapped to op-0x2C in the JT but has not been observed
+//! dispatched during world-map render in any captured state (the
+//! bulk continent prims in the world-map's prim pool come from a
+//! different emitter that is still under investigation).
 //!
 //! The remaining 54 unique opcodes are advance-only stubs by default.
 //! Engines that want to track e.g. flag writes can override the host
@@ -52,10 +72,9 @@
 //! ## Provenance
 //!
 //! See `ghidra/scripts/funcs/overlay_world_map_801d362c.txt` for the
-//! full decompilation and `ghidra/scripts/funcs/world_map_vm_jt_overlay_world_map.bin.txt`
-//! for the jump-table at `0x801CE868`. Bytecode source on disc lives at
-//! the head of each `mapNN` PROT block (e.g. PROT 0085 = map01) starting
-//! at file offset `0x800`.
+//! full decompilation and
+//! `ghidra/scripts/funcs/world_map_vm_jt_overlay_world_map.bin.txt`
+//! for the jump-table at `0x801CE868`.
 
 #![allow(clippy::needless_range_loop)]
 
@@ -67,8 +86,8 @@ pub const HALFWORD: usize = 2;
 
 /// Slab descriptor offsets relative to the actor's `+0x9C` base.
 ///
-/// These are the fields the per-scanline emitter (`FUN_801D31B0`) reads
-/// when it walks the continent. The drawing VM mutates the UV bounds
+/// These are the fields the per-scanline POLY_FT4 strip emitter
+/// (`FUN_801D31B0`) reads. The drawing VM mutates the UV bounds
 /// (`+0x18..+0x1E`) via sub-ops 0x2B / 0x2D; everything else is set up
 /// either by the controller or by sub-op 0x2E (TPage/CLUT packet build).
 pub mod slab {
@@ -169,12 +188,12 @@ pub fn canonical_size(sub_op: u16) -> Option<u16> {
     })
 }
 
-/// Engine-side callbacks for the world-map drawing VM.
+/// Engine-side callbacks for the overlay-resident move-VM extension VM.
 ///
-/// The four `slab_*` / `gpu_*` hooks correspond to the continent-render
-/// opcodes; default impls are no-ops so an engine can run the VM in
-/// "advance-only" mode (validating that every byte parses) before
-/// wiring up the renderer.
+/// The four `slab_*` / `gpu_*` hooks correspond to the scrolling-strip
+/// opcodes (0x2B..0x2E); default impls are no-ops so an engine can
+/// run the VM in "advance-only" mode (validating that every byte
+/// parses) before wiring up the renderer.
 pub trait WorldMapDrawHost {
     /// Sub-op 0x2B - set slab UV bounds.
     ///
@@ -190,15 +209,17 @@ pub trait WorldMapDrawHost {
     /// sh`).
     fn slab_uv_inc(&mut self, _args: [u16; 4]) {}
 
-    /// Sub-op 0x2C - draw continent.
+    /// Sub-op 0x2C - invoke the per-scanline POLY_FT4 strip emitter
+    /// (`FUN_801D31B0`).
     ///
-    /// Invokes the per-scanline POLY_FT4 emitter (`FUN_801D31B0`).
     /// The full instruction is 7 halfwords (14 bytes) - including the
     /// outer `0x2F` op + inner `0x2C` sub-op header at +0..+4. Args
     /// `op[2..7]` (5 halfwords) are the emitter parameters; their
-    /// precise role lives inside `FUN_801D31B0` and is not relevant to
-    /// the VM walk.
-    fn draw_continent(&mut self, _args: [u16; 5]) {}
+    /// precise role lives inside `FUN_801D31B0` and is not relevant
+    /// to the VM walk. `FUN_801D31B0` is a shared scrolling-strip
+    /// helper used by dialog / cutscene / 0897 field / world-map
+    /// overlays, not a continent-specific function.
+    fn emit_strip(&mut self, _args: [u16; 5]) {}
 
     /// Sub-op 0x2E - build GP0 TPage/CLUT packet.
     ///
@@ -266,7 +287,7 @@ pub fn step<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> Step
             let a = [read_u16(4), read_u16(6), read_u16(8), read_u16(0xA)];
             host.slab_uv_set(a);
         }
-        // 0x2C - draw continent. 5 arg halfwords at +4..+0xE.
+        // 0x2C - invoke scanline strip emitter. 5 arg halfwords at +4..+0xE.
         0x2C => {
             let a = [
                 read_u16(4),
@@ -275,7 +296,7 @@ pub fn step<H: WorldMapDrawHost + ?Sized>(host: &mut H, bytecode: &[u8]) -> Step
                 read_u16(0xA),
                 read_u16(0xC),
             ];
-            host.draw_continent(a);
+            host.emit_strip(a);
         }
         // 0x2D - slab UV bounds increment.
         0x2D => {
@@ -370,7 +391,7 @@ mod tests {
     enum Event {
         SlabSet([u16; 4]),
         SlabInc([u16; 4]),
-        Draw([u16; 5]),
+        Strip([u16; 5]),
         DrawMode([u16; 11]),
     }
 
@@ -381,8 +402,8 @@ mod tests {
         fn slab_uv_inc(&mut self, a: [u16; 4]) {
             self.events.borrow_mut().push(Event::SlabInc(a));
         }
-        fn draw_continent(&mut self, a: [u16; 5]) {
-            self.events.borrow_mut().push(Event::Draw(a));
+        fn emit_strip(&mut self, a: [u16; 5]) {
+            self.events.borrow_mut().push(Event::Strip(a));
         }
         fn gpu_draw_mode(&mut self, a: [u16; 11]) {
             self.events.borrow_mut().push(Event::DrawMode(a));
@@ -413,12 +434,15 @@ mod tests {
     }
 
     #[test]
-    fn draw_continent_decodes_five_args_and_advances_seven() {
+    fn emit_strip_decodes_five_args_and_advances_seven() {
         let bc = one_op(0x2C, &[1, 2, 3, 4, 5]);
         let mut host = RecHost::default();
         let r = step(&mut host, &bc);
         assert_eq!(r.size_u16, 7);
-        assert_eq!(host.events.into_inner(), vec![Event::Draw([1, 2, 3, 4, 5])]);
+        assert_eq!(
+            host.events.into_inner(),
+            vec![Event::Strip([1, 2, 3, 4, 5])]
+        );
     }
 
     #[test]
@@ -478,7 +502,7 @@ mod tests {
             host.events.into_inner(),
             vec![
                 Event::SlabSet([1, 2, 3, 4]),
-                Event::Draw([10, 20, 30, 40, 50]),
+                Event::Strip([10, 20, 30, 40, 50]),
             ]
         );
     }

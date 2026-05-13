@@ -25,7 +25,8 @@
       <ul class="fnref-list">
         <li><code>FUN_801D6628</code> - actor / sprite VM (13 opcodes, JT at <code>0x801CED70</code>)</li>
         <li><code>FUN_80023070</code> - move-table VM (71 opcodes, JT at <code>0x80010778</code>)</li>
-        <li><code>FUN_801D362C</code> - move-VM extension (61 sub-opcodes via op <code>0x2F</code>)</li>
+        <li><code>FUN_801D362C</code> - move-VM extension (61 sub-opcodes via op <code>0x2F</code>); same dispatcher in town / world-map / dialog / cutscene overlays at the same RAM address</li>
+        <li><code>FUN_8002519C</code> - per-frame actor-list iterator; called 5x per frame from <code>FUN_80016444</code> against the actor-list heads at <code>_DAT_8007C34C..0x36C</code></li>
         <li><code>FUN_801DE840</code> - field / event script VM (43 ops, switch at <code>0x801E00F4</code>)</li>
         <li><code>FUN_801E0C3C</code> - field-VM <code>0x4C</code> 2nd-stage dispatcher (16-entry JT at <code>0x801CEE60</code>)</li>
         <li><code>FUN_801E3040</code> - field-VM <code>0x4C</code> outer-nibble-<code>0xE</code> sub-dispatcher (15-entry JT at <code>0x801CF008</code>)</li>
