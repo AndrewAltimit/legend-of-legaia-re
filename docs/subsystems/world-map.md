@@ -213,13 +213,16 @@ renderer). That accounts for the landmark prims in the GPU pool.
 **Open**: the bulk continent ground terrain (~3500-4000 POLY_FT4 prims
 of green/rocky tiles in the prim pool) is **not** sourced from any
 TMD-magic-bearing disc payload that has been located so far. Slot 4
-of each kingdom bundle (type byte `0x05`, the [world-map overlay
-outlines](../formats/world-map-overlay.md)) was a logical candidate
-but it turned out to be the dev-menu top-view wireframe / coastline
-data, not the textured ground tiles. The remaining hypothesis is a
-procedural emitter sibling of `FUN_801D7EA0` reachable from the same
-per-frame tick - that sibling is the most likely site of the bulk
-terrain generation but has not been located yet.
+of each kingdom bundle (type byte `0x05`, see [`world-map-overlay`
+format doc](../formats/world-map-overlay.md)) was a logical candidate
+but visual inspection across every projection and topology mode
+falsified the wireframe / coastline reading - the container is solved
+but the records carry something else (likely a library of object-local
+3D meshes, consumer not yet pinned in Ghidra). The remaining hypothesis
+for the bulk continent terrain is a procedural emitter sibling of
+`FUN_801D7EA0` reachable from the same per-frame tick - that sibling
+is the most likely site of the bulk terrain generation but has not been
+located yet.
 
 The horizon emitter is called by direct `jal` from SCUS - it does not
 need function-pointer dispatch. Ghidra's reference manager misses the

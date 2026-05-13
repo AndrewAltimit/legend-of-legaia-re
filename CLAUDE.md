@@ -60,7 +60,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`str-fmv-table.md`](docs/formats/str-fmv-table.md) | In-RAM compact STR FMV file table at `0x801CAE40` (24-byte stride × 6: name + libcd BCD MSF + size). |
 | [`scene-bundles.md`](docs/formats/scene-bundles.md) | Scene-asset bundle layout per game mode. |
 | [`scene-v12-table.md`](docs/formats/scene-v12-table.md) | Per-scene runtime-fixup header + inline-record table + event-script prescript at offset `0x800` (97 PROT entries). |
-| [`world-map-overlay.md`](docs/formats/world-map-overlay.md) | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`). Outer pack of 15 sub-bodies; per-body header `[u8 count_a, u8 flag_a, u8 count_b, u8 flag_b, u16 0x080C, u16 kind]` + `count_a*count_b` 8-byte records. Dev-menu top-view wireframe data (coastlines + world boundary frame), not the textured ground tiles. |
+| [`world-map-overlay.md`](docs/formats/world-map-overlay.md) | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`). Container confirmed (15 / 16 / 16 sub-bodies, per-body header + 8-byte records, byte-verified vs live RAM at `0x8011A624`), but the record interpretation is **open** - the historical "world-map overlay outlines / coastline wireframe" reading is falsified. Most likely a runtime library of small object-local 3D meshes; consumer in Ghidra not yet pinned. |
 | [`pochi.md`](docs/formats/pochi.md) | "Pochi-fill" placeholder slots - reserved-but-unused dev fillers. |
 | [`mips-overlay.md`](docs/formats/mips-overlay.md) | Per-PROT MIPS-code-likelihood detection. |
 | [`overlay-ptr-table.md`](docs/formats/overlay-ptr-table.md) | Sister of `mips-overlay`. |

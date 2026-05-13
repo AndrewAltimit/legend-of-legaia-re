@@ -1,24 +1,37 @@
-# World-map overlay outlines
+# Slot-4 records (unidentified)
 
-The `slot 4` payload of each world-map (kingdom) bundle holds the
-wireframe/outline data the dev-menu top-view renderer draws over the
-world map. Three carriers, one per kingdom:
+> **Status: research artifact, runtime semantic open.** The container
+> layout below is byte-verified against live RAM, but every hypothesis
+> we've tested for what the *records inside* mean has been falsified.
+> Visual inspection of every projection (xz / xy / zy) and every
+> topology interpretation (points / pair-edges / row-major polylines /
+> column-major polylines / heightfield grid) failed to reproduce the
+> dev-menu top-view, a continent coastline, or any other recognizable
+> 2D map structure. The data is heterogeneous: some bodies clearly
+> carry 3D mesh geometry (vertical pillar/column silhouettes visible
+> in the xy projection), others are flat or corner-clustered. Slot 4
+> is most likely a runtime library of small object-local meshes /
+> collision hulls / decorations / particle-emitter shapes, **not**
+> world-map outline data. Pinning the consumer in Ghidra is the
+> remaining unblock.
 
-| Bundle | PROT index | CDNAME label |
-|---|---|---|
-| Drake | 0085 | `map01` |
-| Sebucus | 0244 | `map02` |
-| Karisto | 0391 | `map03` |
+Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size
+buffer that the runtime loads verbatim into RAM. Three carriers:
 
-The 7-asset bundle these live in is the [`scene_asset_table`](scene-bundles.md#scene_asset_table---canonical-7-asset-bundle)
-shape (`(1, 2, 3, 4, 5, 6, 7)` type sequence). Slot 4's type byte is
-`0x05` per [asset-type](asset-type.md) - the standard table calls this
-"MOVE", but the kingdom-bundle consumer interprets the bytes as
-world-map outline data, **not** as a move table. (Similar mismatch to
-the `vab_01` / `move_program_no` CDNAME labels - the type byte is
-just a routing tag, and the kingdom path uses it differently.)
+| Bundle | PROT index | CDNAME label | Decoded size |
+|---|---|---|---:|
+| Drake | 0085 | `map01` | 32304 |
+| Sebucus | 0244 | `map02` | 26964 |
+| Karisto | 0391 | `map03` | 24444 |
 
-## Layout
+The 7-asset bundle is the standard
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---canonical-7-asset-bundle)
+shape with type sequence `(1, 2, 3, 4, 5, 6, 7)`. Slot 4's type byte
+is `0x05` per [asset-type](asset-type.md) - the standard table calls
+this "MOVE", but the kingdom-bundle consumer interprets the bytes as
+something else (see "Falsified hypotheses" below).
+
+## Container layout (confirmed)
 
 ### Outer pack
 
@@ -31,14 +44,13 @@ just a routing tag, and the kingdom path uses it differently.)
 ```
 
 Drake decodes to 32304 bytes with `count = 15`. First entry is
-`0x40 = 4 + 4*15` (right after the header). Each subsequent entry is
-strictly greater; the last body extends to end-of-decoded-payload.
+`0x40 = 4 + 4*15` (right after the header).
 
 ### Sub-body header (8 bytes)
 
 ```text
 +0x00   u8   count_a              ; records per group
-+0x01   u8   flag_a               ; usually 0; 1 in Drake body 13
++0x01   u8   flag_a               ; usually 0; 1 for kind=4 bodies
 +0x02   u8   count_b              ; number of groups
 +0x03   u8   flag_b               ; usually 0
 +0x04   u16  marker               ; constant 0x080C across all bodies
@@ -50,273 +62,172 @@ strictly greater; the last body extends to end-of-decoded-payload.
 ```text
 +0x08   record[count_a * count_b] ; each record is 8 bytes
                                   ; ( i16 x, i16 y, i16 z, i16 attr )
-+...    trailer (8 bytes)         ; always 8 zero bytes in Drake
++...    trailer (8 bytes)         ; always 8 zero bytes
 ```
 
 Total body size is always `8 + count_a * count_b * 8 + 8`. The math
-fits all 15 of Drake's bodies exactly.
+fits every body in all three kingdoms exactly. The container layout
+above is fully confirmed; what's **not** confirmed is how the runtime
+*interprets* the 8-byte records.
 
-### Per-kingdom body inventory
+## Per-kingdom body inventory
 
-Drake = 15 bodies; Sebucus = 16; Karisto = 16. The `flag_a` byte is
-`0` for all the `kind = 1` and most `kind = 2` bodies; it flips to `1`
-for the `kind = 4` boundary-frame bodies in every kingdom and also for
-one anomalous `kind = 2` body (Karisto body 10, `count_a=10` /
-`count_b=5`), so the simple "`flag_a` = is-boundary" rule doesn't hold
-universally. Whether it selects a draw mode or modifies the count
-interpretation is still open.
+Drake = 15 bodies; Sebucus = 16; Karisto = 16. The leading three
+bodies (`kind = 1`, `count_a = 10`) are byte-identical templates
+across all three kingdoms - whatever they encode, the engine ships
+the same generic shape in every bundle.
 
-#### Drake (`map01`, PROT 0085)
+### Drake (`map01`, PROT 0085)
 
-| Body | count_a | count_b | kind | flag_a | records | Notes |
-|---|---|---|---|---|---|---|
-| 0 | 10 | 20 | 1 | 0 | 200 | Inner contour, ~200 vertices |
-| 1 | 10 | 20 | 1 | 0 | 200 | Sister contour to body 0 |
-| 2 | 10 | 30 | 1 | 0 | 300 | Inner contour, ~300 vertices |
-| 3 | 2 | 30 | 2 | 0 | 60 | Polyline, X stepping with `(0, 0, 0, 0)` pad records between |
-| 4 | 2 | 20 | 2 | 0 | 40 | Polyline (20 vertices stepping in X by 256 units, fixed Y/Z) |
-| 5 | 10 | 30 | 2 | 0 | 300 | Inner contour (25 unique of 30 groups) |
-| 6 | 10 | 26 | 2 | 0 | 260 | Inner contour |
-| 7 | 10 | 30 | 2 | 0 | 300 | Inner contour (25 unique of 30 groups) |
-| 8 | 10 | 3 | 2 | 0 | 30 | 3 IDENTICAL groups of 10 records (reserved/padding) |
-| 9 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
-| 10 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
-| 11 | 12 | 10 | 2 | 0 | 120 | Small feature |
-| 12 | 10 | 120 | 2 | 0 | 1200 | **Continent coastline** - 120 segments × 10 sub-points |
-| 13 | 14 | 15 | 4 | 1 | 210 | **World-map boundary frame** at ±32K (perimeter only) |
-| 14 | 2 | 30 | 2 | 0 | 60 | Polyline |
+| Body | count_a | count_b | kind | flag_a | records | X span | Y span | Z span |
+|---|---|---|---|---|---|---:|---:|---:|
+| 0 | 10 | 20 | 1 | 0 | 200 | 16626 | 10767 | 38641 |
+| 1 | 10 | 20 | 1 | 0 | 200 | - | - | - |
+| 2 | 10 | 30 | 1 | 0 | 300 | - | - | - |
+| 3 | 2 | 30 | 2 | 0 | 60 | 0 | 0 | 0 (pinned plane) |
+| 4 | 2 | 20 | 2 | 0 | 40 | - | - | - |
+| 5 | 10 | 30 | 2 | 0 | 300 | - | - | - |
+| 6 | 10 | 26 | 2 | 0 | 260 | - | - | - |
+| 7 | 10 | 30 | 2 | 0 | 300 | - | - | - |
+| 8 | 10 | 3 | 2 | 0 | 30 | - | - | - (3 identical groups - filler/padding) |
+| 9 | 12 | 30 | 2 | 0 | 360 | 10725 | **25856** | 21248 |
+| 10 | 12 | 30 | 2 | 0 | 360 | 13056 | 18432 | 31503 |
+| 11 | 12 | 10 | 2 | 0 | 120 | 11492 | **27648** | 24064 |
+| 12 | 10 | 120 | 2 | 0 | 1200 | 16118 | 4096 | 31473 |
+| 13 | 14 | 15 | 4 | 1 | 210 | 65485 | 14336 | 64512 |
+| 14 | 2 | 30 | 2 | 0 | 60 | - | - | - |
 
-#### Sebucus (`map02`, PROT 0244)
+Bodies 9 / 10 / 11 have Y spans comparable to the X/Z scale - 3D mesh
+extent, not 2D contour data. Body 12 is nearly flat (Y span 4K).
+Body 13 reaches the full ±32K world bounds on X and Z and clusters in
+the corners.
 
-| Body | count_a | count_b | kind | flag_a | records | Notes |
-|---|---|---|---|---|---|---|
-| 0 | 10 | 20 | 1 | 0 | 200 | Inner contour (matches Drake body 0) |
-| 1 | 10 | 20 | 1 | 0 | 200 | Inner contour (matches Drake body 1) |
-| 2 | 10 | 30 | 1 | 0 | 300 | Inner contour (matches Drake body 2) |
-| 3 | 2 | 30 | 2 | 0 | 60 | Polyline (matches Drake body 3) |
-| 4 | 10 | 30 | 2 | 0 | 300 | Inner contour |
-| 5 | 10 | 26 | 2 | 0 | 260 | Inner contour |
-| 6 | 10 | 30 | 2 | 0 | 300 | Inner contour |
-| 7 | 10 | 3 | 2 | 0 | 30 | 3 IDENTICAL groups (reserved/padding) |
-| 8 | 11 | 30 | 4 | 1 | 330 | Boundary-style frame |
-| 9 | 11 | 15 | 4 | 1 | 165 | Boundary-style frame |
-| 10 | 1 | 30 | 4 | 1 | 30 | Single-strand boundary marker |
-| 11 | 1 | 15 | 4 | 1 | 15 | Single-strand boundary marker |
-| 12 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
-| 13 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
-| 14 | 12 | 10 | 2 | 0 | 120 | Small feature |
-| 15 | 10 | 30 | 2 | 0 | 300 | Inner contour |
+### Sebucus (`map02`, PROT 0244)
 
-#### Karisto (`map03`, PROT 0391)
+| Body | count_a | count_b | kind | flag_a | records |
+|---|---|---|---|---|---|
+| 0-3 | 10/10/10/2 | 20/20/30/30 | 1/1/1/2 | 0 | 200/200/300/60 |
+| 4-7 | 10/10/10/10 | 30/26/30/3 | 2/2/2/2 | 0 | 300/260/300/30 |
+| 8-11 | 11/11/1/1 | 30/15/30/15 | 4/4/4/4 | 1 | 330/165/30/15 |
+| 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 | 360/360/120/300 |
 
-| Body | count_a | count_b | kind | flag_a | records | Notes |
-|---|---|---|---|---|---|---|
-| 0 | 10 | 20 | 1 | 0 | 200 | Inner contour |
-| 1 | 10 | 20 | 1 | 0 | 200 | Inner contour |
-| 2 | 10 | 30 | 1 | 0 | 300 | Inner contour |
-| 3 | 1 | 15 | 2 | 0 | 15 | Single-strand contour |
-| 4 | 14 | 15 | 4 | 1 | 210 | Boundary frame (mirrors Drake body 13) |
-| 5 | 14 | 15 | 4 | 1 | 210 | Boundary frame |
-| 6 | 11 | 30 | 4 | 1 | 330 | Boundary-style |
-| 7 | 11 | 15 | 4 | 1 | 165 | Boundary-style |
-| 8 | 1 | 15 | 4 | 1 | 15 | Single-strand boundary marker |
-| 9 | 1 | 30 | 4 | 1 | 30 | Single-strand boundary marker |
-| 10 | 10 | 5 | 2 | 1 | 50 | Small feature |
-| 11 | 10 | 15 | 4 | 1 | 150 | Boundary-style |
-| 12 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
-| 13 | 12 | 30 | 2 | 0 | 360 | Mid-density feature |
-| 14 | 12 | 10 | 2 | 0 | 120 | Small feature |
-| 15 | 10 | 30 | 2 | 0 | 300 | Inner contour |
+### Karisto (`map03`, PROT 0391)
 
-Across all three kingdoms, the leading three bodies (`kind=1`,
-`count_a=10`, `count_b=20/20/30`) are byte-identical templates -
-they're the same generic inner-contour shape installed at the front
-of each slot. The kingdom-specific data lives in the trailing bodies.
+| Body | count_a | count_b | kind | flag_a | records |
+|---|---|---|---|---|---|
+| 0-3 | 10/10/10/1 | 20/20/30/15 | 1/1/1/2 | 0 | 200/200/300/15 |
+| 4-7 | 14/14/11/11 | 15/15/30/15 | 4/4/4/4 | 1 | 210/210/330/165 |
+| 8-11 | 1/1/10/10 | 15/30/5/15 | 4/4/2/4 | 1/1/1/1 | 15/30/50/150 |
+| 12-15 | 12/12/12/10 | 30/30/10/30 | 2/2/2/2 | 0 | 360/360/120/300 |
 
-## RAM layout
+## RAM layout (confirmed)
 
 Slot 4 is loaded **verbatim into RAM** with zero per-byte diffs vs
 disc. Drake's payload starts at `0x8011A624` (the outer pack header)
-and ends at `0x80122454` exclusive - exactly 32304 bytes, matching the
-disc-decoded length. Body 0's records start at `0x8011A664` (`0x40`
-past the base, after the 4-byte count and 15 × 4-byte offsets). No
-runtime fixup is applied.
+and ends at `0x80122454` exclusive - exactly 32304 bytes, matching
+the disc-decoded length. Body 0's records start at `0x8011A664`
+(`0x40` past the base, after the 4-byte count and 15 × 4-byte
+offsets). No runtime fixup is applied.
 
-Confirmed by `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` against a
+Verified by `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` against a
 PCSX-Redux save state: every byte of all 15 bodies matches the
-disc-side LZS-decoded payload. The load base was pinned by
-signature-searching the full 2 MiB main RAM for the 64-byte outer
-pack header (count = 15 followed by `byte_offsets[0..15]`) - see
-`scripts/pcsx-redux/autorun_dump_full_ram.lua` for the procedure if
-the base needs re-pinning on a different build / save state.
+disc-side LZS-decoded payload. The load base was pinned by signature-
+searching the full 2 MiB main RAM for the 64-byte outer pack header
+(count = 15 followed by `byte_offsets[0..15]`) - see
+`scripts/pcsx-redux/autorun_dump_full_ram.lua` for the procedure.
 
-## Why it isn't the bulk continent terrain
+## Falsified hypotheses
 
-The top-down rendering of all bodies' points (see
-`scripts/slot4_topdown_png.py`) reveals body 12 traces a continent
-coastline and body 13 traces the world boundary - both are 1D
-contours, not 2D terrain meshes. Total ~4000 vertices across all 15
-bodies is far below the ~17000+ vertex positions the textured
-continent in the GPU prim pool would need (Drake's pool has 4994
-prims, mostly POLY_FT4 quads with 4 verts each).
+The container is solved. **What slot 4 *encodes* is not.** Three
+interpretations were systematically tested and falsified by visual
+inspection (PNG renders of every body × every projection plane ×
+every topology mode):
 
-The bulk continent geometry source is therefore separate. The most
-likely candidate is a procedural emitter, sibling of the horizon
-emitter [`FUN_801D7EA0`](../subsystems/world-map.md#fun_801d7ea0---world-map-poly_ft4-batch-emitter)
-reachable from the per-frame world-map tick `FUN_80016444`. Pinning
-that is still open.
+1. **Top-down dev-menu wireframe / continent coastline.** The
+   strongest historical claim: that body 12 traces a continent
+   coastline, body 13 traces the world boundary frame, and the
+   remaining bodies are inner contours / decorative outlines visible
+   in the developer top-view. Projecting all 15 bodies onto `xz`
+   produces no recognizable map silhouette in any kingdom; matching
+   PNG renders against the dev-menu top-view captured from PCSX-Redux
+   save states found no agreement.
 
-## Consumer (presumed)
+2. **`count_a × count_b` heightfield grid.** Drake body 12 records
+   pair up at fixed X-bands and consecutive groups looked like
+   differential Z-updates over a shared topology, suggesting a
+   coarse 10 × 120 terrain mesh. Rendering body 12 as a grid quad-
+   mesh wireframe (`row + column edges`) produces the wrong silhouette;
+   pair-wise edge interpretation (`(r0,r1) (r2,r3) ...`) likewise
+   doesn't yield a coastline-like contour.
 
-Slot 4 is loaded by the standard kingdom-bundle loader. The reader
-that interprets these bytes is presumably the world-map controller
-`FUN_801E76D4` (top-view branch) and/or the developer menu renderer
-`FUN_801EAD98`, both documented under [world map subsystem](../subsystems/world-map.md).
-The exact reading call has not been pinned down in Ghidra; the
-overlap with PSX SVECTOR shape (3 int16 + pad) and the 0x080C marker
-suggest the data feeds a small VRAM/GPU-prim-pool generator rather
-than the standard TMD renderer (which would have used the type
-`0x02` TMD-pack slot 1 instead).
+3. **Heterogeneous via a single non-`xz` projection.** Rendering on
+   `xy` (front side view) surfaces clean vertical pillar/column
+   silhouettes for bodies 9 and 11 (which have 25K-27K Y span). The
+   `xy` all-bodies overlay also looks more map-like than `xz` overall.
+   But no single axis pair produces a coherent map across **all** 15
+   bodies, and the recognizable shapes in `xy` look like 3D objects
+   seen sideways - not map outlines.
+
+## Current working hypothesis
+
+Slot 4 is most likely a **runtime library of small object-local 3D
+meshes** the world-map controller / dev-menu top-view places at world
+coordinates. Plausible roles for individual bodies: collision hulls,
+instantiable decoration meshes, particle-emitter shapes, debug-overlay
+geometry, or animation rigs. This is consistent with:
+
+- bodies 9 / 11 having full 3D mesh-scale Y extents while body 12 is
+  near-flat (different kinds of objects, not 2D contour vs 2D outline)
+- the leading three bodies being byte-identical templates across all
+  three kingdoms (shared generic objects, not kingdom-specific data)
+- the corner-clustered point distribution in body 13 (kind = 4):
+  could be four corner-anchored objects, not a single ±32K boundary
+  frame
+- the in-game-object silhouettes visible in side projections - the
+  user identified body-9 features that resemble specific game props
+
+**Pinning the consumer in Ghidra is the unblock.** The reader hasn't
+appeared as a direct `LUI+ADDIU` reference to `0x8011A624` in any
+captured world-map overlay, suggesting it accesses the buffer via a
+runtime pointer rather than a hardcoded address. The next move is
+either (a) dynamic memory-watchpoint capture of which function reads
+this RAM range during top-view, or (b) static sweep of the captured
+overlays for any 8-byte stride iterator that walks a `count_a *
+count_b` array starting from the loaded buffer.
 
 ## Tooling
 
+These remain useful for future RE work even though their original
+purpose ("render the world-map wireframe") is no longer valid:
+
 | Tool | Role |
 |---|---|
-| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Engine-side standalone PNG renderer. `--style row\|col\|pairs\|grid\|points` toggles between row-major polylines, column-major (record-slot-as-strand) polylines, pair-wise edges (every two records = one segment), heightfield-grid quad-mesh wireframe, and a topology-free point cloud. `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <ram-dump>.bin` renders a previously-dumped slot-4 payload (e.g. from PCSX-Redux live RAM). |
-| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4 --wireframe-obj <out>.obj` | Per-body inventory dump + Wavefront-line OBJ export. Available for slots 0..6. |
-| `legaia_asset::world_map_overlay::parse` + `top_down_lines` / `record_points` | Rust API consumed by the [world overview web viewer](../../site/world-overview.html) (`LegaiaViewer::slot4_wireframe_lines`). |
-| `scripts/pcsx-redux/run_dump_slot4.sh` + `autorun_dump_slot4.lua` | PCSX-Redux closed-loop autorun: loads a save state, waits for the kingdom to settle, dumps the live slot-4 RAM region (32304 / 26964 / 24444 bytes) to `slot4_ram_<kingdom>.bin`, quits. Same pattern as the existing world-map probes. |
-| `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Companion: dumps the full 2 MiB main RAM (post-save-state-load + settle) to a `.bin`. Useful when the slot-4 load base is unknown for a new build / state - run, then signature-scan the dump for the 64-byte outer pack prefix to find the real base. |
-| `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare the RAM dump against the disc-decoded payload (per-body diff counts + first 32 offsets). Confirms whether disc bytes hit RAM verbatim. |
-| `scripts/decode_slot4_subbodies.py` | Per-body hex dump + header parse + grid-hypothesis analysis; OBJ export per body. |
-| `scripts/slot4_to_obj.py` | Combined OBJ writer (polys / lines / points modes). |
-| `scripts/slot4_topdown_png.py` | Top-down PGM/PNG renderer of the point cloud (X-Z plane). |
-| `scripts/pcsx-redux/verify_slot4_in_ram.py` | Byte-for-byte cross-check of disc-decoded bodies against PCSX-Redux save-state RAM (legacy; superseded by `run_dump_slot4.sh` + `diff_slot4_ram_vs_disc.py`). |
+| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Container PNG renderer. `--style row\|col\|pairs\|grid\|points` toggles between topology interpretations; `--axes xz\|xy\|zy` switches projection plane; `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <bin>` renders a previously-dumped slot-4 payload. |
+| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4` | Per-body inventory dump (counts, ranges, kind / flag_a). |
+| `legaia_asset::world_map_overlay::{parse, top_down_lines, record_points, body_axis_range}` | Rust API. |
+| `scripts/pcsx-redux/run_dump_slot4.sh` + `autorun_dump_slot4.lua` | PCSX-Redux closed-loop dumper: loads a save state, dumps the live slot-4 RAM region, quits. |
+| `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Full 2 MiB main RAM dump. Use when the load base is unknown for a new build / state - signature-scan the dump for the 64-byte outer pack prefix. |
+| `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare a RAM dump against the disc-decoded payload. |
 
-### Validation flow
+The world-overview web viewer no longer exposes slot 4 - the previous
+"show slot-4 wireframe" toggle was removed once the wireframe
+hypothesis was falsified. Re-enable from the WASM exports
+(`slot4_wireframe_lines` / `slot4_wireframe_points` /
+`slot4_wireframe_bounds`) if a future RE pass identifies the correct
+draw interpretation.
 
-To confirm whether the disc bytes we render are what the live runtime
-actually consumes:
+## Open work
 
-```bash
-# 1. dump slot 4 from a top-view save state
-LEGAIA_SSTATE=~/Tools/pcsx-redux/SCUS94254.sstate2 \
-LEGAIA_KINGDOM=drake \
-scripts/pcsx-redux/run_dump_slot4.sh
-
-# 2. byte-compare against the disc-decoded payload
-python3 scripts/pcsx-redux/diff_slot4_ram_vs_disc.py \
-    slot4_ram_drake.bin --bundle map01
-# Expected: "MATCH: slot 4 is loaded verbatim into RAM with zero diffs."
-
-# 3. visualize the RAM dump and the disc dump side-by-side
-./target/release/asset slot4-png --from-raw slot4_ram_drake.bin \
-    --style points --out /tmp/ram.png
-./target/release/asset slot4-png --input extracted/PROT/0085_map01.BIN \
-    --style points --out /tmp/disc.png
-```
-
-If the diff is non-zero, the load base in `autorun_dump_slot4.lua`
-needs re-pinning. Use the full-RAM helper:
-
-```bash
-LEGAIA_LUA=scripts/pcsx-redux/autorun_dump_full_ram.lua \
-LEGAIA_OUT=/tmp/ram_full.bin \
-scripts/pcsx-redux/run_dump_slot4.sh
-
-# then signature-scan ram_full.bin for the 64-byte outer pack prefix
-python3 -c "
-import sys
-ram = open('/tmp/ram_full.bin', 'rb').read()
-disc = open('/tmp/drake_slot4.bin', 'rb').read()
-hit = ram.find(disc[:64])
-print('payload at virt 0x{:08X}'.format(0x80000000 + hit) if hit >= 0 else 'not found')
-"
-```
-
-## Per-body Y-extent and the axis-projection question
-
-Per-axis ranges across Drake's 15 bodies (skipping zero records):
-
-| Body | X span | Y span | Z span | kind |
-|---:|---:|---:|---:|---:|
-| 0 | 16626 | 10767 | 38641 | 1 |
-| 9 | 10725 | **25856** | 21248 | 2 |
-| 10 | 13056 | 18432 | 31503 | 2 |
-| 11 | 11492 | **27648** | 24064 | 2 |
-| 12 | 16118 | 4096 | 31473 | 2 |
-| 13 | 65485 | 14336 | 64512 | 4 |
-
-Bodies 9 / 10 / 11 have Y spans of 18-27K - comparable to the X/Z scale,
-not the small elevation deltas a 2D map contour would carry. Body 12's
-Y span is only 4K (consistent with a near-flat coastline at near-zero
-elevation). When all bodies are projected onto `xz` (top-down) some of
-them produce coherent silhouettes (12) while others look like noise
-(9 / 11) - because for those bodies the flatten-to-xz step is collapsing
-genuine 3D structure into 2D mush.
-
-Rendering the same bodies on `xy` (front side view) surfaces clean
-vertical pillar-like silhouettes for bodies 9 and 11 - **3D mesh
-structure that's invisible in the top-down view**. This suggests slot 4
-is heterogeneous: at least some bodies are object-local 3D meshes
-(collision hulls? instantiable decoration meshes?) rather than 2D map
-contours. The WebGL world-overview viewer exposes the projection plane
-as a second selector (`xz` / `xy` / `zy`) so the same data can be
-inspected from each angle without committing to one interpretation.
-
-It's also possible the engine doesn't treat the middle field as world
-Y-elevation at all - some bodies make more sense as map data in the
-`xy` projection (cleaner overall continent shape) than in `xz`. The
-final word will come from Ghidra capture of the consumer.
-
-## Topology hypothesis
-
-Drake body 12 (`count_a=10`, `count_b=120`, `kind=2`) is the largest
-contour body in any kingdom and was used to probe the per-group record
-layout. Walking group 0 reveals records pair up at fixed X-bands:
-
-```text
-r0  (-22016, -1280)   r1  (-14848,     0)   <- band 0, low/high X
-r2  (-18965,  -512)   r3  (-14872, -1024)   <- band 1
-r4  (-19179,   256)   r5  (-15080,     0)   <- band 2
-r6  (-10759,  -512)   r7   (-5898,  -512)   <- band 3
-r8  (-11001,   512)   r9   (-6134,   256)   <- band 4
-```
-
-Group 0 and group 1 are byte-identical except for r8/r9's Z values -
-consecutive groups are differential updates to a shared topology. The
-records are therefore a `count_a x count_b` grid of vertices forming a
-heightfield strip, **not** a chained polyline. Three rendering
-candidates are wired into the CLI:
-
-- `--style pairs` - each group emits `count_a / 2` independent edge
-  pairs (`(r0,r1), (r2,r3), ...`); 120 z-stride groups × 5 edges per
-  group = 600 line segments;
-- `--style grid` - emits both row edges (`(k, g) -> (k + 1, g)`) and
-  column edges (`(k, g) -> (k, g + 1)`); shows the heightfield as a
-  quad-mesh wireframe;
-- `--style points` - topology-free; matches the visible structure most
-  closely and is the recommended raw-validation lens.
-
-None of `row`, `col`, `pairs`, or `grid` cleanly reproduce the dev-menu
-top-view's continent silhouette by itself, so the runtime consumer
-likely encodes more than one draw mode (probably keyed off `kind` /
-`flag_a`).
-
-## Open questions
-
-1. **`kind = 1, 2, 4` semantic.** Not yet tied to a draw-mode or
-   sub-format. `kind = 4` correlates strongly with `flag_a = 1`
-   across all three kingdoms (every `kind = 4` body has `flag_a = 1`)
-   and those bodies plot as world-boundary frames at ±32K /
-   large-perimeter rings - but the reverse doesn't hold (Karisto body
-   10 is `kind = 2` with `flag_a = 1`), so `(kind, flag_a)` together
-   select more than a simple "border-strand" toggle.
-2. **Per-record 4th `int16` column (`attr`).** Always 0 for body 4,
-   has 22 distinct values across 300 records in body 5, 214 distinct
-   values in body 12. Body 12 attr-values cluster at `±1280, ±1792,
-   1793, ±1281, ±1025` - which look like packed `(high_byte = facing,
-   low_byte = sub-id)` tags rather than indices. Depends on the
-   consumer.
-3. **Per-body kind→draw routine mapping.** Needs Ghidra capture of the
-   consumer (likely in the `world_map_top` overlay).
+1. **Pin the consumer in Ghidra.** The slot-4 reader hasn't been
+   located. Candidate sites: dynamic memory-watchpoint capture, or
+   static sweep of captured overlays for stride-8 iterators.
+2. **Identify each body.** With the consumer in hand, walking each
+   body through the actual draw call should immediately reveal what
+   each `kind / flag_a` combination means.
+3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
+   in every kingdom; the reverse doesn't hold (Karisto body 10 is
+   `kind = 2, flag_a = 1`).
+4. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
+   in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
+   `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
+   low-byte) tags rather than indices.
