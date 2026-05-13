@@ -20,7 +20,7 @@
 
 <section class="doc-section" id="confidence">
   <h2>Confidence</h2>
-  <p><strong>Inferred &mdash; container format pinned, semantic confirmed by visualisation.</strong> The outer pack + per-body header layout is exact across all 15 sub-bodies of Drake. The data is loaded verbatim into RAM (zero per-byte diffs vs disc). The records&apos; semantic (continent coastline / world boundary frame / inner zone outlines) is read off the top-down PNG render; the per-record draw call has not been traced in Ghidra yet.</p>
+  <p><strong>Inferred &mdash; container format pinned, semantic confirmed by visualisation, RAM payload byte-verified.</strong> The outer pack + per-body header layout is exact across all 15 sub-bodies of Drake (16 each for Sebucus and Karisto). The decoded payload matches live RAM byte-for-byte (zero diffs over 32304 bytes). The per-body draw routine has <em>not</em> been traced in Ghidra yet, so the on-disc &rarr; draw-mode dispatch is still open.</p>
 </section>
 
 <section class="doc-section" id="type-byte-context">
@@ -40,7 +40,7 @@
 
   <h3 id="sub-body-header">Sub-body header (8 bytes)</h3>
 <pre><code>+0x00   u8   count_a              ; records per group
-+0x01   u8   flag_a               ; usually 0; 1 in Drake body 13
++0x01   u8   flag_a               ; usually 0; 1 for kind=4 boundary frames
 +0x02   u8   count_b              ; number of groups
 +0x03   u8   flag_b               ; usually 0
 +0x04   u16  marker               ; constant 0x080C across all bodies
@@ -50,62 +50,130 @@
 <pre><code>+0x08   record[count_a * count_b] ; each record is 8 bytes
                                   ; ( i16 x, i16 y, i16 z, i16 attr )
 +...    trailer (8 bytes)         ; always 8 zero bytes in Drake</code></pre>
-  <p>Total body size is always <code>8 + count_a * count_b * 8 + 8</code>. The math fits all 15 of Drake&apos;s bodies exactly.</p>
+  <p>Total body size is always <code>8 + count_a * count_b * 8 + 8</code>. The math fits every body in all three kingdoms exactly.</p>
 </section>
 
-<section class="doc-section" id="drake-inventory">
-  <h2>Drake body inventory (reference)</h2>
+<section class="doc-section" id="per-kingdom-inventory">
+  <h2>Per-kingdom body inventory</h2>
+  <p>Drake = 15 bodies; Sebucus = 16; Karisto = 16. The <code>flag_a</code> byte is <code>0</code> for all <code>kind = 1</code> and most <code>kind = 2</code> bodies and flips to <code>1</code> for the <code>kind = 4</code> boundary-frame bodies (plus one anomalous <code>kind = 2</code> body in Karisto). The leading three bodies (<code>kind = 1</code>, <code>count_a = 10</code>) are byte-identical templates across all three kingdoms &mdash; the same generic inner-contour shape installed at the front of each slot. The kingdom-specific data lives in the trailing bodies.</p>
+
+  <h3 id="drake-inventory">Drake (<code>map01</code>, PROT 0085)</h3>
   <table>
     <thead>
-      <tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>Size</th><th>What the points look like top-down</th></tr>
+      <tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>records</th><th>Notes</th></tr>
     </thead>
     <tbody>
-      <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>1616</td><td>Inner contour, ~200 vertices</td></tr>
-      <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>1616</td><td>Sister contour to body 0</td></tr>
-      <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>2416</td><td>Inner contour, ~300 vertices</td></tr>
-      <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>496</td><td>Polyline with <code>(0,0,0,0)</code> pad records</td></tr>
-      <tr><td>4</td><td>2</td><td>20</td><td>2</td><td>336</td><td>Polyline (20 vertices stepping in X by 256 units)</td></tr>
-      <tr><td>5</td><td>10</td><td>30</td><td>2</td><td>2416</td><td>Inner contour (25 unique of 30 groups)</td></tr>
-      <tr><td>6</td><td>10</td><td>26</td><td>2</td><td>2096</td><td>Inner contour</td></tr>
-      <tr><td>7</td><td>10</td><td>30</td><td>2</td><td>2416</td><td>Inner contour (25 unique of 30 groups)</td></tr>
-      <tr><td>8</td><td>10</td><td>3</td><td>2</td><td>256</td><td>3 IDENTICAL groups (reserved / padding)</td></tr>
-      <tr><td>9</td><td>12</td><td>30</td><td>2</td><td>2896</td><td>Mid-density feature</td></tr>
-      <tr><td>10</td><td>12</td><td>30</td><td>2</td><td>2896</td><td>Mid-density feature</td></tr>
-      <tr><td>11</td><td>12</td><td>10</td><td>2</td><td>976</td><td>Small feature</td></tr>
-      <tr><td>12</td><td>10</td><td>120</td><td>2</td><td>9616</td><td><strong>Continent coastline</strong> &mdash; 120 segments &times; 10 sub-points</td></tr>
-      <tr><td>13</td><td>14</td><td>15</td><td>4</td><td>1696</td><td><strong>World-map boundary frame</strong> at &plusmn;32K (perimeter only)</td></tr>
-      <tr><td>14</td><td>2</td><td>30</td><td>2</td><td>496</td><td>Polyline</td></tr>
+      <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>Inner contour, ~200 vertices</td></tr>
+      <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>Sister contour to body 0</td></tr>
+      <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>0</td><td>300</td><td>Inner contour, ~300 vertices</td></tr>
+      <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td>Polyline; pad records between</td></tr>
+      <tr><td>4</td><td>2</td><td>20</td><td>2</td><td>0</td><td>40</td><td>Polyline (20 vertices stepping in X by 256 units)</td></tr>
+      <tr><td>5</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>Inner contour (25 unique of 30 groups)</td></tr>
+      <tr><td>6</td><td>10</td><td>26</td><td>2</td><td>0</td><td>260</td><td>Inner contour</td></tr>
+      <tr><td>7</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>Inner contour (25 unique of 30 groups)</td></tr>
+      <tr><td>8</td><td>10</td><td>3</td><td>2</td><td>0</td><td>30</td><td>3 IDENTICAL groups of 10 records (reserved / padding)</td></tr>
+      <tr><td>9</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>Mid-density feature</td></tr>
+      <tr><td>10</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>Mid-density feature</td></tr>
+      <tr><td>11</td><td>12</td><td>10</td><td>2</td><td>0</td><td>120</td><td>Small feature</td></tr>
+      <tr><td>12</td><td>10</td><td>120</td><td>2</td><td>0</td><td>1200</td><td><strong>Continent coastline</strong> &mdash; largest body in any kingdom</td></tr>
+      <tr><td>13</td><td>14</td><td>15</td><td>4</td><td>1</td><td>210</td><td><strong>World-map boundary frame</strong> at &plusmn;32K</td></tr>
+      <tr><td>14</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td>Polyline</td></tr>
     </tbody>
   </table>
-  <p>The <code>flag_a</code> byte is <code>1</code> for body 13 (the boundary frame) and <code>0</code> for every other Drake body. Whether <code>flag_a</code> selects between draw modes or just modifies the count interpretation is not pinned down.</p>
+
+  <h3 id="sebucus-inventory">Sebucus (<code>map02</code>, PROT 0244)</h3>
+  <table>
+    <thead>
+      <tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>records</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>Inner contour (matches Drake body 0)</td></tr>
+      <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>Inner contour (matches Drake body 1)</td></tr>
+      <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>0</td><td>300</td><td>Inner contour (matches Drake body 2)</td></tr>
+      <tr><td>3</td><td>2</td><td>30</td><td>2</td><td>0</td><td>60</td><td>Polyline (matches Drake body 3)</td></tr>
+      <tr><td>4</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>Inner contour</td></tr>
+      <tr><td>5</td><td>10</td><td>26</td><td>2</td><td>0</td><td>260</td><td>Inner contour</td></tr>
+      <tr><td>6</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>Inner contour</td></tr>
+      <tr><td>7</td><td>10</td><td>3</td><td>2</td><td>0</td><td>30</td><td>3 IDENTICAL groups (reserved/padding)</td></tr>
+      <tr><td>8</td><td>11</td><td>30</td><td>4</td><td>1</td><td>330</td><td>Boundary-style frame</td></tr>
+      <tr><td>9</td><td>11</td><td>15</td><td>4</td><td>1</td><td>165</td><td>Boundary-style frame</td></tr>
+      <tr><td>10</td><td>1</td><td>30</td><td>4</td><td>1</td><td>30</td><td>Single-strand boundary marker</td></tr>
+      <tr><td>11</td><td>1</td><td>15</td><td>4</td><td>1</td><td>15</td><td>Single-strand boundary marker</td></tr>
+      <tr><td>12</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>Mid-density feature</td></tr>
+      <tr><td>13</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>Mid-density feature</td></tr>
+      <tr><td>14</td><td>12</td><td>10</td><td>2</td><td>0</td><td>120</td><td>Small feature</td></tr>
+      <tr><td>15</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>Inner contour</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="karisto-inventory">Karisto (<code>map03</code>, PROT 0391)</h3>
+  <table>
+    <thead>
+      <tr><th>Body</th><th>count_a</th><th>count_b</th><th>kind</th><th>flag_a</th><th>records</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>0</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>Inner contour</td></tr>
+      <tr><td>1</td><td>10</td><td>20</td><td>1</td><td>0</td><td>200</td><td>Inner contour</td></tr>
+      <tr><td>2</td><td>10</td><td>30</td><td>1</td><td>0</td><td>300</td><td>Inner contour</td></tr>
+      <tr><td>3</td><td>1</td><td>15</td><td>2</td><td>0</td><td>15</td><td>Single-strand contour</td></tr>
+      <tr><td>4</td><td>14</td><td>15</td><td>4</td><td>1</td><td>210</td><td>Boundary frame (mirrors Drake body 13)</td></tr>
+      <tr><td>5</td><td>14</td><td>15</td><td>4</td><td>1</td><td>210</td><td>Boundary frame</td></tr>
+      <tr><td>6</td><td>11</td><td>30</td><td>4</td><td>1</td><td>330</td><td>Boundary-style</td></tr>
+      <tr><td>7</td><td>11</td><td>15</td><td>4</td><td>1</td><td>165</td><td>Boundary-style</td></tr>
+      <tr><td>8</td><td>1</td><td>15</td><td>4</td><td>1</td><td>15</td><td>Single-strand boundary marker</td></tr>
+      <tr><td>9</td><td>1</td><td>30</td><td>4</td><td>1</td><td>30</td><td>Single-strand boundary marker</td></tr>
+      <tr><td>10</td><td>10</td><td>5</td><td>2</td><td>1</td><td>50</td><td>Small feature</td></tr>
+      <tr><td>11</td><td>10</td><td>15</td><td>4</td><td>1</td><td>150</td><td>Boundary-style</td></tr>
+      <tr><td>12</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>Mid-density feature</td></tr>
+      <tr><td>13</td><td>12</td><td>30</td><td>2</td><td>0</td><td>360</td><td>Mid-density feature</td></tr>
+      <tr><td>14</td><td>12</td><td>10</td><td>2</td><td>0</td><td>120</td><td>Small feature</td></tr>
+      <tr><td>15</td><td>10</td><td>30</td><td>2</td><td>0</td><td>300</td><td>Inner contour</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="ram-layout">
   <h2>RAM layout</h2>
-  <p>Slot 4 is loaded <strong>verbatim into RAM</strong> with zero per-byte diffs vs disc. Drake&apos;s load address is <code>0x8011A664</code>; bodies sit contiguously through <code>0x80122454</code> (32240 bytes total &mdash; the 64-byte header is the only RAM/disc-offset slip). No runtime fixup is applied.</p>
-  <p>Confirmed by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/verify_slot4_in_ram.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/verify_slot4_in_ram.py</code></a> against a real PCSX-Redux save state.</p>
+  <p>Slot 4 is loaded <strong>verbatim into RAM</strong> with zero per-byte diffs vs disc. Drake&apos;s payload starts at <code>0x8011A624</code> (the outer pack header) and ends at <code>0x80122454</code> exclusive &mdash; exactly 32304 bytes, matching the disc-decoded length. Body 0&apos;s records start at <code>0x8011A664</code> (<code>0x40</code> past the base, after the 4-byte count and 15 &times; 4-byte offsets). No runtime fixup is applied.</p>
+  <p>Confirmed by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/diff_slot4_ram_vs_disc.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/diff_slot4_ram_vs_disc.py</code></a> against a PCSX-Redux save state: every byte of all 15 bodies matches the disc-side LZS-decoded payload. The load base was pinned by signature-searching the full 2 MiB main RAM for the 64-byte outer pack header (count = 15 followed by <code>byte_offsets[0..15]</code>) &mdash; see <code>scripts/pcsx-redux/autorun_dump_full_ram.lua</code> for the procedure if the base needs re-pinning on a different build / save state.</p>
 </section>
 
 <section class="doc-section" id="not-bulk-terrain">
   <h2>Why this isn&apos;t the bulk continent terrain</h2>
-  <p>The top-down rendering of all bodies&apos; points (see <code>scripts/slot4_topdown_png.py</code>) reveals body 12 traces a continent coastline and body 13 traces the world boundary &mdash; both are 1D contours, not 2D terrain meshes. Total ~4000 vertices across all 15 sub-bodies is far below the ~17000+ vertex positions the textured continent in the GPU prim pool would need (Drake&apos;s pool has 4994 prims, mostly POLY_FT4 quads with 4 verts each).</p>
+  <p>The top-down rendering of all bodies&apos; points reveals body 12 traces a continent coastline and body 13 traces the world boundary &mdash; both are 1D contours, not 2D terrain meshes. Total ~4000 vertices across all 15 sub-bodies is far below the ~17000+ vertex positions the textured continent in the GPU prim pool would need (Drake&apos;s pool has 4994 prims, mostly POLY_FT4 quads with 4 verts each).</p>
   <p>The bulk continent geometry source is therefore separate. The most likely candidate is a procedural emitter, sibling of the horizon emitter <a href="../subsystems/world-map.html#fun_801d7ea0---world-map-poly_ft4-batch-emitter"><code>FUN_801D7EA0</code></a> reachable from the per-frame world-map tick <code>FUN_80016444</code>. Pinning that is still open.</p>
 </section>
 
 <section class="doc-section" id="consumer">
   <h2>Consumer (presumed)</h2>
-  <p>Slot 4 is loaded by the standard kingdom-bundle loader. The reader that interprets these bytes is presumably the world-map controller <code>FUN_801E76D4</code> (top-view branch) and/or the developer menu renderer <code>FUN_801EAD98</code>, both documented under <a href="../subsystems/world-map.html">world map subsystem</a>. The exact reading call has not been pinned down in Ghidra; the overlap with PSX SVECTOR shape (3 int16 + pad) and the <code>0x080C</code> marker suggest the data feeds a small VRAM/GPU-prim-pool generator rather than the standard TMD renderer (which would have used the type <code>0x02</code> TMD-pack slot 1 instead).</p>
+  <p>Slot 4 is loaded by the standard kingdom-bundle loader. The reader that interprets these bytes is presumably the world-map controller <code>FUN_801E76D4</code> (top-view branch) and/or the developer menu renderer <code>FUN_801EAD98</code>, both documented under <a href="../subsystems/world-map.html">world map subsystem</a>. The exact reading call has not been pinned down in Ghidra; the data does not appear as a direct LUI+ADDIU reference to <code>0x8011A624</code> in any captured world-map overlay, suggesting the consumer accesses the buffer via a runtime pointer rather than a hardcoded address.</p>
+</section>
+
+<section class="doc-section" id="topology">
+  <h2>Topology hypothesis</h2>
+  <p>Inspecting Drake body 12 group 0 records by hand reveals records pair up at fixed X-bands &mdash; <code>(r0, r1)</code>, <code>(r2, r3)</code>, ... are 5 <code>(lo, hi)</code> X-pairs per group, with consecutive groups acting as differential Z-updates over a shared topology. The body is therefore a <code>count_a &times; count_b</code> grid of vertices forming a heightfield strip, <strong>not</strong> a chained polyline. Three rendering candidates are wired into the CLI and the web viewer:</p>
+  <ul>
+    <li><code>pairs</code> &mdash; each group emits <code>count_a / 2</code> independent edge pairs (<code>(r0,r1), (r2,r3), ...</code>); 120 z-stride groups &times; 5 edges per group = 600 line segments;</li>
+    <li><code>grid</code> &mdash; emits both row edges (<code>(k, g) &rarr; (k + 1, g)</code>) and column edges (<code>(k, g) &rarr; (k, g + 1)</code>); shows the heightfield as a quad-mesh wireframe;</li>
+    <li><code>points</code> &mdash; topology-free; matches the visible structure most closely and is the recommended raw-validation lens.</li>
+  </ul>
+  <p>None of <code>row</code>, <code>col</code>, <code>pairs</code>, or <code>grid</code> cleanly reproduces the dev-menu top-view&apos;s continent silhouette by itself, so the runtime consumer likely encodes more than one draw mode (probably keyed off <code>kind</code> / <code>flag_a</code>). The <a href="../../world-overview.html#viewer">world overview viewer</a> exposes all five rendering styles via the &quot;show slot-4 wireframe&quot; toggle.</p>
 </section>
 
 <section class="doc-section" id="tooling">
   <h2>Tooling</h2>
   <table>
-    <thead><tr><th>Script</th><th>Role</th></tr></thead>
+    <thead><tr><th>Tool</th><th>Role</th></tr></thead>
     <tbody>
+      <tr><td><code>cargo run -p legaia-asset --bin asset -- slot4-png --input &lt;PROT&gt;.BIN --out &lt;png&gt;</code></td><td>Engine-side standalone PNG renderer. <code>--style row|col|pairs|grid|points</code> toggles between row-major polylines, column-major (record-slot-as-strand) polylines, pair-wise edges (every two records = one segment), heightfield-grid quad-mesh wireframe, and a topology-free point cloud. <code>--only-body N</code> / <code>--frame-body N</code> isolate a single body. <code>--from-raw &lt;ram-dump&gt;.bin</code> renders a previously-dumped slot-4 payload.</td></tr>
+      <tr><td><code>cargo run -p legaia-asset --bin asset -- kingdom-slot &lt;PROT&gt;.BIN --slot 4 --wireframe-obj &lt;out&gt;.obj</code></td><td>Per-body inventory dump + Wavefront-line OBJ export. Available for slots 0..6.</td></tr>
+      <tr><td><code>legaia_asset::world_map_overlay::parse</code> + <code>top_down_lines</code> / <code>record_points</code></td><td>Rust API consumed by the world-overview web viewer (<code>LegaiaViewer::slot4_wireframe_lines</code> / <code>slot4_wireframe_points</code>).</td></tr>
+      <tr><td><code>scripts/pcsx-redux/run_dump_slot4.sh</code> + <code>autorun_dump_slot4.lua</code></td><td>PCSX-Redux closed-loop autorun: loads a save state, waits for the kingdom to settle, dumps the live slot-4 RAM region to <code>slot4_ram_&lt;kingdom&gt;.bin</code>, quits.</td></tr>
+      <tr><td><code>scripts/pcsx-redux/autorun_dump_full_ram.lua</code></td><td>Companion: dumps the full 2 MiB main RAM. Useful when the slot-4 load base is unknown for a new build / state &mdash; signature-scan the dump for the 64-byte outer pack prefix.</td></tr>
+      <tr><td><code>scripts/pcsx-redux/diff_slot4_ram_vs_disc.py</code></td><td>Byte-compare the RAM dump against the disc-decoded payload (per-body diff counts + first 32 offsets).</td></tr>
       <tr><td><code>scripts/decode_slot4_subbodies.py</code></td><td>Per-body hex dump + header parse + grid-hypothesis analysis; OBJ export per body.</td></tr>
       <tr><td><code>scripts/slot4_to_obj.py</code></td><td>Combined OBJ writer (polys / lines / points modes).</td></tr>
       <tr><td><code>scripts/slot4_topdown_png.py</code></td><td>Top-down PGM/PNG renderer of the point cloud (X-Z plane).</td></tr>
-      <tr><td><code>scripts/pcsx-redux/verify_slot4_in_ram.py</code></td><td>Byte-for-byte cross-check of disc-decoded bodies against PCSX-Redux save-state RAM.</td></tr>
     </tbody>
   </table>
 </section>
@@ -113,10 +181,9 @@
 <section class="doc-section" id="open">
   <h2>Open questions</h2>
   <ol>
-    <li><strong><code>kind = 1, 2, 4</code> semantic.</strong> Not yet tied to a draw-mode or sub-format. Body 13 (<code>kind = 4</code>) is the only <code>kind != 2</code> body that spans the full &plusmn;32K bounds; could be a &quot;boundary&quot; tag.</li>
-    <li><strong>Per-record 4th <code>int16</code> column (<code>attr</code>).</strong> Always 0 for body 4, has 22 distinct values across 300 records in body 5, 214 distinct values in body 12. Probably packs <code>(tpage, clut)</code> or a zone-id; depends on the consumer.</li>
+    <li><strong><code>kind = 1, 2, 4</code> semantic.</strong> Not yet tied to a draw-mode or sub-format. <code>kind = 4</code> correlates strongly with <code>flag_a = 1</code> across all three kingdoms (every <code>kind = 4</code> body has <code>flag_a = 1</code>) and those bodies plot as world-boundary frames at &plusmn;32K / large-perimeter rings &mdash; but the reverse doesn&apos;t hold (Karisto body 10 is <code>kind = 2</code> with <code>flag_a = 1</code>), so <code>(kind, flag_a)</code> together select more than a simple &quot;border-strand&quot; toggle.</li>
+    <li><strong>Per-record 4th <code>int16</code> column (<code>attr</code>).</strong> Always 0 for body 4; 22 distinct values across 300 records in body 5; 214 distinct in body 12. Body 12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; which look like packed (high-byte facing, low-byte sub-id) tags rather than indices.</li>
     <li><strong>Per-body <code>kind</code> &rarr; draw routine mapping.</strong> Needs Ghidra capture of the consumer (likely in the <code>world_map_top</code> overlay).</li>
-    <li><strong>Whether Sebucus / Karisto slot 4 share the same per-body <code>kind</code> counts</strong> or have kingdom-specific layouts. <em>(Currently only Drake has been decoded against a live save state.)</em></li>
   </ol>
 </section>
 
