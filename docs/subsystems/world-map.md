@@ -126,6 +126,106 @@ ori  $tmp, $tmp, 0x400      ; raise "encounter armed" flag in actor[+0x10]
 sw   $tmp,         0x10(<actor>)
 ```
 
+## Render pipeline
+
+The per-frame world-map render dispatches from the SCUS-resident game loop
+into the overlay-loaded code window. Two chains converge: a per-frame
+dispatch tick that reads the prim emitter's gate flag, and a one-shot
+arm path that sets the gate plus a small param block.
+
+### Per-frame dispatch (SCUS-resident)
+
+Two SCUS-resident handlers from the 28-mode dispatch table at
+`0x8007078C` ([game-mode state machine](../reference/functions.md#game-mode-state-machine))
+reach the world-map render tick:
+
+| Address | Mode-table role | Tick call |
+|---|---|---|
+| `FUN_80025EEC` | Default per-mode handler (used by 13 of 28 modes - not world-map-specific). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
+| `FUN_80025F2C` | Mode 13 (MAPDSIP MODE) - field/world-map display per-frame handler. | `FUN_8001698C` → `func_0x801CE850` (overlay entry) → `FUN_80016444(0)`. |
+
+The `a0` arg controls whether `FUN_80016444` skips its early
+`FUN_8005FB84` block (Mode 13 skips it; the default handler runs
+it). Both reach the world-map render branch deeper in the function,
+so the terrain emitter can fire from any of the 14 modes that route
+through `FUN_80016444` whenever the submode register holds `2`.
+
+### `FUN_80016444` - SCUS world-map render tick (1352 bytes)
+
+Entry: `(submode_flag)`. Iterates the world-map render passes for one
+frame. The pipeline includes a gated direct call into the overlay-
+resident POLY_FT4 emitter:
+
+```mips
+80016750  lui   v1, 0x8008
+80016754  lw    v1, -0x43c4(v1)        ; v1 = _DAT_8007BC3C (submode register)
+80016758  li    v0, 0x2
+8001675c  bne   v1, v0, 0x8001676c     ; skip unless submode == 2
+80016764  jal   0x801d7ea0             ; -> overlay-resident emitter
+```
+
+Same `0x8007BC3C` register has six SCUS writers (`FUN_80016230` -
+the two-write set/clear path - plus `FUN_80025980`, `FUN_80025DA0`,
+`FUN_8001D424`); the writer that stores `2` is the entry point for
+the world-map render branch.
+
+### `FUN_801D7EA0` - world-map POLY_FT4 batch emitter (832 bytes)
+
+Entry: `()`. One-shot emitter gated by `_DAT_801F351C`:
+
+```c
+if (_DAT_801F351C != 0) {
+    _DAT_801F351C = 0;                   // self-clear gate
+    iVar11 = 4;
+    local_30 = 0x2C808080;                // POLY_FT4 GP0 cmd + neutral grey
+    uVar6 = _DAT_801F3518
+          + DAT_1F800393 * _DAT_801F3524; // angle += per-frame-tick * step
+    _DAT_801F3518 = uVar6;
+    local_3c = _DAT_801F3520;
+    local_34 = _DAT_801F3520 / 5;
+    local_38 = _DAT_801F3520 - local_34;
+    do {
+        iVar10 = cos_table[(uVar6 & 0xFFF)];   // 0x8007B81C cos LUT
+        // emit 2x POLY_FT4 (chain tag 0x9000000) + 1 small prim
+        // (chain tag 0x3000000); vertex coords are cos-rotation-
+        // projected with local_3c/local_38 as scale moduli.
+        ...
+        uVar6 += 0x10;
+        iVar11++;
+    } while (iVar11 < 0xE4);              // 224 iterations
+}
+```
+
+`_DAT_8007B81C` is the cos lookup table (`docs/reference/memory-map.md`).
+The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter
+across 224 iters). Vertex coordinates project via the cos table, so
+the rendered output rotates with the camera angle - consistent with
+a horizon / sky / animated-background plane, not a fixed continent
+mesh. The bulk-continent POLY_FT4 chain (`~5000 prims` per the
+prim-pool decoder) likely involves additional emitters that are
+still to be identified.
+
+The function is called by direct `jal` from SCUS - it does not need
+function-pointer dispatch. Ghidra's reference manager misses the
+cross-program call when sweeping the overlay alone; sweep SCUS to
+surface the caller.
+
+### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
+
+The one-shot gate `_DAT_801F351C` is armed by a 40-byte trigger
+function called from a 1332-byte parameter-prep wrapper:
+
+| Address | Role |
+|---|---|
+| `FUN_801D1344` | World-map gate-arm wrapper. 1332 bytes; function-pointer-only entry (Ghidra `incoming=0`). Reads three globals at `_DAT_8007BCD0/_D4/_D8` and forwards them to `FUN_801D8258` as the scale / step / OT-layer params at PC `0x801D1470: jal 0x801D8258`. **Same RAM address holds a different function when the dialog overlay is paged in** - that variant is the actor frame handler (see [`reference/functions.md`](../reference/functions.md#dialog-overlay-actor-frame-helpers)). |
+| `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
+| `FUN_801C2B2C` | Code-identical relocation copy of `FUN_801D1344` in the 0897 field overlay. Same body, different load address; calls `jal 0x801D8258` at PC `0x801C2C58`. Active during field-mode entry transitions. |
+
+The gate flag `_DAT_801F351C` is in the persistent `0x801F0000+` region,
+so it survives overlay swaps. The flag is shared - both the world-map
+overlay's `FUN_801D7EA0` and the 0897 field overlay's
+`FUN_801C9688` read + clear it.
+
 ## Globals used
 
 | Address | Role |
@@ -139,3 +239,10 @@ sw   $tmp,         0x10(<actor>)
 | `_DAT_8007B868` | Door/portal open flag: `0` = open (MAP_CHANGE/CARD_OPTION visible), `1` = CLOSED. |
 | `_DAT_8007B6B8` | Game-mode discriminator (value `0x20` = alternate sprite path). |
 | `_DAT_80083808` | World-map entity activation gate. |
+| `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
+| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and the 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
+| `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the cos LUT at `0x8007B81C`. |
+| `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
+| `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
+| `_DAT_801F3528` | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |
+| `_DAT_8007BCD0..D8` | Three contiguous u32 globals that `FUN_801D1344` reads and forwards as the gate-setter's scale / step / OT-layer params. |

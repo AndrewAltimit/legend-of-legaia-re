@@ -132,6 +132,7 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 |---|---|
 | `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. |
 | `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has `>=8` instructions ending in `jr $ra` before committing the function. |
+| `dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain (`FUN_801D7EA0` / `FUN_801D8258` / `FUN_801D1344` / `FUN_80016444` + SCUS callers and the 0897 relocation copy). Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
 
 **LUI+ADDIU and address-resolution helpers**
 
@@ -139,6 +140,8 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 |---|---|
 | `find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. |
 | `find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables. |
+| `find_data_word.py` | Generic u32-LE-literal scanner across every initialized memory block, with surrounding-dword context. Useful when you suspect a function pointer is stuffed in a dispatch table somewhere; reports the containing function (if any) plus 8 dwords of surrounding data so the table structure is visible. |
+| `find_terrain_emitter_caller.py` | Combined ref-manager + LUI+ADDIU + ori + `jal` / `j` direct-target sweep against a configurable target-address set. Reports every overlay where each target is loaded as an immediate, stored / loaded via `base+offset`, or called directly. Useful pattern for any "who calls function X across the overlay set?" question: edit `TARGET_ADDRS` and `TARGETS_HEX`, run against each `-process <overlay>` in turn. The cross-program `jal` sweep is the unlock - Ghidra's ref manager only sees refs internal to one program. |
 | `find_string_xrefs.py` | Resolve dev-path string literals (`h:\\prot\\...`) to RAM addresses and dump every code site that references them. |
 
 **Caller / xref helpers**

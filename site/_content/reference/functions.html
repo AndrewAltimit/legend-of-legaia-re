@@ -106,6 +106,20 @@
     </div>
 
     <div class="fnref-block">
+      <h3>World map</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_801E76D4</code> - world-map controller (9320 B); top-view debug toggle + camera scroll/azimuth/zoom</li>
+        <li><code>FUN_801EAD98</code> - world-map developer menu renderer (7280 B); 24-entry scrollable list</li>
+        <li><code>FUN_801DA51C</code> - per-entity tick (260 B); 5-state SM on <code>entity[+0x8A]</code></li>
+        <li><code>FUN_801CFC40</code> - top-view sprite batcher (524 B, top-view only)</li>
+        <li><code>FUN_80016444</code> (SCUS, 1352 B) - per-frame render tick reached from <code>FUN_80025EEC</code> (default per-mode handler) or <code>FUN_80025F2C</code> (Mode 13 MAPDSIP); <code>jal 0x801D7EA0</code> gated by <code>_DAT_8007BC3C == 2</code></li>
+        <li><code>FUN_801D7EA0</code> - 832-byte POLY_FT4 batch emitter; one-shot gated by <code>_DAT_801F351C</code>; 224-iter cos-rotation loop</li>
+        <li><code>FUN_801D8258</code> - 40-byte gate setter; <code>_DAT_801F351C = 1</code> + scale/step/OT-layer params</li>
+        <li><code>FUN_801D1344</code> (world_map overlay) + <code>FUN_801C2B2C</code> (0897 field overlay) - 1332-byte gate-arm wrapper (overlay relocation pair). Distinct from the dialog overlay's <code>FUN_801D1344</code> (different code at the same RAM address).</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
       <h3>BIOS + libapi</h3>
       <ul class="fnref-list">
         <li><code>0x80056678</code> - <code>EnterCriticalSection</code></li>

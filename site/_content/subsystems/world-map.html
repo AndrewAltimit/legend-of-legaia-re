@@ -65,6 +65,68 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
   <p>Called by <code>FUN_801ECA08</code> when the debug panel is active (<code>ctx[+0x54]</code> mod-6 dispatch, cases 1 or 3).</p>
 </section>
 
+<section class="doc-section" id="render-pipeline">
+  <h2>Render pipeline</h2>
+  <p>The per-frame world-map render dispatches from the SCUS-resident game loop into the overlay-loaded code window. Two chains converge: a per-frame dispatch tick that reads the prim emitter's gate flag, and a one-shot arm path that sets the gate plus a small param block.</p>
+
+  <h3>Per-frame dispatch (SCUS-resident)</h3>
+  <p>Two SCUS-resident handlers from the 28-mode dispatch table at <code>0x8007078C</code> reach the world-map render tick:</p>
+  <table>
+    <thead><tr><th>Address</th><th>Mode-table role</th><th>Tick call</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80025EEC</code></td><td>Default per-mode handler (used by 13 of 28 modes &mdash; not world-map-specific).</td><td><code>FUN_8001698C</code> &rarr; <code>FUN_80016444(1)</code> &rarr; <code>FUN_80016B6C</code>.</td></tr>
+      <tr><td><code>FUN_80025F2C</code></td><td>Mode 13 (MAPDSIP MODE) &mdash; field/world-map display per-frame handler.</td><td><code>FUN_8001698C</code> &rarr; <code>func_0x801CE850</code> (overlay entry) &rarr; <code>FUN_80016444(0)</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>The <code>a0</code> arg controls whether <code>FUN_80016444</code> skips its early <code>FUN_8005FB84</code> block (Mode 13 skips it; the default handler runs it). Both reach the world-map render branch deeper in the function, so the terrain emitter can fire from any of the 14 modes that route through <code>FUN_80016444</code> whenever the submode register holds <code>2</code>.</p>
+
+  <h3><code>FUN_80016444</code> &mdash; SCUS world-map render tick (1352 bytes)</h3>
+  <p>Entry: <code>(submode_flag)</code>. Iterates the world-map render passes for one frame. The pipeline includes a gated direct call into the overlay-resident POLY_FT4 emitter:</p>
+<pre><code>80016750  lui   v1, 0x8008
+80016754  lw    v1, -0x43c4(v1)        ; v1 = _DAT_8007BC3C (submode register)
+80016758  li    v0, 0x2
+8001675c  bne   v1, v0, 0x8001676c     ; skip unless submode == 2
+80016764  jal   0x801d7ea0             ; -&gt; overlay-resident emitter</code></pre>
+  <p>Same <code>0x8007BC3C</code> register has six SCUS writers (<code>FUN_80016230</code> &mdash; the two-write set/clear path &mdash; plus <code>FUN_80025980</code>, <code>FUN_80025DA0</code>, <code>FUN_8001D424</code>); the writer that stores <code>2</code> is the entry point for the world-map render branch.</p>
+
+  <h3><code>FUN_801D7EA0</code> &mdash; world-map POLY_FT4 batch emitter (832 bytes)</h3>
+  <p>Entry: <code>()</code>. One-shot emitter gated by <code>_DAT_801F351C</code>:</p>
+<pre><code>if (_DAT_801F351C != 0) {
+    _DAT_801F351C = 0;                   // self-clear gate
+    iVar11 = 4;
+    local_30 = 0x2C808080;                // POLY_FT4 GP0 cmd + neutral grey
+    uVar6 = _DAT_801F3518
+          + DAT_1F800393 * _DAT_801F3524; // angle += per-frame-tick * step
+    _DAT_801F3518 = uVar6;
+    local_3c = _DAT_801F3520;
+    local_34 = _DAT_801F3520 / 5;
+    local_38 = _DAT_801F3520 - local_34;
+    do {
+        iVar10 = cos_table[(uVar6 &amp; 0xFFF)];   // 0x8007B81C cos LUT
+        // emit 2x POLY_FT4 (chain tag 0x9000000) + 1 small prim
+        // (chain tag 0x3000000); vertex coords are cos-rotation-
+        // projected with local_3c/local_38 as scale moduli.
+        ...
+        uVar6 += 0x10;
+        iVar11++;
+    } while (iVar11 &lt; 0xE4);              // 224 iterations
+}</code></pre>
+  <p><code>_DAT_8007B81C</code> is the cos lookup table (see the <a href="../reference/memory-map.html">memory map</a>). The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter across 224 iters). Vertex coordinates project via the cos table, so the rendered output rotates with the camera angle &mdash; consistent with a horizon / sky / animated-background plane, not a fixed continent mesh. The bulk-continent POLY_FT4 chain (~5000 prims per the prim-pool decoder) likely involves additional emitters that are still to be identified.</p>
+  <p>The function is called by direct <code>jal</code> from SCUS &mdash; it does not need function-pointer dispatch. Ghidra's reference manager misses the cross-program call when sweeping the overlay alone; sweep SCUS to surface the caller.</p>
+
+  <h3>Gate-arm chain &mdash; <code>FUN_801D1344</code> &rarr; <code>FUN_801D8258</code></h3>
+  <p>The one-shot gate <code>_DAT_801F351C</code> is armed by a 40-byte trigger function called from a 1332-byte parameter-prep wrapper:</p>
+  <table>
+    <thead><tr><th>Address</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_801D1344</code></td><td>World-map gate-arm wrapper. 1332 bytes; function-pointer-only entry (Ghidra <code>incoming=0</code>). Reads three globals at <code>_DAT_8007BCD0/_D4/_D8</code> and forwards them to <code>FUN_801D8258</code> as the scale / step / OT-layer params at PC <code>0x801D1470: jal 0x801D8258</code>. <strong>Same RAM address holds a different function when the dialog overlay is paged in</strong> &mdash; that variant is the actor frame handler (see the <a href="../reference/functions.html">functions reference</a>).</td></tr>
+      <tr><td><code>FUN_801D8258</code></td><td>40-byte gate setter. Writes <code>_DAT_801F351C = 1</code>, then <code>_DAT_801F3520 = param_2</code>, <code>_DAT_801F3524 = param_3</code>, <code>_DAT_801F3528 = param_4</code> &mdash; the inputs the emitter consumes on its next run.</td></tr>
+      <tr><td><code>FUN_801C2B2C</code></td><td>Code-identical relocation copy of <code>FUN_801D1344</code> in the 0897 field overlay. Same body, different load address; calls <code>jal 0x801D8258</code> at PC <code>0x801C2C58</code>. Active during field-mode entry transitions.</td></tr>
+    </tbody>
+  </table>
+  <p>The gate flag <code>_DAT_801F351C</code> is in the persistent <code>0x801F0000+</code> region, so it survives overlay swaps. The flag is shared &mdash; both the world-map overlay's <code>FUN_801D7EA0</code> and the 0897 field overlay's <code>FUN_801C9688</code> read + clear it.</p>
+</section>
+
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
   <p>Two modules in the clean-room port cover this subsystem:</p>
