@@ -88,6 +88,30 @@ export class LegaiaViewer {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Number of TMDs in the currently-loaded continent pack. 0 when no
+     * continent pack was found for this kingdom.
+     */
+    continent_pack_count(): number;
+    /**
+     * Select the active continent pack slot. Parallel to `pack_mesh` but
+     * operates on the continent pack.
+     */
+    continent_pack_mesh(slot: number): number;
+    continent_pack_mesh_bounds(): Float32Array;
+    continent_pack_mesh_cba_tsb(): Uint16Array;
+    continent_pack_mesh_indices(): Uint32Array;
+    continent_pack_mesh_positions(): Float32Array;
+    continent_pack_mesh_uvs(): Uint8Array;
+    /**
+     * VRAM bytes (1 MB) built from the continent pack's slot 0. Distinct from
+     * the landmark VRAM since the two packs ship independent TIM_LISTs.
+     */
+    continent_pack_vram_bytes(): Uint8Array;
+    /**
+     * PROT index the continent pack was loaded from (0 when none).
+     */
+    continent_prot_index(): number;
+    /**
      * JSON-encoded summary of the current entry - class label, byte size,
      * MES record count (if any), SEQ presence (if any), VAB presence
      * (if any). The JS side parses this and shows it in the inspector
@@ -202,33 +226,6 @@ export class LegaiaViewer {
      */
     save_state_framebuffer(save_state_bytes: Uint8Array): Uint8Array;
     /**
-     * Decode the live PSX GPU primitive pool out of a mednafen save state
-     * and return per-vertex attribute arrays for replay in WebGL2 against
-     * the save state's VRAM.
-     *
-     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
-     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
-     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
-     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
-     * triangles in screen-space.
-     *
-     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
-     *
-     * ```text
-     * [u16 vram_width = 1024]
-     * [u16 vram_height = 512]
-     * [u32 vram_byte_len = 1048576]
-     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
-     * [u16 screen_w]
-     * [u16 screen_h]
-     * [u32 vertex_count]
-     * [Vertex; vertex_count]   ; struct, 14 bytes each:
-     *     i16 x, i16 y
-     *     u8  u, u8 v
-     *     u16 cba, u16 tsb
-     *     u8  r, u8 g, u8 b, u8 flags
-     * ```
-     *
      * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
      * bit 1 = raw texture (skip color modulation). JS computes the model-view
      * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
@@ -264,6 +261,47 @@ export class LegaiaViewer {
      * JSON status string: PROT index, class name, dims, current slot.
      */
     status(): string;
+    /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * JSON dump of the world-map quick-travel menu parsed out of
+     * `SCUS_942.54` at disc-load time. Returns `null` if no disc was
+     * loaded as a Mode2/2352 image (raw PROT.DAT paths skip SCUS).
+     *
+     * Shape:
+     * ```json
+     * { "names": [..16 strings..],
+     *   "placements": [{ "index": u32, "name_idx": u8,
+     *                    "discovery_flag": u8, "scene_id": u16,
+     *                    "menu_x": u8, "menu_y": u8 }, ...] }
+     * ```
+     */
+    worldmap_menu_json(): string;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -285,6 +323,15 @@ export interface InitOutput {
     readonly legaiaruntime_open_menu: (a: number) => void;
     readonly legaiaruntime_scene_mode: (a: number) => [number, number];
     readonly legaiaruntime_tick: (a: number) => bigint;
+    readonly legaiaviewer_continent_pack_count: (a: number) => number;
+    readonly legaiaviewer_continent_pack_mesh: (a: number, b: number) => [number, number, number];
+    readonly legaiaviewer_continent_pack_mesh_bounds: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_cba_tsb: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_indices: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_positions: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaviewer_continent_pack_vram_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_continent_prot_index: (a: number) => number;
     readonly legaiaviewer_current_entry_info_json: (a: number) => [number, number];
     readonly legaiaviewer_current_has_tmd: (a: number) => number;
     readonly legaiaviewer_current_index: (a: number) => number;
@@ -316,6 +363,7 @@ export interface InitOutput {
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_status: (a: number) => [number, number];
+    readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

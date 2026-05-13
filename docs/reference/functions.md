@@ -129,7 +129,8 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `8003774C` | **Per-actor motion / path-stepping VM** (a third dispatcher distinct from the actor VM at `FUN_801D6628` and the field VM at `FUN_801DE840`). 577 instructions; switch on `cmd & 0x7F`: cases `0x37/0x41` (linear delta on `actor[+0x14]/[+0x18]` from tables `_DAT_80073F14/0x80073F04`), `0x38` (bearing ramp), `0x47` (XZ approach with quadrant select), `0x4C` (line-of-sight to target actor - resolves `0xF8/0xFB` system channels via `_DAT_8007C34C/8007C354/8007C364` actor lists, same idiom as `FUN_8003C83C`). Reads `_DAT_1F800393` (frame dt). Drives `actor[+0x05/+0x06/+0x15/+0x26]` (X / Z / step-counter / facing). Likely the per-actor pursue / patrol / face-target subroutine called by the actor or move VM. |
 | `80021B04` | Actor-spawn helper. Builds per-actor OBJECT pointer table at `actor[0x44]+4`. Calls `FUN_80023070` once at spawn to run the initialisation opcodes in the move buffer. |
 | `80021DF4` | Per-frame actor tick. Updates `actor[+0x54]` (wait timer), `+0x22` (rotation), state-2/5/6 animation slots; then calls `FUN_80023070` to step the move VM. |
-| `801D362C` | Move-VM overlay extension (town overlay). 61 sub-opcodes (`0x00..0x3C`); JT at `0x801CE868`. Reached only via move-VM opcode `0x2F`. Sub-handlers include `0x801D31B0`, `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`. |
+| `801D362C` | Move-VM overlay extension dispatcher. 61 sub-opcodes (`0x00..0x3C`); JT at `0x801CE868`. Reached only via move-VM opcode `0x2F`. Resident in multiple overlays at the same RAM address (the `world_map` / `world_map_top` / `world_map_walk` / `0897` field / `dialog_mc4` / `dialog_typing` / `cutscene_dialogue` / `cutscene_mapview` variants all carry a copy); each overlay supplies its own JT contents. Sub-handlers shared across overlays include `0x801D31B0` (per-scanline POLY_FT4 strip emitter), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`. |
+| `8002519c` | Per-frame actor-list iterator (328 bytes). Walks a linked-list head, dispatching each node by `jalr node[+0xC]`. Five lists at `_DAT_8007C34C..._DAT_8007C36C` are iterated per frame from `FUN_80016444` (one call per render pass). Per node: `+0x00` = next ptr, `+0x0C` = tick fn ptr, `+0x10` = flags (bit `0x8` selects early-return path, bit `0x200` is the "already-emitted" guard), `+0x44` = optional prim-chain head to free. |
 
 ## Game-mode state machine
 
@@ -231,7 +232,11 @@ sub-state, `+0x07` action-type).
 
 | Address | Role |
 |---|---|
-| `8002735C` | Legaia TMD renderer. 60 GTE ops; per-mode descriptor table at `DAT_8007326C`. |
+| `8002735C` | Legaia TMD renderer. 60 GTE ops; per-mode descriptor table at `DAT_8007326C`. Reached as the bone-animated emit leaf via `FUN_8001ADA4` case-5; the bulk world-map continent flows through this path (cmd byte read from the descriptor table, so static addprim hunters miss it). |
+| `8001ADA4` | Per-actor RENDER dispatcher (2456 bytes). Switch on `actor[+0x56]` (render mode 1..0xB). Case 4 (multi-target): dispatches on `actor[+0x9e]` flags - bit `0x4000` → `FUN_8002A5A4`, bit `0x2000` → `FUN_801CFA48` (overlay-resident), else → `FUN_80028158`. Case 5 (full TMD): iterates the mesh chain at `actor[+0x44]` (`puVar5[0]`=count, `puVar5[1..n]`=mesh ptrs) and calls `FUN_80043390` (textured) / `FUN_80029888` (env-mapped, when `actor[+0x7a] != 0`) / `FUN_8002735C` (bone-animated TMD). Called 6x per frame via the `FUN_8001D140` wrapper against the same actor lists as the tick pass. |
+| `8001D140` | Tiny stack-swap wrapper (`_DAT_1F8002BC = scratch; jal FUN_8001ADA4`). Called 6x per frame from `FUN_80016444` against `_DAT_8007C34C..0x36C` — the render-pass counterpart to the tick-pass `FUN_8002519C`. |
+| `8002519C` | Per-frame actor-list TICK iterator (328 bytes). Walks the linked list, calls `actor[+0x0c]` (tick fn). Called 5x per frame from `FUN_80016444` against actor lists at `_DAT_8007C34C..0x36C` (different render passes). Distinct from `FUN_8001D140` (render pass). |
+| `8002C69C` | HUD / dialog / menu sprite-batch emitter. 10 `cmd=0x2C` (POLY_FT4) lui/li sites in SCUS — the most prolific addprim emitter on a static scan. All callers pass small counts (`a3 = 0xb..0x44` = 11..68 prims each); total across all world-map call sites is ~120 prims. UI text rows, dialog frames, dev-menu strips. NOT the bulk continent emitter. |
 | `800460AC` | GTE billboard fan helper. Loads 3 vertices via SVTX0/1/2 with-`(X-0x20, Y, Z), (X, Y, Z), (X+0x20, Y, Z)`, runs RTPT (cop opcode `0x280030`) 3 iterations decreasing Z, stores SXY/SZ at scratchpad `0x1F8002FC..`. Stage decoration / billboard sprite projection. |
 | `0x8007326C` (data) | Per-prim-mode descriptor table. 6 entries × 8 bytes — see [`formats/tmd.md`](../formats/tmd.md). |
 | `0x8007C018` (data) | TMD pointer table. Written by `FUN_80026B4C`; read by 4 setup-not-render functions. |
@@ -371,6 +376,19 @@ Both live at `0x801C0000+`. Full architecture in `docs/subsystems/world-map.md`.
 | `FUN_801EE90C` (world_map overlay) | World map text-box dispatcher. 15-entry JT on `ctx[+0x54]`; out-of-range path calls `FUN_80031D00` (text-actor tick) when `ctx[+0x54] < 10`. |
 | `FUN_801CFC40` (world_map_top only) | World map sprite batcher (top-view). Writes `actor[+0x14/16/18]` into GPU coord registers `0x1F800020/22/24`, iterates sprite list at `DAT_801C93C8`. Delegates to `FUN_801CF9F4` when `_DAT_8007B6B8 == 0x20`. |
 | `FUN_801DA51C` (world_map overlay) | World map entity tick. 5-state SM on `entity[+0x8A]` (JT `0x801CEC28`); at state 0 calls `FUN_800243F0` (BGM/scene resolver) and checks `_DAT_8007BB38` pad for interaction. |
+
+### World-map render pipeline
+
+The render chain that gets the POLY_FT4 batch from the per-frame SCUS dispatch into the overlay-resident emitter. Walked end-to-end in [`docs/subsystems/world-map.md`](../subsystems/world-map.md#render-pipeline). The SCUS dispatcher entries `FUN_80025EEC` and `FUN_80025F2C` are documented under [Game-mode state machine](#game-mode-state-machine) above; both route through the per-frame render tick below.
+
+| Address | Role |
+|---|---|
+| `FUN_80016444` (SCUS, 1352 bytes) | Per-frame world-map render tick reached via `FUN_80025EEC(1)` (default per-mode handler) or `FUN_80025F2C(0)` (Mode 13 MAPDSIP handler). Reads `_DAT_8007BC3C`; if `== 2` performs a direct `jal 0x801D7EA0` (PC `0x80016764`) into the overlay-resident POLY_FT4 emitter. |
+| `FUN_801D7EA0` (world_map overlay, 832 bytes) | Parametric POLY_FT4 emitter. Gated by one-shot self-clearing flag `_DAT_801F351C`. 224-iter outer loop emitting 2× POLY_FT4 (literal `0x2C808080` GP0 cmd, chain tag `0x9000000`) + 1 small prim (chain tag `0x3000000`) per iter using cos-rotation projection from the LUT at `0x8007B81C`. ~670 prims per call. Horizon / sky / animated background. The bulk continent (~4300 POLY_FT4 prims) is emitted separately by the standard TMD renderer `FUN_8002735C` reached via the case-5 path of `FUN_8001ADA4` (one or more world-map actors hold the continent's TMD mesh chain at `actor[+0x44]`). |
+| `FUN_801D8258` (world_map overlay, 40 bytes) | Gate-arm trigger. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520/3524/3528 = param_2/3/4` (scale / step / OT-layer for the next emission). |
+| `FUN_801D1344` (**world_map overlay**, 1332 bytes) | Gate-arm caller. Function-pointer-only entry (Ghidra `incoming=0`); reads three globals at `_DAT_8007BCD0/_D4/_D8` and forwards them to `FUN_801D8258` at PC `0x801D1470: jal 0x801D8258`. **Distinct from `FUN_801D1344` in the dialog overlay** (the actor frame handler with sub-helpers at `FUN_801CF754` / `FUN_801D0B90` / `FUN_801D1BA0` / `FUN_801D9D30` / `FUN_801DB510` / `FUN_801DE234`, see [Dialog-overlay actor-frame helpers](#dialog-overlay-actor-frame-helpers)) - same RAM address, different code per overlay. |
+| `FUN_801C2B2C` (0897 field overlay, 1332 bytes) | Code-identical relocation copy of the world_map overlay's `FUN_801D1344`. Calls `jal 0x801D8258` at PC `0x801C2C58`. Same body at a different load address. |
+| `FUN_801C9688` (0897 field overlay) | Sibling reader / clearer of `_DAT_801F351C`. Field-mode equivalent of the world-map emitter's gate-check path. |
 
 ## Stub helpers
 -

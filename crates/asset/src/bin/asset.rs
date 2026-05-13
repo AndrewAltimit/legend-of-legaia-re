@@ -267,6 +267,44 @@ enum Cmd {
         #[arg(long, default_value_t = true)]
         only_hits: bool,
     },
+    /// Inspect a single PROT entry as a scene v12 table: print the header
+    /// fields, the inline records at `+0x14`, and a summary of the
+    /// event-script prescript at `+0x800`.
+    SceneV12 {
+        input: PathBuf,
+        /// Print every event-script record's bytecode head (first 16 bytes)
+        /// instead of just the count and frame-opener rate.
+        #[arg(long, default_value_t = false)]
+        scripts: bool,
+        /// Maximum script records to print when `--scripts` is on.
+        #[arg(long, default_value_t = 16)]
+        max_scripts: usize,
+    },
+    /// Bulk-scan a directory of PROT entries for the scene_v12_table format.
+    /// Reports per-entry `N` / `param` / inline-records group counts /
+    /// script-record count / frame-opener rate. With `--cdname`, prefixes
+    /// each line with the CDNAME scene label.
+    SceneV12Scan {
+        dir: PathBuf,
+        /// CDNAME.TXT for nicer entry titles. Optional.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// Print only entries that match.
+        #[arg(long, default_value_t = true)]
+        only_hits: bool,
+    },
+    /// Parse the world-map quick-travel menu out of a `SCUS_942.54`
+    /// executable: the 16-entry landmark name table at `DAT_80073B18`
+    /// plus the 6-byte placement records at `DAT_80073A98`. Prints either
+    /// a human-readable table or the same JSON shape the web viewer
+    /// consumes (with `--json`).
+    WorldmapMenu {
+        /// Path to `SCUS_942.54` (typically `extracted/SCUS_942.54`).
+        scus: PathBuf,
+        /// Emit machine-readable JSON instead of the formatted table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Targeted validation: walk PROT entries that correspond to the first
     /// entry of each named CDNAME block. Each is tested with strict layout
     /// and (when applicable) magic checks.
@@ -357,6 +395,17 @@ fn main() -> Result<()> {
             only_hits,
         } => battle_data_pack_scan(&dir, cdname.as_deref(), only_hits),
         Cmd::EffectBundleScan { dir, only_hits } => effect_bundle_scan(&dir, only_hits),
+        Cmd::SceneV12 {
+            input,
+            scripts,
+            max_scripts,
+        } => scene_v12_one(&input, scripts, max_scripts),
+        Cmd::SceneV12Scan {
+            dir,
+            cdname,
+            only_hits,
+        } => scene_v12_scan(&dir, cdname.as_deref(), only_hits),
+        Cmd::WorldmapMenu { scus, json } => worldmap_menu_cmd(&scus, json),
         Cmd::Validate {
             dir,
             cdname,
@@ -722,6 +771,43 @@ fn parse_hex_u32(s: &str) -> std::result::Result<u32, String> {
         .or_else(|| s.strip_prefix("0X"))
         .unwrap_or(s);
     u32::from_str_radix(s, 16).map_err(|e| e.to_string())
+}
+
+fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
+    let bytes = std::fs::read(scus)?;
+    let menu = legaia_asset::worldmap_menu::parse_scus(&bytes)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&menu)?);
+        return Ok(());
+    }
+    println!(
+        "World-map quick-travel menu  ({} names, {} placement records)\n",
+        menu.names.len(),
+        menu.placements.len(),
+    );
+    println!("Names (DAT_80073B18, stride 0x20):");
+    for (i, name) in menu.names.iter().enumerate() {
+        let used = menu.placements.iter().any(|p| (p.name_idx as usize) == i);
+        let tag = if used { "  " } else { "* " };
+        println!("  {tag}[0x{i:02X}] {name:?}");
+    }
+    println!("* = not referenced by any placement record (cutscene-only).\n");
+    println!(
+        "Placements (DAT_80073A98, stride 6; terminator byte0=0xFF):\n  \
+         idx flag scene_id  menu_xy   name"
+    );
+    for p in &menu.placements {
+        let name = menu
+            .names
+            .get(p.name_idx as usize)
+            .map(|s| s.as_str())
+            .unwrap_or("<?>");
+        println!(
+            "   {:>2}  0x{:02X}  0x{:04X}   ({:3}, {:3})  {}",
+            p.index, p.discovery_flag, p.scene_id, p.menu_x, p.menu_y, name
+        );
+    }
+    Ok(())
 }
 
 fn validate_blocks(
@@ -2359,6 +2445,149 @@ fn battle_data_pack_scan(dir: &Path, cdname_path: Option<&Path>, only_hits: bool
     println!(
         "{} entries match, {} records, {} TMDs found",
         total_hits, total_recs, total_tmds
+    );
+    Ok(())
+}
+
+fn scene_v12_one(input: &Path, dump_scripts: bool, max_scripts: usize) -> Result<()> {
+    let buf = std::fs::read(input)?;
+    let t = legaia_asset::scene_v12_table::detect(&buf)
+        .ok_or_else(|| anyhow::anyhow!("not a scene_v12_table (header magic / algebra failed)"))?;
+
+    println!("scene_v12_table @ {}", input.display());
+    println!("  size:       {} bytes", buf.len());
+    println!("  N:          {} ({:#x})", t.n, t.n);
+    println!("  param:      {}", t.param);
+    println!(
+        "  fixup slots @ +{:#x}, +{:#x}, +{:#x} (zero on disc)",
+        t.table_b_base(),
+        t.n,
+        t.table_a_base()
+    );
+    println!("  end_records: {:#x}", t.end_records());
+    println!();
+
+    // Inline records at +0x14: print compact, with a small group histogram.
+    println!("inline records @ +0x14 ({} entries):", t.records.len());
+    let mut by_b2: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
+    let head_n = t.records.len().min(24);
+    for (i, r) in t.records.iter().take(head_n).enumerate() {
+        println!(
+            "  [{:3}] b0={:02x} b1={:02x} b2={:02x} flag={:02x}",
+            i, r.b0, r.b1, r.b2, r.flag
+        );
+    }
+    if t.records.len() > head_n {
+        println!("  ... {} more not shown", t.records.len() - head_n);
+    }
+    for r in &t.records {
+        *by_b2.entry(r.b2).or_insert(0) += 1;
+    }
+    print!("  b2 histogram:");
+    for (b2, n) in &by_b2 {
+        print!(" {:02x}×{}", b2, n);
+    }
+    println!();
+    println!();
+
+    // Event-script prescript at +0x800.
+    println!(
+        "event scripts @ +0x800: {} records, frame-opener rate {:.0}%",
+        t.scripts.len(),
+        100.0 * t.frame_opener_rate()
+    );
+    if dump_scripts {
+        let show = t.scripts.len().min(max_scripts);
+        for (i, r) in t.scripts.iter().take(show).enumerate() {
+            let head = &buf[r.start..r.end.min(r.start + 16)];
+            print!(
+                "  [{:3}] @{:#06x} len={:5} {}",
+                i,
+                r.start,
+                r.len(),
+                if r.frame_opener { "OPENER" } else { "      " }
+            );
+            print!("  ");
+            for b in head {
+                print!("{:02x} ", b);
+            }
+            println!();
+        }
+        if t.scripts.len() > show {
+            println!("  ... {} more not shown", t.scripts.len() - show);
+        }
+    }
+    Ok(())
+}
+
+fn scene_v12_scan(dir: &Path, cdname_path: Option<&Path>, only_hits: bool) -> Result<()> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    entries.sort();
+
+    let names = match cdname_path {
+        Some(p) => Some(cdname::parse(p)?),
+        None => None,
+    };
+
+    println!(
+        "{:<32}  {:>5}  {:>5}  {:>5}  {:>7}  {:>4}  notes",
+        "entry", "N", "param", "b2#", "scripts", "fo%"
+    );
+    println!("{}", "-".repeat(80));
+    let mut hits = 0usize;
+    let mut total_scripts = 0usize;
+    let mut high_fo = 0usize;
+    for path in &entries {
+        let Ok(buf) = std::fs::read(path) else {
+            continue;
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let display = display_name_for(&stem, names.as_ref());
+        match legaia_asset::scene_v12_table::detect(&buf) {
+            Some(t) => {
+                let unique_b2 = t
+                    .records
+                    .iter()
+                    .map(|r| r.b2)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                let rate = t.frame_opener_rate();
+                println!(
+                    "{:<32}  {:>5}  {:>5}  {:>5}  {:>7}  {:>3}%",
+                    display,
+                    t.n,
+                    t.param,
+                    unique_b2,
+                    t.scripts.len(),
+                    (rate * 100.0).round() as i32
+                );
+                hits += 1;
+                total_scripts += t.scripts.len();
+                if rate >= 0.5 {
+                    high_fo += 1;
+                }
+            }
+            None => {
+                if !only_hits {
+                    println!(
+                        "{:<32}  {:>5}  {:>5}  {:>5}  {:>7}  {:>4}",
+                        display, "-", "-", "-", "-", "-"
+                    );
+                }
+            }
+        }
+    }
+    println!();
+    println!(
+        "{hits} matches, {total_scripts} total event-script records, {high_fo} with frame-opener rate ≥ 50%"
     );
     Ok(())
 }

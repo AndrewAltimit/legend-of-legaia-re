@@ -176,6 +176,17 @@ TARGETS = [
     "801e71d0",  # world_map overlay (undumped)
     "801e733c",  # world_map overlay (undumped)
 
+    # Bulk continent-emitter candidate cluster (per project_continent_terrain_generator_status.md)
+    "8003bc08",  # per-actor tick for 14 actors in list _DAT_8007C354 (top candidate)
+    "8003774c",  # motion VM (already dumped, included for cross-ref)
+    "801d79e8",  # overlay helper cited by FUN_8003BC08 tick path
+    "80038158",  # bit-0x80 path from FUN_8003BC08 (actor[+0x80] != 0) - actor motion VM
+    "80019278",  # heading helper called twice from FUN_8003BC08
+    "80046978",  # UNCONDITIONAL call right before horizon emitter in FUN_80016444
+    "8001d140",  # per-actor render-pass iterator, called 6x against same lists as FUN_8002519c
+    "8001d058",  # conditional render-side call (gated by game_mode != 0x15)
+    "8002519c",  # per-frame actor-list tick iterator (already mentioned in functions.md)
+
     # Missing helpers surfaced by world_map dumps (coverage tracker 2026-05-08)
     "80017714",  # cited by 801edf00
     "80039b7c",  # cited by 801da51c (world map entity tick)

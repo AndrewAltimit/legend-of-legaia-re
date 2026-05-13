@@ -139,6 +139,10 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
 <td><code>force_disasm_dump.py</code></td>
 <td>Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Validates the result has <code>&gt;=8</code> instructions ending in <code>jr $ra</code> before committing the function.</td>
 </tr>
+<tr>
+<td><code>dump_terrain_trigger.py</code></td>
+<td>Per-overlay-aware dumper for the world-map render-pipeline chain (<code>FUN_801D7EA0</code> / <code>FUN_801D8258</code> / <code>FUN_801D1344</code> / <code>FUN_80016444</code> + SCUS callers and the 0897 relocation copy). Uses <code>prog.getMemory().contains(addr)</code> to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: <code>&lt;program_label&gt;_&lt;addr&gt;.txt</code>.</td>
+</tr>
 </tbody>
 </table>
   <p><strong>LUI+ADDIU and address-resolution helpers</strong></p>
@@ -155,6 +159,14 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
 <tr>
 <td><code>find_addr_data.py</code></td>
 <td>Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables.</td>
+</tr>
+<tr>
+<td><code>find_data_word.py</code></td>
+<td>Generic u32-LE-literal scanner across every initialized memory block, with surrounding-dword context. Useful when you suspect a function pointer is stuffed in a dispatch table somewhere; reports the containing function (if any) plus 8 dwords of surrounding data so the table structure is visible.</td>
+</tr>
+<tr>
+<td><code>find_terrain_emitter_caller.py</code></td>
+<td>Combined ref-manager + LUI+ADDIU + ori + <code>jal</code> / <code>j</code> direct-target sweep against a configurable target-address set. Reports every overlay where each target is loaded as an immediate, stored / loaded via <code>base+offset</code>, or called directly. Useful pattern for any "who calls function X across the overlay set?" question: edit <code>TARGET_ADDRS</code> and <code>TARGETS_HEX</code>, run against each <code>-process &lt;overlay&gt;</code> in turn. The cross-program <code>jal</code> sweep is the unlock - Ghidra's ref manager only sees refs internal to one program.</td>
 </tr>
 <tr>
 <td><code>find_string_xrefs.py</code></td>

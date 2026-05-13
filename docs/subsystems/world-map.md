@@ -126,6 +126,205 @@ ori  $tmp, $tmp, 0x400      ; raise "encounter armed" flag in actor[+0x10]
 sw   $tmp,         0x10(<actor>)
 ```
 
+## Render pipeline
+
+The per-frame world-map render dispatches from the SCUS-resident game loop
+into the overlay-loaded code window. Two chains converge: a per-frame
+dispatch tick that reads the prim emitter's gate flag, and a one-shot
+arm path that sets the gate plus a small param block.
+
+### Per-frame dispatch (SCUS-resident)
+
+Two SCUS-resident handlers from the 28-mode dispatch table at
+`0x8007078C` ([game-mode state machine](../reference/functions.md#game-mode-state-machine))
+reach the world-map render tick:
+
+| Address | Mode-table role | Tick call |
+|---|---|---|
+| `FUN_80025EEC` | Default per-mode handler (used by 13 of 28 modes - not world-map-specific). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
+| `FUN_80025F2C` | Mode 13 (MAPDSIP MODE) - field/world-map display per-frame handler. | `FUN_8001698C` → `func_0x801CE850` (overlay entry) → `FUN_80016444(0)`. |
+
+The `a0` arg controls whether `FUN_80016444` skips its early
+`FUN_8005FB84` block (Mode 13 skips it; the default handler runs
+it). Both reach the world-map render branch deeper in the function,
+so the horizon emitter can fire from any of the 14 modes that route
+through `FUN_80016444` whenever the submode register holds `2`.
+
+### `FUN_80016444` - SCUS world-map render tick (1352 bytes)
+
+Entry: `(submode_flag)`. Iterates the world-map render passes for one
+frame. The pipeline includes a gated direct call into the overlay-
+resident POLY_FT4 emitter:
+
+```mips
+80016750  lui   v1, 0x8008
+80016754  lw    v1, -0x43c4(v1)        ; v1 = _DAT_8007BC3C (submode register)
+80016758  li    v0, 0x2
+8001675c  bne   v1, v0, 0x8001676c     ; skip unless submode == 2
+80016764  jal   0x801d7ea0             ; -> overlay-resident emitter
+```
+
+Same `0x8007BC3C` register has six SCUS writers (`FUN_80016230` -
+the two-write set/clear path - plus `FUN_80025980`, `FUN_80025DA0`,
+`FUN_8001D424`); the writer that stores `2` is the entry point for
+the world-map render branch.
+
+### `FUN_801D7EA0` - world-map POLY_FT4 batch emitter (832 bytes)
+
+Entry: `()`. One-shot emitter gated by `_DAT_801F351C`:
+
+```c
+if (_DAT_801F351C != 0) {
+    _DAT_801F351C = 0;                   // self-clear gate
+    iVar11 = 4;
+    local_30 = 0x2C808080;                // POLY_FT4 GP0 cmd + neutral grey
+    uVar6 = _DAT_801F3518
+          + DAT_1F800393 * _DAT_801F3524; // angle += per-frame-tick * step
+    _DAT_801F3518 = uVar6;
+    local_3c = _DAT_801F3520;
+    local_34 = _DAT_801F3520 / 5;
+    local_38 = _DAT_801F3520 - local_34;
+    do {
+        iVar10 = cos_table[(uVar6 & 0xFFF)];   // 0x8007B81C cos LUT
+        // emit 2x POLY_FT4 (chain tag 0x9000000) + 1 small prim
+        // (chain tag 0x3000000); vertex coords are cos-rotation-
+        // projected with local_3c/local_38 as scale moduli.
+        ...
+        uVar6 += 0x10;
+        iVar11++;
+    } while (iVar11 < 0xE4);              // 224 iterations
+}
+```
+
+`_DAT_8007B81C` is the cos lookup table (`docs/reference/memory-map.md`).
+The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter
+across 224 iters). Vertex coordinates project via the cos table, so
+the rendered output rotates with the camera angle - consistent with
+a horizon / sky / animated-background plane, not a fixed continent
+mesh.
+
+The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
+draws every **landmark** TMD (castle, towers, bridges, gates) - each
+world-map actor's `actor[+0x44]` mesh chain points into Drake's
+40-TMD landmark pack at PROT entry 0085 slot 1, which the dispatcher
+walks once per frame through `FUN_8002735C` (the 60-GTE Legaia TMD
+renderer). That accounts for the landmark prims in the GPU pool.
+
+**Open**: the bulk continent ground terrain (~3500-4000 POLY_FT4 prims
+of green/rocky tiles in the prim pool) is **not** sourced from any
+TMD-magic-bearing disc payload that has been located so far. Slot 4
+of each kingdom bundle (type byte `0x05`, the [world-map overlay
+outlines](../formats/world-map-overlay.md)) was a logical candidate
+but it turned out to be the dev-menu top-view wireframe / coastline
+data, not the textured ground tiles. The remaining hypothesis is a
+procedural emitter sibling of `FUN_801D7EA0` reachable from the same
+per-frame tick - that sibling is the most likely site of the bulk
+terrain generation but has not been located yet.
+
+The horizon emitter is called by direct `jal` from SCUS - it does not
+need function-pointer dispatch. Ghidra's reference manager misses the
+cross-program call when sweeping the overlay alone; sweep SCUS to
+surface the caller.
+
+### Per-frame render-pass iterator - `FUN_8002519c`
+
+Five times per frame, `FUN_80016444` invokes the SCUS-resident actor-list
+iterator `FUN_8002519c` (328 bytes) against five linked-list heads at
+`_DAT_8007C34C..._DAT_8007C36C`. Each list is one render pass. The
+iterator walks the chain and per node:
+
+```c
+for (node = *(list_head); node != NULL; node = node->next) {
+    if (node->flags & 0x8) {
+        if (node->flags & 0x200) {
+            // already-emitted path: skip the heavy work
+        } else if (node->fn == &FUN_80021df4) {
+            // standard per-frame actor tick
+            ...
+        }
+    } else {
+        ((void (*)(void *))node->fn)(node);   // jalr node->fn
+    }
+    // mark `flags |= 0x200` to dedupe in case the list is walked again
+}
+```
+
+Per-actor record layout consumed by the iterator:
+
+| Offset | Type | Role |
+|---|---|---|
+| `+0x00` | `actor *` | Next pointer (singly linked list, `NULL` terminates). |
+| `+0x0C` | `void (*)(actor *)` | Tick function (the entry point `jalr` calls). |
+| `+0x10` | `u32` | Flags; bit `0x8` selects the early-return path, bit `0x200` is the "already-emitted this frame" guard. |
+| `+0x14` | `u32` | Saved next-pc copy used by the early-return path. |
+| `+0x18` | `u16` | Halfword count exposed at `+0x20` for the early-return path. |
+| `+0x44` | `chain *` | Optional prim-chain head; freed via `FUN_80017b94` when bit `0x800` is set. |
+| `+0x48` | `u8 *` | Move-VM bytecode base (for actors whose tick is `FUN_80021df4`). |
+| `+0x70` | `u16` | Move-VM PC in halfword units; the actual byte offset is `2 * actor[+0x70]`. |
+
+Standard tick functions observed in the world-map render passes:
+
+| Tick function | Where | Role |
+|---|---|---|
+| `FUN_80021DF4` (SCUS) | per-frame actor tick | Steps the move VM via `FUN_80023070(actor)`. The eight actors in list `_DAT_8007C350` use this tick. |
+| `FUN_8003BC08` (SCUS) | per-actor tick | Calls the motion VM (`FUN_8003774C`), move-buffer setup (`FUN_800204F8`), and overlay helper `FUN_801D79E8`. The fourteen actors in list `_DAT_8007C354` use this tick. |
+| `FUN_801E76D4` (world_map overlay) | world-map controller | Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render. |
+| `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
+| `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |
+
+### Per-actor render dispatcher - `FUN_8001ADA4`
+
+In addition to the five TICK calls into `FUN_8002519c`, the same frame
+issues six RENDER calls into the stack-swap wrapper `FUN_8001D140`,
+which forwards into the per-actor render dispatcher `FUN_8001ADA4`
+(2456 bytes). The render dispatcher walks the same actor lists but
+runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
+
+- **case 4** (multi-target). Dispatches on `actor[+0x9e]` flags:
+  - bit `0x4000` → `FUN_8002A5A4` (SCUS).
+  - bit `0x2000` → `FUN_801CFA48` (overlay-resident).
+  - else → `FUN_80028158` (SCUS, distinct from the 6692-byte motion
+    bytecode VM `FUN_80038158`).
+- **case 5** (full TMD). Iterates the mesh chain at `actor[+0x44]`
+  (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
+  entry calls:
+  - `FUN_80043390(mesh, color, tpage)` - textured TMD (default).
+  - `FUN_80029888(...)` - environment-mapped TMD when
+    `actor[+0x7a] != 0`.
+  - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer (the
+    **landmark emit leaf** — each landmark TMD in Drake's 40-mesh
+    kingdom pack passes through here; the bulk continent ground
+    terrain is *not* drawn from here).
+- **cases 1, 2, 3, 6, 7, 8, B** - distance-LOD / particle / sprite-billboard
+  branches calling per-effect helpers (`FUN_8001B73C`, `FUN_8001B964`,
+  `FUN_800480D8`, `FUN_8002B944/94C/954`, `FUN_8001C204`).
+
+Static `addprim` hunters do not surface `FUN_8002735C` as a POLY_FT4
+emitter because the cmd byte is read from the per-mode descriptor
+table at `DAT_8007326C`, not built with `lui/li` immediates. That is
+why the landmark TMD emitter eluded static analysis: the addprim scan
+flags every direct emitter (the horizon, the HUD sprite batch
+`FUN_8002C69C`, the screen-tint, etc.) but skips the TMD renderer
+where the landmark prims actually originate. The bulk continent
+ground terrain that fills the rest of the prim pool is a separate
+emit path that has *not* been located yet.
+
+### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
+
+The one-shot gate `_DAT_801F351C` is armed by a 40-byte trigger
+function called from a 1332-byte parameter-prep wrapper:
+
+| Address | Role |
+|---|---|
+| `FUN_801D1344` | World-map gate-arm wrapper. 1332 bytes; function-pointer-only entry (Ghidra `incoming=0`). Reads three globals at `_DAT_8007BCD0/_D4/_D8` and forwards them to `FUN_801D8258` as the scale / step / OT-layer params at PC `0x801D1470: jal 0x801D8258`. **Same RAM address holds a different function when the dialog overlay is paged in** - that variant is the actor frame handler (see [`reference/functions.md`](../reference/functions.md#dialog-overlay-actor-frame-helpers)). |
+| `FUN_801D8258` | 40-byte gate setter. Writes `_DAT_801F351C = 1`, then `_DAT_801F3520 = param_2`, `_DAT_801F3524 = param_3`, `_DAT_801F3528 = param_4` - the inputs the emitter consumes on its next run. |
+| `FUN_801C2B2C` | Code-identical relocation copy of `FUN_801D1344` in the 0897 field overlay. Same body, different load address; calls `jal 0x801D8258` at PC `0x801C2C58`. Active during field-mode entry transitions. |
+
+The gate flag `_DAT_801F351C` is in the persistent `0x801F0000+` region,
+so it survives overlay swaps. The flag is shared - both the world-map
+overlay's `FUN_801D7EA0` and the 0897 field overlay's
+`FUN_801C9688` read + clear it.
+
 ## Globals used
 
 | Address | Role |
@@ -139,3 +338,11 @@ sw   $tmp,         0x10(<actor>)
 | `_DAT_8007B868` | Door/portal open flag: `0` = open (MAP_CHANGE/CARD_OPTION visible), `1` = CLOSED. |
 | `_DAT_8007B6B8` | Game-mode discriminator (value `0x20` = alternate sprite path). |
 | `_DAT_80083808` | World-map entity activation gate. |
+| `_DAT_8007BC3C` | World-map submode register. `FUN_80016444` gates its `jal 0x801D7EA0` on this being `2`. Six SCUS writers (`FUN_80016230` / `FUN_80025980` / `FUN_80025DA0` / `FUN_8001D424`). |
+| `_DAT_801F351C` | One-shot gate flag for the POLY_FT4 batch emitter. `FUN_801D8258` sets it to `1`; `FUN_801D7EA0` (and the 0897 sibling `FUN_801C9688`) clear it after one emission. Lives in the persistent `0x801F0000+` region and survives overlay swaps. |
+| `_DAT_801F3518` | Running camera angle. Advanced by `DAT_1F800393 * _DAT_801F3524` per `FUN_801D7EA0` call; masked to 4096 entries when indexing the cos LUT at `0x8007B81C`. |
+| `_DAT_801F3520` | Render scale / range. Sourced from `_DAT_8007BCD4` via `FUN_801D8258`'s `param_2`. The emitter uses it both as `local_3c` and `local_3c / 5`. |
+| `_DAT_801F3524` | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
+| `_DAT_801F3528` | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |
+| `_DAT_8007BCD0..D8` | Three contiguous u32 globals that `FUN_801D1344` reads and forwards as the gate-setter's scale / step / OT-layer params. |
+| `_DAT_8007C34C..0x36C` | Seven actor-list heads consumed by `FUN_8002519c`. `_DAT_8007C34C` / `_DAT_8007C350` / `_DAT_8007C354` / `_DAT_8007C358` / `_DAT_8007C35C` / `_DAT_8007C360` / `_DAT_8007C36C` correspond to the five world-map render passes that `FUN_80016444` issues per frame plus two scratch heads. |

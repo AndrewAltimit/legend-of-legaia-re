@@ -101,29 +101,34 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 }
 ```
 
-## scene_v12_table - twin-offset header
+## scene_v12_table - scene header + event-script bundle
 
-A scene-named table whose 8-word header carries three constant magic words and two algebraic ties to a record count. Implementation: `crates/asset/src/scene_v12_table.rs`. 97 PROT entries match - one per scene.
+A scene-named container that bundles a small runtime-fixup header with a full event-script prescript at sector offset `0x800`. Implementation: `crates/asset/src/scene_v12_table.rs`. 97 PROT entries match — one per scene. Detailed reference: [`scene-v12-table.md`](scene-v12-table.md).
 
 ```text
-+0x00   u16  N + 4          ; first offset table base = N + 4
-+0x02   u16  0x0012         ; constant magic
-+0x04   u16  0x0000         ; constant
-+0x06   u16  0x0014         ; constant - second-table base offset *header*
-+0x08   u16  ?              ; per-scene parameter (varies; semantics unknown)
-+0x0A   u16  N              ; record count for the first table
-+0x0C   u16  0x0000         ; constant
-+0x0E   u16  N + 2          ; second offset table base = N + 2
-...                          ; trailing dense data (>96% nonzero past 0x2000)
++0x000   u16  N + 4              ; runtime fixup-slot offset; header field
++0x002   u16  0x0012             ; constant magic
++0x004   u16  0x0000             ; constant
++0x006   u16  0x0014             ; constant magic (= byte offset of records)
++0x008   u16  param              ; count of inline records (0..=192 in retail)
++0x00A   u16  N                  ; runtime fixup-slot offset; header field
++0x00C   u16  0x0000             ; constant
++0x00E   u16  N + 2              ; runtime fixup-slot offset; header field
++0x010   u32  0                  ; padding to 0x14
++0x014   param × 4 bytes         ; inline record table
++end_records (= 0x14 + 4*param)  ; runtime writes three pointers here
+                                 ; (slots at +N, +N+2, +N+4 — zero on disc).
++end_records .. 0x800            ; zero padding
++0x800   u16  script_count       ; scene event-scripts prescript
++0x802   script_count × u16      ;   offset table relative to +0x800
++0x800 + offsets[i]              ;   per-record field-VM bytecode
 ```
 
-Strict structural checks: the three constant words at fixed offsets, plus `u16[0] == N + 4` and `u16[7] == N + 2` (algebraic ties to `u16[5] = N`), plus `8 <= N <= 4096`. The constants alone are nearly enough; the algebraic ties produce zero false positives across the entire PROT corpus.
+The header's `u16[0]`, `u16[5]`, `u16[7]` are algebraically tied to a single per-scene constant `N`: `u16[0] = N + 4`, `u16[5] = N`, `u16[7] = N + 2`, and `N = 4 * param + 22` (= byte distance from the file head to the first runtime fixup slot). Strict structural checks combine the three constant words, the algebraic ties, and the `N/param` algebra. Across the entire 1234-entry PROT corpus this matches **97** entries with zero false positives — and **every** match parses cleanly as a scene-event-scripts prescript at `+0x800`.
 
-Sizes range from ~30 KB to ~387 KB; median ~270 KB. Density >96% nonzero past offset `0x2000` - the leading 8 KB is the structured header / offset tables, the rest is dense payload data.
+The post-header dense data is the [scene_event_scripts](#scene_event_scripts---prescript-only) prescript, parsed by the field VM (`FUN_801DE840`) at scene entry. The pre-header table at `+0x14` is per-scene runtime metadata: `param` records of 4 bytes each, grouped by the third byte (`b2`) into 1..N scene regions; the last byte is always `0x01` (probably a "live" flag). See [`scene-v12-table.md`](scene-v12-table.md) for the per-byte semantics.
 
-The runtime consumer hasn't been located. Likely candidates: per-scene navmesh / collision data, scene-event trigger tables. The class name reflects the structural signature, not a guessed semantic; it should change once the consumer is reversed.
-
-[`ghidra/scripts/find_scene_v12_consumers.py`](../../ghidra/scripts/find_scene_v12_consumers.py) is the consumer-search complement: it walks every captured program for `lh` / `lhu` instructions at `+2` and `+6` immediate offsets - the offsets where the header's two constant magic words live. Functions that touch both offsets are high-confidence candidates for the v12 reader. Run with `-process` once per overlay; group hits cluster inside the consumer.
+Each scene block on the disc carries **both** a v12 entry (this format, prescript at `+0x800`) and a sister `scene_event_scripts` entry (prescript at offset 0, no v12 header). The two scripts likely serve different runtime phases — scene-enter triggers vs. per-actor / per-region triggers — though the exact split isn't pinned down yet; both are walked by the same field VM.
 
 ## scene_asset_table - canonical 7-asset bundle
 

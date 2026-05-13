@@ -185,6 +185,92 @@ export class LegaiaViewer {
         wasm.__wbg_legaiaviewer_free(ptr, 0);
     }
     /**
+     * Number of TMDs in the currently-loaded continent pack. 0 when no
+     * continent pack was found for this kingdom.
+     * @returns {number}
+     */
+    continent_pack_count() {
+        const ret = wasm.legaiaviewer_continent_pack_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Select the active continent pack slot. Parallel to `pack_mesh` but
+     * operates on the continent pack.
+     * @param {number} slot
+     * @returns {number}
+     */
+    continent_pack_mesh(slot) {
+        const ret = wasm.legaiaviewer_continent_pack_mesh(this.__wbg_ptr, slot);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    continent_pack_mesh_bounds() {
+        const ret = wasm.legaiaviewer_continent_pack_mesh_bounds(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    continent_pack_mesh_cba_tsb() {
+        const ret = wasm.legaiaviewer_continent_pack_mesh_cba_tsb(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint32Array}
+     */
+    continent_pack_mesh_indices() {
+        const ret = wasm.legaiaviewer_continent_pack_mesh_indices(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    continent_pack_mesh_positions() {
+        const ret = wasm.legaiaviewer_continent_pack_mesh_positions(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    continent_pack_mesh_uvs() {
+        const ret = wasm.legaiaviewer_continent_pack_mesh_uvs(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * VRAM bytes (1 MB) built from the continent pack's slot 0. Distinct from
+     * the landmark VRAM since the two packs ship independent TIM_LISTs.
+     * @returns {Uint8Array}
+     */
+    continent_pack_vram_bytes() {
+        const ret = wasm.legaiaviewer_continent_pack_vram_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * PROT index the continent pack was loaded from (0 when none).
+     * @returns {number}
+     */
+    continent_prot_index() {
+        const ret = wasm.legaiaviewer_continent_prot_index(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * JSON-encoded summary of the current entry - class label, byte size,
      * MES record count (if any), SEQ presence (if any), VAB presence
      * (if any). The JS side parses this and shows it in the inspector
@@ -516,33 +602,6 @@ export class LegaiaViewer {
         return v2;
     }
     /**
-     * Decode the live PSX GPU primitive pool out of a mednafen save state
-     * and return per-vertex attribute arrays for replay in WebGL2 against
-     * the save state's VRAM.
-     *
-     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
-     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
-     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
-     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
-     * triangles in screen-space.
-     *
-     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
-     *
-     * ```text
-     * [u16 vram_width = 1024]
-     * [u16 vram_height = 512]
-     * [u32 vram_byte_len = 1048576]
-     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
-     * [u16 screen_w]
-     * [u16 screen_h]
-     * [u32 vertex_count]
-     * [Vertex; vertex_count]   ; struct, 14 bytes each:
-     *     i16 x, i16 y
-     *     u8  u, u8 v
-     *     u16 cba, u16 tsb
-     *     u8  r, u8 g, u8 b, u8 flags
-     * ```
-     *
      * `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
      * bit 1 = raw texture (skip color modulation). JS computes the model-view
      * matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
@@ -619,6 +678,59 @@ export class LegaiaViewer {
         let deferred1_1;
         try {
             const ret = wasm.legaiaviewer_status(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Decode the live PSX GPU primitive pool out of a mednafen save state
+     * and return per-vertex attribute arrays for replay in WebGL2 against
+     * the save state's VRAM.
+     *
+     * Pool location is per `legaia_mednafen::prim_pool::POOL_BASE_DEFAULT`
+     * (= `0x800AD400`, consistent across the Drake / Sebucus / Karisto
+     * top-view captures). Each accepted primitive (POLY_FT4, POLY_GT4,
+     * POLY_FT3, POLY_GT3, SPRT_16, SPRT_8) is expanded into two
+     * triangles in screen-space.
+     *
+     * Return layout (single packed `Vec<u8>`, little-endian, in this order):
+     *
+     * ```text
+     * [u16 vram_width = 1024]
+     * [u16 vram_height = 512]
+     * [u32 vram_byte_len = 1048576]
+     * [u8;  1048576] VRAM bytes (raw BGR555+STP halfwords)
+     * [u16 screen_w]
+     * [u16 screen_h]
+     * [u32 vertex_count]
+     * [Vertex; vertex_count]   ; struct, 14 bytes each:
+     *     i16 x, i16 y
+     *     u8  u, u8 v
+     *     u16 cba, u16 tsb
+     *     u8  r, u8 g, u8 b, u8 flags
+     * ```
+     *
+     * JSON dump of the world-map quick-travel menu parsed out of
+     * `SCUS_942.54` at disc-load time. Returns `null` if no disc was
+     * loaded as a Mode2/2352 image (raw PROT.DAT paths skip SCUS).
+     *
+     * Shape:
+     * ```json
+     * { "names": [..16 strings..],
+     *   "placements": [{ "index": u32, "name_idx": u8,
+     *                    "discovery_flag": u8, "scene_id": u16,
+     *                    "menu_x": u8, "menu_y": u8 }, ...] }
+     * ```
+     * @returns {string}
+     */
+    worldmap_menu_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_worldmap_menu_json(this.__wbg_ptr);
             deferred1_0 = ret[0];
             deferred1_1 = ret[1];
             return getStringFromWasm0(ret[0], ret[1]);
@@ -794,7 +906,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 427, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 429, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

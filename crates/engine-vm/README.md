@@ -68,7 +68,8 @@ machines that aren't pure data-driven.
 71-opcode move-table VM (jump table at `0x80010778`); `actor_tick` and
 `decrement_wait_timer` mirror the `FUN_80021DF4` + `FUN_80022B94` gate
 (skip when wait_timer ≥ 0, run VM, check HALT flag). Op `0x2F` escapes
-into the overlay-resident `FUN_801D362C` extension VM, not yet ported.
+into the overlay-resident `FUN_801D362C` extension VM (61 sub-opcodes);
+the dispatch table is ported in `world_map_draw_vm.rs`.
 
 ## `actor_tick` - `FUN_80021DF4`
 

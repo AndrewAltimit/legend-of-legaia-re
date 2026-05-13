@@ -164,7 +164,7 @@
     </a>
   </div>
 
-  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to the town overlay extension at <code>FUN_801D362C</code>. The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
+  <p style="margin-top: 1rem;"><strong>How they wire together:</strong> field-VM op <code>0x22 EXEC_MOVE</code> calls <code>FUN_800204F8</code> to stage a move record into the actor; the per-frame actor tick (<code>FUN_80021DF4</code>) calls <code>FUN_80023070</code> to step the move VM; move-VM opcode <code>0x2F</code> escapes to <code>FUN_801D362C</code>, an overlay-resident extension dispatcher (the same 61-sub-opcode dispatcher is loaded by town, world-map, dialog, and cutscene overlays; each supplies its own JT contents). The motion VM (<code>FUN_8003774C</code>) runs independently per actor for NPC pathing and camera-follow paths. The effect VM is on a different track - battle-only - but shares the same actor model: every effect is bound to a master-slot actor that the script-VM and battle-action SM can reference.</p>
 
   <figure class="vm-graph">
     <svg viewBox="0 0 880 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vm-graph-title">

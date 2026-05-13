@@ -9,9 +9,10 @@ pub mod disc;
 pub mod runtime;
 pub mod tmd3d;
 
-use disc::{EntryMeta, extract_prot_dat, parse_prot_toc};
+use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_asset::categorize::{Class, classify};
 use legaia_asset::tim_scan;
+use legaia_asset::worldmap_menu;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -97,6 +98,16 @@ pub struct LegaiaViewer {
     /// Currently-loaded kingdom bundle (Drake/Sebucus/Karisto). Populated by
     /// `set_scene_kingdom`; consumed by the `pack_mesh_*` accessors.
     kingdom: Option<KingdomPack>,
+    /// Bulk continent terrain pack for the same kingdom. Each kingdom's PROT
+    /// bundle has a SECOND 7-asset table at offset +8/+9 holding the world
+    /// terrain TMDs (Drake +8 = 70 TMDs, Sebucus +9 = 43 TMDs). Loaded
+    /// alongside the landmark pack by `set_scene_kingdom` when present;
+    /// consumed by the `continent_pack_*` accessors.
+    continent: Option<KingdomPack>,
+    /// World-map landmark menu (16 names + ~20 placement records) parsed from
+    /// `SCUS_942.54` at load time. Only populated when a full disc image is
+    /// loaded (raw PROT.DAT / single TIM paths leave this `None`).
+    worldmap_menu: Option<worldmap_menu::WorldmapMenu>,
 }
 
 #[wasm_bindgen]
@@ -115,6 +126,8 @@ impl LegaiaViewer {
             current: 0,
             clut_idx: 0,
             kingdom: None,
+            continent: None,
+            worldmap_menu: None,
         })
     }
 
@@ -125,12 +138,30 @@ impl LegaiaViewer {
         self.viewable.clear();
         self.current = 0;
 
+        self.worldmap_menu = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
                 bytes.len() / 1024 / 1024,
                 extracted.len() / 1024 / 1024
             ));
+            // Best-effort parse of the world-map menu out of SCUS_942.54.
+            // Failures are silent: the user might be loading a region build
+            // that ships a differently-named executable, and the rest of the
+            // viewer still works without the menu overlay.
+            if let Some(scus) = extract_scus(&bytes) {
+                match worldmap_menu::parse_scus(&scus) {
+                    Ok(menu) => {
+                        console_log(&format!(
+                            "Parsed world-map menu: {} names, {} placements",
+                            menu.names.len(),
+                            menu.placements.len()
+                        ));
+                        self.worldmap_menu = Some(menu);
+                    }
+                    Err(e) => console_log(&format!("worldmap_menu::parse_scus skipped: {e}")),
+                }
+            }
             extracted
         } else if parse_prot_toc(&bytes).is_some() {
             console_log("Loading bytes as raw PROT.DAT");
@@ -341,7 +372,128 @@ impl LegaiaViewer {
             pack.pack.len()
         ));
         self.kingdom = Some(pack);
+        // Sweep nearby entries (+8..+12) for a second 7-asset table holding
+        // the bulk continent terrain TMDs. Drake's is at +8 (entry 0093, 70
+        // TMDs); Sebucus's at +9 (entry 0253, 43 TMDs); Karisto's not yet
+        // pinned. We try a window of plausible offsets and accept the first
+        // entry that decodes cleanly.
+        self.continent = None;
+        for off in 8..=12u32 {
+            let candidate = prot_base + off;
+            if let Ok(p) = self.try_load_kingdom_at(&entries, candidate) {
+                console_log(&format!(
+                    "continent PROT {} loaded: {} TMDs in pack ({} bytes)",
+                    p.prot_index,
+                    p.byte_offsets.len(),
+                    p.pack.len()
+                ));
+                self.continent = Some(p);
+                break;
+            }
+        }
         Ok(count)
+    }
+
+    /// Number of TMDs in the currently-loaded continent pack. 0 when no
+    /// continent pack was found for this kingdom.
+    pub fn continent_pack_count(&self) -> u32 {
+        self.continent
+            .as_ref()
+            .map(|k| k.byte_offsets.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// PROT index the continent pack was loaded from (0 when none).
+    pub fn continent_prot_index(&self) -> u32 {
+        self.continent.as_ref().map(|k| k.prot_index).unwrap_or(0)
+    }
+
+    /// VRAM bytes (1 MB) built from the continent pack's slot 0. Distinct from
+    /// the landmark VRAM since the two packs ship independent TIM_LISTs.
+    pub fn continent_pack_vram_bytes(&self) -> Vec<u8> {
+        self.continent
+            .as_ref()
+            .map(|k| k.vram.as_bytes().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Select the active continent pack slot. Parallel to `pack_mesh` but
+    /// operates on the continent pack.
+    pub fn continent_pack_mesh(&mut self, slot: u32) -> Result<u32, JsValue> {
+        let k = self
+            .continent
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("continent_pack_mesh: no continent loaded"))?;
+        let s = slot as usize;
+        if s >= k.byte_offsets.len() {
+            return Err(JsValue::from_str(&format!(
+                "continent_pack_mesh: slot {s} >= count {}",
+                k.byte_offsets.len()
+            )));
+        }
+        k.cur_slot = Some(s);
+        Ok(slot)
+    }
+
+    pub fn continent_pack_mesh_positions(&self) -> Vec<f32> {
+        let Some(mesh) = self.build_continent_mesh() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.push(p[0]);
+            out.push(p[1]);
+            out.push(p[2]);
+        }
+        out
+    }
+
+    pub fn continent_pack_mesh_uvs(&self) -> Vec<u8> {
+        let Some(mesh) = self.build_continent_mesh() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.push(uv[0]);
+            out.push(uv[1]);
+        }
+        out
+    }
+
+    pub fn continent_pack_mesh_cba_tsb(&self) -> Vec<u16> {
+        let Some(mesh) = self.build_continent_mesh() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.cba_tsb.len() * 2);
+        for ct in &mesh.cba_tsb {
+            out.push(ct[0]);
+            out.push(ct[1]);
+        }
+        out
+    }
+
+    pub fn continent_pack_mesh_indices(&self) -> Vec<u32> {
+        self.build_continent_mesh()
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    pub fn continent_pack_mesh_bounds(&self) -> Vec<f32> {
+        let Some(mesh) = self.build_continent_mesh() else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        let (lo, hi) = mesh.aabb();
+        let cx = (lo[0] + hi[0]) * 0.5;
+        let cy = (lo[1] + hi[1]) * 0.5;
+        let cz = (lo[2] + hi[2]) * 0.5;
+        let dx = (hi[0] - lo[0]) * 0.5;
+        let dy = (hi[1] - lo[1]) * 0.5;
+        let dz = (hi[2] - lo[2]) * 0.5;
+        let r = (dx * dx + dy * dy + dz * dz).sqrt().max(1.0);
+        vec![cx, cy, cz, r]
     }
 
     /// Set the active pack-mesh slot. Subsequent `pack_mesh_*` calls source
@@ -472,6 +624,25 @@ impl LegaiaViewer {
     ///     u8  r, u8 g, u8 b, u8 flags
     /// ```
     ///
+    /// JSON dump of the world-map quick-travel menu parsed out of
+    /// `SCUS_942.54` at disc-load time. Returns `null` if no disc was
+    /// loaded as a Mode2/2352 image (raw PROT.DAT paths skip SCUS).
+    ///
+    /// Shape:
+    /// ```json
+    /// { "names": [..16 strings..],
+    ///   "placements": [{ "index": u32, "name_idx": u8,
+    ///                    "discovery_flag": u8, "scene_id": u16,
+    ///                    "menu_x": u8, "menu_y": u8 }, ...] }
+    /// ```
+    pub fn worldmap_menu_json(&self) -> String {
+        match &self.worldmap_menu {
+            Some(menu) => serde_json::to_string(menu)
+                .unwrap_or_else(|e| format!("{{\"error\":\"serialize failed: {e}\"}}")),
+            None => "null".to_string(),
+        }
+    }
+
     /// `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
     /// bit 1 = raw texture (skip color modulation). JS computes the model-view
     /// matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).
@@ -1345,7 +1516,18 @@ impl LegaiaViewer {
     /// matching TIMs), which would avoid the collision but require
     /// rebuilding VRAM per slot.
     fn build_kingdom_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
-        let k = self.kingdom.as_ref()?;
+        Self::build_pack_mesh(self.kingdom.as_ref()?)
+    }
+
+    /// Mirror of `build_kingdom_mesh` for the bulk-continent pack loaded
+    /// from slot +N of the kingdom bundle (Drake +8, Sebucus +9). The
+    /// continent pack carries its own VRAM + its own TMD list, so the
+    /// pack-mesh accessors route through it via `cur_slot`.
+    fn build_continent_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
+        Self::build_pack_mesh(self.continent.as_ref()?)
+    }
+
+    fn build_pack_mesh(k: &KingdomPack) -> Option<legaia_tmd::mesh::VramMesh> {
         let slot = k.cur_slot?;
         let start = *k.byte_offsets.get(slot)?;
         let end = *k.byte_ends.get(slot)?;

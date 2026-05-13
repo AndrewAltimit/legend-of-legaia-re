@@ -2,23 +2,26 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld is built from a set of small flat TMDs (Z &isin; [-64, +64]) placed at world coordinates by the field VM. This page renders the world-map mesh data <strong>in real-time WebGL 3D</strong> straight from your disc image. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
+    Each kingdom's overworld combines (a) a continent ground terrain mesh built at runtime as ~5,000 textured polygons in a GPU primitive pool and (b) a sparse set of landmark TMDs (towns, dungeons, NPCs) placed at world coordinates from the kingdom's bundle. This page renders both <strong>in real-time WebGL 3D</strong> &mdash; the landmark TMDs straight from your disc image (40/40 Drake landmarks now placed via a live-RAM actor-to-TMD resolver, on top of the 43 entity placements from the kingdom's MAN asset); the continent ground terrain (currently) from a top-view mednafen save state, since the generator that produces the textured ground tiles hasn't been located yet. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a> &middot; <a href="formats/world-map-overlay.html">slot-4 overlay outlines</a>.
   </p>
 </header>
 
 <section class="doc-section" id="how-this-works">
-  <h2>What's rendered, what's still WIP</h2>
+  <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>In-game top-down view:</strong> upload a mednafen <code>.mc[N]</code> save state captured in the world-map debug top-view (slots 1 / 2 / 3 = Drake / Sebucus / Karisto for many of our recordings) and the page extracts the GPU framebuffer straight out of the save state's VRAM section. That framebuffer is what the game actually renders: the full kingdom continent composed of ~10,000 textured polygons per frame from the kingdom's TIM pack + tile-mesh data. No disc image required for this path - the save state already holds the rendered pixels.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. For Drake the page additionally overlays 12 live-RAM-resolved actor placements (bridge towers, gates, the small castle, wall sections) baked into <code>site/world-overview-live.json</code> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. This combined view renders the landmark layer but <em>not</em> the continent ground terrain beneath it &mdash; the textured ground tiles are produced by a runtime generator that hasn't been located yet (slot 4 of the kingdom bundle is the dev-menu top-view wireframe, not the textured tiles).
   </p>
   <p>
-    <strong>Mesh inspector + placement scatter:</strong> if you load a disc image, you can also browse the per-kingdom TMD pack one mesh at a time (Mesh inspector mode) or see all decoded actor placements as a 3D scatter (Placement scatter mode). The placement walker mirrors <code>FUN_8003A1E4</code>'s record reader and pulls Shift-JIS location names + <code>(tmd_slot, x, z)</code> coordinates from each kingdom's type-3 &quot;Man&quot; asset.
+    <strong>Framebuffer (save state):</strong> until the continent generator is reversed, the only way to see the full overworld is to upload a mednafen <code>.mc[N]</code> save state captured while the world-map debug top-view is active. The page then extracts either the rendered GPU framebuffer straight out of VRAM (fast, pixel-accurate, fixed 320&times;240) or replays the live primitive pool (~10,000 textured POLY_FT4 packets, pan/zoom in WebGL2). No disc image required for this path. Tracking the generator RE in <a href="subsystems/world-map.html">world-map subsystem</a>.
   </p>
   <p>
-    <strong>Placement table:</strong> the world-map actor positions are now extracted straight from each kingdom's bundle. The format is the type-3 &quot;Man&quot; asset (LZS-compressed slot 2 in the 7-asset table), parsed via <code>FUN_8003A1E4</code>'s walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate.
+    <strong>Mesh inspector:</strong> with a disc loaded, browse the per-kingdom TMD pack one mesh at a time (orbit camera, auto-rotate).
   </p>
   <p>
-    <strong>Slot &rarr; TMD resolved:</strong> each placement's <code>tmd_slot</code> now cross-links to the exact mesh that fills it. The scene-pool TMDs come from slot 1 of the same 7-asset bundle (type byte <code>0x02</code>) - an LZS-compressed pack with <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> layout that the runtime walks via <code>FUN_8001F05C case 2</code>, calling <code>FUN_80026b4c</code> per body to fill positions 0..count-1 of the scene's TMD pool. The offsets are in 4-byte words, mirroring <code>prot::timpack</code>. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>; every scene-slot referenced by a placement record exists inside that pack (max slots: Drake 37, Sebucus 33, Karisto 54). Placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead - Drake's three party-on-the-world-map records use globals 0/1/2.
+    <strong>Placement table:</strong> the world-map actor positions baked into <code>site/world-overview.json</code> are parsed from each kingdom's type-3 &quot;Man&quot; asset via <code>FUN_8003A1E4</code>'s record walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate. Each placement's <code>tmd_slot</code> resolves into the kingdom pack (max slot Drake 37, Sebucus 33, Karisto 54); placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead. Drake additionally surfaces 12 live-RAM actor placements via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a>: each world-map actor's <code>mesh_head[+0x44]</code> chain is walked to find the containing TMD via backward magic-word search, then mapped to a slot index. The result is baked into <code>site/world-overview-live.json</code>; the viewer overlays those placements on top of the MAN entities so the bridge towers, gates, small castle, and other actor-positioned features render correctly.
+  </p>
+  <p>
+    <strong>What about slot 4?</strong> Each kingdom bundle's slot 4 (type byte <code>0x05</code>, ~32 KB) was a logical candidate for the bulk continent geometry. It IS world-map data and we&apos;ve fully decoded it (see the <a href="formats/world-map-overlay.html">world-map overlay outlines</a> format doc), but it turns out to hold the <em>dev-menu top-view wireframe</em> &mdash; coastline curves (Drake body 12 = 1200-vertex outline) and the &plusmn;32K world-boundary frame (body 13), not the textured ground tiles. The data is loaded verbatim into RAM at <code>0x8011A664</code> with zero per-byte diffs, but ~4000 vertices across all 15 sub-bodies is far below the ~17000+ vertex positions the textured continent in the GPU prim pool would need. So slot 4 is ruled out as the bulk-terrain source; the strongest remaining hypothesis is a procedural sibling of the horizon emitter <code>FUN_801D7EA0</code> reached from the per-frame world-map tick <code>FUN_80016444</code>.
   </p>
 </section>
 
@@ -31,7 +34,7 @@
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
       <button id="wo-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
     </div>
-    <div class="viewer-status" id="wo-status">No disc loaded. Once loaded, every world-map TMD becomes browsable as a textured 3D mesh.</div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Load a disc and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required for that view.</div>
   </div>
 </section>
 
@@ -48,9 +51,9 @@
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
         <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
-          <button id="wo-mode-savestate" type="button" class="wo-mode is-active" role="radio" aria-checked="true">In-game top-view</button>
-          <button id="wo-mode-world"     type="button" class="wo-mode" role="radio" aria-checked="false">Placement scatter</button>
-          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false">Mesh inspector</button>
+          <button id="wo-mode-world"     type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Disc image only. Landmark TMDs from the kingdom bundle placed at their world coordinates. Continent terrain not yet reversed.">Assembled scene (disc)</button>
+          <button id="wo-mode-savestate" type="button" class="wo-mode" role="radio" aria-checked="false" title="Requires a top-view debug save state. Pulls the full rendered continent + landmarks straight from VRAM.">Framebuffer (save state)</button>
+          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false" title="Disc image only. Browse the per-kingdom TMD pack one mesh at a time.">Mesh inspector</button>
         </span>
         <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
@@ -69,12 +72,12 @@
         </span>
         <span id="wo-ss-status" style="font-size:0.75rem; color: var(--text-dim);">no save state loaded</span>
       </div>
-      <div class="wo-hover-3d" id="wo-mesh-info">Upload a top-view save state above (e.g. mednafen <code>.mc1</code>) and click Load to see the kingdom rendered as the game draws it</div>
+      <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D &mdash; or switch to <em>Framebuffer (save state)</em> to view the full continent pulled from a mednafen <code>.mc[N]</code> save.</div>
     </div>
 
     <aside class="wo-side">
-      <h3>Placement scatter</h3>
-      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">World positions parsed from each kingdom's type-3 &quot;Man&quot; asset. Hover a dot for the location's in-game name.</p>
+      <h3>Top-down placement map</h3>
+      <p class="hint" style="margin: 0 0 0.5rem; font-size: 0.75rem;">2D minimap of every world-placed actor. Always available &mdash; baked from the disc into <code>world-overview.json</code>. Hover a dot for the location's in-game name.</p>
       <canvas id="wo-canvas2d" width="280" height="280" aria-label="Top-down placement scatter"></canvas>
       <div id="wo-hover" class="wo-hover-2d">&nbsp;</div>
       <h3 style="margin-top:1rem">Snapshot</h3>
@@ -83,6 +86,24 @@
       <ul id="wo-list-counts" class="wo-list-counts"></ul>
       <h3 style="margin-top:1rem">Named locations</h3>
       <ul id="wo-name-list" class="wo-name-list"></ul>
+    </aside>
+  </div>
+</section>
+
+<section class="doc-section" id="quick-travel">
+  <h2>World-map quick-travel menu (whole Legaia)</h2>
+  <p>
+    The PSX retail build ships a 16-entry landmark name table at <code>DAT_80073B18</code> + a 20-record placement table at <code>DAT_80073A98</code> in <code>SCUS_942.54</code> &mdash; the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button. Each placement record is 6 bytes: <code>(name_idx, discovery_flag, scene_id, menu_x, menu_y)</code>. The walker (<code>FUN_80030628</code> case <code>0x19</code>) skips records whose discovery flag (offset +0x20 in the fourth flag bank) is still cleared, and dedupes consecutive entries that share a name &mdash; so 16 landmarks expose 20 entry-point records with 3 of them flagged with multiple sub-entries (Biron Monastery, Drake Castle, Rim Elm, Ratayu have 2-3 each).
+  </p>
+  <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu screen-space (<code>menu_x &isin; 22..102</code>, <code>menu_y &isin; 13..108</code>). Hover a dot for the name and the destination scene id. Data is parsed from <code>SCUS_942.54</code> at disc-load time; load a disc above to populate.</p>
+  <div class="wo-layout">
+    <div>
+      <canvas id="wo-qt-canvas" width="600" height="450" class="viewer-canvas" aria-label="Quick-travel menu map"></canvas>
+      <div id="wo-qt-hover" class="wo-hover-2d">&nbsp;</div>
+    </div>
+    <aside class="wo-side">
+      <h3>Landmarks (16)</h3>
+      <ul id="wo-qt-namelist" class="wo-name-list" style="max-height: 420px;"></ul>
     </aside>
   </div>
 </section>
@@ -274,7 +295,7 @@
   let   primReplay   = null;   /* PrimReplayRenderer instance (created lazily) */
   const replayCam    = { centerX: 160, centerY: 120, zoom: 3 };
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
-  let   viewMode    = 'savestate';  /* 'savestate' (in-game framebuffer) | 'world' (assembled scatter 3D) | 'mesh' (single TMD) */
+  let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'savestate' (framebuffer / prim replay from .mcN) | 'mesh' (single TMD) */
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -300,10 +321,12 @@
   updateSnapshot();
   drawScatter();
 
-  /* Render the savestate-mode placeholder text on first paint so the
-   * canvas isn't an empty black square while waiting for a save state.
-   * Calls into drawSavestate which is hoisted (function declaration). */
-  queueMicrotask(() => drawSavestate());
+  /* Render a "load a disc" placeholder on first paint so the canvas
+   * isn't an empty black square. Default mode is 'world' (assembled scene
+   * from disc); if the user has no disc yet, drawWorldPlaceholder() draws
+   * a friendly hint. drawWorldPlaceholder is hoisted as a function
+   * declaration. */
+  queueMicrotask(() => drawWorldPlaceholder());
 
   /* ---------- Camera controls ----------- */
   function attachCameraControls(canvas) {
@@ -379,9 +402,13 @@
   $modeSavestate.addEventListener('click', () => setViewMode('savestate'));
   $modeWorld    .addEventListener('click', () => setViewMode('world'));
   $modeMesh     .addEventListener('click', () => setViewMode('mesh'));
-  /* Default UI matches default viewMode = 'savestate'. */
+  /* Default UI matches default viewMode = 'world' (assembled scene from
+   * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
+   * (used by the top-down camera); the savestate file-picker bar is
+   * hidden until the user clicks the "Framebuffer (save state)" mode. */
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
-  $resetCam.hidden = true;
+  $resetCam.hidden = false;
+  $ssBar.style.display = 'none';
 
   /* ---------- Save state framebuffer + prim-pool extraction ----------- */
   /* Cached per-kingdom data so switching tabs after one upload re-shows
@@ -456,6 +483,29 @@
   }
   $ssModeFb    .addEventListener('click', () => setSsRenderMode('fb'));
   $ssModeReplay.addEventListener('click', () => setSsRenderMode('replay'));
+
+  /* Empty-state placeholder painted on first load when no disc has been
+   * uploaded yet (the default mode is 'world' but loadWorldView() needs
+   * the WASM viewer + a disc). Also used as a soft fallback when the
+   * user clicks "Assembled scene (disc)" without a disc loaded. */
+  function drawWorldPlaceholder() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (primReplay) { primReplay.dispose(); primReplay = null; }
+    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
+    const fresh = freshCanvas();
+    if (!fresh) return;
+    const ctx = fresh.getContext('2d');
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, fresh.width, fresh.height);
+    ctx.fillStyle = '#888'; ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load a disc image above to render this kingdom\'s assembled scene.', fresh.width / 2, fresh.height / 2 - 18);
+    ctx.fillStyle = '#666';
+    ctx.fillText('No save state required for this view.', fresh.width / 2, fresh.height / 2 + 4);
+    ctx.fillText('(Switch to "Framebuffer (save state)" to view the full continent.)', fresh.width / 2, fresh.height / 2 + 22);
+    $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - waiting for disc`;
+    $meshInfo.innerHTML = 'Load a disc image above to see the kingdom\'s landmark TMDs assembled in 3D &mdash; or switch to <em>Framebuffer (save state)</em> to view the full continent pulled from a mednafen <code>.mc[N]</code> save.';
+  }
 
   function drawSavestate() {
     /* Always start by stopping any prior rAF / disposing the prim renderer. */
@@ -589,6 +639,16 @@
       }
       const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
       $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
+      /* Populate the whole-Legaia quick-travel section from SCUS data
+       * the viewer parsed during load_disc(). Failures are silent: the
+       * section just stays in its "load a disc" state. */
+      try {
+        const json = viewer.worldmap_menu_json();
+        const menu = JSON.parse(json);
+        if (menu) renderQuickTravel(menu);
+      } catch (e) {
+        console.warn('worldmap_menu_json:', e);
+      }
       $prev.disabled = false;
       $next.disabled = false;
       currentMeshIdx = 0;
@@ -612,7 +672,13 @@
       drawSavestate();
       return;
     }
-    if (!viewer) return;
+    if (!viewer) {
+      /* No disc loaded yet. Both 'world' and 'mesh' modes need the WASM
+       * viewer + a parsed PROT TOC. Show the friendly placeholder so the
+       * canvas doesn't sit empty until the user uploads a disc. */
+      drawWorldPlaceholder();
+      return;
+    }
     if (viewMode === 'world') {
       loadWorldView();
     } else if (kingdomSlots[k].length > 0) {
@@ -894,6 +960,122 @@
       scatterDots.push({ x, y, p });
     });
   }
+
+  /* ---------- Quick-travel menu overlay (whole Legaia) ---------- */
+  /* Visual style guide for the 20-record overlay - subtle but readable. */
+  const QT_DOT_COLOR = '#F4B41A';
+  const QT_DOT_RADIUS = 5;
+  let qtRecords = null;  /* { names: string[], placements: [{name_idx, ...}] } */
+  let qtScreen = [];     /* [{ x, y, p, name }] hit-test entries in canvas coords */
+
+  function renderQuickTravel(menu) {
+    qtRecords = menu;
+    const $qtCanvas   = document.getElementById('wo-qt-canvas');
+    const $qtNameList = document.getElementById('wo-qt-namelist');
+    if (!$qtCanvas || !$qtNameList) return;
+    /* Sidebar: 16 names with placement counts (sub-entries per landmark). */
+    const counts = new Array(menu.names.length).fill(0);
+    menu.placements.forEach(p => { counts[p.name_idx]++; });
+    $qtNameList.innerHTML = menu.names.map((name, i) => {
+      const c = counts[i];
+      const tag = c === 0
+        ? '<span style="color:#888">(no record)</span>'
+        : `<span class="wo-coord">x${c}</span>`;
+      return `<li><span class="wo-name">[0x${i.toString(16).padStart(2,'0').toUpperCase()}] ${escapeHtml(name)}</span> ${tag}</li>`;
+    }).join('');
+    /* Canvas: scale menu_x/menu_y (PSX menu screen space, ~128x128) to
+     * canvas pixels. menu_x range observed 22..102, menu_y 13..108. */
+    drawQuickTravelCanvas();
+  }
+  function drawQuickTravelCanvas() {
+    const $qtCanvas = document.getElementById('wo-qt-canvas');
+    if (!$qtCanvas || !qtRecords) return;
+    const ctx = $qtCanvas.getContext('2d');
+    const W = $qtCanvas.width, H = $qtCanvas.height;
+    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
+    /* Margin + scale from a 0..128 menu-coord box to canvas. */
+    const margin = 30;
+    const aW = W - margin * 2;
+    const aH = H - margin * 2;
+    const sx = aW / 128;
+    const sy = aH / 128;
+    /* Grid */
+    ctx.strokeStyle = 'rgba(120,130,200,0.12)';
+    for (let i = 0; i <= 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(margin + (i/8)*aW, margin);
+      ctx.lineTo(margin + (i/8)*aW, margin + aH);
+      ctx.moveTo(margin, margin + (i/8)*aH);
+      ctx.lineTo(margin + aW, margin + (i/8)*aH);
+      ctx.stroke();
+    }
+    qtScreen = [];
+    /* Draw dots first so labels render on top. */
+    qtRecords.placements.forEach(p => {
+      const x = margin + p.menu_x * sx;
+      const y = margin + p.menu_y * sy;
+      ctx.beginPath();
+      ctx.arc(x, y, QT_DOT_RADIUS, 0, 2*Math.PI);
+      ctx.fillStyle = QT_DOT_COLOR; ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+      qtScreen.push({ x, y, p, name: qtRecords.names[p.name_idx] || '?' });
+    });
+    /* Label one entry per landmark (the first record we see for each
+     * name_idx). De-dupes the closely-grouped sub-entry triplets. */
+    ctx.font = '11px monospace';
+    ctx.fillStyle = '#ddd';
+    ctx.textBaseline = 'middle';
+    const labeled = new Set();
+    qtScreen.forEach(d => {
+      if (labeled.has(d.p.name_idx)) return;
+      labeled.add(d.p.name_idx);
+      const label = d.name;
+      const tx = d.x + QT_DOT_RADIUS + 4;
+      const tw = ctx.measureText(label).width;
+      /* Background pill so labels stay readable over the grid. */
+      ctx.fillStyle = 'rgba(10,10,26,0.78)';
+      ctx.fillRect(tx - 2, d.y - 7, tw + 4, 14);
+      ctx.fillStyle = '#ddd';
+      ctx.fillText(label, tx, d.y);
+    });
+  }
+  /* Hover tooltip over the quick-travel canvas. */
+  const $qtCanvasEl = document.getElementById('wo-qt-canvas');
+  const $qtHover    = document.getElementById('wo-qt-hover');
+  if ($qtCanvasEl && $qtHover) {
+    $qtCanvasEl.addEventListener('mousemove', ev => {
+      const rect = $qtCanvasEl.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) * ($qtCanvasEl.width / rect.width);
+      const my = (ev.clientY - rect.top) * ($qtCanvasEl.height / rect.height);
+      let best = null, bestD = Infinity;
+      for (const d of qtScreen) {
+        const dx = d.x - mx, dy = d.y - my;
+        const r2 = dx*dx + dy*dy;
+        if (r2 < bestD) { bestD = r2; best = d; }
+      }
+      if (best && bestD < 96) {
+        const p = best.p;
+        $qtHover.textContent =
+          `${best.name}  -  rec ${p.index}  menu (${p.menu_x}, ${p.menu_y})  ` +
+          `scene_id=0x${p.scene_id.toString(16).padStart(4,'0').toUpperCase()}  ` +
+          `flag=0x${p.discovery_flag.toString(16).padStart(2,'0').toUpperCase()}`;
+      } else {
+        $qtHover.innerHTML = '&nbsp;';
+      }
+    });
+    $qtCanvasEl.addEventListener('mouseleave', () => { $qtHover.innerHTML = '&nbsp;'; });
+  }
+  /* Initial placeholder. */
+  (function paintQtPlaceholder() {
+    const $c = document.getElementById('wo-qt-canvas');
+    if (!$c) return;
+    const ctx = $c.getContext('2d');
+    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, $c.width, $c.height);
+    ctx.fillStyle = '#888'; ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load a disc above to see the in-game world-map menu', $c.width / 2, $c.height / 2 - 10);
+    ctx.fillText('(parsed live from SCUS_942.54)', $c.width / 2, $c.height / 2 + 10);
+  })();
 
   /* Hover tooltip over the scatter */
   if ($canvas2d) {

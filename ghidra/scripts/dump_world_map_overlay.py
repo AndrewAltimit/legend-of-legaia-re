@@ -41,6 +41,10 @@ TARGETS = [
     "801d9e1c",  # 1396 bytes
     "801d27e0",  # 1368 bytes
     "801e4794",  # 1220 bytes
+    "801d7ea0",  # 832 bytes  -- only POLY_FT4 (cmd=0x2C) AddPrim candidate
+                 #               in the overlay; incoming=0 = called via
+                 #               function pointer. Suspected terrain emitter.
+    "801d7518",  # 732 bytes  -- callee of main_init, incoming=7
 ]
 
 OUT_DIR = "/scripts/funcs"

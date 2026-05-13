@@ -1,6 +1,6 @@
 # Move-table opcode VM
 
-A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from the [field/event script VM](script-vm.md) and the [actor / sprite VM](actor-vm.md): the move VM lives in `SCUS_942.54`, runs on the per-actor "move buffer" set up by `FUN_800204F8`, and is invoked every frame from the actor tick. The opcode space is **71 instructions** (`0x00..0x46`); opcode `0x2F` escapes to a per-overlay extension dispatcher in the town overlay (`FUN_801D362C`, **61 sub-opcodes** `0x00..0x3C`).
+A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from the [field/event script VM](script-vm.md) and the [actor / sprite VM](actor-vm.md): the move VM lives in `SCUS_942.54`, runs on the per-actor "move buffer" set up by `FUN_800204F8`, and is invoked every frame from the actor tick. The opcode space is **71 instructions** (`0x00..0x46`); opcode `0x2F` escapes to an overlay-resident extension dispatcher (`FUN_801D362C`, **61 sub-opcodes** `0x00..0x3C`) that is loaded by many overlays (town, world-map, dialog, cutscene, ...) at the same RAM address; each overlay supplies its own JT contents.
 
 ## Three-VM picture
 
@@ -13,7 +13,7 @@ A bytecode VM dedicated to per-actor animation, motion, and state. Distinct from
 The three are wired:
 - Field VM op `0x22` `EXEC_MOVE` calls `FUN_800204F8`, which finds the move record for `move_id` and stages it into the actor at `actor[+0x48]` (buffer base) / `actor[+0x70]` (PC).
 - Actor tick (`FUN_80021DF4`, per frame) and actor spawn (`FUN_80021B04`, one-shot) both call `FUN_80023070(actor)` to step the move buffer.
-- Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **scene-specific extension opcodes** that live in the town overlay.
+- Move-VM opcode `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` for **overlay-defined extension opcodes**. The dispatcher exists in many overlays (town, world-map and its variants, dialog, cutscene); each overlay carries its own copy with its own JT contents.
 
 ## Function signature
 
@@ -132,7 +132,7 @@ Calls `FUN_80024C80(actor, op[1])`. The body is a pure `jr ra` / nop - the opcod
 param_3 = func_0x801d362c(actor, op);
 ```
 
-**Escape to overlay-defined extension opcodes.** The town overlay's `FUN_801D362C` reads `op[1]` as a 16-bit sub-opcode (range `0x00..0x3C`) and dispatches via its own JT at `0x801CE868` (61 entries × 4 bytes). Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0`, `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of this table.
+**Escape to overlay-defined extension opcodes.** `FUN_801D362C` reads `op[1]` as a 16-bit sub-opcode (range `0x00..0x3C`) and dispatches via its own JT at `0x801CE868` (61 entries × 4 bytes). The same dispatcher resides in many overlays (town, world-map and its variants, dialog, cutscene) at the same RAM address; each overlay supplies its own JT contents. Each sub-handler returns the size in u16 units. Sub-handlers at `0x801D31B0` (per-scanline POLY_FT4 strip emitter; reused across dialog / cutscene / world-map / 0897 overlays), `0x801D32F8`, `0x801D3444`, `0x801D3748`, `0x801D52D0`, etc. are members of this table.
 
 The 16-slot, 8-byte-stride scratch table at `&DAT_801F3498` is shared across actors - sub-ops `0x25/0x26` round-trip world coords (8 B), `0x27/0x28` round-trip the tween-source triple at `+0x90` (with `>> 12` fixed-point scaling and `[-0xFF, 0xFF]` clamping on read), `0x31/0x32` round-trip the render-bank section at `+0x24..+0x2C`, and `0x34/0x35` round-trip `actor[+0x72]`. Sub-op `0x0C` sets `actor[+0x50]` (the midpoint blend / sub-state byte consumed by the `FUN_801E45BC` mid-point helper from sub-ops `0x0E` / `0x12`); sub-op `0x0D` is the additive variant.
 

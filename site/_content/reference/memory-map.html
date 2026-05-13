@@ -92,6 +92,14 @@
       <span class="memmap-addr">0x8007BD24</span>
       <span class="memmap-label">Pointer to active battle context struct</span>
     </div>
+    <div class="memmap-row" data-key="wmap-render-pipeline">
+      <span class="memmap-addr">0x8007BC3C + 0x801F351C..3528</span>
+      <span class="memmap-label">World-map render-pipeline gate flag + params</span>
+    </div>
+    <div class="memmap-row" data-key="actor-list-slots">
+      <span class="memmap-addr">0x8007C34C..0x36C</span>
+      <span class="memmap-label">Actor-list slot table (7 linked-list heads consumed by FUN_8002519c)</span>
+    </div>
 
     <div class="memmap-section-head">Heap + scratch</div>
     <div class="memmap-row" data-key="heap">
@@ -171,6 +179,20 @@ const DETAILS = {
   'battle-ctx-ptr': {
     title: 'Battle context pointer',
     body: `<p>4-byte pointer to the active battle context struct in heap. Resolves to <code>0x800EB654</code> for the captured battle. Byte <code>+0x07</code> of the pointed-to struct is the party-action ID; byte <code>+0x06</code> is the monster-action ID. The battle action state machine (<code>FUN_801E295C</code>) keys on these.</p>`
+  },
+  'wmap-render-pipeline': {
+    title: 'World-map render-pipeline state',
+    body: `<p>Two adjacent groups of globals drive the world-map's per-frame POLY_FT4 batch chain. See the <a href="../subsystems/world-map.html#render-pipeline">world-map render pipeline section</a> for the full call graph.</p>
+<ul>
+<li><code>0x8007BC3C</code> &mdash; submode register. SCUS <code>FUN_80016444</code> gates its direct <code>jal 0x801D7EA0</code> on this being <code>2</code>. Six SCUS writers; <code>FUN_80016230</code> is the two-write set/clear path.</li>
+<li><code>0x8007BCD0/_D4/_D8</code> &mdash; source globals for the gate-arm scale / step / OT-layer params (<code>FUN_801D1344</code> forwards these to <code>FUN_801D8258</code>).</li>
+<li><code>0x801F351C</code> &mdash; one-shot self-clearing gate flag for the emitter. Lives in the persistent <code>0x801F0000+</code> region so survives overlay swaps; shared between the world-map overlay's <code>FUN_801D7EA0</code> and the 0897 field overlay's sibling <code>FUN_801C9688</code>.</li>
+<li><code>0x801F3518/3520/3524/3528</code> &mdash; running camera angle / scale / step / OT-layer state consumed by the emitter on its next run. Angle indexes the cos LUT at <code>0x8007B81C</code>.</li>
+</ul>`
+  },
+  'actor-list-slots': {
+    title: 'Actor-list slot table',
+    body: `<p>Seven linked-list heads at strides of 4 bytes (<code>+0x00/+0x04/+0x08/+0x0C/+0x10/+0x14/+0x20</code>). <code>FUN_80016444</code> walks five of them per frame as separate render passes; the iterator <code>FUN_8002519c</code> dispatches each node via <code>jalr node[+0x0C]</code>. <code>_DAT_8007C354</code> and <code>_DAT_8007C364</code> are also read by <code>func_0x8003C83C</code> for motion-VM <code>0xF8</code>/<code>0xFB</code> channel lookups (same list, two consumers).</p>`
   },
   'heap': {
     title: 'Game heap',

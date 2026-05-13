@@ -34,6 +34,7 @@ pub mod gpu;
 pub mod prim_pool;
 pub mod psx;
 pub mod scenarios;
+pub mod source_hunt;
 
 pub use container::{SaveState, Section, SubEntry};
 pub use diff::{RamDiff, RegionDiff};

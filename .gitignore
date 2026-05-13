@@ -37,6 +37,22 @@
 *.mc[0-9]
 *.mca
 
+# PCSX-Redux closed-loop probe outputs (scripts/pcsx-redux/run_world_map_probe.sh
+# and its autorun Lua scripts). CSVs contain RAM-slice bytes captured at
+# breakpoint hits and are Sony-derived; .hits.txt is just per-probe counts
+# but lands next to the CSV. Re-generate via the wrapper.
+/logs/
+/world_map_probe*.csv
+/world_map_probe*.txt
+/prim_pool_writers*.csv
+/prim_pool_writers*.txt
+/cd_dma_probe*.csv
+/cd_dma_probe*.txt
+/lzs_bundle_probe*.csv
+/lzs_bundle_probe*.txt
+/deep_pool_probe*.csv
+/deep_pool_probe*.txt
+
 # User-local overlay sweep spec (path/label pairs; example committed as .example).
 scripts/overlays.spec
 

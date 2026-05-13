@@ -39,7 +39,8 @@
       <ul class="fnref-list">
         <li><code>FUN_801D6628</code> - actor / sprite VM (13 opcodes, JT at <code>0x801CED70</code>)</li>
         <li><code>FUN_80023070</code> - move-table VM (71 opcodes, JT at <code>0x80010778</code>)</li>
-        <li><code>FUN_801D362C</code> - move-VM extension (61 sub-opcodes via op <code>0x2F</code>)</li>
+        <li><code>FUN_801D362C</code> - move-VM extension (61 sub-opcodes via op <code>0x2F</code>); same dispatcher in town / world-map / dialog / cutscene overlays at the same RAM address</li>
+        <li><code>FUN_8002519C</code> - per-frame actor-list iterator; called 5x per frame from <code>FUN_80016444</code> against the actor-list heads at <code>_DAT_8007C34C..0x36C</code></li>
         <li><code>FUN_801DE840</code> - field / event script VM (43 ops, switch at <code>0x801E00F4</code>)</li>
         <li><code>FUN_801E0C3C</code> - field-VM <code>0x4C</code> 2nd-stage dispatcher (16-entry JT at <code>0x801CEE60</code>)</li>
         <li><code>FUN_801E3040</code> - field-VM <code>0x4C</code> outer-nibble-<code>0xE</code> sub-dispatcher (15-entry JT at <code>0x801CF008</code>)</li>
@@ -63,7 +64,11 @@
     <div class="fnref-block">
       <h3>Renderer + GTE</h3>
       <ul class="fnref-list">
-        <li><code>FUN_8002735C</code> - Legaia TMD renderer (60 GTE ops)</li>
+        <li><code>FUN_8002735C</code> - Legaia TMD renderer (60 GTE ops); bulk world-map continent flows through this leaf via <code>FUN_8001ADA4</code> case-5</li>
+        <li><code>FUN_8001ADA4</code> - Per-actor RENDER dispatcher (switch on <code>actor[+0x56]</code>); case-5 walks the mesh chain at <code>actor[+0x44]</code> and emits TMDs</li>
+        <li><code>FUN_8001D140</code> - Stack-swap wrapper around <code>FUN_8001ADA4</code>; called 6&times; per frame from <code>FUN_80016444</code> against <code>_DAT_8007C34C..0x36C</code> (render pass)</li>
+        <li><code>FUN_8002519C</code> - Per-frame actor-list TICK iterator; called 5&times; per frame (distinct from the render pass)</li>
+        <li><code>FUN_8002C69C</code> - HUD / menu / dialog sprite-batch POLY_FT4 emitter (~120 prims/frame for world-map UI; not the continent)</li>
         <li><code>FUN_80026B4C</code> - TMD validate + register</li>
         <li><code>FUN_800268DC</code> - TMD pointer fixup</li>
         <li><code>0x80010778</code> - move-VM jump table</li>
@@ -116,6 +121,20 @@
         <li><code>0x80061-0x80067</code> - libsnd SsAPI sequencer cluster</li>
         <li><code>0x80068-0x6D</code> - libspu SPU control cluster</li>
         <li><code>FUN_80069B18</code> - SPU DMA transfer state machine</li>
+      </ul>
+    </div>
+
+    <div class="fnref-block">
+      <h3>World map</h3>
+      <ul class="fnref-list">
+        <li><code>FUN_801E76D4</code> - world-map controller (9320 B); top-view debug toggle + camera scroll/azimuth/zoom</li>
+        <li><code>FUN_801EAD98</code> - world-map developer menu renderer (7280 B); 24-entry scrollable list</li>
+        <li><code>FUN_801DA51C</code> - per-entity tick (260 B); 5-state SM on <code>entity[+0x8A]</code></li>
+        <li><code>FUN_801CFC40</code> - top-view sprite batcher (524 B, top-view only)</li>
+        <li><code>FUN_80016444</code> (SCUS, 1352 B) - per-frame render tick reached from <code>FUN_80025EEC</code> (default per-mode handler) or <code>FUN_80025F2C</code> (Mode 13 MAPDSIP); <code>jal 0x801D7EA0</code> gated by <code>_DAT_8007BC3C == 2</code></li>
+        <li><code>FUN_801D7EA0</code> - 832-byte POLY_FT4 batch emitter; one-shot gated by <code>_DAT_801F351C</code>; 224-iter cos-rotation loop</li>
+        <li><code>FUN_801D8258</code> - 40-byte gate setter; <code>_DAT_801F351C = 1</code> + scale/step/OT-layer params</li>
+        <li><code>FUN_801D1344</code> (world_map overlay) + <code>FUN_801C2B2C</code> (0897 field overlay) - 1332-byte gate-arm wrapper (overlay relocation pair). Distinct from the dialog overlay's <code>FUN_801D1344</code> (different code at the same RAM address).</li>
       </ul>
     </div>
 
