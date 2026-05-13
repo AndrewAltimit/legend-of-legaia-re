@@ -418,14 +418,49 @@ class TmdRenderer {
     this.wireVertexCount = lineCount * 2;
   }
 
+  /* Upload a topology-free point cloud (`LegaiaViewer::slot4_wireframe_points`).
+   * Same packing scheme as `uploadWireframeLines` but 8 bytes per point
+   * (one vertex per record instead of two). Use this for the `points`
+   * style - the most honest visualization since the records are
+   * byte-verified against live RAM and we don't depend on a topology
+   * interpretation. */
+  uploadWireframePoints(packed) {
+    if (!this.wireProgram) this.initWireframePipeline();
+    const gl = this.gl;
+    const view = new DataView(packed.buffer, packed.byteOffset, packed.byteLength);
+    const ptCount = view.getUint32(0, true);
+    /* per vertex: 3 floats (x,y,z) + 3 floats (r,g,b) = 24 bytes. */
+    const verts = new Float32Array(ptCount * 6);
+    let p = 4;
+    let v = 0;
+    for (let i = 0; i < ptCount; i++) {
+      const bodyIdx = view.getUint8(p); p += 4; /* +pad bytes */
+      const x = view.getInt16(p, true); p += 2;
+      const z = view.getInt16(p, true); p += 2;
+      const [r, g, b] = wireframeBodyColor(bodyIdx);
+      verts[v++] = x; verts[v++] = 0; verts[v++] = z;
+      verts[v++] = r;  verts[v++] = g; verts[v++] = b;
+    }
+    gl.bindVertexArray(this.wireVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.wireVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.wireLocPos);
+    gl.vertexAttribPointer(this.wireLocPos, 3, gl.FLOAT, false, 24, 0);
+    gl.enableVertexAttribArray(this.wireLocColor);
+    gl.vertexAttribPointer(this.wireLocColor, 3, gl.FLOAT, false, 24, 12);
+    gl.bindVertexArray(null);
+    this.wireVertexCount = ptCount;
+    this.wireDrawMode = 'points';
+  }
+
   /* Draw the previously-uploaded wireframe overlay on top of the
    * current frame using the same top-down camera math as
-   * renderAssembled. No-ops when no lines are uploaded.
+   * renderAssembled. No-ops when nothing is uploaded.
    *
-   * Renders with depth-test OFF (lines always paint on top of the
-   * landmarks - they're a UI overlay, not 3D geometry) and standard
-   * alpha blending so the assembled scene remains visible through the
-   * wireframe. */
+   * Renders with depth-test OFF (the wireframe is a UI overlay, not 3D
+   * geometry) and standard alpha blending so the assembled scene remains
+   * visible through it. The draw primitive (LINES or POINTS) is
+   * selected by whichever upload path was last invoked. */
   renderWireframe(worldExtent, cam) {
     if (!this.wireProgram || !this.wireVertexCount) return;
     const gl = this.gl;
@@ -438,9 +473,12 @@ class TmdRenderer {
     gl.useProgram(this.wireProgram);
     const vp = buildTopDownVp(w, h, worldExtent, cam);
     gl.uniformMatrix4fv(this.wireLocMvp, false, vp);
-    gl.uniform1f(this.wireLocAlpha, 0.55);
+    /* Points get a slightly higher alpha than lines since each one
+     * covers fewer pixels (gl_PointSize = 3 below). */
+    const isPoints = this.wireDrawMode === 'points';
+    gl.uniform1f(this.wireLocAlpha, isPoints ? 0.85 : 0.55);
     gl.bindVertexArray(this.wireVao);
-    gl.drawArrays(gl.LINES, 0, this.wireVertexCount);
+    gl.drawArrays(isPoints ? gl.POINTS : gl.LINES, 0, this.wireVertexCount);
     gl.bindVertexArray(null);
     /* Restore depth-test for the next frame's assembled-scene pass. */
     gl.disable(gl.BLEND);
@@ -457,6 +495,7 @@ class TmdRenderer {
       out vec3 v_color;
       void main() {
         gl_Position = u_mvp * vec4(a_position, 1.0);
+        gl_PointSize = 3.0;
         v_color = a_color;
       }
     `;

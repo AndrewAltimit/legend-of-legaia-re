@@ -709,15 +709,22 @@ export class LegaiaViewer {
      *
      * The wireframe is the dev-menu top-view overlay - coastline curves
      * (Drake body 12 = 1200-vertex outline) and the ±32K world-boundary
-     * frame (Drake body 13). Loaded verbatim into RAM at `0x8011A664`
-     * for Drake; format is fully reversed (see
+     * frame (Drake body 13). Loaded verbatim into RAM at `0x8011A624` for
+     * Drake (32304 bytes); format is fully reversed (see
      * [`docs/formats/world-map-overlay.md`]).
+     *
+     * `style` selects the polyline-construction mode:
+     * `"row"` (each group as one polyline), `"col"` (each record-slot as
+     * one polyline across groups), `"pairs"` (every 2 consecutive
+     * records emit one segment), or `"grid"` (both row and column
+     * edges of the `count_a x count_b` vertex grid). Unknown values
+     * fall back to `"row"`.
      *
      * Output layout (single packed `Vec<u8>`, little-endian):
      *
      * ```text
      * [u32 line_count]
-     * [Line; line_count]   ; struct, 10 bytes each:
+     * [Line; line_count]   ; struct, 12 bytes each:
      *     u8  body_index
      *     u8  group_index_low   ; group_index = (low | (high << 8))
      *     u8  group_index_high
@@ -731,10 +738,40 @@ export class LegaiaViewer {
      * Returns an empty buffer when slot 4 is missing or fails to parse.
      * The JS-side renderer assigns per-body colors based on `body_index`.
      * @param {number} prot_base
+     * @param {string} style
      * @returns {Uint8Array}
      */
-    slot4_wireframe_lines(prot_base) {
-        const ret = wasm.legaiaviewer_slot4_wireframe_lines(this.__wbg_ptr, prot_base);
+    slot4_wireframe_lines(prot_base, style) {
+        const ptr0 = passStringToWasm0(style, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_slot4_wireframe_lines(this.__wbg_ptr, prot_base, ptr0, len0);
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * Decode the slot-4 world-map overlay as a topology-free point cloud.
+     * Useful when the on-disc draw-mode dispatch isn't fully reverse-
+     * engineered: the points themselves are byte-verified against live
+     * RAM, so plotting them straight is the most honest visualization.
+     *
+     * Output layout (little-endian):
+     *
+     * ```text
+     * [u32 point_count]
+     * [Point; point_count] ; 8 bytes each:
+     *     u8  body_index
+     *     u8  group_index_low
+     *     u8  group_index_high
+     *     u8  _pad
+     *     i16 x
+     *     i16 z
+     * ```
+     * @param {number} prot_base
+     * @returns {Uint8Array}
+     */
+    slot4_wireframe_points(prot_base) {
+        const ret = wasm.legaiaviewer_slot4_wireframe_points(this.__wbg_ptr, prot_base);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
