@@ -136,12 +136,19 @@ of each slot. The kingdom-specific data lives in the trailing bodies.
 ## RAM layout
 
 Slot 4 is loaded **verbatim into RAM** with zero per-byte diffs vs
-disc. Drake's load address is `0x8011A664`; bodies sit contiguously
-through `0x80122454` (32240 bytes total - the 64-byte header is
-the only RAM/disc-offset slip). No runtime fixup is applied.
+disc. Drake's payload starts at `0x8011A624` (the outer pack header)
+and ends at `0x80122454` exclusive - exactly 32304 bytes, matching the
+disc-decoded length. Body 0's records start at `0x8011A664` (`0x40`
+past the base, after the 4-byte count and 15 × 4-byte offsets). No
+runtime fixup is applied.
 
-Confirmed by `scripts/pcsx-redux/verify_slot4_in_ram.py` against a
-real PCSX-Redux save state.
+Confirmed by `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` against a
+PCSX-Redux save state: every byte of all 15 bodies matches the
+disc-side LZS-decoded payload. The load base was pinned by
+signature-searching the full 2 MiB main RAM for the 64-byte outer
+pack header (count = 15 followed by `byte_offsets[0..15]`) - see
+`scripts/pcsx-redux/autorun_dump_full_ram.lua` for the procedure if
+the base needs re-pinning on a different build / save state.
 
 ## Why it isn't the bulk continent terrain
 
@@ -179,6 +186,7 @@ than the standard TMD renderer (which would have used the type
 | `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4 --wireframe-obj <out>.obj` | Per-body inventory dump + Wavefront-line OBJ export. Available for slots 0..6. |
 | `legaia_asset::world_map_overlay::parse` + `top_down_lines` / `record_points` | Rust API consumed by the [world overview web viewer](../../site/world-overview.html) (`LegaiaViewer::slot4_wireframe_lines`). |
 | `scripts/pcsx-redux/run_dump_slot4.sh` + `autorun_dump_slot4.lua` | PCSX-Redux closed-loop autorun: loads a save state, waits for the kingdom to settle, dumps the live slot-4 RAM region (32304 / 26964 / 24444 bytes) to `slot4_ram_<kingdom>.bin`, quits. Same pattern as the existing world-map probes. |
+| `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Companion: dumps the full 2 MiB main RAM (post-save-state-load + settle) to a `.bin`. Useful when the slot-4 load base is unknown for a new build / state - run, then signature-scan the dump for the 64-byte outer pack prefix to find the real base. |
 | `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare the RAM dump against the disc-decoded payload (per-body diff counts + first 32 offsets). Confirms whether disc bytes hit RAM verbatim. |
 | `scripts/decode_slot4_subbodies.py` | Per-body hex dump + header parse + grid-hypothesis analysis; OBJ export per body. |
 | `scripts/slot4_to_obj.py` | Combined OBJ writer (polys / lines / points modes). |
@@ -199,12 +207,31 @@ scripts/pcsx-redux/run_dump_slot4.sh
 # 2. byte-compare against the disc-decoded payload
 python3 scripts/pcsx-redux/diff_slot4_ram_vs_disc.py \
     slot4_ram_drake.bin --bundle map01
+# Expected: "MATCH: slot 4 is loaded verbatim into RAM with zero diffs."
 
 # 3. visualize the RAM dump and the disc dump side-by-side
 ./target/release/asset slot4-png --from-raw slot4_ram_drake.bin \
     --style points --out /tmp/ram.png
 ./target/release/asset slot4-png --input extracted/PROT/0085_map01.BIN \
     --style points --out /tmp/disc.png
+```
+
+If the diff is non-zero, the load base in `autorun_dump_slot4.lua`
+needs re-pinning. Use the full-RAM helper:
+
+```bash
+LEGAIA_LUA=scripts/pcsx-redux/autorun_dump_full_ram.lua \
+LEGAIA_OUT=/tmp/ram_full.bin \
+scripts/pcsx-redux/run_dump_slot4.sh
+
+# then signature-scan ram_full.bin for the 64-byte outer pack prefix
+python3 -c "
+import sys
+ram = open('/tmp/ram_full.bin', 'rb').read()
+disc = open('/tmp/drake_slot4.bin', 'rb').read()
+hit = ram.find(disc[:64])
+print('payload at virt 0x{:08X}'.format(0x80000000 + hit) if hit >= 0 else 'not found')
+"
 ```
 
 ## Topology hypothesis

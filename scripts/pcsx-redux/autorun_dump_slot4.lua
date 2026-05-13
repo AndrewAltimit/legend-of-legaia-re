@@ -46,16 +46,20 @@ local OUT_PATH    = getenv("LEGAIA_OUT", "slot4_ram.bin")
 local SETTLE_VSYNCS = tonumber(getenv("LEGAIA_FRAMES", "120"))
 
 -- Per-kingdom (slot-4-load-base, decoded-length).
--- Drake: pinned via scripts/pcsx-redux/verify_slot4_in_ram.py against
--- the disc bytes; the data is loaded VERBATIM at this address with
--- zero diffs. Sebucus and Karisto follow the same load-base
--- convention but the addresses haven't been re-verified - they're
--- inferred from the disc-decoded slot-4 sizes (26964 / 24444). If a
--- mismatch appears, the autorun script falls back to a needle search.
+-- Drake's base is pinned by the full-RAM signature search in
+-- autorun_dump_full_ram.lua: the disc-decoded payload's first 64 bytes
+-- (count = 15, byte_offsets[0..15]) appear verbatim at 0x8011A624 and
+-- the next 32304 bytes byte-match the disc-decoded payload. That's
+-- 0x40 earlier than the previously-cached 0x8011A664 (which pointed at
+-- body 0, past the outer pack header). Sebucus / Karisto haven't been
+-- re-verified yet - they inherit the same base offset on the
+-- assumption that the kingdom loader writes all three to the same RAM
+-- slot. If a mismatch appears, run autorun_dump_full_ram.lua first and
+-- search for the 64-byte payload prefix to pin the new base.
 local KINGDOMS = {
-    drake   = { base = 0x8011A664, size = 32304 },
-    sebucus = { base = 0x8011A664, size = 26964 },
-    karisto = { base = 0x8011A664, size = 24444 },
+    drake   = { base = 0x8011A624, size = 32304 },
+    sebucus = { base = 0x8011A624, size = 26964 },
+    karisto = { base = 0x8011A624, size = 24444 },
 }
 
 local cfg = KINGDOMS[KINGDOM]
