@@ -23,7 +23,7 @@
 <section class="doc-section" id="how-this-works">
   <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. This renders the landmark layer (~43 buildings/dungeons/NPCs for Drake) but <em>not</em> the continent terrain beneath it &mdash; the MAN-asset placement table only references entity TMDs (player/NPC instances at slots 0+35), leaving 38 of Drake's 40 TMDs un-placed. Those un-placed TMDs include real terrain chunks but their world positions live in a structure we haven't yet pinned (likely set by runtime field-VM script at scene init, not in any static slot of the bundle). Each kingdom's PROT block also carries a SECOND 7-asset table at +8/+9 (Drake PROT 0093 = 70 TMDs) which holds sub-scenes (battle arena, town interiors), not world-map continent; exposed via <code>continent_pack_*</code> WASM accessors for inspection.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Pack counts: <strong>Drake 40 / Sebucus 36 / Karisto 56</strong>. Two placement sources combine: (a) entity placements parsed from the type-3 &quot;Man&quot; asset (~43 player/NPC instances for Drake, hitting slots 0+35); (b) a snapshot of live-RAM actor-to-TMD-slot resolutions captured by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a> at <code>site/world-overview-live.json</code>, which surfaces the remaining 10&ndash;15 slot placements (slots 34, 36, 37, etc.) that the runtime field-VM positions at scene init. Currently only Drake has a live snapshot - Sebucus and Karisto fall back to entity placements only until similar save states are captured. The kingdom's PROT block also carries a SECOND 7-asset table at +8/+9 (Drake PROT 0093 = 70 TMDs) holding sub-scenes (battle arena, town interiors); exposed via <code>continent_pack_*</code> WASM accessors for inspection but not rendered here.
   </p>
   <p>
     <strong>Framebuffer (save state):</strong> until the continent generator is reversed, the only way to see the full overworld is to upload a mednafen <code>.mc[N]</code> save state captured while the world-map debug top-view is active. The page then extracts either the rendered GPU framebuffer straight out of VRAM (fast, pixel-accurate, fixed 320&times;240) or replays the live primitive pool (~10,000 textured POLY_FT4 packets, pan/zoom in WebGL2). No disc image required for this path. Tracking the generator RE in <a href="subsystems/world-map.html">world-map subsystem</a>.
@@ -317,6 +317,7 @@
   if (!KINGDOM_PROT[currentKingdom]) currentKingdom = 'drake';
   let currentMeshIdx = 0;     /* index into kingdomSlots[currentKingdom] */
   let placements = null;      /* world-overview.json */
+  let livePlacements = null;  /* world-overview-live.json - live-RAM actor-to-TMD resolver snapshot */
   let glRenderer = null;
   let rafId = null;
   const cam = { yaw: 0, pitch: 0.25, distance: 2.5, panX: 0, panY: 0, autoRotate: true };
@@ -328,6 +329,11 @@
     placements = await fetch('world-overview.json').then(r => r.json());
   } catch (e) {
     placements = null;
+  }
+  try {
+    livePlacements = await fetch('world-overview-live.json').then(r => r.json());
+  } catch (e) {
+    livePlacements = null;
   }
   updateSnapshot();
   drawScatter();
@@ -770,15 +776,39 @@
     }
     /* The MAN-asset placement table only references entity TMDs (NPCs,
      * party characters, story markers) at slots 0 + 35 - leaving 38 of
-     * Drake's 40 TMDs unplaced. An earlier bounds-heuristic that
-     * auto-rendered those TMDs at world origin proved misleading: it
-     * picks up tower / column / bridge TMDs whose geometry extends
-     * along one axis but isn't actually terrain, and stamping them at
-     * (0, 0) gives a duplicated-tower visual that doesn't match the
-     * real continent view. The correct placement table for the 38
-     * un-MAN-placed TMDs is still TBD - they're likely positioned by
-     * runtime field-VM script, not by any static record in the kingdom
-     * bundle that we've found so far. */
+     * Drake's 40 TMDs unplaced. Static slot inspection (0..6) showed
+     * no other place those positions live; they're populated by the
+     * runtime field-VM script at scene init.
+     *
+     * To bridge that gap, scripts/pcsx-redux/resolve_actor_tmds.py
+     * captures a SNAPSHOT of actor-to-TMD-slot mappings from a live
+     * PCSX-Redux save state and bakes it into world-overview-live.json.
+     * This catches the slots the field-VM has actually positioned at
+     * the moment of capture - for Drake's MAPDSIP state that's
+     * slots 36 (14x), 34 (12x), and ~10 others, all at real world
+     * coords. Each kingdom needs its own save state to populate. */
+    let livePlacementCount = 0;
+    if (livePlacements && livePlacements.bundle === k.cdname) {
+      for (const a of livePlacements.actors) {
+        for (const slot of a.slots) {
+          if (slot < 0 || slot >= packCount) continue;
+          if (!used.has(slot)) {
+            viewer.pack_mesh(slot);
+            const positions = viewer.pack_mesh_positions();
+            const uvs = viewer.pack_mesh_uvs();
+            const cba = viewer.pack_mesh_cba_tsb();
+            const idx = viewer.pack_mesh_indices();
+            if (positions.length === 0 || idx.length === 0) continue;
+            glRenderer.uploadSceneMesh(slot, positions, uvs, cba, idx);
+            used.add(slot);
+          }
+          if (used.has(slot)) {
+            drawPlacements.push({ meshId: slot, x: a.pos[0], z: a.pos[2] });
+            livePlacementCount++;
+          }
+        }
+      }
+    }
     const continentCount = viewer.continent_pack_count();
     const continentProt = viewer.continent_prot_index();
     /* Camera frames the placement bbox (not the world bbox) - many
@@ -808,8 +838,11 @@
     const secondaryLabel = continentCount > 0
       ? ` (+${continentCount}-TMD secondary pack at PROT ${continentProt}, not drawn)`
       : '';
+    const liveLabel = livePlacementCount > 0
+      ? ` + ${livePlacementCount} live-RAM placements`
+      : '';
     $meshLabel.textContent =
-      `${k.cdname} - ${drawPlacements.length} entity placements (${used.size} unique meshes, ${packCount}-TMD pack)${secondaryLabel}`;
+      `${k.cdname} - ${drawPlacements.length - livePlacementCount} entity placements (${used.size} unique meshes, ${packCount}-TMD pack)${liveLabel}${secondaryLabel}`;
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
