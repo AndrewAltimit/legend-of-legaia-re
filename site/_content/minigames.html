@@ -72,9 +72,20 @@
 </section>
 
 <section class="doc-section" id="slot-machines">
-  <h2>Slot machines &amp; prize counters</h2>
+  <h2>Slot machines</h2>
+  <p>
+    Two coin-economy prize tables sit behind the slot-machine pulls: the
+    <strong>Vidna casino</strong> exchanges casino coins won at its slots
+    for items, while the <strong>Sol Tower</strong> F4 Muscle Dome counter
+    exchanges the same coin pool (also earned through Muscle Dome runs and
+    Baka Fighter rounds) for a higher-value prize ladder. Each ladder is
+    capped at the 100,000-coin Earth Egg.
+  </p>
   <div class="hint">
-    The <strong>Sol</strong> rows below are the Muscle Dome prize-exchange counter on F4, <em>not</em> the slot machine itself - the slot machine only pays out coins. The same coin pool funds Muscle Dome entry fees, Baka Fighter games, and counter purchases.
+    The <strong>Sol</strong> rows below are technically the Muscle Dome
+    prize-exchange counter on F4, not the slot machine itself - the slot
+    machine only pays out coins. The same coin pool funds Muscle Dome entry
+    fees, Baka Fighter games, and counter purchases.
   </div>
   <div id="slot-machines"></div>
 </section>
@@ -191,10 +202,16 @@
             <span class="ship-price">${cost}</span>
           </li>`;
       }).join('');
+      /* Sol's rows aren't technically a slot machine - they're the
+       * Muscle Dome counter. Distinguish so the heading doesn't
+       * contradict the section's hint. */
+      const heading = s.location === 'Sol'
+        ? 'Sol Tower (Muscle Dome prize counter)'
+        : `${s.location} slot machine`;
       return `
         <section class="prize-table">
           <header class="prize-head">
-            <h3>${escapeHtml(s.location)}</h3>
+            <h3>${escapeHtml(heading)}</h3>
             <span class="vendor-meta">${s.prizes.length} prize${s.prizes.length === 1 ? '' : 's'}</span>
           </header>
           <ul class="ship-list">${rows}</ul>

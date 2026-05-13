@@ -32,9 +32,9 @@
       <label for="wo-disc-file"><strong>Disc image (.bin Mode2/2352) or PROT.DAT:</strong></label>
       <input type="file" id="wo-disc-file" accept=".bin,.dat"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
-      <button id="wo-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
+      <label style="margin-left:1rem" id="wo-wireframe-wrap" hidden title="Overlay the kingdom's slot-4 dev-menu wireframe (coastline + world boundary frame) on top of the assembled landmarks."><input type="checkbox" id="wo-wireframe-toggle"> show slot-4 wireframe</label>
     </div>
-    <div class="viewer-status" id="wo-status">No disc loaded. Load a disc and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required for that view.</div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image above and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required for that view.</div>
   </div>
 </section>
 
@@ -59,7 +59,6 @@
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
-        <label style="margin-left:1rem" id="wo-wireframe-wrap" hidden title="Overlay the kingdom's slot-4 dev-menu wireframe (coastline + world boundary frame) on top of the assembled landmarks. Disc image required."><input type="checkbox" id="wo-wireframe-toggle"> show slot-4 wireframe</label>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-canvas-controls" id="wo-savestate-bar">
@@ -250,7 +249,10 @@
 .wo-name-list .wo-coord { color: var(--text-dim); font-size: 0.72rem; }
 </style>
 
-<script src="js/webgl-tmd.js"></script>
+<!-- The ?v= cache-busts after the wireframe Lines pipeline was added; bump
+     this any time webgl-tmd.js gains a method JS code below this point
+     relies on, so users don't hit a stale cached copy. -->
+<script src="js/webgl-tmd.js?v=20260513"></script>
 <script src="js/webgl-prim-replay.js"></script>
 <script>
 (async function () {
@@ -268,7 +270,6 @@
 
   /* ---------- DOM refs ----------- */
   const $file       = document.getElementById('wo-disc-file');
-  const $loadBtn    = document.getElementById('wo-load-btn');
   const $status     = document.getElementById('wo-status');
   const $canvas3d   = document.getElementById('wo-canvas3d');
   const $canvas2d   = document.getElementById('wo-canvas2d');
@@ -400,11 +401,9 @@
     $modeMesh     .setAttribute('aria-checked', mode === 'mesh');
     const meshOnly = (mode === 'mesh');
     const ssOnly   = (mode === 'savestate');
-    const worldOnly = (mode === 'world');
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
-    $wireWrap.hidden = !worldOnly;
     $resetCam.hidden = ssOnly;
     $ssBar.style.display = ssOnly ? '' : 'none';
     /* Re-enter the active kingdom so the right path renders. */
@@ -418,9 +417,11 @@
    * (used by the top-down camera); the savestate file-picker bar is
    * hidden until the user clicks the "Framebuffer (save state)" mode. */
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
-  $wireWrap.hidden = false;
   $resetCam.hidden = false;
   $ssBar.style.display = 'none';
+  /* Wireframe toggle stays hidden until a disc is loaded - it can only
+   * decode from the live disc bytes. Revealed in `loadDisc()` below. */
+  $wireWrap.hidden = true;
 
   /* Wireframe toggle. When the disc is loaded and the kingdom's slot-4
    * lines haven't been decoded yet, the load happens lazily inside
@@ -619,7 +620,12 @@
   }
 
   /* ---------- Load disc + WASM ----------- */
-  $loadBtn.addEventListener('click', async () => {
+  /* Wires to the file input's `change` event below: as soon as the user
+   * picks a disc image the page starts the WASM load + classify pass
+   * (so there's no separate "Load" button to click). The same path is
+   * also reachable programmatically via `loadDisc()` if we ever add a
+   * "reload" affordance. */
+  async function loadDisc() {
     const f = $file.files[0];
     if (!f) { $status.textContent = 'Pick a .bin or .dat file first.'; return; }
     try {
@@ -677,13 +683,18 @@
       $prev.disabled = false;
       $next.disabled = false;
       currentMeshIdx = 0;
+      /* Disc is loaded - reveal the slot-4 wireframe toggle. The render
+       * loop only consumes it in `world` mode; in other modes the
+       * checkbox state is harmless. */
+      $wireWrap.hidden = false;
       /* selectKingdom dispatches to loadWorldView or loadMesh based on viewMode. */
       selectKingdom(currentKingdom);
     } catch (err) {
       console.error(err);
       $status.textContent = 'Load failed: ' + (err.message || err);
     }
-  });
+  }
+  $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
 
   /* ---------- Mesh navigation ----------- */
   function selectKingdom(k) {
@@ -824,7 +835,9 @@
     const tick = (now) => {
       last = now;
       glRenderer.renderAssembled(drawPlacements, ext, worldCam);
-      if (wireframeEnabled) {
+      if (wireframeEnabled
+          && typeof glRenderer.uploadWireframeLines === 'function'
+          && typeof glRenderer.renderWireframe === 'function') {
         const cache = wireframeCache[currentKingdom];
         if (cache && cache.lines) {
           if (!cache.uploaded) {
