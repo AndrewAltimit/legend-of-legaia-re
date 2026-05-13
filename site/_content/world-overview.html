@@ -248,6 +248,23 @@
     sebucus: { start: 244, end: 253, label: 'Sebucus Islands', cdname: 'map02' },
     karisto: { start: 391, end: 398, label: 'Karisto Kingdom', cdname: 'map03' },
   };
+
+  /* ---------- Retail camera defaults (from .mc{1,2,3}) -------------
+   * Captured per-kingdom from mednafen save states in walk-view mode.
+   * The X/Z scrolls live at `_DAT_80089120` / `_DAT_80089118` and are
+   * stored as negated map-origin coordinates - the engine writes
+   * `_DAT_80089118 = -(int)*(short *)(actor + 0x14)` etc., so the world
+   * camera target is the negation of the raw cell. The captured saves
+   * are all in walk-view (DAT_801F2B94 = 0), so these reflect the
+   * load-time spawn rather than an interactively-scrolled dev-menu
+   * camera; they're still useful as per-kingdom anchor points.
+   *   mednafen-state world-map-camera --table <save> ...
+   * regenerates these values. */
+  const KINGDOM_CAM = {
+    drake:   { centerX: 8832, centerZ: 8832, zoom: 0x170 },
+    sebucus: { centerX: 7936, centerZ: 9344, zoom: 0x170 },
+    karisto: { centerX: 7936, centerZ: 9088, zoom: 0x170 },
+  };
   const LIST_NAMES = {
     0: 'player/system', 1: 'entities', 2: 'background',
     3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
@@ -343,11 +360,18 @@
   }
   $resetCam.addEventListener('click', () => {
     if (viewMode === 'world') {
-      /* Frame the whole kingdom again. */
+      /* Frame the whole kingdom again, anchored on the retail camera
+       * centre when one is known. */
       const k = placements?.[currentKingdom];
       const ext = k?.world_extent || [16320, 16320];
-      worldCam.centerX = ext[0] / 2;
-      worldCam.centerZ = ext[1] / 2;
+      const retail = KINGDOM_CAM[currentKingdom];
+      if (retail) {
+        worldCam.centerX = retail.centerX;
+        worldCam.centerZ = retail.centerZ;
+      } else {
+        worldCam.centerX = ext[0] / 2;
+        worldCam.centerZ = ext[1] / 2;
+      }
       worldCam.halfWidth = ext[0] / 2 + 1000;
       worldCam.halfHeight = ext[1] / 2 + 1000;
       worldCam.pitch = 0;
@@ -728,8 +752,16 @@
     rafId = requestAnimationFrame(tick);
   }
 
-  /* Frame the top-down camera on the placement cluster. */
+  /* Frame the top-down camera on the placement cluster.
+   *
+   * If a retail camera anchor is known for the current kingdom
+   * (KINGDOM_CAM), centre on that instead of the placement-cluster
+   * average and widen halfWidth/halfHeight to enclose both the anchor
+   * and the cluster. This keeps the viewer's initial view aligned with
+   * the retail spawn (where the kingdom's exit drops the player onto
+   * the world map) while still showing every placed landmark. */
   function frameWorldCam(drawPlacements, ext) {
+    const retail = KINGDOM_CAM[currentKingdom];
     if (drawPlacements && drawPlacements.length > 0) {
       let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
       for (const p of drawPlacements) {
@@ -738,10 +770,24 @@
         if (p.z < zmin) zmin = p.z;
         if (p.z > zmax) zmax = p.z;
       }
-      worldCam.centerX = (xmin + xmax) / 2;
-      worldCam.centerZ = (zmin + zmax) / 2;
-      worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + 1500;
-      worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + 1500;
+      if (retail) {
+        worldCam.centerX = retail.centerX;
+        worldCam.centerZ = retail.centerZ;
+        const dx = Math.max(retail.centerX - xmin, xmax - retail.centerX);
+        const dz = Math.max(retail.centerZ - zmin, zmax - retail.centerZ);
+        worldCam.halfWidth  = Math.max(dx, 1500) + 1500;
+        worldCam.halfHeight = Math.max(dz, 1500) + 1500;
+      } else {
+        worldCam.centerX = (xmin + xmax) / 2;
+        worldCam.centerZ = (zmin + zmax) / 2;
+        worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + 1500;
+        worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + 1500;
+      }
+    } else if (retail) {
+      worldCam.centerX = retail.centerX;
+      worldCam.centerZ = retail.centerZ;
+      worldCam.halfWidth = ext[0] / 2 + 1000;
+      worldCam.halfHeight = ext[1] / 2 + 1000;
     } else {
       worldCam.centerX = ext[0] / 2;
       worldCam.centerZ = ext[1] / 2;
