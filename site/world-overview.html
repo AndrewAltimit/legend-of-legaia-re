@@ -23,7 +23,7 @@
 <section class="doc-section" id="how-this-works">
   <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Landmark pack counts: <strong>Drake 40 / Sebucus 36 / Karisto 56</strong>. This renders the landmark layer (~43 buildings/dungeons/NPCs for Drake) but <em>not</em> the continent terrain beneath it &mdash; the bulk continent source is still TBD. Each kingdom's PROT block has additional 7-asset tables at +8/+9 (Drake PROT 0093 = 70 TMDs, Sebucus PROT 0253 = 43) but visual inspection confirmed those hold sub-scenes (arena, town interiors) rather than the world-map continent; the viewer exposes them through <code>continent_pack_*</code> for inspection but doesn't draw them in this view.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Two complementary rendering paths land in the assembled view: (a) entity placements parsed from the type-3 &quot;Man&quot; asset draw player/NPC TMDs at their world coordinates; (b) bounds-detected SELF-POSITIONING terrain chunks (TMDs whose X/Z vertex spans exceed ~4000 units &mdash; e.g. Drake's TMD 36 spans <code>[0, 16512]</code> matching the world extent) render at world origin since their vertices already encode world coords. Landmark pack counts: <strong>Drake 40 / Sebucus 36 / Karisto 56</strong>; of those, ~6&ndash;15 are terrain chunks per kingdom, the rest are entities. Each kingdom's PROT block also carries a SECOND 7-asset table at +8/+9 (Drake PROT 0093 = 70 TMDs) but visual inspection confirmed those hold sub-scenes (battle arena, town interiors), not world-map continent; exposed via <code>continent_pack_*</code> WASM accessors for inspection.
   </p>
   <p>
     <strong>Framebuffer (save state):</strong> until the continent generator is reversed, the only way to see the full overworld is to upload a mednafen <code>.mc[N]</code> save state captured while the world-map debug top-view is active. The page then extracts either the rendered GPU framebuffer straight out of VRAM (fast, pixel-accurate, fixed 320&times;240) or replays the live primitive pool (~10,000 textured POLY_FT4 packets, pan/zoom in WebGL2). No disc image required for this path. Tracking the generator RE in <a href="subsystems/world-map.html">world-map subsystem</a>.
@@ -768,15 +768,41 @@
         drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
       }
     }
-    /* The kingdom's PROT block contains a SECOND 7-asset table at
-     * offset +8/+9 (Drake PROT 0093 = 70 TMDs, Sebucus PROT 0253 = 43).
-     * Visual inspection showed that pack carries OTHER SUB-SCENES of the
-     * kingdom (battle arena interior, town overhead views, etc.), NOT
-     * the world-map continent terrain. We leave the WASM accessors
-     * (`continent_pack_*` on LegaiaViewer) exposed for future scene
-     * inspection but skip auto-rendering here - it would just stamp
-     * unrelated geometry at world origin. The actual bulk-continent
-     * source remains TBD. */
+    /* The MAN-asset placement table only references entity TMDs (NPCs,
+     * party characters, story markers) at slots 0 + 35. The remaining
+     * 38 TMDs in the pack are SELF-POSITIONING terrain chunks: their
+     * vertex coordinates ARE world coordinates (verified empirically -
+     * TMD 36 in Drake's pack has X/Z bounds spanning ~16500 units,
+     * matching the world extent). They render correctly at world
+     * origin (0, 0) since the geometry already lives in world space.
+     * Detect them by bounds: any TMD whose mesh extends past
+     * `worldCoordThreshold` units in X or Z is treated as self-positioning. */
+    let terrainCount = 0;
+    const worldCoordThreshold = 4000;  // > any reasonable local-space landmark
+    for (let s = 0; s < packCount; s++) {
+      if (used.has(s)) continue;  // already drawn as an entity placement
+      viewer.pack_mesh(s);
+      const positions = viewer.pack_mesh_positions();
+      const idx = viewer.pack_mesh_indices();
+      if (positions.length === 0 || idx.length === 0) continue;
+      // Compute X/Z extents (positions is xyzxyz... floats)
+      let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i], z = positions[i + 2];
+        if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+        if (z < zmin) zmin = z; if (z > zmax) zmax = z;
+      }
+      const xspan = xmax - xmin, zspan = zmax - zmin;
+      if (xspan > worldCoordThreshold || zspan > worldCoordThreshold) {
+        // World-coord terrain chunk - render at origin
+        const uvs = viewer.pack_mesh_uvs();
+        const cba = viewer.pack_mesh_cba_tsb();
+        glRenderer.uploadSceneMesh(s, positions, uvs, cba, idx);
+        used.add(s);
+        drawPlacements.push({ meshId: s, x: 0, z: 0 });
+        terrainCount++;
+      }
+    }
     const continentCount = viewer.continent_pack_count();
     const continentProt = viewer.continent_prot_index();
     /* Camera frames the placement bbox (not the world bbox) - many
@@ -806,8 +832,9 @@
     const secondaryLabel = continentCount > 0
       ? ` (+${continentCount}-TMD secondary pack at PROT ${continentProt}, not drawn)`
       : '';
+    const terrainLabel = terrainCount > 0 ? ` + ${terrainCount} terrain chunks at origin` : '';
     $meshLabel.textContent =
-      `${k.cdname} - ${drawPlacements.length} landmark placements (${used.size} unique meshes, ${packCount}-TMD pack)${secondaryLabel}`;
+      `${k.cdname} - ${drawPlacements.length - terrainCount} entity placements (${used.size} unique meshes, ${packCount}-TMD pack)${terrainLabel}${secondaryLabel}`;
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
