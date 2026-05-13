@@ -231,27 +231,33 @@ def analyze_body(body: bytes, idx: int) -> None:
 
 
 def export_body_obj(body: bytes, idx: int, out_path: Path):
-    """Write a sub-body as a Wavefront OBJ assuming the count_a x count_b
-    grid hypothesis: count_a * count_b vertices, quads connecting adjacent
-    cells."""
-    count_a, _, count_b, _, _, _ = parse_body_header(body)
+    """Write a sub-body as a Wavefront OBJ treating each of the
+    `count_b` groups as a polygon with `count_a` vertices. Each record
+    is interpreted as (x, y, z, attr) - col 4 ignored.
+
+    This is the "group = primitive" hypothesis. If it produces coherent
+    shapes, the per-record format is at least dimensionally correct.
+    """
+    count_a, _, count_b, _, _, kind = parse_body_header(body)
     n_records = count_a * count_b
     if 8 + n_records * 8 + 8 > len(body):
         return False
-    out = ["# slot-4 body OBJ — grid hypothesis",
-           f"# count_a={count_a} count_b={count_b} records={n_records}"]
-    for k in range(n_records):
-        off = 8 + k * 8
-        x, y, z, _a = struct.unpack("<4h", body[off : off + 8])
-        out.append(f"v {x} {y} {z}")
-    # Quad mesh: faces between (a,b)-(a,b+1)-(a+1,b+1)-(a+1,b)
-    for a in range(count_a - 1):
-        for b in range(count_b - 1):
-            v0 = 1 + a * count_b + b
-            v1 = 1 + a * count_b + (b + 1)
-            v2 = 1 + (a + 1) * count_b + (b + 1)
-            v3 = 1 + (a + 1) * count_b + b
-            out.append(f"f {v0} {v1} {v2} {v3}")
+    out = [
+        "# slot-4 body OBJ",
+        f"# body {idx}: count_a={count_a} count_b={count_b} kind={kind}",
+        f"# treating each of {count_b} groups as a {count_a}-vertex polygon",
+    ]
+    # Emit vertices
+    for g in range(count_b):
+        for v in range(count_a):
+            off = 8 + (g * count_a + v) * 8
+            x, y, z, _a = struct.unpack("<4h", body[off : off + 8])
+            out.append(f"v {x} {y} {z}")
+    # Emit each group as a polygon face
+    for g in range(count_b):
+        base = 1 + g * count_a
+        idx_list = " ".join(str(base + v) for v in range(count_a))
+        out.append(f"f {idx_list}")
     out_path.write_text("\n".join(out))
     return True
 
