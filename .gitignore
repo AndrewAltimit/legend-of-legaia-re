@@ -50,6 +50,8 @@
 /cd_dma_probe*.txt
 /lzs_bundle_probe*.csv
 /lzs_bundle_probe*.txt
+/deep_pool_probe*.csv
+/deep_pool_probe*.txt
 
 # User-local overlay sweep spec (path/label pairs; example committed as .example).
 scripts/overlays.spec
