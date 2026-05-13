@@ -305,6 +305,71 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Render a kingdom's slot-4 wireframe (or a raw decoded slot-4 .bin)
+    /// to a top-down PNG. The output uses the same per-body color palette
+    /// as the WebGL world-overview viewer so a PNG screenshot can be
+    /// visually diffed against the in-browser render.
+    ///
+    /// Two input modes:
+    ///   - `--input <PROT>.BIN` : a kingdom PROT entry; LZS-decodes slot 4.
+    ///   - `--from-raw <slot4>.bin`: a previously-decoded slot-4 payload
+    ///     (e.g. dumped from live RAM via the PCSX-Redux autorun).
+    ///
+    /// Optional `--placements <world-overview.json>` overlays the kingdom's
+    /// MAN-asset placements as dots so you can verify landmarks sit inside
+    /// the expected coastline curves.
+    Slot4Png {
+        /// Kingdom PROT entry to decode. Mutually exclusive with `--from-raw`.
+        #[arg(long)]
+        input: Option<PathBuf>,
+        /// Already-decoded slot-4 .bin (e.g. RAM dump). Mutually exclusive
+        /// with `--input`.
+        #[arg(long)]
+        from_raw: Option<PathBuf>,
+        /// Output PNG path.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// `site/world-overview.json` (or world-overview-live.json) used
+        /// for an optional placement-scatter overlay. The kingdom key is
+        /// derived from `--kingdom`.
+        #[arg(long)]
+        placements: Option<PathBuf>,
+        /// Kingdom key for the placement overlay (`drake` / `sebucus` /
+        /// `karisto`). Ignored when `--placements` is absent.
+        #[arg(long, default_value = "drake")]
+        kingdom: String,
+        /// PNG width in pixels.
+        #[arg(long, default_value_t = 1024)]
+        width: u32,
+        /// PNG height in pixels.
+        #[arg(long, default_value_t = 1024)]
+        height: u32,
+        /// Pixel margin around the world bbox.
+        #[arg(long, default_value_t = 16)]
+        margin: u32,
+        /// Render only this body index (0..N-1). Useful for isolating
+        /// the continent coastline (body 12 in Drake) from the noisy
+        /// inner contours.
+        #[arg(long)]
+        only_body: Option<usize>,
+        /// Frame the camera on a single body's bbox instead of the full
+        /// slot-4 extent. When set, body 13's ±32K boundary frame is
+        /// skipped from the camera fit, so the inner contours fill
+        /// the canvas instead of compressing into a corner.
+        #[arg(long)]
+        frame_body: Option<usize>,
+        /// Close each polyline back to its first vertex. Off by default
+        /// (slot-4 groups are open polylines, not closed polygons).
+        #[arg(long, default_value_t = false)]
+        close_polylines: bool,
+        /// Polyline-construction mode. `row` connects each group's
+        /// records in order (matches the WebGL world-overview viewer).
+        /// `col` connects each record-slot's value across groups.
+        /// `points` is topology-free - one dot per record, no line
+        /// segments at all. Use `points` for raw-data validation.
+        #[arg(long, default_value = "row")]
+        style: String,
+    },
     /// Decode one slot of a kingdom-bundle PROT entry (map01 / map02 / map03).
     ///
     /// Locates the 7-asset table, LZS-decodes the requested slot, and prints
@@ -432,6 +497,33 @@ fn main() -> Result<()> {
             out,
             wireframe_obj,
         } => kingdom_slot_cmd(&input, slot, out.as_deref(), wireframe_obj.as_deref()),
+        Cmd::Slot4Png {
+            input,
+            from_raw,
+            out,
+            placements,
+            kingdom,
+            width,
+            height,
+            margin,
+            only_body,
+            frame_body,
+            close_polylines,
+            style,
+        } => slot4_png_cmd(
+            input.as_deref(),
+            from_raw.as_deref(),
+            &out,
+            placements.as_deref(),
+            &kingdom,
+            width,
+            height,
+            margin,
+            only_body,
+            frame_body,
+            close_polylines,
+            &style,
+        ),
         Cmd::Validate {
             dir,
             cdname,
@@ -834,6 +926,185 @@ fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn slot4_png_cmd(
+    input: Option<&Path>,
+    from_raw: Option<&Path>,
+    out: &Path,
+    placements_path: Option<&Path>,
+    kingdom: &str,
+    width: u32,
+    height: u32,
+    margin: u32,
+    only_body: Option<usize>,
+    frame_body: Option<usize>,
+    close_polylines: bool,
+    style: &str,
+) -> Result<()> {
+    use legaia_asset::{kingdom_bundle, world_map_overlay};
+
+    if input.is_some() == from_raw.is_some() {
+        anyhow::bail!("exactly one of --input or --from-raw is required");
+    }
+    let mode = match style {
+        "row" => world_map_overlay::PolylineMode::RowMajor,
+        "col" => world_map_overlay::PolylineMode::ColumnMajor,
+        "points" => world_map_overlay::PolylineMode::RowMajor, // mode ignored in points-only path
+        other => anyhow::bail!("--style must be row|col|points (got {other})"),
+    };
+    let points_only = style == "points";
+
+    // Source the decoded slot-4 bytes from either a kingdom PROT entry or
+    // a previously-decoded .bin.
+    let decoded: Vec<u8> = if let Some(p) = input {
+        let buf = std::fs::read(p)?;
+        kingdom_bundle::decode_slot(&buf, 4)
+            .map_err(|e| anyhow::anyhow!("decode slot 4 from {p:?}: {e}"))?
+    } else {
+        std::fs::read(from_raw.unwrap())?
+    };
+
+    let parsed =
+        world_map_overlay::parse(&decoded).map_err(|e| anyhow::anyhow!("parse slot 4: {e}"))?;
+    println!(
+        "Parsed slot 4: {} bodies, {} bytes decoded",
+        parsed.bodies.len(),
+        decoded.len()
+    );
+
+    let opts = world_map_overlay::WireframeOptions {
+        close_polylines,
+        mode,
+        ..world_map_overlay::WireframeOptions::default()
+    };
+    if points_only {
+        let pts = world_map_overlay::record_points(&parsed, &opts);
+        println!("Record points: {}", pts.len());
+    } else {
+        let lines = world_map_overlay::top_down_lines(&parsed, &opts);
+        println!("Top-down line segments: {}", lines.len());
+    }
+
+    let mut raster =
+        world_map_overlay::WireframeRaster::new(width, height, margin, [0x0A, 0x0A, 0x1A, 0xFF]);
+    if let Some(b) = frame_body {
+        let body = parsed
+            .bodies
+            .get(b)
+            .ok_or_else(|| anyhow::anyhow!("--frame-body {b} out of range"))?;
+        let mut xmin = i16::MAX;
+        let mut zmin = i16::MAX;
+        let mut xmax = i16::MIN;
+        let mut zmax = i16::MIN;
+        for r in &body.records {
+            if r.x == 0 && r.y == 0 && r.z == 0 {
+                continue;
+            }
+            xmin = xmin.min(r.x);
+            zmin = zmin.min(r.z);
+            xmax = xmax.max(r.x);
+            zmax = zmax.max(r.z);
+        }
+        if xmin == i16::MAX {
+            anyhow::bail!("--frame-body {b} has no non-zero records");
+        }
+        raster.set_bounds(xmin as i32, zmin as i32, xmax as i32, zmax as i32);
+    } else {
+        raster.set_bounds_from(&parsed);
+    }
+    let (xmin, zmin, xmax, zmax) = raster.world_bounds;
+    println!("Camera bounds (x,z): {xmin}..{xmax}, {zmin}..{zmax}");
+
+    if points_only {
+        raster.draw_points(&parsed, &opts, only_body, 1);
+    } else {
+        raster.draw_wireframe(&parsed, &opts, only_body);
+    }
+
+    if let Some(pp) = placements_path {
+        match load_placements(pp, kingdom) {
+            Ok(pts) => {
+                println!(
+                    "Overlaying {} placements for kingdom '{kingdom}'",
+                    pts.len()
+                );
+                // Placement coords use a different scale than slot-4 (placements
+                // are in `[0, world_extent]` while slot-4 is in centered ±32K).
+                // We map placements into the current camera's bbox so a dot's
+                // RELATIVE position within the kingdom carries over - imperfect
+                // but enough for "does landmark N sit roughly inside the
+                // coastline?" eyeballing.
+                let (xmin, zmin, xmax, zmax) = raster.world_bounds;
+                let mut pmin_x = i32::MAX;
+                let mut pmin_z = i32::MAX;
+                let mut pmax_x = i32::MIN;
+                let mut pmax_z = i32::MIN;
+                for &(x, z) in &pts {
+                    pmin_x = pmin_x.min(x);
+                    pmin_z = pmin_z.min(z);
+                    pmax_x = pmax_x.max(x);
+                    pmax_z = pmax_z.max(z);
+                }
+                let dx_p = (pmax_x - pmin_x).max(1) as f32;
+                let dz_p = (pmax_z - pmin_z).max(1) as f32;
+                let dx_w = (xmax - xmin).max(1) as f32;
+                let dz_w = (zmax - zmin).max(1) as f32;
+                let mapped: Vec<(i32, i32)> = pts
+                    .iter()
+                    .map(|&(x, z)| {
+                        let nx = (x - pmin_x) as f32 / dx_p;
+                        let nz = (z - pmin_z) as f32 / dz_p;
+                        let mx = (nx * dx_w) as i32 + xmin;
+                        let mz = (nz * dz_w) as i32 + zmin;
+                        (mx, mz)
+                    })
+                    .collect();
+                raster.draw_placements(&mapped, [0xF4, 0xB4, 0x1A, 0xFF], 3);
+            }
+            Err(e) => {
+                eprintln!("warn: skipping placement overlay ({e})");
+            }
+        }
+    }
+
+    let f = std::fs::File::create(out)?;
+    raster
+        .encode_png(std::io::BufWriter::new(f))
+        .map_err(|e| anyhow::anyhow!("write PNG: {e}"))?;
+    println!("Wrote {out:?}  ({width}x{height})");
+    Ok(())
+}
+
+/// Tiny JSON-ish picker for the `world-overview.json` placement records.
+/// Returns `Vec<(x, z)>` in world units, filtering out script-positioned
+/// records (which carry no static world coordinate). We hand-roll the
+/// extraction to avoid pulling a full serde_json model just for two ints.
+fn load_placements(path: &Path, kingdom: &str) -> Result<Vec<(i32, i32)>> {
+    let raw = std::fs::read_to_string(path)?;
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+    let king = value
+        .get(kingdom)
+        .ok_or_else(|| anyhow::anyhow!("kingdom '{kingdom}' not in placement JSON"))?;
+    let arr = king
+        .get("placements")
+        .and_then(|p| p.as_array())
+        .ok_or_else(|| anyhow::anyhow!("no `placements` array under '{kingdom}'"))?;
+    let mut pts = Vec::new();
+    for p in arr {
+        if p.get("script_positioned").and_then(|v| v.as_bool()) == Some(true) {
+            continue;
+        }
+        let pos = p.get("pos").and_then(|v| v.as_array());
+        if let Some(a) = pos
+            && a.len() >= 3
+            && let (Some(x), Some(z)) = (a[0].as_i64(), a[2].as_i64())
+        {
+            pts.push((x as i32, z as i32));
+        }
+    }
+    Ok(pts)
 }
 
 fn kingdom_slot_cmd(

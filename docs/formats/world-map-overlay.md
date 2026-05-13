@@ -175,12 +175,37 @@ than the standard TMD renderer (which would have used the type
 
 | Tool | Role |
 |---|---|
-| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4 --wireframe-obj <out>.obj` | Engine-side decoder: parses the bundle, dumps the per-body inventory, writes the wireframe as a Wavefront OBJ (line segments only). Available for slots 0..6 (slot 4 is the wireframe; the others print structural summaries). |
-| `legaia_asset::world_map_overlay::parse` + `top_down_lines` | Rust API consumed by the [world overview web viewer](../../site/world-overview.html) (`LegaiaViewer::slot4_wireframe_lines`). |
+| `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Engine-side standalone PNG renderer. `--style row|col|points` toggles between row-major polylines, column-major (record-slot-as-strand) polylines, and a topology-free point cloud. `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <ram-dump>.bin` renders a previously-dumped slot-4 payload (e.g. from PCSX-Redux live RAM). |
+| `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4 --wireframe-obj <out>.obj` | Per-body inventory dump + Wavefront-line OBJ export. Available for slots 0..6. |
+| `legaia_asset::world_map_overlay::parse` + `top_down_lines` / `record_points` | Rust API consumed by the [world overview web viewer](../../site/world-overview.html) (`LegaiaViewer::slot4_wireframe_lines`). |
+| `scripts/pcsx-redux/run_dump_slot4.sh` + `autorun_dump_slot4.lua` | PCSX-Redux closed-loop autorun: loads a save state, waits for the kingdom to settle, dumps the live slot-4 RAM region (32304 / 26964 / 24444 bytes) to `slot4_ram_<kingdom>.bin`, quits. Same pattern as the existing world-map probes. |
+| `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare the RAM dump against the disc-decoded payload (per-body diff counts + first 32 offsets). Confirms whether disc bytes hit RAM verbatim. |
 | `scripts/decode_slot4_subbodies.py` | Per-body hex dump + header parse + grid-hypothesis analysis; OBJ export per body. |
 | `scripts/slot4_to_obj.py` | Combined OBJ writer (polys / lines / points modes). |
 | `scripts/slot4_topdown_png.py` | Top-down PGM/PNG renderer of the point cloud (X-Z plane). |
-| `scripts/pcsx-redux/verify_slot4_in_ram.py` | Byte-for-byte cross-check of disc-decoded bodies against PCSX-Redux save-state RAM. |
+| `scripts/pcsx-redux/verify_slot4_in_ram.py` | Byte-for-byte cross-check of disc-decoded bodies against PCSX-Redux save-state RAM (legacy; superseded by `run_dump_slot4.sh` + `diff_slot4_ram_vs_disc.py`). |
+
+### Validation flow
+
+To confirm whether the disc bytes we render are what the live runtime
+actually consumes:
+
+```bash
+# 1. dump slot 4 from a top-view save state
+LEGAIA_SSTATE=~/Tools/pcsx-redux/SCUS94254.sstate2 \
+LEGAIA_KINGDOM=drake \
+scripts/pcsx-redux/run_dump_slot4.sh
+
+# 2. byte-compare against the disc-decoded payload
+python3 scripts/pcsx-redux/diff_slot4_ram_vs_disc.py \
+    slot4_ram_drake.bin --bundle map01
+
+# 3. visualize the RAM dump and the disc dump side-by-side
+./target/release/asset slot4-png --from-raw slot4_ram_drake.bin \
+    --style points --out /tmp/ram.png
+./target/release/asset slot4-png --input extracted/PROT/0085_map01.BIN \
+    --style points --out /tmp/disc.png
+```
 
 ## Open questions
 

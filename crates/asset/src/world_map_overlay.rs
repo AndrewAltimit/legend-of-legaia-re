@@ -208,6 +208,21 @@ pub struct WireframeLine {
     pub z1: i16,
 }
 
+/// How to interpret the per-body record layout when emitting polylines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PolylineMode {
+    /// One polyline per group, walking the `count_a` records in order.
+    /// (Original "row-major" interpretation.)
+    RowMajor,
+    /// One polyline per record-slot, walking that slot's value across
+    /// every group. The result is `count_a` polylines of `count_b`
+    /// vertices each. Matches the slot-4 body 12 layout where record
+    /// X-values are fixed per record-slot and Z varies per group -
+    /// the records trace `count_a` parallel "scan lines" across the
+    /// continent.
+    ColumnMajor,
+}
+
 /// Top-down wireframe-line emission options.
 #[derive(Clone, Debug)]
 pub struct WireframeOptions {
@@ -222,6 +237,8 @@ pub struct WireframeOptions {
     /// degenerate-polyline bodies (3, 4, 14 in Drake), true for the
     /// contour bodies.
     pub close_polylines: bool,
+    /// Polyline layout interpretation. See [`PolylineMode`].
+    pub mode: PolylineMode,
 }
 
 impl Default for WireframeOptions {
@@ -229,16 +246,31 @@ impl Default for WireframeOptions {
         Self {
             strip_zero_records: true,
             skip_identical_group_bodies: true,
-            close_polylines: true,
+            // Slot-4 groups are OPEN polylines (coastline curves, scan
+            // lines), not closed polygons. Closing them adds a spurious
+            // diagonal from the last vertex back to the first that
+            // visually scrambles the rendered shape. Keep them open by
+            // default - callers that want a closed polygon can flip
+            // this to `true`.
+            close_polylines: false,
+            // RowMajor is what the live WebGL view uses today. Both
+            // mode variants are visually noisy because the per-group
+            // record layout isn't a simple polyline (see body 12: each
+            // group is 5 (left, right) edge pairs of a contour ring,
+            // not a 10-vertex polyline). Use [`record_points`] for a
+            // topology-free dump.
+            mode: PolylineMode::RowMajor,
         }
     }
 }
 
 /// Emit a top-down (X-Z) wireframe-line list from a parsed slot 4.
 ///
-/// One line per consecutive pair of vertices within each group, plus
-/// (optionally) one closing segment back to the first vertex. Zero
-/// records are stripped per [`WireframeOptions::strip_zero_records`].
+/// Polyline construction follows [`WireframeOptions::mode`]:
+///   - `RowMajor` walks each group's `count_a` records in order;
+///   - `ColumnMajor` walks each record-slot's value across all groups.
+///
+/// Zero records are stripped per [`WireframeOptions::strip_zero_records`].
 pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<WireframeLine> {
     let mut out = Vec::new();
     for body in &slot.bodies {
@@ -246,36 +278,91 @@ pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Wiref
             continue;
         }
         let ca = body.count_a as usize;
-        if ca < 2 {
-            // Single-vertex groups can't draw a line; skip the body.
-            continue;
-        }
-        for (g, group) in body.groups().enumerate() {
-            let mut pts: Vec<(i16, i16)> = group
-                .iter()
-                .filter(|r| !(opts.strip_zero_records && r.x == 0 && r.y == 0 && r.z == 0))
-                .map(|r| (r.x, r.z))
-                .collect();
-            if pts.len() < 2 {
-                continue;
-            }
-            if opts.close_polylines && pts.first() != pts.last() {
-                pts.push(pts[0]);
-            }
-            for w in pts.windows(2) {
-                let (x0, z0) = w[0];
-                let (x1, z1) = w[1];
-                if x0 == x1 && z0 == z1 {
+        let cb = body.count_b as usize;
+        match opts.mode {
+            PolylineMode::RowMajor => {
+                if ca < 2 {
                     continue;
                 }
-                out.push(WireframeLine {
-                    body_index: body.index as u8,
-                    group_index: g as u16,
-                    x0,
-                    z0,
-                    x1,
-                    z1,
-                });
+                for (g, group) in body.groups().enumerate() {
+                    emit_polyline(&mut out, body.index as u8, g as u16, group, opts);
+                }
+            }
+            PolylineMode::ColumnMajor => {
+                if cb < 2 {
+                    continue;
+                }
+                // For each record-slot k in [0..ca), gather its value
+                // across all groups [0..cb) and emit as one polyline.
+                for k in 0..ca {
+                    let strand: Vec<Slot4Record> =
+                        (0..cb).map(|g| body.records[g * ca + k]).collect();
+                    emit_polyline(&mut out, body.index as u8, k as u16, &strand, opts);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Emit one polyline (consecutive pairs as line segments) into `out`,
+/// honoring strip-zero and close-polyline options. Pulled out so both
+/// `RowMajor` and `ColumnMajor` can share the same emission logic.
+fn emit_polyline(
+    out: &mut Vec<WireframeLine>,
+    body_index: u8,
+    group_index: u16,
+    records: &[Slot4Record],
+    opts: &WireframeOptions,
+) {
+    let mut pts: Vec<(i16, i16)> = records
+        .iter()
+        .filter(|r| !(opts.strip_zero_records && r.x == 0 && r.y == 0 && r.z == 0))
+        .map(|r| (r.x, r.z))
+        .collect();
+    if pts.len() < 2 {
+        return;
+    }
+    if opts.close_polylines && pts.first() != pts.last() {
+        pts.push(pts[0]);
+    }
+    for w in pts.windows(2) {
+        let (x0, z0) = w[0];
+        let (x1, z1) = w[1];
+        if x0 == x1 && z0 == z1 {
+            continue;
+        }
+        out.push(WireframeLine {
+            body_index,
+            group_index,
+            x0,
+            z0,
+            x1,
+            z1,
+        });
+    }
+}
+
+/// Emit one point per non-zero record across every body, tagged with
+/// its body index (for color routing) and group index. No polyline
+/// topology is assumed - the caller decides how to render each point.
+/// Useful for the disc-vs-RAM validation viewer where any imposed
+/// polyline interpretation risks hiding format bugs.
+pub fn record_points(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<(u8, u16, i16, i16)> {
+    let mut out = Vec::new();
+    for body in &slot.bodies {
+        if opts.skip_identical_group_bodies && body_groups_identical(body) {
+            continue;
+        }
+        let ca = body.count_a as usize;
+        for (g, group) in body.groups().enumerate() {
+            for (k, r) in group.iter().enumerate() {
+                if opts.strip_zero_records && r.x == 0 && r.y == 0 && r.z == 0 {
+                    continue;
+                }
+                let _ = k;
+                let _ = ca;
+                out.push((body.index as u8, g as u16, r.x, r.z));
             }
         }
     }
@@ -316,6 +403,241 @@ pub fn xz_bounds(slot: &KingdomSlot4) -> Option<(i16, i16, i16, i16)> {
         Some((xmin, zmin, xmax, zmax))
     } else {
         None
+    }
+}
+
+/// One per-body color, RGBA8. Matches `site/js/webgl-tmd.js::wireframeBodyColor`
+/// so the standalone PNG renderer agrees visually with the WebGL viewer.
+const PALETTE: &[[u8; 4]] = &[
+    [0xF2, 0x8C, 0x59, 0xFF], //  0  amber
+    [0xA6, 0xD9, 0x73, 0xFF], //  1  lime
+    [0x8C, 0xCC, 0xF2, 0xFF], //  2  sky
+    [0xF2, 0x8C, 0xF2, 0xFF], //  3  magenta
+    [0xF2, 0xCC, 0x73, 0xFF], //  4  gold
+    [0xA6, 0x73, 0xF2, 0xFF], //  5  violet
+    [0x73, 0xF2, 0xA6, 0xFF], //  6  mint
+    [0xF2, 0x73, 0x8C, 0xFF], //  7  rose
+    [0x73, 0xA6, 0xF2, 0xFF], //  8  azure
+    [0xD9, 0xD9, 0x73, 0xFF], //  9  olive
+    [0x73, 0xF2, 0xF2, 0xFF], // 10  aqua
+    [0xF2, 0xA6, 0x73, 0xFF], // 11  apricot
+    [0x8C, 0xF2, 0xF2, 0xFF], // 12  coastline
+    [0xF2, 0xF2, 0xA6, 0xFF], // 13  boundary
+    [0xA6, 0xF2, 0x8C, 0xFF], // 14  chartreuse
+    [0xF2, 0x8C, 0xA6, 0xFF], // 15  blush
+];
+
+/// Color for body `i`. Wraps if `i >= PALETTE.len()`.
+pub fn body_color(i: usize) -> [u8; 4] {
+    PALETTE[i % PALETTE.len()]
+}
+
+/// Top-down PNG rasterizer for slot-4 wireframe lines.
+///
+/// Output coordinate system: `x` increases right, `z` increases down
+/// (matches the in-game minimap orientation). The world bounds are
+/// computed from `xz_bounds(slot)`; the line set is rasterized into a
+/// canvas of `(width, height)` with a configurable margin so labels /
+/// dots stay inside.
+pub struct WireframeRaster {
+    pub width: u32,
+    pub height: u32,
+    /// Margin in pixels around the world bbox (each edge).
+    pub margin: u32,
+    /// Background color (RGBA8). Default `#0A0A1A` to match the site.
+    pub bg: [u8; 4],
+    /// Pixel buffer (RGBA8, row-major, length = width * height * 4).
+    pub buf: Vec<u8>,
+    /// Cached world-bounds: (xmin, zmin, xmax, zmax). All-zero if the
+    /// slot is empty (rendering is a no-op in that case).
+    pub world_bounds: (i32, i32, i32, i32),
+}
+
+impl WireframeRaster {
+    /// Create a new raster initialised to `bg`.
+    pub fn new(width: u32, height: u32, margin: u32, bg: [u8; 4]) -> Self {
+        let mut buf = Vec::with_capacity((width as usize) * (height as usize) * 4);
+        for _ in 0..(width * height) {
+            buf.extend_from_slice(&bg);
+        }
+        Self {
+            width,
+            height,
+            margin,
+            bg,
+            buf,
+            world_bounds: (0, 0, 0, 0),
+        }
+    }
+
+    /// Compute world bounds from the slot's record set. Re-used by
+    /// every subsequent `world_to_pix` call.
+    pub fn set_bounds_from(&mut self, slot: &KingdomSlot4) {
+        match xz_bounds(slot) {
+            Some((xmin, zmin, xmax, zmax)) => {
+                self.world_bounds = (xmin as i32, zmin as i32, xmax as i32, zmax as i32);
+            }
+            None => self.world_bounds = (0, 0, 1, 1),
+        }
+    }
+
+    /// Override bounds (when rasterizing several kingdoms at once and you
+    /// want them sharing a common camera).
+    pub fn set_bounds(&mut self, xmin: i32, zmin: i32, xmax: i32, zmax: i32) {
+        self.world_bounds = (xmin, zmin, xmax, zmax);
+    }
+
+    /// Convert world (x, z) to pixel (px, py). Letter-boxes inside the
+    /// margin so the shorter axis doesn't stretch.
+    pub fn world_to_pix(&self, x: i32, z: i32) -> (i32, i32) {
+        let (xmin, zmin, xmax, zmax) = self.world_bounds;
+        let dx = (xmax - xmin).max(1) as f32;
+        let dz = (zmax - zmin).max(1) as f32;
+        let aw = (self.width as i32 - 2 * self.margin as i32).max(1) as f32;
+        let ah = (self.height as i32 - 2 * self.margin as i32).max(1) as f32;
+        // Letterbox: keep aspect ratio.
+        let scale = (aw / dx).min(ah / dz);
+        let pw = (dx * scale) as i32;
+        let ph = (dz * scale) as i32;
+        let ox = self.margin as i32 + (aw as i32 - pw) / 2;
+        let oy = self.margin as i32 + (ah as i32 - ph) / 2;
+        let px = ox + (((x - xmin) as f32) * scale) as i32;
+        let py = oy + (((z - zmin) as f32) * scale) as i32;
+        (px, py)
+    }
+
+    /// Plot a single pixel with alpha blending. Out-of-range coords are
+    /// clipped.
+    pub fn put_px(&mut self, x: i32, y: i32, color: [u8; 4]) {
+        if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
+            return;
+        }
+        let off = ((y as u32 * self.width + x as u32) * 4) as usize;
+        let sa = color[3] as u16;
+        let inv = 255 - sa;
+        for (c, src_c) in color.iter().enumerate().take(3) {
+            let dst = self.buf[off + c] as u16;
+            let src = *src_c as u16;
+            self.buf[off + c] = ((dst * inv + src * sa) / 255) as u8;
+        }
+        // Keep alpha at 255 (opaque output).
+    }
+
+    /// Bresenham line in pixel space, blended.
+    pub fn line_pix(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: [u8; 4]) {
+        let dx = (x1 - x0).abs();
+        let dy = -(y1 - y0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx + dy;
+        let mut x = x0;
+        let mut y = y0;
+        loop {
+            self.put_px(x, y, color);
+            if x == x1 && y == y1 {
+                break;
+            }
+            let e2 = 2 * err;
+            if e2 >= dy {
+                err += dy;
+                x += sx;
+            }
+            if e2 <= dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+
+    /// Filled circle of `radius` pixels around (cx, cy).
+    pub fn dot_pix(&mut self, cx: i32, cy: i32, radius: i32, color: [u8; 4]) {
+        let r2 = radius * radius;
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                if dx * dx + dy * dy <= r2 {
+                    self.put_px(cx + dx, cy + dy, color);
+                }
+            }
+        }
+    }
+
+    /// Rasterize all wireframe lines, one body at a time. Body color
+    /// comes from [`body_color`]; alpha is 220 so overlapping lines
+    /// brighten the pixel without fully replacing it.
+    ///
+    /// When `only_body` is `Some(i)`, only body index `i` is rendered.
+    /// Render order is body-major: body 0 first, body N-1 last; the
+    /// coastline body (12 in Drake) therefore paints on top of the
+    /// padded inner contours.
+    pub fn draw_wireframe(
+        &mut self,
+        slot: &KingdomSlot4,
+        opts: &WireframeOptions,
+        only_body: Option<usize>,
+    ) {
+        let lines = top_down_lines(slot, opts);
+        for l in &lines {
+            if let Some(i) = only_body
+                && l.body_index as usize != i
+            {
+                continue;
+            }
+            let mut c = body_color(l.body_index as usize);
+            c[3] = 220;
+            let (x0, y0) = self.world_to_pix(l.x0 as i32, l.z0 as i32);
+            let (x1, y1) = self.world_to_pix(l.x1 as i32, l.z1 as i32);
+            self.line_pix(x0, y0, x1, y1, c);
+        }
+    }
+
+    /// Render every (non-zero) record as a small dot, colored by body.
+    /// Polyline-topology-free; the truest one-shot view of the raw
+    /// data. Optional `only_body` mirrors [`Self::draw_wireframe`].
+    pub fn draw_points(
+        &mut self,
+        slot: &KingdomSlot4,
+        opts: &WireframeOptions,
+        only_body: Option<usize>,
+        radius: i32,
+    ) {
+        let pts = record_points(slot, opts);
+        for (body, _group, x, z) in &pts {
+            if let Some(i) = only_body
+                && (*body as usize) != i
+            {
+                continue;
+            }
+            let mut c = body_color(*body as usize);
+            c[3] = 255;
+            let (px, py) = self.world_to_pix(*x as i32, *z as i32);
+            self.dot_pix(px, py, radius, c);
+        }
+    }
+
+    /// Plot a placement scatter overlay. Each dot is a small filled
+    /// circle with a halo so it stays visible against busy wireframes.
+    pub fn draw_placements(&mut self, placements: &[(i32, i32)], color: [u8; 4], radius: i32) {
+        for &(x, z) in placements {
+            let (px, py) = self.world_to_pix(x, z);
+            // Dark halo
+            self.dot_pix(px, py, radius + 1, [0x00, 0x00, 0x00, 0xC0]);
+            // Bright core
+            self.dot_pix(px, py, radius, color);
+        }
+    }
+
+    /// Encode the buffer as a PNG into `out`.
+    pub fn encode_png<W: std::io::Write>(&self, out: W) -> std::io::Result<()> {
+        let mut enc = png::Encoder::new(out, self.width, self.height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut writer = enc
+            .write_header()
+            .map_err(|e| std::io::Error::other(format!("png header: {e}")))?;
+        writer
+            .write_image_data(&self.buf)
+            .map_err(|e| std::io::Error::other(format!("png data: {e}")))?;
+        Ok(())
     }
 }
 
@@ -373,15 +695,24 @@ mod tests {
     fn top_down_lines_strip_zeros() {
         let buf = synthetic_one_body();
         let slot = parse(&buf).unwrap();
+        // Default options leave polylines open: 3 records → strip 1 zero
+        // → 2 vertices → 1 line segment (no closing diagonal).
         let lines = top_down_lines(&slot, &WireframeOptions::default());
-        // 3 records: (0,0,0), (100,0,200), (50,0,300). After stripping the
-        // zero record we have 2 points; close back to first; one line each
-        // way = 2 segments.
-        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.len(), 1);
         assert_eq!((lines[0].x0, lines[0].z0), (100, 200));
         assert_eq!((lines[0].x1, lines[0].z1), (50, 300));
-        assert_eq!((lines[1].x0, lines[1].z0), (50, 300));
-        assert_eq!((lines[1].x1, lines[1].z1), (100, 200));
+
+        // Closed-polyline mode adds the back-edge.
+        let closed = top_down_lines(
+            &slot,
+            &WireframeOptions {
+                close_polylines: true,
+                ..WireframeOptions::default()
+            },
+        );
+        assert_eq!(closed.len(), 2);
+        assert_eq!((closed[1].x0, closed[1].z0), (50, 300));
+        assert_eq!((closed[1].x1, closed[1].z1), (100, 200));
     }
 
     #[test]
