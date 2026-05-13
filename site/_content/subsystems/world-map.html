@@ -124,7 +124,27 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
   </table>
   <p>The overlay path skips the alpha offset (<code>_DAT_1F800028</code> is not added on the overlay branch), so only the first row of the overlay table is meaningful. Slots 8..11 of row 0 share the same low-mode dispatchers as SCUS (<code>0x8004409C</code>, <code>0x8004423C</code>, <code>0x80044434</code>, <code>0x800445B0</code>); slots 12..19 carry the eight overlay-resident high-mode renderers at <code>0x801F7644</code>, <code>0x801F7838</code>, <code>0x801F7F78</code>, <code>0x801F8198</code>, <code>0x801F7AA4</code>, <code>0x801F7CCC</code>, <code>0x801F8454</code>, <code>0x801F8690</code>. Each is a per-primitive emitter that loads vertex indices from the TMD prim body, looks vertices up in the actor&apos;s vertex pool, runs them through the GTE, and emits one GPU prim packet.</p>
   <p>Static <code>addprim</code> hunters never surfaced these because (a) the cmd byte is loaded from a per-mode descriptor table rather than as a <code>lui</code>/<code>li</code> immediate, and (b) the captured overlay window stopped at <code>0x801F0000</code> &mdash; which clipped every leaf address. The dynamic prim-pool-writers probe confirms top-of-list PC hits at <code>0x801F7344..0x801F8DBC</code>, exactly the eight high-mode renderer addresses.</p>
-  <p>Source mesh data is the same kingdom slot-1 TMD pack the landmarks draw from. <code>mednafen-state prim-dispatch-table &lt;save&gt;</code> decodes both tables out of a save state&apos;s main RAM and surfaces the eight overlay-resident targets; pass <code>--overlay-targets-only</code> to pipe addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list.</p>
+  <p>Source mesh data is the same kingdom slot-1 TMD pack the landmarks draw from. <code>mednafen-state prim-dispatch-table &lt;save&gt;</code> decodes both tables out of a save state&apos;s main RAM and surfaces the eight overlay-resident targets; pass <code>--overlay-targets-only</code> to pipe addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list. The companion subcommand <code>mednafen-state prim-dispatch-survey &lt;save&gt;...</code> compares multiple saves side-by-side and asserts the SCUS table is byte-identical across them.</p>
+
+  <h4 id="per-slot-delta-vs-scus-sibling">Per-slot delta vs SCUS sibling</h4>
+  <p>Capstone disassembly (<code>scripts/disasm-overlay-fn.py --batch leaves</code>) plus Ghidra decompilation (<code>ghidra/scripts/dump_world_map_top_prim_leaves.py</code>) confirms every overlay leaf is the SCUS sibling body plus a per-vertex <strong>distance-cue fog post-process</strong> inserted between the GTE projection and the OT packet write. The fog block is gated on <code>(u8 *)(t2-0x2D1) &amp; 0x10</code>; when set, it computes a clamped max-Z, shifts it by <code>(u8 *)(t2+0x90)</code>, mixes a far-Z reference at <code>t2-0x2E0</code> into the prim cmd, invokes <code>GTE.dpcs</code> (single colour, slots 12-14 / 16-18) or <code>GTE.dpct + dpcs</code> (textured quads, slots 15 / 19), then indexes the per-Z RGB LUT at <code>t2-0x2BC</code> three times to ADD-write fog tints into offsets 8 / 0xC / 0x10 of the OT packet.</p>
+
+  <table>
+    <thead><tr><th>Slot</th><th>SCUS sibling</th><th>Overlay leaf</th><th>Overlay-only GTE ops</th></tr></thead>
+    <tbody>
+      <tr><td>12</td><td><code>0x80043658</code> (68 instr)</td><td><code>0x801F7644</code> (125 instr)</td><td><code>dpcs</code></td></tr>
+      <tr><td>13</td><td><code>0x80043768</code> (84 instr)</td><td><code>0x801F7838</code> (155 instr)</td><td><code>dpcs</code></td></tr>
+      <tr><td>14</td><td><code>0x80043B58</code> (69 instr)</td><td><code>0x801F7F78</code> (136 instr)</td><td><code>dpcs</code></td></tr>
+      <tr><td>15</td><td><code>0x80043C6C</code> (90 instr)</td><td><code>0x801F8198</code> (175 instr)</td><td><code>dpct</code> + <code>dpcs</code></td></tr>
+      <tr><td>16</td><td><code>0x800438B8</code> (75 instr)</td><td><code>0x801F7AA4</code> (138 instr)</td><td><code>dpcs</code></td></tr>
+      <tr><td>17</td><td><code>0x800439E4</code> (93 instr)</td><td><code>0x801F7CCC</code> (171 instr)</td><td><code>dpcs</code></td></tr>
+      <tr><td>18</td><td><code>0x80043DD4</code> (79 instr)</td><td><code>0x801F8454</code> (143 instr)</td><td><code>dpcs</code></td></tr>
+      <tr><td>19</td><td><code>0x80043F10</code> (99 instr)</td><td><code>0x801F8690</code> (182 instr)</td><td><code>dpct</code> + <code>dpcs</code></td></tr>
+    </tbody>
+  </table>
+
+  <p>Slots 15 and 19 are the textured-quad (POLY_FT4 / POLY_GT4) variants that need <code>dpct</code> for the first three vertices plus a final <code>dpcs</code> for the fourth; every other slot needs only <code>dpcs</code>. Each leaf ends with <code>j 0x80043580; addiu $a1, $a1, 0xc</code> &mdash; tail call to the SCUS dispatcher continuation plus the loop's per-prim source-pointer advance. The engine port mirrors this dispatch in <code>legaia-engine-vm::prim_dispatch</code>; <code>SceneLoadKind::WorldMap</code> selects the overlay variant.</p>
+
   <p>Slot 4 of each kingdom bundle is <strong>not</strong> the bulk-terrain source. Its records are something else (a runtime library of object-local 3D meshes, see <a href="../formats/world-map-overlay.html">slot-4 records format doc</a>) &mdash; that hunt is independent of the continent terrain emit mechanism.</p>
   <p>The horizon emitter is called by direct <code>jal</code> from SCUS &mdash; it does not need function-pointer dispatch. Ghidra's reference manager misses the cross-program call when sweeping the overlay alone; sweep SCUS to surface the caller.</p>
 

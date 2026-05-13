@@ -205,6 +205,18 @@ enum Cmd {
         #[arg(long)]
         overlay_targets_only: bool,
     },
+    /// Survey the dispatch tables across multiple saves in one pass.
+    /// Prints a side-by-side comparison table showing which saves have
+    /// the world-map overlay paged in (overlay dispatch populated) vs.
+    /// not, and asserts the SCUS-resident table is byte-identical across
+    /// every save (it lives in code so RAM writes can't legally touch
+    /// it). Useful for spot-checking after the user adds a new save
+    /// capture.
+    PrimDispatchSurvey {
+        /// Two or more save states to survey. Order is preserved in the
+        /// output.
+        saves: Vec<PathBuf>,
+    },
 }
 
 fn parse_addr(s: &str) -> Result<u32, String> {
@@ -305,6 +317,7 @@ fn main() -> Result<()> {
             save,
             overlay_targets_only,
         } => cmd_prim_dispatch_table(&save, overlay_targets_only),
+        Cmd::PrimDispatchSurvey { saves } => cmd_prim_dispatch_survey(&saves),
     }
 }
 
@@ -1259,6 +1272,129 @@ fn cmd_prim_dispatch_table(save: &Path, overlay_targets_only: bool) -> Result<()
                     .collect::<Vec<_>>(),
             );
         }
+    }
+    Ok(())
+}
+
+fn cmd_prim_dispatch_survey(saves: &[PathBuf]) -> Result<()> {
+    use legaia_mednafen::prim_dispatch::{
+        HIGH_MODE_END, HIGH_MODE_START, SCUS_ALPHA_ROWS, SCUS_TABLE_BASE, SLOT_BYTES, classify,
+        decode, decode_both,
+    };
+
+    if saves.len() < 2 {
+        anyhow::bail!("prim-dispatch-survey requires at least 2 save states");
+    }
+
+    println!("[info] surveying {} save state(s)", saves.len());
+
+    let mut entries: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    for path in saves {
+        let s = SaveState::from_path(path)?;
+        let ram = s.main_ram()?;
+        entries.push((path.clone(), ram.to_vec()));
+    }
+
+    // SCUS invariant. Use the first save as anchor; compare the
+    // populated slot range (12..20) on every alpha row to every other
+    // save.
+    let (anchor_path, anchor_ram) = &entries[0];
+    let anchor = decode(anchor_ram, SCUS_TABLE_BASE, SCUS_ALPHA_ROWS)?;
+    let mut drift_count = 0;
+    for (path, ram) in &entries[1..] {
+        let here = decode(ram, SCUS_TABLE_BASE, SCUS_ALPHA_ROWS)?;
+        for (row_idx, (ra, rh)) in anchor.rows.iter().zip(here.rows.iter()).enumerate() {
+            for slot_idx in HIGH_MODE_START..HIGH_MODE_END {
+                if ra.slots[slot_idx] != rh.slots[slot_idx] {
+                    drift_count += 1;
+                    if drift_count <= 8 {
+                        println!(
+                            "WARN: SCUS table drift {}:row{row_idx}:slot{slot_idx} \
+                             vs {}: 0x{:08X} != 0x{:08X}",
+                            path.display(),
+                            anchor_path.display(),
+                            rh.slots[slot_idx],
+                            ra.slots[slot_idx]
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if drift_count == 0 {
+        println!(
+            "[ok]   SCUS dispatch table @ 0x{:08X} is byte-identical across all \
+             surveyed saves (high-mode slots {}..{}).",
+            SCUS_TABLE_BASE,
+            HIGH_MODE_START,
+            HIGH_MODE_END - 1
+        );
+    } else {
+        println!(
+            "ERROR: SCUS dispatch table drifted in {drift_count} slot(s) - the SCUS \
+             code region should be immutable. Re-extract or re-import the saves."
+        );
+    }
+
+    println!();
+    println!(
+        "{:<48}  {:>6}  {:<40}  high-mode targets",
+        "save", "status", "summary"
+    );
+    println!("{}", "-".repeat(140));
+    for (path, ram) in &entries {
+        let (_scus, overlay) = decode_both(ram)?;
+        let (status, summary) = if overlay.is_empty() {
+            ("empty", "world-map overlay NOT paged in".to_string())
+        } else if overlay.looks_like_dispatch_table() {
+            (
+                "POP",
+                format!(
+                    "world-map overlay loaded ({} high-mode targets)",
+                    overlay.high_mode_targets().len()
+                ),
+            )
+        } else {
+            (
+                "stale",
+                "leftover overlay code, not a dispatch table".to_string(),
+            )
+        };
+        let targets = overlay
+            .high_mode_targets()
+            .iter()
+            .map(|t| {
+                use legaia_mednafen::prim_dispatch::SlotKind;
+                let mark = match classify(*t) {
+                    SlotKind::Overlay => "",
+                    SlotKind::Scus => "(SCUS!)",
+                    SlotKind::Zero => "(zero!)",
+                    SlotKind::Other => "(OTHER!)",
+                };
+                format!("0x{t:08X}{mark}")
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let truncated = if name.len() > 48 {
+            format!("…{}", &name[name.len() - 47..])
+        } else {
+            name
+        };
+        println!("{truncated:<48}  {status:>6}  {summary:<40}  {targets}");
+    }
+    let row_bytes = SLOT_BYTES * legaia_mednafen::prim_dispatch::SLOTS_PER_ROW as u32;
+    println!(
+        "\n[info] row stride = 0x{row_bytes:X} bytes; high-mode slots = {}..{}",
+        HIGH_MODE_START,
+        HIGH_MODE_END - 1
+    );
+    if drift_count > 0 {
+        anyhow::bail!("SCUS dispatch table drift detected; see warnings above");
     }
     Ok(())
 }

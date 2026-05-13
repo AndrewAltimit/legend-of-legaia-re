@@ -1675,7 +1675,289 @@
           "md5": "01e3017b64a1"
         }
       ]
-    }
+    },
+    "unplaced_slot1_tmds": [
+      {
+        "pack_slot": 1,
+        "byte_offset": 3128,
+        "byte_end": 4040,
+        "body_bytes": 912,
+        "nobj": 1,
+        "md5": "c228c8465560"
+      },
+      {
+        "pack_slot": 2,
+        "byte_offset": 4040,
+        "byte_end": 5792,
+        "body_bytes": 1752,
+        "nobj": 2,
+        "md5": "9681bad75020"
+      },
+      {
+        "pack_slot": 3,
+        "byte_offset": 5792,
+        "byte_end": 6504,
+        "body_bytes": 712,
+        "nobj": 1,
+        "md5": "0a2eddb1739d"
+      },
+      {
+        "pack_slot": 4,
+        "byte_offset": 6504,
+        "byte_end": 7324,
+        "body_bytes": 820,
+        "nobj": 1,
+        "md5": "ccb942f8964e"
+      },
+      {
+        "pack_slot": 5,
+        "byte_offset": 7324,
+        "byte_end": 9464,
+        "body_bytes": 2140,
+        "nobj": 1,
+        "md5": "6268c421f277"
+      },
+      {
+        "pack_slot": 6,
+        "byte_offset": 9464,
+        "byte_end": 10232,
+        "body_bytes": 768,
+        "nobj": 1,
+        "md5": "8186b1932240"
+      },
+      {
+        "pack_slot": 7,
+        "byte_offset": 10232,
+        "byte_end": 13036,
+        "body_bytes": 2804,
+        "nobj": 1,
+        "md5": "add70b1432af"
+      },
+      {
+        "pack_slot": 8,
+        "byte_offset": 13036,
+        "byte_end": 14312,
+        "body_bytes": 1276,
+        "nobj": 1,
+        "md5": "e32e8ff8b199"
+      },
+      {
+        "pack_slot": 9,
+        "byte_offset": 14312,
+        "byte_end": 14784,
+        "body_bytes": 472,
+        "nobj": 1,
+        "md5": "fe006913a36d"
+      },
+      {
+        "pack_slot": 10,
+        "byte_offset": 14784,
+        "byte_end": 15068,
+        "body_bytes": 284,
+        "nobj": 1,
+        "md5": "3b0459979e74"
+      },
+      {
+        "pack_slot": 11,
+        "byte_offset": 15068,
+        "byte_end": 15420,
+        "body_bytes": 352,
+        "nobj": 1,
+        "md5": "ad1e77399133"
+      },
+      {
+        "pack_slot": 12,
+        "byte_offset": 15420,
+        "byte_end": 16360,
+        "body_bytes": 940,
+        "nobj": 1,
+        "md5": "efbb31de7bf7"
+      },
+      {
+        "pack_slot": 13,
+        "byte_offset": 16360,
+        "byte_end": 17712,
+        "body_bytes": 1352,
+        "nobj": 1,
+        "md5": "1dbbc7754591"
+      },
+      {
+        "pack_slot": 14,
+        "byte_offset": 17712,
+        "byte_end": 19908,
+        "body_bytes": 2196,
+        "nobj": 1,
+        "md5": "132aee678a9d"
+      },
+      {
+        "pack_slot": 15,
+        "byte_offset": 19908,
+        "byte_end": 21496,
+        "body_bytes": 1588,
+        "nobj": 1,
+        "md5": "aa7c1c80a495"
+      },
+      {
+        "pack_slot": 16,
+        "byte_offset": 21496,
+        "byte_end": 24284,
+        "body_bytes": 2788,
+        "nobj": 1,
+        "md5": "5d228770d46f"
+      },
+      {
+        "pack_slot": 17,
+        "byte_offset": 24284,
+        "byte_end": 25348,
+        "body_bytes": 1064,
+        "nobj": 1,
+        "md5": "4c841e7a0b52"
+      },
+      {
+        "pack_slot": 18,
+        "byte_offset": 25348,
+        "byte_end": 26544,
+        "body_bytes": 1196,
+        "nobj": 1,
+        "md5": "01049c15d1be"
+      },
+      {
+        "pack_slot": 19,
+        "byte_offset": 26544,
+        "byte_end": 27608,
+        "body_bytes": 1064,
+        "nobj": 1,
+        "md5": "8cbd67ee0cf6"
+      },
+      {
+        "pack_slot": 20,
+        "byte_offset": 27608,
+        "byte_end": 28804,
+        "body_bytes": 1196,
+        "nobj": 1,
+        "md5": "33aed36fbc8c"
+      },
+      {
+        "pack_slot": 21,
+        "byte_offset": 28804,
+        "byte_end": 29676,
+        "body_bytes": 872,
+        "nobj": 1,
+        "md5": "3b8485004d6b"
+      },
+      {
+        "pack_slot": 22,
+        "byte_offset": 29676,
+        "byte_end": 30204,
+        "body_bytes": 528,
+        "nobj": 1,
+        "md5": "599e68aacc1e"
+      },
+      {
+        "pack_slot": 23,
+        "byte_offset": 30204,
+        "byte_end": 32860,
+        "body_bytes": 2656,
+        "nobj": 1,
+        "md5": "76d095d31d8f"
+      },
+      {
+        "pack_slot": 24,
+        "byte_offset": 32860,
+        "byte_end": 33472,
+        "body_bytes": 612,
+        "nobj": 1,
+        "md5": "48153a7d007e"
+      },
+      {
+        "pack_slot": 25,
+        "byte_offset": 33472,
+        "byte_end": 34048,
+        "body_bytes": 576,
+        "nobj": 1,
+        "md5": "7a462e519bf7"
+      },
+      {
+        "pack_slot": 26,
+        "byte_offset": 34048,
+        "byte_end": 34632,
+        "body_bytes": 584,
+        "nobj": 1,
+        "md5": "77d77d4c76dd"
+      },
+      {
+        "pack_slot": 27,
+        "byte_offset": 34632,
+        "byte_end": 35240,
+        "body_bytes": 608,
+        "nobj": 1,
+        "md5": "a7517ef52bdf"
+      },
+      {
+        "pack_slot": 28,
+        "byte_offset": 35240,
+        "byte_end": 39632,
+        "body_bytes": 4392,
+        "nobj": 1,
+        "md5": "0e2f406ad4dc"
+      },
+      {
+        "pack_slot": 29,
+        "byte_offset": 39632,
+        "byte_end": 42660,
+        "body_bytes": 3028,
+        "nobj": 1,
+        "md5": "6e810249d03c"
+      },
+      {
+        "pack_slot": 30,
+        "byte_offset": 42660,
+        "byte_end": 51752,
+        "body_bytes": 9092,
+        "nobj": 8,
+        "md5": "85be2dd7248f"
+      },
+      {
+        "pack_slot": 31,
+        "byte_offset": 51752,
+        "byte_end": 52892,
+        "body_bytes": 1140,
+        "nobj": 1,
+        "md5": "fe27c480792f"
+      },
+      {
+        "pack_slot": 32,
+        "byte_offset": 52892,
+        "byte_end": 56360,
+        "body_bytes": 3468,
+        "nobj": 1,
+        "md5": "b19251c47b6e"
+      },
+      {
+        "pack_slot": 33,
+        "byte_offset": 56360,
+        "byte_end": 62640,
+        "body_bytes": 6280,
+        "nobj": 10,
+        "md5": "06ea405a96b2"
+      },
+      {
+        "pack_slot": 38,
+        "byte_offset": 82308,
+        "byte_end": 82676,
+        "body_bytes": 368,
+        "nobj": 1,
+        "md5": "fb7f6e6c976d"
+      },
+      {
+        "pack_slot": 39,
+        "byte_offset": 82676,
+        "byte_end": 83064,
+        "body_bytes": 388,
+        "nobj": 1,
+        "md5": "01e3017b64a1"
+      }
+    ]
   },
   "sebucus": {
     "kingdom": "sebucus",
@@ -2630,7 +2912,249 @@
           "md5": "01e3017b64a1"
         }
       ]
-    }
+    },
+    "unplaced_slot1_tmds": [
+      {
+        "pack_slot": 1,
+        "byte_offset": 1428,
+        "byte_end": 3064,
+        "body_bytes": 1636,
+        "nobj": 1,
+        "md5": "418d6c52f3d1"
+      },
+      {
+        "pack_slot": 2,
+        "byte_offset": 3064,
+        "byte_end": 4420,
+        "body_bytes": 1356,
+        "nobj": 1,
+        "md5": "2efcbe5af4d6"
+      },
+      {
+        "pack_slot": 3,
+        "byte_offset": 4420,
+        "byte_end": 5288,
+        "body_bytes": 868,
+        "nobj": 1,
+        "md5": "db4e4014e077"
+      },
+      {
+        "pack_slot": 4,
+        "byte_offset": 5288,
+        "byte_end": 6564,
+        "body_bytes": 1276,
+        "nobj": 1,
+        "md5": "0427e5a0f439"
+      },
+      {
+        "pack_slot": 5,
+        "byte_offset": 6564,
+        "byte_end": 8044,
+        "body_bytes": 1480,
+        "nobj": 1,
+        "md5": "7256c79b9028"
+      },
+      {
+        "pack_slot": 6,
+        "byte_offset": 8044,
+        "byte_end": 13640,
+        "body_bytes": 5596,
+        "nobj": 1,
+        "md5": "f96a0308297a"
+      },
+      {
+        "pack_slot": 7,
+        "byte_offset": 13640,
+        "byte_end": 18932,
+        "body_bytes": 5292,
+        "nobj": 2,
+        "md5": "79ebd85028c8"
+      },
+      {
+        "pack_slot": 8,
+        "byte_offset": 18932,
+        "byte_end": 24200,
+        "body_bytes": 5268,
+        "nobj": 1,
+        "md5": "9e31f80a4b85"
+      },
+      {
+        "pack_slot": 9,
+        "byte_offset": 24200,
+        "byte_end": 27544,
+        "body_bytes": 3344,
+        "nobj": 1,
+        "md5": "e18e6a2072e9"
+      },
+      {
+        "pack_slot": 10,
+        "byte_offset": 27544,
+        "byte_end": 27828,
+        "body_bytes": 284,
+        "nobj": 1,
+        "md5": "6d282256139d"
+      },
+      {
+        "pack_slot": 11,
+        "byte_offset": 27828,
+        "byte_end": 28180,
+        "body_bytes": 352,
+        "nobj": 1,
+        "md5": "271bf3e642ae"
+      },
+      {
+        "pack_slot": 12,
+        "byte_offset": 28180,
+        "byte_end": 29372,
+        "body_bytes": 1192,
+        "nobj": 2,
+        "md5": "acf8389974fb"
+      },
+      {
+        "pack_slot": 13,
+        "byte_offset": 29372,
+        "byte_end": 32160,
+        "body_bytes": 2788,
+        "nobj": 1,
+        "md5": "7e6e99d13253"
+      },
+      {
+        "pack_slot": 14,
+        "byte_offset": 32160,
+        "byte_end": 32708,
+        "body_bytes": 548,
+        "nobj": 1,
+        "md5": "0ac44cdca45c"
+      },
+      {
+        "pack_slot": 15,
+        "byte_offset": 32708,
+        "byte_end": 34984,
+        "body_bytes": 2276,
+        "nobj": 1,
+        "md5": "8a89ed8bc8b2"
+      },
+      {
+        "pack_slot": 16,
+        "byte_offset": 34984,
+        "byte_end": 37824,
+        "body_bytes": 2840,
+        "nobj": 1,
+        "md5": "9db00d215767"
+      },
+      {
+        "pack_slot": 17,
+        "byte_offset": 37824,
+        "byte_end": 39388,
+        "body_bytes": 1564,
+        "nobj": 1,
+        "md5": "9db1ad443308"
+      },
+      {
+        "pack_slot": 18,
+        "byte_offset": 39388,
+        "byte_end": 40200,
+        "body_bytes": 812,
+        "nobj": 1,
+        "md5": "b72e6c0c3d09"
+      },
+      {
+        "pack_slot": 19,
+        "byte_offset": 40200,
+        "byte_end": 41656,
+        "body_bytes": 1456,
+        "nobj": 1,
+        "md5": "3f7cf4c14f58"
+      },
+      {
+        "pack_slot": 20,
+        "byte_offset": 41656,
+        "byte_end": 42056,
+        "body_bytes": 400,
+        "nobj": 1,
+        "md5": "8f41acae5e2c"
+      },
+      {
+        "pack_slot": 21,
+        "byte_offset": 42056,
+        "byte_end": 43840,
+        "body_bytes": 1784,
+        "nobj": 1,
+        "md5": "36434fcd7c26"
+      },
+      {
+        "pack_slot": 22,
+        "byte_offset": 43840,
+        "byte_end": 44240,
+        "body_bytes": 400,
+        "nobj": 1,
+        "md5": "610bada00ec0"
+      },
+      {
+        "pack_slot": 23,
+        "byte_offset": 44240,
+        "byte_end": 44904,
+        "body_bytes": 664,
+        "nobj": 1,
+        "md5": "8326c22c88fd"
+      },
+      {
+        "pack_slot": 24,
+        "byte_offset": 44904,
+        "byte_end": 46632,
+        "body_bytes": 1728,
+        "nobj": 1,
+        "md5": "66e20edbd2b7"
+      },
+      {
+        "pack_slot": 25,
+        "byte_offset": 46632,
+        "byte_end": 52716,
+        "body_bytes": 6084,
+        "nobj": 2,
+        "md5": "7055da0ef420"
+      },
+      {
+        "pack_slot": 26,
+        "byte_offset": 52716,
+        "byte_end": 59840,
+        "body_bytes": 7124,
+        "nobj": 3,
+        "md5": "9e7665a831ae"
+      },
+      {
+        "pack_slot": 27,
+        "byte_offset": 59840,
+        "byte_end": 64240,
+        "body_bytes": 4400,
+        "nobj": 1,
+        "md5": "170359ce27e8"
+      },
+      {
+        "pack_slot": 29,
+        "byte_offset": 64608,
+        "byte_end": 70888,
+        "body_bytes": 6280,
+        "nobj": 10,
+        "md5": "06ea405a96b2"
+      },
+      {
+        "pack_slot": 34,
+        "byte_offset": 86672,
+        "byte_end": 93004,
+        "body_bytes": 6332,
+        "nobj": 12,
+        "md5": "eb1d26a37e87"
+      },
+      {
+        "pack_slot": 35,
+        "byte_offset": 93004,
+        "byte_end": 93392,
+        "body_bytes": 388,
+        "nobj": 1,
+        "md5": "01e3017b64a1"
+      }
+    ]
   },
   "karisto": {
     "kingdom": "karisto",
@@ -4207,6 +4731,320 @@
           "md5": "01e3017b64a1"
         }
       ]
-    }
+    },
+    "unplaced_slot1_tmds": [
+      {
+        "pack_slot": 1,
+        "byte_offset": 412,
+        "byte_end": 3440,
+        "body_bytes": 3028,
+        "nobj": 1,
+        "md5": "3b5fb2c69fe4"
+      },
+      {
+        "pack_slot": 2,
+        "byte_offset": 3440,
+        "byte_end": 3988,
+        "body_bytes": 548,
+        "nobj": 1,
+        "md5": "0ac44cdca45c"
+      },
+      {
+        "pack_slot": 3,
+        "byte_offset": 3988,
+        "byte_end": 8028,
+        "body_bytes": 4040,
+        "nobj": 1,
+        "md5": "d3ecd1ac0e18"
+      },
+      {
+        "pack_slot": 4,
+        "byte_offset": 8028,
+        "byte_end": 11880,
+        "body_bytes": 3852,
+        "nobj": 1,
+        "md5": "92dbd123e3a0"
+      },
+      {
+        "pack_slot": 5,
+        "byte_offset": 11880,
+        "byte_end": 17284,
+        "body_bytes": 5404,
+        "nobj": 5,
+        "md5": "65496d83b2ee"
+      },
+      {
+        "pack_slot": 6,
+        "byte_offset": 17284,
+        "byte_end": 19972,
+        "body_bytes": 2688,
+        "nobj": 1,
+        "md5": "a39e87a06639"
+      },
+      {
+        "pack_slot": 7,
+        "byte_offset": 19972,
+        "byte_end": 23244,
+        "body_bytes": 3272,
+        "nobj": 4,
+        "md5": "42ba7d2effe1"
+      },
+      {
+        "pack_slot": 8,
+        "byte_offset": 23244,
+        "byte_end": 25700,
+        "body_bytes": 2456,
+        "nobj": 1,
+        "md5": "ff7ef6b194dc"
+      },
+      {
+        "pack_slot": 9,
+        "byte_offset": 25700,
+        "byte_end": 26072,
+        "body_bytes": 372,
+        "nobj": 1,
+        "md5": "8288e833e338"
+      },
+      {
+        "pack_slot": 10,
+        "byte_offset": 26072,
+        "byte_end": 30456,
+        "body_bytes": 4384,
+        "nobj": 4,
+        "md5": "a086b9c154af"
+      },
+      {
+        "pack_slot": 11,
+        "byte_offset": 30456,
+        "byte_end": 35192,
+        "body_bytes": 4736,
+        "nobj": 1,
+        "md5": "b55d68b8aac9"
+      },
+      {
+        "pack_slot": 12,
+        "byte_offset": 35192,
+        "byte_end": 40172,
+        "body_bytes": 4980,
+        "nobj": 1,
+        "md5": "e353053d167f"
+      },
+      {
+        "pack_slot": 13,
+        "byte_offset": 40172,
+        "byte_end": 45208,
+        "body_bytes": 5036,
+        "nobj": 2,
+        "md5": "7a6b70ac9d37"
+      },
+      {
+        "pack_slot": 14,
+        "byte_offset": 45208,
+        "byte_end": 51576,
+        "body_bytes": 6368,
+        "nobj": 1,
+        "md5": "ad3dabd44e4d"
+      },
+      {
+        "pack_slot": 15,
+        "byte_offset": 51576,
+        "byte_end": 53852,
+        "body_bytes": 2276,
+        "nobj": 4,
+        "md5": "8a269ec182e2"
+      },
+      {
+        "pack_slot": 16,
+        "byte_offset": 53852,
+        "byte_end": 55624,
+        "body_bytes": 1772,
+        "nobj": 1,
+        "md5": "12aed754c1f1"
+      },
+      {
+        "pack_slot": 17,
+        "byte_offset": 55624,
+        "byte_end": 57400,
+        "body_bytes": 1776,
+        "nobj": 1,
+        "md5": "70ff39de3fd7"
+      },
+      {
+        "pack_slot": 18,
+        "byte_offset": 57400,
+        "byte_end": 63108,
+        "body_bytes": 5708,
+        "nobj": 1,
+        "md5": "602f211a2287"
+      },
+      {
+        "pack_slot": 19,
+        "byte_offset": 63108,
+        "byte_end": 63580,
+        "body_bytes": 472,
+        "nobj": 1,
+        "md5": "046072473ac2"
+      },
+      {
+        "pack_slot": 20,
+        "byte_offset": 63580,
+        "byte_end": 64056,
+        "body_bytes": 476,
+        "nobj": 1,
+        "md5": "1ca0ac3daca6"
+      },
+      {
+        "pack_slot": 21,
+        "byte_offset": 64056,
+        "byte_end": 64508,
+        "body_bytes": 452,
+        "nobj": 1,
+        "md5": "2b885faa08a4"
+      },
+      {
+        "pack_slot": 22,
+        "byte_offset": 64508,
+        "byte_end": 65480,
+        "body_bytes": 972,
+        "nobj": 1,
+        "md5": "ba3ab2038c13"
+      },
+      {
+        "pack_slot": 23,
+        "byte_offset": 65480,
+        "byte_end": 65932,
+        "body_bytes": 452,
+        "nobj": 1,
+        "md5": "4aaed054d59f"
+      },
+      {
+        "pack_slot": 24,
+        "byte_offset": 65932,
+        "byte_end": 68716,
+        "body_bytes": 2784,
+        "nobj": 1,
+        "md5": "46db49ef78c8"
+      },
+      {
+        "pack_slot": 25,
+        "byte_offset": 68716,
+        "byte_end": 69568,
+        "body_bytes": 852,
+        "nobj": 1,
+        "md5": "3f6d9142686d"
+      },
+      {
+        "pack_slot": 26,
+        "byte_offset": 69568,
+        "byte_end": 70012,
+        "body_bytes": 444,
+        "nobj": 1,
+        "md5": "26fe2633e478"
+      },
+      {
+        "pack_slot": 27,
+        "byte_offset": 70012,
+        "byte_end": 70420,
+        "body_bytes": 408,
+        "nobj": 1,
+        "md5": "a2f75033bb49"
+      },
+      {
+        "pack_slot": 28,
+        "byte_offset": 70420,
+        "byte_end": 71984,
+        "body_bytes": 1564,
+        "nobj": 1,
+        "md5": "22690d1ff0af"
+      },
+      {
+        "pack_slot": 29,
+        "byte_offset": 71984,
+        "byte_end": 73768,
+        "body_bytes": 1784,
+        "nobj": 1,
+        "md5": "1c2411a54542"
+      },
+      {
+        "pack_slot": 30,
+        "byte_offset": 73768,
+        "byte_end": 74580,
+        "body_bytes": 812,
+        "nobj": 1,
+        "md5": "b72e6c0c3d09"
+      },
+      {
+        "pack_slot": 31,
+        "byte_offset": 74580,
+        "byte_end": 74980,
+        "body_bytes": 400,
+        "nobj": 1,
+        "md5": "610bada00ec0"
+      },
+      {
+        "pack_slot": 32,
+        "byte_offset": 74980,
+        "byte_end": 75644,
+        "body_bytes": 664,
+        "nobj": 1,
+        "md5": "8326c22c88fd"
+      },
+      {
+        "pack_slot": 33,
+        "byte_offset": 75644,
+        "byte_end": 77100,
+        "body_bytes": 1456,
+        "nobj": 1,
+        "md5": "3f7cf4c14f58"
+      },
+      {
+        "pack_slot": 34,
+        "byte_offset": 77100,
+        "byte_end": 78828,
+        "body_bytes": 1728,
+        "nobj": 1,
+        "md5": "66e20edbd2b7"
+      },
+      {
+        "pack_slot": 36,
+        "byte_offset": 81620,
+        "byte_end": 83300,
+        "body_bytes": 1680,
+        "nobj": 1,
+        "md5": "1ca86a5f8650"
+      },
+      {
+        "pack_slot": 37,
+        "byte_offset": 83300,
+        "byte_end": 86580,
+        "body_bytes": 3280,
+        "nobj": 3,
+        "md5": "cd70e9ae7887"
+      },
+      {
+        "pack_slot": 38,
+        "byte_offset": 86580,
+        "byte_end": 86948,
+        "body_bytes": 368,
+        "nobj": 1,
+        "md5": "d90d5e8236ca"
+      },
+      {
+        "pack_slot": 43,
+        "byte_offset": 110160,
+        "byte_end": 116492,
+        "body_bytes": 6332,
+        "nobj": 12,
+        "md5": "eb1d26a37e87"
+      },
+      {
+        "pack_slot": 55,
+        "byte_offset": 164168,
+        "byte_end": 164556,
+        "body_bytes": 388,
+        "nobj": 1,
+        "md5": "01e3017b64a1"
+      }
+    ]
   }
 }

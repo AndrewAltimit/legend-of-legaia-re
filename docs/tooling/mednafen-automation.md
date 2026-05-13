@@ -219,6 +219,30 @@ for the mechanism and
 [`crates/mednafen/src/prim_dispatch.rs`](../../crates/mednafen/src/prim_dispatch.rs)
 for the typed accessors.
 
+### Survey dispatch tables across multiple saves
+
+```bash
+mednafen-state prim-dispatch-survey <save> <save>...
+```
+
+Runs `prim-dispatch-table` against multiple saves in one pass and prints
+a side-by-side comparison. Useful after adding a new save capture, to
+confirm:
+
+- The SCUS-resident dispatch table is **byte-identical** across every
+  save (it lives in code, so RAM writes can't legally touch it). The
+  command exits non-zero if drift is detected.
+- Which saves have the world-map overlay paged in (`status = POP`,
+  eight high-mode targets in `0x801F76..0x801F86`) vs. saves where the
+  overlay address space holds leftover code or zeros (`stale` / `empty`).
+- Targets outside the documented `0x801C0000..0x801F9000` window flag
+  with `(OTHER!)` - that's an early-warning sign the overlay window
+  needs widening.
+
+The same invariants are asserted as disc-gated tests in
+[`crates/mednafen/tests/dispatch_table.rs`](../../crates/mednafen/tests/dispatch_table.rs);
+the survey command is the one-shot equivalent for spot-checking.
+
 ## Workflow patterns
 
 ### "Find what writes to X" between two known points

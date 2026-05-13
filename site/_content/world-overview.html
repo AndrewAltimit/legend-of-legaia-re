@@ -2,14 +2,14 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld combines (a) a continent ground terrain mesh built at runtime as several thousand textured polygons in a GPU primitive pool and (b) a sparse set of landmark TMDs (towns, dungeons, NPCs) placed at world coordinates from the kingdom's bundle. This page renders the <strong>landmark layer in real-time WebGL 3D straight from your disc image</strong> &mdash; no save state required. The bulk continent terrain source isn't located yet; tracking in <a href="subsystems/world-map.html">world-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
+    Each kingdom's overworld combines (a) a kingdom slot-1 TMD pack (40 / 36 / 56 meshes for Drake / Sebucus / Karisto) that holds both landmark meshes (castles, towers, bridges) and ground-tile meshes, and (b) a static <a href="formats/world-map-overlay.html">MAN placement table</a> that pins a subset of those meshes at world coordinates. The runtime additionally walks per-frame actor lists so the same pack supplies bulk terrain prims via a mode-switched per-prim renderer; the mechanism is now pinned (see <a href="subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">world-map &sect; bulk emit</a>). This page renders the landmark layer in real-time WebGL 3D straight from your disc image &mdash; no save state required &mdash; and an optional toggle drops the <em>unplaced</em> slot-1 TMDs (the 35 / 30 / 39 meshes the MAN table doesn't pin) onto a canonical grid for visual classification.
   </p>
 </header>
 
 <section class="doc-section" id="how-this-works">
   <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. For Drake the page additionally overlays 12 live-RAM-resolved actor placements (bridge towers, gates, the small castle, wall sections) baked into <code>site/world-overview-live.json</code> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. This view renders the landmark layer but <em>not</em> the continent ground terrain &mdash; the textured ground tiles are produced by a runtime generator that hasn't been located yet.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. The MAN table only pins a handful of slots per kingdom (5 unique slots for Drake, 6 for Sebucus, 17 for Karisto); the rest are surfaced by the <em>show unplaced slot-1 TMDs</em> toggle below at canonical grid positions, since the runtime resolves their final positions through actor lists rather than MAN. For Drake the page additionally overlays 12 live-RAM-resolved actor placements (bridge towers, gates, the small castle, wall sections) baked into <code>site/world-overview-live.json</code> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. Distance-cue fog is applied by the runtime via <code>FUN_80043390</code>'s overlay-mode dispatch table (see below); this WebGL view doesn't replicate the fog yet, so meshes render flat-colored.
   </p>
   <p>
     <strong>Mesh inspector:</strong> with a disc loaded, browse the per-kingdom TMD pack one mesh at a time (orbit camera, auto-rotate).
@@ -18,7 +18,10 @@
     <strong>Placement table:</strong> the world-map actor positions baked into <code>site/world-overview.json</code> are parsed from each kingdom's type-3 &quot;Man&quot; asset via <code>FUN_8003A1E4</code>'s record walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate. Each placement's <code>tmd_slot</code> resolves into the kingdom pack (max slot Drake 37, Sebucus 33, Karisto 54); placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead. Drake additionally surfaces 12 live-RAM actor placements via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a>: each world-map actor's <code>mesh_head[+0x44]</code> chain is walked to find the containing TMD via backward magic-word search, then mapped to a slot index. The result is baked into <code>site/world-overview-live.json</code>; the viewer overlays those placements on top of the MAN entities so the bridge towers, gates, small castle, and other actor-positioned features render correctly.
   </p>
   <p>
-    <strong>Slot 4 of the kingdom bundle.</strong> Slot 4 (type byte <code>0x05</code>, ~32 KB) was previously hypothesized to be the dev-menu top-view wireframe / coastline data, but visual inspection across every projection and topology mode falsified that reading. The container is solved (15 / 16 / 16 sub-bodies, byte-verified vs live RAM at <code>0x8011A624</code>) but what the records actually encode is open - most likely a runtime library of small object-local 3D meshes that the world-map controller places at world coordinates. The previous &quot;show slot-4 wireframe&quot; toggle on this page was removed once the wireframe hypothesis was falsified; the format doc keeps the container details + falsified hypotheses + CLI tooling as a research artifact (<a href="formats/world-map-overlay.html">slot-4 records doc</a>). The strongest remaining hypothesis for the bulk continent terrain is still a procedural sibling of the horizon emitter <code>FUN_801D7EA0</code> reached from the per-frame world-map tick <code>FUN_80016444</code>; see <a href="subsystems/world-map.html#bulk-continent-terrain-emitter-investigation">world-map subsystem &sect; emitter investigation</a>.
+    <strong>Bulk continent terrain (mechanism pinned).</strong> The ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view come out of ordinary case-5 TMD rendering whose per-prim dispatch is <em>mode-switched</em> to overlay-resident renderers when the world-map overlay is paged in. <code>FUN_80043390</code> selects one of two function-pointer tables based on <code>_DAT_1F800394 &amp; 1</code> &mdash; SCUS at <code>0x8007657C</code> when clear, world-map overlay at <code>0x801F8968</code> when set. The overlay table's eight high-mode renderers at <code>0x801F7644..0x801F8690</code> are the SCUS sibling bodies plus a per-vertex distance-cue fog post-process (GTE <code>dpcs</code> / <code>dpct</code> + a per-Z RGB LUT tint). The source mesh data is the same kingdom slot-1 TMD pack the landmarks draw from; the runtime just routes prims through the fog-enabled leaves when rendering the world map. Full mechanism + per-slot fog delta at <a href="subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">world-map &sect; bulk emit</a>; CLI at <code>mednafen-state prim-dispatch-table &lt;save&gt;</code>.
+  </p>
+  <p>
+    <strong>Slot 4 of the kingdom bundle.</strong> Slot 4 (type byte <code>0x05</code>, ~32 KB) was previously hypothesized to be the dev-menu top-view wireframe / coastline data; visual inspection falsified that reading across every projection and topology mode. The container is solved (15 / 16 / 16 sub-bodies, byte-verified vs live RAM at <code>0x8011A624</code>) but the records' semantic remains open. Dynamic memory-watchpoint capture against the dev-menu top-view registered zero reads, so the consumer runs only at scene-load (or via input the captured state doesn't trigger). Slot 4 is <em>not</em> the bulk continent terrain source &mdash; that puzzle is now answered by <code>FUN_80043390</code>'s dispatch table, above. See <a href="formats/world-map-overlay.html">slot-4 records doc</a>.
   </p>
 </section>
 
@@ -47,13 +50,14 @@
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
         <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
-          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Landmark TMDs from the kingdom bundle placed at their world coordinates. Continent terrain not yet reversed.">Assembled scene (disc)</button>
+          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Landmark TMDs from the kingdom bundle placed at their world coordinates from the static MAN table.">Assembled scene (disc)</button>
           <button id="wo-mode-mesh"  type="button" class="wo-mode"           role="radio" aria-checked="false" title="Browse the per-kingdom TMD pack one mesh at a time.">Mesh inspector</button>
         </span>
         <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
+        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Rendered at canonical world-bound-spanning positions for visual classification (ground tile vs landmark)."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
@@ -268,6 +272,7 @@
   const $modeWorld  = document.getElementById('wo-mode-world');
   const $modeMesh   = document.getElementById('wo-mode-mesh');
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
+  const $showUnplaced = document.getElementById('wo-show-unplaced');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
 
@@ -365,12 +370,26 @@
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
+    /* Unplaced-TMD toggle only makes sense in world mode (mesh inspector
+     * already walks the whole pack one mesh at a time). */
+    const $unplacedWrap = document.getElementById('wo-show-unplaced-wrap');
+    if ($unplacedWrap) $unplacedWrap.hidden = meshOnly;
     $resetCam.hidden = false;
     /* Re-enter the active kingdom so the right path renders. */
     selectKingdom(currentKingdom);
   }
   $modeWorld.addEventListener('click', () => setViewMode('world'));
   $modeMesh .addEventListener('click', () => setViewMode('mesh'));
+  if ($showUnplaced) {
+    $showUnplaced.addEventListener('change', () => {
+      if (viewMode === 'world') {
+        /* Rerun the assembled-scene path so the unplaced grid appears or
+         * clears. The world view only reads `$showUnplaced.checked` once
+         * per load, not per-frame, so a checkbox flip has to retrigger. */
+        selectKingdom(currentKingdom);
+      }
+    });
+  }
   /* Default UI matches default viewMode = 'world' (assembled scene from
    * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
    * (used by the top-down camera). */
@@ -562,11 +581,49 @@
         drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
       }
     }
+    /* Optional: render the unplaced slot-1 TMDs at canonical positions.
+     * MAN surfaces only a subset of the kingdom pack; the rest are
+     * referenced by runtime actor lists (likely ground tiles + bulk
+     * landmark variants). Spread them across the world bounds so each
+     * can be visually classified. */
     const ext = k.world_extent || [16320, 16320];
+    if ($showUnplaced && $showUnplaced.checked) {
+      const unplaced = k.unplaced_slot1_tmds || [];
+      if (unplaced.length > 0) {
+        const cols = Math.max(1, Math.ceil(Math.sqrt(unplaced.length)));
+        const rows = Math.max(1, Math.ceil(unplaced.length / cols));
+        for (let i = 0; i < unplaced.length; i++) {
+          const u = unplaced[i];
+          const ms = u.pack_slot;
+          if (ms < 0 || ms >= packCount) continue;
+          if (!used.has(ms)) {
+            viewer.pack_mesh(ms);
+            const positions = viewer.pack_mesh_positions();
+            const uvs = viewer.pack_mesh_uvs();
+            const cba = viewer.pack_mesh_cba_tsb();
+            const idx = viewer.pack_mesh_indices();
+            if (positions.length > 0 && idx.length > 0) {
+              glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
+              used.add(ms);
+            } else {
+              continue;
+            }
+          }
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          const x = ((col + 0.5) / cols) * ext[0];
+          const z = ((row + 0.5) / rows) * ext[1];
+          drawPlacements.push({ meshId: ms, x, z, unplaced: true });
+        }
+      }
+    }
     frameWorldCam(drawPlacements, ext);
     worldCam.pitch = 0;
+    const unplacedShownCount = drawPlacements.filter(p => p.unplaced).length;
+    const placedShownCount = drawPlacements.length - unplacedShownCount;
     $meshLabel.textContent =
-      `${k.cdname} - ${drawPlacements.length} placements (${used.size} unique meshes, ${packCount}-TMD pack)`;
+      `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)` +
+      (unplacedShownCount > 0 ? ` + ${unplacedShownCount} unplaced TMDs` : '');
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);

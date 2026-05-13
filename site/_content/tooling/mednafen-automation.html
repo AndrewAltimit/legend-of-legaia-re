@@ -86,6 +86,16 @@
 <pre><code>mednafen-state prim-dispatch-table &lt;save&gt;
 mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></pre>
   <p>Decodes <code>FUN_80043390</code>'s SCUS-resident table at <code>0x8007657C</code> (4 alpha rows &times; 20 slots) and the overlay-resident variant at <code>0x801F8968</code> (1 alpha row only &mdash; the overlay path skips the alpha offset). Reports every populated slot, classifies it (SCUS / overlay / other), and surfaces the eight overlay-resident high-mode renderers at <code>0x801F7644..0x801F8690</code> &mdash; the per-prim emit leaves the world-map top-view routes its TMD prims through. The overlay table reports as empty when the world-map overlay isn't paged in; pass <code>--overlay-targets-only</code> to pipe the eight addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map &mdash; bulk continent terrain emit mechanism</a>.</p>
+
+  <h3>Survey dispatch tables across multiple saves</h3>
+<pre><code>mednafen-state prim-dispatch-survey &lt;save&gt; &lt;save&gt;...</code></pre>
+  <p>Runs <code>prim-dispatch-table</code> against multiple saves in one pass and prints a side-by-side comparison. Useful after adding a new save capture, to confirm:</p>
+  <ul class="bullets">
+    <li>The SCUS-resident dispatch table is <strong>byte-identical</strong> across every save (it lives in code, so RAM writes can&apos;t legally touch it). The command exits non-zero if drift is detected.</li>
+    <li>Which saves have the world-map overlay paged in (<code>status = POP</code>, eight high-mode targets in <code>0x801F76xx..0x801F86xx</code>) vs. saves where the overlay address space holds leftover code or zeros (<code>stale</code> / <code>empty</code>).</li>
+    <li>Targets outside the documented <code>0x801C0000..0x801F9000</code> window flag with <code>(OTHER!)</code> &mdash; that&apos;s an early-warning sign the overlay window needs widening.</li>
+  </ul>
+  <p>The same invariants are asserted as disc-gated tests in <code>crates/mednafen/tests/dispatch_table.rs</code>; the survey command is the one-shot equivalent for spot-checking.</p>
 </section>
 
 <section class="doc-section" id="workflow-patterns">

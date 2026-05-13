@@ -284,6 +284,29 @@ def main():
                 }
             else:
                 p["tmd_source"] = {"kind": "out_of_range", "pack_slot": slot}
+        # The MAN placement table surfaces a subset of the kingdom pack;
+        # the rest are slot-1 TMDs the static placement records don't
+        # reference. They're still loaded into the runtime scene pool by
+        # the kingdom-bundle loader, and are reachable via runtime
+        # actor-list placements - hard to enumerate from disc alone.
+        # `unplaced_slot1_tmds` carries every pack slot NOT in the MAN
+        # table so the world-overview can render them at canonical
+        # positions for visual classification (ground tile vs landmark).
+        placed_slot_set = {
+            p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0
+        }
+        unplaced: list[dict] = []
+        for pack_slot, t in enumerate(tmds):
+            if pack_slot in placed_slot_set:
+                continue
+            unplaced.append({
+                "pack_slot": pack_slot,
+                "byte_offset": t["byte_offset"],
+                "byte_end": t["byte_end"],
+                "body_bytes": t["body_bytes"],
+                "nobj": t["nobj"],
+                "md5": t["md5"],
+            })
         # Camera centroid uses only world-positioned actors (skip the
         # script-positioned 0x7F-sentinel records).
         real = [p for p in parsed["placements"] if not p["script_positioned"]]
@@ -310,6 +333,7 @@ def main():
                 "decompressed_bytes": len(tmd_pack),
                 "records": tmds,
             },
+            "unplaced_slot1_tmds": unplaced,
         }
         # Per-placement scene-slot summary
         scene_used = sorted({p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0})
@@ -319,7 +343,8 @@ def main():
               f"{len(parsed['placements'])} records "
               f"({len(real)} placed, {parsed['script_positioned_count']} scripted), "
               f"pack={len(tmds)} TMDs, "
-              f"scene-slots used={scene_used}, global={global_used}")
+              f"scene-slots used={scene_used}, global={global_used}, "
+              f"unplaced={len(unplaced)}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2))

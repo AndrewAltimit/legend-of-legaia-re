@@ -255,6 +255,94 @@ them because (a) the cmd byte is loaded from a per-mode descriptor table
 rather than as a `lui`/`li` immediate, and (b) the captured overlay
 window stopped at `0x801F0000` (which clipped every leaf address).
 
+#### Per-slot delta vs SCUS sibling
+
+First-pass capstone disassembly (`scripts/disasm-overlay-fn.py --batch
+leaves` against the extended overlay; `--batch scus-siblings` against
+`SCUS_942.54`) shows every overlay leaf is the SCUS sibling body plus a
+**distance-cue fog post-process**. The fog block is inserted between the
+GTE projection and the OT packet write; its shape is constant across all
+eight slots:
+
+```mips
+; --- common GTE projection (identical to SCUS sibling) ---
+mtc2  v0, v1, v2                                ; vertex coords -> GTE
+GTE.rtpt                                         ; perspective transform
+GTE.nclip                                        ; backface test
+GTE.avsz3 / avsz4                                ; average Z
+
+; --- fog block (overlay-only) ---
+lbu   s3, -0x2d1(gp)                             ; fog-enable byte
+andi  s3, s3, 0x10                               ; bit 4 = "fog on"
+bnez  s3, fog_path                               ; bypass if cleared
+mfc2  z1, sxyz1; mfc2 z2, sxyz2; mfc2 z3, sxyz3  ; per-vertex Z
+; Z_far = max(z1, z2, z3) >> *(u8 *)(gp+0x90)
+sub/move/branch sequence to pick the max         ; min-of-mins clamp
+lbu   shift, 0x90(gp); srlv Z_far, Z_far, shift
+lw    fog_ref, -0x2e0(gp)                        ; far-plane reference
+lwc2  fog_color, -0x2dc(gp)                      ; fog color -> GTE
+or    cmd, cmd, fog_ref                          ; mix into prim cmd
+mtc2  cmd, rgbc
+GTE.dpcs                                          ; depth-cue single
+; per-vertex RGB LUT tint: indexes lut[Z>>5] from gp-0x2bc
+; for each of the three R,G,B sub-vertices and ADD-writes
+; the result into offsets 8/0xc/0x10 of the OT packet.
+
+; --- common OT write (identical to SCUS sibling) ---
+sw    rgbc,    0(t1)
+sw    p0_xy,   4(t1)
+sw    p1_xy,   8(t1)
+...
+addi  t1, t1, 0x14                                ; stride 20 (5 words)
+bgtz  t3, loop_top
+addi  t3, t3, -1
+j     0x80043580                                  ; tail call to SCUS
+                                                  ; dispatcher continuation
+```
+
+The fog parameters all sit at GP-relative offsets in the per-frame
+camera/render context block accessed through `$t2`:
+
+| GP offset | Role |
+|---|---|
+| `-0x2e0` | Far-plane reference Z (mixed into prim cmd word). |
+| `-0x2dc` | Fog color (loaded into GTE color register before `dpcs`). |
+| `-0x2d1` | Fog-enable flags byte; bit `0x10` gates the whole fog path. |
+| `-0x2bc` | Pointer to per-Z fog-tint LUT (2-byte entries, indexed by `Z >> 5`). |
+| `+0x90`  | Z shift exponent (controls how aggressively far-plane Z compresses). |
+
+Each overlay leaf is the SCUS sibling at 60-80 instructions plus
+~60-80 instructions of the fog block, so every leaf roughly doubles in
+size:
+
+| Slot | SCUS sibling | Overlay leaf | Overlay-only GTE ops added |
+|---|---|---|---|
+| 12 | `0x80043658` (68 instr) | `0x801F7644` (125 instr) | `dpcs` |
+| 13 | `0x80043768` (84 instr) | `0x801F7838` (155 instr) | `dpcs` |
+| 14 | `0x80043B58` (69 instr) | `0x801F7F78` (136 instr) | `dpcs` |
+| 15 | `0x80043C6C` (90 instr) | `0x801F8198` (175 instr) | `dpct` + `dpcs` |
+| 16 | `0x800438B8` (75 instr) | `0x801F7AA4` (138 instr) | `dpcs` |
+| 17 | `0x800439E4` (93 instr) | `0x801F7CCC` (171 instr) | `dpcs` |
+| 18 | `0x80043DD4` (79 instr) | `0x801F8454` (143 instr) | `dpcs` |
+| 19 | `0x80043F10` (99 instr) | `0x801F8690` (182 instr) | `dpct` + `dpcs` |
+
+The two slots that use `dpct` (Depth-Cue Triple: applies the fog to all
+three current GTE color registers at once) are the textured-quad modes
+(slot 15 and 19) - the rest only need `dpcs` because they emit one color
+per prim. Every leaf ends with `j 0x80043580; addiu $a1, $a1, 0xc` -
+the tail call back to the SCUS dispatcher continuation plus the loop's
+per-prim source-pointer advance.
+
+The capstone dump source lives in `/tmp/leaves/` (overlay) and
+`/tmp/scus-siblings/` (SCUS); regenerate with:
+
+```bash
+scripts/disasm-overlay-fn.py /tmp/overlay_world_map_top_ext.bin \
+    --base 0x801C0000 --batch leaves        --out-dir /tmp/leaves
+scripts/disasm-overlay-fn.py extracted/SCUS_942.54 \
+    --base 0x80010000 --header 0x800 --batch scus-siblings --out-dir /tmp/scus-siblings
+```
+
 This is **why the bulk continent prims didn't show up under a single
 emit function**: there isn't one. There are eight per-mode leaves
 called once per TMD primitive across however many actor mesh chains are
