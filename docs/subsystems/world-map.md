@@ -202,7 +202,10 @@ across 224 iters). Vertex coordinates project via the cos table, so
 the rendered output rotates with the camera angle - consistent with
 a horizon / sky / animated-background plane, not a fixed continent
 mesh. The bulk continent POLY_FT4 chain in the prim pool is produced
-by other emitters reached through the [actor-list render passes](#per-frame-render-pass-iterator---fun_8002519c).
+by the standard TMD renderer `FUN_8002735C` reached via the case-5
+path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
+- one or more world-map actors carry the continent's TMD mesh chain at
+`actor[+0x44]`, which the render dispatcher walks once per frame.
 
 The function is called by direct `jal` from SCUS - it does not need
 function-pointer dispatch. Ghidra's reference manager misses the
@@ -254,6 +257,39 @@ Standard tick functions observed in the world-map render passes:
 | `FUN_801E76D4` (world_map overlay) | world-map controller | Top-view debug toggle + camera scroll/azimuth/zoom + dev-menu render. |
 | `FUN_801DA51C` (world_map overlay) | per-entity tick | 5-state SM on `entity[+0x8A]` (see [actor-vm](actor-vm.md)). |
 | `FUN_801D1344` (world_map overlay) | horizon gate-arm wrapper | See the gate-arm chain below. |
+
+### Per-actor render dispatcher - `FUN_8001ADA4`
+
+In addition to the five TICK calls into `FUN_8002519c`, the same frame
+issues six RENDER calls into the stack-swap wrapper `FUN_8001D140`,
+which forwards into the per-actor render dispatcher `FUN_8001ADA4`
+(2456 bytes). The render dispatcher walks the same actor lists but
+runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
+
+- **case 4** (multi-target). Dispatches on `actor[+0x9e]` flags:
+  - bit `0x4000` → `FUN_8002A5A4` (SCUS).
+  - bit `0x2000` → `FUN_801CFA48` (overlay-resident).
+  - else → `FUN_80028158` (SCUS, distinct from the 6692-byte motion
+    bytecode VM `FUN_80038158`).
+- **case 5** (full TMD). Iterates the mesh chain at `actor[+0x44]`
+  (`puVar5[0]` = count, `puVar5[1..n]` = mesh pointers) and per
+  entry calls:
+  - `FUN_80043390(mesh, color, tpage)` - textured TMD (default).
+  - `FUN_80029888(...)` - environment-mapped TMD when
+    `actor[+0x7a] != 0`.
+  - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer for the
+    bone-animated path (the **bulk-continent emit leaf**).
+- **cases 1, 2, 3, 6, 7, 8, B** - distance-LOD / particle / sprite-billboard
+  branches calling per-effect helpers (`FUN_8001B73C`, `FUN_8001B964`,
+  `FUN_800480D8`, `FUN_8002B944/94C/954`, `FUN_8001C204`).
+
+Static `addprim` hunters do not surface `FUN_8002735C` as a POLY_FT4
+emitter because the cmd byte is read from the per-mode descriptor
+table at `DAT_8007326C`, not built with `lui/li` immediates. That is
+why the bulk continent emitter eluded static analysis for so long:
+the addprim scan flags every direct emitter (the horizon, the HUD
+sprite batch `FUN_8002C69C`, the screen-tint, etc.) but skips the
+TMD renderer where most world-map prims actually originate.
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 
