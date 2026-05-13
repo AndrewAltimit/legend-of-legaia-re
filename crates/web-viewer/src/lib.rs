@@ -21,6 +21,30 @@ fn console_log(s: &str) {
     web_sys::console::log_1(&JsValue::from_str(s));
 }
 
+/// Parse a 2-char axis pair string like `"xz"` / `"xy"` / `"zy"` into the
+/// (horizontal, vertical) [`Axis`] pair the slot-4 emitter expects.
+/// Unknown / malformed strings fall back to `(X, Z)` (historical top-down).
+fn parse_axes(
+    s: &str,
+) -> (
+    legaia_asset::world_map_overlay::Axis,
+    legaia_asset::world_map_overlay::Axis,
+) {
+    use legaia_asset::world_map_overlay::Axis;
+    let pick = |c: char| -> Axis {
+        match c {
+            'x' | 'X' => Axis::X,
+            'y' | 'Y' => Axis::Y,
+            'z' | 'Z' => Axis::Z,
+            _ => Axis::X,
+        }
+    };
+    let mut it = s.chars();
+    let a = it.next().map(pick).unwrap_or(Axis::X);
+    let b = it.next().map(pick).unwrap_or(Axis::Z);
+    (a, b)
+}
+
 /// One entry's metadata + its first viewable TIM hit (if any).
 #[derive(Clone)]
 struct ViewerEntry {
@@ -595,6 +619,185 @@ impl LegaiaViewer {
         let dz = (hi[2] - lo[2]) * 0.5;
         let r = (dx * dx + dy * dy + dz * dz).sqrt().max(1.0);
         vec![cx, cy, cz, r]
+    }
+
+    /// Decode the slot-4 world-map overlay wireframe for the kingdom at
+    /// `prot_base` and return a packed line-segment list for top-down
+    /// rendering.
+    ///
+    /// The wireframe is the dev-menu top-view overlay - coastline curves
+    /// (Drake body 12 = 1200-vertex outline) and the ±32K world-boundary
+    /// frame (Drake body 13). Loaded verbatim into RAM at `0x8011A624` for
+    /// Drake (32304 bytes); format is fully reversed (see
+    /// [`docs/formats/world-map-overlay.md`]).
+    ///
+    /// `style` selects the polyline-construction mode:
+    /// `"row"` (each group as one polyline), `"col"` (each record-slot as
+    /// one polyline across groups), `"pairs"` (every 2 consecutive
+    /// records emit one segment), or `"grid"` (both row and column
+    /// edges of the `count_a x count_b` vertex grid). Unknown values
+    /// fall back to `"row"`.
+    ///
+    /// Output layout (single packed `Vec<u8>`, little-endian):
+    ///
+    /// ```text
+    /// [u32 line_count]
+    /// [Line; line_count]   ; struct, 12 bytes each:
+    ///     u8  body_index
+    ///     u8  group_index_low   ; group_index = (low | (high << 8))
+    ///     u8  group_index_high
+    ///     u8  _pad
+    ///     i16 x0
+    ///     i16 z0
+    ///     i16 x1
+    ///     i16 z1
+    /// ```
+    ///
+    /// Returns an empty buffer when slot 4 is missing or fails to parse.
+    /// The JS-side renderer assigns per-body colors based on `body_index`.
+    pub fn slot4_wireframe_lines(&self, prot_base: u32, style: &str, axes: &str) -> Vec<u8> {
+        let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
+            return Vec::new();
+        };
+        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+            return Vec::new();
+        };
+        let mode = match style {
+            "col" => legaia_asset::world_map_overlay::PolylineMode::ColumnMajor,
+            "pairs" => legaia_asset::world_map_overlay::PolylineMode::PairWise,
+            "grid" => legaia_asset::world_map_overlay::PolylineMode::Grid,
+            _ => legaia_asset::world_map_overlay::PolylineMode::RowMajor,
+        };
+        let opts = legaia_asset::world_map_overlay::WireframeOptions {
+            mode,
+            axes: parse_axes(axes),
+            ..Default::default()
+        };
+        let lines = legaia_asset::world_map_overlay::top_down_lines(&slot, &opts);
+
+        let mut out = Vec::with_capacity(4 + lines.len() * 12);
+        out.extend_from_slice(&(lines.len() as u32).to_le_bytes());
+        for l in &lines {
+            out.push(l.body_index);
+            out.push((l.group_index & 0xFF) as u8);
+            out.push((l.group_index >> 8) as u8);
+            out.push(0); // pad
+            out.extend_from_slice(&l.x0.to_le_bytes());
+            out.extend_from_slice(&l.z0.to_le_bytes());
+            out.extend_from_slice(&l.x1.to_le_bytes());
+            out.extend_from_slice(&l.z1.to_le_bytes());
+        }
+        out
+    }
+
+    /// Decode the slot-4 world-map overlay as a topology-free point cloud.
+    /// Useful when the on-disc draw-mode dispatch isn't fully reverse-
+    /// engineered: the points themselves are byte-verified against live
+    /// RAM, so plotting them straight is the most honest visualization.
+    ///
+    /// Output layout (little-endian):
+    ///
+    /// ```text
+    /// [u32 point_count]
+    /// [Point; point_count] ; 8 bytes each:
+    ///     u8  body_index
+    ///     u8  group_index_low
+    ///     u8  group_index_high
+    ///     u8  _pad
+    ///     i16 x
+    ///     i16 z
+    /// ```
+    pub fn slot4_wireframe_points(&self, prot_base: u32, axes: &str) -> Vec<u8> {
+        let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
+            return Vec::new();
+        };
+        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+            return Vec::new();
+        };
+        let opts = legaia_asset::world_map_overlay::WireframeOptions {
+            axes: parse_axes(axes),
+            ..Default::default()
+        };
+        let pts = legaia_asset::world_map_overlay::record_points(&slot, &opts);
+
+        let mut out = Vec::with_capacity(4 + pts.len() * 8);
+        out.extend_from_slice(&(pts.len() as u32).to_le_bytes());
+        for (body, group, x, z) in &pts {
+            out.push(*body);
+            out.push((*group & 0xFF) as u8);
+            out.push((*group >> 8) as u8);
+            out.push(0); // pad
+            out.extend_from_slice(&x.to_le_bytes());
+            out.extend_from_slice(&z.to_le_bytes());
+        }
+        out
+    }
+
+    /// Bounding box of every non-zero record in the kingdom's slot-4
+    /// wireframe, as `[amin, bmin, amax, bmax]` (i32) for the requested
+    /// axis pair (`"xz"` / `"xy"` / `"zy"`, etc). Useful for re-framing
+    /// the top-down camera when the overlay is toggled on. Empty vec
+    /// when slot 4 can't be decoded.
+    pub fn slot4_wireframe_bounds(&self, prot_base: u32, axes: &str) -> Vec<i32> {
+        let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
+            return Vec::new();
+        };
+        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+            return Vec::new();
+        };
+        let (ah, av) = parse_axes(axes);
+        match legaia_asset::world_map_overlay::axis_bounds(&slot, ah, av) {
+            Some((amin, bmin, amax, bmax)) => {
+                vec![amin as i32, bmin as i32, amax as i32, bmax as i32]
+            }
+            None => Vec::new(),
+        }
+    }
+
+    /// Per-body inventory of the slot-4 wireframe, as a JSON string.
+    /// Used by the inspector panel to show which bodies are present.
+    /// Returns `"[]"` when slot 4 can't be decoded.
+    pub fn slot4_body_inventory_json(&self, prot_base: u32) -> String {
+        let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
+            return "[]".into();
+        };
+        let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
+            return "[]".into();
+        };
+        let mut s = String::from("[");
+        for (i, b) in slot.bodies.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            let (xlo, xhi) = legaia_asset::world_map_overlay::body_axis_range(
+                b,
+                legaia_asset::world_map_overlay::Axis::X,
+            )
+            .unwrap_or((0, 0));
+            let (ylo, yhi) = legaia_asset::world_map_overlay::body_axis_range(
+                b,
+                legaia_asset::world_map_overlay::Axis::Y,
+            )
+            .unwrap_or((0, 0));
+            let (zlo, zhi) = legaia_asset::world_map_overlay::body_axis_range(
+                b,
+                legaia_asset::world_map_overlay::Axis::Z,
+            )
+            .unwrap_or((0, 0));
+            s.push_str(&format!(
+                r#"{{"index":{},"count_a":{},"count_b":{},"flag_a":{},"flag_b":{},"kind":{},"records":{},"x":[{},{}],"y":[{},{}],"z":[{},{}]}}"#,
+                b.index,
+                b.count_a,
+                b.count_b,
+                b.flag_a,
+                b.flag_b,
+                b.kind,
+                b.records.len(),
+                xlo, xhi, ylo, yhi, zlo, zhi,
+            ));
+        }
+        s.push(']');
+        s
     }
 
     /// Decode the live PSX GPU primitive pool out of a mednafen save state
@@ -1381,6 +1584,27 @@ impl LegaiaViewer {
         };
         let tmd = legaia_tmd::parse(&tmd_buf).ok()?;
         Some((tmd, tmd_buf))
+    }
+
+    /// Decode slot 4 (world-map overlay outlines) of the kingdom bundle at
+    /// `prot_base`. Mirrors the runtime loader's "try base, then base+1"
+    /// fallback so both `scene_scripted_asset_table` and bare
+    /// `scene_asset_table` variants succeed.
+    fn decode_kingdom_slot4(&self, prot_base: u32) -> Option<Vec<u8>> {
+        let entries = parse_prot_toc(&self.disc)?;
+        for candidate in [prot_base, prot_base + 1] {
+            let meta = entries.iter().find(|e| e.index == candidate)?;
+            let off = meta.byte_offset as usize;
+            let end = (meta.byte_offset + meta.size_bytes) as usize;
+            if end > self.disc.len() {
+                continue;
+            }
+            let buf = &self.disc[off..end];
+            if let Ok(decoded) = legaia_asset::kingdom_bundle::decode_slot(buf, 4) {
+                return Some(decoded);
+            }
+        }
+        None
     }
 
     /// Try to load a kingdom 7-asset bundle from the PROT entry at `prot_index`.

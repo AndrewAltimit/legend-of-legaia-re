@@ -2,17 +2,14 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld combines (a) a continent ground terrain mesh built at runtime as ~5,000 textured polygons in a GPU primitive pool and (b) a sparse set of landmark TMDs (towns, dungeons, NPCs) placed at world coordinates from the kingdom's bundle. This page renders both <strong>in real-time WebGL 3D</strong> &mdash; the landmark TMDs straight from your disc image (40/40 Drake landmarks now placed via a live-RAM actor-to-TMD resolver, on top of the 43 entity placements from the kingdom's MAN asset); the continent ground terrain (currently) from a top-view mednafen save state, since the generator that produces the textured ground tiles hasn't been located yet. <a href="subsystems/world-map.html">World-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a> &middot; <a href="formats/world-map-overlay.html">slot-4 overlay outlines</a>.
+    Each kingdom's overworld combines (a) a continent ground terrain mesh built at runtime as several thousand textured polygons in a GPU primitive pool and (b) a sparse set of landmark TMDs (towns, dungeons, NPCs) placed at world coordinates from the kingdom's bundle. This page renders the <strong>landmark layer in real-time WebGL 3D straight from your disc image</strong> &mdash; no save state required. The bulk continent terrain source isn't located yet; tracking in <a href="subsystems/world-map.html">world-map subsystem</a> &middot; <a href="formats/scene-bundles.html">scene-bundle format</a>.
   </p>
 </header>
 
 <section class="doc-section" id="how-this-works">
   <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. For Drake the page additionally overlays 12 live-RAM-resolved actor placements (bridge towers, gates, the small castle, wall sections) baked into <code>site/world-overview-live.json</code> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. This combined view renders the landmark layer but <em>not</em> the continent ground terrain beneath it &mdash; the textured ground tiles are produced by a runtime generator that hasn't been located yet (slot 4 of the kingdom bundle is the dev-menu top-view wireframe, not the textured tiles).
-  </p>
-  <p>
-    <strong>Framebuffer (save state):</strong> until the continent generator is reversed, the only way to see the full overworld is to upload a mednafen <code>.mc[N]</code> save state captured while the world-map debug top-view is active. The page then extracts either the rendered GPU framebuffer straight out of VRAM (fast, pixel-accurate, fixed 320&times;240) or replays the live primitive pool (~10,000 textured POLY_FT4 packets, pan/zoom in WebGL2). No disc image required for this path. Tracking the generator RE in <a href="subsystems/world-map.html">world-map subsystem</a>.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. For Drake the page additionally overlays 12 live-RAM-resolved actor placements (bridge towers, gates, the small castle, wall sections) baked into <code>site/world-overview-live.json</code> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. This view renders the landmark layer but <em>not</em> the continent ground terrain &mdash; the textured ground tiles are produced by a runtime generator that hasn't been located yet.
   </p>
   <p>
     <strong>Mesh inspector:</strong> with a disc loaded, browse the per-kingdom TMD pack one mesh at a time (orbit camera, auto-rotate).
@@ -21,7 +18,7 @@
     <strong>Placement table:</strong> the world-map actor positions baked into <code>site/world-overview.json</code> are parsed from each kingdom's type-3 &quot;Man&quot; asset via <code>FUN_8003A1E4</code>'s record walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate. Each placement's <code>tmd_slot</code> resolves into the kingdom pack (max slot Drake 37, Sebucus 33, Karisto 54); placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead. Drake additionally surfaces 12 live-RAM actor placements via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a>: each world-map actor's <code>mesh_head[+0x44]</code> chain is walked to find the containing TMD via backward magic-word search, then mapped to a slot index. The result is baked into <code>site/world-overview-live.json</code>; the viewer overlays those placements on top of the MAN entities so the bridge towers, gates, small castle, and other actor-positioned features render correctly.
   </p>
   <p>
-    <strong>What about slot 4?</strong> Each kingdom bundle's slot 4 (type byte <code>0x05</code>, ~32 KB) was a logical candidate for the bulk continent geometry. It IS world-map data and we&apos;ve fully decoded it (see the <a href="formats/world-map-overlay.html">world-map overlay outlines</a> format doc), but it turns out to hold the <em>dev-menu top-view wireframe</em> &mdash; coastline curves (Drake body 12 = 1200-vertex outline) and the &plusmn;32K world-boundary frame (body 13), not the textured ground tiles. The data is loaded verbatim into RAM at <code>0x8011A664</code> with zero per-byte diffs, but ~4000 vertices across all 15 sub-bodies is far below the ~17000+ vertex positions the textured continent in the GPU prim pool would need. So slot 4 is ruled out as the bulk-terrain source; the strongest remaining hypothesis is a procedural sibling of the horizon emitter <code>FUN_801D7EA0</code> reached from the per-frame world-map tick <code>FUN_80016444</code>.
+    <strong>Slot 4 of the kingdom bundle.</strong> Slot 4 (type byte <code>0x05</code>, ~32 KB) was previously hypothesized to be the dev-menu top-view wireframe / coastline data, but visual inspection across every projection and topology mode falsified that reading. The container is solved (15 / 16 / 16 sub-bodies, byte-verified vs live RAM at <code>0x8011A624</code>) but what the records actually encode is open - most likely a runtime library of small object-local 3D meshes that the world-map controller places at world coordinates. The previous &quot;show slot-4 wireframe&quot; toggle on this page was removed once the wireframe hypothesis was falsified; the format doc keeps the container details + falsified hypotheses + CLI tooling as a research artifact (<a href="formats/world-map-overlay.html">slot-4 records doc</a>). The strongest remaining hypothesis for the bulk continent terrain is still a procedural sibling of the horizon emitter <code>FUN_801D7EA0</code> reached from the per-frame world-map tick <code>FUN_80016444</code>; see <a href="subsystems/world-map.html#bulk-continent-terrain-emitter-investigation">world-map subsystem &sect; emitter investigation</a>.
   </p>
 </section>
 
@@ -32,9 +29,8 @@
       <label for="wo-disc-file"><strong>Disc image (.bin Mode2/2352) or PROT.DAT:</strong></label>
       <input type="file" id="wo-disc-file" accept=".bin,.dat"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
-      <button id="wo-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
     </div>
-    <div class="viewer-status" id="wo-status">No disc loaded. Load a disc and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required for that view.</div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image above and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required.</div>
   </div>
 </section>
 
@@ -51,9 +47,8 @@
       <canvas id="wo-canvas3d" width="800" height="600" class="viewer-canvas" aria-label="World-map 3D mesh viewer"></canvas>
       <div class="wo-canvas-controls">
         <span class="wo-mode-group" role="radiogroup" aria-label="Render mode">
-          <button id="wo-mode-world"     type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Disc image only. Landmark TMDs from the kingdom bundle placed at their world coordinates. Continent terrain not yet reversed.">Assembled scene (disc)</button>
-          <button id="wo-mode-savestate" type="button" class="wo-mode" role="radio" aria-checked="false" title="Requires a top-view debug save state. Pulls the full rendered continent + landmarks straight from VRAM.">Framebuffer (save state)</button>
-          <button id="wo-mode-mesh"      type="button" class="wo-mode" role="radio" aria-checked="false" title="Disc image only. Browse the per-kingdom TMD pack one mesh at a time.">Mesh inspector</button>
+          <button id="wo-mode-world" type="button" class="wo-mode is-active" role="radio" aria-checked="true"  title="Landmark TMDs from the kingdom bundle placed at their world coordinates. Continent terrain not yet reversed.">Assembled scene (disc)</button>
+          <button id="wo-mode-mesh"  type="button" class="wo-mode"           role="radio" aria-checked="false" title="Browse the per-kingdom TMD pack one mesh at a time.">Mesh inspector</button>
         </span>
         <button id="wo-prev-mesh" type="button" disabled hidden>&larr; prev mesh</button>
         <span id="wo-mesh-label">no disc loaded</span>
@@ -61,18 +56,7 @@
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
-      <div class="wo-canvas-controls" id="wo-savestate-bar">
-        <label for="wo-ss-file"><strong>Top-view save state:</strong></label>
-        <input type="file" id="wo-ss-file" accept=".mc0,.mc1,.mc2,.mc3,.mc4,.mc5,.mc6,.mc7,.mc8,.mc9"
-               style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.75rem;">
-        <button id="wo-ss-load" type="button">Load</button>
-        <span class="wo-mode-group" style="margin-left:0.5rem" role="radiogroup" aria-label="Render style">
-          <button id="wo-ss-mode-fb"     type="button" class="wo-mode is-active" role="radio" aria-checked="true" title="Pull the rendered framebuffer directly from VRAM">Framebuffer</button>
-          <button id="wo-ss-mode-replay" type="button" class="wo-mode"            role="radio" aria-checked="false" title="Decode the live GPU primitive pool (~5000 textured polygons) and replay through WebGL2 — pan/zoom">Prim replay</button>
-        </span>
-        <span id="wo-ss-status" style="font-size:0.75rem; color: var(--text-dim);">no save state loaded</span>
-      </div>
-      <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D &mdash; or switch to <em>Framebuffer (save state)</em> to view the full continent pulled from a mednafen <code>.mc[N]</code> save.</div>
+      <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
     </div>
 
     <aside class="wo-side">
@@ -249,8 +233,9 @@
 .wo-name-list .wo-coord { color: var(--text-dim); font-size: 0.72rem; }
 </style>
 
-<script src="js/webgl-tmd.js"></script>
-<script src="js/webgl-prim-replay.js"></script>
+<!-- Bump ?v= any time webgl-tmd.js gains a method JS code below this point
+     relies on, so users don't hit a stale cached copy. -->
+<script src="js/webgl-tmd.js?v=20260514c"></script>
 <script>
 (async function () {
   /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
@@ -267,7 +252,6 @@
 
   /* ---------- DOM refs ----------- */
   const $file       = document.getElementById('wo-disc-file');
-  const $loadBtn    = document.getElementById('wo-load-btn');
   const $status     = document.getElementById('wo-status');
   const $canvas3d   = document.getElementById('wo-canvas3d');
   const $canvas2d   = document.getElementById('wo-canvas2d');
@@ -281,21 +265,11 @@
   const $resetCam   = document.getElementById('wo-reset-cam');
   const $hover      = document.getElementById('wo-hover');
   const $nameList   = document.getElementById('wo-name-list');
-  const $modeSavestate = document.getElementById('wo-mode-savestate');
   const $modeWorld  = document.getElementById('wo-mode-world');
   const $modeMesh   = document.getElementById('wo-mode-mesh');
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
-  const $ssBar       = document.getElementById('wo-savestate-bar');
-  const $ssFile      = document.getElementById('wo-ss-file');
-  const $ssLoad      = document.getElementById('wo-ss-load');
-  const $ssStatus    = document.getElementById('wo-ss-status');
-  const $ssModeFb    = document.getElementById('wo-ss-mode-fb');
-  const $ssModeReplay= document.getElementById('wo-ss-mode-replay');
-  let   ssRenderMode = 'fb';   /* 'fb' = blit framebuffer | 'replay' = re-rasterise prim pool */
-  let   primReplay   = null;   /* PrimReplayRenderer instance (created lazily) */
-  const replayCam    = { centerX: 160, centerY: 120, zoom: 3 };
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
-  let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'savestate' (framebuffer / prim replay from .mcN) | 'mesh' (single TMD) */
+  let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -380,117 +354,33 @@
 
   /* ---------- View-mode toggle ----------- */
   function setViewMode(mode) {
-    if (!['savestate', 'world', 'mesh'].includes(mode)) return;
+    if (!['world', 'mesh'].includes(mode)) return;
     if (mode === viewMode) return;
     viewMode = mode;
-    $modeSavestate.classList.toggle('is-active', mode === 'savestate');
-    $modeWorld    .classList.toggle('is-active', mode === 'world');
-    $modeMesh     .classList.toggle('is-active', mode === 'mesh');
-    $modeSavestate.setAttribute('aria-checked', mode === 'savestate');
-    $modeWorld    .setAttribute('aria-checked', mode === 'world');
-    $modeMesh     .setAttribute('aria-checked', mode === 'mesh');
+    $modeWorld.classList.toggle('is-active', mode === 'world');
+    $modeMesh .classList.toggle('is-active', mode === 'mesh');
+    $modeWorld.setAttribute('aria-checked', mode === 'world');
+    $modeMesh .setAttribute('aria-checked', mode === 'mesh');
     const meshOnly = (mode === 'mesh');
-    const ssOnly   = (mode === 'savestate');
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
-    $resetCam.hidden = ssOnly;
-    $ssBar.style.display = ssOnly ? '' : 'none';
+    $resetCam.hidden = false;
     /* Re-enter the active kingdom so the right path renders. */
     selectKingdom(currentKingdom);
   }
-  $modeSavestate.addEventListener('click', () => setViewMode('savestate'));
-  $modeWorld    .addEventListener('click', () => setViewMode('world'));
-  $modeMesh     .addEventListener('click', () => setViewMode('mesh'));
+  $modeWorld.addEventListener('click', () => setViewMode('world'));
+  $modeMesh .addEventListener('click', () => setViewMode('mesh'));
   /* Default UI matches default viewMode = 'world' (assembled scene from
    * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
-   * (used by the top-down camera); the savestate file-picker bar is
-   * hidden until the user clicks the "Framebuffer (save state)" mode. */
+   * (used by the top-down camera). */
   $prev.hidden = true; $next.hidden = true; $autoRotWrap.hidden = true;
   $resetCam.hidden = false;
-  $ssBar.style.display = 'none';
-
-  /* ---------- Save state framebuffer + prim-pool extraction ----------- */
-  /* Cached per-kingdom data so switching tabs after one upload re-shows
-   * the previously-rendered image without re-uploading. Keyed by
-   * `currentKingdom`. Each entry: { fb: {w, h, rgba}, replay: {vram,
-   * vertexBytes, screenW, screenH}, filename }. */
-  const ssCache = {};
-  $ssLoad.addEventListener('click', async () => {
-    const f = $ssFile.files[0];
-    if (!f) { $ssStatus.textContent = 'Pick a .mc[N] file first.'; return; }
-    try {
-      $ssStatus.textContent = 'Loading WASM ...';
-      if (!wasmMod) {
-        wasmMod = await import('./wasm/legaia_web_viewer.js');
-        await wasmMod.default();
-      }
-      if (!viewer) {
-        const fresh = freshCanvas();
-        if (!fresh) return;
-        viewer = new wasmMod.LegaiaViewer('wo-canvas3d');
-      }
-      $ssStatus.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)...`;
-      const bytes = new Uint8Array(await f.arrayBuffer());
-      /* Always extract both views so the user can toggle freely. */
-      const fbOut = viewer.save_state_framebuffer(bytes);
-      const fbW = fbOut[0] | (fbOut[1] << 8);
-      const fbH = fbOut[2] | (fbOut[3] << 8);
-      const fbRgba = new Uint8ClampedArray(fbOut.buffer, fbOut.byteOffset + 4, fbW * fbH * 4);
-      const replayOut = viewer.save_state_prim_replay(bytes);
-      const dv = new DataView(replayOut.buffer, replayOut.byteOffset, replayOut.byteLength);
-      let p = 0;
-      const vramW = dv.getUint16(p, true); p += 2;
-      const vramH = dv.getUint16(p, true); p += 2;
-      const vramLen = dv.getUint32(p, true); p += 4;
-      const vram = new Uint8Array(replayOut.buffer, replayOut.byteOffset + p, vramLen); p += vramLen;
-      const screenW = dv.getUint16(p, true); p += 2;
-      const screenH = dv.getUint16(p, true); p += 2;
-      const vertexCount = dv.getUint32(p, true); p += 4;
-      const vertexBytes = new Uint8Array(replayOut.buffer, replayOut.byteOffset + p, vertexCount * 14);
-      ssCache[currentKingdom] = {
-        fb: { w: fbW, h: fbH, rgba: new Uint8ClampedArray(fbRgba) },
-        replay: {
-          vram: new Uint8Array(vram),                /* clone so the wasm buffer can be freed */
-          vertexBytes: new Uint8Array(vertexBytes),
-          screenW, screenH, vertexCount,
-          vramW, vramH,
-        },
-        filename: f.name,
-      };
-      $ssStatus.textContent =
-        `${currentKingdom}: ${fbW}x${fbH} framebuffer + ${vertexCount} replay verts (~${Math.round(vertexCount/6)} prims) from ${f.name}`;
-      /* Center the replay camera on the framebuffer's centre. */
-      replayCam.centerX = screenW / 2;
-      replayCam.centerY = screenH / 2;
-      drawSavestate();
-    } catch (err) {
-      console.error(err);
-      $ssStatus.textContent = 'Failed: ' + (err.message || err);
-    }
-  });
-
-  /* Sub-mode toggle (framebuffer blit vs prim replay) */
-  function setSsRenderMode(mode) {
-    if (mode !== 'fb' && mode !== 'replay') return;
-    if (mode === ssRenderMode) return;
-    ssRenderMode = mode;
-    $ssModeFb    .classList.toggle('is-active', mode === 'fb');
-    $ssModeReplay.classList.toggle('is-active', mode === 'replay');
-    $ssModeFb    .setAttribute('aria-checked', mode === 'fb');
-    $ssModeReplay.setAttribute('aria-checked', mode === 'replay');
-    drawSavestate();
-  }
-  $ssModeFb    .addEventListener('click', () => setSsRenderMode('fb'));
-  $ssModeReplay.addEventListener('click', () => setSsRenderMode('replay'));
 
   /* Empty-state placeholder painted on first load when no disc has been
-   * uploaded yet (the default mode is 'world' but loadWorldView() needs
-   * the WASM viewer + a disc). Also used as a soft fallback when the
-   * user clicks "Assembled scene (disc)" without a disc loaded. */
+   * uploaded yet. */
   function drawWorldPlaceholder() {
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
-    if (primReplay) { primReplay.dispose(); primReplay = null; }
     if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const fresh = freshCanvas();
     if (!fresh) return;
@@ -499,102 +389,20 @@
     ctx.fillRect(0, 0, fresh.width, fresh.height);
     ctx.fillStyle = '#888'; ctx.font = '14px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('Load a disc image above to render this kingdom\'s assembled scene.', fresh.width / 2, fresh.height / 2 - 18);
+    ctx.fillText('Load a disc image above to render this kingdom\'s assembled scene.', fresh.width / 2, fresh.height / 2 - 8);
     ctx.fillStyle = '#666';
-    ctx.fillText('No save state required for this view.', fresh.width / 2, fresh.height / 2 + 4);
-    ctx.fillText('(Switch to "Framebuffer (save state)" to view the full continent.)', fresh.width / 2, fresh.height / 2 + 22);
+    ctx.fillText('No save state required.', fresh.width / 2, fresh.height / 2 + 14);
     $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - waiting for disc`;
-    $meshInfo.innerHTML = 'Load a disc image above to see the kingdom\'s landmark TMDs assembled in 3D &mdash; or switch to <em>Framebuffer (save state)</em> to view the full continent pulled from a mednafen <code>.mc[N]</code> save.';
-  }
-
-  function drawSavestate() {
-    /* Always start by stopping any prior rAF / disposing the prim renderer. */
-    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
-    if (primReplay) { primReplay.dispose(); primReplay = null; }
-    if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
-    const fresh = freshCanvas();
-    if (!fresh) return;
-    const entry = ssCache[currentKingdom];
-    if (!entry) {
-      const ctx = fresh.getContext('2d');
-      ctx.fillStyle = '#0a0a1a';
-      ctx.fillRect(0, 0, fresh.width, fresh.height);
-      ctx.fillStyle = '#888'; ctx.font = '14px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('Upload this kingdom\'s top-view save state (mednafen .mcN file)', fresh.width / 2, fresh.height / 2 - 8);
-      ctx.fillText('then click Load', fresh.width / 2, fresh.height / 2 + 12);
-      return;
-    }
-    if (ssRenderMode === 'fb') {
-      const ctx = fresh.getContext('2d');
-      const W = fresh.width, H = fresh.height;
-      ctx.fillStyle = '#0a0a1a';
-      ctx.fillRect(0, 0, W, H);
-      const off = document.createElement('canvas');
-      off.width = entry.fb.w; off.height = entry.fb.h;
-      off.getContext('2d').putImageData(new ImageData(entry.fb.rgba, entry.fb.w, entry.fb.h), 0, 0);
-      const scale = Math.min(W / entry.fb.w, H / entry.fb.h);
-      const dw = Math.floor(entry.fb.w * scale);
-      const dh = Math.floor(entry.fb.h * scale);
-      const dx = Math.floor((W - dw) / 2);
-      const dy = Math.floor((H - dh) / 2);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(off, dx, dy, dw, dh);
-      $meshLabel.textContent = `${KINGDOM_PROT[currentKingdom].cdname} - in-game top-down view (${entry.fb.w}x${entry.fb.h})`;
-      $meshInfo.textContent =
-        `From save state ${entry.filename}. Direct blit of the GPU framebuffer captured in VRAM. Click "Prim replay" to re-rasterise the live primitive pool via WebGL2.`;
-    } else {
-      /* Prim replay path. */
-      try {
-        primReplay = new window.PrimReplayRenderer(fresh);
-      } catch (err) {
-        $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
-        return;
-      }
-      const r = entry.replay;
-      /* Fit the replay camera to the framebuffer aspect ratio: scale up so
-       * the 320x240 PSX output fills the visible canvas. */
-      const zoom = Math.max(1, Math.min(fresh.width / r.screenW, fresh.height / r.screenH));
-      replayCam.zoom = zoom;
-      primReplay.uploadVram(r.vram);
-      primReplay.uploadVertices(r.vertexBytes, r.screenW, r.screenH);
-      attachPrimReplayControls(fresh);
-      const tick = () => {
-        primReplay.render(replayCam);
-        rafId = requestAnimationFrame(tick);
-      };
-      rafId = requestAnimationFrame(tick);
-      $meshLabel.textContent =
-        `${KINGDOM_PROT[currentKingdom].cdname} - prim-pool replay (${r.vertexCount} verts, ${Math.round(r.vertexCount/6)} prims)`;
-      $meshInfo.textContent =
-        `Live PSX GPU primitive pool decoded from ${entry.filename} and replayed through WebGL2. ` +
-        `Drag to pan, scroll to zoom. Pixel-perfect equivalent to the framebuffer view but pan/zoomable.`;
-    }
-  }
-
-  /* Pan + zoom for the prim-replay camera. */
-  function attachPrimReplayControls(canvas) {
-    let dragging = false, lastX = 0, lastY = 0;
-    canvas.addEventListener('mousedown', e => {
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
-    });
-    window.addEventListener('mouseup', () => { dragging = false; });
-    window.addEventListener('mousemove', e => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      lastX = e.clientX; lastY = e.clientY;
-      replayCam.centerX -= dx / replayCam.zoom;
-      replayCam.centerY -= dy / replayCam.zoom;
-    });
-    canvas.addEventListener('wheel', e => {
-      e.preventDefault();
-      const f = Math.exp(-e.deltaY * 0.001);
-      replayCam.zoom = Math.max(0.5, Math.min(20, replayCam.zoom * f));
-    }, { passive: false });
+    $meshInfo.textContent = 'Load a disc image above to see the kingdom\'s landmark TMDs assembled in 3D.';
   }
 
   /* ---------- Load disc + WASM ----------- */
-  $loadBtn.addEventListener('click', async () => {
+  /* Wires to the file input's `change` event below: as soon as the user
+   * picks a disc image the page starts the WASM load + classify pass
+   * (so there's no separate "Load" button to click). The same path is
+   * also reachable programmatically via `loadDisc()` if we ever add a
+   * "reload" affordance. */
+  async function loadDisc() {
     const f = $file.files[0];
     if (!f) { $status.textContent = 'Pick a .bin or .dat file first.'; return; }
     try {
@@ -658,7 +466,8 @@
       console.error(err);
       $status.textContent = 'Load failed: ' + (err.message || err);
     }
-  });
+  }
+  $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
 
   /* ---------- Mesh navigation ----------- */
   function selectKingdom(k) {
@@ -668,10 +477,6 @@
     currentMeshIdx = 0;
     updateSnapshot();
     drawScatter();
-    if (viewMode === 'savestate') {
-      drawSavestate();
-      return;
-    }
     if (!viewer) {
       /* No disc loaded yet. Both 'world' and 'mesh' modes need the WASM
        * viewer + a parsed PROT TOC. Show the friendly placeholder so the
@@ -757,12 +562,24 @@
         drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
       }
     }
-    /* Camera frames the placement bbox (not the world bbox) - many
-     * placeholder records have placeholder coords like (64, *) that drag
-     * the world bbox out toward empty edges; framing to placements gives
-     * a tighter view. Falls back to world extent when no placements.  */
     const ext = k.world_extent || [16320, 16320];
-    if (drawPlacements.length > 0) {
+    frameWorldCam(drawPlacements, ext);
+    worldCam.pitch = 0;
+    $meshLabel.textContent =
+      `${k.cdname} - ${drawPlacements.length} placements (${used.size} unique meshes, ${packCount}-TMD pack)`;
+    $meshInfo.textContent =
+      `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
+    attachTopDownControls(fresh);
+    const tick = () => {
+      glRenderer.renderAssembled(drawPlacements, ext, worldCam);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+  }
+
+  /* Frame the top-down camera on the placement cluster. */
+  function frameWorldCam(drawPlacements, ext) {
+    if (drawPlacements && drawPlacements.length > 0) {
       let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
       for (const p of drawPlacements) {
         if (p.x < xmin) xmin = p.x;
@@ -780,19 +597,6 @@
       worldCam.halfWidth = ext[0] / 2 + 1000;
       worldCam.halfHeight = ext[1] / 2 + 1000;
     }
-    worldCam.pitch = 0;
-    $meshLabel.textContent =
-      `${k.cdname} - ${drawPlacements.length} placements (${used.size} unique meshes, ${packCount}-TMD pack)`;
-    $meshInfo.textContent =
-      `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
-    attachTopDownControls(fresh);
-    let last = performance.now();
-    const tick = (now) => {
-      last = now;
-      glRenderer.renderAssembled(drawPlacements, ext, worldCam);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
   }
 
   /* Pan / zoom controls for the top-down camera. Replaces the orbit

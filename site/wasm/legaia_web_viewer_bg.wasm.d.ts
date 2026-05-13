@@ -55,6 +55,10 @@ export const legaiaviewer_save_state_prim_replay: (a: number, b: number, c: numb
 export const legaiaviewer_set_clut: (a: number, b: number) => [number, number];
 export const legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
 export const legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
+export const legaiaviewer_slot4_body_inventory_json: (a: number, b: number) => [number, number];
+export const legaiaviewer_slot4_wireframe_bounds: (a: number, b: number, c: number, d: number) => [number, number];
+export const legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const legaiaviewer_slot4_wireframe_points: (a: number, b: number, c: number, d: number) => [number, number];
 export const legaiaviewer_status: (a: number) => [number, number];
 export const legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
 export const wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;

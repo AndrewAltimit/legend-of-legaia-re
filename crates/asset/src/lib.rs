@@ -21,6 +21,7 @@ pub mod categorize;
 pub mod data_field_truncated;
 pub mod effect_bundle;
 pub mod field_pack;
+pub mod kingdom_bundle;
 pub mod mips_overlay;
 pub mod overlay_ptr_table;
 pub mod pack;
@@ -36,6 +37,7 @@ pub mod tim_scan;
 pub mod tmd_scan;
 pub mod tmd_size_prefix;
 pub mod vab_multi_bank;
+pub mod world_map_overlay;
 pub mod worldmap_menu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

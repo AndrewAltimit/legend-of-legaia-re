@@ -1191,6 +1191,7 @@ dependencies = [
  "legaia-prot",
  "legaia-tim",
  "legaia-tmd",
+ "png",
  "serde",
  "serde_json",
 ]

@@ -127,8 +127,38 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
 }</code></pre>
   <p><code>_DAT_8007B81C</code> is the cos lookup table (see the <a href="../reference/memory-map.html">memory map</a>). The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter across 224 iters). Vertex coordinates project via the cos table, so the rendered output rotates with the camera angle &mdash; consistent with a horizon / sky / animated-background plane, not a fixed continent mesh.</p>
   <p>The case-5 path of the per-actor render dispatcher <code>FUN_8001ADA4</code> draws every <strong>landmark</strong> TMD (castle, towers, bridges, gates) &mdash; each world-map actor&apos;s <code>actor[+0x44]</code> mesh chain points into Drake&apos;s 40-TMD landmark pack at PROT entry 0085 slot 1, which the dispatcher walks once per frame through <code>FUN_8002735C</code> (the 60-GTE Legaia TMD renderer). That accounts for the landmark prims in the GPU pool.</p>
-  <p><strong>Open</strong>: the bulk continent ground terrain (~3500-4000 POLY_FT4 prims of green/rocky tiles in the prim pool) is <strong>not</strong> sourced from any TMD-magic-bearing disc payload located so far. Slot 4 of each kingdom bundle (type byte <code>0x05</code>, the <a href="../formats/world-map-overlay.html">world-map overlay outlines</a>) was a logical candidate but it turned out to be the dev-menu top-view wireframe / coastline data, not the textured ground tiles. The remaining hypothesis is a procedural emitter sibling of <code>FUN_801D7EA0</code> reachable from the same per-frame tick &mdash; that sibling is the most likely site of the bulk terrain generation but has not been located yet.</p>
+  <p><strong>Open</strong>: the bulk continent ground terrain (~3500-4000 POLY_FT4 prims of green/rocky tiles in the prim pool) is <strong>not</strong> sourced from any TMD-magic-bearing disc payload located so far. Slot 4 of each kingdom bundle (type byte <code>0x05</code>, see <a href="../formats/world-map-overlay.html">slot-4 records format doc</a>) was a logical candidate but visual inspection across every projection and topology mode falsified the wireframe / coastline reading &mdash; the container is solved but the records carry something else (likely a library of object-local 3D meshes, consumer not yet pinned in Ghidra). The remaining hypothesis for the bulk continent terrain is a procedural emitter sibling of <code>FUN_801D7EA0</code> reachable from the same per-frame tick &mdash; that sibling is the most likely site of the bulk terrain generation but has not been located yet.</p>
   <p>The horizon emitter is called by direct <code>jal</code> from SCUS &mdash; it does not need function-pointer dispatch. Ghidra's reference manager misses the cross-program call when sweeping the overlay alone; sweep SCUS to surface the caller.</p>
+
+  <h3 id="bulk-continent-terrain-emitter-investigation">Bulk continent terrain emitter investigation</h3>
+  <p>Audit of <code>FUN_80016444</code>&apos;s direct <code>jal</code> targets finds 12 unique targets across 60 call sites. None of the unmapped targets are a bulk-terrain emitter:</p>
+  <table>
+    <thead><tr><th>Target</th><th>Calls</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x8001a068</code></td><td>19</td><td>Actor-list pass dispatcher (8 of the 19 hit at the function head).</td></tr>
+      <tr><td><code>0x8005fb84</code></td><td>18</td><td>Early-return block; skipped when submode == 2.</td></tr>
+      <tr><td><code>0x8002519c</code></td><td>6</td><td>Per-frame render-pass iterator (5 lists per frame).</td></tr>
+      <tr><td><code>0x8001d140</code></td><td>6</td><td>Stack-swap wrapper &rarr; <code>FUN_8001ADA4</code> (per-actor render dispatcher).</td></tr>
+      <tr><td><code>0x800172c0</code></td><td>1</td><td>GTE matrix setup helper (<code>FUN_80026988(&amp;local_18, 0x1F8003A8)</code>).</td></tr>
+      <tr><td><code>0x800179c0</code></td><td>1</td><td>Small helper.</td></tr>
+      <tr><td><code>0x800188c8</code></td><td>1</td><td>Debug-HUD text renderer (<code>PSX_TEST_PROGRAM</code> string).</td></tr>
+      <tr><td><code>0x8001d058</code></td><td>2</td><td>48-byte scratchpad / GPU register flush.</td></tr>
+      <tr><td><code>0x8002b688/790</code></td><td>2 / 2</td><td>Tiny accessors (60-80 bytes each).</td></tr>
+      <tr><td><code>0x80046978</code></td><td>1</td><td>Screen-tint fade emitter (gated on <code>gp+0x9d4</code>).</td></tr>
+      <tr><td><code>0x801d7ea0</code></td><td>1</td><td><strong>Horizon emitter</strong> (overlay-resident, single direct call).</td></tr>
+    </tbody>
+  </table>
+  <p>None of these dispatch into a function whose body contains a bulk POLY_FT4 loop. Static <code>addprim</code> hunters find only the horizon emitter inside any world_map overlay variant; SCUS-side <code>addprim</code> candidates are five non-terrain emitters (HUD sprite batches, screen-tint, digit batchers).</p>
+  <p>The strongest remaining hypothesis is a <strong>table-driven emitter</strong> &mdash; a function whose POLY_FT4 cmd byte is loaded from a per-mode descriptor table (the same trick <code>FUN_8002735C</code> uses, sourcing the cmd from <code>DAT_8007326C</code>). Static addprim hunters miss those because the cmd byte is never an <code>lui/li</code> immediate. Two leaf candidates inside the case-5 dispatcher chain:</p>
+  <table>
+    <thead><tr><th>Function</th><th>Where it&apos;s called</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80043390</code> (SCUS, 712 bytes)</td><td>case-5 default branch</td><td>Textured TMD renderer; uses GTE colour matrix setup; reads structural fields at <code>mesh+0x14/+0xc/+0x18</code>.</td></tr>
+      <tr><td><code>FUN_80029888</code> (SCUS)</td><td>case-5 env-mapped branch</td><td>Environment-mapped TMD renderer; triggered when <code>actor[+0x7a] != 0</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>If the bulk terrain is built from many small textured-TMD &quot;tile&quot; actors whose render fn routes through <code>FUN_80043390</code>, then static analysis correctly rules out a single bulk emitter &mdash; the prims emerge from N small calls, each emitting a handful of polys from its own small mesh chain. Verifying this requires a dynamic probe at <code>scripts/pcsx-redux/autorun_prim_pool_writers.lua</code>: log every PC that writes into the prim pool (<code>0x800AD400..</code>) for one second of top-view gameplay, then bucket by caller.</p>
+  <p>The bulk terrain&apos;s source mesh data may then be the same kingdom slot-1 TMD pack the landmarks come from &mdash; just slots that <code>world-overview.json</code> doesn&apos;t surface today because no <code>MAN</code> placement references them. Drake has 40 TMDs in slot 1 but the placement table only uses 28 unique slots; the unused slots (or slots with <code>pos = 0</code> that the scatter view filters out) could be the ground tiles, placed at runtime by a generator that hasn&apos;t been pinned to a function yet.</p>
 
   <h3>Per-frame render-pass iterator &mdash; <code>FUN_8002519c</code></h3>
   <p>Five times per frame, <code>FUN_80016444</code> invokes the SCUS-resident actor-list iterator <code>FUN_8002519c</code> (328 bytes) against five linked-list heads at <code>_DAT_8007C34C..._DAT_8007C36C</code>. Each list is one render pass. The iterator walks the chain and per node either takes an early-return path (when bit <code>0x8</code> of <code>node[+0x10]</code> is set) or calls the tick function at <code>node[+0xC]</code> via <code>jalr</code>.</p>

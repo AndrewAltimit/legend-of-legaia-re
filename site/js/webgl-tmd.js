@@ -365,6 +365,7 @@ class TmdRenderer {
     gl.bindVertexArray(null);
   }
 
+
   dispose() {
     const gl = this.gl;
     this.clearScene();
@@ -377,6 +378,7 @@ class TmdRenderer {
     gl.deleteTexture(this.tex);
   }
 }
+
 
 const IDENTITY4 = new Float32Array([
   1, 0, 0, 0,
