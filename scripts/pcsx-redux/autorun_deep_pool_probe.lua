@@ -66,18 +66,18 @@ local LZS_PC_HI = 0x8001A900
 -- vsync-139 LZS destination range, [0x800C8D24, 0x80120D24)).
 local PROBES = {
     -- Exec — LZS call counter (drives the lzs_count discriminator column).
-    { addr = 0x8001A55C, name = "lzs_decoder",  kind = "Exec",  cap = 20  },
+    { addr = 0x8001A55C, name = "lzs_decoder",  kind = "Exec",  cap = 50   },
     -- Sub-LZS-range terrain candidate. Writes here cannot be LZS-139.
-    { addr = 0x800C8000, name = "pool_pre_lzs", kind = "Write", cap = 400 },
+    { addr = 0x800C8000, name = "pool_pre_lzs", kind = "Write", cap = 1500 },
     -- In-LZS-range probes — need PC filter offline to strip LZS noise.
-    { addr = 0x800CC000, name = "pool_d8_a",    kind = "Write", cap = 400 },
-    { addr = 0x800CE000, name = "pool_d8_b",    kind = "Write", cap = 400 },
-    { addr = 0x800D0010, name = "pool_buf_b0",  kind = "Write", cap = 400 },
-    { addr = 0x800D8000, name = "pool_d8_c",    kind = "Write", cap = 400 },
-    { addr = 0x800E0000, name = "pool_d8_d",    kind = "Write", cap = 400 },
-    { addr = 0x800E8000, name = "pool_d8_e",    kind = "Write", cap = 400 },
+    { addr = 0x800CC000, name = "pool_d8_a",    kind = "Write", cap = 1500 },
+    { addr = 0x800CE000, name = "pool_d8_b",    kind = "Write", cap = 1500 },
+    { addr = 0x800D0010, name = "pool_buf_b0",  kind = "Write", cap = 1500 },
+    { addr = 0x800D8000, name = "pool_d8_c",    kind = "Write", cap = 1500 },
+    { addr = 0x800E0000, name = "pool_d8_d",    kind = "Write", cap = 1500 },
+    { addr = 0x800E8000, name = "pool_d8_e",    kind = "Write", cap = 1500 },
     -- Post-LZS-range — beyond the vsync-139 350 KB dst tail (~0x80120D24).
-    { addr = 0x80120D24, name = "pool_post_lzs",kind = "Write", cap = 200 },
+    { addr = 0x80120D24, name = "pool_post_lzs",kind = "Write", cap = 1500 },
 }
 
 PCSX.log(string.format("[dpp] sstate=%s frames=%d out=%s",
@@ -167,7 +167,10 @@ local function arm_probes()
                     vsync_count, idx - 1, probe.name, probe.kind,
                     info.pc, info.a0, info.a1, info.a2, info.a3, info.ra,
                     info.val, lzs_count, in_lzs))
-                csv_fh:flush()
+                -- NOTE: do NOT flush per-row. At ~5000 prims/frame the
+                -- flush call was hot enough to SEGV pcsx-redux mid-frame.
+                -- Vsync handler does a periodic flush every SNAPSHOT_EVERY
+                -- frames instead.
             end
 
             -- Inline log: every LZS Exec hit, every non-LZS write to a
@@ -288,6 +291,7 @@ local function on_vsync()
     vsync_count = vsync_count + 1
     if vsync_count % SNAPSHOT_EVERY == 0 then
         write_live_hits("live")
+        if csv_fh then csv_fh:flush() end
     end
 
     if state == STATE_WAIT_BOOT then
