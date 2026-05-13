@@ -19,13 +19,41 @@ of the 40 loaded landmark TMDs. We reverse the chain:
                       -> slot index 0..N-1.
 
 USAGE
+    # Single state, single kingdom (legacy form)
     python3 scripts/pcsx-redux/resolve_actor_tmds.py \\
         ~/Tools/pcsx-redux/SCUS94254.sstate2 \\
         [--bundle map01] [--json out.json]
 
+    # Multiple states sharing one kingdom (merges actors across them)
+    python3 scripts/pcsx-redux/resolve_actor_tmds.py \\
+        --bundle map01 \\
+        --json site/world-overview-live.json \\
+        ~/.../drake-state-a.sstate ~/.../drake-state-b.sstate
+
+    # Multiple states across kingdoms (one bundle per state)
+    python3 scripts/pcsx-redux/resolve_actor_tmds.py \\
+        --bundles map01,map02,map03 \\
+        --json site/world-overview-live.json \\
+        drake.sstate sebucus.sstate karisto.sstate
+
 The optional --json output writes a placements list usable by the
 disc-only viewer: each entry has `pos`, `slots` (list of int), and
-`actor_node` for tracing.
+`actor_node` for tracing. Multi-bundle runs emit a list of bundle
+dicts; `scripts/extract-world-placements.py` merges them per-kingdom
+into `site/world-overview.json`.
+
+CAVEAT
+    The original task brief described an "init blob the field-VM runs at
+    scene-load" carrying per-kingdom actor placements. After tracing the
+    kingdom 7-asset bundle (slots 0..6) plus the prescript at file
+    offset 0x800, the MAN asset (slot 2, type 0x03) turns out to be the
+    ONLY static placement source on disc - slot 5 (type 0x06) and slot 6
+    (type 0x07) are template payloads that are byte-identical across all
+    three kingdoms. Records flagged with (x_enc, z_enc) = (0x7F, 0x7F)
+    are deliberately script-positioned and resolve to coordinates inside
+    an overlay (world_map / dialog), not on disc. So extending this
+    script to a disc-only walk is blocked on reversing the
+    overlay-resident spawn logic; see docs/subsystems/world-map.md.
 """
 
 import argparse
@@ -209,64 +237,48 @@ def tmd_addr_to_slot(tmd_ram_addr, load_base, byte_offsets):
         return -1
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("state", help="PCSX-Redux save state path")
-    ap.add_argument(
-        "--bundle",
-        default="map01",
-        choices=sorted(KINGDOM_BASE.keys()),
-        help="Kingdom bundle (default: map01).",
-    )
-    ap.add_argument(
-        "--extracted",
-        default="extracted",
-        help="Extracted disc root (default: extracted/).",
-    )
-    ap.add_argument(
-        "--json",
-        help="Optional: write placements as JSON to this path.",
-    )
-    args = ap.parse_args()
+def run_one_state(state_path, bundle, extracted_root, verbose=True):
+    """Run the full resolver against a single save state. Returns the
+    output dict (the same shape that `--json` writes) or None on failure.
 
-    ram = extract_ram(args.state)
-    print(f"loaded {len(ram):#x} bytes of RAM\n")
+    Stateless wrapper around the original main()-body logic so callers
+    can resolve multiple save states in one invocation."""
+    ram = extract_ram(state_path)
+    if verbose:
+        print(f"\n=== {state_path} -> {bundle} ===")
+        print(f"loaded {len(ram):#x} bytes of RAM")
 
-    pack, byte_offsets, fname = load_kingdom_pack(args.extracted, args.bundle)
+    pack, byte_offsets, fname = load_kingdom_pack(extracted_root, bundle)
     if pack is None:
-        print(f"!! could not load kingdom pack for {args.bundle}")
-        return 1
-    print(
-        f"kingdom pack: {fname}  {len(byte_offsets)} TMDs total, "
-        f"pack size = {len(pack)}"
-    )
+        if verbose:
+            print(f"!! could not load kingdom pack for {bundle}")
+        return None
+    if verbose:
+        print(
+            f"kingdom pack: {fname}  {len(byte_offsets)} TMDs total, "
+            f"pack size = {len(pack)}"
+        )
 
     load_base = find_landmark_load_base(ram, pack, byte_offsets)
     if load_base is None:
-        print("!! could not locate landmark pack in RAM")
-        return 1
-    print(f"landmark pack loaded at RAM {load_base:#010x}\n")
-
-    # Pre-compute the RAM range of each slot for diagnostics
-    slot_ram_starts = [load_base + bo for bo in byte_offsets]
-    print(
-        f"slot 0 starts at {slot_ram_starts[0]:#010x}, "
-        f"last slot starts at {slot_ram_starts[-1]:#010x}"
-    )
+        if verbose:
+            print("!! could not locate landmark pack in RAM")
+        return None
+    if verbose:
+        print(f"landmark pack loaded at RAM {load_base:#010x}")
 
     actors = collect_actors(ram)
-    print(f"\n{len(actors)} actors across all lists\n")
-
     placements = []
     slot_use = Counter()
     unresolved_ptrs = 0
     total_ptrs = 0
-
-    print(
-        f"  {'node':>10s} {'list':>10s} {'pos':>22s} {'mesh#':>5s} "
-        f"{'slots':<24s}  tick"
-    )
-    print("  " + "-" * 90)
+    if verbose:
+        print(f"{len(actors)} actors across all lists")
+        print(
+            f"  {'node':>10s} {'list':>10s} {'pos':>22s} {'mesh#':>5s} "
+            f"{'slots':<24s}  tick"
+        )
+        print("  " + "-" * 90)
     for a in actors:
         ptrs = mesh_chain_ptrs(ram, a["mesh_head"])
         slots = []
@@ -279,20 +291,17 @@ def main():
                 slot_use[slot] += 1
             else:
                 unresolved_ptrs += 1
-        # Deduplicate slots for the per-actor output (one actor often
-        # holds many prim groups from the same TMD).
         unique_slots = sorted(set(s for s in slots if s >= 0))
         unresolved_for_actor = sum(1 for s in slots if s < 0)
-        pos_str = f"({a['x']:>5d},{a['y']:>5d},{a['z']:>5d})"
-        slots_str = ",".join(str(s) for s in unique_slots)
-        if unresolved_for_actor:
-            slots_str += f" +{unresolved_for_actor}?"
-        if not slots_str:
-            slots_str = "-"
-        print(
-            f"  {a['node']:#010x} {a['list_head']:#010x} {pos_str:>22s} "
-            f"{len(ptrs):>5d} {slots_str:<24s}  {a['tick']:#010x}"
-        )
+        if verbose:
+            pos_str = f"({a['x']:>5d},{a['y']:>5d},{a['z']:>5d})"
+            slots_str = ",".join(str(s) for s in unique_slots) or "-"
+            if unresolved_for_actor:
+                slots_str += f" +{unresolved_for_actor}?"
+            print(
+                f"  {a['node']:#010x} {a['list_head']:#010x} {pos_str:>22s} "
+                f"{len(ptrs):>5d} {slots_str:<24s}  {a['tick']:#010x}"
+            )
         if unique_slots:
             placements.append(
                 dict(
@@ -305,32 +314,150 @@ def main():
                     render_mode=a["render_mode"],
                     chain_size=len(ptrs),
                     unresolved=unresolved_for_actor,
+                    source_state=str(state_path),
                 )
             )
-
-    print(f"\n=== Resolution stats ===")
-    print(f"  total chain pointers:  {total_ptrs}")
-    print(f"  resolved to slot:      {total_ptrs - unresolved_ptrs}")
-    print(f"  unresolved:            {unresolved_ptrs}")
-    print(
-        f"  unique slots referenced: {len(slot_use)} / {len(byte_offsets)}"
+    return dict(
+        bundle=bundle,
+        kingdom_pack_load_base=f"{load_base:#010x}",
+        slots_in_pack=len(byte_offsets),
+        actors=placements,
+        slot_usage={str(k): v for k, v in sorted(slot_use.items())},
+        unresolved_ptrs=unresolved_ptrs,
+        total_ptrs=total_ptrs,
+        source_state=str(state_path),
     )
-    print(f"\n=== Slot usage ===")
-    for slot in sorted(slot_use.keys()):
-        print(f"  slot {slot:>2d}: used {slot_use[slot]:>3d} times")
 
-    if args.json:
-        out = dict(
-            bundle=args.bundle,
-            kingdom_pack_load_base=f"{load_base:#010x}",
-            slots_in_pack=len(byte_offsets),
-            actors=placements,
-            slot_usage={str(k): v for k, v in sorted(slot_use.items())},
-            unresolved_ptrs=unresolved_ptrs,
-            total_ptrs=total_ptrs,
+
+def merge_states(results):
+    """Merge per-state results that share a `bundle` field. Actors are
+    deduped by (node, pos). The latest state wins on metadata."""
+    by_bundle: dict[str, dict] = {}
+    for r in results:
+        if r is None:
+            continue
+        b = r["bundle"]
+        cur = by_bundle.get(b)
+        if cur is None:
+            by_bundle[b] = {
+                **r,
+                "actors": list(r["actors"]),
+                "source_states": [r["source_state"]],
+            }
+            continue
+        cur["source_states"].append(r["source_state"])
+        # Newer-state metadata overrides
+        cur["kingdom_pack_load_base"] = r["kingdom_pack_load_base"]
+        cur["slots_in_pack"] = r["slots_in_pack"]
+        seen = {(a["node"], tuple(a["pos"])) for a in cur["actors"]}
+        for a in r["actors"]:
+            key = (a["node"], tuple(a["pos"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            cur["actors"].append(a)
+        # Recompute slot_usage from the merged actor set
+        slot_use = Counter()
+        for a in cur["actors"]:
+            for s in a["slots"]:
+                slot_use[s] += 1
+        cur["slot_usage"] = {str(k): v for k, v in sorted(slot_use.items())}
+    if len(by_bundle) == 1:
+        return next(iter(by_bundle.values()))
+    return list(by_bundle.values())
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "state",
+        nargs="+",
+        help="PCSX-Redux save state path(s). When more than one is given, "
+             "use --bundles to assign a bundle to each (positionally) or "
+             "let --bundle apply to all.",
+    )
+    ap.add_argument(
+        "--bundle",
+        default="map01",
+        choices=sorted(KINGDOM_BASE.keys()),
+        help="Kingdom bundle for every state when --bundles isn't given. "
+             "Default: map01.",
+    )
+    ap.add_argument(
+        "--bundles",
+        help="Comma-separated bundle list aligned with the positional "
+             "`state` args. Lets one call cover multiple kingdoms "
+             "(e.g. --bundles map01,map02,map03 sstate1 sstate2 sstate3).",
+    )
+    ap.add_argument(
+        "--extracted",
+        default="extracted",
+        help="Extracted disc root (default: extracted/).",
+    )
+    ap.add_argument(
+        "--json",
+        help="Optional: write merged placements as JSON to this path. "
+             "When the input covers a single bundle, the output is the "
+             "legacy single-bundle dict; when it covers multiple, it's a "
+             "list of bundle-dicts so site/extract-world-placements.py "
+             "can merge them per-kingdom.",
+    )
+    args = ap.parse_args()
+
+    if args.bundles:
+        bundles = [b.strip() for b in args.bundles.split(",")]
+        if len(bundles) != len(args.state):
+            sys.exit(
+                f"--bundles has {len(bundles)} entries but {len(args.state)} "
+                f"state paths were given."
+            )
+    else:
+        bundles = [args.bundle] * len(args.state)
+
+    if len(args.state) == 1:
+        # Preserve the original single-state output shape verbatim so any
+        # downstream tooling that consumed the old structure still works.
+        r = run_one_state(args.state[0], bundles[0], args.extracted)
+        if r is None:
+            return 1
+        print(f"\n=== Resolution stats ===")
+        print(f"  total chain pointers:  {r['total_ptrs']}")
+        print(f"  resolved to slot:      {r['total_ptrs'] - r['unresolved_ptrs']}")
+        print(f"  unresolved:            {r['unresolved_ptrs']}")
+        print(
+            f"  unique slots referenced: {len(r['slot_usage'])} / "
+            f"{r['slots_in_pack']}"
         )
-        Path(args.json).write_text(json.dumps(out, indent=2))
+        if args.json:
+            out_dict = {k: v for k, v in r.items() if k != "source_state"}
+            Path(args.json).write_text(json.dumps(out_dict, indent=2))
+            print(f"\nwrote {args.json}")
+        return 0
+
+    # Multi-state path
+    results = [
+        run_one_state(s, b, args.extracted)
+        for s, b in zip(args.state, bundles)
+    ]
+    merged = merge_states(results)
+    print(f"\n=== Merged across {len(args.state)} state(s) ===")
+    if isinstance(merged, list):
+        for m in merged:
+            print(
+                f"  bundle={m['bundle']:<8s}  actors={len(m['actors']):>3d}  "
+                f"slots_referenced={len(m['slot_usage'])} / "
+                f"{m['slots_in_pack']}"
+            )
+    else:
+        print(
+            f"  bundle={merged['bundle']:<8s}  actors={len(merged['actors']):>3d}  "
+            f"slots_referenced={len(merged['slot_usage'])} / "
+            f"{merged['slots_in_pack']}"
+        )
+    if args.json:
+        Path(args.json).write_text(json.dumps(merged, indent=2))
         print(f"\nwrote {args.json}")
+    return 0
 
 
 if __name__ == "__main__":

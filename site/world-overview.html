@@ -23,7 +23,7 @@
 <section class="doc-section" id="how-this-works">
   <h2>What each mode needs and what it shows</h2>
   <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. The MAN table only pins a handful of slots per kingdom (5 unique slots for Drake, 6 for Sebucus, 17 for Karisto); the rest are surfaced by the <em>show unplaced slot-1 TMDs</em> toggle below at canonical grid positions, since the runtime resolves their final positions through actor lists rather than MAN. For Drake the page additionally overlays 12 live-RAM-resolved actor placements (bridge towers, gates, the small castle, wall sections) baked into <code>site/world-overview-live.json</code> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. Distance-cue fog is applied by the runtime via <code>FUN_80043390</code>'s overlay-mode dispatch table (see below); this WebGL view doesn't replicate the fog yet, so meshes render flat-colored.
+    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. The MAN table only pins a handful of slots per kingdom (5 unique slots for Drake, 6 for Sebucus, 17 for Karisto); the rest are surfaced by the <em>show unplaced slot-1 TMDs</em> toggle below, laid out by class from <code><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/site/world-overview/slot1_classification.toml" target="_blank" rel="noopener">site/world-overview/slot1_classification.toml</a></code> (landmark / ground_tile / decoration / npc_token / unknown). For Drake the page also overlays 12 live-RAM-resolved actor placements baked into <code>site/world-overview-live.json</code> via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. Distance-cue fog is applied by the runtime via <code>FUN_80043390</code>'s overlay-mode dispatch table (see below); this WebGL view doesn't replicate the fog yet, so meshes render flat-colored.
   </p>
   <p>
     <strong>Mesh inspector:</strong> with a disc loaded, browse the per-kingdom TMD pack one mesh at a time (orbit camera, auto-rotate).
@@ -71,7 +71,7 @@
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
-        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Rendered at canonical world-bound-spanning positions for visual classification (ground tile vs landmark)."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
+        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Laid out by class from site/world-overview/slot1_classification.toml: landmarks south of the kingdom, ground tiles stacked at centre, decorations north, unknown to the east. Live-RAM actor-placed slots (Drake only today) draw at their real coordinates instead."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
@@ -570,74 +570,168 @@
       return;
     }
     glRenderer.uploadVram(viewer.pack_vram_bytes());
-    /* Upload each unique pack mesh referenced by a placement (skip
-     * script-positioned + global-pool records - those don't source from
-     * the kingdom pack). */
+    /* Upload a single pack mesh on demand; return true if its mesh data
+     * is renderable (some slots have non-textured flat-shaded prims that
+     * the WebGL path skips). */
     const used = new Set();
+    function ensureMeshUploaded(ms) {
+      if (ms < 0 || ms >= packCount) return false;
+      if (used.has(ms)) return true;
+      viewer.pack_mesh(ms);
+      const positions = viewer.pack_mesh_positions();
+      const uvs = viewer.pack_mesh_uvs();
+      const cba = viewer.pack_mesh_cba_tsb();
+      const idx = viewer.pack_mesh_indices();
+      if (positions.length === 0 || idx.length === 0) return false;
+      glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
+      used.add(ms);
+      return true;
+    }
+
     const drawPlacements = [];
+    /* MAN-table placements at the disc-encoded world coordinates. */
+    const manSlots = new Set();
     for (const p of k.placements) {
       if (p.script_positioned) continue;
       if (!p.tmd_source || p.tmd_source.kind !== 'scene_tmd_pack') continue;
       const ms = p.tmd_source.pack_slot;
-      if (ms < 0 || ms >= packCount) continue;
-      if (!used.has(ms)) {
-        viewer.pack_mesh(ms);
-        const positions = viewer.pack_mesh_positions();
-        const uvs = viewer.pack_mesh_uvs();
-        const cba = viewer.pack_mesh_cba_tsb();
-        const idx = viewer.pack_mesh_indices();
-        if (positions.length > 0 && idx.length > 0) {
-          glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
-          used.add(ms);
-        }
-      }
-      if (used.has(ms)) {
-        drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
-      }
+      if (!ensureMeshUploaded(ms)) continue;
+      manSlots.add(ms);
+      drawPlacements.push({
+        meshId: ms, x: p.pos[0], z: p.pos[2],
+        kind: 'man', class: p.class || 'landmark', name: p.name,
+      });
     }
-    /* Optional: render the unplaced slot-1 TMDs at canonical positions.
-     * MAN surfaces only a subset of the kingdom pack; the rest are
-     * referenced by runtime actor lists (likely ground tiles + bulk
-     * landmark variants). Spread them across the world bounds so each
-     * can be visually classified. */
+    /* Live-RAM actor placements (resolve_actor_tmds.py output). These
+     * pin actor-positioned slots that MAN doesn't reference (Drake
+     * surfaces 12 today; Sebucus/Karisto pending a save state). */
+    const liveSlots = new Set();
+    const livePlacements = k.live_placements || [];
+    for (const lp of livePlacements) {
+      const ms = lp.pack_slot;
+      if (!ensureMeshUploaded(ms)) continue;
+      liveSlots.add(ms);
+      drawPlacements.push({
+        meshId: ms, x: lp.pos[0], z: lp.pos[2],
+        kind: 'live', class: lp.class || 'landmark',
+      });
+    }
+
+    /* Optional: render the unplaced slot-1 TMDs. MAN surfaces only a
+     * subset of the kingdom pack; the rest are positioned by the
+     * runtime field-VM via actor lists. Until the disc-side init-blob
+     * walker lands we lay these out by classification:
+     *   landmark    - row south of the world bounds (sorted by slot)
+     *   ground_tile - stacked at kingdom centre
+     *   decoration  - row north of the world bounds
+     *   npc_token   - hidden
+     *   unknown     - canonical grid east of the world bounds
+     * The class field comes from world-overview/slot1_classification.toml
+     * and is rolled into world-overview.json by the build pipeline. */
     const ext = k.world_extent || [16320, 16320];
+    const unplacedShown = { landmark: 0, decoration: 0, ground_tile: 0,
+                            npc_token: 0, unknown: 0 };
     if ($showUnplaced && $showUnplaced.checked) {
-      const unplaced = k.unplaced_slot1_tmds || [];
-      if (unplaced.length > 0) {
-        const cols = Math.max(1, Math.ceil(Math.sqrt(unplaced.length)));
-        const rows = Math.max(1, Math.ceil(unplaced.length / cols));
-        for (let i = 0; i < unplaced.length; i++) {
-          const u = unplaced[i];
-          const ms = u.pack_slot;
-          if (ms < 0 || ms >= packCount) continue;
-          if (!used.has(ms)) {
-            viewer.pack_mesh(ms);
-            const positions = viewer.pack_mesh_positions();
-            const uvs = viewer.pack_mesh_uvs();
-            const cba = viewer.pack_mesh_cba_tsb();
-            const idx = viewer.pack_mesh_indices();
-            if (positions.length > 0 && idx.length > 0) {
-              glRenderer.uploadSceneMesh(ms, positions, uvs, cba, idx);
-              used.add(ms);
-            } else {
-              continue;
-            }
-          }
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-          const x = ((col + 0.5) / cols) * ext[0];
-          const z = ((row + 0.5) / rows) * ext[1];
-          drawPlacements.push({ meshId: ms, x, z, unplaced: true });
-        }
+      /* Drop entries the live extract already placed in real
+       * coordinates - drawing them twice produces visual duplicates. */
+      const unplacedAll = (k.unplaced_slot1_tmds || [])
+        .filter(u => !liveSlots.has(u.pack_slot));
+      const byClass = { landmark: [], decoration: [], ground_tile: [],
+                        npc_token: [], unknown: [] };
+      for (const u of unplacedAll) {
+        const cls = u.class || 'unknown';
+        (byClass[cls] || byClass.unknown).push(u);
+      }
+      /* Landmarks: sort by slot, lay in a row south of the world. */
+      const landmarks = byClass.landmark;
+      landmarks.sort((a, b) => a.pack_slot - b.pack_slot);
+      const gap = ext[0] / Math.max(landmarks.length, 1);
+      for (let i = 0; i < landmarks.length; i++) {
+        const u = landmarks[i];
+        if (!ensureMeshUploaded(u.pack_slot)) continue;
+        const x = (i + 0.5) * gap;
+        const z = ext[1] + 1500;
+        drawPlacements.push({
+          meshId: u.pack_slot, x, z, kind: 'unplaced',
+          class: 'landmark', slot: u.pack_slot, note: u.note,
+        });
+        unplacedShown.landmark++;
+      }
+      /* Decorations: row north of the world. */
+      byClass.decoration.sort((a, b) => a.pack_slot - b.pack_slot);
+      const gd = ext[0] / Math.max(byClass.decoration.length, 1);
+      for (let i = 0; i < byClass.decoration.length; i++) {
+        const u = byClass.decoration[i];
+        if (!ensureMeshUploaded(u.pack_slot)) continue;
+        drawPlacements.push({
+          meshId: u.pack_slot,
+          x: (i + 0.5) * gd, z: -1500,
+          kind: 'unplaced', class: 'decoration',
+          slot: u.pack_slot, note: u.note,
+        });
+        unplacedShown.decoration++;
+      }
+      /* Ground tiles: stack at kingdom centre (the runtime tiles them
+       * via the overlay-routed dispatch; rendering them all overlaid is
+       * the closest visual proxy we get without porting the bulk emit
+       * mechanism). */
+      for (const u of byClass.ground_tile) {
+        if (!ensureMeshUploaded(u.pack_slot)) continue;
+        drawPlacements.push({
+          meshId: u.pack_slot,
+          x: ext[0] / 2, z: ext[1] / 2,
+          kind: 'unplaced', class: 'ground_tile',
+          slot: u.pack_slot, note: u.note,
+        });
+        unplacedShown.ground_tile++;
+      }
+      /* npc_token: skipped on purpose (the count is reported in the
+       * status line so the user can confirm). */
+      unplacedShown.npc_token = byClass.npc_token.length;
+      /* Unknown: keep the canonical grid behaviour, but parked east of
+       * the world so it doesn't visually clash with classified slots. */
+      const unknowns = byClass.unknown;
+      unknowns.sort((a, b) => a.pack_slot - b.pack_slot);
+      const ucols = Math.max(1, Math.ceil(Math.sqrt(unknowns.length)));
+      const urows = Math.max(1, Math.ceil(unknowns.length / ucols));
+      const ucell = 1800;
+      const uxBase = ext[0] + 1500;
+      for (let i = 0; i < unknowns.length; i++) {
+        const u = unknowns[i];
+        if (!ensureMeshUploaded(u.pack_slot)) continue;
+        const col = i % ucols;
+        const row = Math.floor(i / ucols);
+        drawPlacements.push({
+          meshId: u.pack_slot,
+          x: uxBase + (col + 0.5) * ucell,
+          z: (row + 0.5) * ucell,
+          kind: 'unplaced', class: 'unknown',
+          slot: u.pack_slot, note: u.note,
+        });
+        unplacedShown.unknown++;
       }
     }
     frameWorldCam(drawPlacements, ext);
     worldCam.pitch = 0;
-    const unplacedShownCount = drawPlacements.filter(p => p.unplaced).length;
-    const placedShownCount = drawPlacements.length - unplacedShownCount;
+    const unplacedShownTotal = unplacedShown.landmark
+      + unplacedShown.decoration + unplacedShown.ground_tile
+      + unplacedShown.unknown;
+    const placedShownCount = drawPlacements.length - unplacedShownTotal;
+    const unplacedSummary = unplacedShownTotal === 0 ? '' :
+      ` + ${unplacedShownTotal} unplaced (`
+      + [
+          unplacedShown.landmark    ? `${unplacedShown.landmark}L` : null,
+          unplacedShown.ground_tile ? `${unplacedShown.ground_tile}G` : null,
+          unplacedShown.decoration  ? `${unplacedShown.decoration}D` : null,
+          unplacedShown.unknown     ? `${unplacedShown.unknown}?` : null,
+        ].filter(Boolean).join(' ')
+      + (unplacedShown.npc_token ? `, ${unplacedShown.npc_token} hidden` : '')
+      + ')';
+    const liveSummary = liveSlots.size === 0 ? '' :
+      ` + ${livePlacements.length} live-RAM actors (${liveSlots.size} slots)`;
     $meshLabel.textContent =
-      `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)` +
-      (unplacedShownCount > 0 ? ` + ${unplacedShownCount} unplaced TMDs` : '');
+      `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
+      + liveSummary + unplacedSummary;
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
@@ -975,7 +1069,9 @@
           }
         }
         const slot = `0x${p.tmd_slot.toString(16).padStart(2,'0').toUpperCase()}`;
-        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd_slot=${slot}${src}`;
+        const cls = p.class ? `  class=${p.class}` : '';
+        const note = p.class_note ? `  ${p.class_note}` : '';
+        $hover.textContent = `${p.name || '(unnamed)'}  -  (${p.pos[0]}, ${p.pos[2]})  tmd_slot=${slot}${src}${cls}${note}`;
       } else {
         $hover.innerHTML = '&nbsp;';
       }

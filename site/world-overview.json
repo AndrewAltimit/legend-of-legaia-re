@@ -46,7 +46,9 @@
           "body_bytes": 6332,
           "nobj": 12,
           "md5": "eb1d26a37e87"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 2,
@@ -72,7 +74,9 @@
           "body_bytes": 400,
           "nobj": 1,
           "md5": "593bdb0da97b"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 3,
@@ -93,7 +97,9 @@
         "tmd_source": {
           "kind": "global_pool",
           "global_index": 0
-        }
+        },
+        "class": "global_pool",
+        "class_note": null
       },
       {
         "id": 4,
@@ -114,7 +120,9 @@
         "tmd_source": {
           "kind": "global_pool",
           "global_index": 1
-        }
+        },
+        "class": "global_pool",
+        "class_note": null
       },
       {
         "id": 5,
@@ -135,7 +143,9 @@
         "tmd_source": {
           "kind": "global_pool",
           "global_index": 2
-        }
+        },
+        "class": "global_pool",
+        "class_note": null
       },
       {
         "id": 6,
@@ -161,7 +171,9 @@
           "body_bytes": 9976,
           "nobj": 14,
           "md5": "02287f2a628b"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 7,
@@ -187,7 +199,9 @@
           "body_bytes": 2960,
           "nobj": 2,
           "md5": "fe6cd54ad555"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 8,
@@ -213,7 +227,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 9,
@@ -239,7 +255,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 10,
@@ -265,7 +283,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 11,
@@ -291,7 +311,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 12,
@@ -317,7 +339,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 13,
@@ -343,7 +367,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 14,
@@ -369,7 +395,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 15,
@@ -395,7 +423,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 16,
@@ -421,7 +451,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 17,
@@ -447,7 +479,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 18,
@@ -473,7 +507,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 19,
@@ -499,7 +535,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 20,
@@ -525,7 +563,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 21,
@@ -551,7 +591,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 22,
@@ -577,7 +619,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 23,
@@ -603,7 +647,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 24,
@@ -629,7 +675,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 25,
@@ -655,7 +703,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 26,
@@ -681,7 +731,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 27,
@@ -707,7 +759,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 28,
@@ -733,7 +787,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 29,
@@ -759,7 +815,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 30,
@@ -785,7 +843,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 31,
@@ -811,7 +871,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 32,
@@ -837,7 +899,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 33,
@@ -863,7 +927,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 34,
@@ -889,7 +955,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 35,
@@ -915,7 +983,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 36,
@@ -941,7 +1011,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 37,
@@ -967,7 +1039,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 38,
@@ -993,7 +1067,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 39,
@@ -1019,7 +1095,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 40,
@@ -1045,7 +1123,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 41,
@@ -1071,7 +1151,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 42,
@@ -1097,7 +1179,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 43,
@@ -1123,7 +1207,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 44,
@@ -1149,7 +1235,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 45,
@@ -1175,7 +1263,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 46,
@@ -1201,7 +1291,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 47,
@@ -1227,7 +1319,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 48,
@@ -1253,7 +1347,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 49,
@@ -1279,7 +1375,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 50,
@@ -1305,7 +1403,9 @@
           "body_bytes": 2964,
           "nobj": 1,
           "md5": "84dcca68ccfc"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       }
     ],
     "world_placed_count": 43,
@@ -1683,7 +1783,9 @@
         "byte_end": 4040,
         "body_bytes": 912,
         "nobj": 1,
-        "md5": "c228c8465560"
+        "md5": "c228c8465560",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 2,
@@ -1691,7 +1793,9 @@
         "byte_end": 5792,
         "body_bytes": 1752,
         "nobj": 2,
-        "md5": "9681bad75020"
+        "md5": "9681bad75020",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain (see world-overview-live.json)"
       },
       {
         "pack_slot": 3,
@@ -1699,7 +1803,9 @@
         "byte_end": 6504,
         "body_bytes": 712,
         "nobj": 1,
-        "md5": "0a2eddb1739d"
+        "md5": "0a2eddb1739d",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 4,
@@ -1707,7 +1813,9 @@
         "byte_end": 7324,
         "body_bytes": 820,
         "nobj": 1,
-        "md5": "ccb942f8964e"
+        "md5": "ccb942f8964e",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 5,
@@ -1715,7 +1823,9 @@
         "byte_end": 9464,
         "body_bytes": 2140,
         "nobj": 1,
-        "md5": "6268c421f277"
+        "md5": "6268c421f277",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 6,
@@ -1723,7 +1833,9 @@
         "byte_end": 10232,
         "body_bytes": 768,
         "nobj": 1,
-        "md5": "8186b1932240"
+        "md5": "8186b1932240",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain"
       },
       {
         "pack_slot": 7,
@@ -1731,7 +1843,9 @@
         "byte_end": 13036,
         "body_bytes": 2804,
         "nobj": 1,
-        "md5": "add70b1432af"
+        "md5": "add70b1432af",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 8,
@@ -1739,7 +1853,9 @@
         "byte_end": 14312,
         "body_bytes": 1276,
         "nobj": 1,
-        "md5": "e32e8ff8b199"
+        "md5": "e32e8ff8b199",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 9,
@@ -1747,7 +1863,9 @@
         "byte_end": 14784,
         "body_bytes": 472,
         "nobj": 1,
-        "md5": "fe006913a36d"
+        "md5": "fe006913a36d",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 10,
@@ -1755,7 +1873,9 @@
         "byte_end": 15068,
         "body_bytes": 284,
         "nobj": 1,
-        "md5": "3b0459979e74"
+        "md5": "3b0459979e74",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 11,
@@ -1763,7 +1883,9 @@
         "byte_end": 15420,
         "body_bytes": 352,
         "nobj": 1,
-        "md5": "ad1e77399133"
+        "md5": "ad1e77399133",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 12,
@@ -1771,7 +1893,9 @@
         "byte_end": 16360,
         "body_bytes": 940,
         "nobj": 1,
-        "md5": "efbb31de7bf7"
+        "md5": "efbb31de7bf7",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 13,
@@ -1779,7 +1903,9 @@
         "byte_end": 17712,
         "body_bytes": 1352,
         "nobj": 1,
-        "md5": "1dbbc7754591"
+        "md5": "1dbbc7754591",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 14,
@@ -1787,7 +1913,9 @@
         "byte_end": 19908,
         "body_bytes": 2196,
         "nobj": 1,
-        "md5": "132aee678a9d"
+        "md5": "132aee678a9d",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain"
       },
       {
         "pack_slot": 15,
@@ -1795,7 +1923,9 @@
         "byte_end": 21496,
         "body_bytes": 1588,
         "nobj": 1,
-        "md5": "aa7c1c80a495"
+        "md5": "aa7c1c80a495",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 16,
@@ -1803,7 +1933,9 @@
         "byte_end": 24284,
         "body_bytes": 2788,
         "nobj": 1,
-        "md5": "5d228770d46f"
+        "md5": "5d228770d46f",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain"
       },
       {
         "pack_slot": 17,
@@ -1811,7 +1943,9 @@
         "byte_end": 25348,
         "body_bytes": 1064,
         "nobj": 1,
-        "md5": "4c841e7a0b52"
+        "md5": "4c841e7a0b52",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 18,
@@ -1819,7 +1953,9 @@
         "byte_end": 26544,
         "body_bytes": 1196,
         "nobj": 1,
-        "md5": "01049c15d1be"
+        "md5": "01049c15d1be",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 19,
@@ -1827,7 +1963,9 @@
         "byte_end": 27608,
         "body_bytes": 1064,
         "nobj": 1,
-        "md5": "8cbd67ee0cf6"
+        "md5": "8cbd67ee0cf6",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 20,
@@ -1835,7 +1973,9 @@
         "byte_end": 28804,
         "body_bytes": 1196,
         "nobj": 1,
-        "md5": "33aed36fbc8c"
+        "md5": "33aed36fbc8c",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 21,
@@ -1843,7 +1983,9 @@
         "byte_end": 29676,
         "body_bytes": 872,
         "nobj": 1,
-        "md5": "3b8485004d6b"
+        "md5": "3b8485004d6b",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 22,
@@ -1851,7 +1993,9 @@
         "byte_end": 30204,
         "body_bytes": 528,
         "nobj": 1,
-        "md5": "599e68aacc1e"
+        "md5": "599e68aacc1e",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 23,
@@ -1859,7 +2003,9 @@
         "byte_end": 32860,
         "body_bytes": 2656,
         "nobj": 1,
-        "md5": "76d095d31d8f"
+        "md5": "76d095d31d8f",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 24,
@@ -1867,7 +2013,9 @@
         "byte_end": 33472,
         "body_bytes": 612,
         "nobj": 1,
-        "md5": "48153a7d007e"
+        "md5": "48153a7d007e",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 25,
@@ -1875,7 +2023,9 @@
         "byte_end": 34048,
         "body_bytes": 576,
         "nobj": 1,
-        "md5": "7a462e519bf7"
+        "md5": "7a462e519bf7",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 26,
@@ -1883,7 +2033,9 @@
         "byte_end": 34632,
         "body_bytes": 584,
         "nobj": 1,
-        "md5": "77d77d4c76dd"
+        "md5": "77d77d4c76dd",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 27,
@@ -1891,7 +2043,9 @@
         "byte_end": 35240,
         "body_bytes": 608,
         "nobj": 1,
-        "md5": "a7517ef52bdf"
+        "md5": "a7517ef52bdf",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 28,
@@ -1899,7 +2053,9 @@
         "byte_end": 39632,
         "body_bytes": 4392,
         "nobj": 1,
-        "md5": "0e2f406ad4dc"
+        "md5": "0e2f406ad4dc",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 29,
@@ -1907,7 +2063,9 @@
         "byte_end": 42660,
         "body_bytes": 3028,
         "nobj": 1,
-        "md5": "6e810249d03c"
+        "md5": "6e810249d03c",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain (also shares md5 with sebucus.29)"
       },
       {
         "pack_slot": 30,
@@ -1915,7 +2073,9 @@
         "byte_end": 51752,
         "body_bytes": 9092,
         "nobj": 8,
-        "md5": "85be2dd7248f"
+        "md5": "85be2dd7248f",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 31,
@@ -1923,7 +2083,9 @@
         "byte_end": 52892,
         "body_bytes": 1140,
         "nobj": 1,
-        "md5": "fe27c480792f"
+        "md5": "fe27c480792f",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain"
       },
       {
         "pack_slot": 32,
@@ -1931,7 +2093,9 @@
         "byte_end": 56360,
         "body_bytes": 3468,
         "nobj": 1,
-        "md5": "b19251c47b6e"
+        "md5": "b19251c47b6e",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 33,
@@ -1939,7 +2103,9 @@
         "byte_end": 62640,
         "body_bytes": 6280,
         "nobj": 10,
-        "md5": "06ea405a96b2"
+        "md5": "06ea405a96b2",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 38,
@@ -1947,7 +2113,9 @@
         "byte_end": 82676,
         "body_bytes": 368,
         "nobj": 1,
-        "md5": "fb7f6e6c976d"
+        "md5": "fb7f6e6c976d",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 39,
@@ -1955,7 +2123,167 @@
         "byte_end": 83064,
         "body_bytes": 388,
         "nobj": 1,
-        "md5": "01e3017b64a1"
+        "md5": "01e3017b64a1",
+        "class": "landmark",
+        "note": "actor-placed via mesh chain (also shares md5 with sebucus.35 / karisto.55)"
+      }
+    ],
+    "live_placements": [
+      {
+        "pack_slot": 39,
+        "pos": [
+          6976,
+          -276,
+          9280
+        ],
+        "node": "0x80081ae4",
+        "tick": "0x80021df4",
+        "flags": 134498432,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 34,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x80082e4c",
+        "tick": "0x8003bc08",
+        "flags": 142739584,
+        "chain_size": 12,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 35,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x80082aec",
+        "tick": "0x8003bc08",
+        "flags": 146933888,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 36,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x8008278c",
+        "tick": "0x8003bc08",
+        "flags": 142739584,
+        "chain_size": 14,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 37,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x800826b4",
+        "tick": "0x8003bc08",
+        "flags": 142739584,
+        "chain_size": 2,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 0,
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "node": "0x800825dc",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 31,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x80082504",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 29,
+        "pos": [
+          12352,
+          -1,
+          3008
+        ],
+        "node": "0x8008242c",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 6,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x80082354",
+        "tick": "0x8003bc08",
+        "flags": 142641281,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 2,
+        "pos": [
+          7296,
+          -192,
+          8000
+        ],
+        "node": "0x8008227c",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 14,
+        "pos": [
+          6976,
+          -192,
+          8256
+        ],
+        "node": "0x800821a4",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 1,
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 16,
+        "pos": [
+          9152,
+          -96,
+          10432
+        ],
+        "node": "0x800820cc",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "class": "landmark"
       }
     ]
   },
@@ -2006,7 +2334,9 @@
           "body_bytes": 400,
           "nobj": 1,
           "md5": "d51c3d9b1e0c"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 2,
@@ -2032,7 +2362,9 @@
           "body_bytes": 400,
           "nobj": 1,
           "md5": "d51c3d9b1e0c"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 3,
@@ -2058,7 +2390,9 @@
           "body_bytes": 9392,
           "nobj": 11,
           "md5": "dee5974fa9ea"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 4,
@@ -2084,7 +2418,9 @@
           "body_bytes": 3932,
           "nobj": 1,
           "md5": "72b3280ffef2"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 5,
@@ -2110,7 +2446,9 @@
           "body_bytes": 3932,
           "nobj": 1,
           "md5": "72b3280ffef2"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 6,
@@ -2136,7 +2474,9 @@
           "body_bytes": 368,
           "nobj": 1,
           "md5": "45c91f45f8a2"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 7,
@@ -2162,7 +2502,9 @@
           "body_bytes": 2060,
           "nobj": 1,
           "md5": "6d4939581536"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 8,
@@ -2188,7 +2530,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 9,
@@ -2214,7 +2558,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 10,
@@ -2240,7 +2586,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 11,
@@ -2266,7 +2614,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 12,
@@ -2292,7 +2642,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 13,
@@ -2318,7 +2670,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 14,
@@ -2344,7 +2698,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 15,
@@ -2370,7 +2726,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 16,
@@ -2396,7 +2754,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 17,
@@ -2422,7 +2782,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 18,
@@ -2448,7 +2810,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 19,
@@ -2474,7 +2838,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 20,
@@ -2500,7 +2866,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 21,
@@ -2526,7 +2894,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 22,
@@ -2552,7 +2922,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 23,
@@ -2578,7 +2950,9 @@
           "body_bytes": 1280,
           "nobj": 1,
           "md5": "863d097a748d"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       }
     ],
     "world_placed_count": 18,
@@ -2920,7 +3294,9 @@
         "byte_end": 3064,
         "body_bytes": 1636,
         "nobj": 1,
-        "md5": "418d6c52f3d1"
+        "md5": "418d6c52f3d1",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 2,
@@ -2928,7 +3304,9 @@
         "byte_end": 4420,
         "body_bytes": 1356,
         "nobj": 1,
-        "md5": "2efcbe5af4d6"
+        "md5": "2efcbe5af4d6",
+        "class": "landmark",
+        "note": "md5 0ac44cdca45c shared with karisto.2 (generic landmark)"
       },
       {
         "pack_slot": 3,
@@ -2936,7 +3314,9 @@
         "byte_end": 5288,
         "body_bytes": 868,
         "nobj": 1,
-        "md5": "db4e4014e077"
+        "md5": "db4e4014e077",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 4,
@@ -2944,7 +3324,9 @@
         "byte_end": 6564,
         "body_bytes": 1276,
         "nobj": 1,
-        "md5": "0427e5a0f439"
+        "md5": "0427e5a0f439",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 5,
@@ -2952,7 +3334,9 @@
         "byte_end": 8044,
         "body_bytes": 1480,
         "nobj": 1,
-        "md5": "7256c79b9028"
+        "md5": "7256c79b9028",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 6,
@@ -2960,7 +3344,9 @@
         "byte_end": 13640,
         "body_bytes": 5596,
         "nobj": 1,
-        "md5": "f96a0308297a"
+        "md5": "f96a0308297a",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 7,
@@ -2968,7 +3354,9 @@
         "byte_end": 18932,
         "body_bytes": 5292,
         "nobj": 2,
-        "md5": "79ebd85028c8"
+        "md5": "79ebd85028c8",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 8,
@@ -2976,7 +3364,9 @@
         "byte_end": 24200,
         "body_bytes": 5268,
         "nobj": 1,
-        "md5": "9e31f80a4b85"
+        "md5": "9e31f80a4b85",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 9,
@@ -2984,7 +3374,9 @@
         "byte_end": 27544,
         "body_bytes": 3344,
         "nobj": 1,
-        "md5": "e18e6a2072e9"
+        "md5": "e18e6a2072e9",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 10,
@@ -2992,7 +3384,9 @@
         "byte_end": 27828,
         "body_bytes": 284,
         "nobj": 1,
-        "md5": "6d282256139d"
+        "md5": "6d282256139d",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 11,
@@ -3000,7 +3394,9 @@
         "byte_end": 28180,
         "body_bytes": 352,
         "nobj": 1,
-        "md5": "271bf3e642ae"
+        "md5": "271bf3e642ae",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 12,
@@ -3008,7 +3404,9 @@
         "byte_end": 29372,
         "body_bytes": 1192,
         "nobj": 2,
-        "md5": "acf8389974fb"
+        "md5": "acf8389974fb",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 13,
@@ -3016,7 +3414,9 @@
         "byte_end": 32160,
         "body_bytes": 2788,
         "nobj": 1,
-        "md5": "7e6e99d13253"
+        "md5": "7e6e99d13253",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 14,
@@ -3024,7 +3424,9 @@
         "byte_end": 32708,
         "body_bytes": 548,
         "nobj": 1,
-        "md5": "0ac44cdca45c"
+        "md5": "0ac44cdca45c",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 15,
@@ -3032,7 +3434,9 @@
         "byte_end": 34984,
         "body_bytes": 2276,
         "nobj": 1,
-        "md5": "8a89ed8bc8b2"
+        "md5": "8a89ed8bc8b2",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 16,
@@ -3040,7 +3444,9 @@
         "byte_end": 37824,
         "body_bytes": 2840,
         "nobj": 1,
-        "md5": "9db00d215767"
+        "md5": "9db00d215767",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 17,
@@ -3048,7 +3454,9 @@
         "byte_end": 39388,
         "body_bytes": 1564,
         "nobj": 1,
-        "md5": "9db1ad443308"
+        "md5": "9db1ad443308",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 18,
@@ -3056,7 +3464,9 @@
         "byte_end": 40200,
         "body_bytes": 812,
         "nobj": 1,
-        "md5": "b72e6c0c3d09"
+        "md5": "b72e6c0c3d09",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 19,
@@ -3064,7 +3474,9 @@
         "byte_end": 41656,
         "body_bytes": 1456,
         "nobj": 1,
-        "md5": "3f7cf4c14f58"
+        "md5": "3f7cf4c14f58",
+        "class": "landmark",
+        "note": "md5 3f7cf4c14f58 shared with karisto.33"
       },
       {
         "pack_slot": 20,
@@ -3072,7 +3484,9 @@
         "byte_end": 42056,
         "body_bytes": 400,
         "nobj": 1,
-        "md5": "8f41acae5e2c"
+        "md5": "8f41acae5e2c",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 21,
@@ -3080,7 +3494,9 @@
         "byte_end": 43840,
         "body_bytes": 1784,
         "nobj": 1,
-        "md5": "36434fcd7c26"
+        "md5": "36434fcd7c26",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 22,
@@ -3088,7 +3504,9 @@
         "byte_end": 44240,
         "body_bytes": 400,
         "nobj": 1,
-        "md5": "610bada00ec0"
+        "md5": "610bada00ec0",
+        "class": "landmark",
+        "note": "md5 610bada00ec0 shared with karisto.31"
       },
       {
         "pack_slot": 23,
@@ -3096,7 +3514,9 @@
         "byte_end": 44904,
         "body_bytes": 664,
         "nobj": 1,
-        "md5": "8326c22c88fd"
+        "md5": "8326c22c88fd",
+        "class": "landmark",
+        "note": "md5 8326c22c88fd shared with karisto.32"
       },
       {
         "pack_slot": 24,
@@ -3104,7 +3524,9 @@
         "byte_end": 46632,
         "body_bytes": 1728,
         "nobj": 1,
-        "md5": "66e20edbd2b7"
+        "md5": "66e20edbd2b7",
+        "class": "landmark",
+        "note": "md5 66e20edbd2b7 shared with karisto.34"
       },
       {
         "pack_slot": 25,
@@ -3112,7 +3534,9 @@
         "byte_end": 52716,
         "body_bytes": 6084,
         "nobj": 2,
-        "md5": "7055da0ef420"
+        "md5": "7055da0ef420",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 26,
@@ -3120,7 +3544,9 @@
         "byte_end": 59840,
         "body_bytes": 7124,
         "nobj": 3,
-        "md5": "9e7665a831ae"
+        "md5": "9e7665a831ae",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 27,
@@ -3128,7 +3554,9 @@
         "byte_end": 64240,
         "body_bytes": 4400,
         "nobj": 1,
-        "md5": "170359ce27e8"
+        "md5": "170359ce27e8",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 29,
@@ -3136,7 +3564,9 @@
         "byte_end": 70888,
         "body_bytes": 6280,
         "nobj": 10,
-        "md5": "06ea405a96b2"
+        "md5": "06ea405a96b2",
+        "class": "landmark",
+        "note": "md5 06ea405a96b2 shared with drake.29 (verified actor-placed in Drake)"
       },
       {
         "pack_slot": 34,
@@ -3144,7 +3574,9 @@
         "byte_end": 93004,
         "body_bytes": 6332,
         "nobj": 12,
-        "md5": "eb1d26a37e87"
+        "md5": "eb1d26a37e87",
+        "class": "landmark",
+        "note": "md5 eb1d26a37e87 shared with drake.34 / karisto.43 (12-obj cluster)"
       },
       {
         "pack_slot": 35,
@@ -3152,9 +3584,12 @@
         "byte_end": 93392,
         "body_bytes": 388,
         "nobj": 1,
-        "md5": "01e3017b64a1"
+        "md5": "01e3017b64a1",
+        "class": "landmark",
+        "note": "md5 01e3017b64a1 shared with drake.39 / karisto.55"
       }
-    ]
+    ],
+    "live_placements": []
   },
   "karisto": {
     "kingdom": "karisto",
@@ -3203,7 +3638,9 @@
           "body_bytes": 13168,
           "nobj": 1,
           "md5": "838cd06b60ee"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 2,
@@ -3229,7 +3666,9 @@
           "body_bytes": 400,
           "nobj": 1,
           "md5": "d51c3d9b1e0c"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 3,
@@ -3255,7 +3694,9 @@
           "body_bytes": 9392,
           "nobj": 11,
           "md5": "dee5974fa9ea"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 4,
@@ -3281,7 +3722,9 @@
           "body_bytes": 3932,
           "nobj": 1,
           "md5": "72b3280ffef2"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 5,
@@ -3307,7 +3750,9 @@
           "body_bytes": 10776,
           "nobj": 1,
           "md5": "6377d19e61fd"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 6,
@@ -3333,7 +3778,9 @@
           "body_bytes": 10776,
           "nobj": 1,
           "md5": "6377d19e61fd"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 7,
@@ -3359,7 +3806,9 @@
           "body_bytes": 10776,
           "nobj": 1,
           "md5": "6377d19e61fd"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 8,
@@ -3385,7 +3834,9 @@
           "body_bytes": 7736,
           "nobj": 1,
           "md5": "de9b4b510926"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 9,
@@ -3411,7 +3862,9 @@
           "body_bytes": 2532,
           "nobj": 1,
           "md5": "0b382c5e3734"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 10,
@@ -3437,7 +3890,9 @@
           "body_bytes": 1676,
           "nobj": 1,
           "md5": "83c8c9d875c9"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 11,
@@ -3463,7 +3918,9 @@
           "body_bytes": 1356,
           "nobj": 1,
           "md5": "cf707db84106"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 12,
@@ -3489,7 +3946,9 @@
           "body_bytes": 2988,
           "nobj": 1,
           "md5": "6bc497db7cd3"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 13,
@@ -3515,7 +3974,9 @@
           "body_bytes": 1608,
           "nobj": 1,
           "md5": "840e60f60b0b"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 14,
@@ -3541,7 +4002,9 @@
           "body_bytes": 1084,
           "nobj": 1,
           "md5": "c82014d1413b"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 15,
@@ -3567,7 +4030,9 @@
           "body_bytes": 1084,
           "nobj": 1,
           "md5": "c82014d1413b"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 16,
@@ -3593,7 +4058,9 @@
           "body_bytes": 2792,
           "nobj": 1,
           "md5": "8dc6af712c2e"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 17,
@@ -3619,7 +4086,9 @@
           "body_bytes": 9488,
           "nobj": 14,
           "md5": "c1fd0672e545"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 18,
@@ -3645,7 +4114,9 @@
           "body_bytes": 2692,
           "nobj": 1,
           "md5": "0a929029b87c"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 19,
@@ -3671,7 +4142,9 @@
           "body_bytes": 2060,
           "nobj": 1,
           "md5": "07d24734ea20"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 20,
@@ -3697,7 +4170,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 21,
@@ -3723,7 +4198,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 22,
@@ -3749,7 +4226,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 23,
@@ -3775,7 +4254,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 24,
@@ -3801,7 +4282,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 25,
@@ -3827,7 +4310,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 26,
@@ -3853,7 +4338,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 27,
@@ -3879,7 +4366,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 28,
@@ -3905,7 +4394,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 29,
@@ -3931,7 +4422,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 30,
@@ -3957,7 +4450,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 31,
@@ -3983,7 +4478,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 32,
@@ -4009,7 +4506,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 33,
@@ -4035,7 +4534,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 34,
@@ -4061,7 +4562,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 35,
@@ -4087,7 +4590,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 36,
@@ -4113,7 +4618,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 37,
@@ -4139,7 +4646,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 38,
@@ -4165,7 +4674,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 39,
@@ -4191,7 +4702,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       },
       {
         "id": 40,
@@ -4217,7 +4730,9 @@
           "body_bytes": 184,
           "nobj": 1,
           "md5": "07516192e278"
-        }
+        },
+        "class": "landmark",
+        "class_note": null
       }
     ],
     "world_placed_count": 23,
@@ -4739,7 +5254,9 @@
         "byte_end": 3440,
         "body_bytes": 3028,
         "nobj": 1,
-        "md5": "3b5fb2c69fe4"
+        "md5": "3b5fb2c69fe4",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 2,
@@ -4747,7 +5264,9 @@
         "byte_end": 3988,
         "body_bytes": 548,
         "nobj": 1,
-        "md5": "0ac44cdca45c"
+        "md5": "0ac44cdca45c",
+        "class": "landmark",
+        "note": "md5 0ac44cdca45c shared with sebucus.14"
       },
       {
         "pack_slot": 3,
@@ -4755,7 +5274,9 @@
         "byte_end": 8028,
         "body_bytes": 4040,
         "nobj": 1,
-        "md5": "d3ecd1ac0e18"
+        "md5": "d3ecd1ac0e18",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 4,
@@ -4763,7 +5284,9 @@
         "byte_end": 11880,
         "body_bytes": 3852,
         "nobj": 1,
-        "md5": "92dbd123e3a0"
+        "md5": "92dbd123e3a0",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 5,
@@ -4771,7 +5294,9 @@
         "byte_end": 17284,
         "body_bytes": 5404,
         "nobj": 5,
-        "md5": "65496d83b2ee"
+        "md5": "65496d83b2ee",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 6,
@@ -4779,7 +5304,9 @@
         "byte_end": 19972,
         "body_bytes": 2688,
         "nobj": 1,
-        "md5": "a39e87a06639"
+        "md5": "a39e87a06639",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 7,
@@ -4787,7 +5314,9 @@
         "byte_end": 23244,
         "body_bytes": 3272,
         "nobj": 4,
-        "md5": "42ba7d2effe1"
+        "md5": "42ba7d2effe1",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 8,
@@ -4795,7 +5324,9 @@
         "byte_end": 25700,
         "body_bytes": 2456,
         "nobj": 1,
-        "md5": "ff7ef6b194dc"
+        "md5": "ff7ef6b194dc",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 9,
@@ -4803,7 +5334,9 @@
         "byte_end": 26072,
         "body_bytes": 372,
         "nobj": 1,
-        "md5": "8288e833e338"
+        "md5": "8288e833e338",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 10,
@@ -4811,7 +5344,9 @@
         "byte_end": 30456,
         "body_bytes": 4384,
         "nobj": 4,
-        "md5": "a086b9c154af"
+        "md5": "a086b9c154af",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 11,
@@ -4819,7 +5354,9 @@
         "byte_end": 35192,
         "body_bytes": 4736,
         "nobj": 1,
-        "md5": "b55d68b8aac9"
+        "md5": "b55d68b8aac9",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 12,
@@ -4827,7 +5364,9 @@
         "byte_end": 40172,
         "body_bytes": 4980,
         "nobj": 1,
-        "md5": "e353053d167f"
+        "md5": "e353053d167f",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 13,
@@ -4835,7 +5374,9 @@
         "byte_end": 45208,
         "body_bytes": 5036,
         "nobj": 2,
-        "md5": "7a6b70ac9d37"
+        "md5": "7a6b70ac9d37",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 14,
@@ -4843,7 +5384,9 @@
         "byte_end": 51576,
         "body_bytes": 6368,
         "nobj": 1,
-        "md5": "ad3dabd44e4d"
+        "md5": "ad3dabd44e4d",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 15,
@@ -4851,7 +5394,9 @@
         "byte_end": 53852,
         "body_bytes": 2276,
         "nobj": 4,
-        "md5": "8a269ec182e2"
+        "md5": "8a269ec182e2",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 16,
@@ -4859,7 +5404,9 @@
         "byte_end": 55624,
         "body_bytes": 1772,
         "nobj": 1,
-        "md5": "12aed754c1f1"
+        "md5": "12aed754c1f1",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 17,
@@ -4867,7 +5414,9 @@
         "byte_end": 57400,
         "body_bytes": 1776,
         "nobj": 1,
-        "md5": "70ff39de3fd7"
+        "md5": "70ff39de3fd7",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 18,
@@ -4875,7 +5424,9 @@
         "byte_end": 63108,
         "body_bytes": 5708,
         "nobj": 1,
-        "md5": "602f211a2287"
+        "md5": "602f211a2287",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 19,
@@ -4883,7 +5434,9 @@
         "byte_end": 63580,
         "body_bytes": 472,
         "nobj": 1,
-        "md5": "046072473ac2"
+        "md5": "046072473ac2",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 20,
@@ -4891,7 +5444,9 @@
         "byte_end": 64056,
         "body_bytes": 476,
         "nobj": 1,
-        "md5": "1ca0ac3daca6"
+        "md5": "1ca0ac3daca6",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 21,
@@ -4899,7 +5454,9 @@
         "byte_end": 64508,
         "body_bytes": 452,
         "nobj": 1,
-        "md5": "2b885faa08a4"
+        "md5": "2b885faa08a4",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 22,
@@ -4907,7 +5464,9 @@
         "byte_end": 65480,
         "body_bytes": 972,
         "nobj": 1,
-        "md5": "ba3ab2038c13"
+        "md5": "ba3ab2038c13",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 23,
@@ -4915,7 +5474,9 @@
         "byte_end": 65932,
         "body_bytes": 452,
         "nobj": 1,
-        "md5": "4aaed054d59f"
+        "md5": "4aaed054d59f",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 24,
@@ -4923,7 +5484,9 @@
         "byte_end": 68716,
         "body_bytes": 2784,
         "nobj": 1,
-        "md5": "46db49ef78c8"
+        "md5": "46db49ef78c8",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 25,
@@ -4931,7 +5494,9 @@
         "byte_end": 69568,
         "body_bytes": 852,
         "nobj": 1,
-        "md5": "3f6d9142686d"
+        "md5": "3f6d9142686d",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 26,
@@ -4939,7 +5504,9 @@
         "byte_end": 70012,
         "body_bytes": 444,
         "nobj": 1,
-        "md5": "26fe2633e478"
+        "md5": "26fe2633e478",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 27,
@@ -4947,7 +5514,9 @@
         "byte_end": 70420,
         "body_bytes": 408,
         "nobj": 1,
-        "md5": "a2f75033bb49"
+        "md5": "a2f75033bb49",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 28,
@@ -4955,7 +5524,9 @@
         "byte_end": 71984,
         "body_bytes": 1564,
         "nobj": 1,
-        "md5": "22690d1ff0af"
+        "md5": "22690d1ff0af",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 29,
@@ -4963,7 +5534,9 @@
         "byte_end": 73768,
         "body_bytes": 1784,
         "nobj": 1,
-        "md5": "1c2411a54542"
+        "md5": "1c2411a54542",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 30,
@@ -4971,7 +5544,9 @@
         "byte_end": 74580,
         "body_bytes": 812,
         "nobj": 1,
-        "md5": "b72e6c0c3d09"
+        "md5": "b72e6c0c3d09",
+        "class": "landmark",
+        "note": "md5 b72e6c0c3d09 shared with sebucus.2"
       },
       {
         "pack_slot": 31,
@@ -4979,7 +5554,9 @@
         "byte_end": 74980,
         "body_bytes": 400,
         "nobj": 1,
-        "md5": "610bada00ec0"
+        "md5": "610bada00ec0",
+        "class": "landmark",
+        "note": "md5 610bada00ec0 shared with sebucus.22"
       },
       {
         "pack_slot": 32,
@@ -4987,7 +5564,9 @@
         "byte_end": 75644,
         "body_bytes": 664,
         "nobj": 1,
-        "md5": "8326c22c88fd"
+        "md5": "8326c22c88fd",
+        "class": "landmark",
+        "note": "md5 8326c22c88fd shared with sebucus.23"
       },
       {
         "pack_slot": 33,
@@ -4995,7 +5574,9 @@
         "byte_end": 77100,
         "body_bytes": 1456,
         "nobj": 1,
-        "md5": "3f7cf4c14f58"
+        "md5": "3f7cf4c14f58",
+        "class": "landmark",
+        "note": "md5 3f7cf4c14f58 shared with sebucus.19"
       },
       {
         "pack_slot": 34,
@@ -5003,7 +5584,9 @@
         "byte_end": 78828,
         "body_bytes": 1728,
         "nobj": 1,
-        "md5": "66e20edbd2b7"
+        "md5": "66e20edbd2b7",
+        "class": "landmark",
+        "note": "md5 66e20edbd2b7 shared with sebucus.24"
       },
       {
         "pack_slot": 36,
@@ -5011,7 +5594,9 @@
         "byte_end": 83300,
         "body_bytes": 1680,
         "nobj": 1,
-        "md5": "1ca86a5f8650"
+        "md5": "1ca86a5f8650",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 37,
@@ -5019,7 +5604,9 @@
         "byte_end": 86580,
         "body_bytes": 3280,
         "nobj": 3,
-        "md5": "cd70e9ae7887"
+        "md5": "cd70e9ae7887",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 38,
@@ -5027,7 +5614,9 @@
         "byte_end": 86948,
         "body_bytes": 368,
         "nobj": 1,
-        "md5": "d90d5e8236ca"
+        "md5": "d90d5e8236ca",
+        "class": "unknown",
+        "note": null
       },
       {
         "pack_slot": 43,
@@ -5035,7 +5624,9 @@
         "byte_end": 116492,
         "body_bytes": 6332,
         "nobj": 12,
-        "md5": "eb1d26a37e87"
+        "md5": "eb1d26a37e87",
+        "class": "landmark",
+        "note": "md5 eb1d26a37e87 shared with drake.34 / sebucus.34 (12-obj cluster)"
       },
       {
         "pack_slot": 55,
@@ -5043,8 +5634,11 @@
         "byte_end": 164556,
         "body_bytes": 388,
         "nobj": 1,
-        "md5": "01e3017b64a1"
+        "md5": "01e3017b64a1",
+        "class": "landmark",
+        "note": "md5 01e3017b64a1 shared with drake.39 / sebucus.35"
       }
-    ]
+    ],
+    "live_placements": []
   }
 }
