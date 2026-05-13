@@ -1,0 +1,227 @@
+{
+  "bundle": "map01",
+  "kingdom_pack_load_base": "0x801250ac",
+  "slots_in_pack": 40,
+  "actors": [
+    {
+      "node": "0x80081ae4",
+      "pos": [
+        6976,
+        -276,
+        9280
+      ],
+      "slots": [
+        39
+      ],
+      "tick": "0x80021df4",
+      "list_head": "0x8007c350",
+      "flags": 134498432,
+      "render_mode": 8323077,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x80082e4c",
+      "pos": [
+        16320,
+        -84,
+        16320
+      ],
+      "slots": [
+        34
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142739584,
+      "render_mode": 1,
+      "chain_size": 12,
+      "unresolved": 0
+    },
+    {
+      "node": "0x80082aec",
+      "pos": [
+        16320,
+        -84,
+        16320
+      ],
+      "slots": [
+        35
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 146933888,
+      "render_mode": 5,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x8008278c",
+      "pos": [
+        16320,
+        -84,
+        16320
+      ],
+      "slots": [
+        36
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142739584,
+      "render_mode": 1,
+      "chain_size": 14,
+      "unresolved": 0
+    },
+    {
+      "node": "0x800826b4",
+      "pos": [
+        16320,
+        -84,
+        16320
+      ],
+      "slots": [
+        37
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142739584,
+      "render_mode": 1,
+      "chain_size": 2,
+      "unresolved": 0
+    },
+    {
+      "node": "0x800825dc",
+      "pos": [
+        16320,
+        0,
+        16320
+      ],
+      "slots": [
+        0
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 673319040,
+      "render_mode": 5,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x80082504",
+      "pos": [
+        16320,
+        -84,
+        16320
+      ],
+      "slots": [
+        31
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142641280,
+      "render_mode": 5,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x8008242c",
+      "pos": [
+        12352,
+        -1,
+        3008
+      ],
+      "slots": [
+        29
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142641280,
+      "render_mode": 65541,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x80082354",
+      "pos": [
+        16320,
+        -84,
+        16320
+      ],
+      "slots": [
+        6
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142641281,
+      "render_mode": 65541,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x8008227c",
+      "pos": [
+        7296,
+        -192,
+        8000
+      ],
+      "slots": [
+        2
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 134252672,
+      "render_mode": 131073,
+      "chain_size": 2,
+      "unresolved": 0
+    },
+    {
+      "node": "0x800821a4",
+      "pos": [
+        6976,
+        -192,
+        8256
+      ],
+      "slots": [
+        14
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 134252672,
+      "render_mode": 131077,
+      "chain_size": 1,
+      "unresolved": 0
+    },
+    {
+      "node": "0x800820cc",
+      "pos": [
+        9152,
+        -96,
+        10432
+      ],
+      "slots": [
+        16
+      ],
+      "tick": "0x8003bc08",
+      "list_head": "0x8007c354",
+      "flags": 142641280,
+      "render_mode": 65541,
+      "chain_size": 1,
+      "unresolved": 0
+    }
+  ],
+  "slot_usage": {
+    "0": 1,
+    "2": 2,
+    "6": 1,
+    "14": 1,
+    "16": 1,
+    "29": 1,
+    "31": 1,
+    "34": 12,
+    "35": 1,
+    "36": 14,
+    "37": 2,
+    "39": 1
+  },
+  "unresolved_ptrs": 80,
+  "total_ptrs": 118
+}
