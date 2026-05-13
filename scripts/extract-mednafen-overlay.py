@@ -7,10 +7,16 @@ Mednafen save states are gzipped streams whose decompressed body has a
 GPU, main RAM, etc.). For PSX, main RAM (2 MB) sits at a section we locate
 by anchoring on a known string from SCUS_942.54.
 
-The default slice extracts the overlay code window 0x801C0000..0x801F0000
-(192 KB) where Legaia loads runtime overlays (script VM, per-mode handlers,
+The default slice extracts the overlay code window 0x801C0000..0x801F9000
+(228 KB) where Legaia loads runtime overlays (script VM, per-mode handlers,
 etc.). Use --start / --end (PSX virtual addresses) to slice a different
 window.
+
+The world-map overlay variants extend past 0x801F0000 - the overlay-mode
+prim-renderer jump table sits at 0x801F8968 and its eight overlay-resident
+emit leaves live in 0x801F7644..0x801F8690. The older default
+(0x801C0000..0x801F0000) missed them, so static `addprim` hunters reported
+only the horizon emitter as the world-map prim source.
 
 Usage:
     scripts/extract-mednafen-overlay.py SAVE.mc0 [--out OUT.bin]
@@ -44,7 +50,7 @@ PSX_RAM_KSEG0 = 0x80000000
 SCUS_LOAD_ADDR = 0x80010000
 PSX_EXE_HEADER = 0x800
 DEFAULT_OVERLAY_START = 0x801C0000
-DEFAULT_OVERLAY_END = 0x801F0000
+DEFAULT_OVERLAY_END = 0x801F9000
 
 
 def parse_addr(s: str) -> int:
@@ -59,7 +65,7 @@ def main() -> int:
     ap.add_argument("--start", type=parse_addr, default=DEFAULT_OVERLAY_START,
                     help="Slice start as PSX virtual address (default: 0x801C0000)")
     ap.add_argument("--end", type=parse_addr, default=DEFAULT_OVERLAY_END,
-                    help="Slice end (exclusive) as PSX virtual address (default: 0x801F0000)")
+                    help="Slice end (exclusive) as PSX virtual address (default: 0x801F9000)")
     ap.add_argument("--scus", default="extracted/SCUS_942.54",
                     help="Path to extracted SCUS_942.54 (default: extracted/SCUS_942.54)")
     args = ap.parse_args()

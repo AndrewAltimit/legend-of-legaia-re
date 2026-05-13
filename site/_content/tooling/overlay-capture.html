@@ -137,7 +137,7 @@
     <li><code>File → Show Lua Console</code>.</li>
     <li>Run <code>ghidra/scripts/dump_overlay.lua</code> from the Lua console - it writes <code>0x801C0000-0x801EFFFF</code> to <code>/tmp/legaia_overlay_&lt;TIMESTAMP&gt;.bin</code>.</li>
   </ol>
-  <p>&gt; The 192 KB window in <code>dump_overlay.lua</code> is too narrow for some battle-effect handlers (which live in <code>0x801F0000+</code>). For the full 256 KB use <code>extract-mednafen-overlay.py --start 0x801C0000 --end 0x80200000</code>.</p>
+  <p>&gt; The 192 KB window in <code>dump_overlay.lua</code> is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at <code>0x801F7644..0x801F8690</code> (consumed by <code>FUN_80043390</code>'s overlay-mode dispatch table at <code>0x801F8968</code>). Use <code>extract-mednafen-overlay.py</code> (default window is now <code>0x801C0000-0x801F9000</code>, 228 KB) &mdash; or pass <code>--end 0x80200000</code> for the full 256 KB.</p>
   <p>Then load the dump into Ghidra:</p>
 <pre><code>docker compose cp /tmp/legaia_overlay_&lt;TIMESTAMP&gt;.bin ghidra:/data/overlay.bin
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
@@ -161,7 +161,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
     --label level_up</code></pre>
   <p>What it does:</p>
   <ol class="bullets">
-    <li>Decompresses the gzipped mednafen save state and slices <code>0x801C0000-0x801F0000</code> to <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code>.</li>
+    <li>Decompresses the gzipped mednafen save state and slices <code>0x801C0000-0x801F9000</code> to <code>/tmp/legaia_overlay_&lt;label&gt;.bin</code> (default; covers the world-map overlay's full extent).</li>
     <li>Re-imports as <code>overlay.bin</code> in the Ghidra project (overwrites the previous import - keep separate labels per scene).</li>
     <li>Runs <code>find_overlay_asset_loads.py</code> to scan every <code>jal</code> to a known SCUS asset loader (<code>FUN_8003E8A8</code>, <code>FUN_8003EB98</code>, <code>FUN_8003E6BC</code>, <code>FUN_800520F0</code>, <code>FUN_8001F7C0</code>, <code>FUN_8001E890</code>, <code>FUN_8001ED60</code>) and const-tracks the <code>$a0</code> argument.</li>
     <li>Writes a CSV to <code>/tmp/overlay_loads_&lt;label&gt;.csv</code> and prints a summary.</li>

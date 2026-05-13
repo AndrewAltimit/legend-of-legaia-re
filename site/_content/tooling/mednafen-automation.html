@@ -81,6 +81,11 @@
   ~/.mednafen/mcs/"Legend of Legaia (USA)."*".&lt;TOWN_SLOT&gt;" \
   ~/.mednafen/mcs/"Legend of Legaia (USA)."*".&lt;BATTLE_SLOT&gt;"</code></pre>
   <p>LZS-decompresses every record in the named battle_data pack, slides a 32-byte halfword-aligned window past each record's embedded TMD, and searches the save state's VRAM for an exact byte match. Each hit is one <code>(record_idx, record_offset, fb_x, fb_y)</code> tuple - the corpus narrows the encoding of the per-record post-TMD descriptor at <code>u32[3..0x20]</code>. See <a href="../formats/battle-data-pack.html">battle-data-pack.html</a> for the analysis methodology and findings.</p>
+
+  <h3>Decode the per-prim renderer dispatch tables</h3>
+<pre><code>mednafen-state prim-dispatch-table &lt;save&gt;
+mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></pre>
+  <p>Decodes <code>FUN_80043390</code>'s SCUS-resident table at <code>0x8007657C</code> (4 alpha rows &times; 20 slots) and the overlay-resident variant at <code>0x801F8968</code> (1 alpha row only &mdash; the overlay path skips the alpha offset). Reports every populated slot, classifies it (SCUS / overlay / other), and surfaces the eight overlay-resident high-mode renderers at <code>0x801F7644..0x801F8690</code> &mdash; the per-prim emit leaves the world-map top-view routes its TMD prims through. The overlay table reports as empty when the world-map overlay isn't paged in; pass <code>--overlay-targets-only</code> to pipe the eight addresses into a Ghidra <code>dump_funcs.py</code> <code>TARGETS</code> list. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map &mdash; bulk continent terrain emit mechanism</a>.</p>
 </section>
 
 <section class="doc-section" id="workflow-patterns">

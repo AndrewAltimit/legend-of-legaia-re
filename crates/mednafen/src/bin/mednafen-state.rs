@@ -190,6 +190,21 @@ enum Cmd {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+    /// Decode the per-primitive renderer dispatch tables consumed by
+    /// `FUN_80043390`: the SCUS-resident table at `0x8007657C` and the
+    /// world-map-overlay variant at `0x801F8968`. Reports every populated
+    /// slot's target address, classifies it (SCUS / overlay / other), and
+    /// surfaces the eight overlay-resident high-mode prim renderers - the
+    /// per-prim emit leaves the world-map top-view routes its TMD prims
+    /// through. The overlay table reports as all-zero when the world-map
+    /// overlay isn't paged into the save state.
+    PrimDispatchTable {
+        save: PathBuf,
+        /// Print only the unique high-mode target addresses from the
+        /// overlay table (suitable for piping to per-function dump tools).
+        #[arg(long)]
+        overlay_targets_only: bool,
+    },
 }
 
 fn parse_addr(s: &str) -> Result<u32, String> {
@@ -286,6 +301,10 @@ fn main() -> Result<()> {
             scan_all_ram,
             json.as_deref(),
         ),
+        Cmd::PrimDispatchTable {
+            save,
+            overlay_targets_only,
+        } => cmd_prim_dispatch_table(&save, overlay_targets_only),
     }
 }
 
@@ -1122,6 +1141,124 @@ fn cmd_prim_trace(
         let json = serde_json::to_string_pretty(&report)?;
         std::fs::write(path, json).with_context(|| format!("writing {}", path.display()))?;
         println!("[json] wrote {}", path.display());
+    }
+    Ok(())
+}
+
+fn cmd_prim_dispatch_table(save: &Path, overlay_targets_only: bool) -> Result<()> {
+    use legaia_mednafen::prim_dispatch::{
+        HIGH_MODE_END, LOW_MODE_END, LOW_MODE_START, SLOT_BYTES, SlotKind, classify, decode_both,
+    };
+
+    let s = SaveState::from_path(save)?;
+    let ram = s.main_ram()?;
+    let (scus_table, overlay_table) = decode_both(ram)?;
+
+    if overlay_targets_only {
+        for tgt in overlay_table.high_mode_targets() {
+            println!("0x{tgt:08X}");
+        }
+        return Ok(());
+    }
+
+    println!("[info] {}", save.display());
+    println!(
+        "[info] SCUS table @ 0x{:08X}  ({} alpha rows × {} slots)",
+        scus_table.base,
+        scus_table.rows.len(),
+        scus_table.rows[0].slots.len()
+    );
+    let overlay_status = if overlay_table.is_empty() {
+        "empty - world-map overlay not paged in"
+    } else if overlay_table.looks_like_dispatch_table() {
+        "populated (world-map overlay loaded)"
+    } else {
+        "leftover overlay code, NOT a dispatch table"
+    };
+    println!(
+        "[info] overlay table @ 0x{:08X}  ({} alpha row(s); {})",
+        overlay_table.base,
+        overlay_table.rows.len(),
+        overlay_status,
+    );
+    println!();
+
+    let print_table = |label: &str, t: &legaia_mednafen::prim_dispatch::DispatchTable| {
+        println!("=== {label} (base 0x{:08X}) ===", t.base);
+        for (row_idx, row) in t.rows.iter().enumerate() {
+            println!("  alpha row #{row_idx}  (+0x{:02X})", row.alpha_offset);
+            for slot_idx in LOW_MODE_START..HIGH_MODE_END {
+                let val = row.slots[slot_idx];
+                let kind = classify(val);
+                let kind_s = match kind {
+                    SlotKind::Zero => "zero",
+                    SlotKind::Scus => "SCUS",
+                    SlotKind::Overlay => "OVERLAY",
+                    SlotKind::Other => "OTHER",
+                };
+                let band = if slot_idx < LOW_MODE_END {
+                    "low "
+                } else if slot_idx < HIGH_MODE_END {
+                    "high"
+                } else {
+                    "?"
+                };
+                let slot_addr = t.base + row.alpha_offset + slot_idx as u32 * SLOT_BYTES;
+                println!(
+                    "    [{band}] slot {slot_idx:>2}  @ 0x{slot_addr:08X}  ->  \
+                     0x{val:08X}  {kind_s}"
+                );
+            }
+        }
+    };
+
+    print_table("SCUS-resident dispatch table", &scus_table);
+    println!();
+    print_table("Overlay-resident dispatch table", &overlay_table);
+
+    if overlay_table.looks_like_dispatch_table() {
+        let scus_high = scus_table.high_mode_targets();
+        let overlay_high = overlay_table.high_mode_targets();
+        println!();
+        println!(
+            "=== high-mode targets (the per-prim emit leaves) ===\n\
+             SCUS    : {} unique\n\
+             overlay : {} unique\n\
+             swap-in : the overlay-resident high-mode renderers are the\n\
+                       bulk-continent emit leaves the world-map top-view\n\
+                       routes its TMD prims through.",
+            scus_high.len(),
+            overlay_high.len()
+        );
+        for tgt in &overlay_high {
+            let in_scus = scus_high.contains(tgt);
+            let mark = if in_scus {
+                "(shared with SCUS)"
+            } else {
+                "(overlay-only)"
+            };
+            println!("  0x{tgt:08X}  {mark}");
+        }
+        // Quick sanity check: any overlay-table slot whose pointer
+        // lands outside the documented overlay window indicates the
+        // world-map overlay actually extends past 0x801F9000 - flag it.
+        let stragglers: Vec<u32> = overlay_high
+            .iter()
+            .copied()
+            .filter(|p| classify(*p) == SlotKind::Other)
+            .collect();
+        if !stragglers.is_empty() {
+            println!(
+                "\nWARNING: {} overlay-table target(s) classified as OTHER \
+                 (outside known overlay window); re-extract with a wider \
+                 window:\n  {:?}",
+                stragglers.len(),
+                stragglers
+                    .iter()
+                    .map(|p| format!("0x{p:08X}"))
+                    .collect::<Vec<_>>(),
+            );
+        }
     }
     Ok(())
 }

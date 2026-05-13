@@ -29,8 +29,18 @@ mednafen-state trace  --addr ADDR SAVE...
 mednafen-state watch LABEL [--manifest PATH]
 mednafen-state vram-dump SAVE [--out PNG --out-bin BIN --regs]
 mednafen-state clut-trace --pack PROT_ENTRY SAVE... [--json PATH --include-tmd-body]
+mednafen-state prim-dispatch-table SAVE [--overlay-targets-only]
 mednafen-state scenarios [--manifest PATH]
 ```
+
+`prim-dispatch-table` decodes `FUN_80043390`'s SCUS-resident per-prim
+renderer table (`0x8007657C`, 4 alpha rows × 20 slots) and the overlay
+variant (`0x801F8968`, 1 row - the overlay path skips the alpha offset).
+The eight overlay-resident high-mode renderers at `0x801F7644..0x801F8690`
+ARE the per-prim emit leaves the world-map top-view routes its TMD
+prims through - the bulk-continent emit mechanism that static `addprim`
+hunters missed (cmd byte loaded from a descriptor table, leaf addresses
+above the old `0x801F0000` overlay-capture cap).
 
 See `docs/tooling/mednafen-automation.md` for the full workflow.
 

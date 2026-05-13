@@ -12,8 +12,17 @@
 > in the xy projection), others are flat or corner-clustered. Slot 4
 > is most likely a runtime library of small object-local meshes /
 > collision hulls / decorations / particle-emitter shapes, **not**
-> world-map outline data. Pinning the consumer in Ghidra is the
-> remaining unblock.
+> world-map outline data, and **not** the bulk continent terrain
+> source. Pinning the consumer in Ghidra is the remaining unblock.
+>
+> The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
+> tile the kingdom continent in the dev-menu top-view - is *not*
+> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack
+> the landmarks draw from, routed through `FUN_80043390`'s
+> overlay-mode dispatch table at `0x801F8968` whose eight high-mode
+> renderers replace the SCUS variants when the world-map overlay is
+> paged in. See
+> [`subsystems/world-map.md`](../subsystems/world-map.md#bulk-continent-terrain-emit-mechanism-pinned).
 
 Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size
 buffer that the runtime loads verbatim into RAM. Three carriers:

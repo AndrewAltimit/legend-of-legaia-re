@@ -197,6 +197,28 @@ the encoding of the per-record post-TMD descriptor at `u32[3..0x20]`.
 See [`docs/formats/battle-data-pack.md`](../formats/battle-data-pack.md)
 for the analysis methodology and findings.
 
+### Decode the per-prim renderer dispatch tables
+
+```bash
+mednafen-state prim-dispatch-table <save>
+mednafen-state prim-dispatch-table <save> --overlay-targets-only
+```
+
+Decodes `FUN_80043390`'s SCUS-resident table at `0x8007657C` (4 alpha
+rows × 20 slots) and the overlay-resident variant at `0x801F8968` (1
+alpha row only - the overlay path skips the alpha offset). Reports
+every populated slot, classifies it (SCUS / overlay / other), and
+surfaces the eight overlay-resident high-mode renderers at
+`0x801F7644..0x801F8690` - the per-prim emit leaves the world-map
+top-view routes its TMD prims through. The overlay table reports as
+empty when the world-map overlay isn't paged in; pass
+`--overlay-targets-only` to pipe the eight addresses into a Ghidra
+`dump_funcs.py` `TARGETS` list. See
+[`docs/subsystems/world-map.md`](../subsystems/world-map.md#bulk-continent-terrain-emit-mechanism-pinned)
+for the mechanism and
+[`crates/mednafen/src/prim_dispatch.rs`](../../crates/mednafen/src/prim_dispatch.rs)
+for the typed accessors.
+
 ## Workflow patterns
 
 ### "Find what writes to X" between two known points
