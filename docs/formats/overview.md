@@ -52,6 +52,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Per-scene primitive scratch buffer](navmesh.md) | Documented negative finding — `0x80108EA4..0x80109550` is per-scene rendering scratch, not navmesh data. Reproduction commands included. |
 | [Encounter record](encounter.md) | Layout `[3 reserved][count: u8][monster_ids: u8[count]]`. Pointer installed at `actor[+0x94]` by the script-VM, read by `FUN_801DA51C` to populate the formation cell at `0x8007BD0C`. |
 | [STR FMV table](str-fmv-table.md) | In-RAM compact table the cutscene / MDEC overlay uses to look up `MV*.STR` files. Six 24-byte entries at `0x801CAE40`: filename + libcd BCD MSF + size. |
+| [World-map overlay outlines](world-map-overlay.md) | Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte `0x05`). Outer pack of 15 sub-bodies each holding a `count_a × count_b` grid of 8-byte records. Dev-menu top-view wireframe data (continent coastlines + world boundary frame), **not** the textured ground tiles. |
 
 ## Runtime overlay carriers
 

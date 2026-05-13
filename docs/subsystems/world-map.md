@@ -201,14 +201,28 @@ The function emits ~670 prims per call (2 POLY_FT4 + 1 small per iter
 across 224 iters). Vertex coordinates project via the cos table, so
 the rendered output rotates with the camera angle - consistent with
 a horizon / sky / animated-background plane, not a fixed continent
-mesh. The bulk continent POLY_FT4 chain in the prim pool is produced
-by the standard TMD renderer `FUN_8002735C` reached via the case-5
-path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
-- one or more world-map actors carry the continent's TMD mesh chain at
-`actor[+0x44]`, which the render dispatcher walks once per frame.
+mesh.
 
-The function is called by direct `jal` from SCUS - it does not need
-function-pointer dispatch. Ghidra's reference manager misses the
+The case-5 path of the [per-actor render dispatcher `FUN_8001ADA4`](#per-actor-render-dispatcher---fun_8001ada4)
+draws every **landmark** TMD (castle, towers, bridges, gates) - each
+world-map actor's `actor[+0x44]` mesh chain points into Drake's
+40-TMD landmark pack at PROT entry 0085 slot 1, which the dispatcher
+walks once per frame through `FUN_8002735C` (the 60-GTE Legaia TMD
+renderer). That accounts for the landmark prims in the GPU pool.
+
+**Open**: the bulk continent ground terrain (~3500-4000 POLY_FT4 prims
+of green/rocky tiles in the prim pool) is **not** sourced from any
+TMD-magic-bearing disc payload that has been located so far. Slot 4
+of each kingdom bundle (type byte `0x05`, the [world-map overlay
+outlines](../formats/world-map-overlay.md)) was a logical candidate
+but it turned out to be the dev-menu top-view wireframe / coastline
+data, not the textured ground tiles. The remaining hypothesis is a
+procedural emitter sibling of `FUN_801D7EA0` reachable from the same
+per-frame tick - that sibling is the most likely site of the bulk
+terrain generation but has not been located yet.
+
+The horizon emitter is called by direct `jal` from SCUS - it does not
+need function-pointer dispatch. Ghidra's reference manager misses the
 cross-program call when sweeping the overlay alone; sweep SCUS to
 surface the caller.
 
@@ -277,8 +291,10 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
   - `FUN_80043390(mesh, color, tpage)` - textured TMD (default).
   - `FUN_80029888(...)` - environment-mapped TMD when
     `actor[+0x7a] != 0`.
-  - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer for the
-    bone-animated path (the **bulk-continent emit leaf**).
+  - `FUN_8002735C(...)` - 60-GTE Legaia TMD renderer (the
+    **landmark emit leaf** — each landmark TMD in Drake's 40-mesh
+    kingdom pack passes through here; the bulk continent ground
+    terrain is *not* drawn from here).
 - **cases 1, 2, 3, 6, 7, 8, B** - distance-LOD / particle / sprite-billboard
   branches calling per-effect helpers (`FUN_8001B73C`, `FUN_8001B964`,
   `FUN_800480D8`, `FUN_8002B944/94C/954`, `FUN_8001C204`).
@@ -286,10 +302,12 @@ runs a different switch - on `actor[+0x56]` (render mode `1..0xB`):
 Static `addprim` hunters do not surface `FUN_8002735C` as a POLY_FT4
 emitter because the cmd byte is read from the per-mode descriptor
 table at `DAT_8007326C`, not built with `lui/li` immediates. That is
-why the bulk continent emitter eluded static analysis for so long:
-the addprim scan flags every direct emitter (the horizon, the HUD
-sprite batch `FUN_8002C69C`, the screen-tint, etc.) but skips the
-TMD renderer where most world-map prims actually originate.
+why the landmark TMD emitter eluded static analysis: the addprim scan
+flags every direct emitter (the horizon, the HUD sprite batch
+`FUN_8002C69C`, the screen-tint, etc.) but skips the TMD renderer
+where the landmark prims actually originate. The bulk continent
+ground terrain that fills the rest of the prim pool is a separate
+emit path that has *not* been located yet.
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 
