@@ -265,11 +265,12 @@ export class LegaiaViewer {
     slot4_body_inventory_json(prot_base: number): string;
     /**
      * Bounding box of every non-zero record in the kingdom's slot-4
-     * wireframe, as `[xmin, zmin, xmax, zmax]` (i32). Useful for
-     * re-framing the top-down camera when the overlay is toggled on.
-     * Empty vec when slot 4 can't be decoded.
+     * wireframe, as `[amin, bmin, amax, bmax]` (i32) for the requested
+     * axis pair (`"xz"` / `"xy"` / `"zy"`, etc). Useful for re-framing
+     * the top-down camera when the overlay is toggled on. Empty vec
+     * when slot 4 can't be decoded.
      */
-    slot4_wireframe_bounds(prot_base: number): Int32Array;
+    slot4_wireframe_bounds(prot_base: number, axes: string): Int32Array;
     /**
      * Decode the slot-4 world-map overlay wireframe for the kingdom at
      * `prot_base` and return a packed line-segment list for top-down
@@ -306,7 +307,7 @@ export class LegaiaViewer {
      * Returns an empty buffer when slot 4 is missing or fails to parse.
      * The JS-side renderer assigns per-body colors based on `body_index`.
      */
-    slot4_wireframe_lines(prot_base: number, style: string): Uint8Array;
+    slot4_wireframe_lines(prot_base: number, style: string, axes: string): Uint8Array;
     /**
      * Decode the slot-4 world-map overlay as a topology-free point cloud.
      * Useful when the on-disc draw-mode dispatch isn't fully reverse-
@@ -326,7 +327,7 @@ export class LegaiaViewer {
      *     i16 z
      * ```
      */
-    slot4_wireframe_points(prot_base: number): Uint8Array;
+    slot4_wireframe_points(prot_base: number, axes: string): Uint8Array;
     /**
      * JSON status string: PROT index, class name, dims, current slot.
      */
@@ -433,9 +434,9 @@ export interface InitOutput {
     readonly legaiaviewer_set_scene_kingdom: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_set_slot: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_slot4_body_inventory_json: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_slot4_wireframe_bounds: (a: number, b: number) => [number, number];
-    readonly legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly legaiaviewer_slot4_wireframe_points: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_slot4_wireframe_bounds: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly legaiaviewer_slot4_wireframe_points: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_status: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;

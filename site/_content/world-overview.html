@@ -29,7 +29,7 @@
       <label for="wo-disc-file"><strong>Disc image (.bin Mode2/2352) or PROT.DAT:</strong></label>
       <input type="file" id="wo-disc-file" accept=".bin,.dat"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
-      <span id="wo-wireframe-wrap" hidden style="margin-left:1rem" title="Overlay the kingdom's slot-4 dev-menu wireframe (coastline + world boundary frame). The on-disc draw-mode dispatch (per-body kind/flag_a) isn't fully reverse-engineered yet, so a style selector exposes every interpretation the parser supports; 'points' is the most honest visualization since it doesn't depend on a topology guess.">
+      <span id="wo-wireframe-wrap" hidden style="margin-left:1rem" title="Overlay the kingdom's slot-4 dev-menu wireframe. The on-disc draw-mode dispatch isn't fully reverse-engineered yet; 'points' is the most honest visualization. Slot 4 looks heterogeneous — some bodies have ±15K Y extents (3D mesh data, recognizable only in xy/zy projection) while others are flat (2D contours in xz). Try axis pair xy to surface side-view structure.">
         <label><input type="checkbox" id="wo-wireframe-toggle"> show slot-4 wireframe</label>
         <select id="wo-wireframe-style" style="margin-left:0.4rem; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.15rem 0.3rem; font-family: var(--font-mono); font-size: 0.75rem;">
           <option value="points" selected>points</option>
@@ -37,6 +37,11 @@
           <option value="grid">grid</option>
           <option value="row">row polylines</option>
           <option value="col">col polylines</option>
+        </select>
+        <select id="wo-wireframe-axes" style="margin-left:0.3rem; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.15rem 0.3rem; font-family: var(--font-mono); font-size: 0.75rem;" title="2D projection plane: xz = top-down (default), xy = front side view, zy = right side view. Several Drake bodies have large Y extents and look 3D-shaped only in xy/zy.">
+          <option value="xz" selected>xz (top-down)</option>
+          <option value="xy">xy (front)</option>
+          <option value="zy">zy (side)</option>
         </select>
       </span>
     </div>
@@ -246,7 +251,7 @@
 <!-- The ?v= cache-busts after the wireframe Lines pipeline was added; bump
      this any time webgl-tmd.js gains a method JS code below this point
      relies on, so users don't hit a stale cached copy. -->
-<script src="js/webgl-tmd.js?v=20260514a"></script>
+<script src="js/webgl-tmd.js?v=20260514b"></script>
 <script>
 (async function () {
   /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
@@ -282,6 +287,7 @@
   const $wireWrap    = document.getElementById('wo-wireframe-wrap');
   const $wireToggle  = document.getElementById('wo-wireframe-toggle');
   const $wireStyle   = document.getElementById('wo-wireframe-style');
+  const $wireAxes    = document.getElementById('wo-wireframe-axes');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
 
@@ -400,18 +406,29 @@
    * decode from the live disc bytes. Revealed in `loadDisc()` below. */
   $wireWrap.hidden = true;
 
-  /* Active slot-4 render style. 'points' is the most honest default
-   * because the per-body draw-mode dispatch (kind / flag_a) isn't
-   * fully reverse-engineered, and any line interpretation imposes a
-   * topology that the live runtime may not use. The other modes are
-   * exposed for exploratory comparison; see
-   * docs/formats/world-map-overlay.md `Topology hypothesis`. */
+  /* Active slot-4 render style + axis pair. 'points' on 'xz' (top-down)
+   * are the defaults; the other modes / axes are exposed for
+   * exploratory comparison because slot 4 looks heterogeneous (some
+   * bodies are 2D contours, others have 3D mesh extents that xz
+   * flattens away). See docs/formats/world-map-overlay.md. */
   let wireframeStyle = $wireStyle.value || 'points';
+  let wireframeAxes  = $wireAxes.value || 'xz';
+
+  function invalidateWireframeCache() {
+    const cache = wireframeCache[currentKingdom];
+    if (cache) {
+      cache.lines = null;
+      cache.points = null;
+      cache.uploaded = false;
+      cache.style = null;
+      cache.bounds = null;  /* bounds depend on the axis pair now */
+    }
+  }
 
   $wireToggle.addEventListener('change', () => {
     wireframeEnabled = $wireToggle.checked;
     if (wireframeEnabled && viewer && viewMode === 'world') {
-      maybeLoadWireframe(currentKingdom, wireframeStyle);
+      maybeLoadWireframe(currentKingdom, wireframeStyle, wireframeAxes);
     }
     if (viewMode === 'world') {
       frameWorldCam(currentDrawPlacements, currentWorldExtent);
@@ -419,18 +436,19 @@
   });
   $wireStyle.addEventListener('change', () => {
     wireframeStyle = $wireStyle.value;
-    /* Invalidate the cached decoded buffer for the active kingdom so
-     * the next maybeLoadWireframe() call re-decodes in the new style.
-     * Keep the bounds cache - bounds are style-independent. */
-    const cache = wireframeCache[currentKingdom];
-    if (cache) {
-      cache.lines = null;
-      cache.points = null;
-      cache.uploaded = false;
-      cache.style = null;
-    }
+    invalidateWireframeCache();
     if (wireframeEnabled && viewer && viewMode === 'world') {
-      maybeLoadWireframe(currentKingdom, wireframeStyle);
+      maybeLoadWireframe(currentKingdom, wireframeStyle, wireframeAxes);
+    }
+  });
+  $wireAxes.addEventListener('change', () => {
+    wireframeAxes = $wireAxes.value;
+    invalidateWireframeCache();
+    if (wireframeEnabled && viewer && viewMode === 'world') {
+      maybeLoadWireframe(currentKingdom, wireframeStyle, wireframeAxes);
+      if (viewMode === 'world') {
+        frameWorldCam(currentDrawPlacements, currentWorldExtent);
+      }
     }
   });
 
@@ -643,14 +661,14 @@
     /* If the user already toggled the wireframe on, decode it now so the
      * first frame paints the overlay. Otherwise defer until the toggle
      * fires. */
-    if (wireframeEnabled) maybeLoadWireframe(currentKingdom, wireframeStyle);
+    if (wireframeEnabled) maybeLoadWireframe(currentKingdom, wireframeStyle, wireframeAxes);
     let last = performance.now();
     const tick = (now) => {
       last = now;
       glRenderer.renderAssembled(drawPlacements, ext, worldCam);
       if (wireframeEnabled && typeof glRenderer.renderWireframe === 'function') {
         const cache = wireframeCache[currentKingdom];
-        if (cache && cache.style === wireframeStyle) {
+        if (cache && cache.style === wireframeStyle && cache.axes === wireframeAxes) {
           if (!cache.uploaded) {
             if (wireframeStyle === 'points' && cache.points
                 && typeof glRenderer.uploadWireframePoints === 'function') {
@@ -718,46 +736,46 @@
    * JS-side renderer expands them into colored vertex streams. Cache is
    * style-tagged so switching styles re-decodes; bounds are
    * style-independent and survive style switches. */
-  function maybeLoadWireframe(k, style) {
+  function maybeLoadWireframe(k, style, axes) {
     if (!viewer) return;
     const cache = wireframeCache[k];
-    if (cache && cache.style === style && (cache.lines || cache.points)) return;
+    if (cache && cache.style === style && cache.axes === axes && (cache.lines || cache.points)) return;
     const base = KINGDOM_PROT[k].start;
     try {
       let inventory = [];
       try {
         inventory = JSON.parse(viewer.slot4_body_inventory_json(base));
       } catch (e) { inventory = []; }
-      let bounds = cache?.bounds || null;
-      if (!bounds) {
-        try {
-          const b = viewer.slot4_wireframe_bounds(base);
-          if (b && b.length >= 4) {
-            bounds = { xmin: b[0], zmin: b[1], xmax: b[2], zmax: b[3] };
-          }
-        } catch (e) { /* tolerate missing accessor */ }
-      }
+      /* Bounds are now per-axis-pair (the underlying record range
+       * differs between xz / xy / zy projections). */
+      let bounds = null;
+      try {
+        const b = viewer.slot4_wireframe_bounds(base, axes);
+        if (b && b.length >= 4) {
+          bounds = { xmin: b[0], zmin: b[1], xmax: b[2], zmax: b[3] };
+        }
+      } catch (e) { /* tolerate missing accessor */ }
       let lines = null, points = null, count = 0;
       if (style === 'points') {
-        const bytes = viewer.slot4_wireframe_points(base);
+        const bytes = viewer.slot4_wireframe_points(base, axes);
         if (bytes && bytes.length >= 4) {
           points = new Uint8Array(bytes);
           count = new DataView(points.buffer, points.byteOffset, 4).getUint32(0, true);
         }
       } else {
-        const bytes = viewer.slot4_wireframe_lines(base, style);
+        const bytes = viewer.slot4_wireframe_lines(base, style, axes);
         if (bytes && bytes.length >= 4) {
           lines = new Uint8Array(bytes);
           count = new DataView(lines.buffer, lines.byteOffset, 4).getUint32(0, true);
         }
       }
-      wireframeCache[k] = { lines, points, style, count, inventory, bounds, uploaded: false };
+      wireframeCache[k] = { lines, points, style, axes, count, inventory, bounds, uploaded: false };
       const noun = style === 'points' ? 'points' : 'line segments';
       $meshInfo.textContent =
-        `slot-4 wireframe (${style}): ${count} ${noun} across ${inventory.length} bodies`;
+        `slot-4 wireframe (${style} on ${axes}): ${count} ${noun} across ${inventory.length} bodies`;
     } catch (e) {
       console.warn('slot4 wireframe decode:', e);
-      wireframeCache[k] = { lines: null, points: null, style, count: 0 };
+      wireframeCache[k] = { lines: null, points: null, style, axes, count: 0 };
     }
   }
 

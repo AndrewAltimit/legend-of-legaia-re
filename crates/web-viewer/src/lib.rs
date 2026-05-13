@@ -21,6 +21,30 @@ fn console_log(s: &str) {
     web_sys::console::log_1(&JsValue::from_str(s));
 }
 
+/// Parse a 2-char axis pair string like `"xz"` / `"xy"` / `"zy"` into the
+/// (horizontal, vertical) [`Axis`] pair the slot-4 emitter expects.
+/// Unknown / malformed strings fall back to `(X, Z)` (historical top-down).
+fn parse_axes(
+    s: &str,
+) -> (
+    legaia_asset::world_map_overlay::Axis,
+    legaia_asset::world_map_overlay::Axis,
+) {
+    use legaia_asset::world_map_overlay::Axis;
+    let pick = |c: char| -> Axis {
+        match c {
+            'x' | 'X' => Axis::X,
+            'y' | 'Y' => Axis::Y,
+            'z' | 'Z' => Axis::Z,
+            _ => Axis::X,
+        }
+    };
+    let mut it = s.chars();
+    let a = it.next().map(pick).unwrap_or(Axis::X);
+    let b = it.next().map(pick).unwrap_or(Axis::Z);
+    (a, b)
+}
+
 /// One entry's metadata + its first viewable TIM hit (if any).
 #[derive(Clone)]
 struct ViewerEntry {
@@ -631,7 +655,7 @@ impl LegaiaViewer {
     ///
     /// Returns an empty buffer when slot 4 is missing or fails to parse.
     /// The JS-side renderer assigns per-body colors based on `body_index`.
-    pub fn slot4_wireframe_lines(&self, prot_base: u32, style: &str) -> Vec<u8> {
+    pub fn slot4_wireframe_lines(&self, prot_base: u32, style: &str, axes: &str) -> Vec<u8> {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
@@ -646,6 +670,7 @@ impl LegaiaViewer {
         };
         let opts = legaia_asset::world_map_overlay::WireframeOptions {
             mode,
+            axes: parse_axes(axes),
             ..Default::default()
         };
         let lines = legaia_asset::world_map_overlay::top_down_lines(&slot, &opts);
@@ -682,14 +707,17 @@ impl LegaiaViewer {
     ///     i16 x
     ///     i16 z
     /// ```
-    pub fn slot4_wireframe_points(&self, prot_base: u32) -> Vec<u8> {
+    pub fn slot4_wireframe_points(&self, prot_base: u32, axes: &str) -> Vec<u8> {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
         let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
-        let opts = legaia_asset::world_map_overlay::WireframeOptions::default();
+        let opts = legaia_asset::world_map_overlay::WireframeOptions {
+            axes: parse_axes(axes),
+            ..Default::default()
+        };
         let pts = legaia_asset::world_map_overlay::record_points(&slot, &opts);
 
         let mut out = Vec::with_capacity(4 + pts.len() * 8);
@@ -706,19 +734,21 @@ impl LegaiaViewer {
     }
 
     /// Bounding box of every non-zero record in the kingdom's slot-4
-    /// wireframe, as `[xmin, zmin, xmax, zmax]` (i32). Useful for
-    /// re-framing the top-down camera when the overlay is toggled on.
-    /// Empty vec when slot 4 can't be decoded.
-    pub fn slot4_wireframe_bounds(&self, prot_base: u32) -> Vec<i32> {
+    /// wireframe, as `[amin, bmin, amax, bmax]` (i32) for the requested
+    /// axis pair (`"xz"` / `"xy"` / `"zy"`, etc). Useful for re-framing
+    /// the top-down camera when the overlay is toggled on. Empty vec
+    /// when slot 4 can't be decoded.
+    pub fn slot4_wireframe_bounds(&self, prot_base: u32, axes: &str) -> Vec<i32> {
         let Some(decoded) = self.decode_kingdom_slot4(prot_base) else {
             return Vec::new();
         };
         let Ok(slot) = legaia_asset::world_map_overlay::parse(&decoded) else {
             return Vec::new();
         };
-        match legaia_asset::world_map_overlay::xz_bounds(&slot) {
-            Some((xmin, zmin, xmax, zmax)) => {
-                vec![xmin as i32, zmin as i32, xmax as i32, zmax as i32]
+        let (ah, av) = parse_axes(axes);
+        match legaia_asset::world_map_overlay::axis_bounds(&slot, ah, av) {
+            Some((amin, bmin, amax, bmax)) => {
+                vec![amin as i32, bmin as i32, amax as i32, bmax as i32]
             }
             None => Vec::new(),
         }
@@ -739,15 +769,31 @@ impl LegaiaViewer {
             if i > 0 {
                 s.push(',');
             }
+            let (xlo, xhi) = legaia_asset::world_map_overlay::body_axis_range(
+                b,
+                legaia_asset::world_map_overlay::Axis::X,
+            )
+            .unwrap_or((0, 0));
+            let (ylo, yhi) = legaia_asset::world_map_overlay::body_axis_range(
+                b,
+                legaia_asset::world_map_overlay::Axis::Y,
+            )
+            .unwrap_or((0, 0));
+            let (zlo, zhi) = legaia_asset::world_map_overlay::body_axis_range(
+                b,
+                legaia_asset::world_map_overlay::Axis::Z,
+            )
+            .unwrap_or((0, 0));
             s.push_str(&format!(
-                r#"{{"index":{},"count_a":{},"count_b":{},"flag_a":{},"flag_b":{},"kind":{},"records":{}}}"#,
+                r#"{{"index":{},"count_a":{},"count_b":{},"flag_a":{},"flag_b":{},"kind":{},"records":{},"x":[{},{}],"y":[{},{}],"z":[{},{}]}}"#,
                 b.index,
                 b.count_a,
                 b.count_b,
                 b.flag_a,
                 b.flag_b,
                 b.kind,
-                b.records.len()
+                b.records.len(),
+                xlo, xhi, ylo, yhi, zlo, zhi,
             ));
         }
         s.push(']');

@@ -135,6 +135,25 @@
   <p>Slot 4 is loaded by the standard kingdom-bundle loader. The reader that interprets these bytes is presumably the world-map controller <code>FUN_801E76D4</code> (top-view branch) and/or the developer menu renderer <code>FUN_801EAD98</code>, both documented under <a href="../subsystems/world-map.html">world map subsystem</a>. The exact reading call has not been pinned down in Ghidra; the data does not appear as a direct LUI+ADDIU reference to <code>0x8011A624</code> in any captured world-map overlay, suggesting the consumer accesses the buffer via a runtime pointer rather than a hardcoded address.</p>
 </section>
 
+<section class="doc-section" id="axis-projection">
+  <h2>Per-body Y-extent and the axis-projection question</h2>
+  <p>Per-axis ranges across Drake&apos;s 15 bodies (skipping zero records):</p>
+  <table>
+    <thead><tr><th>Body</th><th>X span</th><th>Y span</th><th>Z span</th><th>kind</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>16626</td><td>10767</td><td>38641</td><td>1</td></tr>
+      <tr><td>9</td><td>10725</td><td><strong>25856</strong></td><td>21248</td><td>2</td></tr>
+      <tr><td>10</td><td>13056</td><td>18432</td><td>31503</td><td>2</td></tr>
+      <tr><td>11</td><td>11492</td><td><strong>27648</strong></td><td>24064</td><td>2</td></tr>
+      <tr><td>12</td><td>16118</td><td>4096</td><td>31473</td><td>2</td></tr>
+      <tr><td>13</td><td>65485</td><td>14336</td><td>64512</td><td>4</td></tr>
+    </tbody>
+  </table>
+  <p>Bodies 9 / 10 / 11 have Y spans of 18-27K - comparable to the X/Z scale, not the small elevation deltas a 2D map contour would carry. Body 12&apos;s Y span is only 4K (consistent with a near-flat coastline at near-zero elevation). When all bodies are projected onto <code>xz</code> (top-down) some of them produce coherent silhouettes (12) while others look like noise (9 / 11) - because for those bodies the flatten-to-xz step is collapsing genuine 3D structure into 2D mush.</p>
+  <p>Rendering the same bodies on <code>xy</code> (front side view) surfaces clean vertical pillar-like silhouettes for bodies 9 and 11 - <strong>3D mesh structure that&apos;s invisible in the top-down view</strong>. This suggests slot 4 is heterogeneous: at least some bodies are object-local 3D meshes (collision hulls? instantiable decoration meshes?) rather than 2D map contours. The <a href="../../world-overview.html#viewer">world-overview viewer</a> exposes the projection plane as a second selector (<code>xz</code> / <code>xy</code> / <code>zy</code>) so the same data can be inspected from each angle without committing to one interpretation.</p>
+  <p>It&apos;s also possible the engine doesn&apos;t treat the middle field as world Y-elevation at all - some bodies make more sense as map data in the <code>xy</code> projection (cleaner overall continent shape) than in <code>xz</code>. The final word will come from Ghidra capture of the consumer.</p>
+</section>
+
 <section class="doc-section" id="topology">
   <h2>Topology hypothesis</h2>
   <p>Inspecting Drake body 12 group 0 records by hand reveals records pair up at fixed X-bands &mdash; <code>(r0, r1)</code>, <code>(r2, r3)</code>, ... are 5 <code>(lo, hi)</code> X-pairs per group, with consecutive groups acting as differential Z-updates over a shared topology. The body is therefore a <code>count_a &times; count_b</code> grid of vertices forming a heightfield strip, <strong>not</strong> a chained polyline. Three rendering candidates are wired into the CLI and the web viewer:</p>

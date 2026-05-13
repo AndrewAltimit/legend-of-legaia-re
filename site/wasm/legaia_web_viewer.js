@@ -690,17 +690,21 @@ export class LegaiaViewer {
     }
     /**
      * Bounding box of every non-zero record in the kingdom's slot-4
-     * wireframe, as `[xmin, zmin, xmax, zmax]` (i32). Useful for
-     * re-framing the top-down camera when the overlay is toggled on.
-     * Empty vec when slot 4 can't be decoded.
+     * wireframe, as `[amin, bmin, amax, bmax]` (i32) for the requested
+     * axis pair (`"xz"` / `"xy"` / `"zy"`, etc). Useful for re-framing
+     * the top-down camera when the overlay is toggled on. Empty vec
+     * when slot 4 can't be decoded.
      * @param {number} prot_base
+     * @param {string} axes
      * @returns {Int32Array}
      */
-    slot4_wireframe_bounds(prot_base) {
-        const ret = wasm.legaiaviewer_slot4_wireframe_bounds(this.__wbg_ptr, prot_base);
-        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+    slot4_wireframe_bounds(prot_base, axes) {
+        const ptr0 = passStringToWasm0(axes, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_slot4_wireframe_bounds(this.__wbg_ptr, prot_base, ptr0, len0);
+        var v2 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v1;
+        return v2;
     }
     /**
      * Decode the slot-4 world-map overlay wireframe for the kingdom at
@@ -739,15 +743,18 @@ export class LegaiaViewer {
      * The JS-side renderer assigns per-body colors based on `body_index`.
      * @param {number} prot_base
      * @param {string} style
+     * @param {string} axes
      * @returns {Uint8Array}
      */
-    slot4_wireframe_lines(prot_base, style) {
+    slot4_wireframe_lines(prot_base, style, axes) {
         const ptr0 = passStringToWasm0(style, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.legaiaviewer_slot4_wireframe_lines(this.__wbg_ptr, prot_base, ptr0, len0);
-        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        const ptr1 = passStringToWasm0(axes, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_slot4_wireframe_lines(this.__wbg_ptr, prot_base, ptr0, len0, ptr1, len1);
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v2;
+        return v3;
     }
     /**
      * Decode the slot-4 world-map overlay as a topology-free point cloud.
@@ -768,13 +775,16 @@ export class LegaiaViewer {
      *     i16 z
      * ```
      * @param {number} prot_base
+     * @param {string} axes
      * @returns {Uint8Array}
      */
-    slot4_wireframe_points(prot_base) {
-        const ret = wasm.legaiaviewer_slot4_wireframe_points(this.__wbg_ptr, prot_base);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    slot4_wireframe_points(prot_base, axes) {
+        const ptr0 = passStringToWasm0(axes, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaviewer_slot4_wireframe_points(this.__wbg_ptr, prot_base, ptr0, len0);
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v1;
+        return v2;
     }
     /**
      * JSON status string: PROT index, class name, dims, current slot.
@@ -1013,7 +1023,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 429, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 430, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

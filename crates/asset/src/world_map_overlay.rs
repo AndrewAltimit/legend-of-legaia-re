@@ -208,6 +208,33 @@ pub struct WireframeLine {
     pub z1: i16,
 }
 
+/// Which axis of a [`Slot4Record`] to project onto the 2D output plane.
+///
+/// Slot 4 stores each record as `(x, y, z, attr)`. The dev-menu top-view
+/// renderer was originally assumed to consume `(x, z)` (top-down), but
+/// several bodies (Drake body 9 / 11 with `count_a x count_b` y-ranges
+/// comparable to the x/z scale) show coherent silhouettes only in the
+/// `(x, y)` or `(y, z)` projections, suggesting slot 4 holds heterogeneous
+/// per-body object-local meshes rather than a single top-down map. Letting
+/// the caller pick the axis pair unblocks visual exploration without
+/// committing to a topology guess.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+impl Axis {
+    pub fn pick(self, r: &Slot4Record) -> i16 {
+        match self {
+            Axis::X => r.x,
+            Axis::Y => r.y,
+            Axis::Z => r.z,
+        }
+    }
+}
+
 /// How to interpret the per-body record layout when emitting polylines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PolylineMode {
@@ -252,6 +279,9 @@ pub struct WireframeOptions {
     pub close_polylines: bool,
     /// Polyline layout interpretation. See [`PolylineMode`].
     pub mode: PolylineMode,
+    /// 2D-projection axis pair: `(horizontal, vertical)` axis of the
+    /// output plane. Default is `(X, Z)` (top-down view). See [`Axis`].
+    pub axes: (Axis, Axis),
 }
 
 impl Default for WireframeOptions {
@@ -273,6 +303,8 @@ impl Default for WireframeOptions {
             // not a 10-vertex polyline). Use [`record_points`] for a
             // topology-free dump.
             mode: PolylineMode::RowMajor,
+            // (X, Z) preserves the historical top-down behaviour.
+            axes: (Axis::X, Axis::Z),
         }
     }
 }
@@ -317,6 +349,7 @@ pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Wiref
                 if ca < 2 {
                     continue;
                 }
+                let (ah, av) = opts.axes;
                 for (g, group) in body.groups().enumerate() {
                     for pair in group.chunks_exact(2) {
                         let a = pair[0];
@@ -331,16 +364,18 @@ pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Wiref
                         {
                             continue;
                         }
-                        if a.x == b.x && a.z == b.z {
+                        let (a0, b0) = (ah.pick(&a), av.pick(&a));
+                        let (a1, b1) = (ah.pick(&b), av.pick(&b));
+                        if a0 == a1 && b0 == b1 {
                             continue;
                         }
                         out.push(WireframeLine {
                             body_index: body.index as u8,
                             group_index: g as u16,
-                            x0: a.x,
-                            z0: a.z,
-                            x1: b.x,
-                            z1: b.z,
+                            x0: a0,
+                            z0: b0,
+                            x1: a1,
+                            z1: b1,
                         });
                     }
                 }
@@ -349,22 +384,25 @@ pub fn top_down_lines(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<Wiref
                 if ca < 2 && cb < 2 {
                     continue;
                 }
+                let (ah, av) = opts.axes;
                 let is_zero = |r: &Slot4Record| r.x == 0 && r.y == 0 && r.z == 0;
                 let push =
                     |out: &mut Vec<WireframeLine>, g: usize, a: Slot4Record, b: Slot4Record| {
                         if opts.strip_zero_records && (is_zero(&a) || is_zero(&b)) {
                             return;
                         }
-                        if a.x == b.x && a.z == b.z {
+                        let (a0, b0) = (ah.pick(&a), av.pick(&a));
+                        let (a1, b1) = (ah.pick(&b), av.pick(&b));
+                        if a0 == a1 && b0 == b1 {
                             return;
                         }
                         out.push(WireframeLine {
                             body_index: body.index as u8,
                             group_index: g as u16,
-                            x0: a.x,
-                            z0: a.z,
-                            x1: b.x,
-                            z1: b.z,
+                            x0: a0,
+                            z0: b0,
+                            x1: a1,
+                            z1: b1,
                         });
                     };
                 // Row edges: (k, g) -> (k+1, g)
@@ -403,10 +441,11 @@ fn emit_polyline(
     records: &[Slot4Record],
     opts: &WireframeOptions,
 ) {
+    let (ah, av) = opts.axes;
     let mut pts: Vec<(i16, i16)> = records
         .iter()
         .filter(|r| !(opts.strip_zero_records && r.x == 0 && r.y == 0 && r.z == 0))
-        .map(|r| (r.x, r.z))
+        .map(|r| (ah.pick(r), av.pick(r)))
         .collect();
     if pts.len() < 2 {
         return;
@@ -438,6 +477,7 @@ fn emit_polyline(
 /// polyline interpretation risks hiding format bugs.
 pub fn record_points(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<(u8, u16, i16, i16)> {
     let mut out = Vec::new();
+    let (ah, av) = opts.axes;
     for body in &slot.bodies {
         if opts.skip_identical_group_bodies && body_groups_identical(body) {
             continue;
@@ -450,7 +490,7 @@ pub fn record_points(slot: &KingdomSlot4, opts: &WireframeOptions) -> Vec<(u8, u
                 }
                 let _ = k;
                 let _ = ca;
-                out.push((body.index as u8, g as u16, r.x, r.z));
+                out.push((body.index as u8, g as u16, ah.pick(r), av.pick(r)));
             }
         }
     }
@@ -470,10 +510,16 @@ fn body_groups_identical(body: &Slot4Body) -> bool {
 /// Top-down (X-Z) bounding box across every record in every body.
 /// Returns `(xmin, zmin, xmax, zmax)` or `None` if `slot` is empty.
 pub fn xz_bounds(slot: &KingdomSlot4) -> Option<(i16, i16, i16, i16)> {
-    let mut xmin = i16::MAX;
-    let mut zmin = i16::MAX;
-    let mut xmax = i16::MIN;
-    let mut zmax = i16::MIN;
+    axis_bounds(slot, Axis::X, Axis::Z)
+}
+
+/// Bounding box on the given axis pair across every record in every body.
+/// Returns `(amin, bmin, amax, bmax)` or `None` if `slot` is empty.
+pub fn axis_bounds(slot: &KingdomSlot4, ah: Axis, av: Axis) -> Option<(i16, i16, i16, i16)> {
+    let mut amin = i16::MAX;
+    let mut bmin = i16::MAX;
+    let mut amax = i16::MIN;
+    let mut bmax = i16::MIN;
     let mut any = false;
     for b in &slot.bodies {
         for r in &b.records {
@@ -481,17 +527,37 @@ pub fn xz_bounds(slot: &KingdomSlot4) -> Option<(i16, i16, i16, i16)> {
                 continue;
             }
             any = true;
-            xmin = xmin.min(r.x);
-            zmin = zmin.min(r.z);
-            xmax = xmax.max(r.x);
-            zmax = zmax.max(r.z);
+            let a = ah.pick(r);
+            let v = av.pick(r);
+            amin = amin.min(a);
+            bmin = bmin.min(v);
+            amax = amax.max(a);
+            bmax = bmax.max(v);
         }
     }
     if any {
-        Some((xmin, zmin, xmax, zmax))
+        Some((amin, bmin, amax, bmax))
     } else {
         None
     }
+}
+
+/// Per-axis range `(min, max)` for a single body. Skips zero records.
+/// Returns `None` if every record is zero.
+pub fn body_axis_range(body: &Slot4Body, axis: Axis) -> Option<(i16, i16)> {
+    let mut lo = i16::MAX;
+    let mut hi = i16::MIN;
+    let mut any = false;
+    for r in &body.records {
+        if r.x == 0 && r.y == 0 && r.z == 0 {
+            continue;
+        }
+        any = true;
+        let v = axis.pick(r);
+        lo = lo.min(v);
+        hi = hi.max(v);
+    }
+    if any { Some((lo, hi)) } else { None }
 }
 
 /// One per-body color, RGBA8. Matches `site/js/webgl-tmd.js::wireframeBodyColor`
@@ -558,12 +624,20 @@ impl WireframeRaster {
         }
     }
 
-    /// Compute world bounds from the slot's record set. Re-used by
-    /// every subsequent `world_to_pix` call.
+    /// Compute world bounds from the slot's record set, using the X-Z
+    /// projection. Use [`Self::set_bounds_from_axes`] for non-default
+    /// projections.
     pub fn set_bounds_from(&mut self, slot: &KingdomSlot4) {
-        match xz_bounds(slot) {
-            Some((xmin, zmin, xmax, zmax)) => {
-                self.world_bounds = (xmin as i32, zmin as i32, xmax as i32, zmax as i32);
+        self.set_bounds_from_axes(slot, Axis::X, Axis::Z);
+    }
+
+    /// Compute world bounds from the slot's record set on the given
+    /// axis pair. Use when rendering a non-default projection so the
+    /// raster's viewport matches the data being plotted.
+    pub fn set_bounds_from_axes(&mut self, slot: &KingdomSlot4, ah: Axis, av: Axis) {
+        match axis_bounds(slot, ah, av) {
+            Some((amin, bmin, amax, bmax)) => {
+                self.world_bounds = (amin as i32, bmin as i32, amax as i32, bmax as i32);
             }
             None => self.world_bounds = (0, 0, 1, 1),
         }

@@ -375,6 +375,13 @@ enum Cmd {
         /// segments at all. Use `points` for raw-data validation.
         #[arg(long, default_value = "row")]
         style: String,
+        /// Output 2D axes as a two-character string from `x|y|z`.
+        /// Default `xz` (top-down map). Try `xy` or `zy` to see whether
+        /// a body has 3D side-view structure that XZ flattens away -
+        /// Drake bodies 9 / 11 / 12 reveal coherent silhouettes only in
+        /// the non-default projections.
+        #[arg(long, default_value = "xz")]
+        axes: String,
     },
     /// Decode one slot of a kingdom-bundle PROT entry (map01 / map02 / map03).
     ///
@@ -516,6 +523,7 @@ fn main() -> Result<()> {
             frame_body,
             close_polylines,
             style,
+            axes,
         } => slot4_png_cmd(
             input.as_deref(),
             from_raw.as_deref(),
@@ -529,6 +537,7 @@ fn main() -> Result<()> {
             frame_body,
             close_polylines,
             &style,
+            &axes,
         ),
         Cmd::Validate {
             dir,
@@ -948,6 +957,7 @@ fn slot4_png_cmd(
     frame_body: Option<usize>,
     close_polylines: bool,
     style: &str,
+    axes: &str,
 ) -> Result<()> {
     use legaia_asset::{kingdom_bundle, world_map_overlay};
 
@@ -963,6 +973,17 @@ fn slot4_png_cmd(
         other => anyhow::bail!("--style must be row|col|pairs|grid|points (got {other})"),
     };
     let points_only = style == "points";
+    let parse_axis = |c: char| match c {
+        'x' | 'X' => Ok(world_map_overlay::Axis::X),
+        'y' | 'Y' => Ok(world_map_overlay::Axis::Y),
+        'z' | 'Z' => Ok(world_map_overlay::Axis::Z),
+        other => anyhow::bail!("axis '{other}' must be one of x|y|z"),
+    };
+    let chars: Vec<char> = axes.chars().collect();
+    if chars.len() != 2 {
+        anyhow::bail!("--axes must be 2 chars from x|y|z (got '{axes}')");
+    }
+    let axis_pair = (parse_axis(chars[0])?, parse_axis(chars[1])?);
 
     // Source the decoded slot-4 bytes from either a kingdom PROT entry or
     // a previously-decoded .bin.
@@ -985,6 +1006,7 @@ fn slot4_png_cmd(
     let opts = world_map_overlay::WireframeOptions {
         close_polylines,
         mode,
+        axes: axis_pair,
         ..world_map_overlay::WireframeOptions::default()
     };
     if points_only {
@@ -997,33 +1019,36 @@ fn slot4_png_cmd(
 
     let mut raster =
         world_map_overlay::WireframeRaster::new(width, height, margin, [0x0A, 0x0A, 0x1A, 0xFF]);
+    let (ah, av) = axis_pair;
     if let Some(b) = frame_body {
         let body = parsed
             .bodies
             .get(b)
             .ok_or_else(|| anyhow::anyhow!("--frame-body {b} out of range"))?;
-        let mut xmin = i16::MAX;
-        let mut zmin = i16::MAX;
-        let mut xmax = i16::MIN;
-        let mut zmax = i16::MIN;
+        let mut amin = i16::MAX;
+        let mut bmin = i16::MAX;
+        let mut amax = i16::MIN;
+        let mut bmax = i16::MIN;
         for r in &body.records {
             if r.x == 0 && r.y == 0 && r.z == 0 {
                 continue;
             }
-            xmin = xmin.min(r.x);
-            zmin = zmin.min(r.z);
-            xmax = xmax.max(r.x);
-            zmax = zmax.max(r.z);
+            let a = ah.pick(r);
+            let v = av.pick(r);
+            amin = amin.min(a);
+            bmin = bmin.min(v);
+            amax = amax.max(a);
+            bmax = bmax.max(v);
         }
-        if xmin == i16::MAX {
+        if amin == i16::MAX {
             anyhow::bail!("--frame-body {b} has no non-zero records");
         }
-        raster.set_bounds(xmin as i32, zmin as i32, xmax as i32, zmax as i32);
+        raster.set_bounds(amin as i32, bmin as i32, amax as i32, bmax as i32);
     } else {
-        raster.set_bounds_from(&parsed);
+        raster.set_bounds_from_axes(&parsed, ah, av);
     }
-    let (xmin, zmin, xmax, zmax) = raster.world_bounds;
-    println!("Camera bounds (x,z): {xmin}..{xmax}, {zmin}..{zmax}");
+    let (amin, bmin, amax, bmax) = raster.world_bounds;
+    println!("Camera bounds ({axes}): {amin}..{amax}, {bmin}..{bmax}");
 
     if points_only {
         raster.draw_points(&parsed, &opts, only_body, 1);

@@ -234,6 +234,41 @@ print('payload at virt 0x{:08X}'.format(0x80000000 + hit) if hit >= 0 else 'not 
 "
 ```
 
+## Per-body Y-extent and the axis-projection question
+
+Per-axis ranges across Drake's 15 bodies (skipping zero records):
+
+| Body | X span | Y span | Z span | kind |
+|---:|---:|---:|---:|---:|
+| 0 | 16626 | 10767 | 38641 | 1 |
+| 9 | 10725 | **25856** | 21248 | 2 |
+| 10 | 13056 | 18432 | 31503 | 2 |
+| 11 | 11492 | **27648** | 24064 | 2 |
+| 12 | 16118 | 4096 | 31473 | 2 |
+| 13 | 65485 | 14336 | 64512 | 4 |
+
+Bodies 9 / 10 / 11 have Y spans of 18-27K - comparable to the X/Z scale,
+not the small elevation deltas a 2D map contour would carry. Body 12's
+Y span is only 4K (consistent with a near-flat coastline at near-zero
+elevation). When all bodies are projected onto `xz` (top-down) some of
+them produce coherent silhouettes (12) while others look like noise
+(9 / 11) - because for those bodies the flatten-to-xz step is collapsing
+genuine 3D structure into 2D mush.
+
+Rendering the same bodies on `xy` (front side view) surfaces clean
+vertical pillar-like silhouettes for bodies 9 and 11 - **3D mesh
+structure that's invisible in the top-down view**. This suggests slot 4
+is heterogeneous: at least some bodies are object-local 3D meshes
+(collision hulls? instantiable decoration meshes?) rather than 2D map
+contours. The WebGL world-overview viewer exposes the projection plane
+as a second selector (`xz` / `xy` / `zy`) so the same data can be
+inspected from each angle without committing to one interpretation.
+
+It's also possible the engine doesn't treat the middle field as world
+Y-elevation at all - some bodies make more sense as map data in the
+`xy` projection (cleaner overall continent shape) than in `xz`. The
+final word will come from Ghidra capture of the consumer.
+
 ## Topology hypothesis
 
 Drake body 12 (`count_a=10`, `count_b=120`, `kind=2`) is the largest
