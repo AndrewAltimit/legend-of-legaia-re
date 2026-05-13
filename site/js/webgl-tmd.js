@@ -420,23 +420,31 @@ class TmdRenderer {
 
   /* Draw the previously-uploaded wireframe overlay on top of the
    * current frame using the same top-down camera math as
-   * renderAssembled. No-ops when no lines are uploaded. */
+   * renderAssembled. No-ops when no lines are uploaded.
+   *
+   * Renders with depth-test OFF (lines always paint on top of the
+   * landmarks - they're a UI overlay, not 3D geometry) and standard
+   * alpha blending so the assembled scene remains visible through the
+   * wireframe. */
   renderWireframe(worldExtent, cam) {
     if (!this.wireProgram || !this.wireVertexCount) return;
     const gl = this.gl;
     const w = this.canvas.width;
     const h = this.canvas.height;
     gl.viewport(0, 0, w, h);
-    /* Draw with depth-test still enabled but a slight Y-lift via the
-     * shader's u_y_offset uniform so the lines float above the textured
-     * landmarks instead of z-fighting through them. */
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.wireProgram);
     const vp = buildTopDownVp(w, h, worldExtent, cam);
     gl.uniformMatrix4fv(this.wireLocMvp, false, vp);
-    gl.uniform1f(this.wireLocAlpha, 0.95);
+    gl.uniform1f(this.wireLocAlpha, 0.55);
     gl.bindVertexArray(this.wireVao);
     gl.drawArrays(gl.LINES, 0, this.wireVertexCount);
     gl.bindVertexArray(null);
+    /* Restore depth-test for the next frame's assembled-scene pass. */
+    gl.disable(gl.BLEND);
+    gl.enable(gl.DEPTH_TEST);
   }
 
   initWireframePipeline() {

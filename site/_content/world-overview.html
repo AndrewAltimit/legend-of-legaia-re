@@ -252,7 +252,7 @@
 <!-- The ?v= cache-busts after the wireframe Lines pipeline was added; bump
      this any time webgl-tmd.js gains a method JS code below this point
      relies on, so users don't hit a stale cached copy. -->
-<script src="js/webgl-tmd.js?v=20260513"></script>
+<script src="js/webgl-tmd.js?v=20260513b"></script>
 <script src="js/webgl-prim-replay.js"></script>
 <script>
 (async function () {
@@ -433,6 +433,14 @@
      * fetch the line buffer if it hasn't been cached yet. */
     if (wireframeEnabled && viewer && viewMode === 'world') {
       maybeLoadWireframe(currentKingdom);
+    }
+    /* Re-fit the top-down camera: enabling the wireframe expands to
+     * the slot-4 bbox (so the user sees the coastline context);
+     * disabling it returns to the tighter landmark cluster. The
+     * per-frame tick keeps running so the change is visible
+     * immediately without rebuilding the scene. */
+    if (viewMode === 'world') {
+      frameWorldCam(currentDrawPlacements, currentWorldExtent);
     }
   });
 
@@ -793,29 +801,12 @@
         drawPlacements.push({ meshId: ms, x: p.pos[0], z: p.pos[2] });
       }
     }
-    /* Camera frames the placement bbox (not the world bbox) - many
-     * placeholder records have placeholder coords like (64, *) that drag
-     * the world bbox out toward empty edges; framing to placements gives
-     * a tighter view. Falls back to world extent when no placements.  */
     const ext = k.world_extent || [16320, 16320];
-    if (drawPlacements.length > 0) {
-      let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
-      for (const p of drawPlacements) {
-        if (p.x < xmin) xmin = p.x;
-        if (p.x > xmax) xmax = p.x;
-        if (p.z < zmin) zmin = p.z;
-        if (p.z > zmax) zmax = p.z;
-      }
-      worldCam.centerX = (xmin + xmax) / 2;
-      worldCam.centerZ = (zmin + zmax) / 2;
-      worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + 1500;
-      worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + 1500;
-    } else {
-      worldCam.centerX = ext[0] / 2;
-      worldCam.centerZ = ext[1] / 2;
-      worldCam.halfWidth = ext[0] / 2 + 1000;
-      worldCam.halfHeight = ext[1] / 2 + 1000;
-    }
+    /* Cache for the toggle handler so it can re-frame without re-running
+     * the full disc-decode + upload pipeline. */
+    currentDrawPlacements = drawPlacements;
+    currentWorldExtent = ext;
+    frameWorldCam(drawPlacements, ext);
     worldCam.pitch = 0;
     $meshLabel.textContent =
       `${k.cdname} - ${drawPlacements.length} placements (${used.size} unique meshes, ${packCount}-TMD pack)`;
@@ -852,6 +843,49 @@
     rafId = requestAnimationFrame(tick);
   }
 
+  /* Frame the top-down camera. When the wireframe is on we expand to
+   * the wireframe's X-Z bbox (the slot-4 contours span the full ±32K
+   * world, which is where the coastline lives) so the user sees the
+   * landmarks in their geographic context. When off, frame the tighter
+   * placement bbox - the landmark cluster is what most users want to
+   * see by default. */
+  function frameWorldCam(drawPlacements, ext) {
+    const wf = wireframeEnabled && wireframeCache[currentKingdom]?.bounds;
+    let xmin, xmax, zmin, zmax;
+    if (wf) {
+      xmin = wf.xmin; xmax = wf.xmax;
+      zmin = wf.zmin; zmax = wf.zmax;
+    } else if (drawPlacements && drawPlacements.length > 0) {
+      xmin = Infinity; xmax = -Infinity; zmin = Infinity; zmax = -Infinity;
+      for (const p of drawPlacements) {
+        if (p.x < xmin) xmin = p.x;
+        if (p.x > xmax) xmax = p.x;
+        if (p.z < zmin) zmin = p.z;
+        if (p.z > zmax) zmax = p.z;
+      }
+    } else {
+      worldCam.centerX = ext[0] / 2;
+      worldCam.centerZ = ext[1] / 2;
+      worldCam.halfWidth = ext[0] / 2 + 1000;
+      worldCam.halfHeight = ext[1] / 2 + 1000;
+      return;
+    }
+    worldCam.centerX = (xmin + xmax) / 2;
+    worldCam.centerZ = (zmin + zmax) / 2;
+    /* When framing the wireframe (whole-kingdom view) add a generous
+     * padding; for the tight placement view we keep the historical
+     * "+1500" buffer so labels and landmarks have breathing room. */
+    const pad = wf ? 2000 : 1500;
+    worldCam.halfWidth  = Math.max((xmax - xmin) / 2, 1500) + pad;
+    worldCam.halfHeight = Math.max((zmax - zmin) / 2, 1500) + pad;
+  }
+
+  /* Snapshot of the latest draw call's placement set, so the wireframe
+   * toggle handler can re-frame the camera without re-running the full
+   * loadWorldView() upload pipeline. Set inside loadWorldView(). */
+  let currentDrawPlacements = [];
+  let currentWorldExtent = [16320, 16320];
+
   /* Decode slot-4 wireframe lines for the active kingdom if not cached.
    * The Rust accessor returns 4 bytes of line_count + 12 bytes per line;
    * the JS-side renderer expands those into colored line segments. */
@@ -873,7 +907,19 @@
       try {
         inventory = JSON.parse(viewer.slot4_body_inventory_json(base));
       } catch (e) { inventory = []; }
-      wireframeCache[k] = { lines: buf, lineCount, inventory, uploaded: false };
+      /* Cache the X-Z bounds too so toggling the wireframe on can
+       * expand the top-down camera to fit the full coastline +
+       * boundary frame. Without this the camera stays framed on the
+       * tight landmark cluster and the wireframe lines fan in from
+       * the ±32K boundary as wild rays through the viewport. */
+      let bounds = null;
+      try {
+        const b = viewer.slot4_wireframe_bounds(base);
+        if (b && b.length >= 4) {
+          bounds = { xmin: b[0], zmin: b[1], xmax: b[2], zmax: b[3] };
+        }
+      } catch (e) { /* tolerate missing accessor */ }
+      wireframeCache[k] = { lines: buf, lineCount, inventory, bounds, uploaded: false };
       $meshInfo.textContent =
         `slot-4 wireframe: ${lineCount} line segments across ${inventory.length} bodies`;
     } catch (e) {
