@@ -549,3 +549,116 @@ overlay's `FUN_801D7EA0` and the 0897 field overlay's
 | `_DAT_801F3528` | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |
 | `_DAT_8007BCD0..D8` | Three contiguous u32 globals that `FUN_801D1344` reads and forwards as the gate-setter's scale / step / OT-layer params. |
 | `_DAT_8007C34C..0x36C` | Seven actor-list heads consumed by `FUN_8002519c`. `_DAT_8007C34C` / `_DAT_8007C350` / `_DAT_8007C354` / `_DAT_8007C358` / `_DAT_8007C35C` / `_DAT_8007C360` / `_DAT_8007C36C` correspond to the five world-map render passes that `FUN_80016444` issues per frame plus two scratch heads. |
+
+## World-overview viewer
+
+The `/world-overview/` page in the static site renders each kingdom's
+landmark layer in real-time WebGL 3D from a disc image. It exists to
+make the world-map data layer reviewable end-to-end without a save
+state or an emulator.
+
+### Layout engine for unplaced slot-1 TMDs
+
+The MAN placement table pins a small subset of each kingdom's slot-1
+TMD pack at world coordinates (5 / 6 / 17 slots for Drake / Sebucus /
+Karisto). The remaining slots are positioned at runtime by the
+field-VM via actor-mesh chains and don't carry a static world coord.
+The viewer's "show unplaced slot-1 TMDs" toggle drops those onto a
+canonical layout grid, classified by `slot1_classification.toml`:
+
+- **landmark** &mdash; row south of the kingdom bounds, sorted by slot.
+- **decoration** &mdash; row north of the kingdom bounds.
+- **ground_tile** &mdash; grid west of the kingdom (the runtime tiles
+  them via the overlay-routed dispatch table).
+- **npc_token** &mdash; hidden (reused generic actor bases; reporting
+  the count avoids cluttering the view).
+- **unknown** &mdash; grid east of the kingdom.
+
+Two per-mesh transforms keep the layout legible:
+
+1. **AABB-centroid anchor** &mdash; each unplaced TMD is drawn so its
+   AABB centroid sits at the assigned grid slot, instead of its
+   TMD-local origin (which can be far from the visual centre and
+   shift the mesh out of frame).
+2. **Class-conditional footprint normalisation** &mdash; per-class
+   target footprints in world units (landmark ~600, decoration ~200,
+   ground_tile ~1200, unknown ~600). Each mesh's larger XZ extent maps
+   to the target via a per-placement scale so the row reads at a
+   consistent size regardless of the TMD's native scale.
+
+The "normalize unplaced" toggle disables both transforms (falls back
+to the legacy constant scale + TMD-local-origin pivot) so the user
+can ground-truth against retail.
+
+### Distance-cue fog pass
+
+The viewer's fog toggle approximates the retail world-map fog: the
+diffuse term fades toward a per-kingdom haze colour with distance.
+The math splits into two pieces the runtime keeps separate, and the
+WebGL port mirrors that split:
+
+- The **LUT** at `gp-0x2BC` (2048 u16 entries that climb from `0x0000`
+  at near-Z to `~0x01FF` at far-Z) is a **per-Z scalar**, not a colour
+  ramp. The retail overlay leaves at `0x801F7644..0x801F8690` `lh` the
+  LUT entry, shift it left by 16, and add it to the high half of
+  vertex SXY+offset words via `sw s1, 0x8(t1)` / `0xC(t1)` /
+  `0x10(t1)`. The visible effect on flat triangles is a per-vertex
+  screen-Y nudge proportional to `Z >> 5`.
+- The **haze colour** is set per-kingdom via the GTE `FAR_COLOR`
+  control register (loaded via `ctc2` during world-map enter, not
+  surfaced by the `lwc2 t0, -0x2dc(t2)` load - that field is the
+  `IR0` depth-cue factor, despite earlier doc tables labelling it
+  "fog color").
+
+The WebGL port runs this in a vertex + fragment shader:
+
+- Per-vertex: `Z_far = exp2(-zShift) * dist(world, camera_origin)`,
+  clamped to `[0, far_ref]` and normalised to `v_fog_t in [0..1]`.
+  Approximates the runtime's `Z_far = Z >> shift` against the
+  top-down camera origin.
+- Per-fragment: sample `lut[clamp(v_fog_t * 2047, 0, 2047)]` as a
+  scalar u16; normalise to `factor = lut_word / 511`; then
+  `mix(lit, u_fog_color, factor)` with `u_fog_color` = the
+  per-kingdom haze tint from `KINGDOM_FOG_TINT`. This produces the
+  fade-toward-haze visual instead of treating the LUT entries as
+  RGB tints (an earlier port did the latter and produced "richer
+  textures" rather than fog).
+
+The shader supports two LUT sources, in priority order:
+
+1. **Disc-extracted LUT (default)** &mdash; the WASM viewer locates
+   the 4 KiB (2048 u16) LUT inside `SCUS_942.54` via the
+   `fog_lut::find` content-scan (monotone non-decreasing ramp with
+   leading zero entries + saturating tail) and auto-uploads it on
+   disc load. No file picker; one disc upload = full functionality.
+   On the retail USA build the LUT sits at SCUS offset `0x05FCC0`
+   (vaddr `0x8006FCC0`); the content scan handles regional variants
+   without hardcoding.
+2. **Kingdom-tinted fallback** &mdash; when SCUS extraction doesn't
+   surface a LUT (raw PROT.DAT load, regional variant with shifted
+   SCUS, modded disc), the shader falls back to using `v_fog_t`
+   directly as the mix factor, still toward the kingdom haze tint.
+
+The per-vertex math diverges from retail in one place: retail samples
+Z from the GTE's screen-space pipeline after `rtpt`, while the
+WebGL2 path uses XZ-plane distance to the fog origin (`fog_origin =
+worldCam centre` by default). For a top-down ortho camera the two
+quantities are equivalent up to a constant; for the orbit-camera mesh
+inspector the fog toggle is hidden because it doesn't carry over.
+
+### Camera anchors
+
+Per-kingdom camera centres + zoom anchors live in two tables:
+
+- `KINGDOM_CAM` &mdash; walk-view spawn anchors (load-time map-origin
+  coords from `_DAT_80089118` / `_DAT_80089120`, decoded by
+  `mednafen-state world-map-camera --table <save>`). This is the
+  default view when a kingdom tab is opened.
+- `KINGDOM_TOPVIEW_CAM` &mdash; the "lock to retail top-view" button
+  slams the world cam to these centres + sets `halfWidth / halfHeight
+  = ext / 2` for the dev-menu top-view framing. Captured anchors
+  initially mirror `KINGDOM_CAM` (the dev-menu's free-camera enters
+  from the same spawn anchor before user input scrolls it); replace
+  these values with the output of `mednafen-state world-map-camera
+  --table <top-view-save>` after capturing a save state in
+  `DAT_801F2B94 != 0` mode (D-pad drives camera scroll, not party).

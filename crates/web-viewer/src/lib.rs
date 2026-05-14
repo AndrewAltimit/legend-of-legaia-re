@@ -6,6 +6,7 @@
 //! list of viewable entries instead of every raw entry.
 
 pub mod disc;
+pub mod fog_lut;
 pub mod runtime;
 pub mod tmd3d;
 
@@ -132,6 +133,12 @@ pub struct LegaiaViewer {
     /// `SCUS_942.54` at load time. Only populated when a full disc image is
     /// loaded (raw PROT.DAT / single TIM paths leave this `None`).
     worldmap_menu: Option<worldmap_menu::WorldmapMenu>,
+    /// Fog LUT bytes extracted from SCUS at load time. 4 KiB (2048 u16
+    /// entries) — the shared depth-cue ramp the world-map overlay leaves
+    /// at `0x801F7644..0x801F8690` consult on every vertex. None when
+    /// the SCUS extract or LUT scan didn't surface a match (raw
+    /// PROT.DAT load, regional variant, modded disc).
+    fog_lut: Option<Vec<u8>>,
 }
 
 #[wasm_bindgen]
@@ -152,6 +159,7 @@ impl LegaiaViewer {
             kingdom: None,
             continent: None,
             worldmap_menu: None,
+            fog_lut: None,
         })
     }
 
@@ -163,6 +171,7 @@ impl LegaiaViewer {
         self.current = 0;
 
         self.worldmap_menu = None;
+        self.fog_lut = None;
         let prot_bytes = if let Some(extracted) = extract_prot_dat(&bytes) {
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
@@ -184,6 +193,20 @@ impl LegaiaViewer {
                         self.worldmap_menu = Some(menu);
                     }
                     Err(e) => console_log(&format!("worldmap_menu::parse_scus skipped: {e}")),
+                }
+                // Locate the world-map fog LUT - same bytes the runtime
+                // consults on every vertex. The viewer auto-uploads
+                // these to the GL renderer so the user doesn't need to
+                // drop a separate fog_probe.lut.bin file.
+                if let Some(lut) = fog_lut::find(&scus) {
+                    self.fog_lut = Some(lut.to_vec());
+                    console_log(&format!(
+                        "Extracted fog LUT from SCUS ({} bytes, {} entries)",
+                        lut.len(),
+                        lut.len() / 2
+                    ));
+                } else {
+                    console_log("fog_lut::find skipped: no LUT signature in SCUS");
                 }
             }
             extracted
@@ -844,6 +867,19 @@ impl LegaiaViewer {
                 .unwrap_or_else(|e| format!("{{\"error\":\"serialize failed: {e}\"}}")),
             None => "null".to_string(),
         }
+    }
+
+    /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
+    /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
+    /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex
+    /// (the shared depth-cue ramp; the per-kingdom hue mixes in from the
+    /// `fog_color` field at gp-0x2DC).
+    ///
+    /// Returns an empty Vec when no LUT was located - the JS side should
+    /// treat empty as "fall back to the kingdom-tinted baseline" and not
+    /// upload anything to the renderer.
+    pub fn fog_lut_bytes(&self) -> Vec<u8> {
+        self.fog_lut.clone().unwrap_or_default()
     }
 
     /// `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,

@@ -48,6 +48,7 @@
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
     </div>
     <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image above and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required.</div>
+    <div class="viewer-status" id="wo-fog-lut-status" style="margin-top: 0.4rem; font-size: 0.78rem;">Fog LUT: not yet loaded (auto-extracts from <code>SCUS_942.54</code> on disc load).</div>
   </div>
 </section>
 
@@ -72,6 +73,9 @@
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
         <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Laid out by class from site/world-overview/slot1_classification.toml: landmarks south of the kingdom, ground tiles stacked at centre, decorations north, unknown to the east. Live-RAM actor-placed slots (Drake only today) draw at their real coordinates instead."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
+        <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Normalize each unplaced slot-1 TMD to a class-conditional target footprint (landmark ~600, decoration ~200, ground_tile ~1200) and pivot on its AABB centroid. Disable to see meshes at their TMD-native scale with the TMD-local origin as the pivot (ground-truth against retail)."><input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced</label>
+        <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the world-map distance-cue fog post-process. Mirrors the retail overlay leaves' dpcs/dpct tint. A 512-entry LUT captured from a top-view save state (scripts/pcsx-redux/autorun_world_map_fog_probe.lua, fog_probe.lut.bin) drives the per-tier color ramp; without a capture the renderer falls back to a kingdom-tinted baseline."><input type="checkbox" id="wo-fog-enable"> fog</label>
+        <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn (KINGDOM_CAM[].topView). Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
@@ -253,7 +257,7 @@
 
 <!-- Bump ?v= any time webgl-tmd.js gains a method JS code below this point
      relies on, so users don't hit a stale cached copy. -->
-<script src="js/webgl-tmd.js?v=20260514c"></script>
+<script src="js/webgl-tmd.js?v=fog-scalar-3"></script>
 <script>
 (async function () {
   /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
@@ -279,6 +283,45 @@
     sebucus: { centerX: 7936, centerZ: 9344, zoom: 0x170 },
     karisto: { centerX: 7936, centerZ: 9088, zoom: 0x170 },
   };
+  /* Top-view camera anchors per kingdom. The "lock to retail top-view"
+   * button slams the world-cam to these centres + sets the zoom so the
+   * frame matches the in-game world-map camera. Values mirror the
+   * walk-view load-time spawn anchors decoded by `mednafen-state
+   * world-map-camera --table <save>` against per-kingdom saves; the
+   * dev-menu's free-camera top-view (DAT_801F2B94 != 0) starts from the
+   * same anchor before user input scrolls it, so these double as
+   * top-view defaults until a captured dev-menu state refines them. */
+  const KINGDOM_TOPVIEW_CAM = {
+    drake:   { centerX: 8832, centerZ: 8832, azimuth: 0x0000, zoom: 0x0170 },
+    sebucus: { centerX: 7936, centerZ: 9344, azimuth: 0x0000, zoom: 0x0170 },
+    karisto: { centerX: 7936, centerZ: 9088, azimuth: 0x0000, zoom: 0x0170 },
+  };
+  /* Class-conditional target footprints for the unplaced-slot1 grid.
+   * Each unplaced TMD is normalised so its larger XZ extent maps to this
+   * target, then centroid-anchored at its assigned grid slot. Numbers
+   * are world units (Drake is 16320x16320). The renderer falls back to
+   * MESH_SCALE when normalisation is disabled or the AABB collapses to
+   * zero. Matches the four classes in slot1_classification.toml. */
+  const UNPLACED_TARGET_FOOTPRINT = {
+    landmark:   600,
+    decoration: 200,
+    ground_tile: 1200,
+    unknown:    600,
+  };
+  /* Per-kingdom baseline fog tint (BGR555 -> linear RGB). Used as the
+   * fragment shader's fallback when a captured LUT entry is zero, so the
+   * "fog" toggle still produces a kingdom-flavoured gradient before the
+   * user supplies fog_probe.lut.bin. The values are mid-tier samples of
+   * each kingdom's dev-menu top-view sky colour. */
+  const KINGDOM_FOG_TINT = {
+    drake:   { r: 0.18, g: 0.22, b: 0.34 },
+    sebucus: { r: 0.16, g: 0.26, b: 0.32 },
+    karisto: { r: 0.26, g: 0.20, b: 0.22 },
+  };
+  /* Initial fog defaults: matches the retail probe shape (Z_far = Z >> 5
+   * over a ~16384-unit reference). Overwritten when the user uploads a
+   * fog_probe.lut.bin via the fog-LUT picker. */
+  const DEFAULT_FOG_PARAMS = { enable: 0, zShift: 5, farRef: 12000, color: null };
   const LIST_NAMES = {
     0: 'player/system', 1: 'entities', 2: 'background',
     3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
@@ -304,8 +347,13 @@
   const $modeMesh   = document.getElementById('wo-mode-mesh');
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
   const $showUnplaced = document.getElementById('wo-show-unplaced');
+  const $normalizeUnplaced = document.getElementById('wo-normalize-unplaced');
+  const $fogEnable  = document.getElementById('wo-fog-enable');
+  const $lockTopView = document.getElementById('wo-lock-topview');
   let   scatterDots = [];   /* { x, y, p } screen-space hit-test entries */
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
+  let   fogLut      = null;     /* Uint16Array(512) BGR555 entries, or null */
+  let   fogParams   = { ...DEFAULT_FOG_PARAMS };
 
   /* ---------- State ----------- */
   let viewer = null;          /* LegaiaViewer (WASM) - created after load */
@@ -408,10 +456,16 @@
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
-    /* Unplaced-TMD toggle only makes sense in world mode (mesh inspector
-     * already walks the whole pack one mesh at a time). */
+    /* Unplaced-TMD toggle, normalisation, fog, top-view lock only make
+     * sense in world mode (mesh inspector already walks the whole pack
+     * one mesh at a time). */
     const $unplacedWrap = document.getElementById('wo-show-unplaced-wrap');
-    if ($unplacedWrap) $unplacedWrap.hidden = meshOnly;
+    const $normalizeWrap = document.getElementById('wo-normalize-unplaced-wrap');
+    const $fogWrap = document.getElementById('wo-fog-wrap');
+    if ($unplacedWrap)  $unplacedWrap.hidden  = meshOnly;
+    if ($normalizeWrap) $normalizeWrap.hidden = meshOnly;
+    if ($fogWrap)       $fogWrap.hidden       = meshOnly;
+    if ($lockTopView)   $lockTopView.hidden   = meshOnly;
     $resetCam.hidden = false;
     /* Re-enter the active kingdom so the right path renders. */
     selectKingdom(currentKingdom);
@@ -426,6 +480,54 @@
          * per load, not per-frame, so a checkbox flip has to retrigger. */
         selectKingdom(currentKingdom);
       }
+    });
+  }
+  if ($normalizeUnplaced) {
+    $normalizeUnplaced.addEventListener('change', () => {
+      /* Re-run the layout pass so the per-class footprint normalisation
+       * (and the centroid-anchor flag) is re-applied or dropped. */
+      if (viewMode === 'world') selectKingdom(currentKingdom);
+    });
+  }
+  if ($fogEnable) {
+    $fogEnable.addEventListener('change', () => {
+      fogParams.enable = $fogEnable.checked ? 1 : 0;
+      pushFogParamsToRenderer();
+    });
+  }
+  if ($lockTopView) {
+    $lockTopView.addEventListener('click', () => {
+      const tv = KINGDOM_TOPVIEW_CAM[currentKingdom];
+      if (!tv) return;
+      worldCam.centerX = tv.centerX;
+      worldCam.centerZ = tv.centerZ;
+      /* Top-view zoom field encodes a half-extent multiplier; the retail
+       * dev-menu enters at zoom=0x170 which maps roughly to 1.0x of the
+       * kingdom extent. Match that here so the lock action visually
+       * matches the dev-menu spawn framing. */
+      const k = placements?.[currentKingdom];
+      const ext = k?.world_extent || [16320, 16320];
+      worldCam.halfWidth  = ext[0] / 2;
+      worldCam.halfHeight = ext[1] / 2;
+      worldCam.pitch = 0;
+    });
+  }
+
+  /* Push the latest (fogLut, fogParams) snapshot into the GL renderer.
+   * Safe to call even when glRenderer isn't a TmdRenderer (mesh-inspector
+   * mode binds the same class, so uploadFogLut always exists). */
+  function pushFogParamsToRenderer() {
+    if (!glRenderer || typeof glRenderer.uploadFogLut !== 'function') return;
+    /* Compose the color: explicit param overrides take precedence,
+     * otherwise fall back to the per-kingdom baseline tint. */
+    const color = fogParams.color
+      ? fogParams.color
+      : (KINGDOM_FOG_TINT[currentKingdom] || { r: 0.20, g: 0.20, b: 0.30 });
+    glRenderer.uploadFogLut(fogLut, {
+      enable: fogParams.enable,
+      zShift: fogParams.zShift,
+      farRef: fogParams.farRef,
+      color,
     });
   }
   /* Default UI matches default viewMode = 'world' (assembled scene from
@@ -504,6 +606,29 @@
       }
       const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
       $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
+      /* Auto-extract the world-map fog LUT from SCUS. The runtime
+       * adds these per-Z scalar entries to vertex SXY+offset words in
+       * the overlay leaves at 0x801F7644..0x801F8690; the WebGL port
+       * reuses them as the per-tier fade curve and mixes the diffuse
+       * term toward the per-kingdom haze color from KINGDOM_FOG_TINT.
+       * An empty return means SCUS extraction failed (raw PROT.DAT,
+       * regional variant, modded disc) - the kingdom-tinted fallback
+       * still works without it. */
+      try {
+        const raw = viewer.fog_lut_bytes();
+        if (raw && raw.length >= 4096) {
+          fogLut = new Uint16Array(raw.buffer, raw.byteOffset, raw.length / 2);
+          if ($fogLutStatus) {
+            $fogLutStatus.textContent =
+              `Fog LUT: auto-extracted from SCUS_942.54 (${raw.length} B, ${fogLut.length} per-Z scalar entries).`;
+          }
+        } else if ($fogLutStatus) {
+          $fogLutStatus.textContent =
+            'Fog LUT: not located in SCUS — kingdom-tinted fallback active.';
+        }
+      } catch (err) {
+        console.warn('fog_lut_bytes:', err);
+      }
       /* Populate the whole-Legaia quick-travel section from SCUS data
        * the viewer parsed during load_disc(). Failures are silent: the
        * section just stays in its "load a disc" state. */
@@ -525,6 +650,11 @@
     }
   }
   $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
+
+  /* Status line for the auto-extracted fog LUT. The disc-load path
+   * populates this; there is no manual upload affordance because the
+   * SCUS bytes are the authoritative source. */
+  const $fogLutStatus = document.getElementById('wo-fog-lut-status');
 
   /* ---------- Mesh navigation ----------- */
   function selectKingdom(k) {
@@ -585,6 +715,10 @@
       $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
       return;
     }
+    /* Top-view-lock + fog become available in world-view mode; mesh
+     * inspector mode hides them again. */
+    if ($lockTopView) $lockTopView.hidden = false;
+    pushFogParamsToRenderer();
     /* Load kingdom bundle (TIM_LIST -> VRAM, TMD pack parsed). */
     let packCount;
     try {
@@ -655,6 +789,39 @@
     const ext = k.world_extent || [16320, 16320];
     const unplacedShown = { landmark: 0, decoration: 0, ground_tile: 0,
                             npc_token: 0, unknown: 0 };
+    const normalize = !$normalizeUnplaced || $normalizeUnplaced.checked;
+    /* Layout helper: given an uploaded mesh's AABB + class target
+     * footprint, compute the per-placement world scale that maps the
+     * mesh's larger XZ extent onto the target. Returns the legacy
+     * MESH_SCALE constant when normalisation is disabled or the AABB
+     * is degenerate (zero-extent mesh).
+     *
+     * MESH_SCALE = 6.0 (from webgl-tmd.js) is the legacy constant scale
+     * factor; we hard-code the same value here so we don't need to plumb
+     * a getter through the renderer. */
+    const LEGACY_MESH_SCALE = 6.0;
+    function classScale(aabb, cls) {
+      if (!normalize) return LEGACY_MESH_SCALE;
+      if (!aabb) return LEGACY_MESH_SCALE;
+      const footprint = Math.max(aabb.sx, aabb.sz);
+      if (footprint <= 0) return LEGACY_MESH_SCALE;
+      const target = UNPLACED_TARGET_FOOTPRINT[cls]
+        ?? UNPLACED_TARGET_FOOTPRINT.unknown;
+      return target / footprint;
+    }
+    /* Helper for layout: each unplaced placement uses centroid anchoring
+     * + per-class scale. Returns the new draw record (does NOT push it). */
+    function buildUnplacedDraw(u, cls, x, z) {
+      const aabb = glRenderer.getMeshAabb(u.pack_slot);
+      const scale = classScale(aabb, cls);
+      return {
+        meshId: u.pack_slot, x, z, rotY: 0,
+        kind: 'unplaced', class: cls,
+        slot: u.pack_slot, note: u.note,
+        scale,
+        anchor: normalize ? 'centroid' : 'origin',
+      };
+    }
     if ($showUnplaced && $showUnplaced.checked) {
       /* Drop entries the live extract already placed in real
        * coordinates - drawing them twice produces visual duplicates. */
@@ -666,73 +833,88 @@
         const cls = u.class || 'unknown';
         (byClass[cls] || byClass.unknown).push(u);
       }
-      /* Landmarks: sort by slot, lay in a row south of the world. */
+      /* Landmarks: sort by slot, lay in a row south of the world. Spacing
+       * is the larger of (a) the world width / count - so a 25-landmark
+       * row spans the kingdom - and (b) 1.4 x the class target footprint
+       * so neighbouring meshes don't visually collide after scaling. */
       const landmarks = byClass.landmark;
       landmarks.sort((a, b) => a.pack_slot - b.pack_slot);
-      const gap = ext[0] / Math.max(landmarks.length, 1);
-      for (let i = 0; i < landmarks.length; i++) {
-        const u = landmarks[i];
-        if (!ensureMeshUploaded(u.pack_slot)) continue;
-        const x = (i + 0.5) * gap;
-        const z = ext[1] + 1500;
-        drawPlacements.push({
-          meshId: u.pack_slot, x, z, kind: 'unplaced',
-          class: 'landmark', slot: u.pack_slot, note: u.note,
-        });
-        unplacedShown.landmark++;
+      {
+        const target = UNPLACED_TARGET_FOOTPRINT.landmark;
+        const pitch = Math.max(ext[0] / Math.max(landmarks.length, 1),
+                               target * 1.4);
+        const rowSpan = pitch * landmarks.length;
+        const xStart = (ext[0] - rowSpan) / 2;
+        for (let i = 0; i < landmarks.length; i++) {
+          const u = landmarks[i];
+          if (!ensureMeshUploaded(u.pack_slot)) continue;
+          const x = xStart + (i + 0.5) * pitch;
+          const z = ext[1] + Math.max(1500, target);
+          drawPlacements.push(buildUnplacedDraw(u, 'landmark', x, z));
+          unplacedShown.landmark++;
+        }
       }
-      /* Decorations: row north of the world. */
+      /* Decorations: row north of the world, same spacing rule. */
       byClass.decoration.sort((a, b) => a.pack_slot - b.pack_slot);
-      const gd = ext[0] / Math.max(byClass.decoration.length, 1);
-      for (let i = 0; i < byClass.decoration.length; i++) {
-        const u = byClass.decoration[i];
-        if (!ensureMeshUploaded(u.pack_slot)) continue;
-        drawPlacements.push({
-          meshId: u.pack_slot,
-          x: (i + 0.5) * gd, z: -1500,
-          kind: 'unplaced', class: 'decoration',
-          slot: u.pack_slot, note: u.note,
-        });
-        unplacedShown.decoration++;
+      {
+        const target = UNPLACED_TARGET_FOOTPRINT.decoration;
+        const pitch = Math.max(ext[0] / Math.max(byClass.decoration.length, 1),
+                               target * 1.5);
+        const rowSpan = pitch * byClass.decoration.length;
+        const xStart = (ext[0] - rowSpan) / 2;
+        for (let i = 0; i < byClass.decoration.length; i++) {
+          const u = byClass.decoration[i];
+          if (!ensureMeshUploaded(u.pack_slot)) continue;
+          const x = xStart + (i + 0.5) * pitch;
+          const z = -Math.max(1500, target);
+          drawPlacements.push(buildUnplacedDraw(u, 'decoration', x, z));
+          unplacedShown.decoration++;
+        }
       }
-      /* Ground tiles: stack at kingdom centre (the runtime tiles them
-       * via the overlay-routed dispatch; rendering them all overlaid is
-       * the closest visual proxy we get without porting the bulk emit
-       * mechanism). */
-      for (const u of byClass.ground_tile) {
-        if (!ensureMeshUploaded(u.pack_slot)) continue;
-        drawPlacements.push({
-          meshId: u.pack_slot,
-          x: ext[0] / 2, z: ext[1] / 2,
-          kind: 'unplaced', class: 'ground_tile',
-          slot: u.pack_slot, note: u.note,
-        });
-        unplacedShown.ground_tile++;
+      /* Ground tiles: spread in a small grid west of the kingdom so
+       * each silhouette is visible. The runtime tiles them via the
+       * overlay-routed dispatch; this layout is the closest we can
+       * approximate without porting the bulk emit mechanism. */
+      {
+        const tiles = byClass.ground_tile;
+        const target = UNPLACED_TARGET_FOOTPRINT.ground_tile;
+        const pitch = target * 1.2;
+        const cols = Math.max(1, Math.ceil(Math.sqrt(tiles.length)));
+        const gridSpan = pitch * cols;
+        const xBase = -gridSpan - 1500;
+        const zBase = (ext[1] - gridSpan) / 2;
+        for (let i = 0; i < tiles.length; i++) {
+          const u = tiles[i];
+          if (!ensureMeshUploaded(u.pack_slot)) continue;
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          const x = xBase + (col + 0.5) * pitch;
+          const z = zBase + (row + 0.5) * pitch;
+          drawPlacements.push(buildUnplacedDraw(u, 'ground_tile', x, z));
+          unplacedShown.ground_tile++;
+        }
       }
       /* npc_token: skipped on purpose (the count is reported in the
        * status line so the user can confirm). */
       unplacedShown.npc_token = byClass.npc_token.length;
-      /* Unknown: keep the canonical grid behaviour, but parked east of
-       * the world so it doesn't visually clash with classified slots. */
+      /* Unknown: grid east of the world. Same normalisation rule. */
       const unknowns = byClass.unknown;
       unknowns.sort((a, b) => a.pack_slot - b.pack_slot);
-      const ucols = Math.max(1, Math.ceil(Math.sqrt(unknowns.length)));
-      const urows = Math.max(1, Math.ceil(unknowns.length / ucols));
-      const ucell = 1800;
-      const uxBase = ext[0] + 1500;
-      for (let i = 0; i < unknowns.length; i++) {
-        const u = unknowns[i];
-        if (!ensureMeshUploaded(u.pack_slot)) continue;
-        const col = i % ucols;
-        const row = Math.floor(i / ucols);
-        drawPlacements.push({
-          meshId: u.pack_slot,
-          x: uxBase + (col + 0.5) * ucell,
-          z: (row + 0.5) * ucell,
-          kind: 'unplaced', class: 'unknown',
-          slot: u.pack_slot, note: u.note,
-        });
-        unplacedShown.unknown++;
+      {
+        const target = UNPLACED_TARGET_FOOTPRINT.unknown;
+        const pitch = target * 1.4;
+        const ucols = Math.max(1, Math.ceil(Math.sqrt(unknowns.length)));
+        const uxBase = ext[0] + 1500;
+        for (let i = 0; i < unknowns.length; i++) {
+          const u = unknowns[i];
+          if (!ensureMeshUploaded(u.pack_slot)) continue;
+          const col = i % ucols;
+          const row = Math.floor(i / ucols);
+          const x = uxBase + (col + 0.5) * pitch;
+          const z = (row + 0.5) * pitch;
+          drawPlacements.push(buildUnplacedDraw(u, 'unknown', x, z));
+          unplacedShown.unknown++;
+        }
       }
     }
     frameWorldCam(drawPlacements, ext);

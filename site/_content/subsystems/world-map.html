@@ -229,6 +229,49 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
   <p>The <code>legaia-engine play-window --world-map</code> flag activates <code>WorldMap</code> mode and shows camera state (scroll, azimuth, zoom) in the HUD overlay.</p>
 </section>
 
+<section class="doc-section" id="world-overview-viewer">
+  <h2>World-overview viewer</h2>
+  <p>The <a href="../world-overview.html"><code>/world-overview/</code></a> page in the static site renders each kingdom's landmark layer in real-time WebGL 3D from a disc image. It exists to make the world-map data layer reviewable end-to-end without a save state or an emulator.</p>
+  <h3>Layout engine for unplaced slot-1 TMDs</h3>
+  <p>The MAN placement table pins a small subset of each kingdom's slot-1 TMD pack at world coordinates (5 / 6 / 17 slots for Drake / Sebucus / Karisto). The remaining slots are positioned at runtime by the field-VM via actor-mesh chains and don't carry a static world coord. The viewer's <em>show unplaced slot-1 TMDs</em> toggle drops those onto a canonical layout grid, classified by <code>slot1_classification.toml</code>:</p>
+  <ul class="bullets">
+    <li><strong>landmark</strong> &mdash; row south of the kingdom bounds, sorted by slot.</li>
+    <li><strong>decoration</strong> &mdash; row north of the kingdom bounds.</li>
+    <li><strong>ground_tile</strong> &mdash; grid west of the kingdom (the runtime tiles them via the overlay-routed dispatch table).</li>
+    <li><strong>npc_token</strong> &mdash; hidden (reused generic actor bases; the count is reported in the status line).</li>
+    <li><strong>unknown</strong> &mdash; grid east of the kingdom.</li>
+  </ul>
+  <p>Two per-mesh transforms keep the layout legible:</p>
+  <ol>
+    <li><strong>AABB-centroid anchor</strong> &mdash; each unplaced TMD is drawn so its AABB centroid sits at the assigned grid slot, instead of its TMD-local origin (which can be far from the visual centre and shift the mesh out of frame).</li>
+    <li><strong>Class-conditional footprint normalisation</strong> &mdash; per-class target footprints in world units (landmark ~600, decoration ~200, ground_tile ~1200, unknown ~600). Each mesh's larger XZ extent maps to the target via a per-placement scale so the row reads at a consistent size regardless of the TMD's native scale.</li>
+  </ol>
+  <p>The <em>normalize unplaced</em> toggle disables both transforms (falls back to the legacy constant scale + TMD-local-origin pivot) so the user can ground-truth against retail.</p>
+  <h3>Distance-cue fog pass</h3>
+  <p>The viewer's <em>fog</em> toggle approximates the retail world-map fog: the diffuse term fades toward a per-kingdom haze colour with distance. The math splits into two pieces the runtime keeps separate, and the WebGL port mirrors that split:</p>
+  <ul class="bullets">
+    <li>The <strong>LUT</strong> at <code>gp-0x2BC</code> (2048 u16 entries that climb from <code>0x0000</code> at near-Z to <code>~0x01FF</code> at far-Z) is a <em>per-Z scalar</em>, not a colour ramp. The retail overlay leaves at <code>0x801F7644..0x801F8690</code> <code>lh</code> the LUT entry, shift it left by 16, and add it to the high half of vertex SXY+offset words via <code>sw s1, 0x8(t1)</code> / <code>0xC(t1)</code> / <code>0x10(t1)</code>. The visible effect on flat triangles is a per-vertex screen-Y nudge proportional to <code>Z &gt;&gt; 5</code>.</li>
+    <li>The <strong>haze colour</strong> is set per-kingdom via the GTE <code>FAR_COLOR</code> control register (loaded via <code>ctc2</code> during world-map enter, not surfaced by the <code>lwc2 t0, -0x2dc(t2)</code> load &mdash; that field is the <code>IR0</code> depth-cue factor, despite earlier doc tables labelling it &ldquo;fog color&rdquo;).</li>
+  </ul>
+  <p>The WebGL port runs this in a vertex + fragment shader:</p>
+  <ul class="bullets">
+    <li>Per-vertex: <code>Z_far = exp2(-zShift) * dist(world, camera_origin)</code>, clamped to <code>[0, far_ref]</code> and normalised to <code>v_fog_t in [0..1]</code>. Approximates the runtime's <code>Z_far = Z &gt;&gt; shift</code> against the top-down camera origin.</li>
+    <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 2047, 0, 2047)]</code> as a scalar u16; normalise to <code>factor = lut_word / 511</code>; then <code>mix(lit, u_fog_color, factor)</code> with <code>u_fog_color</code> = the per-kingdom haze tint from <code>KINGDOM_FOG_TINT</code>. This produces the fade-toward-haze visual instead of treating the LUT entries as RGB tints (an earlier port did the latter and produced &ldquo;richer textures&rdquo; rather than fog).</li>
+  </ul>
+  <p>The shader supports two LUT sources, in priority order:</p>
+  <ol>
+    <li><strong>Disc-extracted LUT (default)</strong> &mdash; the WASM viewer locates the 4 KiB (2048 u16) LUT inside <code>SCUS_942.54</code> via the <code>fog_lut::find</code> content-scan (monotone non-decreasing ramp with leading zero entries + saturating tail) and auto-uploads it on disc load. No file picker; one disc upload = full functionality. On the retail USA build the LUT sits at SCUS offset <code>0x05FCC0</code> (vaddr <code>0x8006FCC0</code>); the content scan handles regional variants without hardcoding.</li>
+    <li><strong>Kingdom-tinted fallback</strong> &mdash; when SCUS extraction doesn't surface a LUT (raw PROT.DAT load, regional variant with shifted SCUS, modded disc), the shader falls back to using <code>v_fog_t</code> directly as the mix factor, still toward the kingdom haze tint.</li>
+  </ol>
+  <p>The per-vertex math diverges from retail in one place: retail samples Z from the GTE's screen-space pipeline after <code>rtpt</code>, while the WebGL2 path uses XZ-plane distance to the fog origin (<code>fog_origin = worldCam centre</code> by default). For a top-down ortho camera the two quantities are equivalent up to a constant; for the orbit-camera mesh inspector the fog toggle is hidden because it doesn't carry over.</p>
+  <h3>Camera anchors</h3>
+  <p>Per-kingdom camera centres + zoom anchors live in two tables:</p>
+  <ul class="bullets">
+    <li><strong><code>KINGDOM_CAM</code></strong> &mdash; walk-view spawn anchors (load-time map-origin coords from <code>_DAT_80089118</code> / <code>_DAT_80089120</code>, decoded by <code>mednafen-state world-map-camera --table &lt;save&gt;</code>). Default view when a kingdom tab is opened.</li>
+    <li><strong><code>KINGDOM_TOPVIEW_CAM</code></strong> &mdash; the <em>lock to retail top-view</em> button slams the world cam to these centres and sets <code>halfWidth / halfHeight = ext / 2</code>. Captured anchors initially mirror <code>KINGDOM_CAM</code> (the dev-menu's free-camera enters from the same spawn anchor before user input scrolls it); replace these values with the output of <code>mednafen-state world-map-camera --table &lt;top-view-save&gt;</code> after capturing a save state in <code>DAT_801F2B94 != 0</code> mode (D-pad drives camera scroll, not party).</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
   <p>The complete function-level reference with Ghidra provenance lives at <code>docs/subsystems/world-map.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_dialog_801e76d4.txt</code>, <code>overlay_dialog_801ead98.txt</code>, and <code>801cfc40.txt</code>.</p>

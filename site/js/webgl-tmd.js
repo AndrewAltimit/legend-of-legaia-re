@@ -6,14 +6,37 @@
  *
  * Public API:
  *   const r = new TmdRenderer(canvas);
- *   r.uploadVram(vramBytes);  // 1MB Uint8Array
+ *   r.uploadVram(vramBytes);                                   // 1MB Uint8Array
  *   r.uploadMesh(positions, uvs, cbaTsb, indices);
  *   r.render(yaw, pitch, center, radius);
+ *   r.uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices);
+ *   r.getMeshAabb(meshId);   // null until uploadSceneMesh has run
+ *   r.uploadFogLut(u16Array, params);                          // optional
+ *   r.renderAssembled(placements, worldExtent, cam);
  *   r.dispose();
+ *
+ * Each `placement` for `renderAssembled` is:
+ *   { meshId, x, z, rotY?, scale?, anchor? }
+ *     scale  - per-placement world-scale (defaults to MESH_SCALE).
+ *     anchor - 'origin' (default) uses the mesh's TMD-local origin as the
+ *              placement pivot; 'centroid' first translates the mesh so
+ *              its AABB centroid sits at (x, 0, z).
+ *
+ * Fog parameters (uploadFogLut(lut, { enable, zShift, color, farRef })):
+ *   lut     - 512-entry Uint16Array, BGR555 entries indexed by Z >> 5.
+ *   enable  - non-zero enables the fog post-process (matches retail's
+ *             gp-0x2D1 & 0x10 gate).
+ *   zShift  - exponent used to compute Z_far = Z >> zShift (retail gp+0x90).
+ *   color   - { r, g, b } in 0..1 floats; mid-distance tint baseline.
+ *   farRef  - 0..16383 reference Z for the far plane (retail gp-0x2E0).
  */
 
 const VRAM_W = 1024;
 const VRAM_H = 512;
+/* Matches the retail fog-LUT shape: 2048 u16 entries indexed by
+ * Z >> 5 (where Z is the 16-bit GTE-output Z, range 0..65535). The
+ * shader samples this via `int(v_fog_t * (FOG_LUT_SIZE - 1))`. */
+const FOG_LUT_SIZE = 2048;
 
 const VS_SRC = `#version 300 es
 precision highp float;
@@ -22,6 +45,14 @@ precision highp int;
 uniform mat4 u_mvp;
 uniform mat4 u_model;   /* per-draw model matrix (identity for single-mesh mode) */
 
+/* Fog (mirrors the overlay leaves at 0x801F7644..0x801F8690 - per-vertex
+ * distance-cue tint added between GTE projection and OT packet write.
+ * Disabled per-draw via u_fog_enable=0; see uploadFogLut.) */
+uniform vec3 u_fog_origin;   /* world-space camera/eye origin (XZ floor plane) */
+uniform float u_fog_far_ref; /* retail gp-0x2E0; far-plane reference Z */
+uniform float u_fog_z_shift; /* retail gp+0x90; exponent for Z_far = Z >> shift */
+uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
+
 in vec3 a_position;
 in vec2 a_uv_byte;       /* 0..255 each, sent as Uint8x2 normalised=false */
 in uvec2 a_cba_tsb;
@@ -29,12 +60,30 @@ in uvec2 a_cba_tsb;
 out vec3 v_world;
 out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
+out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
   v_world = world_pos.xyz;
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
+  /* Mirror the per-vertex Z_far the overlay leaves compute. The retail
+   * pipeline pulls Z from the GTE's screen-space pipeline after rtpt;
+   * here we approximate using XZ-plane distance to the camera origin
+   * since the world-overview camera is a top-down ortho looking straight
+   * down. The far-ref + shift come straight from gp-0x2E0 / gp+0x90. */
+  if (u_fog_enable != 0 && u_fog_far_ref > 0.0) {
+    float dx = world_pos.x - u_fog_origin.x;
+    float dz = world_pos.z - u_fog_origin.z;
+    float dist = sqrt(dx * dx + dz * dz);
+    /* Retail does Z_far = Z >> shift. The same right-shift here in float
+     * space is exp2(-shift); applied to dist before normalisation against
+     * u_fog_far_ref. */
+    float shifted = dist * exp2(-u_fog_z_shift);
+    v_fog_t = clamp(shifted / u_fog_far_ref, 0.0, 1.0);
+  } else {
+    v_fog_t = 0.0;
+  }
   gl_Position = u_mvp * world_pos;
 }
 `;
@@ -45,17 +94,35 @@ precision highp int;
 precision highp usampler2D;
 
 uniform usampler2D u_vram;
+uniform usampler2D u_fog_lut;  /* 512x1 R16UI, BGR555 entries; indexed by Z >> 5 */
 uniform vec3 u_light;
 /* When non-zero, render transparent samples as opaque (with a tinted
  * fallback so they're visible). Used by the assembled top-view map where
  * CLUT collisions are expected and discarded fragments leave holes. */
 uniform int u_no_discard;
+/* When non-zero, blend the per-vertex distance-cue fog LUT into the
+ * diffuse term. Mirrors the overlay leaves' dpcs/dpct post-process. */
+uniform int u_fog_enable;
+/* Per-kingdom baseline fog tint (BGR555 -> RGB linear in 0..1). Used as
+ * the fog color when u_fog_lut hasn't been bound to a captured LUT yet
+ * so the LUT-less path still produces a visually-meaningful gradient. */
+uniform vec3 u_fog_color;
 
 in vec3 v_world;
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
+in float v_fog_t;
 
 out vec4 o_color;
+
+/* Decode BGR555 R/G/B in 0..1 linear. Used for VRAM texture samples. */
+vec3 bgr555_to_rgb(uint c) {
+  return vec3(
+    float(c & 31u) / 31.0,
+    float((c >> 5u) & 31u) / 31.0,
+    float((c >> 10u) & 31u) / 31.0
+  );
+}
 
 vec4 bgr555_to_rgba(uint c) {
   float r = float(c & 31u) / 31.0;
@@ -132,7 +199,37 @@ void main() {
   vec3 n = normalize(cross(dx, dy));
   float lambert = max(dot(n, normalize(-u_light)), 0.0);
   float shade = 0.45 + 0.55 * lambert;
-  o_color = vec4(color.rgb * shade, 1.0);
+  vec3 lit = color.rgb * shade;
+
+  if (u_fog_enable != 0) {
+    /* The retail LUT at gp-0x2BC stores a per-Z SCALAR (entries climb
+     * from 0x0000 at near-Z to ~0x01FF at far-Z) that the overlay
+     * leaves add to vertex SXY+offset words; the per-kingdom haze
+     * COLOR comes from the GTE FAR_COLOR register, set via ctc2
+     * during kingdom init. The retail visual is "diffuse fades toward
+     * a kingdom-tinted haze color with distance" - not a color tint
+     * baked into the LUT itself.
+     *
+     * The WebGL approximation mirrors that split: sample the LUT as a
+     * scalar fog factor in 0..1, then mix(lit, u_fog_color, factor)
+     * with u_fog_color = the kingdom haze tint. When v_fog_t already
+     * encodes the distance signal, the LUT shapes the per-tier
+     * curve (retail samples discrete tiers at Z >> 5 boundaries). */
+    float lut_idx_f = clamp(v_fog_t * 2047.0, 0.0, 2047.0);
+    int lut_idx = int(lut_idx_f);
+    uint lut_word = texelFetch(u_fog_lut, ivec2(lut_idx, 0), 0).r;
+    /* The retail LUT saturates at 0x01FF (= 511); normalise to 0..1.
+     * Without a captured LUT (the 1D texture is seeded to all zeros)
+     * we fall back to v_fog_t directly so the toggle still produces
+     * a distance-based fade. */
+    float lut_factor = float(lut_word) / 511.0;
+    float factor = (lut_word == 0u && v_fog_t > 0.0)
+      ? v_fog_t
+      : clamp(lut_factor, 0.0, 1.0);
+    lit = mix(lit, u_fog_color, factor);
+  }
+
+  o_color = vec4(lit, 1.0);
 }
 `;
 
@@ -149,6 +246,12 @@ class TmdRenderer {
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locLight   = gl.getUniformLocation(this.program, 'u_light');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
+    this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
+    this.locFogEnableFs = gl.getUniformLocation(this.program, 'u_fog_enable');
+    this.locFogColor    = gl.getUniformLocation(this.program, 'u_fog_color');
+    this.locFogOrigin   = gl.getUniformLocation(this.program, 'u_fog_origin');
+    this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
+    this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
     this.locPos     = gl.getAttribLocation(this.program, 'a_position');
     this.locUv      = gl.getAttribLocation(this.program, 'a_uv_byte');
     this.locCbaTsb  = gl.getAttribLocation(this.program, 'a_cba_tsb');
@@ -159,10 +262,13 @@ class TmdRenderer {
     this.ctBuf  = gl.createBuffer();
     this.idxBuf = gl.createBuffer();
     this.tex    = gl.createTexture();
+    this.fogTex = gl.createTexture();
     /* Per-mesh GL state for the assembled (multi-mesh world) path. Indexed
      * by a caller-supplied meshId (typically the kingdom pack slot). Each
      * entry holds its own VAO + buffers so we can switch meshes cheaply
-     * inside a single render frame. */
+     * inside a single render frame. Each entry also carries an AABB so
+     * placements can opt into centroid-anchored layout instead of using
+     * the TMD-local origin as the placement pivot. */
     this.sceneMeshes = new Map();
 
     /* Allocate the VRAM texture once (R16UI 1024x512). */
@@ -172,6 +278,31 @@ class TmdRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    /* Fog LUT texture: 512x1 R16UI; entries are PSX BGR555 packets. */
+    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, FOG_LUT_SIZE, 1);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    /* Seed with a neutral grey ramp (BGR555 == 0) so a fog draw before
+     * the first uploadFogLut still produces u_fog_color-blended output. */
+    {
+      const zeros = new Uint16Array(FOG_LUT_SIZE);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, 0, FOG_LUT_SIZE, 1,
+        gl.RED_INTEGER, gl.UNSIGNED_SHORT, zeros,
+      );
+    }
+    this.fogParams = {
+      enable: 0,
+      zShift: 5,
+      color: { r: 0.18, g: 0.20, b: 0.32 },
+      farRef: 16384.0,
+      origin: [0, 0, 0],
+    };
 
     this.indexCount = 0;
   }
@@ -191,6 +322,49 @@ class TmdRenderer {
       gl.RED_INTEGER, gl.UNSIGNED_SHORT,
       u16,
     );
+  }
+
+  /* Upload a 512-entry fog LUT + scalar params. `lut` is a Uint16Array of
+   * BGR555 entries (matches the bytes the retail Lua probe dumps to
+   * fog_probe.lut.bin). `params` keys override the cached defaults; pass
+   * only the fields that changed. */
+  uploadFogLut(lut, params) {
+    const gl = this.gl;
+    if (lut && lut.length >= FOG_LUT_SIZE) {
+      gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, 0, FOG_LUT_SIZE, 1,
+        gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+        lut.subarray(0, FOG_LUT_SIZE),
+      );
+    }
+    if (params) {
+      if (params.enable !== undefined) this.fogParams.enable = params.enable ? 1 : 0;
+      if (params.zShift !== undefined) this.fogParams.zShift = +params.zShift;
+      if (params.farRef !== undefined) this.fogParams.farRef = +params.farRef;
+      if (params.color) {
+        this.fogParams.color = {
+          r: +params.color.r,
+          g: +params.color.g,
+          b: +params.color.b,
+        };
+      }
+      if (params.origin) this.fogParams.origin = params.origin.slice(0, 3);
+    }
+  }
+
+  /* Convenience setter for the per-frame fog origin (typically the
+   * top-down camera target so silhouettes near the player fade last). */
+  setFogOrigin(x, y, z) {
+    this.fogParams.origin = [x, y, z];
+  }
+
+  /* Return the AABB this renderer computed for an uploaded scene mesh.
+   * Returns null if the meshId has never been uploaded. */
+  getMeshAabb(meshId) {
+    const m = this.sceneMeshes.get(meshId);
+    return m ? m.aabb : null;
   }
 
   uploadMesh(positions, uvs, cbaTsb, indices) {
@@ -271,9 +445,11 @@ class TmdRenderer {
         ctBuf:  gl.createBuffer(),
         idxBuf: gl.createBuffer(),
         indexCount: 0,
+        aabb: null,
       };
       this.sceneMeshes.set(meshId, m);
     }
+    m.aabb = computeAabb(positions);
     gl.bindVertexArray(m.vao);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
@@ -343,6 +519,25 @@ class TmdRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
+    /* Fog uniforms. The cam's centre doubles as the fog origin when no
+     * explicit override has been pushed - silhouettes near the camera
+     * stay tinted least, matching the runtime's per-vertex pipeline. */
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
+    gl.uniform1i(this.locFogLut, 1);
+    gl.uniform1i(this.locFogEnableFs, this.fogParams.enable);
+    gl.uniform3f(
+      this.locFogColor,
+      this.fogParams.color.r,
+      this.fogParams.color.g,
+      this.fogParams.color.b,
+    );
+    const fogOrigin = this.fogParams.origin && this.fogParams.origin.length === 3
+      ? this.fogParams.origin
+      : [cam.centerX, 0, cam.centerZ];
+    gl.uniform3f(this.locFogOrigin, fogOrigin[0], fogOrigin[1], fogOrigin[2]);
+    gl.uniform1f(this.locFogFarRef, this.fogParams.farRef);
+    gl.uniform1f(this.locFogZShift, this.fogParams.zShift);
 
     /* Group draws by meshId so we bind each VAO once per frame. */
     const byMesh = new Map();
@@ -357,7 +552,11 @@ class TmdRenderer {
       if (m.indexCount === 0) continue;
       gl.bindVertexArray(m.vao);
       for (const p of list) {
-        const model = placementModel(p.x, p.z, p.rotY || 0);
+        const scale = (p.scale != null) ? p.scale : MESH_SCALE;
+        const useCentroid = (p.anchor === 'centroid') && m.aabb;
+        const model = useCentroid
+          ? placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb)
+          : placementModelScaled(p.x, p.z, p.rotY || 0, scale);
         gl.uniformMatrix4fv(this.locModel, false, model);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
@@ -534,16 +733,61 @@ function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, v
  * presentation knob, not the retail engine's behaviour - the in-game
  * top-view debug camera is much closer to its meshes. */
 const MESH_SCALE = 6.0;
-function placementModel(x, z, rotY) {
+
+/* Legacy per-placement model: scale by `sc`, rotate Y, place at (x, 0, z).
+ * The mesh's TMD-local origin is the placement pivot; meshes with a
+ * non-zero AABB centroid will render offset from the placement coord. */
+function placementModelScaled(x, z, rotY, scale) {
   const c = Math.cos(rotY), s = Math.sin(rotY);
-  const sc = MESH_SCALE;
-  /* World matrix = T_world * Ry(rotY) * S_yflip_scaled. Column-major. */
+  const sc = scale;
   return new Float32Array([
-     sc * c,    0, -sc * s, 0,
+     sc * c,    0,  sc * s, 0,
      0,       -sc,  0,      0,    /* flip Y so PSX +Y down -> world +Y up */
-     sc * s,    0,  sc * c, 0,
+    -sc * s,    0,  sc * c, 0,
      x,         0,  z,      1,
   ]);
+}
+
+/* Centroid-anchored per-placement model. Pre-translates the mesh so its
+ * AABB centroid sits at the placement coord before rotation + Y-flip
+ * scale + world translation. The math expands `T_world * Sflip_scaled *
+ * Ry * T(-centroid)`. Used for `kind: 'unplaced'` placements where the
+ * TMD-local origin doesn't carry meaningful world-position information. */
+function placementModelCentered(x, z, rotY, scale, aabb) {
+  const c = Math.cos(rotY), s = Math.sin(rotY);
+  const sc = scale;
+  const cx = aabb.cx, cy = aabb.cy, cz = aabb.cz;
+  return new Float32Array([
+     sc * c,                            0,      sc * s,                          0,
+     0,                                -sc,     0,                                0,
+    -sc * s,                            0,      sc * c,                          0,
+     sc * (-c * cx + s * cz) + x,       sc * cy, sc * (-s * cx - c * cz) + z,    1,
+  ]);
+}
+
+/* Compute AABB + bounding-sphere radius over a Float32Array of vec3s.
+ * Empty input collapses to a zero-extent box at origin. */
+function computeAabb(positions) {
+  if (!positions || positions.length < 3) {
+    return { cx: 0, cy: 0, cz: 0, sx: 0, sy: 0, sz: 0, radius: 0 };
+  }
+  let minX = positions[0], maxX = positions[0];
+  let minY = positions[1], maxY = positions[1];
+  let minZ = positions[2], maxZ = positions[2];
+  for (let i = 3; i < positions.length; i += 3) {
+    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+    if (x < minX) minX = x; else if (x > maxX) maxX = x;
+    if (y < minY) minY = y; else if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; else if (z > maxZ) maxZ = z;
+  }
+  const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
+  return {
+    cx: (minX + maxX) * 0.5,
+    cy: (minY + maxY) * 0.5,
+    cz: (minZ + maxZ) * 0.5,
+    sx, sy, sz,
+    radius: Math.hypot(sx, sy, sz) * 0.5,
+  };
 }
 
 /* Top-down orthographic view-projection.
