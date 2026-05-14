@@ -43,35 +43,152 @@
 # Live-RAM signal: scripts/pcsx-redux/resolve_actor_tmds.py extracts
 # actor-placed slots from PCSX-Redux save states. Slots that show up in
 # site/world-overview-live.json are seeded as "landmark" below.
+#
+# Visual sweep aid: `python3 scripts/render-unplaced-tmds.py` writes a
+# wireframe contact sheet (iso + top + front) for every unplaced slot to
+# /tmp/world-thumbs/<kingdom>_unplaced_pN.png so you can review a kingdom
+# end-to-end without driving the live web viewer.
 
 # ---------------------------------------------------------------- Drake
 # Pack: 40 TMDs. MAN table pins 5 slots (0, 34, 35, 36, 37) of which 2
 # (0, 35) carry world coordinates. Live-RAM extract adds 10 more
 # actor-placed slots (2, 6, 14, 16, 29, 31, 34, 36, 37, 39).
 
+[drake.1]
+class = "ground_tile"
+note = "flat triangulated patch, very low height profile"
+
 [drake.2]  # live actor-placed
 class = "landmark"
 note = "actor-placed via mesh chain (see world-overview-live.json)"
+
+[drake.3]
+class = "landmark"
+note = "small angular building / hut"
+
+[drake.4]
+class = "landmark"
+note = "tall narrow tower / spire"
+
+[drake.5]
+class = "landmark"
+note = "dome with concentric / spiralled top — structure"
 
 [drake.6]  # live actor-placed
 class = "landmark"
 note = "actor-placed via mesh chain"
 
+[drake.7]
+class = "landmark"
+note = "complex multi-form structure with internal detail"
+
+[drake.8]
+class = "landmark"
+note = "rounded dome / hill"
+
+[drake.9]
+class = "landmark"
+note = "small faceted dome"
+
+[drake.10]
+class = "npc_token"
+note = "4-point star primitive (~284B); generic actor base"
+
+[drake.11]
+class = "npc_token"
+note = "4-point star primitive (~352B); generic actor base"
+
+[drake.12]
+class = "landmark"
+note = "octagonal symmetric tower"
+
+[drake.13]
+class = "landmark"
+note = "rounded dome / arched roof"
+
 [drake.14]  # live actor-placed
 class = "landmark"
 note = "actor-placed via mesh chain"
+
+[drake.15]
+class = "ground_tile"
+note = "very flat wide disc, dome-shaped, low height profile"
 
 [drake.16]  # live actor-placed
 class = "landmark"
 note = "actor-placed via mesh chain"
 
+[drake.17]
+class = "landmark"
+note = "spiky multi-peak mountain group"
+
+[drake.18]
+class = "landmark"
+note = "geodesic dome"
+
+[drake.19]
+class = "landmark"
+note = "spiky mountain group; same family as drake.17"
+
+[drake.20]
+class = "landmark"
+note = "geodesic dome; same family as drake.18"
+
+[drake.21]
+class = "landmark"
+note = "tall square building"
+
+[drake.22]
+class = "decoration"
+note = "small faceted prop (~528B)"
+
+[drake.23]
+class = "landmark"
+note = "terraced mountain peak — concentric square layering on top view"
+
+[drake.24]
+class = "decoration"
+note = "small icosahedron-like polyhedron"
+
+[drake.25]
+class = "decoration"
+note = "small thin angular shape (~576B); sign / marker"
+
+[drake.26]
+class = "decoration"
+note = "small angular shape; same family as drake.25"
+
+[drake.27]
+class = "decoration"
+note = "small angular shape; same family as drake.25"
+
+[drake.28]
+class = "landmark"
+note = "wide mountain range silhouette, distinct kingdom-specific terrain"
+
 [drake.29]  # live actor-placed
 class = "landmark"
 note = "actor-placed via mesh chain (also shares md5 with sebucus.29)"
 
+[drake.30]
+class = "landmark"
+note = "multi-spire castle / city cluster (nobj=8)"
+
 [drake.31]  # live actor-placed
 class = "landmark"
 note = "actor-placed via mesh chain"
+
+[drake.32]
+class = "landmark"
+note = "multi-roof building cluster"
+
+[drake.33]
+class = "landmark"
+note = "md5 06ea405a96b2 shared with sebucus.29 (verified actor-placed in Drake via live RAM in Drake variant; same 10-obj cluster)"
+
+[drake.38]
+class = "decoration"
+note = "very small thin flat prop (~368B)"
 
 [drake.39]  # live actor-placed
 class = "landmark"
@@ -80,15 +197,91 @@ note = "actor-placed via mesh chain (also shares md5 with sebucus.35 / karisto.5
 # ---------------------------------------------------------- Sebucus
 # Pack: 36 TMDs. MAN pins 6 slots of which 3 carry world coordinates.
 # No live-RAM extract yet for this kingdom; classifications below are
-# inferred from cross-kingdom md5 collisions only.
+# inferred from cross-kingdom md5 collisions and visual sweep.
+
+[sebucus.1]
+class = "landmark"
+note = "mounded island / landmass form"
 
 [sebucus.2]
 class = "landmark"
 note = "md5 0ac44cdca45c shared with karisto.2 (generic landmark)"
 
+[sebucus.3]
+class = "landmark"
+note = "elongated small island / boat-shaped landform"
+
+[sebucus.4]
+class = "landmark"
+note = "hill / mound with dome silhouette"
+
+[sebucus.5]
+class = "landmark"
+note = "low landform with multiple peaks"
+
+[sebucus.6]
+class = "landmark"
+note = "tall obelisk / pillar (~5.6KB)"
+
+[sebucus.7]
+class = "landmark"
+note = "4-corner-tower cluster (nobj=2, ~5.3KB) — temple / fortress quad layout"
+
+[sebucus.8]
+class = "landmark"
+note = "multi-spire group (3-4 narrow towers)"
+
+[sebucus.9]
+class = "landmark"
+note = "building cluster with spires"
+
+[sebucus.10]
+class = "npc_token"
+note = "4-point star primitive (~284B); generic actor base"
+
+[sebucus.11]
+class = "npc_token"
+note = "4-point star primitive (~352B); generic actor base"
+
+[sebucus.12]
+class = "landmark"
+note = "tall narrow tower with base (nobj=2)"
+
+[sebucus.13]
+class = "landmark"
+note = "wide floor / platform with 3 internal markers"
+
+[sebucus.14]
+class = "landmark"
+note = "thin bar / road segment; md5 0ac44cdca45c shared with karisto.2"
+
+[sebucus.15]
+class = "landmark"
+note = "mountain / dome — triangular peak silhouette"
+
+[sebucus.16]
+class = "landmark"
+note = "rounded wide landform"
+
+[sebucus.17]
+class = "landmark"
+note = "twin tall spires"
+
+[sebucus.18]
+class = "landmark"
+note = "thin bar / road; md5 b72e6c0c3d09 shared with karisto.30"
+
 [sebucus.19]
 class = "landmark"
 note = "md5 3f7cf4c14f58 shared with karisto.33"
+
+[sebucus.20]
+class = "landmark"
+note = "thin bar / road; same family as sebucus.14 / sebucus.18"
+
+[sebucus.21]
+class = "landmark"
+note = "twin spires; same family as sebucus.17"
 
 [sebucus.22]
 class = "landmark"
@@ -102,9 +295,21 @@ note = "md5 8326c22c88fd shared with karisto.32"
 class = "landmark"
 note = "md5 66e20edbd2b7 shared with karisto.34"
 
+[sebucus.25]
+class = "landmark"
+note = "3-building town cluster (nobj=2)"
+
+[sebucus.26]
+class = "landmark"
+note = "multi-building cluster with central element (nobj=3)"
+
+[sebucus.27]
+class = "landmark"
+note = "wide multi-building cluster"
+
 [sebucus.29]
 class = "landmark"
-note = "md5 06ea405a96b2 shared with drake.29 (verified actor-placed in Drake)"
+note = "md5 06ea405a96b2 shared with drake.29 / drake.33 (verified actor-placed in Drake)"
 
 [sebucus.34]
 class = "landmark"
@@ -119,13 +324,125 @@ note = "md5 01e3017b64a1 shared with drake.39 / karisto.55"
 # Largest pack; many slots remain unclassified pending a live-RAM extract
 # from a Karisto save state.
 
+[karisto.1]
+class = "landmark"
+note = "castle structure with stepped levels"
+
 [karisto.2]
 class = "landmark"
 note = "md5 0ac44cdca45c shared with sebucus.14"
 
+[karisto.3]
+class = "landmark"
+note = "tall castle / fortress"
+
+[karisto.4]
+class = "landmark"
+note = "cliff / coastline terrain block"
+
+[karisto.5]
+class = "landmark"
+note = "5-building town arrangement (nobj=5)"
+
+[karisto.6]
+class = "ground_tile"
+note = "wide flat triangulated mesh, low profile"
+
+[karisto.7]
+class = "landmark"
+note = "tall multi-element building (nobj=4)"
+
+[karisto.8]
+class = "landmark"
+note = "dome with multiple spires on top — temple / antenna pavilion"
+
+[karisto.9]
+class = "decoration"
+note = "small bow-tie / X-shaped prop"
+
+[karisto.10]
+class = "landmark"
+note = "3-spire tower cluster (nobj=4)"
+
+[karisto.11]
+class = "landmark"
+note = "wide mountain range with many peaks"
+
+[karisto.12]
+class = "landmark"
+note = "mountain / hill with rounded top"
+
+[karisto.13]
+class = "landmark"
+note = "mountain range with two distinct peaks (nobj=2)"
+
+[karisto.14]
+class = "landmark"
+note = "large single mountain"
+
+[karisto.15]
+class = "landmark"
+note = "cluster of 4 small huts (nobj=4) — village"
+
+[karisto.16]
+class = "landmark"
+note = "faceted dome / hill"
+
+[karisto.17]
+class = "landmark"
+note = "angular dome; similar to karisto.16"
+
+[karisto.18]
+class = "landmark"
+note = "large multi-peak mountain range"
+
+[karisto.19]
+class = "npc_token"
+note = "small octahedron primitive (~472B); generic actor base"
+
+[karisto.20]
+class = "npc_token"
+note = "small octahedron primitive (~476B); same family as karisto.19"
+
+[karisto.21]
+class = "npc_token"
+note = "small octahedron primitive (~452B); same family as karisto.19"
+
+[karisto.22]
+class = "decoration"
+note = "5-pointed star / umbrella shape"
+
+[karisto.23]
+class = "npc_token"
+note = "small octahedron primitive (~452B); same family as karisto.19"
+
+[karisto.24]
+class = "landmark"
+note = "cluster of small landmasses / rocks"
+
+[karisto.25]
+class = "decoration"
+note = "small angular shape with wing"
+
+[karisto.26]
+class = "decoration"
+note = "small pyramid / tent"
+
+[karisto.27]
+class = "decoration"
+note = "small pointed shape"
+
+[karisto.28]
+class = "landmark"
+note = "twin spires; same family as sebucus.17 / sebucus.21"
+
+[karisto.29]
+class = "landmark"
+note = "twin spires; same family as karisto.28"
+
 [karisto.30]
 class = "landmark"
-note = "md5 b72e6c0c3d09 shared with sebucus.2"
+note = "md5 b72e6c0c3d09 shared with sebucus.18"
 
 [karisto.31]
 class = "landmark"
@@ -142,6 +459,18 @@ note = "md5 3f7cf4c14f58 shared with sebucus.19"
 [karisto.34]
 class = "landmark"
 note = "md5 66e20edbd2b7 shared with sebucus.24"
+
+[karisto.36]
+class = "landmark"
+note = "wide low jagged form"
+
+[karisto.37]
+class = "landmark"
+note = "multi-spire cluster on base (nobj=3)"
+
+[karisto.38]
+class = "decoration"
+note = "very small thin flat prop (~368B); same family as drake.38"
 
 [karisto.43]
 class = "landmark"

@@ -1784,8 +1784,8 @@
         "body_bytes": 912,
         "nobj": 1,
         "md5": "c228c8465560",
-        "class": "unknown",
-        "note": null
+        "class": "ground_tile",
+        "note": "flat triangulated patch, very low height profile"
       },
       {
         "pack_slot": 2,
@@ -1804,8 +1804,8 @@
         "body_bytes": 712,
         "nobj": 1,
         "md5": "0a2eddb1739d",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "small angular building / hut"
       },
       {
         "pack_slot": 4,
@@ -1814,8 +1814,8 @@
         "body_bytes": 820,
         "nobj": 1,
         "md5": "ccb942f8964e",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "tall narrow tower / spire"
       },
       {
         "pack_slot": 5,
@@ -1824,8 +1824,8 @@
         "body_bytes": 2140,
         "nobj": 1,
         "md5": "6268c421f277",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "dome with concentric / spiralled top — structure"
       },
       {
         "pack_slot": 6,
@@ -1844,8 +1844,8 @@
         "body_bytes": 2804,
         "nobj": 1,
         "md5": "add70b1432af",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "complex multi-form structure with internal detail"
       },
       {
         "pack_slot": 8,
@@ -1854,8 +1854,8 @@
         "body_bytes": 1276,
         "nobj": 1,
         "md5": "e32e8ff8b199",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "rounded dome / hill"
       },
       {
         "pack_slot": 9,
@@ -1864,8 +1864,8 @@
         "body_bytes": 472,
         "nobj": 1,
         "md5": "fe006913a36d",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "small faceted dome"
       },
       {
         "pack_slot": 10,
@@ -1874,8 +1874,8 @@
         "body_bytes": 284,
         "nobj": 1,
         "md5": "3b0459979e74",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "4-point star primitive (~284B); generic actor base"
       },
       {
         "pack_slot": 11,
@@ -1884,8 +1884,8 @@
         "body_bytes": 352,
         "nobj": 1,
         "md5": "ad1e77399133",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "4-point star primitive (~352B); generic actor base"
       },
       {
         "pack_slot": 12,
@@ -1894,8 +1894,8 @@
         "body_bytes": 940,
         "nobj": 1,
         "md5": "efbb31de7bf7",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "octagonal symmetric tower"
       },
       {
         "pack_slot": 13,
@@ -1904,8 +1904,8 @@
         "body_bytes": 1352,
         "nobj": 1,
         "md5": "1dbbc7754591",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "rounded dome / arched roof"
       },
       {
         "pack_slot": 14,
@@ -1924,8 +1924,8 @@
         "body_bytes": 1588,
         "nobj": 1,
         "md5": "aa7c1c80a495",
-        "class": "unknown",
-        "note": null
+        "class": "ground_tile",
+        "note": "very flat wide disc, dome-shaped, low height profile"
       },
       {
         "pack_slot": 16,
@@ -1944,8 +1944,8 @@
         "body_bytes": 1064,
         "nobj": 1,
         "md5": "4c841e7a0b52",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "spiky multi-peak mountain group"
       },
       {
         "pack_slot": 18,
@@ -1954,8 +1954,8 @@
         "body_bytes": 1196,
         "nobj": 1,
         "md5": "01049c15d1be",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "geodesic dome"
       },
       {
         "pack_slot": 19,
@@ -1964,8 +1964,8 @@
         "body_bytes": 1064,
         "nobj": 1,
         "md5": "8cbd67ee0cf6",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "spiky mountain group; same family as drake.17"
       },
       {
         "pack_slot": 20,
@@ -1974,8 +1974,8 @@
         "body_bytes": 1196,
         "nobj": 1,
         "md5": "33aed36fbc8c",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "geodesic dome; same family as drake.18"
       },
       {
         "pack_slot": 21,
@@ -1984,8 +1984,8 @@
         "body_bytes": 872,
         "nobj": 1,
         "md5": "3b8485004d6b",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "tall square building"
       },
       {
         "pack_slot": 22,
@@ -1994,8 +1994,8 @@
         "body_bytes": 528,
         "nobj": 1,
         "md5": "599e68aacc1e",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small faceted prop (~528B)"
       },
       {
         "pack_slot": 23,
@@ -2004,8 +2004,8 @@
         "body_bytes": 2656,
         "nobj": 1,
         "md5": "76d095d31d8f",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "terraced mountain peak — concentric square layering on top view"
       },
       {
         "pack_slot": 24,
@@ -2014,8 +2014,8 @@
         "body_bytes": 612,
         "nobj": 1,
         "md5": "48153a7d007e",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small icosahedron-like polyhedron"
       },
       {
         "pack_slot": 25,
@@ -2024,8 +2024,8 @@
         "body_bytes": 576,
         "nobj": 1,
         "md5": "7a462e519bf7",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small thin angular shape (~576B); sign / marker"
       },
       {
         "pack_slot": 26,
@@ -2034,8 +2034,8 @@
         "body_bytes": 584,
         "nobj": 1,
         "md5": "77d77d4c76dd",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small angular shape; same family as drake.25"
       },
       {
         "pack_slot": 27,
@@ -2044,8 +2044,8 @@
         "body_bytes": 608,
         "nobj": 1,
         "md5": "a7517ef52bdf",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small angular shape; same family as drake.25"
       },
       {
         "pack_slot": 28,
@@ -2054,8 +2054,8 @@
         "body_bytes": 4392,
         "nobj": 1,
         "md5": "0e2f406ad4dc",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "wide mountain range silhouette, distinct kingdom-specific terrain"
       },
       {
         "pack_slot": 29,
@@ -2074,8 +2074,8 @@
         "body_bytes": 9092,
         "nobj": 8,
         "md5": "85be2dd7248f",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "multi-spire castle / city cluster (nobj=8)"
       },
       {
         "pack_slot": 31,
@@ -2094,8 +2094,8 @@
         "body_bytes": 3468,
         "nobj": 1,
         "md5": "b19251c47b6e",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "multi-roof building cluster"
       },
       {
         "pack_slot": 33,
@@ -2104,8 +2104,8 @@
         "body_bytes": 6280,
         "nobj": 10,
         "md5": "06ea405a96b2",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "md5 06ea405a96b2 shared with sebucus.29 (verified actor-placed in Drake via live RAM in Drake variant; same 10-obj cluster)"
       },
       {
         "pack_slot": 38,
@@ -2114,8 +2114,8 @@
         "body_bytes": 368,
         "nobj": 1,
         "md5": "fb7f6e6c976d",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "very small thin flat prop (~368B)"
       },
       {
         "pack_slot": 39,
@@ -3295,8 +3295,8 @@
         "body_bytes": 1636,
         "nobj": 1,
         "md5": "418d6c52f3d1",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "mounded island / landmass form"
       },
       {
         "pack_slot": 2,
@@ -3315,8 +3315,8 @@
         "body_bytes": 868,
         "nobj": 1,
         "md5": "db4e4014e077",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "elongated small island / boat-shaped landform"
       },
       {
         "pack_slot": 4,
@@ -3325,8 +3325,8 @@
         "body_bytes": 1276,
         "nobj": 1,
         "md5": "0427e5a0f439",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "hill / mound with dome silhouette"
       },
       {
         "pack_slot": 5,
@@ -3335,8 +3335,8 @@
         "body_bytes": 1480,
         "nobj": 1,
         "md5": "7256c79b9028",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "low landform with multiple peaks"
       },
       {
         "pack_slot": 6,
@@ -3345,8 +3345,8 @@
         "body_bytes": 5596,
         "nobj": 1,
         "md5": "f96a0308297a",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "tall obelisk / pillar (~5.6KB)"
       },
       {
         "pack_slot": 7,
@@ -3355,8 +3355,8 @@
         "body_bytes": 5292,
         "nobj": 2,
         "md5": "79ebd85028c8",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "4-corner-tower cluster (nobj=2, ~5.3KB) — temple / fortress quad layout"
       },
       {
         "pack_slot": 8,
@@ -3365,8 +3365,8 @@
         "body_bytes": 5268,
         "nobj": 1,
         "md5": "9e31f80a4b85",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "multi-spire group (3-4 narrow towers)"
       },
       {
         "pack_slot": 9,
@@ -3375,8 +3375,8 @@
         "body_bytes": 3344,
         "nobj": 1,
         "md5": "e18e6a2072e9",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "building cluster with spires"
       },
       {
         "pack_slot": 10,
@@ -3385,8 +3385,8 @@
         "body_bytes": 284,
         "nobj": 1,
         "md5": "6d282256139d",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "4-point star primitive (~284B); generic actor base"
       },
       {
         "pack_slot": 11,
@@ -3395,8 +3395,8 @@
         "body_bytes": 352,
         "nobj": 1,
         "md5": "271bf3e642ae",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "4-point star primitive (~352B); generic actor base"
       },
       {
         "pack_slot": 12,
@@ -3405,8 +3405,8 @@
         "body_bytes": 1192,
         "nobj": 2,
         "md5": "acf8389974fb",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "tall narrow tower with base (nobj=2)"
       },
       {
         "pack_slot": 13,
@@ -3415,8 +3415,8 @@
         "body_bytes": 2788,
         "nobj": 1,
         "md5": "7e6e99d13253",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "wide floor / platform with 3 internal markers"
       },
       {
         "pack_slot": 14,
@@ -3425,8 +3425,8 @@
         "body_bytes": 548,
         "nobj": 1,
         "md5": "0ac44cdca45c",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "thin bar / road segment; md5 0ac44cdca45c shared with karisto.2"
       },
       {
         "pack_slot": 15,
@@ -3435,8 +3435,8 @@
         "body_bytes": 2276,
         "nobj": 1,
         "md5": "8a89ed8bc8b2",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "mountain / dome — triangular peak silhouette"
       },
       {
         "pack_slot": 16,
@@ -3445,8 +3445,8 @@
         "body_bytes": 2840,
         "nobj": 1,
         "md5": "9db00d215767",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "rounded wide landform"
       },
       {
         "pack_slot": 17,
@@ -3455,8 +3455,8 @@
         "body_bytes": 1564,
         "nobj": 1,
         "md5": "9db1ad443308",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "twin tall spires"
       },
       {
         "pack_slot": 18,
@@ -3465,8 +3465,8 @@
         "body_bytes": 812,
         "nobj": 1,
         "md5": "b72e6c0c3d09",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "thin bar / road; md5 b72e6c0c3d09 shared with karisto.30"
       },
       {
         "pack_slot": 19,
@@ -3485,8 +3485,8 @@
         "body_bytes": 400,
         "nobj": 1,
         "md5": "8f41acae5e2c",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "thin bar / road; same family as sebucus.14 / sebucus.18"
       },
       {
         "pack_slot": 21,
@@ -3495,8 +3495,8 @@
         "body_bytes": 1784,
         "nobj": 1,
         "md5": "36434fcd7c26",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "twin spires; same family as sebucus.17"
       },
       {
         "pack_slot": 22,
@@ -3535,8 +3535,8 @@
         "body_bytes": 6084,
         "nobj": 2,
         "md5": "7055da0ef420",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "3-building town cluster (nobj=2)"
       },
       {
         "pack_slot": 26,
@@ -3545,8 +3545,8 @@
         "body_bytes": 7124,
         "nobj": 3,
         "md5": "9e7665a831ae",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "multi-building cluster with central element (nobj=3)"
       },
       {
         "pack_slot": 27,
@@ -3555,8 +3555,8 @@
         "body_bytes": 4400,
         "nobj": 1,
         "md5": "170359ce27e8",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "wide multi-building cluster"
       },
       {
         "pack_slot": 29,
@@ -3566,7 +3566,7 @@
         "nobj": 10,
         "md5": "06ea405a96b2",
         "class": "landmark",
-        "note": "md5 06ea405a96b2 shared with drake.29 (verified actor-placed in Drake)"
+        "note": "md5 06ea405a96b2 shared with drake.29 / drake.33 (verified actor-placed in Drake)"
       },
       {
         "pack_slot": 34,
@@ -5255,8 +5255,8 @@
         "body_bytes": 3028,
         "nobj": 1,
         "md5": "3b5fb2c69fe4",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "castle structure with stepped levels"
       },
       {
         "pack_slot": 2,
@@ -5275,8 +5275,8 @@
         "body_bytes": 4040,
         "nobj": 1,
         "md5": "d3ecd1ac0e18",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "tall castle / fortress"
       },
       {
         "pack_slot": 4,
@@ -5285,8 +5285,8 @@
         "body_bytes": 3852,
         "nobj": 1,
         "md5": "92dbd123e3a0",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "cliff / coastline terrain block"
       },
       {
         "pack_slot": 5,
@@ -5295,8 +5295,8 @@
         "body_bytes": 5404,
         "nobj": 5,
         "md5": "65496d83b2ee",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "5-building town arrangement (nobj=5)"
       },
       {
         "pack_slot": 6,
@@ -5305,8 +5305,8 @@
         "body_bytes": 2688,
         "nobj": 1,
         "md5": "a39e87a06639",
-        "class": "unknown",
-        "note": null
+        "class": "ground_tile",
+        "note": "wide flat triangulated mesh, low profile"
       },
       {
         "pack_slot": 7,
@@ -5315,8 +5315,8 @@
         "body_bytes": 3272,
         "nobj": 4,
         "md5": "42ba7d2effe1",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "tall multi-element building (nobj=4)"
       },
       {
         "pack_slot": 8,
@@ -5325,8 +5325,8 @@
         "body_bytes": 2456,
         "nobj": 1,
         "md5": "ff7ef6b194dc",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "dome with multiple spires on top — temple / antenna pavilion"
       },
       {
         "pack_slot": 9,
@@ -5335,8 +5335,8 @@
         "body_bytes": 372,
         "nobj": 1,
         "md5": "8288e833e338",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small bow-tie / X-shaped prop"
       },
       {
         "pack_slot": 10,
@@ -5345,8 +5345,8 @@
         "body_bytes": 4384,
         "nobj": 4,
         "md5": "a086b9c154af",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "3-spire tower cluster (nobj=4)"
       },
       {
         "pack_slot": 11,
@@ -5355,8 +5355,8 @@
         "body_bytes": 4736,
         "nobj": 1,
         "md5": "b55d68b8aac9",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "wide mountain range with many peaks"
       },
       {
         "pack_slot": 12,
@@ -5365,8 +5365,8 @@
         "body_bytes": 4980,
         "nobj": 1,
         "md5": "e353053d167f",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "mountain / hill with rounded top"
       },
       {
         "pack_slot": 13,
@@ -5375,8 +5375,8 @@
         "body_bytes": 5036,
         "nobj": 2,
         "md5": "7a6b70ac9d37",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "mountain range with two distinct peaks (nobj=2)"
       },
       {
         "pack_slot": 14,
@@ -5385,8 +5385,8 @@
         "body_bytes": 6368,
         "nobj": 1,
         "md5": "ad3dabd44e4d",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "large single mountain"
       },
       {
         "pack_slot": 15,
@@ -5395,8 +5395,8 @@
         "body_bytes": 2276,
         "nobj": 4,
         "md5": "8a269ec182e2",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "cluster of 4 small huts (nobj=4) — village"
       },
       {
         "pack_slot": 16,
@@ -5405,8 +5405,8 @@
         "body_bytes": 1772,
         "nobj": 1,
         "md5": "12aed754c1f1",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "faceted dome / hill"
       },
       {
         "pack_slot": 17,
@@ -5415,8 +5415,8 @@
         "body_bytes": 1776,
         "nobj": 1,
         "md5": "70ff39de3fd7",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "angular dome; similar to karisto.16"
       },
       {
         "pack_slot": 18,
@@ -5425,8 +5425,8 @@
         "body_bytes": 5708,
         "nobj": 1,
         "md5": "602f211a2287",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "large multi-peak mountain range"
       },
       {
         "pack_slot": 19,
@@ -5435,8 +5435,8 @@
         "body_bytes": 472,
         "nobj": 1,
         "md5": "046072473ac2",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "small octahedron primitive (~472B); generic actor base"
       },
       {
         "pack_slot": 20,
@@ -5445,8 +5445,8 @@
         "body_bytes": 476,
         "nobj": 1,
         "md5": "1ca0ac3daca6",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "small octahedron primitive (~476B); same family as karisto.19"
       },
       {
         "pack_slot": 21,
@@ -5455,8 +5455,8 @@
         "body_bytes": 452,
         "nobj": 1,
         "md5": "2b885faa08a4",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "small octahedron primitive (~452B); same family as karisto.19"
       },
       {
         "pack_slot": 22,
@@ -5465,8 +5465,8 @@
         "body_bytes": 972,
         "nobj": 1,
         "md5": "ba3ab2038c13",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "5-pointed star / umbrella shape"
       },
       {
         "pack_slot": 23,
@@ -5475,8 +5475,8 @@
         "body_bytes": 452,
         "nobj": 1,
         "md5": "4aaed054d59f",
-        "class": "unknown",
-        "note": null
+        "class": "npc_token",
+        "note": "small octahedron primitive (~452B); same family as karisto.19"
       },
       {
         "pack_slot": 24,
@@ -5485,8 +5485,8 @@
         "body_bytes": 2784,
         "nobj": 1,
         "md5": "46db49ef78c8",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "cluster of small landmasses / rocks"
       },
       {
         "pack_slot": 25,
@@ -5495,8 +5495,8 @@
         "body_bytes": 852,
         "nobj": 1,
         "md5": "3f6d9142686d",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small angular shape with wing"
       },
       {
         "pack_slot": 26,
@@ -5505,8 +5505,8 @@
         "body_bytes": 444,
         "nobj": 1,
         "md5": "26fe2633e478",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small pyramid / tent"
       },
       {
         "pack_slot": 27,
@@ -5515,8 +5515,8 @@
         "body_bytes": 408,
         "nobj": 1,
         "md5": "a2f75033bb49",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "small pointed shape"
       },
       {
         "pack_slot": 28,
@@ -5525,8 +5525,8 @@
         "body_bytes": 1564,
         "nobj": 1,
         "md5": "22690d1ff0af",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "twin spires; same family as sebucus.17 / sebucus.21"
       },
       {
         "pack_slot": 29,
@@ -5535,8 +5535,8 @@
         "body_bytes": 1784,
         "nobj": 1,
         "md5": "1c2411a54542",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "twin spires; same family as karisto.28"
       },
       {
         "pack_slot": 30,
@@ -5546,7 +5546,7 @@
         "nobj": 1,
         "md5": "b72e6c0c3d09",
         "class": "landmark",
-        "note": "md5 b72e6c0c3d09 shared with sebucus.2"
+        "note": "md5 b72e6c0c3d09 shared with sebucus.18"
       },
       {
         "pack_slot": 31,
@@ -5595,8 +5595,8 @@
         "body_bytes": 1680,
         "nobj": 1,
         "md5": "1ca86a5f8650",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "wide low jagged form"
       },
       {
         "pack_slot": 37,
@@ -5605,8 +5605,8 @@
         "body_bytes": 3280,
         "nobj": 3,
         "md5": "cd70e9ae7887",
-        "class": "unknown",
-        "note": null
+        "class": "landmark",
+        "note": "multi-spire cluster on base (nobj=3)"
       },
       {
         "pack_slot": 38,
@@ -5615,8 +5615,8 @@
         "body_bytes": 368,
         "nobj": 1,
         "md5": "d90d5e8236ca",
-        "class": "unknown",
-        "note": null
+        "class": "decoration",
+        "note": "very small thin flat prop (~368B); same family as drake.38"
       },
       {
         "pack_slot": 43,

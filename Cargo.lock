@@ -1511,6 +1511,8 @@ dependencies = [
  "legaia-tmd",
  "legaia-vab",
  "serde_json",
+ "sha2",
+ "toml",
  "wasm-bindgen",
  "web-sys",
 ]

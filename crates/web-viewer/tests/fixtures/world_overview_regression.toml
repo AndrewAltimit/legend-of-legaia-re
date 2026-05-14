@@ -1,0 +1,18 @@
+# World-overview content regression fixture. Auto-rewritten by
+# `LEGAIA_REGRESSION_UPDATE=1 cargo test -p legaia-web-viewer \
+#     world_overview_regression`. Commit the diff after reviewing.
+#
+# Each digest is a SHA-256 over (pack-TMD fingerprints +
+# MAN-placement records + classification TOML entries) for one
+# kingdom. See crates/web-viewer/tests/world_overview_regression.rs
+# for the canonical text format the digest is computed over.
+
+[kingdom.drake]
+digest = "2ec7958fc0c05d526bf17babed09d12ddf5ac3c2d0fee7a51e0a6514533abd7a"
+
+[kingdom.karisto]
+digest = "20d237580eb9a3aa23ff0838896dfe06b11e515e7606c55cfb7c31ec71884828"
+
+[kingdom.sebucus]
+digest = "a900e33383098be691b3507413e8d56f19723cb6d31f380fb0ab4515e6c9e026"
+
