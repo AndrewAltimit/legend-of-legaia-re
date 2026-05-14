@@ -437,6 +437,60 @@ hypothesis was falsified. Re-enable from the WASM exports
 `slot4_wireframe_bounds`) if a future RE pass identifies the correct
 draw interpretation.
 
+### Working-buffer writers (transcoder-hunt probe, 2026-05-14)
+
+Running `autorun_slot4_transcoder_hunt.lua` against Drake (sstate1,
+held UP for 60 vsyncs into the warp transition) with Write bps tiled
+across the `0x801BA000` working buffer surfaced **two distinct
+writers**, not a single transcoder:
+
+| Working-buffer offset | First-write PC | RA | Writer function | Role |
+|---|---|---|---|---|
+| `+0x7F8` (`0x801BA7F8`, cluster A's `vertex_base`) | `0x80028710` / `0x8002871C` (paired `sh` instructions) | `0x8001B160` | `FUN_80028158` (5580 B / 1395 instructions) | **per-frame procedural mesh builder**, called from `FUN_8001ada4` case 4 |
+| `+0x8E4` (`0x801BA8E4`, cluster A's `command_stream`) | `0x800293C8` / `0x800296A0` (paired `sw` instructions) | `0x8001B160` | same `FUN_80028158` | per-frame procedural primitive-batch writer (same call) |
+| `+0x6000` (`0x801C0000`, deeper region) | `0x8001A8C8` (memcpy inner loop) | `0x8001E758` | `FUN_8001E54C` (836 B), the streaming chunk processor | **scene-load chunk loader** — copies streaming-format chunks (`[type, size, data]`) to the buffer |
+
+**`FUN_80028158`** decompiles as a switch on `(param_2 >> 3) & 0xf`
+with per-case mesh layouts; it reads only the actor's `+0x9C` params
+struct (offsets `+0x10..+0x22`) and writes the working buffer
+directly. **No slot-4 RAM pointers appear in its arguments** — it is a
+procedural mesh generator (probably waves / sky / particle-emitter
+sheets), not a slot-4 transcoder.
+
+**`FUN_8001E54C`** is the `[type, size, data]` streaming chunk
+dispatcher: it switches on `*(char*)(chunk + 3)` (the chunk type byte)
+and routes each chunk to one of memcpy (case 0/2), LZS decode (case
+1/3), or another decoder (case 12). Its 4 captured writes at
+`0x801C0000` are scene-load chunk copies that land deeper into the
+buffer than cluster A's per-frame inputs at `+0x7F8` / `+0x8E4`.
+
+**Revised model**: slot 4 is not transcoded into a single working-
+buffer region. Instead:
+
+1. At scene load, `FUN_8001E54C` (or a sibling streaming-chunk processor)
+   reads the kingdom bundle's chunks and **distributes their bytes
+   across multiple destinations** — actor structs, working buffer at
+   different offsets, etc.
+2. Some destinations are read by cluster A during the same scene-load
+   pass (Drake Read-bp captures show this — slot-4 RAM is touched once
+   during the warp transition).
+3. Per-frame, cluster A reads the working buffer (now populated with
+   scene-load data plus per-frame procedural patches from
+   `FUN_80028158`).
+
+The cross-kingdom Exec-bp captures sample **per-frame steady state**,
+where cluster A reads the working buffer — NOT slot 4 directly. The
+high per-frame cluster-A hit counts (~2000 in 1800 frames) are
+procedural rendering volume, not slot-4 walks.
+
+The remaining open question is whether slot 4 ends up in
+`0x801BA000`-region (close to where cluster A reads per-frame, so
+maybe accessed via per-actor mesh-table indirection) or in some other
+region (so accessed via a different cluster-A entry path). A finer
+probe that arms Read bps on slot-4 RAM during the warp transition,
+plus Exec bps at `FUN_8001E54C`'s case-0 / case-1 / case-2 / case-12
+arms, would pin which chunks come from slot 4 and where they land.
+
 ### Cluster-A caller (`FUN_8001ada4`)
 
 `FUN_8001ada4` (2456 bytes / 614 instructions; see
@@ -497,16 +551,15 @@ stream — never touching slot 4 directly after the scene-load pass.
 
 ## Open work
 
-1. **Identify the transcoder.** The function that writes the
-   mesh-table at `actor+0x44` (or the mesh structs at the working
-   buffer at `0x801BA000`-ish) during world-map scene load. Likely
-   path: arm a Write breakpoint on `actor+0x44` during the kingdom
-   warp transition, or on a representative byte of the
-   `0x801BA000`-ish buffer; capture the PC + ra-chain at the moment
-   slot-4 data flows into the mesh struct. The transcoder will be a
-   per-body / per-record walker that reads `[i16 x, i16 y, i16 z,
-   i16 attr]` records from slot 4 and emits `(cmd_word, primitive_data
-   ...)` batches into the working buffer.
+1. **Identify the slot-4 chunk dispatch path.** The transcoder-hunt
+   probe (above) ruled out `FUN_80028158` as the slot-4 transcoder
+   (procedural mesh generator) and surfaced `FUN_8001E54C` as a
+   scene-load streaming-chunk processor. The remaining lift is to
+   identify which case arm of `FUN_8001E54C` (or a sibling) handles
+   slot-4's type byte (`0x05`) and where its output lands. Likely
+   probe: arm Read bps on slot-4 RAM (`0x8011A624+` for Drake) AND
+   Exec bps at the entries of `FUN_8001E54C`'s case 0 / 1 / 2 / 12
+   handlers, run during the kingdom warp transition.
 2. **Per-record-kind semantic.** Once the transcoder is decompiled,
    the mapping from slot-4 body bytes → cluster-A primitive kind will
    be direct: each body header's `kind` selects which primitive type

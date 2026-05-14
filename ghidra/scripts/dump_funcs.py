@@ -110,6 +110,11 @@ TARGETS = [
     # Cluster B: secondary mid-body reader
     "80059c00",  # cluster B entry (contains LW PC 0x80059DE4)
     "8001ada4",  # caller of cluster A (entry of FUN containing call site 0x8001b474)
+    # Transcoder identified via autorun_slot4_transcoder_hunt.lua:
+    # write to 0x801BA7F8 (vertex_base) hit at PC 0x80028710, ra=0x8001B160
+    # write to 0x801BA8E4 (command_stream) hit at PC 0x800293C8, ra=0x8001B160
+    # ra=0x8001B160 = return after `jal 0x80028158` inside FUN_8001ada4 case 4
+    "80028158",  # cluster-A working-buffer transcoder (called from FUN_8001ada4)
     # Per-kind handlers (from slot-4 handler table at 0x8007657C, dumped 2026-05-14)
     # Kinds 8-11 (shared across all three banks)
     "8004409c",  # k8 handler
