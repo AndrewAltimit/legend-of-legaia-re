@@ -197,19 +197,54 @@ Two parallel handler tables drive the dispatch:
 | Overlay handlers | `0x801F8968` | when `_DAT_1F800394 & 1` is set — the alternate route for the bulk-terrain pipeline (see `world-map.md`) |
 
 Within the SCUS table the dispatcher adds a **bank offset** to the
-`kind*4` index based on the caller's `cmd_flags` argument:
+`kind*4` index based on the caller's `cmd_flags` (`param_2`) and
+`fade_flags` (`param_3`) arguments. The selection is the literal
+disassembly from
+[`ghidra/scripts/funcs/80043390.txt`](../../ghidra/scripts/funcs/80043390.txt)
+(lines 230-244):
 
-| `cmd_flags` mask | Bank offset | Effect |
-|---|---:|---|
-| (none of the below) | `0x00` | bank 0 — `kind ∈ [8..11]` shared with all banks; `kind ∈ [12..19]` use the small `0x80043658..0x80043F10` handler set |
-| `0x04000000` set | `0x50` | bank 1 — same `kind 8..11`; `kind 12..19` swap to the `0x800448B0..0x80045584` set |
-| `0x20000000` set | `0xA0` | bank 2 — `kind 12..17` same as bank 1; `kind 18` / `19` swap to `0x800457C4` / `0x80045988` |
+```c
+_DAT_1f800028 = 0;
+if (fade_flags != 0) {
+    _DAT_1f800028 = 0x50;
+    if ((cmd_flags & 0x04000000) != 0) _DAT_1f800028 = 0xA0;
+    if ((cmd_flags & 0x20000000) != 0) _DAT_1f800028 = 0xF0;
+}
+```
 
-The three banks correspond to three rendering modes the world-map
-overlay drives via different `cmd_flags` arguments; the kind-handler
-identity is bank-dependent only for kinds 12-19. `kind ∈ [0..7]` and
-`kind ≥ 20` are NULL slots — encountering them ends the primitive
-stream.
+So there are **four banks**, not three; the two `if`s are sequential
+(not else-if), so the `0x20000000` branch wins when both flags are
+set. And bank 0 / bank 1 are gated by `fade_flags`, not by
+`cmd_flags` bits.
+
+| `fade_flags` | `cmd_flags` bits | Bank offset | Effect |
+|---|---|---:|---|
+| `== 0` | (ignored) | `0x00` | bank 0 — `kind ∈ [12..19]` use the small `0x80043658..0x80043F10` handler set |
+| `!= 0` | neither `0x04000000` nor `0x20000000` | `0x50` | bank 1 — `kind 12..19` swap to the `0x800448B0..0x80045584` set |
+| `!= 0` | `0x04000000` set, `0x20000000` clear | `0xA0` | bank 2 — `kind 12..17` same as bank 1; `kind 18` / `19` swap to `0x800457C4` / `0x80045988` |
+| `!= 0` | `0x20000000` set | `0xF0` | bank 3 — likely dev / debug mode; never observed in retail world-map render |
+
+`kind ∈ [0..7]` and `kind ≥ 20` are NULL slots in every bank —
+encountering them ends the primitive stream. `kind ∈ [8..11]` is
+shared across all banks; only `kind ∈ [12..19]` swaps handler per bank.
+
+#### Banks exercised in retail world-map play
+
+Empirically (Drake post-warp settled, 19,935 dispatcher-entry
+hits captured via
+[`autorun_slot4_dispatcher_args.lua`](../../scripts/pcsx-redux/autorun_slot4_dispatcher_args.lua)):
+
+| Bank | Drake hits | % | cmd_flags values seen |
+|---|---:|---:|---|
+| `0x00` (no fade) | 15,257 | 77% | `0x00D0D0D0`, `0xC9000000`, `0x00808080`, …  |
+| `0x50` (fade) | 4,678 | 23% | `0x40D0D0D0`, `0x40808080`, `0x50808080`, … |
+| `0xA0` | 0 | 0% | (`0x04000000` mask never set) |
+| `0xF0` | 0 | 0% | (`0x20000000` mask never set) |
+
+The high cmd_flags bits `0x04000000` and `0x20000000` are **never set**
+during retail Drake world-map gameplay; banks 2 and 3 are reachable in
+the dispatcher but no caller passes the flags that select them. The
+sole bank distinction is `fade_flags != 0` (bank 0 ↔ bank 1).
 
 #### Per-kind primitive types
 
@@ -242,16 +277,19 @@ plus 8-byte vertex stride from `param_3` = the vertex pool base).
 
 #### Mapping captured LW PCs to kinds
 
-Each of the eight cluster-A LW PCs captured by `autorun_slot4_consumer_pcs.lua`
-falls inside one of the kind handlers above:
+Each of the eight cluster-A LW PCs captured by
+[`autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
+falls inside one of the bank-1 kind handlers (`0x800448B0..0x80045584`).
+The probe doesn't have PCs inside bank 0 (`0x80043658..0x80043F10`) or
+bank 2 (`0x800457C4..0x80045988`):
 
 | LW PC | Handler | Kind | Bank |
 |---|---|---:|---|
-| `0x80044B00` | `0x80044A3C..0x80044C13` | 13 | banks 1,2 |
-| `0x80044C70` | `0x80044C14..0x80044DC7` | 16 | banks 1,2 |
-| `0x80044E08` | `0x80044DC8..0x80044FDB` | 17 | banks 1,2 |
-| `0x80045418` | `0x80045194..0x800453BB` | 15 | banks 1,2 |
-| `0x800455E4` | `0x800453BC..0x80045583` | 18 | bank 1 only |
+| `0x80044B00` | `0x80044A3C..0x80044C13` | 13 | bank 1 (= bank 2 for this kind) |
+| `0x80044C70` | `0x80044C14..0x80044DC7` | 16 | bank 1 (= bank 2 for this kind) |
+| `0x80044E08` | `0x80044DC8..0x80044FDB` | 17 | bank 1 (= bank 2 for this kind) |
+| `0x80045418` | `0x80045194..0x800453BB` | 15 | bank 1 (= bank 2 for this kind) |
+| `0x800455E4` | `0x800453BC..0x80045583` | 18 | bank 1 only (bank 2 uses `0x800457C4`) |
 | `0x800455E8` | `0x800453BC..0x80045583` | 18 | bank 1 only |
 | `0x8004561C` | `0x800453BC..0x80045583` | 18 | bank 1 only |
 | `0x80045658` | `0x800453BC..0x80045583` | 18 | bank 1 only |
@@ -263,117 +301,115 @@ in the underlying handler. Those reads are the handler's normal
 load-vertex-from-pool operation; the pool just happened to be backed by
 slot-4 record bytes during the kingdom-bundle scene-load transition.
 
+[`autorun_slot4_dispatcher_args.lua`](../../scripts/pcsx-redux/autorun_slot4_dispatcher_args.lua)
+captures the *dispatcher prologue* (`0x80043390`) directly — `a0`,
+`a1` (cmd_flags), `a2` (fade_flags), and the first command word's
+kind / count fields *before* the handlers clobber the registers. Use
+that probe to characterise per-call dispatch behaviour; use
+`autorun_slot4_consumer_pcs.lua` to count handler-level work (number
+of primitives emitted per kind).
+
 ### How slot-4 bytes reach cluster A
 
-Live RAM verification (Drake world-map snapshot) shows the cluster-A
-input pointer originates from two parallel paths, both ultimately
-sourced from `DAT_8007C018` (the global asset-pointer table — see
-[reference/memory-map](../reference/memory-map.md)):
+The cluster-A input pointer originates from `DAT_8007C018` (the global
+asset-pointer table — see [reference/memory-map](../reference/memory-map.md)).
+Two parallel call paths funnel into the same dispatcher:
 
-1. **Direct via DAT_8007C018[94..113]**. The global table installs 20
-   pointers that land inside slot-4 RAM at body-aligned offsets
-   (slot-4 body 0 start, body 1 start, etc.). These entries do **not**
-   carry the TMD magic `0x80000002` at word[0] — `FUN_80026B4C`
-   accepts non-TMD-magic input (a magic mismatch only sets
-   `DAT_8007B828` bits, it doesn't reject the install). The world-map
-   dispatcher `FUN_801F69D8` reads
-   `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]` and passes
-   `entry + 0xC` to `FUN_80043390`. When the actor kind picks a
-   slot-4-pointer entry, the dispatcher feeds raw slot-4 body bytes
-   into cluster A as a command-stream + vertex-pool.
-2. **Indirect via actor mesh tables**. The per-actor renderer
-   `FUN_8001ada4` (caller RA `0x8001B47C` in every cross-kingdom
-   capture) walks `actor+0x44 = [u32 count, u32 mesh_ptr[count]]` and
-   passes each `mesh_ptr` to `FUN_80043390`. In the live Drake snapshot
-   four actor instances in the 0x80082xxx region hold mesh pointers at
-   `instance+0x28` that target slot-4 body starts exactly (slot-4
-   offsets `0x1840` = body 4, `0x40F0` = body 10, `0x75A0` = body 13,
-   `0x7C40` = body 14).
+1. **Top-view dispatcher (`FUN_801F69D8`)**: reads
+   `DAT_8007C018[(visible_object_kind8 + DAT_8007B6F8) * 4]` per tile
+   and passes `entry + 0xC` (the TMD's group-descriptor array start)
+   to `FUN_80043390`. This is the warp-into-world-map render path the
+   Read-bp probe captured.
+2. **Per-actor renderer (`FUN_8001ada4`, caller RA `0x8001B47C`)**:
+   walks `actor+0x44 = [u32 count, u32 mesh_ptr[count]]` and passes
+   each `mesh_ptr` to `FUN_80043390`. The mesh pointers came from
+   `actor+0x44`, which is populated by `FUN_80021B04`/`FUN_80024D78`
+   from `DAT_8007C018[actor[+0x64].i16]` — same table, different
+   actor-allocator path.
 
-Slot-4 RAM contains **zero TMD-magic words** at any alignment in any
-of the three kingdoms — slot-4 is **not** a TMD-pack. Cluster A
-accepts it anyway because `FUN_80043390` doesn't gate on TMD magic:
-it reads `param_1[4]` as a command word, extracts a `kind` field, and
-tail-calls a per-kind handler. The slot-4 body header `kind ∈ {1, 2,
-4}` plausibly maps to the dispatcher's `cmd_flags` bank selector
-(bank 0 / 1 / 2 — see
-[Jump tables](#jump-tables)) but the connection has not been verified
-end-to-end.
+Slot 4 of the kingdom bundle (`type = 0x05` = MOVE) is the largest
+data slot but **is not directly consumed by cluster A**. The MOVE
+buffer at the kingdom-load destination (a mid-warp Drake dump pinned
+it to `0x8011A624`, but the address varies per build / save state)
+gets overwritten by later
+TMD-pack installs whose TMDs occupy the same physical RAM by the time
+the world-map enters steady state. The Read-bp probe that captured
+"slot-4 bytes being read by cluster A" was sampling that buffer
+*after* the TMD overwrite — cluster A was reading TMDs at addresses
+that had once held slot-4 bytes, not the slot-4 bytes themselves.
+
+The slot-4 body header `kind ∈ {1, 2, 4}` therefore has **no link** to
+the cluster-A bank selector (the previously listed hypothesis is
+empirically falsified — see
+[Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play)).
+Whatever slot 4 encodes, it's consumed during the warp's first asset
+pass and converted into TMD blobs by an as-yet-unpinned step before
+the world map runs.
 
 See [reference/memory-map](../reference/memory-map.md#world-map-tmd-and-actor-tables)
-for the `DAT_8007C018` entry-class breakdown and [the kingdom-TMD
-prefix entry](../reference/memory-map.md#world-map-tmd-and-actor-tables)
-for `DAT_8007B6F8`.
+for the `DAT_8007C018` snapshot breakdown and the kingdom-TMD prefix
+counter `DAT_8007B6F8`.
 
 ### Cross-kingdom hit-count comparison
 
 Exec-breakpoint hit counts at the eight cluster-A LW PCs + the
-cluster-B LW PC during a single warp-tile transition with
-`LEGAIA_PC_CAP=5000` over 1800 vsyncs (per-PC cap so each cluster-A
-PC tops at 5000, cluster B at 5000):
+cluster-B LW PC during a single warp-tile transition. All three
+kingdoms captured with `LEGAIA_PC_CAP=50000` over 1800 vsyncs; no PC
+saturates the cap, so the per-kingdom totals are exact:
 
-| Kingdom | sstate | Cluster A total | Cluster B | Cluster A RAs observed |
+| Kingdom | Capture state | Cluster A total | Cluster B | Cluster A RAs observed |
 |---|---|---:|---:|---|
-| Drake | sstate1 (already on map01, held UP) | 35762 (caps on 7 of 8 PCs) | 178 | 0x8001B47C, 0x8001BC8C, 0x801F78D4 |
-| Sebucus | sstate4 (town → map02, held DOWN) | 28159 (caps on 5 of 8 PCs) | 67 | 0x8001B47C, 0x801F78D4 |
-| Karisto | sstate5 (town → map03, held DOWN) | 13593 (no caps) | 115 | 0x8001B47C, 0x801F78D4 |
+| Drake | already on map01, held UP | 71,331 | 178 | 0x8001B47C, 0x8001BC8C, 0x801F78D4 |
+| Sebucus | town → map02, held DOWN | 90,096 | 67 | 0x8001B47C, 0x801F78D4 |
+| Karisto | town → map03, held DOWN | 13,593 | 115 | 0x8001B47C, 0x801F78D4 |
 
-Karisto's lower cluster-A total (uncapped) tracks its smaller slot 4
-(24444 bytes / 16 bodies vs Drake's 32304 / 15 bodies and Sebucus's
-26964 / 16) — hit-count scales with record-count. Cluster B's variance
-matches: Drake walks the most slot-4 bodies, then Karisto, then
-Sebucus. The per-kind breakdown ([Per-kind delta](#per-kind-delta)
-below) makes the per-handler differences visible even where the
-overall totals saturate.
+Sebucus's cluster-A total is *higher* than Drake's despite Sebucus's
+slot-4 being smaller — confirming hit-count tracks scene-render
+volume, not slot-4 record count. Cluster B's variance is the inverse:
+Drake walks the most slot-4 bodies, then Karisto, then Sebucus. The
+per-kind breakdown ([Per-kind delta](#per-kind-delta) below) makes the
+per-handler differences visible.
 
 #### Per-kind delta
 
 With the cluster-A LW PCs mapped to specific kind handlers (see
 [Cluster A internals](#cluster-a-internals) above), the per-PC × per-
-kingdom hit counts surface a clean signal. All three kingdoms re-
-captured with `LEGAIA_PC_CAP=5000` over a 1800-vsync window. Karisto
-runs clean under the cap; Drake / Sebucus saturate several PCs at
-5000 — those entries are flagged `*` and represent lower bounds:
+kingdom hit counts surface a clean signal. All three kingdoms
+captured uncapped (`LEGAIA_PC_CAP=50000` over 1800 vsyncs):
 
 | Kind handler | Primitive (likely) | Drake hits | Sebucus hits | Karisto hits |
 |---:|---|---:|---:|---:|
-| 13 banks 1,2 (`0x80044A3C`, LW `0x80044B00`) | `POLY_G3`/`POLY_FT3` triangle | ≥5000* | **2040** | **49** |
-| 17 banks 1,2 (`0x80044DC8`, LW `0x80044E08`) | `POLY_GT4` textured quad | **762** | **240** | **147** |
-| 18 bank 1 (`0x800453BC`, 4 LW PCs `0x800455E4..0x80045658`) | `POLY_GT4` extended quad | ≥5000* (×4) | ≥5000* (×4) | **1820** (×4) |
-| 16 banks 1,2 (`0x80044C14`, LW `0x80044C70`) | `POLY_G4` quad | ≥5000* | **878** | **2058** |
-| 15 banks 1,2 (`0x80045194`, LW `0x80045418`) | `POLY_GT3` textured triangle | ≥5000* | ≥5000* | **2059** |
+| 13 banks 1,2 (`0x80044A3C`, LW `0x80044B00`) | `POLY_G3`/`POLY_FT3` triangle | **9,465** | **2,040** | 49 |
+| 17 banks 1,2 (`0x80044DC8`, LW `0x80044E08`) | `POLY_GT4` textured quad | **762** | **240** | 147 |
+| 18 bank 1 (`0x800453BC`, 4 LW PCs `0x800455E4..0x80045658`) | `POLY_GT4` extended quad | **13,561** (×4) | **20,601** (×4) | **1,820** (×4) |
+| 16 banks 1,2 (`0x80044C14`, LW `0x80044C70`) | `POLY_G4` quad | **7,688** | **878** | **2,058** |
+| 15 banks 1,2 (`0x80045194`, LW `0x80045418`) | `POLY_GT3` textured triangle | **6,860** | **5,412** | **2,059** |
 | cluster B (`0x80059DE4`) | mid-body reader | **178** | **67** | **115** |
 
-`* = capped at PC_CAP=5000; true count is higher.`
+Cross-kingdom picture (now with all entries uncapped):
 
-The clean (uncapped) datapoints already paint a clear cross-kingdom
-picture:
-
-- **Kind 13** is rare in Karisto (49) but a workhorse in Sebucus
-  (2040) and Drake (≥5000). Sebucus and Drake have continental
-  geometry with many small triangle primitives that Karisto doesn't.
-- **Kind 17** scales with overall geometry weight: Drake (762) >
+- **Kind 13** scales sharply: Drake (9,465) ≫ Sebucus (2,040) ≫
+  Karisto (49). Drake / Sebucus have continental geometry with many
+  small triangle primitives; Karisto barely uses them.
+- **Kind 17** scales with overall scene weight: Drake (762) >
   Sebucus (240) > Karisto (147). Ratio Drake / Karisto ≈ 5.2.
-- **Kind 16** is the inverse of kind 13: Karisto-heavy (2058) while
-  Sebucus barely uses it (878). Drake ≥5000.
+- **Kind 16** is the inverse of kind 13: Karisto-heavy (2,058) /
+  Drake-heavy (7,688) but Sebucus uses it least (878). Drake's quad
+  count dwarfs the others.
+- **Kind 18 (extended quad)** is the absolute workhorse — Sebucus
+  dispatches **20,601 instances** of it (~80% of the cluster-A
+  primitive count), Drake 13,561, Karisto 1,820. This is the dominant
+  per-frame primitive across every kingdom.
 - **Cluster B** (the mid-body reader): Drake (178) > Karisto (115) >
   Sebucus (67) — Drake's larger slot 4 visits more of the secondary
   reader's body subset.
 
-Kinds 15 and 18 saturate on both Drake and Sebucus while Karisto stays
-clean at 2059 / 1820 ×4, meaning these are the workhorses for *every*
-kingdom — the consistent kind-15 ≈ kind-18 totals in Karisto suggest
-they're paired primitives (a textured triangle plus a quad variant) in
-the same per-frame batch loop.
-
-`LEGAIA_PC_CAP=5000` is sufficient for Karisto's warp-burst window but
-gets saturated on Drake / Sebucus inside the same 1800-frame interval
-because their slot-4 buffers are larger (32304 / 26964 bytes vs
-24444). The CSV writes per-row, so the cap counts are exact at the
-sampling moment; the saturated entries just don't reveal Drake's /
-Sebucus's true totals. To lift the cap, set `LEGAIA_PC_CAP=50000` and
-accept the longer wall time (see
-[Reproducing the capture](#reproducing-the-capture)).
+The captured CSVs land under
+[`captures/slot4_uncapped/`](../../captures/slot4_uncapped/) (per-row
+flushed; safe to inspect mid-run). The dispatcher-entry probe CSV at
+[`captures/slot4_dispatcher/`](../../captures/slot4_dispatcher/) gives
+the first-kind / `cmd_flags` / `fade_flags` per call — see the bank-
+breakdown table above.
 
 ### Reproducing the capture
 
@@ -385,7 +421,7 @@ probe is **Drake-tuned** — its record-region offsets are Drake's
 form:
 
 ```bash
-LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate1 \
+LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-drake-on-map01-save>.sstate \
 LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60 \
 LEGAIA_S4_DETAIL=1 LEGAIA_S4_QUIT_AFTER_ALL=1 \
 LEGAIA_FRAMES=900 \
@@ -403,13 +439,13 @@ instead — it arms Exec breakpoints at the eight identified cluster-A
 LW PCs + the cluster-B LW PC, so the probe is kingdom-agnostic:
 
 ```bash
-LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate4 \
+LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-sebucus-warp-save>.sstate \
 LEGAIA_HOLD_BUTTON=6 LEGAIA_HOLD=60 \
 LEGAIA_FRAMES=1800 \
-LEGAIA_PC_CAP=5000 \
-LEGAIA_OUT=/tmp/slot4_pcs_sebucus_high.csv \
+LEGAIA_PC_CAP=50000 \
+LEGAIA_OUT=captures/slot4_uncapped/sebucus.csv \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua \
-    timeout --kill-after=30s 900s bash scripts/pcsx-redux/run_world_map_probe.sh
+    timeout --kill-after=30s 1500s bash scripts/pcsx-redux/run_world_map_probe.sh
 ```
 
 Each CSV row records `probe_idx, cluster, pc, name, ra, a0..a3, s8`
@@ -482,12 +518,12 @@ identical across all three kingdoms; per-record semantic still open.**
 The reader accesses the buffer via a runtime pointer, not a static
 `LUI+ADDIU` reference - which is why the static sweep returned empty.
 Dynamic memory-watchpoint capture against the **world-map dev-menu
-top-view** (steady-state, sstate2) registered **zero reads** during
+top-view** in steady state registered **zero reads** during
 300 vsyncs, but Exec-breakpoint capture at the identified reader PCs
-during the **kingdom-bundle scene-load transition** (sstate1: warp
-into Drake region, sstate4: town → Sebucus map02, sstate5: town →
-Karisto map03) hits all three kingdoms with the same PCs and the
-same caller RAs - see [consumer call sites](#consumer-call-sites)
+during the **kingdom-bundle scene-load transition** (warp into each of
+Drake / Sebucus / Karisto, from one save state per kingdom) hits all
+three with the same PCs and the same caller RAs — see
+[consumer call sites](#consumer-call-sites)
 above. Slot 4 is *not* re-read every frame; it's walked during the
 kingdom-entry transition, transformed via the GTE, and emitted as GP0
 primitive packets into the scene's primitive pool. The dev-menu top-
@@ -516,7 +552,7 @@ draw interpretation.
 
 ### Slot-4 loader (loader-hunt probe)
 
-Running `autorun_slot4_loader_hunt.lua` against Drake (sstate1, held UP
+Running `autorun_slot4_loader_hunt.lua` against Drake (held UP
 for 60 vsyncs into the warp) with Write bps tiled across slot-4 RAM
 (`0x8011A624 + offset[0..7000]`) surfaced **the LZS decoder** as the
 sole writer:
@@ -545,7 +581,7 @@ the byte-verified `disc → RAM` finding documented in
 
 ### Working-buffer writers (transcoder-hunt probe, 2026-05-14)
 
-Running `autorun_slot4_transcoder_hunt.lua` against Drake (sstate1,
+Running `autorun_slot4_transcoder_hunt.lua` against Drake (
 held UP for 60 vsyncs into the warp transition) with Write bps tiled
 across the `0x801BA000` working buffer surfaced **two distinct
 writers**, not a single transcoder:
@@ -664,7 +700,7 @@ magic `0x80000002`). Those TMD pointers live in a global runtime table:
 ```
 DAT_8007C018 : array of u32 TMD pointers; entry stride = 4
 DAT_8007B774 : install counter (next free index)
-DAT_8007BB38 : walk counter (last valid index, used by the table walker)
+DAT_8007BB38 : walker counter (last installed index, used by the table walker)
 DAT_8007B824 : per-pack count (set by case 2 to `*pack_header[0]`)
 ```
 
@@ -679,35 +715,43 @@ from the asset dispatcher's case 2 TMD-pack handler):
 80026ba0  addu  v1, v1, v0          ; v1 = &DAT_8007C018[idx]
 80026ba4  jal   FUN_800268dc        ; build per-group descriptor array at tmd+0xC
 80026ba8  _sw   a0, 0x0(v1)         ; install: DAT_8007C018[idx] = tmd_ptr
+                                     ;          and, via gp+0x820: DAT_8007BB38 = idx
+                                     ; (gp[+0x820] aliases DAT_8007BB38 in SCUS)
 ```
 
-Ghidra's static reference-database doesn't surface this store because the
-`addu` between the `lui+addiu` and the `sw` defeats its constant
+Ghidra's static reference-database doesn't surface either store because
+the `addu` between the `lui+addiu` and the `sw` defeats its constant
 propagation. The materialisation scan
-`ghidra/scripts/find_addr_materializer_dat_8007c018.py` walks every
-`lui+addiu` pair that produces `0x8007C018` and looks at the next six
-instructions; that's how the installer was pinned.
+[`ghidra/scripts/find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find_addr_materializer_dat_8007c018.py)
+walks every `lui+addiu` pair that produces `0x8007C018` across SCUS +
+every world-map overlay; that's how the installer was pinned. A scan
+across `SCUS_942.54`, `overlay_world_map.bin`, `overlay_world_map_top.bin`,
+`overlay_world_map_walk.bin`, and `overlay_world_map_top_ext.bin`
+returns **only one store site** (`FUN_80026B4C @ 0x80026BA8`); every
+other materialisation in those programs is a read.
 
 After installation, each pointed-to TMD has the runtime shape:
 
 ```
 [+0x00] u32 magic = 0x80000002
-[+0x04] u32 flags / version
+[+0x04] u32 flags     (= 1 post-fixup; FUN_800268DC's idempotency guard)
 [+0x08] u32 group_count
 [+0x0C] array of group_count × 0x1C-byte group descriptors
         each starts with `vertex_base_ptr (u32) + vertex_count (u32)`
         followed by 0x14 bytes of per-group state
 ```
 
-Consumers of `DAT_8007C018[*]` (all read-only):
+### Readers (all access `DAT_8007C018[*]` read-only)
 
 | Function | Site | Role |
 |---|---|---|
 | `FUN_80021B04` (SCUS actor allocator) | reads `DAT_8007C018[actor[+0x64].i16]` | populates `actor[+0x44] = [count, mesh_ptr[count]]` from TMD groups |
+| `FUN_80024D78` (SCUS actor allocator — variant) | reads `DAT_8007C018[actor[+0x64].i16]` | same shape as `FUN_80021B04` but also OR-sets `actor[+0x10] \|= 0x08000000` (a per-actor enable flag) |
 | `FUN_801D77F4` (overlay alt allocator) | reads `DAT_8007C018[(i16)param_2]` | copies vertex pool from sub-records into `actor[+0x90]` |
 | `FUN_801D8280` (overlay table walker) | iterates `DAT_8007C018[0..DAT_8007BB38]` | hands each sub-record to `FUN_801D5E20` |
 | `FUN_801F69D8` (world-map top-view dispatcher in `world_map_top_ext`) | reads `DAT_8007C018[(visible_object_kind8 + DAT_8007B6F8) * 4]` | walks per-tile visibility scratchpad and calls `FUN_80043390(tmd+0xC, color, fog)` |
-| `FUN_8001E890` | sets `entry[+0x8] = 10` for three consecutive table indices | per-pack count override |
+| `FUN_8001E890` | sets `entry[+0x8] = 10` for three consecutive table indices at `DAT_8007B824 + 0..2` | per-pack count override (overwrites the installed TMD's `group_count` field) |
+| `FUN_8001EBEC` | reads `DAT_8007C018[DAT_8007B824 + 0..2]` (3 consecutive party-character TMDs) | per-party-member group-descriptor patch — for each of 3 chars, picks one of two pre-built 0x1C-byte descriptors (`TMD+0x124` vs `TMD+0x140`) based on a per-character byte at `0x80084xxx + char_stride*N + offset`, then overwrites the indexed group descriptor in the TMD. Drives equipment-conditional mesh swaps |
 
 The world-map top-view dispatcher `FUN_801F69D8` (2572 B / 643 instr at
 prologue `0x801F69D8`, dumped in
@@ -723,55 +767,110 @@ object record's `[+0x1E]` flag is set, and OR'd with `0x10000000` if
 `record[+0x12] & 0x800`. The `fog` arg is
 `clamp((GTE_screen_z - 0x5000) >> 3, 0, 0x1000)`.
 
-**Implication for slot 4.** Cluster A's input is *TMD-pack data*, not
-slot-4 MOVE bytes. The Read-bp probe that captured slot-4-region RAM
-reads passing through `FUN_80043390` was almost certainly observing
-TMD reads from a TMD-pack buffer allocated near slot-4's MOVE buffer
-in retail RAM. Slot 2 of each kingdom bundle is type `0x02`
-(TMD-pack) per the type sequence `(1, 2, 3, 4, 5, 6, 7)` — that's the
-more likely true source of `DAT_8007C018` entries during the warp
-transition. The slot-4 → cluster-A connection documented earlier in
-this page needs targeted re-validation.
+### Live snapshot (Drake post-warp settled)
+
+Drake world-map RAM dump after the warp has settled
+([`captures/ram_dumps/drake_world.bin`](../../captures/ram_dumps/)):
+
+| Field | Value |
+|---|---:|
+| `DAT_8007B774` (install counter) | `143` |
+| `DAT_8007BB38` (walker counter) | `142` |
+| `DAT_8007B6F8` (kingdom-TMD prefix) | `5` |
+| `DAT_8007B828` (error bits) | `0x00000000` (no magic mismatches during install) |
+
+Entry contents (per
+[`scripts/classify_dat_8007c018.py`](../../scripts/classify_dat_8007c018.py)):
+
+| Index range | Count | Content |
+|---|---:|---|
+| `[0..4]` | 5 | Player-character TMDs from `player.lz` (at `0x8014D554..0x801585C0`, group_count 10/10/10/3/2) |
+| `[5..142]` | 138 | Kingdom-derived TMDs at `0x800F7908..0x80138D44` (group_count 1..10, mixed sizes) |
+| `[143..255]` | 113 | Either zero (uninstalled — never written) or stale junk past the walker counter — **never read by code** because every reader gates on `DAT_8007BB38` or an explicit index ≤ install counter |
+
+**Every populated entry is a valid Legaia TMD** (magic
+`0x80000002`, flags = 1, group_count > 0). The table is homogeneous in
+the steady state. The kingdom-derived 138 TMDs include the slot-4
+body-aligned addresses previously described (e.g. `[94..113]` land in
+`0x8011A7B0..0x8012202C` — all inside the slot-4 RAM window — but the
+bytes there have already been overwritten with TMD blobs by the time
+the snapshot is taken; the slot-4 outer-pack signature is *absent*
+from steady-state RAM).
+
+### Live snapshot (Sebucus mid-warp)
+
+The Sebucus dump captures the warp transition partway through the
+asset install:
+
+| Field | Value |
+|---|---:|
+| `DAT_8007B774` (install counter) | `92` |
+| `DAT_8007BB38` (walker counter) | `91` |
+| `DAT_8007B6F8` (kingdom-TMD prefix) | `5` |
+| `DAT_8007B828` (error bits) | `0x00000000` |
+
+Entries `[0..91]` are valid TMDs; the install is in flight, so the
+TMD-pack handler has not yet completed pushing every member. Entries
+`[92..]` carry leftover pointers from a previous game-state's table
+fill, but `DAT_8007BB38 = 91` means **no consumer ever reads past index 91**.
+
+The mid-load Sebucus state is what historical "non-TMD entry
+classification" passes appear to have sampled. Those mid-load reads
+went *past* the walker counter and treated stale leftover pointers as
+table content — producing the previously-reported "[45..53] FFFAFFFA",
+"[114..193] mixed text/vertex/texture" classifications. With
+`DAT_8007BB38` as the authoritative bound, those characterisations are
+**out-of-bounds reads, not table contents**.
+
+### Implication for slot 4 — partly resolved
+
+The Read-bp probe that originally captured cluster-A reads against
+slot-4 RAM observed reads to addresses that, in steady-state world-
+map RAM, hold *real TMD blobs* (Legaia magic, post-fixup) **placed by
+the kingdom asset chain into RAM that was the slot-4 load destination
+during the warp**. Slot 4 of the kingdom bundle (type `0x05` = MOVE)
+*is* decoded into that RAM region by the warp's first pass, but the
+same physical RAM is then reused by later TMD-pack installs whose TMDs
+replace the slot-4 bytes byte-by-byte before the world-map enters
+steady-state. The slot-4 outer-pack signature is therefore absent from
+the post-warp dump even though the buffer base RAM address is still
+populated.
+
+In other words: cluster A reads TMDs (via `DAT_8007C018` indirection
+or actor mesh tables), and those TMDs *happen* to occupy what was once
+the slot-4 buffer. Slot 4's MOVE bytes are gone by the time cluster A
+runs; the geometry being rendered came from a different (later-loaded)
+TMD-pack.
 
 ## Open work
 
-1. **Re-validate the slot-4 → cluster-A claim.** With `DAT_8007C018`
-   now known to hold TMD pointers installed by the case 2 TMD-pack
-   handler, the slot-4 → cluster-A pipeline needs a check: is slot 4
-   actually consumed by cluster A, or are the Read-bp hits coming
-   from a co-located TMD-pack buffer (slot 2 = type `0x02`)? A
-   targeted Read-bp watching `DAT_8007C018[*]` entry addresses (not
-   slot-4 RAM) would settle the question. If slot 4 *is* on the
-   cluster-A path, an as-yet-unidentified converter must transform
-   the slot-4 outer-pack records into TMD blobs at some point in the
-   warp sequence.
+1. **Slot-4 → TMD converter.** Slot 4 *is* loaded into RAM as MOVE
+   bytes during the warp's first pass, but the same physical RAM gets
+   overwritten by TMD blobs from a later-loaded TMD-pack before the
+   world-map settles. The intermediate converter that walks the slot-4
+   15/16-body outer pack and emits TMDs at the right RAM offsets has
+   not been pinned. Candidates: a chunk-handler case in `FUN_8001E54C`
+   that turns slot-4 sub-bodies into TMD-shaped blobs in-place, or an
+   asset-load-chain step that doesn't lower through `FUN_8001F05C` at
+   all. A Read-bp probe watching `DAT_8007C018[*]` entry addresses
+   (not slot-4 RAM) during the install pass would identify which
+   loader call populates the kingdom-derived entries `[5..N]`.
 
-2. **Per-record-kind semantic.** Body header `kind ∈ {1, 2, 4}` is
-   plausibly a draw-MODE selector that picks one of the three SCUS
-   handler banks via the caller's `cmd_flags` argument
-   (`kind = 2` → bank 1 via the `0x04000000` flag;
-   `kind = 4` → bank 2 via `0x20000000`; `kind = 1` → bank 0).
-   Body `kind` is NOT the same as primitive `kind` (8–19).
-   With the cluster-A source clarified, this hypothesis may dissolve
-   — body `kind` might be slot-4-internal with no link to cluster-A
-   banks at all.
-3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
-   in every kingdom; the reverse doesn't hold (Karisto body 10 is
-   `kind = 2, flag_a = 1`). With the cluster-A primitive vocabulary
-   pinned, the body header's `kind` field is plausibly a **draw mode**
-   selector that picks one of the three SCUS handler banks (bank 0 /
-   bank 1 / bank 2) via the `cmd_flags` argument FUN_80043390 receives
-   — i.e., body `kind` → caller's `cmd_flags` → dispatcher's bank
-   offset. Body `kind` is not the same as primitive `kind`.
-4. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
+2. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
    in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
    `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
-   low-byte) tags rather than indices. With the GTE pipeline pinned,
-   the `attr` field likely feeds either the GP0 packet header (color /
-   blend / texture-page) or a per-record draw-flag mask.
-5. **Re-run probe with higher cap on Drake / Sebucus.** Karisto's
-   uncapped totals are documented above. Drake / Sebucus runs are
-   deferred because interpreter-mode pcsx-redux is slow (~60 min
-   per kingdom for the full 1800-frame capture). A shorter capture
-   window (e.g. 300 frames covering the warp itself) would finish
-   in ~10 min and still produce useful uncapped totals.
+   low-byte) tags rather than indices. The body-kind ↔ cmd_flags
+   bank hypothesis (previously listed as open work) is **falsified**
+   — Drake's dispatcher-entry probe shows neither `0x04000000` nor
+   `0x20000000` is ever set in retail world-map play; only banks
+   `0x00` and `0x50` (the fade-flag distinction) are exercised. See
+   [Banks exercised in retail world-map play](#banks-exercised-in-retail-world-map-play).
+   So body `kind ∈ {1, 2, 4}` is slot-4-internal data with no link to
+   cluster-A bank dispatch.
+
+3. **Banks 2 (`0xA0`) and 3 (`0xF0`).** Banks reachable in the
+   dispatcher but never observed during retail world-map play.
+   Candidates: dev/debug menu render modes, battle-overlay re-use of
+   the dispatcher, or cutscene render paths. Setting up a wide-
+   coverage `cmd_flags`-capture probe across multiple non-world-map
+   game modes would pin which (if any) caller passes those flags.
