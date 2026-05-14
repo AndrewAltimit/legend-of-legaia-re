@@ -182,6 +182,34 @@ export class LegaiaViewer {
     constructor(canvas_id: string);
     next_entry(): number;
     /**
+     * 13-frame ocean CLUT animation table: 13 × 32 bytes = 416 bytes,
+     * frame-0 first. Each frame is 16 BGR555 entries (the same shape as
+     * the first 16 entries of [`Self::ocean_base_clut_bytes`]). The
+     * runtime DMAs one frame at a time onto VRAM (0, 506) to cycle
+     * the wave colours through the ocean tile.
+     */
+    ocean_animation_frames(): Uint8Array;
+    /**
+     * Static base CLUT for the ocean tile row: 256 entries × 2 bytes
+     * (BGR555 LE) = 512 bytes. The first 16 entries are the ones the
+     * animation cycle overrides each frame; entries 16..255 stay fixed
+     * and belong to other tiles sharing the same VRAM row.
+     */
+    ocean_base_clut_bytes(): Uint8Array;
+    /**
+     * Number of valid ocean animation frames (typically 13). Returns 0
+     * when the kingdom doesn't have ocean assets.
+     */
+    ocean_frame_count(): number;
+    /**
+     * Ocean tile pixel data (4bpp indexed), 64 halfwords × 256 rows =
+     * 32 768 bytes. Each byte holds 2 pixels (low nibble first). The
+     * CLUT index addressing is `pixel = byte >> 4` for the high pixel
+     * and `byte & 0x0F` for the low pixel. Empty when the kingdom is
+     * not a world-map kingdom or the ocean TIM wasn't found.
+     */
+    ocean_texture_bytes(): Uint8Array;
+    /**
      * Number of TMDs in the currently-loaded kingdom pack. 0 when no
      * kingdom is loaded.
      */
@@ -431,6 +459,10 @@ export interface InitOutput {
     readonly legaiaviewer_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_new: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_next_entry: (a: number) => [number, number, number];
+    readonly legaiaviewer_ocean_animation_frames: (a: number) => [number, number];
+    readonly legaiaviewer_ocean_base_clut_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_ocean_frame_count: (a: number) => number;
+    readonly legaiaviewer_ocean_texture_bytes: (a: number) => [number, number];
     readonly legaiaviewer_pack_count: (a: number) => number;
     readonly legaiaviewer_pack_mesh: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_pack_mesh_bounds: (a: number) => [number, number];

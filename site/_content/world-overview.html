@@ -566,6 +566,27 @@
     }
     glRenderer.setOceanColor(color, enable, 0);
   }
+  /* Hand the disc-side ocean assets (texture + 13-frame CLUT animation
+   * table) to the renderer. Called after `viewer.set_scene_kingdom`
+   * has decompressed slot 0 and `legaia_web_viewer::ocean::find_ocean_assets`
+   * has run. When the kingdom isn't a world-map one (or the disc isn't
+   * loaded yet), the accessors return empty buffers and we leave the
+   * solid-colour fallback in place. */
+  function pushOceanAssetsToRenderer() {
+    if (!viewer || !glRenderer || typeof glRenderer.setOceanAssets !== 'function') {
+      return;
+    }
+    const tex = viewer.ocean_texture_bytes();
+    const frames = viewer.ocean_animation_frames();
+    if (!tex || tex.byteLength === 0 || !frames || frames.byteLength === 0) {
+      glRenderer.setOceanAssets(null, null);
+      return;
+    }
+    /* tileWorldSize=256: one ocean-texture wrap covers 256 world units.
+     * Each kingdom is 16320 world units across (~64 wraps), matching
+     * the retail tile pitch in the prim pool. */
+    glRenderer.setOceanAssets(tex, frames, 256);
+  }
   /* Default UI matches default viewMode = 'world' (assembled scene from
    * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
    * (used by the top-down camera). */
@@ -765,6 +786,9 @@
       return;
     }
     glRenderer.uploadVram(viewer.pack_vram_bytes());
+    /* Upload the disc-side ocean texture + 13-frame CLUT animation
+     * table now that slot 0 has been decompressed. */
+    pushOceanAssetsToRenderer();
     /* Upload a single pack mesh on demand; return true if its mesh data
      * is renderable (some slots have non-textured flat-shaded prims that
      * the WebGL path skips). */

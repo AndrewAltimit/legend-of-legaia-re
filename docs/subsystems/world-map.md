@@ -747,30 +747,55 @@ field at priority above the hand-eyeballed ``KINGDOM_FOG_TINT``
 fallback. World-map saves that don't have an active atmospheric tick
 fall back to the hardcoded table.
 
-### Ocean / coastline source — open, visualised by sampled tint
+### Ocean tile — disc-side asset + 13-frame CLUT animation
 
-The retail ocean source mesh isn't yet pinned to a specific disc-side
-asset. Survey results so far:
+The world-map ocean is a **static 4bpp tile** + **CLUT cycling**
+animation, both shipped on disc:
 
-- **Slot 1 (TMD pack):** Every TMD in each kingdom's slot-1 pack is
-  classified in ``site/world-overview/slot1_classification.toml`` -
-  none of the 40 / 36 / 56 entries reads as an ocean / large-flat-
-  blue plane.
-- **Horizon emitter ``FUN_801D7EA0``:** emits ~670 prims per call
-  with neutral-grey colour (`0x2C808080`), projected via the cos
-  LUT - consistent with a sky / horizon plane, *not* the ocean.
-- **Walk-view prim pool inspection:** ``mednafen-state prim-trace``
-  on a walk-view save shows ~5000 textured POLY_FT4 tiles. The
-  blue-dominant cluster across all three kingdoms converges on
-  ``clut=0x7E80 tpage=0x001C`` (sampled CLUT colour ~``#1F2466``
-  royal blue, hits 65-70 per kingdom). This is the shared ocean tile
-  family that lives in VRAM persistently across kingdom loads; the
-  same prim-pool family also draws in the top-view path.
+- **Texture:** PSX TIM image at VRAM ``(768, 256)`` 64 halfwords ×
+  256 rows (= 256 × 256 logical pixels in 4bpp), inside slot 0
+  (TIM_LIST) of each world-map kingdom bundle (PROT 0085 Drake / 0244
+  Sebucus / 0391 Karisto). The kingdom-specific TIM is the one with
+  CLUT block fb_xy ``(0, 506)`` and image block fb_xy ``(768, 256)``.
+  Texture bytes vary per kingdom (each ships its own variant).
+- **Base CLUT:** 256-entry BGR555 row at VRAM ``(0, 506)`` (same TIM
+  as the texture). The first 16 entries are the ones the runtime
+  overwrites per frame; entries 16..255 stay fixed and belong to other
+  tiles sharing the row.
+- **Animation table:** **13 frames × 16 BGR555 entries = 416 bytes**,
+  byte-identical across all three retail kingdoms (SHA-256
+  ``dfc6dd263a71152c40ab7726193d79e9658efc04402f4280f5f49f392e32071f``).
+  Located by signature scan in each kingdom's decompressed slot 0;
+  the disc wraps each frame in a 532-byte "CLUT-only TIM" record at
+  TIM_LIST slots 3-5 (Sebucus/Karisto) or 10-15 (Drake), with the
+  first frame starting 0x54 bytes into the record (8 zero bytes +
+  12-byte CLUT block header + 32 unrelated CLUT entries).
 
-The viewer doesn't draw the live prim mesh in 3D (it's screen-space
-post-GTE), so until the disc-side ocean source is pinned the
-world-overview viewer paints a **procedural ocean plane** at ``y=0``
-in the captured ocean tint. Capture pipeline:
+The runtime DMAs one frame at a time onto VRAM ``(0, 506)``,
+overwriting the first 16 CLUT entries; the wave peak (``0x3D05``
+bright blue) propagates through indices 0..7 over the 13-frame cycle,
+creating the horizontal rolling-wave appearance visible in retail.
+Frame 0 starts at index 5; the cycle wraps back to index 0 at frame
+8 and continues through index 2 at frame 12.
+
+### Web-overview viewer
+
+``crates/web-viewer::ocean::find_ocean_assets`` decompresses the
+kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and
+signature-scans the slot for the animation table. The disc-gated
+test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
+across all three kingdoms.
+
+The WebGL ocean shader (``site/js/webgl-tmd.js``) draws a flat
+quad at ``y=0`` covering the world extent, samples the 4bpp texture
++ animated 16-entry CLUT, and advances the frame counter on a
+wall-clock timer (frame duration tunable; default ~8 Hz so the
+visible cadence matches retail at roughly normal playback speed).
+The plane is drawn before bulk-terrain meshes so depth-test handles
+occlusion.
+
+Capture pipeline for the procedural-tint fallback used before the
+disc is loaded:
 
 ```
 scripts/mednafen/resolve_bulk_terrain.py --bundles map01,map02,map03 \
@@ -779,19 +804,13 @@ python3 scripts/extract-world-placements.py \
     --prot-dir extracted/PROT --out site/world-overview.json
 ```
 
-``pick_ocean_color`` (in ``resolve_bulk_terrain.py``) walks every
-POLY_FT4 cluster reported by ``mednafen-state prim-trace``, samples
-each cluster's representative tile texel via its CLUT + tpage out of
-the save's VRAM, and ranks blue-dominant clusters by
-``hits × blue_dominance``. The winner's average RGB lands as
-``site/world-overview.json[kingdom].ocean_color`` and drives the
-viewer's ocean plane.
-
-A true disc-side ocean source would let the viewer render real
-geometry instead of the flat stand-in. Best next path:
-``mednafen-state prim-trace --scan-all-ram`` against the ocean
-cluster's fingerprint to find where the per-tile descriptor table
-lives outside the default 139 KB / 91 KB scan windows.
+``pick_ocean_color`` walks every POLY_FT4 cluster reported by
+``mednafen-state prim-trace``, samples each cluster's representative
+tile via its CLUT + tpage out of the save's VRAM, and ranks
+blue-dominant clusters by ``hits × blue_dominance``. The winner's
+average RGB lands as ``site/world-overview.json[kingdom].ocean_color``
+and drives the viewer's fallback colour before the textured pipeline
+loads.
 
 ### Camera anchors
 

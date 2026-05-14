@@ -7,6 +7,7 @@
 
 pub mod disc;
 pub mod fog_lut;
+pub mod ocean;
 pub mod runtime;
 pub mod sentinel_placements;
 pub mod tmd3d;
@@ -84,6 +85,8 @@ enum TimSource {
     Lzs { section: usize, offset: usize },
 }
 
+use crate::ocean::{OceanAssets, find_ocean_assets};
+
 /// Loaded kingdom bundle (slot 0 = TIM_LIST -> VRAM, slot 1 = TMD pack ->
 /// per-slot TMD bodies). Built by [`LegaiaViewer::set_scene_kingdom`] and
 /// consumed by the assembled top-view world-map render path.
@@ -102,6 +105,10 @@ struct KingdomPack {
     byte_ends: Vec<usize>,
     /// Currently selected pack slot for the mesh accessors.
     cur_slot: Option<usize>,
+    /// Ocean tile texture + base CLUT + animation table, extracted from
+    /// slot 0's TIM_LIST. `None` when the kingdom is not a world-map
+    /// kingdom (the assets are only present in PROT 0085 / 0244 / 0391).
+    ocean: Option<OceanAssets>,
 }
 
 #[wasm_bindgen]
@@ -580,6 +587,54 @@ impl LegaiaViewer {
             .as_ref()
             .map(|k| k.vram.as_bytes().to_vec())
             .unwrap_or_default()
+    }
+
+    /// Ocean tile pixel data (4bpp indexed), 64 halfwords × 256 rows =
+    /// 32 768 bytes. Each byte holds 2 pixels (low nibble first). The
+    /// CLUT index addressing is `pixel = byte >> 4` for the high pixel
+    /// and `byte & 0x0F` for the low pixel. Empty when the kingdom is
+    /// not a world-map kingdom or the ocean TIM wasn't found.
+    pub fn ocean_texture_bytes(&self) -> Vec<u8> {
+        self.kingdom
+            .as_ref()
+            .and_then(|k| k.ocean.as_ref())
+            .map(|o| o.texture.clone())
+            .unwrap_or_default()
+    }
+
+    /// Static base CLUT for the ocean tile row: 256 entries × 2 bytes
+    /// (BGR555 LE) = 512 bytes. The first 16 entries are the ones the
+    /// animation cycle overrides each frame; entries 16..255 stay fixed
+    /// and belong to other tiles sharing the same VRAM row.
+    pub fn ocean_base_clut_bytes(&self) -> Vec<u8> {
+        self.kingdom
+            .as_ref()
+            .and_then(|k| k.ocean.as_ref())
+            .map(|o| o.base_clut.clone())
+            .unwrap_or_default()
+    }
+
+    /// 13-frame ocean CLUT animation table: 13 × 32 bytes = 416 bytes,
+    /// frame-0 first. Each frame is 16 BGR555 entries (the same shape as
+    /// the first 16 entries of [`Self::ocean_base_clut_bytes`]). The
+    /// runtime DMAs one frame at a time onto VRAM (0, 506) to cycle
+    /// the wave colours through the ocean tile.
+    pub fn ocean_animation_frames(&self) -> Vec<u8> {
+        self.kingdom
+            .as_ref()
+            .and_then(|k| k.ocean.as_ref())
+            .map(|o| o.animation_frames.clone())
+            .unwrap_or_default()
+    }
+
+    /// Number of valid ocean animation frames (typically 13). Returns 0
+    /// when the kingdom doesn't have ocean assets.
+    pub fn ocean_frame_count(&self) -> u32 {
+        self.kingdom
+            .as_ref()
+            .and_then(|k| k.ocean.as_ref())
+            .map(|o| (o.animation_frames.len() / 32) as u32)
+            .unwrap_or(0)
     }
 
     /// Parallel to [`Self::mesh_positions`] but sources from the currently
@@ -1729,6 +1784,7 @@ impl LegaiaViewer {
                 }
             }
         }
+        let ocean = find_ocean_assets(&tim_decoded);
 
         // Parse the TMD-pack table.
         if pack.len() < 4 {
@@ -1759,6 +1815,7 @@ impl LegaiaViewer {
             byte_offsets,
             byte_ends,
             cur_slot: None,
+            ocean,
         })
     }
 
@@ -1962,7 +2019,7 @@ fn sprite_to_quad(
 /// 0x800-aligned offsets for `u32_le[0] == 7` and
 /// `descriptor[0].data_offset == 0x40` (the structural signature shared by
 /// the `scene_scripted_asset_table` and bare `scene_asset_table` variants).
-fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
+pub fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
     let mut off = 0usize;
     while off + 64 <= buf.len() {
         let count = u32::from_le_bytes(buf[off..off + 4].try_into().unwrap());

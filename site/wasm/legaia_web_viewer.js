@@ -474,6 +474,56 @@ export class LegaiaViewer {
         return ret[0] >>> 0;
     }
     /**
+     * 13-frame ocean CLUT animation table: 13 × 32 bytes = 416 bytes,
+     * frame-0 first. Each frame is 16 BGR555 entries (the same shape as
+     * the first 16 entries of [`Self::ocean_base_clut_bytes`]). The
+     * runtime DMAs one frame at a time onto VRAM (0, 506) to cycle
+     * the wave colours through the ocean tile.
+     * @returns {Uint8Array}
+     */
+    ocean_animation_frames() {
+        const ret = wasm.legaiaviewer_ocean_animation_frames(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Static base CLUT for the ocean tile row: 256 entries × 2 bytes
+     * (BGR555 LE) = 512 bytes. The first 16 entries are the ones the
+     * animation cycle overrides each frame; entries 16..255 stay fixed
+     * and belong to other tiles sharing the same VRAM row.
+     * @returns {Uint8Array}
+     */
+    ocean_base_clut_bytes() {
+        const ret = wasm.legaiaviewer_ocean_base_clut_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Number of valid ocean animation frames (typically 13). Returns 0
+     * when the kingdom doesn't have ocean assets.
+     * @returns {number}
+     */
+    ocean_frame_count() {
+        const ret = wasm.legaiaviewer_ocean_frame_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Ocean tile pixel data (4bpp indexed), 64 halfwords × 256 rows =
+     * 32 768 bytes. Each byte holds 2 pixels (low nibble first). The
+     * CLUT index addressing is `pixel = byte >> 4` for the high pixel
+     * and `byte & 0x0F` for the low pixel. Empty when the kingdom is
+     * not a world-map kingdom or the ocean TIM wasn't found.
+     * @returns {Uint8Array}
+     */
+    ocean_texture_bytes() {
+        const ret = wasm.legaiaviewer_ocean_texture_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Number of TMDs in the currently-loaded kingdom pack. 0 when no
      * kingdom is loaded.
      * @returns {number}

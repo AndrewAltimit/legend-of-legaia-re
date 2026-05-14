@@ -34,33 +34,84 @@
 const VRAM_W = 1024;
 const VRAM_H = 512;
 
-/* Minimal solid-colour shader for the procedural ocean-plane backdrop.
- * The world-overview viewer renders the kingdom's bulk terrain + MAN
- * placements as 3D meshes; the ocean source mesh isn't yet pinned in
- * the kingdom slot-1 pack (the visible ocean tiles in walk-view come
- * out of the GPU prim pool, which isn't disc-resident). As a stand-in
- * we draw a flat quad at y = 0 filling the world extent + margin in
- * the kingdom's sampled ocean colour. The colour comes from
- * `world-overview.json[kingdom].ocean_color` (CLUT-sampled from a save
- * state by `scripts/mednafen/resolve_bulk_terrain.py`), with the
- * three retail kingdoms all converging on royal blue (#1D2463 family).
+/* Ocean tile pipeline: 4bpp indexed texture (sampled from a 256×256
+ * pixel atlas) + a 16-entry CLUT that gets rewritten every animation
+ * frame. This is a runtime port of the retail disc-side asset (located
+ * at PROT 0085/0244/0391, slot 0 TIM_LIST, ocean TIM with image at
+ * VRAM `(768, 256)` 64×256 4bpp and CLUT at `(0, 506)` 256×1). The
+ * 13-frame animation table at a known signature inside slot 0 drives
+ * the rolling-wave effect by cycling the first 16 CLUT entries each
+ * frame.
  *
- * Draws before the bulk-terrain pass with depth-test enabled so 3D
- * landmark meshes occlude the ocean plane naturally. */
+ * See `crates/web-viewer/src/ocean.rs` and
+ * `docs/subsystems/world-map.md` § "Ocean / coastline source" for the
+ * full RE provenance.
+ *
+ * The plane lives at y=0 and tiles UV across the world extent. The
+ * shader does 4bpp index decode + CLUT lookup matching the PSX GPU
+ * (low-nibble pixel first; CLUT entry 0 transparent; BGR555 -> linear
+ * RGB). When the disc-side assets aren't loaded (no disc supplied yet)
+ * we fall back to a solid royal-blue colour. */
 const OCEAN_VS_SRC = `#version 300 es
 precision highp float;
 uniform mat4 u_mvp;
+uniform vec2 u_uv_scale;   /* world units per ocean-texture cell */
 in vec3 a_position;
+in vec2 a_uv_world;        /* unit-quad XZ in [-0.5, 0.5] */
+out vec2 v_uv;
 void main() {
+  /* a_uv_world matches the quad's XZ; multiply by u_uv_scale to tile
+   * across the kingdom extent. The fragment shader takes fract() so
+   * UVs wrap as the camera pans. */
+  v_uv = a_uv_world * u_uv_scale;
   gl_Position = u_mvp * vec4(a_position, 1.0);
 }
 `;
 const OCEAN_FS_SRC = `#version 300 es
 precision highp float;
-uniform vec4 u_color;
+precision highp int;
+precision highp usampler2D;
+
+uniform usampler2D u_ocean_tex;   /* R8UI, 128×256: each texel = one byte of 4bpp data (2 pixels) */
+uniform usampler2D u_ocean_clut;  /* R16UI, 16×1: 16 BGR555 entries (animated per frame) */
+uniform int u_ocean_textured;     /* 0 = solid u_color fallback, 1 = textured pipeline */
+uniform vec4 u_color;             /* fallback solid colour */
+
+in vec2 v_uv;
 out vec4 o_color;
+
+vec3 bgr555_to_rgb(uint c) {
+  return vec3(
+    float((c >> 0u)  & 0x1Fu) / 31.0,
+    float((c >> 5u)  & 0x1Fu) / 31.0,
+    float((c >> 10u) & 0x1Fu) / 31.0
+  );
+}
+
 void main() {
-  o_color = u_color;
+  if (u_ocean_textured == 0) {
+    o_color = u_color;
+    return;
+  }
+  /* Wrap UVs into [0, 1) and sample a 256×256-pixel ocean tile.
+   * 4bpp packing: each VRAM byte holds 2 pixels, low nibble first.
+   * So the texture is 128 bytes wide × 256 rows. */
+  vec2 uv = fract(v_uv);
+  int px = int(uv.x * 256.0);     /* 0..255 logical pixel x */
+  int py = int(uv.y * 256.0);     /* 0..255 logical pixel y */
+  int byte_x = px >> 1;           /* 0..127 byte column */
+  int low_nib = px & 1;           /* 0 = low nibble, 1 = high nibble */
+  uint b = texelFetch(u_ocean_tex, ivec2(byte_x, py), 0).r;
+  uint nibble = (low_nib == 0) ? (b & 0xFu) : ((b >> 4) & 0xFu);
+  uint entry = texelFetch(u_ocean_clut, ivec2(int(nibble), 0), 0).r;
+  /* PSX CLUT entry 0 = fully transparent (skip the discard so the
+   * ocean still paints something underneath - on retail the ocean is
+   * never fully transparent in the visible region). */
+  if (entry == 0u) {
+    o_color = u_color;
+    return;
+  }
+  o_color = vec4(bgr555_to_rgb(entry), 1.0);
 }
 `;
 
@@ -335,17 +386,24 @@ class TmdRenderer {
       origin: [0, 0, 0],
     };
 
-    /* Ocean plane: minimal shader + a single 4-vertex quad expanded to
-     * 6 indices (two triangles). The plane lives at y = 0 and spans a
-     * single unit square in world units; per-frame we multiply through
-     * u_mvp to extend it across the kingdom's world extent + margin. */
+    /* Ocean plane: 4bpp indexed texture sampled with a 16-entry CLUT
+     * that gets swapped every animation frame. The plane lives at
+     * y = 0 and spans a single unit square in world units; per-frame
+     * we multiply through u_mvp to extend it across the kingdom's
+     * world extent + margin. */
     this.oceanProgram   = compileProgram(gl, OCEAN_VS_SRC, OCEAN_FS_SRC);
-    this.locOceanMvp    = gl.getUniformLocation(this.oceanProgram, 'u_mvp');
-    this.locOceanColor  = gl.getUniformLocation(this.oceanProgram, 'u_color');
-    this.locOceanPos    = gl.getAttribLocation(this.oceanProgram, 'a_position');
-    this.oceanVao       = gl.createVertexArray();
-    this.oceanPosBuf    = gl.createBuffer();
-    this.oceanIdxBuf    = gl.createBuffer();
+    this.locOceanMvp        = gl.getUniformLocation(this.oceanProgram, 'u_mvp');
+    this.locOceanUvScale    = gl.getUniformLocation(this.oceanProgram, 'u_uv_scale');
+    this.locOceanColor      = gl.getUniformLocation(this.oceanProgram, 'u_color');
+    this.locOceanTex        = gl.getUniformLocation(this.oceanProgram, 'u_ocean_tex');
+    this.locOceanClut       = gl.getUniformLocation(this.oceanProgram, 'u_ocean_clut');
+    this.locOceanTextured   = gl.getUniformLocation(this.oceanProgram, 'u_ocean_textured');
+    this.locOceanPos        = gl.getAttribLocation(this.oceanProgram, 'a_position');
+    this.locOceanUv         = gl.getAttribLocation(this.oceanProgram, 'a_uv_world');
+    this.oceanVao           = gl.createVertexArray();
+    this.oceanPosBuf        = gl.createBuffer();
+    this.oceanUvBuf         = gl.createBuffer();
+    this.oceanIdxBuf        = gl.createBuffer();
     gl.bindVertexArray(this.oceanVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.oceanPosBuf);
     /* Unit quad in XZ at y=0, centred at origin (extents -0.5..+0.5). */
@@ -357,19 +415,61 @@ class TmdRenderer {
     ]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(this.locOceanPos);
     gl.vertexAttribPointer(this.locOceanPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.oceanUvBuf);
+    /* UV matches XZ position so it's easy to compute world-space tiling. */
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -0.5, -0.5,
+       0.5, -0.5,
+       0.5,  0.5,
+      -0.5,  0.5,
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locOceanUv);
+    gl.vertexAttribPointer(this.locOceanUv, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.oceanIdxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,
       new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
     gl.bindVertexArray(null);
 
+    /* Ocean texture: 128×256 R8UI (4bpp 256-pixel-wide tile packed 2/byte). */
+    this.oceanTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.oceanTex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8UI, 128, 256);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+    /* Ocean CLUT: 16×1 R16UI (16 BGR555 entries, rewritten per frame). */
+    this.oceanClutTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, 16, 1);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
     /* Per-kingdom ocean override. The viewer pushes
      * `setOceanColor({ r, g, b }, enable)` once per kingdom switch so the
-     * plane swaps to the captured tint without a per-frame uniform set. */
+     * plane swaps to the captured tint without a per-frame uniform set.
+     * When `setOceanAssets()` has uploaded a real texture + animation
+     * frames, the textured pipeline takes over and the fallback colour
+     * only matters where the CLUT samples to entry 0 (transparent). */
     this.oceanParams = {
       enable: 0,
-      color: { r: 0.12, g: 0.14, b: 0.39 },  /* #1F2466, the retail default */
+      color: { r: 0.12, g: 0.14, b: 0.39 },  /* #1F2466, the retail fallback */
       planeY: 0.0,
-      extentScale: 2.5,   /* world-extent multiplier so the quad reaches past clip */
+      extentScale: 2.5,    /* world-extent multiplier so the quad reaches past clip */
+      tileWorldSize: 256,  /* world units per ocean-texture wrap */
+      /* Set when setOceanAssets() has uploaded real disc data. */
+      textured: false,
+      animationFrames: null,   /* Uint16Array, 13×16 entries flat */
+      frameCount: 0,
+      currentFrame: 0,
+      /* How many wall-clock seconds between animation steps. 60 FPS
+       * retail / 13 frames = full cycle in ~0.22s (4.6 Hz) - we slow
+       * that down to roughly the visible rate in the user's screenshot. */
+      frameDurationSec: 1 / 8,
+      lastFrameAdvanceTs: 0,
     };
 
     this.indexCount = 0;
@@ -433,7 +533,9 @@ class TmdRenderer {
    * world-overview.json). `enable` toggles whether the ocean pass runs
    * at all - the viewer wires this to a "show ocean" checkbox so the
    * 2D-style overview without the backdrop is still reachable. Pass
-   * `planeY` to lift/lower the plane (default 0). */
+   * `planeY` to lift/lower the plane (default 0). The colour is only
+   * the visible output when `setOceanAssets` hasn't uploaded a real
+   * texture; once it has, the textured pipeline takes over. */
   setOceanColor(color, enable, planeY) {
     if (color && typeof color === 'object') {
       this.oceanParams.color = {
@@ -446,6 +548,72 @@ class TmdRenderer {
     if (planeY !== undefined) {
       this.oceanParams.planeY = +planeY;
     }
+  }
+
+  /* Upload the disc-side ocean tile assets. `texture` is the raw 4bpp
+   * VRAM data (32 768 bytes, 128×256 packed) extracted by
+   * `legaia_web_viewer::ocean::find_ocean_assets`. `animationFrames` is
+   * the 416-byte flat buffer (13 frames × 16 BGR555 entries, LE) from
+   * the same source. `tileWorldSize` is how many world units one
+   * texture wrap should cover (default 256, matches the retail tile
+   * pitch). After this call the ocean pass switches into textured mode.
+   *
+   * Pass `null` arguments to clear back to the solid-colour fallback. */
+  setOceanAssets(texture, animationFrames, tileWorldSize) {
+    const gl = this.gl;
+    if (!texture || !animationFrames) {
+      this.oceanParams.textured = false;
+      this.oceanParams.animationFrames = null;
+      this.oceanParams.frameCount = 0;
+      this.oceanParams.currentFrame = 0;
+      return;
+    }
+    if (texture.byteLength !== 128 * 256) {
+      console.warn('[webgl-tmd] unexpected ocean texture size:', texture.byteLength);
+    }
+    /* Upload the 4bpp byte stream into the R8UI atlas. */
+    gl.bindTexture(gl.TEXTURE_2D, this.oceanTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 0, 128, 256,
+      gl.RED_INTEGER, gl.UNSIGNED_BYTE,
+      texture,
+    );
+    /* Stash the animation table as a Uint16Array view so we can splat
+     * one frame at a time into the small CLUT texture each tick. */
+    const u16 = new Uint16Array(
+      animationFrames.buffer,
+      animationFrames.byteOffset,
+      animationFrames.byteLength / 2,
+    );
+    const frameCount = Math.floor(u16.length / 16);
+    this.oceanParams.animationFrames = u16;
+    this.oceanParams.frameCount = frameCount;
+    this.oceanParams.currentFrame = 0;
+    this.oceanParams.textured = frameCount > 0 && texture.byteLength === 128 * 256;
+    if (tileWorldSize !== undefined && tileWorldSize > 0) {
+      this.oceanParams.tileWorldSize = +tileWorldSize;
+    }
+    /* Push frame 0 so the first draw has valid CLUT data. */
+    this._uploadOceanFrame(0);
+  }
+
+  /* Internal: upload animation frame `idx` (16 BGR555 entries) to the
+   * CLUT texture. Called from renderAssembled when wall-clock time
+   * crosses `frameDurationSec`. */
+  _uploadOceanFrame(idx) {
+    const p = this.oceanParams;
+    if (!p.animationFrames || idx >= p.frameCount) return;
+    const slice = p.animationFrames.subarray(idx * 16, (idx + 1) * 16);
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 0, 16, 1,
+      gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+      slice,
+    );
+    p.currentFrame = idx;
   }
 
   /* Return the AABB this renderer computed for an uploaded scene mesh.
@@ -598,28 +766,55 @@ class TmdRenderer {
 
     const vp = buildTopDownVp(w, h, worldExtent, cam);
 
-    /* Procedural ocean plane: drawn first so bulk-terrain meshes occlude
-     * it through depth-test. Skipped when `setOceanColor(..., false)` is
-     * the current state. */
+    /* Ocean plane: drawn first so bulk-terrain meshes occlude it
+     * through depth-test. Skipped when `setOceanColor(..., false)` is
+     * the current state. When `setOceanAssets` has uploaded disc-side
+     * data the textured pipeline takes over; otherwise we paint a
+     * solid fallback colour. */
     if (this.oceanParams.enable) {
+      const p = this.oceanParams;
       const ex = (worldExtent && worldExtent[0]) || 16320;
       const ez = (worldExtent && worldExtent[1]) || 16320;
       const cx = (cam && cam.centerX != null) ? cam.centerX : ex * 0.5;
       const cz = (cam && cam.centerZ != null) ? cam.centerZ : ez * 0.5;
-      const sx = ex * this.oceanParams.extentScale;
-      const sz = ez * this.oceanParams.extentScale;
+      const sx = ex * p.extentScale;
+      const sz = ez * p.extentScale;
+      /* Advance animation frame based on wall-clock. */
+      if (p.textured && p.frameCount > 0) {
+        const now = performance.now() / 1000;
+        if (p.lastFrameAdvanceTs === 0) p.lastFrameAdvanceTs = now;
+        if (now - p.lastFrameAdvanceTs >= p.frameDurationSec) {
+          const steps = Math.floor((now - p.lastFrameAdvanceTs) / p.frameDurationSec);
+          const next = (p.currentFrame + steps) % p.frameCount;
+          this._uploadOceanFrame(next);
+          p.lastFrameAdvanceTs += steps * p.frameDurationSec;
+        }
+      }
       /* model = T(cx, planeY, cz) * S(sx, 1, sz) */
       const model = new Float32Array([
         sx, 0,  0,  0,
         0,  1,  0,  0,
         0,  0,  sz, 0,
-        cx, this.oceanParams.planeY, cz, 1,
+        cx, p.planeY, cz, 1,
       ]);
       const mvp = mulMat4(vp, model);
       gl.useProgram(this.oceanProgram);
       gl.uniformMatrix4fv(this.locOceanMvp, false, mvp);
-      const c = this.oceanParams.color;
+      /* UV scale: world-units-per-quad × wraps-per-quad. The vertex
+       * shader multiplies the unit-quad UV by this; the fragment
+       * shader does fract() to tile. */
+      const wrapsX = sx / p.tileWorldSize;
+      const wrapsZ = sz / p.tileWorldSize;
+      gl.uniform2f(this.locOceanUvScale, wrapsX, wrapsZ);
+      gl.uniform1i(this.locOceanTextured, p.textured ? 1 : 0);
+      const c = p.color;
       gl.uniform4f(this.locOceanColor, c.r, c.g, c.b, 1.0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.oceanTex);
+      gl.uniform1i(this.locOceanTex, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
+      gl.uniform1i(this.locOceanClut, 1);
       gl.bindVertexArray(this.oceanVao);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
       gl.bindVertexArray(null);
@@ -693,7 +888,10 @@ class TmdRenderer {
     gl.deleteProgram(this.oceanProgram);
     gl.deleteVertexArray(this.oceanVao);
     gl.deleteBuffer(this.oceanPosBuf);
+    gl.deleteBuffer(this.oceanUvBuf);
     gl.deleteBuffer(this.oceanIdxBuf);
+    gl.deleteTexture(this.oceanTex);
+    gl.deleteTexture(this.oceanClutTex);
   }
 }
 
