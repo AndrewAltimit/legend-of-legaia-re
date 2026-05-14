@@ -19,6 +19,12 @@
 /ghidra/scripts/*.json
 /ghidra/scripts/*.txt
 /ghidra/scripts/*.log
+# symbols.json / symbols.lua are name -> address maps generated from the
+# funcs/*.txt headers (Ghidra default labels + addresses, no Sony bytes).
+# Committed so PCSX-Redux Lua probes can resolve names without bundling
+# the funcs/ tree. Regenerate via scripts/pcsx-redux/build-symbols.py.
+!/ghidra/scripts/symbols.json
+!/ghidra/scripts/symbols.lua
 /ghidra/import.log
 
 # Disc images, dumps, and PSX executables - defensive: extracted/ already
