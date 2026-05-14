@@ -135,27 +135,37 @@
   </table>
   <p>Each handler decodes the per-command words as two packed vertex indices per <code>u32</code> (low-16 <code>&amp; 0x7FF8</code>, high-16 also <code>&amp; 0x7FF8</code> &mdash; a <code>&gt;&gt;3</code> divisor plus 8-byte vertex stride from <code>param_3</code> = the vertex pool base).</p>
   <h3 id="cross-kingdom-hits">Cross-kingdom hit-count comparison</h3>
-  <p>Exec-breakpoint hit counts at the eight cluster-A LW PCs + the cluster-B LW PC during a single warp-tile transition, per-probe cap at 200:</p>
+  <p>Exec-breakpoint hit counts at the eight cluster-A LW PCs + the cluster-B LW PC during a single warp-tile transition with <code>LEGAIA_PC_CAP=5000</code> over a 1800-vsync window (per-PC cap, so each cluster-A PC tops at 5000):</p>
   <table>
-    <thead><tr><th>Kingdom</th><th>sstate</th><th>Cluster A</th><th>Cluster B</th></tr></thead>
+    <thead><tr><th>Kingdom</th><th>sstate</th><th>Cluster A total</th><th>Cluster B</th><th>Cluster A RAs observed</th></tr></thead>
     <tbody>
-      <tr><td>Drake</td><td>sstate1 (already on map01, held UP)</td><td>1400 (capped on 7 of 8 PCs)</td><td>178</td></tr>
-      <tr><td>Sebucus</td><td>sstate4 (town &rarr; map02, held DOWN)</td><td>1400 (capped on 7 of 8 PCs)</td><td>67</td></tr>
-      <tr><td>Karisto</td><td>sstate5 (town &rarr; map03, held DOWN)</td><td>1196</td><td>115</td></tr>
+      <tr><td>Drake</td><td>sstate1 (already on map01, held UP)</td><td>35762 (caps on 7 of 8 PCs)</td><td>178</td><td><code>0x8001B47C</code>, <code>0x8001BC8C</code>, <code>0x801F78D4</code></td></tr>
+      <tr><td>Sebucus</td><td>sstate4 (town &rarr; map02, held DOWN)</td><td>28159 (caps on 5 of 8 PCs)</td><td>67</td><td><code>0x8001B47C</code>, <code>0x801F78D4</code></td></tr>
+      <tr><td>Karisto</td><td>sstate5 (town &rarr; map03, held DOWN)</td><td>13593 (no caps)</td><td>115</td><td><code>0x8001B47C</code>, <code>0x801F78D4</code></td></tr>
     </tbody>
   </table>
-  <p>Karisto fell below the 200 cap on two PCs (kind 13 at <code>0x80044B00</code>: <strong>49 hits</strong>; kind 17 at <code>0x80044E08</code>: <strong>147 hits</strong>), revealing that Karisto&apos;s warp into <code>map03</code> draws fewer textured triangle / gouraud-textured quad batches than other kinds. A high-cap follow-up (<code>LEGAIA_PC_CAP=5000</code>) for Karisto produced full per-kind totals:</p>
+  <p>Karisto&apos;s lower cluster-A total (uncapped) tracks its smaller slot 4 (24444 bytes / 16 bodies vs Drake&apos;s 32304 / 15 and Sebucus&apos;s 26964 / 16) &mdash; hit-count scales with record-count. The per-kind breakdown below makes the per-handler differences visible even where the overall totals saturate.</p>
+
+  <h4>Per-kind delta (PC_CAP=5000)</h4>
   <table>
-    <thead><tr><th>Kind</th><th>Primitive (likely)</th><th>Karisto hits (uncapped)</th></tr></thead>
+    <thead><tr><th>Kind handler</th><th>Primitive (likely)</th><th>Drake</th><th>Sebucus</th><th>Karisto</th></tr></thead>
     <tbody>
-      <tr><td>13</td><td>POLY_G3 / POLY_FT3 triangle</td><td>49</td></tr>
-      <tr><td>17</td><td>POLY_GT4 textured quad</td><td>147</td></tr>
-      <tr><td>18 bank 1</td><td>POLY_GT4 extended quad (4 LW PCs)</td><td>1820 each (= 7280 total)</td></tr>
-      <tr><td>16</td><td>POLY_G4 quad</td><td>2058</td></tr>
-      <tr><td>15</td><td>POLY_GT3 textured triangle</td><td>2059</td></tr>
+      <tr><td>13 banks 1,2 (<code>0x80044A3C</code>)</td><td>POLY_G3 / POLY_FT3 triangle</td><td>&ge;5000*</td><td><strong>2040</strong></td><td><strong>49</strong></td></tr>
+      <tr><td>17 banks 1,2 (<code>0x80044DC8</code>)</td><td>POLY_GT4 textured quad</td><td><strong>762</strong></td><td><strong>240</strong></td><td><strong>147</strong></td></tr>
+      <tr><td>18 bank 1 (<code>0x800453BC</code>, &times;4 LW PCs)</td><td>POLY_GT4 extended quad</td><td>&ge;5000* (&times;4)</td><td>&ge;5000* (&times;4)</td><td><strong>1820</strong> (&times;4)</td></tr>
+      <tr><td>16 banks 1,2 (<code>0x80044C14</code>)</td><td>POLY_G4 quad</td><td>&ge;5000*</td><td><strong>878</strong></td><td><strong>2058</strong></td></tr>
+      <tr><td>15 banks 1,2 (<code>0x80045194</code>)</td><td>POLY_GT3 textured triangle</td><td>&ge;5000*</td><td>&ge;5000*</td><td><strong>2059</strong></td></tr>
+      <tr><td>cluster B (<code>0x80059DE4</code>)</td><td>mid-body reader</td><td><strong>178</strong></td><td><strong>67</strong></td><td><strong>115</strong></td></tr>
     </tbody>
   </table>
-  <p>Kind 15 / 16 / 18 each draw ~2000 batches; kinds 13 / 17 draw &lt; 200 &mdash; so the textured-flat-triangle / gouraud-textured-quad primitives are rare-use in the slot-4 vocabulary and the gouraud quad / textured triangle / extended quad primitives are the workhorses. Re-running the high-cap probe against Drake / Sebucus is deferred (interpreter-mode runs are slow).</p>
+  <p><code>* = capped at PC_CAP=5000; true count is higher.</code></p>
+  <ul>
+    <li><strong>Kind 13</strong> is rare in Karisto (49) but a workhorse in Sebucus (2040) and Drake (&ge;5000). Sebucus and Drake have continental geometry with many small triangle primitives that Karisto doesn&apos;t.</li>
+    <li><strong>Kind 17</strong> scales with overall geometry weight: Drake (762) &gt; Sebucus (240) &gt; Karisto (147). Ratio Drake / Karisto &asymp; 5.2.</li>
+    <li><strong>Kind 16</strong> is the inverse of kind 13: Karisto-heavy (2058) while Sebucus barely uses it (878). Drake &ge;5000.</li>
+    <li><strong>Cluster B</strong> (the mid-body reader): Drake (178) &gt; Karisto (115) &gt; Sebucus (67) &mdash; Drake&apos;s larger slot 4 visits more of the secondary reader&apos;s body subset.</li>
+  </ul>
+  <p>Kinds 15 and 18 saturate on both Drake and Sebucus while Karisto stays clean at 2059 / 1820 &times;4, meaning these are workhorses for <em>every</em> kingdom. To lift the cap further, set <code>LEGAIA_PC_CAP=50000</code> and accept the longer wall time (PCSX-Redux in interpreter+debugger mode does not reliably self-terminate; wrap with <code>timeout --kill-after=30s 1500s</code>).</p>
 
   <h3 id="cluster-a-caller">Cluster-A caller (<code>FUN_8001ada4</code>)</h3>
   <p><code>FUN_8001ada4</code> (2456 B / 614 instructions) is the per-actor renderer that walks a linked list of actor records and calls cluster A for each one&apos;s meshes. For each actor, the mesh-table at <code>actor+0x44</code> is <code>[u32 count, u32 mesh_ptr[count]]</code>. Each <code>mesh_ptr</code> is the TMD-style struct passed as <code>param_1</code> to <code>FUN_80043390</code>. The captured cluster-A LW PCs all have <code>ra = 0x8001B47C</code> (i.e., FUN_8001ada4&apos;s call site at PC <code>0x8001B474</code>) for the per-frame path; the warp-transition path uses <code>ra = 0x801F78D4</code> (a world-map overlay function).</p>
@@ -171,7 +181,7 @@
     <li>the in-game-object silhouettes visible in side projections &mdash; the user identified body-9 features that resemble specific game props</li>
     <li>cluster A&apos;s primitive vocabulary (POLY_G4 / POLY_GT4 / POLY_F3 / etc.) is a standard 3D-mesh renderer, not a wireframe / coastline-line driver</li>
   </ul>
-  <p>The reader hasn&apos;t appeared as a direct <code>LUI+ADDIU</code> reference to <code>0x8011A624</code> in any captured world-map overlay &mdash; it accesses the buffer via a runtime pointer. Steady-state dev-menu top-view registers <strong>zero reads</strong> across the slot-4 region; slot 4 is read during the kingdom-bundle scene-load transition only, transcoded into a working buffer, and the resulting GP0 packets are then drawn per-frame.</p>
+  <p>The reader doesn&apos;t appear as a direct <code>LUI+ADDIU</code> reference to <code>0x8011A624</code> in any captured world-map overlay &mdash; the cluster-A consumer reaches slot-4 bytes through <code>DAT_8007C018[94..113]</code> (20 body-aligned pointers) and through per-actor mesh tables, not via a direct LUI+ADDIU materialization. Steady-state dev-menu top-view registers <strong>zero direct reads</strong> across the slot-4 region.</p>
 </section>
 
 <section class="doc-section" id="tooling">
@@ -269,15 +279,36 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
     <li><code>arg2</code> = fog cue <code>clamp((GTE_screen_z - 0x5000) &gt;&gt; 3, 0, 0x1000)</code></li>
   </ul>
 
-  <p><strong>Implication for slot 4.</strong> Cluster A&apos;s input is <em>TMD-pack data</em>, not slot-4 MOVE bytes. The Read-bp probe that captured slot-4-region RAM reads passing through <code>FUN_80043390</code> was almost certainly observing TMD reads from a TMD-pack buffer allocated near slot-4&apos;s MOVE buffer in retail RAM. Slot 2 of each kingdom bundle is type <code>0x02</code> (TMD-pack) per the type sequence <code>(1, 2, 3, 4, 5, 6, 7)</code> &mdash; that&apos;s the more likely true source of <code>DAT_8007C018</code> entries during the warp transition. The slot-4 &rarr; cluster-A connection documented earlier on this page needs targeted re-validation.</p>
+  <h3 id="how-slot4-reaches-cluster-a">How slot-4 bytes reach cluster A</h3>
+  <p>Live RAM verification (Drake world-map snapshot) shows the cluster-A input pointer originates from two parallel paths, both ultimately sourced from <code>DAT_8007C018</code>:</p>
+  <ol>
+    <li><strong>Direct via <code>DAT_8007C018[94..113]</code>.</strong> The global table installs 20 pointers that land inside slot-4 RAM at body-aligned offsets (slot-4 body 0 start, body 1 start, etc.). These entries do <strong>not</strong> carry the TMD magic <code>0x80000002</code> at word[0] &mdash; <code>FUN_80026B4C</code> accepts non-TMD-magic input (a magic mismatch only sets <code>DAT_8007B828</code> bits, it doesn&apos;t reject the install). The world-map dispatcher <code>FUN_801F69D8</code> reads <code>DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]</code> and passes <code>entry + 0xC</code> to <code>FUN_80043390</code>. When the actor kind picks a slot-4-pointer entry, the dispatcher feeds raw slot-4 body bytes into cluster A as a command-stream + vertex-pool.</li>
+    <li><strong>Indirect via actor mesh tables.</strong> The per-actor renderer <code>FUN_8001ada4</code> (caller RA <code>0x8001B47C</code> in every cross-kingdom capture) walks <code>actor+0x44 = [u32 count, u32 mesh_ptr[count]]</code> and passes each <code>mesh_ptr</code> to <code>FUN_80043390</code>. In the live Drake snapshot four actor instances in the <code>0x80082xxx</code> region hold mesh pointers at <code>instance+0x28</code> that target slot-4 body starts exactly (slot-4 offsets <code>0x1840</code> = body 4, <code>0x40F0</code> = body 10, <code>0x75A0</code> = body 13, <code>0x7C40</code> = body 14).</li>
+  </ol>
+  <p>Slot-4 RAM contains <strong>zero TMD-magic words</strong> at any alignment in any of the three kingdoms &mdash; slot-4 is <strong>not</strong> a TMD-pack. Cluster A accepts it anyway because <code>FUN_80043390</code> doesn&apos;t gate on TMD magic: it reads <code>param_1[4]</code> as a command word, extracts a <code>kind</code> field, and tail-calls a per-kind handler. The slot-4 body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to the dispatcher&apos;s <code>cmd_flags</code> bank selector (bank 0 / 1 / 2 &mdash; see the jump-table section above) but the connection has not been verified end-to-end.</p>
+  <p>The live-RAM walk also revealed <code>DAT_8007C018</code> is heterogeneous, not a strict TMD-pointer table:</p>
+  <table>
+    <thead><tr><th>Index range</th><th>Count</th><th>Content</th></tr></thead>
+    <tbody>
+      <tr><td><code>[0..4]</code></td><td>5</td><td>Party-character TMDs from <code>player.lz</code></td></tr>
+      <tr><td><code>[5..44]</code></td><td>40</td><td>Kingdom slot-1 TMD-pack TMDs</td></tr>
+      <tr><td><code>[45..53]</code></td><td>9</td><td>Vertex-pool pointers (word[0] = <code>0xFFFAFFFA</code>)</td></tr>
+      <tr><td><code>[54..63]</code></td><td>10</td><td>Texture-byte pointers</td></tr>
+      <tr><td><code>[64..91]</code></td><td>28</td><td>Pre-allocated zero-padded slots</td></tr>
+      <tr><td><code>[92..93]</code></td><td>2</td><td>Header-shaped entries</td></tr>
+      <tr><td><strong><code>[94..113]</code></strong></td><td><strong>20</strong></td><td><strong>Pointers INTO slot-4 RAM at body-aligned offsets</strong></td></tr>
+      <tr><td><code>[114..193]</code></td><td>80</td><td>Mixed (text fragments, more vertex/texture data)</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="open">
   <h2>Open work</h2>
   <ol>
-    <li><strong>Re-validate the slot-4 &rarr; cluster-A claim.</strong> With <code>DAT_8007C018</code> now known to hold TMD pointers installed by the case 2 TMD-pack handler, the slot-4 &rarr; cluster-A pipeline needs a check: is slot 4 actually consumed by cluster A, or are the Read-bp hits coming from a co-located TMD-pack buffer (slot 2 = type <code>0x02</code>)? A targeted Read-bp watching <code>DAT_8007C018[*]</code> entry addresses (not slot-4 RAM) would settle the question. If slot 4 <em>is</em> on the cluster-A path, an as-yet-unidentified converter must transform the slot-4 outer-pack records into TMD blobs at some point in the warp sequence.</li>
-    <li><strong><code>kind</code> / <code>flag_a</code> semantic.</strong> Body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to one of the three SCUS handler banks via the caller&apos;s flag argument (<code>kind=2</code> &rarr; bank 1; <code>kind=4</code> &rarr; bank 2; <code>kind=1</code> &rarr; bank 0). Body <code>kind</code> is <strong>not</strong> the same as primitive <code>kind</code> (8-19). With the cluster-A source clarified, this hypothesis may dissolve.</li>
+    <li><strong>Body-<code>kind</code> &harr; dispatcher-bank hypothesis.</strong> Body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to one of the three SCUS handler banks via the caller&apos;s <code>cmd_flags</code> argument (<code>kind=2</code> &rarr; bank 1 via flag <code>0x04000000</code>; <code>kind=4</code> &rarr; bank 2 via <code>0x20000000</code>; <code>kind=1</code> &rarr; bank 0). Body <code>kind</code> is <strong>not</strong> the same as primitive <code>kind</code> (8-19). Test: correlate the captured CSV register state (<code>a0</code>, <code>a1</code>, <code>a2</code>, <code>s8</code>) against body-kind at hit time.</li>
     <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; look like packed (high-byte, low-byte) tags rather than indices.</li>
-    <li><strong>Re-run probe with higher cap.</strong> <code>autorun_slot4_consumer_pcs.lua</code> has <code>LEGAIA_PC_CAP</code> env-var support; bumping to 5000+ surfaces uncapped per-kind totals where Drake/Sebucus are currently capped at 200.</li>
+    <li><strong>True uncapped Drake / Sebucus totals.</strong> Re-run <code>autorun_slot4_consumer_pcs.lua</code> with <code>LEGAIA_PC_CAP=50000</code> and a <code>timeout --kill-after=30s 1500s</code> wrapper. Closes the cross-kingdom delta table where Drake / Sebucus currently saturate.</li>
+    <li><strong><code>DAT_8007C018[45..53]</code> writer hunt.</strong> Nine entries filled with <code>0xFFFAFFFA</code>. Origin path is open &mdash; <code>FUN_80026B4C</code> would call <code>FUN_800268DC</code> on them unconditionally, so either their <code>+8</code> word is zero (loop-skip) or a separate writer installs them.</li>
+    <li><strong><code>DAT_8007C018[114..193]</code> consumer chain.</strong> 80 mixed-content entries (text fragments / vertex / texture). Needs classification + loader trace.</li>
   </ol>
 </section>
