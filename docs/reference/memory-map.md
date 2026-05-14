@@ -119,7 +119,7 @@ patching an instruction. Useful Ghidra anchors.
 | `0x801C6EA4` | Current world / scene struct pointer. |
 | `0x801C6460` | 64-entry × u16 scratchpad slot table. Written by op 0x4C nibble-C sub-A; adjusted by sub-B / sub-C. |
 | `0x801C66A0` | 64-slot ramp scheduler pool (stride 0x20). |
-| `0x8007C018` | TMD pointer table (`idx * 4` stride). Written by `FUN_80026B4C`. |
+| `0x8007C018` | TMD pointer table (`idx * 4` stride). Sole writer is `FUN_80026B4C`. All populated entries (`[0..DAT_8007BB38]`) are post-fixup Legaia TMDs. |
 | `0x8007C348` | u32 | Free-list LIFO stack pointer for the actor allocator. |
 | `0x8007C34C..0x36C` | u32[7] | Actor-list slot table consumed by `FUN_8002519c`. Seven linked-list heads at strides of 4 bytes (`+0x00`/`+0x04`/`+0x08`/`+0x0C`/`+0x10`/`+0x14`/`+0x20`). `FUN_80016444` walks five of them per frame as separate render passes; per-node entry-point is `node[+0x0C]` invoked via `jalr`. `_DAT_8007C354` and `_DAT_8007C364` are also read by `func_0x8003C83C` for the `0xF8`/`0xFB` motion-VM channel lookups (same list, two consumers). |
 | `0x8007C364` | Player context pointer. |
@@ -155,15 +155,15 @@ renderer (`FUN_801F69D8` → `FUN_80043390`). Live verification: see the
 
 | Address | Type | Purpose |
 |---|---|---|
-| `0x8007C018` | `void *[N]` | **Global asset-pointer table.** Installer `FUN_80026B4C @ 0x80026BA8` stores any pointer here (TMD-magic mismatch only sets `DAT_8007B828` bits, doesn't reject). In a Drake world-map snapshot 194 of the first 256 entries are populated: 45 TMD pointers (`[0..4]` = 5 party TMDs from `player.lz`, `[5..44]` = 40 kingdom slot-1 TMDs), 20 slot-4 body-aligned pointers at `[94..113]`, plus vertex-pool / texture / zero-padded slots. Consumed by `FUN_801F69D8` (world-map top-view), `FUN_80021B04` (SCUS actor allocator), `FUN_801D77F4` (overlay actor allocator), `FUN_801D8280` (table walker). |
-| `0x8007B774` | u32 | Write counter for `DAT_8007C018`. Bumped by `FUN_80026B4C` on each install. Drake snapshot = `0x2D` (45 entries installed). |
-| `0x8007BB38` | u32 | Walk count (last valid index). Drake snapshot = `0x2C`. |
-| `0x8007B824` | u32 | Per-pack start index into `DAT_8007C018`. Set when a new pack begins, read by `FUN_8001E928` / `FUN_8001E890` post-install to update `DAT_8007B6F8`. Drake snapshot = `0`. |
-| `0x8007B828` | u32 | TMD-magic-mismatch error bits. Set by `FUN_80026B4C` when a non-TMD pointer (e.g. slot-4 body) is installed. Drake snapshot = `0` (no errors observed in steady-state). |
+| `0x8007C018` | `void *[N]` | **Global TMD pointer table.** Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer (verified across SCUS + every world-map overlay via [`find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find_addr_materializer_dat_8007c018.py)). Every populated entry `[0..DAT_8007BB38]` is a post-fixup Legaia TMD: magic `0x80000002`, flags = 1, `group_count` at `+0x8`, group-descriptor array (`0x1C`-byte stride) at `+0xC`. Drake post-warp settled snapshot: 143 entries — `[0..4]` = 5 party TMDs from `player.lz`, `[5..142]` = 138 kingdom-bundle TMDs (the 0x8011xxxx-region addresses formerly classified as "slot-4 body-aligned" are simply TMDs that the kingdom load placed into RAM that the slot-4 MOVE buffer had briefly occupied; the slot-4 outer-pack signature is absent from steady-state RAM). Mid-load snapshots (e.g. a Sebucus warp-in-progress capture) show fewer installed entries; reading past `DAT_8007BB38` returns stale pointers from the previous game state, **but no consumer ever does this**. Consumed by `FUN_801F69D8` (world-map top-view), `FUN_80021B04` / `FUN_80024D78` (SCUS actor allocators), `FUN_801D77F4` (overlay actor allocator), `FUN_801D8280` (table walker), `FUN_8001E890` (per-pack count override), `FUN_8001EBEC` (per-party-member group-descriptor patch — equipment-conditional mesh swap for 3 party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`). |
+| `0x8007B774` | u32 | Install counter for `DAT_8007C018`. Bumped by `FUN_80026B4C` on each install. Drake post-warp snapshot = `0x8F` (143 entries installed). |
+| `0x8007BB38` | u32 | **Walker counter** (last installed index). Also written by `FUN_80026B4C` via `gp[+0x820]`; the `addu` between the gp-relative `lui+addiu` materialiser and the `sw` is what hides this store from Ghidra's xref database. Used by `FUN_801D8280` to bound the table walk. Drake snapshot = `0x8E` (= install counter − 1). |
+| `0x8007B824` | u32 | Per-pack start index into `DAT_8007C018`. Set when a new pack begins, read by `FUN_8001E928` / `FUN_8001E890` post-install to update `DAT_8007B6F8`. Drake post-warp snapshot = `0`. |
+| `0x8007B828` | u32 | TMD-magic-mismatch error bits. Set by `FUN_80026B4C` when an input fails the `*(input)==0x80000002` check (only flags the error; does not reject the install). Drake / Sebucus snapshots = `0x00000000` — every installed entry passes the magic check. |
 | `0x8007B6F8` | u32 | **Kingdom-TMD prefix offset.** Count of party-character TMDs that precede the kingdom-bundle TMDs in `DAT_8007C018`. The world-map dispatcher does `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]`, so this shifts world-map actor-kind indices past the party prefix. Writers: `FUN_80020118` (field-load entry; resets to 0) and `FUN_8001E890` / `FUN_8001E928` (set to `DAT_8007B824 + *player_pack_count`). Drake snapshot = `5`. |
-| `0x8007B7DC` | `void *` | VDF buffer pointer. Set by asset-dispatcher case 7. `FUN_8001FBCC` walks each sub-entry and writes a parallel pointer table at `0x80083E58` (consumed by `FUN_801D77F4` for actor instance bring-up). Drake snapshot points at `0x8011A2F4`. |
-| `0x8007B888` | `void *` | Slot-4 (MOVE) buffer pointer. Drake snapshot = `0x8011A624`. |
-| `0x80083E58` | `void *[N]` | Parallel VDF sub-entry pointer table. First entry points into VDF buffer (`0x8011A2FC` in Drake snapshot); subsequent entries point into the `0x800D9xxx` actor-instance area. |
+| `0x8007B7DC` | `void *` | VDF buffer pointer. Set by asset-dispatcher case 7. `FUN_8001FBCC` walks each sub-entry and writes a parallel pointer table at `0x80083E58` (consumed by `FUN_801D77F4` for actor instance bring-up). |
+| `0x8007B888` | `void *` | Slot-4 (MOVE) buffer pointer. Kingdom-dependent — Drake mid-warp pinned it to `0x8011A624`, but the physical bytes get overwritten by the kingdom's TMD-pack install before world-map steady state. |
+| `0x80083E58` | `void *[N]` | Parallel VDF sub-entry pointer table. First entry points into VDF buffer; subsequent entries point into the actor-instance area. |
 
 ## Debug flags
 

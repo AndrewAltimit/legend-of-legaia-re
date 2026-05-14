@@ -39,13 +39,17 @@ probes run.
 The expected on-disk layout (matches the run-script defaults):
 
 ```
-~/Tools/pcsx-redux/pcsx-redux            # locally-built binary
-~/Tools/pcsx-redux/SCUS94254.sstate1     # quicksave slot 1 (F1)
-~/Tools/pcsx-redux/SCUS94254.sstate2     # quicksave slot 2 (F2)
-...
-~/.mednafen/firmware/SCPH1001.BIN        # PSX BIOS, reused from mednafen
-~/Downloads/Legend of Legaia (USA)/      # disc image
+~/Tools/pcsx-redux/pcsx-redux                  # locally-built binary
+~/Tools/pcsx-redux/<TITLE_ID>.sstate<N>        # PCSX-Redux quicksave (F1..F10 in-emulator)
+~/.mednafen/firmware/SCPH1001.BIN              # PSX BIOS, reused from mednafen
+~/Downloads/Legend of Legaia (USA)/            # disc image
 ```
+
+The `<TITLE_ID>` is the PSX disc's product code (e.g. `SCUS94254` for the USA
+release of Legaia); PCSX-Redux writes one file per quicksave slot when you
+press the assigned F-key in the running emulator. Each probe's documentation
+calls out which game state the save needs to be in — pick a save you've
+prepared locally that matches.
 
 Override any of these via env vars (`PCSX_REDUX`, `LEGAIA_BIOS`,
 `LEGAIA_SSTATE`, `LEGAIA_ISO`). The repo doesn't ship the binary or
@@ -58,7 +62,7 @@ is the canonical wrapper. Despite the name, every other Lua autorun
 re-uses it via the `LEGAIA_LUA` override:
 
 ```bash
-LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate2 \
+LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-saved-state>.sstate \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_world_map_fog_probe.lua \
 LEGAIA_OUT=/tmp/fog_probe.csv \
 LEGAIA_FRAMES=600 \
@@ -230,8 +234,9 @@ is the high-level index.
 | `autorun_cd_dma_probe.lua` | CD-DMA reads during a town &rarr; world-map transition | Disproved the "continent prim pool comes from CD-DMA" hypothesis. |
 | `autorun_lzs_and_bundle_probe.lua` | LZS decode entries + bundle dispatcher (`FUN_8001F05C`) during world-map load | Pins which PROT entries get LZS-decoded for the world-map bundle. |
 | `autorun_deep_pool_probe.lua` | Writes to the deep Buffer-A / Buffer-B region | Matches GPU prim-pool writes to the overlay emit leaves. |
-| `autorun_slot4_readers.lua` | Reads at the live slot-4 RAM region (`0x8011A624+`) | **Drake-tuned**: probe offsets are tied to Drake's 15-body slot-4 layout, so they don't reliably land on records in Sebucus / Karisto. Pinned two distinct reader clusters at the Drake kingdom-bundle scene-load transition (sstate1, held UP for 60 vsyncs): cluster A at `PC 0x80044B00..0x80045700` is a GTE-driven primitive emitter; cluster B at `PC 0x80059DE4` reads mid-body bytes. Steady-state dev-menu top-view (sstate2) reads nothing - the consumer only walks slot 4 at scene-load. `LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60` drives the warp input from inside the probe. `LEGAIA_S4_DETAIL=1` adds a first-hit call-context dump (32 GPRs, code window around PC, 32 stack words at sp). `LEGAIA_S4_QUIT_AFTER_ALL=1` ends the capture as soon as every probe has logged at least one hit. For cross-kingdom verification use `autorun_slot4_consumer_pcs.lua` instead. |
-| `autorun_slot4_consumer_pcs.lua` | Exec bps at the cluster-A + cluster-B LW PCs identified from the Drake Read-bp run | **Kingdom-agnostic**: hits the same SCUS function PCs regardless of where slot 4 lives in RAM for the destination kingdom. Confirmed cross-kingdom: cluster A and B fire on Drake (sstate1), Sebucus (sstate4, town → map02) and Karisto (sstate5, town → map03) with the same caller RAs (cluster B's RA `0x80059C00` is byte-identical across all three; cluster A's RAs `0x8001B47C` inside `FUN_8001ada4` + `0x801F78D4` world-map overlay are present in every kingdom). Hit-count scales with per-kingdom record count. Output CSV is `probe_idx, cluster, pc, name, ra, a0..a3, s8`; `.detail.txt` sidecar captures first-hit call-context per PC. `LEGAIA_PC_CAP=N` raises the default 200-hit-per-PC cap for uncapped totals. |
+| `autorun_slot4_readers.lua` | Reads at the live slot-4 RAM region (`0x8011A624+`) | **Drake-tuned**: probe offsets are tied to Drake's 15-body slot-4 layout, so they don't reliably land on records in Sebucus / Karisto. Pinned two distinct reader clusters at the Drake kingdom-bundle scene-load transition (held UP for 60 vsyncs from a Drake-on-map01 save): cluster A at `PC 0x80044B00..0x80045700` is a GTE-driven primitive emitter; cluster B at `PC 0x80059DE4` reads mid-body bytes. Steady-state dev-menu top-view reads nothing — the consumer only walks slot 4 at scene-load. `LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60` drives the warp input from inside the probe. `LEGAIA_S4_DETAIL=1` adds a first-hit call-context dump (32 GPRs, code window around PC, 32 stack words at sp). `LEGAIA_S4_QUIT_AFTER_ALL=1` ends the capture as soon as every probe has logged at least one hit. For cross-kingdom verification use `autorun_slot4_consumer_pcs.lua` instead. |
+| `autorun_slot4_consumer_pcs.lua` | Exec bps at the cluster-A + cluster-B LW PCs identified from the Drake Read-bp run | **Kingdom-agnostic**: hits the same SCUS function PCs regardless of where slot 4 lives in RAM for the destination kingdom. Confirmed cross-kingdom: cluster A and B fire on Drake, Sebucus (town → map02) and Karisto (town → map03) with the same caller RAs (cluster B's RA `0x80059C00` is byte-identical across all three; cluster A's RAs `0x8001B47C` inside `FUN_8001ada4` + `0x801F78D4` world-map overlay are present in every kingdom). Hit-count scales with per-kingdom record count. Output CSV is `probe_idx, cluster, pc, name, ra, a0..a3, s8`; `.detail.txt` sidecar captures first-hit call-context per PC. `LEGAIA_PC_CAP=N` raises the default 200-hit-per-PC cap for uncapped totals. |
+| `autorun_slot4_dispatcher_args.lua` | Exec bp at `0x80043390` (cluster A dispatcher entry) | Captures the *original* call args before the kind handlers clobber `a1` / `a2`: caller RA, descriptor pointer `a0`, packed `cmd_flags` (`a1`), `fade_flags` (`a2`), and the first command word's `kind` / `count`. Use this to classify which of the four dispatcher banks (`0x00` / `0x50` / `0xA0` / `0xF0`) each call lands in; the `consumer_pcs` probe records register state inside handlers and can't recover the original args. `LEGAIA_DISP_CAP=N` raises the default 200000-hit cap. |
 | `autorun_slot4_transcoder_hunt.lua` | Write bps across the `0x801BA000`-ish working buffer where cluster A's per-frame inputs live | Cross-kingdom Exec-bp captures show cluster A reads from `0x801BA000`-region per frame, not from slot 4's documented base — initial hypothesis was that slot 4 was transcoded into that buffer during world-map scene load. Probe ruled this out: writes at `+0x7F8` / `+0x8E4` come from `FUN_80028158`, a **per-frame procedural mesh builder** that reads only actor+0x9C struct fields (NOT slot 4). Deeper writes at `+0x6000` come from `FUN_8001E54C` (streaming chunk processor). Per-frame cluster-A is procedural rendering, not slot-4 walks. `LEGAIA_WB_BASE=0x801BA000` is overridable; `LEGAIA_WB_CAP=50` per-bp cap. |
 | `autorun_slot4_loader_hunt.lua` | Write bps tiled across slot-4 RAM (`0x8011A624+` for Drake, same offsets as `autorun_slot4_readers.lua`) | Identifies the function that **populates slot-4 RAM** during the kingdom warp transition. Result: all writes come from `FUN_8001A55C` (the LZS decoder) at PC `0x8001A604` etc., called via the standard asset-dispatcher chain (`FUN_8001F05C` in the call stack). Slot 4 is just LZS-decoded verbatim into RAM — no special transcoder. `LEGAIA_LOAD_CAP=50` per-bp cap. |
 | `autorun_dump_slot4.lua` | Dumps the slot-4 RAM region directly | Sister to the readers probe; produces the ground-truth byte buffer for `verify_slot4_in_ram.py`. |
