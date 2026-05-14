@@ -99,6 +99,35 @@ If both return zero hits, the function has no static caller *in the program curr
 
 If the address is referenced via `lui+addiu`, the reference manager will miss it. Use `find_lui_writers.py` with `LO`/`HI` narrowed to your target range.
 
+### "Ghidra says nothing writes / reads this global, but I know something does"
+
+Common when the address is materialized by `lui+addiu` and then *passed* to a helper (so the actual `sw`/`lw` is in the helper, against `$a0`/`$a1`), OR when it's stored as a function-argument base that an `addu` reroutes (so the constant tracker bails and the final `sw` doesn't appear in the xref database).
+
+Use `find_addr_materializers.py` to walk every instruction in a program, track per-register `lui` + `addiu` pairs, and report every site where the combined value lands on one of your target addresses - plus the next 6 instructions for use-classification (store base = writer, load base = reader, `jal`/`jalr` follows = address passed as argument).
+
+```bash
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 -noanalysis \
+    -postScript /scripts/find_addr_materializers.py \
+    0x8007C018 0x8007BB38 0x8007B7DC
+```
+
+Arguments may be decimal or hex (`0x...` prefix). Multiple addresses are scanned in a single pass. Alternative: set `GHIDRA_FIND_ADDRS='0x8007c018,0x8007bb38'` and run without args.
+
+The pattern this catches (the actual installer for `DAT_8007C018` at `FUN_80026B4C` - missed by the reference manager):
+
+```asm
+lui   v0, 0x8008
+lui   v1, 0x8008
+lw    v1, -0x488c(v1)     ; v1 = *DAT_8007B774 (index counter)
+addiu v0, v0, -0x3fe8     ; v0 = 0x8007C018   <-- the materializer site
+sll   v1, v1, 0x2         ; v1 = idx * 4
+addu  v1, v1, v0          ; v1 = idx*4 + 0x8007C018
+sw    a0, 0(v1)           ; store to table    <-- the missed writer
+```
+
+The reference manager tracks `lui+addiu` pairs but bails when `addu` mixes the propagated constant with a value loaded from memory. So `sw a0, 0(v1)` is invisible to it - but the `addiu v0, v0, -0x3fe8` site IS visible to a manual scanner that knows the combination forms the target address. Once you see the materializer, the surrounding 6 instructions usually make the role obvious.
+
 ### "What format does this PROT entry use?"
 
 Empirical workflow:
@@ -138,7 +167,8 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 
 | Script | Purpose |
 |---|---|
-| `find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. |
+| `find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. Edit `LO`/`HI` per run. |
+| `find_addr_materializers.py` | Per-address LUI+ADDIU materializer finder. Reports every `addiu` whose combined value lands on one of the targets, plus the next 6 instructions for use-classification. Accepts addresses via `getScriptArgs()` or the `GHIDRA_FIND_ADDRS` env var - no source edit needed per invocation. See the LUI+ADDIU + ADDU+SW investigation pattern above. |
 | `find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables. |
 | `find_data_word.py` | Generic u32-LE-literal scanner across every initialized memory block, with surrounding-dword context. Useful when you suspect a function pointer is stuffed in a dispatch table somewhere; reports the containing function (if any) plus 8 dwords of surrounding data so the table structure is visible. |
 | `find_terrain_emitter_caller.py` | Combined ref-manager + LUI+ADDIU + ori + `jal` / `j` direct-target sweep against a configurable target-address set. Reports every overlay where each target is loaded as an immediate, stored / loaded via `base+offset`, or called directly. Useful pattern for any "who calls function X across the overlay set?" question: edit `TARGET_ADDRS` and `TARGETS_HEX`, run against each `-process <overlay>` in turn. The cross-program `jal` sweep is the unlock - Ghidra's ref manager only sees refs internal to one program. |

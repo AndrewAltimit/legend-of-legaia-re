@@ -1,12 +1,15 @@
 # @category Legaia
 # @runtime Jython
 #
-# Look for the specific `lui+addiu` pair that materializes 0x8007C018
-# (or 0x8007BB38) into a register but DOES NOT immediately load from it -
-# i.e., the address is being passed as a function argument or used as a
-# store base. These are the prime candidates for the install-time writer
-# that Ghidra's reference manager misses (because the actual sw happens
-# inside a helper that receives the address via $a0/$a1).
+# Historical shim for the original DAT_8007C018 / DAT_8007BB38 / DAT_8007B7DC
+# materializer hunt. The generic version lives at
+# `find_addr_materializers.py` and accepts arbitrary target addresses via
+# `getScriptArgs()` or the `GHIDRA_FIND_ADDRS` env var. This file is
+# preserved so the original ad-hoc invocation keeps working.
+#
+# Equivalent invocation with the generic script:
+#   -postScript /scripts/find_addr_materializers.py \
+#       0x8007C018 0x8007BB38 0x8007B7DC
 
 prog = currentProgram
 prog_name = prog.getName()

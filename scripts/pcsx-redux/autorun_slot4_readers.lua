@@ -1,5 +1,23 @@
 -- autorun_slot4_readers.lua
 --
+-- [HISTORICAL — SUPERSEDED] Drake-tuned Read-breakpoint probe.
+--
+-- This probe is hard-coded to Drake's slot-4 RAM layout
+-- (0x8011A624..0x80122454, 15 sub-bodies). Sebucus and Karisto's
+-- slot-4 offsets do NOT line up with these probe addresses, so this
+-- script only produces useful captures for Drake.
+--
+-- The kingdom-agnostic replacement is `autorun_slot4_consumer_pcs.lua`,
+-- which arms Exec breakpoints on the SCUS cluster-A consumer PC range
+-- (0x80044B00..0x80045700) instead of Read breakpoints on Drake's
+-- specific slot-4 addresses. The consumer PCs are byte-identical across
+-- all three kingdoms (Drake / Sebucus / Karisto), so the Exec-bp probe
+-- captures all three without per-kingdom retuning.
+--
+-- Use the Read-bp probe (this script) only when you need to know WHICH
+-- slot-4 byte ranges are touched at hit time, not just which functions
+-- consume slot 4. For everything else, prefer `_consumer_pcs.lua`.
+--
 -- Closed-loop probe for "what code reads kingdom slot-4 records".
 --
 -- Slot-4 container is solved (15 sub-bodies for Drake; byte-verified

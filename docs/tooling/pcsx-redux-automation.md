@@ -267,9 +267,12 @@ is the high-level index.
 The fastest path to a new probe:
 
 1. Start from
-   [`scripts/pcsx-redux/autorun_slot4_readers.lua`](../../scripts/pcsx-redux/autorun_slot4_readers.lua)
-   &mdash; the canonical thin probe (~115 lines) that uses the shared
-   library for everything except the per-probe breakpoint body.
+   [`scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
+   &mdash; the canonical thin probe (~145 lines, kingdom-agnostic) that
+   uses the shared library for everything except the per-probe
+   breakpoint body. (`autorun_slot4_readers.lua` is the Drake-tuned
+   precursor &mdash; kept as a historical reference but not the recommended
+   starting point.)
 2. Edit the `PROBE_OFFSETS` (or your own probe-address list), the CSV
    header, and the per-hit row written from inside the breakpoint
    callback. The boot-delay / capture-vsync / disarm state machine
