@@ -1,19 +1,16 @@
-# Slot-4 records (unidentified)
+# Slot-4 records (record semantic open; consumer pinned)
 
-> **Status: research artifact, runtime semantic open.** The container
-> layout below is byte-verified against live RAM, but every hypothesis
-> we've tested for what the *records inside* mean has been falsified.
-> Visual inspection of every projection (xz / xy / zy) and every
-> topology interpretation (points / pair-edges / row-major polylines /
-> column-major polylines / heightfield grid) failed to reproduce the
-> dev-menu top-view, a continent coastline, or any other recognizable
-> 2D map structure. The data is heterogeneous: some bodies clearly
-> carry 3D mesh geometry (vertical pillar/column silhouettes visible
-> in the xy projection), others are flat or corner-clustered. Slot 4
-> is most likely a runtime library of small object-local meshes /
-> collision hulls / decorations / particle-emitter shapes, **not**
-> world-map outline data, and **not** the bulk continent terrain
-> source. Pinning the consumer in Ghidra is the remaining unblock.
+> **Status: container confirmed; consumer pinned to two SCUS reader
+> clusters; per-record semantic still open.** The container layout
+> below is byte-verified against live RAM, and a transition-time Read-
+> breakpoint capture (kingdom-bundle scene-load, not dev-menu top-view)
+> surfaces explicit reader sites — see
+> [Consumer call sites](#consumer-call-sites). The historical "world-
+> map wireframe / coastline" reading was falsified; the data is
+> heterogeneous and the working interpretation is **a runtime library
+> of small object-local 3D meshes** the world-map renderer transforms
+> via the GTE and emits as GP0 primitive packets into the active scene
+> primitive pool.
 >
 > The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
 > tile the kingdom continent in the dev-menu top-view - is *not*
@@ -145,6 +142,55 @@ searching the full 2 MiB main RAM for the 64-byte outer pack header
 (count = 15 followed by `byte_offsets[0..15]`) - see
 `scripts/pcsx-redux/autorun_dump_full_ram.lua` for the procedure.
 
+## Consumer call sites
+
+A 14-probe Read-breakpoint capture during the kingdom-bundle scene-load
+transition (Drake save: world-map enters the Drake region) pins two
+distinct reader clusters and one third caller. Every probe at a record
+offset hits except probe 12 (slot4 + 0x05400, mid-body 12) within the
+~15-second capture window — body 12 records start gets read, but the
+mid-record region is not exercised in that timeline.
+
+| Reader | PC range | RA | Records read |
+|---|---|---|---|
+| **Cluster A — primary GTE renderer** | `0x80044B00..0x80045700` | `0x801F78D4` (world-map overlay) | outer count, body 0 word_offset, body 0 records start, body 0 mid, body 1 records start, body 12 records start, body 13 records start, body 14 region |
+| **Cluster B — secondary mid-body reader** | `0x80059DE4` | `0x80059C00` (SCUS) | body 4 records start, body 4 mid (+0x800), body 9 region, body 12 later (+0x2800) |
+| **Cluster C — near-end consumer** | `0x80044C70` | `0x8001BC8C` (SCUS) | slot4 + 0x07000 (deep body 12 / start of body 13) |
+
+Cluster A's code window contains GTE opcodes (`4A280030` = MVMVA,
+`4B400006` = NCLIP, `4812C000` = SWC2/load) interleaved with `LW` reads
+of slot-4 record fields - this is the GTE-driven 3D primitive emitter
+that consumes slot-4 records and writes GP0 packets. Clusters A and C
+share an overlapping PC region but are reached through distinct call
+chains (different RA). The 14-probe capture also exercises the loader
+(`FUN_8001F7C0`); the post-load RAM window for `map01` is a 75 KB
+**GP0-primitive pool** (records at 0x20-byte stride with command bytes
+like 0x7d / 0x7f for textured triangles), confirming that the slot-4
+records are consumed to produce GPU primitives in that pool. The pool
+base is `_DAT_8007B8D0 - 0x12800` while the overlay is paged in.
+
+The capture is reproduced by
+
+```bash
+LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate1 \
+LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60 \
+LEGAIA_S4_DETAIL=1 LEGAIA_S4_QUIT_AFTER_ALL=1 \
+LEGAIA_FRAMES=900 \
+LEGAIA_OUT=/tmp/slot4_drake.csv \
+LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_readers.lua \
+    bash scripts/pcsx-redux/run_world_map_probe.sh
+```
+
+`BTN.UP = 4` per [`probe.lua`](../../scripts/pcsx-redux/lib/probe.lua)
+drives the held-direction input that triggers the warp transition from
+inside the probe. The CSV at `LEGAIA_OUT` records each hit and the
+`.detail.txt` sidecar captures the full call context (32 GPRs + 32-word
+code window at PC + 32-word stack window at sp) at the first hit per
+probe. Replicating across Sebucus + Karisto sstates produces the corpus
+needed to nail down each record-kind's semantic via the per-kingdom
+record-count differences in the
+[per-kingdom body inventory](#per-kingdom-body-inventory).
+
 ## Falsified hypotheses
 
 The container is solved. **What slot 4 *encodes* is not.** Three
@@ -195,30 +241,19 @@ geometry, or animation rigs. This is consistent with:
 - the in-game-object silhouettes visible in side projections - the
   user identified body-9 features that resemble specific game props
 
-**Pinning the consumer is the unblock.** The reader hasn't
-appeared as a direct `LUI+ADDIU` reference to `0x8011A624` in any
-captured world-map overlay, suggesting it accesses the buffer via a
-runtime pointer. Dynamic memory-watchpoint capture against the
-world-map top-view registered **zero reads** across the slot-4 region
-during 300 vsyncs of steady-state dev-menu top-view rendering (probe:
-[`scripts/pcsx-redux/autorun_slot4_readers.lua`](../../scripts/pcsx-redux/autorun_slot4_readers.lua),
-14 Read breakpoints spread across the 32 KB region for the densest
-kingdom). The negative is informative: slot 4 is *not* re-read every
-frame, so the consumer either pre-processes the records into something
-else at scene-load and never touches the slot again, or only walks it
-in response to specific input that the captured state doesn't
-exercise. Two follow-ups remain:
-
-1. **Scene-load transition capture** - re-arm the same Read probes
-   during a fresh kingdom-bundle load (force a `MAP_CHANGE` from the
-   world-map dev menu, or pick a town save that's about to enter a
-   kingdom). The probe is ready; the triggering scenario still needs
-   to be captured.
-2. **Static sweep of captured overlays** for any 8-byte-stride
-   iterator that walks a `count_a * count_b` array, especially in the
-   world-map controller `FUN_801E76D4` and dev-menu renderer
-   `FUN_801EAD98` bodies. Past sweeps did not surface a match;
-   re-running with a stricter loop-shape signature is worth a pass.
+**Consumer pinned to GTE-driven primitive emitter; per-record semantic
+still open.** The reader accesses the buffer via a runtime pointer, not
+a static `LUI+ADDIU` reference - which is why the static sweep returned
+empty. Dynamic memory-watchpoint capture against the **world-map dev-
+menu top-view** (steady-state, sstate2) registered **zero reads** during
+300 vsyncs, but the same 14-probe capture during a **kingdom-bundle
+scene-load** (sstate1: world-map enters Drake region, `LEGAIA_HOLD_BUTTON=4
+LEGAIA_HOLD=60`) hits every record-region probe and surfaces the
+[consumer call sites](#consumer-call-sites) above. Slot 4 is *not* re-
+read every frame; it's walked during the kingdom-entry transition,
+transformed via the GTE, and emitted as GP0 primitive packets into the
+scene's primitive pool. The dev-menu top-view sees the GP0 packets,
+never re-reading slot 4 directly.
 
 ## Tooling
 
@@ -243,17 +278,23 @@ draw interpretation.
 
 ## Open work
 
-1. **Pin the consumer.** Steady-state dev-menu top-view doesn't read
-   the slot at all (negative confirmed by 14-probe Read-breakpoint
-   capture). Next captures: scene-load transition (kingdom entry / dev
-   menu `MAP_CHANGE`), or a stricter static sweep for stride-8 iterators.
-2. **Identify each body.** With the consumer in hand, walking each
-   body through the actual draw call should immediately reveal what
-   each `kind / flag_a` combination means.
+1. **Identify reader cluster A in Ghidra.** Pin `FUN_xxxxxxxx` for PC
+   range `0x80044B00..0x80045700` in SCUS - the GTE-driven primitive
+   emitter the world-map overlay calls into. Decomp + a trace of which
+   slot-4 record fields feed which GTE op should reveal the per-record
+   draw semantic directly.
+2. **Replicate the capture for Sebucus + Karisto.** A save inside the
+   connecting town with movement queued toward the warp tile gives the
+   same closed-loop capture pattern. Three matching captures across
+   all three kingdoms is the corpus needed to nail per-record-kind
+   semantics, exploiting the differing record counts across kingdoms.
 3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
    in every kingdom; the reverse doesn't hold (Karisto body 10 is
-   `kind = 2, flag_a = 1`).
+   `kind = 2, flag_a = 1`). Cross-reference against which GTE op
+   sequence each `kind` triggers.
 4. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
    in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
    `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
-   low-byte) tags rather than indices.
+   low-byte) tags rather than indices. With the GTE pipeline pinned,
+   the `attr` field likely feeds either the GP0 packet header (color /
+   blend / texture-page) or a per-record draw-flag mask.

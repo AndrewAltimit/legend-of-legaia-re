@@ -27,16 +27,19 @@
 --      onto the warp tile).
 --   2. The save's scene-input setup arranged so that resuming the state
 --      and tapping a direction triggers the transition into the target
---      scene.
+--      scene. Use LEGAIA_HOLD_BUTTON / LEGAIA_HOLD to drive the direction
+--      from inside the probe (BTN.UP = 4 per probe.lua) so the run is
+--      unattended.
 --
--- A separate Python tool (scripts/mednafen/diff_field_pack_projection.py)
--- then diffs the captured RAM against the on-disc PROT bytes for the
--- target scene's field-pack entry, surfacing the "0x4C 0xE2" instances
--- and any other relocation residue.
+-- A separate Python tool (scripts/diff_field_pack_projection.py) then
+-- diffs the captured RAM against the on-disc PROT bytes for the target
+-- scene's field-pack entry, surfacing the "0x4C 0xE2" instances and any
+-- other relocation residue.
 --
 -- Run:
 --   LEGAIA_LUA=scripts/pcsx-redux/autorun_field_pack_projection.lua \
 --       LEGAIA_SSTATE=/path/to/pre_warp.sstate \
+--       LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60 \
 --       LEGAIA_OUT=/tmp/fp_proj \
 --       LEGAIA_FRAMES=1200 \
 --       ./scripts/pcsx-redux/run_world_map_probe.sh
@@ -48,6 +51,8 @@ local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate")
 local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 1200)
 local OUT_BASE    = probe.getenv("LEGAIA_OUT", "fp_proj")
+local HOLD_BUTTON = probe.getenv_num("LEGAIA_HOLD_BUTTON", 0)
+local HOLD_FRAMES = probe.getenv_num("LEGAIA_HOLD", 0)
 
 -- Loader address (per docs/formats/field-pack.md and
 -- capture_observations::field_pack_load::SCENE_ASSET_LOADER_ADDR).
@@ -65,6 +70,7 @@ local state = {
     capture_count = 0,
     armed_return  = false,
     return_bp     = nil,
+    quit_at_vsync = nil,
 }
 
 local function read_cstring(addr, max)
@@ -192,6 +198,20 @@ probe.run({
     capture_frames = FRAMES,
     out_path       = OUT_BASE,
     snapshot_path  = OUT_BASE .. ".hits.txt",
+    hold_button    = HOLD_BUTTON ~= 0 and HOLD_BUTTON or nil,
+    hold_frames    = HOLD_FRAMES,
+
+    -- Quit ~30 vsyncs after the first post-load dump fires, so a
+    -- warp-driven run terminates as soon as the data is on disk
+    -- instead of running the full LEGAIA_FRAMES window.
+    on_capture = function(ctx, elapsed)
+        if state.capture_count > 0 and state.quit_at_vsync == nil then
+            state.quit_at_vsync = elapsed + 30
+        end
+        if state.quit_at_vsync ~= nil and elapsed >= state.quit_at_vsync then
+            ctx.request_quit = true
+        end
+    end,
 
     on_arm = function(_)
         -- Truncate output files so multi-shot runs are clean.
