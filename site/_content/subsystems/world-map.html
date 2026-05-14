@@ -253,10 +253,11 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
     <li>Per-vertex: <code>Z_far = exp2(-zShift) * dist(world, camera_origin)</code>, clamped to <code>[0, far_ref]</code> and normalised to <code>v_fog_t in [0..1]</code>. Approximates the runtime's <code>Z_far = Z &gt;&gt; shift</code> against the top-down camera origin.</li>
     <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 511, 0, 511)]</code> from a 512-entry 1D R16UI texture; the BGR555 entry decodes to a tint colour and <code>mix(lit, tint, v_fog_t)</code>-blends with the diffuse term.</li>
   </ul>
-  <p>The shader supports two LUT sources:</p>
+  <p>The shader supports three LUT sources, in priority order:</p>
   <ol>
-    <li><strong>Captured LUT</strong> &mdash; drop a <code>fog_probe.lut.bin</code> (1 KiB binary, 512 BGR555 u16 entries) via the page's fog-LUT picker. The probe script at <code>scripts/pcsx-redux/autorun_world_map_fog_probe.lua</code> writes this file from a top-view save state; the captured LUT reproduces the retail per-tier banding.</li>
-    <li><strong>Kingdom-tinted fallback</strong> &mdash; when no LUT is loaded the fragment shader uses a per-kingdom baseline tint (<code>KINGDOM_FOG_TINT</code> in <code>site/world-overview.html</code>) so the toggle still produces a kingdom-flavoured fade.</li>
+    <li><strong>Disc-extracted LUT (default)</strong> &mdash; the WASM viewer locates the 4 KiB (2048 u16) fog LUT inside <code>SCUS_942.54</code> via the <code>fog_lut::find</code> content-scan (smooth monotonic ramp with leading zero entries + saturating tail) and auto-uploads it on disc load. No separate file picker is needed. On the retail USA build the LUT sits at SCUS offset <code>0x05FCC0</code> (vaddr <code>0x8006FCC0</code>); the content scan handles regional variants without hardcoding.</li>
+    <li><strong>Probe-captured LUT (override)</strong> &mdash; drop a <code>fog_probe.lut.bin</code> (1 KiB / 512 entries from the legacy probe, or 4 KiB / 2048 entries from a future-shape capture) via the override file picker. Useful for ground-truth comparison against the disc-extracted bytes.</li>
+    <li><strong>Kingdom-tinted fallback</strong> &mdash; when neither source produces a LUT (e.g. raw PROT.DAT load, regional variant with shifted SCUS), the fragment shader uses a per-kingdom baseline tint (<code>KINGDOM_FOG_TINT</code> in <code>site/world-overview.html</code>) so the toggle still produces a kingdom-flavoured fade.</li>
   </ol>
   <p>The per-vertex math diverges from retail in one place: retail samples Z from the GTE's screen-space pipeline after <code>rtpt</code>, while the WebGL path uses XZ-plane distance to the fog origin (<code>fog_origin = worldCam centre</code> by default). For a top-down ortho camera the two quantities are equivalent up to a constant; the fog toggle is hidden in the orbit-camera mesh inspector because the equivalence doesn't carry over.</p>
   <h3>Camera anchors</h3>

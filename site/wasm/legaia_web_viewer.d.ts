@@ -145,6 +145,18 @@ export class LegaiaViewer {
      */
     entry_list_json(): string;
     /**
+     * Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
+     * 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
+     * per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex
+     * (the shared depth-cue ramp; the per-kingdom hue mixes in from the
+     * `fog_color` field at gp-0x2DC).
+     *
+     * Returns an empty Vec when no LUT was located - the JS side should
+     * treat empty as "fall back to the kingdom-tinted baseline" and not
+     * upload anything to the renderer.
+     */
+    fog_lut_bytes(): Uint8Array;
+    /**
      * Load a disc image. Auto-detects: full Mode2/2352 .bin, raw PROT.DAT,
      * or single TIM. Returns the count of viewable entries (entries with at
      * least one decodable TIM) for the JS UI.
@@ -410,6 +422,7 @@ export interface InitOutput {
     readonly legaiaviewer_current_vram_bytes: (a: number) => [number, number];
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
+    readonly legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
     readonly legaiaviewer_load_disc: (a: number, b: number, c: number) => [number, number, number];
     readonly legaiaviewer_mesh_bounds: (a: number) => [number, number];
     readonly legaiaviewer_mesh_cba_tsb: (a: number) => [number, number];

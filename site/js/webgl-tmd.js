@@ -33,7 +33,10 @@
 
 const VRAM_W = 1024;
 const VRAM_H = 512;
-const FOG_LUT_SIZE = 512;
+/* Matches the retail fog-LUT shape: 2048 u16 entries indexed by
+ * Z >> 5 (where Z is the 16-bit GTE-output Z, range 0..65535). The
+ * shader samples this via `int(v_fog_t * (FOG_LUT_SIZE - 1))`. */
+const FOG_LUT_SIZE = 2048;
 
 const VS_SRC = `#version 300 es
 precision highp float;
@@ -205,9 +208,15 @@ void main() {
      * onto the LUT's 512 entries. Sampling with texelFetch keeps the LUT
      * entries discrete (matches the retail per-tier banding). When no LUT
      * is bound, we fall back to u_fog_color blended toward the entry. */
-    float lut_idx_f = clamp(v_fog_t * 511.0, 0.0, 511.0);
+    float lut_idx_f = clamp(v_fog_t * 2047.0, 0.0, 2047.0);
     int lut_idx = int(lut_idx_f);
     uint lut_word = texelFetch(u_fog_lut, ivec2(lut_idx, 0), 0).r;
+    /* Retail packs the LUT as scalar fog strengths (0..0x1FF) in u16
+     * slots; decoding them as BGR555 yields a ramp that's effectively
+     * a fog-strength signal in the red/green channels with blue=0. The
+     * shader treats the result as an RGB tint so the kingdom-tinted
+     * fallback (when no LUT loaded) and the captured LUT use the same
+     * codepath. */
     vec3 lut_rgb = bgr555_to_rgb(lut_word);
     /* The LUT entries are tint deltas in retail's pipeline (added to
      * the per-prim color by GTE.dpcs). The closest one-pass analogue in

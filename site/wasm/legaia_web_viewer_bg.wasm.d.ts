@@ -32,6 +32,7 @@ export const legaiaviewer_current_mes_message_hex: (a: number, b: number) => [nu
 export const legaiaviewer_current_vram_bytes: (a: number) => [number, number];
 export const legaiaviewer_entry_count: (a: number) => number;
 export const legaiaviewer_entry_list_json: (a: number) => [number, number];
+export const legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
 export const legaiaviewer_load_disc: (a: number, b: number, c: number) => [number, number, number];
 export const legaiaviewer_mesh_bounds: (a: number) => [number, number];
 export const legaiaviewer_mesh_cba_tsb: (a: number) => [number, number];

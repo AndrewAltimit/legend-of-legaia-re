@@ -363,6 +363,24 @@ export class LegaiaViewer {
         }
     }
     /**
+     * Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
+     * 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
+     * per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex
+     * (the shared depth-cue ramp; the per-kingdom hue mixes in from the
+     * `fog_color` field at gp-0x2DC).
+     *
+     * Returns an empty Vec when no LUT was located - the JS side should
+     * treat empty as "fall back to the kingdom-tinted baseline" and not
+     * upload anything to the renderer.
+     * @returns {Uint8Array}
+     */
+    fog_lut_bytes() {
+        const ret = wasm.legaiaviewer_fog_lut_bytes(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * Load a disc image. Auto-detects: full Mode2/2352 .bin, raw PROT.DAT,
      * or single TIM. Returns the count of viewable entries (entries with at
      * least one decodable TIM) for the JS UI.

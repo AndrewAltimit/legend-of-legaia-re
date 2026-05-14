@@ -605,15 +605,24 @@ fragment shader:
   512-entry 1D R16UI texture; the BGR555 entry decodes to a tint
   colour `mix(lit, tint, v_fog_t)`-blended with the diffuse term.
 
-The shader supports two LUT sources:
+The shader supports three LUT sources, in priority order:
 
-1. **Captured LUT** &mdash; drop a `fog_probe.lut.bin` (1 KiB binary,
-   512 BGR555 u16 entries) via the page's fog-LUT picker. The probe
-   script `scripts/pcsx-redux/autorun_world_map_fog_probe.lua` writes
-   this file from a top-view save state; the captured LUT reproduces
-   the retail per-tier banding.
-2. **Kingdom-tinted fallback** &mdash; when no LUT is loaded, the
-   fragment shader uses a per-kingdom baseline tint
+1. **Disc-extracted LUT (default)** &mdash; the WASM viewer locates
+   the 4 KiB (2048 u16) fog LUT inside `SCUS_942.54` via the
+   `fog_lut::find` content-scan (smooth monotonic ramp with leading
+   zero entries + saturating tail) and auto-uploads it on disc load.
+   No separate file picker is needed; one disc upload = full
+   functionality. On the retail USA build the LUT sits at SCUS
+   offset `0x05FCC0` (vaddr `0x8006FCC0`); the content scan handles
+   regional variants without hardcoding.
+2. **Probe-captured LUT (override)** &mdash; drop a
+   `fog_probe.lut.bin` (1 KiB / 512 entries from the legacy probe,
+   or 4 KiB / 2048 entries from a future-shape capture) via the
+   override file picker. Useful for ground-truth comparison against
+   the disc-extracted bytes.
+3. **Kingdom-tinted fallback** &mdash; when neither source produces
+   a LUT (e.g. raw PROT.DAT load, regional variant with shifted
+   SCUS), the fragment shader uses a per-kingdom baseline tint
    (`KINGDOM_FOG_TINT` in `site/world-overview.html`) so the toggle
    still produces a kingdom-flavoured fade.
 
