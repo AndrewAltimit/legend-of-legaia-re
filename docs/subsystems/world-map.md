@@ -758,6 +758,15 @@ animation, both shipped on disc:
   Sebucus / 0391 Karisto). The kingdom-specific TIM is the one with
   CLUT block fb_xy ``(0, 506)`` and image block fb_xy ``(768, 256)``.
   Texture bytes vary per kingdom (each ships its own variant).
+- **Wave-ramp region:** the ocean data fills the **top-left 96 × 96
+  logical pixels** of the 256 × 256 page; the rest is shared with
+  other tile prims in 4bpp mode and reads as CLUT-entry-0 padding at
+  world-map entry. Confirmed by walking non-zero byte density across
+  every row and byte column of the decompressed image - rows 1-96
+  + logical pixel cols 0-95 are 100% non-zero, the rest tapers off
+  to zero past row 191. The prim-trace POLY_FT4 cluster UVs for the
+  ``clut=0x7E80 tpage=0x001C`` family land entirely inside this
+  envelope (UVs from ``(0,0)`` to ``(95,95)``).
 - **Base CLUT:** 256-entry BGR555 row at VRAM ``(0, 506)`` (same TIM
   as the texture). The first 16 entries are the ones the runtime
   overwrites per frame; entries 16..255 stay fixed and belong to other
