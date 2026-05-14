@@ -51,7 +51,10 @@ local CONSUMER_PCS = {
     -- Cluster C - SCUS near-end consumer; RA 0x8001BC8C
     { pc = 0x80044C70, name = "C_lw_near_end",          cluster = "C" },
 }
-local MAX_HITS_PER_PROBE = 200
+-- Per-probe cap. Defaults to 200 (fast for kingdom verification);
+-- set LEGAIA_PC_CAP to a larger value (e.g. 5000) to surface uncapped
+-- totals for per-kind delta analysis.
+local MAX_HITS_PER_PROBE = probe.getenv_num("LEGAIA_PC_CAP", 200)
 
 local csv = probe.csv_open(OUT_PATH,
     "probe_idx,cluster,pc,name,ra,a0,a1,a2,a3,s8")

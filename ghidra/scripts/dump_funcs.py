@@ -103,6 +103,42 @@ TARGETS = [
     "80029888",  # 16 ops
     "8003d344",  # 5 GTE ops; called from FUN_80021b04
 
+    # Slot-4 consumer (world-map overlay bundle entry, PROT 85/244/391)
+    # Cluster A: FUN_80043390 - GTE-driven primitive emitter (bulk terrain emit)
+    # 8 LW PCs in the body 0x80044B00..0x80045658.
+    "80043390",  # cluster A entry (FUN_80043390 - bulk terrain emit dispatcher)
+    # Cluster B: secondary mid-body reader
+    "80059c00",  # cluster B entry (contains LW PC 0x80059DE4)
+    "8001ada4",  # caller of cluster A (entry of FUN containing call site 0x8001b474)
+    # Per-kind handlers (from slot-4 handler table at 0x8007657C, dumped 2026-05-14)
+    # Kinds 8-11 (shared across all three banks)
+    "8004409c",  # k8 handler
+    "8004423c",  # k9 handler
+    "80044434",  # k10 handler
+    "800445b0",  # k11 handler
+    # Bank 0 (s2=0, no param_3 flag): kinds 12-19
+    "80043658",  # k12 bank0
+    "80043768",  # k13 bank0
+    "800438b8",  # k16 bank0
+    "800439e4",  # k17 bank0
+    "80043b58",  # k14 bank0
+    "80043c6c",  # k15 bank0
+    "80043dd4",  # k18 bank0
+    "80043f10",  # k19 bank0
+    # Banks 1,2 (s2=0x50 or 0xA0): kinds 12-17 (k18,k19 differ)
+    "800448b0",  # k12 banks1,2
+    "80044a3c",  # k13 banks1,2 (LW PC 0x80044B00 lives here)
+    "80044c14",  # k16 banks1,2 (LW PC 0x80044C70 lives here)
+    "80044dc8",  # k17 banks1,2 (LW PC 0x80044E08 lives here)
+    "80044fdc",  # k14 banks1,2
+    "80045194",  # k15 banks1,2 (LW PC 0x80045418 lives here)
+    # Bank 1 only (s2=0x50): k18,k19
+    "800453bc",  # k18 bank1 (LW PCs 0x800455E4..0x80045658 live here)
+    "80045584",  # k19 bank1
+    # Bank 2 only (s2=0xA0): k18,k19
+    "800457c4",  # k18 bank2
+    "80045988",  # k19 bank2
+
     # DATA_FIELD trailer-consumer chain (readers of _DAT_8007b85c)
     "8001c604",
     "8001e3b8",

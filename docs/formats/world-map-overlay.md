@@ -151,7 +151,7 @@ kingdom overlay code.
 
 | Reader | PC range | RA | What it reads |
 |---|---|---|---|
-| **Cluster A — primary GTE renderer + record walker** | `0x80044B00..0x80045700` | `0x8001B47C` (SCUS dispatcher), `0x801F78D4` (world-map overlay) — both present in every kingdom; Drake additionally captured `0x8001BC8C` | outer count, body 0 word_offset, body 0 records start, body 0 mid, body 1 records start, body 12 records start, body 13 records start, body 14 region, and the "near-end" slot at `0x80044C70` (formerly thought to be a third cluster — same function body, different LW point) |
+| **Cluster A — TMD-style primitive renderer (`FUN_80043390` + handlers)** | dispatcher entry `0x80043390`; per-kind handler bodies at `0x80043658..0x80045988` | `0x8001B47C` (inside `FUN_8001ada4`), `0x801F78D4` (world-map overlay) — both present in every kingdom; Drake additionally captured `0x8001BC8C` | the outer count, body word offsets, and per-body record bytes — see [Cluster A internals](#cluster-a-internals) below |
 | **Cluster B — secondary mid-body reader** | `0x80059DE4` | `0x80059C00` (SCUS) — identical across all three kingdoms | body 4 records start, body 4 mid (+0x800), body 9 region, body 12 later (+0x2800) |
 
 Cluster A's code window contains GTE opcodes (`4A280030` = MVMVA,
@@ -163,6 +163,105 @@ byte stride with command bytes like 0x7d / 0x7f for textured triangles),
 confirming that the slot-4 records are consumed to produce GPU
 primitives in that pool. The pool base is `_DAT_8007B8D0 - 0x12800`
 while the overlay is paged in.
+
+### Cluster A internals
+
+`FUN_80043390` (712 bytes / 178 instructions; see
+`ghidra/scripts/funcs/80043390.txt`) is the slot-4-consuming primitive
+renderer. It takes three arguments:
+
+```c
+void FUN_80043390(struct *display_state, u32 cmd_flags, u32 fade_flags);
+//   display_state[0]   -> vertex pool base  (a2 in handlers = param_3)
+//   display_state[3]   -> non-zero gates the color/light-modulation path
+//   display_state[4]   -> command-stream pointer (where slot-4 records feed in)
+```
+
+The function reads one command word from the stream
+(`*display_state[4]`), extracts a 15-bit `kind` from bits 17-31 and a
+16-bit `count` from bits 0-15, optionally re-arms the GTE colour
+registers, and **tail-calls a per-kind handler** through a jump table.
+Each handler consumes its own command's primitive batch (count items of
+a kind-specific stride), emits GP0 packets into the active primitive
+pool at `_DAT_8007BB04`, then **chain-calls the next kind handler at
+the same dispatch point** — the renderer is a TMD-style display-list
+walker, not a fixed-size record loop.
+
+#### Jump tables
+
+Two parallel handler tables drive the dispatch:
+
+| Table | Address | When used |
+|---|---|---|
+| SCUS handlers | `0x8007657C` | always — the default world-map / overlay-resident render |
+| Overlay handlers | `0x801F8968` | when `_DAT_1F800394 & 1` is set — the alternate route for the bulk-terrain pipeline (see `world-map.md`) |
+
+Within the SCUS table the dispatcher adds a **bank offset** to the
+`kind*4` index based on the caller's `cmd_flags` argument:
+
+| `cmd_flags` mask | Bank offset | Effect |
+|---|---:|---|
+| (none of the below) | `0x00` | bank 0 — `kind ∈ [8..11]` shared with all banks; `kind ∈ [12..19]` use the small `0x80043658..0x80043F10` handler set |
+| `0x04000000` set | `0x50` | bank 1 — same `kind 8..11`; `kind 12..19` swap to the `0x800448B0..0x80045584` set |
+| `0x20000000` set | `0xA0` | bank 2 — `kind 12..17` same as bank 1; `kind 18` / `19` swap to `0x800457C4` / `0x80045988` |
+
+The three banks correspond to three rendering modes the world-map
+overlay drives via different `cmd_flags` arguments; the kind-handler
+identity is bank-dependent only for kinds 12-19. `kind ∈ [0..7]` and
+`kind ≥ 20` are NULL slots — encountering them ends the primitive
+stream.
+
+#### Per-kind primitive types
+
+Every handler has the same shape: read N command-stream words, transform
+3-or-4 vertices through the GTE, write an `M`-byte GP0 packet at the
+primitive-pool pointer (`_DAT_8007BB04`-shaped global, advanced by `M`
+each emit). The strides give away the PSX primitive type:
+
+| Kind | Bank 0 entry | Banks 1,2 entry | cmd stride | GP0 stride | Likely primitive |
+|---:|---|---|---:|---:|---|
+| 8 | `0x8004409c` (shared) | (shared) | 0x14 (20B) | 0x20 (32B) | `POLY_G4` (gouraud quad) |
+| 9 | `0x8004423c` (shared) | (shared) | 0x18 (24B) | 0x28 (40B) | `POLY_GT4` (gouraud-textured quad) |
+| 10 | `0x80044434` (shared) | (shared) | 0x18 (24B) | 0x28 (40B) | `POLY_GT4` variant |
+| 11 | `0x800445b0` (shared) | (shared) | 0x1c (28B) | 0x34 (52B) | extended quad (extra per-vert data) |
+| 12 | `0x80043658` | `0x800448b0` | 0x0c (12B) | 0x14 (20B) | `POLY_F3` (flat triangle) |
+| 13 | `0x80043768` | `0x80044a3c` | 0x0c (12B) | 0x18 (24B) | `POLY_G3` / `POLY_FT3` (gouraud or textured tri) |
+| 14 | `0x80043b58` | `0x80044fdc` | 0x14 (20B) | 0x1c (28B) | `POLY_FT3` (flat textured triangle) |
+| 15 | `0x80043c6c` | `0x80045194` | 0x18 (24B) | 0x24 (36B) | `POLY_GT3` (gouraud-textured triangle) |
+| 16 | `0x800438b8` | `0x80044c14` | 0x14 (20B) | 0x20 (32B) | `POLY_G4` |
+| 17 | `0x800439e4` | `0x80044dc8` | 0x18 (24B) | 0x28 (40B) | `POLY_GT4` |
+| 18 | `0x80043dd4` | `0x800453bc` (b1) / `0x800457c4` (b2) | 0x1c (28B) | 0x28 (40B) (b1) / 0x20 (b2) | `POLY_GT4` extended (per-vertex tag word) |
+| 19 | `0x80043f10` | `0x80045584` (b1) / `0x80045988` (b2) | 0x24 (36B) | 0x34 (52B) (b1) / 0x28 (b2) | `POLY_GT4` extended-plus (sub-poly) |
+
+Decomp dumps for each handler live at
+`ghidra/scripts/funcs/slot4_<kind>_<bank>_<addr>.txt`; the SCUS table is
+at `ghidra/scripts/funcs/slot4_handler_table_scus_0x8007657C.txt`.
+Each handler decodes the per-command words as two packed vertex indices
+per `u32` (low-16 `& 0x7FF8`, high-16 also `& 0x7FF8` — a `>>3` divisor
+plus 8-byte vertex stride from `param_3` = the vertex pool base).
+
+#### Mapping captured LW PCs to kinds
+
+Each of the eight cluster-A LW PCs captured by `autorun_slot4_consumer_pcs.lua`
+falls inside one of the kind handlers above:
+
+| LW PC | Handler | Kind | Bank |
+|---|---|---:|---|
+| `0x80044B00` | `0x80044A3C..0x80044C13` | 13 | banks 1,2 |
+| `0x80044C70` | `0x80044C14..0x80044DC7` | 16 | banks 1,2 |
+| `0x80044E08` | `0x80044DC8..0x80044FDB` | 17 | banks 1,2 |
+| `0x80045418` | `0x80045194..0x800453BB` | 15 | banks 1,2 |
+| `0x800455E4` | `0x800453BC..0x80045583` | 18 | bank 1 only |
+| `0x800455E8` | `0x800453BC..0x80045583` | 18 | bank 1 only |
+| `0x8004561C` | `0x800453BC..0x80045583` | 18 | bank 1 only |
+| `0x80045658` | `0x800453BC..0x80045583` | 18 | bank 1 only |
+
+The Drake-tuned probe's per-PC labels (`A_lw_count_word`,
+`A_lw_body0_offset`, etc.) describe **what RAM region the LW happened
+to touch** at the moment of the first hit, not the role of the field
+in the underlying handler. Those reads are the handler's normal
+load-vertex-from-pool operation; the pool just happened to be backed by
+slot-4 record bytes during the kingdom-bundle scene-load transition.
 
 ### Cross-kingdom hit-count comparison
 
@@ -181,6 +280,33 @@ Karisto's lower cluster-A total tracks its smaller slot 4 (24444 bytes
 hint that hit-count scales with record-count once per-record-kind
 semantics are pinned. Cluster B's variance across kingdoms is similar:
 it walks a subset of bodies, and per-kingdom body inventory differs.
+
+#### Per-kind delta
+
+With the cluster-A LW PCs mapped to specific kind handlers (see
+[Cluster A internals](#cluster-a-internals) above), the per-PC × per-
+kingdom hit counts surface a clean signal. Karisto was re-captured
+with `LEGAIA_PC_CAP=5000` to lift the 200-cap and read true per-kind
+totals across the same warp-tile transition; Drake / Sebucus are still
+capped at 200 (interpreter-mode capture runs ~60 min uncapped, deferred):
+
+| Kind handler | Primitive (likely) | Drake hits | Sebucus hits | Karisto hits (uncapped) |
+|---:|---|---:|---:|---:|
+| 13 banks 1,2 (`0x80044A3C`, LW `0x80044B00`) | `POLY_G3`/`POLY_FT3` triangle | 200 (cap) | 200 (cap) | **49** |
+| 17 banks 1,2 (`0x80044DC8`, LW `0x80044E08`) | `POLY_GT4` textured quad | 200 (cap) | 200 (cap) | **147** |
+| 18 bank 1 (`0x800453BC`, 4 LW PCs `0x800455E4..0x80045658`) | `POLY_GT4` extended quad | 200 (cap, ×4) | 200 (cap, ×4) | **1820** (×4) |
+| 16 banks 1,2 (`0x80044C14`, LW `0x80044C70`) | `POLY_G4` quad | 200 (cap) | 200 (cap) | **2058** |
+| 15 banks 1,2 (`0x80045194`, LW `0x80045418`) | `POLY_GT3` textured triangle | 200 (cap) | 200 (cap) | **2059** |
+
+Karisto's per-kind profile shows the **POLY_F3-textured + gouraud
+quad mix dominates**: kinds 15 / 16 / 18 each draw 1820-2059 batches
+per warp-tile transition window, while kinds 13 (textured triangle)
+and 17 (gouraud-textured quad) draw only **49 / 147** respectively. The
+ratio kind-15 : kind-13 ≈ 42:1 inside Karisto identifies kind 13 as a
+**rare-use** primitive in the slot-4 vocabulary, and kind 15 / 16 / 18
+as the workhorses. Re-running the high-cap probe against Drake +
+Sebucus (defer to a faster CPU mode or short-window capture) would
+let us complete the cross-kingdom delta.
 
 ### Reproducing the capture
 
@@ -313,24 +439,49 @@ draw interpretation.
 
 ## Open work
 
-1. **Identify reader cluster A in Ghidra.** Pin `FUN_xxxxxxxx` for PC
-   range `0x80044B00..0x80045700` in SCUS - the GTE-driven primitive
-   emitter the world-map overlay calls into. Decomp + a trace of which
-   slot-4 record fields feed which GTE op should reveal the per-record
-   draw semantic directly.
-2. **Per-record-kind semantic.** Cross-kingdom captures (sstate1 /
-   sstate4 / sstate5) confirm the same consumer functions handle all
-   three kingdoms with hit-count scaling proportional to record count
-   - Karisto's smaller slot 4 sees fewer cluster-A hits than Drake's.
-   The next step is decoding cluster A's body to identify which slot-4
-   record fields feed which GTE op + which kind/flag_a branch.
+1. **Verify slot 4 IS the cluster-A command stream.** The Read-bp
+   capture (`autorun_slot4_readers.lua`, Drake sstate1 + held UP)
+   proves cluster A reads slot-4 RAM during the warp-tile transition.
+   The Exec-bp captures show the same PCs fire on Drake/Sebucus/Karisto
+   warps. But the register snapshots in `.detail.txt` show the cluster-A
+   handler's `a1` (command stream) and `a2` (vertex pool) pointing at
+   `0x801BA8E4` / `0x801BA7F8` — **not the documented slot-4 RAM range
+   (`0x8011A624..0x80122454` for Drake)**. Possibilities:
+   (a) slot 4 is **copied/transcoded** into the working buffer at
+       `0x801BA000` before cluster A walks it (one-shot during scene
+       load);
+   (b) cluster A walks slot 4 once at scene-load time and then walks
+       the resulting GP0 packet pool many times per-frame thereafter
+       — the Exec-bp captures sample the per-frame work, not the
+       one-shot scene-load reads.
+   A finer probe that arms Read bps on `0x801BA000`-region AND Exec bps
+   at the cluster-A PCs, run only during the warp transition window,
+   would disambiguate.
+2. **Per-record-kind semantic.** Cluster A renders kinds 8-19 as a
+   TMD-style primitive list (see [Cluster A internals](#cluster-a-internals));
+   the question is which fields of the slot-4 body header / body-record
+   payload select / parametrise those primitives. Likely path: dump
+   `FUN_8001ada4` (the cluster-A caller at PC `0x8001B474`) to see how
+   it builds the `display_state` struct passed to `FUN_80043390` — that
+   struct's vertex-pool, command-stream, and flag-word source addresses
+   reveal whether slot-4 body bytes are the command stream, the vertex
+   pool, both, or input to a copy that produces both.
 3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
    in every kingdom; the reverse doesn't hold (Karisto body 10 is
-   `kind = 2, flag_a = 1`). Cross-reference against which GTE op
-   sequence each `kind` triggers.
+   `kind = 2, flag_a = 1`). With the cluster-A primitive vocabulary
+   pinned, the body header's `kind` field is plausibly a **draw mode**
+   selector that picks one of the three SCUS handler banks (bank 0 /
+   bank 1 / bank 2) via the `cmd_flags` argument FUN_80043390 receives
+   — i.e., body `kind` → caller's `cmd_flags` → dispatcher's bank
+   offset. Body `kind` is not the same as primitive `kind`.
 4. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
    in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
    `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
    low-byte) tags rather than indices. With the GTE pipeline pinned,
    the `attr` field likely feeds either the GP0 packet header (color /
    blend / texture-page) or a per-record draw-flag mask.
+5. **Re-run probe with higher cap.** Bump `MAX_HITS_PER_PROBE` in
+   `autorun_slot4_consumer_pcs.lua` from 200 to ~5000 and re-run for
+   all three kingdoms; the resulting per-PC × per-kingdom totals fill
+   in the kind-12/14/15/16/18/19 hit counts where every current
+   capture is capped, and complete the per-kind delta table above.

@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; slot-4 records (unidentified)</div>
-  <h1>Slot-4 records (unidentified) <span class="tag tag-partial">Container confirmed; runtime use open</span></h1>
-  <p class="lede"><strong>Status: research artifact, runtime semantic open.</strong> The container layout below is byte-verified against live RAM, but every hypothesis we&apos;ve tested for what the <em>records inside</em> mean has been falsified. Visual inspection of every projection (<code>xz</code> / <code>xy</code> / <code>zy</code>) and every topology interpretation (points / pair-edges / row-major polylines / column-major polylines / heightfield grid) failed to reproduce the dev-menu top-view, a continent coastline, or any other recognizable 2D map structure. The data is heterogeneous: some bodies clearly carry 3D mesh geometry (vertical pillar/column silhouettes visible in the <code>xy</code> projection), others are flat or corner-clustered. Slot 4 is most likely a runtime library of small object-local meshes / collision hulls / decorations / particle-emitter shapes, <strong>not</strong> world-map outline data, and <strong>not</strong> the bulk continent terrain source. Pinning the consumer in Ghidra is the remaining unblock.</p>
+  <h1>Slot-4 records (consumer pinned) <span class="tag tag-partial">Container confirmed; per-record semantic open</span></h1>
+  <p class="lede"><strong>Status: container confirmed; consumer pinned; per-record semantic open.</strong> The container layout below is byte-verified against live RAM. The consumer is now pinned to <code>FUN_80043390</code> &mdash; a TMD-style display-list renderer that dispatches over 22 per-kind handlers (kinds 8-19 across 3 SCUS banks) and emits GP0 primitive packets into the active scene primitive pool. See <a href="#consumer">Consumer call sites</a>. The historical &quot;world-map wireframe / coastline&quot; reading was falsified; the working interpretation is <strong>a runtime library of small object-local 3D meshes</strong> rendered as PSX triangles and quads.</p>
   <p class="lede">The bulk continent terrain itself &mdash; the ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view &mdash; is <em>not</em> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack the landmarks draw from, routed through <code>FUN_80043390</code>&apos;s overlay-mode dispatch table at <code>0x801F8968</code> whose eight high-mode renderers replace the SCUS variants when the world-map overlay is paged in. See <a href="../subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">subsystems / world-map &mdash; bulk continent terrain emit mechanism</a>.</p>
 </header>
 
@@ -93,20 +93,82 @@
   </ol>
 </section>
 
+<section class="doc-section" id="consumer">
+  <h2>Consumer call sites</h2>
+  <p>Two distinct SCUS-resident reader clusters consume slot 4. Both are <strong>byte-identical across all three kingdoms</strong> &mdash; same PC ranges, same caller RAs &mdash; proving the consumer is generic SCUS code, not per-kingdom overlay code.</p>
+  <table>
+    <thead><tr><th>Reader</th><th>Entry / PC range</th><th>Caller RA</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Cluster A &mdash; TMD-style primitive renderer</strong> (<code>FUN_80043390</code> + per-kind handlers)</td><td>dispatcher entry <code>0x80043390</code>; per-kind handler bodies at <code>0x80043658..0x80045988</code></td><td><code>0x8001B47C</code> (inside <code>FUN_8001ada4</code>), <code>0x801F78D4</code> (world-map overlay) &mdash; both in every kingdom</td></tr>
+      <tr><td><strong>Cluster B &mdash; secondary mid-body reader</strong></td><td><code>0x80059DE4</code></td><td><code>0x80059C00</code> (SCUS) &mdash; identical across all three kingdoms</td></tr>
+    </tbody>
+  </table>
+  <p><code>FUN_80043390</code> reads one u32 command word from <code>param_1[4]</code> (the command stream pointer), extracts <code>kind = word &gt;&gt; 17</code> and <code>count = word &amp; 0xFFFF</code>, and <strong>tail-calls a per-kind handler</strong> through a jump table. Each handler consumes its own command&apos;s primitive batch (count items of a kind-specific stride), emits GP0 packets into the active primitive pool, then <strong>chain-calls the next kind handler at the same dispatch point</strong> &mdash; the renderer is a TMD-style display-list walker, not a fixed-size record loop.</p>
+  <p>Two parallel handler tables drive the dispatch: SCUS handlers at <code>0x8007657C</code> (default), or overlay handlers at <code>0x801F8968</code> when <code>_DAT_1F800394 &amp; 1</code> is set (the alternate route for the bulk-terrain pipeline). Within the SCUS table the dispatcher adds a <strong>bank offset</strong> to the <code>kind*4</code> index based on the caller&apos;s flag argument:</p>
+  <table>
+    <thead><tr><th>Flag mask</th><th>Bank offset</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>(none)</td><td><code>0x00</code></td><td>bank 0 &mdash; kinds 12-19 use the small handler set</td></tr>
+      <tr><td><code>0x04000000</code></td><td><code>0x50</code></td><td>bank 1 &mdash; kinds 12-19 swap to a different handler set</td></tr>
+      <tr><td><code>0x20000000</code></td><td><code>0xA0</code></td><td>bank 2 &mdash; kind 18/19 swap again</td></tr>
+    </tbody>
+  </table>
+  <p>Kinds 8-11 are shared across all banks. The three banks correspond to three rendering modes the world-map overlay drives via different flag arguments.</p>
+  <h3 id="per-kind">Per-kind primitive types</h3>
+  <p>Every handler has the same shape: read N command-stream words, transform 3-or-4 vertices through the GTE, write an <code>M</code>-byte GP0 packet at the primitive-pool pointer. The strides give away the PSX primitive type:</p>
+  <table>
+    <thead><tr><th>Kind</th><th>Bank 0 entry</th><th>Banks 1,2 entry</th><th>cmd stride</th><th>GP0 stride</th><th>Likely primitive</th></tr></thead>
+    <tbody>
+      <tr><td>8</td><td><code>0x8004409c</code> (shared)</td><td>(shared)</td><td>0x14 (20B)</td><td>0x20 (32B)</td><td>POLY_G4 (gouraud quad)</td></tr>
+      <tr><td>9</td><td><code>0x8004423c</code> (shared)</td><td>(shared)</td><td>0x18 (24B)</td><td>0x28 (40B)</td><td>POLY_GT4 (gouraud-textured quad)</td></tr>
+      <tr><td>10</td><td><code>0x80044434</code> (shared)</td><td>(shared)</td><td>0x18 (24B)</td><td>0x28 (40B)</td><td>POLY_GT4 variant</td></tr>
+      <tr><td>11</td><td><code>0x800445b0</code> (shared)</td><td>(shared)</td><td>0x1c (28B)</td><td>0x34 (52B)</td><td>extended quad (extra per-vert data)</td></tr>
+      <tr><td>12</td><td><code>0x80043658</code></td><td><code>0x800448b0</code></td><td>0x0c (12B)</td><td>0x14 (20B)</td><td>POLY_F3 (flat triangle)</td></tr>
+      <tr><td>13</td><td><code>0x80043768</code></td><td><code>0x80044a3c</code></td><td>0x0c (12B)</td><td>0x18 (24B)</td><td>POLY_G3 / POLY_FT3</td></tr>
+      <tr><td>14</td><td><code>0x80043b58</code></td><td><code>0x80044fdc</code></td><td>0x14 (20B)</td><td>0x1c (28B)</td><td>POLY_FT3</td></tr>
+      <tr><td>15</td><td><code>0x80043c6c</code></td><td><code>0x80045194</code></td><td>0x18 (24B)</td><td>0x24 (36B)</td><td>POLY_GT3</td></tr>
+      <tr><td>16</td><td><code>0x800438b8</code></td><td><code>0x80044c14</code></td><td>0x14 (20B)</td><td>0x20 (32B)</td><td>POLY_G4</td></tr>
+      <tr><td>17</td><td><code>0x800439e4</code></td><td><code>0x80044dc8</code></td><td>0x18 (24B)</td><td>0x28 (40B)</td><td>POLY_GT4</td></tr>
+      <tr><td>18</td><td><code>0x80043dd4</code></td><td><code>0x800453bc</code> (b1) / <code>0x800457c4</code> (b2)</td><td>0x1c (28B)</td><td>0x28 / 0x20</td><td>POLY_GT4 extended</td></tr>
+      <tr><td>19</td><td><code>0x80043f10</code></td><td><code>0x80045584</code> (b1) / <code>0x80045988</code> (b2)</td><td>0x24 (36B)</td><td>0x34 / 0x28</td><td>POLY_GT4 extended-plus</td></tr>
+    </tbody>
+  </table>
+  <p>Each handler decodes the per-command words as two packed vertex indices per <code>u32</code> (low-16 <code>&amp; 0x7FF8</code>, high-16 also <code>&amp; 0x7FF8</code> &mdash; a <code>&gt;&gt;3</code> divisor plus 8-byte vertex stride from <code>param_3</code> = the vertex pool base).</p>
+  <h3 id="cross-kingdom-hits">Cross-kingdom hit-count comparison</h3>
+  <p>Exec-breakpoint hit counts at the eight cluster-A LW PCs + the cluster-B LW PC during a single warp-tile transition, per-probe cap at 200:</p>
+  <table>
+    <thead><tr><th>Kingdom</th><th>sstate</th><th>Cluster A</th><th>Cluster B</th></tr></thead>
+    <tbody>
+      <tr><td>Drake</td><td>sstate1 (already on map01, held UP)</td><td>1400 (capped on 7 of 8 PCs)</td><td>178</td></tr>
+      <tr><td>Sebucus</td><td>sstate4 (town &rarr; map02, held DOWN)</td><td>1400 (capped on 7 of 8 PCs)</td><td>67</td></tr>
+      <tr><td>Karisto</td><td>sstate5 (town &rarr; map03, held DOWN)</td><td>1196</td><td>115</td></tr>
+    </tbody>
+  </table>
+  <p>Karisto fell below the 200 cap on two PCs (kind 13 at <code>0x80044B00</code>: <strong>49 hits</strong>; kind 17 at <code>0x80044E08</code>: <strong>147 hits</strong>), revealing that Karisto&apos;s warp into <code>map03</code> draws fewer textured triangle / gouraud-textured quad batches than other kinds. A high-cap follow-up (<code>LEGAIA_PC_CAP=5000</code>) for Karisto produced full per-kind totals:</p>
+  <table>
+    <thead><tr><th>Kind</th><th>Primitive (likely)</th><th>Karisto hits (uncapped)</th></tr></thead>
+    <tbody>
+      <tr><td>13</td><td>POLY_G3 / POLY_FT3 triangle</td><td>49</td></tr>
+      <tr><td>17</td><td>POLY_GT4 textured quad</td><td>147</td></tr>
+      <tr><td>18 bank 1</td><td>POLY_GT4 extended quad (4 LW PCs)</td><td>1820 each (= 7280 total)</td></tr>
+      <tr><td>16</td><td>POLY_G4 quad</td><td>2058</td></tr>
+      <tr><td>15</td><td>POLY_GT3 textured triangle</td><td>2059</td></tr>
+    </tbody>
+  </table>
+  <p>Kind 15 / 16 / 18 each draw ~2000 batches; kinds 13 / 17 draw &lt; 200 &mdash; so the textured-flat-triangle / gouraud-textured-quad primitives are rare-use in the slot-4 vocabulary and the gouraud quad / textured triangle / extended quad primitives are the workhorses. Re-running the high-cap probe against Drake / Sebucus is deferred (interpreter-mode runs are slow).</p>
+</section>
+
 <section class="doc-section" id="working-hypothesis">
   <h2>Current working hypothesis</h2>
-  <p>Slot 4 is most likely a <strong>runtime library of small object-local 3D meshes</strong> the world-map controller / dev-menu top-view places at world coordinates. Plausible roles for individual bodies: collision hulls, instantiable decoration meshes, particle-emitter shapes, debug-overlay geometry, or animation rigs. This is consistent with:</p>
+  <p>Slot 4 is most likely a <strong>runtime library of small object-local 3D meshes</strong> the world-map controller / dev-menu top-view places at world coordinates, walked through the cluster-A primitive renderer above. Plausible roles for individual bodies: collision hulls, instantiable decoration meshes, particle-emitter shapes, debug-overlay geometry, or animation rigs. This is consistent with:</p>
   <ul>
     <li>bodies 9 / 11 having full 3D mesh-scale Y extents while body 12 is near-flat (different kinds of objects, not 2D contour vs 2D outline)</li>
     <li>the leading three bodies being byte-identical templates across all three kingdoms (shared generic objects, not kingdom-specific data)</li>
     <li>the corner-clustered point distribution in body 13 (kind = 4): could be four corner-anchored objects, not a single &plusmn;32K boundary frame</li>
-    <li>the in-game-object silhouettes visible in side projections - the user identified body-9 features that resemble specific game props</li>
+    <li>the in-game-object silhouettes visible in side projections &mdash; the user identified body-9 features that resemble specific game props</li>
+    <li>cluster A&apos;s primitive vocabulary (POLY_G4 / POLY_GT4 / POLY_F3 / etc.) is a standard 3D-mesh renderer, not a wireframe / coastline-line driver</li>
   </ul>
-  <p><strong>Pinning the consumer is the unblock.</strong> The reader hasn&apos;t appeared as a direct <code>LUI+ADDIU</code> reference to <code>0x8011A624</code> in any captured world-map overlay, suggesting it accesses the buffer via a runtime pointer. Dynamic memory-watchpoint capture against the world-map top-view registered <strong>zero reads</strong> across the slot-4 region during 300 vsyncs of steady-state dev-menu top-view rendering (probe: <code>scripts/pcsx-redux/autorun_slot4_readers.lua</code>, 14 Read breakpoints spread across the 32 KB region). The negative is informative: slot 4 is <em>not</em> re-read every frame, so the consumer either pre-processes the records at scene-load and never touches the slot again, or only walks it in response to specific input. Two follow-ups remain:</p>
-  <ol>
-    <li><strong>Scene-load transition capture</strong> &mdash; re-arm the same Read probes during a fresh kingdom-bundle load (force a <code>MAP_CHANGE</code> from the world-map dev menu, or pick a town save about to enter a kingdom).</li>
-    <li><strong>Static sweep</strong> for any 8-byte-stride iterator that walks a <code>count_a * count_b</code> array, especially inside <code>FUN_801E76D4</code> (world-map controller) and <code>FUN_801EAD98</code> (dev-menu renderer).</li>
-  </ol>
+  <p>The reader hasn&apos;t appeared as a direct <code>LUI+ADDIU</code> reference to <code>0x8011A624</code> in any captured world-map overlay &mdash; it accesses the buffer via a runtime pointer. Steady-state dev-menu top-view registers <strong>zero reads</strong> across the slot-4 region; slot 4 is read during the kingdom-bundle scene-load transition only, transcoded into a working buffer, and the resulting GP0 packets are then drawn per-frame.</p>
 </section>
 
 <section class="doc-section" id="tooling">
@@ -129,9 +191,10 @@
 <section class="doc-section" id="open">
   <h2>Open work</h2>
   <ol>
-    <li><strong>Pin the consumer.</strong> Steady-state dev-menu top-view doesn&apos;t read the slot at all (negative confirmed by 14-probe Read-breakpoint capture). Next captures: scene-load transition (kingdom entry / dev menu <code>MAP_CHANGE</code>), or a stricter static sweep for stride-8 iterators.</li>
-    <li><strong>Identify each body.</strong> With the consumer in hand, walking each body through the actual draw call should immediately reveal what each <code>kind / flag_a</code> combination means.</li>
-    <li><strong><code>kind</code> / <code>flag_a</code> semantic.</strong> <code>kind = 4</code> always has <code>flag_a = 1</code> in every kingdom; the reverse doesn&apos;t hold (Karisto body 10 is <code>kind = 2, flag_a = 1</code>).</li>
-    <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> - look like packed (high-byte, low-byte) tags rather than indices.</li>
+    <li><strong>Verify slot 4 IS the cluster-A command stream.</strong> Exec-bp register snapshots show <code>a1</code> (command stream) and <code>a2</code> (vertex pool) pointing at a working buffer (<code>0x801BA000</code>-ish), not the documented slot-4 RAM base. Likely slot 4 is transcoded into that buffer during scene load; a paired Read-bp + Exec-bp probe run during the warp transition would confirm.</li>
+    <li><strong>Decompile <code>FUN_8001ada4</code></strong> (the cluster-A caller at PC <code>0x8001B474</code>) to identify the struct passed to <code>FUN_80043390</code> &mdash; its vertex-pool, command-stream, and flag-word source addresses reveal whether slot-4 body bytes feed the command stream, the vertex pool, both, or input to a transcoder.</li>
+    <li><strong><code>kind</code> / <code>flag_a</code> semantic.</strong> Body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to one of the three SCUS handler banks via the caller&apos;s flag argument (<code>kind=2</code> &rarr; bank 1; <code>kind=4</code> &rarr; bank 2; <code>kind=1</code> &rarr; bank 0). Body <code>kind</code> is <strong>not</strong> the same as primitive <code>kind</code> (8-19).</li>
+    <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; look like packed (high-byte, low-byte) tags rather than indices. Likely feeds either the GP0 packet header (color / blend / texture-page) or a per-record draw-flag mask.</li>
+    <li><strong>Re-run probe with higher cap.</strong> <code>autorun_slot4_consumer_pcs.lua</code> now has <code>LEGAIA_PC_CAP</code> env-var support; bumping to 5000+ surfaces uncapped per-kind totals where Drake/Sebucus are currently capped at 200.</li>
   </ol>
 </section>
