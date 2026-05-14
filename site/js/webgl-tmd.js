@@ -75,7 +75,8 @@ precision highp usampler2D;
 uniform usampler2D u_ocean_tex;   /* R8UI, 128×256: each texel = one byte of 4bpp data (2 pixels) */
 uniform usampler2D u_ocean_clut;  /* R16UI, 16×1: 16 BGR555 entries (animated per frame) */
 uniform int u_ocean_textured;     /* 0 = solid u_color fallback, 1 = textured pipeline */
-uniform vec4 u_color;             /* fallback solid colour */
+uniform vec2 u_ocean_sample_size; /* (w, h) - the logical-pixel region of the texture page that holds ocean data */
+uniform vec4 u_color;             /* fallback solid colour (also used where CLUT entry 0 maps to transparent) */
 
 in vec2 v_uv;
 out vec4 o_color;
@@ -93,20 +94,26 @@ void main() {
     o_color = u_color;
     return;
   }
-  /* Wrap UVs into [0, 1) and sample a 256×256-pixel ocean tile.
+  /* Wrap UVs into [0, 1) and sample only the top-left region of the
+   * texture page that actually contains ocean data. The retail TIM
+   * uploads a 256×256 page but only the top-left 96×96 holds the
+   * blue-ramp ocean tile; the rest is reserved for other tiles that
+   * share the page in 4bpp mode. Sampling the whole page would
+   * surface CLUT-entry-0 (transparent) padding in the unused regions.
+   *
    * 4bpp packing: each VRAM byte holds 2 pixels, low nibble first.
-   * So the texture is 128 bytes wide × 256 rows. */
+   * One byte column = 2 logical pixels. */
   vec2 uv = fract(v_uv);
-  int px = int(uv.x * 256.0);     /* 0..255 logical pixel x */
-  int py = int(uv.y * 256.0);     /* 0..255 logical pixel y */
-  int byte_x = px >> 1;           /* 0..127 byte column */
-  int low_nib = px & 1;           /* 0 = low nibble, 1 = high nibble */
+  int px = int(uv.x * u_ocean_sample_size.x);
+  int py = int(uv.y * u_ocean_sample_size.y);
+  int byte_x = px >> 1;
+  int low_nib = px & 1;
   uint b = texelFetch(u_ocean_tex, ivec2(byte_x, py), 0).r;
   uint nibble = (low_nib == 0) ? (b & 0xFu) : ((b >> 4) & 0xFu);
   uint entry = texelFetch(u_ocean_clut, ivec2(int(nibble), 0), 0).r;
-  /* PSX CLUT entry 0 = fully transparent (skip the discard so the
-   * ocean still paints something underneath - on retail the ocean is
-   * never fully transparent in the visible region). */
+  /* PSX CLUT entry 0 = fully transparent. The retail world-map
+   * renderer never samples this in the ocean region; if we hit it the
+   * texture is mis-sized so we fall back to the kingdom tint colour. */
   if (entry == 0u) {
     o_color = u_color;
     return;
@@ -398,6 +405,7 @@ class TmdRenderer {
     this.locOceanTex        = gl.getUniformLocation(this.oceanProgram, 'u_ocean_tex');
     this.locOceanClut       = gl.getUniformLocation(this.oceanProgram, 'u_ocean_clut');
     this.locOceanTextured   = gl.getUniformLocation(this.oceanProgram, 'u_ocean_textured');
+    this.locOceanSampleSize = gl.getUniformLocation(this.oceanProgram, 'u_ocean_sample_size');
     this.locOceanPos        = gl.getAttribLocation(this.oceanProgram, 'a_position');
     this.locOceanUv         = gl.getAttribLocation(this.oceanProgram, 'a_uv_world');
     this.oceanVao           = gl.createVertexArray();
@@ -460,6 +468,13 @@ class TmdRenderer {
       planeY: 0.0,
       extentScale: 2.5,    /* world-extent multiplier so the quad reaches past clip */
       tileWorldSize: 256,  /* world units per ocean-texture wrap */
+      /* Logical-pixel region of the texture page that holds ocean data.
+       * The retail TIM uploads a 256×256 page but only the top-left
+       * 96×96 holds the wave-ramp ocean tile; the rest is shared with
+       * other tiles in 4bpp mode and reads as CLUT-entry-0 padding
+       * inside the kingdom bundle. Tunable via setOceanAssets. */
+      sampleWidth: 96,
+      sampleHeight: 96,
       /* Set when setOceanAssets() has uploaded real disc data. */
       textured: false,
       animationFrames: null,   /* Uint16Array, 13×16 entries flat */
@@ -558,8 +573,14 @@ class TmdRenderer {
    * texture wrap should cover (default 256, matches the retail tile
    * pitch). After this call the ocean pass switches into textured mode.
    *
+   * `sampleWidth` / `sampleHeight` (optional, default 96/96) restrict
+   * sampling to a top-left sub-rectangle of the texture page. Retail
+   * uses only the top-left 96x96 logical-pixel region for the ocean
+   * wave ramp; the rest of the page is shared with other tile prims
+   * and reads as zeros for our purposes.
+   *
    * Pass `null` arguments to clear back to the solid-colour fallback. */
-  setOceanAssets(texture, animationFrames, tileWorldSize) {
+  setOceanAssets(texture, animationFrames, tileWorldSize, sampleWidth, sampleHeight) {
     const gl = this.gl;
     if (!texture || !animationFrames) {
       this.oceanParams.textured = false;
@@ -593,6 +614,12 @@ class TmdRenderer {
     this.oceanParams.textured = frameCount > 0 && texture.byteLength === 128 * 256;
     if (tileWorldSize !== undefined && tileWorldSize > 0) {
       this.oceanParams.tileWorldSize = +tileWorldSize;
+    }
+    if (sampleWidth !== undefined && sampleWidth > 0) {
+      this.oceanParams.sampleWidth = +sampleWidth;
+    }
+    if (sampleHeight !== undefined && sampleHeight > 0) {
+      this.oceanParams.sampleHeight = +sampleHeight;
     }
     /* Push frame 0 so the first draw has valid CLUT data. */
     this._uploadOceanFrame(0);
@@ -807,6 +834,7 @@ class TmdRenderer {
       const wrapsZ = sz / p.tileWorldSize;
       gl.uniform2f(this.locOceanUvScale, wrapsX, wrapsZ);
       gl.uniform1i(this.locOceanTextured, p.textured ? 1 : 0);
+      gl.uniform2f(this.locOceanSampleSize, p.sampleWidth, p.sampleHeight);
       const c = p.color;
       gl.uniform4f(this.locOceanColor, c.r, c.g, c.b, 1.0);
       gl.activeTexture(gl.TEXTURE0);
