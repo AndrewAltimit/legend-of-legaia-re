@@ -131,6 +131,44 @@ the KSEG segment selector so KSEG0 (`0x80xxxxxx`) and KSEG1
 (`0xA0xxxxxx`) map to the same physical byte. Always work in
 absolute PSX virtual addresses on input; convert at the boundary.
 
+### Call-context capture
+
+`probe.capture_call_context(label)` returns a multi-line text snapshot
+of the CPU at the moment of a breakpoint hit:
+
+* All 32 GPRs by MIPS name (`zero`, `at`, `v0`, …, `ra`), four per
+  row.
+* The 8 instruction words straddling PC (`pc-0x20..pc+0x60`), one row
+  per 16 bytes, with a `<- pc` marker on the row containing PC. Lets
+  the reader see the calling instruction context without round-tripping
+  through Ghidra.
+* The 32 stack words at `sp` (`sp..sp+0x80`), 4 per row. The MIPS
+  calling convention saves `ra` into a sp-relative prologue slot for
+  any non-leaf function, so this captures the visible ra-chain
+  without DWARF unwind info. Walking the chain still requires
+  reading the prologue offsets out of the disassembly post-hoc, but
+  the bytes you need to do that are already in the snapshot.
+
+`probe.append_call_context(path, snap)` is the matching writer; it
+opens the file in append mode so multi-shot probes can stack
+snapshots without overwriting earlier ones. The slot-4 reader and the
+XP-table probe both use this for first-hit detail dumps.
+
+### Early-quit signal
+
+`probe.run` polls `ctx.request_quit` each vsync and exits the
+capture loop on the next tick if it's set. Probes use this to bail as
+soon as their stop condition is met (e.g. every probe in a sweep has
+hit at least once), instead of waiting for `LEGAIA_FRAMES` to elapse:
+
+```lua
+on_capture = function(ctx, _elapsed)
+    if every_probe_hit() then
+        ctx.request_quit = true
+    end
+end,
+```
+
 ### Symbolic breakpoint addresses
 
 Hard-coded `0x801DA51C`-style breakpoint targets break across overlay
@@ -192,8 +230,10 @@ is the high-level index.
 | `autorun_cd_dma_probe.lua` | CD-DMA reads during a town &rarr; world-map transition | Disproved the "continent prim pool comes from CD-DMA" hypothesis. |
 | `autorun_lzs_and_bundle_probe.lua` | LZS decode entries + bundle dispatcher (`FUN_8001F05C`) during world-map load | Pins which PROT entries get LZS-decoded for the world-map bundle. |
 | `autorun_deep_pool_probe.lua` | Writes to the deep Buffer-A / Buffer-B region | Matches GPU prim-pool writes to the overlay emit leaves. |
-| `autorun_slot4_readers.lua` | Reads at the live slot-4 RAM region (`0x8011A624+`) | Found the slot-4 container is byte-identical to disc but with zero readers from the dev-menu top-view; the consumer runs at scene-load only. |
+| `autorun_slot4_readers.lua` | Reads at the live slot-4 RAM region (`0x8011A624+`) | Found the slot-4 container is byte-identical to disc but with zero readers from the dev-menu top-view; the consumer runs at scene-load only. `LEGAIA_S4_DETAIL=1` adds a first-hit call-context dump (32 GPRs, code window around PC, 32 stack words at sp). `LEGAIA_S4_QUIT_AFTER_ALL=1` ends the capture as soon as every probe has logged at least one hit. |
 | `autorun_dump_slot4.lua` | Dumps the slot-4 RAM region directly | Sister to the readers probe; produces the ground-truth byte buffer for `verify_slot4_in_ram.py`. |
+| `autorun_xp_table_reader.lua` | Read bps tiled across the XP increment table at `0x8007123C..0x80071300` (98 u16 entries) | Pins the runtime XP-table reader function. Static LUI+ADDIU scans return zero hits across SCUS + every captured overlay; the reader either lives in an unimported overlay or builds the pointer indirectly. The probe writes a CSV of every hit + a `.detail.txt` sidecar with call-context for the first 8 hits (so the leveling formula's call site can be lifted into the engine). |
+| `autorun_field_pack_projection.lua` | Exec bp at `FUN_8001F7C0` (scene asset loader) entry; one-shot Exec bp at the loader's return address; dumps post-load RAM window | Captures the loader's on-disc &rarr; RAM projection that a single save state can't observe. Diff via [`scripts/diff_field_pack_projection.py`](../../scripts/diff_field_pack_projection.py) against the on-disc PROT bytes. Output is a per-slot diff over the canonical 97-slot field-pack schema, sorted by changed bytes. |
 | `autorun_dump_full_ram.lua` | Dumps the full 2 MiB main RAM | One-shot snapshot for downstream analysis. |
 | `log_world_map_vm.lua` | Exec breakpoint on `FUN_801D362C` | Surfaces calls into the world-map drawing VM dispatcher. |
 | `probe_world_map_callchain.lua` | Multi-PC exec hooks | Diagnostic: traces why `log_world_map_vm.lua` saw zero dispatches. |
@@ -208,6 +248,7 @@ is the high-level index.
 | `verify_slot4_in_ram.py` | `autorun_dump_slot4.lua` output | Confirms the live RAM region matches the disc-decoded slot-4 sub-bodies byte-for-byte. |
 | `diff_slot4_ram_vs_disc.py` | Live + disc slot-4 bytes | Generates the byte-level diff visualisation. |
 | `match_prim_groups_to_disc.py` | Live prim-pool dump + disc TMD pack | Matches POLY_FT4 prim groups back to their source TMD bodies. |
+| [`diff_field_pack_projection.py`](../../scripts/diff_field_pack_projection.py) (repo root) | `.post.NN.bin` + `.meta` from the field-pack projection probe; on-disc LZS-decoded PROT entry | Walks the canonical 97-slot field-pack schema; for each slot, compares runtime RAM bytes against on-disc bytes and prints a per-slot diff sorted by changed-byte count, plus a hex preview of the first divergence per slot. |
 
 ### One-shot wrappers
 

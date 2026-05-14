@@ -15,6 +15,21 @@
 --
 -- Output CSV columns: probe_idx, addr, pc, width, value, ra
 --
+-- ## Modes
+--
+-- Default (steady-state count): arm Read bps, log every hit to CSV,
+-- run for LEGAIA_FRAMES vsyncs, dump hit counts.
+--
+-- First-hit detail dump (LEGAIA_S4_DETAIL=1): in addition to the CSV,
+-- the *first* hit on each probe writes a full call-context block to
+-- the .detail.txt sidecar (32 GPRs, code window around PC, 32 stack
+-- words at sp). The MIPS calling convention saves ra into a sp-relative
+-- prologue slot for any non-leaf function, so the stack window
+-- captures the visible ra-chain without DWARF unwind info. Setting
+-- LEGAIA_S4_QUIT_AFTER_ALL=1 quits early once every probe has logged
+-- at least one hit (so a manual scene-transition drive doesn't have to
+-- run the full LEGAIA_FRAMES window).
+--
 -- Run:
 --   LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_readers.lua \
 --       LEGAIA_OUT=slot4_readers.csv LEGAIA_FRAMES=300 \
@@ -30,6 +45,9 @@ local OUT_PATH    = probe.getenv("LEGAIA_OUT", "slot4_readers.csv")
 local HOLD_BUTTON = probe.getenv_num("LEGAIA_HOLD_BUTTON", 0)
 local HOLD_FRAMES = probe.getenv_num("LEGAIA_HOLD", 0)
 local SLOT4_BASE  = probe.getenv_num("LEGAIA_SLOT4_BASE", 0x8011A624)
+local DETAIL      = probe.getenv_num("LEGAIA_S4_DETAIL", 0) ~= 0
+local QUIT_ALL    = probe.getenv_num("LEGAIA_S4_QUIT_AFTER_ALL", 0) ~= 0
+local DETAIL_PATH = OUT_PATH:gsub("%.csv$", ".detail.txt")
 
 -- Offsets relative to SLOT4_BASE. Each probe arms one Read breakpoint.
 local PROBE_OFFSETS = {
@@ -51,6 +69,18 @@ local PROBE_OFFSETS = {
 local MAX_HITS_PER_PROBE = 200
 
 local csv = probe.csv_open(OUT_PATH, "probe_idx,addr,pc,width,value,ra")
+if DETAIL then
+    -- Truncate the detail sidecar at start; subsequent first-hits append.
+    local fh = io.open(DETAIL_PATH, "w")
+    if fh then
+        fh:write(string.format(
+            "# slot-4 reader detail; base=0x%08X; sstate=%s\n\n",
+            SLOT4_BASE, SSTATE_PATH))
+        fh:close()
+    end
+end
+
+local descs_ref = { list = nil }
 
 probe.run({
     sstate         = SSTATE_PATH,
@@ -92,18 +122,43 @@ probe.run({
                         "[s4r] probe %d (0x%08X) hit %d: pc=0x%08X val=0x%08X ra=0x%08X",
                         idx - 1, watched_addr, d.hits_ref.n, pc, val, ra))
                 end
+                if DETAIL and d.hits_ref.n == 1 then
+                    local label = string.format(
+                        "probe %d (slot4+0x%05X = 0x%08X) val=0x%08X",
+                        idx - 1, watched_addr - SLOT4_BASE,
+                        watched_addr, val)
+                    local snap = probe.capture_call_context(label)
+                    probe.append_call_context(DETAIL_PATH, snap)
+                end
             end)
             descs[#descs + 1] = d
         end
         PCSX.log(string.format(
             "[s4r] %d Read probes armed across slot 4 (base=0x%08X)",
             #descs, SLOT4_BASE))
+        descs_ref.list = descs
         return descs
+    end,
+
+    on_capture = function(ctx, _elapsed)
+        if QUIT_ALL and descs_ref.list then
+            local all = true
+            for _, d in ipairs(descs_ref.list) do
+                if d.hits_ref.n == 0 then all = false; break end
+            end
+            if all then
+                PCSX.log("[s4r] all probes hit; quitting early")
+                ctx.request_quit = true
+            end
+        end
     end,
 
     on_done = function(_, descs)
         csv:close()
         PCSX.log("[s4r] CSV closed: " .. OUT_PATH)
+        if DETAIL then
+            PCSX.log("[s4r] detail sidecar: " .. DETAIL_PATH)
+        end
         -- The default summary printer in probe.run already dumps hit counts.
         -- We add a one-liner with capped status the default doesn't show.
         for _, d in ipairs(descs) do

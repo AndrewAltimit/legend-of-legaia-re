@@ -159,6 +159,19 @@ enum Cmd {
         /// Print per-tile (64x64) overlap counts instead of just bands.
         #[arg(long, default_value_t = false)]
         tiles: bool,
+        /// Optional: write a per-row (Y=0..511) CSV of pixel-level diff
+        /// stats. Columns: y, runtime_nz, engine_nz, overlap, runtime_only,
+        /// engine_only. Useful for automated regression checks - drift
+        /// in any single row above a threshold (e.g. row 479's NPC CLUT)
+        /// surfaces as a high `runtime_only` count.
+        #[arg(long)]
+        rows_csv: Option<PathBuf>,
+        /// Print a focused report on documented CLUT bands (NPC palette
+        /// row 479, character / texture-page CLUT rows). One line per
+        /// band with overlap percentage; non-zero "runtime_only" on a
+        /// known band is the regression signature this catches.
+        #[arg(long, default_value_t = false)]
+        clut_regions: bool,
     },
     /// List every distinct scene name the CDNAME map exposes, with the
     /// PROT entry range each one covers.
@@ -464,6 +477,26 @@ enum Cmd {
         #[arg(long, default_value = "0,1,2")]
         party: String,
     },
+    /// Run the engine integration scenarios manifest. Loads
+    /// `scripts/engine/scenarios.toml` (or the path under `--manifest`),
+    /// boots each scenario headlessly, and asserts the SHA-256 of the
+    /// resulting `SaveFile` byte stream matches the recorded
+    /// `expected_save_sha256`. Use `--bless` to record observed hashes
+    /// into the manifest in place. See
+    /// `crates/engine-shell/src/scenarios.rs`.
+    Scenarios {
+        /// Manifest path. Defaults to `scripts/engine/scenarios.toml`
+        /// relative to the cwd.
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Rewrite the manifest in place with observed hashes for any
+        /// scenario whose recorded hash differs (or is empty).
+        #[arg(long, default_value_t = false)]
+        bless: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -544,6 +577,8 @@ fn main() -> Result<()> {
             runtime_vram,
             diff_png,
             tiles,
+            rows_csv,
+            clut_regions,
         } => cmd_vram_oracle(
             &scene,
             &extracted_root,
@@ -551,6 +586,8 @@ fn main() -> Result<()> {
             &runtime_vram,
             diff_png.as_deref(),
             tiles,
+            rows_csv.as_deref(),
+            clut_regions,
         ),
         Cmd::Play {
             scene,
@@ -647,7 +684,82 @@ fn main() -> Result<()> {
         } => cmd_target_pick(&kind, actor, &script),
         Cmd::ChainEditor { char_slot, script } => cmd_chain_editor(char_slot, &script),
         Cmd::SeruCapture { seru, count, party } => cmd_seru_capture(seru, count, &party),
+        Cmd::Scenarios {
+            manifest,
+            extracted_root,
+            bless,
+        } => cmd_scenarios(manifest.as_deref(), &extracted_root, bless),
     }
+}
+
+fn cmd_scenarios(
+    manifest_override: Option<&Path>,
+    extracted_root: &Path,
+    bless: bool,
+) -> Result<()> {
+    use legaia_engine_shell::scenarios::{
+        ScenariosManifest, bless as bless_manifest, default_manifest_path, run_all,
+    };
+
+    let manifest_path = manifest_override
+        .map(PathBuf::from)
+        .unwrap_or_else(default_manifest_path);
+    let manifest = ScenariosManifest::from_toml_path(&manifest_path)?;
+    println!(
+        "engine scenarios: manifest={} ({} scenarios)  extracted_root={}",
+        manifest_path.display(),
+        manifest.scenarios.len(),
+        extracted_root.display()
+    );
+    let results = run_all(&manifest, extracted_root)?;
+
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut unblessed = 0;
+    for r in &results {
+        match (&r.expected_sha256, r.passed()) {
+            (None, _) => {
+                unblessed += 1;
+                println!(
+                    "  [unblessed]   {:<32} scene={:<8} frames={:>3}  observed={}",
+                    r.name, r.scene, r.frames, r.observed_sha256
+                );
+            }
+            (Some(_), true) => {
+                passed += 1;
+                println!(
+                    "  [ok]          {:<32} scene={:<8} frames={:>3}  hash={}",
+                    r.name, r.scene, r.frames, r.observed_sha256
+                );
+            }
+            (Some(exp), false) => {
+                failed += 1;
+                println!(
+                    "  [DRIFT]       {:<32} scene={:<8} frames={:>3}",
+                    r.name, r.scene, r.frames
+                );
+                println!("                expected:  {exp}");
+                println!("                observed:  {}", r.observed_sha256);
+            }
+        }
+    }
+    println!("summary: {passed} passed, {failed} drifted, {unblessed} unblessed");
+
+    if bless {
+        let updated = bless_manifest(&manifest_path, &results)?;
+        println!(
+            "blessed: {updated} hash row(s) updated in {}",
+            manifest_path.display()
+        );
+    }
+
+    if failed > 0 {
+        anyhow::bail!("{failed} scenario(s) drifted from manifest");
+    }
+    if unblessed > 0 && !bless {
+        anyhow::bail!("{unblessed} scenario(s) need blessing - rerun with --bless after review");
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1097,6 +1209,7 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// upload) against a runtime VRAM blob from a save state. Reports the
 /// per-band overlap and per-tile (64x64) diff if `tiles` is set; writes
 /// the colour-coded diff PNG when `diff_png` is provided.
+#[allow(clippy::too_many_arguments)]
 fn cmd_vram_oracle(
     scene_name: &str,
     extracted_root: &Path,
@@ -1104,6 +1217,8 @@ fn cmd_vram_oracle(
     runtime_vram: &Path,
     diff_png: Option<&Path>,
     tiles: bool,
+    rows_csv: Option<&Path>,
+    clut_regions: bool,
 ) -> Result<()> {
     let index = open_index_from_args(extracted_root, disc)?;
     let scene =
@@ -1183,7 +1298,132 @@ fn cmd_vram_oracle(
         println!("[ok] wrote VRAM diff PNG to {}", p.display());
     }
 
+    if let Some(p) = rows_csv {
+        write_vram_rows_csv(p, &engine_bytes, &runtime_bytes)?;
+        println!("[ok] wrote per-row VRAM CSV to {}", p.display());
+    }
+
+    if clut_regions {
+        print_vram_clut_region_report(&engine_bytes, &runtime_bytes);
+    }
+
     Ok(())
+}
+
+/// VRAM regions known to carry CLUT (colour-lookup-table) data, by Y row
+/// and approximate X span. The renderer treats CLUTs as 16- or 256-entry
+/// rows of u16 BGR555 anywhere in VRAM; the project's RE has surfaced
+/// specific bands that scene-pack uploads target.
+///
+/// Each entry is `(label, y, x_start, width)`; width is in pixels (not
+/// bytes), and a CLUT row is one pixel tall by definition.
+const VRAM_CLUT_BANDS: &[(&str, usize, usize, usize)] = &[
+    // Row-479 NPC palette band (see docs/formats/npc-palette.md +
+    // project_row479_global_hue_ramp memory). Scene-pack TIMs upload
+    // 16- and 32-entry CLUTs into this row at fb_x=0..256.
+    ("npc-clut row 479           x=  0..256", 479, 0, 256),
+    // Common low-pages-area CLUT rows used by character / scene
+    // textures. Most scenes touch at least one row in 480..512.
+    ("char-clut row 480           x=  0..256", 480, 0, 256),
+    ("char-clut row 481           x=  0..256", 481, 0, 256),
+    ("char-clut row 496           x=  0..256", 496, 0, 256),
+    // Display framebuffer scan rows. These are normally rewritten
+    // every frame so any "engine populated this from the static
+    // upload" content is suspect.
+    ("framebuffer scanline y= 16  x=  0..640", 16, 0, 640),
+    ("framebuffer scanline y=128  x=  0..640", 128, 0, 640),
+];
+
+fn write_vram_rows_csv(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()> {
+    const W: usize = 1024;
+    const H: usize = 512;
+    let mut s = String::new();
+    s.push_str("y,runtime_nz,engine_nz,overlap,runtime_only,engine_only\n");
+    for y in 0..H {
+        let mut rt = 0u32;
+        let mut en = 0u32;
+        let mut ov = 0u32;
+        let mut rt_only = 0u32;
+        let mut en_only = 0u32;
+        let row_base = y * W * 2;
+        for x in 0..W {
+            let off = row_base + x * 2;
+            let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
+            let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
+            let rnz = rw != 0;
+            let enz = ew != 0;
+            if rnz {
+                rt += 1;
+            }
+            if enz {
+                en += 1;
+            }
+            match (rnz, enz) {
+                (true, true) => ov += 1,
+                (true, false) => rt_only += 1,
+                (false, true) => en_only += 1,
+                _ => {}
+            }
+        }
+        s.push_str(&format!("{y},{rt},{en},{ov},{rt_only},{en_only}\n"));
+    }
+    std::fs::write(path, s).with_context(|| format!("write VRAM rows CSV {}", path.display()))?;
+    Ok(())
+}
+
+fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
+    const W: usize = 1024;
+    const H: usize = 512;
+    println!();
+    println!("VRAM CLUT-region health (engine vs runtime):");
+    println!(
+        "  {:<48} {:>5} {:>5} {:>5} {:>6} {:>6}",
+        "band", "rt", "en", "ov", "rt-only", "en-only"
+    );
+    for &(label, y, x0, w) in VRAM_CLUT_BANDS {
+        if y >= H {
+            continue;
+        }
+        let row_base = y * W * 2;
+        let mut rt = 0u32;
+        let mut en = 0u32;
+        let mut ov = 0u32;
+        let mut rt_only = 0u32;
+        let mut en_only = 0u32;
+        let x_end = (x0 + w).min(W);
+        for x in x0..x_end {
+            let off = row_base + x * 2;
+            let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
+            let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
+            let rnz = rw != 0;
+            let enz = ew != 0;
+            if rnz {
+                rt += 1;
+            }
+            if enz {
+                en += 1;
+            }
+            match (rnz, enz) {
+                (true, true) => ov += 1,
+                (true, false) => rt_only += 1,
+                (false, true) => en_only += 1,
+                _ => {}
+            }
+        }
+        let pct = if rt > 0 {
+            100.0 * (ov as f64) / (rt as f64)
+        } else {
+            0.0
+        };
+        let flag = if rt_only > 0 && rt > 0 {
+            " <-- gap"
+        } else {
+            ""
+        };
+        println!(
+            "  {label:<48} {rt:>5} {en:>5} {ov:>5} {rt_only:>6} {en_only:>6}  ({pct:5.1}%){flag}"
+        );
+    }
 }
 
 /// Serialise a software `Vram` into a 1 MiB little-endian BGR555 buffer

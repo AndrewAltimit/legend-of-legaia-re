@@ -6,6 +6,7 @@
 
 pub mod bgm;
 pub mod boot;
+pub mod scenarios;
 
 pub use bgm::AudioBgmDirector;
 pub use boot::{BootConfig, BootSession};

@@ -1302,6 +1302,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-render",
  "legaia-font",
+ "legaia-iso",
  "legaia-mdec",
  "legaia-mednafen",
  "legaia-prot",
@@ -1312,6 +1313,9 @@ dependencies = [
  "legaia-vab",
  "log",
  "png",
+ "serde",
+ "sha2",
+ "toml",
  "winit",
 ]
 
