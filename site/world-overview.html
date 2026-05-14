@@ -37,6 +37,9 @@
   <p>
     <strong>Slot 4 of the kingdom bundle.</strong> Slot 4 (type byte <code>0x05</code>, ~32 KB) was previously hypothesized to be the dev-menu top-view wireframe / coastline data; visual inspection falsified that reading across every projection and topology mode. The container is solved (15 / 16 / 16 sub-bodies, byte-verified vs live RAM at <code>0x8011A624</code>) but the records' semantic remains open. Dynamic memory-watchpoint capture against the dev-menu top-view registered zero reads, so the consumer runs only at scene-load (or via input the captured state doesn't trigger). Slot 4 is <em>not</em> the bulk continent terrain source &mdash; that puzzle is now answered by <code>FUN_80043390</code>'s dispatch table, above. See <a href="formats/world-map-overlay.html">slot-4 records doc</a>.
   </p>
+  <p>
+    <strong>Ocean tile + wave animation.</strong> The world-map ocean is a static 4bpp tile + per-frame CLUT cycling, both shipped on disc inside slot 0 (TIM_LIST) of the same kingdom bundle. The texture sits at VRAM <code>(768, 256)</code> 64x256 halfwords with its base CLUT at <code>(0, 506)</code> 256x1; the wave-ramp data fills the top-left <strong>96x96 logical pixels</strong> of the texture page (the rest is shared with other tiles in 4bpp mode). The animation is <strong>13 frames x 16 BGR555 entries</strong> wrapped in 532-byte "CLUT-only TIM" records at TIM_LIST slots 3-5 (Sebucus / Karisto) or 10-15 (Drake); the runtime swaps one frame at a time onto the first 16 entries of the CLUT, cycling a bright-blue wave peak through indices 0-7. The animation table is <strong>byte-identical across all three kingdoms</strong> (verified by SHA-256, disc-gated <code>crates/web-viewer/tests/ocean_assets.rs</code>). The 3D viewer extracts these via <code>legaia_web_viewer::ocean::find_ocean_assets</code> at scene load and renders the ocean as a textured plane with per-frame CLUT swap in the fragment shader. Before a disc is loaded the renderer falls back to a solid kingdom tint (baked into <code>world-overview.json</code> by <code>scripts/mednafen/resolve_bulk_terrain.py</code>'s <code>pick_ocean_color</code>).
+  </p>
 </section>
 
 <section class="doc-section" id="disc-load">
@@ -75,6 +78,7 @@
         <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Laid out by class from site/world-overview/slot1_classification.toml: landmarks south of the kingdom, ground tiles stacked at centre, decorations north, unknown to the east. Live-RAM actor-placed slots (Drake only today) draw at their real coordinates instead."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
         <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Normalize each unplaced slot-1 TMD to a class-conditional target footprint (landmark ~600, decoration ~200, ground_tile ~1200) and pivot on its AABB centroid. Disable to see meshes at their TMD-native scale with the TMD-local origin as the pivot (ground-truth against retail)."><input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced</label>
         <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the world-map distance-cue fog post-process. Mirrors the retail overlay leaves' dpcs/dpct tint. A 512-entry LUT captured from a top-view save state (scripts/pcsx-redux/autorun_world_map_fog_probe.lua, fog_probe.lut.bin) drives the per-tier color ramp; without a capture the renderer falls back to a kingdom-tinted baseline."><input type="checkbox" id="wo-fog-enable"> fog</label>
+        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the disc-side ocean tile + 13-frame CLUT animation pulled from slot 0 (TIM_LIST) of the kingdom bundle (PROT 0085/0244/0391). Texture and CLUT come from a 256x256 4bpp TIM at VRAM (768,256)/(0,506); the wave effect is CLUT cycling (16 entries swapped per frame, 13-frame cycle, byte-identical across kingdoms). Falls back to a solid sampled tint before the disc is loaded."><input type="checkbox" id="wo-ocean-enable" checked> ocean</label>
         <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn (KINGDOM_CAM[].topView). Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
@@ -495,9 +499,23 @@
       pushFogParamsToRenderer();
     });
   }
+  const $oceanEnable = document.getElementById('wo-ocean-enable');
+  if ($oceanEnable) {
+    $oceanEnable.addEventListener('change', () => {
+      pushOceanParamsToRenderer();
+    });
+  }
   if ($lockTopView) {
     $lockTopView.addEventListener('click', () => {
-      const tv = KINGDOM_TOPVIEW_CAM[currentKingdom];
+      /* Prefer the per-kingdom anchor captured into world-overview.json
+       * (`topview_cam`, sourced by `mednafen-state world-map-camera` from
+       * the user's per-kingdom save state). Falls back to the hardcoded
+       * KINGDOM_TOPVIEW_CAM defaults if the JSON field is missing. */
+      const fromJson = placements?.[currentKingdom]?.topview_cam;
+      const tv = fromJson
+        ? { centerX: fromJson.cam_x, centerZ: fromJson.cam_z,
+            azimuth: fromJson.azimuth, zoom: fromJson.zoom }
+        : KINGDOM_TOPVIEW_CAM[currentKingdom];
       if (!tv) return;
       worldCam.centerX = tv.centerX;
       worldCam.centerZ = tv.centerZ;
@@ -518,17 +536,73 @@
    * mode binds the same class, so uploadFogLut always exists). */
   function pushFogParamsToRenderer() {
     if (!glRenderer || typeof glRenderer.uploadFogLut !== 'function') return;
-    /* Compose the color: explicit param overrides take precedence,
-     * otherwise fall back to the per-kingdom baseline tint. */
-    const color = fogParams.color
-      ? fogParams.color
-      : (KINGDOM_FOG_TINT[currentKingdom] || { r: 0.20, g: 0.20, b: 0.30 });
+    /* Compose the color, preferring (in order):
+     *   1. explicit param override (fogParams.color from the UI picker)
+     *   2. per-kingdom captured haze from world-overview.json
+     *      (`fog_color` field, populated by
+     *      scripts/mednafen/resolve_bulk_terrain.py when the save state
+     *      has an active FUN_801E3E00 atmospheric-tick actor)
+     *   3. KINGDOM_FOG_TINT hardcoded fallback (eyeballed defaults). */
+    let color = fogParams.color;
+    if (!color && placements?.[currentKingdom]?.fog_color) {
+      const f = placements[currentKingdom].fog_color;
+      color = { r: f.r, g: f.g, b: f.b };
+    }
+    if (!color) {
+      color = KINGDOM_FOG_TINT[currentKingdom]
+        || { r: 0.20, g: 0.20, b: 0.30 };
+    }
     glRenderer.uploadFogLut(fogLut, {
       enable: fogParams.enable,
       zShift: fogParams.zShift,
       farRef: fogParams.farRef,
       color,
     });
+  }
+  /* Push the latest per-kingdom ocean colour + enable flag into the GL
+   * renderer. Composes the colour preferring the captured
+   * `ocean_color_normalized` field in `world-overview.json`
+   * (CLUT-sampled from the user's save state by
+   * `scripts/mednafen/resolve_bulk_terrain.py::pick_ocean_color`) over
+   * the hardcoded fallback. The checkbox in the canvas controls toggles
+   * the pass; when off, the ocean plane is skipped entirely (canvas
+   * clear-colour shows through). */
+  function pushOceanParamsToRenderer() {
+    if (!glRenderer || typeof glRenderer.setOceanColor !== 'function') return;
+    const enable = $oceanEnable ? ($oceanEnable.checked ? 1 : 0) : 1;
+    const ocn = placements?.[currentKingdom]?.ocean_color;
+    let color;
+    if (ocn && Array.isArray(ocn.ocean_color_normalized)
+        && ocn.ocean_color_normalized.length === 3) {
+      const [r, g, b] = ocn.ocean_color_normalized;
+      color = { r, g, b };
+    } else {
+      /* Hardcoded fallback (royal blue close to #1F2466). Matches the
+       * three retail saves we've sampled so far. */
+      color = { r: 0.122, g: 0.141, b: 0.392 };
+    }
+    glRenderer.setOceanColor(color, enable, 0);
+  }
+  /* Hand the disc-side ocean assets (texture + 13-frame CLUT animation
+   * table) to the renderer. Called after `viewer.set_scene_kingdom`
+   * has decompressed slot 0 and `legaia_web_viewer::ocean::find_ocean_assets`
+   * has run. When the kingdom isn't a world-map one (or the disc isn't
+   * loaded yet), the accessors return empty buffers and we leave the
+   * solid-colour fallback in place. */
+  function pushOceanAssetsToRenderer() {
+    if (!viewer || !glRenderer || typeof glRenderer.setOceanAssets !== 'function') {
+      return;
+    }
+    const tex = viewer.ocean_texture_bytes();
+    const frames = viewer.ocean_animation_frames();
+    if (!tex || tex.byteLength === 0 || !frames || frames.byteLength === 0) {
+      glRenderer.setOceanAssets(null, null);
+      return;
+    }
+    /* tileWorldSize=256: one ocean-texture wrap covers 256 world units.
+     * Each kingdom is 16320 world units across (~64 wraps), matching
+     * the retail tile pitch in the prim pool. */
+    glRenderer.setOceanAssets(tex, frames, 256);
   }
   /* Default UI matches default viewMode = 'world' (assembled scene from
    * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
@@ -719,6 +793,7 @@
      * inspector mode hides them again. */
     if ($lockTopView) $lockTopView.hidden = false;
     pushFogParamsToRenderer();
+    pushOceanParamsToRenderer();
     /* Load kingdom bundle (TIM_LIST -> VRAM, TMD pack parsed). */
     let packCount;
     try {
@@ -728,6 +803,9 @@
       return;
     }
     glRenderer.uploadVram(viewer.pack_vram_bytes());
+    /* Upload the disc-side ocean texture + 13-frame CLUT animation
+     * table now that slot 0 has been decompressed. */
+    pushOceanAssetsToRenderer();
     /* Upload a single pack mesh on demand; return true if its mesh data
      * is renderable (some slots have non-textured flat-shaded prims that
      * the WebGL path skips). */
@@ -760,9 +838,17 @@
         kind: 'man', class: p.class || 'landmark', name: p.name,
       });
     }
-    /* Live-RAM actor placements (resolve_actor_tmds.py output). These
-     * pin actor-positioned slots that MAN doesn't reference (Drake
-     * surfaces 12 today; Sebucus/Karisto pending a save state). */
+    /* Live-RAM actor placements (resolve_actor_tmds.py /
+     * scripts/mednafen/resolve_bulk_terrain.py output). These pin
+     * actor-positioned slots that MAN doesn't reference. The new mednafen
+     * resolver also tags each entry with `kind: 'bulk_terrain'` or
+     * 'man_actor' so we can split the draw list into a separate
+     * `bulk_terrain` track (rendered with class-conditioned colour).
+     *
+     * `bulk_terrain_placements` is a strict subset of `live_placements`
+     * (kind === 'bulk_terrain'). We honour `live_placements` directly so
+     * the legacy class colouring still works, and treat bulk_terrain as
+     * a tagged sub-bucket. */
     const liveSlots = new Set();
     const livePlacements = k.live_placements || [];
     for (const lp of livePlacements) {
@@ -771,7 +857,9 @@
       liveSlots.add(ms);
       drawPlacements.push({
         meshId: ms, x: lp.pos[0], z: lp.pos[2],
-        kind: 'live', class: lp.class || 'landmark',
+        kind: lp.kind === 'bulk_terrain' ? 'bulk_terrain' : 'live',
+        class: lp.class || 'landmark',
+        name: lp.man_record_name,
       });
     }
 
@@ -933,8 +1021,24 @@
         ].filter(Boolean).join(' ')
       + (unplacedShown.npc_token ? `, ${unplacedShown.npc_token} hidden` : '')
       + ')';
+    /* Split live actors into bulk_terrain (positioned by some non-MAN
+     * runtime path - the FieldVM prescript chain via FUN_801DE840, the
+     * world-map overlay's actor-spawn calls into FUN_80024C88, etc.)
+     * vs man_actor (positioned via the standard MAN-record walker at
+     * FUN_8003A1E4). The 'kind' tag comes from the mednafen resolver in
+     * scripts/mednafen/resolve_bulk_terrain.py; older PCSX-Redux runs
+     * miss it and fall under man_actor for back-compat. */
+    const bulkPlacementsLive = livePlacements.filter(
+      lp => lp.kind === 'bulk_terrain'
+    );
+    const manPlacementsLive = livePlacements.filter(
+      lp => lp.kind !== 'bulk_terrain'
+    );
     const liveSummary = liveSlots.size === 0 ? '' :
-      ` + ${livePlacements.length} live-RAM actors (${liveSlots.size} slots)`;
+      ` + ${livePlacements.length} live-RAM actors `
+      + `(${bulkPlacementsLive.length} bulk_terrain, `
+      + `${manPlacementsLive.length} man_actor; `
+      + `${liveSlots.size} slots)`;
     $meshLabel.textContent =
       `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
       + liveSummary + unplacedSummary;

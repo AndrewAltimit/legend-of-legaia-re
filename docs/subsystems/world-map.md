@@ -646,19 +646,203 @@ worldCam centre` by default). For a top-down ortho camera the two
 quantities are equivalent up to a constant; for the orbit-camera mesh
 inspector the fog toggle is hidden because it doesn't carry over.
 
+### Bulk-terrain placement resolver (MAN `0x7F` sentinels)
+
+MAN-record placements where ``(x_enc, z_enc) == (0x7F, 0x7F)`` static-
+decode to the literal world coordinate ``(16320, 16320)`` (the
+world's NE corner, just outside any visible kingdom). Those actors
+are positioned at runtime by the FieldVM prescript embedded in the
+record's trailing bytes, dispatched from ``FUN_8003A1E4`` (the MAN
+placement walker in SCUS):
+
+```c
+// FUN_8003A1E4 lines 326-336 (excerpted):
+uVar14 = (uint)*(byte *)(iVar11 + iVar10);    // script[PC]
+if ((uVar14 - 0x24 < 2) && (... > 0x1F)) {    // op in {0x24, 0x25}
+    while (true) {
+        iVar10 = func_0x801de840(...);         // -> FieldVM dispatcher
+        *(short *)(iVar9 + 0x9e) = (short)iVar10;
+        if (uVar14 == 0x21) break;
+        // walk next opcode
+    }
+}
+```
+
+Each actor is allocated by ``FUN_80024C88`` then its prescript runs
+once through the FieldVM (``FUN_801DE840``). The prescript can write
+``actor[+0x14] / actor[+0x18]`` (X / Z position), so the *resolved*
+position differs from the literal MAN-record decode.
+
+**Statically resolving these without running the FieldVM is not
+covered by the asset extractor.** The MAN prescript is a per-record
+bytecode that picks a position based on actor type, story-flag state,
+overlay-resident lookup tables. A full clean-room port would need
+the engine-vm field VM driving real actor records.
+
+The practical alternative is a **runtime snapshot capture**:
+
+- ``scripts/mednafen/resolve_bulk_terrain.py`` extracts the
+  post-resolve placements out of mednafen save states. It walks every
+  actor list head listed in `Globals used`, captures the actor's live
+  ``+0x14 / +0x18`` coords plus its mesh chain at ``+0x44`` (resolved
+  back to the kingdom TMD pack via reverse-magic-search), and tags
+  each placement ``kind: 'bulk_terrain'`` when ``actor[+0x90]`` is
+  outside the MAN buffer or ``'man_actor'`` otherwise.
+- ``site/extract-world-placements.py`` merges the resulting JSON into
+  ``site/world-overview.json`` under ``bulk_terrain_placements`` per
+  kingdom (alongside the existing ``placements`` and
+  ``live_placements`` fields). The world-overview viewer renders both
+  layers in the same scene.
+- ``crates/web-viewer::sentinel_placements`` is the Rust port of the
+  RAM-side resolver (record parser + actor-list walker + TMD-pack
+  reverse lookup) for downstream callers; the Python script is the
+  end-to-end driver.
+
+The Drake-only count produced by the existing PCSX-Redux capture
+(``site/world-overview-live.json`` legacy single-bundle dict) lands
+as ``man_actor`` under the new tagging since that capture script
+predates the ``kind`` field.
+
+### Per-kingdom fog colour
+
+The atmospheric-tick actor (``actor[+0x0C] == FUN_801E3E00`` at
+``0x801E3E00``) interpolates the per-kingdom haze RGB into its
+``+0x74`` field per frame. That u32 is the input to ``FUN_80043390``'s
+``ctc2`` writers to the GTE ``FAR_COLOR`` control regs (``$21 /
+$22 / $23``):
+
+```c
+// FUN_8001ADA4 case 5 (line 861):
+FUN_80043390(puVar12, piVar2[0x1d], *(undefined2 *)(piVar2 + 0x1e));
+//                    ^^^^^^^^^^^^^
+//                    actor[+0x74] = current fog RGB (0x00BBGGRR)
+
+// FUN_80043390 (0x80043498..0x800434D0):
+andi $s6, $a1, 0x00FF      // R from $a1 = actor[+0x74]
+srl  $s5, $a1, 8           // G
+andi $s5, $s5, 0x00FF
+srl  $s4, $a1, 16          // B
+andi $s4, $s4, 0x00FF
+sll  $s6, $s6, 4           // 8-bit -> 12-bit
+sll  $s5, $s5, 4
+sll  $s4, $s4, 4
+ctc2 $s6, $21              // FAR_COLOR.R
+ctc2 $s5, $22              // FAR_COLOR.G
+ctc2 $s4, $23              // FAR_COLOR.B
+```
+
+The script that drives ``actor[+0x74]`` lives in
+``FUN_801E3E00`` (overlay-resident at
+``ghidra/scripts/funcs/overlay_world_map_801e3e00.txt``) and reads
+its R/G/B bytes from ``script[PC + 7 / +8 / +9]``. The script source
+is a per-kingdom blob at ``actor[+0x94]``; the static walker that
+installs it isn't fully reversed yet, so the practical capture path
+is the runtime snapshot.
+
+When ``scripts/mednafen/resolve_bulk_terrain.py`` finds an actor
+with ``tick == 0x801E3E00`` and ``actor[+0x74] != 0``, it surfaces
+the live RGB as ``fog_color: { r, g, b, u24 }`` per kingdom in
+``site/world-overview.json``. The world-overview viewer reads that
+field at priority above the hand-eyeballed ``KINGDOM_FOG_TINT``
+fallback. World-map saves that don't have an active atmospheric tick
+fall back to the hardcoded table.
+
+### Ocean tile — disc-side asset + 13-frame CLUT animation
+
+The world-map ocean is a **static 4bpp tile** + **CLUT cycling**
+animation, both shipped on disc:
+
+- **Texture:** PSX TIM image at VRAM ``(768, 256)`` 64 halfwords ×
+  256 rows (= 256 × 256 logical pixels in 4bpp), inside slot 0
+  (TIM_LIST) of each world-map kingdom bundle (PROT 0085 Drake / 0244
+  Sebucus / 0391 Karisto). The kingdom-specific TIM is the one with
+  CLUT block fb_xy ``(0, 506)`` and image block fb_xy ``(768, 256)``.
+  Texture bytes vary per kingdom (each ships its own variant).
+- **Wave-ramp region:** the ocean data fills the **top-left 96 × 96
+  logical pixels** of the 256 × 256 page; the rest is shared with
+  other tile prims in 4bpp mode and reads as CLUT-entry-0 padding at
+  world-map entry. Confirmed by walking non-zero byte density across
+  every row and byte column of the decompressed image - rows 1-96
+  + logical pixel cols 0-95 are 100% non-zero, the rest tapers off
+  to zero past row 191. The prim-trace POLY_FT4 cluster UVs for the
+  ``clut=0x7E80 tpage=0x001C`` family land entirely inside this
+  envelope (UVs from ``(0,0)`` to ``(95,95)``).
+- **Base CLUT:** 256-entry BGR555 row at VRAM ``(0, 506)`` (same TIM
+  as the texture). The first 16 entries are the ones the runtime
+  overwrites per frame; entries 16..255 stay fixed and belong to other
+  tiles sharing the row.
+- **Animation table:** **13 frames × 16 BGR555 entries = 416 bytes**,
+  byte-identical across all three retail kingdoms (SHA-256
+  ``dfc6dd263a71152c40ab7726193d79e9658efc04402f4280f5f49f392e32071f``).
+  Located by signature scan in each kingdom's decompressed slot 0;
+  the disc wraps each frame in a 532-byte "CLUT-only TIM" record at
+  TIM_LIST slots 3-5 (Sebucus/Karisto) or 10-15 (Drake), with the
+  first frame starting 0x54 bytes into the record (8 zero bytes +
+  12-byte CLUT block header + 32 unrelated CLUT entries).
+
+The runtime DMAs one frame at a time onto VRAM ``(0, 506)``,
+overwriting the first 16 CLUT entries; the wave peak (``0x3D05``
+bright blue) propagates through indices 0..7 over the 13-frame cycle,
+creating the horizontal rolling-wave appearance visible in retail.
+Frame 0 starts at index 5; the cycle wraps back to index 0 at frame
+8 and continues through index 2 at frame 12.
+
+### Web-overview viewer
+
+``crates/web-viewer::ocean::find_ocean_assets`` decompresses the
+kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and
+signature-scans the slot for the animation table. The disc-gated
+test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction
+across all three kingdoms.
+
+The WebGL ocean shader (``site/js/webgl-tmd.js``) draws a flat
+quad at ``y=0`` covering the world extent, samples the 4bpp texture
++ animated 16-entry CLUT, and advances the frame counter on a
+wall-clock timer (frame duration tunable; default ~8 Hz so the
+visible cadence matches retail at roughly normal playback speed).
+The plane is drawn before bulk-terrain meshes so depth-test handles
+occlusion.
+
+Capture pipeline for the procedural-tint fallback used before the
+disc is loaded:
+
+```
+scripts/mednafen/resolve_bulk_terrain.py --bundles map01,map02,map03 \
+    --json site/world-overview-live.json <mc1> <mc2> <mc3>
+python3 scripts/extract-world-placements.py \
+    --prot-dir extracted/PROT --out site/world-overview.json
+```
+
+``pick_ocean_color`` walks every POLY_FT4 cluster reported by
+``mednafen-state prim-trace``, samples each cluster's representative
+tile via its CLUT + tpage out of the save's VRAM, and ranks
+blue-dominant clusters by ``hits × blue_dominance``. The winner's
+average RGB lands as ``site/world-overview.json[kingdom].ocean_color``
+and drives the viewer's fallback colour before the textured pipeline
+loads.
+
 ### Camera anchors
 
-Per-kingdom camera centres + zoom anchors live in two tables:
+Per-kingdom camera centres + zoom anchors live in two tables and a
+JSON override:
 
 - `KINGDOM_CAM` &mdash; walk-view spawn anchors (load-time map-origin
   coords from `_DAT_80089118` / `_DAT_80089120`, decoded by
   `mednafen-state world-map-camera --table <save>`). This is the
   default view when a kingdom tab is opened.
-- `KINGDOM_TOPVIEW_CAM` &mdash; the "lock to retail top-view" button
-  slams the world cam to these centres + sets `halfWidth / halfHeight
-  = ext / 2` for the dev-menu top-view framing. Captured anchors
-  initially mirror `KINGDOM_CAM` (the dev-menu's free-camera enters
-  from the same spawn anchor before user input scrolls it); replace
-  these values with the output of `mednafen-state world-map-camera
-  --table <top-view-save>` after capturing a save state in
-  `DAT_801F2B94 != 0` mode (D-pad drives camera scroll, not party).
+- `KINGDOM_TOPVIEW_CAM` &mdash; hardcoded fallback for the
+  "lock to retail top-view" button.
+- ``world-overview.json[kingdom].topview_cam`` &mdash; per-kingdom
+  capture preferred over `KINGDOM_TOPVIEW_CAM` when present.
+  ``resolve_bulk_terrain.py::capture_topview_cam`` writes this from
+  ``mednafen-state world-map-camera`` against the user-supplied save
+  state for each kingdom. The "lock to retail top-view" button reads
+  this first; the values drive the world cam centre + frame the
+  kingdom at its captured extent.
+
+The captured anchor is the load-time map origin (`-_DAT_80089118` /
+`-_DAT_80089120`). Top-view dev-menu captures (``DAT_801F2B94 != 0``)
+would refine this with an interactively-scrolled centre + a refined
+``zoom``; walk-view captures (``DAT_801F2B94 == 0``) match the spawn
+anchor, which is good enough as a "lock" target since the dev-menu
+top-view also enters from this anchor before user input scrolls it.

@@ -305,8 +305,26 @@ def main():
     classification = load_classification(Path(args.classification))
     # Live-RAM placements: support both single-bundle dicts
     # (`{"bundle": "map01", "actors": [...]}`) and list-of-dicts shapes.
+    # `live_by_cdname_meta` tracks per-kingdom side-info: fog_color from
+    # the mednafen atmospheric-tick capture, pack load base, etc.
     live_by_cdname: dict[str, list[dict]] = {}
+    live_by_cdname_meta: dict[str, dict] = {}
     live_path = Path(args.live_json)
+
+    def _ingest_live(blob: dict) -> None:
+        bundle = blob.get("bundle")
+        if not bundle:
+            return
+        live_by_cdname[bundle] = blob.get("actors", [])
+        meta: dict = {}
+        for k in ("fog_color", "ocean_color", "topview_cam",
+                  "kingdom_pack_load_base",
+                  "man_buffer_ram_base", "slots_in_pack",
+                  "man_record_count", "man_sentinel_count", "save"):
+            if k in blob:
+                meta[k] = blob[k]
+        live_by_cdname_meta[bundle] = meta
+
     if live_path.exists():
         try:
             live_raw = json.loads(live_path.read_text())
@@ -314,11 +332,11 @@ def main():
             print(f"WARNING: failed to parse {live_path}: {e}", file=sys.stderr)
             live_raw = None
         if isinstance(live_raw, dict) and "bundle" in live_raw:
-            live_by_cdname[live_raw["bundle"]] = live_raw.get("actors", [])
+            _ingest_live(live_raw)
         elif isinstance(live_raw, list):
             for blob in live_raw:
                 if isinstance(blob, dict) and "bundle" in blob:
-                    live_by_cdname[blob["bundle"]] = blob.get("actors", [])
+                    _ingest_live(blob)
 
     payload = {}
     for base, key, label, cdname in KINGDOMS:
@@ -400,28 +418,49 @@ def main():
             else:
                 p["class"] = "global_pool"
                 p["class_note"] = None
-        # Merge in live-RAM placements (resolve_actor_tmds.py output).
-        # These pin actor-positioned slots that MAN doesn't reference.
+        # Merge in live-RAM placements (resolve_actor_tmds.py /
+        # scripts/mednafen/resolve_bulk_terrain.py output). These pin
+        # actor-positioned slots that MAN doesn't reference.
+        #
+        # `kind` is emitted by the mednafen resolver: 'bulk_terrain'
+        # means actor[+0x90] is NOT in the MAN buffer (so the actor
+        # came from some other spawn path - the slot-1 pack as bulk
+        # terrain), 'man_actor' means it IS in the MAN buffer (so the
+        # actor is a MAN-record-driven event/character). The PCSX-Redux
+        # resolver doesn't emit `kind`, so we default to 'bulk_terrain'
+        # for back-compat.
         live_placements: list[dict] = []
-        for actor in live_by_cdname.get(cdname, []):
+        bulk_terrain_placements: list[dict] = []
+        kingdom_live = live_by_cdname.get(cdname, [])
+        kingdom_fog: dict | None = (
+            live_by_cdname_meta.get(cdname, {}).get("fog_color")
+        )
+        for actor in kingdom_live:
             slots = actor.get("slots") or []
             pos = actor.get("pos") or [0, 0, 0]
             if not slots:
                 continue
+            kind = actor.get("kind", "bulk_terrain")
             for s in slots:
                 if not isinstance(s, int) or s < 0 or s >= len(tmds):
                     continue
-                live_placements.append({
+                entry = {
                     "pack_slot": s,
                     "pos": pos,
                     "node": actor.get("node"),
                     "tick": actor.get("tick"),
                     "flags": actor.get("flags"),
                     "chain_size": actor.get("chain_size", 1),
+                    "kind": kind,
                     "class": kingdom_class.get(s, {}).get(
                         "class", "landmark"
                     ),
-                })
+                }
+                if actor.get("man_record_name"):
+                    entry["man_record_name"] = actor["man_record_name"]
+                live_placements.append(entry)
+                if kind == "bulk_terrain":
+                    bulk_terrain_placements.append(entry)
         # Camera centroid uses only world-positioned actors (skip the
         # script-positioned 0x7F-sentinel records).
         real = [p for p in parsed["placements"] if not p["script_positioned"]]
@@ -450,7 +489,31 @@ def main():
             },
             "unplaced_slot1_tmds": unplaced,
             "live_placements": live_placements,
+            "bulk_terrain_placements": bulk_terrain_placements,
         }
+        if kingdom_fog is not None:
+            # Normalise to floats in [0..1] so the JS shader can multiply
+            # directly. Source: actor[+0x74] u24 packed 0x00BBGGRR,
+            # captured live at FUN_801E3E00 atmospheric-tick actors.
+            payload[key]["fog_color"] = {
+                "r": kingdom_fog["r"] / 255.0,
+                "g": kingdom_fog["g"] / 255.0,
+                "b": kingdom_fog["b"] / 255.0,
+                "u24": kingdom_fog["u24"],
+                "source": kingdom_fog.get("source", "live actor[+0x74]"),
+            }
+        # Ocean colour: blue-weighted top POLY_FT4 cluster, CLUT-sampled
+        # from the save state's VRAM. Drives the procedural ocean plane
+        # under the bulk-terrain layer in the viewer.
+        kingdom_ocean = live_by_cdname_meta.get(cdname, {}).get("ocean_color")
+        if kingdom_ocean is not None:
+            payload[key]["ocean_color"] = kingdom_ocean
+        # Top-view camera anchor: captured per-kingdom; powers the
+        # "lock to retail top-view" button without the viewer hardcoding
+        # values.
+        kingdom_topview = live_by_cdname_meta.get(cdname, {}).get("topview_cam")
+        if kingdom_topview is not None:
+            payload[key]["topview_cam"] = kingdom_topview
         # Per-placement scene-slot summary
         scene_used = sorted({p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0})
         global_used = sorted({p["tmd_slot"] - 0xF0 for p in parsed["placements"]

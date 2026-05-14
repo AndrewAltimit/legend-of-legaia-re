@@ -2132,14 +2132,15 @@
       {
         "pack_slot": 39,
         "pos": [
-          6976,
-          -276,
-          9280
+          3904,
+          -420,
+          11712
         ],
         "node": "0x80081ae4",
         "tick": "0x80021df4",
         "flags": 134498432,
         "chain_size": 1,
+        "kind": "bulk_terrain",
         "class": "landmark"
       },
       {
@@ -2153,7 +2154,9 @@
         "tick": "0x8003bc08",
         "flags": 142739584,
         "chain_size": 12,
-        "class": "landmark"
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "テルマ"
       },
       {
         "pack_slot": 35,
@@ -2166,7 +2169,9 @@
         "tick": "0x8003bc08",
         "flags": 146933888,
         "chain_size": 1,
-        "class": "landmark"
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "イベント屋"
       },
       {
         "pack_slot": 36,
@@ -2179,7 +2184,9 @@
         "tick": "0x8003bc08",
         "flags": 142739584,
         "chain_size": 14,
-        "class": "landmark"
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "ソーン"
       },
       {
         "pack_slot": 37,
@@ -2192,7 +2199,9 @@
         "tick": "0x8003bc08",
         "flags": 142739584,
         "chain_size": 2,
-        "class": "landmark"
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "赤ちゃん"
       },
       {
         "pack_slot": 0,
@@ -2205,7 +2214,9 @@
         "tick": "0x8003bc08",
         "flags": 673319040,
         "chain_size": 1,
-        "class": "landmark"
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "カマーンソーン族"
       },
       {
         "pack_slot": 31,
@@ -2218,6 +2229,7 @@
         "tick": "0x8003bc08",
         "flags": 142641280,
         "chain_size": 1,
+        "kind": "bulk_terrain",
         "class": "landmark"
       },
       {
@@ -2231,6 +2243,7 @@
         "tick": "0x8003bc08",
         "flags": 142641280,
         "chain_size": 1,
+        "kind": "bulk_terrain",
         "class": "landmark"
       },
       {
@@ -2244,6 +2257,7 @@
         "tick": "0x8003bc08",
         "flags": 142641281,
         "chain_size": 1,
+        "kind": "bulk_terrain",
         "class": "landmark"
       },
       {
@@ -2257,6 +2271,7 @@
         "tick": "0x8003bc08",
         "flags": 134252672,
         "chain_size": 2,
+        "kind": "bulk_terrain",
         "class": "landmark"
       },
       {
@@ -2270,6 +2285,7 @@
         "tick": "0x8003bc08",
         "flags": 134252672,
         "chain_size": 1,
+        "kind": "bulk_terrain",
         "class": "landmark"
       },
       {
@@ -2283,9 +2299,139 @@
         "tick": "0x8003bc08",
         "flags": 142641280,
         "chain_size": 1,
+        "kind": "bulk_terrain",
         "class": "landmark"
       }
-    ]
+    ],
+    "bulk_terrain_placements": [
+      {
+        "pack_slot": 39,
+        "pos": [
+          3904,
+          -420,
+          11712
+        ],
+        "node": "0x80081ae4",
+        "tick": "0x80021df4",
+        "flags": 134498432,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 31,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x80082504",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 29,
+        "pos": [
+          12352,
+          -1,
+          3008
+        ],
+        "node": "0x8008242c",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 6,
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "node": "0x80082354",
+        "tick": "0x8003bc08",
+        "flags": 142641281,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 2,
+        "pos": [
+          7296,
+          -192,
+          8000
+        ],
+        "node": "0x8008227c",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 14,
+        "pos": [
+          6976,
+          -192,
+          8256
+        ],
+        "node": "0x800821a4",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 16,
+        "pos": [
+          9152,
+          -96,
+          10432
+        ],
+        "node": "0x800820cc",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      }
+    ],
+    "ocean_color": {
+      "ocean_clut": 32384,
+      "ocean_tpage": 28,
+      "ocean_uv": [
+        0,
+        0
+      ],
+      "ocean_hits": 65,
+      "ocean_color_rgb": [
+        31,
+        40,
+        102
+      ],
+      "ocean_color_hex": "#1F2866",
+      "ocean_color_normalized": [
+        0.1216,
+        0.1569,
+        0.4
+      ],
+      "ocean_cluster_score": 4550,
+      "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM"
+    },
+    "topview_cam": {
+      "cam_x": 7552,
+      "cam_z": 6912,
+      "azimuth": 0,
+      "zoom": 368,
+      "source": "mednafen-state world-map-camera (per-kingdom save)"
+    }
   },
   "sebucus": {
     "kingdom": "sebucus",
@@ -3589,7 +3735,1096 @@
         "note": "md5 01e3017b64a1 shared with drake.39 / karisto.55"
       }
     ],
-    "live_placements": []
+    "live_placements": [
+      {
+        "pack_slot": 35,
+        "pos": [
+          4032,
+          -1,
+          11712
+        ],
+        "node": "0x800805cc",
+        "tick": "0x80021df4",
+        "flags": 134498432,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 33,
+        "pos": [
+          16320,
+          -168,
+          16320
+        ],
+        "node": "0x80082e4c",
+        "tick": "0x8003bc08",
+        "flags": 138545280,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "フラグ"
+      },
+      {
+        "pack_slot": 33,
+        "pos": [
+          16320,
+          -168,
+          16320
+        ],
+        "node": "0x80082d74",
+        "tick": "0x8003bc08",
+        "flags": 138545280,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "イベント屋"
+      },
+      {
+        "pack_slot": 31,
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "node": "0x80082c9c",
+        "tick": "0x8003bc08",
+        "flags": 673319041,
+        "chain_size": 11,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "ＳＤ獣車"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "node": "0x80082864",
+        "tick": "0x8003bc08",
+        "flags": 673319041,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "ＳＤ客車"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "node": "0x8008278c",
+        "tick": "0x8003bc08",
+        "flags": 673319041,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "ＳＤ客車２"
+      },
+      {
+        "pack_slot": 28,
+        "pos": [
+          10688,
+          -48,
+          9408
+        ],
+        "node": "0x800826b4",
+        "tick": "0x8003bc08",
+        "flags": 138545280,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "看板１"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          10368,
+          -72,
+          4416
+        ],
+        "node": "0x800825dc",
+        "tick": "0x8003bc08",
+        "flags": 140642432,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "釣り場看板"
+      },
+      {
+        "pack_slot": 12,
+        "pos": [
+          7872,
+          -24,
+          6208
+        ],
+        "node": "0x80082504",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 12,
+        "pos": [
+          7488,
+          -24,
+          6336
+        ],
+        "node": "0x8008242c",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 12,
+        "pos": [
+          7744,
+          -24,
+          6592
+        ],
+        "node": "0x80082354",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 8,
+        "pos": [
+          4160,
+          -1,
+          7488
+        ],
+        "node": "0x8008227c",
+        "tick": "0x8003bc08",
+        "flags": 142641281,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 24,
+        "pos": [
+          6592,
+          -48,
+          7488
+        ],
+        "node": "0x800821a4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          7360,
+          -48,
+          7616
+        ],
+        "node": "0x800820cc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          7872,
+          -1,
+          7616
+        ],
+        "node": "0x80081ff4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 14,
+        "pos": [
+          8256,
+          -48,
+          7616
+        ],
+        "node": "0x80081f1c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          8640,
+          -1,
+          7616
+        ],
+        "node": "0x80081e44",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 20,
+        "pos": [
+          9024,
+          -48,
+          7616
+        ],
+        "node": "0x80081d6c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          6848,
+          -48,
+          7872
+        ],
+        "node": "0x80081c94",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 7,
+        "pos": [
+          11776,
+          -96,
+          8032
+        ],
+        "node": "0x80081bbc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          6592,
+          -1,
+          8384
+        ],
+        "node": "0x80081ae4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          6848,
+          -48,
+          8896
+        ],
+        "node": "0x80081a0c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          7360,
+          -48,
+          9152
+        ],
+        "node": "0x80081934",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          7872,
+          -1,
+          9152
+        ],
+        "node": "0x8008185c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          8384,
+          -1,
+          9152
+        ],
+        "node": "0x80081784",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          8896,
+          -48,
+          9152
+        ],
+        "node": "0x800816ac",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 22,
+        "pos": [
+          9280,
+          -1,
+          9152
+        ],
+        "node": "0x800815d4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          9664,
+          -1,
+          9152
+        ],
+        "node": "0x800814fc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          10176,
+          -48,
+          9408
+        ],
+        "node": "0x80081424",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          10432,
+          -48,
+          9920
+        ],
+        "node": "0x8008134c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          10688,
+          -48,
+          10432
+        ],
+        "node": "0x80081274",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          11200,
+          -48,
+          10688
+        ],
+        "node": "0x8008119c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          11712,
+          -1,
+          10688
+        ],
+        "node": "0x800810c4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          12224,
+          -1,
+          10688
+        ],
+        "node": "0x80080fec",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          12736,
+          -1,
+          10688
+        ],
+        "node": "0x80080f14",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          13248,
+          -1,
+          10688
+        ],
+        "node": "0x80080e3c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          13760,
+          -1,
+          10688
+        ],
+        "node": "0x80080d64",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          14272,
+          -1,
+          10688
+        ],
+        "node": "0x80080c8c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          14784,
+          -1,
+          10688
+        ],
+        "node": "0x80080bb4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          15296,
+          -1,
+          10688
+        ],
+        "node": "0x80080adc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          15808,
+          -1,
+          10688
+        ],
+        "node": "0x80080a04",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      }
+    ],
+    "bulk_terrain_placements": [
+      {
+        "pack_slot": 35,
+        "pos": [
+          4032,
+          -1,
+          11712
+        ],
+        "node": "0x800805cc",
+        "tick": "0x80021df4",
+        "flags": 134498432,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 12,
+        "pos": [
+          7872,
+          -24,
+          6208
+        ],
+        "node": "0x80082504",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 12,
+        "pos": [
+          7488,
+          -24,
+          6336
+        ],
+        "node": "0x8008242c",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 12,
+        "pos": [
+          7744,
+          -24,
+          6592
+        ],
+        "node": "0x80082354",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 8,
+        "pos": [
+          4160,
+          -1,
+          7488
+        ],
+        "node": "0x8008227c",
+        "tick": "0x8003bc08",
+        "flags": 142641281,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 24,
+        "pos": [
+          6592,
+          -48,
+          7488
+        ],
+        "node": "0x800821a4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          7360,
+          -48,
+          7616
+        ],
+        "node": "0x800820cc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          7872,
+          -1,
+          7616
+        ],
+        "node": "0x80081ff4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 14,
+        "pos": [
+          8256,
+          -48,
+          7616
+        ],
+        "node": "0x80081f1c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          8640,
+          -1,
+          7616
+        ],
+        "node": "0x80081e44",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 20,
+        "pos": [
+          9024,
+          -48,
+          7616
+        ],
+        "node": "0x80081d6c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          6848,
+          -48,
+          7872
+        ],
+        "node": "0x80081c94",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 7,
+        "pos": [
+          11776,
+          -96,
+          8032
+        ],
+        "node": "0x80081bbc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          6592,
+          -1,
+          8384
+        ],
+        "node": "0x80081ae4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          6848,
+          -48,
+          8896
+        ],
+        "node": "0x80081a0c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          7360,
+          -48,
+          9152
+        ],
+        "node": "0x80081934",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          7872,
+          -1,
+          9152
+        ],
+        "node": "0x8008185c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          8384,
+          -1,
+          9152
+        ],
+        "node": "0x80081784",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          8896,
+          -48,
+          9152
+        ],
+        "node": "0x800816ac",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 22,
+        "pos": [
+          9280,
+          -1,
+          9152
+        ],
+        "node": "0x800815d4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          9664,
+          -1,
+          9152
+        ],
+        "node": "0x800814fc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          10176,
+          -48,
+          9408
+        ],
+        "node": "0x80081424",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          10432,
+          -48,
+          9920
+        ],
+        "node": "0x8008134c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 19,
+        "pos": [
+          10688,
+          -48,
+          10432
+        ],
+        "node": "0x80081274",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 18,
+        "pos": [
+          11200,
+          -48,
+          10688
+        ],
+        "node": "0x8008119c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          11712,
+          -1,
+          10688
+        ],
+        "node": "0x800810c4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          12224,
+          -1,
+          10688
+        ],
+        "node": "0x80080fec",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          12736,
+          -1,
+          10688
+        ],
+        "node": "0x80080f14",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          13248,
+          -1,
+          10688
+        ],
+        "node": "0x80080e3c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          13760,
+          -1,
+          10688
+        ],
+        "node": "0x80080d64",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          14272,
+          -1,
+          10688
+        ],
+        "node": "0x80080c8c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          14784,
+          -1,
+          10688
+        ],
+        "node": "0x80080bb4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          15296,
+          -1,
+          10688
+        ],
+        "node": "0x80080adc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 23,
+        "pos": [
+          15808,
+          -1,
+          10688
+        ],
+        "node": "0x80080a04",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      }
+    ],
+    "ocean_color": {
+      "ocean_clut": 32384,
+      "ocean_tpage": 28,
+      "ocean_uv": [
+        64,
+        0
+      ],
+      "ocean_hits": 70,
+      "ocean_color_rgb": [
+        31,
+        38,
+        101
+      ],
+      "ocean_color_hex": "#1F2665",
+      "ocean_color_normalized": [
+        0.1216,
+        0.149,
+        0.3961
+      ],
+      "ocean_cluster_score": 4900,
+      "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM"
+    },
+    "topview_cam": {
+      "cam_x": 7936,
+      "cam_z": 9344,
+      "azimuth": 0,
+      "zoom": 368,
+      "source": "mednafen-state world-map-camera (per-kingdom save)"
+    }
   },
   "karisto": {
     "kingdom": "karisto",
@@ -5639,6 +6874,1051 @@
         "note": "md5 01e3017b64a1 shared with drake.39 / sebucus.35"
       }
     ],
-    "live_placements": []
+    "live_placements": [
+      {
+        "pack_slot": 55,
+        "pos": [
+          4672,
+          -96,
+          9024
+        ],
+        "node": "0x8007f84c",
+        "tick": "0x80021df4",
+        "flags": 134498432,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 44,
+        "pos": [
+          8256,
+          -900,
+          2424
+        ],
+        "node": "0x80082e4c",
+        "tick": "0x8003bc08",
+        "flags": 673319041,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城"
+      },
+      {
+        "pack_slot": 42,
+        "pos": [
+          16320,
+          -124,
+          16320
+        ],
+        "node": "0x80082d74",
+        "tick": "0x8003bc08",
+        "flags": 138545280,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "イベント屋"
+      },
+      {
+        "pack_slot": 41,
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "node": "0x80082c9c",
+        "tick": "0x8003bc08",
+        "flags": 673319041,
+        "chain_size": 11,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "ＳＤ獣車"
+      },
+      {
+        "pack_slot": 40,
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "node": "0x80082864",
+        "tick": "0x8003bc08",
+        "flags": 673319041,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "ＳＤ客車"
+      },
+      {
+        "pack_slot": 45,
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "node": "0x8008278c",
+        "tick": "0x8003bc08",
+        "flags": 671221888,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城のかげ"
+      },
+      {
+        "pack_slot": 45,
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "node": "0x800826b4",
+        "tick": "0x8003bc08",
+        "flags": 671221888,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城のかげ１"
+      },
+      {
+        "pack_slot": 45,
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "node": "0x800825dc",
+        "tick": "0x8003bc08",
+        "flags": 671221888,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城のかげ２"
+      },
+      {
+        "pack_slot": 46,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x80082504",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城本体"
+      },
+      {
+        "pack_slot": 47,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x8008242c",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城のかけら"
+      },
+      {
+        "pack_slot": 48,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x80082354",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "岩のかけら０"
+      },
+      {
+        "pack_slot": 49,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x8008227c",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "岩のかけら１"
+      },
+      {
+        "pack_slot": 50,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x800821a4",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "バルコニー"
+      },
+      {
+        "pack_slot": 51,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x800820cc",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "橋のパーツ縁付き"
+      },
+      {
+        "pack_slot": 52,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x80081ff4",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "橋のパーツ"
+      },
+      {
+        "pack_slot": 52,
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "node": "0x80081f1c",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "橋のパーツ１"
+      },
+      {
+        "pack_slot": 35,
+        "pos": [
+          16320,
+          -124,
+          16320
+        ],
+        "node": "0x80081e44",
+        "tick": "0x8003bc08",
+        "flags": 134350976,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "大空城後地"
+      },
+      {
+        "pack_slot": 39,
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "node": "0x80081d6c",
+        "tick": "0x8003bc08",
+        "flags": 673323136,
+        "chain_size": 14,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "レクタス"
+      },
+      {
+        "pack_slot": 53,
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "node": "0x80081c94",
+        "tick": "0x8003bc08",
+        "flags": 673319040,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "パラシュ"
+      },
+      {
+        "pack_slot": 54,
+        "pos": [
+          12800,
+          -192,
+          7104
+        ],
+        "node": "0x80081bbc",
+        "tick": "0x8003bc08",
+        "flags": 138545280,
+        "chain_size": 1,
+        "kind": "man_actor",
+        "class": "landmark",
+        "man_record_name": "釣り場看板"
+      },
+      {
+        "pack_slot": 34,
+        "pos": [
+          6336,
+          -49,
+          2368
+        ],
+        "node": "0x80081ae4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          7104,
+          -1,
+          2496
+        ],
+        "node": "0x80081a0c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          7616,
+          -48,
+          2496
+        ],
+        "node": "0x80081934",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          8128,
+          -48,
+          2496
+        ],
+        "node": "0x8008185c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          8640,
+          -48,
+          2496
+        ],
+        "node": "0x80081784",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 33,
+        "pos": [
+          6592,
+          -49,
+          2752
+        ],
+        "node": "0x800816ac",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 33,
+        "pos": [
+          6080,
+          -49,
+          3264
+        ],
+        "node": "0x800815d4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          448,
+          -1,
+          3520
+        ],
+        "node": "0x800814fc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          960,
+          -1,
+          3520
+        ],
+        "node": "0x80081424",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          1472,
+          -1,
+          3520
+        ],
+        "node": "0x8008134c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          1984,
+          -1,
+          3520
+        ],
+        "node": "0x80081274",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          2496,
+          -1,
+          3520
+        ],
+        "node": "0x8008119c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          3008,
+          -1,
+          3520
+        ],
+        "node": "0x800810c4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          3520,
+          -1,
+          3520
+        ],
+        "node": "0x80080fec",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          4032,
+          -1,
+          3520
+        ],
+        "node": "0x80080f14",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          4544,
+          -1,
+          3520
+        ],
+        "node": "0x80080e3c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          5056,
+          -48,
+          3520
+        ],
+        "node": "0x80080d64",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          5568,
+          -48,
+          3520
+        ],
+        "node": "0x80080c8c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 8,
+        "pos": [
+          4672,
+          -96,
+          9664
+        ],
+        "node": "0x80080bb4",
+        "tick": "0x8003bc08",
+        "flags": 142641281,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 16,
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "node": "0x80080adc",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 10,
+        "pos": [
+          2112,
+          -48,
+          10816
+        ],
+        "node": "0x800805cc",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 4,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 7,
+        "pos": [
+          8192,
+          -96,
+          9088
+        ],
+        "node": "0x800804f4",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 4,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 15,
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "node": "0x8008041c",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 4,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 13,
+        "pos": [
+          11200,
+          -192,
+          9280
+        ],
+        "node": "0x80080344",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 5,
+        "pos": [
+          11840,
+          -96,
+          6848
+        ],
+        "node": "0x8008026c",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 5,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      }
+    ],
+    "bulk_terrain_placements": [
+      {
+        "pack_slot": 55,
+        "pos": [
+          4672,
+          -96,
+          9024
+        ],
+        "node": "0x8007f84c",
+        "tick": "0x80021df4",
+        "flags": 134498432,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 34,
+        "pos": [
+          6336,
+          -49,
+          2368
+        ],
+        "node": "0x80081ae4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          7104,
+          -1,
+          2496
+        ],
+        "node": "0x80081a0c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          7616,
+          -48,
+          2496
+        ],
+        "node": "0x80081934",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          8128,
+          -48,
+          2496
+        ],
+        "node": "0x8008185c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          8640,
+          -48,
+          2496
+        ],
+        "node": "0x80081784",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 33,
+        "pos": [
+          6592,
+          -49,
+          2752
+        ],
+        "node": "0x800816ac",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 33,
+        "pos": [
+          6080,
+          -49,
+          3264
+        ],
+        "node": "0x800815d4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          448,
+          -1,
+          3520
+        ],
+        "node": "0x800814fc",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          960,
+          -1,
+          3520
+        ],
+        "node": "0x80081424",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          1472,
+          -1,
+          3520
+        ],
+        "node": "0x8008134c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          1984,
+          -1,
+          3520
+        ],
+        "node": "0x80081274",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          2496,
+          -1,
+          3520
+        ],
+        "node": "0x8008119c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          3008,
+          -1,
+          3520
+        ],
+        "node": "0x800810c4",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          3520,
+          -1,
+          3520
+        ],
+        "node": "0x80080fec",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          4032,
+          -1,
+          3520
+        ],
+        "node": "0x80080f14",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 32,
+        "pos": [
+          4544,
+          -1,
+          3520
+        ],
+        "node": "0x80080e3c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          5056,
+          -48,
+          3520
+        ],
+        "node": "0x80080d64",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 30,
+        "pos": [
+          5568,
+          -48,
+          3520
+        ],
+        "node": "0x80080c8c",
+        "tick": "0x8003bc08",
+        "flags": 134252673,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 8,
+        "pos": [
+          4672,
+          -96,
+          9664
+        ],
+        "node": "0x80080bb4",
+        "tick": "0x8003bc08",
+        "flags": 142641281,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 16,
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "node": "0x80080adc",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 1,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 10,
+        "pos": [
+          2112,
+          -48,
+          10816
+        ],
+        "node": "0x800805cc",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 4,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 7,
+        "pos": [
+          8192,
+          -96,
+          9088
+        ],
+        "node": "0x800804f4",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 4,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 15,
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "node": "0x8008041c",
+        "tick": "0x8003bc08",
+        "flags": 142641280,
+        "chain_size": 4,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 13,
+        "pos": [
+          11200,
+          -192,
+          9280
+        ],
+        "node": "0x80080344",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 2,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      },
+      {
+        "pack_slot": 5,
+        "pos": [
+          11840,
+          -96,
+          6848
+        ],
+        "node": "0x8008026c",
+        "tick": "0x8003bc08",
+        "flags": 134252672,
+        "chain_size": 5,
+        "kind": "bulk_terrain",
+        "class": "landmark"
+      }
+    ],
+    "ocean_color": {
+      "ocean_clut": 32384,
+      "ocean_tpage": 28,
+      "ocean_uv": [
+        0,
+        0
+      ],
+      "ocean_hits": 19,
+      "ocean_color_rgb": [
+        29,
+        36,
+        99
+      ],
+      "ocean_color_hex": "#1D2463",
+      "ocean_color_normalized": [
+        0.1137,
+        0.1412,
+        0.3882
+      ],
+      "ocean_cluster_score": 1330,
+      "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM"
+    },
+    "topview_cam": {
+      "cam_x": 7936,
+      "cam_z": 9088,
+      "azimuth": 0,
+      "zoom": 368,
+      "source": "mednafen-state world-map-camera (per-kingdom save)"
+    }
   }
 }
