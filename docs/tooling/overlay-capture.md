@@ -73,7 +73,55 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin
 ```
 
-## Capturing with mednafen (one-shot pipeline)
+## One-command capture (mednafen + Duckstation)
+
+For new captures, the highest-leverage entry point is
+[`scripts/auto-name-overlay.py`](../../scripts/auto-name-overlay.py).
+It detects the save-state format from the magic bytes (mednafen
+gzip+`MDFNSVST` or Duckstation `DUCCS`+zstd), extracts the overlay
+window, fingerprints which overlay is loaded by counting matches
+against an anchor-function table (curated from the capture-status
+table below), and emits both the binary slice and a stub
+`dump_<label>_overlay.py` Ghidra script with the top-N largest
+function entry-points pre-seeded.
+
+```bash
+scripts/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Legaia (USA).<HASH>.mc0"
+# [info] format: mednafen; sliced 262,144 bytes
+# [info] auto-detected label: world_map  (world_map=4, field=3)
+# [ok]   /tmp/overlay_world_map.bin
+# [ok]   ghidra/scripts/dump_world_map_overlay.py
+```
+
+When the auto-detection picks the wrong label (the anchor table is
+incomplete for some scenes &mdash; shop, cutscene, level-up subset all
+currently miss because no documented function is exclusive to them),
+pass `--label name` to override:
+
+```bash
+scripts/auto-name-overlay.py SAVE.mc0 --label cutscene_dialogue
+```
+
+The stub is preserved if it already exists (pass `--force` to
+overwrite). After running, follow with the existing Ghidra import:
+
+```bash
+scripts/import-overlay-named.sh /tmp/overlay_<label>.bin <label>
+docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
+    -process overlay_<label>.bin -noanalysis \
+    -postScript /scripts/dump_<label>_overlay.py
+```
+
+Cuts the per-scene reverse cycle from manually identifying which
+overlay is loaded + hand-rolling a TARGETS list to a single command +
+a Ghidra import.
+
+To grow the anchor table: when you confirm a function is exclusive to
+a specific overlay (via the dump-script comments + cross-overlay
+inventory diffs), add it to `ANCHOR_FUNCTIONS` in
+[`scripts/auto-name-overlay.py`](../../scripts/auto-name-overlay.py).
+
+## Mednafen pipeline with asset-loader CSV
 
 > For the broader save-state automation toolkit - diffing two saves to
 > see what was written between them, bisecting a sequence of saves to
@@ -81,7 +129,10 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 > each `mc{0..9}` slot - see
 > [`mednafen-automation.md`](mednafen-automation.md).
 
-The `scripts/analyze-overlay.sh` helper turns a gzipped mednafen save state into a labelled overlay program with an asset-load CSV in one step:
+The `scripts/analyze-overlay.sh` helper is the older flow. Use it when
+you specifically need the asset-loader CSV (which PROT entries the
+runtime loader requested for that scene); for plain "capture overlay
++ stub dump" use the auto-name helper above.
 
 ```bash
 scripts/analyze-overlay.sh \

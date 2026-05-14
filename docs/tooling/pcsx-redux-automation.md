@@ -91,24 +91,67 @@ state machine:
 3. **DONE** &mdash; disarm breakpoints, write a final snapshot,
    `PCSX.quit(0)`.
 
-This pattern factors into common helpers reused across scripts:
+This pattern is factored out as a shared library at
+[`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua).
+A new probe doesn't reimplement the state machine, the memory readers,
+the save-state loader, the pad-override helpers, the CSV writer, or the
+live-snapshot writer - it imports them:
 
 ```lua
-local function read_u32(mf, addr)
-    if not in_ram(addr, 4) then return nil end
-    local ok, v = pcall(function() return mf:readU32At(ram_offset(addr)) end)
-    return ok and tonumber(v) or nil
-end
+package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
+local probe = require("probe")
 
-local function arm_probe(addr, width, label, cb)
-    return PCSX.addBreakpoint(addr, "Read", width, "probe:" .. label, cb)
-end
+local csv = probe.csv_open("/tmp/x.csv", "addr,pc,ra")
+
+probe.run({
+    sstate         = probe.getenv("LEGAIA_SSTATE", DEFAULT),
+    capture_frames = probe.getenv_num("LEGAIA_FRAMES", 600),
+    snapshot_path  = "/tmp/x.hits.txt",
+    on_arm = function()
+        local descs = {}
+        for _, addr in ipairs({ 0x801E76D4 }) do
+            local d = { addr = addr, name = string.format("0x%08X", addr),
+                        hits_ref = { n = 0 } }
+            probe.arm_breakpoint(addr, "Exec", 4, d.name, function()
+                d.hits_ref.n = d.hits_ref.n + 1
+                local r = PCSX.getRegisters()
+                csv:row("0x%08X,0x%08X,0x%08X",
+                    addr, tonumber(r.pc), tonumber(r.GPR.n.ra))
+            end)
+            descs[#descs + 1] = d
+        end
+        return descs
+    end,
+    on_done = function() csv:close() end,
+})
 ```
 
-`ram_offset(addr)` is just `bit.band(addr, 0x1FFFFFFF)` &mdash; strips
+`probe.ram_offset(addr)` is `bit.band(addr, 0x1FFFFFFF)` &mdash; strips
 the KSEG segment selector so KSEG0 (`0x80xxxxxx`) and KSEG1
 (`0xA0xxxxxx`) map to the same physical byte. Always work in
 absolute PSX virtual addresses on input; convert at the boundary.
+
+### Symbolic breakpoint addresses
+
+Hard-coded `0x801DA51C`-style breakpoint targets break across overlay
+re-imports that shift function entry points. Use the symbol resolver:
+
+```lua
+local symbols = require("symbols").load()  -- ghidra/scripts/symbols.lua
+probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)
+```
+
+`ghidra/scripts/symbols.json` (canonical) and `ghidra/scripts/symbols.lua`
+(LuaJIT-loadable convenience) are both auto-generated from the per-function
+dump headers under `ghidra/scripts/funcs/*.txt`. Regenerate via
+
+```bash
+python3 scripts/pcsx-redux/build-symbols.py
+```
+
+after adding new dumps. The resolver fails loudly on a typo'd symbol
+name &mdash; arming a breakpoint at `nil` otherwise silently captures
+zero hits and the probe runs to completion with no diagnostic.
 
 ### Things that catch people out
 
@@ -179,11 +222,14 @@ is the high-level index.
 
 The fastest path to a new probe:
 
-1. Copy `autorun_world_map_probe.lua` to
-   `autorun_<your_thing>.lua`.
-2. Replace the `PROBE_ADDRS` / `CSV_HEADER` / breakpoint-arm block
-   with your fields. Keep the boot-delay + capture-vsync state
-   machine intact.
+1. Start from
+   [`scripts/pcsx-redux/autorun_slot4_readers.lua`](../../scripts/pcsx-redux/autorun_slot4_readers.lua)
+   &mdash; the canonical thin probe (~115 lines) that uses the shared
+   library for everything except the per-probe breakpoint body.
+2. Edit the `PROBE_OFFSETS` (or your own probe-address list), the CSV
+   header, and the per-hit row written from inside the breakpoint
+   callback. The boot-delay / capture-vsync / disarm state machine
+   comes from `probe.run({...})` &mdash; don't reimplement it.
 3. Run with the harness:
    ```bash
    LEGAIA_LUA=scripts/pcsx-redux/autorun_your_thing.lua \
@@ -191,7 +237,10 @@ The fastest path to a new probe:
        bash scripts/pcsx-redux/run_world_map_probe.sh
    ```
 4. Iterate on the live CSV. The harness re-launches the emulator
-   per run; the CSV is overwritten each time.
+   per run; the CSV is overwritten each time. While the probe is
+   running, the snapshot file (`<probe>.hits.txt` next to the CSV)
+   is rewritten every 60 vsyncs &mdash; tail it from another shell to
+   watch hit counts climb live.
 
 When the probe surfaces a useful signal, commit the Lua file under
 `scripts/pcsx-redux/` and update the catalogue table above. The CSV
