@@ -110,6 +110,14 @@ mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></p
     <li>Targets outside the documented <code>0x801C0000..0x801F9000</code> window flag with <code>(OTHER!)</code> &mdash; that&apos;s an early-warning sign the overlay window needs widening.</li>
   </ul>
   <p>The same invariants are asserted as disc-gated tests in <code>crates/mednafen/tests/dispatch_table.rs</code>; the survey command is the one-shot equivalent for spot-checking.</p>
+  <h3>Pin SC-block fields by diffing two saves</h3>
+<pre><code>save-tool sc-diff \
+  ~/.mednafen/sav/"Legend of Legaia (USA).&lt;HASH&gt;.0.mcr" \
+  ~/.mednafen/sav/"Legend of Legaia (USA).&lt;HASH&gt;.1.mcr" \
+  --save-index 1 --coalesce 8</code></pre>
+  <p>Diffs the two memory cards' SC save blocks and surfaces every differing byte cluster, annotated against the documented SC-block layout (<code>SC magic</code>, icon palette, location name, scene CDNAMEs, etc.). The <code>global header (story_flags / inventory candidate)</code> band is the one to watch when you're hunting the not-yet-pinned story-flag word or inventory slot array: pick two saves bracketing a single known state change (item picked up, story flag flipped, money changed) and the cluster width inside that band tells you the field's type (4 bytes &rarr; u32 story flags; 2-byte stride &rarr; inventory <code>(item_id, count)</code> array).</p>
+  <p><code>--coalesce N</code> merges runs of differing bytes whose gap is &le; N into one cluster (default 8). <code>--range LO..HI</code> (hex or decimal) restricts the scan; the default range skips the per-character record region (<code>0x086F..</code>) since per-character changes are visible via <code>save-tool character</code>. Either argument can be a raw 8192-byte SC-block file or a <code>.mcr</code> memory-card image; the tool detects which.</p>
+  <p>Layout reference: <a href="../subsystems/save-screen.html#retail-sc-block-layout">retail SC-block layout</a> in the save-screen page.</p>
 </section>
 
 <section class="doc-section" id="workflow-patterns">

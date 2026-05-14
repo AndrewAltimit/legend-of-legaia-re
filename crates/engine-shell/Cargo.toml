@@ -28,6 +28,10 @@ legaia-tmd = { path = "../tmd" }
 legaia-font = { path = "../font" }
 legaia-mdec = { path = "../mdec" }
 legaia-mednafen = { path = "../mednafen" }
+legaia-iso = { path = "../iso" }
 glam.workspace = true
 png = "0.17"
 winit = "0.30"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+sha2 = "0.10"

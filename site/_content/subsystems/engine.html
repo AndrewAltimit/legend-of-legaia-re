@@ -139,3 +139,20 @@ asset-viewer &rarr; engine-*, all parser crates</code></pre>
   <p>The decompiled C dumps under <code>ghidra/scripts/funcs/</code> are reference material. Engine code in <code>crates/engine-vm/</code> is fresh Rust written <em>from</em> the decompile - never paste, always rewrite from the documented spec.</p>
   <p>Per-opcode tests live next to the port; they use synthetic bytecode (no Sony bytes) so the test suite stays clean-room.</p>
 </section>
+
+<section class="doc-section" id="engine-scenarios">
+  <h2>Engine integration scenarios</h2>
+  <p><code>scripts/engine/scenarios.toml</code> declares scenarios that drive the headless <code>BootSession</code> for a fixed frame count and assert the SHA-256 of the resulting <code>SaveFile</code> byte stream matches a recorded baseline. Mirrors the byte-level <a href="../tooling/mednafen-automation.html#the-scenarios-manifest">mednafen scenarios manifest</a> &mdash; both files live side by side so a feature touching either layer is forced to consider regression coverage on the other.</p>
+  <p>Schema lives in <code>crates/engine-shell/src/scenarios.rs</code>; the disc-gated runner in <code>crates/engine-shell/tests/scenarios.rs</code> exercises every entry. The CLI runner is <code>legaia-engine scenarios [--bless]</code> (the <code>--bless</code> flag rewrites the manifest in place with observed hashes for blessing).</p>
+  <p>A scenario row whose <code>expected_save_sha256</code> is empty is "unblessed" &mdash; the test reports the observed hash and skips assertion; the CLI runner exits non-zero unless <code>--bless</code> is on. That forces every new scenario to be reviewed once before it can drift silently.</p>
+</section>
+
+<section class="doc-section" id="vram-diff">
+  <h2>VRAM diff harness</h2>
+  <p><code>legaia-engine info --runtime-vram &lt;bin&gt; --vram-diff-png &lt;path&gt;</code> and <code>legaia-engine vram-oracle --runtime-vram &lt;bin&gt;</code> already compare engine VRAM (built via <code>SceneResources::build_targeted</code>) against a runtime VRAM blob captured from a save state. The <code>vram-oracle</code> subcommand also exposes:</p>
+  <ul class="bullets">
+    <li><code>--rows-csv &lt;path&gt;</code> &mdash; per-Y row CSV of pixel-level diff stats (<code>y, runtime_nz, engine_nz, overlap, runtime_only, engine_only</code>). Drift in any single row above a threshold (e.g. row 479 NPC CLUT) shows up as a high <code>runtime_only</code> count for that row only, which is the regression signature of a missed targeted-upload pass.</li>
+    <li><code>--clut-regions</code> &mdash; one-line health report per documented CLUT band (NPC palette row 479, character / texture-page CLUT rows). A <code>&lt;-- gap</code> flag flags the engine-missing case.</li>
+  </ul>
+  <p>Pair with <code>mednafen-state vram-dump --out-bin</code> to get the runtime ground-truth blob, and with <code>mednafen-state prim-dispatch-survey</code> to confirm the per-prim renderer dispatch tables haven't drifted between the saves you're comparing.</p>
+</section>

@@ -243,6 +243,35 @@ The same invariants are asserted as disc-gated tests in
 [`crates/mednafen/tests/dispatch_table.rs`](../../crates/mednafen/tests/dispatch_table.rs);
 the survey command is the one-shot equivalent for spot-checking.
 
+### Pin SC-block fields by diffing two saves
+
+```bash
+target/release/save-tool sc-diff \
+  ~/.mednafen/sav/"Legend of Legaia (USA).<HASH>.0.mcr" \
+  ~/.mednafen/sav/"Legend of Legaia (USA).<HASH>.1.mcr" \
+  --save-index 1 --coalesce 8
+```
+
+Diffs the two memory cards' SC save blocks and surfaces every
+differing byte cluster, annotated against the documented SC-block
+layout (`SC magic`, icon palette, location name, scene CDNAMEs,
+etc.). The `global header (story_flags / inventory candidate)` band
+is the one to watch when you're hunting the not-yet-pinned story-flag
+word or inventory slot array: pick two saves bracketing a single
+known state change (item picked up, story flag flipped, money
+changed) and the cluster width inside that band tells you the field's
+type (4 bytes &rarr; u32 story flags; 2-byte stride &rarr; inventory
+`(item_id, count)` array).
+
+`--coalesce N` merges runs of differing bytes whose gap is &le; `N`
+into one cluster (default 8). `--range LO..HI` (hex or decimal)
+restricts the scan; the default range skips the per-character record
+region (`0x086F..`) since per-character changes are visible via
+`save-tool character`. Either argument can be a raw 8192-byte SC-block
+file or a `.mcr` memory-card image; the tool detects which.
+
+Layout reference: [`docs/subsystems/save-screen.md#retail-sc-block-layout`](../subsystems/save-screen.md#retail-sc-block-layout).
+
 ## Workflow patterns
 
 ### "Find what writes to X" between two known points

@@ -1,0 +1,55 @@
+# Engine integration scenarios manifest.
+#
+# Mirror of `scripts/mednafen/scenarios.toml` for the clean-room engine
+# (clean-room engine track, not the byte-level state-diff track). Each
+# scenario boots `BootSession::open` with audio off, ticks N frames,
+# and asserts the SHA-256 of the engine's `SaveFile` byte stream matches
+# the recorded `expected_save_sha256`.
+#
+# CI runs `cargo test -p legaia-engine-shell scenarios -- --include-ignored`
+# (disc-gated by `LEGAIA_DISC_BIN` + an extracted PROT tree at the
+# default location). Scenario state-drift surfaces as a hash mismatch.
+#
+# Adding a scenario:
+#   1. Add a [[scenario]] block here with `expected_save_sha256 = ""`.
+#   2. Run the harness once; the test will report the observed hash.
+#   3. Bless: `legaia-engine scenarios bless` - the binary rewrites this
+#      file in place, swapping each empty `expected_save_sha256` for
+#      the freshly-observed value. Review the diff, commit if it
+#      matches your intent.
+#
+# Schema lives in `crates/engine-shell/src/scenarios.rs`.
+
+[defaults]
+# Default frames-to-tick when a scenario doesn't override.
+frames = 5
+
+# ----------------------------------------------------------------------
+# Field scene smoke - the boot scene should be ticking-stable.
+# ----------------------------------------------------------------------
+[[scenario]]
+name = "town01_5_frames"
+scene = "town01"
+frames = 5
+expected_save_sha256 = ""
+
+# ----------------------------------------------------------------------
+# Genesis-Tree variant of Rim Elm - exercises a different field-pack
+# region and a different scene-VAB.
+# ----------------------------------------------------------------------
+[[scenario]]
+name = "town0c_5_frames"
+scene = "town0c"
+frames = 5
+expected_save_sha256 = ""
+
+# ----------------------------------------------------------------------
+# World-map. SceneMode::WorldMap takes a different code path through
+# the scene host (camera follow + draw-VM), so a hash drift here flags
+# a regression that field scenes would miss.
+# ----------------------------------------------------------------------
+[[scenario]]
+name = "world_map_5_frames"
+scene = "map01"
+frames = 5
+expected_save_sha256 = ""
