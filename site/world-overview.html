@@ -75,6 +75,7 @@
         <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Laid out by class from site/world-overview/slot1_classification.toml: landmarks south of the kingdom, ground tiles stacked at centre, decorations north, unknown to the east. Live-RAM actor-placed slots (Drake only today) draw at their real coordinates instead."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
         <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Normalize each unplaced slot-1 TMD to a class-conditional target footprint (landmark ~600, decoration ~200, ground_tile ~1200) and pivot on its AABB centroid. Disable to see meshes at their TMD-native scale with the TMD-local origin as the pivot (ground-truth against retail)."><input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced</label>
         <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the world-map distance-cue fog post-process. Mirrors the retail overlay leaves' dpcs/dpct tint. A 512-entry LUT captured from a top-view save state (scripts/pcsx-redux/autorun_world_map_fog_probe.lua, fog_probe.lut.bin) drives the per-tier color ramp; without a capture the renderer falls back to a kingdom-tinted baseline."><input type="checkbox" id="wo-fog-enable"> fog</label>
+        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render a procedural ocean plane at y=0 in the kingdom's sampled ocean colour (from world-overview.json[kingdom].ocean_color, CLUT-sampled from the save state by scripts/mednafen/resolve_bulk_terrain.py). The real ocean source mesh isn't yet pinned; this is a visual stand-in."><input type="checkbox" id="wo-ocean-enable" checked> ocean</label>
         <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn (KINGDOM_CAM[].topView). Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
@@ -495,9 +496,23 @@
       pushFogParamsToRenderer();
     });
   }
+  const $oceanEnable = document.getElementById('wo-ocean-enable');
+  if ($oceanEnable) {
+    $oceanEnable.addEventListener('change', () => {
+      pushOceanParamsToRenderer();
+    });
+  }
   if ($lockTopView) {
     $lockTopView.addEventListener('click', () => {
-      const tv = KINGDOM_TOPVIEW_CAM[currentKingdom];
+      /* Prefer the per-kingdom anchor captured into world-overview.json
+       * (`topview_cam`, sourced by `mednafen-state world-map-camera` from
+       * the user's per-kingdom save state). Falls back to the hardcoded
+       * KINGDOM_TOPVIEW_CAM defaults if the JSON field is missing. */
+      const fromJson = placements?.[currentKingdom]?.topview_cam;
+      const tv = fromJson
+        ? { centerX: fromJson.cam_x, centerZ: fromJson.cam_z,
+            azimuth: fromJson.azimuth, zoom: fromJson.zoom }
+        : KINGDOM_TOPVIEW_CAM[currentKingdom];
       if (!tv) return;
       worldCam.centerX = tv.centerX;
       worldCam.centerZ = tv.centerZ;
@@ -540,6 +555,30 @@
       farRef: fogParams.farRef,
       color,
     });
+  }
+  /* Push the latest per-kingdom ocean colour + enable flag into the GL
+   * renderer. Composes the colour preferring the captured
+   * `ocean_color_normalized` field in `world-overview.json`
+   * (CLUT-sampled from the user's save state by
+   * `scripts/mednafen/resolve_bulk_terrain.py::pick_ocean_color`) over
+   * the hardcoded fallback. The checkbox in the canvas controls toggles
+   * the pass; when off, the ocean plane is skipped entirely (canvas
+   * clear-colour shows through). */
+  function pushOceanParamsToRenderer() {
+    if (!glRenderer || typeof glRenderer.setOceanColor !== 'function') return;
+    const enable = $oceanEnable ? ($oceanEnable.checked ? 1 : 0) : 1;
+    const ocn = placements?.[currentKingdom]?.ocean_color;
+    let color;
+    if (ocn && Array.isArray(ocn.ocean_color_normalized)
+        && ocn.ocean_color_normalized.length === 3) {
+      const [r, g, b] = ocn.ocean_color_normalized;
+      color = { r, g, b };
+    } else {
+      /* Hardcoded fallback (royal blue close to #1F2466). Matches the
+       * three retail saves we've sampled so far. */
+      color = { r: 0.122, g: 0.141, b: 0.392 };
+    }
+    glRenderer.setOceanColor(color, enable, 0);
   }
   /* Default UI matches default viewMode = 'world' (assembled scene from
    * disc). Mesh-inspector chrome stays hidden; reset-camera stays visible
@@ -730,6 +769,7 @@
      * inspector mode hides them again. */
     if ($lockTopView) $lockTopView.hidden = false;
     pushFogParamsToRenderer();
+    pushOceanParamsToRenderer();
     /* Load kingdom bundle (TIM_LIST -> VRAM, TMD pack parsed). */
     let packCount;
     try {

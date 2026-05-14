@@ -33,6 +33,37 @@
 
 const VRAM_W = 1024;
 const VRAM_H = 512;
+
+/* Minimal solid-colour shader for the procedural ocean-plane backdrop.
+ * The world-overview viewer renders the kingdom's bulk terrain + MAN
+ * placements as 3D meshes; the ocean source mesh isn't yet pinned in
+ * the kingdom slot-1 pack (the visible ocean tiles in walk-view come
+ * out of the GPU prim pool, which isn't disc-resident). As a stand-in
+ * we draw a flat quad at y = 0 filling the world extent + margin in
+ * the kingdom's sampled ocean colour. The colour comes from
+ * `world-overview.json[kingdom].ocean_color` (CLUT-sampled from a save
+ * state by `scripts/mednafen/resolve_bulk_terrain.py`), with the
+ * three retail kingdoms all converging on royal blue (#1D2463 family).
+ *
+ * Draws before the bulk-terrain pass with depth-test enabled so 3D
+ * landmark meshes occlude the ocean plane naturally. */
+const OCEAN_VS_SRC = `#version 300 es
+precision highp float;
+uniform mat4 u_mvp;
+in vec3 a_position;
+void main() {
+  gl_Position = u_mvp * vec4(a_position, 1.0);
+}
+`;
+const OCEAN_FS_SRC = `#version 300 es
+precision highp float;
+uniform vec4 u_color;
+out vec4 o_color;
+void main() {
+  o_color = u_color;
+}
+`;
+
 /* Matches the retail fog-LUT shape: 2048 u16 entries indexed by
  * Z >> 5 (where Z is the 16-bit GTE-output Z, range 0..65535). The
  * shader samples this via `int(v_fog_t * (FOG_LUT_SIZE - 1))`. */
@@ -304,6 +335,43 @@ class TmdRenderer {
       origin: [0, 0, 0],
     };
 
+    /* Ocean plane: minimal shader + a single 4-vertex quad expanded to
+     * 6 indices (two triangles). The plane lives at y = 0 and spans a
+     * single unit square in world units; per-frame we multiply through
+     * u_mvp to extend it across the kingdom's world extent + margin. */
+    this.oceanProgram   = compileProgram(gl, OCEAN_VS_SRC, OCEAN_FS_SRC);
+    this.locOceanMvp    = gl.getUniformLocation(this.oceanProgram, 'u_mvp');
+    this.locOceanColor  = gl.getUniformLocation(this.oceanProgram, 'u_color');
+    this.locOceanPos    = gl.getAttribLocation(this.oceanProgram, 'a_position');
+    this.oceanVao       = gl.createVertexArray();
+    this.oceanPosBuf    = gl.createBuffer();
+    this.oceanIdxBuf    = gl.createBuffer();
+    gl.bindVertexArray(this.oceanVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.oceanPosBuf);
+    /* Unit quad in XZ at y=0, centred at origin (extents -0.5..+0.5). */
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -0.5, 0, -0.5,
+       0.5, 0, -0.5,
+       0.5, 0,  0.5,
+      -0.5, 0,  0.5,
+    ]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(this.locOceanPos);
+    gl.vertexAttribPointer(this.locOceanPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.oceanIdxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,
+      new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+
+    /* Per-kingdom ocean override. The viewer pushes
+     * `setOceanColor({ r, g, b }, enable)` once per kingdom switch so the
+     * plane swaps to the captured tint without a per-frame uniform set. */
+    this.oceanParams = {
+      enable: 0,
+      color: { r: 0.12, g: 0.14, b: 0.39 },  /* #1F2466, the retail default */
+      planeY: 0.0,
+      extentScale: 2.5,   /* world-extent multiplier so the quad reaches past clip */
+    };
+
     this.indexCount = 0;
   }
 
@@ -358,6 +426,26 @@ class TmdRenderer {
    * top-down camera target so silhouettes near the player fade last). */
   setFogOrigin(x, y, z) {
     this.fogParams.origin = [x, y, z];
+  }
+
+  /* Set the per-kingdom ocean tint + enable flag. `color` is `{ r, g, b }`
+   * in 0..1 floats (typically the `ocean_color_normalized` field from
+   * world-overview.json). `enable` toggles whether the ocean pass runs
+   * at all - the viewer wires this to a "show ocean" checkbox so the
+   * 2D-style overview without the backdrop is still reachable. Pass
+   * `planeY` to lift/lower the plane (default 0). */
+  setOceanColor(color, enable, planeY) {
+    if (color && typeof color === 'object') {
+      this.oceanParams.color = {
+        r: +color.r, g: +color.g, b: +color.b,
+      };
+    }
+    if (enable !== undefined) {
+      this.oceanParams.enable = enable ? 1 : 0;
+    }
+    if (planeY !== undefined) {
+      this.oceanParams.planeY = +planeY;
+    }
   }
 
   /* Return the AABB this renderer computed for an uploaded scene mesh.
@@ -508,9 +596,36 @@ class TmdRenderer {
     gl.clearColor(0.04, 0.05, 0.08, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    if (this.sceneMeshes.size === 0 || placements.length === 0) return;
-
     const vp = buildTopDownVp(w, h, worldExtent, cam);
+
+    /* Procedural ocean plane: drawn first so bulk-terrain meshes occlude
+     * it through depth-test. Skipped when `setOceanColor(..., false)` is
+     * the current state. */
+    if (this.oceanParams.enable) {
+      const ex = (worldExtent && worldExtent[0]) || 16320;
+      const ez = (worldExtent && worldExtent[1]) || 16320;
+      const cx = (cam && cam.centerX != null) ? cam.centerX : ex * 0.5;
+      const cz = (cam && cam.centerZ != null) ? cam.centerZ : ez * 0.5;
+      const sx = ex * this.oceanParams.extentScale;
+      const sz = ez * this.oceanParams.extentScale;
+      /* model = T(cx, planeY, cz) * S(sx, 1, sz) */
+      const model = new Float32Array([
+        sx, 0,  0,  0,
+        0,  1,  0,  0,
+        0,  0,  sz, 0,
+        cx, this.oceanParams.planeY, cz, 1,
+      ]);
+      const mvp = mulMat4(vp, model);
+      gl.useProgram(this.oceanProgram);
+      gl.uniformMatrix4fv(this.locOceanMvp, false, mvp);
+      const c = this.oceanParams.color;
+      gl.uniform4f(this.locOceanColor, c.r, c.g, c.b, 1.0);
+      gl.bindVertexArray(this.oceanVao);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      gl.bindVertexArray(null);
+    }
+
+    if (this.sceneMeshes.size === 0 || placements.length === 0) return;
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
@@ -575,6 +690,10 @@ class TmdRenderer {
     gl.deleteBuffer(this.ctBuf);
     gl.deleteBuffer(this.idxBuf);
     gl.deleteTexture(this.tex);
+    gl.deleteProgram(this.oceanProgram);
+    gl.deleteVertexArray(this.oceanVao);
+    gl.deleteBuffer(this.oceanPosBuf);
+    gl.deleteBuffer(this.oceanIdxBuf);
   }
 }
 

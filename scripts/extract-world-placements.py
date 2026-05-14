@@ -317,7 +317,8 @@ def main():
             return
         live_by_cdname[bundle] = blob.get("actors", [])
         meta: dict = {}
-        for k in ("fog_color", "kingdom_pack_load_base",
+        for k in ("fog_color", "ocean_color", "topview_cam",
+                  "kingdom_pack_load_base",
                   "man_buffer_ram_base", "slots_in_pack",
                   "man_record_count", "man_sentinel_count", "save"):
             if k in blob:
@@ -501,6 +502,18 @@ def main():
                 "u24": kingdom_fog["u24"],
                 "source": kingdom_fog.get("source", "live actor[+0x74]"),
             }
+        # Ocean colour: blue-weighted top POLY_FT4 cluster, CLUT-sampled
+        # from the save state's VRAM. Drives the procedural ocean plane
+        # under the bulk-terrain layer in the viewer.
+        kingdom_ocean = live_by_cdname_meta.get(cdname, {}).get("ocean_color")
+        if kingdom_ocean is not None:
+            payload[key]["ocean_color"] = kingdom_ocean
+        # Top-view camera anchor: captured per-kingdom; powers the
+        # "lock to retail top-view" button without the viewer hardcoding
+        # values.
+        kingdom_topview = live_by_cdname_meta.get(cdname, {}).get("topview_cam")
+        if kingdom_topview is not None:
+            payload[key]["topview_cam"] = kingdom_topview
         # Per-placement scene-slot summary
         scene_used = sorted({p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0})
         global_used = sorted({p["tmd_slot"] - 0xF0 for p in parsed["placements"]

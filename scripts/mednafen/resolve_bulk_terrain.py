@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 import subprocess
 import sys
@@ -94,6 +95,221 @@ ATMOSPHERIC_TICK = 0x801E3E00
 # Address of the SCUS global pointer holding the decompressed MAN buffer.
 # Written by FUN_8001F05C case 3 (MAN asset loader).
 MAN_BUFFER_PTR_ADDR = 0x8007B898
+
+# `mednafen-state prim-trace` stdout line we mine for tile clusters.
+_CLUSTER_LINE_RE = re.compile(
+    r"#(\d+)\s+clut=0x([0-9A-Fa-f]+)\s+tpage=0x([0-9A-Fa-f]+)\s+uvs=\[\(([0-9, ]+)\)"
+    r".*?hits=(\d+)"
+)
+
+# `mednafen-state world-map-camera` text-form fields we mine for the
+# top-view camera anchor and zoom.
+_CAM_FIELD_RE = {
+    "raw_x":   re.compile(r"_DAT_80089120\s+raw i32\s+=\s+(-?\d+)"),
+    "raw_z":   re.compile(r"_DAT_80089118\s+raw i32\s+=\s+(-?\d+)"),
+    "azimuth": re.compile(r"_DAT_8007B794\s+azimuth\s+\(low u16\)\s+=\s+0x([0-9A-Fa-f]+)"),
+    "zoom":    re.compile(r"_DAT_8007B6F4\s+zoom/mode\s+\(low u16\)\s+=\s+0x([0-9A-Fa-f]+)"),
+}
+
+
+# ----- VRAM CLUT sampling for ocean colour ------------------------------
+
+def _decode_tpage(tpage: int) -> tuple[int, int, int]:
+    """Returns (page_x, page_y, bpp) for a PSX tpage word."""
+    page_x = (tpage & 0xF) * 64
+    page_y = ((tpage >> 4) & 1) * 256
+    bpp = {0: 4, 1: 8, 2: 16}.get((tpage >> 5) & 3, 4)
+    return page_x, page_y, bpp
+
+
+def _clut_xy(clut: int) -> tuple[int, int]:
+    return (clut & 0x3F) * 16, (clut >> 6) & 0x1FF
+
+
+def _bgr555_to_rgb(p: int) -> tuple[int, int, int] | None:
+    if p == 0:
+        return None
+    return ((p & 0x1F) << 3, ((p >> 5) & 0x1F) << 3, ((p >> 10) & 0x1F) << 3)
+
+
+def _sample_tile(vram: bytes, tpage: int, clut: int, ux: int, uy: int,
+                 w: int = 32, h: int = 32) -> Counter:
+    """Sample a 4bpp tile from VRAM via its CLUT. Returns a colour histogram."""
+    page_x, page_y, bpp = _decode_tpage(tpage)
+    if bpp != 4:
+        return Counter()
+    cx, cy = _clut_xy(clut)
+    palette: list[tuple[int, int, int] | None] = []
+    base = (cy * 1024 + cx) * 2
+    for i in range(16):
+        off = base + i * 2
+        if off + 2 > len(vram):
+            palette.append(None)
+            continue
+        bgr = vram[off] | (vram[off + 1] << 8)
+        palette.append(_bgr555_to_rgb(bgr))
+    out: Counter = Counter()
+    for v in range(uy, uy + h):
+        ry = page_y + v
+        if ry < 0 or ry >= 512:
+            continue
+        row = ry * 1024 * 2
+        for u in range(ux, ux + w):
+            cx2 = page_x + u // 4
+            if cx2 < 0 or cx2 >= 1024:
+                continue
+            off = row + cx2 * 2
+            if off + 2 > len(vram):
+                continue
+            hw = vram[off] | (vram[off + 1] << 8)
+            nibble = (hw >> ((u & 3) * 4)) & 0xF
+            rgb = palette[nibble]
+            if rgb is not None:
+                out[rgb] += 1
+    return out
+
+
+def _avg_top(counter: Counter, top: int = 5) -> tuple[int, int, int] | None:
+    rs = gs = bs = w = 0
+    for (r, g, b), n in counter.most_common(top):
+        rs += r * n
+        gs += g * n
+        bs += b * n
+        w += n
+    return None if w == 0 else (rs // w, gs // w, bs // w)
+
+
+def _blue_score(rgb: tuple[int, int, int]) -> int:
+    """Positive for blue-dominant tiles; magnitude = saturation toward blue.
+
+    Ocean tiles read as ``(r,g,b)`` where ``b`` clearly dominates ``r``;
+    rejecting pure black (palette index 0 leaking through ``_sample_tile``)
+    keeps stripe-of-transparent CLUTs from winning the rank."""
+    r, g, b = rgb
+    if b < 24:
+        return 0
+    return max(0, b - max(r, g - 8))
+
+
+def pick_ocean_color(save: Path, mednafen_state_bin: Path,
+                     verbose: bool = True) -> dict | None:
+    """Run ``mednafen-state prim-trace`` + ``vram-dump`` and choose the
+    POLY_FT4 cluster whose dominant texel colour is most strongly blue,
+    weighted by hit count. Returns ``{ocean_clut, ocean_tpage, ocean_uv,
+    ocean_hits, ocean_color_rgb, ocean_color_normalized}`` or ``None`` if
+    no candidate qualifies.
+
+    The walk-view prim pool already includes the kingdom's ocean tiles
+    (the user's save states are walk-view with ocean visible on screen),
+    so this works without dev-menu top-view captures."""
+    # 1. Cluster list (stdout text — mednafen-state JSON omits non-matching
+    # clusters, which we still want here).
+    proc = subprocess.run([
+        str(mednafen_state_bin), "prim-trace",
+        str(save), "--top", "300",
+    ], capture_output=True, text=True)
+    if proc.returncode != 0:
+        if verbose:
+            print(f"  ocean: prim-trace failed: {proc.stderr.strip()}",
+                  flush=True)
+        return None
+    clusters: list[tuple[int, int, int, int, int, int]] = []
+    for line in proc.stdout.splitlines():
+        m = _CLUSTER_LINE_RE.search(line)
+        if not m:
+            continue
+        idx = int(m.group(1))
+        clut = int(m.group(2), 16)
+        tpage = int(m.group(3), 16)
+        uvs = [int(x) for x in m.group(4).replace(" ", "").split(",")]
+        hits = int(m.group(5))
+        clusters.append((idx, clut, tpage, uvs[0], uvs[1], hits))
+    if not clusters:
+        return None
+
+    # 2. VRAM blob via vram-dump --out-bin (PNG is a side effect).
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as png_t:
+        png_out = Path(png_t.name)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as bin_t:
+        bin_out = Path(bin_t.name)
+    try:
+        proc = subprocess.run([
+            str(mednafen_state_bin), "vram-dump",
+            str(save), "--out", str(png_out), "--out-bin", str(bin_out),
+        ], capture_output=True, text=True)
+        if proc.returncode != 0:
+            return None
+        vram = bin_out.read_bytes()
+    finally:
+        png_out.unlink(missing_ok=True)
+        bin_out.unlink(missing_ok=True)
+
+    # 3. Sample each cluster + score.
+    scored: list[tuple[int, int, int, int, int, int, tuple[int, int, int], int, int]] = []
+    for idx, clut, tpage, ux, uy, hits in clusters:
+        counter = _sample_tile(vram, tpage, clut, ux, uy)
+        avg = _avg_top(counter, 5)
+        if avg is None:
+            continue
+        bsc = _blue_score(avg)
+        if bsc == 0:
+            continue
+        scored.append((idx, clut, tpage, ux, uy, hits, avg, bsc, hits * bsc))
+    if not scored:
+        return None
+    scored.sort(key=lambda c: -c[8])
+    idx, clut, tpage, ux, uy, hits, avg, _bsc, score = scored[0]
+    r, g, b = avg
+    return {
+        "ocean_clut": clut,
+        "ocean_tpage": tpage,
+        "ocean_uv": [ux, uy],
+        "ocean_hits": hits,
+        "ocean_color_rgb": [r, g, b],
+        "ocean_color_hex": f"#{r:02X}{g:02X}{b:02X}",
+        "ocean_color_normalized": [round(r / 255.0, 4),
+                                    round(g / 255.0, 4),
+                                    round(b / 255.0, 4)],
+        "ocean_cluster_score": score,
+        "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM",
+    }
+
+
+# ----- Top-view camera capture -----------------------------------------
+
+def capture_topview_cam(save: Path, mednafen_state_bin: Path,
+                        verbose: bool = True) -> dict | None:
+    """Capture the per-kingdom camera-state globals out of the save state.
+
+    These are useful as top-view-camera defaults regardless of whether the
+    dev-menu top-view flag (``DAT_801F2B94``) is set: ``_DAT_80089118/20``
+    hold the negated map-origin coords (camera target = ``-_DAT``) and
+    ``_DAT_8007B794/6F4`` carry azimuth + zoom.
+
+    Returns ``{cam_x, cam_z, azimuth, zoom, source}`` or ``None``."""
+    proc = subprocess.run([
+        str(mednafen_state_bin), "world-map-camera", str(save),
+    ], capture_output=True, text=True)
+    if proc.returncode != 0:
+        if verbose:
+            print(f"  topview cam: capture failed: {proc.stderr.strip()}",
+                  flush=True)
+        return None
+    fields: dict[str, int] = {}
+    for key, regex in _CAM_FIELD_RE.items():
+        m = regex.search(proc.stdout)
+        if m:
+            fields[key] = (int(m.group(1)) if key.startswith("raw")
+                           else int(m.group(1), 16))
+    if "raw_x" not in fields or "raw_z" not in fields:
+        return None
+    return {
+        "cam_x": -fields["raw_x"],
+        "cam_z": -fields["raw_z"],
+        "azimuth": fields.get("azimuth", 0),
+        "zoom": fields.get("zoom", 0x170),
+        "source": "mednafen-state world-map-camera (per-kingdom save)",
+    }
 
 
 def extract_mednafen_ram(save: Path, mednafen_state_bin: Path) -> bytes:
@@ -409,6 +625,34 @@ def run_one_kingdom(save: Path, bundle: str, extracted_root: Path,
             "u24": fog_color_pick,
             "source": "actor[+0x74] of FUN_801E3E00 tick actor",
         }
+
+    # Ocean colour: blue-weighted top POLY_FT4 cluster, CLUT-sampled from
+    # the save's VRAM. The walk-view prim pool already contains the
+    # kingdom's ocean tiles (visible on screen in the user's saves), so
+    # this works without a dev-menu top-view capture.
+    ocean = pick_ocean_color(save, mednafen_state_bin, verbose=verbose)
+    if ocean is not None:
+        if verbose:
+            r, g, b = ocean["ocean_color_rgb"]
+            print(f"  ocean colour: #{r:02X}{g:02X}{b:02X} "
+                  f"(clut=0x{ocean['ocean_clut']:04X} "
+                  f"tpage=0x{ocean['ocean_tpage']:04X} "
+                  f"hits={ocean['ocean_hits']})", flush=True)
+        out["ocean_color"] = ocean
+    elif verbose:
+        print("  ocean colour: no blue-dominant cluster found", flush=True)
+
+    # Top-view camera anchor: per-kingdom (cam_x, cam_z, azimuth, zoom)
+    # captured from the same save state. Useful as a "lock to top-view"
+    # default regardless of whether the dev-menu flag is set, since the
+    # raw map-origin coords vary per kingdom.
+    topview = capture_topview_cam(save, mednafen_state_bin, verbose=verbose)
+    if topview is not None:
+        if verbose:
+            print(f"  topview cam: ({topview['cam_x']}, {topview['cam_z']}) "
+                  f"az=0x{topview['azimuth']:04X} "
+                  f"zoom=0x{topview['zoom']:04X}", flush=True)
+        out["topview_cam"] = topview
     return out
 
 

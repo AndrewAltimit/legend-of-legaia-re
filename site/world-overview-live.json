@@ -253,6 +253,35 @@
       "36": 14,
       "37": 2,
       "39": 1
+    },
+    "ocean_color": {
+      "ocean_clut": 32384,
+      "ocean_tpage": 28,
+      "ocean_uv": [
+        0,
+        0
+      ],
+      "ocean_hits": 65,
+      "ocean_color_rgb": [
+        31,
+        40,
+        102
+      ],
+      "ocean_color_hex": "#1F2866",
+      "ocean_color_normalized": [
+        0.1216,
+        0.1569,
+        0.4
+      ],
+      "ocean_cluster_score": 4550,
+      "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM"
+    },
+    "topview_cam": {
+      "cam_x": 7552,
+      "cam_z": 6912,
+      "azimuth": 0,
+      "zoom": 368,
+      "source": "mednafen-state world-map-camera (per-kingdom save)"
     }
   },
   {
@@ -1041,6 +1070,35 @@
       "32": 1,
       "33": 2,
       "35": 1
+    },
+    "ocean_color": {
+      "ocean_clut": 32384,
+      "ocean_tpage": 28,
+      "ocean_uv": [
+        64,
+        0
+      ],
+      "ocean_hits": 70,
+      "ocean_color_rgb": [
+        31,
+        38,
+        101
+      ],
+      "ocean_color_hex": "#1F2665",
+      "ocean_color_normalized": [
+        0.1216,
+        0.149,
+        0.3961
+      ],
+      "ocean_cluster_score": 4900,
+      "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM"
+    },
+    "topview_cam": {
+      "cam_x": 7936,
+      "cam_z": 9344,
+      "azimuth": 0,
+      "zoom": 368,
+      "source": "mednafen-state world-map-camera (per-kingdom save)"
     }
   },
   {
@@ -1949,6 +2007,35 @@
       "53": 1,
       "54": 1,
       "55": 1
+    },
+    "ocean_color": {
+      "ocean_clut": 32384,
+      "ocean_tpage": 28,
+      "ocean_uv": [
+        0,
+        0
+      ],
+      "ocean_hits": 19,
+      "ocean_color_rgb": [
+        29,
+        36,
+        99
+      ],
+      "ocean_color_hex": "#1D2463",
+      "ocean_color_normalized": [
+        0.1137,
+        0.1412,
+        0.3882
+      ],
+      "ocean_cluster_score": 1330,
+      "source": "blue-weighted top POLY_FT4 cluster, CLUT-sampled from save VRAM"
+    },
+    "topview_cam": {
+      "cam_x": 7936,
+      "cam_z": 9088,
+      "azimuth": 0,
+      "zoom": 368,
+      "source": "mednafen-state world-map-camera (per-kingdom save)"
     }
   }
 ]

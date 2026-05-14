@@ -747,10 +747,10 @@ field at priority above the hand-eyeballed ``KINGDOM_FOG_TINT``
 fallback. World-map saves that don't have an active atmospheric tick
 fall back to the hardcoded table.
 
-### Ocean / coastline source — open
+### Ocean / coastline source — open, visualised by sampled tint
 
-The visible ocean / coastline silhouette in the dev-menu top-view
-isn't yet pinned to a specific source. Survey results to date:
+The retail ocean source mesh isn't yet pinned to a specific disc-side
+asset. Survey results so far:
 
 - **Slot 1 (TMD pack):** Every TMD in each kingdom's slot-1 pack is
   classified in ``site/world-overview/slot1_classification.toml`` -
@@ -760,30 +760,61 @@ isn't yet pinned to a specific source. Survey results to date:
   with neutral-grey colour (`0x2C808080`), projected via the cos
   LUT - consistent with a sky / horizon plane, *not* the ocean.
 - **Walk-view prim pool inspection:** ``mednafen-state prim-trace``
-  on a walk-view save shows ~5000 textured POLY_FT4 tiles all using
-  ``clut=0x7C40`` / ``tpage=0x001A``. The same texture page likely
-  carries the ocean tiles for walk-view; top-view's ocean source
-  hasn't been independently captured.
+  on a walk-view save shows ~5000 textured POLY_FT4 tiles. The
+  blue-dominant cluster across all three kingdoms converges on
+  ``clut=0x7E80 tpage=0x001C`` (sampled CLUT colour ~``#1F2466``
+  royal blue, hits 65-70 per kingdom). This is the shared ocean tile
+  family that lives in VRAM persistently across kingdom loads; the
+  same prim-pool family also draws in the top-view path.
 
-A top-view save state with the world-map overlay paged in is the
-unblocker - ``mednafen-state prim-trace`` against it would surface
-any flat-shaded large-quad ocean draws and a ``vram-dump`` would
-identify the texture region. The walk-view captures available today
-(``mc1 / mc2 / mc3``) don't exercise the top-view render path.
+The viewer doesn't draw the live prim mesh in 3D (it's screen-space
+post-GTE), so until the disc-side ocean source is pinned the
+world-overview viewer paints a **procedural ocean plane** at ``y=0``
+in the captured ocean tint. Capture pipeline:
+
+```
+scripts/mednafen/resolve_bulk_terrain.py --bundles map01,map02,map03 \
+    --json site/world-overview-live.json <mc1> <mc2> <mc3>
+python3 scripts/extract-world-placements.py \
+    --prot-dir extracted/PROT --out site/world-overview.json
+```
+
+``pick_ocean_color`` (in ``resolve_bulk_terrain.py``) walks every
+POLY_FT4 cluster reported by ``mednafen-state prim-trace``, samples
+each cluster's representative tile texel via its CLUT + tpage out of
+the save's VRAM, and ranks blue-dominant clusters by
+``hits × blue_dominance``. The winner's average RGB lands as
+``site/world-overview.json[kingdom].ocean_color`` and drives the
+viewer's ocean plane.
+
+A true disc-side ocean source would let the viewer render real
+geometry instead of the flat stand-in. Best next path:
+``mednafen-state prim-trace --scan-all-ram`` against the ocean
+cluster's fingerprint to find where the per-tile descriptor table
+lives outside the default 139 KB / 91 KB scan windows.
 
 ### Camera anchors
 
-Per-kingdom camera centres + zoom anchors live in two tables:
+Per-kingdom camera centres + zoom anchors live in two tables and a
+JSON override:
 
 - `KINGDOM_CAM` &mdash; walk-view spawn anchors (load-time map-origin
   coords from `_DAT_80089118` / `_DAT_80089120`, decoded by
   `mednafen-state world-map-camera --table <save>`). This is the
   default view when a kingdom tab is opened.
-- `KINGDOM_TOPVIEW_CAM` &mdash; the "lock to retail top-view" button
-  slams the world cam to these centres + sets `halfWidth / halfHeight
-  = ext / 2` for the dev-menu top-view framing. Captured anchors
-  initially mirror `KINGDOM_CAM` (the dev-menu's free-camera enters
-  from the same spawn anchor before user input scrolls it); replace
-  these values with the output of `mednafen-state world-map-camera
-  --table <top-view-save>` after capturing a save state in
-  `DAT_801F2B94 != 0` mode (D-pad drives camera scroll, not party).
+- `KINGDOM_TOPVIEW_CAM` &mdash; hardcoded fallback for the
+  "lock to retail top-view" button.
+- ``world-overview.json[kingdom].topview_cam`` &mdash; per-kingdom
+  capture preferred over `KINGDOM_TOPVIEW_CAM` when present.
+  ``resolve_bulk_terrain.py::capture_topview_cam`` writes this from
+  ``mednafen-state world-map-camera`` against the user-supplied save
+  state for each kingdom. The "lock to retail top-view" button reads
+  this first; the values drive the world cam centre + frame the
+  kingdom at its captured extent.
+
+The captured anchor is the load-time map origin (`-_DAT_80089118` /
+`-_DAT_80089120`). Top-view dev-menu captures (``DAT_801F2B94 != 0``)
+would refine this with an interactively-scrolled centre + a refined
+``zoom``; walk-view captures (``DAT_801F2B94 == 0``) match the spawn
+anchor, which is good enough as a "lock" target since the dev-menu
+top-view also enters from this anchor before user input scrolls it.
