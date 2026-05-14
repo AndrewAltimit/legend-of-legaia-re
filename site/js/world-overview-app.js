@@ -386,7 +386,10 @@
     try {
       $status.textContent = 'Loading WASM ...';
       if (!wasmMod) {
-        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        // ES module import paths resolve relative to the importing JS
+        // file (site/js/), not the host HTML page. wasm-pack output
+        // lives at site/wasm/.
+        wasmMod = await import('../wasm/legaia_web_viewer.js');
         await wasmMod.default();
       }
       $status.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB) ...`;
