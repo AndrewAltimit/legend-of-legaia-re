@@ -144,32 +144,52 @@ searching the full 2 MiB main RAM for the 64-byte outer pack header
 
 ## Consumer call sites
 
-A 14-probe Read-breakpoint capture during the kingdom-bundle scene-load
-transition (Drake save: world-map enters the Drake region) pins two
-distinct reader clusters and one third caller. Every probe at a record
-offset hits except probe 12 (slot4 + 0x05400, mid-body 12) within the
-~15-second capture window — body 12 records start gets read, but the
-mid-record region is not exercised in that timeline.
+Two distinct SCUS-resident reader functions consume slot 4. Both are
+**byte-identical across all three kingdoms** — same PC ranges, same
+caller RAs — proving the consumer is generic SCUS code, not per-
+kingdom overlay code.
 
-| Reader | PC range | RA | Records read |
+| Reader | PC range | RA | What it reads |
 |---|---|---|---|
-| **Cluster A — primary GTE renderer** | `0x80044B00..0x80045700` | `0x801F78D4` (world-map overlay) | outer count, body 0 word_offset, body 0 records start, body 0 mid, body 1 records start, body 12 records start, body 13 records start, body 14 region |
-| **Cluster B — secondary mid-body reader** | `0x80059DE4` | `0x80059C00` (SCUS) | body 4 records start, body 4 mid (+0x800), body 9 region, body 12 later (+0x2800) |
-| **Cluster C — near-end consumer** | `0x80044C70` | `0x8001BC8C` (SCUS) | slot4 + 0x07000 (deep body 12 / start of body 13) |
+| **Cluster A — primary GTE renderer + record walker** | `0x80044B00..0x80045700` | `0x8001B47C` (SCUS dispatcher), `0x801F78D4` (world-map overlay) — both present in every kingdom; Drake additionally captured `0x8001BC8C` | outer count, body 0 word_offset, body 0 records start, body 0 mid, body 1 records start, body 12 records start, body 13 records start, body 14 region, and the "near-end" slot at `0x80044C70` (formerly thought to be a third cluster — same function body, different LW point) |
+| **Cluster B — secondary mid-body reader** | `0x80059DE4` | `0x80059C00` (SCUS) — identical across all three kingdoms | body 4 records start, body 4 mid (+0x800), body 9 region, body 12 later (+0x2800) |
 
 Cluster A's code window contains GTE opcodes (`4A280030` = MVMVA,
 `4B400006` = NCLIP, `4812C000` = SWC2/load) interleaved with `LW` reads
 of slot-4 record fields - this is the GTE-driven 3D primitive emitter
-that consumes slot-4 records and writes GP0 packets. Clusters A and C
-share an overlapping PC region but are reached through distinct call
-chains (different RA). The 14-probe capture also exercises the loader
-(`FUN_8001F7C0`); the post-load RAM window for `map01` is a 75 KB
-**GP0-primitive pool** (records at 0x20-byte stride with command bytes
-like 0x7d / 0x7f for textured triangles), confirming that the slot-4
-records are consumed to produce GPU primitives in that pool. The pool
-base is `_DAT_8007B8D0 - 0x12800` while the overlay is paged in.
+that consumes slot-4 records and writes GP0 packets. The post-load RAM
+window for `map01` is a 75 KB **GP0-primitive pool** (records at 0x20-
+byte stride with command bytes like 0x7d / 0x7f for textured triangles),
+confirming that the slot-4 records are consumed to produce GPU
+primitives in that pool. The pool base is `_DAT_8007B8D0 - 0x12800`
+while the overlay is paged in.
 
-The capture is reproduced by
+### Cross-kingdom hit-count comparison
+
+Exec-breakpoint hit counts at the eight cluster-A LW PCs + the
+cluster-B LW PC during a single warp-tile transition, per-probe cap at
+200 (so cluster A maxes at 8 × 200 = 1600, cluster B at 200):
+
+| Kingdom | sstate | Cluster A | Cluster B | Cluster A RAs observed |
+|---|---|---:|---:|---|
+| Drake | sstate1 (already on map01, held UP) | 1400 (capped on 7 of 8 PCs) | 178 | 0x8001B47C, 0x8001BC8C, 0x801F78D4 |
+| Sebucus | sstate4 (town → map02, held DOWN) | 1400 (capped on 7 of 8 PCs) | 67 | 0x8001B47C, 0x801F78D4 |
+| Karisto | sstate5 (town → map03, held DOWN) | 1196 | 115 | 0x8001B47C, 0x801F78D4 |
+
+Karisto's lower cluster-A total tracks its smaller slot 4 (24444 bytes
+/ 16 bodies vs Drake's 32304 / 15 bodies and Sebucus's 26964 / 16) — a
+hint that hit-count scales with record-count once per-record-kind
+semantics are pinned. Cluster B's variance across kingdoms is similar:
+it walks a subset of bodies, and per-kingdom body inventory differs.
+
+### Reproducing the capture
+
+The original
+[`autorun_slot4_readers.lua`](../../scripts/pcsx-redux/autorun_slot4_readers.lua)
+probe is **Drake-tuned** — its record-region offsets are Drake's
+15-body layout, and they don't reliably land on records in Sebucus
+(16 bodies) or Karisto (16 bodies, smaller total). The Drake-specific
+form:
 
 ```bash
 LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate1 \
@@ -181,15 +201,28 @@ LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_readers.lua \
     bash scripts/pcsx-redux/run_world_map_probe.sh
 ```
 
-`BTN.UP = 4` per [`probe.lua`](../../scripts/pcsx-redux/lib/probe.lua)
-drives the held-direction input that triggers the warp transition from
-inside the probe. The CSV at `LEGAIA_OUT` records each hit and the
-`.detail.txt` sidecar captures the full call context (32 GPRs + 32-word
-code window at PC + 32-word stack window at sp) at the first hit per
-probe. Replicating across Sebucus + Karisto sstates produces the corpus
-needed to nail down each record-kind's semantic via the per-kingdom
-record-count differences in the
-[per-kingdom body inventory](#per-kingdom-body-inventory).
+`BTN.UP = 4` / `BTN.DOWN = 6` per
+[`probe.lua`](../../scripts/pcsx-redux/lib/probe.lua) drives the held-
+direction input that triggers the warp transition from inside the
+probe. For cross-kingdom verification, use
+[`autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
+instead — it arms Exec breakpoints at the eight identified cluster-A
+LW PCs + the cluster-B LW PC, so the probe is kingdom-agnostic:
+
+```bash
+LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate4 \
+LEGAIA_HOLD_BUTTON=6 LEGAIA_HOLD=60 \
+LEGAIA_FRAMES=1800 \
+LEGAIA_OUT=/tmp/slot4_pcs_sebucus.csv \
+LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua \
+    bash scripts/pcsx-redux/run_world_map_probe.sh
+```
+
+Each CSV row records `probe_idx, cluster, pc, name, ra, a0..a3, s8`
+at the moment the Exec breakpoint fires — enough to cross-reference
+caller RA + register state per hit when comparing kingdoms. A
+`.detail.txt` sidecar carries the first-hit call-context for each PC
+(32 GPRs, 16-word code window around PC, 32-word stack window at sp).
 
 ## Falsified hypotheses
 
@@ -241,19 +274,21 @@ geometry, or animation rigs. This is consistent with:
 - the in-game-object silhouettes visible in side projections - the
   user identified body-9 features that resemble specific game props
 
-**Consumer pinned to GTE-driven primitive emitter; per-record semantic
-still open.** The reader accesses the buffer via a runtime pointer, not
-a static `LUI+ADDIU` reference - which is why the static sweep returned
-empty. Dynamic memory-watchpoint capture against the **world-map dev-
-menu top-view** (steady-state, sstate2) registered **zero reads** during
-300 vsyncs, but the same 14-probe capture during a **kingdom-bundle
-scene-load** (sstate1: world-map enters Drake region, `LEGAIA_HOLD_BUTTON=4
-LEGAIA_HOLD=60`) hits every record-region probe and surfaces the
-[consumer call sites](#consumer-call-sites) above. Slot 4 is *not* re-
-read every frame; it's walked during the kingdom-entry transition,
-transformed via the GTE, and emitted as GP0 primitive packets into the
-scene's primitive pool. The dev-menu top-view sees the GP0 packets,
-never re-reading slot 4 directly.
+**Consumer pinned to two SCUS-resident reader functions, byte-
+identical across all three kingdoms; per-record semantic still open.**
+The reader accesses the buffer via a runtime pointer, not a static
+`LUI+ADDIU` reference - which is why the static sweep returned empty.
+Dynamic memory-watchpoint capture against the **world-map dev-menu
+top-view** (steady-state, sstate2) registered **zero reads** during
+300 vsyncs, but Exec-breakpoint capture at the identified reader PCs
+during the **kingdom-bundle scene-load transition** (sstate1: warp
+into Drake region, sstate4: town → Sebucus map02, sstate5: town →
+Karisto map03) hits all three kingdoms with the same PCs and the
+same caller RAs - see [consumer call sites](#consumer-call-sites)
+above. Slot 4 is *not* re-read every frame; it's walked during the
+kingdom-entry transition, transformed via the GTE, and emitted as GP0
+primitive packets into the scene's primitive pool. The dev-menu top-
+view sees the GP0 packets, never re-reading slot 4 directly.
 
 ## Tooling
 
@@ -283,11 +318,12 @@ draw interpretation.
    emitter the world-map overlay calls into. Decomp + a trace of which
    slot-4 record fields feed which GTE op should reveal the per-record
    draw semantic directly.
-2. **Replicate the capture for Sebucus + Karisto.** A save inside the
-   connecting town with movement queued toward the warp tile gives the
-   same closed-loop capture pattern. Three matching captures across
-   all three kingdoms is the corpus needed to nail per-record-kind
-   semantics, exploiting the differing record counts across kingdoms.
+2. **Per-record-kind semantic.** Cross-kingdom captures (sstate1 /
+   sstate4 / sstate5) confirm the same consumer functions handle all
+   three kingdoms with hit-count scaling proportional to record count
+   - Karisto's smaller slot 4 sees fewer cluster-A hits than Drake's.
+   The next step is decoding cluster A's body to identify which slot-4
+   record fields feed which GTE op + which kind/flag_a branch.
 3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
    in every kingdom; the reverse doesn't hold (Karisto body 10 is
    `kind = 2, flag_a = 1`). Cross-reference against which GTE op

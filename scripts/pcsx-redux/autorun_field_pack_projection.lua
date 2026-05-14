@@ -53,6 +53,7 @@ local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 1200)
 local OUT_BASE    = probe.getenv("LEGAIA_OUT", "fp_proj")
 local HOLD_BUTTON = probe.getenv_num("LEGAIA_HOLD_BUTTON", 0)
 local HOLD_FRAMES = probe.getenv_num("LEGAIA_HOLD", 0)
+local QUIT_AFTER_LOADS = probe.getenv_num("LEGAIA_QUIT_AFTER_LOADS", 0)
 
 -- Loader address (per docs/formats/field-pack.md and
 -- capture_observations::field_pack_load::SCENE_ASSET_LOADER_ADDR).
@@ -201,11 +202,16 @@ probe.run({
     hold_button    = HOLD_BUTTON ~= 0 and HOLD_BUTTON or nil,
     hold_frames    = HOLD_FRAMES,
 
-    -- Quit ~30 vsyncs after the first post-load dump fires, so a
-    -- warp-driven run terminates as soon as the data is on disk
-    -- instead of running the full LEGAIA_FRAMES window.
+    -- For warp transitions that cross a town -> world boundary, the
+    -- loader fires TWICE: once during sstate-restore re-init of the
+    -- current scene, then again when the held-direction input drives
+    -- the player onto the warp tile and the destination scene's assets
+    -- load. Don't quit after the first dump; capture every loader call
+    -- within the full LEGAIA_FRAMES window. Set LEGAIA_QUIT_AFTER_LOADS=N
+    -- to terminate ~30 vsyncs after the Nth post-load dump completes.
     on_capture = function(ctx, elapsed)
-        if state.capture_count > 0 and state.quit_at_vsync == nil then
+        if QUIT_AFTER_LOADS > 0 and state.capture_count >= QUIT_AFTER_LOADS
+            and state.quit_at_vsync == nil then
             state.quit_at_vsync = elapsed + 30
         end
         if state.quit_at_vsync ~= nil and elapsed >= state.quit_at_vsync then
