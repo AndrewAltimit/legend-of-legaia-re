@@ -308,47 +308,72 @@ for `DAT_8007B6F8`.
 ### Cross-kingdom hit-count comparison
 
 Exec-breakpoint hit counts at the eight cluster-A LW PCs + the
-cluster-B LW PC during a single warp-tile transition, per-probe cap at
-200 (so cluster A maxes at 8 × 200 = 1600, cluster B at 200):
+cluster-B LW PC during a single warp-tile transition with
+`LEGAIA_PC_CAP=5000` over 1800 vsyncs (per-PC cap so each cluster-A
+PC tops at 5000, cluster B at 5000):
 
-| Kingdom | sstate | Cluster A | Cluster B | Cluster A RAs observed |
+| Kingdom | sstate | Cluster A total | Cluster B | Cluster A RAs observed |
 |---|---|---:|---:|---|
-| Drake | sstate1 (already on map01, held UP) | 1400 (capped on 7 of 8 PCs) | 178 | 0x8001B47C, 0x8001BC8C, 0x801F78D4 |
-| Sebucus | sstate4 (town → map02, held DOWN) | 1400 (capped on 7 of 8 PCs) | 67 | 0x8001B47C, 0x801F78D4 |
-| Karisto | sstate5 (town → map03, held DOWN) | 1196 | 115 | 0x8001B47C, 0x801F78D4 |
+| Drake | sstate1 (already on map01, held UP) | 35762 (caps on 7 of 8 PCs) | 178 | 0x8001B47C, 0x8001BC8C, 0x801F78D4 |
+| Sebucus | sstate4 (town → map02, held DOWN) | 28159 (caps on 5 of 8 PCs) | 67 | 0x8001B47C, 0x801F78D4 |
+| Karisto | sstate5 (town → map03, held DOWN) | 13593 (no caps) | 115 | 0x8001B47C, 0x801F78D4 |
 
-Karisto's lower cluster-A total tracks its smaller slot 4 (24444 bytes
-/ 16 bodies vs Drake's 32304 / 15 bodies and Sebucus's 26964 / 16) — a
-hint that hit-count scales with record-count once per-record-kind
-semantics are pinned. Cluster B's variance across kingdoms is similar:
-it walks a subset of bodies, and per-kingdom body inventory differs.
+Karisto's lower cluster-A total (uncapped) tracks its smaller slot 4
+(24444 bytes / 16 bodies vs Drake's 32304 / 15 bodies and Sebucus's
+26964 / 16) — hit-count scales with record-count. Cluster B's variance
+matches: Drake walks the most slot-4 bodies, then Karisto, then
+Sebucus. The per-kind breakdown ([Per-kind delta](#per-kind-delta)
+below) makes the per-handler differences visible even where the
+overall totals saturate.
 
 #### Per-kind delta
 
 With the cluster-A LW PCs mapped to specific kind handlers (see
 [Cluster A internals](#cluster-a-internals) above), the per-PC × per-
-kingdom hit counts surface a clean signal. Karisto was re-captured
-with `LEGAIA_PC_CAP=5000` to lift the 200-cap and read true per-kind
-totals across the same warp-tile transition; Drake / Sebucus are still
-capped at 200 (interpreter-mode capture runs ~60 min uncapped, deferred):
+kingdom hit counts surface a clean signal. All three kingdoms re-
+captured with `LEGAIA_PC_CAP=5000` over a 1800-vsync window. Karisto
+runs clean under the cap; Drake / Sebucus saturate several PCs at
+5000 — those entries are flagged `*` and represent lower bounds:
 
-| Kind handler | Primitive (likely) | Drake hits | Sebucus hits | Karisto hits (uncapped) |
+| Kind handler | Primitive (likely) | Drake hits | Sebucus hits | Karisto hits |
 |---:|---|---:|---:|---:|
-| 13 banks 1,2 (`0x80044A3C`, LW `0x80044B00`) | `POLY_G3`/`POLY_FT3` triangle | 200 (cap) | 200 (cap) | **49** |
-| 17 banks 1,2 (`0x80044DC8`, LW `0x80044E08`) | `POLY_GT4` textured quad | 200 (cap) | 200 (cap) | **147** |
-| 18 bank 1 (`0x800453BC`, 4 LW PCs `0x800455E4..0x80045658`) | `POLY_GT4` extended quad | 200 (cap, ×4) | 200 (cap, ×4) | **1820** (×4) |
-| 16 banks 1,2 (`0x80044C14`, LW `0x80044C70`) | `POLY_G4` quad | 200 (cap) | 200 (cap) | **2058** |
-| 15 banks 1,2 (`0x80045194`, LW `0x80045418`) | `POLY_GT3` textured triangle | 200 (cap) | 200 (cap) | **2059** |
+| 13 banks 1,2 (`0x80044A3C`, LW `0x80044B00`) | `POLY_G3`/`POLY_FT3` triangle | ≥5000* | **2040** | **49** |
+| 17 banks 1,2 (`0x80044DC8`, LW `0x80044E08`) | `POLY_GT4` textured quad | **762** | **240** | **147** |
+| 18 bank 1 (`0x800453BC`, 4 LW PCs `0x800455E4..0x80045658`) | `POLY_GT4` extended quad | ≥5000* (×4) | ≥5000* (×4) | **1820** (×4) |
+| 16 banks 1,2 (`0x80044C14`, LW `0x80044C70`) | `POLY_G4` quad | ≥5000* | **878** | **2058** |
+| 15 banks 1,2 (`0x80045194`, LW `0x80045418`) | `POLY_GT3` textured triangle | ≥5000* | ≥5000* | **2059** |
+| cluster B (`0x80059DE4`) | mid-body reader | **178** | **67** | **115** |
 
-Karisto's per-kind profile shows the **POLY_F3-textured + gouraud
-quad mix dominates**: kinds 15 / 16 / 18 each draw 1820-2059 batches
-per warp-tile transition window, while kinds 13 (textured triangle)
-and 17 (gouraud-textured quad) draw only **49 / 147** respectively. The
-ratio kind-15 : kind-13 ≈ 42:1 inside Karisto identifies kind 13 as a
-**rare-use** primitive in the slot-4 vocabulary, and kind 15 / 16 / 18
-as the workhorses. Re-running the high-cap probe against Drake +
-Sebucus (defer to a faster CPU mode or short-window capture) would
-let us complete the cross-kingdom delta.
+`* = capped at PC_CAP=5000; true count is higher.`
+
+The clean (uncapped) datapoints already paint a clear cross-kingdom
+picture:
+
+- **Kind 13** is rare in Karisto (49) but a workhorse in Sebucus
+  (2040) and Drake (≥5000). Sebucus and Drake have continental
+  geometry with many small triangle primitives that Karisto doesn't.
+- **Kind 17** scales with overall geometry weight: Drake (762) >
+  Sebucus (240) > Karisto (147). Ratio Drake / Karisto ≈ 5.2.
+- **Kind 16** is the inverse of kind 13: Karisto-heavy (2058) while
+  Sebucus barely uses it (878). Drake ≥5000.
+- **Cluster B** (the mid-body reader): Drake (178) > Karisto (115) >
+  Sebucus (67) — Drake's larger slot 4 visits more of the secondary
+  reader's body subset.
+
+Kinds 15 and 18 saturate on both Drake and Sebucus while Karisto stays
+clean at 2059 / 1820 ×4, meaning these are the workhorses for *every*
+kingdom — the consistent kind-15 ≈ kind-18 totals in Karisto suggest
+they're paired primitives (a textured triangle plus a quad variant) in
+the same per-frame batch loop.
+
+`LEGAIA_PC_CAP=5000` is sufficient for Karisto's warp-burst window but
+gets saturated on Drake / Sebucus inside the same 1800-frame interval
+because their slot-4 buffers are larger (32304 / 26964 bytes vs
+24444). The CSV writes per-row, so the cap counts are exact at the
+sampling moment; the saturated entries just don't reveal Drake's /
+Sebucus's true totals. To lift the cap, set `LEGAIA_PC_CAP=50000` and
+accept the longer wall time (see
+[Reproducing the capture](#reproducing-the-capture)).
 
 ### Reproducing the capture
 
@@ -381,9 +406,10 @@ LW PCs + the cluster-B LW PC, so the probe is kingdom-agnostic:
 LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/SCUS94254.sstate4 \
 LEGAIA_HOLD_BUTTON=6 LEGAIA_HOLD=60 \
 LEGAIA_FRAMES=1800 \
-LEGAIA_OUT=/tmp/slot4_pcs_sebucus.csv \
+LEGAIA_PC_CAP=5000 \
+LEGAIA_OUT=/tmp/slot4_pcs_sebucus_high.csv \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua \
-    bash scripts/pcsx-redux/run_world_map_probe.sh
+    timeout --kill-after=30s 900s bash scripts/pcsx-redux/run_world_map_probe.sh
 ```
 
 Each CSV row records `probe_idx, cluster, pc, name, ra, a0..a3, s8`
@@ -391,6 +417,15 @@ at the moment the Exec breakpoint fires — enough to cross-reference
 caller RA + register state per hit when comparing kingdoms. A
 `.detail.txt` sidecar carries the first-hit call-context for each PC
 (32 GPRs, 16-word code window around PC, 32-word stack window at sp).
+
+`pcsx-redux` in `-interpreter -debugger` mode does not reliably
+self-terminate within a tractable wall-clock window even though
+`probe.lua` calls `PCSX.quit(0)` after the capture window — the
+PSX vsync timer is game-time, not wall-time, and interpreter overhead
+with active breakpoints stretches the 1830-vsync wall-clock by an
+order of magnitude. The `timeout --kill-after=30s 900s` wrapper above
+forces a clean shutdown after 15 minutes; the CSV is flushed per row,
+so the partial capture remains usable even after an explicit kill.
 
 ## Falsified hypotheses
 
