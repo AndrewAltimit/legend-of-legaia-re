@@ -37,5 +37,9 @@ features = [
     "ImageData",
 ]
 
+[dev-dependencies]
+sha2 = "0.10"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

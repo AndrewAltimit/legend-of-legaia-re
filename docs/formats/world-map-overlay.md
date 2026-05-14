@@ -12,8 +12,17 @@
 > in the xy projection), others are flat or corner-clustered. Slot 4
 > is most likely a runtime library of small object-local meshes /
 > collision hulls / decorations / particle-emitter shapes, **not**
-> world-map outline data. Pinning the consumer in Ghidra is the
-> remaining unblock.
+> world-map outline data, and **not** the bulk continent terrain
+> source. Pinning the consumer in Ghidra is the remaining unblock.
+>
+> The bulk continent terrain itself - the ~4300 POLY_FT4 prims that
+> tile the kingdom continent in the dev-menu top-view - is *not*
+> sourced from slot 4. It comes from the same kingdom slot-1 TMD pack
+> the landmarks draw from, routed through `FUN_80043390`'s
+> overlay-mode dispatch table at `0x801F8968` whose eight high-mode
+> renderers replace the SCUS variants when the world-map overlay is
+> paged in. See
+> [`subsystems/world-map.md`](../subsystems/world-map.md#bulk-continent-terrain-emit-mechanism-pinned).
 
 Slot 4 of each world-map (kingdom) bundle decompresses to a fixed-size
 buffer that the runtime loads verbatim into RAM. Three carriers:
@@ -186,14 +195,30 @@ geometry, or animation rigs. This is consistent with:
 - the in-game-object silhouettes visible in side projections - the
   user identified body-9 features that resemble specific game props
 
-**Pinning the consumer in Ghidra is the unblock.** The reader hasn't
+**Pinning the consumer is the unblock.** The reader hasn't
 appeared as a direct `LUI+ADDIU` reference to `0x8011A624` in any
 captured world-map overlay, suggesting it accesses the buffer via a
-runtime pointer rather than a hardcoded address. The next move is
-either (a) dynamic memory-watchpoint capture of which function reads
-this RAM range during top-view, or (b) static sweep of the captured
-overlays for any 8-byte stride iterator that walks a `count_a *
-count_b` array starting from the loaded buffer.
+runtime pointer. Dynamic memory-watchpoint capture against the
+world-map top-view registered **zero reads** across the slot-4 region
+during 300 vsyncs of steady-state dev-menu top-view rendering (probe:
+[`scripts/pcsx-redux/autorun_slot4_readers.lua`](../../scripts/pcsx-redux/autorun_slot4_readers.lua),
+14 Read breakpoints spread across the 32 KB region for the densest
+kingdom). The negative is informative: slot 4 is *not* re-read every
+frame, so the consumer either pre-processes the records into something
+else at scene-load and never touches the slot again, or only walks it
+in response to specific input that the captured state doesn't
+exercise. Two follow-ups remain:
+
+1. **Scene-load transition capture** - re-arm the same Read probes
+   during a fresh kingdom-bundle load (force a `MAP_CHANGE` from the
+   world-map dev menu, or pick a town save that's about to enter a
+   kingdom). The probe is ready; the triggering scenario still needs
+   to be captured.
+2. **Static sweep of captured overlays** for any 8-byte-stride
+   iterator that walks a `count_a * count_b` array, especially in the
+   world-map controller `FUN_801E76D4` and dev-menu renderer
+   `FUN_801EAD98` bodies. Past sweeps did not surface a match;
+   re-running with a stricter loop-shape signature is worth a pass.
 
 ## Tooling
 
@@ -218,9 +243,10 @@ draw interpretation.
 
 ## Open work
 
-1. **Pin the consumer in Ghidra.** The slot-4 reader hasn't been
-   located. Candidate sites: dynamic memory-watchpoint capture, or
-   static sweep of captured overlays for stride-8 iterators.
+1. **Pin the consumer.** Steady-state dev-menu top-view doesn't read
+   the slot at all (negative confirmed by 14-probe Read-breakpoint
+   capture). Next captures: scene-load transition (kingdom entry / dev
+   menu `MAP_CHANGE`), or a stricter static sweep for stride-8 iterators.
 2. **Identify each body.** With the consumer in hand, walking each
    body through the actual draw call should immediately reveal what
    each `kind / flag_a` combination means.

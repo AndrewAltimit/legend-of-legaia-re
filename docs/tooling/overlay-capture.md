@@ -55,7 +55,7 @@ entries at runtime (HP grant at Seru `+0x74`). See
 2. `File → Show Lua Console`.
 3. Run `ghidra/scripts/dump_overlay.lua` from the Lua console - it writes `0x801C0000-0x801EFFFF` to `/tmp/legaia_overlay_<TIMESTAMP>.bin`.
 
-> The 192 KB window in `dump_overlay.lua` is too narrow for some battle-effect handlers (which live in `0x801F0000+`). For the full 256 KB use `extract-mednafen-overlay.py --start 0x801C0000 --end 0x80200000`.
+> The 192 KB window in `dump_overlay.lua` is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at `0x801F7644..0x801F8690` (consumed by `FUN_80043390`'s overlay-mode dispatch table at `0x801F8968`). Use `extract-mednafen-overlay.py` (default window is now `0x801C0000-0x801F9000`, 228 KB) - or pass `--end 0x80200000` for the full 256 KB.
 
 Then load the dump into Ghidra:
 
@@ -90,7 +90,7 @@ scripts/analyze-overlay.sh \
 ```
 
 What it does:
-1. Decompresses the gzipped mednafen save state and slices `0x801C0000-0x801F0000` to `/tmp/legaia_overlay_<label>.bin`.
+1. Decompresses the gzipped mednafen save state and slices `0x801C0000-0x801F9000` to `/tmp/legaia_overlay_<label>.bin` (default; covers the world-map overlay's full extent).
 2. Re-imports as `overlay.bin` in the Ghidra project (overwrites the previous import - keep separate labels per scene).
 3. Runs `find_overlay_asset_loads.py` to scan every `jal` to a known SCUS asset loader (`FUN_8003E8A8`, `FUN_8003EB98`, `FUN_8003E6BC`, `FUN_800520F0`, `FUN_8001F7C0`, `FUN_8001E890`, `FUN_8001ED60`) and const-tracks the `$a0` argument.
 4. Writes a CSV to `/tmp/overlay_loads_<label>.csv` and prints a summary.

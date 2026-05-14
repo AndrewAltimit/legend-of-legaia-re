@@ -13,6 +13,10 @@
 //!              (+ optional .bin) so engine-side runtime-VRAM comparisons
 //!              have a ground-truth reference.
 //!   scenarios  List the scenarios known to the manifest.
+//!   world-map-camera
+//!              Decode the world-map top-view camera-state RAM globals
+//!              (negated map-origin scrolls, azimuth, zoom/mode) from one
+//!              or more save states.
 //!
 //! See `docs/tooling/mednafen-automation.md`.
 
@@ -190,6 +194,54 @@ enum Cmd {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+    /// Decode the per-primitive renderer dispatch tables consumed by
+    /// `FUN_80043390`: the SCUS-resident table at `0x8007657C` and the
+    /// world-map-overlay variant at `0x801F8968`. Reports every populated
+    /// slot's target address, classifies it (SCUS / overlay / other), and
+    /// surfaces the eight overlay-resident high-mode prim renderers - the
+    /// per-prim emit leaves the world-map top-view routes its TMD prims
+    /// through. The overlay table reports as all-zero when the world-map
+    /// overlay isn't paged into the save state.
+    PrimDispatchTable {
+        save: PathBuf,
+        /// Print only the unique high-mode target addresses from the
+        /// overlay table (suitable for piping to per-function dump tools).
+        #[arg(long)]
+        overlay_targets_only: bool,
+    },
+    /// Survey the dispatch tables across multiple saves in one pass.
+    /// Prints a side-by-side comparison table showing which saves have
+    /// the world-map overlay paged in (overlay dispatch populated) vs.
+    /// not, and asserts the SCUS-resident table is byte-identical across
+    /// every save (it lives in code so RAM writes can't legally touch
+    /// it). Useful for spot-checking after the user adds a new save
+    /// capture.
+    PrimDispatchSurvey {
+        /// Two or more save states to survey. Order is preserved in the
+        /// output.
+        saves: Vec<PathBuf>,
+    },
+    /// Decode the world-map top-view camera-state globals
+    /// (`_DAT_80089120`, `_DAT_80089118`, `_DAT_8007B794`,
+    /// `_DAT_8007B6F4`) from one or more save states.
+    ///
+    /// The X/Z scrolls are stored as negated map-origin coordinates
+    /// (`-(int)*(short *)(actor + 0x14)` in overlay_0978 /
+    /// overlay_slot_machine), so the printed `cam_x` / `cam_z` are the
+    /// negations - the camera target in world units. The view-mode
+    /// flag (`DAT_801F2B94`) is also printed: `0` = walk-view (D-pad
+    /// does not pump the camera globals), `1` = top-view debug mode
+    /// (D-pad actively scrolls / rotates / zooms).
+    ///
+    /// Use this to seed per-kingdom defaults in the world-overview
+    /// viewer once a save capture in top-view mode exists.
+    WorldMapCamera {
+        /// One or more save states. Order preserved in the output.
+        saves: Vec<PathBuf>,
+        /// Print a tabular summary instead of one block per save.
+        #[arg(long)]
+        table: bool,
+    },
 }
 
 fn parse_addr(s: &str) -> Result<u32, String> {
@@ -286,6 +338,12 @@ fn main() -> Result<()> {
             scan_all_ram,
             json.as_deref(),
         ),
+        Cmd::PrimDispatchTable {
+            save,
+            overlay_targets_only,
+        } => cmd_prim_dispatch_table(&save, overlay_targets_only),
+        Cmd::PrimDispatchSurvey { saves } => cmd_prim_dispatch_survey(&saves),
+        Cmd::WorldMapCamera { saves, table } => cmd_world_map_camera(&saves, table),
     }
 }
 
@@ -1124,4 +1182,459 @@ fn cmd_prim_trace(
         println!("[json] wrote {}", path.display());
     }
     Ok(())
+}
+
+fn cmd_prim_dispatch_table(save: &Path, overlay_targets_only: bool) -> Result<()> {
+    use legaia_mednafen::prim_dispatch::{
+        HIGH_MODE_END, LOW_MODE_END, LOW_MODE_START, SLOT_BYTES, SlotKind, classify, decode_both,
+    };
+
+    let s = SaveState::from_path(save)?;
+    let ram = s.main_ram()?;
+    let (scus_table, overlay_table) = decode_both(ram)?;
+
+    if overlay_targets_only {
+        for tgt in overlay_table.high_mode_targets() {
+            println!("0x{tgt:08X}");
+        }
+        return Ok(());
+    }
+
+    println!("[info] {}", save.display());
+    println!(
+        "[info] SCUS table @ 0x{:08X}  ({} alpha rows × {} slots)",
+        scus_table.base,
+        scus_table.rows.len(),
+        scus_table.rows[0].slots.len()
+    );
+    let overlay_status = if overlay_table.is_empty() {
+        "empty - world-map overlay not paged in"
+    } else if overlay_table.looks_like_dispatch_table() {
+        "populated (world-map overlay loaded)"
+    } else {
+        "leftover overlay code, NOT a dispatch table"
+    };
+    println!(
+        "[info] overlay table @ 0x{:08X}  ({} alpha row(s); {})",
+        overlay_table.base,
+        overlay_table.rows.len(),
+        overlay_status,
+    );
+    println!();
+
+    let print_table = |label: &str, t: &legaia_mednafen::prim_dispatch::DispatchTable| {
+        println!("=== {label} (base 0x{:08X}) ===", t.base);
+        for (row_idx, row) in t.rows.iter().enumerate() {
+            println!("  alpha row #{row_idx}  (+0x{:02X})", row.alpha_offset);
+            for slot_idx in LOW_MODE_START..HIGH_MODE_END {
+                let val = row.slots[slot_idx];
+                let kind = classify(val);
+                let kind_s = match kind {
+                    SlotKind::Zero => "zero",
+                    SlotKind::Scus => "SCUS",
+                    SlotKind::Overlay => "OVERLAY",
+                    SlotKind::Other => "OTHER",
+                };
+                let band = if slot_idx < LOW_MODE_END {
+                    "low "
+                } else if slot_idx < HIGH_MODE_END {
+                    "high"
+                } else {
+                    "?"
+                };
+                let slot_addr = t.base + row.alpha_offset + slot_idx as u32 * SLOT_BYTES;
+                println!(
+                    "    [{band}] slot {slot_idx:>2}  @ 0x{slot_addr:08X}  ->  \
+                     0x{val:08X}  {kind_s}"
+                );
+            }
+        }
+    };
+
+    print_table("SCUS-resident dispatch table", &scus_table);
+    println!();
+    print_table("Overlay-resident dispatch table", &overlay_table);
+
+    if overlay_table.looks_like_dispatch_table() {
+        let scus_high = scus_table.high_mode_targets();
+        let overlay_high = overlay_table.high_mode_targets();
+        println!();
+        println!(
+            "=== high-mode targets (the per-prim emit leaves) ===\n\
+             SCUS    : {} unique\n\
+             overlay : {} unique\n\
+             swap-in : the overlay-resident high-mode renderers are the\n\
+                       bulk-continent emit leaves the world-map top-view\n\
+                       routes its TMD prims through.",
+            scus_high.len(),
+            overlay_high.len()
+        );
+        for tgt in &overlay_high {
+            let in_scus = scus_high.contains(tgt);
+            let mark = if in_scus {
+                "(shared with SCUS)"
+            } else {
+                "(overlay-only)"
+            };
+            println!("  0x{tgt:08X}  {mark}");
+        }
+        // Quick sanity check: any overlay-table slot whose pointer
+        // lands outside the documented overlay window indicates the
+        // world-map overlay actually extends past 0x801F9000 - flag it.
+        let stragglers: Vec<u32> = overlay_high
+            .iter()
+            .copied()
+            .filter(|p| classify(*p) == SlotKind::Other)
+            .collect();
+        if !stragglers.is_empty() {
+            println!(
+                "\nWARNING: {} overlay-table target(s) classified as OTHER \
+                 (outside known overlay window); re-extract with a wider \
+                 window:\n  {:?}",
+                stragglers.len(),
+                stragglers
+                    .iter()
+                    .map(|p| format!("0x{p:08X}"))
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn cmd_prim_dispatch_survey(saves: &[PathBuf]) -> Result<()> {
+    use legaia_mednafen::prim_dispatch::{
+        HIGH_MODE_END, HIGH_MODE_START, SCUS_ALPHA_ROWS, SCUS_TABLE_BASE, SLOT_BYTES, classify,
+        decode, decode_both,
+    };
+
+    if saves.len() < 2 {
+        anyhow::bail!("prim-dispatch-survey requires at least 2 save states");
+    }
+
+    println!("[info] surveying {} save state(s)", saves.len());
+
+    let mut entries: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    for path in saves {
+        let s = SaveState::from_path(path)?;
+        let ram = s.main_ram()?;
+        entries.push((path.clone(), ram.to_vec()));
+    }
+
+    // SCUS invariant. Use the first save as anchor; compare the
+    // populated slot range (12..20) on every alpha row to every other
+    // save.
+    let (anchor_path, anchor_ram) = &entries[0];
+    let anchor = decode(anchor_ram, SCUS_TABLE_BASE, SCUS_ALPHA_ROWS)?;
+    let mut drift_count = 0;
+    for (path, ram) in &entries[1..] {
+        let here = decode(ram, SCUS_TABLE_BASE, SCUS_ALPHA_ROWS)?;
+        for (row_idx, (ra, rh)) in anchor.rows.iter().zip(here.rows.iter()).enumerate() {
+            for slot_idx in HIGH_MODE_START..HIGH_MODE_END {
+                if ra.slots[slot_idx] != rh.slots[slot_idx] {
+                    drift_count += 1;
+                    if drift_count <= 8 {
+                        println!(
+                            "WARN: SCUS table drift {}:row{row_idx}:slot{slot_idx} \
+                             vs {}: 0x{:08X} != 0x{:08X}",
+                            path.display(),
+                            anchor_path.display(),
+                            rh.slots[slot_idx],
+                            ra.slots[slot_idx]
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if drift_count == 0 {
+        println!(
+            "[ok]   SCUS dispatch table @ 0x{:08X} is byte-identical across all \
+             surveyed saves (high-mode slots {}..{}).",
+            SCUS_TABLE_BASE,
+            HIGH_MODE_START,
+            HIGH_MODE_END - 1
+        );
+    } else {
+        println!(
+            "ERROR: SCUS dispatch table drifted in {drift_count} slot(s) - the SCUS \
+             code region should be immutable. Re-extract or re-import the saves."
+        );
+    }
+
+    println!();
+    println!(
+        "{:<48}  {:>6}  {:<40}  high-mode targets",
+        "save", "status", "summary"
+    );
+    println!("{}", "-".repeat(140));
+    for (path, ram) in &entries {
+        let (_scus, overlay) = decode_both(ram)?;
+        let (status, summary) = if overlay.is_empty() {
+            ("empty", "world-map overlay NOT paged in".to_string())
+        } else if overlay.looks_like_dispatch_table() {
+            (
+                "POP",
+                format!(
+                    "world-map overlay loaded ({} high-mode targets)",
+                    overlay.high_mode_targets().len()
+                ),
+            )
+        } else {
+            (
+                "stale",
+                "leftover overlay code, not a dispatch table".to_string(),
+            )
+        };
+        let targets = overlay
+            .high_mode_targets()
+            .iter()
+            .map(|t| {
+                use legaia_mednafen::prim_dispatch::SlotKind;
+                let mark = match classify(*t) {
+                    SlotKind::Overlay => "",
+                    SlotKind::Scus => "(SCUS!)",
+                    SlotKind::Zero => "(zero!)",
+                    SlotKind::Other => "(OTHER!)",
+                };
+                format!("0x{t:08X}{mark}")
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let truncated = if name.len() > 48 {
+            format!("…{}", &name[name.len() - 47..])
+        } else {
+            name
+        };
+        println!("{truncated:<48}  {status:>6}  {summary:<40}  {targets}");
+    }
+    let row_bytes = SLOT_BYTES * legaia_mednafen::prim_dispatch::SLOTS_PER_ROW as u32;
+    println!(
+        "\n[info] row stride = 0x{row_bytes:X} bytes; high-mode slots = {}..{}",
+        HIGH_MODE_START,
+        HIGH_MODE_END - 1
+    );
+    if drift_count > 0 {
+        anyhow::bail!("SCUS dispatch table drift detected; see warnings above");
+    }
+    Ok(())
+}
+
+/// World-map top-view camera-state globals. See `docs/subsystems/world-map.md`
+/// section "Globals used". The X/Z scrolls are stored as negated
+/// map-origin coordinates; the negation is applied here so `cam_x` /
+/// `cam_z` are camera-target world units.
+const CAM_X_SCROLL: u32 = 0x80089120;
+const CAM_Z_SCROLL: u32 = 0x80089118;
+const CAM_AZIMUTH: u32 = 0x8007B794;
+const CAM_ZOOM_MODE: u32 = 0x8007B6F4;
+const VIEW_MODE_FLAG: u32 = 0x801F2B94;
+
+#[derive(Debug)]
+struct CameraState {
+    raw_x: i32,
+    raw_z: i32,
+    raw_az: i32,
+    raw_zoom_mode: u32,
+    view_mode: u8,
+}
+
+impl CameraState {
+    fn from_ram(ram: &[u8]) -> Result<Self> {
+        let raw_x = read_i32_le(ram, CAM_X_SCROLL)?;
+        let raw_z = read_i32_le(ram, CAM_Z_SCROLL)?;
+        let raw_az = read_i32_le(ram, CAM_AZIMUTH)?;
+        let raw_zoom_mode = read_u32_le(ram, CAM_ZOOM_MODE)?;
+        let view_mode = ram_slice(ram, VIEW_MODE_FLAG, VIEW_MODE_FLAG + 1)?[0];
+        Ok(Self {
+            raw_x,
+            raw_z,
+            raw_az,
+            raw_zoom_mode,
+            view_mode,
+        })
+    }
+    fn cam_x(&self) -> i32 {
+        -self.raw_x
+    }
+    fn cam_z(&self) -> i32 {
+        -self.raw_z
+    }
+    fn view_label(&self) -> &'static str {
+        match self.view_mode {
+            0 => "walk",
+            1 => "top",
+            _ => "?",
+        }
+    }
+}
+
+fn read_u32_le(ram: &[u8], addr: u32) -> Result<u32> {
+    let s = ram_slice(ram, addr, addr + 4)?;
+    Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+}
+
+fn read_i32_le(ram: &[u8], addr: u32) -> Result<i32> {
+    Ok(read_u32_le(ram, addr)? as i32)
+}
+
+fn cmd_world_map_camera(saves: &[PathBuf], table: bool) -> Result<()> {
+    if saves.is_empty() {
+        bail!("at least one save state is required");
+    }
+    let mut decoded = Vec::with_capacity(saves.len());
+    for path in saves {
+        let s = SaveState::from_path(path)?;
+        let ram = s.main_ram()?;
+        decoded.push((path.clone(), CameraState::from_ram(ram)?));
+    }
+    if table {
+        println!(
+            "{:<48}  {:>4}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}",
+            "save", "view", "raw_x", "raw_z", "cam_x", "cam_z", "az/zoom"
+        );
+        println!("{}", "-".repeat(120));
+        for (path, c) in &decoded {
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("?")
+                .to_string();
+            let truncated = if name.len() > 48 {
+                format!("…{}", &name[name.len() - 47..])
+            } else {
+                name
+            };
+            println!(
+                "{:<48}  {:>4}  {:>10}  {:>10}  {:>10}  {:>10}  az=0x{:04X} zoom=0x{:04X}",
+                truncated,
+                c.view_label(),
+                c.raw_x,
+                c.raw_z,
+                c.cam_x(),
+                c.cam_z(),
+                (c.raw_az as u32) & 0xFFFF,
+                c.raw_zoom_mode & 0xFFFF
+            );
+        }
+        let top_view_count = decoded.iter().filter(|(_, c)| c.view_mode == 1).count();
+        println!();
+        println!(
+            "[info] {}/{} save state(s) captured in top-view mode (DAT_801F2B94 = 1)",
+            top_view_count,
+            decoded.len()
+        );
+        if top_view_count == 0 {
+            println!(
+                "[warn] all captured saves are in walk-view; cam_x/cam_z reflect \
+                 load-time map-origin only, not an interactively-scrolled camera \
+                 position. Re-capture in top-view debug mode (dev menu) to get \
+                 true camera defaults."
+            );
+        }
+    } else {
+        for (path, c) in &decoded {
+            println!("{}", path.display());
+            println!(
+                "  view-mode flag (DAT_801F2B94)        = {} ({})",
+                c.view_mode,
+                c.view_label()
+            );
+            println!(
+                "  _DAT_80089120  raw i32                = {} (0x{:08X})",
+                c.raw_x, c.raw_x as u32
+            );
+            println!(
+                "  _DAT_80089118  raw i32                = {} (0x{:08X})",
+                c.raw_z, c.raw_z as u32
+            );
+            println!("  cam_x = -_DAT_80089120                = {}", c.cam_x());
+            println!("  cam_z = -_DAT_80089118                = {}", c.cam_z());
+            println!(
+                "  _DAT_8007B794  azimuth (low u16)      = 0x{:04X} ({})",
+                (c.raw_az as u32) & 0xFFFF,
+                c.raw_az & 0xFFFF
+            );
+            println!(
+                "  _DAT_8007B6F4  zoom/mode (low u16)    = 0x{:04X} ({})",
+                c.raw_zoom_mode & 0xFFFF,
+                c.raw_zoom_mode & 0xFFFF
+            );
+            println!();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod camera_decode_tests {
+    use super::*;
+
+    fn synth_ram_with(values: &[(u32, &[u8])]) -> Vec<u8> {
+        let mut ram = vec![0u8; PSX_RAM_SIZE];
+        for (addr, bytes) in values {
+            let off = (*addr - PSX_RAM_KSEG0) as usize;
+            ram[off..off + bytes.len()].copy_from_slice(bytes);
+        }
+        ram
+    }
+
+    #[test]
+    fn decode_drake_walk_view_capture() {
+        // Mirrors a captured world-map walk-view state: raw_x =
+        // -8832 (0xFFFFDD80), raw_z = -8832, zoom-mode = 0x0170,
+        // view-mode flag = 0.
+        let ram = synth_ram_with(&[
+            (CAM_X_SCROLL, &(-8832i32).to_le_bytes()),
+            (CAM_Z_SCROLL, &(-8832i32).to_le_bytes()),
+            (CAM_AZIMUTH, &0u32.to_le_bytes()),
+            (CAM_ZOOM_MODE, &0x0170u32.to_le_bytes()),
+            (VIEW_MODE_FLAG, &[0u8]),
+        ]);
+        let c = CameraState::from_ram(&ram).unwrap();
+        assert_eq!(c.raw_x, -8832);
+        assert_eq!(c.raw_z, -8832);
+        assert_eq!(c.cam_x(), 8832);
+        assert_eq!(c.cam_z(), 8832);
+        assert_eq!(c.raw_zoom_mode & 0xFFFF, 0x0170);
+        assert_eq!(c.view_mode, 0);
+        assert_eq!(c.view_label(), "walk");
+    }
+
+    #[test]
+    fn decode_top_view_flag_labels_correctly() {
+        let ram = synth_ram_with(&[
+            (CAM_X_SCROLL, &0u32.to_le_bytes()),
+            (CAM_Z_SCROLL, &0u32.to_le_bytes()),
+            (CAM_AZIMUTH, &0u32.to_le_bytes()),
+            (CAM_ZOOM_MODE, &0u32.to_le_bytes()),
+            (VIEW_MODE_FLAG, &[1u8]),
+        ]);
+        let c = CameraState::from_ram(&ram).unwrap();
+        assert_eq!(c.view_mode, 1);
+        assert_eq!(c.view_label(), "top");
+    }
+
+    #[test]
+    fn cam_negation_matches_overlay_convention() {
+        // `_DAT_80089118 = -(int)*(short *)(actor + 0x14)` in
+        // overlay_0978 + slot_machine means: cam_z is the negation of
+        // the raw cell. A positive raw_z must round-trip to negative
+        // cam_z.
+        let ram = synth_ram_with(&[
+            (CAM_X_SCROLL, &1234i32.to_le_bytes()),
+            (CAM_Z_SCROLL, &5678i32.to_le_bytes()),
+            (CAM_AZIMUTH, &0u32.to_le_bytes()),
+            (CAM_ZOOM_MODE, &0u32.to_le_bytes()),
+            (VIEW_MODE_FLAG, &[0u8]),
+        ]);
+        let c = CameraState::from_ram(&ram).unwrap();
+        assert_eq!(c.cam_x(), -1234);
+        assert_eq!(c.cam_z(), -5678);
+    }
 }

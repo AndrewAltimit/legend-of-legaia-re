@@ -154,8 +154,8 @@
       <div class="card-body">Per-scene container: runtime-fixup header + inline record table + event-script prescript at sector offset <code>0x800</code>. 97 PROT entries (one per scene); strict header algebra <code>N = 4*param + 22</code>; field VM (<code>FUN_801DE840</code>) walks the prescript.</div>
     </a>
     <a class="card" href="world-map-overlay.html">
-      <div class="card-title">World-map overlay outlines</div>
-      <div class="card-body">Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte <code>0x05</code>). Outer pack of 15 sub-bodies; per-body header <code>[u8 count_a, u8 flag_a, u8 count_b, u8 flag_b, u16 0x080C, u16 kind]</code> + <code>count_a*count_b</code> 8-byte records. Dev-menu top-view wireframe (coastlines + world boundary), <strong>not</strong> the textured ground tiles.</div>
+      <div class="card-title">World-map slot-4 records</div>
+      <div class="card-body">Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte <code>0x05</code>). Outer pack of 15 sub-bodies; per-body header <code>[u8 count_a, u8 flag_a, u8 count_b, u8 flag_b, u16 0x080C, u16 kind]</code> + <code>count_a*count_b</code> 8-byte records. Container byte-verified vs live RAM; record interpretation <strong>open</strong> (wireframe / coastline hypothesis falsified). Most likely a runtime library of small object-local 3D meshes. <strong>Not</strong> the bulk continent terrain source.</div>
     </a>
     <a class="card" href="effect.html">
       <div class="card-title">Effect bundles</div>

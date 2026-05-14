@@ -224,6 +224,50 @@ def parse_placements(man: bytes) -> dict:
     }
 
 
+def load_classification(path: Path) -> dict:
+    """Load site/world-overview/slot1_classification.toml. Returns a nested
+    `{kingdom: {slot: {"class": str, "note": str|None}}}` mapping; missing
+    kingdoms / slots are simply absent. Returns `{}` when the TOML doesn't
+    exist or tomllib isn't available."""
+    if not path.exists():
+        return {}
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[import-not-found]
+        except ImportError:
+            print(f"WARNING: tomllib/tomli not available, skipping {path}",
+                  file=sys.stderr)
+            return {}
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    out: dict[str, dict[int, dict]] = {}
+    for kingdom, slot_map in data.items():
+        if not isinstance(slot_map, dict):
+            continue
+        per_kingdom = out.setdefault(kingdom, {})
+        for slot_str, entry in slot_map.items():
+            try:
+                slot = int(slot_str)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(entry, dict):
+                continue
+            cls = entry.get("class", "unknown")
+            if cls not in {"landmark", "ground_tile", "decoration",
+                           "npc_token", "unknown"}:
+                print(f"WARNING: {path}: unknown class {cls!r} at "
+                      f"[{kingdom}.{slot}]; treating as 'unknown'",
+                      file=sys.stderr)
+                cls = "unknown"
+            per_kingdom[slot] = {
+                "class": cls,
+                "note": entry.get("note"),
+            }
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--prot-dir", default="/tmp/legaia-extract/PROT",
@@ -233,6 +277,20 @@ def main():
                     help="Path to the lzs-decode CLI binary.")
     ap.add_argument("--out", default="site/world-overview.json",
                     help="Output JSON path for the site page.")
+    ap.add_argument(
+        "--classification",
+        default="site/world-overview/slot1_classification.toml",
+        help="Optional per-slot classification TOML. Default: %(default)s",
+    )
+    ap.add_argument(
+        "--live-json",
+        default="site/world-overview-live.json",
+        help="Optional live-RAM placement JSON produced by "
+             "scripts/pcsx-redux/resolve_actor_tmds.py. The script's "
+             "`bundle` field is matched against each kingdom's `cdname` "
+             "so multi-kingdom files merge automatically. Default: "
+             "%(default)s",
+    )
     args = ap.parse_args()
 
     prot_dir = Path(args.prot_dir)
@@ -243,6 +301,24 @@ def main():
             f"lzs-decode CLI not found at {lzs_bin}.\n"
             f"Run `cargo build --release -p legaia-lzs` first."
         )
+
+    classification = load_classification(Path(args.classification))
+    # Live-RAM placements: support both single-bundle dicts
+    # (`{"bundle": "map01", "actors": [...]}`) and list-of-dicts shapes.
+    live_by_cdname: dict[str, list[dict]] = {}
+    live_path = Path(args.live_json)
+    if live_path.exists():
+        try:
+            live_raw = json.loads(live_path.read_text())
+        except json.JSONDecodeError as e:
+            print(f"WARNING: failed to parse {live_path}: {e}", file=sys.stderr)
+            live_raw = None
+        if isinstance(live_raw, dict) and "bundle" in live_raw:
+            live_by_cdname[live_raw["bundle"]] = live_raw.get("actors", [])
+        elif isinstance(live_raw, list):
+            for blob in live_raw:
+                if isinstance(blob, dict) and "bundle" in blob:
+                    live_by_cdname[blob["bundle"]] = blob.get("actors", [])
 
     payload = {}
     for base, key, label, cdname in KINGDOMS:
@@ -284,6 +360,68 @@ def main():
                 }
             else:
                 p["tmd_source"] = {"kind": "out_of_range", "pack_slot": slot}
+        # The MAN placement table surfaces a subset of the kingdom pack;
+        # the rest are slot-1 TMDs the static placement records don't
+        # reference. They're still loaded into the runtime scene pool by
+        # the kingdom-bundle loader, and are reachable via runtime
+        # actor-list placements - hard to enumerate from disc alone.
+        # `unplaced_slot1_tmds` carries every pack slot NOT in the MAN
+        # table so the world-overview can render them at canonical
+        # positions for visual classification (ground tile vs landmark).
+        placed_slot_set = {
+            p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0
+        }
+        kingdom_class = classification.get(key, {})
+        unplaced: list[dict] = []
+        for pack_slot, t in enumerate(tmds):
+            if pack_slot in placed_slot_set:
+                continue
+            entry = kingdom_class.get(pack_slot, {})
+            unplaced.append({
+                "pack_slot": pack_slot,
+                "byte_offset": t["byte_offset"],
+                "byte_end": t["byte_end"],
+                "body_bytes": t["body_bytes"],
+                "nobj": t["nobj"],
+                "md5": t["md5"],
+                "class": entry.get("class", "unknown"),
+                "note": entry.get("note"),
+            })
+        # Also attach classification to MAN-placed records (their class is
+        # implicitly 'landmark', but having the field uniform across both
+        # paths simplifies the viewer logic and surfaces the override in
+        # the hover tooltip).
+        for p in parsed["placements"]:
+            slot = p["tmd_slot"]
+            if slot < 0xF0:
+                entry = kingdom_class.get(slot, {"class": "landmark"})
+                p["class"] = entry.get("class") or "landmark"
+                p["class_note"] = entry.get("note")
+            else:
+                p["class"] = "global_pool"
+                p["class_note"] = None
+        # Merge in live-RAM placements (resolve_actor_tmds.py output).
+        # These pin actor-positioned slots that MAN doesn't reference.
+        live_placements: list[dict] = []
+        for actor in live_by_cdname.get(cdname, []):
+            slots = actor.get("slots") or []
+            pos = actor.get("pos") or [0, 0, 0]
+            if not slots:
+                continue
+            for s in slots:
+                if not isinstance(s, int) or s < 0 or s >= len(tmds):
+                    continue
+                live_placements.append({
+                    "pack_slot": s,
+                    "pos": pos,
+                    "node": actor.get("node"),
+                    "tick": actor.get("tick"),
+                    "flags": actor.get("flags"),
+                    "chain_size": actor.get("chain_size", 1),
+                    "class": kingdom_class.get(s, {}).get(
+                        "class", "landmark"
+                    ),
+                })
         # Camera centroid uses only world-positioned actors (skip the
         # script-positioned 0x7F-sentinel records).
         real = [p for p in parsed["placements"] if not p["script_positioned"]]
@@ -310,6 +448,8 @@ def main():
                 "decompressed_bytes": len(tmd_pack),
                 "records": tmds,
             },
+            "unplaced_slot1_tmds": unplaced,
+            "live_placements": live_placements,
         }
         # Per-placement scene-slot summary
         scene_used = sorted({p["tmd_slot"] for p in parsed["placements"] if p["tmd_slot"] < 0xF0})
@@ -319,7 +459,8 @@ def main():
               f"{len(parsed['placements'])} records "
               f"({len(real)} placed, {parsed['script_positioned_count']} scripted), "
               f"pack={len(tmds)} TMDs, "
-              f"scene-slots used={scene_used}, global={global_used}")
+              f"scene-slots used={scene_used}, global={global_used}, "
+              f"unplaced={len(unplaced)}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2))

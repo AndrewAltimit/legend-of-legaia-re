@@ -50,8 +50,9 @@
     <div class="fnref-block">
       <h3>Renderer + GTE</h3>
       <ul class="fnref-list">
-        <li><code>FUN_8002735C</code> - Legaia TMD renderer (60 GTE ops); bulk world-map continent flows through this leaf via <code>FUN_8001ADA4</code> case-5</li>
-        <li><code>FUN_8001ADA4</code> - Per-actor RENDER dispatcher (switch on <code>actor[+0x56]</code>); case-5 walks the mesh chain at <code>actor[+0x44]</code> and emits TMDs</li>
+        <li><code>FUN_8002735C</code> - Legaia 60-GTE TMD renderer; the landmark emit leaf reached from <code>FUN_8001ADA4</code> case-5 for each landmark TMD in a kingdom pack</li>
+        <li><code>FUN_80043390</code> - Per-prim renderer dispatcher inside <code>FUN_8001ADA4</code> case-5 (default textured-TMD path). Selects an emit leaf from one of two function-pointer tables (SCUS <code>0x8007657C</code> vs world-map overlay <code>0x801F8968</code>) based on <code>_DAT_1F800394 &amp; 1</code> &mdash; the overlay variant routes every prim through fog-enabled leaves at <code>0x801F7644..0x801F8690</code>. This is the bulk world-map continent emit path.</li>
+        <li><code>FUN_8001ADA4</code> - Per-actor RENDER dispatcher (switch on <code>actor[+0x56]</code>); case-5 walks the mesh chain at <code>actor[+0x44]</code> and dispatches each TMD to <code>FUN_80043390</code> (textured), <code>FUN_80029888</code> (env-mapped), or <code>FUN_8002735C</code> (landmark)</li>
         <li><code>FUN_8001D140</code> - Stack-swap wrapper around <code>FUN_8001ADA4</code>; called 6&times; per frame from <code>FUN_80016444</code> against <code>_DAT_8007C34C..0x36C</code> (render pass)</li>
         <li><code>FUN_8002519C</code> - Per-frame actor-list TICK iterator; called 5&times; per frame (distinct from the render pass)</li>
         <li><code>FUN_8002C69C</code> - HUD / menu / dialog sprite-batch POLY_FT4 emitter (~120 prims/frame for world-map UI; not the continent)</li>
