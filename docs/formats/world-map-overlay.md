@@ -437,35 +437,81 @@ hypothesis was falsified. Re-enable from the WASM exports
 `slot4_wireframe_bounds`) if a future RE pass identifies the correct
 draw interpretation.
 
+### Cluster-A caller (`FUN_8001ada4`)
+
+`FUN_8001ada4` (2456 bytes / 614 instructions; see
+`ghidra/scripts/funcs/8001b47c.txt`) is the per-actor renderer that
+walks a linked list of actor records. For each record at
+`piVar2 = head_ptr`, then chained via `piVar2 = piVar2[0]`, it:
+
+1. Pre-transforms the actor's local origin through the GTE
+   (`copFunction(2, 0x480012)`) and writes the transformed coordinates
+   back into `piVar2[+0x2C..+0x34]`.
+2. Switches on `piVar2[+0x56]` (a u16 actor type, values 1..6) to do
+   type-specific drawing.
+
+The cluster-A call at PC `0x8001B474` is one of those drawing paths.
+The relevant disasm slice (lines 415-442 of `8001b47c.txt`):
+
+```text
+8001b40c  lw v1,0x44(s0)        ; v1 = actor+0x44 = mesh-table base
+8001b414  lw v0,0x0(v1)         ; v0 = *v1 = mesh count (terminator if 0)
+8001b41c  beq v0,zero,...       ; if no meshes, skip render
+8001b430  addu v0,v1,s2<<2      ; v0 = mesh-table[index]
+8001b438  lw s3,0x4(v0)         ; s3 = (actor+0x44 + index*4 + 4) = mesh_ptr
+...
+8001b46c  lw a1,0x74(s0)        ; a1 = actor+0x74 (FUN_80043390's cmd_flags arg)
+8001b470  lhu a2,0x78(s0)       ; a2 = actor+0x78 (FUN_80043390's fade_flags arg)
+8001b474  jal 0x80043390        ; call cluster A with s3 = mesh struct
+8001b478  _move a0,s3
+```
+
+The mesh-table at `actor+0x44` is a contiguous `[u32 count, u32
+mesh_ptr[count]]` array. Each `mesh_ptr` is the pointer FUN_80043390
+receives as `param_1` (= the struct exposing `vertex_base` at +0,
+`flag_word` at +0xC, `command_stream` at +0x10). Case 3 inside the
+type switch contains the same pattern explicitly:
+
+```c
+puVar5 = (uint *)piVar2[0x11];  // = actor+0x44
+if (*puVar5 != 0) {
+  do {
+    uVar11 = puVar5[uVar10 + 1];     // mesh_ptr
+    FUN_80043390(uVar11, piVar2[0x1d] | uVar8, *(undefined2 *)(piVar2 + 0x1e));
+    ...
+  } while (uVar10 < *puVar5);
+}
+```
+
+The Exec-bp register snapshots from `autorun_slot4_consumer_pcs.lua`
+captured `a1 = 0x801BA8E4` and `a2 = 0x801BA7F8` at the cluster-A LW
+PCs — both in the **`0x801BA000`-ish working buffer**, not in slot 4's
+documented RAM base (`0x8011A624..0x80122454` for Drake). Combined
+with the `actor+0x44 → mesh_ptr_array → mesh_struct` chain, this
+**confirms the transcoder pattern**: slot 4 is read once at scene
+load, decoded into TMD-style mesh structs in the working buffer at
+`0x801BA000`-ish, and the actor's mesh-table is populated with
+pointers to those decoded structs. Per-frame, `FUN_8001ada4` walks the
+mesh-table and FUN_80043390 walks each mesh's vertex pool + command
+stream — never touching slot 4 directly after the scene-load pass.
+
 ## Open work
 
-1. **Verify slot 4 IS the cluster-A command stream.** The Read-bp
-   capture (`autorun_slot4_readers.lua`, Drake sstate1 + held UP)
-   proves cluster A reads slot-4 RAM during the warp-tile transition.
-   The Exec-bp captures show the same PCs fire on Drake/Sebucus/Karisto
-   warps. But the register snapshots in `.detail.txt` show the cluster-A
-   handler's `a1` (command stream) and `a2` (vertex pool) pointing at
-   `0x801BA8E4` / `0x801BA7F8` — **not the documented slot-4 RAM range
-   (`0x8011A624..0x80122454` for Drake)**. Possibilities:
-   (a) slot 4 is **copied/transcoded** into the working buffer at
-       `0x801BA000` before cluster A walks it (one-shot during scene
-       load);
-   (b) cluster A walks slot 4 once at scene-load time and then walks
-       the resulting GP0 packet pool many times per-frame thereafter
-       — the Exec-bp captures sample the per-frame work, not the
-       one-shot scene-load reads.
-   A finer probe that arms Read bps on `0x801BA000`-region AND Exec bps
-   at the cluster-A PCs, run only during the warp transition window,
-   would disambiguate.
-2. **Per-record-kind semantic.** Cluster A renders kinds 8-19 as a
-   TMD-style primitive list (see [Cluster A internals](#cluster-a-internals));
-   the question is which fields of the slot-4 body header / body-record
-   payload select / parametrise those primitives. Likely path: dump
-   `FUN_8001ada4` (the cluster-A caller at PC `0x8001B474`) to see how
-   it builds the `display_state` struct passed to `FUN_80043390` — that
-   struct's vertex-pool, command-stream, and flag-word source addresses
-   reveal whether slot-4 body bytes are the command stream, the vertex
-   pool, both, or input to a copy that produces both.
+1. **Identify the transcoder.** The function that writes the
+   mesh-table at `actor+0x44` (or the mesh structs at the working
+   buffer at `0x801BA000`-ish) during world-map scene load. Likely
+   path: arm a Write breakpoint on `actor+0x44` during the kingdom
+   warp transition, or on a representative byte of the
+   `0x801BA000`-ish buffer; capture the PC + ra-chain at the moment
+   slot-4 data flows into the mesh struct. The transcoder will be a
+   per-body / per-record walker that reads `[i16 x, i16 y, i16 z,
+   i16 attr]` records from slot 4 and emits `(cmd_word, primitive_data
+   ...)` batches into the working buffer.
+2. **Per-record-kind semantic.** Once the transcoder is decompiled,
+   the mapping from slot-4 body bytes → cluster-A primitive kind will
+   be direct: each body header's `kind` selects which primitive type
+   to emit; each record's `(x, y, z, attr)` fields supply vertex
+   indices + color/normal data for the primitive.
 3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
    in every kingdom; the reverse doesn't hold (Karisto body 10 is
    `kind = 2, flag_a = 1`). With the cluster-A primitive vocabulary
@@ -480,8 +526,9 @@ draw interpretation.
    low-byte) tags rather than indices. With the GTE pipeline pinned,
    the `attr` field likely feeds either the GP0 packet header (color /
    blend / texture-page) or a per-record draw-flag mask.
-5. **Re-run probe with higher cap.** Bump `MAX_HITS_PER_PROBE` in
-   `autorun_slot4_consumer_pcs.lua` from 200 to ~5000 and re-run for
-   all three kingdoms; the resulting per-PC × per-kingdom totals fill
-   in the kind-12/14/15/16/18/19 hit counts where every current
-   capture is capped, and complete the per-kind delta table above.
+5. **Re-run probe with higher cap on Drake / Sebucus.** Karisto's
+   uncapped totals are documented above. Drake / Sebucus runs are
+   deferred because interpreter-mode pcsx-redux is slow (~60 min
+   per kingdom for the full 1800-frame capture). A shorter capture
+   window (e.g. 300 frames covering the warp itself) would finish
+   in ~10 min and still produce useful uncapped totals.
