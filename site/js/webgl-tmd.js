@@ -115,9 +115,7 @@ in float v_fog_t;
 
 out vec4 o_color;
 
-/* Decode BGR555 R/G/B in 0..1 linear. The LUT entries are PSX-style
- * 15-bit RGB packets - the same shape the runtime stores at the address
- * gp-0x2BC points to. */
+/* Decode BGR555 R/G/B in 0..1 linear. Used for VRAM texture samples. */
 vec3 bgr555_to_rgb(uint c) {
   return vec3(
     float(c & 31u) / 31.0,
@@ -204,27 +202,31 @@ void main() {
   vec3 lit = color.rgb * shade;
 
   if (u_fog_enable != 0) {
-    /* Retail samples the LUT at Z >> 5 from gp-0x2BC. Map v_fog_t (0..1)
-     * onto the LUT's 512 entries. Sampling with texelFetch keeps the LUT
-     * entries discrete (matches the retail per-tier banding). When no LUT
-     * is bound, we fall back to u_fog_color blended toward the entry. */
+    /* The retail LUT at gp-0x2BC stores a per-Z SCALAR (entries climb
+     * from 0x0000 at near-Z to ~0x01FF at far-Z) that the overlay
+     * leaves add to vertex SXY+offset words; the per-kingdom haze
+     * COLOR comes from the GTE FAR_COLOR register, set via ctc2
+     * during kingdom init. The retail visual is "diffuse fades toward
+     * a kingdom-tinted haze color with distance" - not a color tint
+     * baked into the LUT itself.
+     *
+     * The WebGL approximation mirrors that split: sample the LUT as a
+     * scalar fog factor in 0..1, then mix(lit, u_fog_color, factor)
+     * with u_fog_color = the kingdom haze tint. When v_fog_t already
+     * encodes the distance signal, the LUT shapes the per-tier
+     * curve (retail samples discrete tiers at Z >> 5 boundaries). */
     float lut_idx_f = clamp(v_fog_t * 2047.0, 0.0, 2047.0);
     int lut_idx = int(lut_idx_f);
     uint lut_word = texelFetch(u_fog_lut, ivec2(lut_idx, 0), 0).r;
-    /* Retail packs the LUT as scalar fog strengths (0..0x1FF) in u16
-     * slots; decoding them as BGR555 yields a ramp that's effectively
-     * a fog-strength signal in the red/green channels with blue=0. The
-     * shader treats the result as an RGB tint so the kingdom-tinted
-     * fallback (when no LUT loaded) and the captured LUT use the same
-     * codepath. */
-    vec3 lut_rgb = bgr555_to_rgb(lut_word);
-    /* The LUT entries are tint deltas in retail's pipeline (added to
-     * the per-prim color by GTE.dpcs). The closest one-pass analogue in
-     * a per-fragment shader is a screen-space lerp toward the LUT entry
-     * weighted by v_fog_t: near the camera the diffuse term wins; at
-     * the far plane the LUT color wins. */
-    vec3 tint = (lut_word == 0u) ? u_fog_color : lut_rgb;
-    lit = mix(lit, tint, v_fog_t);
+    /* The retail LUT saturates at 0x01FF (= 511); normalise to 0..1.
+     * Without a captured LUT (the 1D texture is seeded to all zeros)
+     * we fall back to v_fog_t directly so the toggle still produces
+     * a distance-based fade. */
+    float lut_factor = float(lut_word) / 511.0;
+    float factor = (lut_word == 0u && v_fog_t > 0.0)
+      ? v_fog_t
+      : clamp(lut_factor, 0.0, 1.0);
+    lit = mix(lit, u_fog_color, factor);
   }
 
   o_color = vec4(lit, 1.0);

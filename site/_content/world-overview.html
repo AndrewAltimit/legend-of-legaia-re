@@ -34,12 +34,7 @@
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
     </div>
     <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image above and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required.</div>
-    <div class="engine-row" style="margin-top: 0.5rem;">
-      <label for="wo-fog-lut-file" title="The world-map fog LUT (4 KiB, 2048 u16 entries) is auto-extracted from SCUS_942.54 when you load the disc above - no separate upload required. This picker is only needed for override workflows (e.g. dropping in a probe-captured LUT to compare against the SCUS bytes); leave it untouched for the default flow."><strong>Fog LUT override (optional):</strong></label>
-      <input type="file" id="wo-fog-lut-file" accept=".bin"
-             style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.4rem; font-family: var(--font-mono); font-size: 0.8rem;">
-      <span id="wo-fog-lut-status" class="hint" style="font-size: 0.78rem; margin-left: 0.5rem;">load a disc above; LUT auto-extracts from SCUS</span>
-    </div>
+    <div class="viewer-status" id="wo-fog-lut-status" style="margin-top: 0.4rem; font-size: 0.78rem;">Fog LUT: not yet loaded (auto-extracts from <code>SCUS_942.54</code> on disc load).</div>
   </div>
 </section>
 
@@ -248,7 +243,7 @@
 
 <!-- Bump ?v= any time webgl-tmd.js gains a method JS code below this point
      relies on, so users don't hit a stale cached copy. -->
-<script src="js/webgl-tmd.js?v=fog-aabb-2"></script>
+<script src="js/webgl-tmd.js?v=fog-scalar-3"></script>
 <script>
 (async function () {
   /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
@@ -597,11 +592,12 @@
       }
       const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
       $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
-      /* Auto-extract the world-map fog LUT from SCUS. The viewer
-       * surfaces the 4 KiB byte slice the runtime consults on every
-       * vertex; we promote it to a Uint16Array of u16 BGR555 entries
-       * and stash it for the next pushFogParamsToRenderer() call. An
-       * empty return means SCUS extraction failed (raw PROT.DAT load,
+      /* Auto-extract the world-map fog LUT from SCUS. The runtime
+       * adds these per-Z scalar entries to vertex SXY+offset words in
+       * the overlay leaves at 0x801F7644..0x801F8690; the WebGL port
+       * reuses them as the per-tier fade curve and mixes the diffuse
+       * term toward the per-kingdom haze color from KINGDOM_FOG_TINT.
+       * An empty return means SCUS extraction failed (raw PROT.DAT,
        * regional variant, modded disc) - the kingdom-tinted fallback
        * still works without it. */
       try {
@@ -610,31 +606,11 @@
           fogLut = new Uint16Array(raw.buffer, raw.byteOffset, raw.length / 2);
           if ($fogLutStatus) {
             $fogLutStatus.textContent =
-              `lut auto-extracted from SCUS (${raw.length} B, ${fogLut.length} entries)`;
-          }
-          /* Auto-derive a mid-tier average tint for the fallback path
-           * so the per-kingdom u_fog_color stays useful when the LUT
-           * itself happens to be a near-grey ramp. */
-          if (!fogParams.color) {
-            let sR = 0, sG = 0, sB = 0, n = 0;
-            const lo = Math.floor(fogLut.length * 0.25);
-            const hi = Math.floor(fogLut.length * 0.75);
-            for (let i = lo; i < hi; i++) {
-              const c = fogLut[i];
-              sR += (c & 31);
-              sG += (c >> 5) & 31;
-              sB += (c >> 10) & 31;
-              n++;
-            }
-            fogParams.color = {
-              r: (sR / n) / 31,
-              g: (sG / n) / 31,
-              b: (sB / n) / 31,
-            };
+              `Fog LUT: auto-extracted from SCUS_942.54 (${raw.length} B, ${fogLut.length} per-Z scalar entries).`;
           }
         } else if ($fogLutStatus) {
           $fogLutStatus.textContent =
-            'lut not located in SCUS - using kingdom-tinted fallback';
+            'Fog LUT: not located in SCUS — kingdom-tinted fallback active.';
         }
       } catch (err) {
         console.warn('fog_lut_bytes:', err);
@@ -661,60 +637,10 @@
   }
   $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
 
-  /* Fog LUT loader. Reads a 1 KiB binary (512 BGR555 u16 entries) from
-   * a file picker and uploads it to the renderer. Matches the byte
-   * layout that `autorun_world_map_fog_probe.lua` dumps to
-   * fog_probe.lut.bin. Re-uploading clears the previous LUT. */
-  const $fogLutFile = document.getElementById('wo-fog-lut-file');
+  /* Status line for the auto-extracted fog LUT. The disc-load path
+   * populates this; there is no manual upload affordance because the
+   * SCUS bytes are the authoritative source. */
   const $fogLutStatus = document.getElementById('wo-fog-lut-status');
-  if ($fogLutFile) {
-    $fogLutFile.addEventListener('change', async () => {
-      const f = $fogLutFile.files[0];
-      if (!f) return;
-      try {
-        const buf = await f.arrayBuffer();
-        if (buf.byteLength < 1024) {
-          $fogLutStatus.textContent =
-            `lut too small (${buf.byteLength} B; expected at least 1024)`;
-          return;
-        }
-        /* The SCUS-extracted LUT is 4096 B (2048 u16); the older
-         * pcsx-redux fog probe writes 1024 B (512 u16). Accept either
-         * and pad short captures with the saturation tail. */
-        const incoming = new Uint16Array(buf, 0, Math.floor(buf.byteLength / 2));
-        if (incoming.length >= 2048) {
-          fogLut = incoming.subarray(0, 2048);
-        } else {
-          fogLut = new Uint16Array(2048);
-          fogLut.set(incoming);
-          const last = incoming[incoming.length - 1];
-          for (let i = incoming.length; i < 2048; i++) fogLut[i] = last;
-        }
-        if (!fogParams.color) {
-          let sR = 0, sG = 0, sB = 0, n = 0;
-          const lo = Math.floor(fogLut.length * 0.25);
-          const hi = Math.floor(fogLut.length * 0.75);
-          for (let i = lo; i < hi; i++) {
-            const c = fogLut[i];
-            sR += (c & 31);
-            sG += (c >> 5) & 31;
-            sB += (c >> 10) & 31;
-            n++;
-          }
-          fogParams.color = {
-            r: (sR / n) / 31,
-            g: (sG / n) / 31,
-            b: (sB / n) / 31,
-          };
-        }
-        $fogLutStatus.textContent =
-          `lut override loaded (${f.name}, ${buf.byteLength} B)`;
-        pushFogParamsToRenderer();
-      } catch (err) {
-        $fogLutStatus.textContent = 'lut load failed: ' + (err.message || err);
-      }
-    });
-  }
 
   /* ---------- Mesh navigation ----------- */
   function selectKingdom(k) {

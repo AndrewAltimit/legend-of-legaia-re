@@ -248,18 +248,22 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
   </ol>
   <p>The <em>normalize unplaced</em> toggle disables both transforms (falls back to the legacy constant scale + TMD-local-origin pivot) so the user can ground-truth against retail.</p>
   <h3>Distance-cue fog pass</h3>
-  <p>The viewer's <em>fog</em> toggle layers a per-vertex distance-cue tint onto the top-down render, mirroring the retail overlay leaves' <code>dpcs</code> / <code>dpct</code> post-process documented above. The math runs in a WebGL2 vertex + fragment shader:</p>
+  <p>The viewer's <em>fog</em> toggle approximates the retail world-map fog: the diffuse term fades toward a per-kingdom haze colour with distance. The math splits into two pieces the runtime keeps separate, and the WebGL port mirrors that split:</p>
+  <ul class="bullets">
+    <li>The <strong>LUT</strong> at <code>gp-0x2BC</code> (2048 u16 entries that climb from <code>0x0000</code> at near-Z to <code>~0x01FF</code> at far-Z) is a <em>per-Z scalar</em>, not a colour ramp. The retail overlay leaves at <code>0x801F7644..0x801F8690</code> <code>lh</code> the LUT entry, shift it left by 16, and add it to the high half of vertex SXY+offset words via <code>sw s1, 0x8(t1)</code> / <code>0xC(t1)</code> / <code>0x10(t1)</code>. The visible effect on flat triangles is a per-vertex screen-Y nudge proportional to <code>Z &gt;&gt; 5</code>.</li>
+    <li>The <strong>haze colour</strong> is set per-kingdom via the GTE <code>FAR_COLOR</code> control register (loaded via <code>ctc2</code> during world-map enter, not surfaced by the <code>lwc2 t0, -0x2dc(t2)</code> load &mdash; that field is the <code>IR0</code> depth-cue factor, despite earlier doc tables labelling it &ldquo;fog color&rdquo;).</li>
+  </ul>
+  <p>The WebGL port runs this in a vertex + fragment shader:</p>
   <ul class="bullets">
     <li>Per-vertex: <code>Z_far = exp2(-zShift) * dist(world, camera_origin)</code>, clamped to <code>[0, far_ref]</code> and normalised to <code>v_fog_t in [0..1]</code>. Approximates the runtime's <code>Z_far = Z &gt;&gt; shift</code> against the top-down camera origin.</li>
-    <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 511, 0, 511)]</code> from a 512-entry 1D R16UI texture; the BGR555 entry decodes to a tint colour and <code>mix(lit, tint, v_fog_t)</code>-blends with the diffuse term.</li>
+    <li>Per-fragment: sample <code>lut[clamp(v_fog_t * 2047, 0, 2047)]</code> as a scalar u16; normalise to <code>factor = lut_word / 511</code>; then <code>mix(lit, u_fog_color, factor)</code> with <code>u_fog_color</code> = the per-kingdom haze tint from <code>KINGDOM_FOG_TINT</code>. This produces the fade-toward-haze visual instead of treating the LUT entries as RGB tints (an earlier port did the latter and produced &ldquo;richer textures&rdquo; rather than fog).</li>
   </ul>
-  <p>The shader supports three LUT sources, in priority order:</p>
+  <p>The shader supports two LUT sources, in priority order:</p>
   <ol>
-    <li><strong>Disc-extracted LUT (default)</strong> &mdash; the WASM viewer locates the 4 KiB (2048 u16) fog LUT inside <code>SCUS_942.54</code> via the <code>fog_lut::find</code> content-scan (smooth monotonic ramp with leading zero entries + saturating tail) and auto-uploads it on disc load. No separate file picker is needed. On the retail USA build the LUT sits at SCUS offset <code>0x05FCC0</code> (vaddr <code>0x8006FCC0</code>); the content scan handles regional variants without hardcoding.</li>
-    <li><strong>Probe-captured LUT (override)</strong> &mdash; drop a <code>fog_probe.lut.bin</code> (1 KiB / 512 entries from the legacy probe, or 4 KiB / 2048 entries from a future-shape capture) via the override file picker. Useful for ground-truth comparison against the disc-extracted bytes.</li>
-    <li><strong>Kingdom-tinted fallback</strong> &mdash; when neither source produces a LUT (e.g. raw PROT.DAT load, regional variant with shifted SCUS), the fragment shader uses a per-kingdom baseline tint (<code>KINGDOM_FOG_TINT</code> in <code>site/world-overview.html</code>) so the toggle still produces a kingdom-flavoured fade.</li>
+    <li><strong>Disc-extracted LUT (default)</strong> &mdash; the WASM viewer locates the 4 KiB (2048 u16) LUT inside <code>SCUS_942.54</code> via the <code>fog_lut::find</code> content-scan (monotone non-decreasing ramp with leading zero entries + saturating tail) and auto-uploads it on disc load. No file picker; one disc upload = full functionality. On the retail USA build the LUT sits at SCUS offset <code>0x05FCC0</code> (vaddr <code>0x8006FCC0</code>); the content scan handles regional variants without hardcoding.</li>
+    <li><strong>Kingdom-tinted fallback</strong> &mdash; when SCUS extraction doesn't surface a LUT (raw PROT.DAT load, regional variant with shifted SCUS, modded disc), the shader falls back to using <code>v_fog_t</code> directly as the mix factor, still toward the kingdom haze tint.</li>
   </ol>
-  <p>The per-vertex math diverges from retail in one place: retail samples Z from the GTE's screen-space pipeline after <code>rtpt</code>, while the WebGL path uses XZ-plane distance to the fog origin (<code>fog_origin = worldCam centre</code> by default). For a top-down ortho camera the two quantities are equivalent up to a constant; the fog toggle is hidden in the orbit-camera mesh inspector because the equivalence doesn't carry over.</p>
+  <p>The per-vertex math diverges from retail in one place: retail samples Z from the GTE's screen-space pipeline after <code>rtpt</code>, while the WebGL2 path uses XZ-plane distance to the fog origin (<code>fog_origin = worldCam centre</code> by default). For a top-down ortho camera the two quantities are equivalent up to a constant; for the orbit-camera mesh inspector the fog toggle is hidden because it doesn't carry over.</p>
   <h3>Camera anchors</h3>
   <p>Per-kingdom camera centres + zoom anchors live in two tables:</p>
   <ul class="bullets">

@@ -592,39 +592,52 @@ can ground-truth against retail.
 
 ### Distance-cue fog pass
 
-The viewer's fog toggle layers a per-vertex distance-cue tint onto the
-top-down render, mirroring the retail overlay leaves' `dpcs` / `dpct`
-post-process documented above. The math runs in a WebGL2 vertex +
-fragment shader:
+The viewer's fog toggle approximates the retail world-map fog: the
+diffuse term fades toward a per-kingdom haze colour with distance.
+The math splits into two pieces the runtime keeps separate, and the
+WebGL port mirrors that split:
+
+- The **LUT** at `gp-0x2BC` (2048 u16 entries that climb from `0x0000`
+  at near-Z to `~0x01FF` at far-Z) is a **per-Z scalar**, not a colour
+  ramp. The retail overlay leaves at `0x801F7644..0x801F8690` `lh` the
+  LUT entry, shift it left by 16, and add it to the high half of
+  vertex SXY+offset words via `sw s1, 0x8(t1)` / `0xC(t1)` /
+  `0x10(t1)`. The visible effect on flat triangles is a per-vertex
+  screen-Y nudge proportional to `Z >> 5`.
+- The **haze colour** is set per-kingdom via the GTE `FAR_COLOR`
+  control register (loaded via `ctc2` during world-map enter, not
+  surfaced by the `lwc2 t0, -0x2dc(t2)` load - that field is the
+  `IR0` depth-cue factor, despite earlier doc tables labelling it
+  "fog color").
+
+The WebGL port runs this in a vertex + fragment shader:
 
 - Per-vertex: `Z_far = exp2(-zShift) * dist(world, camera_origin)`,
   clamped to `[0, far_ref]` and normalised to `v_fog_t in [0..1]`.
-  This approximates the runtime's `Z_far = Z >> shift` against the
+  Approximates the runtime's `Z_far = Z >> shift` against the
   top-down camera origin.
-- Per-fragment: sample `lut[clamp(v_fog_t * 511, 0, 511)]` from a
-  512-entry 1D R16UI texture; the BGR555 entry decodes to a tint
-  colour `mix(lit, tint, v_fog_t)`-blended with the diffuse term.
+- Per-fragment: sample `lut[clamp(v_fog_t * 2047, 0, 2047)]` as a
+  scalar u16; normalise to `factor = lut_word / 511`; then
+  `mix(lit, u_fog_color, factor)` with `u_fog_color` = the
+  per-kingdom haze tint from `KINGDOM_FOG_TINT`. This produces the
+  fade-toward-haze visual instead of treating the LUT entries as
+  RGB tints (an earlier port did the latter and produced "richer
+  textures" rather than fog).
 
-The shader supports three LUT sources, in priority order:
+The shader supports two LUT sources, in priority order:
 
 1. **Disc-extracted LUT (default)** &mdash; the WASM viewer locates
-   the 4 KiB (2048 u16) fog LUT inside `SCUS_942.54` via the
-   `fog_lut::find` content-scan (smooth monotonic ramp with leading
-   zero entries + saturating tail) and auto-uploads it on disc load.
-   No separate file picker is needed; one disc upload = full
-   functionality. On the retail USA build the LUT sits at SCUS
-   offset `0x05FCC0` (vaddr `0x8006FCC0`); the content scan handles
-   regional variants without hardcoding.
-2. **Probe-captured LUT (override)** &mdash; drop a
-   `fog_probe.lut.bin` (1 KiB / 512 entries from the legacy probe,
-   or 4 KiB / 2048 entries from a future-shape capture) via the
-   override file picker. Useful for ground-truth comparison against
-   the disc-extracted bytes.
-3. **Kingdom-tinted fallback** &mdash; when neither source produces
-   a LUT (e.g. raw PROT.DAT load, regional variant with shifted
-   SCUS), the fragment shader uses a per-kingdom baseline tint
-   (`KINGDOM_FOG_TINT` in `site/world-overview.html`) so the toggle
-   still produces a kingdom-flavoured fade.
+   the 4 KiB (2048 u16) LUT inside `SCUS_942.54` via the
+   `fog_lut::find` content-scan (monotone non-decreasing ramp with
+   leading zero entries + saturating tail) and auto-uploads it on
+   disc load. No file picker; one disc upload = full functionality.
+   On the retail USA build the LUT sits at SCUS offset `0x05FCC0`
+   (vaddr `0x8006FCC0`); the content scan handles regional variants
+   without hardcoding.
+2. **Kingdom-tinted fallback** &mdash; when SCUS extraction doesn't
+   surface a LUT (raw PROT.DAT load, regional variant with shifted
+   SCUS, modded disc), the shader falls back to using `v_fog_t`
+   directly as the mix factor, still toward the kingdom haze tint.
 
 The per-vertex math diverges from retail in one place: retail samples
 Z from the GTE's screen-space pipeline after `rtpt`, while the
