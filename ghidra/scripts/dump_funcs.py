@@ -103,6 +103,10 @@ TARGETS = [
     "80029888",  # 16 ops
     "8003d344",  # 5 GTE ops; called from FUN_80021b04
 
+    # DAT_8007C018 table - neighbour write + pool allocator
+    "8001f690",  # writes DAT_8007C014 (4 B before the table base)
+    "80020de0",  # pool allocator used by FUN_80021b04 / FUN_801d77f4
+
     # Slot-4 consumer (world-map overlay bundle entry, PROT 85/244/391)
     # Cluster A: FUN_80043390 - GTE-driven primitive emitter (bulk terrain emit)
     # 8 LW PCs in the body 0x80044B00..0x80045658.

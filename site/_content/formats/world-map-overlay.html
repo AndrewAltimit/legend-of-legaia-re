@@ -220,12 +220,64 @@
   <p><strong>Revised model</strong>: slot 4 is not transcoded into a single working-buffer region. At scene load, <code>FUN_8001E54C</code> (or a sibling streaming-chunk processor) reads the kingdom bundle&apos;s chunks and <strong>distributes their bytes across multiple destinations</strong> &mdash; actor structs, working buffer at different offsets, etc. Per-frame, cluster A reads the working buffer (now populated with scene-load data plus per-frame procedural patches from <code>FUN_80028158</code>). The cross-kingdom Exec-bp captures sample <strong>per-frame steady state</strong>, where cluster A reads the working buffer &mdash; NOT slot 4 directly. The high per-frame cluster-A hit counts (~2000 in 1800 frames) are procedural rendering volume, not slot-4 walks.</p>
 </section>
 
+<section class="doc-section" id="dat-8007c018">
+  <h2><code>DAT_8007C018</code> &mdash; global TMD pointer table (the <em>actual</em> cluster-A source)</h2>
+  <p><code>FUN_80043390</code>&apos;s <code>display_state</code> arg points at a TMD&apos;s group-descriptor array (offset <code>+0xC</code> into a TMD blob whose <code>+0x00</code> carries the Legaia magic <code>0x80000002</code>). Those TMD pointers live in a global runtime table:</p>
+  <pre><code>DAT_8007C018 : array of u32 TMD pointers; entry stride = 4
+DAT_8007B774 : install counter (next free index)
+DAT_8007BB38 : walk counter (last valid index, used by the table walker)
+DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
+
+  <p>The installer is <strong><code>FUN_80026B4C</code> @ PC <code>0x80026BA8</code></strong> (called per-TMD from the asset dispatcher&apos;s case 2 TMD-pack handler):</p>
+<pre><code>80026b90  lui   v1, 0x8008
+80026b94  lw    v1, -0x488c(v1)     ; v1 = *DAT_8007B774 (next free idx)
+80026b98  addiu v0, v0, -0x3fe8     ; v0 = 0x8007C018
+80026b9c  sll   v1, v1, 0x2
+80026ba0  addu  v1, v1, v0          ; v1 = &amp;DAT_8007C018[idx]
+80026ba4  jal   FUN_800268dc        ; build per-group descriptor array at tmd+0xC
+80026ba8  _sw   a0, 0x0(v1)         ; install: DAT_8007C018[idx] = tmd_ptr</code></pre>
+
+  <p>Ghidra&apos;s static reference-database doesn&apos;t surface this store because the <code>addu</code> between the <code>lui+addiu</code> and the <code>sw</code> defeats its constant propagation. The materialisation scan <code>ghidra/scripts/find_addr_materializer_dat_8007c018.py</code> walks every <code>lui+addiu</code> pair that produces <code>0x8007C018</code> and looks at the next six instructions; that&apos;s how the installer was pinned.</p>
+
+  <p>After installation, each pointed-to TMD has the runtime shape:</p>
+<pre><code>[+0x00] u32 magic = 0x80000002
+[+0x04] u32 flags / version
+[+0x08] u32 group_count
+[+0x0C] array of group_count &times; 0x1C-byte group descriptors
+        each starts with vertex_base_ptr (u32) + vertex_count (u32)
+        followed by 0x14 bytes of per-group state</code></pre>
+
+  <h3 id="dat-8007c018-consumers">Consumers</h3>
+  <table>
+    <thead><tr><th>Function</th><th>Site</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80021B04</code> (SCUS actor allocator)</td><td>reads <code>DAT_8007C018[actor[+0x64].i16]</code></td><td>populates <code>actor[+0x44] = [count, mesh_ptr[count]]</code> from TMD groups</td></tr>
+      <tr><td><code>FUN_801D77F4</code> (overlay alt allocator)</td><td>reads <code>DAT_8007C018[(i16)param_2]</code> + <code>_DAT_8007B7DC</code> VDF buffer</td><td>copies vertex pool from sub-records into <code>actor[+0x90]</code></td></tr>
+      <tr><td><code>FUN_801D8280</code> (overlay table walker)</td><td>iterates <code>DAT_8007C018[0..DAT_8007BB38]</code></td><td>hands each sub-record to <code>FUN_801D5E20</code></td></tr>
+      <tr><td><code>FUN_801F69D8</code> (world-map top-view dispatcher in <code>world_map_top_ext</code>)</td><td>reads <code>DAT_8007C018[(visible_object_kind8 + DAT_8007B6F8) * 4]</code></td><td>walks per-tile visibility scratchpad, calls <code>FUN_80043390(tmd+0xC, color, fog)</code></td></tr>
+      <tr><td><code>FUN_8001E890</code></td><td>writes <code>entry[+0x8] = 10</code> for three consecutive table indices</td><td>per-pack count override</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="warp-transition-caller">Warp-transition caller (<code>FUN_801F69D8</code>)</h3>
+  <p>The Drake warp-into-world-map Read-bp captured <code>ra = 0x801F725C</code>, pointing at the JAL into <code>FUN_80043390</code> at PC <code>0x801F7254</code>. The enclosing function is <strong><code>FUN_801F69D8</code></strong> (2572 B / 643 instr) in <code>overlay_world_map_top_ext.bin</code>. The probe&apos;s original label "<code>FUN_801F7088</code>" was inside the function body, not at its entry &mdash; the prologue <code>addiu sp, sp, -0x70</code> sits 1712 bytes earlier at <code>0x801F69D8</code>. Force-disasm + walk-back + force-set body pinned the true extent; see <code>ghidra/scripts/dump_world_map_top_ext_caller.py</code>.</p>
+
+  <p>The function bulk-copies a 0x20-byte camera struct from <code>0x8007BF10</code> into scratchpad <code>0x1F8002CC</code>, nested-loops over visible tile cells in scratchpad table <code>_DAT_1F8003EC + 0x8000 + Y*0x100 + X*2</code> (padded by &plusmn;10), dereferences each 0x20-byte object record at <code>_DAT_1F8003EC + (idx &amp; 0x1FF) * 0x20</code>, applies frustum bounds + visibility flags + GTE RTPT projection, then routes the TMD via <code>DAT_8007C018</code> and emits the display list. Arg breakdown for the <code>FUN_80043390</code> call:</p>
+  <ul>
+    <li><code>arg0</code> = TMD group descriptor array start (<code>tmd + 0xC</code>)</li>
+    <li><code>arg1</code> = color RGB (<code>0xD0D0D0</code> default; <code>0x40D0D0D0</code> if object record&apos;s <code>[+0x1E]</code> flag is set; OR&apos;d with <code>0x10000000</code> if <code>record[+0x12] &amp; 0x800</code> &mdash; interactive)</li>
+    <li><code>arg2</code> = fog cue <code>clamp((GTE_screen_z - 0x5000) &gt;&gt; 3, 0, 0x1000)</code></li>
+  </ul>
+
+  <p><strong>Implication for slot 4.</strong> Cluster A&apos;s input is <em>TMD-pack data</em>, not slot-4 MOVE bytes. The Read-bp probe that captured slot-4-region RAM reads passing through <code>FUN_80043390</code> was almost certainly observing TMD reads from a TMD-pack buffer allocated near slot-4&apos;s MOVE buffer in retail RAM. Slot 2 of each kingdom bundle is type <code>0x02</code> (TMD-pack) per the type sequence <code>(1, 2, 3, 4, 5, 6, 7)</code> &mdash; that&apos;s the more likely true source of <code>DAT_8007C018</code> entries during the warp transition. The slot-4 &rarr; cluster-A connection documented earlier on this page needs targeted re-validation.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open work</h2>
   <ol>
-    <li><strong>Identify the slot-4 runtime reader function (overlay-resident).</strong> Drake Read-bp captures of slot-4 RAM show the dominant caller-RA is <code>0x801F78D4</code>, which means the JAL into <code>FUN_80043390</code> is at PC <code>0x801F78D0</code> inside a world-map overlay function. The matching address in three sister overlays (<code>baka_fighter</code>, <code>dance</code>, <code>debug_menu</code>) is <code>FUN_801F7088</code> &mdash; a 2580 B function that wraps the call. The <code>world_map_top_ext.bin</code> overlay almost certainly has the same shape but Ghidra returns size=1 for that entry &mdash; forcing disassembly would let us decompile the overlay caller and see how it feeds slot-4 bytes into <code>FUN_80043390</code>&apos;s <code>display_state</code> struct.</li>
-    <li><strong><code>kind</code> / <code>flag_a</code> semantic.</strong> Body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to one of the three SCUS handler banks via the caller&apos;s flag argument (<code>kind=2</code> &rarr; bank 1; <code>kind=4</code> &rarr; bank 2; <code>kind=1</code> &rarr; bank 0). Body <code>kind</code> is <strong>not</strong> the same as primitive <code>kind</code> (8-19).</li>
-    <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; look like packed (high-byte, low-byte) tags rather than indices. Likely feeds either the GP0 packet header (color / blend / texture-page) or a per-record draw-flag mask.</li>
+    <li><strong>Re-validate the slot-4 &rarr; cluster-A claim.</strong> With <code>DAT_8007C018</code> now known to hold TMD pointers installed by the case 2 TMD-pack handler, the slot-4 &rarr; cluster-A pipeline needs a check: is slot 4 actually consumed by cluster A, or are the Read-bp hits coming from a co-located TMD-pack buffer (slot 2 = type <code>0x02</code>)? A targeted Read-bp watching <code>DAT_8007C018[*]</code> entry addresses (not slot-4 RAM) would settle the question. If slot 4 <em>is</em> on the cluster-A path, an as-yet-unidentified converter must transform the slot-4 outer-pack records into TMD blobs at some point in the warp sequence.</li>
+    <li><strong><code>kind</code> / <code>flag_a</code> semantic.</strong> Body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to one of the three SCUS handler banks via the caller&apos;s flag argument (<code>kind=2</code> &rarr; bank 1; <code>kind=4</code> &rarr; bank 2; <code>kind=1</code> &rarr; bank 0). Body <code>kind</code> is <strong>not</strong> the same as primitive <code>kind</code> (8-19). With the cluster-A source clarified, this hypothesis may dissolve.</li>
+    <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; look like packed (high-byte, low-byte) tags rather than indices.</li>
     <li><strong>Re-run probe with higher cap.</strong> <code>autorun_slot4_consumer_pcs.lua</code> has <code>LEGAIA_PC_CAP</code> env-var support; bumping to 5000+ surfaces uncapped per-kind totals where Drake/Sebucus are currently capped at 200.</li>
   </ol>
 </section>

@@ -578,25 +578,106 @@ pointers to those decoded structs. Per-frame, `FUN_8001ada4` walks the
 mesh-table and FUN_80043390 walks each mesh's vertex pool + command
 stream — never touching slot 4 directly after the scene-load pass.
 
+## DAT_8007C018 — global TMD pointer table (the *actual* cluster-A source)
+
+`FUN_80043390`'s `display_state` arg points at a TMD's group-descriptor
+array (offset `+0xC` into a TMD blob whose `+0x00` carries the Legaia
+magic `0x80000002`). Those TMD pointers live in a global runtime table:
+
+```
+DAT_8007C018 : array of u32 TMD pointers; entry stride = 4
+DAT_8007B774 : install counter (next free index)
+DAT_8007BB38 : walk counter (last valid index, used by the table walker)
+DAT_8007B824 : per-pack count (set by case 2 to `*pack_header[0]`)
+```
+
+The installer is **`FUN_80026B4C` @ PC `0x80026BA8`** (called per-TMD
+from the asset dispatcher's case 2 TMD-pack handler):
+
+```
+80026b90  lui   v1, 0x8008
+80026b94  lw    v1, -0x488c(v1)     ; v1 = *DAT_8007B774 (next free idx)
+80026b98  addiu v0, v0, -0x3fe8     ; v0 = 0x8007C018
+80026b9c  sll   v1, v1, 0x2
+80026ba0  addu  v1, v1, v0          ; v1 = &DAT_8007C018[idx]
+80026ba4  jal   FUN_800268dc        ; build per-group descriptor array at tmd+0xC
+80026ba8  _sw   a0, 0x0(v1)         ; install: DAT_8007C018[idx] = tmd_ptr
+```
+
+Ghidra's static reference-database doesn't surface this store because the
+`addu` between the `lui+addiu` and the `sw` defeats its constant
+propagation. The materialisation scan
+`ghidra/scripts/find_addr_materializer_dat_8007c018.py` walks every
+`lui+addiu` pair that produces `0x8007C018` and looks at the next six
+instructions; that's how the installer was pinned.
+
+After installation, each pointed-to TMD has the runtime shape:
+
+```
+[+0x00] u32 magic = 0x80000002
+[+0x04] u32 flags / version
+[+0x08] u32 group_count
+[+0x0C] array of group_count × 0x1C-byte group descriptors
+        each starts with `vertex_base_ptr (u32) + vertex_count (u32)`
+        followed by 0x14 bytes of per-group state
+```
+
+Consumers of `DAT_8007C018[*]` (all read-only):
+
+| Function | Site | Role |
+|---|---|---|
+| `FUN_80021B04` (SCUS actor allocator) | reads `DAT_8007C018[actor[+0x64].i16]` | populates `actor[+0x44] = [count, mesh_ptr[count]]` from TMD groups |
+| `FUN_801D77F4` (overlay alt allocator) | reads `DAT_8007C018[(i16)param_2]` | copies vertex pool from sub-records into `actor[+0x90]` |
+| `FUN_801D8280` (overlay table walker) | iterates `DAT_8007C018[0..DAT_8007BB38]` | hands each sub-record to `FUN_801D5E20` |
+| `FUN_801F69D8` (world-map top-view dispatcher in `world_map_top_ext`) | reads `DAT_8007C018[(visible_object_kind8 + DAT_8007B6F8) * 4]` | walks per-tile visibility scratchpad and calls `FUN_80043390(tmd+0xC, color, fog)` |
+| `FUN_8001E890` | sets `entry[+0x8] = 10` for three consecutive table indices | per-pack count override |
+
+The world-map top-view dispatcher `FUN_801F69D8` (2572 B / 643 instr at
+prologue `0x801F69D8`, dumped in
+`ghidra/scripts/funcs/overlay_world_map_top_ext_wm_ext_dispatcher_caller_801f69d8.txt`)
+is the route the warp-into-world-map Read-bp probe captured. Its body
+copies a 0x20-byte camera struct from `0x8007BF10` into scratchpad,
+nested-loops over Y/X tile indices (padded by ±10), dereferences each
+visible tile's 0x20-byte object record from
+`_DAT_1F8003EC + 0x8000 + Y*0x100 + X*2`, applies frustum + GTE RTPT,
+then routes the TMD via `DAT_8007C018` and calls `FUN_80043390`. The
+`color` arg is `0xD0D0D0` default, switched to `0x40D0D0D0` if the
+object record's `[+0x1E]` flag is set, and OR'd with `0x10000000` if
+`record[+0x12] & 0x800`. The `fog` arg is
+`clamp((GTE_screen_z - 0x5000) >> 3, 0, 0x1000)`.
+
+**Implication for slot 4.** Cluster A's input is *TMD-pack data*, not
+slot-4 MOVE bytes. The Read-bp probe that captured slot-4-region RAM
+reads passing through `FUN_80043390` was almost certainly observing
+TMD reads from a TMD-pack buffer allocated near slot-4's MOVE buffer
+in retail RAM. Slot 2 of each kingdom bundle is type `0x02`
+(TMD-pack) per the type sequence `(1, 2, 3, 4, 5, 6, 7)` — that's the
+more likely true source of `DAT_8007C018` entries during the warp
+transition. The slot-4 → cluster-A connection documented earlier in
+this page needs targeted re-validation.
+
 ## Open work
 
-1. **Identify the slot-4 runtime reader function (overlay-resident).**
-   Drake Read-bp captures of slot-4 RAM show the dominant caller-RA is
-   `0x801F78D4`, which means the JAL into `FUN_80043390` is at PC
-   `0x801F78D0` inside a world-map overlay function. The matching
-   address in three sister overlays (`baka_fighter`, `dance`,
-   `debug_menu`) is `FUN_801F7088` — a 2580 B function that wraps the
-   call. The `world_map_top_ext.bin` overlay almost certainly has the
-   same shape but the function isn't auto-disassembled by Ghidra
-   (`-process overlay_world_map_top_ext.bin` returns size=1). Forcing
-   disassembly of the range (or running auto-analysis with stricter
-   settings) would let us decompile the overlay caller and see how it
-   feeds slot-4 bytes into `FUN_80043390`'s `display_state` struct.
-2. **Per-record-kind semantic.** Once the transcoder is decompiled,
-   the mapping from slot-4 body bytes → cluster-A primitive kind will
-   be direct: each body header's `kind` selects which primitive type
-   to emit; each record's `(x, y, z, attr)` fields supply vertex
-   indices + color/normal data for the primitive.
+1. **Re-validate the slot-4 → cluster-A claim.** With `DAT_8007C018`
+   now known to hold TMD pointers installed by the case 2 TMD-pack
+   handler, the slot-4 → cluster-A pipeline needs a check: is slot 4
+   actually consumed by cluster A, or are the Read-bp hits coming
+   from a co-located TMD-pack buffer (slot 2 = type `0x02`)? A
+   targeted Read-bp watching `DAT_8007C018[*]` entry addresses (not
+   slot-4 RAM) would settle the question. If slot 4 *is* on the
+   cluster-A path, an as-yet-unidentified converter must transform
+   the slot-4 outer-pack records into TMD blobs at some point in the
+   warp sequence.
+
+2. **Per-record-kind semantic.** Body header `kind ∈ {1, 2, 4}` is
+   plausibly a draw-MODE selector that picks one of the three SCUS
+   handler banks via the caller's `cmd_flags` argument
+   (`kind = 2` → bank 1 via the `0x04000000` flag;
+   `kind = 4` → bank 2 via `0x20000000`; `kind = 1` → bank 0).
+   Body `kind` is NOT the same as primitive `kind` (8–19).
+   With the cluster-A source clarified, this hypothesis may dissolve
+   — body `kind` might be slot-4-internal with no link to cluster-A
+   banks at all.
 3. **`kind` / `flag_a` semantic.** `kind = 4` always has `flag_a = 1`
    in every kingdom; the reverse doesn't hold (Karisto body 10 is
    `kind = 2, flag_a = 1`). With the cluster-A primitive vocabulary

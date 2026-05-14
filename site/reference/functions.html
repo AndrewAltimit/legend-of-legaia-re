@@ -70,8 +70,11 @@
         <li><code>FUN_8001D140</code> - Stack-swap wrapper around <code>FUN_8001ADA4</code>; called 6&times; per frame from <code>FUN_80016444</code> against <code>_DAT_8007C34C..0x36C</code> (render pass)</li>
         <li><code>FUN_8002519C</code> - Per-frame actor-list TICK iterator; called 5&times; per frame (distinct from the render pass)</li>
         <li><code>FUN_8002C69C</code> - HUD / menu / dialog sprite-batch POLY_FT4 emitter (~120 prims/frame for world-map UI; not the continent)</li>
-        <li><code>FUN_80026B4C</code> - TMD validate + register</li>
-        <li><code>FUN_800268DC</code> - TMD pointer fixup</li>
+        <li><code>FUN_80026B4C</code> - TMD validate + register. Stores <code>tmd_ptr</code> at <code>DAT_8007C018[DAT_8007B774++]</code> then calls <code>FUN_800268DC</code> for the per-group descriptor fixup. Reached from <code>FUN_8001F05C</code> case 2 (TMD-pack) and case 9 (TMD2).</li>
+        <li><code>FUN_800268DC</code> - TMD pointer fixup; builds the <code>+0xC</code> group descriptor array (0x1C-byte stride) consumed by <code>FUN_80043390</code>.</li>
+        <li><code>FUN_801F69D8</code> - World-map top-view tile-visibility dispatcher in <code>overlay_world_map_top_ext.bin</code> (643 instr, 2572 B). Walks per-tile visibility scratchpad and emits TMDs from <code>DAT_8007C018</code> via <code>FUN_80043390</code>. Was the captured warp-transition cluster-A caller.</li>
+        <li><code>FUN_801D8280</code> - <code>DAT_8007C018</code> table walker (overlay-resident). Iterates entries <code>0..DAT_8007BB38</code> and for each pointed-to TMD calls <code>FUN_801D5E20</code> per sub-record.</li>
+        <li><code>0x8007C018</code> - global TMD pointer table; installer-counter at <code>0x8007B774</code>, walk-counter at <code>0x8007BB38</code>. See <a href="../formats/world-map-overlay.html#dat-8007c018">formats / world-map-overlay &mdash; <code>DAT_8007C018</code></a>.</li>
         <li><code>0x80010778</code> - move-VM jump table</li>
         <li><code>DAT_8007326C</code> - per-mode primitive descriptor table</li>
         <li><code>0x801CE868</code> - move-VM extension JT</li>
