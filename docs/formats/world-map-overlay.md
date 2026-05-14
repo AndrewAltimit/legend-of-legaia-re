@@ -263,6 +263,48 @@ in the underlying handler. Those reads are the handler's normal
 load-vertex-from-pool operation; the pool just happened to be backed by
 slot-4 record bytes during the kingdom-bundle scene-load transition.
 
+### How slot-4 bytes reach cluster A
+
+Live RAM verification (Drake world-map snapshot) shows the cluster-A
+input pointer originates from two parallel paths, both ultimately
+sourced from `DAT_8007C018` (the global asset-pointer table — see
+[reference/memory-map](../reference/memory-map.md)):
+
+1. **Direct via DAT_8007C018[94..113]**. The global table installs 20
+   pointers that land inside slot-4 RAM at body-aligned offsets
+   (slot-4 body 0 start, body 1 start, etc.). These entries do **not**
+   carry the TMD magic `0x80000002` at word[0] — `FUN_80026B4C`
+   accepts non-TMD-magic input (a magic mismatch only sets
+   `DAT_8007B828` bits, it doesn't reject the install). The world-map
+   dispatcher `FUN_801F69D8` reads
+   `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]` and passes
+   `entry + 0xC` to `FUN_80043390`. When the actor kind picks a
+   slot-4-pointer entry, the dispatcher feeds raw slot-4 body bytes
+   into cluster A as a command-stream + vertex-pool.
+2. **Indirect via actor mesh tables**. The per-actor renderer
+   `FUN_8001ada4` (caller RA `0x8001B47C` in every cross-kingdom
+   capture) walks `actor+0x44 = [u32 count, u32 mesh_ptr[count]]` and
+   passes each `mesh_ptr` to `FUN_80043390`. In the live Drake snapshot
+   four actor instances in the 0x80082xxx region hold mesh pointers at
+   `instance+0x28` that target slot-4 body starts exactly (slot-4
+   offsets `0x1840` = body 4, `0x40F0` = body 10, `0x75A0` = body 13,
+   `0x7C40` = body 14).
+
+Slot-4 RAM contains **zero TMD-magic words** at any alignment in any
+of the three kingdoms — slot-4 is **not** a TMD-pack. Cluster A
+accepts it anyway because `FUN_80043390` doesn't gate on TMD magic:
+it reads `param_1[4]` as a command word, extracts a `kind` field, and
+tail-calls a per-kind handler. The slot-4 body header `kind ∈ {1, 2,
+4}` plausibly maps to the dispatcher's `cmd_flags` bank selector
+(bank 0 / 1 / 2 — see
+[Jump tables](#jump-tables)) but the connection has not been verified
+end-to-end.
+
+See [reference/memory-map](../reference/memory-map.md#world-map-tmd-and-actor-tables)
+for the `DAT_8007C018` entry-class breakdown and [the kingdom-TMD
+prefix entry](../reference/memory-map.md#world-map-tmd-and-actor-tables)
+for `DAT_8007B6F8`.
+
 ### Cross-kingdom hit-count comparison
 
 Exec-breakpoint hit counts at the eight cluster-A LW PCs + the

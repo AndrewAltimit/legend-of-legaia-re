@@ -146,6 +146,25 @@ chain. End-to-end walkthrough in [`subsystems/world-map.md`](../subsystems/world
 | `0x801F3524` | u32 | Angle step per frame tick. Sourced from `_DAT_8007BCD8` via `FUN_801D8258`'s `param_3`. |
 | `0x801F3528` | u32 | OT layer / draw priority. Sourced from `_DAT_8007BCDC` via `FUN_801D8258`'s `param_4`. |
 
+## World-map TMD and actor tables
+
+The global asset-pointer table consumed by the world-map top-view
+renderer (`FUN_801F69D8` → `FUN_80043390`). Live verification: see the
+"Live snapshot (Drake world-map)" example in
+[`formats/world-map-overlay.md`](../formats/world-map-overlay.md#how-slot-4-bytes-reach-cluster-a).
+
+| Address | Type | Purpose |
+|---|---|---|
+| `0x8007C018` | `void *[N]` | **Global asset-pointer table.** Installer `FUN_80026B4C @ 0x80026BA8` stores any pointer here (TMD-magic mismatch only sets `DAT_8007B828` bits, doesn't reject). In a Drake world-map snapshot 194 of the first 256 entries are populated: 45 TMD pointers (`[0..4]` = 5 party TMDs from `player.lz`, `[5..44]` = 40 kingdom slot-1 TMDs), 20 slot-4 body-aligned pointers at `[94..113]`, plus vertex-pool / texture / zero-padded slots. Consumed by `FUN_801F69D8` (world-map top-view), `FUN_80021B04` (SCUS actor allocator), `FUN_801D77F4` (overlay actor allocator), `FUN_801D8280` (table walker). |
+| `0x8007B774` | u32 | Write counter for `DAT_8007C018`. Bumped by `FUN_80026B4C` on each install. Drake snapshot = `0x2D` (45 entries installed). |
+| `0x8007BB38` | u32 | Walk count (last valid index). Drake snapshot = `0x2C`. |
+| `0x8007B824` | u32 | Per-pack start index into `DAT_8007C018`. Set when a new pack begins, read by `FUN_8001E928` / `FUN_8001E890` post-install to update `DAT_8007B6F8`. Drake snapshot = `0`. |
+| `0x8007B828` | u32 | TMD-magic-mismatch error bits. Set by `FUN_80026B4C` when a non-TMD pointer (e.g. slot-4 body) is installed. Drake snapshot = `0` (no errors observed in steady-state). |
+| `0x8007B6F8` | u32 | **Kingdom-TMD prefix offset.** Count of party-character TMDs that precede the kingdom-bundle TMDs in `DAT_8007C018`. The world-map dispatcher does `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]`, so this shifts world-map actor-kind indices past the party prefix. Writers: `FUN_80020118` (field-load entry; resets to 0) and `FUN_8001E890` / `FUN_8001E928` (set to `DAT_8007B824 + *player_pack_count`). Drake snapshot = `5`. |
+| `0x8007B7DC` | `void *` | VDF buffer pointer. Set by asset-dispatcher case 7. `FUN_8001FBCC` walks each sub-entry and writes a parallel pointer table at `0x80083E58` (consumed by `FUN_801D77F4` for actor instance bring-up). Drake snapshot points at `0x8011A2F4`. |
+| `0x8007B888` | `void *` | Slot-4 (MOVE) buffer pointer. Drake snapshot = `0x8011A624`. |
+| `0x80083E58` | `void *[N]` | Parallel VDF sub-entry pointer table. First entry points into VDF buffer (`0x8011A2FC` in Drake snapshot); subsequent entries point into the `0x800D9xxx` actor-instance area. |
+
 ## Debug flags
 
 | Address | Purpose |
