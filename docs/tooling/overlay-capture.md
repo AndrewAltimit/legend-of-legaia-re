@@ -177,8 +177,10 @@ quads can land in `crates/engine-render` against the extracted font atlas.
 
 Cutscenes use XA-streamed audio + a per-cutscene mode driver in an overlay
 distinct from town/battle. The XA demuxer is in `crates/xa`; the
-game-mode driver landed in PR #9. The missing piece is the cutscene
-overlay's outer state machine that picks XA tracks + scene transitions.
+game-mode driver is the STR mode-26/27 dispatcher described in
+[`cutscene.md`](../subsystems/cutscene.md). The missing piece is the
+cutscene overlay's outer state machine that picks XA tracks + scene
+transitions.
 
 1. Load a save just before a known cutscene trigger (post-boss,
    chapter-end, etc.).
