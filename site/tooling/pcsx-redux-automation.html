@@ -66,17 +66,41 @@ LEGAIA_FRAMES=600 \
     <li><strong>ARMED_LOADED</strong> &mdash; load the save state, read the register file, compute breakpoint addresses (often GP-relative), arm the probes, write an initial snapshot. Capture for <code>LEGAIA_FRAMES</code> vsyncs while breakpoints log hits to the CSV.</li>
     <li><strong>DONE</strong> &mdash; disarm breakpoints, write a final snapshot, <code>PCSX.quit(0)</code>.</li>
   </ol>
-  <p>This pattern factors into common helpers reused across scripts:</p>
-<pre><code>local function read_u32(mf, addr)
-    if not in_ram(addr, 4) then return nil end
-    local ok, v = pcall(function() return mf:readU32At(ram_offset(addr)) end)
-    return ok and tonumber(v) or nil
-end
+  <p>This pattern is factored out as a shared library at <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/lib/probe.lua"><code>scripts/pcsx-redux/lib/probe.lua</code></a>. A new probe doesn't reimplement the state machine, the memory readers, the save-state loader, the pad-override helpers, the CSV writer, or the live-snapshot writer &mdash; it imports them:</p>
+<pre><code>package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
+local probe = require("probe")
 
-local function arm_probe(addr, width, label, cb)
-    return PCSX.addBreakpoint(addr, "Read", width, "probe:" .. label, cb)
-end</code></pre>
-  <p><code>ram_offset(addr)</code> is just <code>bit.band(addr, 0x1FFFFFFF)</code> &mdash; strips the KSEG segment selector so KSEG0 (<code>0x80xxxxxx</code>) and KSEG1 (<code>0xA0xxxxxx</code>) map to the same physical byte. Always work in absolute PSX virtual addresses on input; convert at the boundary.</p>
+local csv = probe.csv_open("/tmp/x.csv", "addr,pc,ra")
+
+probe.run({
+    sstate         = probe.getenv("LEGAIA_SSTATE", DEFAULT),
+    capture_frames = probe.getenv_num("LEGAIA_FRAMES", 600),
+    snapshot_path  = "/tmp/x.hits.txt",
+    on_arm = function()
+        local descs = {}
+        for _, addr in ipairs({ 0x801E76D4 }) do
+            local d = { addr = addr, name = string.format("0x%08X", addr),
+                        hits_ref = { n = 0 } }
+            probe.arm_breakpoint(addr, "Exec", 4, d.name, function()
+                d.hits_ref.n = d.hits_ref.n + 1
+                local r = PCSX.getRegisters()
+                csv:row("0x%08X,0x%08X,0x%08X",
+                    addr, tonumber(r.pc), tonumber(r.GPR.n.ra))
+            end)
+            descs[#descs + 1] = d
+        end
+        return descs
+    end,
+    on_done = function() csv:close() end,
+})</code></pre>
+  <p><code>probe.ram_offset(addr)</code> is <code>bit.band(addr, 0x1FFFFFFF)</code> &mdash; strips the KSEG segment selector so KSEG0 (<code>0x80xxxxxx</code>) and KSEG1 (<code>0xA0xxxxxx</code>) map to the same physical byte. Always work in absolute PSX virtual addresses on input; convert at the boundary.</p>
+  <h3>Symbolic breakpoint addresses</h3>
+  <p>Hard-coded <code>0x801DA51C</code>-style breakpoint targets break across overlay re-imports that shift function entry points. Use the symbol resolver:</p>
+<pre><code>local symbols = require("symbols").load()  -- ghidra/scripts/symbols.lua
+probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)</code></pre>
+  <p><code>ghidra/scripts/symbols.json</code> (canonical) and <code>ghidra/scripts/symbols.lua</code> (LuaJIT-loadable convenience) are both auto-generated from the per-function dump headers under <code>ghidra/scripts/funcs/*.txt</code>. Regenerate via</p>
+<pre><code>python3 scripts/pcsx-redux/build-symbols.py</code></pre>
+  <p>after adding new dumps. The resolver fails loudly on a typo'd symbol name &mdash; arming a breakpoint at <code>nil</code> otherwise silently captures zero hits and the probe runs to completion with no diagnostic.</p>
   <h3>Things that catch people out</h3>
   <ul class="bullets">
     <li><strong>Breakpoint width matters.</strong> <code>lbu</code> from a watched word triggers only when the width-1 byte falls inside the breakpoint's range. Arming a width-4 probe at an LW target works; arming a width-1 probe at an LBU target works; mismatches silently miss hits.</li>
@@ -129,13 +153,13 @@ end</code></pre>
   <h2>Authoring a new probe</h2>
   <p>The fastest path to a new probe:</p>
   <ol>
-    <li>Copy <code>autorun_world_map_probe.lua</code> to <code>autorun_&lt;your_thing&gt;.lua</code>.</li>
-    <li>Replace the <code>PROBE_ADDRS</code> / <code>CSV_HEADER</code> / breakpoint-arm block with your fields. Keep the boot-delay + capture-vsync state machine intact.</li>
+    <li>Start from <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/autorun_slot4_readers.lua"><code>scripts/pcsx-redux/autorun_slot4_readers.lua</code></a> &mdash; the canonical thin probe (~115 lines) that uses the shared library for everything except the per-probe breakpoint body.</li>
+    <li>Edit the <code>PROBE_OFFSETS</code> (or your own probe-address list), the CSV header, and the per-hit row written from inside the breakpoint callback. The boot-delay / capture-vsync / disarm state machine comes from <code>probe.run({...})</code> &mdash; don't reimplement it.</li>
     <li>Run with the harness:
 <pre><code>LEGAIA_LUA=scripts/pcsx-redux/autorun_your_thing.lua \
 LEGAIA_OUT=/tmp/your_probe.csv \
     bash scripts/pcsx-redux/run_world_map_probe.sh</code></pre></li>
-    <li>Iterate on the live CSV. The harness re-launches the emulator per run; the CSV is overwritten each time.</li>
+    <li>Iterate on the live CSV. The harness re-launches the emulator per run; the CSV is overwritten each time. While the probe is running, the snapshot file (<code>&lt;probe&gt;.hits.txt</code> next to the CSV) is rewritten every 60 vsyncs &mdash; tail it from another shell to watch hit counts climb live.</li>
   </ol>
   <p>When the probe surfaces a useful signal, commit the Lua file under <code>scripts/pcsx-redux/</code> and update the catalogue table above. The CSV output itself is gitignored &mdash; it's a per-run artifact, not a project state.</p>
 </section>
