@@ -1,227 +1,1954 @@
-{
-  "bundle": "map01",
-  "kingdom_pack_load_base": "0x801250ac",
-  "slots_in_pack": 40,
-  "actors": [
-    {
-      "node": "0x80081ae4",
-      "pos": [
-        6976,
-        -276,
-        9280
-      ],
-      "slots": [
-        39
-      ],
-      "tick": "0x80021df4",
-      "list_head": "0x8007c350",
-      "flags": 134498432,
-      "render_mode": 8323077,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x80082e4c",
-      "pos": [
-        16320,
-        -84,
-        16320
-      ],
-      "slots": [
-        34
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142739584,
-      "render_mode": 1,
-      "chain_size": 12,
-      "unresolved": 0
-    },
-    {
-      "node": "0x80082aec",
-      "pos": [
-        16320,
-        -84,
-        16320
-      ],
-      "slots": [
-        35
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 146933888,
-      "render_mode": 5,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x8008278c",
-      "pos": [
-        16320,
-        -84,
-        16320
-      ],
-      "slots": [
-        36
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142739584,
-      "render_mode": 1,
-      "chain_size": 14,
-      "unresolved": 0
-    },
-    {
-      "node": "0x800826b4",
-      "pos": [
-        16320,
-        -84,
-        16320
-      ],
-      "slots": [
-        37
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142739584,
-      "render_mode": 1,
-      "chain_size": 2,
-      "unresolved": 0
-    },
-    {
-      "node": "0x800825dc",
-      "pos": [
-        16320,
-        0,
-        16320
-      ],
-      "slots": [
-        0
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 673319040,
-      "render_mode": 5,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x80082504",
-      "pos": [
-        16320,
-        -84,
-        16320
-      ],
-      "slots": [
-        31
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142641280,
-      "render_mode": 5,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x8008242c",
-      "pos": [
-        12352,
-        -1,
-        3008
-      ],
-      "slots": [
-        29
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142641280,
-      "render_mode": 65541,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x80082354",
-      "pos": [
-        16320,
-        -84,
-        16320
-      ],
-      "slots": [
-        6
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142641281,
-      "render_mode": 65541,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x8008227c",
-      "pos": [
-        7296,
-        -192,
-        8000
-      ],
-      "slots": [
-        2
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 134252672,
-      "render_mode": 131073,
-      "chain_size": 2,
-      "unresolved": 0
-    },
-    {
-      "node": "0x800821a4",
-      "pos": [
-        6976,
-        -192,
-        8256
-      ],
-      "slots": [
-        14
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 134252672,
-      "render_mode": 131077,
-      "chain_size": 1,
-      "unresolved": 0
-    },
-    {
-      "node": "0x800820cc",
-      "pos": [
-        9152,
-        -96,
-        10432
-      ],
-      "slots": [
-        16
-      ],
-      "tick": "0x8003bc08",
-      "list_head": "0x8007c354",
-      "flags": 142641280,
-      "render_mode": 65541,
-      "chain_size": 1,
-      "unresolved": 0
+[
+  {
+    "bundle": "map01",
+    "save": "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc1",
+    "man_buffer_ram_base": "0x80122494",
+    "kingdom_pack_load_base": "0x801250ac",
+    "slots_in_pack": 40,
+    "man_record_count": 50,
+    "man_sentinel_count": 7,
+    "actors": [
+      {
+        "node": "0x80081ae4",
+        "kind": "bulk_terrain",
+        "pos": [
+          3904,
+          -420,
+          11712
+        ],
+        "slots": [
+          39
+        ],
+        "tick": "0x80021df4",
+        "list_head": "0x8007c350",
+        "flags": 134498432,
+        "render_mode": 8323077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80082e4c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "slots": [
+          34
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142739584,
+        "render_mode": 1,
+        "chain_size": 12,
+        "unresolved": 0,
+        "man_record_index": 1,
+        "man_record_name": "テルマ",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082aec",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "slots": [
+          35
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 146933888,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 2,
+        "man_record_name": "イベント屋",
+        "script_positioned": false
+      },
+      {
+        "node": "0x8008278c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "slots": [
+          36
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142739584,
+        "render_mode": 1,
+        "chain_size": 14,
+        "unresolved": 0,
+        "man_record_index": 6,
+        "man_record_name": "ソーン",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800826b4",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "slots": [
+          37
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142739584,
+        "render_mode": 1,
+        "chain_size": 2,
+        "unresolved": 0,
+        "man_record_index": 7,
+        "man_record_name": "赤ちゃん",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800825dc",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "slots": [
+          0
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 8,
+        "man_record_name": "カマーンソーン族",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082504",
+        "kind": "bulk_terrain",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "slots": [
+          31
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641280,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008242c",
+        "kind": "bulk_terrain",
+        "pos": [
+          12352,
+          -1,
+          3008
+        ],
+        "slots": [
+          29
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641280,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80082354",
+        "kind": "bulk_terrain",
+        "pos": [
+          16320,
+          -84,
+          16320
+        ],
+        "slots": [
+          6
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641281,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008227c",
+        "kind": "bulk_terrain",
+        "pos": [
+          7296,
+          -192,
+          8000
+        ],
+        "slots": [
+          2
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252672,
+        "render_mode": 131073,
+        "chain_size": 2,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800821a4",
+        "kind": "bulk_terrain",
+        "pos": [
+          6976,
+          -192,
+          8256
+        ],
+        "slots": [
+          14
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252672,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800820cc",
+        "kind": "bulk_terrain",
+        "pos": [
+          9152,
+          -96,
+          10432
+        ],
+        "slots": [
+          16
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641280,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      }
+    ],
+    "slot_usage": {
+      "0": 1,
+      "2": 2,
+      "6": 1,
+      "14": 1,
+      "16": 1,
+      "29": 1,
+      "31": 1,
+      "34": 12,
+      "35": 1,
+      "36": 14,
+      "37": 2,
+      "39": 1
     }
-  ],
-  "slot_usage": {
-    "0": 1,
-    "2": 2,
-    "6": 1,
-    "14": 1,
-    "16": 1,
-    "29": 1,
-    "31": 1,
-    "34": 12,
-    "35": 1,
-    "36": 14,
-    "37": 2,
-    "39": 1
   },
-  "unresolved_ptrs": 80,
-  "total_ptrs": 118
-}
+  {
+    "bundle": "map02",
+    "save": "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc2",
+    "man_buffer_ram_base": "0x80120678",
+    "kingdom_pack_load_base": "0x80122854",
+    "slots_in_pack": 36,
+    "man_record_count": 23,
+    "man_sentinel_count": 5,
+    "actors": [
+      {
+        "node": "0x800805cc",
+        "kind": "bulk_terrain",
+        "pos": [
+          4032,
+          -1,
+          11712
+        ],
+        "slots": [
+          35
+        ],
+        "tick": "0x80021df4",
+        "list_head": "0x8007c350",
+        "flags": 134498432,
+        "render_mode": 8323077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80082e4c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -168,
+          16320
+        ],
+        "slots": [
+          33
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 138545280,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 1,
+        "man_record_name": "フラグ",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082d74",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -168,
+          16320
+        ],
+        "slots": [
+          33
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 138545280,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 2,
+        "man_record_name": "イベント屋",
+        "script_positioned": false
+      },
+      {
+        "node": "0x80082c9c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "slots": [
+          31
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319041,
+        "render_mode": 1,
+        "chain_size": 11,
+        "unresolved": 0,
+        "man_record_index": 3,
+        "man_record_name": "ＳＤ獣車",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082864",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319041,
+        "render_mode": 1,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 4,
+        "man_record_name": "ＳＤ客車",
+        "script_positioned": true
+      },
+      {
+        "node": "0x8008278c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319041,
+        "render_mode": 1,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 5,
+        "man_record_name": "ＳＤ客車２",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800826b4",
+        "kind": "man_actor",
+        "pos": [
+          10688,
+          -48,
+          9408
+        ],
+        "slots": [
+          28
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 138545280,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 6,
+        "man_record_name": "看板１",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800825dc",
+        "kind": "man_actor",
+        "pos": [
+          10368,
+          -72,
+          4416
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 140642432,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 7,
+        "man_record_name": "釣り場看板",
+        "script_positioned": false
+      },
+      {
+        "node": "0x80082504",
+        "kind": "bulk_terrain",
+        "pos": [
+          7872,
+          -24,
+          6208
+        ],
+        "slots": [
+          12
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252672,
+        "render_mode": 1,
+        "chain_size": 2,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008242c",
+        "kind": "bulk_terrain",
+        "pos": [
+          7488,
+          -24,
+          6336
+        ],
+        "slots": [
+          12
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252672,
+        "render_mode": 1,
+        "chain_size": 2,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80082354",
+        "kind": "bulk_terrain",
+        "pos": [
+          7744,
+          -24,
+          6592
+        ],
+        "slots": [
+          12
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252672,
+        "render_mode": 1,
+        "chain_size": 2,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008227c",
+        "kind": "bulk_terrain",
+        "pos": [
+          4160,
+          -1,
+          7488
+        ],
+        "slots": [
+          8
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641281,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800821a4",
+        "kind": "bulk_terrain",
+        "pos": [
+          6592,
+          -48,
+          7488
+        ],
+        "slots": [
+          24
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 196613,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800820cc",
+        "kind": "bulk_terrain",
+        "pos": [
+          7360,
+          -48,
+          7616
+        ],
+        "slots": [
+          18
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081ff4",
+        "kind": "bulk_terrain",
+        "pos": [
+          7872,
+          -1,
+          7616
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081f1c",
+        "kind": "bulk_terrain",
+        "pos": [
+          8256,
+          -48,
+          7616
+        ],
+        "slots": [
+          14
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081e44",
+        "kind": "bulk_terrain",
+        "pos": [
+          8640,
+          -1,
+          7616
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081d6c",
+        "kind": "bulk_terrain",
+        "pos": [
+          9024,
+          -48,
+          7616
+        ],
+        "slots": [
+          20
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081c94",
+        "kind": "bulk_terrain",
+        "pos": [
+          6848,
+          -48,
+          7872
+        ],
+        "slots": [
+          19
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081bbc",
+        "kind": "bulk_terrain",
+        "pos": [
+          11776,
+          -96,
+          8032
+        ],
+        "slots": [
+          7
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 2,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081ae4",
+        "kind": "bulk_terrain",
+        "pos": [
+          6592,
+          -1,
+          8384
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081a0c",
+        "kind": "bulk_terrain",
+        "pos": [
+          6848,
+          -48,
+          8896
+        ],
+        "slots": [
+          19
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081934",
+        "kind": "bulk_terrain",
+        "pos": [
+          7360,
+          -48,
+          9152
+        ],
+        "slots": [
+          18
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008185c",
+        "kind": "bulk_terrain",
+        "pos": [
+          7872,
+          -1,
+          9152
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081784",
+        "kind": "bulk_terrain",
+        "pos": [
+          8384,
+          -1,
+          9152
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800816ac",
+        "kind": "bulk_terrain",
+        "pos": [
+          8896,
+          -48,
+          9152
+        ],
+        "slots": [
+          18
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800815d4",
+        "kind": "bulk_terrain",
+        "pos": [
+          9280,
+          -1,
+          9152
+        ],
+        "slots": [
+          22
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800814fc",
+        "kind": "bulk_terrain",
+        "pos": [
+          9664,
+          -1,
+          9152
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081424",
+        "kind": "bulk_terrain",
+        "pos": [
+          10176,
+          -48,
+          9408
+        ],
+        "slots": [
+          19
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008134c",
+        "kind": "bulk_terrain",
+        "pos": [
+          10432,
+          -48,
+          9920
+        ],
+        "slots": [
+          18
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081274",
+        "kind": "bulk_terrain",
+        "pos": [
+          10688,
+          -48,
+          10432
+        ],
+        "slots": [
+          19
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008119c",
+        "kind": "bulk_terrain",
+        "pos": [
+          11200,
+          -48,
+          10688
+        ],
+        "slots": [
+          18
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 65541,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800810c4",
+        "kind": "bulk_terrain",
+        "pos": [
+          11712,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080fec",
+        "kind": "bulk_terrain",
+        "pos": [
+          12224,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080f14",
+        "kind": "bulk_terrain",
+        "pos": [
+          12736,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080e3c",
+        "kind": "bulk_terrain",
+        "pos": [
+          13248,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080d64",
+        "kind": "bulk_terrain",
+        "pos": [
+          13760,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080c8c",
+        "kind": "bulk_terrain",
+        "pos": [
+          14272,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080bb4",
+        "kind": "bulk_terrain",
+        "pos": [
+          14784,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080adc",
+        "kind": "bulk_terrain",
+        "pos": [
+          15296,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080a04",
+        "kind": "bulk_terrain",
+        "pos": [
+          15808,
+          -1,
+          10688
+        ],
+        "slots": [
+          23
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      }
+    ],
+    "slot_usage": {
+      "7": 2,
+      "8": 1,
+      "12": 6,
+      "14": 1,
+      "18": 5,
+      "19": 4,
+      "20": 1,
+      "22": 1,
+      "23": 15,
+      "24": 1,
+      "28": 1,
+      "30": 2,
+      "31": 11,
+      "32": 1,
+      "33": 2,
+      "35": 1
+    }
+  },
+  {
+    "bundle": "map03",
+    "save": "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc3",
+    "man_buffer_ram_base": "0x8010ed40",
+    "kingdom_pack_load_base": "0x80111258",
+    "slots_in_pack": 56,
+    "man_record_count": 40,
+    "man_sentinel_count": 17,
+    "actors": [
+      {
+        "node": "0x8007f84c",
+        "kind": "bulk_terrain",
+        "pos": [
+          4672,
+          -96,
+          9024
+        ],
+        "slots": [
+          55
+        ],
+        "tick": "0x80021df4",
+        "list_head": "0x8007c350",
+        "flags": 134498432,
+        "render_mode": 8323077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80082e4c",
+        "kind": "man_actor",
+        "pos": [
+          8256,
+          -900,
+          2424
+        ],
+        "slots": [
+          44
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319041,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 1,
+        "man_record_name": "大空城",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082d74",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -124,
+          16320
+        ],
+        "slots": [
+          42
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 138545280,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 2,
+        "man_record_name": "イベント屋",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082c9c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "slots": [
+          41
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319041,
+        "render_mode": 1,
+        "chain_size": 11,
+        "unresolved": 0,
+        "man_record_index": 3,
+        "man_record_name": "ＳＤ獣車",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082864",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -228,
+          16320
+        ],
+        "slots": [
+          40
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319041,
+        "render_mode": 1,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 4,
+        "man_record_name": "ＳＤ客車",
+        "script_positioned": true
+      },
+      {
+        "node": "0x8008278c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "slots": [
+          45
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 671221888,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 5,
+        "man_record_name": "大空城のかげ",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800826b4",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "slots": [
+          45
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 671221888,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 6,
+        "man_record_name": "大空城のかげ１",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800825dc",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -400,
+          16320
+        ],
+        "slots": [
+          45
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 671221888,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 7,
+        "man_record_name": "大空城のかげ２",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082504",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          46
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 8,
+        "man_record_name": "大空城本体",
+        "script_positioned": true
+      },
+      {
+        "node": "0x8008242c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          47
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 9,
+        "man_record_name": "大空城のかけら",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80082354",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          48
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 10,
+        "man_record_name": "岩のかけら０",
+        "script_positioned": true
+      },
+      {
+        "node": "0x8008227c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          49
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 11,
+        "man_record_name": "岩のかけら１",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800821a4",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          50
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 12,
+        "man_record_name": "バルコニー",
+        "script_positioned": true
+      },
+      {
+        "node": "0x800820cc",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          51
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 13,
+        "man_record_name": "橋のパーツ縁付き",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80081ff4",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          52
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 14,
+        "man_record_name": "橋のパーツ",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80081f1c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -5200,
+          16320
+        ],
+        "slots": [
+          52
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 15,
+        "man_record_name": "橋のパーツ１",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80081e44",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          -124,
+          16320
+        ],
+        "slots": [
+          35
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134350976,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 16,
+        "man_record_name": "大空城後地",
+        "script_positioned": false
+      },
+      {
+        "node": "0x80081d6c",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "slots": [
+          39
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673323136,
+        "render_mode": 1,
+        "chain_size": 14,
+        "unresolved": 0,
+        "man_record_index": 17,
+        "man_record_name": "レクタス",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80081c94",
+        "kind": "man_actor",
+        "pos": [
+          16320,
+          0,
+          16320
+        ],
+        "slots": [
+          53
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 673319040,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 18,
+        "man_record_name": "パラシュ",
+        "script_positioned": true
+      },
+      {
+        "node": "0x80081bbc",
+        "kind": "man_actor",
+        "pos": [
+          12800,
+          -192,
+          7104
+        ],
+        "slots": [
+          54
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 138545280,
+        "render_mode": 5,
+        "chain_size": 1,
+        "unresolved": 0,
+        "man_record_index": 19,
+        "man_record_name": "釣り場看板",
+        "script_positioned": false
+      },
+      {
+        "node": "0x80081ae4",
+        "kind": "bulk_terrain",
+        "pos": [
+          6336,
+          -49,
+          2368
+        ],
+        "slots": [
+          34
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081a0c",
+        "kind": "bulk_terrain",
+        "pos": [
+          7104,
+          -1,
+          2496
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081934",
+        "kind": "bulk_terrain",
+        "pos": [
+          7616,
+          -48,
+          2496
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008185c",
+        "kind": "bulk_terrain",
+        "pos": [
+          8128,
+          -48,
+          2496
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081784",
+        "kind": "bulk_terrain",
+        "pos": [
+          8640,
+          -48,
+          2496
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800816ac",
+        "kind": "bulk_terrain",
+        "pos": [
+          6592,
+          -49,
+          2752
+        ],
+        "slots": [
+          33
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800815d4",
+        "kind": "bulk_terrain",
+        "pos": [
+          6080,
+          -49,
+          3264
+        ],
+        "slots": [
+          33
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800814fc",
+        "kind": "bulk_terrain",
+        "pos": [
+          448,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081424",
+        "kind": "bulk_terrain",
+        "pos": [
+          960,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008134c",
+        "kind": "bulk_terrain",
+        "pos": [
+          1472,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80081274",
+        "kind": "bulk_terrain",
+        "pos": [
+          1984,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008119c",
+        "kind": "bulk_terrain",
+        "pos": [
+          2496,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800810c4",
+        "kind": "bulk_terrain",
+        "pos": [
+          3008,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080fec",
+        "kind": "bulk_terrain",
+        "pos": [
+          3520,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080f14",
+        "kind": "bulk_terrain",
+        "pos": [
+          4032,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080e3c",
+        "kind": "bulk_terrain",
+        "pos": [
+          4544,
+          -1,
+          3520
+        ],
+        "slots": [
+          32
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080d64",
+        "kind": "bulk_terrain",
+        "pos": [
+          5056,
+          -48,
+          3520
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080c8c",
+        "kind": "bulk_terrain",
+        "pos": [
+          5568,
+          -48,
+          3520
+        ],
+        "slots": [
+          30
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 134252673,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080bb4",
+        "kind": "bulk_terrain",
+        "pos": [
+          4672,
+          -96,
+          9664
+        ],
+        "slots": [
+          8
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641281,
+        "render_mode": 131077,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080adc",
+        "kind": "bulk_terrain",
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "slots": [
+          16
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c354",
+        "flags": 142641280,
+        "render_mode": 327681,
+        "chain_size": 1,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800805cc",
+        "kind": "bulk_terrain",
+        "pos": [
+          2112,
+          -48,
+          10816
+        ],
+        "slots": [
+          10
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c36c",
+        "flags": 142641280,
+        "render_mode": 131077,
+        "chain_size": 4,
+        "unresolved": 0
+      },
+      {
+        "node": "0x800804f4",
+        "kind": "bulk_terrain",
+        "pos": [
+          8192,
+          -96,
+          9088
+        ],
+        "slots": [
+          7
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c36c",
+        "flags": 134252672,
+        "render_mode": 65541,
+        "chain_size": 4,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008041c",
+        "kind": "bulk_terrain",
+        "pos": [
+          8528,
+          -96,
+          13344
+        ],
+        "slots": [
+          15
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c36c",
+        "flags": 142641280,
+        "render_mode": 327685,
+        "chain_size": 4,
+        "unresolved": 0
+      },
+      {
+        "node": "0x80080344",
+        "kind": "bulk_terrain",
+        "pos": [
+          11200,
+          -192,
+          9280
+        ],
+        "slots": [
+          13
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c36c",
+        "flags": 134252672,
+        "render_mode": 327685,
+        "chain_size": 2,
+        "unresolved": 0
+      },
+      {
+        "node": "0x8008026c",
+        "kind": "bulk_terrain",
+        "pos": [
+          11840,
+          -96,
+          6848
+        ],
+        "slots": [
+          5
+        ],
+        "tick": "0x8003bc08",
+        "list_head": "0x8007c36c",
+        "flags": 134252672,
+        "render_mode": 5,
+        "chain_size": 5,
+        "unresolved": 0
+      }
+    ],
+    "slot_usage": {
+      "5": 5,
+      "7": 4,
+      "8": 1,
+      "10": 4,
+      "13": 2,
+      "15": 4,
+      "16": 1,
+      "30": 5,
+      "32": 10,
+      "33": 2,
+      "34": 1,
+      "35": 1,
+      "39": 14,
+      "40": 1,
+      "41": 11,
+      "42": 1,
+      "44": 1,
+      "45": 3,
+      "46": 1,
+      "47": 1,
+      "48": 1,
+      "49": 1,
+      "50": 1,
+      "51": 1,
+      "52": 2,
+      "53": 1,
+      "54": 1,
+      "55": 1
+    }
+  }
+]

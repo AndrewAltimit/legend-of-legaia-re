@@ -646,6 +646,131 @@ worldCam centre` by default). For a top-down ortho camera the two
 quantities are equivalent up to a constant; for the orbit-camera mesh
 inspector the fog toggle is hidden because it doesn't carry over.
 
+### Bulk-terrain placement resolver (MAN `0x7F` sentinels)
+
+MAN-record placements where ``(x_enc, z_enc) == (0x7F, 0x7F)`` static-
+decode to the literal world coordinate ``(16320, 16320)`` (the
+world's NE corner, just outside any visible kingdom). Those actors
+are positioned at runtime by the FieldVM prescript embedded in the
+record's trailing bytes, dispatched from ``FUN_8003A1E4`` (the MAN
+placement walker in SCUS):
+
+```c
+// FUN_8003A1E4 lines 326-336 (excerpted):
+uVar14 = (uint)*(byte *)(iVar11 + iVar10);    // script[PC]
+if ((uVar14 - 0x24 < 2) && (... > 0x1F)) {    // op in {0x24, 0x25}
+    while (true) {
+        iVar10 = func_0x801de840(...);         // -> FieldVM dispatcher
+        *(short *)(iVar9 + 0x9e) = (short)iVar10;
+        if (uVar14 == 0x21) break;
+        // walk next opcode
+    }
+}
+```
+
+Each actor is allocated by ``FUN_80024C88`` then its prescript runs
+once through the FieldVM (``FUN_801DE840``). The prescript can write
+``actor[+0x14] / actor[+0x18]`` (X / Z position), so the *resolved*
+position differs from the literal MAN-record decode.
+
+**Statically resolving these without running the FieldVM is not
+covered by the asset extractor.** The MAN prescript is a per-record
+bytecode that picks a position based on actor type, story-flag state,
+overlay-resident lookup tables. A full clean-room port would need
+the engine-vm field VM driving real actor records.
+
+The practical alternative is a **runtime snapshot capture**:
+
+- ``scripts/mednafen/resolve_bulk_terrain.py`` extracts the
+  post-resolve placements out of mednafen save states. It walks every
+  actor list head listed in `Globals used`, captures the actor's live
+  ``+0x14 / +0x18`` coords plus its mesh chain at ``+0x44`` (resolved
+  back to the kingdom TMD pack via reverse-magic-search), and tags
+  each placement ``kind: 'bulk_terrain'`` when ``actor[+0x90]`` is
+  outside the MAN buffer or ``'man_actor'`` otherwise.
+- ``site/extract-world-placements.py`` merges the resulting JSON into
+  ``site/world-overview.json`` under ``bulk_terrain_placements`` per
+  kingdom (alongside the existing ``placements`` and
+  ``live_placements`` fields). The world-overview viewer renders both
+  layers in the same scene.
+- ``crates/web-viewer::sentinel_placements`` is the Rust port of the
+  RAM-side resolver (record parser + actor-list walker + TMD-pack
+  reverse lookup) for downstream callers; the Python script is the
+  end-to-end driver.
+
+The Drake-only count produced by the existing PCSX-Redux capture
+(``site/world-overview-live.json`` legacy single-bundle dict) lands
+as ``man_actor`` under the new tagging since that capture script
+predates the ``kind`` field.
+
+### Per-kingdom fog colour
+
+The atmospheric-tick actor (``actor[+0x0C] == FUN_801E3E00`` at
+``0x801E3E00``) interpolates the per-kingdom haze RGB into its
+``+0x74`` field per frame. That u32 is the input to ``FUN_80043390``'s
+``ctc2`` writers to the GTE ``FAR_COLOR`` control regs (``$21 /
+$22 / $23``):
+
+```c
+// FUN_8001ADA4 case 5 (line 861):
+FUN_80043390(puVar12, piVar2[0x1d], *(undefined2 *)(piVar2 + 0x1e));
+//                    ^^^^^^^^^^^^^
+//                    actor[+0x74] = current fog RGB (0x00BBGGRR)
+
+// FUN_80043390 (0x80043498..0x800434D0):
+andi $s6, $a1, 0x00FF      // R from $a1 = actor[+0x74]
+srl  $s5, $a1, 8           // G
+andi $s5, $s5, 0x00FF
+srl  $s4, $a1, 16          // B
+andi $s4, $s4, 0x00FF
+sll  $s6, $s6, 4           // 8-bit -> 12-bit
+sll  $s5, $s5, 4
+sll  $s4, $s4, 4
+ctc2 $s6, $21              // FAR_COLOR.R
+ctc2 $s5, $22              // FAR_COLOR.G
+ctc2 $s4, $23              // FAR_COLOR.B
+```
+
+The script that drives ``actor[+0x74]`` lives in
+``FUN_801E3E00`` (overlay-resident at
+``ghidra/scripts/funcs/overlay_world_map_801e3e00.txt``) and reads
+its R/G/B bytes from ``script[PC + 7 / +8 / +9]``. The script source
+is a per-kingdom blob at ``actor[+0x94]``; the static walker that
+installs it isn't fully reversed yet, so the practical capture path
+is the runtime snapshot.
+
+When ``scripts/mednafen/resolve_bulk_terrain.py`` finds an actor
+with ``tick == 0x801E3E00`` and ``actor[+0x74] != 0``, it surfaces
+the live RGB as ``fog_color: { r, g, b, u24 }`` per kingdom in
+``site/world-overview.json``. The world-overview viewer reads that
+field at priority above the hand-eyeballed ``KINGDOM_FOG_TINT``
+fallback. World-map saves that don't have an active atmospheric tick
+fall back to the hardcoded table.
+
+### Ocean / coastline source — open
+
+The visible ocean / coastline silhouette in the dev-menu top-view
+isn't yet pinned to a specific source. Survey results to date:
+
+- **Slot 1 (TMD pack):** Every TMD in each kingdom's slot-1 pack is
+  classified in ``site/world-overview/slot1_classification.toml`` -
+  none of the 40 / 36 / 56 entries reads as an ocean / large-flat-
+  blue plane.
+- **Horizon emitter ``FUN_801D7EA0``:** emits ~670 prims per call
+  with neutral-grey colour (`0x2C808080`), projected via the cos
+  LUT - consistent with a sky / horizon plane, *not* the ocean.
+- **Walk-view prim pool inspection:** ``mednafen-state prim-trace``
+  on a walk-view save shows ~5000 textured POLY_FT4 tiles all using
+  ``clut=0x7C40`` / ``tpage=0x001A``. The same texture page likely
+  carries the ocean tiles for walk-view; top-view's ocean source
+  hasn't been independently captured.
+
+A top-view save state with the world-map overlay paged in is the
+unblocker - ``mednafen-state prim-trace`` against it would surface
+any flat-shaded large-quad ocean draws and a ``vram-dump`` would
+identify the texture region. The walk-view captures available today
+(``mc1 / mc2 / mc3``) don't exercise the top-view render path.
+
 ### Camera anchors
 
 Per-kingdom camera centres + zoom anchors live in two tables:

@@ -518,11 +518,22 @@
    * mode binds the same class, so uploadFogLut always exists). */
   function pushFogParamsToRenderer() {
     if (!glRenderer || typeof glRenderer.uploadFogLut !== 'function') return;
-    /* Compose the color: explicit param overrides take precedence,
-     * otherwise fall back to the per-kingdom baseline tint. */
-    const color = fogParams.color
-      ? fogParams.color
-      : (KINGDOM_FOG_TINT[currentKingdom] || { r: 0.20, g: 0.20, b: 0.30 });
+    /* Compose the color, preferring (in order):
+     *   1. explicit param override (fogParams.color from the UI picker)
+     *   2. per-kingdom captured haze from world-overview.json
+     *      (`fog_color` field, populated by
+     *      scripts/mednafen/resolve_bulk_terrain.py when the save state
+     *      has an active FUN_801E3E00 atmospheric-tick actor)
+     *   3. KINGDOM_FOG_TINT hardcoded fallback (eyeballed defaults). */
+    let color = fogParams.color;
+    if (!color && placements?.[currentKingdom]?.fog_color) {
+      const f = placements[currentKingdom].fog_color;
+      color = { r: f.r, g: f.g, b: f.b };
+    }
+    if (!color) {
+      color = KINGDOM_FOG_TINT[currentKingdom]
+        || { r: 0.20, g: 0.20, b: 0.30 };
+    }
     glRenderer.uploadFogLut(fogLut, {
       enable: fogParams.enable,
       zShift: fogParams.zShift,
@@ -760,9 +771,17 @@
         kind: 'man', class: p.class || 'landmark', name: p.name,
       });
     }
-    /* Live-RAM actor placements (resolve_actor_tmds.py output). These
-     * pin actor-positioned slots that MAN doesn't reference (Drake
-     * surfaces 12 today; Sebucus/Karisto pending a save state). */
+    /* Live-RAM actor placements (resolve_actor_tmds.py /
+     * scripts/mednafen/resolve_bulk_terrain.py output). These pin
+     * actor-positioned slots that MAN doesn't reference. The new mednafen
+     * resolver also tags each entry with `kind: 'bulk_terrain'` or
+     * 'man_actor' so we can split the draw list into a separate
+     * `bulk_terrain` track (rendered with class-conditioned colour).
+     *
+     * `bulk_terrain_placements` is a strict subset of `live_placements`
+     * (kind === 'bulk_terrain'). We honour `live_placements` directly so
+     * the legacy class colouring still works, and treat bulk_terrain as
+     * a tagged sub-bucket. */
     const liveSlots = new Set();
     const livePlacements = k.live_placements || [];
     for (const lp of livePlacements) {
@@ -771,7 +790,9 @@
       liveSlots.add(ms);
       drawPlacements.push({
         meshId: ms, x: lp.pos[0], z: lp.pos[2],
-        kind: 'live', class: lp.class || 'landmark',
+        kind: lp.kind === 'bulk_terrain' ? 'bulk_terrain' : 'live',
+        class: lp.class || 'landmark',
+        name: lp.man_record_name,
       });
     }
 
@@ -933,8 +954,24 @@
         ].filter(Boolean).join(' ')
       + (unplacedShown.npc_token ? `, ${unplacedShown.npc_token} hidden` : '')
       + ')';
+    /* Split live actors into bulk_terrain (positioned by some non-MAN
+     * runtime path - the FieldVM prescript chain via FUN_801DE840, the
+     * world-map overlay's actor-spawn calls into FUN_80024C88, etc.)
+     * vs man_actor (positioned via the standard MAN-record walker at
+     * FUN_8003A1E4). The 'kind' tag comes from the mednafen resolver in
+     * scripts/mednafen/resolve_bulk_terrain.py; older PCSX-Redux runs
+     * miss it and fall under man_actor for back-compat. */
+    const bulkPlacementsLive = livePlacements.filter(
+      lp => lp.kind === 'bulk_terrain'
+    );
+    const manPlacementsLive = livePlacements.filter(
+      lp => lp.kind !== 'bulk_terrain'
+    );
     const liveSummary = liveSlots.size === 0 ? '' :
-      ` + ${livePlacements.length} live-RAM actors (${liveSlots.size} slots)`;
+      ` + ${livePlacements.length} live-RAM actors `
+      + `(${bulkPlacementsLive.length} bulk_terrain, `
+      + `${manPlacementsLive.length} man_actor; `
+      + `${liveSlots.size} slots)`;
     $meshLabel.textContent =
       `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
       + liveSummary + unplacedSummary;

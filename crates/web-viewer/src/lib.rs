@@ -8,6 +8,7 @@
 pub mod disc;
 pub mod fog_lut;
 pub mod runtime;
+pub mod sentinel_placements;
 pub mod tmd3d;
 
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
