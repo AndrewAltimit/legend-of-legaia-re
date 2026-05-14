@@ -188,6 +188,19 @@
   <p>The <a href="../../world-overview.html">world-overview web viewer</a> no longer exposes slot 4 - the previous &quot;show slot-4 wireframe&quot; toggle was removed once the wireframe hypothesis was falsified. Re-enable from the WASM exports (<code>slot4_wireframe_lines</code> / <code>slot4_wireframe_points</code> / <code>slot4_wireframe_bounds</code>) if a future RE pass identifies the correct draw interpretation.</p>
 </section>
 
+<section class="doc-section" id="loader-hunt">
+  <h2>Slot-4 loader (loader-hunt probe)</h2>
+  <p>Running <code>autorun_slot4_loader_hunt.lua</code> against Drake (sstate1, held UP for 60 vsyncs into the warp) with Write bps tiled across slot-4 RAM (<code>0x8011A624 + offset[0..7000]</code>) surfaced <strong>the LZS decoder</strong> as the sole writer:</p>
+  <table>
+    <thead><tr><th>Caller chain</th><th>PC of write</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_8001A55C</code> (LZS decoder)</td><td><code>0x8001A604</code> (<code>sb v1, 0(s1)</code> literal-byte write)</td><td>Dominant: 5-byte bursts at every probed offset</td></tr>
+      <tr><td>same</td><td><code>0x8001A664</code> / <code>0x8001A668</code> / <code>0x8001A610</code> / <code>0x8001A5AC</code></td><td>Back-reference / literal-run / dictionary-byte paths inside the LZS loop</td></tr>
+    </tbody>
+  </table>
+  <p>Every captured first-write shows <code>pc = 0x8001A604, ra = 0x8001A58C</code> (LZS calling itself internally), with the stack containing <code>0x8001F194</code> / <code>0x8001F0A0</code> at the call-chain slots &mdash; both inside the <code>FUN_8001F05C</code> asset-dispatcher region. The chain is the <strong>standard asset-load path</strong>: scene loader &rarr; <code>FUN_8001F05C</code> (asset dispatcher) &rarr; LZS decoder &rarr; writes slot 4 at its allocated RAM destination. No special slot-4 transcoder &mdash; the asset is just LZS-decoded verbatim into RAM, matching the byte-verified disc-to-RAM finding.</p>
+</section>
+
 <section class="doc-section" id="transcoder-hunt">
   <h2>Working-buffer writers (transcoder-hunt probe)</h2>
   <p>Running <code>autorun_slot4_transcoder_hunt.lua</code> against Drake (sstate1, held UP for 60 vsyncs into the warp transition) with Write bps tiled across the <code>0x801BA000</code> working buffer surfaced <strong>two distinct writers</strong>, not a single transcoder:</p>
@@ -207,7 +220,7 @@
 <section class="doc-section" id="open">
   <h2>Open work</h2>
   <ol>
-    <li><strong>Identify the slot-4 chunk dispatch path.</strong> The transcoder-hunt probe ruled out <code>FUN_80028158</code> as the slot-4 transcoder (procedural mesh generator) and surfaced <code>FUN_8001E54C</code> as a scene-load streaming-chunk processor. The remaining lift is to identify which case arm of <code>FUN_8001E54C</code> (or a sibling) handles slot-4&apos;s type byte (<code>0x05</code>) and where its output lands. Likely probe: arm Read bps on slot-4 RAM (<code>0x8011A624+</code> for Drake) AND Exec bps at the entries of <code>FUN_8001E54C</code>&apos;s case 0 / 1 / 2 / 12 handlers, run during the kingdom warp transition.</li>
+    <li><strong>Identify the slot-4 runtime reader function (overlay-resident).</strong> Drake Read-bp captures of slot-4 RAM show the dominant caller-RA is <code>0x801F78D4</code>, which means the JAL into <code>FUN_80043390</code> is at PC <code>0x801F78D0</code> inside a world-map overlay function. The matching address in three sister overlays (<code>baka_fighter</code>, <code>dance</code>, <code>debug_menu</code>) is <code>FUN_801F7088</code> &mdash; a 2580 B function that wraps the call. The <code>world_map_top_ext.bin</code> overlay almost certainly has the same shape but Ghidra returns size=1 for that entry &mdash; forcing disassembly would let us decompile the overlay caller and see how it feeds slot-4 bytes into <code>FUN_80043390</code>&apos;s <code>display_state</code> struct.</li>
     <li><strong><code>kind</code> / <code>flag_a</code> semantic.</strong> Body header <code>kind &isin; {1, 2, 4}</code> plausibly maps to one of the three SCUS handler banks via the caller&apos;s flag argument (<code>kind=2</code> &rarr; bank 1; <code>kind=4</code> &rarr; bank 2; <code>kind=1</code> &rarr; bank 0). Body <code>kind</code> is <strong>not</strong> the same as primitive <code>kind</code> (8-19).</li>
     <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; look like packed (high-byte, low-byte) tags rather than indices. Likely feeds either the GP0 packet header (color / blend / texture-page) or a per-record draw-flag mask.</li>
     <li><strong>Re-run probe with higher cap.</strong> <code>autorun_slot4_consumer_pcs.lua</code> has <code>LEGAIA_PC_CAP</code> env-var support; bumping to 5000+ surfaces uncapped per-kind totals where Drake/Sebucus are currently capped at 200.</li>

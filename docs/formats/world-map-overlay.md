@@ -437,6 +437,35 @@ hypothesis was falsified. Re-enable from the WASM exports
 `slot4_wireframe_bounds`) if a future RE pass identifies the correct
 draw interpretation.
 
+### Slot-4 loader (loader-hunt probe)
+
+Running `autorun_slot4_loader_hunt.lua` against Drake (sstate1, held UP
+for 60 vsyncs into the warp) with Write bps tiled across slot-4 RAM
+(`0x8011A624 + offset[0..7000]`) surfaced **the LZS decoder** as the
+sole writer:
+
+| Caller chain | PC of write | Notes |
+|---|---|---|
+| `FUN_8001A55C` (LZS decoder, body at `0x8001A55C..0x8001A6XX`) | `0x8001A604` (`sb v1, 0(s1)` — literal-byte write) | Dominant: 5-byte bursts at every probed offset |
+| same | `0x8001A664` / `0x8001A668` / `0x8001A610` / `0x8001A5AC` | Back-reference copy / literal-run / dictionary-byte paths inside the LZS loop |
+
+Every captured first-write shows:
+
+```text
+pc = 0x8001A604, ra = 0x8001A58C  (LZS decoder calling itself)
+stack:
+  +0x20  0x8001F194    <- next caller up (inside asset dispatcher region)
+  +0x24  0x8001F0A0    <- asset dispatcher FUN_8001F05C-area
+  +0x30  0x801E3DC0
+```
+
+The chain is the **standard asset-load path**: scene loader →
+`FUN_8001F05C` (asset dispatcher) → LZS decoder → writes slot 4 at its
+allocated RAM destination (`0x8011A624` for Drake). No special slot-4
+transcoder; the asset is just LZS-decoded verbatim into RAM, matching
+the byte-verified `disc → RAM` finding documented in
+[RAM layout](#ram-layout) above.
+
 ### Working-buffer writers (transcoder-hunt probe, 2026-05-14)
 
 Running `autorun_slot4_transcoder_hunt.lua` against Drake (sstate1,
@@ -551,15 +580,18 @@ stream — never touching slot 4 directly after the scene-load pass.
 
 ## Open work
 
-1. **Identify the slot-4 chunk dispatch path.** The transcoder-hunt
-   probe (above) ruled out `FUN_80028158` as the slot-4 transcoder
-   (procedural mesh generator) and surfaced `FUN_8001E54C` as a
-   scene-load streaming-chunk processor. The remaining lift is to
-   identify which case arm of `FUN_8001E54C` (or a sibling) handles
-   slot-4's type byte (`0x05`) and where its output lands. Likely
-   probe: arm Read bps on slot-4 RAM (`0x8011A624+` for Drake) AND
-   Exec bps at the entries of `FUN_8001E54C`'s case 0 / 1 / 2 / 12
-   handlers, run during the kingdom warp transition.
+1. **Identify the slot-4 runtime reader function (overlay-resident).**
+   Drake Read-bp captures of slot-4 RAM show the dominant caller-RA is
+   `0x801F78D4`, which means the JAL into `FUN_80043390` is at PC
+   `0x801F78D0` inside a world-map overlay function. The matching
+   address in three sister overlays (`baka_fighter`, `dance`,
+   `debug_menu`) is `FUN_801F7088` — a 2580 B function that wraps the
+   call. The `world_map_top_ext.bin` overlay almost certainly has the
+   same shape but the function isn't auto-disassembled by Ghidra
+   (`-process overlay_world_map_top_ext.bin` returns size=1). Forcing
+   disassembly of the range (or running auto-analysis with stricter
+   settings) would let us decompile the overlay caller and see how it
+   feeds slot-4 bytes into `FUN_80043390`'s `display_state` struct.
 2. **Per-record-kind semantic.** Once the transcoder is decompiled,
    the mapping from slot-4 body bytes → cluster-A primitive kind will
    be direct: each body header's `kind` selects which primitive type
