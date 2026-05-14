@@ -152,6 +152,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/ghidra.html",        "Ghidra in Docker",              "tooling/ghidra",             "tooling/ghidra.html"),
     ("tooling/overlay-capture.html","Overlay capture",              "tooling/overlay-capture",    "tooling/overlay-capture.html"),
     ("tooling/mednafen-automation.html","Mednafen automation",      "tooling/mednafen-automation","tooling/mednafen-automation.html"),
+    ("tooling/pcsx-redux-automation.html","PCSX-Redux automation",  "tooling/pcsx-redux-automation","tooling/pcsx-redux-automation.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
