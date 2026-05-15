@@ -2236,6 +2236,95 @@ pub trait FieldHost {
         let _ = ctx;
         false
     }
+
+    // ----------------------------------------------------------------------
+    // Round 19: 0x4C n5 / n6 / n8 sub-cases entangled with the halt-acquire
+    // state machine. The standard halt-acquire predicate/apply pair gates
+    // n6 sub-0x61 and n8 sub-0; n5 sub-1/sub-2 sit alongside but don't
+    // route through the predicate.
+    // ----------------------------------------------------------------------
+
+    /// Op 0x4C n5 sub-1 - NPC / player move-to-tile with run dispatch.
+    ///
+    /// 6-byte instruction `[4C, 0x51, x_enc, z_enc, depth_or_flags, move_id]`.
+    /// The VM has already decoded `world_x` / `world_z` via the standard tile
+    /// formula (`(b & 0x7F) * 0x80 + 0x40 + 0x40 if (b & 0x80)`). `depth_byte`
+    /// is the lower 4 bits of byte +3, indexing the 8-entry depth table at
+    /// `_DAT_80073F04` in retail. `move_id` is the move-table id passed into
+    /// the move-table consumer (`func_0x800204f8`); `99` is the cancel sentinel
+    /// on the player path.
+    ///
+    /// `is_player` is derived from `ctx == _DAT_8007c364` in the original;
+    /// the VM passes `true` when `ctx.flags & 0x0100_0000` is set (the
+    /// player-vs-NPC bit). Default no-op - hosts that own the move-table
+    /// consumer override.
+    fn op4c_n5_sub1_npc_run(
+        &mut self,
+        ctx: &mut FieldCtx,
+        world_x: u16,
+        world_z: u16,
+        depth_byte: u8,
+        move_id: u8,
+        is_player: bool,
+    ) {
+        let _ = (ctx, world_x, world_z, depth_byte, move_id, is_player);
+    }
+
+    /// Op 0x4C n5 sub-2 - menu / sub-screen activation poll.
+    ///
+    /// 3-byte instruction `[4C, 0x52, menu_id]`. The original at dump lines
+    /// 6286-6294 calls `func_0x8004313c()` then
+    /// `sVar9 = func_0x80042310(menu_id, 1)`. If `sVar9 == 0x100` (menu
+    /// activation finished), the dispatcher calls `func_0x800430ac(menu_id)`
+    /// and exits through `switchD_801e00f4::default()` - advance PC by 3.
+    /// Otherwise the dispatcher routes through `LAB_801e00bc` which halts
+    /// at PC - the script polls each tick until the menu transition lands.
+    ///
+    /// Returns `true` when the menu activation finalised (advance PC),
+    /// `false` while still in transit (halt at PC). Default returns `false`
+    /// (the menu never activates) so engines without a menu compositor
+    /// halt indefinitely - they MUST override if they want this opcode to
+    /// progress.
+    fn op4c_n5_sub2_menu_activation(&mut self, menu_id: u8) -> bool {
+        let _ = menu_id;
+        false
+    }
+
+    /// Op 0x4C n6 sub-0x61 - 16-byte halt-acquire emitter (FUN_801E4C58 caller).
+    ///
+    /// `payload` is the 14-byte operand slice (bytes +1..+15 of the
+    /// instruction, including the gating word at +0xD..=+0xE). The VM has
+    /// already routed this through the standard halt-acquire predicate
+    /// ([`Self::field_halt_acquire_predicate`] with `which = 0x61`) and
+    /// performed the ctx mutation ((`saved_pc`, `wait_accum=0`,
+    /// `flags |= 0x400`) plus optional system-channel mirror via
+    /// [`Self::field_halt_acquire_apply`]).
+    ///
+    /// Default no-op. Hosts that model the emitter graph override.
+    fn op4c_n6_sub_61_emitter(&mut self, ctx: &mut FieldCtx, payload: [u8; 14]) {
+        let _ = (ctx, payload);
+    }
+
+    /// Op 0x4C n8 sub-0 - actor allocator with halt-acquire prelude.
+    ///
+    /// 3-byte header `[4C, 0x80, count]` followed by `count` variable-length
+    /// child-actor records. The VM has routed this through the standard
+    /// halt-acquire predicate ([`Self::field_halt_acquire_predicate`] with
+    /// `which = 0x80`) and performed the ctx mutation. `count` is the byte
+    /// at operand+1 (immediately after the `0x80` sub-byte); `tail` is the
+    /// raw bytecode slice starting at operand+2 (the first record byte) up
+    /// to the bytecode end. Hosts walk the records themselves - the
+    /// original uses `func_0x8003ca38` to advance through variable-length
+    /// entries.
+    ///
+    /// The VM advances PC by 3 regardless of how many records the host
+    /// consumes - the records are owned by the spawned actor at offset
+    /// `+0x90`, not by the parent script's PC.
+    ///
+    /// Default no-op. Hosts that model actor allocation override.
+    fn op4c_n8_sub_0_actor_allocator(&mut self, ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+        let _ = (ctx, count, tail);
+    }
 }
 
 /// Tristate result for [`FieldHost::op4c_n_8_sub_d_actor_search`] (op 0x4C
@@ -3389,7 +3478,49 @@ pub fn step<H: FieldHost>(
                             }
                         }
                     }
-                    1..=2 => StepResult::Pending { opcode, pc },
+                    // Sub-1: 6-byte `[4C, 0x51, x_enc, z_enc, depth, move_id]`.
+                    // NPC / player move-to-tile with run dispatch.
+                    // Dispatcher lines 6216-6285. Standard tile-coord decode,
+                    // is_player from `ctx.flags & 0x0100_0000`, dispatch to
+                    // the move-table consumer via the host. PC += 6.
+                    1 => {
+                        if operand + 5 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let b1 = bytecode[operand + 1];
+                        let b2 = bytecode[operand + 2];
+                        let b3 = bytecode[operand + 3];
+                        let move_id = bytecode[operand + 4];
+                        let world_x = ((b1 & 0x7F) as u16) * 0x80
+                            + 0x40
+                            + if b1 & 0x80 != 0 { 0x40 } else { 0 };
+                        let world_z = ((b2 & 0x7F) as u16) * 0x80
+                            + 0x40
+                            + if b2 & 0x80 != 0 { 0x40 } else { 0 };
+                        let is_player = ctx.flags & 0x0100_0000 != 0;
+                        host.op4c_n5_sub1_npc_run(ctx, world_x, world_z, b3, move_id, is_player);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 5,
+                        }
+                    }
+                    // Sub-2: 3-byte `[4C, 0x52, menu_id]`. Menu activation
+                    // poll. Dispatcher lines 6286-6294: host returns `true`
+                    // once `func_0x80042310(menu_id, 1) == 0x100` (the
+                    // "menu fully activated" sentinel); the VM advances by 3.
+                    // Otherwise the script halts at PC and polls next tick.
+                    2 => {
+                        if operand + 1 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let menu_id = bytecode[operand + 1];
+                        if host.op4c_n5_sub2_menu_activation(menu_id) {
+                            StepResult::Advance {
+                                next_pc: pc + header_size + 2,
+                            }
+                        } else {
+                            StepResult::Halt { final_pc: pc }
+                        }
+                    }
                     _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 6 - emitter call families.
@@ -3415,7 +3546,33 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 13,
                         }
                     }
-                    0x61 => StepResult::Pending { opcode, pc },
+                    // Sub-0x61: 16-byte `[4C, 0x61, ...14 operand bytes]`.
+                    // Halt-acquire emitter variant - dispatcher lines 6330-6364.
+                    // Predicate checks: `ctx.field_94 != 0 || ctx == player`
+                    // AND `ctx.flags & 0x400 == 0 || _DAT_801c6ea4+8 != 0`.
+                    // On success: standard mutation, optional system-channel
+                    // mirror, emitter call, advance PC by 16. On failure:
+                    // halt at PC. Modeled through the shared host predicate
+                    // with `which = 0x61`.
+                    0x61 => {
+                        if operand + 15 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        if host.field_halt_acquire_predicate(ctx, 0x61) {
+                            let resume = pc + header_size + 15;
+                            ctx.flags |= 0x400;
+                            ctx.wait_accum = 0;
+                            ctx.saved_pc = pc as u32;
+                            host.field_halt_acquire_apply(ctx, 0x61, resume, [0; 3]);
+                            let payload: [u8; 14] = bytecode[operand + 1..operand + 15]
+                                .try_into()
+                                .expect("14-byte payload slice");
+                            host.op4c_n6_sub_61_emitter(ctx, payload);
+                            StepResult::Advance { next_pc: resume }
+                        } else {
+                            StepResult::Halt { final_pc: pc }
+                        }
+                    }
                     _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 7 - VRAM tile-flag bulk operation. 7-byte
@@ -3652,6 +3809,37 @@ pub fn step<H: FieldHost>(
                                 }
                             }
                             ActorSearchResult::NoMatch => StepResult::Halt { final_pc: pc },
+                        }
+                    }
+                    // Sub-0: 3-byte header `[4C, 0x80, count]` + `count`
+                    // variable-length child-actor records. Halt-acquire
+                    // prelude (dispatcher lines 6456-6495) - identical
+                    // predicate to n6 sub-0x61. On success: standard ctx
+                    // mutation, actor-allocator + record-walking via host,
+                    // advance PC by 3. On failure: halt at PC. The records
+                    // past offset +2 are owned by the spawned actor's
+                    // bytecode-pointer field (`+0x90`), not by the script.
+                    0 => {
+                        if operand + 1 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        if host.field_halt_acquire_predicate(ctx, 0x80) {
+                            let resume = pc + header_size + 2;
+                            ctx.flags |= 0x400;
+                            ctx.wait_accum = 0;
+                            ctx.saved_pc = pc as u32;
+                            host.field_halt_acquire_apply(ctx, 0x80, resume, [0; 3]);
+                            let count = bytecode[operand + 1];
+                            let tail_start = operand + 2;
+                            let tail = if tail_start <= bytecode.len() {
+                                &bytecode[tail_start..]
+                            } else {
+                                &[][..]
+                            };
+                            host.op4c_n8_sub_0_actor_allocator(ctx, count, tail);
+                            StepResult::Advance { next_pc: resume }
+                        } else {
+                            StepResult::Halt { final_pc: pc }
                         }
                     }
                     _ => StepResult::Pending { opcode, pc },
@@ -5624,6 +5812,13 @@ mod tests {
         // Round 19 - 0x4C nD sub-4/5 VRAM STP set/clear.
         n_d_sub_4_vram_stp_set_calls: Vec<(u16, u16)>,
         n_d_sub_5_vram_stp_clear_calls: Vec<(u16, u16)>,
+        // Round 20 - STATE_RESUME-entangled 0x4C n5/n6/n8 sub-cases.
+        #[allow(clippy::type_complexity)]
+        n_5_sub_1_npc_runs: Vec<(u16, u16, u8, u8, bool)>, // (x, z, depth, move_id, is_player)
+        n_5_sub_2_menu_state: std::collections::HashMap<u8, bool>,
+        n_5_sub_2_polls: std::cell::RefCell<Vec<u8>>,
+        n_6_sub_61_emitter_calls: Vec<[u8; 14]>,
+        n_8_sub_0_allocator_calls: Vec<(u8, Vec<u8>)>,
     }
 
     impl FieldHost for TestHost {
@@ -6180,6 +6375,31 @@ mod tests {
             self.n_5_sub_4_polls += 1;
             self.n_5_sub_4_dialog_active
         }
+        fn op4c_n5_sub1_npc_run(
+            &mut self,
+            _ctx: &mut FieldCtx,
+            world_x: u16,
+            world_z: u16,
+            depth_byte: u8,
+            move_id: u8,
+            is_player: bool,
+        ) {
+            self.n_5_sub_1_npc_runs
+                .push((world_x, world_z, depth_byte, move_id, is_player));
+        }
+        fn op4c_n5_sub2_menu_activation(&mut self, menu_id: u8) -> bool {
+            self.n_5_sub_2_polls.borrow_mut().push(menu_id);
+            self.n_5_sub_2_menu_state
+                .get(&menu_id)
+                .copied()
+                .unwrap_or(false)
+        }
+        fn op4c_n6_sub_61_emitter(&mut self, _ctx: &mut FieldCtx, payload: [u8; 14]) {
+            self.n_6_sub_61_emitter_calls.push(payload);
+        }
+        fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+            self.n_8_sub_0_allocator_calls.push((count, tail.to_vec()));
+        }
     }
 
     impl TestHost {
@@ -6442,12 +6662,13 @@ mod tests {
     fn unimplemented_opcode_returns_pending() {
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // 0x4C outer-nibble-5 sub-1 (movement+halt-acquire) is still unported.
-        // The opcode is recognized but the handler returns Pending.
+        // 0x4C outer-nibble-8 sub-3 (box-fill table via FUN_801D5630) is the
+        // last 0x4C subdispatcher arm that remains Pending - the opcode is
+        // recognized but the handler returns Pending.
         let r = step(
             &mut host,
             &mut ctx,
-            &[0x4C, 0x51, 0x00, 0x00, 0x00, 0x00],
+            &[0x4C, 0x83, 0x00, 0x00, 0x00, 0x00],
             0,
         );
         assert!(matches!(r, StepResult::Pending { opcode: 0x4C, .. }));
@@ -7272,12 +7493,12 @@ mod tests {
         // Sanity-check that the outer 0x4C dispatcher still returns Pending
         // for sub-dispatchers we haven't ported yet. Outer nibble 5 sub-1
         // (NPC movement with halt-acquire), sub-2/3/4 (dialog query
-        // cluster), and outer nibble 8 sub-0 (actor allocator with
-        // halt-acquire) all remain Pending. Pick nibble 5 sub-1 as a stable
-        // target.
+        // cluster), n6 sub-0x61 (halt-acquire emitter), and n8 sub-0
+        // (actor allocator with halt-acquire) are all ported now; only n8
+        // sub-3 (box-fill table via FUN_801D5630) remains Pending.
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        let r = step(&mut host, &mut ctx, &[0x4C, 0x51, 0, 0, 0, 0], 0);
+        let r = step(&mut host, &mut ctx, &[0x4C, 0x83, 0, 0, 0, 0], 0);
         assert!(matches!(r, StepResult::Pending { opcode: 0x4C, .. }));
     }
 
@@ -9103,12 +9324,15 @@ mod tests {
     }
 
     #[test]
-    fn op_4c_n6_unrecognized_returns_pending() {
-        let bytecode = [0x4Cu8, 0x61, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    fn op_4c_n6_unrecognized_halts_at_pc() {
+        // n6 op0 in {0x62..=0x6F}: original dispatcher returns `param_2`
+        // unchanged (halt at PC). Only 0x60 (6-word emitter) and 0x61
+        // (halt-acquire emitter) are recognized.
+        let bytecode = [0x4Cu8, 0x62, 0, 0, 0, 0];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert!(matches!(r, StepResult::Pending { .. }));
+        assert!(matches!(r, StepResult::Halt { .. }));
     }
 
     #[test]
@@ -9170,6 +9394,139 @@ mod tests {
         };
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 4 });
+    }
+
+    #[test]
+    fn op_4c_n5_sub_1_decodes_coords_and_advances_six() {
+        // [4C, 0x51, b1, b2, b3, b4]. Tile-coord formula: world = (b & 0x7F)*0x80 + 0x40
+        // (+0x40 if high bit). b1=0x82 → (2*0x80) + 0x40 + 0x40 = 0x180.
+        // b2=0x03 → (3*0x80) + 0x40 = 0x1C0.
+        let bytecode = [0x4Cu8, 0x51, 0x82, 0x03, 0x07, 0x2A];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_5_sub_1_npc_runs.len(), 1);
+        let (wx, wz, depth, move_id, is_player) = host.n_5_sub_1_npc_runs[0];
+        assert_eq!(wx, 0x180);
+        assert_eq!(wz, 0x1C0);
+        assert_eq!(depth, 0x07);
+        assert_eq!(move_id, 0x2A);
+        assert!(!is_player, "ctx.flags & 0x01000000 == 0 → NPC path");
+    }
+
+    #[test]
+    fn op_4c_n5_sub_1_is_player_when_flag_bit_set() {
+        let bytecode = [0x4Cu8, 0x51, 0x00, 0x00, 0x00, 0x63];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx {
+            flags: 0x0100_0000,
+            ..FieldCtx::default()
+        };
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert!(host.n_5_sub_1_npc_runs[0].4);
+        // 99 (0x63) is the player-path cancel sentinel.
+        assert_eq!(host.n_5_sub_1_npc_runs[0].3, 99);
+    }
+
+    #[test]
+    fn op_4c_n5_sub_2_advances_when_menu_activated() {
+        let bytecode = [0x4Cu8, 0x52, 0x05];
+        let mut host = TestHost {
+            n_5_sub_2_menu_state: std::collections::HashMap::from([(0x05u8, true)]),
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 3 });
+        assert_eq!(host.n_5_sub_2_polls.borrow().as_slice(), &[0x05]);
+    }
+
+    #[test]
+    fn op_4c_n5_sub_2_halts_while_menu_still_loading() {
+        let bytecode = [0x4Cu8, 0x52, 0x05];
+        let mut host = TestHost::default();
+        // Menu state defaults to false - polling halts at PC.
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert!(host.n_6_sub_61_emitter_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n6_sub_61_acquires_and_advances_sixteen() {
+        // 16-byte instruction; TestHost's predicate defaults to `false`, so
+        // arm it for the acquire-success path.
+        let bytecode = [
+            0x4Cu8, 0x61, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+            0x0D, 0x0E,
+        ];
+        let mut host = TestHost {
+            halt_acquire_predicate: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 16 });
+        // ctx mutation: halt bit set, saved_pc and wait_accum updated.
+        assert_eq!(ctx.flags & 0x400, 0x400);
+        assert_eq!(ctx.saved_pc, 0);
+        assert_eq!(ctx.wait_accum, 0);
+        // Apply hook fired with which = 0x61.
+        assert!(host.halt_acquire_calls.iter().any(|(w, _, _)| *w == 0x61));
+        // Emitter received bytes +2..+15 (14 data bytes; sub-byte 0x61 stripped).
+        assert_eq!(host.n_6_sub_61_emitter_calls.len(), 1);
+        assert_eq!(
+            host.n_6_sub_61_emitter_calls[0],
+            [
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E
+            ],
+        );
+    }
+
+    #[test]
+    fn op_4c_n6_sub_61_halts_when_predicate_refuses() {
+        let bytecode = [
+            0x4Cu8, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        // halt_acquire_predicate defaults to false → refuse.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert!(host.n_6_sub_61_emitter_calls.is_empty());
+        assert_eq!(ctx.flags & 0x400, 0, "ctx unmutated on refusal");
+    }
+
+    #[test]
+    fn op_4c_n8_sub_0_acquires_and_advances_three() {
+        let bytecode = [0x4Cu8, 0x80, 0x03, 0xAA, 0xBB, 0xCC];
+        let mut host = TestHost {
+            halt_acquire_predicate: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 3 });
+        assert_eq!(ctx.flags & 0x400, 0x400);
+        assert!(host.halt_acquire_calls.iter().any(|(w, _, _)| *w == 0x80));
+        assert_eq!(host.n_8_sub_0_allocator_calls.len(), 1);
+        let (count, tail) = &host.n_8_sub_0_allocator_calls[0];
+        assert_eq!(*count, 3);
+        assert_eq!(tail.as_slice(), &[0xAA, 0xBB, 0xCC]);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_0_halts_when_predicate_refuses() {
+        let bytecode = [0x4Cu8, 0x80, 0x00];
+        // halt_acquire_predicate defaults to false.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
+        assert!(host.n_8_sub_0_allocator_calls.is_empty());
     }
 
     #[test]

@@ -156,6 +156,18 @@ The Drake-only count produced by the existing PCSX-Redux capture
 as ``man_actor`` under the new tagging since that capture script
 predates the ``kind`` field.
 
+## Global-pool placement placeholders
+
+MAN-record placements with ``tmd_slot >= 0xF0`` reference the global TMD
+pool (``DAT_8007C018``) rather than the kingdom-local pack at slot 1.
+The disc-side global mesh pool is not yet bundled into
+``site/world-overview.json``; until that pipeline lands, the viewer
+stamps the kingdom pack's slot 0 mesh (typically a ground tile) at the
+decoded world coordinates and tags the draw record ``kind: 'global_pool'``.
+The snapshot panel surfaces both the underlying ``global TMD refs``
+count and the ``+ N global-pool placeholders`` rendered count so the
+gap stays visible without dropping the placements silently.
+
 ## Per-kingdom fog colour
 
 The atmospheric-tick actor (``actor[+0x0C] == FUN_801E3E00`` at

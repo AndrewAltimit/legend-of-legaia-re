@@ -100,10 +100,18 @@ fn synthetic_party() -> Party {
 
 /// Build a populated [`SaveFile`] from a synthetic party.
 fn synthetic_save_file() -> SaveFile {
+    // Retail-shaped 512-byte story-flag bitmap with a sentinel pattern -
+    // verifies that the bigger-than-u32 region round-trips through the
+    // full save cycle.
+    let mut story_flag_bits = vec![0u8; legaia_save::RETAIL_STORY_FLAGS_SIZE];
+    story_flag_bits[0] = 0xAB;
+    story_flag_bits[1] = 0xCD;
+    story_flag_bits[0x100] = 0xEF;
     SaveFile {
         party: synthetic_party(),
         ext: SaveExt {
             story_flags: 0xCAFE_BABE,
+            story_flag_bits,
             money: 1234,
             inventory: vec![(0x0A, 5), (0x14, 1), (0x20, 99)],
         },
@@ -309,6 +317,7 @@ fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
 
     let pre_money = world.money;
     let pre_story_flags = world.story_flags;
+    let pre_story_flag_bits = world.story_flag_bits.clone();
     let pre_inventory: std::collections::HashMap<u8, u8> = world.inventory.clone();
     let pre_levels: Vec<u8> = world.level_up_tracker.level[..3].to_vec();
 
@@ -416,6 +425,10 @@ fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
     assert_eq!(
         reloaded.story_flags, pre_story_flags,
         "story flags must round-trip"
+    );
+    assert_eq!(
+        reloaded.story_flag_bits, pre_story_flag_bits,
+        "retail-sized story-flag bitmap must round-trip"
     );
     assert_eq!(
         reloaded.money, world.money,
@@ -904,8 +917,12 @@ fn real_psx_memory_card_save_drives_full_loop() {
             return;
         }
     };
-    let party = match Party::from_retail_sc_block(block, 4) {
-        Ok(p) if !p.members.is_empty() => p,
+    // SaveFile::from_retail_sc_block pulls party + story_flag_bits + inventory
+    // straight from the SC block at their pinned offsets. Fall back to the
+    // party-only constructor when the block is too small or the records are
+    // shaped unexpectedly so the test remains a soft skip rather than a hard fail.
+    let retail_save = match SaveFile::from_retail_sc_block(block, 4) {
+        Ok(s) if !s.party.members.is_empty() => s,
         Ok(_) => {
             eprintln!("[skip] SC block contained no character records");
             return;
@@ -915,21 +932,32 @@ fn real_psx_memory_card_save_drives_full_loop() {
             return;
         }
     };
+    let party = retail_save.party.clone();
 
     eprintln!(
-        "[real-card] booting loop from {} ({} character record{})",
+        "[real-card] booting loop from {} ({} character record{}, story-bits={} B, items={})",
         card_path.display(),
         party.members.len(),
-        if party.members.len() == 1 { "" } else { "s" }
+        if party.members.len() == 1 { "" } else { "s" },
+        retail_save.ext.story_flag_bits.len(),
+        retail_save.ext.inventory.len(),
     );
 
-    // Build a SaveFile around the retail party + sentinel globals.
+    // Build a SaveFile around the retail party + retail story flag bitmap +
+    // retail inventory. Override money/play_time/active_party with test
+    // sentinels since the retail money offset isn't yet exposed as a reader
+    // and the SM expects a 3-slot active party.
     let save = SaveFile {
         party,
         ext: SaveExt {
-            story_flags: 0xCAFE_BABE,
+            story_flags: retail_save.ext.story_flags,
+            story_flag_bits: retail_save.ext.story_flag_bits.clone(),
             money: 5000,
-            inventory: vec![(0x01, 9), (0x02, 3)],
+            inventory: if retail_save.ext.inventory.is_empty() {
+                vec![(0x01, 9), (0x02, 3)]
+            } else {
+                retail_save.ext.inventory.clone()
+            },
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 7200,
@@ -968,4 +996,74 @@ fn real_psx_memory_card_save_drives_full_loop() {
         ..save
     });
     assert_eq!(&bytes[..4], b"LGSF");
+}
+
+/// Walk a save through the retail SC-block layout end-to-end.
+///
+/// Build a populated `SaveFile`, write it into an 8 KiB SC block via
+/// [`SaveFile::write_into_retail_sc_block`], read it back via
+/// [`SaveFile::from_retail_sc_block`], and verify that the party records,
+/// inventory, and full 512-byte story-flag bitmap survive the cycle. Runs
+/// in CI - no disc data needed, the SC block is synthesised in-memory.
+#[test]
+fn save_file_round_trips_through_retail_sc_block_layout() {
+    use legaia_save::{
+        BLOCK_SIZE, RETAIL_STORY_FLAGS_SIZE, SAVE_BLOCK_MAGIC, read_retail_inventory,
+        read_retail_story_flags,
+    };
+
+    let mut bits = vec![0u8; RETAIL_STORY_FLAGS_SIZE];
+    bits[0] = 0xDE;
+    bits[1] = 0xAD;
+    bits[0x40] = 0x55;
+    bits[RETAIL_STORY_FLAGS_SIZE - 1] = 0x99;
+
+    let mut roster = synthetic_party();
+    // synthetic_party may produce zero-valued slots at byte 0 - flip a
+    // sentinel into raw[0] so the retail reader recognises each slot as
+    // populated (its empty-slot test is "all bytes zero").
+    for (i, rec) in roster.members.iter_mut().enumerate() {
+        rec.raw[0] = (0x11 * (i as u8 + 1)).max(1);
+    }
+    let original = SaveFile {
+        party: roster,
+        ext: SaveExt {
+            story_flags: u32::from_le_bytes([bits[0], bits[1], bits[2], bits[3]]),
+            story_flag_bits: bits.clone(),
+            money: 0,
+            inventory: vec![(0x07, 3), (0x10, 1), (0x42, 64)],
+        },
+        ext_v2: SaveExtV2::default(),
+    };
+
+    let mut sc_block = vec![0u8; BLOCK_SIZE];
+    original
+        .write_into_retail_sc_block(&mut sc_block)
+        .expect("write into retail SC block");
+    assert_eq!(&sc_block[..2], &SAVE_BLOCK_MAGIC, "SC magic stamped");
+    assert_eq!(
+        read_retail_story_flags(&sc_block).unwrap(),
+        bits.as_slice(),
+        "story-flag bitmap landed at retail offset"
+    );
+    let inv_raw = read_retail_inventory(&sc_block).unwrap();
+    assert_eq!(inv_raw[..6], [0x07, 3, 0x10, 1, 0x42, 64]);
+
+    // synthetic_party builds 3 records. Read max_records=3 so the reader
+    // never walks into slot 3 (which overlaps the story-flag region in
+    // the retail layout and would surface as a spurious extra record).
+    let parsed =
+        SaveFile::from_retail_sc_block(&sc_block, 3).expect("round-trip through retail SC block");
+    assert_eq!(parsed.party.members.len(), original.party.members.len());
+    for (i, (a, b)) in parsed
+        .party
+        .members
+        .iter()
+        .zip(original.party.members.iter())
+        .enumerate()
+    {
+        assert_eq!(a.raw, b.raw, "character record {i} round-trips byte-exact");
+    }
+    assert_eq!(parsed.ext.story_flag_bits, bits);
+    assert_eq!(parsed.ext.inventory, original.ext.inventory);
 }

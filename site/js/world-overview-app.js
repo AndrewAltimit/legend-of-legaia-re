@@ -573,18 +573,54 @@
     }
 
     const drawPlacements = [];
-    /* MAN-table placements at the disc-encoded world coordinates. */
+    /* MAN-table placements at the disc-encoded world coordinates. Counts
+     * by source so the snapshot panel surfaces how many placements made
+     * it onto the GPU vs were dropped for the global-pool gap. */
     const manSlots = new Set();
+    const renderCounts = { scene_pack: 0, global_pool: 0, skipped: 0 };
     for (const p of k.placements) {
       if (p.script_positioned) continue;
-      if (!p.tmd_source || p.tmd_source.kind !== 'scene_tmd_pack') continue;
-      const ms = p.tmd_source.pack_slot;
-      if (!ensureMeshUploaded(ms)) continue;
-      manSlots.add(ms);
-      drawPlacements.push({
-        meshId: ms, x: p.pos[0], z: p.pos[2],
-        kind: 'man', class: p.class || 'landmark', name: p.name,
-      });
+      if (!p.tmd_source) {
+        renderCounts.skipped++;
+        continue;
+      }
+      if (p.tmd_source.kind === 'scene_tmd_pack') {
+        const ms = p.tmd_source.pack_slot;
+        if (!ensureMeshUploaded(ms)) {
+          renderCounts.skipped++;
+          continue;
+        }
+        manSlots.add(ms);
+        drawPlacements.push({
+          meshId: ms, x: p.pos[0], z: p.pos[2],
+          kind: 'man', class: p.class || 'landmark', name: p.name,
+        });
+        renderCounts.scene_pack++;
+        continue;
+      }
+      if (p.tmd_source.kind === 'global_pool') {
+        /* Global TMD references (slot >= 0xF0) resolve through retail's
+         * DAT_8007C018 table - the disc-side global mesh pool is not yet
+         * bundled into world-overview.json. Until that pipeline lands,
+         * stamp a placeholder using the kingdom pack's smallest TMD
+         * (slot 0 - typically a ground tile) so the position is visible.
+         * Tagged 'global_pool' so the snapshot panel can call them out. */
+        if (!ensureMeshUploaded(0)) {
+          renderCounts.skipped++;
+          continue;
+        }
+        manSlots.add(0);
+        drawPlacements.push({
+          meshId: 0, x: p.pos[0], z: p.pos[2],
+          kind: 'global_pool',
+          class: p.class || 'landmark',
+          name: p.name,
+          global_index: p.tmd_source.global_index,
+        });
+        renderCounts.global_pool++;
+        continue;
+      }
+      renderCounts.skipped++;
     }
     /* Live-RAM actor placements (resolve_actor_tmds.py /
      * scripts/mednafen/resolve_bulk_terrain.py output). These pin
@@ -787,9 +823,15 @@
       + `(${bulkPlacementsLive.length} bulk_terrain, `
       + `${manPlacementsLive.length} man_actor; `
       + `${liveSlots.size} slots)`;
+    /* Global-pool placeholders render at MAN coords with a generic
+     * scene-pack stand-in mesh; surface the count so the gap is visible. */
+    const globalPoolSummary = renderCounts.global_pool === 0 ? '' :
+      ` + ${renderCounts.global_pool} global-pool placeholders`;
+    const skippedSummary = renderCounts.skipped === 0 ? '' :
+      ` (${renderCounts.skipped} skipped)`;
     $meshLabel.textContent =
       `${k.cdname} - ${placedShownCount} placements (${used.size} unique meshes, ${packCount}-TMD pack)`
-      + liveSummary + unplacedSummary;
+      + liveSummary + globalPoolSummary + unplacedSummary + skippedSummary;
     $meshInfo.textContent =
       `top-down view; world ${ext[0]} x ${ext[1]} units; scroll to zoom, drag to pan`;
     attachTopDownControls(fresh);
@@ -960,7 +1002,7 @@
       <dt>world-placed</dt>    <dd>${placed}</dd>
       <dt>script-positioned</dt><dd>${scripted}</dd>
       <dt>TMD pack</dt>        <dd>${packCount} meshes (slot 1, type 0x02)</dd>
-      <dt>global TMD refs</dt> <dd>${globalRefs} placement(s) use the global pool (slot &ge; 0xF0)</dd>
+      <dt>global TMD refs</dt> <dd>${globalRefs} placement(s) use the global pool (slot &ge; 0xF0) - rendered as placeholders pending disc-side global mesh bundle</dd>
     `;
     const counts = {};
     k.placements.forEach(p => { if (!p.script_positioned) counts[p.list] = (counts[p.list] || 0) + 1; });

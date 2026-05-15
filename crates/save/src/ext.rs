@@ -23,8 +23,8 @@
 //!
 //! ## Binary layout (`LGSF v2` - extends v1)
 //!
-//! v2 is backward-compatible: the writer always emits v2; the parser
-//! accepts both. v2 appends a per-character extension block plus a
+//! v2 is backward-compatible: the writer (when emitting v2 or higher) emits
+//! a v1-shaped prelude and appends a per-character extension block plus a
 //! game-level extension block after the v1 party records:
 //!
 //! ```text
@@ -53,6 +53,21 @@
 //!        - 1    sequence_len
 //!        - K    Command bytes
 //! ```
+//!
+//! ## Binary layout (`LGSF v3` - extends v2)
+//!
+//! v3 appends a retail-faithful story-flag bitmap (mirroring the 512-byte
+//! region at retail SC offset `0x14C0` / live RAM `0x80085600..0x80085800`)
+//! after the v2 ext block. Writers always emit v3 once any byte of
+//! [`SaveExt::story_flag_bits`] is non-empty; readers accept v1, v2, and v3.
+//!
+//! ```text
+//! ... v2 fields above ...
+//! 4      ext3_magic: b"LGX3" (sentinel - v2 readers stop here)
+//! 4      ext3_total_size (u32 LE)
+//! 2      story_flag_bits_len (u16 LE)
+//! N      story_flag_bits (bytes, mirrors retail SC `+0x14C0`)
+//! ```
 
 use anyhow::{Context, Result, bail};
 
@@ -61,22 +76,41 @@ use crate::character::{CHARACTER_RECORD_SIZE, Party};
 /// Four-byte magic at the start of every `LGSF` save file.
 pub const SAVE_FILE_MAGIC: [u8; 4] = *b"LGSF";
 /// Current format version stored in byte 4.
-pub const SAVE_FILE_VERSION: u8 = 2;
+pub const SAVE_FILE_VERSION: u8 = 3;
 /// V1 sentinel kept for legacy save reads.
 pub const SAVE_FILE_VERSION_V1: u8 = 1;
+/// V2 sentinel - first version with the LGX2 ext block but no LGX3 story-flag bitmap.
+pub const SAVE_FILE_VERSION_V2: u8 = 2;
 /// Magic at the start of the v2 extension block.
 pub const SAVE_FILE_EXT_MAGIC: [u8; 4] = *b"LGX2";
+/// Magic at the start of the v3 extension block (full story-flag bitmap).
+pub const SAVE_FILE_EXT3_MAGIC: [u8; 4] = *b"LGX3";
 
 /// Engine-wide global state that is not part of any per-character record.
 ///
-/// The retail PSX memory card stores this alongside the character records
-/// in a block whose layout is not yet reversed. Until that trace is done,
-/// this struct is the engine's own representation.
+/// Retail SC blocks store these alongside the character records at fixed
+/// offsets:
+/// - `story_flag_bits` mirrors the 512-byte bitmap at `0x14C0` (RAM
+///   `0x80085600..0x80085800`).
+/// - `inventory` mirrors the 144-byte 72-slot pair array at `0x1818`
+///   (RAM `0x80085958..0x800859E8`).
+///
+/// The 32-bit [`Self::story_flags`] word is the scratchpad cache
+/// (`_DAT_1F800394`) that the field VM operates on via opcodes
+/// `0x2E` / `0x2F` / `0x30`; it's a narrower view than the full retail
+/// bitmap and is round-tripped separately.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SaveExt {
     /// Story-flag word mirroring `World::story_flags` (`_DAT_1F800394` in
     /// retail). Read by field-VM op `0x30`; set by ops `0x31` / `0x32`.
     pub story_flags: u32,
+    /// Full 512-byte story-flag bitmap from retail SC offset `0x14C0`,
+    /// mirroring live RAM `0x80085600..0x80085800`. Empty (`vec![]`) means
+    /// "no retail-shaped data captured"; engines that don't track the wide
+    /// bitmap can leave this default. Reads/writes of the bitmap go through
+    /// [`crate::card::read_retail_story_flags`] /
+    /// [`crate::card::write_retail_story_flags`].
+    pub story_flag_bits: Vec<u8>,
     /// Running gold total mirroring `World::money`. Field-VM op `0x3A`
     /// mutates this; clamped to `[0, 9_999_999]` at runtime.
     pub money: i32,
@@ -212,6 +246,19 @@ impl SaveFile {
         let ext_total_size = ext_block.len() as u32;
         out.extend_from_slice(&ext_total_size.to_le_bytes());
         out.extend_from_slice(&ext_block);
+
+        // V3 extension block: retail-faithful 512-byte story-flag bitmap.
+        // Emit unconditionally so the magic byte is a stable parse marker -
+        // an empty bitmap encodes as `len=0` and costs 10 bytes.
+        let mut ext3_block = Vec::new();
+        let bits_len = self.ext.story_flag_bits.len().min(u16::MAX as usize) as u16;
+        ext3_block.extend_from_slice(&bits_len.to_le_bytes());
+        ext3_block.extend_from_slice(&self.ext.story_flag_bits[..bits_len as usize]);
+        out.extend_from_slice(&SAVE_FILE_EXT3_MAGIC);
+        let ext3_total_size = ext3_block.len() as u32;
+        out.extend_from_slice(&ext3_total_size.to_le_bytes());
+        out.extend_from_slice(&ext3_block);
+
         out
     }
 
@@ -237,7 +284,7 @@ impl SaveFile {
         }
         let version = buf[4];
         match version {
-            SAVE_FILE_VERSION_V1 | SAVE_FILE_VERSION => {}
+            SAVE_FILE_VERSION_V1 | SAVE_FILE_VERSION_V2 | SAVE_FILE_VERSION => {}
             other => bail!("LGSF: unsupported version {other}"),
         }
         let story_flags = u32::from_le_bytes(buf[5..9].try_into().unwrap());
@@ -268,13 +315,14 @@ impl SaveFile {
             Party::parse(&buf[party_start..party_end]).context("LGSF: parse party records")?
         };
 
-        let ext = SaveExt {
+        let mut ext = SaveExt {
             story_flags,
             money,
             inventory,
+            story_flag_bits: Vec::new(),
         };
 
-        // V1 reads stop at party_end. V2 may have an extension block.
+        // V1 reads stop at party_end. V2/V3 may have one or two extension blocks.
         if version == SAVE_FILE_VERSION_V1 {
             return Ok(Self {
                 party,
@@ -284,7 +332,7 @@ impl SaveFile {
         }
         let mut cursor = party_end;
         if cursor + 8 > buf.len() {
-            // V2 declared but no ext block - treat as empty.
+            // V2/V3 declared but no ext block - treat as empty.
             return Ok(Self {
                 party,
                 ext,
@@ -305,8 +353,107 @@ impl SaveFile {
         }
         let ext_buf = &buf[cursor..ext_end];
         let ext_v2 = parse_ext_v2(ext_buf).context("parse LGSF v2 ext block")?;
+        cursor = ext_end;
+
+        // V3 LGX3 ext block carries the 512-byte retail story-flag bitmap.
+        if version == SAVE_FILE_VERSION {
+            if cursor + 8 > buf.len() {
+                bail!("LGSF v3: LGX3 ext header missing (cursor {cursor:#x})");
+            }
+            let magic3 = &buf[cursor..cursor + 4];
+            if magic3 != SAVE_FILE_EXT3_MAGIC {
+                bail!("LGSF v3: missing LGX3 magic at {cursor:#x}");
+            }
+            cursor += 4;
+            let ext3_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext3_end = cursor + ext3_total_size;
+            if buf.len() < ext3_end {
+                bail!("LGSF v3: LGX3 ext block truncated");
+            }
+            ext.story_flag_bits =
+                parse_ext_v3(&buf[cursor..ext3_end]).context("parse LGSF v3 ext block")?;
+        }
+
         Ok(Self { party, ext, ext_v2 })
     }
+
+    /// Build a [`SaveFile`] from a retail SC save block (8 KiB block whose
+    /// first two bytes are [`crate::SAVE_BLOCK_MAGIC`]).
+    ///
+    /// Reads party records, the 512-byte story-flag bitmap, and the 72-slot
+    /// inventory at their pinned offsets. `money` defaults to `0` since the
+    /// retail gold offset (`game_data+0x025C`) is documented but not yet
+    /// exposed as a read helper. Empty inventory slots (`(0, 0)`) are
+    /// dropped so the returned [`SaveExt::inventory`] is compact.
+    ///
+    /// `max_records` caps the party walk - retail saves never hold more
+    /// than 4 active records (Vahn / Noa / Gala / Terra).
+    pub fn from_retail_sc_block(sc_block: &[u8], max_records: usize) -> Result<Self> {
+        let party = Party::from_retail_sc_block(sc_block, max_records)
+            .context("LGSF: parse party records from retail SC block")?;
+        let story_flag_bits = crate::card::read_retail_story_flags(sc_block)
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default();
+        let inventory: Vec<(u8, u8)> = crate::card::read_retail_inventory(sc_block)
+            .map(|raw| {
+                raw.chunks_exact(2)
+                    .filter(|p| !(p[0] == 0 && p[1] == 0))
+                    .map(|p| (p[0], p[1]))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let story_flags = story_flag_bits
+            .get(..4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .unwrap_or(0);
+        Ok(Self {
+            party,
+            ext: SaveExt {
+                story_flags,
+                story_flag_bits,
+                money: 0,
+                inventory,
+            },
+            ext_v2: SaveExtV2::default(),
+        })
+    }
+
+    /// Write this save into a retail SC save block in place.
+    ///
+    /// Stamps the SC magic at offset 0, then dispatches each region through
+    /// the corresponding `write_retail_*` helper. The SC block must be at
+    /// least the size of the largest region's end (handled by the underlying
+    /// helpers). `ext.story_flag_bits` shorter than 512 bytes is right-padded
+    /// with zeros; longer is truncated. Inventory slots past the 72-slot
+    /// retail cap are dropped.
+    ///
+    /// `money` is NOT written: the retail gold offset isn't exposed as a
+    /// write helper yet. Engines that need to update gold via this path can
+    /// write the 4 bytes directly at `RETAIL_GAME_DATA_OFFSET + 0x025C`.
+    pub fn write_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<()> {
+        if sc_block.len() < 2 {
+            bail!("sc_block too small to hold SC magic");
+        }
+        sc_block[..2].copy_from_slice(&crate::card::SAVE_BLOCK_MAGIC);
+        let records: Vec<Vec<u8>> = self.party.members.iter().map(|m| m.raw.to_vec()).collect();
+        crate::card::write_retail_char_records(sc_block, &records)?;
+        crate::card::write_retail_story_flags(sc_block, &self.ext.story_flag_bits)?;
+        crate::card::write_retail_inventory(sc_block, &self.ext.inventory)?;
+        Ok(())
+    }
+}
+
+fn parse_ext_v3(buf: &[u8]) -> Result<Vec<u8>> {
+    if buf.len() < 2 {
+        bail!("LGX3 ext block too short");
+    }
+    let bits_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+    if buf.len() < 2 + bits_len {
+        bail!("LGX3 story_flag_bits truncated");
+    }
+    Ok(buf[2..2 + bits_len].to_vec())
 }
 
 fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
@@ -438,6 +585,7 @@ mod tests {
                 story_flags: 0xDEAD_BEEF,
                 money: 12345,
                 inventory: vec![(1, 5), (7, 2), (255, 1)],
+                story_flag_bits: Vec::new(),
             },
             ext_v2: SaveExtV2::default(),
         }
@@ -461,6 +609,7 @@ mod tests {
                 story_flags: 0,
                 money: 0,
                 inventory: vec![],
+                story_flag_bits: Vec::new(),
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -494,6 +643,7 @@ mod tests {
                 story_flags: 1,
                 money: 999,
                 inventory: vec![(0, 3)],
+                story_flag_bits: Vec::new(),
             },
             ext_v2: SaveExtV2::default(),
         };
@@ -598,5 +748,122 @@ mod tests {
         bad.truncate(bad.len() - 3);
         let err = SaveFile::parse(&bad).unwrap_err();
         assert!(format!("{err:#}").contains("ext"));
+    }
+
+    #[test]
+    fn round_trip_v3_story_flag_bits() {
+        let mut bits = vec![0u8; 0x200];
+        for (i, b) in bits.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(0x33);
+        }
+        let sf = SaveFile {
+            party: Party {
+                members: vec![CharacterRecord::zeroed()],
+            },
+            ext: SaveExt {
+                story_flags: 0xCAFE_F00D,
+                money: 42,
+                inventory: vec![(0x10, 7)],
+                story_flag_bits: bits.clone(),
+            },
+            ext_v2: SaveExtV2::default(),
+        };
+        let bytes = sf.write();
+        assert_eq!(bytes[4], SAVE_FILE_VERSION);
+        let parsed = SaveFile::parse(&bytes).unwrap();
+        assert_eq!(parsed, sf);
+        assert_eq!(parsed.ext.story_flag_bits, bits);
+    }
+
+    #[test]
+    fn parse_v2_file_into_v3_struct_keeps_bits_empty() {
+        // Hand-craft a v2 save (no LGX3 trailer).
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(&SAVE_FILE_MAGIC);
+        v2.push(SAVE_FILE_VERSION_V2);
+        v2.extend_from_slice(&0u32.to_le_bytes()); // story_flags
+        v2.extend_from_slice(&500i32.to_le_bytes()); // money
+        v2.push(1); // inv_count
+        v2.push(7);
+        v2.push(3); // (id, count)
+        v2.push(0); // party_count
+        v2.extend_from_slice(&SAVE_FILE_EXT_MAGIC);
+        // 7 bytes minimum LGX2 body (play_time(4) + active_len(1) + per_char_count(1) + saved_chain_count(1)).
+        v2.extend_from_slice(&7u32.to_le_bytes());
+        v2.extend_from_slice(&0u32.to_le_bytes()); // play_time
+        v2.push(0); // active_party len
+        v2.push(0); // per_char count
+        v2.push(0); // saved_chain count
+        let parsed = SaveFile::parse(&v2).unwrap();
+        assert_eq!(parsed.ext.money, 500);
+        assert!(parsed.ext.story_flag_bits.is_empty());
+    }
+
+    #[test]
+    fn truncated_v3_ext_returns_error() {
+        let mut bits = vec![0u8; 0x200];
+        bits[0] = 0xAB;
+        let sf = SaveFile {
+            party: Party::default(),
+            ext: SaveExt {
+                story_flags: 0,
+                money: 0,
+                inventory: vec![],
+                story_flag_bits: bits,
+            },
+            ext_v2: SaveExtV2::default(),
+        };
+        let mut bytes = sf.write();
+        // Lop off the last 16 bytes - well inside the 0x200-byte LGX3 body.
+        bytes.truncate(bytes.len() - 16);
+        let err = SaveFile::parse(&bytes).unwrap_err();
+        assert!(
+            format!("{err:#}").to_lowercase().contains("lgx3"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn save_file_round_trips_through_retail_sc_block() {
+        use crate::card::{BLOCK_SIZE, SAVE_BLOCK_MAGIC};
+
+        let mut bits = vec![0u8; crate::card::RETAIL_STORY_FLAGS_SIZE];
+        for (i, b) in bits.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_add(1);
+        }
+        // Two records with a recognisable pattern in the first byte so the
+        // reader doesn't stop at slot 0 thinking it's empty.
+        let mut rec0 = CharacterRecord::zeroed();
+        rec0.raw[0] = 0x11;
+        let mut rec1 = CharacterRecord::zeroed();
+        rec1.raw[0] = 0x22;
+        let original = SaveFile {
+            party: Party {
+                members: vec![rec0, rec1],
+            },
+            ext: SaveExt {
+                story_flags: 0,
+                money: 0,
+                inventory: vec![(0x05, 9), (0x10, 1), (0x33, 64)],
+                story_flag_bits: bits.clone(),
+            },
+            ext_v2: SaveExtV2::default(),
+        };
+
+        let mut sc_block = vec![0u8; BLOCK_SIZE];
+        original.write_into_retail_sc_block(&mut sc_block).unwrap();
+        assert_eq!(&sc_block[..2], &SAVE_BLOCK_MAGIC);
+
+        let parsed = SaveFile::from_retail_sc_block(&sc_block, 4).unwrap();
+        assert_eq!(parsed.party.members.len(), 2);
+        assert_eq!(parsed.party.members[0].raw[0], 0x11);
+        assert_eq!(parsed.party.members[1].raw[0], 0x22);
+        assert_eq!(parsed.ext.story_flag_bits, bits);
+        assert_eq!(parsed.ext.inventory, vec![(0x05, 9), (0x10, 1), (0x33, 64)]);
+        // story_flags scratchpad u32 mirrors the first 4 bits-bytes LE.
+        assert_eq!(
+            parsed.ext.story_flags,
+            u32::from_le_bytes([bits[0], bits[1], bits[2], bits[3]])
+        );
     }
 }

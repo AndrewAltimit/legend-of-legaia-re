@@ -330,6 +330,17 @@ pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x66F;
 /// Gala at `game+0xE97`, Terra at `game+0x12AB` - all at 0x414-byte intervals.
 pub const RETAIL_CHAR_RECORD_STRIDE: usize = 0x414;
 
+/// Maximum number of non-overlapping character record slots in the retail
+/// SC layout.
+///
+/// `RETAIL_CHAR_RECORD_HEADER_SIZE + N*RETAIL_CHAR_RECORD_STRIDE` first
+/// collides with [`RETAIL_STORY_FLAGS_OFFSET`] at `N=3` (slot 3 starts at
+/// SC offset `0x14AB`, which the 512-byte story-flag bitmap at `+0x14C0`
+/// would overlap). Retail handles slot 3 (Terra) via a special-case path
+/// the reverse-engineering doesn't yet model, so callers that want a
+/// conservative non-overlapping walk should cap at 3 records.
+pub const RETAIL_MAX_CHAR_RECORDS: usize = 3;
+
 /// Byte offset from the SC block start to the story-flag bitmap.
 ///
 /// The story-flag bitmap occupies 512 bytes (`0x200`) and mirrors the
@@ -434,6 +445,88 @@ pub fn read_retail_story_flags(sc_block: &[u8]) -> Option<&[u8]> {
 /// The slice mirrors the live-RAM region `0x80085958..0x800859E8`.
 pub fn read_retail_inventory(sc_block: &[u8]) -> Option<&[u8]> {
     sc_block.get(RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE)
+}
+
+/// Write character records into a retail SC save block in place.
+///
+/// `records` are written sequentially starting at the retail record region
+/// (`RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE`). Each record
+/// occupies exactly `RETAIL_CHAR_RECORD_STRIDE` (0x414) bytes; shorter slices
+/// are zero-padded, longer ones are truncated.
+///
+/// Returns the number of slots written. Returns `Err` if the SC block is too
+/// small to hold even one record. The function does **not** zero trailing
+/// slots: the retail SC layout places the story-flag bitmap (`+0x14C0`) and
+/// inventory (`+0x1818`) regions in addresses that overlap what would
+/// otherwise be the 4th and 5th record slots, so blindly zero-padding
+/// trailing slots would clobber later writes. Callers that want a clean
+/// block should zero-fill the buffer before writing.
+pub fn write_retail_char_records(sc_block: &mut [u8], records: &[Vec<u8>]) -> Result<usize> {
+    let records_start = RETAIL_GAME_DATA_OFFSET + RETAIL_CHAR_RECORD_HEADER_SIZE;
+    if sc_block.len() < records_start + RETAIL_CHAR_RECORD_STRIDE {
+        bail!(
+            "sc_block too small for retail char record region (need >= {}, got {})",
+            records_start + RETAIL_CHAR_RECORD_STRIDE,
+            sc_block.len()
+        );
+    }
+    let cap = (sc_block.len() - records_start) / RETAIL_CHAR_RECORD_STRIDE;
+    let n = records.len().min(cap);
+    for (i, rec) in records.iter().take(n).enumerate() {
+        let off = records_start + i * RETAIL_CHAR_RECORD_STRIDE;
+        let dst = &mut sc_block[off..off + RETAIL_CHAR_RECORD_STRIDE];
+        dst.fill(0);
+        let take = rec.len().min(RETAIL_CHAR_RECORD_STRIDE);
+        dst[..take].copy_from_slice(&rec[..take]);
+    }
+    Ok(n)
+}
+
+/// Write the 512-byte story-flag bitmap into a retail SC save block in place.
+///
+/// `bits` shorter than [`RETAIL_STORY_FLAGS_SIZE`] is zero-padded on the right;
+/// longer slices are truncated. Returns the number of bytes written.
+/// Returns `Err` if the SC block is too small to hold the bitmap region.
+pub fn write_retail_story_flags(sc_block: &mut [u8], bits: &[u8]) -> Result<usize> {
+    let end = RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE;
+    if sc_block.len() < end {
+        bail!(
+            "sc_block too small for retail story-flag region (need >= {}, got {})",
+            end,
+            sc_block.len()
+        );
+    }
+    let dst = &mut sc_block[RETAIL_STORY_FLAGS_OFFSET..end];
+    dst.fill(0);
+    let take = bits.len().min(RETAIL_STORY_FLAGS_SIZE);
+    dst[..take].copy_from_slice(&bits[..take]);
+    Ok(take)
+}
+
+/// Write the 72-slot inventory into a retail SC save block in place.
+///
+/// `pairs` is a slice of `(item_id, count)` pairs in destination-slot order.
+/// Up to [`RETAIL_INVENTORY_SLOTS`] pairs are written; any extras are dropped.
+/// Trailing slots past `pairs.len()` are zeroed. Returns the number of slots
+/// written. Returns `Err` if the SC block is too small to hold the inventory
+/// region.
+pub fn write_retail_inventory(sc_block: &mut [u8], pairs: &[(u8, u8)]) -> Result<usize> {
+    let end = RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE;
+    if sc_block.len() < end {
+        bail!(
+            "sc_block too small for retail inventory region (need >= {}, got {})",
+            end,
+            sc_block.len()
+        );
+    }
+    let dst = &mut sc_block[RETAIL_INVENTORY_OFFSET..end];
+    dst.fill(0);
+    let n = pairs.len().min(RETAIL_INVENTORY_SLOTS);
+    for (i, &(id, count)) in pairs.iter().take(n).enumerate() {
+        dst[i * 2] = id;
+        dst[i * 2 + 1] = count;
+    }
+    Ok(n)
 }
 
 fn bytes_to_ascii(b: &[u8]) -> String {
@@ -575,5 +668,111 @@ mod tests {
             card[frame_off..frame_off + 4].copy_from_slice(&state::FIRST_BLOCK.to_le_bytes());
         }
         assert!(write_block(&mut card, b"data", "BASCUS-94254TEST").is_err());
+    }
+
+    fn fresh_sc_block() -> Vec<u8> {
+        let mut block = vec![0u8; BLOCK_SIZE];
+        block[..2].copy_from_slice(&SAVE_BLOCK_MAGIC);
+        block
+    }
+
+    #[test]
+    fn write_retail_story_flags_round_trips_through_reader() {
+        let mut block = fresh_sc_block();
+        let mut bits = vec![0u8; RETAIL_STORY_FLAGS_SIZE];
+        for (i, b) in bits.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(7) ^ 0x5A;
+        }
+        let n = write_retail_story_flags(&mut block, &bits).unwrap();
+        assert_eq!(n, RETAIL_STORY_FLAGS_SIZE);
+        let read = read_retail_story_flags(&block).expect("read back");
+        assert_eq!(read, bits.as_slice());
+    }
+
+    #[test]
+    fn write_retail_story_flags_pads_short_input() {
+        let mut block = fresh_sc_block();
+        let short = vec![0xAA; 16];
+        let n = write_retail_story_flags(&mut block, &short).unwrap();
+        assert_eq!(n, 16);
+        let read = read_retail_story_flags(&block).unwrap();
+        assert!(read[..16].iter().all(|&b| b == 0xAA));
+        assert!(read[16..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn write_retail_inventory_round_trips() {
+        let mut block = fresh_sc_block();
+        let pairs: Vec<(u8, u8)> = (0..RETAIL_INVENTORY_SLOTS as u8)
+            .map(|i| (i, i.wrapping_mul(3)))
+            .collect();
+        let n = write_retail_inventory(&mut block, &pairs).unwrap();
+        assert_eq!(n, RETAIL_INVENTORY_SLOTS);
+        let raw = read_retail_inventory(&block).unwrap();
+        for (i, &(id, count)) in pairs.iter().enumerate() {
+            assert_eq!(raw[i * 2], id);
+            assert_eq!(raw[i * 2 + 1], count);
+        }
+    }
+
+    #[test]
+    fn write_retail_inventory_truncates_overflow() {
+        let mut block = fresh_sc_block();
+        let pairs: Vec<(u8, u8)> = (0..200u32).map(|i| ((i & 0xFF) as u8, 1)).collect();
+        let n = write_retail_inventory(&mut block, &pairs).unwrap();
+        assert_eq!(n, RETAIL_INVENTORY_SLOTS);
+    }
+
+    #[test]
+    fn write_retail_char_records_round_trips() {
+        let mut block = fresh_sc_block();
+        let records: Vec<Vec<u8>> = (0..3u8)
+            .map(|n| {
+                let mut r = vec![0u8; RETAIL_CHAR_RECORD_STRIDE];
+                // Reader stops at the first all-zero slot, so every record
+                // here carries at least one nonzero byte to round-trip.
+                r[0] = n + 1;
+                r[RETAIL_CHAR_RECORD_STRIDE - 1] = (n + 1).wrapping_mul(11);
+                r
+            })
+            .collect();
+        let n = write_retail_char_records(&mut block, &records).unwrap();
+        assert_eq!(n, 3);
+        let read = read_retail_char_records(&block, 4).unwrap();
+        assert_eq!(read.len(), 3, "fourth slot is empty so reader stops");
+        for (i, rec) in read.iter().enumerate() {
+            assert_eq!(rec[0], (i as u8) + 1);
+            assert_eq!(
+                rec[RETAIL_CHAR_RECORD_STRIDE - 1],
+                ((i as u8) + 1).wrapping_mul(11)
+            );
+        }
+    }
+
+    #[test]
+    fn write_retail_char_records_does_not_zero_trailing_slots() {
+        // The retail SC layout places the story-flag bitmap (+0x14C0) and
+        // inventory (+0x1818) regions inside what would otherwise be the
+        // trailing record slots. So the writer must leave those bytes
+        // untouched - any pre-existing content past the last written record
+        // must survive.
+        let mut block = fresh_sc_block();
+        // Drop a sentinel inside the story-flag region (which lives
+        // at +0x14C0, inside the 4th would-be record slot).
+        block[RETAIL_STORY_FLAGS_OFFSET + 0x10] = 0xAB;
+        let one = vec![{
+            let mut r = vec![0u8; RETAIL_CHAR_RECORD_STRIDE];
+            r[5] = 99;
+            r
+        }];
+        write_retail_char_records(&mut block, &one).unwrap();
+        let read = read_retail_char_records(&block, 4).unwrap();
+        assert_eq!(read.len(), 1, "first slot only");
+        assert_eq!(read[0][5], 99);
+        assert_eq!(
+            block[RETAIL_STORY_FLAGS_OFFSET + 0x10],
+            0xAB,
+            "story-flag region survives the record write"
+        );
     }
 }
