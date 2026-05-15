@@ -1587,13 +1587,31 @@ pub trait FieldHost {
     /// (the dump exits via `goto LAB_801e00bc`).
     fn op4c_n_d_sub6_field74_mutate_ack(&mut self) {}
 
-    /// Op 0x4C outer-nibble-D sub-8 - `FUN_801D77F4` 4-arg call.
+    /// Op 0x4C outer-nibble-D sub-8 - synchronous actor allocator,
+    /// `FUN_801D77F4` (overlay-resident) 4-arg call.
     ///
-    /// 9-byte instruction `[4C, 0xD8, b1, lo_x, hi_x, lo_y, hi_y, lo_z, hi_z]`.
-    /// The original at line 7042 reads three 16-bit values from the operand,
-    /// adds the global `_DAT_8007B6F8` to `x` (sign-extended u16 truncation),
-    /// then calls `FUN_801D77F4(b1, x, y, z)` - overlay-resident. Hosts apply
-    /// the call if needed. PC += 9.
+    /// 9-byte instruction
+    /// `[4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, variant_lo, variant_hi]`.
+    /// PC += 9.
+    ///
+    /// The retail dispatcher at `0x4C 0xD8` (case 8 of the outer-D dispatch,
+    /// see `overlay_world_map_801de840.txt` line 7682-7687) reads:
+    ///   - `vdf_idx`  (`b1` here): u8 packet-record index into the VDF
+    ///     buffer at `_DAT_8007B7DC + 4 + vdf_idx*4`; the record contains
+    ///     the per-actor bytecode that FUN_801D77F4 stores at `actor[+0x4C]`.
+    ///   - `tmd_idx`  (`words[0]` here): i16 delta added to the global
+    ///     `_DAT_8007B6F8` then truncated to i16; the sum indexes the global
+    ///     TMD table at `DAT_8007C018 + tmd_idx*4` and is written to
+    ///     `actor[+0x48]` (the spawned actor's TMD pointer).
+    ///   - `kind`     (`words[1]` here): u16 stored at `actor[+0x3C]`.
+    ///   - `variant`  (`words[2]` here): u16 stored at `actor[+0x3E]`.
+    ///
+    /// Unlike the halt-acquire-gated `0x4C 0x80` allocator path (which
+    /// queues records and lets the engine materialize them on its own
+    /// schedule via [`crate::field::FieldHost`]-side wiring), `0x4C 0xD8`
+    /// spawns synchronously: FUN_801D77F4 returns with the slot already
+    /// populated, and the parent script advances by 9 unconditionally.
+    /// Hosts emit `FieldEvent::ActorSpawned` directly from this hook.
     fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
         let _ = (b1, words);
     }

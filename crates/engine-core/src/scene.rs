@@ -971,11 +971,14 @@ impl SceneHost {
         Ok(())
     }
 
-    /// One frame: tick the world and then process any pending field-VM
-    /// `scene_transition(map_id)` request. Returns the [`SceneTickEvent`]
-    /// describing what happened.
+    /// One frame: tick the world, materialize any actor-spawn requests
+    /// queued by the field VM's `0x4C 0x80` opcode, then process any
+    /// pending `scene_transition(map_id)` request. Returns the
+    /// [`SceneTickEvent`] describing what happened.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         let _ = self.world.tick();
+        self.world
+            .materialize_actor_spawns(crate::world::FIELD_SPAWN_START_SLOT);
         if let Some(map_id) = self.world.pending_scene_transition.take() {
             match self.map_resolver.resolve(map_id) {
                 Some(name) => {

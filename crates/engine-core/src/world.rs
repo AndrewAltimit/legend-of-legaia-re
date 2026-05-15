@@ -38,6 +38,16 @@ use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 /// 8 + 32 spare slots for field-side NPCs / cutscene actors.
 pub const MAX_ACTORS: usize = 64;
 
+/// Default `start_slot` engines pass to
+/// [`World::materialize_actor_spawns`]. Slots `0..FIELD_SPAWN_START_SLOT`
+/// stay reserved so the field-VM actor-allocator path can't clobber the
+/// party (slots `0..party_count`, typically 0..3) or the small band of
+/// scripted NPC / cutscene actors the scene reserves above the party.
+/// The exact retail value is unknown - 8 is the smallest power-of-two
+/// that comfortably brackets every observed `party_count + scripted-NPC`
+/// span and matches the start-slot the field-VM unit tests use.
+pub const FIELD_SPAWN_START_SLOT: u8 = 8;
+
 /// Per-frame opcode cap for the move VM. Retail has no explicit cap (relies
 /// on opcodes naturally yielding via `WAIT_SET` / `HALT`); for a software
 /// port we set a generous defensive cap so a buggy script can't hang the
@@ -2534,6 +2544,58 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .pending_field_events
             .push(FieldEvent::ActorAllocate { records });
     }
+
+    fn op4c_n_d_sub8_call_d77f4(&mut self, _b1: u8, words: [i16; 3]) {
+        // Synchronous actor allocator (see retail `FUN_801D77F4` body
+        // dumped at `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`).
+        // The dispatcher packs the four args
+        //   `[vdf_idx: u8, tmd_idx: i16, kind: i16, variant: i16]`
+        // into the 7 bytes after `[0x4C, 0xD8]`; FUN_801D77F4 then writes
+        // `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the
+        // allocated slot. We mirror those two writes here. The `vdf_idx`
+        // and `tmd_idx` bytes select the VDF record + TMD pointer the
+        // retail body wires into `actor[+0x4C]` / `actor[+0x48]` - the
+        // clean-room port doesn't yet model the VDF buffer + global TMD
+        // table, so we keep `spawn_record` empty for now and leave the
+        // ActorSpawned event's `record` field as the placeholder. When
+        // the VDF / TMD-pool lift lands, this hook should pull the
+        // record bytes and write them through `Actor::spawn_record`.
+        let kind = words[1] as u16;
+        let variant = words[2] as u16;
+        let start = FIELD_SPAWN_START_SLOT as usize;
+        match self
+            .world
+            .actors
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, a)| !a.active)
+            .map(|(i, _)| i)
+        {
+            Some(slot_idx) => {
+                let actor = &mut self.world.actors[slot_idx];
+                actor.active = true;
+                actor.kind = kind;
+                actor.variant = variant;
+                actor.spawn_record = None;
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::ActorSpawned {
+                        slot: slot_idx as u8,
+                        kind,
+                        variant,
+                        record: Vec::new(),
+                    });
+            }
+            None => {
+                // Pool-exhausted: mirrors the retail bail-silently branch
+                // where FUN_80020DE0 returns 0.
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::ActorSpawnFailed { record: Vec::new() });
+            }
+        }
+    }
 }
 
 // --- battle action host ----------------------------------------------------
@@ -3837,6 +3899,64 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, vec!["alloc", "spawned"]);
+    }
+
+    /// Op `0x4C 0xD8` is the synchronous-spawn sibling of the halt-acquire
+    /// `0x4C 0x80` path. The dispatcher decodes
+    /// `[0x4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]`
+    /// into `(vdf_idx, [tmd_idx, kind, variant])` and calls the
+    /// FieldHostImpl override directly - no queue. The actor slot must
+    /// come out active with `kind` / `variant` mirrored from the operand,
+    /// and a single `ActorSpawned` event must surface in the queue.
+    #[test]
+    fn field_op_4c_d8_spawns_actor_synchronously_with_kind_variant() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // `[0x4C, 0xD8, vdf_idx=0x07, tmd=0x0102, kind=0xABCD, variant=0xBEEF, 0x00]`.
+        // Trailing 0x00 is a HALT so the VM doesn't run off the end.
+        let bytecode = vec![0x4C, 0xD8, 0x07, 0x02, 0x01, 0xCD, 0xAB, 0xEF, 0xBE, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+
+        let slot = FIELD_SPAWN_START_SLOT as usize;
+        assert!(
+            world.actors[slot].active,
+            "0x4C 0xD8 should have spawned synchronously into slot {slot}",
+        );
+        assert_eq!(world.actors[slot].kind, 0xABCD);
+        assert_eq!(world.actors[slot].variant, 0xBEEF);
+        // 0x4C 0xD8 doesn't carry packet bytes in the bytecode - the
+        // record lives in the VDF buffer at runtime - so spawn_record
+        // stays `None` until the VDF / global TMD lift lands.
+        assert!(world.actors[slot].spawn_record.is_none());
+
+        let evs = world.drain_field_events();
+        let spawned: Vec<_> = evs
+            .iter()
+            .filter_map(|e| match e {
+                FieldEvent::ActorSpawned {
+                    slot: s,
+                    kind,
+                    variant,
+                    record,
+                } => Some((*s, *kind, *variant, record.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            spawned,
+            vec![(FIELD_SPAWN_START_SLOT, 0xABCDu16, 0xBEEFu16, Vec::new())]
+        );
+        // No ActorAllocate event - that one is exclusively the
+        // queue-based 0x4C 0x80 path.
+        assert!(
+            !evs.iter()
+                .any(|e| matches!(e, FieldEvent::ActorAllocate { .. })),
+            "0x4C 0xD8 must not emit ActorAllocate; got {evs:?}"
+        );
+        // And nothing was queued on the pending_actor_spawns side - the
+        // synchronous path doesn't go through the materializer.
+        assert!(world.pending_actor_spawns.is_empty());
     }
 
     /// `tick_move_vms` records per-actor outcomes via `actor_tick`. A

@@ -2380,6 +2380,12 @@ impl FieldApp {
                 self.vm_stats.opcode_histogram[op as usize].saturating_add(1);
             self.vm_stats.last_opcode = Some(op);
         }
+        // Drain queued actor-spawn requests (field-VM op `0x4C 0x80`) into
+        // real actor slots before the event-tag histogram pass so the
+        // emitted `ActorSpawned` / `ActorSpawnFailed` events surface in the
+        // HUD alongside the `ActorAllocate` event that produced them.
+        self.world
+            .materialize_actor_spawns(legaia_engine_core::world::FIELD_SPAWN_START_SLOT);
         // Aggregate every FieldHost callback the step emitted by tag so the
         // HUD / session-end summary surface which retail behaviours fired.
         for event in self.world.drain_field_events() {
