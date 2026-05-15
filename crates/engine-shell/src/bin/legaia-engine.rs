@@ -3679,7 +3679,7 @@ fn cmd_play_str(str_file: &Path, _win_width: u32, _win_height: u32) -> Result<()
                     rgba,
                     width: hdr.width as u32,
                     height: hdr.height as u32,
-                    frame_number: hdr.frame_number as u32,
+                    frame_number: hdr.frame_number,
                 }),
                 Err(e) => log::warn!("frame {}: decode error: {e}", hdr.frame_number),
             }

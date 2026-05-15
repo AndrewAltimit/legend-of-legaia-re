@@ -62,7 +62,7 @@ fn decode_first_frame(sectors: &[u8]) -> Option<VideoFrame> {
                         rgba,
                         width: hdr.width as u32,
                         height: hdr.height as u32,
-                        frame_number: hdr.frame_number as u32,
+                        frame_number: hdr.frame_number,
                     });
                 }
             }

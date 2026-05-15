@@ -347,15 +347,14 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | A     | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | B     | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | C     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
-| D     | ✓   | ✓   | ✓   | ✓   | P   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
+| D     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | E     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | -   |
 | F     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 
-Pending sub-ops are clustered around three blockers:
+Remaining pending sub-ops fall into two clusters:
 
 1. **STATE_RESUME entanglement.** `0x4C n5 sub-1` (dialog-position halt-acquire), `n5 sub-2` (menu activation), `n6 sub-0x61` (16-byte halt-acquire), and `n8 sub-0` (actor-allocator with halt-acquire prelude) all interleave with the existing STATE_RESUME tristate machinery. Tractable but each requires a small refactor of the `field_halt_acquire_*` hook pair, deferred to a follow-up round.
-2. **Overlay helpers with sync wrappers.** `0x4C nD sub-4/5` (16-element u16 OR/AND mask) call into `func_0x80058104` - a `DrawSync`-shaped wrapper that bridges to PSX hardware-side rendering pointers. The mask logic is portable but the sync calls aren't, so the arms need a host hook for the FFI boundary; landed as Pending pending the host-side decision.
-3. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `nE sub-F` (fall-through default), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) - each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split.
+2. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) — each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split. `nE sub-F` has no `case` arm in the original and halts at PC (already `Halt`, not `Pending`).
 
 ### 0x4C nibble-4 - immediate-or-ramp cluster
 
@@ -388,6 +387,27 @@ Sub-9's tristate dispatch:
 | clear | clear | `Default` - write/ramp `_DAT_801C6EA4 + 0x4A` |
 | clear | set | `AbsJump` - return `signed_16(operand)` as new PC |
 | set | (ignored) | `Delta` - write/ramp both target slot **and** delta global at `_DAT_8007BCAC` |
+
+### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
+
+6-byte `[4C, 0xD4|0xD5, x_lo, x_hi, y_lo, y_hi]`. The operand is a `(vram_x, vram_y)` pair; the rect is hard-coded to `w = 0x10, h = 1`. The original (overlay dump lines 7621-7666) runs the PsyQ libgs sequence
+
+```c
+DrawSync(0);
+StoreImage(rect, buf16);   // FUN_8005842c - read 16 u16 pixels from VRAM
+DrawSync(0);
+for (i = 0; i < 16; i++) {
+    if (sub_4) {           // op 0xD4: set STP on non-zero pixels
+        if (buf16[i] != 0)      buf16[i] |= 0x8000;
+    } else {               // op 0xD5: clear STP unless already STP-only
+        if (buf16[i] != 0x8000) buf16[i] &= 0x7FFF;
+    }
+}
+LoadImage(rect, buf16);    // FUN_800583c8 - write 16 u16 pixels back
+return iVar47 + 6;
+```
+
+`FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a clean-room renderer that maintains its own framebuffer can emulate the read-modify-write itself.
 
 ## Default-case "extension" opcodes - the fourth flag bank
 

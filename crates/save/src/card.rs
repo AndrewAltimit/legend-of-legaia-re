@@ -330,6 +330,56 @@ pub const RETAIL_CHAR_RECORD_HEADER_SIZE: usize = 0x66F;
 /// Gala at `game+0xE97`, Terra at `game+0x12AB` - all at 0x414-byte intervals.
 pub const RETAIL_CHAR_RECORD_STRIDE: usize = 0x414;
 
+/// Byte offset from the SC block start to the story-flag bitmap.
+///
+/// The story-flag bitmap occupies 512 bytes (`0x200`) and mirrors the
+/// live-RAM region `0x80085600..0x80085800`.  Derived via the linear
+/// address formula `block_offset = RETAIL_GAME_DATA_OFFSET +
+/// (ram_addr - SAVE_GAME_DATA_RAM_BASE)`:
+/// `0x200 + (0x80085600 - 0x80084340) = 0x14C0`.
+///
+/// Confirmed by byte-match against mednafen save states cross-referenced
+/// against retail Drake and Sebucus MCR save blocks.
+pub const RETAIL_STORY_FLAGS_OFFSET: usize = 0x14C0;
+
+/// Size of the story-flag bitmap in the save block (matches the live-RAM
+/// window `0x80085600..0x80085800`).
+pub const RETAIL_STORY_FLAGS_SIZE: usize = 0x200;
+
+/// Byte offset from the SC block start to the global inventory array.
+///
+/// The inventory holds 72 slots of `(item_id: u8, count: u8)` pairs
+/// (144 bytes total, `0x90`) and mirrors the live-RAM region
+/// `0x80085958..0x800859E8`.  Derived via the linear address formula:
+/// `0x200 + (0x80085958 - 0x80084340) = 0x1818`.
+///
+/// Confirmed by 100% byte-match against mednafen save states cross-referenced
+/// against retail Drake and Sebucus MCR save blocks.
+pub const RETAIL_INVENTORY_OFFSET: usize = 0x1818;
+
+/// Number of inventory slots in the retail save (and in live RAM).
+pub const RETAIL_INVENTORY_SLOTS: usize = 72;
+
+/// Size in bytes of the retail inventory array (`RETAIL_INVENTORY_SLOTS × 2`).
+pub const RETAIL_INVENTORY_SIZE: usize = RETAIL_INVENTORY_SLOTS * 2; // 0x90
+
+/// RAM base address for the save game data block (`game_data[0]` in the SC block).
+///
+/// The save block's `game_data` region (starting at `RETAIL_GAME_DATA_OFFSET`)
+/// is a structured dump whose global fields (gold, story flags, inventory, …)
+/// map linearly to live RAM via:
+///
+/// ```text
+/// sc_block_offset = RETAIL_GAME_DATA_OFFSET + (ram_addr - SAVE_GAME_DATA_RAM_BASE)
+/// ```
+///
+/// Derived by anchoring the confirmed inventory address:
+/// `0x80085958 - game_data_offset(0x1618) = 0x80084340`.
+/// Cross-validated against party gold (`0x8008459C` → `game_data+0x025C`),
+/// story-flag bitmap (`0x80085600` → `game_data+0x12C0`), and the active
+/// scene slot (`0x80084540` → `game_data+0x0200`).
+pub const SAVE_GAME_DATA_RAM_BASE: u32 = 0x80084340;
+
 /// Extract raw character record bytes from a retail SC save block.
 ///
 /// `sc_block` is the full 8192-byte save block starting with the `SC` magic.
@@ -361,6 +411,29 @@ pub fn read_retail_char_records(sc_block: &[u8], max_records: usize) -> Option<V
         out.push(record.to_vec());
     }
     Some(out)
+}
+
+/// Extract the 512-byte story-flag bitmap from a retail SC save block.
+///
+/// Returns a reference to the 512-byte slice at `RETAIL_STORY_FLAGS_OFFSET`, or
+/// `None` if the block is too small.  Each bit in the bitmap corresponds to one
+/// game-progress flag (visited towns, event triggers, Door of Wind flags, etc.).
+///
+/// The slice mirrors the live-RAM region `0x80085600..0x80085800`.
+pub fn read_retail_story_flags(sc_block: &[u8]) -> Option<&[u8]> {
+    sc_block.get(RETAIL_STORY_FLAGS_OFFSET..RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE)
+}
+
+/// Extract the 72-slot inventory from a retail SC save block.
+///
+/// Returns the 144-byte raw inventory array at `RETAIL_INVENTORY_OFFSET`, or
+/// `None` if the block is too small.  Each slot is a 2-byte `(item_id: u8,
+/// count: u8)` pair in little-endian order.  An `item_id` of `0` with
+/// `count` of `0` denotes an empty slot.
+///
+/// The slice mirrors the live-RAM region `0x80085958..0x800859E8`.
+pub fn read_retail_inventory(sc_block: &[u8]) -> Option<&[u8]> {
+    sc_block.get(RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE)
 }
 
 fn bytes_to_ascii(b: &[u8]) -> String {

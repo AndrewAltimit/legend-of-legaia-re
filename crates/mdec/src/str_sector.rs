@@ -2,41 +2,53 @@
 //!
 //! Each PSX STR file is a sequence of Mode 2 Form 1 CD-ROM sectors. After
 //! stripping the Mode 2 subheader (handled by the `legaia-iso` disc reader),
-//! each sector's 2048-byte data area has the layout:
+//! each sector's 2048-byte data area has the canonical PSX-SPX layout:
 //!
 //! ```text
 //! Offset  Bytes  Field
 //! 0x000   2      sector_magic      (0x0160 for video sectors)
-//! 0x002   2      chunk_number      (0-indexed position of this sector in the frame)
-//! 0x004   2      chunks_per_frame  (total sectors needed for this frame)
-//! 0x006   2      frame_number      (frame index, wraps at 0xFFFF)
-//! 0x008   4      bs_data_size      (total bitstream bytes across all sectors)
-//! 0x00C   2      width             (frame width in pixels)
-//! 0x00E   2      height            (frame height in pixels)
-//! 0x010   2      bs_version        (2 = PSX BS v2)
-//! 0x012   2      quantize_scale    (per-frame quantization scale)
-//! 0x014   2028   bs_data           (bitstream payload bytes for this sector)
+//! 0x002   2      sector_type       (0x8001 = PSX picture)
+//! 0x004   2      chunk_number      (0-indexed position of this sector in the frame)
+//! 0x006   2      chunks_per_frame  (total sectors needed for this frame)
+//! 0x008   4      frame_number      (u32 frame index, 1-based, may wrap)
+//! 0x00C   4      frame_size_bytes  (total BS data bytes across all sectors of this frame)
+//! 0x010   2      width             (frame width in pixels)
+//! 0x012   2      height            (frame height in pixels)
+//! 0x014   16     reserved/picture-code (per-frame constants - usually contains a
+//!                  duplicate of (w, h) and a 0x3800 magic; not used by the decoder)
+//! 0x020   2016   bs_data           (bitstream payload bytes for this sector)
 //! ```
 //!
-//! `StrFrameAssembler` collects sectors by `frame_number` and calls
-//! `on_frame` when a complete frame has arrived.
+//! BS data starts at offset `0x020` (32). Each sector therefore contributes
+//! `2048 - 32 = 2016` bytes of bitstream. `frame_size_bytes` is the total
+//! length of the bitstream for the frame; the trailing chunk is zero-padded.
+//!
+//! `StrFrameAssembler` collects sectors by `frame_number` and emits the
+//! assembled bitstream when the last chunk of the current frame arrives.
 //!
 //! ## Source
 //!
-//! PSX-SPX §MDEC - "STR Movie Files", plus cross-reference with the
-//! Mednafen and PCSX-Redux implementations (clean-room: only the protocol
-//! spec, not source bytes, was used).
+//! PSX-SPX §MDEC - "STR Movie Files":
+//! <https://problemkaputt.de/psxspx-cdrom-sector-encoding.htm>, plus
+//! cross-reference with the Mednafen and PCSX-Redux implementations
+//! (clean-room: only the protocol spec, not source bytes, was used).
 
 use anyhow::{Context, Result, bail};
 
 /// Magic value at offset 0 of a video sector.
 pub const VIDEO_SECTOR_MAGIC: u16 = 0x0160;
 
+/// Sector-type tag at offset 2 of a video sector (PSX picture).
+pub const VIDEO_SECTOR_TYPE: u16 = 0x8001;
+
 /// Bytes per STR sector data area (Mode 2 Form 1 user data).
 pub const SECTOR_DATA_BYTES: usize = 2048;
 
-/// Payload bytes in a single sector (total minus 20-byte header).
-pub const SECTOR_PAYLOAD_BYTES: usize = SECTOR_DATA_BYTES - 20;
+/// Length of the per-sector STR header. BS data starts at this offset.
+pub const SECTOR_HEADER_BYTES: usize = 32;
+
+/// Payload bytes in a single sector (total minus 32-byte header).
+pub const SECTOR_PAYLOAD_BYTES: usize = SECTOR_DATA_BYTES - SECTOR_HEADER_BYTES;
 
 /// Parsed header from one STR video sector.
 #[derive(Debug, Clone)]
@@ -45,26 +57,22 @@ pub struct StrSectorHeader {
     pub chunk_number: u16,
     /// Total number of sectors required to complete this frame.
     pub chunks_per_frame: u16,
-    /// Frame sequence number.
-    pub frame_number: u16,
+    /// Frame sequence number (1-based, u32; may wrap).
+    pub frame_number: u32,
     /// Total bitstream size in bytes across all sectors for this frame.
-    pub bs_data_size: u32,
+    pub frame_size_bytes: u32,
     /// Frame width in pixels.
     pub width: u16,
     /// Frame height in pixels.
     pub height: u16,
-    /// Bitstream version. Legaia uses 2.
-    pub bs_version: u16,
-    /// Per-frame quantization scale.
-    pub quantize_scale: u16,
 }
 
 /// Parse the header of a 2048-byte video sector data area.
 ///
 /// Returns `None` if the magic doesn't match (audio or non-video sector).
-/// Returns an error if the buffer is too short.
+/// Returns an error if the buffer is too short for a 32-byte header.
 pub fn parse_video_sector(sector_data: &[u8]) -> Result<Option<(StrSectorHeader, &[u8])>> {
-    if sector_data.len() < 20 {
+    if sector_data.len() < SECTOR_HEADER_BYTES {
         bail!("STR sector too short: {} bytes", sector_data.len());
     }
     let magic = u16::from_le_bytes(sector_data[0..2].try_into().unwrap());
@@ -72,16 +80,17 @@ pub fn parse_video_sector(sector_data: &[u8]) -> Result<Option<(StrSectorHeader,
         return Ok(None);
     }
     let hdr = StrSectorHeader {
-        chunk_number: u16::from_le_bytes(sector_data[2..4].try_into().unwrap()),
-        chunks_per_frame: u16::from_le_bytes(sector_data[4..6].try_into().unwrap()),
-        frame_number: u16::from_le_bytes(sector_data[6..8].try_into().unwrap()),
-        bs_data_size: u32::from_le_bytes(sector_data[8..12].try_into().unwrap()),
-        width: u16::from_le_bytes(sector_data[12..14].try_into().unwrap()),
-        height: u16::from_le_bytes(sector_data[14..16].try_into().unwrap()),
-        bs_version: u16::from_le_bytes(sector_data[16..18].try_into().unwrap()),
-        quantize_scale: u16::from_le_bytes(sector_data[18..20].try_into().unwrap()),
+        chunk_number: u16::from_le_bytes(sector_data[4..6].try_into().unwrap()),
+        chunks_per_frame: u16::from_le_bytes(sector_data[6..8].try_into().unwrap()),
+        frame_number: u32::from_le_bytes(sector_data[8..12].try_into().unwrap()),
+        frame_size_bytes: u32::from_le_bytes(sector_data[12..16].try_into().unwrap()),
+        width: u16::from_le_bytes(sector_data[16..18].try_into().unwrap()),
+        height: u16::from_le_bytes(sector_data[18..20].try_into().unwrap()),
     };
-    let payload = &sector_data[20..sector_data.len().min(20 + SECTOR_PAYLOAD_BYTES)];
+    let end = sector_data
+        .len()
+        .min(SECTOR_HEADER_BYTES + SECTOR_PAYLOAD_BYTES);
+    let payload = &sector_data[SECTOR_HEADER_BYTES..end];
     Ok(Some((hdr, payload)))
 }
 
@@ -91,7 +100,7 @@ pub fn parse_video_sector(sector_data: &[u8]) -> Result<Option<(StrSectorHeader,
 /// When a complete frame is assembled the provided callback receives the
 /// [`StrSectorHeader`] from the first sector and the concatenated BS payload.
 pub struct StrFrameAssembler {
-    current_frame: Option<u16>,
+    current_frame: Option<u32>,
     chunks_expected: u16,
     header: Option<StrSectorHeader>,
     payload: Vec<u8>,
@@ -130,9 +139,9 @@ impl StrFrameAssembler {
             self.payload.clear();
         }
 
-        // Append payload bytes (limited to bs_data_size remaining)
+        // Append payload bytes (limited to frame_size_bytes remaining)
         let remaining =
-            hdr.bs_data_size as usize - self.payload.len().min(hdr.bs_data_size as usize);
+            hdr.frame_size_bytes as usize - self.payload.len().min(hdr.frame_size_bytes as usize);
         let to_copy = payload.len().min(remaining);
         self.payload.extend_from_slice(&payload[..to_copy]);
 
@@ -172,17 +181,19 @@ impl Default for StrFrameAssembler {
 mod tests {
     use super::*;
 
-    fn make_sector(chunk: u16, total: u16, frame: u16, bs_size: u32) -> Vec<u8> {
+    fn make_sector(chunk: u16, total: u16, frame: u32, frame_size: u32) -> Vec<u8> {
         let mut s = vec![0u8; SECTOR_DATA_BYTES];
         s[0..2].copy_from_slice(&VIDEO_SECTOR_MAGIC.to_le_bytes());
-        s[2..4].copy_from_slice(&chunk.to_le_bytes());
-        s[4..6].copy_from_slice(&total.to_le_bytes());
-        s[6..8].copy_from_slice(&frame.to_le_bytes());
-        s[8..12].copy_from_slice(&bs_size.to_le_bytes());
-        s[12..14].copy_from_slice(&320u16.to_le_bytes()); // width
-        s[14..16].copy_from_slice(&240u16.to_le_bytes()); // height
-        s[16..18].copy_from_slice(&2u16.to_le_bytes()); // bs_ver
-        s[18..20].copy_from_slice(&8u16.to_le_bytes()); // qs
+        s[2..4].copy_from_slice(&VIDEO_SECTOR_TYPE.to_le_bytes());
+        s[4..6].copy_from_slice(&chunk.to_le_bytes());
+        s[6..8].copy_from_slice(&total.to_le_bytes());
+        s[8..12].copy_from_slice(&frame.to_le_bytes());
+        s[12..16].copy_from_slice(&frame_size.to_le_bytes());
+        s[16..18].copy_from_slice(&320u16.to_le_bytes()); // width
+        s[18..20].copy_from_slice(&240u16.to_le_bytes()); // height
+        // bytes 0x14..0x20 are per-frame magic; the decoder doesn't use them.
+        // Real Legaia STR sectors put a duplicated (w,h) + 0x3800 magic here;
+        // tests can leave them zero - parse_video_sector ignores those bytes.
         s
     }
 
@@ -238,7 +249,7 @@ mod tests {
         assert_eq!(hdr.chunk_number, 2);
         assert_eq!(hdr.chunks_per_frame, 4);
         assert_eq!(hdr.frame_number, 10);
-        assert_eq!(hdr.bs_data_size, 8000);
+        assert_eq!(hdr.frame_size_bytes, 8000);
         assert_eq!(payload.len(), SECTOR_PAYLOAD_BYTES);
     }
 }
