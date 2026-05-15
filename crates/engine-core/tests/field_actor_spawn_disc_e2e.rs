@@ -272,6 +272,10 @@ fn scene_host_loads_doman_vdf_buffer_and_spawn_resolves_body() {
     // this scene either) - what we're testing here is that the host
     // hook reads the real on-disc VDF buffer onto the spawned actor.
     let body0_owned = body0.to_vec();
+    // Synthesise a 0x4C 0xD8 with tmd_idx=0x0000 so we also exercise the
+    // global TMD-pool lookup (`Actor::tmd_ref`). The `enter_field_scene`
+    // path seeds pool[0..=4] from PROT 0874 section 0, so slot 0 must
+    // resolve to a parsed character-mesh TMD here.
     let bytecode = vec![0x4C, 0xD8, 0x00, 0x00, 0x00, 0x77, 0x77, 0x88, 0x88, 0x00];
     host.world.load_field_record(&bytecode);
     let _ = host.world.tick();
@@ -289,6 +293,30 @@ fn scene_host_loads_doman_vdf_buffer_and_spawn_resolves_body() {
         "spawn_record should mirror VDF body 0 from the doman buffer"
     );
 
+    // The global TMD-pool head is seeded from PROT 0874 section 0, so
+    // tmd_idx = 0 must resolve to a real character-mesh TMD.
+    let tmd_ref = host.world.actors[slot]
+        .tmd_ref
+        .as_ref()
+        .expect("tmd_idx=0 should resolve to befect_data section-0 slot 0");
+    assert_eq!(
+        tmd_ref.tmd.header.id, 0x8000_0002,
+        "slot-0 TMD should carry the Legaia TMD magic",
+    );
+    assert!(
+        tmd_ref.tmd.header.flist_bit_set,
+        "befect_data TMDs ship with FLIST_BIT set",
+    );
+    assert!(
+        !tmd_ref.raw.is_empty(),
+        "raw bytes should round-trip through the global pool",
+    );
+    eprintln!(
+        "[disc] doman tmd_idx=0 -> nobj={}, raw={}B",
+        tmd_ref.tmd.header.nobj,
+        tmd_ref.raw.len()
+    );
+
     let evs = host.world.drain_field_events();
     let spawn_records: Vec<&Vec<u8>> = evs
         .iter()
@@ -303,6 +331,56 @@ fn scene_host_loads_doman_vdf_buffer_and_spawn_resolves_body() {
         "should see exactly one ActorSpawned event"
     );
     assert_eq!(spawn_records[0], &body0_owned);
+}
+
+/// SceneHost-driven check that the global TMD-pool head (5 character-mesh
+/// TMDs from PROT 0874 section 0) is seeded into `World::global_tmd_pool`
+/// on field-scene entry. Companion to
+/// [`scene_host_loads_doman_vdf_buffer_and_spawn_resolves_body`] which
+/// covers the spawn-time resolver - this one isolates the seed.
+#[test]
+fn scene_host_seeds_global_tmd_pool_head_from_befect_data() {
+    let Some(extracted) = skip_if_no_disc() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let mut host =
+        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    if host.load_scene("doman").is_err() {
+        eprintln!("[skip] doman scene not loadable");
+        return;
+    }
+    // Pool starts empty.
+    assert!(host.world.global_tmd_pool.is_empty());
+    host.enter_field_scene("doman", 0)
+        .expect("enter doman record 0");
+    // Head of 5 must be populated.
+    assert!(
+        host.world.global_tmd_pool.len() >= 5,
+        "global TMD pool head should be at least 5 slots; got {}",
+        host.world.global_tmd_pool.len()
+    );
+    for idx in 0..5 {
+        let entry = host
+            .world
+            .global_tmd_pool
+            .get(idx)
+            .and_then(|s| s.as_ref())
+            .unwrap_or_else(|| panic!("befect_data slot {idx} should be populated"));
+        assert_eq!(
+            entry.tmd.header.id, 0x8000_0002,
+            "befect_data slot {idx} should carry the Legaia TMD magic",
+        );
+        assert!(
+            entry.tmd.header.flist_bit_set,
+            "befect_data slot {idx} should have FLIST_BIT set",
+        );
+        eprintln!(
+            "[disc] befect_data slot {idx}: nobj={}, raw={}B",
+            entry.tmd.header.nobj,
+            entry.raw.len()
+        );
+    }
 }
 
 /// SceneHost-driven variant: boot `balden2` through `enter_field_scene`

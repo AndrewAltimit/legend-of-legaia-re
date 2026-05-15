@@ -18,6 +18,8 @@
 //! Engines that want a different layout - say, ECS storage - should
 //! implement the VM `Host` traits themselves; this is the default.
 
+use std::sync::Arc;
+
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
@@ -123,6 +125,23 @@ pub struct ActorSpriteRequest {
     pub tint: [f32; 4],
 }
 
+/// One entry in [`World::global_tmd_pool`]. Mirrors a single slot of the
+/// retail `DAT_8007C018` global TMD-pointer table - a parsed TMD plus its
+/// raw bytes so downstream renderers can drive `legaia_tmd::mesh::*` builders
+/// without re-fetching from disc.
+///
+/// See `project_dat_8007c018_global_tmd_table.md` and
+/// `project_global_tmd_pool_source.md` for the retail-side semantics. The
+/// clean-room port treats the pool as opaque indexed storage: the field-VM
+/// `0x4C 0xD8` host hook reads slot `tmd_idx` and writes the resulting `Arc`
+/// onto [`Actor::tmd_ref`] - whatever populated the slot is the producer's
+/// concern.
+#[derive(Debug)]
+pub struct GlobalTmd {
+    pub tmd: legaia_tmd::Tmd,
+    pub raw: Vec<u8>,
+}
+
 /// Per-actor record held by the world. Composes the per-VM state structs.
 ///
 /// Each VM's `Host` trait reads/writes only the slice it owns, so the per-VM
@@ -209,6 +228,16 @@ pub struct Actor {
     /// Distinct from [`Self::tmd_binding`] / [`Self::active_animation`],
     /// which cover the rendering side.
     pub spawn_record: Option<Vec<u8>>,
+
+    /// Global TMD this actor was instantiated with. Retail equivalent: the
+    /// `u32` at `actor[+0x48]` written by the overlay actor allocator -
+    /// `iVar13 = *(int *)(&DAT_8007C018 + ((tmd_idx << 16) >> 14))`. Set by
+    /// the field-VM `0x4C 0xD8` host hook from [`World::global_tmd`], and
+    /// reachable from rendering / animation systems that want a mesh +
+    /// raw bytes for this actor without re-walking the global pool.
+    /// `None` for actors spawned through paths that don't reference the
+    /// global TMD pool (the actor VM's own `Spawn*` opcodes, etc.).
+    pub tmd_ref: Option<Arc<GlobalTmd>>,
 }
 
 impl Actor {
@@ -575,6 +604,22 @@ pub struct World {
     /// [`crate::scene::SceneHost::enter_field_scene`] from the first
     /// asset-type-7 chunk found in the scene's streaming entries.
     pub vdf_buffer: Option<Vec<u8>>,
+
+    /// Global TMD-pointer pool indexed by `tmd_idx`. Mirrors retail
+    /// `DAT_8007C018` (the 143-entry homogeneous TMD pointer table in
+    /// steady-state - see `project_dat_8007c018_global_tmd_table.md`).
+    /// `None` at indices the active loader chain hasn't populated; the
+    /// vector grows on demand through [`Self::set_global_tmd`].
+    ///
+    /// Seeded by [`crate::scene::SceneHost::enter_field_scene`] with the
+    /// 5 character-mesh TMDs from PROT 0874 section 0 (byte-equality
+    /// verified in `project_global_tmd_pool_source.md`). Producers of the
+    /// other 138 kingdom-derived entries are not yet pinned; those slots
+    /// stay `None` until the full chain lands.
+    ///
+    /// Read by the field-VM `0x4C 0xD8` host hook to populate
+    /// [`Actor::tmd_ref`] on synchronous-spawn.
+    pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -705,6 +750,7 @@ impl World {
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             active_scene_label: String::new(),
             vdf_buffer: None,
+            global_tmd_pool: Vec::new(),
         }
     }
 
@@ -776,6 +822,37 @@ impl World {
             }
         }
         Some(&buf[off..end])
+    }
+
+    /// Install a global TMD at pool index `idx`. The pool grows lazily on
+    /// write to accommodate sparse loader-chain installs. Indices that
+    /// later producers fill in stay `None` until they're explicitly set.
+    ///
+    /// Mirrors the retail `FUN_80026B4C` writer
+    /// (`DAT_8007C018[DAT_8007B774++] = tmd_ptr`) but exposes the index
+    /// directly rather than auto-bumping a counter - engines that want
+    /// the retail behaviour can read the next free slot via
+    /// [`Self::global_tmd_pool`]`.len()` and pass it here.
+    pub fn set_global_tmd(&mut self, idx: usize, tmd: Arc<GlobalTmd>) {
+        if idx >= self.global_tmd_pool.len() {
+            self.global_tmd_pool.resize(idx + 1, None);
+        }
+        self.global_tmd_pool[idx] = Some(tmd);
+    }
+
+    /// Resolve a global TMD by pool index. Mirrors the retail field-VM
+    /// allocator's `iVar13 = DAT_8007C018[(int16_t)tmd_idx]` read - the
+    /// caller is responsible for clamping negative indices (the retail
+    /// engine sign-extends the i16 then implicitly treats it as unsigned;
+    /// the clean-room port returns `None` for negative or out-of-range
+    /// indices via the `i16 → usize` cast guarded by the bounds check).
+    ///
+    /// Returns `None` when the slot is empty or `idx` is out of range.
+    pub fn global_tmd(&self, idx: i16) -> Option<&Arc<GlobalTmd>> {
+        if idx < 0 {
+            return None;
+        }
+        self.global_tmd_pool.get(idx as usize)?.as_ref()
     }
 
     /// Drain emitted field-VM events. Engines call once per frame after
@@ -2628,12 +2705,12 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         //   `[vdf_idx: u8, tmd_idx: i16, kind: i16, variant: i16]`
         // into the 7 bytes after `[0x4C, 0xD8]`; FUN_801D77F4 then writes
         // `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the
-        // allocated slot, plus `actor[+0x4C] = VDF_body_ptr`. We mirror
-        // those writes here. The TMD pointer (retail `actor[+0x48]`,
-        // sourced from `DAT_8007C018[tmd_idx]`) is still unmodeled
-        // pending the global TMD-pool lift.
+        // allocated slot, plus `actor[+0x48] = DAT_8007C018[tmd_idx]`
+        // (TMD pointer) and `actor[+0x4C] = VDF_body_ptr`. We mirror
+        // all four writes here.
         let kind = words[1] as u16;
         let variant = words[2] as u16;
+        let tmd_ref = self.world.global_tmd(words[0]).cloned();
         // Mirror retail's `actor[+0x4C] = VDF_body_ptr`: look up the
         // VDF record body bytes and store them on the allocated actor.
         // `None` when no VDF buffer is installed or the index is OOR;
@@ -2660,6 +2737,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 actor.active = true;
                 actor.kind = kind;
                 actor.variant = variant;
+                actor.tmd_ref = tmd_ref;
                 actor.spawn_record = if record_bytes.is_empty() {
                     None
                 } else {
@@ -4104,6 +4182,98 @@ mod tests {
             })
             .collect();
         assert_eq!(spawned, vec![vec![0xCA, 0xFE, 0xBA, 0xBE, 0x42]]);
+    }
+
+    /// `0x4C 0xD8` with a populated global TMD pool should write a
+    /// matching `Arc<GlobalTmd>` onto the spawned actor's `tmd_ref`
+    /// (mirror of retail `actor[+0x48] = DAT_8007C018[tmd_idx]`).
+    /// Indices the pool hasn't seen leave `tmd_ref` at `None` rather
+    /// than aborting the spawn.
+    #[test]
+    fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+
+        // Install a stub TMD at pool slot 5. The Tmd doesn't need to
+        // represent realistic mesh data - the host hook only does an
+        // Arc::clone and stores the result.
+        let stub = std::sync::Arc::new(GlobalTmd {
+            tmd: legaia_tmd::Tmd {
+                header: legaia_tmd::Header {
+                    id: 0x8000_0002,
+                    flags: 1,
+                    nobj: 0,
+                    flist_bit_set: true,
+                },
+                objects: Vec::new(),
+            },
+            raw: vec![
+                0x02, 0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            ],
+        });
+        let stub_ptr = std::sync::Arc::as_ptr(&stub);
+        world.set_global_tmd(5, stub.clone());
+
+        // `[0x4C, 0xD8, vdf_idx=0x00, tmd=0x0005, kind=0x1111, variant=0x2222, 0x00]`.
+        let bytecode = vec![0x4C, 0xD8, 0x00, 0x05, 0x00, 0x11, 0x11, 0x22, 0x22, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+
+        let slot = FIELD_SPAWN_START_SLOT as usize;
+        assert!(world.actors[slot].active);
+        let tmd_ref = world.actors[slot]
+            .tmd_ref
+            .as_ref()
+            .expect("tmd_ref should mirror DAT_8007C018[5]");
+        assert_eq!(
+            std::sync::Arc::as_ptr(tmd_ref),
+            stub_ptr,
+            "tmd_ref should reference the installed pool entry by Arc identity",
+        );
+
+        // A second spawn with an unpopulated index leaves tmd_ref at None.
+        let bytecode2 = vec![0x4C, 0xD8, 0x00, 0x09, 0x00, 0x33, 0x33, 0x44, 0x44, 0x00];
+        world.load_field_script(bytecode2);
+        let _ = world.tick();
+        let slot2 = slot + 1;
+        assert!(world.actors[slot2].active);
+        assert!(
+            world.actors[slot2].tmd_ref.is_none(),
+            "empty pool slot should not populate tmd_ref",
+        );
+    }
+
+    /// Accessors round-trip: `set_global_tmd` + `global_tmd` agree on
+    /// installed slots, negative indices return `None`, and the pool
+    /// grows lazily.
+    #[test]
+    fn global_tmd_accessor_round_trip() {
+        let mut world = World::new();
+        assert!(world.global_tmd(0).is_none());
+        assert!(world.global_tmd(-1).is_none());
+
+        let stub = std::sync::Arc::new(GlobalTmd {
+            tmd: legaia_tmd::Tmd {
+                header: legaia_tmd::Header {
+                    id: 0x8000_0002,
+                    flags: 1,
+                    nobj: 0,
+                    flist_bit_set: true,
+                },
+                objects: Vec::new(),
+            },
+            raw: Vec::new(),
+        });
+        world.set_global_tmd(3, stub.clone());
+        // Pool grew to fit idx 3.
+        assert_eq!(world.global_tmd_pool.len(), 4);
+        assert!(world.global_tmd_pool[0..3].iter().all(|s| s.is_none()));
+        assert!(std::sync::Arc::ptr_eq(
+            world.global_tmd(3).expect("slot 3 populated"),
+            &stub
+        ));
+        assert!(world.global_tmd(7).is_none(), "out-of-range -> None");
+        assert!(world.global_tmd(-5).is_none(), "negative -> None");
     }
 
     /// `vdf_record_bytes` rejects out-of-range indices, malformed

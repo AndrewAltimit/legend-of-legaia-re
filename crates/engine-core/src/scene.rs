@@ -942,6 +942,22 @@ impl SceneHost {
             self.world
                 .set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
         }
+        // Seed the global TMD-pool head from PROT 0874 section 0 (the
+        // 5 character-mesh TMDs that retail's `DAT_8007C018[0..4]`
+        // resolves to). Byte-equality verified - see
+        // `project_global_tmd_pool_source.md`. Producers for the
+        // remaining 138 kingdom-bundle entries are not yet pinned;
+        // those slots stay empty until the full chain lands. Idempotent:
+        // the head re-seeds across scene transitions but only on the
+        // first call (subsequent calls early-return when the head is
+        // already populated).
+        let head_populated = self.world.global_tmd_pool.len() >= 5
+            && self.world.global_tmd_pool[..5].iter().all(|s| s.is_some());
+        if !head_populated
+            && let Err(err) = seed_global_tmd_pool_from_befect_data(&self.index, &mut self.world)
+        {
+            eprintln!("[scene] global TMD-pool seed skipped: {err:#}");
+        }
         // Pre-bind actor ↔ TMD/ANM resources so they survive the first
         // field-VM actor-spawn opcode (see `World::init_scene_animations`).
         //
@@ -1016,6 +1032,68 @@ impl SceneHost {
     pub fn from_extracted_root(root: impl Into<PathBuf>) -> Result<Self> {
         Self::open_extracted(root.into())
     }
+}
+
+/// PROT entry index for `befect_data` carrying the global TMD-pool head
+/// (the 5 character-mesh TMDs at retail `DAT_8007C018[0..4]`). Pinned in
+/// `project_global_tmd_pool_source.md` via byte-equality vs a Drake post-warp
+/// RAM snapshot.
+const PROT_BEFECT_DATA_ENTRY: u32 = 874;
+
+/// Number of slots PROT 0874 section 0 contributes to the head of the
+/// global TMD pool. Set by the section's TMD-pack `count` field; the
+/// retail pack carries exactly 5 character meshes.
+const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
+
+/// Seed `World::global_tmd_pool[0..=4]` from PROT 0874 (`befect_data`)
+/// section 0. Soft-fails (returns `Err`) when the entry is missing, the
+/// section header is malformed, the LZS decode fails, or the inner
+/// TMD-pack walk fails - the field-VM `0x4C 0xD8` host hook then leaves
+/// `Actor::tmd_ref` at `None` rather than aborting scene-load.
+///
+/// The retail loader chain that produces these 5 entries via
+/// `FUN_8001F05C case 2 → FUN_80026B4C` is not yet pinned (see open work
+/// item in `docs/formats/world-map-overlay.md`); this routes the disc
+/// bytes directly through the `parse_player_lzs + pack` parsers and
+/// installs the parsed TMDs onto the world.
+fn seed_global_tmd_pool_from_befect_data(
+    index: &ProtIndex,
+    world: &mut crate::world::World,
+) -> Result<()> {
+    let raw = index
+        .entry_bytes(PROT_BEFECT_DATA_ENTRY)
+        .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
+    let container = legaia_asset::parse_player_lzs(&raw, 3)
+        .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
+    let section0 = container
+        .descriptors
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("befect_data has no section 0"))?;
+    let decoded = legaia_asset::decode(&raw, section0, legaia_asset::DecodeMode::Lzs)
+        .context("LZS-decode befect_data section 0")?;
+    let pack_entries = legaia_asset::pack::extract_pack(&decoded)
+        .context("walk befect_data section 0 as a TMD-pack")?;
+    let head = pack_entries
+        .into_iter()
+        .take(GLOBAL_TMD_POOL_HEAD_COUNT)
+        .enumerate();
+    for (i, body) in head {
+        let tmd = match legaia_tmd::parse(body) {
+            Ok(t) => t,
+            Err(err) => {
+                eprintln!("[scene] befect_data slot {i} did not parse as TMD ({err:#}); skipping");
+                continue;
+            }
+        };
+        world.set_global_tmd(
+            i,
+            std::sync::Arc::new(crate::world::GlobalTmd {
+                tmd,
+                raw: body.to_vec(),
+            }),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
