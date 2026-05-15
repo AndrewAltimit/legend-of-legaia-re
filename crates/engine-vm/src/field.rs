@@ -1793,6 +1793,30 @@ pub trait FieldHost {
         None
     }
 
+    /// Op 0x4C outer-nibble-D sub-4 - 16-element u16 OR mask applied to the
+    /// engine's render-pointer array.
+    ///
+    /// 34-byte instruction `[4C, 0xD4, w0_lo, w0_hi, …, w15_lo, w15_hi]`.
+    /// The original (dispatcher dump ~6937-6948) calls `func_0x80058104` (a
+    /// `DrawSync`-shaped wrapper that synchronises the PSX rendering pipeline)
+    /// then ORs each of the 16 u16 words into a parallel render-pointer table.
+    /// The DrawSync wrapper is PSX-hardware-specific; the mask logic itself is
+    /// pure arithmetic. The host receives the prepared words and applies both
+    /// the sync and the OR to whatever rendering state it maintains. Default
+    /// no-op (safe for engines that don't track this table).
+    fn op4c_n_d_sub_4_or_mask(&mut self, words: [u16; 16]) {
+        let _ = words;
+    }
+
+    /// Op 0x4C outer-nibble-D sub-5 - 16-element u16 AND mask.
+    ///
+    /// 34-byte instruction `[4C, 0xD5, w0_lo, w0_hi, …, w15_lo, w15_hi]`.
+    /// Sister of sub-4 with AND-then-apply semantics instead of OR. Same
+    /// `func_0x80058104` DrawSync wrapper prefix. Default no-op.
+    fn op4c_n_d_sub_5_and_mask(&mut self, words: [u16; 16]) {
+        let _ = words;
+    }
+
     // -----------------------------------------------------------------
     // Round 17 - five 0x4C nC sub-ops + two 0x4C nE sub-ops.
     // -----------------------------------------------------------------
@@ -3415,18 +3439,19 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // Outer nibble 8 - large multi-purpose dispatcher. The
-                // ported subset covers the simple writes + the field_68
-                // conditional-jump + sub-9 (DAT_80073F00 write) + sub-5/E/F
-                // (halt-acquire idiom - the original at lines 6550-6570
-                // shares one inner-switch arm body across all three sub-ops:
-                // ctx mutation that sets saved_pc + halt bit + clears
-                // wait_accum, then halts at PC). Sub-0 (actor allocator),
-                // sub-1 (ramp scheduler), sub-3 (box-fill table), sub-6
-                // (script-context resolution), sub-0xB / sub-0xD (inventory
-                // search) remain `Pending` because they require overlay-
-                // resident helpers (`func_0x80020de0`, `func_0x8003ce64`,
-                // `FUN_801D5630`, `func_0x8003cf04`).
+                // Outer nibble 8 - large multi-purpose dispatcher. Sub-ops
+                // 1..=F minus sub-0 and sub-3 are fully ported: sub-1
+                // (actor model + anim, 9-byte), sub-2 (mirror write, 2-byte),
+                // sub-4 (b630 write, 2-byte), sub-5/E/F (halt-acquire idiom,
+                // 2-byte - the original at lines 6550-6570 shares one body),
+                // sub-6 (actor set rotation, 15-byte), sub-7 (callback
+                // register + halt), sub-8 (globals write, 6-byte), sub-9
+                // (DAT_80073F00 write, 4-byte), sub-0xA (write quad, 11-byte),
+                // sub-0xB (actor-type conditional jump, 5-byte), sub-0xC
+                // (field_68 conditional jump, 4-byte), sub-0xD (char actor
+                // search, 6-byte). Sub-0 (actor allocator, needs
+                // `func_0x80020de0`) and sub-3 (box-fill table, needs
+                // `FUN_801D5630`) remain `Pending`.
                 8 => match op0 & 0x0F {
                     // Sub-1: 9-byte `[4C, 0x81, m0, m1, m2, anim_lo,
                     // anim_hi, frames_lo, frames_hi]`. Set actor model +
@@ -3900,22 +3925,23 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 3,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    // All 16 sub-ops 0x0..=0xF are covered above; values 16+
+                    // are unreachable because `op0 & 0x0F` is at most 0xF.
+                    16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                 },
                 // Outer nibble 0xD - party state + camera-ish setup.
-                // Ported subset covers sub-1 (linked-list lookup gate, 2-byte
-                // host-Option, PC += 4 on miss), sub-2 (channel-spawn halt,
-                // 2-byte), sub-3 (party state setup, 14-byte), sub-6
-                // (`field_74` bitfield mutation, 3-byte, halts at PC),
+                // All 16 sub-ops are ported: sub-0 (field SE trigger, 6-byte),
+                // sub-1 (linked-list lookup gate, 2-byte), sub-2 (channel-spawn
+                // halt, 2-byte), sub-3 (party state setup, 14-byte), sub-4
+                // (u16 OR mask × 16, 34-byte), sub-5 (u16 AND mask × 16,
+                // 34-byte), sub-6 (`field_74` bitfield mutation, halts at PC),
                 // sub-7 (list-walk register + halt, 1-byte), sub-8
                 // (`FUN_801D77F4` 4-arg call, 9-byte), sub-9 (inverted-Y
                 // mirror set, 4-byte), sub-0xA (clear mirror + collision-Y
                 // refresh, 2-byte), sub-0xB (FUN_801E57F0 yield, 13-byte),
                 // sub-0xC (party search-and-set, 5-byte), sub-0xD (field_58
                 // write, 3-byte), sub-0xE (party search query, 5-byte),
-                // sub-0xF (scene byte write, 3-byte). Sub-0 (field SE
-                // trigger), sub-4/5 (16-element u16 OR/AND mask via
-                // overlay helpers) remain `Pending`.
+                // sub-0xF (scene byte write, 3-byte).
                 0xD => match op0 & 0x0F {
                     // Sub-0: 6-byte `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`.
                     // Field SE trigger with conditional u16 pair. The
@@ -4101,19 +4127,59 @@ pub fn step<H: FieldHost>(
                             },
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    // Sub-4: 34-byte `[4C, 0xD4, w0_lo, w0_hi, …, w15_lo,
+                    // w15_hi]`. 16-element u16 OR mask on the render-pointer
+                    // table. Original calls `func_0x80058104` (DrawSync-shaped
+                    // PSX sync wrapper) then ORs each word in. PC += 34.
+                    4 => {
+                        if operand + 33 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let mut words = [0u16; 16];
+                        for (i, w) in words.iter_mut().enumerate() {
+                            *w = u16::from_le_bytes([
+                                bytecode[operand + 1 + i * 2],
+                                bytecode[operand + 2 + i * 2],
+                            ]);
+                        }
+                        host.op4c_n_d_sub_4_or_mask(words);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 33,
+                        }
+                    }
+                    // Sub-5: 34-byte `[4C, 0xD5, w0_lo, w0_hi, …, w15_lo,
+                    // w15_hi]`. 16-element u16 AND mask. Sister of sub-4 with
+                    // AND semantics. Same DrawSync wrapper prefix. PC += 34.
+                    5 => {
+                        if operand + 33 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let mut words = [0u16; 16];
+                        for (i, w) in words.iter_mut().enumerate() {
+                            *w = u16::from_le_bytes([
+                                bytecode[operand + 1 + i * 2],
+                                bytecode[operand + 2 + i * 2],
+                            ]);
+                        }
+                        host.op4c_n_d_sub_5_and_mask(words);
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 33,
+                        }
+                    }
+                    16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
                 },
                 // Outer nibble 0xE - misc scene writes + emitter helper calls.
-                // Ported subset covers sub-0 (3-way state write, halt at PC),
-                // sub-2 (set globals, 6-byte), sub-6 (FUN_801D8280, 8-byte),
-                // sub-9 (clear b9c4 via caseD_4 = PC += 2), sub-0xA (call
-                // c7ec then halt), sub-0xC (capture FUN_801DDF48, 2-byte),
-                // sub-0xD (set ba66, 3-byte), sub-0xE (snapshot 84570,
-                // 2-byte). Sub-1 (variable-length packet via FUN_801F8004),
-                // sub-3 (teleport to script ctx), sub-4 (bbox-test
-                // halt-or-advance), sub-5 (XP add + LAB_801df89c), sub-7
-                // (ramp scheduler with FUN_801E212C return), sub-8 (camera
-                // config), sub-0xB (actor lookup) remain `Pending`.
+                // All sub-ops 0x0..=0xE are ported: sub-0 (3-way state write,
+                // halt at PC), sub-1 (variable-length text balloon), sub-2
+                // (set globals, 6-byte), sub-3 (camera-anchored teleport,
+                // 2-byte), sub-4 (bbox-test halt-or-advance, 9-byte), sub-5
+                // (XP add, 5-byte), sub-6 (FUN_801D8280, 8-byte), sub-7
+                // (camera animate, 7-byte), sub-8 (camera zoom, 10-byte),
+                // sub-9 (clear b9c4, 2-byte), sub-0xA (call c7ec then halt),
+                // sub-0xB (actor lookup + conditional jump, 5-byte), sub-0xC
+                // (capture FUN_801DDF48, 2-byte), sub-0xD (set ba66, 3-byte),
+                // sub-0xE (snapshot 84570, 2-byte). Sub-0xF has no `case` arm
+                // in the original and falls through to the default halt.
                 0xE => match op0 & 0x0F {
                     // Sub-0: 2-byte `[4C, 0xE0, b1]`. 3-way write (host
                     // performs based on b1 value); halt at PC.
@@ -4315,7 +4381,10 @@ pub fn step<H: FieldHost>(
                             next_pc: pc + header_size + 1,
                         }
                     }
-                    _ => StepResult::Pending { opcode, pc },
+                    // Sub-F: no `case` arm in the original; falls through to
+                    // `switchD_801e00f4::default()` which returns `param_2`
+                    // (= halt at PC) for outer nibble 0xE opcodes.
+                    _ => StepResult::Halt { final_pc: pc },
                 },
                 // Outer nibble 0xF - only `op0 == 0xFF` is valid; falls
                 // through to the default arm (PC += 2). Other sub-ops in
@@ -5546,6 +5615,9 @@ mod tests {
         n_5_sub_3_dialog_waits: u32,
         n_5_sub_4_dialog_active: bool,
         n_5_sub_4_polls: u32,
+        // Round 19 - 0x4C nD sub-4/5 OR/AND mask.
+        n_d_sub_4_or_masks: Vec<[u16; 16]>,
+        n_d_sub_5_and_masks: Vec<[u16; 16]>,
     }
 
     impl FieldHost for TestHost {
@@ -6007,6 +6079,12 @@ mod tests {
         fn op4c_n_d_sub_e_party_search_query(&mut self, needle: u8) -> Option<usize> {
             self.n_d_sub_e_calls.push(needle);
             self.n_d_sub_e_jump_target
+        }
+        fn op4c_n_d_sub_4_or_mask(&mut self, words: [u16; 16]) {
+            self.n_d_sub_4_or_masks.push(words);
+        }
+        fn op4c_n_d_sub_5_and_mask(&mut self, words: [u16; 16]) {
+            self.n_d_sub_5_and_masks.push(words);
         }
         fn op4c_n_c_sub_0_move_cancel(&mut self, _ctx: &mut FieldCtx) -> bool {
             self.n_c_sub_0_move_cancels += 1;
@@ -10526,5 +10604,52 @@ mod tests {
         let bboxes = host.n_e_sub_4_bboxes.borrow();
         assert_eq!(bboxes.len(), 1);
         assert_eq!(bboxes[0], [0x840, 0x880, 0, 0x840]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_4_or_mask_advances_34_bytes() {
+        // [4C, 0xD4, w0_lo, w0_hi, …, w15_lo, w15_hi] = 34 bytes.
+        // next_pc = 0 + 1 (header_size) + 33 = 34.
+        let mut bytecode = vec![0x4Cu8, 0xD4];
+        for i in 0..16u16 {
+            bytecode.extend_from_slice(&(i * 0x100).to_le_bytes());
+        }
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 34 });
+        let mut expected = [0u16; 16];
+        for (i, e) in expected.iter_mut().enumerate() {
+            *e = i as u16 * 0x100;
+        }
+        assert_eq!(host.n_d_sub_4_or_masks, vec![expected]);
+    }
+
+    #[test]
+    fn op_4c_n_d_sub_5_and_mask_advances_34_bytes() {
+        // Sister of sub-4 with AND semantics.
+        let mut bytecode = vec![0x4Cu8, 0xD5];
+        for i in 0..16u16 {
+            bytecode.extend_from_slice(&(0xFFFF - i).to_le_bytes());
+        }
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 34 });
+        let mut expected = [0u16; 16];
+        for (i, e) in expected.iter_mut().enumerate() {
+            *e = 0xFFFF - i as u16;
+        }
+        assert_eq!(host.n_d_sub_5_and_masks, vec![expected]);
+    }
+
+    #[test]
+    fn op_4c_n_e_sub_f_halts_at_pc() {
+        // Sub-F has no case in the original; falls through to halt.
+        let bytecode = [0x4Cu8, 0xEF];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Halt { final_pc: 0 });
     }
 }

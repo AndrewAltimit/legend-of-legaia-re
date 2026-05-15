@@ -43,7 +43,7 @@ citation table.
 | `0x8008459C` | u32 | Party gold. | `Infinite Gold (Never Glitchy)`. |
 | `0x800845A4` | u32 | Casino coin bank. | `Infinite Coins`. |
 | `0x80085600..0x80085800` | u8[512] | Story-flag bitmap window (Door of Wind, town visited markers). | `Access All Towns` writes `0xF77F` / `0xF8FF`. |
-| `0x80085958..` | u8[144] | 72-slot inventory array, 2-byte stride `(id, count)`. | `Have 99 Items` and `Item Modifier`. |
+| `0x80085958..0x800859E8` | u8[144] | 72-slot inventory array, 2-byte stride `(id, count)`. | `Have 99 Items` and `Item Modifier`. |
 | `0x800EC9E8` | u8[0x2D4] × N | Battle actor pool, party-slot stride `0x2D4`. | `Infinite HP/MP (Vahn/Noa/Gala)` cheats target slots 0..2. |
 | `0x8007A6BC` | u16 | Shared "currently-acting character" HP/MP scratch. | Every "Infinite HP/MP" cheat hits this first. |
 | `0x8007A894` | u16 | Frame-pacing logic timer. | `Slow Motion` writes `0x68FB`. |

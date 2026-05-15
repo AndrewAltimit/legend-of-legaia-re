@@ -347,15 +347,14 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | A     | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | B     | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | C     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
-| D     | ✓   | ✓   | ✓   | ✓   | P   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
+| D     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | E     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | -   |
 | F     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 
-Pending sub-ops are clustered around three blockers:
+Remaining pending sub-ops fall into two clusters:
 
 1. **STATE_RESUME entanglement.** `0x4C n5 sub-1` (dialog-position halt-acquire), `n5 sub-2` (menu activation), `n6 sub-0x61` (16-byte halt-acquire), and `n8 sub-0` (actor-allocator with halt-acquire prelude) all interleave with the existing STATE_RESUME tristate machinery. Tractable but each requires a small refactor of the `field_halt_acquire_*` hook pair, deferred to a follow-up round.
-2. **Overlay helpers with sync wrappers.** `0x4C nD sub-4/5` (16-element u16 OR/AND mask) call into `func_0x80058104` - a `DrawSync`-shaped wrapper that bridges to PSX hardware-side rendering pointers. The mask logic is portable but the sync calls aren't, so the arms need a host hook for the FFI boundary; landed as Pending pending the host-side decision.
-3. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `nE sub-F` (fall-through default), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) - each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split.
+2. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) — each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split. `nE sub-F` has no `case` arm in the original and halts at PC (already `Halt`, not `Pending`).
 
 ### 0x4C nibble-4 - immediate-or-ramp cluster
 

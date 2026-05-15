@@ -143,26 +143,23 @@ Copies the per-character save record (stride `0x414` bytes) to a staging buffer
 at `DAT_801EF0C8` using `char_id * 0x414 + 0x80084A9E` (character record base).
 8 bytes are copied first, then the full record in `do { ... } while (iVar16 < 8)`
 chunks. Calls `FUN_801CF650` (memory-card write primitive) as a setup step at
-`DAT_801e46ac == 0`. The exact offsets for `story_flags` and `inventory` within
-the save block - i.e., what follows the per-character records - are in
-`FUN_801DBD94` (sub-screen `0x1F`); see dump at
-`ghidra/scripts/funcs/overlay_menu_801dbd94.txt`.
+`DAT_801e46ac == 0`.
 
 ## Relationship to `legaia_save`
 
 The memory-card write calls through `_DAT_8007B44C` (PSX LibC card handle set
 from `DAT_801C6EA0`). The in-engine LGSF format (`legaia_save::SaveFile` with
-`SaveExt`) is the clean-room counterpart. The exact offsets for `story_flags`
-and `inventory` within the retail save block are in `FUN_801DBD94` (sub-screen
-`0x1F`); the dump at `ghidra/scripts/funcs/overlay_menu_801dbd94.txt` shows
-money (`_DAT_8008459C`), slot count, and save-block existence scan. A full trace
-of the global-state bytes (story flags, inventory) requires following
-`func_0x80042310` and the staging buffer beyond the per-character record.
+`SaveExt`) is the clean-room counterpart. The `crates/save` constants
+`RETAIL_STORY_FLAGS_OFFSET`, `RETAIL_INVENTORY_OFFSET`, and `SAVE_GAME_DATA_RAM_BASE`
+expose all confirmed offsets; use `read_retail_story_flags` / `read_retail_inventory`
+to slice them from a raw SC block.
 
 ## Retail SC block layout
 
-Verified by analyzing a real mednafen memory-card save at
-`~/.mednafen/sav/Legend of Legaia (USA).*.0.mcr`:
+Verified by cross-referencing mednafen save-state RAM dumps against real MCR saves.
+The game data region (`block+0x200` onward) is a contiguous linear copy of live RAM
+starting at `0x80084340` (`SAVE_GAME_DATA_RAM_BASE`). Any live-RAM field can be
+located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 
 | Offset in SC block | Size | Field |
 |---|---|---|
@@ -174,6 +171,8 @@ Verified by analyzing a real mednafen memory-card save at
 | `0x0100` | 256 | (duplicate icon frame or padding) |
 | `0x0200` | 0x66F | display/global header (see below) |
 | `0x086F` | 0x414 × N | character records (Vahn, Noa, Gala, Terra…) |
+| `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) |
+| `0x1818` | 0x90 | inventory array — 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) |
 
 **Display header** (`0x0200..0x086E`):
 
@@ -183,18 +182,6 @@ Verified by analyzing a real mednafen memory-card save at
 | `+0x054` | 12 | Primary character display name (for save-select screen) |
 | `+0x208` | 8 | CDNAME label of most-recently-visited scene (e.g. `town0b`) |
 | `+0x218` | 8 | CDNAME label of previous scene (e.g. `town01`) |
-| `+0x???` | 4 | Story flags (`_DAT_1F800394` scratchpad value) - offset not yet pinned |
-| `+0x???` | ~512 | Inventory slot array (`DAT_80085958`, 2-byte `(item_id, count)` entries) - offset not yet pinned |
-
-**Investigation status.** The display header contains structured non-zero data beyond the
-four pinned fields above. The in-game money global (`_DAT_8008459C`) is displayed by
-`FUN_801DCF84` (called from the save-slot screen); its display path is `func_0x80034b78` (number
-formatter). The inventory in RAM lives at `DAT_80085958` as 2-byte `(item_id, count)` entries
-(confirmed by `FUN_80042310` decrement and `FUN_800421D4` increment); the serialisation path into
-the staging buffer (`DAT_801EF0C8`) has not been found in the available function dumps. Pinning
-both offsets requires either: (a) an advanced-game MCR save so non-zero values appear at known
-positions, or (b) tracing the full write chain for `_DAT_8008459C` and `DAT_80085958` through
-`FUN_801D9C14` (sub-screen `0x14`) and its callers.
 
 **Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each, name at record+0x000.
 Minimum 4 records observed: Vahn, Noa, Gala, Terra. Empty slots have all-zero bytes;
