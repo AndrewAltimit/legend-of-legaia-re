@@ -105,7 +105,7 @@ The per-prim data IS uniform 20 bytes (= `ilen*4`) - there are no per-prim sub-h
 | `FUN_80021B04` | Actor-spawn helper; builds per-actor OBJECT pointer table at `actor[0x44]+4` |
 | `FUN_80024D78` | Per-actor OBJECT-table rebuild |
 | `FUN_8001EBEC` | Per-frame OBJECT[10/11] swap (pose select for player TMDs) |
-| `FUN_8001E890` | DATA_FIELD player loader (loads `data_field_player_lzs` chains, registers TMDs) |
+| `FUN_8001E890` | "DATA_FIELD player loader" — calls `FUN_8003eb98(0x36C, …)` (PROT 876 = `player_data`) and the dev paths `data\field\player.lzs` / `h:\prot\all\data\field\player.lz`. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev `data\field\player.lzs` file is absent from the ISO9660 walk) **do not** carry the `[0..4]` character TMDs. Those come from PROT 0874 (`befect_data`) section 0 — see [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04). What this function *does* do that's still consumed at `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`. |
 
 The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 

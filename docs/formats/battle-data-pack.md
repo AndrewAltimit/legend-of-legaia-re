@@ -287,9 +287,17 @@ mednafen-state clut-trace \
   with merge-zeros semantics so the "full" (slots 0..14) and "partial"
   (slots 0..7) variants coexist. See [`npc-palette.md`](npc-palette.md).
 
-- **Runtime asset-loader chain**: `FUN_8001E890` is the data-field-player
-  loader (see [`asset-loader.md`](../subsystems/asset-loader.md)) - it
-  reads `data\field\player.lzs` and registers the embedded TMDs into
-  `0x8007C018 + idx*4` via `FUN_80026B4C`. The battle_data pack might
-  feed into the same registry through a sister loader; tracing where the
-  battle scene loader registers character TMDs would close the gap.
+- **Runtime asset-loader chain**: `FUN_8001E890` is misleadingly named
+  "DATA_FIELD player loader" — its retail-PROT branch targets PROT 876
+  (`player_data`) but those bytes are a streaming-format VAB + TIM_LIST
+  + SEQ payload with **no TMDs**. The 5 character TMDs that end up at
+  `DAT_8007C018[0..4]` actually originate from **PROT 0874**
+  (`befect_data`) section 0 — see
+  [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04)
+  for the byte-equality proof against a live RAM dump. What
+  `FUN_8001E890` *does* do that's visible at `DAT_8007C018[0..2]` is
+  the post-install group-count cap (`entry[+0x08] = 10`) and the
+  equipment-conditional patch dispatch into `FUN_8001EBEC`. The exact
+  dispatch site that routes PROT 0874 section 0 through
+  `FUN_8001F05C case 2` → `FUN_80026B4C` is open work
+  (item 4 in `world-map-overlay.md` § Open work).
