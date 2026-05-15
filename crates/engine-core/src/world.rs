@@ -562,6 +562,19 @@ pub struct World {
     /// this when it's called with the empty string, the encounter HUD
     /// surfaces it for diagnostics, etc.). Empty when no scene is loaded.
     pub active_scene_label: String,
+
+    /// VDF ("set_mime", asset type `0x07`) buffer for the active scene.
+    /// Layout `[u32 count][u32 byte_offsets[count]][body...]` mirrors the
+    /// retail `DAT_8007B7DC` buffer the asset-dispatcher case 7 builds
+    /// (see `project_vdf_buffer_and_parallel_table.md` for byte-level
+    /// detail). The buffer holds the spawnable actor templates the field
+    /// VM's `0x4C 0xD8` opcode resolves via [`World::vdf_record_bytes`].
+    ///
+    /// `None` when no scene is loaded or the scene carries no VDF chunk
+    /// (most utility / cutscene scenes don't). Populated by
+    /// [`crate::scene::SceneHost::enter_field_scene`] from the first
+    /// asset-type-7 chunk found in the scene's streaming entries.
+    pub vdf_buffer: Option<Vec<u8>>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -691,6 +704,7 @@ impl World {
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             active_scene_label: String::new(),
+            vdf_buffer: None,
         }
     }
 
@@ -700,6 +714,68 @@ impl World {
     /// the current scene without re-walking the [`crate::scene::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+    }
+
+    /// Install the VDF ("set_mime") buffer for the active scene. The bytes
+    /// must follow the `[u32 count][u32 byte_offsets[count]][body...]`
+    /// layout the retail asset-dispatcher case 7 produces; see
+    /// [`Self::vdf_buffer`] for citation. Engines that want the
+    /// field-VM `0x4C 0xD8` opcode to surface real spawn bytecode call
+    /// this on scene-load with the extracted asset-type-7 chunk's body.
+    ///
+    /// Passing `None` clears the buffer; the next `0x4C 0xD8` call will
+    /// leave `Actor::spawn_record` empty.
+    pub fn set_vdf_buffer(&mut self, bytes: Option<Vec<u8>>) {
+        self.vdf_buffer = bytes;
+    }
+
+    /// Resolve a VDF body slice by index using the
+    /// `[u32 count][u32 byte_offsets[count]][body...]` layout. Each
+    /// returned slice starts at `byte_offsets[idx]` and runs to the
+    /// next body's offset (or end-of-buffer for the last entry).
+    ///
+    /// Returns `None` when:
+    ///  - no VDF buffer is set (the scene loader skipped the install),
+    ///  - the buffer is too short to read the header,
+    ///  - `idx >= count`, or
+    ///  - the indexed offset walks past end-of-buffer.
+    ///
+    /// Mirrors the retail body at
+    /// `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt:152-203`:
+    /// `puVar11 = (uint *)(iVar12 + *(int *)(((vdf_idx << 16) >> 14) + iVar12 + 4))`.
+    pub fn vdf_record_bytes(&self, idx: u8) -> Option<&[u8]> {
+        let buf = self.vdf_buffer.as_deref()?;
+        if buf.len() < 4 {
+            return None;
+        }
+        let count = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+        if (idx as u32) >= count {
+            return None;
+        }
+        let table_byte = 4usize;
+        let slot = table_byte + (idx as usize) * 4;
+        if slot + 4 > buf.len() {
+            return None;
+        }
+        let off = u32::from_le_bytes(buf[slot..slot + 4].try_into().ok()?) as usize;
+        if off >= buf.len() {
+            return None;
+        }
+        // Bound the body by the next *greater* offset (offsets aren't
+        // guaranteed monotonic - we pick the smallest offset above
+        // `off` from any later table slot, defaulting to EOB).
+        let mut end = buf.len();
+        for i in (idx as u32 + 1)..count {
+            let s = table_byte + (i as usize) * 4;
+            if s + 4 > buf.len() {
+                break;
+            }
+            let next = u32::from_le_bytes(buf[s..s + 4].try_into().ok()?) as usize;
+            if next > off && next <= buf.len() && next < end {
+                end = next;
+            }
+        }
+        Some(&buf[off..end])
     }
 
     /// Drain emitted field-VM events. Engines call once per frame after
@@ -2545,23 +2621,30 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ActorAllocate { records });
     }
 
-    fn op4c_n_d_sub8_call_d77f4(&mut self, _b1: u8, words: [i16; 3]) {
+    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
         // Synchronous actor allocator (see retail `FUN_801D77F4` body
         // dumped at `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`).
         // The dispatcher packs the four args
         //   `[vdf_idx: u8, tmd_idx: i16, kind: i16, variant: i16]`
         // into the 7 bytes after `[0x4C, 0xD8]`; FUN_801D77F4 then writes
         // `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the
-        // allocated slot. We mirror those two writes here. The `vdf_idx`
-        // and `tmd_idx` bytes select the VDF record + TMD pointer the
-        // retail body wires into `actor[+0x4C]` / `actor[+0x48]` - the
-        // clean-room port doesn't yet model the VDF buffer + global TMD
-        // table, so we keep `spawn_record` empty for now and leave the
-        // ActorSpawned event's `record` field as the placeholder. When
-        // the VDF / TMD-pool lift lands, this hook should pull the
-        // record bytes and write them through `Actor::spawn_record`.
+        // allocated slot, plus `actor[+0x4C] = VDF_body_ptr`. We mirror
+        // those writes here. The TMD pointer (retail `actor[+0x48]`,
+        // sourced from `DAT_8007C018[tmd_idx]`) is still unmodeled
+        // pending the global TMD-pool lift.
         let kind = words[1] as u16;
         let variant = words[2] as u16;
+        // Mirror retail's `actor[+0x4C] = VDF_body_ptr`: look up the
+        // VDF record body bytes and store them on the allocated actor.
+        // `None` when no VDF buffer is installed or the index is OOR;
+        // engines that drive the host without setting one still get the
+        // kind/variant writes (synchronous spawn semantics) plus an
+        // empty `record` in the event payload.
+        let record_bytes: Vec<u8> = self
+            .world
+            .vdf_record_bytes(b1)
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
         let start = FIELD_SPAWN_START_SLOT as usize;
         match self
             .world
@@ -2577,14 +2660,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 actor.active = true;
                 actor.kind = kind;
                 actor.variant = variant;
-                actor.spawn_record = None;
+                actor.spawn_record = if record_bytes.is_empty() {
+                    None
+                } else {
+                    Some(record_bytes.clone())
+                };
                 self.world
                     .pending_field_events
                     .push(FieldEvent::ActorSpawned {
                         slot: slot_idx as u8,
                         kind,
                         variant,
-                        record: Vec::new(),
+                        record: record_bytes,
                     });
             }
             None => {
@@ -2592,7 +2679,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 // where FUN_80020DE0 returns 0.
                 self.world
                     .pending_field_events
-                    .push(FieldEvent::ActorSpawnFailed { record: Vec::new() });
+                    .push(FieldEvent::ActorSpawnFailed {
+                        record: record_bytes,
+                    });
             }
         }
     }
@@ -3957,6 +4046,88 @@ mod tests {
         // And nothing was queued on the pending_actor_spawns side - the
         // synchronous path doesn't go through the materializer.
         assert!(world.pending_actor_spawns.is_empty());
+    }
+
+    /// `0x4C 0xD8` with a populated VDF buffer should copy the indexed
+    /// body bytes onto the spawned actor's `spawn_record` (mirror of
+    /// retail `actor[+0x4C] = VDF_body_ptr`) and surface them in the
+    /// `ActorSpawned` event payload.
+    #[test]
+    fn field_op_4c_d8_with_vdf_buffer_populates_spawn_record() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // VDF buffer with two records:
+        //   header:  count = 2
+        //   table:   offsets[0] = 12, offsets[1] = 16
+        //   body 0:  [0xDE, 0xAD, 0xBE, 0xEF] @ off 12 (4 bytes -> 16)
+        //   body 1:  [0xCA, 0xFE, 0xBA, 0xBE, 0x42] @ off 16 (to EOB)
+        let mut vdf = Vec::new();
+        vdf.extend_from_slice(&2u32.to_le_bytes()); // count
+        vdf.extend_from_slice(&12u32.to_le_bytes()); // offsets[0]
+        vdf.extend_from_slice(&16u32.to_le_bytes()); // offsets[1]
+        vdf.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        vdf.extend_from_slice(&[0xCA, 0xFE, 0xBA, 0xBE, 0x42]);
+        world.set_vdf_buffer(Some(vdf));
+
+        // Sanity-check the lookup helper.
+        assert_eq!(
+            world.vdf_record_bytes(0),
+            Some(&[0xDE, 0xAD, 0xBE, 0xEF][..])
+        );
+        assert_eq!(
+            world.vdf_record_bytes(1),
+            Some(&[0xCA, 0xFE, 0xBA, 0xBE, 0x42][..])
+        );
+        assert_eq!(world.vdf_record_bytes(2), None); // idx >= count
+
+        // `[0x4C, 0xD8, vdf_idx=0x01, tmd=0x0102, kind=0x1111, variant=0x2222, 0x00]`.
+        let bytecode = vec![0x4C, 0xD8, 0x01, 0x02, 0x01, 0x11, 0x11, 0x22, 0x22, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+
+        let slot = FIELD_SPAWN_START_SLOT as usize;
+        assert!(world.actors[slot].active);
+        assert_eq!(world.actors[slot].kind, 0x1111);
+        assert_eq!(world.actors[slot].variant, 0x2222);
+        assert_eq!(
+            world.actors[slot].spawn_record.as_deref(),
+            Some(&[0xCA, 0xFE, 0xBA, 0xBE, 0x42][..]),
+            "spawn_record should mirror VDF body 1"
+        );
+
+        let evs = world.drain_field_events();
+        let spawned: Vec<_> = evs
+            .iter()
+            .filter_map(|e| match e {
+                FieldEvent::ActorSpawned { record, .. } => Some(record.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spawned, vec![vec![0xCA, 0xFE, 0xBA, 0xBE, 0x42]]);
+    }
+
+    /// `vdf_record_bytes` rejects out-of-range indices, malformed
+    /// buffers, and the `None` (no VDF installed) path.
+    #[test]
+    fn vdf_record_bytes_handles_edge_cases() {
+        let mut world = World::new();
+        assert_eq!(world.vdf_record_bytes(0), None, "no VDF -> None");
+
+        // Empty buffer (shorter than header word).
+        world.set_vdf_buffer(Some(vec![0x01, 0x02]));
+        assert_eq!(world.vdf_record_bytes(0), None);
+
+        // Count = 0.
+        world.set_vdf_buffer(Some(vec![0x00, 0x00, 0x00, 0x00]));
+        assert_eq!(world.vdf_record_bytes(0), None);
+
+        // Count = 1 but offset walks past EOB.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&1u32.to_le_bytes()); // count
+        buf.extend_from_slice(&0xFFFFu32.to_le_bytes()); // offsets[0] - past EOB
+        buf.extend_from_slice(&[0xAAu8; 8]);
+        world.set_vdf_buffer(Some(buf));
+        assert_eq!(world.vdf_record_bytes(0), None);
     }
 
     /// `tick_move_vms` records per-actor outcomes via `actor_tick`. A

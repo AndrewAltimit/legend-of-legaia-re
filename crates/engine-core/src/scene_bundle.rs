@@ -332,6 +332,41 @@ pub fn scripted_event_record_ranges(bundle: &BundleSource) -> Option<ScriptedEve
     None
 }
 
+/// Scan the scene's entries for the first asset-type-0x07 (`VDF` /
+/// `set_mime`) streaming chunk and return its body bytes.
+///
+/// The VDF buffer is the retail `DAT_8007B7DC` install target the
+/// asset-dispatcher case 7 builds; the body bytes are the
+/// `[u32 count][u32 byte_offsets[count]][bodies]` layout the field-VM
+/// `0x4C 0xD8` opcode resolves via [`crate::world::World::vdf_record_bytes`].
+///
+/// Returns `None` when no VDF chunk is reachable from the scene. Some
+/// scenes (utility / cutscene / world-map) carry no VDF data; that's
+/// not an error.
+///
+/// **Heuristic note:** picks the *first* VDF chunk found in CDNAME
+/// order. Of 124 scenes in the retail corpus only 8 carry VDF chunks,
+/// and each carries exactly one - so the "first" choice matches retail
+/// behaviour. If a future PROT layout ever surfaces multiple VDF chunks
+/// per scene, this needs to be revisited.
+pub fn find_vdf_buffer(scene: &Scene) -> Option<Vec<u8>> {
+    for entry in &scene.entries {
+        let Ok(report) = legaia_asset::parse_streaming(&entry.bytes, 4096) else {
+            continue;
+        };
+        for c in &report.chunks {
+            if matches!(AssetType::from_byte(c.type_byte), AssetType::Vdf) {
+                let body_start = c.header_offset + 4;
+                let body_end = body_start + c.size as usize;
+                if body_end <= entry.bytes.len() {
+                    return Some(entry.bytes[body_start..body_end].to_vec());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

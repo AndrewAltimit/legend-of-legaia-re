@@ -934,6 +934,14 @@ impl SceneHost {
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
+        // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
+        // synchronous-spawn host hook can resolve actor templates. Only
+        // a handful of scenes carry VDF data (8/124 in the retail
+        // corpus); the lookup is cheap and returns `None` for the rest.
+        if let Some(scene) = self.scene.as_ref() {
+            self.world
+                .set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
+        }
         // Pre-bind actor ↔ TMD/ANM resources so they survive the first
         // field-VM actor-spawn opcode (see `World::init_scene_animations`).
         //
