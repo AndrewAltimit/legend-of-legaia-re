@@ -42,7 +42,7 @@ RETAIL_CHAR_RECORD_STRIDE = 0x414
 STORY_FLAGS_START = 0x80085600
 STORY_FLAGS_END   = 0x80085800
 INVENTORY_START   = 0x80085958
-INVENTORY_END     = 0x80085A48   # 0x90 = 144 bytes
+INVENTORY_END     = 0x800859E8   # 0x90 = 144 bytes (72 slots * 2 bytes)
 
 # Item name table (index = item_id).  Source: data/cheats + gamedata.
 # Item IDs are 1-based (0 = empty slot). This is a best-effort partial table;

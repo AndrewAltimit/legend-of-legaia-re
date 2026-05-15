@@ -388,6 +388,27 @@ Sub-9's tristate dispatch:
 | clear | set | `AbsJump` - return `signed_16(operand)` as new PC |
 | set | (ignored) | `Delta` - write/ramp both target slot **and** delta global at `_DAT_8007BCAC` |
 
+### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
+
+6-byte `[4C, 0xD4|0xD5, x_lo, x_hi, y_lo, y_hi]`. The operand is a `(vram_x, vram_y)` pair; the rect is hard-coded to `w = 0x10, h = 1`. The original (overlay dump lines 7621-7666) runs the PsyQ libgs sequence
+
+```c
+DrawSync(0);
+StoreImage(rect, buf16);   // FUN_8005842c - read 16 u16 pixels from VRAM
+DrawSync(0);
+for (i = 0; i < 16; i++) {
+    if (sub_4) {           // op 0xD4: set STP on non-zero pixels
+        if (buf16[i] != 0)      buf16[i] |= 0x8000;
+    } else {               // op 0xD5: clear STP unless already STP-only
+        if (buf16[i] != 0x8000) buf16[i] &= 0x7FFF;
+    }
+}
+LoadImage(rect, buf16);    // FUN_800583c8 - write 16 u16 pixels back
+return iVar47 + 6;
+```
+
+`FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` carry the string constants `s_StoreImage` / `s_LoadImage` / `s_DrawSync` respectively. The 16-element u16 buffer lives on the dispatcher's stack and is *not* present in the bytecode - it's pixels read from VRAM at runtime. The host hooks `op4c_n_d_sub_4_vram_stp_set(x, y)` / `op4c_n_d_sub_5_vram_stp_clear(x, y)` receive only the rect origin; a clean-room renderer that maintains its own framebuffer can emulate the read-modify-write itself.
+
 ## Default-case "extension" opcodes - the fourth flag bank
 
 The default arm of the dispatcher checks `*pbVar43 & 0x70`:

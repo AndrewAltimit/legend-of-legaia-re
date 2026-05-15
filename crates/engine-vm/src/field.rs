@@ -1793,28 +1793,35 @@ pub trait FieldHost {
         None
     }
 
-    /// Op 0x4C outer-nibble-D sub-4 - 16-element u16 OR mask applied to the
-    /// engine's render-pointer array.
+    /// Op 0x4C outer-nibble-D sub-4 - VRAM rect read-modify-write that sets
+    /// the PSX STP (semi-transparency) bit on a 16x1 pixel run.
     ///
-    /// 34-byte instruction `[4C, 0xD4, w0_lo, w0_hi, …, w15_lo, w15_hi]`.
-    /// The original (dispatcher dump ~6937-6948) calls `func_0x80058104` (a
-    /// `DrawSync`-shaped wrapper that synchronises the PSX rendering pipeline)
-    /// then ORs each of the 16 u16 words into a parallel render-pointer table.
-    /// The DrawSync wrapper is PSX-hardware-specific; the mask logic itself is
-    /// pure arithmetic. The host receives the prepared words and applies both
-    /// the sync and the OR to whatever rendering state it maintains. Default
-    /// no-op (safe for engines that don't track this table).
-    fn op4c_n_d_sub_4_or_mask(&mut self, words: [u16; 16]) {
-        let _ = words;
+    /// 6-byte instruction `[4C, 0xD4, x_lo, x_hi, y_lo, y_hi]`. The original
+    /// (dispatcher dump lines 7621-7642) builds a `(vram_x, vram_y, w=0x10,
+    /// h=1)` `RECT`, then runs the PsyQ libgs sequence
+    /// `DrawSync(0); StoreImage(rect, buf16); DrawSync(0); for each of 16
+    /// u16 pixels: if non-zero, OR with 0x8000; LoadImage(rect, buf16);` -
+    /// i.e. it sets bit 15 (STP) on every non-zero pixel in the 16x1 rect.
+    /// `StoreImage`/`LoadImage`/`DrawSync` correspond to
+    /// `FUN_8005842c` / `FUN_800583c8` / `FUN_80058104` (string
+    /// constants `s_StoreImage`/`s_LoadImage`/`s_DrawSync` confirm the
+    /// shape). The host receives the rect origin and may emulate the
+    /// read-modify-write against its own framebuffer. Default no-op.
+    fn op4c_n_d_sub_4_vram_stp_set(&mut self, vram_x: u16, vram_y: u16) {
+        let _ = (vram_x, vram_y);
     }
 
-    /// Op 0x4C outer-nibble-D sub-5 - 16-element u16 AND mask.
+    /// Op 0x4C outer-nibble-D sub-5 - VRAM rect read-modify-write that
+    /// clears the PSX STP bit on a 16x1 pixel run.
     ///
-    /// 34-byte instruction `[4C, 0xD5, w0_lo, w0_hi, …, w15_lo, w15_hi]`.
-    /// Sister of sub-4 with AND-then-apply semantics instead of OR. Same
-    /// `func_0x80058104` DrawSync wrapper prefix. Default no-op.
-    fn op4c_n_d_sub_5_and_mask(&mut self, words: [u16; 16]) {
-        let _ = words;
+    /// 6-byte instruction `[4C, 0xD5, x_lo, x_hi, y_lo, y_hi]`. Same libgs
+    /// shape as sub-4 (StoreImage/LoadImage round-trip with intervening
+    /// DrawSyncs) but the inner loop is `if pixel != 0x8000: pixel &=
+    /// 0x7FFF` - i.e. it clears bit 15 (STP) on every pixel that isn't
+    /// already "STP-only" (`0x8000` = transparent black with STP set).
+    /// Default no-op.
+    fn op4c_n_d_sub_5_vram_stp_clear(&mut self, vram_x: u16, vram_y: u16) {
+        let _ = (vram_x, vram_y);
     }
 
     // -----------------------------------------------------------------
@@ -3933,15 +3940,15 @@ pub fn step<H: FieldHost>(
                 // All 16 sub-ops are ported: sub-0 (field SE trigger, 6-byte),
                 // sub-1 (linked-list lookup gate, 2-byte), sub-2 (channel-spawn
                 // halt, 2-byte), sub-3 (party state setup, 14-byte), sub-4
-                // (u16 OR mask × 16, 34-byte), sub-5 (u16 AND mask × 16,
-                // 34-byte), sub-6 (`field_74` bitfield mutation, halts at PC),
-                // sub-7 (list-walk register + halt, 1-byte), sub-8
-                // (`FUN_801D77F4` 4-arg call, 9-byte), sub-9 (inverted-Y
-                // mirror set, 4-byte), sub-0xA (clear mirror + collision-Y
-                // refresh, 2-byte), sub-0xB (FUN_801E57F0 yield, 13-byte),
-                // sub-0xC (party search-and-set, 5-byte), sub-0xD (field_58
-                // write, 3-byte), sub-0xE (party search query, 5-byte),
-                // sub-0xF (scene byte write, 3-byte).
+                // (VRAM STP-bit set on 16x1 rect, 6-byte), sub-5 (VRAM STP-bit
+                // clear on 16x1 rect, 6-byte), sub-6 (`field_74` bitfield
+                // mutation, halts at PC), sub-7 (list-walk register + halt,
+                // 1-byte), sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9
+                // (inverted-Y mirror set, 4-byte), sub-0xA (clear mirror +
+                // collision-Y refresh, 2-byte), sub-0xB (FUN_801E57F0 yield,
+                // 13-byte), sub-0xC (party search-and-set, 5-byte), sub-0xD
+                // (field_58 write, 3-byte), sub-0xE (party search query,
+                // 5-byte), sub-0xF (scene byte write, 3-byte).
                 0xD => match op0 & 0x0F {
                     // Sub-0: 6-byte `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`.
                     // Field SE trigger with conditional u16 pair. The
@@ -4127,43 +4134,42 @@ pub fn step<H: FieldHost>(
                             },
                         }
                     }
-                    // Sub-4: 34-byte `[4C, 0xD4, w0_lo, w0_hi, …, w15_lo,
-                    // w15_hi]`. 16-element u16 OR mask on the render-pointer
-                    // table. Original calls `func_0x80058104` (DrawSync-shaped
-                    // PSX sync wrapper) then ORs each word in. PC += 34.
+                    // Sub-4: 6-byte `[4C, 0xD4, x_lo, x_hi, y_lo, y_hi]`.
+                    // VRAM 16x1 rect read-modify-write that sets PSX STP bit
+                    // 15 on every non-zero pixel. Original (lines 7621-7642
+                    // of overlay_world_map_walk_801de840.txt) reads two u16
+                    // operands as `(vram_x, vram_y)` with hardcoded `w=0x10,
+                    // h=1`, runs `DrawSync; StoreImage(rect, buf);
+                    // DrawSync; for each of 16 pixels: if != 0 then OR
+                    // with 0x8000; LoadImage(rect, buf)`. `StoreImage` =
+                    // `FUN_8005842c`, `LoadImage` = `FUN_800583c8`,
+                    // `DrawSync` = `FUN_80058104`. Returns `iVar47 + 6`.
                     4 => {
-                        if operand + 33 > bytecode.len() {
+                        if operand + 5 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
                         }
-                        let mut words = [0u16; 16];
-                        for (i, w) in words.iter_mut().enumerate() {
-                            *w = u16::from_le_bytes([
-                                bytecode[operand + 1 + i * 2],
-                                bytecode[operand + 2 + i * 2],
-                            ]);
-                        }
-                        host.op4c_n_d_sub_4_or_mask(words);
+                        let x = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let y = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+                        host.op4c_n_d_sub_4_vram_stp_set(x, y);
                         StepResult::Advance {
-                            next_pc: pc + header_size + 33,
+                            next_pc: pc + header_size + 5,
                         }
                     }
-                    // Sub-5: 34-byte `[4C, 0xD5, w0_lo, w0_hi, …, w15_lo,
-                    // w15_hi]`. 16-element u16 AND mask. Sister of sub-4 with
-                    // AND semantics. Same DrawSync wrapper prefix. PC += 34.
+                    // Sub-5: 6-byte `[4C, 0xD5, x_lo, x_hi, y_lo, y_hi]`.
+                    // Sister of sub-4 that clears PSX STP bit 15 on every
+                    // pixel that isn't already exactly `0x8000` (STP-only
+                    // transparent black). Inner loop is `if pixel != 0x8000
+                    // then AND with 0x7FFF`. Same libgs round-trip as sub-4.
+                    // Returns `iVar47 + 6`.
                     5 => {
-                        if operand + 33 > bytecode.len() {
+                        if operand + 5 > bytecode.len() {
                             return StepResult::Unknown { opcode, pc };
                         }
-                        let mut words = [0u16; 16];
-                        for (i, w) in words.iter_mut().enumerate() {
-                            *w = u16::from_le_bytes([
-                                bytecode[operand + 1 + i * 2],
-                                bytecode[operand + 2 + i * 2],
-                            ]);
-                        }
-                        host.op4c_n_d_sub_5_and_mask(words);
+                        let x = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+                        let y = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+                        host.op4c_n_d_sub_5_vram_stp_clear(x, y);
                         StepResult::Advance {
-                            next_pc: pc + header_size + 33,
+                            next_pc: pc + header_size + 5,
                         }
                     }
                     16..=u8::MAX => unreachable!("op0 & 0x0F is at most 0xF"),
@@ -5615,9 +5621,9 @@ mod tests {
         n_5_sub_3_dialog_waits: u32,
         n_5_sub_4_dialog_active: bool,
         n_5_sub_4_polls: u32,
-        // Round 19 - 0x4C nD sub-4/5 OR/AND mask.
-        n_d_sub_4_or_masks: Vec<[u16; 16]>,
-        n_d_sub_5_and_masks: Vec<[u16; 16]>,
+        // Round 19 - 0x4C nD sub-4/5 VRAM STP set/clear.
+        n_d_sub_4_vram_stp_set_calls: Vec<(u16, u16)>,
+        n_d_sub_5_vram_stp_clear_calls: Vec<(u16, u16)>,
     }
 
     impl FieldHost for TestHost {
@@ -6080,11 +6086,11 @@ mod tests {
             self.n_d_sub_e_calls.push(needle);
             self.n_d_sub_e_jump_target
         }
-        fn op4c_n_d_sub_4_or_mask(&mut self, words: [u16; 16]) {
-            self.n_d_sub_4_or_masks.push(words);
+        fn op4c_n_d_sub_4_vram_stp_set(&mut self, x: u16, y: u16) {
+            self.n_d_sub_4_vram_stp_set_calls.push((x, y));
         }
-        fn op4c_n_d_sub_5_and_mask(&mut self, words: [u16; 16]) {
-            self.n_d_sub_5_and_masks.push(words);
+        fn op4c_n_d_sub_5_vram_stp_clear(&mut self, x: u16, y: u16) {
+            self.n_d_sub_5_vram_stp_clear_calls.push((x, y));
         }
         fn op4c_n_c_sub_0_move_cancel(&mut self, _ctx: &mut FieldCtx) -> bool {
             self.n_c_sub_0_move_cancels += 1;
@@ -10607,40 +10613,26 @@ mod tests {
     }
 
     #[test]
-    fn op_4c_n_d_sub_4_or_mask_advances_34_bytes() {
-        // [4C, 0xD4, w0_lo, w0_hi, …, w15_lo, w15_hi] = 34 bytes.
-        // next_pc = 0 + 1 (header_size) + 33 = 34.
-        let mut bytecode = vec![0x4Cu8, 0xD4];
-        for i in 0..16u16 {
-            bytecode.extend_from_slice(&(i * 0x100).to_le_bytes());
-        }
+    fn op_4c_n_d_sub_4_vram_stp_set_advances_6_bytes() {
+        // [4C, 0xD4, x_lo, x_hi, y_lo, y_hi] = 6 bytes; original returns
+        // iVar47 + 6. next_pc = 0 + 1 (header_size) + 5 = 6.
+        let bytecode = [0x4Cu8, 0xD4, 0x80, 0x00, 0xEF, 0x01]; // x=0x0080, y=0x01EF
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 34 });
-        let mut expected = [0u16; 16];
-        for (i, e) in expected.iter_mut().enumerate() {
-            *e = i as u16 * 0x100;
-        }
-        assert_eq!(host.n_d_sub_4_or_masks, vec![expected]);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_d_sub_4_vram_stp_set_calls, vec![(0x0080, 0x01EF)]);
     }
 
     #[test]
-    fn op_4c_n_d_sub_5_and_mask_advances_34_bytes() {
-        // Sister of sub-4 with AND semantics.
-        let mut bytecode = vec![0x4Cu8, 0xD5];
-        for i in 0..16u16 {
-            bytecode.extend_from_slice(&(0xFFFF - i).to_le_bytes());
-        }
+    fn op_4c_n_d_sub_5_vram_stp_clear_advances_6_bytes() {
+        // Sister of sub-4 with STP-clear semantics; same 6-byte encoding.
+        let bytecode = [0x4Cu8, 0xD5, 0xC0, 0x01, 0x10, 0x00]; // x=0x01C0, y=0x0010
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 34 });
-        let mut expected = [0u16; 16];
-        for (i, e) in expected.iter_mut().enumerate() {
-            *e = 0xFFFF - i as u16;
-        }
-        assert_eq!(host.n_d_sub_5_and_masks, vec![expected]);
+        assert_eq!(r, StepResult::Advance { next_pc: 6 });
+        assert_eq!(host.n_d_sub_5_vram_stp_clear_calls, vec![(0x01C0, 0x0010)]);
     }
 
     #[test]
