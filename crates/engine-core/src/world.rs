@@ -871,20 +871,33 @@ impl World {
 
     /// Engine-side consumer for queued actor-spawn requests.
     ///
-    /// Drains [`Self::pending_actor_spawns`] and, for each record:
+    /// Drains [`Self::pending_actor_spawns`] (records queued by the
+    /// `0x4C 0x80` halt-acquire-gated path) and, for each record:
     /// 1. Scans `actors[start_slot..MAX_ACTORS]` for the first inactive
     ///    slot. Slots `0..start_slot` are skipped so engines keep their
     ///    party / scripted actors out of the auto-allocation range.
-    /// 2. Activates the slot, stores the record bytes on
-    ///    [`Actor::spawn_record`] (mirroring retail's `actor[+0x4C]`
-    ///    record-pointer write for the field-VM allocator path), and
-    ///    leaves [`Actor::kind`] / [`Actor::variant`] at zero - the record
-    ///    encoding that drives those fields is not yet pinned.
+    /// 2. Activates the slot and stores the record bytes on
+    ///    [`Actor::spawn_record`]. The retail allocator writes the
+    ///    bytecode pointer to `actor[+0x90]` (different from the `+0x4C`
+    ///    VDF-body field that the synchronous `0x4C 0xD8` path uses);
+    ///    the clean-room port stores the raw bytes on `spawn_record`
+    ///    regardless and lets the engine route them as field-VM
+    ///    bytecode for a child actor (the records are scripted-child
+    ///    coroutines, not TMD-body or kind/variant tuples).
     /// 3. Emits a [`FieldEvent::ActorSpawned`] event for the engine.
     ///
-    /// Mirrors the retail `FUN_801D77F4` allocator's pool-exhausted branch:
-    /// if no inactive slot is available, the record is dropped silently
-    /// and a [`FieldEvent::ActorSpawnFailed`] event is emitted instead.
+    /// Leaves [`Actor::kind`] and [`Actor::variant`] at zero. The
+    /// retail allocator for this opcode (overlay code at
+    /// `overlay_world_map_801de840.txt:7080-7123` case `8 sub-0`)
+    /// allocates from pool `0x801f28a0` and writes only
+    /// `actor[+0x90]` (bytecode ptr), `actor[+0x94]` (parent
+    /// back-pointer) and `actor[+0x54] = 0`; the `+0x3C`/`+0x3E`
+    /// kind/variant fields are never written by this path, so zero
+    /// matches retail.
+    ///
+    /// Mirrors the retail allocator's pool-exhausted branch: if no
+    /// inactive slot is available, the record is dropped silently and
+    /// a [`FieldEvent::ActorSpawnFailed`] event is emitted instead.
     ///
     /// Returns the count of slots that were actually allocated.
     pub fn materialize_actor_spawns(&mut self, start_slot: u8) -> usize {
