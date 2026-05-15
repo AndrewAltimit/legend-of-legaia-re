@@ -100,31 +100,31 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 
 | ID | Function | Role |
 |---|---|---|
-| `0x00` | `FUN_801DD12C` | (unknown) |
+| `0x00` | `FUN_801DD12C` | 2-state final-exit screen: state 0 invokes actor `&DAT_801E4A78` (terminal display); state 1 waits `_DAT_8007BB80 == 0`, then sets `DAT_801E46A0 = 0xF2` and exit code `_DAT_8007B43C = 3` |
 | `0x01` | `FUN_801D6B20` | `FUN_801DAEF4` slot selector path |
 | `0x02` | `FUN_801D6E18` | save entry (from menu entry-context `(char*)1`) |
-| `0x03` | `FUN_801D6D38` | (unknown) |
+| `0x03` | `FUN_801D6D38` | 2-state Yes/No confirm with default cursor `1`: actor `&DAT_801E4BD4`, picker `FUN_801D688C(&DAT_801E46D0, 2, 1)`; cursor `1` returns to current sub-screen (`0x01`), cursor `0` advances to `0x00` (exit), cancel returns to `0x01` |
 | `0x04` | `FUN_801DD1B8` | post-save return path |
 | `0x05` | `FUN_801D7C00` | (unknown) |
 | `0x06` | `FUN_801D7E50` | (unknown) |
 | `0x07` | `FUN_801D8734` | (unknown) |
-| `0x08` | `FUN_801DD26C` | (unknown) |
+| `0x08` | `FUN_801DD26C` | 2-state actor + pad-release-wait: state 0 invokes actor `&DAT_801E4CA4`; state 1 waits `_DAT_8007BB80 == 0` AND no button held (`_DAT_8007B874 & (_DAT_800846D4 \| _DAT_800846D0) == 0`), advances to `0x05` |
 | `0x09` | `FUN_801D7FF8` | (unknown) |
 | `0x0A` | `FUN_801D8308` | (unknown) |
-| `0x0B` | `FUN_801D8A58` | (unknown) |
+| `0x0B` | `FUN_801D8A58` | 3-state Yes/No confirm with exit branch: state 0 invokes actor `&DAT_801E4CBC`; state 1 picker on cursor `0` invokes second actor `&DAT_801E4A78` + sfx via `func_0x80042310(0x88, 1)` and advances to state 2, otherwise goes to `0x06`; state 2 waits `_DAT_8007BB80 == 0`, then sets `DAT_801E46A0 = 0xF2`, exit code `_DAT_8007B43C = 4` |
 | `0x0C` | `FUN_801D8B90` | (unknown) |
 | `0x0D` | `FUN_801D8D94` | (unknown) |
 | `0x0E` | `FUN_801D8F10` | (unknown) |
 | `0x0F` | `FUN_801D9110` | (unknown) |
 | `0x10` | `FUN_801D9280` | (unknown) |
 | `0x11` | `FUN_801D9594` | (unknown) |
-| `0x12` | `FUN_801D98F0` | (unknown) |
+| `0x12` | `FUN_801D98F0` | 2-state scrollable picker: state 0 sets `_DAT_8007BB94 = 4`, actor `&DAT_801E4D88`; state 1 picker `FUN_801D688C(&DAT_801E46C4, DAT_80084594, 1)` (count from save-block existence table). Confirm → `0x13`, cancel → `0x01` |
 | `0x13` | `FUN_801D99F0` | (unknown) |
 | `0x14` | `FUN_801D9C14` | per-character record serialisation (0x414 bytes, `char_id` stride) |
 | `0x15` | `FUN_801DA2A0` | (unknown) |
-| `0x16` | `FUN_801DD310` | (unknown) |
-| `0x17` | `FUN_801DD330` | (unknown) |
-| `0x18` | `FUN_801DAE24` | (unknown) |
+| `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
+| `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
+| `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main, which performs the actual libcd write); state 3 returns to sub-screen `0x01` |
 | `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
 | `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm |
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
@@ -136,6 +136,26 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
 section (`0x85826B82` etc.) and are not function pointers.
+
+### Load/save dispatch (`FUN_801DD35C`)
+
+The saving-overlay's main routine is shared between the load and save paths.
+Sub-screens `0x18` (save) and `0x19` (load) are structurally identical
+3-state drivers - they install the card handle, invoke a direction-specific
+display actor, then call `FUN_801DD35C(1, op)` repeatedly until it returns
+non-zero. The op selector distinguishes direction:
+
+| Sub-screen | Driver | Display actor | Call | Direction |
+|---|---|---|---|---|
+| `0x18` | `FUN_801DAE24` | `&DAT_801E4E28` | `FUN_801DD35C(1, 2)` | save (RAM → card) |
+| `0x19` | `FUN_801DAEF4` | `&DAT_801E4E30` | `FUN_801DD35C(1, 1)` | load (card → RAM) |
+
+Both install `_DAT_8007B44C = DAT_801C6EA0` (PSX libC card handle) on state 0,
+so the same global handle is used in both directions. On success both return
+to sub-screen `0x01` (the slot picker). The actual libcd-write call site
+inside `FUN_801DD35C`'s save branch (param_2 == 2) is the remaining open
+trace - the load branch (param_2 == 1) is the `FUN_8001A8B0` bulk transfer
+already pinned.
 
 ### Save data serialisation (`FUN_801D9C14`, sub-screen `0x14`)
 
