@@ -337,12 +337,12 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | 0     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 1     | ✓   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   | P   |
 | 2     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
-| 3     | ✓   | ✓   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | P   | P   | P   | ✓   | ✓   |
-| 4     | ✓   | ✓   | ✓   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | P   | P   |
+| 3     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
+| 4     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 5     | ✓   | ✓   | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | 6     | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | 7     | ✓   | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
-| 8     | ✓   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
+| 8     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 9     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | A     | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | B     | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
@@ -351,13 +351,19 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | E     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | -   |
 | F     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 
-Remaining pending sub-ops fall into one cluster:
+All 16x16 cells are now either fully ported (`✓`) or fall through to the dispatcher's default arm (`-`). The previously-`P` cells resolved as follows:
 
-1. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) — each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split. `nE sub-F` has no `case` arm in the original and halts at PC (already `Halt`, not `Pending`).
+- **`n3 sub-4` / `sub-B` / `sub-C`**: the original at `0x801df208` (in `overlay_0897_801de840.txt`) jumps with delay slot `_addiu s8, s8, 0x2` to `LAB_801df09c switchD_801e00f4::default()` - a 2-byte advance with no side effect (the inline `_DAT_8007b5f0 = uVar31` write is a no-op because `uVar31` was read from the same slot). The Rust port matches: `next_pc = pc + header_size + 1`, no host hook fires.
+- **`n3 sub-D`**: routed alongside `sub-8` through [`FieldHost::player_subtile_refresh`], a host hook that distinguishes the two via the inner sub-op byte.
+- **`n4 sub-5`**: 11-byte instruction `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi, w98_lo, w98_hi, ticks_lo, ticks_hi]`. The dispatcher splits on `ticks == 0` between [`FieldHost::op4c_n4_sub5_write_immediate`] (direct write) and [`FieldHost::op4c_n4_sub5_ramp`] (STATE_RESUME ramp).
+- **`n4 sub-E` / `sub-F`**: no `case` arm in the original inner switch - the `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()`, which for opcode `0x4C` halts at PC. The Rust port returns `StepResult::Halt { final_pc: pc }`.
+- **`n8 sub-3`**: 7-byte rectangular tile fill `[4C, 0x83, col_start, row_start, col_end, row_end, value]`. The original at dispatcher lines 6447-6493 walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`, calling `FUN_801D5630(col, row, ...)` per tile to resolve a tile-record pointer; on hit it writes `tile[+0x3] = 0; tile[+0x2] = value`, and the post-loop trailer writes `_DAT_8007B630 = col_start`. The Rust port surfaces the rectangle through [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`] and lets the engine implement its tile pool.
 
 The STATE_RESUME-entangled cluster (`0x4C n5 sub-1`/`sub-2`, `n6 sub-0x61`, `n8 sub-0`) routes through the standard halt-acquire predicate ([`FieldHost::field_halt_acquire_predicate`] with new `which` tags `0x61` and `0x80`). On predicate success the dispatcher performs the ctx mutation (`saved_pc`, `wait_accum=0`, `flags |= 0x400`), calls the case-specific side-effect hook (`op4c_n5_sub1_npc_run`, `op4c_n5_sub2_menu_activation`, `op4c_n6_sub_61_emitter`, `op4c_n8_sub_0_actor_allocator`), and advances PC; on failure it halts at PC. The n5 cluster doesn't route through the predicate (no halt-acquire in the original): sub-1 is a side-effect-only move-table dispatcher, sub-2 polls the host's menu-activation state.
 
 The `n8 sub-0` host hook (`FieldHost::op4c_n8_sub_0_actor_allocator`) receives `(count, tail)`: `count` is the byte at `operand+1` and `tail` is the raw bytecode slice from `operand+2` onward. The host walks `count` variable-length child-actor records out of `tail` using the [`packet_length`](#helper-functions) rule (`FUN_8003CA38`): bytes `<= 0x1E` terminate a record; bytes whose top nibble is `0xC` consume one extra byte. The parent script's PC always advances by 3 regardless of how many records were walked - the records remain embedded in the bytecode buffer and become the spawned actors' own bytecode (retail stores the per-actor bytecode pointer at `actor[+0x90]`). The engine-core implementation (`FieldHostImpl::op4c_n8_sub_0_actor_allocator`) splits the records, queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::ActorAllocate { records }` so engines can route them into their own actor pool.
+
+Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` (the clean-room equivalent of the retail `actor[+0x4C]` record-pointer write performed by `FUN_801D77F4`), and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. `kind` and `variant` correspond to the retail `actor[+0x3C]` and `actor[+0x3E]` writes and currently default to zero - the record encoding that drives them is not yet pinned. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead, mirroring `FUN_801D77F4`'s pool-exhausted bail.
 
 ### 0x4C nibble-4 - immediate-or-ramp cluster
 

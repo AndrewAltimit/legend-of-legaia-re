@@ -1268,6 +1268,37 @@ pub trait FieldHost {
         let _ = value;
     }
 
+    /// Op 0x4C outer-nibble-8 sub-3 - rectangular tile fill.
+    ///
+    /// 7-byte instruction `[4C, 0x83, col_start, row_start, col_end,
+    /// row_end, value]`. The original at lines 6447-6493 of the dispatcher
+    /// dump (`overlay_0897_801de840.txt`) runs two nested loops over the
+    /// inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`,
+    /// calling `FUN_801D5630(col, row, ...)` for each tile. On non-null
+    /// return the inner body writes `tile[+0x3] = 0; tile[+0x2] = value`.
+    /// The post-loop trailer also writes `_DAT_8007B630 = col_start` and
+    /// exits via the dispatcher's `j 0x801e3624` label.
+    ///
+    /// `FUN_801D5630` itself (`ghidra/scripts/funcs/overlay_0897_801d5630.txt`)
+    /// is the tile-resolver helper: 9-instruction body that on hit returns
+    /// a tile-record pointer and on miss sets `ctx.flags |= 0x8` and
+    /// re-enters the dispatcher wait loop. The clean-room port exposes the
+    /// rectangle via the host hook and lets the engine implement its tile
+    /// pool however it wants.
+    ///
+    /// Default impl is a no-op: the tile pool is engine-owned, and there
+    /// is no shared in-VM scratch the rect-fill writes to.
+    fn op4c_n_8_sub_3_rect_tile_fill(
+        &mut self,
+        col_start: u8,
+        row_start: u8,
+        col_end: u8,
+        row_end: u8,
+        value: u8,
+    ) {
+        let _ = (col_start, row_start, col_end, row_end, value);
+    }
+
     /// Op 0x4C outer-nibble-8 sub-7 - register `LAB_801E5154` callback.
     ///
     /// 2-byte instruction `[4C, 0x87]`. The original calls
@@ -3842,6 +3873,33 @@ pub fn step<H: FieldHost>(
                             StepResult::Halt { final_pc: pc }
                         }
                     }
+                    // Sub-3: 7-byte rectangular tile fill `[4C, 0x83,
+                    // col_start, row_start, col_end, row_end, value]`. The
+                    // dispatcher walks the inclusive rectangle and calls
+                    // `FUN_801D5630(col, row, ...)` per tile; on hit, writes
+                    // `tile[+0x2] = value`. The clean-room port surfaces
+                    // the rectangle through one host hook and lets the
+                    // engine drive its tile-pool semantics. The original
+                    // dispatcher's post-loop also writes
+                    // `_DAT_8007B630 = col_start` - the host hook owns that
+                    // side effect too (engines that don't care can ignore
+                    // it). PC advances by `header_size + 6` (= 7 bytes).
+                    3 => {
+                        if operand + 6 > bytecode.len() {
+                            return StepResult::Unknown { opcode, pc };
+                        }
+                        let col_start = bytecode[operand + 1];
+                        let row_start = bytecode[operand + 2];
+                        let col_end = bytecode[operand + 3];
+                        let row_end = bytecode[operand + 4];
+                        let value = bytecode[operand + 5];
+                        host.op4c_n_8_sub_3_rect_tile_fill(
+                            col_start, row_start, col_end, row_end, value,
+                        );
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 6,
+                        }
+                    }
                     _ => StepResult::Pending { opcode, pc },
                 },
                 // Outer nibble 9 - fade family + table copy + callback.
@@ -5744,6 +5802,8 @@ mod tests {
         n8_global_writes: Vec<(i16, u8, u8)>,
         n8_quad_writes: Vec<([i16; 3], u32)>,
         n8_sub9_writes: Vec<i16>,
+        /// (col_start, row_start, col_end, row_end, value).
+        n8_rect_tile_fills: Vec<(u8, u8, u8, u8, u8)>,
         n8_halt_acquires: Vec<u32>,
         n9_dde34_calls: Vec<(u8, u8, [i16; 3])>,
         n9_table_copies: Vec<[i16; 16]>,
@@ -6162,6 +6222,17 @@ mod tests {
         }
         fn op4c_n8_sub4_set_b630(&mut self, value: u8) {
             self.n8_b630_writes.push(value);
+        }
+        fn op4c_n_8_sub_3_rect_tile_fill(
+            &mut self,
+            col_start: u8,
+            row_start: u8,
+            col_end: u8,
+            row_end: u8,
+            value: u8,
+        ) {
+            self.n8_rect_tile_fills
+                .push((col_start, row_start, col_end, row_end, value));
         }
         fn op4c_n8_sub7_register_callback(&mut self) {
             self.n8_callback_regs += 1;
@@ -6659,19 +6730,22 @@ mod tests {
     // -- Pending / Unknown -----------------------------------------------
 
     #[test]
-    fn unimplemented_opcode_returns_pending() {
+    fn op_4c_n8_sub_3_no_longer_pending() {
+        // Sanity-check that the rectangular tile-fill case (`0x4C n8 sub-3`,
+        // host hook [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`]) is fully
+        // ported. The dispatcher previously returned `Pending` for this
+        // opcode; it now invokes the host and advances PC by 7. There are
+        // no remaining `0x4C` sub-ops that return `Pending`.
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        // 0x4C outer-nibble-8 sub-3 (box-fill table via FUN_801D5630) is the
-        // last 0x4C subdispatcher arm that remains Pending - the opcode is
-        // recognized but the handler returns Pending.
         let r = step(
             &mut host,
             &mut ctx,
-            &[0x4C, 0x83, 0x00, 0x00, 0x00, 0x00],
+            &[0x4C, 0x83, 0x00, 0x00, 0x00, 0x00, 0x00],
             0,
         );
-        assert!(matches!(r, StepResult::Pending { opcode: 0x4C, .. }));
+        assert_eq!(r, StepResult::Advance { next_pc: 7 });
+        assert_eq!(host.n8_rect_tile_fills, vec![(0u8, 0, 0, 0, 0)]);
     }
 
     // -- Multi-instruction trace -----------------------------------------
@@ -7489,17 +7563,16 @@ mod tests {
     }
 
     #[test]
-    fn op_4c_outer_unported_subdispatcher_returns_pending() {
-        // Sanity-check that the outer 0x4C dispatcher still returns Pending
-        // for sub-dispatchers we haven't ported yet. Outer nibble 5 sub-1
-        // (NPC movement with halt-acquire), sub-2/3/4 (dialog query
-        // cluster), n6 sub-0x61 (halt-acquire emitter), and n8 sub-0
-        // (actor allocator with halt-acquire) are all ported now; only n8
-        // sub-3 (box-fill table via FUN_801D5630) remains Pending.
+    fn op_4c_outer_dispatcher_has_no_remaining_pending_arms() {
+        // Sanity-check that every `0x4C` sub-dispatcher now returns
+        // `Advance` / `Halt` / `Yield` / `Unknown` - none returns
+        // `Pending`. n8 sub-3 (box-fill table via FUN_801D5630) was the
+        // last truly-pending case; it now invokes
+        // [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`] and advances PC.
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
-        let r = step(&mut host, &mut ctx, &[0x4C, 0x83, 0, 0, 0, 0], 0);
-        assert!(matches!(r, StepResult::Pending { opcode: 0x4C, .. }));
+        let r = step(&mut host, &mut ctx, &[0x4C, 0x83, 0, 0, 0, 0, 0], 0);
+        assert!(!matches!(r, StepResult::Pending { .. }));
     }
 
     #[test]
@@ -9527,6 +9600,35 @@ mod tests {
         let r = step(&mut host, &mut ctx, &bytecode, 0);
         assert_eq!(r, StepResult::Halt { final_pc: 0 });
         assert!(host.n_8_sub_0_allocator_calls.is_empty());
+    }
+
+    #[test]
+    fn op_4c_n8_sub_3_rect_tile_fill_emits_host_hook_and_advances_7() {
+        // [4C, 0x83, col_start, row_start, col_end, row_end, value]
+        // Total instruction = 7 bytes (header + op0 + 5 operand bytes).
+        let bytecode = [0x4Cu8, 0x83, 2, 4, 5, 6, 0x7F];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 7 });
+        assert_eq!(host.n8_rect_tile_fills, vec![(2u8, 4, 5, 6, 0x7F)]);
+    }
+
+    #[test]
+    fn op_4c_n8_sub_3_truncated_bytecode_returns_unknown() {
+        // Operand list cut short (only 4 operand bytes instead of 5).
+        let bytecode = [0x4Cu8, 0x83, 1, 1, 1, 1];
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let r = step(&mut host, &mut ctx, &bytecode, 0);
+        assert_eq!(
+            r,
+            StepResult::Unknown {
+                opcode: 0x4C,
+                pc: 0
+            }
+        );
+        assert!(host.n8_rect_tile_fills.is_empty());
     }
 
     #[test]

@@ -180,6 +180,25 @@ pub struct Actor {
     /// `None` means no TMD is bound - the actor has no visible 3D model.
     /// Set via [`World::set_actor_tmd_binding`].
     pub tmd_binding: Option<usize>,
+
+    /// Actor kind classifier. Retail equivalent: the `u16` at `actor[+0x3C]`
+    /// written by `FUN_801D77F4` (overlay actor allocator). Zero means
+    /// "unset" - either the actor was created via the actor-VM path
+    /// (`spawn` / `spawn_actor`) rather than the field-VM allocator, or no
+    /// kind has been wired yet.
+    pub kind: u16,
+    /// Actor variant. Retail equivalent: the `u16` at `actor[+0x3E]`.
+    /// Co-written with `kind` by `FUN_801D77F4`.
+    pub variant: u16,
+    /// Record bytecode this actor was instantiated from. Retail stores a
+    /// pointer at `actor[+0x4C]` whose meaning depends on the allocation
+    /// path - for the field-VM `0x4C 0x80` allocator the pointer addresses
+    /// the child-actor packet that the parent script's `tail` contributed.
+    /// `None` for actors spawned through other paths.
+    ///
+    /// Distinct from [`Self::tmd_binding`] / [`Self::active_animation`],
+    /// which cover the rendering side.
+    pub spawn_record: Option<Vec<u8>>,
 }
 
 impl Actor {
@@ -685,6 +704,60 @@ impl World {
     /// actor. Engines route these into their actor pool.
     pub fn drain_actor_spawns(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.pending_actor_spawns)
+    }
+
+    /// Engine-side consumer for queued actor-spawn requests.
+    ///
+    /// Drains [`Self::pending_actor_spawns`] and, for each record:
+    /// 1. Scans `actors[start_slot..MAX_ACTORS]` for the first inactive
+    ///    slot. Slots `0..start_slot` are skipped so engines keep their
+    ///    party / scripted actors out of the auto-allocation range.
+    /// 2. Activates the slot, stores the record bytes on
+    ///    [`Actor::spawn_record`] (mirroring retail's `actor[+0x4C]`
+    ///    record-pointer write for the field-VM allocator path), and
+    ///    leaves [`Actor::kind`] / [`Actor::variant`] at zero - the record
+    ///    encoding that drives those fields is not yet pinned.
+    /// 3. Emits a [`FieldEvent::ActorSpawned`] event for the engine.
+    ///
+    /// Mirrors the retail `FUN_801D77F4` allocator's pool-exhausted branch:
+    /// if no inactive slot is available, the record is dropped silently
+    /// and a [`FieldEvent::ActorSpawnFailed`] event is emitted instead.
+    ///
+    /// Returns the count of slots that were actually allocated.
+    pub fn materialize_actor_spawns(&mut self, start_slot: u8) -> usize {
+        let start = (start_slot as usize).min(self.actors.len());
+        let records = std::mem::take(&mut self.pending_actor_spawns);
+        let mut allocated = 0usize;
+        for record in records {
+            match self
+                .actors
+                .iter()
+                .enumerate()
+                .skip(start)
+                .find(|(_, a)| !a.active)
+                .map(|(i, _)| i)
+            {
+                Some(slot_idx) => {
+                    let actor = &mut self.actors[slot_idx];
+                    actor.active = true;
+                    actor.kind = 0;
+                    actor.variant = 0;
+                    actor.spawn_record = Some(record.clone());
+                    self.pending_field_events.push(FieldEvent::ActorSpawned {
+                        slot: slot_idx as u8,
+                        kind: 0,
+                        variant: 0,
+                        record,
+                    });
+                    allocated += 1;
+                }
+                None => {
+                    self.pending_field_events
+                        .push(FieldEvent::ActorSpawnFailed { record });
+                }
+            }
+        }
+        allocated
     }
 
     /// Drain emitted battle action events. Engines call once per frame
@@ -3647,6 +3720,123 @@ mod tests {
         let drained = world.drain_actor_spawns();
         assert_eq!(drained, vec![vec![0xAA, 0xBB]]);
         assert!(world.pending_actor_spawns.is_empty());
+    }
+
+    /// `materialize_actor_spawns` allocates a fresh slot from
+    /// `start_slot..MAX_ACTORS`, populates it with the queued record, and
+    /// emits an `ActorSpawned` event.
+    #[test]
+    fn materialize_actor_spawns_allocates_slot_and_emits_event() {
+        let mut world = World::new();
+        world.pending_actor_spawns.push(vec![0x10, 0x20, 0x30]);
+        let allocated = world.materialize_actor_spawns(8);
+        assert_eq!(allocated, 1);
+        assert!(world.pending_actor_spawns.is_empty());
+        assert!(world.actors[8].active);
+        assert_eq!(
+            world.actors[8].spawn_record.as_deref(),
+            Some(&[0x10, 0x20, 0x30][..])
+        );
+        assert_eq!(world.actors[8].kind, 0);
+        assert_eq!(world.actors[8].variant, 0);
+        let evs = world.drain_field_events();
+        let spawned = evs
+            .iter()
+            .find_map(|e| match e {
+                FieldEvent::ActorSpawned {
+                    slot,
+                    kind,
+                    variant,
+                    record,
+                } => Some((*slot, *kind, *variant, record.clone())),
+                _ => None,
+            })
+            .expect("expected ActorSpawned event");
+        assert_eq!(spawned, (8u8, 0u16, 0u16, vec![0x10, 0x20, 0x30]));
+    }
+
+    /// `materialize_actor_spawns` allocates consecutive inactive slots
+    /// when several spawn requests are queued.
+    #[test]
+    fn materialize_actor_spawns_fills_consecutive_inactive_slots() {
+        let mut world = World::new();
+        world.pending_actor_spawns.push(vec![0xAA]);
+        world.pending_actor_spawns.push(vec![0xBB]);
+        world.pending_actor_spawns.push(vec![0xCC]);
+        let allocated = world.materialize_actor_spawns(4);
+        assert_eq!(allocated, 3);
+        assert!(world.actors[4].active);
+        assert!(world.actors[5].active);
+        assert!(world.actors[6].active);
+        assert_eq!(world.actors[4].spawn_record.as_deref(), Some(&[0xAA][..]));
+        assert_eq!(world.actors[5].spawn_record.as_deref(), Some(&[0xBB][..]));
+        assert_eq!(world.actors[6].spawn_record.as_deref(), Some(&[0xCC][..]));
+    }
+
+    /// Slots below `start_slot` are reserved - even when they are
+    /// inactive, the materializer doesn't touch them.
+    #[test]
+    fn materialize_actor_spawns_skips_reserved_low_slots() {
+        let mut world = World::new();
+        // Slot 0 is inactive but reserved (start_slot=10).
+        world.pending_actor_spawns.push(vec![0xDE, 0xAD]);
+        world.materialize_actor_spawns(10);
+        assert!(!world.actors[0].active);
+        assert!(world.actors[10].active);
+    }
+
+    /// Mirrors retail's "pool exhausted → bail silently" branch of
+    /// `FUN_801D77F4`. When no inactive slot is available in the
+    /// allocation range, the record is dropped and a `ActorSpawnFailed`
+    /// event is emitted instead of `ActorSpawned`.
+    #[test]
+    fn materialize_actor_spawns_emits_failure_when_pool_exhausted() {
+        let mut world = World::new();
+        // Make every slot from index 60 upward active.
+        for slot in 60..MAX_ACTORS {
+            world.actors[slot].active = true;
+        }
+        world.pending_actor_spawns.push(vec![0xEE]);
+        let allocated = world.materialize_actor_spawns(60);
+        assert_eq!(allocated, 0);
+        let evs = world.drain_field_events();
+        assert!(evs.iter().any(|e| matches!(
+            e,
+            FieldEvent::ActorSpawnFailed { record } if record == &[0xEE]
+        )));
+    }
+
+    /// End-to-end: a field-VM `0x4C 0x80` opcode followed by
+    /// `materialize_actor_spawns` should land both events
+    /// (`ActorAllocate` from the opcode, `ActorSpawned` from the
+    /// materializer) and leave the actor slot populated.
+    #[test]
+    fn field_op_4c_n8_sub0_then_materialize_flow_end_to_end() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // One record `[0x40, 0x41]` terminated by `0x00`.
+        let bytecode = vec![0x4C, 0x80, 0x01, 0x40, 0x41, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        let allocated = world.materialize_actor_spawns(16);
+        assert_eq!(allocated, 1);
+        assert!(world.actors[16].active);
+        assert_eq!(
+            world.actors[16].spawn_record.as_deref(),
+            Some(&[0x40, 0x41][..])
+        );
+        let evs = world.drain_field_events();
+        // Both the ActorAllocate (from the opcode) and ActorSpawned (from
+        // the materializer) should appear in emission order.
+        let kinds: Vec<&'static str> = evs
+            .iter()
+            .filter_map(|e| match e {
+                FieldEvent::ActorAllocate { .. } => Some("alloc"),
+                FieldEvent::ActorSpawned { .. } => Some("spawned"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(kinds, vec!["alloc", "spawned"]);
     }
 
     /// `tick_move_vms` records per-actor outcomes via `actor_tick`. A

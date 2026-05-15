@@ -190,6 +190,8 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::ExecMove { .. } => "ExecMove",
             FieldEvent::FmvTrigger { .. } => "FmvTrigger",
             FieldEvent::ActorAllocate { .. } => "ActorAllocate",
+            FieldEvent::ActorSpawned { .. } => "ActorSpawned",
+            FieldEvent::ActorSpawnFailed { .. } => "ActorSpawnFailed",
         };
         *counts.entry(kind).or_insert(0) += 1;
     }

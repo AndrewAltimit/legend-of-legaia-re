@@ -969,11 +969,50 @@ TMD-pack.
    between PROT 0874 section 0 (LZS-decoded from file offset `0x20`)
    and the 5 TMDs at `DAT_8007C018[0..4]` is conclusive (see
    [§ Disc-side source of `[0..4]`](#disc-side-source-of-04)
-   above), but the exact dispatch site that funnels that pack
-   through `FUN_8001F05C case 2` → `FUN_80026B4C` (the TMD-pack
-   installer) is not yet pinned. `FUN_8001E890`'s retail-PROT branch
-   targets PROT 876, not 874, and applies a shape mask that doesn't
-   match either entry's actual layout. A Write-bp probe on
-   `DAT_8007C018[0]` during boot / first-battle init would
-   identify which loader actually populates the slot, settling the
-   `data\field\player.lzs` chain end-to-end.
+   above). The **inner dispatch** is fully pinned:
+
+   - `FUN_80020224(asset_type)` walks `_DAT_8007B85C` as an
+     [`asset-descriptor`](asset-descriptor.md) pack, calling
+     `FUN_8001F05C(buf + offset, size, type, 0)` for each record.
+   - `FUN_8001F05C case 2` is the TMD-pack installer: it
+     LZS-decodes the section, walks the `[u32 count][u32
+     word_offsets[count]][TMD bodies]` pack, and calls
+     `FUN_80026B4C(pack + word_offsets[i] * 4, 0)` for each TMD.
+   - The retail callers of `FUN_80026B4C` (from a corpus grep over
+     `ghidra/scripts/funcs/`) are `FUN_8001E890`, `FUN_8001E928`,
+     `FUN_800520F0`, `FUN_8001F05C` itself (recursive), `FUN_800513F0`,
+     `FUN_800542C8`, and the muscle-dome minigame loader at
+     `overlay_muscle_dome_801f19ec.txt`.
+
+   The **outer producer** that feeds PROT 0874's bytes into this
+   dispatch chain is not pinned in the static `SCUS_942.54` dumps:
+
+   - `FUN_8001E890`'s retail-PROT branch (`_DAT_8007B8C2 != 0`)
+     loads PROT **876** (`0x36c`), not 874, via
+     `FUN_8003eb98(0x36C, piVar2, 1)`. PROT 876 is a streaming-format
+     file (VAB + TIM_LIST + SEQ) whose first bytes are a `VABp`
+     header, not a 3-section `parse_player_lzs(buf, 3)` container.
+     The branch's downstream `FUN_8001a55c(piVar2[2] & 0xffffff,
+     ...)` calls read those VAB-header bytes as `(size, offset)`
+     pairs - shape-incompatible with PROT 876's actual layout.
+     Either the branch is dead code in retail, or
+     `_DAT_8007B85C` is populated by another caller first and
+     `FUN_8001E890` only fires the dispatch.
+   - `FUN_800520F0` (battle scene loader) is the only static SCUS
+     caller that issues `FUN_8003e68c(0x36a)` / `FUN_8003eb98` with
+     PROT 0x369+0x36A, but it loads them as a contiguous block via
+     the debug `_DAT_8007B8C2 != 0` branch and processes the result
+     through `FUN_8001fbcc` (VDF install) rather than as a
+     3-section `parse_player_lzs` container.
+
+   **Conclusion**: the dispatch goes through the generic
+   `FUN_80020224` → `FUN_8001F05C case 2` → `FUN_80026B4C` chain
+   from an overlay-resident scene loader (`FUN_801D6704` family
+   - present in many scene/menu overlay dumps), not from any
+   static `SCUS_942.54` site. The overlay populates
+   `_DAT_8007B85C` from PROT 874 before invoking the asset-pack
+   walker, but the exact CDNAME indirection (which overlay, on
+   which path) needs a write-bp probe on `DAT_8007C018[0]` to
+   isolate. The Lua-probe approach described in
+   [`docs/tooling/pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)
+   is the appropriate next step.

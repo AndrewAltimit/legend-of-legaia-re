@@ -122,6 +122,33 @@ pub enum FieldEvent {
     /// spawned actors' own bytecode (retail stores the pointer at
     /// `actor[+0x90]`).
     ActorAllocate { records: Vec<Vec<u8>> },
+    /// Emitted by [`crate::world::World::materialize_actor_spawns`] - the
+    /// engine-side consumer that drains queued [`Self::ActorAllocate`]
+    /// records and instantiates each as an actor slot.
+    ///
+    /// `slot` is the index into `World::actors` that received the
+    /// allocation. `record` is the bytecode the spawned actor's
+    /// `actor[+0x4C]` record-pointer references (cloned onto the slot's
+    /// [`crate::world::Actor::spawn_record`]). `kind` / `variant` mirror
+    /// the FUN_801D77F4 `actor[+0x3C]` / `actor[+0x3E]` writes - both zero
+    /// until a record encoding is pinned.
+    ///
+    /// Engines drain this when they want to attach rendering / animation
+    /// state to the spawned actor; the spawn itself is already complete by
+    /// the time the event surfaces.
+    ActorSpawned {
+        slot: u8,
+        kind: u16,
+        variant: u16,
+        record: Vec<u8>,
+    },
+    /// Emitted by [`crate::world::World::materialize_actor_spawns`] when an
+    /// actor-allocate request cannot be served because every slot from
+    /// `spawn_start_slot..MAX_ACTORS` is already active. Mirrors the retail
+    /// "pool exhausted: bail silently" branch of `FUN_801D77F4` (the
+    /// instantiator returns when `FUN_80020DE0` hands back zero). The
+    /// dropped record is included so engines can log / diagnose.
+    ActorSpawnFailed { record: Vec<u8> },
 }
 
 impl FieldEvent {
@@ -217,6 +244,20 @@ impl FieldEvent {
             FieldEvent::ActorAllocate { records } => {
                 let bytes: usize = records.iter().map(|r| r.len()).sum();
                 format!("ActorAllocate(count={}, body={}B)", records.len(), bytes,)
+            }
+            FieldEvent::ActorSpawned {
+                slot,
+                kind,
+                variant,
+                record,
+            } => {
+                format!(
+                    "ActorSpawned(slot={slot}, kind={kind:#x}, variant={variant:#x}, body={}B)",
+                    record.len()
+                )
+            }
+            FieldEvent::ActorSpawnFailed { record } => {
+                format!("ActorSpawnFailed(body={}B)", record.len())
             }
         }
     }
