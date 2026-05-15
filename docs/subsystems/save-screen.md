@@ -154,6 +154,39 @@ from `DAT_801C6EA0`). The in-engine LGSF format (`legaia_save::SaveFile` with
 expose all confirmed offsets; use `read_retail_story_flags` / `read_retail_inventory`
 to slice them from a raw SC block.
 
+## Story-flag persistence vs. scratchpad word
+
+Two distinct global-state stores share the *name* "story flags" but live in
+unrelated regions, and **the SC save/load path does not sync between them**:
+
+| Store | Address | Size | Persists in SC? | Touched by save/load |
+|---|---|---|---|---|
+| Wide bitmap | RAM `0x80085600..0x80085800` | 512 B (4096 bits) | Yes — at SC offset `0x14C0` | Yes, via the bulk RAM→card transfer at `FUN_8001A8B0(0x80084340, card, ...)` (live RAM region containing the bitmap is part of the linear SC body) |
+| Scratchpad word | RAM `0x1F800394` | 4 B (32 bits) | No | No |
+
+The scratchpad word `_DAT_1F800394` is the field-VM transient that opcodes
+`0x2E` (set bit), `0x2F` (clear bit), and `0x30` (test bit) operate on.
+Static-reader sweep across `ghidra/scripts/funcs/*.txt` (`python3
+scripts/scan_funcs_for_addr_range.py --lo 0x1F800394 --hi 0x1F800398`)
+finds **one** non-RMW writer: `FUN_8001DCF8` at PC `0x8001E17C`, which
+seeds it from the game-mode descriptor table:
+
+```c
+_DAT_1f800394 = (uint)*(ushort *)(&DAT_800707a0 + _DAT_8007b83c * 0x18);
+```
+
+`DAT_800707A0` is `mode_table[0].param` (the mode table at `0x8007078C` has
+24-byte stride; the `param` field sits at offset `+0x14`). So the scratchpad
+word's lower 16 bits are re-initialised on every mode switch from the
+mode's `param` constant; the upper 16 bits start zeroed and are only ever
+written by the script-VM bit ops. No retail code path copies between
+`0x80085600..0x80085800` and `0x1F800394` in either direction.
+
+In `legaia_save::SaveExt`, `story_flag_bits` mirrors the wide bitmap and
+round-trips through the LGSF v3 extension block; `story_flags` mirrors the
+scratchpad word and round-trips through the LGSF v1 prelude. The two fields
+are independently populated — that matches retail.
+
 ## Retail SC block layout
 
 Verified by cross-referencing mednafen save-state RAM dumps against real MCR saves.

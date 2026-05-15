@@ -342,13 +342,20 @@ pub struct World {
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
     /// against `screen_mode_table`).
     pub screen_mode: u32,
-    /// Story-flag word (`_DAT_1F800394` in retail). Read by field-VM
-    /// op 0x30 GFLAG_TST and friends.
+    /// Field-VM scratchpad flag word (`_DAT_1F800394` in retail). Set
+    /// by op `0x2E` GFLAG_SET; cleared by op `0x2F` GFLAG_CLR; tested
+    /// by op `0x30` GFLAG_TST.
+    ///
+    /// Independent of [`Self::story_flag_bits`]: retail seeds this from
+    /// the game-mode descriptor table on mode init (low 16 bits of
+    /// `mode_table[mode_idx].param`) and the SC save/load bulk copy
+    /// from RAM `0x80084340` never reaches scratchpad, so the bitmap
+    /// and this word are not mirror copies of each other.
     pub story_flags: u32,
     /// Full 512-byte story-flag bitmap mirroring retail RAM
-    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). The narrower
-    /// [`Self::story_flags`] u32 is the field-VM scratchpad cache; this
-    /// is the wider region the SC block persists.
+    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). This is the
+    /// narrative-progress bitmap the SC block persists, separate from
+    /// the per-mode scratchpad word [`Self::story_flags`].
     ///
     /// Empty (`vec![]`) when the engine hasn't been booted from a retail
     /// SC block; populated via [`Self::load_full`] when a retail-shaped

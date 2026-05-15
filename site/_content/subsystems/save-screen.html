@@ -48,6 +48,19 @@
   <p>The exact on-disc offsets for <code>story_flags</code> and <code>inventory</code> within the retail save block require a dump of the ID <code>0x1E</code> sub-screen function (the actual write path at <code>0x801E4FB8</code>); until then the LGSF format uses its own offset scheme. See <code>docs/subsystems/save-screen.md</code> for the pending trace.</p>
 </section>
 
+<section class="doc-section" id="story-flags-vs-scratchpad">
+  <h2>Story-flag persistence vs. scratchpad word</h2>
+  <p>Two distinct stores share the name &ldquo;story flags&rdquo; but live in unrelated regions, and the SC save/load path does <strong>not</strong> sync between them:</p>
+  <table>
+    <thead><tr><th>Store</th><th>Address</th><th>Size</th><th>Persists in SC?</th></tr></thead>
+    <tbody>
+      <tr><td>Wide bitmap</td><td>RAM <code>0x80085600..0x80085800</code></td><td>512 B (4096 bits)</td><td>Yes &mdash; at SC offset <code>0x14C0</code>, via the bulk RAM&rarr;card transfer</td></tr>
+      <tr><td>Scratchpad word</td><td>RAM <code>0x1F800394</code></td><td>4 B (32 bits)</td><td>No</td></tr>
+    </tbody>
+  </table>
+  <p>The scratchpad word <code>_DAT_1F800394</code> is the field-VM transient that opcodes <code>0x2E</code> (set bit), <code>0x2F</code> (clear bit), and <code>0x30</code> (test bit) operate on. A static sweep across all dumped functions finds one non-RMW writer: <code>FUN_8001DCF8</code> at PC <code>0x8001E17C</code>, which seeds the lower 16 bits from <code>mode_table[mode_idx].param</code> on mode init. No retail code path copies between the wide bitmap and the scratchpad word, so the engine's <code>SaveExt::story_flags</code> (mirroring the scratchpad word) and <code>SaveExt::story_flag_bits</code> (mirroring the bitmap) round-trip independently &mdash; that matches retail behaviour.</p>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
   <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <code>docs/subsystems/save-screen.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>.</p>
