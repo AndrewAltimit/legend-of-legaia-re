@@ -65,7 +65,7 @@ This matches what the retail field loader does (DMA only the texture bytes the c
 
 ### Field-shared CDNAME blocks
 
-`FIELD_SHARED_BLOCKS = ["init_data", "player_data"]` is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. `player_data` (PROT 876) holds the player-character TMD + 256x256 atlas at VRAM `fb=(768, 0)` with CLUT at `(0, 500)`; `init_data` (PROT 0) holds shared UI / sprite tiles. `SceneHost::enter_field_scene` passes these to `build_targeted` so the player TMD survives every town / dungeon transition without being re-loaded per scene.
+`FIELD_SHARED_BLOCKS = ["init_data", "player_data"]` is the set of CDNAME blocks the retail field engine keeps resident in VRAM across scene transitions. `player_data` (PROT 876) is a streaming-format file with three chunks — a VAB header, a 256x256 TIM_LIST atlas (uploaded to VRAM `fb=(768, 0)` with CLUT at `(0, 500)`), and a small SEQ-magic trailer; it carries **no TMDs** (the character-mesh TMDs that populate `DAT_8007C018[0..4]` come from PROT 0874 — see [`world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04)). `init_data` (PROT 0) holds shared UI / sprite tiles. `SceneHost::enter_field_scene` passes both blocks to `build_targeted` so the player atlas survives every town / dungeon transition without being re-uploaded per scene.
 
 ### Field vs battle dispatch (`SceneLoadKind`)
 

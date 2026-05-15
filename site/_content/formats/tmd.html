@@ -219,7 +219,7 @@ prim data (count × ilen*4 bytes):
 </tr>
 <tr>
 <td><code>FUN_8001E890</code></td>
-<td>DATA_FIELD player loader (loads <code>data_field_player_lzs</code> chains, registers TMDs)</td>
+<td>&ldquo;DATA_FIELD player loader&rdquo; &mdash; calls <code>FUN_8003eb98(0x36C, &hellip;)</code> (PROT 876 = <code>player_data</code>) and the dev paths <code>data\field\player.lzs</code> / <code>h:\prot\all\data\field\player.lz</code>. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev <code>data\field\player.lzs</code> file is absent from the ISO9660 walk) <strong>do not</strong> carry the <code>[0..4]</code> character TMDs. Those come from PROT 0874 (<code>befect_data</code>) section 0 &mdash; see <a href="world-map-overlay.html#disc-side-source-of-04">world-map-overlay.html &sect; Disc-side source of [0..4]</a>. What this function <em>does</em> do that&apos;s still consumed at <code>DAT_8007C018[0..2]</code> is the post-install group-count cap (<code>entry[+0x08] = 10</code>) and the equipment-conditional patch dispatch into <code>FUN_8001EBEC</code>.</td>
 </tr>
 </tbody>
 </table>

@@ -313,12 +313,48 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
   <table>
     <thead><tr><th>Index range</th><th>Count</th><th>Content</th></tr></thead>
     <tbody>
-      <tr><td><code>[0..4]</code></td><td>5</td><td>Player-character TMDs from <code>player.lz</code> (at <code>0x8014D554..0x801585C0</code>, group_count 10/10/10/3/2)</td></tr>
+      <tr><td><code>[0..4]</code></td><td>5</td><td>Character-mesh TMDs at <code>0x8014D554..0x801585C0</code>, group_count 10/10/10/3/2. Disc source: <a href="#disc-side-source-of-04">&sect; Disc-side source of [0..4]</a> below.</td></tr>
       <tr><td><code>[5..142]</code></td><td>138</td><td>Kingdom-derived TMDs at <code>0x800F7908..0x80138D44</code> (group_count 1..10, mixed sizes)</td></tr>
       <tr><td><code>[143..255]</code></td><td>113</td><td>Either zero (uninstalled) or stale junk past the walker counter &mdash; <strong>never read by code</strong> because every reader gates on <code>DAT_8007BB38</code> or an explicit index &le; install counter</td></tr>
     </tbody>
   </table>
   <p><strong>Every populated entry is a valid Legaia TMD</strong> (magic <code>0x80000002</code>, flags = 1, <code>group_count &gt; 0</code>). The table is homogeneous in the steady state. The kingdom-derived 138 TMDs include the slot-4 body-aligned addresses formerly classified as a separate carrier (e.g. <code>[94..113]</code> land in <code>0x8011A7B0..0x8012202C</code> &mdash; all inside the slot-4 RAM window &mdash; but the bytes there have already been overwritten with TMD blobs by the time the snapshot is taken; the slot-4 outer-pack signature is <em>absent</em> from steady-state RAM).</p>
+
+  <h3 id="disc-side-source-of-04">Disc-side source of <code>[0..4]</code></h3>
+  <p>The five character-mesh TMDs at <code>DAT_8007C018[0..4]</code> originate from <strong>PROT entry 0874 (<code>befect_data</code>)</strong>, not from the dev-tree path <code>data\field\player.lzs</code> (whose runtime name maps to PROT 876 &mdash; <code>player_data</code> &mdash; which actually carries a VAB + TIM_LIST + SEQ streaming-format payload with <strong>zero TMDs</strong>; see <a href="data-field.html">data-field.html</a> for the chunk shape).</p>
+  <p>PROT 0874 is a <a href="asset-descriptor.html"><code>parse_player_lzs(buf, 3)</code></a>-shaped container with three LZS-compressed sections:</p>
+  <table>
+    <thead><tr><th>Section</th><th>Type byte</th><th>Compressed size</th><th>File offset</th><th>Content</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><code>0x01</code></td><td><code>0xB49C</code> (46 236 B)</td><td><code>0x20</code></td><td>5-TMD pack (LZS decodes to 65 536 B)</td></tr>
+      <tr><td>1</td><td><code>0x02</code></td><td><code>0x41E0</code> (16 864 B)</td><td><code>0x5037</code></td><td>Secondary TMD payload</td></tr>
+      <tr><td>2</td><td><code>0x03</code></td><td><code>0x1D524</code> (120 100 B)</td><td><code>0x7055</code></td><td>MAN-shape data</td></tr>
+    </tbody>
+  </table>
+  <p>Decoding section 0 (LZS-decompress from file offset <code>0x20</code>) yields a canonical TMD pack &mdash; <code>[u32 count][u32 word_offsets[count]][TMD bodies]</code> with word offsets in 4-byte units (same convention as <a href="tim-pack.html">tim-pack</a> / kingdom slot 1):</p>
+  <table>
+    <thead><tr><th>Pack slot</th><th>Body offset</th><th>nobj (disc)</th><th>Body bytes (to next slot)</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><code>0x0018</code></td><td>12</td><td>13 220</td></tr>
+      <tr><td>1</td><td><code>0x33BC</code></td><td>12</td><td>13 800</td></tr>
+      <tr><td>2</td><td><code>0x69A4</code></td><td>12</td><td>11 656</td></tr>
+      <tr><td>3</td><td><code>0x972C</code></td><td>3 </td><td>6 488</td></tr>
+      <tr><td>4</td><td><code>0xB084</code></td><td>2 </td><td>20 348 (trailing padding to pack end)</td></tr>
+    </tbody>
+  </table>
+  <p>Byte-equality check against a Drake post-warp RAM snapshot (local-only <code>captures/ram_dumps/drake_world.bin</code>):</p>
+  <ul>
+    <li><strong>Pack slot 3 vs RAM <code>DAT_8007C018[3]</code></strong> (un-fixup the runtime&apos;s absolute-pointer group descriptors back to disc-form offsets using <code>disc_off = abs_ptr - (tmd_base + 0xC)</code>): the full 6488-byte body matches byte-for-byte (0 differences over <code>0x1958</code> bytes compared).</li>
+    <li><strong>Pack slot 4 vs RAM <code>DAT_8007C018[4]</code></strong>: the first 1048 bytes match byte-for-byte. The runtime allocates only the in-use prefix; the trailing ~19 KB of disc padding is not copied.</li>
+    <li><strong>Pack slots 0/1/2 vs RAM <code>DAT_8007C018[0..2]</code></strong>: the first three group descriptors and groups 4..9 match byte-for-byte. RAM&apos;s <code>nobj=10</code> vs disc&apos;s <code>nobj=12</code> is a deliberate runtime override (see &ldquo;10-group cap&rdquo; below); RAM&apos;s slot-3 group descriptor is sourced from disc&apos;s group 11 (the FUN_8001EBEC patch).</li>
+  </ul>
+
+  <h3 id="ten-group-cap">10-group cap + equipment-conditional group patch</h3>
+  <p>The five disc TMDs ship with <code>nobj=12</code> (for the three active-party slots) and <code>nobj=3 / 2</code> (for the trailing two &mdash; confirmed <code>nobj</code> from the disc pack matches RAM exactly for those). The active-party post-install loop in <code>FUN_8001E890</code> overwrites <code>DAT_8007C018[DAT_8007B824 + 0..2]</code>&apos;s <code>entry[+0x08]</code> (TMD <code>group_count</code>) to <strong>10</strong>, capping each of the first three TMDs at 10 active groups. The last two disc groups (10 and 11) are <em>equipment-conditional</em> descriptors: <code>FUN_8001EBEC</code> reads two per-character bytes (from <code>0x80084xxx</code>, equipment slots) and for each of the three active party slots picks either <code>TMD+0x124</code> (= group 10) or <code>TMD+0x140</code> (= group 11) and overwrites the indexed live group descriptor with that pre-built 0x1C-byte template. This is the equipment-conditional mesh swap (weapon variant, etc.).</p>
+
+  <h3 id="loader-chain-open">Loader chain &mdash; partly open</h3>
+  <p><code>FUN_8001E890</code>&apos;s retail-PROT branch (<code>DAT_8007B8C2 != 0</code>) calls <code>FUN_8003eb98(0x36C, piVar2, 1)</code>, which loads PROT 876&apos;s raw bytes into <code>piVar2</code>. The downstream LZS calls then interpret <code>piVar2[2..7]</code> as three <code>(size, offset)</code> pairs &mdash; but PROT 876&apos;s bytes there are streaming-format chunk data (the start of a VABp header inside chunk 0), not LZS descriptors. That branch is therefore <strong>incompatible with PROT 876&apos;s actual layout</strong> in retail and either (a) is gated off by <code>DAT_8007B8C2 == 0</code> in retail or (b) is dead code. The <code>data\field\player.lzs</code> string and PROT-876 fast path both fall over the same shape mismatch.</p>
+  <p>The retail loader that actually installs PROT 0874&apos;s section 0 into <code>DAT_8007C018[0..4]</code> is not yet pinned. <code>FUN_800520F0</code> (the battle scene loader) loads PROT 873+874 contiguously, but its two install loops walk both buffers as flat <code>[count, offsets[], data]</code> packs and process PROT 874&apos;s <code>count = 3</code> entries via <code>FUN_8001fbcc</code> (VDF install). PROT 874 section 0 is gated on the type byte (<code>0x01</code>), so a different dispatch site must funnel section 0 through the TMD-pack handler (<code>FUN_8001F05C case 2</code> &rarr; <code>FUN_80026B4C</code>) rather than VDF. Tracing that site is in <a href="#open">Open work</a> below.</p>
 
   <h3 id="dat-8007c018-snapshot-sebucus">Live snapshot &mdash; Sebucus mid-warp</h3>
   <p>The Sebucus dump captures the warp transition partway through the asset install:</p>
@@ -340,5 +376,6 @@ DAT_8007B824 : per-pack count (set by case 2 to *pack_header[0])</code></pre>
     <li><strong>Slot-4 &rarr; TMD converter.</strong> Slot 4 <em>is</em> loaded into RAM as MOVE bytes during the warp's first pass, but the same physical RAM gets overwritten by TMD blobs from a later-loaded TMD-pack before the world-map settles. The intermediate converter that walks the slot-4 15/16-body outer pack and emits TMDs at the right RAM offsets has not been pinned. Candidates: a chunk-handler case in <code>FUN_8001E54C</code> that turns slot-4 sub-bodies into TMD-shaped blobs in-place, or an asset-load-chain step that doesn't lower through <code>FUN_8001F05C</code> at all. A Read-bp probe watching <code>DAT_8007C018[*]</code> entry addresses (not slot-4 RAM) during the install pass would identify which loader call populates the kingdom-derived entries <code>[5..N]</code>.</li>
     <li><strong>Per-record 4th <code>i16</code> (<code>attr</code>).</strong> 0 for body 4, 22 distinct values in body 5, 214 distinct in body 12. Body-12 attr-values cluster at <code>&plusmn;1280, &plusmn;1792, 1793, &plusmn;1281, &plusmn;1025</code> &mdash; look like packed (high-byte, low-byte) tags rather than indices. The body-kind &harr; cmd_flags bank hypothesis (previously listed as open work) is <strong>falsified</strong> &mdash; Drake's dispatcher-entry probe shows neither <code>0x04000000</code> nor <code>0x20000000</code> is ever set in retail world-map play; only banks <code>0x00</code> and <code>0x50</code> are exercised. So body <code>kind &isin; {1, 2, 4}</code> is slot-4-internal data with no link to cluster-A bank dispatch.</li>
     <li><strong>Banks 2 (<code>0xA0</code>) and 3 (<code>0xF0</code>).</strong> Banks reachable in the dispatcher but never observed during retail world-map play. Candidates: dev/debug menu render modes, battle-overlay re-use of the dispatcher, or cutscene render paths. Setting up a wide-coverage <code>cmd_flags</code>-capture probe across multiple non-world-map game modes would pin which (if any) caller passes those flags.</li>
+    <li><strong>PROT 0874 section-0 loader site.</strong> The byte-equality match between PROT 0874 section 0 (LZS-decoded from file offset <code>0x20</code>) and the 5 TMDs at <code>DAT_8007C018[0..4]</code> is conclusive (see <a href="#disc-side-source-of-04">&sect; Disc-side source of [0..4]</a> above), but the exact dispatch site that funnels that pack through <code>FUN_8001F05C case 2</code> &rarr; <code>FUN_80026B4C</code> (the TMD-pack installer) is not yet pinned. <code>FUN_8001E890</code>&apos;s retail-PROT branch targets PROT 876, not 874, and applies a shape mask that doesn&apos;t match either entry&apos;s actual layout. A Write-bp probe on <code>DAT_8007C018[0]</code> during boot / first-battle init would identify which loader actually populates the slot, settling the <code>data\field\player.lzs</code> chain end-to-end.</li>
   </ol>
 </section>
