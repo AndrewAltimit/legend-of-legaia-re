@@ -124,14 +124,14 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x15` | `FUN_801DA2A0` | (unknown) |
 | `0x16` | `FUN_801DD310` | no-op tick: tail-calls `func_0x80031D00` (frame-end / actor-tick flush) with no other work |
 | `0x17` | `FUN_801DD330` | thin wrapper invoking the generic picker `FUN_801DA9F8(start=0, end=9, init=0x30, return_subscreen=1)` |
-| `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main, which performs the actual libcd write); state 3 returns to sub-screen `0x01` |
+| `0x18` | `FUN_801DAE24` | save-card driver entry. State 0 installs the card handle (`_DAT_8007B44C = DAT_801C6EA0`) and invokes actor `&DAT_801E4E28`; state 1 waits `_DAT_8007BB80 == 0`; state 2 calls `FUN_801DD35C(1, 2)` (saving-overlay main; drives `FUN_801E3294` libcd state machine via the per-frame ticker `FUN_801E1114`); state 3 returns to sub-screen `0x01` |
 | `0x19` | `FUN_801DAEF4` | load-from-slot path (entry-context `*ptr == '\x01'`) |
 | `0x1A` | `FUN_801DAFD4` | save-slot confirm / saving-in-progress - advances to `0x1E` on confirm |
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
 | `0x1C` | `FUN_801DB380` | (unknown) |
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
 | `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 inits + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits for `_DAT_8007BB80 == 0`; state 2 reads two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` and advances to `0x1F` on user-confirm (`_DAT_8007BB94 == 2`) or back to `0x1A` on cancel; state 3 returns to `0x1A` |
-| `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - the actual card I/O lives in the `overlay_save_ui_saving_*` overlay where `FUN_801DD35C`'s case branches stage data through `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` (6 680 B; this is the LOAD direction - card→staging→SC RAM) and the save direction goes through libcd write syscalls (`_DAT_8007B44C` card handle); pinning the libcd-write call site is open work |
+| `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - actual libcd I/O lives in `FUN_801E3294` (see "Libcd I/O state machine" section below); `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is plain memcpy used in both directions (post-read or pre-write staging copy) |
 | `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
@@ -152,18 +152,67 @@ non-zero. The op selector distinguishes direction:
 
 Both install `_DAT_8007B44C = DAT_801C6EA0` (PSX libC card handle) on state 0,
 so the same global handle is used in both directions. On success both return
-to sub-screen `0x01` (the slot picker). The actual libcd-write call site
-inside `FUN_801DD35C`'s save branch (param_2 == 2) is the remaining open
-trace - the load branch (param_2 == 1) is the `FUN_8001A8B0` bulk transfer
-already pinned.
+to sub-screen `0x01` (the slot picker). Both directions share the same
+saving-overlay state machine; the load branch's bulk memcpy
+`FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` is the
+post-libcd-read copy (staging buffer → SC RAM).
 
-### Save data serialisation (`FUN_801D9C14`, sub-screen `0x14`)
+### Libcd I/O state machine (`FUN_801E3294`)
 
-Copies the per-character save record (stride `0x414` bytes) to a staging buffer
-at `DAT_801EF0C8` using `char_id * 0x414 + 0x80084A9E` (character record base).
-8 bytes are copied first, then the full record in `do { ... } while (iVar16 < 8)`
-chunks. Calls `FUN_801CF650` (memory-card write primitive) as a setup step at
-`DAT_801e46ac == 0`.
+The actual PSX memory-card calls live in `FUN_801E3294` (in the menu
+overlay, also captured in the saving overlay), a 5-state libcd
+state-machine driver:
+
+| State (`DAT_801EF188`) | Action |
+|---|---|
+| `0` | Init: call BIOS-A thunk `FUN_8006EE14(chan)`, advance to `1`. |
+| `1` | Poll `FUN_801E3900()`; on result `4` finalise with `FUN_8006EE34` (calls BIOS-B `_card_write` thunk pair); on `1` advance to `2`. |
+| `2` | Step: call `FUN_801E39A8` + BIOS-A thunk `FUN_8006EE24(chan)`, advance to `3`. |
+| `3` | Wait; same dispatch shape as state 1. |
+| `4` | Cleanup: stash result in `DAT_801EF184/180`, reset to `0`. |
+
+The channel argument is `chan = port * 16 + sub_op`. Status strings
+printed during the loop (`"NOT_CARD"`, `"card_sts:%d old:%d"`,
+`"not card count:%d"`) confirm this drives the libcd lifecycle.
+`FUN_8006EE34` is the actual write helper: it calls BIOS-B(0x50) via
+`FUN_8006EE7C`, then BIOS-B(0x4E) via `FUN_8006EE6C` with `(chan, 0x3F, 0)`.
+
+### Save-block directory enumeration (`FUN_801E1208`)
+
+After `FUN_801E3294` finishes a directory scan, `FUN_801E1208` walks the
+15-entry libcd directory table at `0x801F32A8` (entry stride `0x28`),
+matching each filename against the region-specific Legend of Legaia
+prefix using BIOS-A(0x18) `strncmp` (`FUN_80056748`):
+
+| Prefix string | Region |
+|---|---|
+| `BASCUS-94254PRO_` | USA (Legend of Legaia, SCUS-94254) |
+| `BISCPS-10059PRO_` | JP (Legend of Legaia, SCPS-10059) |
+
+The 2-digit slot number is parsed from positions `[10..11]` of the
+matched entry and used to write a per-slot record at
+`slot_idx * 0x40 + 0x801F2A88` plus a present-marker at
+`0x801F2A48 + slot_idx`. `_DAT_801F01F0` carries the available block
+count from the prior `FUN_801E3BA0` call.
+
+The per-frame ticker `FUN_801E1114` is the single static caller wiring
+the trio together: it calls `FUN_801E3294(DAT_801EF18C, 0)` every frame
+to advance the libcd state machine, and when `_DAT_801F021C == 3` (save
+commit) it sequences `FUN_801E3AF0` (open `"bu%d_%d"` channel) →
+`FUN_801E3BA0` (block-count query) → `FUN_801E1208` (directory walk).
+
+### Per-character status preview (`FUN_801D9C14`, sub-screen `0x14`)
+
+Per-character menu preview function. Reads from the character record at
+`char_id * 0x414 + 0x80084A9E` and uses `DAT_801EF0C8` as a staging
+buffer for the displayed stat read-back. State 0 calls `FUN_801CF650`,
+which is the **equipment-effect stat aggregator** for the selected
+character: it walks the 5 equipment slots in the character record, looks
+each equipment ID up in the 12-byte-stride table at `0x80074368`, and
+when `prop[id*12].byte_0 == 1` reads a 5-byte stat-bonus block from
+`0x80074F68 + prop[id*12].byte_1 * 8`, summing the bonuses into
+`DAT_801EF09C..DAT_801EF098` (5 stat totals - HP/MP/Atk/Def/Spd or
+similar). This is **not** a memory-card write primitive.
 
 ## Relationship to `legaia_save`
 
