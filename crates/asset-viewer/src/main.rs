@@ -2199,6 +2199,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
         E::MoveTo { .. } => "MoveTo",
         E::ExecMove { .. } => "ExecMove",
         E::FmvTrigger { .. } => "FmvTrigger",
+        E::ActorAllocate { .. } => "ActorAllocate",
     }
 }
 

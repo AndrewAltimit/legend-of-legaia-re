@@ -370,6 +370,17 @@ pub struct World {
     /// [`FieldEvent`]: crate::field_events::FieldEvent
     pub pending_field_events: Vec<FieldEvent>,
 
+    /// Pending actor-spawn requests emitted by field-VM op `0x4C 0x80`
+    /// (the actor allocator). Each entry is one child-actor's bytecode
+    /// stream, split out of the parent script's `tail` via the retail
+    /// `FUN_8003CA38` packet-length walker. Engines drain this through
+    /// [`Self::drain_actor_spawns`] after [`Self::tick`] and route each
+    /// record into their own actor pool - the retail engine mallocs a
+    /// per-actor vertex pool and stores the record pointer at
+    /// `actor[+0x90]`; the clean-room port leaves that policy to the
+    /// engine that consumes the request.
+    pub pending_actor_spawns: Vec<Vec<u8>>,
+
     /// Battle action state machine side-effects emitted this frame.
     /// Engines drain after [`World::tick`] to dispatch poses, UI elements,
     /// damage, screen-shake, etc. See [`BattleEvent`] for the per-variant
@@ -623,6 +634,7 @@ impl World {
             pending_scene_transition: None,
             pending_fmv_trigger: None,
             pending_field_events: Vec::new(),
+            pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
             current_bgm: None,
             current_dialog: None,
@@ -666,6 +678,13 @@ impl World {
     /// in emission order.
     pub fn drain_field_events(&mut self) -> Vec<FieldEvent> {
         std::mem::take(&mut self.pending_field_events)
+    }
+
+    /// Drain queued actor-spawn requests emitted by field-VM op `0x4C 0x80`.
+    /// Each entry is the variable-length bytecode stream for one child
+    /// actor. Engines route these into their actor pool.
+    pub fn drain_actor_spawns(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.pending_actor_spawns)
     }
 
     /// Drain emitted battle action events. Engines call once per frame
@@ -2412,6 +2431,36 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .pending_field_events
             .push(FieldEvent::ExecMove { move_id });
     }
+
+    fn op4c_n8_sub_0_actor_allocator(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
+        // Walk `count` variable-length records out of `tail` using the
+        // retail packet-length rule (FUN_8003CA38, mirrored in
+        // `legaia_engine_vm::field_helpers::packet_length`): bytes <= 0x1E
+        // terminate a record; bytes whose top nibble is 0xC consume one
+        // extra byte. The walker stops when the tail is exhausted - the
+        // retail original would over-read into adjacent memory, which the
+        // clean-room port refuses by construction.
+        let mut records: Vec<Vec<u8>> = Vec::with_capacity(count as usize);
+        let mut cursor = 0usize;
+        for _ in 0..count {
+            if cursor >= tail.len() {
+                break;
+            }
+            let len = vm::field_helpers::packet_length(&tail[cursor..]);
+            records.push(tail[cursor..cursor + len].to_vec());
+            // Skip the terminator byte itself (the byte <= 0x1E that
+            // closed the record); if the walker ran off the end without
+            // seeing one, `cursor + len == tail.len()` and the next
+            // iteration's bounds check exits the loop.
+            cursor += len + 1;
+        }
+        for record in &records {
+            self.world.pending_actor_spawns.push(record.clone());
+        }
+        self.world
+            .pending_field_events
+            .push(FieldEvent::ActorAllocate { records });
+    }
 }
 
 // --- battle action host ----------------------------------------------------
@@ -3527,6 +3576,77 @@ mod tests {
         let drained = world.drain_field_events();
         assert_eq!(drained.len(), 1);
         assert!(world.pending_field_events.is_empty());
+    }
+
+    /// Op `0x4C 0x80` (actor allocator) walks `count` variable-length
+    /// records using the `FUN_8003CA38` packet-length rule, emits one
+    /// `ActorAllocate` event, and queues each record's bytecode in
+    /// `pending_actor_spawns`. Encoding here: count=2, two records each
+    /// terminated by `0x00`.
+    #[test]
+    fn field_op_4c_n8_sub0_walks_records_and_queues_spawns() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // [4C, 0x80, 2, 0x40, 0x41, 0x00, 0xC1, 0x42, 0x00]
+        //   record 0 = [0x40, 0x41] (two normal tokens, terminator 0x00)
+        //   record 1 = [0xC1, 0x42] (escape pair via 0xCx high nibble)
+        let bytecode = vec![0x4C, 0x80, 0x02, 0x40, 0x41, 0x00, 0xC1, 0x42, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        // PC should land at byte 3 (the first record's first byte) - the
+        // retail VM advances PC by exactly 3 regardless of how many
+        // records the host consumes.
+        assert_eq!(world.field_pc, 3);
+        // Pending queue should hold both records, in emission order.
+        let spawns = world.drain_actor_spawns();
+        assert_eq!(spawns.len(), 2);
+        assert_eq!(spawns[0], vec![0x40, 0x41]);
+        assert_eq!(spawns[1], vec![0xC1, 0x42]);
+        // The event queue should also carry one ActorAllocate with both
+        // records.
+        let evs = world.drain_field_events();
+        let allocate = evs
+            .iter()
+            .find_map(|e| match e {
+                FieldEvent::ActorAllocate { records } => Some(records.clone()),
+                _ => None,
+            })
+            .expect("expected ActorAllocate event");
+        assert_eq!(allocate.len(), 2);
+        assert_eq!(allocate[0], vec![0x40, 0x41]);
+        assert_eq!(allocate[1], vec![0xC1, 0x42]);
+    }
+
+    /// `count = 0` is a legal degenerate case - no records walked, no
+    /// event payload, but the event is still emitted to mark the
+    /// allocator call site.
+    #[test]
+    fn field_op_4c_n8_sub0_zero_count_emits_empty_event() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let bytecode = vec![0x4C, 0x80, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        assert_eq!(world.field_pc, 3);
+        assert!(world.drain_actor_spawns().is_empty());
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::ActorAllocate { records } if records.is_empty()
+            )),
+            "expected empty ActorAllocate event, got {evs:?}"
+        );
+    }
+
+    /// `drain_actor_spawns` empties the queue.
+    #[test]
+    fn drain_actor_spawns_empties_queue() {
+        let mut world = World::new();
+        world.pending_actor_spawns.push(vec![0xAA, 0xBB]);
+        let drained = world.drain_actor_spawns();
+        assert_eq!(drained, vec![vec![0xAA, 0xBB]]);
+        assert!(world.pending_actor_spawns.is_empty());
     }
 
     /// `tick_move_vms` records per-actor outcomes via `actor_tick`. A

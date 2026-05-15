@@ -109,6 +109,19 @@ pub enum FieldEvent {
     /// can drop the event - the field VM doesn't require any
     /// host-side response.
     FmvTrigger { fmv_id: i16 },
+    /// Field-VM op `0x4C 0x80` (actor allocator, halt-acquire prelude).
+    ///
+    /// The dispatcher has already routed through the halt-acquire predicate
+    /// (`which = 0x80`) and performed the ctx mutation; this event surfaces
+    /// the spawn request to engines. `records` is the list of child-actor
+    /// bytecode streams split out of the script's `tail` via the retail
+    /// `FUN_8003CA38` packet-length walker (mirrored by
+    /// [`legaia_engine_vm::field_helpers::packet_length`]). The parent
+    /// script's PC has already advanced past the opcode header; the records
+    /// themselves remain embedded in the bytecode buffer and become the
+    /// spawned actors' own bytecode (retail stores the pointer at
+    /// `actor[+0x90]`).
+    ActorAllocate { records: Vec<Vec<u8>> },
 }
 
 impl FieldEvent {
@@ -201,6 +214,10 @@ impl FieldEvent {
             }
             FieldEvent::ExecMove { move_id } => format!("ExecMove({move_id})"),
             FieldEvent::FmvTrigger { fmv_id } => format!("FmvTrigger({fmv_id})"),
+            FieldEvent::ActorAllocate { records } => {
+                let bytes: usize = records.iter().map(|r| r.len()).sum();
+                format!("ActorAllocate(count={}, body={}B)", records.len(), bytes,)
+            }
         }
     }
 }
@@ -288,6 +305,9 @@ mod tests {
             },
             FieldEvent::ExecMove { move_id: 0 },
             FieldEvent::FmvTrigger { fmv_id: 3 },
+            FieldEvent::ActorAllocate {
+                records: vec![vec![0x40, 0x40], vec![0x80]],
+            },
         ];
         for e in events {
             assert!(!e.summary().is_empty());

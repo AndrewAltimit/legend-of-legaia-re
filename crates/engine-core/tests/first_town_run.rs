@@ -189,6 +189,7 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::MoveTo { .. } => "MoveTo",
             FieldEvent::ExecMove { .. } => "ExecMove",
             FieldEvent::FmvTrigger { .. } => "FmvTrigger",
+            FieldEvent::ActorAllocate { .. } => "ActorAllocate",
         };
         *counts.entry(kind).or_insert(0) += 1;
     }
