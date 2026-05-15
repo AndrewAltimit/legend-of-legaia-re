@@ -287,6 +287,15 @@ pub struct World {
     /// Story-flag word (`_DAT_1F800394` in retail). Read by field-VM
     /// op 0x30 GFLAG_TST and friends.
     pub story_flags: u32,
+    /// Full 512-byte story-flag bitmap mirroring retail RAM
+    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). The narrower
+    /// [`Self::story_flags`] u32 is the field-VM scratchpad cache; this
+    /// is the wider region the SC block persists.
+    ///
+    /// Empty (`vec![]`) when the engine hasn't been booted from a retail
+    /// SC block; populated via [`Self::load_full`] when a retail-shaped
+    /// [`legaia_save::SaveFile`] is restored.
+    pub story_flag_bits: Vec<u8>,
 
     /// PRNG state consumed by every VM that calls `host.rng()`. Default uses
     /// a deterministic LCG so tests are reproducible.
@@ -595,6 +604,7 @@ impl World {
             extra_flags: 0,
             screen_mode: 0,
             story_flags: 0,
+            story_flag_bits: Vec::new(),
             rng_state: 0x1234_5678,
             sin_lut: Vec::new(),
             cos_lut: Vec::new(),
@@ -1186,6 +1196,7 @@ impl World {
             party,
             ext: legaia_save::SaveExt {
                 story_flags: self.story_flags,
+                story_flag_bits: self.story_flag_bits.clone(),
                 money: self.money,
                 inventory,
             },
@@ -1207,6 +1218,7 @@ impl World {
     pub fn load_full(&mut self, sf: legaia_save::SaveFile) {
         self.load_party(sf.party);
         self.story_flags = sf.ext.story_flags;
+        self.story_flag_bits = sf.ext.story_flag_bits;
         self.money = sf.ext.money;
         self.inventory.clear();
         for (id, count) in sf.ext.inventory {
@@ -3033,6 +3045,7 @@ mod tests {
             party: legaia_save::Party::zeroed(1),
             ext: legaia_save::SaveExt {
                 story_flags: 1,
+                story_flag_bits: Vec::new(),
                 money: 0,
                 inventory: vec![(5, 3)],
             },

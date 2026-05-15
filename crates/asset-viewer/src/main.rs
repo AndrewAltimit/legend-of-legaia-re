@@ -2123,7 +2123,11 @@ struct EventScriptSet {
 }
 
 /// Running tally of field-VM step outcomes plus the most recent activity.
-#[derive(Default, Clone)]
+///
+/// Per-opcode histogram is dumped to stdout on session end so a single
+/// playthrough surfaces which opcodes a scene's prescript actually uses -
+/// useful for naturalistic discovery of remaining Pending sub-cases.
+#[derive(Clone)]
 struct FieldVmStats {
     advance: u64,
     yield_: u64,
@@ -2134,6 +2138,90 @@ struct FieldVmStats {
     last_unknown_op: Option<u8>,
     last_pc_before: usize,
     last_pc_after: usize,
+    /// Opcode byte at `pc_before` for every recorded step. Indexed by
+    /// opcode value. Pending / Unknown opcodes are tallied here too so
+    /// the histogram surfaces every dispatch the VM saw.
+    opcode_histogram: [u64; 256],
+    /// Most recent opcode byte at `pc_before`. `None` before the first step.
+    last_opcode: Option<u8>,
+    /// Per-FieldHost callback count, aggregated from `World::drain_field_events`.
+    /// Keys are short stringly tags so the HUD can dump a compact summary.
+    field_event_counts: std::collections::BTreeMap<&'static str, u64>,
+}
+
+impl Default for FieldVmStats {
+    fn default() -> Self {
+        Self {
+            advance: 0,
+            yield_: 0,
+            halt: 0,
+            pending: 0,
+            unknown: 0,
+            last_pending_op: None,
+            last_unknown_op: None,
+            last_pc_before: 0,
+            last_pc_after: 0,
+            opcode_histogram: [0u64; 256],
+            last_opcode: None,
+            field_event_counts: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+/// Short kind tag for a [`legaia_engine_core::field_events::FieldEvent`].
+///
+/// Used as the histogram key in [`FieldVmStats::field_event_counts`].
+fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static str {
+    use legaia_engine_core::field_events::FieldEvent as E;
+    match e {
+        E::Bgm { .. } => "Bgm",
+        E::PlaySfx { .. } => "PlaySfx",
+        E::OpenDialog { .. } => "OpenDialog",
+        E::AddMoney { .. } => "AddMoney",
+        E::SetItemCount { .. } => "SetItemCount",
+        E::PartyAdd { .. } => "PartyAdd",
+        E::PartyRemove { .. } => "PartyRemove",
+        E::FieldInteract { .. } => "FieldInteract",
+        E::SceneRegisterWrite { .. } => "SceneRegisterWrite",
+        E::SetPartyLeader { .. } => "SetPartyLeader",
+        E::CameraConfigure { .. } => "CameraConfigure",
+        E::CameraLoad { .. } => "CameraLoad",
+        E::CameraSave => "CameraSave",
+        E::CameraApply => "CameraApply",
+        E::SetupAnimation { .. } => "SetupAnimation",
+        E::RenderCfgLong { .. } => "RenderCfgLong",
+        E::RenderCfgShort { .. } => "RenderCfgShort",
+        E::CounterUpdate { .. } => "CounterUpdate",
+        E::EffectAnimTrigger { .. } => "EffectAnimTrigger",
+        E::SceneFade { .. } => "SceneFade",
+        E::MenuCtrl { .. } => "MenuCtrl",
+        E::MenuRefresh => "MenuRefresh",
+        E::MoveTo { .. } => "MoveTo",
+        E::ExecMove { .. } => "ExecMove",
+        E::FmvTrigger { .. } => "FmvTrigger",
+    }
+}
+
+impl FieldVmStats {
+    /// Top-10 opcodes by frequency, sorted descending. Each tuple is
+    /// `(opcode, count)`. Returns up to 10 entries; opcodes with zero
+    /// count are excluded.
+    fn top_opcodes(&self) -> Vec<(u8, u64)> {
+        let mut pairs: Vec<(u8, u64)> = self
+            .opcode_histogram
+            .iter()
+            .enumerate()
+            .filter_map(|(op, &c)| if c > 0 { Some((op as u8, c)) } else { None })
+            .collect();
+        pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        pairs.truncate(10);
+        pairs
+    }
+
+    /// Total number of recorded steps (sum across every status).
+    fn total_steps(&self) -> u64 {
+        self.advance + self.yield_ + self.halt + self.pending + self.unknown
+    }
 }
 
 /// Field-mode viewer state. Owned by the winit event loop.
@@ -2273,11 +2361,28 @@ impl FieldApp {
         self.world.tick_move_vms();
 
         let pc_before = self.world.field_pc;
+        let last_opcode = self
+            .world
+            .field_bytecode
+            .get(pc_before)
+            .copied()
+            .filter(|_| !self.world.field_bytecode.is_empty());
         let result = self.world.step_field();
         let pc_after = self.world.field_pc;
 
         self.vm_stats.last_pc_before = pc_before;
         self.vm_stats.last_pc_after = pc_after;
+        if let Some(op) = last_opcode {
+            self.vm_stats.opcode_histogram[op as usize] =
+                self.vm_stats.opcode_histogram[op as usize].saturating_add(1);
+            self.vm_stats.last_opcode = Some(op);
+        }
+        // Aggregate every FieldHost callback the step emitted by tag so the
+        // HUD / session-end summary surface which retail behaviours fired.
+        for event in self.world.drain_field_events() {
+            let tag = field_event_tag(&event);
+            *self.vm_stats.field_event_counts.entry(tag).or_default() += 1;
+        }
 
         let mut should_cycle = false;
         match result {
@@ -2393,6 +2498,46 @@ impl FieldApp {
         )
     }
 
+    /// Dump field-VM telemetry to stdout when the viewer is closing.
+    ///
+    /// Includes the per-opcode histogram (top-10 by count) and the
+    /// FieldHost callback tally. Idempotent for clean shutdown paths
+    /// that may fire both Escape and CloseRequested.
+    fn print_session_summary(&self) {
+        if self.event_scripts.is_none() {
+            return;
+        }
+        let total = self.vm_stats.total_steps();
+        if total == 0 {
+            return;
+        }
+        eprintln!(
+            "\n[field-vm session] scene '{}'  frames={}  steps={}",
+            self.scene_name, self.world.frame, total,
+        );
+        eprintln!(
+            "  advance={}  yield={}  halt={}  pending={}  unknown={}",
+            self.vm_stats.advance,
+            self.vm_stats.yield_,
+            self.vm_stats.halt,
+            self.vm_stats.pending,
+            self.vm_stats.unknown,
+        );
+        let top = self.vm_stats.top_opcodes();
+        if !top.is_empty() {
+            eprintln!("  top opcodes (op=count):");
+            for (op, c) in top {
+                eprintln!("    0x{op:02X}={c}");
+            }
+        }
+        if !self.vm_stats.field_event_counts.is_empty() {
+            eprintln!("  host callbacks fired:");
+            for (tag, c) in &self.vm_stats.field_event_counts {
+                eprintln!("    {tag}={c}");
+            }
+        }
+    }
+
     fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.world.actors[slot];
         let pos = Vec3::new(
@@ -2483,6 +2628,37 @@ impl FieldApp {
             );
             let layout5 = self.font.layout_ascii(&line5);
             out.extend(text_draws_for(&layout5, (8, 80), dim));
+
+            // Last opcode + top-5 opcode histogram so naturalistic
+            // playthroughs surface which ops the prescript actually uses.
+            let last_op_str = self
+                .vm_stats
+                .last_opcode
+                .map(|op| format!("0x{op:02X}"))
+                .unwrap_or_else(|| "-".into());
+            let mut top = self.vm_stats.top_opcodes();
+            top.truncate(5);
+            let top_str = top
+                .into_iter()
+                .map(|(op, c)| format!("0x{op:02X}={c}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let line6 = format!("last-op {last_op_str}  top5 {top_str}");
+            let layout6 = self.font.layout_ascii(&line6);
+            out.extend(text_draws_for(&layout6, (8, 98), dim));
+
+            if !self.vm_stats.field_event_counts.is_empty() {
+                let events_str = self
+                    .vm_stats
+                    .field_event_counts
+                    .iter()
+                    .map(|(tag, c)| format!("{tag}={c}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let line7 = format!("hooks {events_str}");
+                let layout7 = self.font.layout_ascii(&line7);
+                out.extend(text_draws_for(&layout7, (8, 116), dim));
+            }
         }
 
         // Pad state - show one cell per logical button.
@@ -2579,7 +2755,10 @@ impl ApplicationHandler for FieldApp {
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => evl.exit(),
+            WindowEvent::CloseRequested => {
+                self.print_session_summary();
+                evl.exit();
+            }
             WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event:
@@ -2591,6 +2770,7 @@ impl ApplicationHandler for FieldApp {
                 ..
             } => {
                 if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
+                    self.print_session_summary();
                     evl.exit();
                     return;
                 }

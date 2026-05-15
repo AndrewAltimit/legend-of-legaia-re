@@ -12,6 +12,7 @@ asset-viewer tmd   <input> [--shape character] [--sort-by-size] [--bundle battle
 asset-viewer stage <PATH>                       # wireframe stage geometry
 asset-viewer vab   <PROT_entry> --offset <H> --sample <N>
 asset-viewer prot  <PROT.DAT> [--cdname <CDNAME.TXT>]
+asset-viewer field <SCENE> [--record N] [--cycle-records=true]
 ```
 
 ### `tmd` - textured 3D meshes
@@ -76,6 +77,23 @@ supported via `asset stage` proper.
 Walks `PROT.DAT` end-to-end and pages through every entry, showing
 classifier output (TIM hits, TMD hits, scene-bundle membership) and
 naming each entry from `CDNAME.TXT`.
+
+### `field` - field-VM scene runner
+
+Boots a CDNAME scene through `engine-core::World::tick_field` so the
+field VM steps through the scene's event-script records. The HUD
+surfaces:
+
+- Step-outcome tally (`adv / yld / halt / pending / unknown`).
+- Last opcode dispatched + a per-opcode top-5 histogram so naturalistic
+  playthroughs surface which ops a scene's prescript actually exercises.
+- Per-`FieldHost`-callback counter (`Bgm / PlaySfx / OpenDialog / ...`)
+  drained from `World::drain_field_events` each tick.
+
+The session-end summary (printed on Esc / window close) dumps the full
+top-10 opcode histogram and host-callback tally to stderr - useful
+for closing the loop on remaining `Pending` sub-cases by observing
+what real scenes do.
 
 ## Architecture
 

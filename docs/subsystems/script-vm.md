@@ -339,10 +339,10 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | 2     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 3     | ✓   | ✓   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | P   | P   | P   | ✓   | ✓   |
 | 4     | ✓   | ✓   | ✓   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | P   | P   |
-| 5     | ✓   | P   | P   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
-| 6     | ✓   | P   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
+| 5     | ✓   | ✓   | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
+| 6     | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | 7     | ✓   | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
-| 8     | P   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
+| 8     | ✓   | ✓   | ✓   | P   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | 9     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 | A     | ✓   | ✓   | ✓   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
 | B     | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   | -   |
@@ -351,10 +351,11 @@ The 0x4C cluster is the longest-tail opcode in the field VM - most outer nibbles
 | E     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | -   |
 | F     | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
 
-Remaining pending sub-ops fall into two clusters:
+Remaining pending sub-ops fall into one cluster:
 
-1. **STATE_RESUME entanglement.** `0x4C n5 sub-1` (dialog-position halt-acquire), `n5 sub-2` (menu activation), `n6 sub-0x61` (16-byte halt-acquire), and `n8 sub-0` (actor-allocator with halt-acquire prelude) all interleave with the existing STATE_RESUME tristate machinery. Tractable but each requires a small refactor of the `field_halt_acquire_*` hook pair, deferred to a follow-up round.
-2. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) — each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split. `nE sub-F` has no `case` arm in the original and halts at PC (already `Halt`, not `Pending`).
+1. **Variable-width / non-trivial helpers.** `0x4C n8 sub-3` (rectangular tile fill via `FUN_801D5630`), `n4 sub-5` and `n3 sub-4`/`sub-B`/`sub-C`/`sub-D` (ramp scheduler quirks) — each remaining `P` cell maps to one specific overlay helper with no clean pure-arithmetic split. `nE sub-F` has no `case` arm in the original and halts at PC (already `Halt`, not `Pending`).
+
+The STATE_RESUME-entangled cluster (`0x4C n5 sub-1`/`sub-2`, `n6 sub-0x61`, `n8 sub-0`) routes through the standard halt-acquire predicate ([`FieldHost::field_halt_acquire_predicate`] with new `which` tags `0x61` and `0x80`). On predicate success the dispatcher performs the ctx mutation (`saved_pc`, `wait_accum=0`, `flags |= 0x400`), calls the case-specific side-effect hook (`op4c_n5_sub1_npc_run`, `op4c_n5_sub2_menu_activation`, `op4c_n6_sub_61_emitter`, `op4c_n8_sub_0_actor_allocator`), and advances PC; on failure it halts at PC. The n5 cluster doesn't route through the predicate (no halt-acquire in the original): sub-1 is a side-effect-only move-table dispatcher, sub-2 polls the host's menu-activation state.
 
 ### 0x4C nibble-4 - immediate-or-ramp cluster
 
