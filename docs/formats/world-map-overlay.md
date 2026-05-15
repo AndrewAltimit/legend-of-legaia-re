@@ -946,6 +946,36 @@ TMD-pack.
    (not slot-4 RAM) during the install pass would identify which
    loader call populates the kingdom-derived entries `[5..N]`.
 
+   **Static-side evidence narrowing the hunt** (sweep via
+   [`scripts/scan_funcs_for_addr_range.py`](../../scripts/scan_funcs_for_addr_range.py)
+   across SCUS + every captured overlay dump under
+   `ghidra/scripts/funcs/`):
+
+   - **`_DAT_8007B888` (MOVE-buffer pointer set by `FUN_8001F05C` case 5):**
+     7 accessor sites in the entire dump corpus. SCUS: `FUN_8001F05C`
+     (writer, the case-5 store), `FUN_8002541C` (writer, streaming-walker
+     reset), `FUN_800204F8` (reader — Tactical Arts move-table parser).
+     Overlays: 4 reader sites, **all in `overlay_baka_fighter`** (the
+     boxing minigame). **Zero readers in any `overlay_world_map*` dump.**
+     If the kingdom slot-4 → world-map pipeline went through the
+     standard MOVE buffer, the world-map controller would need to read
+     `_DAT_8007B888` somewhere — and it doesn't, statically. So the
+     converter either runs *before* the warp's overlay swap-in (in
+     SCUS code that doesn't read the MOVE pointer by name — e.g. via
+     a function-pointer table populated at boot), or the slot-4 MOVE
+     bytes are consumed via the asset-loader chain itself (a hook
+     inside `FUN_8002541C` or its descriptor-walker sibling
+     `FUN_80020224`) before the world-map overlay even sees them.
+   - **`DAT_8007C018[94..113]` (the index range whose live snapshot
+     once held slot-4-body-aligned pointers):** zero specialized
+     readers — no function statically materializes any address in
+     `0x8007C190..0x8007C1E0` via `lui+addiu`, `lui+lw_with_offset`,
+     or positive-offset `lw` from the table base. Consistent with the
+     [Live snapshot](#live-snapshot-drake-post-warp-settled) finding
+     that those entries are real TMDs in steady state and are reached
+     only through the generic table walkers that iterate
+     `[0..DAT_8007BB38]`.
+
 2. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
    in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
    `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
