@@ -37,7 +37,8 @@
       <tr><td><code>0x4</code></td><td><code>0x801E4F50</code></td><td>Post-save return path</td></tr>
       <tr><td><code>0x19</code></td><td>-</td><td>Load-from-slot path</td></tr>
       <tr><td><code>0x1B</code></td><td>-</td><td>Card-full / error screen</td></tr>
-      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td>Actual write sub-screen (story_flags + inventory write path - not yet dumped)</td></tr>
+      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td><code>FUN_801DBC5C</code> - 4-state spinner; advances to <code>0x1F</code> on user-confirm</td></tr>
+      <tr><td><code>0x1F</code></td><td><code>0x801E4FBC</code></td><td><code>FUN_801DBD94</code> - D-pad quantity-input screen (money/inventory effect; NOT the card writer - actual card I/O lives in the <code>overlay_save_ui_saving_*</code> overlay via libcd write syscalls through the <code>_DAT_8007B44C</code> card handle)</td></tr>
     </tbody>
   </table>
 </section>
@@ -45,7 +46,7 @@
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
   <p><code>legaia_save::SaveFile</code> (with <code>SaveExt</code>) is the clean-room counterpart. It stores party + story flags + money + inventory in the <code>LGSF v1</code> format and round-trips via <code>engine-core</code>'s <code>save_full</code> / <code>load_full</code> calls. The <code>legaia-engine save</code> / <code>load</code> subcommands exercise this path end-to-end.</p>
-  <p>The exact on-disc offsets for <code>story_flags</code> and <code>inventory</code> within the retail save block require a dump of the ID <code>0x1E</code> sub-screen function (the actual write path at <code>0x801E4FB8</code>); until then the LGSF format uses its own offset scheme. See <code>docs/subsystems/save-screen.md</code> for the pending trace.</p>
+  <p>Retail-save offsets are pinned (<code>story_flags</code> at SC <code>+0x14C0</code>, <code>inventory</code> at SC <code>+0x1818</code>); see <code>docs/subsystems/save-screen.md</code> for the full block layout. The remaining open trace is the exact libcd-write call site that pushes the SC body to the card from the <code>overlay_save_ui_saving_*</code> overlay.</p>
 </section>
 
 <section class="doc-section" id="story-flags-vs-scratchpad">

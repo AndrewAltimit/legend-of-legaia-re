@@ -130,8 +130,8 @@ read from `overlay_menu.bin` offset `0x24F40` (table base `0x801C0000`):
 | `0x1B` | `FUN_801DB21C` | card-full / error screen |
 | `0x1C` | `FUN_801DB380` | (unknown) |
 | `0x1D` | `FUN_801DB7F4` | (unknown) |
-| `0x1E` | `FUN_801DBC5C` | write-step confirmation spinner - advances to `0x1F` on slot confirm |
-| `0x1F` | `FUN_801DBD94` | write-step quantity select / save serialisation |
+| `0x1E` | `FUN_801DBC5C` | 4-state spinner: state 0 inits + calls `FUN_801D6628(&DAT_801E4EE4)`; state 1 waits for `_DAT_8007BB80 == 0`; state 2 reads two inventory bytes at `0x80084140 + 0x1818 + _DAT_8007BB88*2` and advances to `0x1F` on user-confirm (`_DAT_8007BB94 == 2`) or back to `0x1A` on cancel; state 3 returns to `0x1A` |
+| `0x1F` | `FUN_801DBD94` | D-pad quantity-input screen (state 0 init + actor invoke; state 1 ±1/±10 on the dpad clamped to `[1, DAT_801E46B8]`, on confirm applies money delta `_DAT_8008459C += (price * qty) >> 1` and walks live inventory at `0x80084140 + 0x1818` for a non-empty slot; state 2 returns to `0x1A` after a brief delay). NOT the save-card writer - the actual card I/O lives in the `overlay_save_ui_saving_*` overlay where `FUN_801DD35C`'s case branches stage data through `FUN_8001A8B0(SC_base=0x80084140, staging=0x801E5120, 0x1A18)` (6 680 B; this is the LOAD direction - card→staging→SC RAM) and the save direction goes through libcd write syscalls (`_DAT_8007B44C` card handle); pinning the libcd-write call site is open work |
 | `0x20` | `FUN_801DC1CC` | auto-save path (entry-context `*ptr == '\x07'`) |
 
 The table ends at `0x1F`; entries past `0x20` are the start of the MES bytecode
