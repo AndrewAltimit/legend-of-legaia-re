@@ -1046,3 +1046,26 @@ TMD-pack.
    isolate. The Lua-probe approach described in
    [`docs/tooling/pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)
    is the appropriate next step.
+
+   A further static narrowing: the `FUN_8001F05C` case-2
+   "freeze" sub-path (`if (param_3 == 1) { _DAT_8007B704 =
+   size; _DAT_8007B824 = pack_count; }`) is the sole SCUS
+   `sw` writer of `_DAT_8007B824` (at PC `0x8001F2F8`). The
+   freeze sets the persistent-base index that
+   `FUN_8001E1B4` later reads to reset the install cursor
+   (`DAT_8007B774 = _DAT_8007B824`), so a non-zero
+   `_DAT_8007B824` would mark slots `[0..pack_count-1]` as
+   carried across mode transitions. A corpus grep over every
+   call site shows zero static SCUS callers of
+   `FUN_8001F05C` pass `param_3 == 1` (the three direct
+   callers - `FUN_80020224`, `FUN_8002541C`, and
+   `overlay_baka_fighter_801d4c50` - pass `s6`, `0`, and
+   `0` respectively), and zero dumped overlay callers of
+   `FUN_80020224` pass `param_1 == 1`. So either the freeze
+   path is in an overlay not yet captured, or
+   `_DAT_8007B824` stays at its BSS-init value of zero
+   throughout retail play and every mode rebuilds the TMD
+   pool from index 0 (in which case the "persistent slots"
+   semantic is vestigial, not load-bearing). The dynamic
+   probe should also break on `_DAT_8007B824` writes to
+   settle which case holds.
