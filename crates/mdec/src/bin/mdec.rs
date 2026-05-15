@@ -96,8 +96,8 @@ fn cmd_scan_str(str_file: &PathBuf) -> Result<()> {
         let sector = &data[i * 2048..(i + 1) * 2048];
         if let Some((hdr, _bs)) = asm.push_sector(sector)? {
             println!(
-                "frame {:4}: {}×{}, qs={}, bs_ver={}",
-                hdr.frame_number, hdr.width, hdr.height, hdr.quantize_scale, hdr.bs_version
+                "frame {:4}: {}×{}, frame_size={}",
+                hdr.frame_number, hdr.width, hdr.height, hdr.frame_size_bytes
             );
             frame_count += 1;
         }
