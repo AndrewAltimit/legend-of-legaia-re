@@ -317,6 +317,29 @@ fn scene_host_loads_doman_vdf_buffer_and_spawn_resolves_body() {
         tmd_ref.raw.len()
     );
 
+    // The renderer-side spawn handler (`legaia-engine` play-window) drains
+    // ActorSpawned events, takes the actor's `tmd_ref`, builds a VRAM
+    // mesh via `legaia_tmd::mesh::tmd_to_vram_mesh`, and uploads it as a
+    // new mesh slot. Assert the seeded slot-0 TMD is mesh-buildable here
+    // so the renderer-side path has something to upload (the upload
+    // itself needs a wgpu device and isn't unit-testable, but the
+    // mesh-build is).
+    let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd_ref.tmd, &tmd_ref.raw);
+    assert!(
+        !vmesh.indices.is_empty(),
+        "seeded slot-0 TMD must produce a non-empty mesh for the renderer to upload",
+    );
+    assert!(
+        vmesh.indices.len().is_multiple_of(3),
+        "vram mesh indices must be a multiple of 3 (triangle list); got {}",
+        vmesh.indices.len(),
+    );
+    eprintln!(
+        "[disc] doman tmd_idx=0 mesh: {} verts, {} indices",
+        vmesh.positions.len(),
+        vmesh.indices.len()
+    );
+
     let evs = host.world.drain_field_events();
     let spawn_records: Vec<&Vec<u8>> = evs
         .iter()

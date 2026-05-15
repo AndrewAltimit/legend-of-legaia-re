@@ -1987,6 +1987,14 @@ struct PlayWindowApp {
     /// the target's `BattleActor::hp` via `World::fold_battle_event`). The
     /// log is empty until a battle SM actually fires.
     battle_event_log: std::collections::VecDeque<String>,
+    /// Actor slots queued for render-side mesh upload. Populated when a
+    /// `FieldEvent::ActorSpawned` fires with a non-`None` `Actor::tmd_ref`
+    /// (the field-VM `0x4C 0xD8` synchronous-spawn path); drained in the
+    /// next render pass, which materializes a [`UploadedVramMesh`] from
+    /// the actor's global-pool TMD, appends it to `self.meshes` /
+    /// `self.scene_tmd_data`, and sets `actor.tmd_binding` to the new
+    /// mesh index so the per-frame draws iteration picks it up.
+    pending_dynamic_mesh_slots: Vec<u8>,
     /// Boot-UI state. `BootUiState::Inactive` means the legacy
     /// "go straight to the scene" path; `Title` / `SaveSelect` route
     /// player input through the boot sessions until the player picks
@@ -2418,6 +2426,34 @@ impl PlayWindowApp {
                 s.continue_enabled,
                 (96, 100),
             ),
+        }
+    }
+
+    /// Drain world field events and route them to whichever subsystem
+    /// owns them. Currently:
+    /// - [`FieldEvent::ActorSpawned`]: when the actor carries a non-`None`
+    ///   `Actor::tmd_ref` (the `0x4C 0xD8` synchronous-spawn path), queue
+    ///   the slot in [`Self::pending_dynamic_mesh_slots`] so the next
+    ///   render pass uploads its mesh. ActorSpawned events without a
+    ///   `tmd_ref` (the `0x4C 0x80` halt-acquire-gated bytecode-only
+    ///   path) are dropped silently here - those actors have no visual
+    ///   in this renderer until their bytecode runs.
+    /// - All other events: not relevant to the play-window renderer yet,
+    ///   surfaced via the HUD log instead by callers that want them.
+    fn drain_and_route_field_events(&mut self) {
+        use legaia_engine_core::field_events::FieldEvent;
+        let world = &mut self.session.host.world;
+        let events = world.drain_field_events();
+        for ev in events {
+            if let FieldEvent::ActorSpawned { slot, .. } = ev {
+                let has_tmd = world
+                    .actors
+                    .get(slot as usize)
+                    .is_some_and(|a| a.tmd_ref.is_some());
+                if has_tmd {
+                    self.pending_dynamic_mesh_slots.push(slot);
+                }
+            }
         }
     }
 
@@ -3302,6 +3338,10 @@ impl ApplicationHandler for PlayWindowApp {
                     // fold their gameplay-state side into the world (HP /
                     // status), and ring them into the HUD log.
                     self.drain_and_log_battle_events();
+                    // Route field events: ActorSpawned events whose actor
+                    // carries a `tmd_ref` queue a render-pass mesh upload
+                    // so spawn-record actors appear in the scene.
+                    self.drain_and_route_field_events();
                 }
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     self.win.renderer.as_ref(),
@@ -3311,6 +3351,52 @@ impl ApplicationHandler for PlayWindowApp {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
                     let cam = self.camera_mvp(aspect);
+                    // Drain queued spawn slots: build a VRAM mesh from each
+                    // actor's `tmd_ref` (global-pool TMD that the field-VM
+                    // 0x4C 0xD8 host hook installed) and append it to
+                    // `self.meshes` / `self.scene_tmd_data`, then bind
+                    // `actor.tmd_binding` to the new mesh index so the
+                    // draws iteration below picks it up. Idempotent: if
+                    // the actor already has a binding (e.g. an earlier
+                    // pass already uploaded), the spawn is skipped.
+                    let pending = std::mem::take(&mut self.pending_dynamic_mesh_slots);
+                    for slot in pending {
+                        let actor = match self.session.host.world.actors.get(slot as usize) {
+                            Some(a) => a,
+                            None => continue,
+                        };
+                        if actor.tmd_binding.is_some() {
+                            continue;
+                        }
+                        let Some(gtmd) = actor.tmd_ref.as_ref().map(std::sync::Arc::clone) else {
+                            continue;
+                        };
+                        let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
+                        if vmesh.indices.is_empty() {
+                            log::warn!(
+                                "play-window: spawn slot {slot} has TMD with 0 indices; skipping"
+                            );
+                            continue;
+                        }
+                        match r.upload_vram_mesh(
+                            &vmesh.positions,
+                            &vmesh.uvs,
+                            &vmesh.cba_tsb,
+                            &vmesh.normals,
+                            &vmesh.indices,
+                        ) {
+                            Ok(m) => {
+                                let new_idx = self.meshes.len();
+                                self.meshes.push(m);
+                                self.scene_tmd_data
+                                    .push((gtmd.tmd.clone(), gtmd.raw.clone()));
+                                self.session.host.world.actors[slot as usize].tmd_binding =
+                                    Some(new_idx);
+                                log::info!("play-window: spawn slot {slot} -> mesh slot {new_idx}");
+                            }
+                            Err(e) => log::warn!("spawn mesh upload: {e:#}"),
+                        }
+                    }
                     // For each active actor with a tmd_binding and a current
                     // pose_frame, regenerate and re-upload the posed mesh.
                     // posed_overrides[i] replaces meshes[i] when present.
@@ -3344,21 +3430,31 @@ impl ApplicationHandler for PlayWindowApp {
                         }
                     }
 
-                    let draws: Vec<SceneDraw<'_>> = self
-                        .meshes
-                        .iter()
-                        .enumerate()
-                        .map(|(i, static_m)| {
-                            let mesh = posed_overrides
-                                .get(i)
-                                .and_then(|o| o.as_ref())
-                                .unwrap_or(static_m);
-                            SceneDraw {
+                    // Iterate every actor that has a `tmd_binding`. Scene-init
+                    // actors (slots 0..N from `init_scene_animations`) have
+                    // their bindings set but aren't necessarily `.active` -
+                    // the original draws iteration walked meshes directly,
+                    // so we preserve that behaviour by not gating on
+                    // `.active` here. Dynamically spawned actors set both
+                    // `.active` and a binding to their freshly uploaded
+                    // mesh slot (beyond `scene_tmd_data.len()`) via the
+                    // spawn pass above.
+                    let mut draws: Vec<SceneDraw<'_>> = Vec::new();
+                    for (i, actor) in self.session.host.world.actors.iter().enumerate() {
+                        let Some(tmd_idx) = actor.tmd_binding else {
+                            continue;
+                        };
+                        let mesh = posed_overrides
+                            .get(tmd_idx)
+                            .and_then(|o| o.as_ref())
+                            .or_else(|| self.meshes.get(tmd_idx));
+                        if let Some(mesh) = mesh {
+                            draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * self.actor_model(i),
-                            }
-                        })
-                        .collect();
+                            });
+                        }
+                    }
                     let hud = self.build_hud(w, h);
                     let overlay = TextOverlay { atlas, draws: &hud };
                     let scene = RenderScene {
@@ -3594,6 +3690,7 @@ fn cmd_play_window(
         world_map_ctrl,
         prev_pad: 0,
         battle_event_log: std::collections::VecDeque::new(),
+        pending_dynamic_mesh_slots: Vec::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),
