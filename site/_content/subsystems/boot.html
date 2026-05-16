@@ -64,6 +64,34 @@
   </table>
 </section>
 
+<section class="doc-section" id="init-pak-publisher-logos">
+  <h2>Publisher-logo boot screens (PROT 0895 <code>init.pak</code>)</h2>
+  <p>PROT entry <code>0895_bat_back_dat</code> is the boot-time <code>init.pak</code> bundle &mdash; despite the misleading CDNAME label. It contains four uncompressed PSX TIMs that the boot sequence uploads to VRAM and fades through before the title screen appears:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Logo</th><th>Mode</th><th>Decoded size</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x021c4</code></td><td>PROKION</td><td>8&nbsp;bpp</td><td>176&times;256</td></tr>
+      <tr><td><code>+0x0d3e4</code></td><td>Contrail</td><td>8&nbsp;bpp</td><td>184&times;256</td></tr>
+      <tr><td><code>+0x18e04</code></td><td>SCEA Presents</td><td>4&nbsp;bpp</td><td>256&times;128</td></tr>
+      <tr><td><code>+0x1ce44</code></td><td>WARNING</td><td>4&nbsp;bpp</td><td>256&times;256</td></tr>
+    </tbody>
+  </table>
+  <p>A typed parser at <code>legaia_asset::init_pak</code> returns slice pointers + decoded VRAM rects for each logo; a disc-gated test pins the on-disc layout. The asset viewer's <em>"Boot publisher logos"</em> panel and the <code>legaia-engine play-window --boot-ui</code> binary both consume this parser to drive a 30 / 90 / 30 fade-in / hold / fade-out animation per logo (see <code>legaia_engine_core::publisher_logos</code>).</p>
+  <h3>Strip-grid unfolding</h3>
+  <p>Two of the four TIMs (PROKION, SCEA) are <strong>vertically-packed sprite atlases</strong> &mdash; the decoded bitmap stacks several smaller strips that retail unfolds into a horizontal/grid layout via multiple GPU quads. Blitting the whole TIM as one quad shows the packed layout (PROKION as <code>PROK</code> over <code>KION</code>, SCEA as four wrapped text rows) rather than the on-screen logo. The per-logo grid lives in <code>publisher_logos::STRIP_GRID</code>:</p>
+  <table>
+    <thead><tr><th>Logo</th><th>Grid <code>(cols, rows)</code></th><th>Source strip</th><th>Unfolded</th></tr></thead>
+    <tbody>
+      <tr><td>PROKION</td><td><code>(2, 1)</code></td><td>176&times;128</td><td>352&times;128 (<code>PROK&nbsp;&#9737;&nbsp;KION</code>)</td></tr>
+      <tr><td>Contrail</td><td><code>(1, 1)</code></td><td>184&times;256</td><td>184&times;256 (no slicing)</td></tr>
+      <tr><td>SCEA</td><td><code>(2, 2)</code></td><td>256&times;32</td><td>512&times;64 (<code>Sony Computer Entertainment America</code> / <code>Presents</code>)</td></tr>
+      <tr><td>WARNING</td><td><code>(1, 1)</code></td><td>256&times;256</td><td>256&times;256 (no slicing)</td></tr>
+    </tbody>
+  </table>
+  <p>Source strips are stored <strong>column-major</strong> in the bitmap; the output grid is row-major, so source strip <code>s = c &times; rows + r</code> lands at output cell <code>(col&nbsp;c, row&nbsp;r)</code>. PROKION's two halves combine into <code>PROK &#9737; KION</code> (the green hemispheres in each half complete a single sun when adjacent); SCEA's four 32-row strips read top-line <code>Sony Computer Entertainment America</code> + bottom-line <code>Presents</code>.</p>
+  <p>The exact on-screen layout retail uses still has to be RE'd from the unlocated <a href="#title-overlay-state">title-overlay tick body</a> &mdash; the <code>STRIP_GRID</code> constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.</p>
+</section>
+
 <section class="doc-section" id="title-overlay-state">
   <h2>Title-screen overlay state</h2>
   <p>The title-screen overlay loads into <code>0x801E0000+</code> during the boot sequence and keeps its mode state in a struct at <code>0x801EF018</code>. Known fields:</p>

@@ -232,6 +232,23 @@ CLUT and pixel data are byte-identical to live RAM after boot extraction — onl
 
 A typed parser lives at [`legaia_asset::init_pak`](../../crates/asset/src/init_pak.rs) — call `parse(&prot_0895_bytes)` to get a struct view over the four logos (slice pointers + decoded VRAM rects). The disc-gated unit test (`parses_real_init_pak_when_disc_extracted`) locks the on-disc layout.
 
+### Strip-grid unfolding
+
+Two of the four TIMs (PROKION, SCEA) are **vertically-packed sprite atlases**: the decoded bitmap stacks several smaller strips that retail unfolds into a horizontal layout via multiple GPU quads. Blitting the whole TIM as one quad shows the packed layout (PROKION as `PROK` over `KION`, SCEA as four wrapped text rows), not the on-screen logo.
+
+The per-logo grid is captured by [`legaia_engine_core::publisher_logos::STRIP_GRID`](../../crates/engine-core/src/publisher_logos.rs):
+
+| Logo     | TIM       | Grid `(cols, rows)` | Source strip | Unfolded |
+|----------|-----------|---------------------|--------------|----------|
+| PROKION  | 176×256   | `(2, 1)`            | 176×128      | 352×128  |
+| Contrail | 184×256   | `(1, 1)`            | 184×256      | 184×256  |
+| SCEA     | 256×128   | `(2, 2)`            | 256×32       | 512×64   |
+| WARNING  | 256×256   | `(1, 1)`            | 256×256      | 256×256  |
+
+Source strips are stored **column-major** in the bitmap; the output grid is row-major, so source strip `s = c * rows + r` lands at output cell `(col c, row r)`. PROKION's two halves combine into `PROK ☉ KION` (the green hemispheres in each half complete a single sun in the middle when adjacent). SCEA's four 32-row strips read top-line `Sony Computer Entertainment America` + bottom-line `Presents`.
+
+The actual on-screen layout the retail boot code uses still has to be RE'd from the unlocated title-overlay tick body — the `STRIP_GRID` constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.
+
 The `h:\prot\field\title\title.pak` string is **only a debug-print referent** — the title-screen content lives in a separate PROT entry referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere.
 
 The TIM-upload helper for these (and for the title overlay's per-frame sprites) is `FUN_800198E0` — it consumes a packed struct with custom magic `0x11` OR a real PSX TIM (flags bit 3 = "has CLUT"), and dispatches to `FUN_800583C8` (the `LoadImage` wrapper, identified by the literal string `s_LoadImage_800156d4` it references for debug logging).

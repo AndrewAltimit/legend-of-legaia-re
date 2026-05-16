@@ -1985,6 +1985,10 @@ pub struct Scene<'a> {
     /// [`Self::overlay_text`]. Used by the actor sprite pipeline.
     pub overlay_sprites: Option<&'a SpriteOverlay<'a>>,
     pub overlay_text: Option<&'a TextOverlay<'a>>,
+    /// Optional override of the surface clear colour (linear RGBA). When
+    /// `None` the renderer falls back to its default dark-grey clear.
+    /// Used during the boot publisher-logos phase to force pure black.
+    pub clear_color: Option<[f32; 4]>,
 }
 
 pub struct Renderer {
@@ -3431,6 +3435,28 @@ impl Renderer {
                 }),
                 stencil_ops: None,
             });
+            let clear_rgba = match &target {
+                RenderTarget::Scene(s) => s
+                    .clear_color
+                    .map(|c| wgpu::Color {
+                        r: c[0] as f64,
+                        g: c[1] as f64,
+                        b: c[2] as f64,
+                        a: c[3] as f64,
+                    })
+                    .unwrap_or(wgpu::Color {
+                        r: 0.05,
+                        g: 0.05,
+                        b: 0.07,
+                        a: 1.0,
+                    }),
+                _ => wgpu::Color {
+                    r: 0.05,
+                    g: 0.05,
+                    b: 0.07,
+                    a: 1.0,
+                },
+            };
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("legaia frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -3438,12 +3464,7 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.05,
-                            g: 0.05,
-                            b: 0.07,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(clear_rgba),
                         store: wgpu::StoreOp::Store,
                     },
                 })],

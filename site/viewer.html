@@ -221,31 +221,6 @@
     <div id="camera-hint" style="display: none; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim); padding: 0.25rem 0;">
       <strong>3D controls:</strong> drag to orbit · scroll to zoom · WASD to pan · space = pause/resume spin · R / double-click = reset
     </div>
-
-    <!-- Boot publisher logos (PROT 0895 init.pak). Only rendered when a
-         full disc is loaded - empty for raw PROT.DAT / single-TIM mode. -->
-    <details id="init-pak-section" style="display: none; margin-top: 1rem; border: 1px solid var(--border); background: var(--bg-card); padding: 0.6rem 0.8rem;">
-      <summary style="cursor: pointer; font-family: var(--font-mono); font-size: 0.85rem;">
-        Boot publisher logos (<code>PROT 0895 init.pak</code>)
-      </summary>
-      <p style="font-size: 0.82rem; color: var(--text-dim); margin: 0.5rem 0;">
-        The four uncompressed publisher-logo TIMs the retail boot sequence uploads to VRAM before
-        the title screen appears: PROKION, Contrail, SCEA Presents, and the WARNING screen. Decoded
-        here from the entry CDNAME mislabels as <code>bat_back_dat</code> &mdash; see
-        <a href="formats/prot.html"><code>docs/formats/prot.md</code></a>.
-      </p>
-      <div id="init-pak-controls" style="display: flex; gap: 0.5rem; margin: 0.5rem 0;">
-        <button type="button" id="init-pak-play" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.6rem; font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer;">&#9654; Play boot sequence</button>
-        <button type="button" id="init-pak-stop" style="background: var(--bg-code); color: var(--text-dim); border: 1px solid var(--border); padding: 0.25rem 0.6rem; font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer; display: none;">&#9632; Stop</button>
-        <span id="init-pak-status" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim); align-self: center;"></span>
-      </div>
-      <div id="init-pak-stage" style="display: none; background: #000; padding: 1rem; margin: 0.5rem 0; text-align: center;">
-        <canvas id="init-pak-stage-canvas" width="320" height="240" style="image-rendering: pixelated; max-width: 100%; background: #000;"></canvas>
-      </div>
-      <div id="init-pak-logos" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start;">
-        <!-- one .logo-card per TIM, injected from JS -->
-      </div>
-    </details>
   </div>
 </section>
 
@@ -672,162 +647,6 @@
       }).join('');
   }
 
-  /* Render the four publisher-logo TIMs from PROT 0895 (init.pak).
-   * Called after load_disc(); returns silently when PROT 0895 isn't
-   * present (raw PROT.DAT without disc walk, single-TIM mode). */
-  function renderInitPakLogos() {
-    const section = document.getElementById('init-pak-section');
-    const host = document.getElementById('init-pak-logos');
-    if (!section || !host || !viewer) return;
-
-    let logos;
-    try {
-      logos = JSON.parse(viewer.init_pak_logos_json());
-    } catch (_) {
-      return;
-    }
-    if (!Array.isArray(logos) || logos.length === 0) {
-      section.style.display = 'none';
-      return;
-    }
-
-    host.innerHTML = '';
-    for (let i = 0; i < logos.length; i++) {
-      const m = logos[i];
-      const card = document.createElement('div');
-      card.className = 'logo-card';
-      card.style.cssText = 'display: flex; flex-direction: column; gap: 0.25rem; align-items: center; font-family: var(--font-mono); font-size: 0.75rem;';
-      const title = document.createElement('div');
-      title.textContent = m.name;
-      title.style.cssText = 'color: var(--text); font-weight: 600;';
-      const sub = document.createElement('div');
-      sub.textContent = `${m.width}x${m.height} ${m.mode === 0 ? '4bpp' : m.mode === 1 ? '8bpp' : m.mode === 2 ? '15bpp' : '24bpp'}`;
-      sub.style.cssText = 'color: var(--text-dim);';
-      const c = document.createElement('canvas');
-      c.width = m.width;
-      c.height = m.height;
-      /* Scale large logos down to fit the row; CSS scales the canvas
-       * up/down independently of its backing-store size. */
-      const maxDisplayWidth = 200;
-      const scale = Math.min(1, maxDisplayWidth / m.width);
-      c.style.cssText = `width: ${Math.round(m.width * scale)}px; height: ${Math.round(m.height * scale)}px; image-rendering: pixelated; border: 1px solid var(--border); background: #000;`;
-
-      const rgba = viewer.init_pak_logo_rgba(i);
-      if (rgba && rgba.length === m.width * m.height * 4) {
-        const ctx = c.getContext('2d');
-        const img = new ImageData(new Uint8ClampedArray(rgba), m.width, m.height);
-        ctx.putImageData(img, 0, 0);
-      } else {
-        const ctx = c.getContext('2d');
-        ctx.fillStyle = '#220'; ctx.fillRect(0, 0, c.width, c.height);
-        ctx.fillStyle = '#f80'; ctx.font = '12px monospace';
-        ctx.fillText('decode failed', 4, 16);
-      }
-
-      card.appendChild(title);
-      card.appendChild(sub);
-      card.appendChild(c);
-      host.appendChild(card);
-    }
-    section.style.display = 'block';
-    section.open = true;
-    wireInitPakPlayback(logos);
-  }
-
-  /* Animated playback that mirrors engine-core::publisher_logos::PublisherLogosSession
-   * timings (FADE_IN=30 / HOLD=90 / FADE_OUT=30 frames @ 60 Hz). Keep these
-   * constants in sync with crates/engine-core/src/publisher_logos.rs. */
-  function wireInitPakPlayback(logos) {
-    const FADE_IN_F  = 30, HOLD_F = 90, FADE_OUT_F = 30;
-    const FRAMES_PER_LOGO = FADE_IN_F + HOLD_F + FADE_OUT_F;
-    const FRAME_MS = 1000 / 60;
-
-    const playBtn = document.getElementById('init-pak-play');
-    const stopBtn = document.getElementById('init-pak-stop');
-    const stage   = document.getElementById('init-pak-stage');
-    const stageCv = document.getElementById('init-pak-stage-canvas');
-    const status  = document.getElementById('init-pak-status');
-    if (!playBtn || !stopBtn || !stage || !stageCv || !status) return;
-
-    /* Pre-decode all logos into off-screen canvases so the animation
-     * loop is just compositing, not decoding. */
-    const cached = logos.map((m, i) => {
-      const off = document.createElement('canvas');
-      off.width = m.width;
-      off.height = m.height;
-      const ctx = off.getContext('2d');
-      const rgba = viewer.init_pak_logo_rgba(i);
-      if (rgba && rgba.length === m.width * m.height * 4) {
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), m.width, m.height), 0, 0);
-      }
-      return { canvas: off, meta: m };
-    });
-
-    let rafId = null;
-    let startTime = 0;
-    let totalFrames = FRAMES_PER_LOGO * cached.length;
-
-    function stopPlayback() {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = null;
-      stage.style.display = 'none';
-      playBtn.style.display = 'inline-block';
-      stopBtn.style.display = 'none';
-      status.textContent = '';
-    }
-
-    function step(ts) {
-      if (!startTime) startTime = ts;
-      const elapsedFrames = (ts - startTime) / FRAME_MS;
-      if (elapsedFrames >= totalFrames) {
-        stopPlayback();
-        return;
-      }
-      const logoIdx  = Math.floor(elapsedFrames / FRAMES_PER_LOGO);
-      const framesIn = elapsedFrames - logoIdx * FRAMES_PER_LOGO;
-      let alpha;
-      let phase;
-      if (framesIn < FADE_IN_F) {
-        alpha = framesIn / FADE_IN_F;
-        phase = 'fade-in';
-      } else if (framesIn < FADE_IN_F + HOLD_F) {
-        alpha = 1.0;
-        phase = 'hold';
-      } else {
-        alpha = 1.0 - (framesIn - FADE_IN_F - HOLD_F) / FADE_OUT_F;
-        phase = 'fade-out';
-      }
-
-      const entry = cached[logoIdx];
-      const ctx   = stageCv.getContext('2d');
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, stageCv.width, stageCv.height);
-
-      /* Centre-fit each logo into the 320x240 stage canvas. */
-      const sw = entry.meta.width, sh = entry.meta.height;
-      const fit = Math.min(stageCv.width / sw, stageCv.height / sh);
-      const dw = Math.round(sw * fit), dh = Math.round(sh * fit);
-      const dx = Math.floor((stageCv.width - dw) / 2);
-      const dy = Math.floor((stageCv.height - dh) / 2);
-      ctx.globalAlpha = alpha;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(entry.canvas, dx, dy, dw, dh);
-      ctx.globalAlpha = 1.0;
-
-      status.textContent = `[${logoIdx + 1}/${cached.length}] ${entry.meta.name} - ${phase}`;
-      rafId = requestAnimationFrame(step);
-    }
-
-    playBtn.onclick = () => {
-      startTime = 0;
-      stage.style.display = 'block';
-      playBtn.style.display = 'none';
-      stopBtn.style.display = 'inline-block';
-      rafId = requestAnimationFrame(step);
-    };
-    stopBtn.onclick = stopPlayback;
-  }
-
   fileInput.addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) {
@@ -892,7 +711,6 @@
         controls.style.display = 'flex';
         status.textContent = `Loaded: ${f.name} - ${count} viewable entries.`;
         refreshInfo();
-        renderInitPakLogos();
       } else {
         status.textContent = `Loaded: ${f.name} - standalone TIM rendered.`;
       }

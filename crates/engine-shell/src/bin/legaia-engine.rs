@@ -3129,42 +3129,77 @@ impl PlayWindowApp {
         Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
     }
 
-    /// Build a single [`legaia_engine_render::SpriteDraw`] that places the
-    /// active publisher logo centred on the surface, scaled with integer
-    /// up-scaling, with the session's current alpha. Returns `None` when
-    /// boot-UI isn't `PublisherLogos` or the atlas wasn't uploaded.
-    fn publisher_logo_sprite_draw(
+    /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
+    /// the active publisher logo.
+    ///
+    /// PROKION and SCEA are stored as vertically-packed sprite atlases
+    /// (see [`legaia_engine_core::publisher_logos::STRIPS_PER_LOGO`]);
+    /// retail unfolds them by drawing the `N` strips side-by-side. We
+    /// compute one [`SpriteDraw`] per strip, all sharing the session's
+    /// current alpha, then integer-scale + centre the unfolded layout.
+    /// Returns an empty vec when boot-UI isn't `PublisherLogos` or the
+    /// atlas wasn't uploaded.
+    fn publisher_logo_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Option<legaia_engine_render::SpriteDraw> {
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
         let BootUiState::PublisherLogos(session) = &self.boot_ui else {
-            return None;
+            return Vec::new();
         };
-        let assets = self.publisher_logos.as_ref()?;
+        let Some(assets) = self.publisher_logos.as_ref() else {
+            return Vec::new();
+        };
         let idx = session.current_logo();
         if idx >= legaia_engine_core::publisher_logos::LOGO_COUNT {
-            return None;
+            return Vec::new();
         }
         let (sx, sy, sw, sh) = assets.rects[idx];
         if sw == 0 || sh == 0 {
-            return None;
+            return Vec::new();
         }
-        // Integer-multiple up-scale that fits inside the surface, then
-        // centre. Caps at 4x to keep logos crisp at typical 960x720.
-        let scale_w = surface_w / sw;
-        let scale_h = surface_h / sh;
+        let (cols, rows) = legaia_engine_core::publisher_logos::STRIP_GRID[idx];
+        let cols = cols.max(1);
+        let rows = rows.max(1);
+        let strips_total = cols * rows;
+        let strip_h_src = sh / strips_total;
+        if strip_h_src == 0 {
+            return Vec::new();
+        }
+        let unfolded_w = sw * cols;
+        let unfolded_h = strip_h_src * rows;
+        // Integer-multiple up-scale that fits inside the surface, capped
+        // at 4× to keep logos crisp at typical 960×720. `max(1)` falls
+        // back to native size (and accepts clipping) for layouts wider
+        // than the surface.
+        let scale_w = surface_w / unfolded_w.max(1);
+        let scale_h = surface_h / unfolded_h.max(1);
         let scale = scale_w.min(scale_h).clamp(1, 4);
-        let dst_w = sw * scale;
-        let dst_h = sh * scale;
-        let dst_x = (surface_w.saturating_sub(dst_w) / 2) as i32;
-        let dst_y = (surface_h.saturating_sub(dst_h) / 2) as i32;
+        let strip_w_dst = sw * scale;
+        let strip_h_dst = strip_h_src * scale;
+        let dst_w_total = unfolded_w * scale;
+        let dst_h_total = unfolded_h * scale;
+        let dst_x0 = (surface_w as i32 - dst_w_total as i32) / 2;
+        let dst_y0 = (surface_h as i32 - dst_h_total as i32) / 2;
         let alpha = session.alpha().clamp(0.0, 1.0);
-        Some(legaia_engine_render::SpriteDraw {
-            dst: (dst_x, dst_y, dst_w, dst_h),
-            src: (sx, sy, sw, sh),
-            color: [1.0, 1.0, 1.0, alpha],
-        })
+        let color = [1.0, 1.0, 1.0, alpha];
+        // Source strips are stored column-major: source strip index
+        // `s = c * rows + r` lands at output (col c, row r).
+        let mut out = Vec::with_capacity(strips_total as usize);
+        for r in 0..rows {
+            for c in 0..cols {
+                let s = c * rows + r;
+                let src_y = sy + s * strip_h_src;
+                let dst_x = dst_x0 + (c * strip_w_dst) as i32;
+                let dst_y = dst_y0 + (r * strip_h_dst) as i32;
+                out.push(legaia_engine_render::SpriteDraw {
+                    dst: (dst_x, dst_y, strip_w_dst, strip_h_dst),
+                    src: (sx, src_y, sw, strip_h_src),
+                    color,
+                });
+            }
+        }
+        out
     }
 
     fn build_hud(&self, _w: u32, _h: u32) -> Vec<TextDraw> {
@@ -3546,37 +3581,50 @@ impl ApplicationHandler for PlayWindowApp {
                     // `.active` and a binding to their freshly uploaded
                     // mesh slot (beyond `scene_tmd_data.len()`) via the
                     // spawn pass above.
+                    //
+                    // Suppress 3D draws while the boot UI is active so the
+                    // last-loaded scene (e.g. a town) doesn't show through
+                    // behind publisher logos / title / save-select.
                     let mut draws: Vec<SceneDraw<'_>> = Vec::new();
-                    for (i, actor) in self.session.host.world.actors.iter().enumerate() {
-                        let Some(tmd_idx) = actor.tmd_binding else {
-                            continue;
-                        };
-                        let mesh = posed_overrides
-                            .get(tmd_idx)
-                            .and_then(|o| o.as_ref())
-                            .or_else(|| self.meshes.get(tmd_idx));
-                        if let Some(mesh) = mesh {
-                            draws.push(SceneDraw {
-                                mesh,
-                                mvp: cam * self.actor_model(i),
-                            });
+                    if !self.boot_ui.is_active() {
+                        for (i, actor) in self.session.host.world.actors.iter().enumerate() {
+                            let Some(tmd_idx) = actor.tmd_binding else {
+                                continue;
+                            };
+                            let mesh = posed_overrides
+                                .get(tmd_idx)
+                                .and_then(|o| o.as_ref())
+                                .or_else(|| self.meshes.get(tmd_idx));
+                            if let Some(mesh) = mesh {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * self.actor_model(i),
+                                });
+                            }
                         }
                     }
                     let hud = self.build_hud(w, h);
                     let overlay = TextOverlay { atlas, draws: &hud };
 
                     // Publisher-logos overlay: emitted only during the
-                    // PublisherLogos boot phase. The single sprite is
-                    // sampled against the pre-uploaded atlas.
-                    let logo_draw_vec = self
-                        .publisher_logo_sprite_draw(w, h)
-                        .map(|d| [d])
-                        .map(|arr| arr.to_vec())
-                        .unwrap_or_default();
+                    // PublisherLogos boot phase. PROKION/SCEA are
+                    // vertically-packed sprite atlases — `publisher_logo_sprite_draws`
+                    // unfolds them into N side-by-side strips. Contrail
+                    // and WARNING produce a single quad.
+                    let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
                     let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                         atlas: &p.atlas,
                         draws: &logo_draw_vec,
                     });
+
+                    // Force a pure-black background during boot UI so the
+                    // logos / title / save-select panels read on PSX-style
+                    // black instead of the default dark-blue clear.
+                    let scene_clear = if self.boot_ui.is_active() {
+                        Some([0.0, 0.0, 0.0, 1.0])
+                    } else {
+                        None
+                    };
 
                     let scene = RenderScene {
                         vram,
@@ -3588,6 +3636,7 @@ impl ApplicationHandler for PlayWindowApp {
                             None
                         },
                         overlay_text: Some(&overlay),
+                        clear_color: scene_clear,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                         log::error!("render: {e:#}");

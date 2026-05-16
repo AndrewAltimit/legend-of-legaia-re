@@ -19,6 +19,27 @@ const FRAMES_PER_LOGO: u16 = FADE_IN_FRAMES + HOLD_FRAMES + FADE_OUT_FRAMES;
 /// Total number of publisher logos shown during boot.
 pub const LOGO_COUNT: usize = 4;
 
+/// Per-logo `(cols, rows)` grid that describes how each TIM is sliced
+/// into strips for on-screen layout.
+///
+/// PROKION (176×256) and SCEA (256×128) are stored as vertically-packed
+/// sprite atlases in VRAM — retail boot draws `cols * rows` GPU quads
+/// to unfold them. Source strips are stored in **column-major** order
+/// (top to bottom in the bitmap = column 0 top to column 0 bottom, then
+/// column 1 top to column 1 bottom, …); the output grid is row-major.
+///
+/// Without unfolding, blitting the whole TIM as one quad shows the
+/// packed layout (e.g. PROKION as `PROK` over `KION` instead of
+/// `PROK ☉ KION` side-by-side; SCEA as 4 rows of wrapped text instead
+/// of a 2-line "Sony Computer Entertainment America / Presents" splash).
+///
+/// Indexed by logo order `[PROKION, Contrail, SCEA, WARNING]`:
+/// - PROKION:  2 cols × 1 row  → 2 strips of 176×128, unfolds to 352×128
+/// - Contrail: 1 col  × 1 row  → full TIM, no slicing
+/// - SCEA:     2 cols × 2 rows → 4 strips of 256×32, unfolds to 512×64
+/// - WARNING:  1 col  × 1 row  → full TIM, no slicing
+pub const STRIP_GRID: [(u32, u32); LOGO_COUNT] = [(2, 1), (1, 1), (2, 2), (1, 1)];
+
 /// One logo's atlas placement: source rect `(x, y, w, h)` in atlas
 /// pixels.
 pub type LogoRect = (u32, u32, u32, u32);
