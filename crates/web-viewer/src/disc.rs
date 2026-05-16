@@ -198,6 +198,15 @@ pub fn parse_prot_toc(buf: &[u8]) -> Option<Vec<EntryMeta>> {
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
         .collect();
 
+    // Mirror crates/prot::archive size math: max(indexed_size, footprint).
+    // The indexed formula `toc[p+5] - toc[p+3] + 4` gives the TOC-declared
+    // payload; the footprint `toc[p+3] - toc[p+2]` gives the full on-disc
+    // span between this entry and the next. The boot loader sometimes reads
+    // past the indexed end into trailing-overlay content (e.g. PROT 899's
+    // trailing 60 sectors are the title-screen overlay code; see
+    // docs/subsystems/boot.md). Honor the larger of the two so the WASM
+    // disc browser sees the same bytes the SCUS loader sees.
+    const MAX_FOOTPRINT_SECTORS: u32 = 64 * 1024;
     let count = file_num.saturating_sub(1) as usize;
     let mut entries = Vec::with_capacity(count);
     for p in 0..count {
@@ -205,7 +214,15 @@ pub fn parse_prot_toc(buf: &[u8]) -> Option<Vec<EntryMeta>> {
             break;
         }
         let start_lba = toc[p + 2];
-        let size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
+        let indexed_size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
+        let footprint_sectors = toc[p + 3].wrapping_sub(start_lba);
+        let size_sectors = if footprint_sectors <= MAX_FOOTPRINT_SECTORS
+            && footprint_sectors > indexed_size_sectors
+        {
+            footprint_sectors
+        } else {
+            indexed_size_sectors
+        };
         let byte_offset = (start_lba as u64) * (SECTOR as u64);
         let size_bytes = (size_sectors as u64) * (SECTOR as u64);
         if byte_offset.saturating_add(size_bytes) > buf.len() as u64

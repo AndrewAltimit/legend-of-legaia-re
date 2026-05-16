@@ -35,6 +35,7 @@ pub mod scene_vab_stream;
 pub mod stage_geom;
 pub mod str_fmv_table;
 pub mod tim_scan;
+pub mod title_pak;
 pub mod tmd_scan;
 pub mod tmd_size_prefix;
 pub mod vab_multi_bank;

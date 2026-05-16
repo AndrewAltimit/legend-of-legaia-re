@@ -109,6 +109,13 @@ impl ProtIndex {
 
     /// Read entry bytes (lazy + cached). Returns the same `Arc` for repeated
     /// reads of the same index.
+    ///
+    /// Returns the **TOC-indexed sub-region** (the historical
+    /// `toc[p+5] - toc[p+3] + 4` slice). Scene-side parsers were designed for
+    /// indexed bytes only — trailing-overlay sectors that some entries carry
+    /// are not scene-asset data (they're MIPS overlay code; see boot.md).
+    /// Callers that want the full on-disc footprint should use
+    /// [`Self::entry_bytes_extended`].
     pub fn entry_bytes(&self, idx: u32) -> Result<Arc<Vec<u8>>> {
         if let Some(b) = self.entry_cache.lock().unwrap().get(&idx).cloned() {
             return Ok(b);
@@ -122,11 +129,32 @@ impl ProtIndex {
         self.archive
             .lock()
             .unwrap()
-            .read_entry(&entry, &mut bytes)
+            .read_entry_indexed(&entry, &mut bytes)
             .with_context(|| format!("read PROT entry {}", idx))?;
         let arc = Arc::new(bytes);
         self.entry_cache.lock().unwrap().insert(idx, arc.clone());
         Ok(arc)
+    }
+
+    /// Read an entry's full on-disc footprint (indexed payload + any
+    /// trailing-overlay sectors). Use this when you want what the SCUS boot
+    /// loader actually reads — e.g. the title-screen overlay code lives in
+    /// the trailing sectors past PROT 899's indexed end (see boot.md).
+    /// Bypasses the indexed-only cache; callers expecting a single byte
+    /// view of an entry should keep using [`Self::entry_bytes`].
+    pub fn entry_bytes_extended(&self, idx: u32) -> Result<Vec<u8>> {
+        let entry = self
+            .entries
+            .get(idx as usize)
+            .ok_or_else(|| anyhow::anyhow!("PROT index {} out of range", idx))?
+            .clone();
+        let mut bytes = Vec::new();
+        self.archive
+            .lock()
+            .unwrap()
+            .read_entry(&entry, &mut bytes)
+            .with_context(|| format!("read PROT entry {} (extended)", idx))?;
+        Ok(bytes)
     }
 
     /// Detected class of an entry (lazy + cached).

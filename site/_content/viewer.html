@@ -217,7 +217,7 @@
   <p>When you load a full disc, the WASM module:</p>
   <ol>
     <li>Walks ISO9660 to find <code>PROT.DAT</code></li>
-    <li>Parses the PROT TOC to locate all 1232 entries</li>
+    <li>Parses the PROT TOC to locate all 1232 entries (each entry's full on-disc footprint, including any trailing-overlay sectors past the TOC-indexed end — see <a href="formats/prot.html">PROT TOC</a>)</li>
     <li>Classifies each entry through the same detector chain the native pipeline uses (<code>tim_passthrough</code>, <code>tim_pack</code>, <code>data_field_streaming</code>, <code>scene_tmd_stream</code>, <code>field_pack</code>, <code>effect_bundle</code>, etc.)</li>
     <li>Runs <code>tim_scan</code> against each entry - including LZS decompression - and keeps only the entries with at least one decodable PSX TIM</li>
     <li>Builds the filtered sidebar list, grouped by classification</li>

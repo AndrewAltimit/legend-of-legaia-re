@@ -1965,6 +1965,18 @@ struct PublisherLogosAssets {
     atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
+/// Pre-decoded title-screen atlas + GPU upload. Created once at boot
+/// when the disc has a valid PROT 0888 (`sound_data2` per CDNAME,
+/// carries title art - see `legaia_asset::title_pak`); reused by
+/// [`BootUiState::Title`] to blit one quad per frame.
+struct TitleScreenAssets {
+    /// Source rect to sample for the title quad
+    /// (`(0, 0, width, height)` for the single-TIM layout).
+    rect: (u32, u32, u32, u32),
+    /// GPU-resident sprite atlas (the 256×256 title TIM).
+    atlas: legaia_engine_render::UploadedSpriteAtlas,
+}
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -1980,6 +1992,12 @@ struct PlayWindowApp {
     /// CPU-side atlas data waiting for renderer upload. Moved into
     /// `publisher_logos` on the first frame the renderer is available.
     pending_publisher_logos_atlas: Option<legaia_engine_core::publisher_logos::LogosAtlas>,
+    /// Title-screen atlas (built once from PROT 0888). `None` if the
+    /// disc isn't loaded or the title TIM doesn't parse.
+    title_screen: Option<TitleScreenAssets>,
+    /// CPU-side title atlas waiting for renderer upload. Moved into
+    /// `title_screen` on the first frame the renderer is available.
+    pending_title_screen_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
@@ -3072,6 +3090,26 @@ impl PlayWindowApp {
                 Err(e) => log::warn!("publisher-logos atlas upload skipped: {e:#}"),
             }
         }
+        // Upload the title-screen atlas the same way.
+        if let (Some(atlas_data), Some(r)) = (
+            self.pending_title_screen_atlas.take(),
+            self.win.renderer.as_ref(),
+        ) {
+            match r.upload_sprite_atlas(&atlas_data.rgba, atlas_data.width, atlas_data.height) {
+                Ok(atlas) => {
+                    log::info!(
+                        "play-window: title-screen atlas uploaded ({}x{})",
+                        atlas_data.width,
+                        atlas_data.height
+                    );
+                    self.title_screen = Some(TitleScreenAssets {
+                        rect: atlas_data.rect,
+                        atlas,
+                    });
+                }
+                Err(e) => log::warn!("title-screen atlas upload skipped: {e:#}"),
+            }
+        }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
@@ -3200,6 +3238,58 @@ impl PlayWindowApp {
             }
         }
         out
+    }
+
+    /// Build the [`legaia_engine_render::SpriteDraw`] list for the
+    /// title-screen quad. Renders one centred + integer-scaled copy of
+    /// the PROT 0888 title TIM. Returns an empty vec when boot-UI
+    /// isn't `Title`, the atlas wasn't uploaded, or the title session
+    /// has reached [`legaia_engine_core::title::TitlePhase::Done`].
+    fn title_screen_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let BootUiState::Title(session) = &self.boot_ui else {
+            return Vec::new();
+        };
+        if matches!(
+            session.phase(),
+            legaia_engine_core::title::TitlePhase::Done(_)
+        ) {
+            return Vec::new();
+        }
+        let Some(assets) = self.title_screen.as_ref() else {
+            return Vec::new();
+        };
+        let (sx, sy, sw, sh) = assets.rect;
+        if sw == 0 || sh == 0 {
+            return Vec::new();
+        }
+        // Integer-multiple up-scale that fits inside the surface,
+        // matching the publisher-logos cap so the title art reads at
+        // the same scale boundary.
+        let scale_w = surface_w / sw.max(1);
+        let scale_h = surface_h / sh.max(1);
+        let scale = scale_w.min(scale_h).clamp(1, 4);
+        let dst_w = sw * scale;
+        let dst_h = sh * scale;
+        let dst_x = (surface_w as i32 - dst_w as i32) / 2;
+        let dst_y = (surface_h as i32 - dst_h as i32) / 2;
+        // Fade-in alpha matches the title-session FadeIn phase so the
+        // bitmap eases up alongside the existing text overlay.
+        let alpha = match session.phase() {
+            legaia_engine_core::title::TitlePhase::FadeIn { frames_remaining } => {
+                let total = session.fade_in_frames.max(1) as f32;
+                1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
+            }
+            _ => 1.0,
+        };
+        vec![legaia_engine_render::SpriteDraw {
+            dst: (dst_x, dst_y, dst_w, dst_h),
+            src: (sx, sy, sw, sh),
+            color: [1.0, 1.0, 1.0, alpha],
+        }]
     }
 
     fn build_hud(&self, _w: u32, _h: u32) -> Vec<TextDraw> {
@@ -3606,15 +3696,22 @@ impl ApplicationHandler for PlayWindowApp {
                     let hud = self.build_hud(w, h);
                     let overlay = TextOverlay { atlas, draws: &hud };
 
-                    // Publisher-logos overlay: emitted only during the
-                    // PublisherLogos boot phase. PROKION/SCEA are
-                    // vertically-packed sprite atlases — `publisher_logo_sprite_draws`
-                    // unfolds them into N side-by-side strips. Contrail
-                    // and WARNING produce a single quad.
+                    // Boot-phase sprite overlay: alternates between the
+                    // publisher-logos atlas (during PublisherLogos) and
+                    // the title-screen atlas (during Title). PROKION/SCEA
+                    // are vertically-packed sprite atlases —
+                    // `publisher_logo_sprite_draws` unfolds them into N
+                    // side-by-side strips; Contrail/WARNING + the title
+                    // TIM produce a single quad each.
                     let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
+                    let title_draw_vec = self.title_screen_sprite_draws(w, h);
                     let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                         atlas: &p.atlas,
                         draws: &logo_draw_vec,
+                    });
+                    let title_overlay = self.title_screen.as_ref().map(|t| TextOverlay {
+                        atlas: &t.atlas,
+                        draws: &title_draw_vec,
                     });
 
                     // Force a pure-black background during boot UI so the
@@ -3632,6 +3729,8 @@ impl ApplicationHandler for PlayWindowApp {
                         overlay_lines: None,
                         overlay_sprites: if !logo_draw_vec.is_empty() {
                             logo_overlay.as_ref()
+                        } else if !title_draw_vec.is_empty() {
+                            title_overlay.as_ref()
                         } else {
                             None
                         },
@@ -3916,6 +4015,38 @@ fn cmd_play_window(
         }
     };
 
+    // Try to decode the title-screen TIM from PROT 0888 (`sound_data2`
+    // per CDNAME, actually carries title art) up front. Falls back
+    // silently when the disc isn't loaded or the entry doesn't parse -
+    // retail discs always have it.
+    let title_screen_atlas_data = match session
+        .host
+        .index
+        .entry_bytes(legaia_asset::title_pak::PROT_INDEX_PRIMARY as u32)
+    {
+        Ok(b) => match legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888(
+            &b,
+            legaia_asset::title_pak::TITLE_TIM_OFFSET,
+        ) {
+            Ok(a) => {
+                log::info!(
+                    "play-window: title-screen atlas built ({}x{})",
+                    a.width,
+                    a.height
+                );
+                Some(a)
+            }
+            Err(e) => {
+                log::warn!("play-window: title-screen build failed: {e:#}");
+                None
+            }
+        },
+        Err(e) => {
+            log::warn!("play-window: PROT 0888 read failed: {e:#}");
+            None
+        }
+    };
+
     let initial_boot_ui = if boot_ui {
         if publisher_logos_atlas_data.is_some() {
             BootUiState::PublisherLogos(
@@ -3941,6 +4072,8 @@ fn cmd_play_window(
         font_atlas: None,
         publisher_logos: None,
         pending_publisher_logos_atlas: publisher_logos_atlas_data,
+        title_screen: None,
+        pending_title_screen_atlas: title_screen_atlas_data,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),

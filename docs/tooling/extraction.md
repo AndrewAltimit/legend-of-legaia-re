@@ -19,7 +19,10 @@ extracted/
 ├── PROT.DAT                       - raw archive copy
 ├── CDNAME.TXT                     - entry name map
 ├── SCUS_942.54                    - executable
-├── PROT/                          - per-PROT-entry files (1232 entries, named via CDNAME)
+├── PROT/                          - per-PROT-entry files (1232 entries, named via CDNAME).
+│                                     Includes trailing-overlay sectors for entries
+│                                     whose on-disc footprint extends past their
+│                                     TOC-indexed end (see formats/prot.md).
 │   ├── categorize.json            - per-class breakdown
 │   └── ####_<name>.BIN
 ├── streaming/                     - DATA_FIELD streaming sub-assets
@@ -47,7 +50,7 @@ Walks ISO9660 and writes every file. See [disc + ISO9660](../formats/disc.md).
 prot-extract --in extracted/PROT.DAT --cdname extracted/CDNAME.TXT --out extracted/PROT/
 ```
 
-Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. See [PROT TOC](../formats/prot.md).
+Splits PROT.DAT into 1232 numbered entries with CDNAME-derived filenames. Each extracted file's size is the entry's full on-disc footprint — `max(indexed_size, next_start - this_start)` — so trailing-overlay sectors past the TOC-indexed end (e.g. PROT 899's title-screen overlay code) are visible. See [PROT TOC](../formats/prot.md).
 
 ### LZS decode (`lzs-decode`)
 

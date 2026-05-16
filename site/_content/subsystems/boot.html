@@ -92,6 +92,24 @@
   <p>The exact on-screen layout retail uses still has to be RE'd from the unlocated <a href="#title-overlay-state">title-overlay tick body</a> &mdash; the <code>STRIP_GRID</code> constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.</p>
 </section>
 
+<section class="doc-section" id="title-overlay-source">
+  <h2>Title-overlay source on disc</h2>
+  <p>The title-overlay code (function <code>FUN_801DD35C</code> at <code>0x801DD35C</code>, the captured <code>overlay_title.bin</code> 256-KiB window) lives in an <strong>unindexed 60-sector gap inside <code>PROT.DAT</code></strong> between TOC entries 899 and 900. The per-entry extractor's size formula stops at each TOC entry's claimed end, so the gap bytes never landed in <code>extracted/PROT/</code> until the extractor was extended with the <code>max(indexed, footprint)</code> rule. The gap is now surfaced as the trailing portion of <code>extracted/PROT/0899_xxx_dat.BIN</code>.</p>
+  <table>
+    <thead><tr><th>Range (PROT.DAT)</th><th>Sectors</th><th>Bytes</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x5C3D800..0x5C44800</code></td><td>47227..47241</td><td>28&nbsp;672</td><td>PROT 899 indexed payload (options menu)</td></tr>
+      <tr><td><code>0x5C44800..0x5C62800</code></td><td>47241..47301</td><td><strong>122&nbsp;880</strong></td><td><strong>Unindexed gap = title overlay code</strong></td></tr>
+      <tr><td><code>0x5C62800..0x5C67800</code></td><td>47301..47311</td><td>20&nbsp;480</td><td>PROT 900 indexed payload</td></tr>
+    </tbody>
+  </table>
+  <p>The title-tick body (<code>FUN_801DD35C</code>) source is at <code>PROT.DAT</code> offset <code>0x5C4C344</code> (gap-relative <code>+0x7B44</code>, sector +15 within the gap).</p>
+  <h3>How the load happens</h3>
+  <p>The SCUS boot sequence issues a multi-sector <code>ReadN</code> starting at PROT 899's LBA (47227) and reads ~74 sectors of contiguous on-disc data &mdash; crossing PROT 899's TOC-claimed end (47241) into the unindexed gap. The CD-DMA primitive (<code>FUN_8005D9A0</code>) breaks the read into 5 sequential DMA bursts, each landing into a different point in the overlay window (capture: <code>scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua</code> with <code>LEGAIA_NO_SSTATE=1</code>). PCSX-Redux Write breakpoints catch DMA writes from CD-DMA-channel-3.</p>
+  <h3>Why the TOC misses it</h3>
+  <p>The historical per-entry size formula <code>size_sectors = toc[p+5] - toc[p+3] + 4</code> gives 14 sectors for PROT 899, but the on-disc contiguous range to PROT 900's LBA is 74 sectors. The formula appears to describe an "indexed" subset of each entry's disc footprint, with trailing unindexed bytes carrying overlay code the SCUS loader reads via an explicit larger sector count. The extractor now honors <code>max(indexed_size_sectors, footprint_sectors)</code> &mdash; see <a href="../formats/prot.html">PROT TOC</a>.</p>
+</section>
+
 <section class="doc-section" id="title-overlay-state">
   <h2>Title-screen overlay state</h2>
   <p>The title-screen overlay loads into <code>0x801E0000+</code> during the boot sequence and keeps its mode state in a struct at <code>0x801EF018</code>. Known fields:</p>
@@ -116,6 +134,29 @@ bgez  v0, 0x801dfc3c    ; if signed &gt;= 0, branch to "still counting"
 _sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
 </code></pre>
   <p>The "still counting" path branches to <code>0x801DFC3C</code> (the normal per-frame attract loop: rendering, input, cursor logic). The "underflow" path falls through past <code>0x801DDCCC</code> into a block that prepares draw primitives via <code>0x80058490</code> and writes the master game-mode index <code>_DAT_8007B83C = 0x1A</code>, zeroing <code>_DAT_8007BA78</code> (FMV id slot) &rarr; <code>MV1.STR</code>.</p>
+  <h3>Sub-mode dispatcher</h3>
+  <p>The first ~250 instructions of <code>FUN_801DD35C</code> fan out via a 25-entry jump table at <code>0x801CF244</code> keyed on <code>state[+0x204]</code>. The JT, the state-struct field offsets, and the observed <code>state[+0x204] = N</code> transitions are pinned in <code>legaia_engine_vm::title_overlay</code>. Four modes are semantically labelled (<code>Init</code>, <code>Idle</code>, <code>AttractIdle</code>, <code>AttractDelay</code>); the other 21 carry <code>Phase0xNN</code> placeholders with traced-transition docstrings.</p>
+  <p>Standout pin: <strong><code>Phase06</code> writes <code>_DAT_8007B83C = 0x02</code> at <code>0x801DFC00</code></strong> &mdash; the title-screen &rarr; main-game master-mode transition, exported as <code>MASTER_GAME_MODE_FIELD_LAUNCH</code> + <code>PHASE06_LAUNCH_GAME_PC</code>. Engine-side observers can detect the launch by watching that single write site.</p>
+  <h3>Sprite-emit helpers</h3>
+  <p>The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in <code>legaia_engine_vm::title_prim</code>:</p>
+  <ul class="bullets">
+    <li><code>FUN_80058298</code> (<code>ClearImage</code> rect-fill queue, 37 instructions) &rarr; <code>exec_clear_image(host, rect, r, g, b)</code>.</li>
+    <li><code>FUN_80058490</code> (<code>MoveImage</code> VRAM-copy queue, 49 instructions) &rarr; <code>exec_move_image(host, src, dst_x, dst_y)</code> with early-out on zero extent.</li>
+    <li><code>FUN_800198E0</code> (sprite-descriptor dispatcher, 146 instructions) &rarr; <code>exec_sprite_descriptor(host, &amp;SpriteDescriptor)</code> with full tag-<code>0x11</code> + complex variant routing (alpha-OR pre-pass under <code>flags &amp; 8</code>, four width-divisor variants from <code>flags &amp; 3</code>).</li>
+  </ul>
+  <p><code>SpriteDescriptor { tag, flags, rect, pixel_data_ptr }</code> + <code>Rect12 { x, y, w, h }</code> capture the wire shapes. The <code>PrimHost</code> trait abstracts the four engine-side callbacks. Overlay-side helpers (<code>FUN_801E1C1C</code> / <code>FUN_801E373C</code> / <code>FUN_801E3EE0</code> / <code>FUN_801E36C4</code>, shared across menu / battle / shop / save UI overlays) are deferred to their own port.</p>
+  <h3>Title TIM source pinned</h3>
+  <p>The <strong>main title-screen art</strong> (Legend of Legaia wordmark, orb, "PRESS START BUTTON", "NEW GAME" / "CONTINUE" menu, copyrights) is sourced from <strong>PROT 0888</strong> (CDNAME label <code>sound_data2</code>; the multi-bank sound-data cluster carries title art in the trailing pool past the audio payload). Multi-bank duplicates live in PROT 0889 and 0890:</p>
+  <table>
+    <thead><tr><th>PROT entry</th><th>File offset</th><th>Size</th><th>Format</th></tr></thead>
+    <tbody>
+      <tr><td><code>0888_sound_data2.BIN</code></td><td><code>0x1AA28</code></td><td>66 080 bytes</td><td>256&times;256 8bpp + 256-colour CLUT (PRIMARY)</td></tr>
+      <tr><td><code>0889_sound_data2.BIN</code></td><td><code>0x19A28</code></td><td>66 080 bytes</td><td>same content (multi-bank duplicate)</td></tr>
+      <tr><td><code>0890_sound_data2.BIN</code></td><td><code>0x14228</code></td><td>66 080 bytes</td><td>same content (multi-bank duplicate)</td></tr>
+    </tbody>
+  </table>
+  <p>Pinned by capturing main RAM at the live title screen, TIM-magic-scanning the dump, and byte-grepping the in-RAM copy (at vaddr <code>0x80170DF8</code>) against the extracted PROT corpus. Reusable scanner at <code>scripts/scan_tims_and_match_prot.py</code>. Typed parser at <code>legaia_asset::title_pak::extract_title_tim</code>; an engine-side RGBA decoder lives at <code>legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888</code>. The <code>play-window --boot-ui</code> binary uploads the atlas and blits one centred + integer-scaled quad during <code>BootUiState::Title</code>.</p>
+  <p>Two more title-related TIMs live <em>embedded inside the title overlay's data segment</em> (the trailing-gap portion of PROT 899) at the addresses the tick body's <code>FUN_800198E0</code> calls reference: <code>0x801E5120</code> &rarr; <code>extracted/PROT/0899_xxx_dat.BIN @ 0x16908</code> (save-menu UI atlas) and <code>0x801EE120</code> &rarr; <code>0x1F908</code> (animated PSX memcard icon strip, 14 frames). The mismatch between the debug-print path <code>h:\prot\field\title\title.pak</code> in <code>init.pak</code>'s string pool and the actual on-disc location (PROT 0888) is the same pattern as <code>bat_back_dat</code> labelling <code>init.pak</code> &mdash; <strong>CDNAME labels are misleading for several entries</strong>; always cross-validate against the loader-call constant or the file's magic bytes.</p>
   <p>A <strong>town/field subsystem</strong> uses a separate format-string pool at <code>0x80011079..0x80011109</code> (<code>"    town "</code>, <code>"mode %d"</code>, <code>"    baria mode "</code>, <code>"    walking set"</code>, <code>"end of mes works set"</code>, <code>"open port.dat"</code>, <code>"nt_group_table %x"</code>). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded &mdash; i.e. the "mode 17 / mode 16" runtime printfs are <em>town-subsystem</em> mode transitions, not the master 28-mode state-machine index.</p>
 </section>
 

@@ -21,84 +21,73 @@ use legaia_prot::archive::Archive;
 /// Total entries we expect from PROT.DAT.
 const EXPECTED_PROT_ENTRIES: usize = 1232;
 
-/// Class breakdown from `categorize::classify` over every PROT entry.
-/// Order doesn't matter - the test asserts each `(class_name, count)` pair.
+/// Class breakdown from `categorize::classify` over every PROT entry's
+/// **full on-disc footprint** (indexed payload + any trailing-overlay
+/// sectors the boot loader reads past the TOC-indexed end — see
+/// `docs/subsystems/boot.md`). Order doesn't matter; the test asserts each
+/// `(class_name, count)` pair.
 ///
-/// Re-pinned 2026-05 after the prot crate's TOC math fix. Earlier values
-/// (effect_bundle=503, field_pack=124, stage_geometry=561, etc.) were all
-/// artifacts of misextraction; ~80% of the previous classifications saw
-/// duplicate bytes due to `start_lba = toc[p+5] - toc[p+2]` reading the
-/// wrong offset. Corrected math (`start_lba = toc[p+2]`) yields the values
-/// below, which pass the runtime cross-check (entries 873/871/872/877/888/891
-/// byte-match the live battle save's loaded buffers).
+/// Re-pinned after the prot crate's `size_sectors = max(indexed, footprint)`
+/// fix that surfaces trailing-overlay content (e.g. PROT 899's trailing
+/// 60 sectors are the title-screen overlay code). Many entries shifted
+/// class as their trailing sectors changed the byte histogram or extended
+/// the data-shape past the previous detector boundaries.
 const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
-    ("all_zeros", 1),
     // `battle_data_pack` claims PROT 0865 (`battle_data` block) plus the
     // 0863 `edstati3` entry that shares the same trailer-table shape.
-    // Both used to fall through to `lzs_container` because the trailer
-    // happens to satisfy a player.lzs-style descriptor walk.
-    ("battle_data_pack", 2),
-    ("data_field_streaming", 26),
-    ("data_field_truncated", 4),
-    ("effect_bundle", 1),
+    // Also picks up one entry with a trailing-overlay tail that completes
+    // the pack-shape detector (3 entries total now).
+    ("battle_data_pack", 3),
+    ("data_field_streaming", 34),
     ("field_pack", 2),
-    // `lzs_container` ticked 42 → 40 once `battle_data_pack` claimed the
-    // two pack-shaped entries that opportunistically satisfied the
-    // weaker LZS-descriptor heuristic.
-    ("lzs_container", 40),
+    // `lzs_container` 40 → 42 as two entries with trailing-overlay tails
+    // newly satisfy the LZS-descriptor heuristic.
+    ("lzs_container", 42),
     ("mips_overlay", 22),
-    // `monster_sound_bank` matches `h:\mpack\monster.snd` (`[u32 format=2]
-    // [u16 spu_addrs[256]][ADPCM]`, every slot bit-15 set). One PROT entry.
     ("monster_sound_bank", 1),
-    // `mostly_zeros` jumped after the working categorize pipeline tightened
-    // its mid-entropy bucket: zero-padded fillers that previously fell into
-    // `unknown_low_entropy` now collapse to `mostly_zeros` once the leading
-    // sectors of zeros dominate the byte histogram.
-    ("mostly_zeros", 101),
-    // `overlay_data_blob` covers mid-entropy data with >= 18 % printable
-    // ASCII - overlay string tables and mixed-text dumps with no clearer
-    // signal. Drains the stragglers that used to live in `unknown_other`.
+    // `mostly_zeros` dropped (101 → 70) because many zero-padded entries
+    // gained non-zero trailing-overlay content that shifts them out of the
+    // dominant-zero bucket.
+    ("mostly_zeros", 70),
+    // `overlay_data_blob` (27 → 27 — unchanged; trailing-overlay bytes are
+    // mostly code or already-classified data, not the mixed-text shape).
     ("overlay_data_blob", 27),
     ("overlay_ptr_table", 42),
     ("pochi_filler", 265),
     ("scene_asset_table", 80),
-    ("scene_tmd_stream", 148),
+    // `scene_tmd_stream` jumped (148 → 182) as 34 entries' trailing-overlay
+    // bytes happened to fit the streaming-with-bare-TMD shape.
+    ("scene_tmd_stream", 182),
     ("scene_vab_stream", 217),
     ("scene_v12_table", 97),
     ("scene_scripted_asset_table", 79),
-    // `scene_event_scripts` ticked 20 → 21 after a tighter prescript opener
-    // gate caught one more borderline scene whose body is field-VM bytecode
-    // without a trailing canonical asset table.
     ("scene_event_scripts", 21),
     ("tim_pack", 7),
-    ("tmd_size_prefix", 34),
-    // `vab_multi_bank` is the level_up multi-bank archive (`[u32 reserved=0]
-    // [u32 count][u32 sector_nums[count]]` with VABp at `sector_nums[0] *
-    // 0x800 + 4`). One PROT entry.
+    // `vab_multi_bank` matches the level_up multi-bank archive. One PROT entry.
     ("vab_multi_bank", 1),
-    // `zero_sector_high_entropy` covers files with >= 2 sectors of leading
-    // zeros followed by a high-entropy body - characteristic of cutscene /
-    // XA audio fragments. Four PROT entries.
+    // `zero_sector_high_entropy` covers files with leading zeros + high-
+    // entropy body. Four PROT entries.
     ("zero_sector_high_entropy", 4),
-    // Residual buckets after every newer detector has had a pass.
-    // `unknown_high_entropy` dropped after `overlay_data_blob` /
-    // `zero_sector_high_entropy` claimed the readable / zero-led entries.
-    ("unknown_high_entropy", 7),
-    // `unknown_other` collapsed to 3: every other entry now lands in a
-    // named class, with the residue being the few that don't match anything.
-    ("unknown_other", 3),
+    // Residual buckets. Trailing-overlay MIPS code doesn't fit any PROT-
+    // format detector, so some entries land here (~8.4 MiB total
+    // unclassified by extended coverage, vs 1.9 MiB by indexed coverage —
+    // see categorize_coverage.rs for the split).
+    ("unknown_high_entropy", 1),
+    ("unknown_low_entropy", 29),
+    ("unknown_other", 6),
 ];
 
 /// Number of PROT entries that pass the strict streaming-format filter
-/// (terminator + ≥2 chunks + all known types + magic OK).
-const EXPECTED_STREAM_HITS: usize = 26;
+/// (terminator + ≥2 chunks + all known types + magic OK). Bumped from 26
+/// → 34 after the size-math fix surfaced 8 entries whose trailing-overlay
+/// bytes complete a streaming-format suffix.
+const EXPECTED_STREAM_HITS: usize = 34;
 
-/// Total sub-assets across all streaming hits, counting both singles
-/// (TIM 0x00 / TMD2 0x09 / MOVE2 0x0B → 1 each) and packs (TimList 0x01
-/// / Tmd 0x02 → expanded via pack walker). Post-fix the 26 hits are all
-/// in the `_other5` cluster and consist of single-asset chunks: 16 TIM +
-/// 19 TMD2 + 14 MOVE2 = 49.
-const EXPECTED_TOTAL_SUBASSETS: usize = 49;
+/// Total sub-assets across all streaming hits. Jumped from 49 → 583 after
+/// the size-math fix: the 8 new streaming hits include TimList/Tmd PACK
+/// chunks (not just single-asset chunks), and the pack walkers expand each
+/// into multiple sub-assets.
+const EXPECTED_TOTAL_SUBASSETS: usize = 583;
 
 /// One pinned PROT entry's size, used as a quick sanity check that the TOC
 /// math hasn't drifted.
@@ -106,8 +95,11 @@ const PINNED_ENTRY: (u32, u64) = (148, 172_032); // entry 148 = retock
 
 /// Number of PROT entries that strict-validate as real LZS containers
 /// (the strict check requires no section-input-overrun and a minimum decoded
-/// total of [`MIN_REAL_DECODE_BYTES`]).
-const EXPECTED_LZS_CONTAINERS_STRICT: usize = 33;
+/// total of [`MIN_REAL_DECODE_BYTES`]). Jumped from 33 → 113 after the
+/// size-math fix: many entries' trailing-overlay tails extend the LZS-
+/// descriptor walk past its previous truncation point, satisfying the
+/// strict decode check.
+const EXPECTED_LZS_CONTAINERS_STRICT: usize = 113;
 
 /// Constant matching `lzs-decode`'s MIN_REAL_DECODE_BYTES - kept in sync
 /// to prove the validation suite checks the same thing the audit tool does.
