@@ -39,9 +39,9 @@
 <tbody>
 <tr>
 <td>Title screen</td>
-<td>✓ (loaded at boot, in SCUS-range)</td>
-<td>- (in SCUS address range)</td>
-<td>Actor / sprite VM (<code>FUN_801D6628</code>)</td>
+<td>✓</td>
+<td><code>overlay_title.bin</code></td>
+<td>Actor / sprite VM (<code>FUN_801D6628</code>); title-overlay tick <code>FUN_801DD35C</code> (pinned via watchpoint on the title-attract countdown at <code>0x801EF16C</code> &mdash; decrement instruction at <code>0x801DDCCC</code>, see <a href="../subsystems/boot.html#title-overlay-state">boot &mdash; tick function</a>). Captured live via <code>autorun_countdown_trigger.lua</code> against a save state at the title screen; sidecar <code>.screen</code> blob is a PNG-decodable framebuffer of the live title (<code>scripts/decode_pcsx_screen.py</code>).</td>
 </tr>
 <tr>
 <td>Town / field / dialog / inventory (<code>0897</code>)</td>

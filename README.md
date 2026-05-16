@@ -40,7 +40,7 @@ For workspace conventions and format gotchas (especially MIPS LUI+ADDIU pairs), 
 cargo build --release
 ```
 
-Binaries land in `target/release/`. Run `<binary> --help` for full subcommand listings.
+Binaries land in `target/release/`. Run `<binary> --help` for full subcommand listings. (Note: `legaia-engine` is the binary name; the *package* is `legaia-engine-shell`, so `cargo build -p legaia-engine-shell` builds just that crate.)
 
 If you plan to commit, run the hook installer once - it points `core.hooksPath` at `scripts/git-hooks/` so `cargo fmt --check` and `cargo clippy -D warnings` run before each commit (matching CI). The hook auto-skips when no Rust files are staged.
 

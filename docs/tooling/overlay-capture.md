@@ -16,7 +16,7 @@ The dump count column reflects committed function dumps under [`ghidra/scripts/f
 
 | Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|
-| Title screen | ✓ (loaded at boot, in SCUS-range) | - (in SCUS address range) | Actor / sprite VM (`FUN_801D6628`) |
+| Title screen | ✓ | `overlay_title.bin` | Actor / sprite VM (`FUN_801D6628`); title-overlay tick `FUN_801DD35C` (pinned via watchpoint on the title-attract countdown at `0x801EF16C` &mdash; decrement instruction at `0x801DDCCC`, see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function)). Captured live via [`scripts/pcsx-redux/autorun_countdown_trigger.lua`](../../scripts/pcsx-redux/autorun_countdown_trigger.lua) against a save state at the title screen; sidecar `.screen` blob is a PNG-decodable framebuffer of the live title (`scripts/decode_pcsx_screen.py`). |
 | Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` (= walk) / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`); top-20 dumped per program |
 | Field overlay - battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (`FUN_801D081C`, `FUN_801D0370`, `FUN_801CFDA0`, `FUN_801D11D0`, and 9 more) |
 | Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
@@ -72,6 +72,47 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin
 ```
+
+## Caveat: overlay-buffer captures are mixed content
+
+A captured 256 KiB slice of an overlay buffer at `0x801C0000` is **not equivalent to a single overlay file on disc**. The buffer holds interleaved data from multiple sources at any given moment:
+
+- Old overlay code/data from previous mode (only partially overwritten).
+- Streaming buffers that share address space (e.g. SEQ data from the BGM streamer).
+- Multi-pak loads where different ranges of the buffer come from different PROT entries.
+- Runtime-initialised BSS/state that has no on-disc counterpart.
+
+Concrete example: at title-screen showing, `captures/boot_walk/overlay_title.bin` contains PROT 1053 (`music_01`) SEQ data at `0x00000..~0x03000`, PROT 0899 options-menu data at `0x0E818..0x15818`, PROT 0897 trailing shared menu helpers at `0x0EFE8..0x10818`, and the title-overlay code proper at `0x0F000..0x25000`. Byte-search for a fingerprint from one region will only find the corresponding source PROT entry, not a single "title overlay" file. To pin a region's source: identify the region boundaries first (look for transitions in content type), pick a fingerprint UNIQUE to that region, then sweep PROT.
+
+## Extracting TIMs from a RAM snapshot
+
+A captured RAM dump often contains transient TIMs that the game staged in main RAM before uploading to VRAM. These can be identified, decoded, and **traced back to their source PROT entry** even when the source is uncompressed - the on-disc CLUT + pixel data is byte-identical to the staged copy; only the RECT fields (VRAM target coords) get rewritten at runtime.
+
+### Methodology
+
+1. Sweep the RAM dump for byte sequence `10 00 00 00` followed by valid PSX TIM flags:
+   ```python
+   import struct
+   for off in range(0, len(data) - 32, 4):
+       if struct.unpack_from('<I', data, off)[0] != 0x10:
+           continue
+       flags = struct.unpack_from('<I', data, off+4)[0]
+       mode = flags & 7
+       if mode > 3: continue
+       # validate CLUT block size + RECT, then pixel block size + RECT
+       # (within sane bounds: w/h <= 1024 / 512, sizes in plausible ranges)
+   ```
+2. Extract each hit as a `.tim` file and decode with `legaia-tim convert` to PNG to identify visually.
+3. Build a 16-byte fingerprint from the first CLUT row at offset `0x14` inside the TIM file (skip the RECT bytes at `0x0C..0x14` because those get runtime-relocated).
+4. Grep the PROT corpus (`extracted/PROT/*.BIN`) for that fingerprint. Each hit identifies the source entry; byte-compare CLUT + pixel data to confirm.
+
+### Worked example
+
+- The captured `captures/boot_walk/snap_vsync_0300.bin` (full 2 MiB main RAM, taken during the publisher-logo phase) contains four TIMs at `0x801D09DC`, `0x801DBBFC`, `0x801E761C`, `0x801EB65C`.
+- Visual decode: PROKION, Contrail "A Contrail Production", "Sony Computer Entertainment America Presents", and the WARNING screen.
+- All four CLUT fingerprints match `0895_bat_back_dat.BIN` at well-separated offsets - PROT 0895 is the boot `init.pak` bundle (CDNAME label `bat_back_dat` is misleading). Documented in [`subsystems/boot.md` § Boot init.pak](../subsystems/boot.md#boot-initpak-prot-0895).
+
+The same method should work for any other transient TIM (battle backgrounds, menu chrome, world map terrain textures) provided the source PROT entry stores the TIM uncompressed. LZS-compressed sources won't match by direct byte search - either decompress them first or use a different signature (e.g., the rendered pixel histogram or framebuffer-area VRAM coords).
 
 ## One-command capture (mednafen + Duckstation)
 

@@ -25,15 +25,29 @@ A directory of the Ghidra-traced functions that matter for understanding Legaia'
 
 ## Disc / loader chain
 
+Full 13-function CD-read API stack documented in [`subsystems/boot.md` § CD-read API stack](../subsystems/boot.md#cd-read-api-stack); per-function memory entry in `project_cd_read_api_stack.md`.
+
 | Address | Role |
 |---|---|
-| `8003E4E8` | Boot-time TOC loader. Reads first 3 sectors of `PROT.DAT` into `0x801C70F0`. |
+| `8003D3C4` | Path-based ISO9660 file loader: `(path, dest)`. Wraps `FUN_8005DBB4` (dir lookup) + SetLoc + `FUN_8005E9A4`. Used for `.STR` / `.XA` filesystem files. |
+| `8003E360` | Demonstrates the **dual-mode loader pattern**: retail (`_DAT_8007B8C2 == 0`) branches to ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read); debug branches to PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). |
+| `8003E4E8` | Boot-time TOC loader. `(filename_str, do_read_flag)`. Called from `FUN_8003F08C(0)` with `"PROT.DAT"`. Reads first 3 sectors of `PROT.DAT` (= 6 KB) into `0x801C70F0`. |
 | `8003E6BC` | Path-based opener. Resolves dev paths into a PROT index via the CDNAME-driven name map. |
-| `8003E800` | Low-level CD setup. Stores destination pointer + size, calls `FUN_8003F128`. |
-| `8003E8A8` | LBA resolver. Reads in-RAM TOC at `0x801C70F0`; computes `(start_lba, size_sectors)`. |
-| `8003EB98` | By-index loader. Wrapper around `FUN_8003E8A8` + `FUN_8003E800`. |
+| `8003E800` | Async LBA-based loader. `(dest, lba, flags)`. Queues a load via `gp+0x97c` (lba) / `gp+0x894` (dest), kicks via `FUN_8003F128` when `flags & 1`; blocks on completion when `flags & 2`. |
+| `8003E8A8` | PROT TOC index resolver. `(prot_index, flag)` → LBA. Reads `*(0x801C70F0 + (index+2)*4)`. Matches the [PROT TOC math](../formats/prot.md). |
+| `8003EB98` | By-index sync loader. Wrapper around `FUN_8003E8A8` + `FUN_8003E800(…, 1)`. |
+| `8003EBE4` | **Overlay loader A.** `param + 0x381` → PROT index. Destination buffer pointer in `*DAT_8001038C`; current-id tracked in `gp+0x924`. |
+| `8003EC70` | **Overlay loader B.** Parallel to `FUN_8003EBE4`. Destination buffer in `*DAT_80010390`; current-id tracked in `gp+0x934`. Allows two overlays resident simultaneously. |
 | `8003F128` | Async CD read kickoff. Stages parameters, submits to BIOS-level CD library. |
+| `8003F08C` / `8003EFE8` | Boot-time entry points that call `FUN_8003E4E8("PROT.DAT", 1)` to populate the TOC at `0x801C70F0`. |
+| `8005C328` | LBA → BCD-MSF converter. Inverse of `FUN_8005C42C`. |
 | `8005C42C` | BCD-MSF → LBA converter. `((m*60 + s)*75 + f) - 150`. |
+| `8005D9A0` | CD-DMA-channel-3 synchronous read primitive. Writes CD command registers (`*DAT_800796A4` etc.) and triggers DMA via `*DAT_800796B4 = 0x11000000`. Takes `(dest_buffer, mode)`. The address `0x8005DA40` is an instruction inside this function (`lui v1, 0x8008`) — Ghidra promotes that intra-function label to a fake `FUN_8005DA40` entry. There is no real function at `0x8005DA40` and no `_DAT_800795B4` pointer table. |
+| `8005DBB4` | ISO9660 directory lookup. `(file_info_out, filename)` → fills `{msf[3], size_bytes, …}`. |
+| `8005E574` | Streaming-read per-IRQ callback. Drives multi-sector reads via streaming-read working globals (`DAT_800796CC` destination cursor, `DAT_800796D8` sectors remaining, `DAT_800796E4` current LBA). Registered by `FUN_8005E788`. |
+| `8005E788` | Streaming-read starter. Copies source globals (`DAT_800796C8` → `DAT_800796CC`; `DAT_800796C4` → `DAT_800796D8`) and registers `FUN_8005E574` as IRQ callback. Sets initial LBA via `FUN_8005C42C(FUN_8005BD70())` (reads BCD MSF from libcd's GetLoc-equivalent). |
+| `8005E9A4` | **Public streaming-read API.** `(sector_count, dest_buffer, mode_flags)`. Sets the streaming-read source globals + calls `FUN_8005E788(0)`. Caller must SetLoc beforehand. Sector size from `mode_flags`: `& 0x30 == 0` → 0x800 (2048, data); `== 0x20` → 0x924 (2336, XA); else 0x918. |
+| `8005E4D4` | Synchronous LBA-based file reader: `(sector_count, lba, dest_buffer)`. Wraps `FUN_8005C328` + `CdControl(SetLoc)` + `FUN_8005E9A4` + completion poll. |
 
 ## PSX runtime / standard libraries
 
@@ -134,18 +148,32 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 
 ## Game-mode state machine
 
+The 28 × 24-byte table at `0x8007078C` is detailed in [`subsystems/boot.md` § Game-mode state machine](../subsystems/boot.md#game-mode-state-machine).
+
 | Address | Role |
 |---|---|
-| `0x8007078C` (data) | Mode table - 28 entries × 24 bytes. `+0x00` = name string ptr; `+0x0A` = next-mode i16; `+0x10` = handler fn ptr; `+0x14` = parameter. |
+| `0x8007078C` (data) | Mode table - 28 entries × 24 bytes. `+0x00` = name string ptr; `+0x10` = handler fn ptr; `+0x14` = parameter. |
 | `gp[0x524]` (data) | Current-mode register (i16). |
+| `_DAT_8007B83C` (data) | Master game-mode index, u16. Title overlay writes `0x1A` (= STR FMV mode 26) on attract countdown underflow; FMV id slot at `_DAT_8007BA78` is zeroed in the same block → `MV1.STR`. |
 | `800179C0` | Dev mode-transition writer. Reads input mask, advances current mode. Gated on `_DAT_8007B98C != 0`. |
-| `80025EEC` | Default per-mode handler - used by 13 of 28 modes. Pipeline: `FUN_8001698C → FUN_80016444(1) → FUN_80016B6C`. |
-| `80025C68` | Mode 0 (CONFIG INIT) handler. |
-| `80025B64` | Mode 2 (MAIN INIT) handler - field/script-runtime init. |
-| `80025DA0` | Mode 12 (MAPDSIP MODE INIT) handler - field-display init. |
-| `80025F2C` | Mode 13 (MAPDSIP MODE) handler - field-display per-frame. |
-| `80025E68` | Mode 8 (EFECT INIT) handler. |
+| `80025EEC` | Default per-frame mode handler - used by all 14 odd-indexed (per-frame) modes. Pipeline: `FUN_8001698C → FUN_80016444(1) → FUN_80016B6C`. |
+| `80025C68` | Mode 0 (CONFIG INIT) handler - **loads PROT 973 (slot-machine debug overlay)** via `FUN_8003EBE4(0x4C)`. Despite the dev name "CONFIG", this is a slot-machine debug mode, not a game-config init. |
+| `80025B64` | Mode 2 (MAIN INIT) handler - **loads PROT 899 (options menu)** via `FUN_8003EBE4(2)`. Despite the dev name "MAIN", this is the options/config menu mode, not the title screen. |
+| `80025DA0` | Mode 12 (MAPDISP INIT) handler - field/town init - this is the actual gameplay-mode entry. |
+| `80025F2C` | Mode 13 (MAPDISP MODE) handler - field-display per-frame. |
+| `80025E68` | Mode 8 (EFECT TEST INIT) handler - effect-bundle test mode. |
+| `80025980` | Mode 24 (OTHER INIT) handler - loads PROT 896 (cited by `ghidra/scripts/dump_round8.py` `OVERLAY_0896_TARGETS`). |
+| `80025FB4` | Mode 26 (STR INIT) handler - cutscene / STR FMV mode entry. This is the mode the title-overlay attract-loop underflow falls through to (`_DAT_8007B83C = 0x1A`). |
 | `8001DCF8` | Boot-time mode initializer. 1212-byte function. NOT the per-frame dispatcher. |
+
+## Title overlay
+
+| Address | Role |
+|---|---|
+| `FUN_801DD35C` (**title overlay**, 12 104 bytes / 3 026 instructions) | Per-frame title-overlay tick. Pinned via PCSX-Redux watchpoint on the attract countdown - the BP captured `pc=0x801DDCCC` on the `sw` that writes the decremented value back. Decrements `_DAT_801EF16C` by the per-frame scalar at `_DAT_1F800393`; `bgez` branches to `0x801DFC3C` while still counting; underflow falls through and writes `_DAT_8007B83C = 0x1A` (= STR FMV mode 26). Capture pipeline: `scripts/pcsx-redux/autorun_countdown_trigger.lua`; dump at `ghidra/scripts/funcs/overlay_title_801ddccc.txt`. |
+| `0x801DDCCC` (instruction) | The `sw v0, -0xe94(a0)` that writes the decremented countdown back. Acts as the watchpoint-pinning anchor for `FUN_801DD35C`. |
+| `0x801DFC3C` (branch target) | Normal per-frame attract loop (rendering, input, cursor logic). Reached via `bgez v0` from inside `FUN_801DD35C` when the countdown is still positive. Not yet dumped. |
+| `FUN_8005DA40` | **Not a real function** — `0x8005DA40` is an instruction (`lui v1, 0x8008`) inside `FUN_8005D9A0` (the CD-DMA-channel-3 read primitive). Ghidra promotes the intra-function label to a fake `FUN_8005DA40` entry. Earlier notes claimed this function "walks `_DAT_800795B4` and stamps `0x8000` into BSS"; that's wrong. The title state struct (including the `0x8000` countdown initial value) is populated by DMA from disc bytes, not by code. See [`subsystems/boot.md` § Title-overlay state struct](../subsystems/boot.md#title-screen-overlay-state). |
 
 ## Battle subsystem
 
@@ -303,6 +331,9 @@ sub-state, `+0x07` action-type).
 | `8004695C` | Initiates a color-fade operation: writes RGBA -nto `gp[+0x9D0]`, sets active-flag at `gp[+0x9D4]`. Mode byte at `_DAT_8007B6CC`. |
 | `8005724C` | OT primitive initializer for sprite rectangle — pos / size / color / clip. Calls `FUN_800608E0` for display config and `FUN_80057FEC` for palette query. |
 | `80059568` / `80059634` / `80059700- | OT coordinate packer trio for textured / textured-variant / opaque sprite primitives. Display-mode-aware mask + shift, COP2 tag bytes `0xE3` / `0xE4` / `0xE5`. |
+| `800198E0` | **TIM-upload helper.** Consumes either a custom Legaia sprite descriptor (magic `0x11`, single LoadImage call) OR a real PSX TIM (flags bit 3 = "has CLUT", two LoadImage calls — one for CLUT, one for pixels). Dispatches to `FUN_800583C8` for each block. Optional alpha-bit ORing (`*entry |= 0x8000`) per CLUT entry when `_DAT_8007B998 != 0`. Confirmed in `ghidra/scripts/funcs/800198e0.txt`. |
+| `800583C8` | **`LoadImage` wrapper.** Pushes a libgpu `LoadImage(RECT*, void*)` request — identified by the literal debug-format string reference `s_LoadImage_800156d4`. The actual PSX BIOS `LoadImage` call site lives downstream. |
+| `80058490` | **`MoveImage` wrapper.** Sister to `FUN_800583C8`. Identified by the debug-format-string reference `s_MoveImage_800156ec`. Push a libgpu VRAM-to-VRAM `MoveImage(RECT*, dest_x, dest_y)` request. |
 | `80058068` | `SetDispMask` wrapper — controls display enable/disable via GP1 command `0x300` / `0x3000001`. |
 | `8005800C` | DrawSync callback registration- |
 | `80057C44` | Display-mode reset dispatcher — calls GTE init, memory clear, resolution setup. |

@@ -381,6 +381,41 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Decoded RGBA8 pixels for one publisher-logo TIM (0..3). Returns
+     * an empty vec when the disc doesn't have PROT 0895 or `idx` is
+     * out of range. Width / height come from [`init_pak_logos_json`].
+     * @param {number} idx
+     * @returns {Uint8Array}
+     */
+    init_pak_logo_rgba(idx) {
+        const ret = wasm.legaiaviewer_init_pak_logo_rgba(this.__wbg_ptr, idx);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * JSON metadata for the boot publisher-logo TIMs from PROT 0895
+     * (`init.pak`). Returns an empty array `"[]"` if the disc doesn't
+     * have PROT 0895 or the entry doesn't parse as init.pak.
+     *
+     * Each element shape:
+     *   `{ "name": str, "width": u32, "height": u32, "mode": u32,
+     *      "fb_x": u32, "fb_y": u32 }`
+     * @returns {string}
+     */
+    init_pak_logos_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_init_pak_logos_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Load a disc image. Auto-detects: full Mode2/2352 .bin, raw PROT.DAT,
      * or single TIM. Returns the count of viewable entries (entries with at
      * least one decodable TIM) for the JS UI.
@@ -1091,7 +1126,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 430, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 455, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
             return ret;
         },

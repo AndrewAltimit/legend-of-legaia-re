@@ -37,6 +37,7 @@ pub mod menu_runtime;
 pub mod mode;
 pub mod monster_catalog;
 pub mod options;
+pub mod publisher_logos;
 pub mod ram_map;
 pub mod save_select;
 pub mod scene;

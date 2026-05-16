@@ -187,7 +187,7 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 | Address | Type | Purpose |
 |---|---|---|
 | `0x1F800314` | i16[] | Inverted-Y mirror table (op 0x4C nibble-9 sub-E writes `-words[i]` here). |
-| `0x1F800393` | u8 | Per-frame tick byte (read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C). |
+| `0x1F800393` | u8 | Per-frame tick byte. Global frame-time scalar. Read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C. Also subtracted from the title-attract countdown at `0x801EF16C` every tick (see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)) and exposed via `World::tick_move_vms_with_delta` in the engine port. |
 | `0x1F800394` | u32 | **Global story-flag word.** Read by `GFLAG_TST` (0x30); written by `GFLAG_SET` / `GFLAG_CLR` (0x2E / 0x2F); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. Set by the dialog opener with bit 0x40 (`"dialog active"` lock). |
 | `0x1F8003E8` | u32 | Render-config block (op 0x46). |
 | `0x1F8003EC` | u8[] | Tile-flag bitmap base used by op 0x4C nibble-7 (rectangle SET/CLEAR over `+0x4000` offset). |
@@ -199,10 +199,11 @@ The 256 KB overlay window is shared between several runtime overlays - only one 
 
 | RAM range | Overlay | Subsystems |
 |---|---|---|
-| `0x801C0000+` | Title screen | Actor / sprite VM (`FUN_801D6628`) |
+| `0x801C0000+` | Title screen | Actor / sprite VM (`FUN_801D6628`); title-overlay tick `FUN_801DD35C` at `0x801DD35C` (decrement instruction at `0x801DDCCC`, see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)) |
 | `0x801CE818+` | Town / field / dialog (loaded from PROT entry `0897_xxx_dat`) | Field VM (`FUN_801DE840`), MES renderer, inventory hub, MAIN INIT |
 | `0x801CE818+` | Battle (loaded from PROT entry `0898_xxx_dat`) | Per-actor state machine, battle main dispatcher, effect VM cluster |
 | `0x801C5818+` | Options / config menu (PROT 0896 = 0897 + 36 KB prefix) | In-game options UI |
+| `0x801EF018` | Title-overlay state struct base | `+0x154` (u32) = title-attract countdown `_DAT_801EF16C` (init `0x8000`, decremented by `_DAT_1F800393` per frame, underflow writes `_DAT_8007B83C = 0x1A` → STR FMV mode 26 → `MV1.STR`); `+0x158` (u32) = title-overlay frame counter `_DAT_801EF170`. |
 | `0x801F0000+` | Battle effect helpers extend into here | `0x801F5D90`, `0x801F5CF8` (effect_id specials), `0x801F8004 / 88FC / 8D4C / 8E6C / 8F28` (particle / emitter cluster) |
 
 ## Mini-game state regions

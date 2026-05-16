@@ -2099,6 +2099,7 @@ impl ApplicationHandler for BattleSceneApp {
                         overlay_lines: None,
                         overlay_sprites: None,
                         overlay_text: Some(&overlay),
+                        clear_color: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                         log::error!("render error: {e:#}");
@@ -2861,6 +2862,7 @@ impl ApplicationHandler for FieldApp {
                         overlay_lines: None,
                         overlay_sprites: None,
                         overlay_text: Some(&overlay),
+                        clear_color: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                         log::error!("render error: {e:#}");
@@ -3064,6 +3066,7 @@ impl ApplicationHandler for WorldApp {
                         overlay_lines: None,
                         overlay_sprites: None,
                         overlay_text: None,
+                        clear_color: None,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                         log::error!("render error: {e:#}");

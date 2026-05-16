@@ -78,6 +78,61 @@
   </table>
 </section>
 
+<section class="doc-section" id="init-pak-publisher-logos">
+  <h2>Publisher-logo boot screens (PROT 0895 <code>init.pak</code>)</h2>
+  <p>PROT entry <code>0895_bat_back_dat</code> is the boot-time <code>init.pak</code> bundle &mdash; despite the misleading CDNAME label. It contains four uncompressed PSX TIMs that the boot sequence uploads to VRAM and fades through before the title screen appears:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Logo</th><th>Mode</th><th>Decoded size</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x021c4</code></td><td>PROKION</td><td>8&nbsp;bpp</td><td>176&times;256</td></tr>
+      <tr><td><code>+0x0d3e4</code></td><td>Contrail</td><td>8&nbsp;bpp</td><td>184&times;256</td></tr>
+      <tr><td><code>+0x18e04</code></td><td>SCEA Presents</td><td>4&nbsp;bpp</td><td>256&times;128</td></tr>
+      <tr><td><code>+0x1ce44</code></td><td>WARNING</td><td>4&nbsp;bpp</td><td>256&times;256</td></tr>
+    </tbody>
+  </table>
+  <p>A typed parser at <code>legaia_asset::init_pak</code> returns slice pointers + decoded VRAM rects for each logo; a disc-gated test pins the on-disc layout. The asset viewer's <em>"Boot publisher logos"</em> panel and the <code>legaia-engine play-window --boot-ui</code> binary both consume this parser to drive a 30 / 90 / 30 fade-in / hold / fade-out animation per logo (see <code>legaia_engine_core::publisher_logos</code>).</p>
+  <h3>Strip-grid unfolding</h3>
+  <p>Two of the four TIMs (PROKION, SCEA) are <strong>vertically-packed sprite atlases</strong> &mdash; the decoded bitmap stacks several smaller strips that retail unfolds into a horizontal/grid layout via multiple GPU quads. Blitting the whole TIM as one quad shows the packed layout (PROKION as <code>PROK</code> over <code>KION</code>, SCEA as four wrapped text rows) rather than the on-screen logo. The per-logo grid lives in <code>publisher_logos::STRIP_GRID</code>:</p>
+  <table>
+    <thead><tr><th>Logo</th><th>Grid <code>(cols, rows)</code></th><th>Source strip</th><th>Unfolded</th></tr></thead>
+    <tbody>
+      <tr><td>PROKION</td><td><code>(2, 1)</code></td><td>176&times;128</td><td>352&times;128 (<code>PROK&nbsp;&#9737;&nbsp;KION</code>)</td></tr>
+      <tr><td>Contrail</td><td><code>(1, 1)</code></td><td>184&times;256</td><td>184&times;256 (no slicing)</td></tr>
+      <tr><td>SCEA</td><td><code>(2, 2)</code></td><td>256&times;32</td><td>512&times;64 (<code>Sony Computer Entertainment America</code> / <code>Presents</code>)</td></tr>
+      <tr><td>WARNING</td><td><code>(1, 1)</code></td><td>256&times;256</td><td>256&times;256 (no slicing)</td></tr>
+    </tbody>
+  </table>
+  <p>Source strips are stored <strong>column-major</strong> in the bitmap; the output grid is row-major, so source strip <code>s = c &times; rows + r</code> lands at output cell <code>(col&nbsp;c, row&nbsp;r)</code>. PROKION's two halves combine into <code>PROK &#9737; KION</code> (the green hemispheres in each half complete a single sun when adjacent); SCEA's four 32-row strips read top-line <code>Sony Computer Entertainment America</code> + bottom-line <code>Presents</code>.</p>
+  <p>The exact on-screen layout retail uses still has to be RE'd from the unlocated <a href="#title-overlay-state">title-overlay tick body</a> &mdash; the <code>STRIP_GRID</code> constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.</p>
+</section>
+
+<section class="doc-section" id="title-overlay-state">
+  <h2>Title-screen overlay state</h2>
+  <p>The title-screen overlay loads into <code>0x801E0000+</code> during the boot sequence and keeps its mode state in a struct at <code>0x801EF018</code>. Known fields:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Width</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x154</code></td><td>u32</td><td>Title-attract idle countdown (<code>_DAT_801EF16C</code>). Initialized to <code>0x8000</code>; decremented per-frame by <code>_DAT_1F800393</code> (the global per-frame scalar &mdash; same byte used by <code>World::tick_move_vms_with_delta</code>); underflow writes the master game-mode index to <code>0x1A</code> (= STR FMV mode 26) and zeroes the FMV id at <code>_DAT_8007BA78</code> &rarr; <code>MV1.STR</code>. See <a href="cutscene.html">cutscene</a>.</td></tr>
+      <tr><td><code>+0x158</code></td><td>u32</td><td>Title-overlay frame counter (<code>_DAT_801EF170</code>). Incremented unconditionally every tick.</td></tr>
+    </tbody>
+  </table>
+  <p>Initial values come from a SCUS-side bulk-initializer at <code>FUN_8005DA40</code> (called via <code>0x8005C2D4</code>) that walks a pointer table at <code>_DAT_800795B4</code> and writes initial values into multiple overlay BSS regions in one pass. The countdown's <code>0x8000</code> sentinel is set during this init pass, before the overlay's tick function starts running. The same initializer writes other addresses sharing a <code>&hellip;116C</code> low-half offset, suggesting <code>_DAT_800795B4</code> is a list of struct bases the init pass walks with a common per-struct displacement.</p>
+  <h3>Tick function</h3>
+  <p>The per-frame tick function is <code>FUN_801DD35C</code> (entry <code>0x801DD35C</code>, 12&nbsp;104 bytes / 3&nbsp;026 instructions, in the title overlay at <code>0x801C0000+</code>, <strong>not</strong> in SCUS). Pinned via a PCSX-Redux watchpoint on the countdown &mdash; the BP captured <code>pc=0x801DDCCC</code> on the exact <code>sw v0, -0xe94(a0)</code> instruction that writes the decremented value back. Full disassembly + decompile in <code>ghidra/scripts/funcs/overlay_title_801ddccc.txt</code>; capture pipeline in <code>scripts/pcsx-redux/autorun_countdown_trigger.lua</code> (slot-8 save state default; outputs RAM + screenshot + regs to <code>captures/boot_walk/overlay_title.bin*</code>).</p>
+  <p>Decrement sequence (around <code>0x801DDCB0..0x801DDCCC</code>):</p>
+  <pre><code>lui   a0, 0x801f
+lui   v1, 0x1f80
+lbu   v1, 0x393(v1)     ; v1 = *_DAT_1F800393  (per-frame scalar)
+lw    v0, -0xe94(a0)    ; v0 = *0x801EF16C     (countdown, u32)
+nop
+subu  v0, v0, v1        ; v0 -= scalar
+bgez  v0, 0x801dfc3c    ; if signed &gt;= 0, branch to "still counting"
+_sw   v0, -0xe94(a0)    ; &lt;-- captured pc: store decremented value
+</code></pre>
+  <p>The "still counting" path branches to <code>0x801DFC3C</code> (the normal per-frame attract loop: rendering, input, cursor logic). The "underflow" path falls through past <code>0x801DDCCC</code> into a block that prepares draw primitives via <code>0x80058490</code> and writes the master game-mode index <code>_DAT_8007B83C = 0x1A</code>, zeroing <code>_DAT_8007BA78</code> (FMV id slot) &rarr; <code>MV1.STR</code>.</p>
+  <p>A <strong>town/field subsystem</strong> uses a separate format-string pool at <code>0x80011079..0x80011109</code> (<code>"    town "</code>, <code>"mode %d"</code>, <code>"    baria mode "</code>, <code>"    walking set"</code>, <code>"end of mes works set"</code>, <code>"open port.dat"</code>, <code>"nt_group_table %x"</code>). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded &mdash; i.e. the "mode 17 / mode 16" runtime printfs are <em>town-subsystem</em> mode transitions, not the master 28-mode state-machine index.</p>
+</section>
+
 <section class="doc-section" id="debug-flags">
   <h2>Debug flags</h2>
   <p>Two RAM bytes that several subsystems branch on at boot time and beyond:</p>

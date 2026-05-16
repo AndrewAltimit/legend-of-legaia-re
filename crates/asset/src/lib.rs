@@ -21,6 +21,7 @@ pub mod categorize;
 pub mod data_field_truncated;
 pub mod effect_bundle;
 pub mod field_pack;
+pub mod init_pak;
 pub mod kingdom_bundle;
 pub mod mips_overlay;
 pub mod overlay_ptr_table;

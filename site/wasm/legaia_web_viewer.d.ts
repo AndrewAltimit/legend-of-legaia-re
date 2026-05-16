@@ -157,6 +157,22 @@ export class LegaiaViewer {
      */
     fog_lut_bytes(): Uint8Array;
     /**
+     * Decoded RGBA8 pixels for one publisher-logo TIM (0..3). Returns
+     * an empty vec when the disc doesn't have PROT 0895 or `idx` is
+     * out of range. Width / height come from [`init_pak_logos_json`].
+     */
+    init_pak_logo_rgba(idx: number): Uint8Array;
+    /**
+     * JSON metadata for the boot publisher-logo TIMs from PROT 0895
+     * (`init.pak`). Returns an empty array `"[]"` if the disc doesn't
+     * have PROT 0895 or the entry doesn't parse as init.pak.
+     *
+     * Each element shape:
+     *   `{ "name": str, "width": u32, "height": u32, "mode": u32,
+     *      "fb_x": u32, "fb_y": u32 }`
+     */
+    init_pak_logos_json(): string;
+    /**
      * Load a disc image. Auto-detects: full Mode2/2352 .bin, raw PROT.DAT,
      * or single TIM. Returns the count of viewable entries (entries with at
      * least one decodable TIM) for the JS UI.
@@ -451,6 +467,8 @@ export interface InitOutput {
     readonly legaiaviewer_entry_count: (a: number) => number;
     readonly legaiaviewer_entry_list_json: (a: number) => [number, number];
     readonly legaiaviewer_fog_lut_bytes: (a: number) => [number, number];
+    readonly legaiaviewer_init_pak_logo_rgba: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_init_pak_logos_json: (a: number) => [number, number];
     readonly legaiaviewer_load_disc: (a: number, b: number, c: number) => [number, number, number];
     readonly legaiaviewer_mesh_bounds: (a: number) => [number, number];
     readonly legaiaviewer_mesh_cba_tsb: (a: number) => [number, number];

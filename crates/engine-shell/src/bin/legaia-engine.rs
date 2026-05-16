@@ -19,7 +19,9 @@ use glam::{Mat4, Vec3};
 use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
-use legaia_engine_core::scene_resources::{FIELD_SHARED_BLOCKS, SceneResources};
+use legaia_engine_core::scene_resources::{
+    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+};
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
@@ -1953,6 +1955,16 @@ fn cmd_config(cmd: ConfigCmd) -> Result<()> {
 // play-window
 // ---------------------------------------------------------------------------
 
+/// Pre-decoded publisher-logos atlas + GPU upload. Created once at boot
+/// when the disc has a valid PROT 0895; reused by [`BootUiState::PublisherLogos`]
+/// to sample one logo per frame.
+struct PublisherLogosAssets {
+    /// Per-logo source rects in atlas pixels.
+    rects: [(u32, u32, u32, u32); legaia_engine_core::publisher_logos::LOGO_COUNT],
+    /// GPU-resident sprite atlas (vertically stacked logos).
+    atlas: legaia_engine_render::UploadedSpriteAtlas,
+}
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -1962,6 +1974,12 @@ struct PlayWindowApp {
     scene_res: Option<SceneResources>,
     win: EngineWindow,
     font_atlas: Option<UploadedFontAtlas>,
+    /// Publisher-logos atlas (built once from PROT 0895). `None` if the
+    /// disc isn't loaded or init.pak doesn't parse.
+    publisher_logos: Option<PublisherLogosAssets>,
+    /// CPU-side atlas data waiting for renderer upload. Moved into
+    /// `publisher_logos` on the first frame the renderer is available.
+    pending_publisher_logos_atlas: Option<legaia_engine_core::publisher_logos::LogosAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
@@ -2015,6 +2033,10 @@ struct PlayWindowApp {
 enum BootUiState {
     /// No boot UI - engine ticks the scene normally.
     Inactive,
+    /// Boot publisher logos (PROT 0895). Runs before the title screen.
+    /// The atlas + per-logo rects live on [`PlayWindowApp`] so the
+    /// renderer can sample one quad per frame.
+    PublisherLogos(legaia_engine_core::publisher_logos::PublisherLogosSession),
     /// Title screen is active. Pad input drives the
     /// [`legaia_engine_core::title::TitleSession`].
     Title(legaia_engine_core::title::TitleSession),
@@ -2067,6 +2089,27 @@ impl PlayWindowApp {
 
         match &mut self.boot_ui {
             BootUiState::Inactive => false,
+            BootUiState::PublisherLogos(session) => {
+                // Start (or Cross) skips the boot sequence.
+                if start || cross {
+                    session.request_skip();
+                }
+                session.tick();
+                if session.is_done() {
+                    // Hand off to the title screen with the
+                    // continue-enabled flag set per save-slot scan.
+                    let snapshots = scan_save_dir(&self.save_dir);
+                    let any_present = snapshots.iter().any(|s| s.present);
+                    self.boot_ui = if any_present {
+                        BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+                    } else {
+                        BootUiState::Title(
+                            legaia_engine_core::title::TitleSession::without_save_data(),
+                        )
+                    };
+                }
+                true
+            }
             BootUiState::Title(session) => {
                 use legaia_engine_core::title::{TitleEvent, TitleInput, TitleOutcome};
                 let input = TitleInput {
@@ -2322,6 +2365,11 @@ impl PlayWindowApp {
     fn boot_ui_draws(&self) -> Vec<TextDraw> {
         match &self.boot_ui {
             BootUiState::Inactive => Vec::new(),
+            BootUiState::PublisherLogos(_) => {
+                // The publisher logos are drawn via the sprite overlay
+                // (see `publisher_logo_sprite_draw`); no font text.
+                Vec::new()
+            }
             BootUiState::Title(s) => {
                 use legaia_engine_core::title::TitlePhase;
                 let (phase_id, cursor) = match s.phase() {
@@ -3003,6 +3051,27 @@ impl PlayWindowApp {
         if let Some(a) = font_opt {
             self.font_atlas = Some(a);
         }
+        // Upload the publisher-logos atlas (if pre-decoded at boot) now
+        // that the renderer is live.
+        if let (Some(atlas_data), Some(r)) = (
+            self.pending_publisher_logos_atlas.take(),
+            self.win.renderer.as_ref(),
+        ) {
+            match r.upload_sprite_atlas(&atlas_data.rgba, atlas_data.width, atlas_data.height) {
+                Ok(atlas) => {
+                    log::info!(
+                        "play-window: publisher-logos atlas uploaded ({}x{})",
+                        atlas_data.width,
+                        atlas_data.height
+                    );
+                    self.publisher_logos = Some(PublisherLogosAssets {
+                        rects: atlas_data.rects,
+                        atlas,
+                    });
+                }
+                Err(e) => log::warn!("publisher-logos atlas upload skipped: {e:#}"),
+            }
+        }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
@@ -3058,6 +3127,79 @@ impl PlayWindowApp {
             a.move_state.world_z as f32,
         );
         Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
+    /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
+    /// the active publisher logo.
+    ///
+    /// PROKION and SCEA are stored as vertically-packed sprite atlases
+    /// (see [`legaia_engine_core::publisher_logos::STRIPS_PER_LOGO`]);
+    /// retail unfolds them by drawing the `N` strips side-by-side. We
+    /// compute one [`SpriteDraw`] per strip, all sharing the session's
+    /// current alpha, then integer-scale + centre the unfolded layout.
+    /// Returns an empty vec when boot-UI isn't `PublisherLogos` or the
+    /// atlas wasn't uploaded.
+    fn publisher_logo_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let BootUiState::PublisherLogos(session) = &self.boot_ui else {
+            return Vec::new();
+        };
+        let Some(assets) = self.publisher_logos.as_ref() else {
+            return Vec::new();
+        };
+        let idx = session.current_logo();
+        if idx >= legaia_engine_core::publisher_logos::LOGO_COUNT {
+            return Vec::new();
+        }
+        let (sx, sy, sw, sh) = assets.rects[idx];
+        if sw == 0 || sh == 0 {
+            return Vec::new();
+        }
+        let (cols, rows) = legaia_engine_core::publisher_logos::STRIP_GRID[idx];
+        let cols = cols.max(1);
+        let rows = rows.max(1);
+        let strips_total = cols * rows;
+        let strip_h_src = sh / strips_total;
+        if strip_h_src == 0 {
+            return Vec::new();
+        }
+        let unfolded_w = sw * cols;
+        let unfolded_h = strip_h_src * rows;
+        // Integer-multiple up-scale that fits inside the surface, capped
+        // at 4× to keep logos crisp at typical 960×720. `max(1)` falls
+        // back to native size (and accepts clipping) for layouts wider
+        // than the surface.
+        let scale_w = surface_w / unfolded_w.max(1);
+        let scale_h = surface_h / unfolded_h.max(1);
+        let scale = scale_w.min(scale_h).clamp(1, 4);
+        let strip_w_dst = sw * scale;
+        let strip_h_dst = strip_h_src * scale;
+        let dst_w_total = unfolded_w * scale;
+        let dst_h_total = unfolded_h * scale;
+        let dst_x0 = (surface_w as i32 - dst_w_total as i32) / 2;
+        let dst_y0 = (surface_h as i32 - dst_h_total as i32) / 2;
+        let alpha = session.alpha().clamp(0.0, 1.0);
+        let color = [1.0, 1.0, 1.0, alpha];
+        // Source strips are stored column-major: source strip index
+        // `s = c * rows + r` lands at output (col c, row r).
+        let mut out = Vec::with_capacity(strips_total as usize);
+        for r in 0..rows {
+            for c in 0..cols {
+                let s = c * rows + r;
+                let src_y = sy + s * strip_h_src;
+                let dst_x = dst_x0 + (c * strip_w_dst) as i32;
+                let dst_y = dst_y0 + (r * strip_h_dst) as i32;
+                out.push(legaia_engine_render::SpriteDraw {
+                    dst: (dst_x, dst_y, strip_w_dst, strip_h_dst),
+                    src: (sx, src_y, sw, strip_h_src),
+                    color,
+                });
+            }
+        }
+        out
     }
 
     fn build_hud(&self, _w: u32, _h: u32) -> Vec<TextDraw> {
@@ -3439,30 +3581,62 @@ impl ApplicationHandler for PlayWindowApp {
                     // `.active` and a binding to their freshly uploaded
                     // mesh slot (beyond `scene_tmd_data.len()`) via the
                     // spawn pass above.
+                    //
+                    // Suppress 3D draws while the boot UI is active so the
+                    // last-loaded scene (e.g. a town) doesn't show through
+                    // behind publisher logos / title / save-select.
                     let mut draws: Vec<SceneDraw<'_>> = Vec::new();
-                    for (i, actor) in self.session.host.world.actors.iter().enumerate() {
-                        let Some(tmd_idx) = actor.tmd_binding else {
-                            continue;
-                        };
-                        let mesh = posed_overrides
-                            .get(tmd_idx)
-                            .and_then(|o| o.as_ref())
-                            .or_else(|| self.meshes.get(tmd_idx));
-                        if let Some(mesh) = mesh {
-                            draws.push(SceneDraw {
-                                mesh,
-                                mvp: cam * self.actor_model(i),
-                            });
+                    if !self.boot_ui.is_active() {
+                        for (i, actor) in self.session.host.world.actors.iter().enumerate() {
+                            let Some(tmd_idx) = actor.tmd_binding else {
+                                continue;
+                            };
+                            let mesh = posed_overrides
+                                .get(tmd_idx)
+                                .and_then(|o| o.as_ref())
+                                .or_else(|| self.meshes.get(tmd_idx));
+                            if let Some(mesh) = mesh {
+                                draws.push(SceneDraw {
+                                    mesh,
+                                    mvp: cam * self.actor_model(i),
+                                });
+                            }
                         }
                     }
                     let hud = self.build_hud(w, h);
                     let overlay = TextOverlay { atlas, draws: &hud };
+
+                    // Publisher-logos overlay: emitted only during the
+                    // PublisherLogos boot phase. PROKION/SCEA are
+                    // vertically-packed sprite atlases — `publisher_logo_sprite_draws`
+                    // unfolds them into N side-by-side strips. Contrail
+                    // and WARNING produce a single quad.
+                    let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
+                    let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
+                        atlas: &p.atlas,
+                        draws: &logo_draw_vec,
+                    });
+
+                    // Force a pure-black background during boot UI so the
+                    // logos / title / save-select panels read on PSX-style
+                    // black instead of the default dark-blue clear.
+                    let scene_clear = if self.boot_ui.is_active() {
+                        Some([0.0, 0.0, 0.0, 1.0])
+                    } else {
+                        None
+                    };
+
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
-                        overlay_sprites: None,
+                        overlay_sprites: if !logo_draw_vec.is_empty() {
+                            logo_overlay.as_ref()
+                        } else {
+                            None
+                        },
                         overlay_text: Some(&overlay),
+                        clear_color: scene_clear,
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
                         log::error!("render: {e:#}");
@@ -3606,6 +3780,28 @@ fn cmd_play_window(
     };
     if world_map {
         session.host.world.mode = SceneMode::WorldMap;
+    } else {
+        // Enter the field scene's first event-script record (the init
+        // prologue) so the field VM actually runs on subsequent ticks.
+        // `BootSession::open` only calls `load_scene`, which leaves the
+        // world in `SceneMode::Title` with an empty actor pool - meaning
+        // no field events ever fire and every actor stays at the origin.
+        // `enter_field_scene` switches to `SceneMode::Field`, installs
+        // record 0 into the bytecode buffer, and pre-binds actor TMD /
+        // ANM bindings via `World::init_scene_animations`.
+        //
+        // Soft-fails: scenes without event scripts log and continue
+        // (rare for field scenes but possible for stripped-down dev
+        // scenes).
+        match session.host.enter_field_scene(scene, 0) {
+            Ok(()) => {
+                log::info!("play-window: entered field scene '{scene}' record 0 (field VM live)")
+            }
+            Err(e) => log::warn!(
+                "play-window: enter_field_scene('{scene}', 0) failed ({e:#}); \
+                 falling back to load_scene-only path (field VM will not tick)"
+            ),
+        }
     }
 
     // Wire vanilla encounter + monster tables so triggered encounters can
@@ -3644,7 +3840,35 @@ fn cmd_play_window(
             .scene
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("no scene loaded after BootSession::open"))?;
-        SceneResources::build(s)?
+        // Load the shared blocks (`init_data` + `player_data`) so the
+        // player TMD + shared UI atlas stay resident across field
+        // transitions, then build with the targeted VRAM-upload
+        // heuristic. Without this every prim sampled non-uploaded
+        // VRAM regions and the filter dropped 100% of the mesh.
+        let mut shared_scenes: Vec<Scene> = Vec::new();
+        for name in FIELD_SHARED_BLOCKS {
+            match Scene::load(&session.host.index, name) {
+                Ok(sc) => shared_scenes.push(sc),
+                Err(e) => log::warn!("play-window: shared block '{name}' not loaded: {e:#}"),
+            }
+        }
+        let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+        // Use Battle kind so scene_tmd_stream entries are *included*:
+        // most town/field scenes ship their party-character meshes
+        // inside scene_tmd_stream-shaped entries, and the engine has
+        // no separate field-geometry dispatch yet. Switching to
+        // `SceneLoadKind::Field` (which retail uses for field-load)
+        // strips those TMDs and leaves the scene with zero meshes.
+        // Matches the diagnostic `info` subcommand. Revisit when a
+        // field-geometry dispatch lands.
+        let (res, _stats) = SceneResources::build_targeted_with_options(
+            s,
+            &shared_refs,
+            BuildOptions {
+                kind: SceneLoadKind::Battle,
+            },
+        )?;
+        res
     };
     log::info!(
         "play-window: scene '{}', {} TMDs, {} TIMs",
@@ -3663,13 +3887,48 @@ fn cmd_play_window(
     } else {
         None
     };
+    // Try to decode the publisher logos from PROT 0895 (init.pak) up
+    // front. Falls back silently when the disc isn't loaded or the
+    // entry doesn't parse - retail discs always have it.
+    let publisher_logos_atlas_data = match session
+        .host
+        .index
+        .entry_bytes(legaia_asset::init_pak::PROT_INDEX as u32)
+    {
+        Ok(b) => match legaia_engine_core::publisher_logos::build_atlas_from_init_pak(&b) {
+            Ok(a) => {
+                log::info!(
+                    "play-window: publisher-logos atlas built ({}x{}, {} logos)",
+                    a.width,
+                    a.height,
+                    a.rects.len()
+                );
+                Some(a)
+            }
+            Err(e) => {
+                log::warn!("play-window: publisher-logos build failed: {e:#}");
+                None
+            }
+        },
+        Err(e) => {
+            log::warn!("play-window: PROT 0895 read failed: {e:#}");
+            None
+        }
+    };
+
     let initial_boot_ui = if boot_ui {
-        let snapshots = scan_save_dir(save_dir);
-        let any_present = snapshots.iter().any(|s| s.present);
-        if any_present {
-            BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+        if publisher_logos_atlas_data.is_some() {
+            BootUiState::PublisherLogos(
+                legaia_engine_core::publisher_logos::PublisherLogosSession::new(),
+            )
         } else {
-            BootUiState::Title(legaia_engine_core::title::TitleSession::without_save_data())
+            let snapshots = scan_save_dir(save_dir);
+            let any_present = snapshots.iter().any(|s| s.present);
+            if any_present {
+                BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+            } else {
+                BootUiState::Title(legaia_engine_core::title::TitleSession::without_save_data())
+            }
         }
     } else {
         BootUiState::Inactive
@@ -3680,6 +3939,8 @@ fn cmd_play_window(
         scene_res: Some(scene_res),
         win: EngineWindow::new(),
         font_atlas: None,
+        publisher_logos: None,
+        pending_publisher_logos_atlas: publisher_logos_atlas_data,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),

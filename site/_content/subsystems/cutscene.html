@@ -169,7 +169,7 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
   <p>The trailing 3 bytes of the instruction are reserved by the dispatcher's PC math (the handler's <code>addiu s8, s8, 6</code> is fixed, but only bytes <code>+1..+3</code> are read). Disassemblers should leave them as opaque padding.</p>
 
   <h3 id="static-fmv-trigger-sites">Static FMV-trigger sites &mdash; exhaustive</h3>
-  <p>A backward sweep of every Ghidra dump in the corpus surfaces only <strong>two</strong> writers of <code>_DAT_8007B83C = 0x1A</code> in retail. Both are codified in <a href="../../crates/engine-vm/src/cutscene_trigger.rs"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>.</p>
+  <p>A backward sweep of every Ghidra dump in the corpus surfaces <strong>three</strong> writers of <code>_DAT_8007B83C = 0x1A</code> in retail. The first two are codified in <a href="../../crates/engine-vm/src/cutscene_trigger.rs"><code>legaia_engine_vm::cutscene_trigger</code></a> as <code>FMV_TRIGGER_SITES</code>; the third was pinned later via a PCSX-Redux watchpoint on the title-attract countdown.</p>
   <table>
     <thead><tr><th>Site</th><th>Function</th><th>Mode-write addr</th><th>FMV-id source</th><th>Trigger condition</th></tr></thead>
     <tbody>
@@ -181,14 +181,22 @@ legaia-engine play-window --scene opdeene --cutscene-map legaia-cutscene-map.tom
         <td>Field-VM bytecode hits <code>0x4C 0xE2 lo hi</code>; reached via JT chain <code>0x801CEE60</code> (high nibble 0xE) &rarr; <code>0x801CF008</code> (low nibble 0x2).</td>
       </tr>
       <tr>
-        <td><code>title_attract_loop</code></td>
-        <td><code>FUN_801DE234</code>, case <code>0x10</code></td>
+        <td><code>title_attract_loop</code> (<code>FUN_801DE234</code> label)</td>
+        <td><code>FUN_801DD35C</code> (label <code>FUN_801DE234</code>)</td>
         <td><code>0x801E0F50</code></td>
         <td>Hardcoded <code>0</code> (= <code>MV1.STR</code>, intro)</td>
         <td>Title-screen idle countdown <code>DAT_801ef16c</code> underflows.</td>
       </tr>
+      <tr>
+        <td><code>title_tick_inline</code></td>
+        <td><code>FUN_801DD35C</code></td>
+        <td><code>0x801DDCF0</code></td>
+        <td>Inline: <code>sh zero, -0x4588(v0)</code> zeroes <code>_DAT_8007BA78</code> at <code>0x801DDCE8</code> immediately before (= <code>MV1.STR</code>).</td>
+        <td>Inline fall-through past the decrement instruction at <code>0x801DDCCC</code> (<code>bgez v0, 0x801DFC3C</code> not taken). PC-verified via the live capture in <a href="boot.html#title-overlay-state">boot &mdash; title-overlay state</a>.</td>
+      </tr>
     </tbody>
   </table>
+  <p>Both title-side sites live in the same outer function <code>FUN_801DD35C</code> (the per-frame title-overlay tick); <code>FUN_801DE234</code> is a Ghidra-promoted label inside its body. The <code>0x801DDCF0</code> site is the one the watchpoint pins in practice &mdash; every per-frame decrement passes through <code>0x801DDCCC</code> and the underflow path immediately writes the mode-byte before any sub-call.</p>
   <p><strong><code>FUN_801E30E4</code> has zero static callers.</strong> It is a label inside <code>FUN_801DE840</code>, not a callable subroutine &mdash; Ghidra promotes it to a <code>FUN_</code> symbol because the JT entry at <code>0x801CF008[2]</code> resolves there. The actual control flow is the chain above.</p>
 
   <h3 id="seven-mid-game-scenes">Why the seven mid-game scenes don't surface in a bytewise PROT scan</h3>
