@@ -6,6 +6,14 @@ use serde::Serialize;
 
 pub const SECTOR: u32 = 0x800;
 
+/// Cap on the trailing-gap extension. Anything bigger than this is almost
+/// certainly a wrap (entries with negative `next_start - start_lba` from
+/// non-monotonic TOC sections) rather than a real on-disc footprint. The
+/// largest legitimate trailing gap observed in the retail TOC is ~15 MiB
+/// (7628 sectors for entry 867); a 64K-sector cap (= 128 MiB) is a comfortable
+/// upper bound while still rejecting wrapped negatives.
+const MAX_REASONABLE_FOOTPRINT_SECTORS: u32 = 64 * 1024;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Header {
     pub header_offset: u64,
@@ -17,9 +25,18 @@ pub struct Header {
 pub struct Entry {
     pub index: u32,
     pub start_lba: u32,
+    /// On-disc footprint in sectors — `max(indexed_size, next_start - start_lba)`.
+    /// This is what `read_entry` returns; covers trailing-overlay content the
+    /// SCUS boot loader reads past the indexed end (see boot.md).
     pub size_sectors: u32,
     pub byte_offset: u64,
     pub size_bytes: u64,
+    /// TOC-indexed payload size (the historical `toc[p+5] - toc[p+3] + 4`
+    /// formula). For entries where the boot loader reads past the indexed
+    /// end into trailing-overlay sectors, this is smaller than `size_sectors`.
+    /// Equal to `size_sectors` for entries without a trailing gap.
+    pub indexed_size_sectors: u32,
+    pub indexed_size_bytes: u64,
 }
 
 trait ReadSeek: Read + Seek + Send {}
@@ -62,18 +79,25 @@ impl Archive {
             .collect();
 
         // For entry p:
-        //   start_lba    = toc[p+2]                    (absolute LBA)
-        //   size_sectors = toc[p+5] - toc[p+3] + 4
+        //   start_lba           = toc[p+2]                       (absolute LBA)
+        //   indexed_size_sectors = toc[p+5] - toc[p+3] + 4       (TOC-indexed payload)
+        //   size_sectors         = max(indexed_size_sectors,
+        //                              toc[p+3] - toc[p+2])      (on-disc footprint)
         //
-        // The earlier interpretation `start_lba = toc[p+5] - toc[p+2]`
-        // happened to equal `size_sectors` for many entries (since the TOC
-        // stores monotonically-spaced absolute LBAs), accidentally producing
-        // size in the start slot and then reading garbage at a low file
-        // offset. Verified 2026-05 against a battle save state:
-        // entry 873 at toc[875] = 0x9086 (file off 0x4843000) byte-matches
-        // the live `_DAT_8007BD5C` runtime efect.dat 2-pack, while the old
-        // formula reads sector 0x77 (a different file). Same correction
-        // verified for entries 871, 872, 877, 888, 891.
+        // The indexed formula describes the entry's TOC-declared payload, but
+        // the SCUS boot loader sometimes reads CONTIGUOUS sectors past the
+        // indexed end into the next entry's LBA — those trailing sectors
+        // carry "trailing-overlay" content (e.g. PROT 899's trailing 60
+        // sectors are the title-screen overlay code; see boot.md). We
+        // surface the larger of the two so consumers see the full on-disc
+        // footprint. For entries that don't overlap the next, both formulas
+        // agree.
+        //
+        // The "+4" in the indexed formula was verified against entry 873's
+        // efect.dat 2-pack byte-equality (also entries 871, 872, 877, 888,
+        // 891). The trailing-gap extension was confirmed by capturing
+        // multi-sector DMA writes during cold boot (see
+        // scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua).
         let count = (header.file_num.saturating_sub(1)) as usize;
         let mut entries = Vec::with_capacity(count);
         for p in 0..count {
@@ -81,9 +105,26 @@ impl Archive {
                 break;
             }
             let start_lba = toc[p + 2];
-            let size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
+            let indexed_size_sectors = toc[p + 5].wrapping_sub(toc[p + 3]).wrapping_add(4);
+            // Trailing-gap candidate: bytes from start_lba to next entry's
+            // start_lba. Use wrapping_sub so unsorted entries don't blow up
+            // — they fall back to the indexed size.
+            let next_start_lba = toc[p + 3];
+            let footprint_sectors = next_start_lba.wrapping_sub(start_lba);
+            // Only honor the trailing extension when it's a sane positive
+            // number (entries aren't always strictly sorted; an unsorted
+            // pair would produce a huge wrapped value).
+            let extended_size_sectors = if footprint_sectors <= MAX_REASONABLE_FOOTPRINT_SECTORS
+                && footprint_sectors > indexed_size_sectors
+            {
+                footprint_sectors
+            } else {
+                indexed_size_sectors
+            };
+            let size_sectors = extended_size_sectors;
             let byte_offset = (start_lba as u64) * (SECTOR as u64);
             let size_bytes = (size_sectors as u64) * (SECTOR as u64);
+            let indexed_size_bytes = (indexed_size_sectors as u64) * (SECTOR as u64);
             if byte_offset.saturating_add(size_bytes) > file_len {
                 continue;
             }
@@ -93,6 +134,8 @@ impl Archive {
                 size_sectors,
                 byte_offset,
                 size_bytes,
+                indexed_size_sectors,
+                indexed_size_bytes,
             });
         }
 
@@ -109,12 +152,35 @@ impl Archive {
         self.file_len
     }
 
+    /// Read an entry's full on-disc footprint (indexed payload + trailing
+    /// gap, if any). This is what consumers usually want — it matches what
+    /// the SCUS boot loader reads when it issues a multi-sector ReadN.
     pub fn read_entry(&mut self, entry: &Entry, out: &mut Vec<u8>) -> Result<()> {
         out.clear();
         out.resize(entry.size_bytes as usize, 0);
         self.reader.seek(SeekFrom::Start(entry.byte_offset))?;
         self.reader.read_exact(out)?;
         Ok(())
+    }
+
+    /// Read only an entry's TOC-indexed sub-region (the historical
+    /// `toc[p+5] - toc[p+3] + 4` slice). Use when you specifically want the
+    /// indexed payload without any trailing-overlay sectors — most callers
+    /// should prefer [`Self::read_entry`].
+    pub fn read_entry_indexed(&mut self, entry: &Entry, out: &mut Vec<u8>) -> Result<()> {
+        out.clear();
+        out.resize(entry.indexed_size_bytes as usize, 0);
+        self.reader.seek(SeekFrom::Start(entry.byte_offset))?;
+        self.reader.read_exact(out)?;
+        Ok(())
+    }
+
+    /// Trailing-gap size in sectors (`size_sectors - indexed_size_sectors`).
+    /// Zero for entries without a trailing gap.
+    pub fn trailing_gap_sectors(entry: &Entry) -> u32 {
+        entry
+            .size_sectors
+            .saturating_sub(entry.indexed_size_sectors)
     }
 }
 

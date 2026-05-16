@@ -80,25 +80,46 @@ The SCUS-side CD I/O is layered. Bottom-up:
 
 `FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`: retail branch uses ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read), debug branch uses PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). The two branches load the same data from different on-disc locations.
 
-### Title-overlay source PROT (open)
+### Title-overlay source on disc
 
-The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) is **not byte-locatable in any PROT entry** - neither raw nor LZS-decompressed. Five distinct 32-byte fingerprints from the title-specific code region (overlay offsets `0x10818`, `0x18000`, `0x1B000`, `0x1D35C` title-tick body, `0x20000`) all return zero PROT matches. A lossy-LZS brute-force scan (`crates/lzs/examples/find_title_overlay.rs`) of every PROT entry × every 4-byte offset 0..0x1000 also returns zero hits.
+The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) lives in an **unindexed 60-sector gap inside `PROT.DAT`** between TOC entries 899 and 900. The per-entry extractor stops at each TOC entry's claimed size, so the gap bytes never land in `extracted/PROT/`. To reach them, slice `PROT.DAT` directly.
 
-**The capture is mixed content, not a single overlay file.** The 256 KiB at RAM `0x801C0000` during the title-screen phase contains interleaved data from multiple sources:
+| Range (PROT.DAT) | Sectors | Bytes | Contents |
+|---|---|---|---|
+| `0x5C3D800..0x5C44800` | 47227..47241 | 28 672 | PROT entry 899 indexed payload (extracted as `0899_xxx_dat.BIN`) |
+| `0x5C44800..0x5C62800` | 47241..47301 | **122 880** | **Unindexed gap = title overlay code** |
+| `0x5C62800..0x5C67800` | 47301..47311 | 20 480 | PROT entry 900 indexed payload (extracted as `0900_xxx_dat.BIN`) |
 
-| Offset range | Source | Reason |
-|---|---|---|
-| `0x00000..~0x03000` | PROT 1053 `music_01` (SEQ data) | leftover from BGM streaming - byte-equality verified vs `1053_music_01.BIN[0x24880:]` |
-| `0x0E818..0x15818` | PROT 0899 (options menu data) | menu-overlay data section |
-| `0x0EFE8..0x10818` | PROT 0897 trailing (shared menu helpers) | shared overlay-init stub (~6 KiB) |
-| `0x0F000..0x25000` (~88 KiB) | title-overlay code | NOT in any uncompressed or LZS-decoded PROT entry |
-| `0x25000+` | runtime state, glyph atlas | dynamic |
+The title-tick body (`FUN_801DD35C`) source is at `PROT.DAT` offset `0x5C4C344` (gap-relative `+0x7B44`, sector +15 within the gap). Capture the gap as a standalone file with:
 
-So a single-file PROT lookup won't reach the title overlay; the captured bytes are a snapshot of the buffer state, not the source. Two paths forward for pinning the on-disc location:
+```python
+raw = open("extracted/PROT.DAT","rb").read()
+open("title_overlay.bin","wb").write(raw[47241*0x800 : 47301*0x800])
+```
 
-- **Pre-mode-dispatch boot path.** PROT 0895 (`init.pak`) gets loaded by some routine before the mode-table starts dispatching - the same routine probably loads the title overlay immediately afterwards. Across 652 SCUS Ghidra dumps, NO function passes literal `a0 = 0x37F` (= PROT 895) to `FUN_8003E8A8` (the LBA resolver), so init.pak is loaded by an undumped SCUS function OR via a dynamic index (lui/addiu pair that Ghidra's reference manager doesn't track) OR via the ISO9660 path resolver. Expand SCUS dump coverage via `force_disasm_dump.py` to find the callsite.
-- **Fresh title-phase RAM capture.** Existing `snap_vsync_0300.bin` is from the publisher-logos phase (vsync 300 ≈ 5 sec, title overlay not yet loaded). Capture during the actual title screen with the LZS staging buffer still resident, then byte-match the staging buffer content against PROT entries.
-- **The "FUN_8005DA40 walks pointer table _DAT_800795B4" memory claim is unverified.** No SCUS dump references `_DAT_800795B4`; `FUN_8005DA40` itself is not a real function entry - the address `0x8005DA40` is an intra-function instruction inside `FUN_8005D9A0` (the CD-DMA-read primitive that triggers DMA channel 3). Per CLAUDE.md's "Ghidra promotes intra-function labels to fake `FUN_xxxxxxxx`" caveat, this label is a mis-attribution.
+#### How the load happens
+
+The SCUS boot sequence issues a multi-sector `ReadN` starting at PROT 899's LBA (47227) and reads ~74 sectors of contiguous on-disc data — crossing PROT 899's TOC-claimed end (47241) into the unindexed gap. The CD-DMA primitive (`FUN_8005D9A0`) breaks the read into 5 sequential DMA bursts:
+
+| DMA burst | RAM dst | PROT.DAT source offset | Caller |
+|---|---|---|---|
+| 1 | `0x801CF818` | `0x5C3E800` (PROT 899 +0x1000, sec +2) | `pc=0x8005DA50, ra=0x8005C2D4` |
+| 2 | `0x801D4818` | `0x5C43800` (PROT 899 +0x6000, sec +12) | same |
+| 3 | `0x801D9818` | `0x5C48800` (gap +0x4000, sec +8) | same |
+| 4 | `0x801DD018` | `0x5C4C000` (gap +0x7800, sec +15) | same |
+| 5 | `0x801E4818` | `0x5C53800` (gap +0xF000, sec +30) | same |
+
+Capture pipeline: [`scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua) (cold-boot mode, `LEGAIA_NO_SSTATE=1`) arms Write breakpoints inside the overlay range and captures the DMA-driven writes — PCSX-Redux Lua Write BPs catch DMA writes from CD-DMA-channel-3.
+
+#### Why the TOC misses it
+
+The per-entry size formula `size_sectors = toc[p+5] - toc[p+3] + 4` (see [`docs/formats/prot.md`](../formats/prot.md) and [`crates/prot/src/archive.rs`](../../crates/prot/src/archive.rs)) gives 14 sectors for PROT 899, but the on-disc contiguous range between PROT 899 and PROT 900 is 74 sectors. The formula appears to describe an "indexed" subset of each entry's disc footprint, with trailing unindexed bytes carrying overlay code that the SCUS loader reads by passing an explicit larger sector count. The same pattern may apply to other entries — comparing each TOC slot's claimed size to the gap to the next entry would identify other hidden overlays.
+
+#### Negative findings (corrects earlier notes)
+
+- The historical claim "title overlay code is not in any PROT entry" was **methodologically** correct (it isn't in any **extracted PROT file**) but missed the disc-level reality: the bytes ARE in PROT.DAT, just outside the indexed entries.
+- A lossy-LZS brute-force scan returned zero hits because the title overlay is **not compressed**; the CD-DMA primitive copies raw bytes straight into the overlay window.
+- The "FUN_8005DA40 walks pointer table _DAT_800795B4" claim from earlier notes is unverified. `0x8005DA40` is an intra-function instruction inside `FUN_8005D9A0` (the CD-DMA-channel-3 read primitive) — Ghidra promotes intra-function labels to fake `FUN_xxxxxxxx`. The actual DMA-driver site is `pc=0x8005DA50`.
 
 The script VM that drives every running script is **not** in `SCUS_942.54` - it lives in RAM overlays at `0x801C0000+`. The actor / sprite VM (`FUN_801D6628`) is in the title-screen overlay; the field/event VM (`FUN_801DE840`) is in the town/field overlay; the effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) is in the battle overlay. See [actor VM](actor-vm.md), [field VM](script-vm.md), and [effect VM](effect-vm.md).
 

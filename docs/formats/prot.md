@@ -18,15 +18,29 @@ The detector tries offset 0x000 first, then 0x800, accepting whichever yields pl
 The TOC is a sequence of `u32` words. Each on-disc entry occupies multiple TOC slots. For entry index `p`:
 
 ```
-start_lba    = toc[p + 2]                       // absolute LBA into PROT.DAT
-size_sectors = toc[p + 5] - toc[p + 3] + 4
-byte_offset  = start_lba * 0x800
-size_bytes   = size_sectors * 0x800
+start_lba             = toc[p + 2]                       // absolute LBA into PROT.DAT
+indexed_size_sectors  = toc[p + 5] - toc[p + 3] + 4      // TOC-declared payload size
+footprint_sectors     = toc[p + 3] - toc[p + 2]          // on-disc span to next entry
+size_sectors          = max(indexed_size_sectors, footprint_sectors)
+byte_offset           = start_lba * 0x800
+size_bytes            = size_sectors * 0x800
 ```
 
-`toc[p+5]` is the absolute LBA of entry `p+3` (an end-marker that aliases the next-entry's start), so `toc[p+5] - toc[p+3] + 4` recovers the size in sectors.
+`toc[p+5]` is the absolute LBA of entry `p+3` (an end-marker that aliases the next-entry's start), so `toc[p+5] - toc[p+3] + 4` recovers the indexed size in sectors.
 
-> **Historical note.** An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes the SIZE in sectors and was misinterpreted as the start LBA - under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges. Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions.
+### Trailing-overlay sectors (`indexed_size` vs `size`)
+
+For ~24% of entries the on-disc contiguous range to the next entry's start LBA is **larger** than the indexed payload — the trailing sectors carry overlay content the SCUS boot loader reads via a multi-sector `ReadN` past the TOC-claimed end. PROT entry 899 is the canonical example: indexed payload is 14 sectors (28 KiB, the options menu), but the on-disc footprint is 74 sectors — the trailing 60 sectors are the title-screen overlay code (see [`subsystems/boot.md`](../subsystems/boot.md#title-overlay-source-on-disc)).
+
+[`legaia_prot::archive::Archive`](../../crates/prot/src/archive.rs) exposes both views:
+
+- `Entry::size_sectors` / `size_bytes` — full on-disc footprint (default).
+- `Entry::indexed_size_sectors` / `indexed_size_bytes` — TOC-indexed payload only.
+- `Archive::read_entry` reads the footprint; `Archive::read_entry_indexed` reads only the indexed sub-region.
+
+Scene-side parsers were designed for the indexed view and use `read_entry_indexed` via [`ProtIndex::entry_bytes`](../../crates/engine-core/src/scene.rs). Asset-viewer / disc-browser consumers use the full footprint so trailing-overlay content is visible.
+
+> **Historical note.** An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes the SIZE in sectors and was misinterpreted as the start LBA — under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges. Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions. The `size_sectors = max(indexed, footprint)` extension is a later correction (the indexed formula alone misses trailing-overlay sectors for entries like 899).
 
 ## In-RAM TOC
 

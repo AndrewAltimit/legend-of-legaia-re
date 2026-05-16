@@ -106,6 +106,24 @@
   <p>The exact on-screen layout retail uses still has to be RE'd from the unlocated <a href="#title-overlay-state">title-overlay tick body</a> &mdash; the <code>STRIP_GRID</code> constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.</p>
 </section>
 
+<section class="doc-section" id="title-overlay-source">
+  <h2>Title-overlay source on disc</h2>
+  <p>The title-overlay code (function <code>FUN_801DD35C</code> at <code>0x801DD35C</code>, the captured <code>overlay_title.bin</code> 256-KiB window) lives in an <strong>unindexed 60-sector gap inside <code>PROT.DAT</code></strong> between TOC entries 899 and 900. The per-entry extractor's size formula stops at each TOC entry's claimed end, so the gap bytes never landed in <code>extracted/PROT/</code> until the extractor was extended with the <code>max(indexed, footprint)</code> rule. The gap is now surfaced as the trailing portion of <code>extracted/PROT/0899_xxx_dat.BIN</code>.</p>
+  <table>
+    <thead><tr><th>Range (PROT.DAT)</th><th>Sectors</th><th>Bytes</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x5C3D800..0x5C44800</code></td><td>47227..47241</td><td>28&nbsp;672</td><td>PROT 899 indexed payload (options menu)</td></tr>
+      <tr><td><code>0x5C44800..0x5C62800</code></td><td>47241..47301</td><td><strong>122&nbsp;880</strong></td><td><strong>Unindexed gap = title overlay code</strong></td></tr>
+      <tr><td><code>0x5C62800..0x5C67800</code></td><td>47301..47311</td><td>20&nbsp;480</td><td>PROT 900 indexed payload</td></tr>
+    </tbody>
+  </table>
+  <p>The title-tick body (<code>FUN_801DD35C</code>) source is at <code>PROT.DAT</code> offset <code>0x5C4C344</code> (gap-relative <code>+0x7B44</code>, sector +15 within the gap).</p>
+  <h3>How the load happens</h3>
+  <p>The SCUS boot sequence issues a multi-sector <code>ReadN</code> starting at PROT 899's LBA (47227) and reads ~74 sectors of contiguous on-disc data &mdash; crossing PROT 899's TOC-claimed end (47241) into the unindexed gap. The CD-DMA primitive (<code>FUN_8005D9A0</code>) breaks the read into 5 sequential DMA bursts, each landing into a different point in the overlay window (capture: <code>scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua</code> with <code>LEGAIA_NO_SSTATE=1</code>). PCSX-Redux Write breakpoints catch DMA writes from CD-DMA-channel-3.</p>
+  <h3>Why the TOC misses it</h3>
+  <p>The historical per-entry size formula <code>size_sectors = toc[p+5] - toc[p+3] + 4</code> gives 14 sectors for PROT 899, but the on-disc contiguous range to PROT 900's LBA is 74 sectors. The formula appears to describe an "indexed" subset of each entry's disc footprint, with trailing unindexed bytes carrying overlay code the SCUS loader reads via an explicit larger sector count. The extractor now honors <code>max(indexed_size_sectors, footprint_sectors)</code> &mdash; see <a href="../formats/prot.html">PROT TOC</a>.</p>
+</section>
+
 <section class="doc-section" id="title-overlay-state">
   <h2>Title-screen overlay state</h2>
   <p>The title-screen overlay loads into <code>0x801E0000+</code> during the boot sequence and keeps its mode state in a struct at <code>0x801EF018</code>. Known fields:</p>
