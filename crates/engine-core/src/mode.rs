@@ -46,13 +46,22 @@ pub struct ModeEntry {
 /// `from_index`/`as_index` round-trip them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameMode {
-    /// Mode 0 - boot config init (sound test / debug menu entry).
+    /// Mode 0 - "CONFIG INIT" (dev label - misleading): the retail handler
+    /// `FUN_80025C68` loads PROT 973, a SLOT-MACHINE DEBUG overlay
+    /// (OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16). Not a game-config init.
     ConfigInit,
-    /// Mode 1 - per-frame config menu.
+    /// Mode 1 - "CONFIG MODE" per-frame handler for the slot-machine debug
+    /// mode. Uses the default per-frame dispatcher `FUN_80025EEC`.
     ConfigMode,
-    /// Mode 2 - main init (boot to title screen).
+    /// Mode 2 - "MAIN INIT" (dev label - misleading): the retail handler
+    /// `FUN_80025B64` loads PROT 899, the OPTIONS MENU code overlay
+    /// (Display Off / Vibration On / Voices On). Despite the dev name and
+    /// earlier engine-core comments, **this is not the title-screen init.**
+    /// The title screen is loaded by a pre-mode-dispatch boot routine
+    /// that is not yet pinned.
     MainInit,
-    /// Mode 3 - title-screen per-frame.
+    /// Mode 3 - "MAIN MODE" (dev label) per-frame handler for the options
+    /// menu. Uses the default per-frame dispatcher `FUN_80025EEC`.
     MainMode,
     /// Mode 4 - monster test init (debug).
     MonsterTest,

@@ -21,17 +21,41 @@ The boot path doesn't call the dispatcher itself; it just makes sure the buffer 
 
 ## Game-mode state machine
 
-The mode-dispatch table at `0x8007078C` covers 14 logical mode pairs × 16 bytes = 224 bytes. Each entry has the layout `(init_handler_PC, init_param, name_string_OR_tick_handler_PC, reserved)`. Half-word 2 frequently encodes a pointer to a 12-byte-aligned debug name string in the pool starting at `0x80010A70` (`"TEST TEST"`, `"EFECT MODE"`, `"EFECT TEST"`, `"TMD MODE"`, `"TMD TEST"`, `"MONSTER MODE"`, `"MAIN MODE"`, `"CONFIG MODE"`, …) — those names are **dev-only debug labels** that don't always match what the handler semantically does.
+The mode-dispatch table at `0x8007078C` is **28 entries × 24 bytes = 672 bytes** (already documented in [`reference/functions.md` § Game-mode state machine](../reference/functions.md#game-mode-state-machine)). Each entry layout:
 
-Verified handler→PROT mappings from SCUS-side reads (`FUN_8003EBE4` and `FUN_8003EC70` are the two overlay loaders; both resolve as `prot_index = param + 0x381` via `FUN_8003E8A8`, with destination buffer pointers `*DAT_8001038C` / `*DAT_80010390` respectively):
+| Offset | Width | Field |
+|---|---|---|
+| `+0x00` | u32 | Name-string pointer. Even modes (init) point at BSS labels in `0x8007B3DC..0x8007B408` (runtime-initialised). Odd modes (per-frame) point at static dev-mode-name strings in the `0x800109D0..0x80010AD8` pool. |
+| `+0x04` | u32 | Reserved / zero. |
+| `+0x08` | u32 | `0xFFFF0000` sentinel on most init modes; `0` on per-frame modes. |
+| `+0x0C` | u32 | Reserved / zero. |
+| `+0x10` | u32 | Handler function pointer (some land in the overlay window `0x801C0000+` when an overlay is resident, e.g. mode 6 TMD-TEST's `0x801CF730`). |
+| `+0x14` | u32 | Handler parameter. |
 
-| Mode name | Init handler | `FUN_8003EBE4(N)` | PROT index | Content (verified) |
+Dev mode-name strings (12-byte stride in the static pool):
+
+| Mode pair | Name | Mode pair | Name |
+|---|---|---|---|
+| `0/1` | `CONFIG INIT` / `CONFIG MODE` | `14/15` | `MAP TEST` / `MAP MODE` |
+| `2/3` | `MAIN INIT` / `MAIN MODE` | `16/17` | `READ INIT` / `READ MODE` |
+| `4/5` | `MONSTER TEST` / `MONSTER MODE` | `18/19` | `GAMEOVER INIT` / `GAMEOVER MODE` |
+| `6/7` | `TMD TEST` / `TMD MODE` | `20/21` | `BATTLE INIT` / `BATTLE MODE` |
+| `8/9` | `EFECT TEST` / `EFECT MODE` | `22/23` | `CARD INIT` / `CARD MODE` |
+| `10/11` | `TEST TEST` / `TEST MODE` | `24/25` | `OTHER INIT` / `OTHER MODE` |
+| `12/13` | `MAPDISP INIT` / `MAPDISP MODE` | `26/27` | `STR INIT` / `STR MODE` |
+
+Verified handler→PROT mappings (`FUN_8003EBE4` and `FUN_8003EC70` are the two parallel overlay loaders; both resolve `prot_index = param + 0x381` via `FUN_8003E8A8`, with destination buffer pointers `*DAT_8001038C` / `*DAT_80010390` respectively):
+
+| Mode | Init handler | Loader call | PROT idx | Content (verified) |
 |---|---|---|---|---|
-| `MAIN MODE` | `FUN_80025B64` | N=2 | 899 | Options/config menu - "Display Off / Vibration On / Voices On" strings + 27 MIPS prologues |
-| `CONFIG MODE` | `FUN_80025C68` | N=0x4C (76) | 973 | Slot-machine debug overlay - "OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16" strings + slot-game text |
-| (mode-24 OTHER) | `FUN_80025980` | N=? | 896 | Mode-24 overlay (cited by `dump_round8.py` `OVERLAY_0896_TARGETS`) - **not** "battle background" despite CDNAME `bat_back_dat` |
+| 0 `CONFIG INIT` | `FUN_80025C68` | `FUN_8003EBE4(0x4C)` | 973 | Slot-machine debug overlay — "OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16" strings + slot-game text. **The dev label "CONFIG" is a misnomer for the slot-machine debug mode.** |
+| 2 `MAIN INIT` | `FUN_80025B64` | `FUN_8003EBE4(2)` | 899 | Options/config menu — "Display Off / Vibration On / Voices On" strings + 27 MIPS prologues. **The dev label "MAIN INIT" refers to the OPTIONS MENU**, not the title screen. |
+| 24 `OTHER INIT` | `FUN_80025980` | ? | 896 | Mode-24 OTHER overlay (cited by `dump_round8.py`'s `OVERLAY_0896_TARGETS`) — **not** "battle background" despite CDNAME `bat_back_dat`. |
+| 26 `STR INIT` | `FUN_80025FB4` | (FMV path) | — | Cutscene / STR FMV mode entry. Title-overlay tick writes `_DAT_8007B83C = 0x1A` (= 26) on attract underflow → enters this mode. |
 
-The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` (mode 2 = `MainInit`, mode 3 = `MainMode`) is a **deduced clean-room interpretation** - the dev string at table-entry 1 word 2 (= `0x80010AD8`) is `"CONFIG MODE"`, not `"MAIN MODE"`, so the mode→name mapping in `mode.rs` needs verification against retail behaviour rather than the dev label.
+**The dev mode-names mislead.** `MAIN INIT` doesn't initialise the title screen; it initialises the options menu (likely so-named because options is the "main game-options" screen in dev parlance). `CONFIG INIT` doesn't initialise game config; it initialises the slot-machine debug mode. The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` shares these dev names but its implied semantics (e.g., comment "Mode 2 - main init (boot to title screen)") are wrong — verify each variant's docstring against retail behaviour before relying on it.
+
+**The title screen does not appear to be one of the 28 modes** — every mode whose init handler we've traced loads a debug/test/menu overlay or a major game mode (field/battle/cutscene), none of which match the title-overlay tick at `FUN_801DD35C`. The title overlay is loaded by a pre-mode-dispatch boot routine, ahead of the mode table being consulted at all.
 
 ### CD-read API stack
 

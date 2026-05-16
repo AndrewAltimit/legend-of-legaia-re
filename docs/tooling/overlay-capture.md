@@ -73,6 +73,36 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin
 ```
 
+## Extracting TIMs from a RAM snapshot
+
+A captured RAM dump often contains transient TIMs that the game staged in main RAM before uploading to VRAM. These can be identified, decoded, and **traced back to their source PROT entry** even when the source is uncompressed - the on-disc CLUT + pixel data is byte-identical to the staged copy; only the RECT fields (VRAM target coords) get rewritten at runtime.
+
+### Methodology
+
+1. Sweep the RAM dump for byte sequence `10 00 00 00` followed by valid PSX TIM flags:
+   ```python
+   import struct
+   for off in range(0, len(data) - 32, 4):
+       if struct.unpack_from('<I', data, off)[0] != 0x10:
+           continue
+       flags = struct.unpack_from('<I', data, off+4)[0]
+       mode = flags & 7
+       if mode > 3: continue
+       # validate CLUT block size + RECT, then pixel block size + RECT
+       # (within sane bounds: w/h <= 1024 / 512, sizes in plausible ranges)
+   ```
+2. Extract each hit as a `.tim` file and decode with `legaia-tim convert` to PNG to identify visually.
+3. Build a 16-byte fingerprint from the first CLUT row at offset `0x14` inside the TIM file (skip the RECT bytes at `0x0C..0x14` because those get runtime-relocated).
+4. Grep the PROT corpus (`extracted/PROT/*.BIN`) for that fingerprint. Each hit identifies the source entry; byte-compare CLUT + pixel data to confirm.
+
+### Worked example
+
+- The captured `captures/boot_walk/snap_vsync_0300.bin` (full 2 MiB main RAM, taken during the publisher-logo phase) contains four TIMs at `0x801D09DC`, `0x801DBBFC`, `0x801E761C`, `0x801EB65C`.
+- Visual decode: PROKION, Contrail "A Contrail Production", "Sony Computer Entertainment America Presents", and the WARNING screen.
+- All four CLUT fingerprints match `0895_bat_back_dat.BIN` at well-separated offsets - PROT 0895 is the boot `init.pak` bundle (CDNAME label `bat_back_dat` is misleading). Documented in [`subsystems/boot.md` § Boot init.pak](../subsystems/boot.md#boot-initpak-prot-0895).
+
+The same method should work for any other transient TIM (battle backgrounds, menu chrome, world map terrain textures) provided the source PROT entry stores the TIM uncompressed. LZS-compressed sources won't match by direct byte search - either decompress them first or use a different signature (e.g., the rendered pixel histogram or framebuffer-area VRAM coords).
+
 ## One-command capture (mednafen + Duckstation)
 
 For new captures, the highest-leverage entry point is
