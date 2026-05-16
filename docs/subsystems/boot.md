@@ -21,7 +21,24 @@ The boot path doesn't call the dispatcher itself; it just makes sure the buffer 
 
 ## Game-mode state machine
 
-The 28-mode state machine table at `0x8007078C` is the top-level "what is the game doing" dispatcher. Each entry is a `(handler_addr, …)` tuple corresponding to a major mode (boot, title, field, battle, world map, menu, cutscene, etc.).
+The mode-dispatch table at `0x8007078C` covers 14 logical mode pairs × 16 bytes = 224 bytes. Each entry has the layout `(init_handler_PC, init_param, name_string_OR_tick_handler_PC, reserved)`. Half-word 2 frequently encodes a pointer to a 12-byte-aligned debug name string in the pool starting at `0x80010A70` (`"TEST TEST"`, `"EFECT MODE"`, `"EFECT TEST"`, `"TMD MODE"`, `"TMD TEST"`, `"MONSTER MODE"`, `"MAIN MODE"`, `"CONFIG MODE"`, …) — those names are **dev-only debug labels** that don't always match what the handler semantically does.
+
+Verified handler→PROT mappings from SCUS-side reads (`FUN_8003EBE4` and `FUN_8003EC70` are the two overlay loaders; both resolve as `prot_index = param + 0x381` via `FUN_8003E8A8`, with destination buffer pointers `*DAT_8001038C` / `*DAT_80010390` respectively):
+
+| Mode name | Init handler | `FUN_8003EBE4(N)` | PROT index | Content (verified) |
+|---|---|---|---|---|
+| `MAIN MODE` | `FUN_80025B64` | N=2 | 899 | Options/config menu - "Display Off / Vibration On / Voices On" strings + 27 MIPS prologues |
+| `CONFIG MODE` | `FUN_80025C68` | N=0x4C (76) | 973 | Slot-machine debug overlay - "OTHER2 / CICLE1 / SPRITE1 / SPREAD / GT4 DIV16" strings + slot-game text |
+| (mode-24 OTHER) | `FUN_80025980` | N=? | 896 | Mode-24 overlay (cited by `dump_round8.py` `OVERLAY_0896_TARGETS`) - **not** "battle background" despite CDNAME `bat_back_dat` |
+
+The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` (mode 2 = `MainInit`, mode 3 = `MainMode`) is a **deduced clean-room interpretation** - the dev string at table-entry 1 word 2 (= `0x80010AD8`) is `"CONFIG MODE"`, not `"MAIN MODE"`, so the mode→name mapping in `mode.rs` needs verification against retail behaviour rather than the dev label.
+
+### Title-overlay source PROT (open)
+
+The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) is **LZS-compressed on disc** - byte-search for `0x801D6704`'s first 32 bytes finds no match across the 1232 uncompressed PROT entries. None of the named mode handlers (`MAIN MODE`, `CONFIG MODE`, `MONSTER MODE`, `TMD MODE`, `EFECT MODE`, `MEM TEST`) load it directly. Two candidate paths for next-session tracing:
+
+- **Pre-mode-dispatch boot path.** PROT 0895 (`init.pak`) gets loaded by some routine before the mode-table starts dispatching - the same routine probably loads the title overlay immediately afterwards. The PROT-895 loader doesn't use the `+0x381` offset (895 = 0x37F, 0x37F − 0x381 = −2), so a different constant or a different loader API is in play.
+- **The "FUN_8005DA40 walks pointer table _DAT_800795B4" memory claim is unverified.** No SCUS dump references `_DAT_800795B4`; `FUN_8005DA40` itself is not a real function entry - the address `0x8005DA40` is an intra-function instruction inside `FUN_8005D9A0` (the CD-DMA-read primitive that triggers DMA channel 3). Per CLAUDE.md's "Ghidra promotes intra-function labels to fake `FUN_xxxxxxxx`" caveat, this label is a mis-attribution.
 
 The script VM that drives every running script is **not** in `SCUS_942.54` - it lives in RAM overlays at `0x801C0000+`. The actor / sprite VM (`FUN_801D6628`) is in the title-screen overlay; the field/event VM (`FUN_801DE840`) is in the town/field overlay; the effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) is in the battle overlay. See [actor VM](actor-vm.md), [field VM](script-vm.md), and [effect VM](effect-vm.md).
 
