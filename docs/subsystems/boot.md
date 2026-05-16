@@ -230,6 +230,8 @@ PROT entry `0895_bat_back_dat` is the **boot-time `init.pak` bundle** — despit
 
 CLUT and pixel data are byte-identical to live RAM after boot extraction — only the RECT fields (VRAM target coords) are runtime-relocated. On-disc each TIM has CLUT `fb=(0, 480+N)` and pixel `fb=(640..800, 0..256)`; the boot loader rewrites these to per-logo VRAM regions before calling LoadImage.
 
+A typed parser lives at [`legaia_asset::init_pak`](../../crates/asset/src/init_pak.rs) — call `parse(&prot_0895_bytes)` to get a struct view over the four logos (slice pointers + decoded VRAM rects). The disc-gated unit test (`parses_real_init_pak_when_disc_extracted`) locks the on-disc layout.
+
 The `h:\prot\field\title\title.pak` string is **only a debug-print referent** — the title-screen content lives in a separate PROT entry referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere.
 
 The TIM-upload helper for these (and for the title overlay's per-frame sprites) is `FUN_800198E0` — it consumes a packed struct with custom magic `0x11` OR a real PSX TIM (flags bit 3 = "has CLUT"), and dispatches to `FUN_800583C8` (the `LoadImage` wrapper, identified by the literal string `s_LoadImage_800156d4` it references for debug logging).
