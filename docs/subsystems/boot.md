@@ -33,6 +33,29 @@ Verified handler→PROT mappings from SCUS-side reads (`FUN_8003EBE4` and `FUN_8
 
 The engine-core `GameMode` enum in `crates/engine-core/src/mode.rs` (mode 2 = `MainInit`, mode 3 = `MainMode`) is a **deduced clean-room interpretation** - the dev string at table-entry 1 word 2 (= `0x80010AD8`) is `"CONFIG MODE"`, not `"MAIN MODE"`, so the mode→name mapping in `mode.rs` needs verification against retail behaviour rather than the dev label.
 
+### CD-read API stack
+
+The SCUS-side CD I/O is layered. Bottom-up:
+
+| Function | Role |
+|---|---|
+| `FUN_8005D9A0` | CD-DMA-channel-3 synchronous read primitive. Writes CD command registers and triggers DMA. Takes `(dest_buffer, mode)`. The `_DAT_800795B4` pointer table mentioned in some older notes does not exist - `0x8005DA40` is just an instruction inside this function (`lui v1, 0x8008`), promoted to a fake `FUN_xxxxx` label by Ghidra. |
+| `FUN_8005C2C4` | 1-line wrapper around `FUN_8005D9A0` returning `iVar1 == 0`. |
+| `FUN_8005C42C` | BCD-MSF → LBA conversion: `(minBCD * 60 + secBCD) * 75 + frameBCD - 150`. Standard PSX MSF math. |
+| `FUN_8005C328` | LBA → BCD-MSF conversion (inverse of `FUN_8005C42C`). |
+| `FUN_8005DBB4` | ISO9660 directory lookup: `(file_info_out, filename)` → fills `file_info_out` with `{msf[3], size, ...}`. |
+| `FUN_8005E574` | Streaming-read per-IRQ callback (registered by `FUN_8005E788`). Drives multi-sector reads via globals `DAT_800796CC` (destination cursor), `DAT_800796D8` (sectors remaining), `DAT_800796E4` (current LBA). |
+| `FUN_8005E788` | Streaming-read **starter**: copies `DAT_800796C8` → `DAT_800796CC` and `DAT_800796C4` → `DAT_800796D8`, registers `FUN_8005E574` as IRQ callback, sets initial LBA via `FUN_8005C42C(FUN_8005BD70())`. |
+| `FUN_8005E9A4` | Public streaming-read API: `(sector_count, dest_buffer, mode_flags)`. Sets the streaming globals + calls `FUN_8005E788(0)`. Caller must SetLoc beforehand. Sector size from `mode_flags`: bits `&0x30 == 0` → 0x200 (2048, data), `== 0x20` → 0x249 (2336, XA), else 0x246. |
+| `FUN_8005E4D4` | Sync LBA-based file reader: `(sector_count, lba, dest_buffer)`. Wraps `FUN_8005C328` + `CdControl(SetLoc)` + `FUN_8005E9A4` + completion poll. |
+| `FUN_8003D3C4` | Path-based ISO9660 file loader: `(path, dest)`. Wraps `FUN_8005DBB4` + SetLoc + `FUN_8005E9A4`. Used for `.STR`/`.XA` filesystem files. |
+| `FUN_8003E4E8` | Boot-time TOC loader: `(filename_str, do_read_flag)`. Hardcoded for `"PROT.DAT"` from `FUN_8003F08C(0)`. Reads 3 sectors (= 6 KB) into `0x801C70F0`. |
+| `FUN_8003E800` | Async LBA-based loader: `(dest, lba, flags)`. Queues a load via globals `gp+0x97c` (lba) / `gp+0x894` (dest), kicks via `FUN_8003F128`. Used by both overlay loaders. |
+| `FUN_8003E8A8` | PROT TOC index resolver: `(prot_index, flag)` → LBA. Reads `*(0x801C70F0 + (index+2)*4)` matching the [PROT TOC math](../formats/prot.md). |
+| `FUN_8003EBE4` / `FUN_8003EC70` | Parallel overlay loaders A/B (see Game-mode state machine section). Both: `prot_index = param + 0x381`. Differ only in destination buffer pointer (`*DAT_8001038C` vs `*DAT_80010390`) and current-id tracker (`gp+0x924` vs `gp+0x934`). |
+
+`FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`: retail branch uses ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read), debug branch uses PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). The two branches load the same data from different on-disc locations.
+
 ### Title-overlay source PROT (open)
 
 The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) is **LZS-compressed on disc** - byte-search for `0x801D6704`'s first 32 bytes finds no match across the 1232 uncompressed PROT entries. None of the named mode handlers (`MAIN MODE`, `CONFIG MODE`, `MONSTER MODE`, `TMD MODE`, `EFECT MODE`, `MEM TEST`) load it directly. Two candidate paths for next-session tracing:
