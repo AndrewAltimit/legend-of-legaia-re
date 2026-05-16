@@ -95,14 +95,20 @@ pub const SAVE_FILE_EXT3_MAGIC: [u8; 4] = *b"LGX3";
 /// - `inventory` mirrors the 144-byte 72-slot pair array at `0x1818`
 ///   (RAM `0x80085958..0x800859E8`).
 ///
-/// The 32-bit [`Self::story_flags`] word is the scratchpad cache
-/// (`_DAT_1F800394`) that the field VM operates on via opcodes
-/// `0x2E` / `0x2F` / `0x30`; it's a narrower view than the full retail
-/// bitmap and is round-tripped separately.
+/// [`Self::story_flags`] is a separate 32-bit flag word at
+/// `_DAT_1F800394` (PSX scratchpad) that the field VM operates on via
+/// opcodes `0x2E` / `0x2F` / `0x30`. It is **not** a cache of the wide
+/// retail bitmap: retail seeds it from the game-mode descriptor table
+/// (`mode_table[mode_idx].param`, stride `0x18`, byte offset `0x14`) on
+/// mode init in `FUN_8001DCF8`, and the SC save/load path never copies
+/// between the bitmap and scratchpad. The two fields therefore
+/// round-trip independently.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SaveExt {
-    /// Story-flag word mirroring `World::story_flags` (`_DAT_1F800394` in
-    /// retail). Read by field-VM op `0x30`; set by ops `0x31` / `0x32`.
+    /// Field-VM scratchpad flag word (`_DAT_1F800394` in retail). Read
+    /// by op `0x30` (test bit); set by op `0x2E`; cleared by op `0x2F`.
+    /// Seeded on mode init from `mode_table[mode_idx].param` low 16
+    /// bits; not synced to or from [`Self::story_flag_bits`].
     pub story_flags: u32,
     /// Full 512-byte story-flag bitmap from retail SC offset `0x14C0`,
     /// mirroring live RAM `0x80085600..0x80085800`. Empty (`vec![]`) means

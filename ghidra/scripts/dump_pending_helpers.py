@@ -1,17 +1,16 @@
 # @category Legaia
 # @runtime Jython
 #
-# Dump the helpers that scripts/function-coverage.py reports as still
-# missing as of branch track-1-and-2-completion-pass. The list is short
-# (single-digit) so this script targets each one explicitly rather than
-# walking the missing-helpers report.
+# Catch-all dumper for helpers / dispatcher leaves the rest of the
+# pipeline is actively interested in. The TARGETS list rotates as
+# different reverse-engineering threads come and go; each entry is
+# expected to land in `ghidra/scripts/funcs/<addr>.txt` (SCUS) or
+# `<prog_label>_<addr>.txt` (overlay).
 #
-# Run with -process for each program: SCUS_942.54 catches the four
-# 8004 / 8005 SCUS-resident helpers, the overlay programs catch the
-# 801df510 / 801e9d8c overlay-resident helpers.
-#
-# Output filename mirrors the existing convention: SCUS dumps land at
-# ghidra/scripts/funcs/<addr>.txt, overlays at <prog_label>_<addr>.txt.
+# `in_program(addr)` makes the script overlay-aware - addresses outside
+# the currently loaded program are skipped silently, so a single run
+# against each program (SCUS_942.54 + every captured overlay) picks up
+# the relevant subset without needing per-program target lists.
 
 import os
 
@@ -19,14 +18,13 @@ from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
 TARGETS = [
-    # SCUS helpers cited from FUN_80047430 (battle UI subsystem).
-    "8004ad80",
-    "8004c7b4",
-    "800508dc",
-    "80050e00",
-    # Overlay-resident helpers in the 0897 cluster.
-    "801df510",
-    "801e9d8c",
+    # FUN_801D77F4 - field-VM actor allocator referenced by op 0x4C 0xD8
+    # (4-arg synchronous spawn) and op 0x4C 0x80 (halt-acquire prelude;
+    # records queued via FieldEvent::ActorAllocate, materialized by
+    # World::materialize_actor_spawns). Pinning the (vdf_idx, tmd_idx,
+    # kind_u16, variant_u16) packing here is the prerequisite for
+    # populating Actor::kind / Actor::variant on the materialized slot.
+    "801d77f4",
 ]
 
 OUT_DIR = "/scripts/funcs"

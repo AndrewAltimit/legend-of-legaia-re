@@ -18,6 +18,8 @@
 //! Engines that want a different layout - say, ECS storage - should
 //! implement the VM `Host` traits themselves; this is the default.
 
+use std::sync::Arc;
+
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
@@ -37,6 +39,16 @@ use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 /// Maximum simultaneous actors in the world. Mirrors the battle-side cap of
 /// 8 + 32 spare slots for field-side NPCs / cutscene actors.
 pub const MAX_ACTORS: usize = 64;
+
+/// Default `start_slot` engines pass to
+/// [`World::materialize_actor_spawns`]. Slots `0..FIELD_SPAWN_START_SLOT`
+/// stay reserved so the field-VM actor-allocator path can't clobber the
+/// party (slots `0..party_count`, typically 0..3) or the small band of
+/// scripted NPC / cutscene actors the scene reserves above the party.
+/// The exact retail value is unknown - 8 is the smallest power-of-two
+/// that comfortably brackets every observed `party_count + scripted-NPC`
+/// span and matches the start-slot the field-VM unit tests use.
+pub const FIELD_SPAWN_START_SLOT: u8 = 8;
 
 /// Per-frame opcode cap for the move VM. Retail has no explicit cap (relies
 /// on opcodes naturally yielding via `WAIT_SET` / `HALT`); for a software
@@ -113,6 +125,23 @@ pub struct ActorSpriteRequest {
     pub tint: [f32; 4],
 }
 
+/// One entry in [`World::global_tmd_pool`]. Mirrors a single slot of the
+/// retail `DAT_8007C018` global TMD-pointer table - a parsed TMD plus its
+/// raw bytes so downstream renderers can drive `legaia_tmd::mesh::*` builders
+/// without re-fetching from disc.
+///
+/// See `project_dat_8007c018_global_tmd_table.md` and
+/// `project_global_tmd_pool_source.md` for the retail-side semantics. The
+/// clean-room port treats the pool as opaque indexed storage: the field-VM
+/// `0x4C 0xD8` host hook reads slot `tmd_idx` and writes the resulting `Arc`
+/// onto [`Actor::tmd_ref`] - whatever populated the slot is the producer's
+/// concern.
+#[derive(Debug)]
+pub struct GlobalTmd {
+    pub tmd: legaia_tmd::Tmd,
+    pub raw: Vec<u8>,
+}
+
 /// Per-actor record held by the world. Composes the per-VM state structs.
 ///
 /// Each VM's `Host` trait reads/writes only the slice it owns, so the per-VM
@@ -180,6 +209,35 @@ pub struct Actor {
     /// `None` means no TMD is bound - the actor has no visible 3D model.
     /// Set via [`World::set_actor_tmd_binding`].
     pub tmd_binding: Option<usize>,
+
+    /// Actor kind classifier. Retail equivalent: the `u16` at `actor[+0x3C]`
+    /// written by `FUN_801D77F4` (overlay actor allocator). Zero means
+    /// "unset" - either the actor was created via the actor-VM path
+    /// (`spawn` / `spawn_actor`) rather than the field-VM allocator, or no
+    /// kind has been wired yet.
+    pub kind: u16,
+    /// Actor variant. Retail equivalent: the `u16` at `actor[+0x3E]`.
+    /// Co-written with `kind` by `FUN_801D77F4`.
+    pub variant: u16,
+    /// Record bytecode this actor was instantiated from. Retail stores a
+    /// pointer at `actor[+0x4C]` whose meaning depends on the allocation
+    /// path - for the field-VM `0x4C 0x80` allocator the pointer addresses
+    /// the child-actor packet that the parent script's `tail` contributed.
+    /// `None` for actors spawned through other paths.
+    ///
+    /// Distinct from [`Self::tmd_binding`] / [`Self::active_animation`],
+    /// which cover the rendering side.
+    pub spawn_record: Option<Vec<u8>>,
+
+    /// Global TMD this actor was instantiated with. Retail equivalent: the
+    /// `u32` at `actor[+0x48]` written by the overlay actor allocator -
+    /// `iVar13 = *(int *)(&DAT_8007C018 + ((tmd_idx << 16) >> 14))`. Set by
+    /// the field-VM `0x4C 0xD8` host hook from [`World::global_tmd`], and
+    /// reachable from rendering / animation systems that want a mesh +
+    /// raw bytes for this actor without re-walking the global pool.
+    /// `None` for actors spawned through paths that don't reference the
+    /// global TMD pool (the actor VM's own `Spawn*` opcodes, etc.).
+    pub tmd_ref: Option<Arc<GlobalTmd>>,
 }
 
 impl Actor {
@@ -284,13 +342,20 @@ pub struct World {
     /// bits (bits 4 / 5 / 6 / 7 individually testable; bits 12..15 indexed
     /// against `screen_mode_table`).
     pub screen_mode: u32,
-    /// Story-flag word (`_DAT_1F800394` in retail). Read by field-VM
-    /// op 0x30 GFLAG_TST and friends.
+    /// Field-VM scratchpad flag word (`_DAT_1F800394` in retail). Set
+    /// by op `0x2E` GFLAG_SET; cleared by op `0x2F` GFLAG_CLR; tested
+    /// by op `0x30` GFLAG_TST.
+    ///
+    /// Independent of [`Self::story_flag_bits`]: retail seeds this from
+    /// the game-mode descriptor table on mode init (low 16 bits of
+    /// `mode_table[mode_idx].param`) and the SC save/load bulk copy
+    /// from RAM `0x80084340` never reaches scratchpad, so the bitmap
+    /// and this word are not mirror copies of each other.
     pub story_flags: u32,
     /// Full 512-byte story-flag bitmap mirroring retail RAM
-    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). The narrower
-    /// [`Self::story_flags`] u32 is the field-VM scratchpad cache; this
-    /// is the wider region the SC block persists.
+    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). This is the
+    /// narrative-progress bitmap the SC block persists, separate from
+    /// the per-mode scratchpad word [`Self::story_flags`].
     ///
     /// Empty (`vec![]`) when the engine hasn't been booted from a retail
     /// SC block; populated via [`Self::load_full`] when a retail-shaped
@@ -533,6 +598,35 @@ pub struct World {
     /// this when it's called with the empty string, the encounter HUD
     /// surfaces it for diagnostics, etc.). Empty when no scene is loaded.
     pub active_scene_label: String,
+
+    /// VDF ("set_mime", asset type `0x07`) buffer for the active scene.
+    /// Layout `[u32 count][u32 byte_offsets[count]][body...]` mirrors the
+    /// retail `DAT_8007B7DC` buffer the asset-dispatcher case 7 builds
+    /// (see `project_vdf_buffer_and_parallel_table.md` for byte-level
+    /// detail). The buffer holds the spawnable actor templates the field
+    /// VM's `0x4C 0xD8` opcode resolves via [`World::vdf_record_bytes`].
+    ///
+    /// `None` when no scene is loaded or the scene carries no VDF chunk
+    /// (most utility / cutscene scenes don't). Populated by
+    /// [`crate::scene::SceneHost::enter_field_scene`] from the first
+    /// asset-type-7 chunk found in the scene's streaming entries.
+    pub vdf_buffer: Option<Vec<u8>>,
+
+    /// Global TMD-pointer pool indexed by `tmd_idx`. Mirrors retail
+    /// `DAT_8007C018` (the 143-entry homogeneous TMD pointer table in
+    /// steady-state - see `project_dat_8007c018_global_tmd_table.md`).
+    /// `None` at indices the active loader chain hasn't populated; the
+    /// vector grows on demand through [`Self::set_global_tmd`].
+    ///
+    /// Seeded by [`crate::scene::SceneHost::enter_field_scene`] with the
+    /// 5 character-mesh TMDs from PROT 0874 section 0 (byte-equality
+    /// verified in `project_global_tmd_pool_source.md`). Producers of the
+    /// other 138 kingdom-derived entries are not yet pinned; those slots
+    /// stay `None` until the full chain lands.
+    ///
+    /// Read by the field-VM `0x4C 0xD8` host hook to populate
+    /// [`Actor::tmd_ref`] on synchronous-spawn.
+    pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -662,6 +756,8 @@ impl World {
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             active_scene_label: String::new(),
+            vdf_buffer: None,
+            global_tmd_pool: Vec::new(),
         }
     }
 
@@ -671,6 +767,99 @@ impl World {
     /// the current scene without re-walking the [`crate::scene::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+    }
+
+    /// Install the VDF ("set_mime") buffer for the active scene. The bytes
+    /// must follow the `[u32 count][u32 byte_offsets[count]][body...]`
+    /// layout the retail asset-dispatcher case 7 produces; see
+    /// [`Self::vdf_buffer`] for citation. Engines that want the
+    /// field-VM `0x4C 0xD8` opcode to surface real spawn bytecode call
+    /// this on scene-load with the extracted asset-type-7 chunk's body.
+    ///
+    /// Passing `None` clears the buffer; the next `0x4C 0xD8` call will
+    /// leave `Actor::spawn_record` empty.
+    pub fn set_vdf_buffer(&mut self, bytes: Option<Vec<u8>>) {
+        self.vdf_buffer = bytes;
+    }
+
+    /// Resolve a VDF body slice by index using the
+    /// `[u32 count][u32 byte_offsets[count]][body...]` layout. Each
+    /// returned slice starts at `byte_offsets[idx]` and runs to the
+    /// next body's offset (or end-of-buffer for the last entry).
+    ///
+    /// Returns `None` when:
+    ///  - no VDF buffer is set (the scene loader skipped the install),
+    ///  - the buffer is too short to read the header,
+    ///  - `idx >= count`, or
+    ///  - the indexed offset walks past end-of-buffer.
+    ///
+    /// Mirrors the retail body at
+    /// `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt:152-203`:
+    /// `puVar11 = (uint *)(iVar12 + *(int *)(((vdf_idx << 16) >> 14) + iVar12 + 4))`.
+    pub fn vdf_record_bytes(&self, idx: u8) -> Option<&[u8]> {
+        let buf = self.vdf_buffer.as_deref()?;
+        if buf.len() < 4 {
+            return None;
+        }
+        let count = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+        if (idx as u32) >= count {
+            return None;
+        }
+        let table_byte = 4usize;
+        let slot = table_byte + (idx as usize) * 4;
+        if slot + 4 > buf.len() {
+            return None;
+        }
+        let off = u32::from_le_bytes(buf[slot..slot + 4].try_into().ok()?) as usize;
+        if off >= buf.len() {
+            return None;
+        }
+        // Bound the body by the next *greater* offset (offsets aren't
+        // guaranteed monotonic - we pick the smallest offset above
+        // `off` from any later table slot, defaulting to EOB).
+        let mut end = buf.len();
+        for i in (idx as u32 + 1)..count {
+            let s = table_byte + (i as usize) * 4;
+            if s + 4 > buf.len() {
+                break;
+            }
+            let next = u32::from_le_bytes(buf[s..s + 4].try_into().ok()?) as usize;
+            if next > off && next <= buf.len() && next < end {
+                end = next;
+            }
+        }
+        Some(&buf[off..end])
+    }
+
+    /// Install a global TMD at pool index `idx`. The pool grows lazily on
+    /// write to accommodate sparse loader-chain installs. Indices that
+    /// later producers fill in stay `None` until they're explicitly set.
+    ///
+    /// Mirrors the retail `FUN_80026B4C` writer
+    /// (`DAT_8007C018[DAT_8007B774++] = tmd_ptr`) but exposes the index
+    /// directly rather than auto-bumping a counter - engines that want
+    /// the retail behaviour can read the next free slot via
+    /// [`Self::global_tmd_pool`]`.len()` and pass it here.
+    pub fn set_global_tmd(&mut self, idx: usize, tmd: Arc<GlobalTmd>) {
+        if idx >= self.global_tmd_pool.len() {
+            self.global_tmd_pool.resize(idx + 1, None);
+        }
+        self.global_tmd_pool[idx] = Some(tmd);
+    }
+
+    /// Resolve a global TMD by pool index. Mirrors the retail field-VM
+    /// allocator's `iVar13 = DAT_8007C018[(int16_t)tmd_idx]` read - the
+    /// caller is responsible for clamping negative indices (the retail
+    /// engine sign-extends the i16 then implicitly treats it as unsigned;
+    /// the clean-room port returns `None` for negative or out-of-range
+    /// indices via the `i16 → usize` cast guarded by the bounds check).
+    ///
+    /// Returns `None` when the slot is empty or `idx` is out of range.
+    pub fn global_tmd(&self, idx: i16) -> Option<&Arc<GlobalTmd>> {
+        if idx < 0 {
+            return None;
+        }
+        self.global_tmd_pool.get(idx as usize)?.as_ref()
     }
 
     /// Drain emitted field-VM events. Engines call once per frame after
@@ -685,6 +874,73 @@ impl World {
     /// actor. Engines route these into their actor pool.
     pub fn drain_actor_spawns(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.pending_actor_spawns)
+    }
+
+    /// Engine-side consumer for queued actor-spawn requests.
+    ///
+    /// Drains [`Self::pending_actor_spawns`] (records queued by the
+    /// `0x4C 0x80` halt-acquire-gated path) and, for each record:
+    /// 1. Scans `actors[start_slot..MAX_ACTORS]` for the first inactive
+    ///    slot. Slots `0..start_slot` are skipped so engines keep their
+    ///    party / scripted actors out of the auto-allocation range.
+    /// 2. Activates the slot and stores the record bytes on
+    ///    [`Actor::spawn_record`]. The retail allocator writes the
+    ///    bytecode pointer to `actor[+0x90]` (different from the `+0x4C`
+    ///    VDF-body field that the synchronous `0x4C 0xD8` path uses);
+    ///    the clean-room port stores the raw bytes on `spawn_record`
+    ///    regardless and lets the engine route them as field-VM
+    ///    bytecode for a child actor (the records are scripted-child
+    ///    coroutines, not TMD-body or kind/variant tuples).
+    /// 3. Emits a [`FieldEvent::ActorSpawned`] event for the engine.
+    ///
+    /// Leaves [`Actor::kind`] and [`Actor::variant`] at zero. The
+    /// retail allocator for this opcode (overlay code at
+    /// `overlay_world_map_801de840.txt:7080-7123` case `8 sub-0`)
+    /// allocates from pool `0x801f28a0` and writes only
+    /// `actor[+0x90]` (bytecode ptr), `actor[+0x94]` (parent
+    /// back-pointer) and `actor[+0x54] = 0`; the `+0x3C`/`+0x3E`
+    /// kind/variant fields are never written by this path, so zero
+    /// matches retail.
+    ///
+    /// Mirrors the retail allocator's pool-exhausted branch: if no
+    /// inactive slot is available, the record is dropped silently and
+    /// a [`FieldEvent::ActorSpawnFailed`] event is emitted instead.
+    ///
+    /// Returns the count of slots that were actually allocated.
+    pub fn materialize_actor_spawns(&mut self, start_slot: u8) -> usize {
+        let start = (start_slot as usize).min(self.actors.len());
+        let records = std::mem::take(&mut self.pending_actor_spawns);
+        let mut allocated = 0usize;
+        for record in records {
+            match self
+                .actors
+                .iter()
+                .enumerate()
+                .skip(start)
+                .find(|(_, a)| !a.active)
+                .map(|(i, _)| i)
+            {
+                Some(slot_idx) => {
+                    let actor = &mut self.actors[slot_idx];
+                    actor.active = true;
+                    actor.kind = 0;
+                    actor.variant = 0;
+                    actor.spawn_record = Some(record.clone());
+                    self.pending_field_events.push(FieldEvent::ActorSpawned {
+                        slot: slot_idx as u8,
+                        kind: 0,
+                        variant: 0,
+                        record,
+                    });
+                    allocated += 1;
+                }
+                None => {
+                    self.pending_field_events
+                        .push(FieldEvent::ActorSpawnFailed { record });
+                }
+            }
+        }
+        allocated
     }
 
     /// Drain emitted battle action events. Engines call once per frame
@@ -2461,6 +2717,72 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .pending_field_events
             .push(FieldEvent::ActorAllocate { records });
     }
+
+    fn op4c_n_d_sub8_call_d77f4(&mut self, b1: u8, words: [i16; 3]) {
+        // Synchronous actor allocator (see retail `FUN_801D77F4` body
+        // dumped at `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt`).
+        // The dispatcher packs the four args
+        //   `[vdf_idx: u8, tmd_idx: i16, kind: i16, variant: i16]`
+        // into the 7 bytes after `[0x4C, 0xD8]`; FUN_801D77F4 then writes
+        // `actor[+0x3C] = kind` and `actor[+0x3E] = variant` on the
+        // allocated slot, plus `actor[+0x48] = DAT_8007C018[tmd_idx]`
+        // (TMD pointer) and `actor[+0x4C] = VDF_body_ptr`. We mirror
+        // all four writes here.
+        let kind = words[1] as u16;
+        let variant = words[2] as u16;
+        let tmd_ref = self.world.global_tmd(words[0]).cloned();
+        // Mirror retail's `actor[+0x4C] = VDF_body_ptr`: look up the
+        // VDF record body bytes and store them on the allocated actor.
+        // `None` when no VDF buffer is installed or the index is OOR;
+        // engines that drive the host without setting one still get the
+        // kind/variant writes (synchronous spawn semantics) plus an
+        // empty `record` in the event payload.
+        let record_bytes: Vec<u8> = self
+            .world
+            .vdf_record_bytes(b1)
+            .map(|s| s.to_vec())
+            .unwrap_or_default();
+        let start = FIELD_SPAWN_START_SLOT as usize;
+        match self
+            .world
+            .actors
+            .iter()
+            .enumerate()
+            .skip(start)
+            .find(|(_, a)| !a.active)
+            .map(|(i, _)| i)
+        {
+            Some(slot_idx) => {
+                let actor = &mut self.world.actors[slot_idx];
+                actor.active = true;
+                actor.kind = kind;
+                actor.variant = variant;
+                actor.tmd_ref = tmd_ref;
+                actor.spawn_record = if record_bytes.is_empty() {
+                    None
+                } else {
+                    Some(record_bytes.clone())
+                };
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::ActorSpawned {
+                        slot: slot_idx as u8,
+                        kind,
+                        variant,
+                        record: record_bytes,
+                    });
+            }
+            None => {
+                // Pool-exhausted: mirrors the retail bail-silently branch
+                // where FUN_80020DE0 returns 0.
+                self.world
+                    .pending_field_events
+                    .push(FieldEvent::ActorSpawnFailed {
+                        record: record_bytes,
+                    });
+            }
+        }
+    }
 }
 
 // --- battle action host ----------------------------------------------------
@@ -3647,6 +3969,355 @@ mod tests {
         let drained = world.drain_actor_spawns();
         assert_eq!(drained, vec![vec![0xAA, 0xBB]]);
         assert!(world.pending_actor_spawns.is_empty());
+    }
+
+    /// `materialize_actor_spawns` allocates a fresh slot from
+    /// `start_slot..MAX_ACTORS`, populates it with the queued record, and
+    /// emits an `ActorSpawned` event.
+    #[test]
+    fn materialize_actor_spawns_allocates_slot_and_emits_event() {
+        let mut world = World::new();
+        world.pending_actor_spawns.push(vec![0x10, 0x20, 0x30]);
+        let allocated = world.materialize_actor_spawns(8);
+        assert_eq!(allocated, 1);
+        assert!(world.pending_actor_spawns.is_empty());
+        assert!(world.actors[8].active);
+        assert_eq!(
+            world.actors[8].spawn_record.as_deref(),
+            Some(&[0x10, 0x20, 0x30][..])
+        );
+        assert_eq!(world.actors[8].kind, 0);
+        assert_eq!(world.actors[8].variant, 0);
+        let evs = world.drain_field_events();
+        let spawned = evs
+            .iter()
+            .find_map(|e| match e {
+                FieldEvent::ActorSpawned {
+                    slot,
+                    kind,
+                    variant,
+                    record,
+                } => Some((*slot, *kind, *variant, record.clone())),
+                _ => None,
+            })
+            .expect("expected ActorSpawned event");
+        assert_eq!(spawned, (8u8, 0u16, 0u16, vec![0x10, 0x20, 0x30]));
+    }
+
+    /// `materialize_actor_spawns` allocates consecutive inactive slots
+    /// when several spawn requests are queued.
+    #[test]
+    fn materialize_actor_spawns_fills_consecutive_inactive_slots() {
+        let mut world = World::new();
+        world.pending_actor_spawns.push(vec![0xAA]);
+        world.pending_actor_spawns.push(vec![0xBB]);
+        world.pending_actor_spawns.push(vec![0xCC]);
+        let allocated = world.materialize_actor_spawns(4);
+        assert_eq!(allocated, 3);
+        assert!(world.actors[4].active);
+        assert!(world.actors[5].active);
+        assert!(world.actors[6].active);
+        assert_eq!(world.actors[4].spawn_record.as_deref(), Some(&[0xAA][..]));
+        assert_eq!(world.actors[5].spawn_record.as_deref(), Some(&[0xBB][..]));
+        assert_eq!(world.actors[6].spawn_record.as_deref(), Some(&[0xCC][..]));
+    }
+
+    /// Slots below `start_slot` are reserved - even when they are
+    /// inactive, the materializer doesn't touch them.
+    #[test]
+    fn materialize_actor_spawns_skips_reserved_low_slots() {
+        let mut world = World::new();
+        // Slot 0 is inactive but reserved (start_slot=10).
+        world.pending_actor_spawns.push(vec![0xDE, 0xAD]);
+        world.materialize_actor_spawns(10);
+        assert!(!world.actors[0].active);
+        assert!(world.actors[10].active);
+    }
+
+    /// Mirrors retail's "pool exhausted → bail silently" branch of
+    /// `FUN_801D77F4`. When no inactive slot is available in the
+    /// allocation range, the record is dropped and a `ActorSpawnFailed`
+    /// event is emitted instead of `ActorSpawned`.
+    #[test]
+    fn materialize_actor_spawns_emits_failure_when_pool_exhausted() {
+        let mut world = World::new();
+        // Make every slot from index 60 upward active.
+        for slot in 60..MAX_ACTORS {
+            world.actors[slot].active = true;
+        }
+        world.pending_actor_spawns.push(vec![0xEE]);
+        let allocated = world.materialize_actor_spawns(60);
+        assert_eq!(allocated, 0);
+        let evs = world.drain_field_events();
+        assert!(evs.iter().any(|e| matches!(
+            e,
+            FieldEvent::ActorSpawnFailed { record } if record == &[0xEE]
+        )));
+    }
+
+    /// End-to-end: a field-VM `0x4C 0x80` opcode followed by
+    /// `materialize_actor_spawns` should land both events
+    /// (`ActorAllocate` from the opcode, `ActorSpawned` from the
+    /// materializer) and leave the actor slot populated.
+    #[test]
+    fn field_op_4c_n8_sub0_then_materialize_flow_end_to_end() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // One record `[0x40, 0x41]` terminated by `0x00`.
+        let bytecode = vec![0x4C, 0x80, 0x01, 0x40, 0x41, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+        let allocated = world.materialize_actor_spawns(16);
+        assert_eq!(allocated, 1);
+        assert!(world.actors[16].active);
+        assert_eq!(
+            world.actors[16].spawn_record.as_deref(),
+            Some(&[0x40, 0x41][..])
+        );
+        let evs = world.drain_field_events();
+        // Both the ActorAllocate (from the opcode) and ActorSpawned (from
+        // the materializer) should appear in emission order.
+        let kinds: Vec<&'static str> = evs
+            .iter()
+            .filter_map(|e| match e {
+                FieldEvent::ActorAllocate { .. } => Some("alloc"),
+                FieldEvent::ActorSpawned { .. } => Some("spawned"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(kinds, vec!["alloc", "spawned"]);
+    }
+
+    /// Op `0x4C 0xD8` is the synchronous-spawn sibling of the halt-acquire
+    /// `0x4C 0x80` path. The dispatcher decodes
+    /// `[0x4C, 0xD8, vdf_idx, tmd_lo, tmd_hi, kind_lo, kind_hi, var_lo, var_hi]`
+    /// into `(vdf_idx, [tmd_idx, kind, variant])` and calls the
+    /// FieldHostImpl override directly - no queue. The actor slot must
+    /// come out active with `kind` / `variant` mirrored from the operand,
+    /// and a single `ActorSpawned` event must surface in the queue.
+    #[test]
+    fn field_op_4c_d8_spawns_actor_synchronously_with_kind_variant() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // `[0x4C, 0xD8, vdf_idx=0x07, tmd=0x0102, kind=0xABCD, variant=0xBEEF, 0x00]`.
+        // Trailing 0x00 is a HALT so the VM doesn't run off the end.
+        let bytecode = vec![0x4C, 0xD8, 0x07, 0x02, 0x01, 0xCD, 0xAB, 0xEF, 0xBE, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+
+        let slot = FIELD_SPAWN_START_SLOT as usize;
+        assert!(
+            world.actors[slot].active,
+            "0x4C 0xD8 should have spawned synchronously into slot {slot}",
+        );
+        assert_eq!(world.actors[slot].kind, 0xABCD);
+        assert_eq!(world.actors[slot].variant, 0xBEEF);
+        // 0x4C 0xD8 doesn't carry packet bytes in the bytecode - the
+        // record lives in the VDF buffer at runtime - so spawn_record
+        // stays `None` until the VDF / global TMD lift lands.
+        assert!(world.actors[slot].spawn_record.is_none());
+
+        let evs = world.drain_field_events();
+        let spawned: Vec<_> = evs
+            .iter()
+            .filter_map(|e| match e {
+                FieldEvent::ActorSpawned {
+                    slot: s,
+                    kind,
+                    variant,
+                    record,
+                } => Some((*s, *kind, *variant, record.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            spawned,
+            vec![(FIELD_SPAWN_START_SLOT, 0xABCDu16, 0xBEEFu16, Vec::new())]
+        );
+        // No ActorAllocate event - that one is exclusively the
+        // queue-based 0x4C 0x80 path.
+        assert!(
+            !evs.iter()
+                .any(|e| matches!(e, FieldEvent::ActorAllocate { .. })),
+            "0x4C 0xD8 must not emit ActorAllocate; got {evs:?}"
+        );
+        // And nothing was queued on the pending_actor_spawns side - the
+        // synchronous path doesn't go through the materializer.
+        assert!(world.pending_actor_spawns.is_empty());
+    }
+
+    /// `0x4C 0xD8` with a populated VDF buffer should copy the indexed
+    /// body bytes onto the spawned actor's `spawn_record` (mirror of
+    /// retail `actor[+0x4C] = VDF_body_ptr`) and surface them in the
+    /// `ActorSpawned` event payload.
+    #[test]
+    fn field_op_4c_d8_with_vdf_buffer_populates_spawn_record() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // VDF buffer with two records:
+        //   header:  count = 2
+        //   table:   offsets[0] = 12, offsets[1] = 16
+        //   body 0:  [0xDE, 0xAD, 0xBE, 0xEF] @ off 12 (4 bytes -> 16)
+        //   body 1:  [0xCA, 0xFE, 0xBA, 0xBE, 0x42] @ off 16 (to EOB)
+        let mut vdf = Vec::new();
+        vdf.extend_from_slice(&2u32.to_le_bytes()); // count
+        vdf.extend_from_slice(&12u32.to_le_bytes()); // offsets[0]
+        vdf.extend_from_slice(&16u32.to_le_bytes()); // offsets[1]
+        vdf.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        vdf.extend_from_slice(&[0xCA, 0xFE, 0xBA, 0xBE, 0x42]);
+        world.set_vdf_buffer(Some(vdf));
+
+        // Sanity-check the lookup helper.
+        assert_eq!(
+            world.vdf_record_bytes(0),
+            Some(&[0xDE, 0xAD, 0xBE, 0xEF][..])
+        );
+        assert_eq!(
+            world.vdf_record_bytes(1),
+            Some(&[0xCA, 0xFE, 0xBA, 0xBE, 0x42][..])
+        );
+        assert_eq!(world.vdf_record_bytes(2), None); // idx >= count
+
+        // `[0x4C, 0xD8, vdf_idx=0x01, tmd=0x0102, kind=0x1111, variant=0x2222, 0x00]`.
+        let bytecode = vec![0x4C, 0xD8, 0x01, 0x02, 0x01, 0x11, 0x11, 0x22, 0x22, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+
+        let slot = FIELD_SPAWN_START_SLOT as usize;
+        assert!(world.actors[slot].active);
+        assert_eq!(world.actors[slot].kind, 0x1111);
+        assert_eq!(world.actors[slot].variant, 0x2222);
+        assert_eq!(
+            world.actors[slot].spawn_record.as_deref(),
+            Some(&[0xCA, 0xFE, 0xBA, 0xBE, 0x42][..]),
+            "spawn_record should mirror VDF body 1"
+        );
+
+        let evs = world.drain_field_events();
+        let spawned: Vec<_> = evs
+            .iter()
+            .filter_map(|e| match e {
+                FieldEvent::ActorSpawned { record, .. } => Some(record.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(spawned, vec![vec![0xCA, 0xFE, 0xBA, 0xBE, 0x42]]);
+    }
+
+    /// `0x4C 0xD8` with a populated global TMD pool should write a
+    /// matching `Arc<GlobalTmd>` onto the spawned actor's `tmd_ref`
+    /// (mirror of retail `actor[+0x48] = DAT_8007C018[tmd_idx]`).
+    /// Indices the pool hasn't seen leave `tmd_ref` at `None` rather
+    /// than aborting the spawn.
+    #[test]
+    fn field_op_4c_d8_with_global_tmd_pool_populates_tmd_ref() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+
+        // Install a stub TMD at pool slot 5. The Tmd doesn't need to
+        // represent realistic mesh data - the host hook only does an
+        // Arc::clone and stores the result.
+        let stub = std::sync::Arc::new(GlobalTmd {
+            tmd: legaia_tmd::Tmd {
+                header: legaia_tmd::Header {
+                    id: 0x8000_0002,
+                    flags: 1,
+                    nobj: 0,
+                    flist_bit_set: true,
+                },
+                objects: Vec::new(),
+            },
+            raw: vec![
+                0x02, 0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            ],
+        });
+        let stub_ptr = std::sync::Arc::as_ptr(&stub);
+        world.set_global_tmd(5, stub.clone());
+
+        // `[0x4C, 0xD8, vdf_idx=0x00, tmd=0x0005, kind=0x1111, variant=0x2222, 0x00]`.
+        let bytecode = vec![0x4C, 0xD8, 0x00, 0x05, 0x00, 0x11, 0x11, 0x22, 0x22, 0x00];
+        world.load_field_script(bytecode);
+        let _ = world.tick();
+
+        let slot = FIELD_SPAWN_START_SLOT as usize;
+        assert!(world.actors[slot].active);
+        let tmd_ref = world.actors[slot]
+            .tmd_ref
+            .as_ref()
+            .expect("tmd_ref should mirror DAT_8007C018[5]");
+        assert_eq!(
+            std::sync::Arc::as_ptr(tmd_ref),
+            stub_ptr,
+            "tmd_ref should reference the installed pool entry by Arc identity",
+        );
+
+        // A second spawn with an unpopulated index leaves tmd_ref at None.
+        let bytecode2 = vec![0x4C, 0xD8, 0x00, 0x09, 0x00, 0x33, 0x33, 0x44, 0x44, 0x00];
+        world.load_field_script(bytecode2);
+        let _ = world.tick();
+        let slot2 = slot + 1;
+        assert!(world.actors[slot2].active);
+        assert!(
+            world.actors[slot2].tmd_ref.is_none(),
+            "empty pool slot should not populate tmd_ref",
+        );
+    }
+
+    /// Accessors round-trip: `set_global_tmd` + `global_tmd` agree on
+    /// installed slots, negative indices return `None`, and the pool
+    /// grows lazily.
+    #[test]
+    fn global_tmd_accessor_round_trip() {
+        let mut world = World::new();
+        assert!(world.global_tmd(0).is_none());
+        assert!(world.global_tmd(-1).is_none());
+
+        let stub = std::sync::Arc::new(GlobalTmd {
+            tmd: legaia_tmd::Tmd {
+                header: legaia_tmd::Header {
+                    id: 0x8000_0002,
+                    flags: 1,
+                    nobj: 0,
+                    flist_bit_set: true,
+                },
+                objects: Vec::new(),
+            },
+            raw: Vec::new(),
+        });
+        world.set_global_tmd(3, stub.clone());
+        // Pool grew to fit idx 3.
+        assert_eq!(world.global_tmd_pool.len(), 4);
+        assert!(world.global_tmd_pool[0..3].iter().all(|s| s.is_none()));
+        assert!(std::sync::Arc::ptr_eq(
+            world.global_tmd(3).expect("slot 3 populated"),
+            &stub
+        ));
+        assert!(world.global_tmd(7).is_none(), "out-of-range -> None");
+        assert!(world.global_tmd(-5).is_none(), "negative -> None");
+    }
+
+    /// `vdf_record_bytes` rejects out-of-range indices, malformed
+    /// buffers, and the `None` (no VDF installed) path.
+    #[test]
+    fn vdf_record_bytes_handles_edge_cases() {
+        let mut world = World::new();
+        assert_eq!(world.vdf_record_bytes(0), None, "no VDF -> None");
+
+        // Empty buffer (shorter than header word).
+        world.set_vdf_buffer(Some(vec![0x01, 0x02]));
+        assert_eq!(world.vdf_record_bytes(0), None);
+
+        // Count = 0.
+        world.set_vdf_buffer(Some(vec![0x00, 0x00, 0x00, 0x00]));
+        assert_eq!(world.vdf_record_bytes(0), None);
+
+        // Count = 1 but offset walks past EOB.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&1u32.to_le_bytes()); // count
+        buf.extend_from_slice(&0xFFFFu32.to_le_bytes()); // offsets[0] - past EOB
+        buf.extend_from_slice(&[0xAAu8; 8]);
+        world.set_vdf_buffer(Some(buf));
+        assert_eq!(world.vdf_record_bytes(0), None);
     }
 
     /// `tick_move_vms` records per-actor outcomes via `actor_tick`. A

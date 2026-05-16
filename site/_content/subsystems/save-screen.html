@@ -23,10 +23,20 @@
 <section class="doc-section" id="key-functions">
   <h2>Key functions</h2>
   <h3><code>FUN_801DAEF4</code> - save-slot selector (sub-screens 0x1 / 0x2)</h3>
-  <p>Runs an actor VM with bytecode at <code>&amp;DAT_801E4E30</code> (slot-select menu), waits on <code>_DAT_8007BB80 != 0</code> (menu-active flag), calls <code>FUN_801DD35C(1, 1)</code> to confirm selection, and clears <code>DAT_801E46A4</code> on return. Each step calls <code>FUN_80031D00</code> (text-actor tick / MES advance).</p>
+  <p>Runs an actor VM with bytecode at <code>&amp;DAT_801E4E30</code> (slot-select menu), waits on <code>_DAT_8007BB80 != 0</code> (menu-active flag). State 2 calls <code>FUN_801DD35C(1, 1)</code> &mdash; the saving-overlay main in <em>load</em> direction (param_2 selects op: 1 = load, 2 = save). Each step calls <code>FUN_80031D00</code> (text-actor tick / MES advance).</p>
 
   <h3><code>FUN_801DAFD4</code> - slot confirm + saving in progress</h3>
   <p>Runs the 3-item slot scrolling list via <code>FUN_801D688C(&amp;DAT_801E46BC, 3, 1)</code>. On slot 1 confirmed: validates against the save-block existence table at <code>&amp;DAT_80084140 + slot * 2 + 0x1818</code> (byte 0 = slot present, byte 1 = slot valid), then advances <code>DAT_801E46A4</code> to <code>0x1E</code> (the write sub-screen). On slot 2: cancel SFX. Slot 0 routes to the card-full/error sub-screen (<code>0x1B</code>).</p>
+
+  <h3>Load/save dispatch (<code>FUN_801DD35C</code>)</h3>
+  <p>Sub-screens <code>0x18</code> and <code>0x19</code> are structurally identical 3-state drivers that share the saving-overlay main routine, distinguished only by the op selector passed as <code>param_2</code>. Both install <code>_DAT_8007B44C = DAT_801C6EA0</code> (card handle) on state 0.</p>
+  <table>
+    <thead><tr><th>Sub-screen</th><th>Driver</th><th>Display actor</th><th>Call</th><th>Direction</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x18</code></td><td><code>FUN_801DAE24</code></td><td><code>&amp;DAT_801E4E28</code></td><td><code>FUN_801DD35C(1, 2)</code></td><td>save (RAM&rarr;card)</td></tr>
+      <tr><td><code>0x19</code></td><td><code>FUN_801DAEF4</code></td><td><code>&amp;DAT_801E4E30</code></td><td><code>FUN_801DD35C(1, 1)</code></td><td>load (card&rarr;RAM)</td></tr>
+    </tbody>
+  </table>
 
   <h3>Sub-screen pointer table at <code>0x801E4F40</code></h3>
   <table>
@@ -35,17 +45,42 @@
       <tr><td><code>0x1</code></td><td><code>0x801E4F44</code></td><td><code>FUN_801DAEF4</code> - slot selector</td></tr>
       <tr><td><code>0x2</code></td><td><code>0x801E4F48</code></td><td>Save entry (from menu)</td></tr>
       <tr><td><code>0x4</code></td><td><code>0x801E4F50</code></td><td>Post-save return path</td></tr>
+      <tr><td><code>0x18</code></td><td><code>0x801E4F80</code></td><td><code>FUN_801DAE24</code> - save-card driver entry; installs card handle and dispatches into <code>FUN_801DD35C(1, 2)</code></td></tr>
       <tr><td><code>0x19</code></td><td>-</td><td>Load-from-slot path</td></tr>
       <tr><td><code>0x1B</code></td><td>-</td><td>Card-full / error screen</td></tr>
-      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td>Actual write sub-screen (story_flags + inventory write path - not yet dumped)</td></tr>
+      <tr><td><code>0x1E</code></td><td><code>0x801E4FB8</code></td><td><code>FUN_801DBC5C</code> - 4-state spinner; advances to <code>0x1F</code> on user-confirm</td></tr>
+      <tr><td><code>0x1F</code></td><td><code>0x801E4FBC</code></td><td><code>FUN_801DBD94</code> - D-pad quantity-input screen (money/inventory effect; NOT the card writer - actual card I/O lives in the <code>overlay_save_ui_saving_*</code> overlay via libcd write syscalls through the <code>_DAT_8007B44C</code> card handle)</td></tr>
     </tbody>
   </table>
+  <p>See <code>docs/subsystems/save-screen.md</code> for the full pointer-table audit (most 5&ndash;15 ms state machines following the same actor-invoke / pad-input / advance pattern as <code>FUN_801DA9F8</code>).</p>
+
+  <h3>Libcd I/O state machine (<code>FUN_801E3294</code>)</h3>
+  <p>The actual PSX memory-card calls live in <code>FUN_801E3294</code> &mdash; a 5-state libcd state-machine driver in the menu overlay. The per-frame ticker <code>FUN_801E1114</code> is the static caller wiring it together: every frame it calls <code>FUN_801E3294(DAT_801EF18C, 0)</code>; when <code>_DAT_801F021C == 3</code> (save commit) it sequences <code>FUN_801E3AF0</code> (sprintf <code>"bu%d_%d"</code> + libcd channel open) &rarr; <code>FUN_801E3BA0</code> (block-count query) &rarr; <code>FUN_801E1208</code> (directory walk).</p>
+  <p><code>FUN_801E1208</code> walks the 15-entry libcd directory table at <code>0x801F32A8</code> (stride <code>0x28</code>), matching each filename against the region-specific Legend of Legaia prefix using BIOS-A(0x18) <code>strncmp</code>:</p>
+  <ul>
+    <li><code>BASCUS-94254PRO_</code> &mdash; USA (Legend of Legaia, SCUS-94254)</li>
+    <li><code>BISCPS-10059PRO_</code> &mdash; JP (Legend of Legaia, SCPS-10059)</li>
+  </ul>
+  <p>The actual BIOS card-write thunk is <code>FUN_8006EE34</code>: it calls <code>FUN_8006EE7C</code> (BIOS-B(0x50)) then <code>FUN_8006EE6C</code> (BIOS-B(0x4E)) with channel argument <code>(port, 0x3F, 0)</code>. The channel encoding is <code>chan = port * 16 + sub_op</code>.</p>
 </section>
 
 <section class="doc-section" id="engine-port">
   <h2>Engine port</h2>
   <p><code>legaia_save::SaveFile</code> (with <code>SaveExt</code>) is the clean-room counterpart. It stores party + story flags + money + inventory in the <code>LGSF v1</code> format and round-trips via <code>engine-core</code>'s <code>save_full</code> / <code>load_full</code> calls. The <code>legaia-engine save</code> / <code>load</code> subcommands exercise this path end-to-end.</p>
-  <p>The exact on-disc offsets for <code>story_flags</code> and <code>inventory</code> within the retail save block require a dump of the ID <code>0x1E</code> sub-screen function (the actual write path at <code>0x801E4FB8</code>); until then the LGSF format uses its own offset scheme. See <code>docs/subsystems/save-screen.md</code> for the pending trace.</p>
+  <p>Retail-save offsets are pinned (<code>story_flags</code> at SC <code>+0x14C0</code>, <code>inventory</code> at SC <code>+0x1818</code>); see <code>docs/subsystems/save-screen.md</code> for the full block layout. The libcd I/O state machine that drives both load and save is pinned at <code>FUN_801E3294</code>; the actual BIOS card-write thunk is <code>FUN_8006EE34</code> (which calls BIOS-B(0x4E) <code>_card_write</code> via the wrapper at <code>FUN_8006EE6C</code>). <code>FUN_8001A8B0</code> is plain <code>memcpy</code> used to stage data into / out of the staging buffer at <code>0x801E5120</code>.</p>
+</section>
+
+<section class="doc-section" id="story-flags-vs-scratchpad">
+  <h2>Story-flag persistence vs. scratchpad word</h2>
+  <p>Two distinct stores share the name &ldquo;story flags&rdquo; but live in unrelated regions, and the SC save/load path does <strong>not</strong> sync between them:</p>
+  <table>
+    <thead><tr><th>Store</th><th>Address</th><th>Size</th><th>Persists in SC?</th></tr></thead>
+    <tbody>
+      <tr><td>Wide bitmap</td><td>RAM <code>0x80085600..0x80085800</code></td><td>512 B (4096 bits)</td><td>Yes &mdash; at SC offset <code>0x14C0</code>, via the bulk RAM&rarr;card transfer</td></tr>
+      <tr><td>Scratchpad word</td><td>RAM <code>0x1F800394</code></td><td>4 B (32 bits)</td><td>No</td></tr>
+    </tbody>
+  </table>
+  <p>The scratchpad word <code>_DAT_1F800394</code> is the field-VM transient that opcodes <code>0x2E</code> (set bit), <code>0x2F</code> (clear bit), and <code>0x30</code> (test bit) operate on. A static sweep across all dumped functions finds one non-RMW writer: <code>FUN_8001DCF8</code> at PC <code>0x8001E17C</code>, which seeds the lower 16 bits from <code>mode_table[mode_idx].param</code> on mode init. No retail code path copies between the wide bitmap and the scratchpad word, so the engine's <code>SaveExt::story_flags</code> (mirroring the scratchpad word) and <code>SaveExt::story_flag_bits</code> (mirroring the bitmap) round-trip independently &mdash; that matches retail behaviour.</p>
 </section>
 
 <section class="doc-section" id="full-reference">

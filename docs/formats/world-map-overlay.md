@@ -946,6 +946,36 @@ TMD-pack.
    (not slot-4 RAM) during the install pass would identify which
    loader call populates the kingdom-derived entries `[5..N]`.
 
+   **Static-side evidence narrowing the hunt** (sweep via
+   [`scripts/scan_funcs_for_addr_range.py`](../../scripts/scan_funcs_for_addr_range.py)
+   across SCUS + every captured overlay dump under
+   `ghidra/scripts/funcs/`):
+
+   - **`_DAT_8007B888` (MOVE-buffer pointer set by `FUN_8001F05C` case 5):**
+     7 accessor sites in the entire dump corpus. SCUS: `FUN_8001F05C`
+     (writer, the case-5 store), `FUN_8002541C` (writer, streaming-walker
+     reset), `FUN_800204F8` (reader — Tactical Arts move-table parser).
+     Overlays: 4 reader sites, **all in `overlay_baka_fighter`** (the
+     boxing minigame). **Zero readers in any `overlay_world_map*` dump.**
+     If the kingdom slot-4 → world-map pipeline went through the
+     standard MOVE buffer, the world-map controller would need to read
+     `_DAT_8007B888` somewhere — and it doesn't, statically. So the
+     converter either runs *before* the warp's overlay swap-in (in
+     SCUS code that doesn't read the MOVE pointer by name — e.g. via
+     a function-pointer table populated at boot), or the slot-4 MOVE
+     bytes are consumed via the asset-loader chain itself (a hook
+     inside `FUN_8002541C` or its descriptor-walker sibling
+     `FUN_80020224`) before the world-map overlay even sees them.
+   - **`DAT_8007C018[94..113]` (the index range whose live snapshot
+     once held slot-4-body-aligned pointers):** zero specialized
+     readers — no function statically materializes any address in
+     `0x8007C190..0x8007C1E0` via `lui+addiu`, `lui+lw_with_offset`,
+     or positive-offset `lw` from the table base. Consistent with the
+     [Live snapshot](#live-snapshot-drake-post-warp-settled) finding
+     that those entries are real TMDs in steady state and are reached
+     only through the generic table walkers that iterate
+     `[0..DAT_8007BB38]`.
+
 2. **Per-record 4th `i16` (`attr`).** 0 for body 4, 22 distinct values
    in body 5, 214 distinct in body 12. Body-12 attr-values cluster at
    `±1280, ±1792, 1793, ±1281, ±1025` - look like packed (high-byte,
@@ -969,11 +999,73 @@ TMD-pack.
    between PROT 0874 section 0 (LZS-decoded from file offset `0x20`)
    and the 5 TMDs at `DAT_8007C018[0..4]` is conclusive (see
    [§ Disc-side source of `[0..4]`](#disc-side-source-of-04)
-   above), but the exact dispatch site that funnels that pack
-   through `FUN_8001F05C case 2` → `FUN_80026B4C` (the TMD-pack
-   installer) is not yet pinned. `FUN_8001E890`'s retail-PROT branch
-   targets PROT 876, not 874, and applies a shape mask that doesn't
-   match either entry's actual layout. A Write-bp probe on
-   `DAT_8007C018[0]` during boot / first-battle init would
-   identify which loader actually populates the slot, settling the
-   `data\field\player.lzs` chain end-to-end.
+   above). The **inner dispatch** is fully pinned:
+
+   - `FUN_80020224(asset_type)` walks `_DAT_8007B85C` as an
+     [`asset-descriptor`](asset-descriptor.md) pack, calling
+     `FUN_8001F05C(buf + offset, size, type, 0)` for each record.
+   - `FUN_8001F05C case 2` is the TMD-pack installer: it
+     LZS-decodes the section, walks the `[u32 count][u32
+     word_offsets[count]][TMD bodies]` pack, and calls
+     `FUN_80026B4C(pack + word_offsets[i] * 4, 0)` for each TMD.
+   - The retail callers of `FUN_80026B4C` (from a corpus grep over
+     `ghidra/scripts/funcs/`) are `FUN_8001E890`, `FUN_8001E928`,
+     `FUN_800520F0`, `FUN_8001F05C` itself (recursive), `FUN_800513F0`,
+     `FUN_800542C8`, and the muscle-dome minigame loader at
+     `overlay_muscle_dome_801f19ec.txt`.
+
+   The **outer producer** that feeds PROT 0874's bytes into this
+   dispatch chain is not pinned in the static `SCUS_942.54` dumps:
+
+   - `FUN_8001E890`'s retail-PROT branch (`_DAT_8007B8C2 != 0`)
+     loads PROT **876** (`0x36c`), not 874, via
+     `FUN_8003eb98(0x36C, piVar2, 1)`. PROT 876 is a streaming-format
+     file (VAB + TIM_LIST + SEQ) whose first bytes are a `VABp`
+     header, not a 3-section `parse_player_lzs(buf, 3)` container.
+     The branch's downstream `FUN_8001a55c(piVar2[2] & 0xffffff,
+     ...)` calls read those VAB-header bytes as `(size, offset)`
+     pairs - shape-incompatible with PROT 876's actual layout.
+     Either the branch is dead code in retail, or
+     `_DAT_8007B85C` is populated by another caller first and
+     `FUN_8001E890` only fires the dispatch.
+   - `FUN_800520F0` (battle scene loader) is the only static SCUS
+     caller that issues `FUN_8003e68c(0x36a)` / `FUN_8003eb98` with
+     PROT 0x369+0x36A, but it loads them as a contiguous block via
+     the debug `_DAT_8007B8C2 != 0` branch and processes the result
+     through `FUN_8001fbcc` (VDF install) rather than as a
+     3-section `parse_player_lzs` container.
+
+   **Conclusion**: the dispatch goes through the generic
+   `FUN_80020224` → `FUN_8001F05C case 2` → `FUN_80026B4C` chain
+   from an overlay-resident scene loader (`FUN_801D6704` family
+   - present in many scene/menu overlay dumps), not from any
+   static `SCUS_942.54` site. The overlay populates
+   `_DAT_8007B85C` from PROT 874 before invoking the asset-pack
+   walker, but the exact CDNAME indirection (which overlay, on
+   which path) needs a write-bp probe on `DAT_8007C018[0]` to
+   isolate. The Lua-probe approach described in
+   [`docs/tooling/pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)
+   is the appropriate next step.
+
+   A further static narrowing: the `FUN_8001F05C` case-2
+   "freeze" sub-path (`if (param_3 == 1) { _DAT_8007B704 =
+   size; _DAT_8007B824 = pack_count; }`) is the sole SCUS
+   `sw` writer of `_DAT_8007B824` (at PC `0x8001F2F8`). The
+   freeze sets the persistent-base index that
+   `FUN_8001E1B4` later reads to reset the install cursor
+   (`DAT_8007B774 = _DAT_8007B824`), so a non-zero
+   `_DAT_8007B824` would mark slots `[0..pack_count-1]` as
+   carried across mode transitions. A corpus grep over every
+   call site shows zero static SCUS callers of
+   `FUN_8001F05C` pass `param_3 == 1` (the three direct
+   callers - `FUN_80020224`, `FUN_8002541C`, and
+   `overlay_baka_fighter_801d4c50` - pass `s6`, `0`, and
+   `0` respectively), and zero dumped overlay callers of
+   `FUN_80020224` pass `param_1 == 1`. So either the freeze
+   path is in an overlay not yet captured, or
+   `_DAT_8007B824` stays at its BSS-init value of zero
+   throughout retail play and every mode rebuilds the TMD
+   pool from index 0 (in which case the "persistent slots"
+   semantic is vestigial, not load-bearing). The dynamic
+   probe should also break on `_DAT_8007B824` writes to
+   settle which case holds.
