@@ -3608,6 +3608,28 @@ fn cmd_play_window(
     };
     if world_map {
         session.host.world.mode = SceneMode::WorldMap;
+    } else {
+        // Enter the field scene's first event-script record (the init
+        // prologue) so the field VM actually runs on subsequent ticks.
+        // `BootSession::open` only calls `load_scene`, which leaves the
+        // world in `SceneMode::Title` with an empty actor pool - meaning
+        // no field events ever fire and every actor stays at the origin.
+        // `enter_field_scene` switches to `SceneMode::Field`, installs
+        // record 0 into the bytecode buffer, and pre-binds actor TMD /
+        // ANM bindings via `World::init_scene_animations`.
+        //
+        // Soft-fails: scenes without event scripts log and continue
+        // (rare for field scenes but possible for stripped-down dev
+        // scenes).
+        match session.host.enter_field_scene(scene, 0) {
+            Ok(()) => {
+                log::info!("play-window: entered field scene '{scene}' record 0 (field VM live)")
+            }
+            Err(e) => log::warn!(
+                "play-window: enter_field_scene('{scene}', 0) failed ({e:#}); \
+                 falling back to load_scene-only path (field VM will not tick)"
+            ),
+        }
     }
 
     // Wire vanilla encounter + monster tables so triggered encounters can

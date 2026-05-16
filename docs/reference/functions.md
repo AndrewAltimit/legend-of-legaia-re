@@ -138,6 +138,7 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 |---|---|
 | `0x8007078C` (data) | Mode table - 28 entries × 24 bytes. `+0x00` = name string ptr; `+0x0A` = next-mode i16; `+0x10` = handler fn ptr; `+0x14` = parameter. |
 | `gp[0x524]` (data) | Current-mode register (i16). |
+| `_DAT_8007B83C` (data) | Master game-mode index, u16. Title overlay writes `0x1A` (= STR FMV mode 26) on attract countdown underflow; FMV id slot at `_DAT_8007BA78` is zeroed in the same block → `MV1.STR`. |
 | `800179C0` | Dev mode-transition writer. Reads input mask, advances current mode. Gated on `_DAT_8007B98C != 0`. |
 | `80025EEC` | Default per-mode handler - used by 13 of 28 modes. Pipeline: `FUN_8001698C → FUN_80016444(1) → FUN_80016B6C`. |
 | `80025C68` | Mode 0 (CONFIG INIT) handler. |
@@ -146,6 +147,15 @@ Used by the sound subsystem's dev branch and elsewhere when retail-async CD read
 | `80025F2C` | Mode 13 (MAPDSIP MODE) handler - field-display per-frame. |
 | `80025E68` | Mode 8 (EFECT INIT) handler. |
 | `8001DCF8` | Boot-time mode initializer. 1212-byte function. NOT the per-frame dispatcher. |
+
+## Title overlay
+
+| Address | Role |
+|---|---|
+| `FUN_801DD35C` (**title overlay**, 12 104 bytes / 3 026 instructions) | Per-frame title-overlay tick. Pinned via PCSX-Redux watchpoint on the attract countdown - the BP captured `pc=0x801DDCCC` on the `sw` that writes the decremented value back. Decrements `_DAT_801EF16C` by the per-frame scalar at `_DAT_1F800393`; `bgez` branches to `0x801DFC3C` while still counting; underflow falls through and writes `_DAT_8007B83C = 0x1A` (= STR FMV mode 26). Capture pipeline: `scripts/pcsx-redux/autorun_countdown_trigger.lua`; dump at `ghidra/scripts/funcs/overlay_title_801ddccc.txt`. |
+| `0x801DDCCC` (instruction) | The `sw v0, -0xe94(a0)` that writes the decremented countdown back. Acts as the watchpoint-pinning anchor for `FUN_801DD35C`. |
+| `0x801DFC3C` (branch target) | Normal per-frame attract loop (rendering, input, cursor logic). Reached via `bgez v0` from inside `FUN_801DD35C` when the countdown is still positive. Not yet dumped. |
+| `FUN_8005DA40` | SCUS-side bulk-initializer that walks `_DAT_800795B4` and stamps the `0x8000` sentinel into multiple overlay BSS regions (including the title-attract countdown). Called via `0x8005C2D4` at boot. |
 
 ## Battle subsystem
 
