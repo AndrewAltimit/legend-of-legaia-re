@@ -187,6 +187,18 @@ The first ~250 instructions of `FUN_801DD35C` set up per-frame state (input read
 
 Mode `0x01` jumps directly to the post-dispatch tail (no-op for that frame). The eligible attract-fire mode is the one whose handler runs through the countdown decrement at `0x801DDCCC` (mode `0x10` per the cutscene-trigger watchpoint capture).
 
+The JT, state-struct field offsets, and observed `state[+0x204] = N` transitions are pinned in [`legaia_engine_vm::title_overlay`](../../crates/engine-vm/src/title_overlay.rs). Four modes are semantically labelled: `Init` (`0x00` — entry init that routes to `Phase02` or `AttractDelay`), `Idle` (`0x01` — body-tail no-op), `AttractIdle` (`0x10` — Press-Start poll), `AttractDelay` (`0x11` — pre-attract delay). The other 21 carry `Phase0xNN` placeholders with traced-transition docstrings; the module's `STATE_204_WRITES` table holds the full graph. Notably, **Phase06 writes `_DAT_8007B83C = 0x02` at `0x801DFC00`** — the title-screen → main-game master-mode transition (exported as `MASTER_GAME_MODE_FIELD_LAUNCH` + `PHASE06_LAUNCH_GAME_PC`).
+
+### Sprite-emit helpers
+
+The title-tick body reaches into three SCUS-side helpers to emit GPU primitives. All three are ported clean-room in [`legaia_engine_vm::title_prim`](../../crates/engine-vm/src/title_prim.rs):
+
+- `FUN_80058298` (`ClearImage` rect-fill queue, 37 instructions) → `exec_clear_image(host, rect, r, g, b)`.
+- `FUN_80058490` (`MoveImage` VRAM-to-VRAM copy, 49 instructions) → `exec_move_image(host, src, dst_x, dst_y)`, with early-out on zero extent matching the original's `li v0, -1` path.
+- `FUN_800198E0` (sprite-descriptor dispatcher, 146 instructions) → `exec_sprite_descriptor(host, &SpriteDescriptor)`, with full tag-`0x11` simple variant + complex variant routing (alpha-OR pre-pass under `flags & 8`, four width-divisor variants from `flags & 3`).
+
+`SpriteDescriptor { tag, flags, rect, pixel_data_ptr }` and `Rect12 { x, y, w, h }` capture the wire shapes. The `PrimHost` trait abstracts the four engine-side callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`, `alpha_or_gate_set`); engines wire those to a real GPU back-end. The overlay-side helpers (`FUN_801E1C1C` / `FUN_801E373C` / `FUN_801E3EE0` / `FUN_801E36C4`, each ~8 KiB, shared across menu / battle / shop / save UI overlays) are deferred to their own focused port — the title-tick body's calls into them can be stubbed against the same `PrimHost`.
+
 ### State struct (extended)
 
 Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` reached via *negative* displacements off the same `lui 0x801f`.
@@ -207,7 +219,17 @@ Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` rea
 | `0x801F0204` | `+0x204` | **Sub-mode dispatcher** (drives the JT above). |
 | `0x801F0230` | `+0x230` | Top-of-tick early-out guard. |
 
-The captured `overlay_title.bin` does NOT contain raw TIM-magic bytes - the title-screen TIM data is either uploaded to VRAM at an earlier boot phase and freed from main RAM, or it lives in a separately-mapped region. The `FUN_800198E0` "draw a sprite descriptor" calls from the tick body pass two in-overlay template addresses (`0x801E5120` and `0x801EE120`) whose payloads encode TPAGE/CLUT coords referencing data already in VRAM.
+The 256-KiB `overlay_title.bin` window does carry two real TIMs embedded in the title overlay's data segment, at the same addresses the tick body's `FUN_800198E0` sprite-descriptor calls reference: `0x801E5120` (256×256 4bpp save-menu UI atlas — memcard icons + Japanese strings) and `0x801EE120` (256×16 4bpp animated PSX memcard icon strip, 14 frames). Both byte-match `extracted/PROT/0899_xxx_dat.BIN` at file offsets `0x16908` / `0x1F908` (i.e. they live in the trailing-overlay portion of PROT 899). A reusable scanner at [`scripts/scan_tims_and_match_prot.py`](../../scripts/scan_tims_and_match_prot.py) walks a PSX main-RAM dump for TIM-magic records and byte-greps the PROT corpus to pin each candidate.
+
+The **main title-screen art** itself (Legend of Legaia wordmark, orb, `PRESS START BUTTON`, `NEW GAME` / `CONTINUE` menu, copyright lines) lives outside the title-overlay window — it's loaded into main RAM at `0x80170DF8` and sourced from **PROT 0888** (CDNAME label `sound_data2`; the multi-bank sound-data cluster carries title art in the trailing pool past the audio payload). Duplicate copies live in PROT 0889 and 0890 at slightly different file offsets:
+
+```text
+PROT 0888 @ 0x1AA28    — 256×256 8bpp, 66 080 bytes — PRIMARY
+PROT 0889 @ 0x19A28    — same content (multi-bank dup)
+PROT 0890 @ 0x14228    — same content (multi-bank dup)
+```
+
+A typed parser lives at [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs) — `extract_title_tim(&prot_0888_bytes, TITLE_TIM_OFFSET)` returns a zero-copy slice + decoded VRAM rects. The disc-gated unit test (`extracts_real_title_tim_when_disc_extracted`) locks the on-disc layout. An engine-side RGBA decoder lives at [`legaia_engine_core::title_screen_atlas::build_atlas_from_prot_888`](../../crates/engine-core/src/title_screen_atlas.rs); the play-window subcommand uploads it as a sprite atlas and blits one centred + integer-scaled quad during `BootUiState::Title`.
 
 ### Pad-mask layout (important)
 
@@ -270,7 +292,7 @@ Source strips are stored **column-major** in the bitmap; the output grid is row-
 
 The actual on-screen layout the retail boot code uses still has to be RE'd from the unlocated title-overlay tick body — the `STRIP_GRID` constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.
 
-The `h:\prot\field\title\title.pak` string is **only a debug-print referent** — the title-screen content lives in a separate PROT entry referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere.
+The `h:\prot\field\title\title.pak` string is **only a debug-print referent** — the title-screen content lives in **PROT 0888** (`sound_data2` per CDNAME, see the title-overlay-state section above) referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere. The mismatch between the debug path and the actual PROT entry is the same pattern as PROT 0895 being labelled `bat_back_dat` while actually carrying `init.pak`: CDNAME labels are misleading for several entries, so always cross-validate against the loader-call constant or the file's magic bytes.
 
 The TIM-upload helper for these (and for the title overlay's per-frame sprites) is `FUN_800198E0` — it consumes a packed struct with custom magic `0x11` OR a real PSX TIM (flags bit 3 = "has CLUT"), and dispatches to `FUN_800583C8` (the `LoadImage` wrapper, identified by the literal string `s_LoadImage_800156d4` it references for debug logging).
 
