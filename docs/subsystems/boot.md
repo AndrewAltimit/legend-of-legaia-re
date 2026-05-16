@@ -55,6 +55,79 @@ _sw   v0, -0xe94(a0)    ; <-- captured pc: store decremented value
 
 The "still counting" path branches to `0x801DFC3C` (the normal per-frame attract loop: rendering, input, cursor logic). The "underflow" path falls through past `0x801DDCCC` into a block that prepares draw primitives via `0x80058490` and writes the master game-mode index `_DAT_8007B83C = 0x1A`, zeroing `_DAT_8007BA78` (FMV id slot) → `MV1.STR`.
 
+### Sub-mode dispatcher
+
+The first ~250 instructions of `FUN_801DD35C` set up per-frame state (input read, fade-fill via `FUN_80024EE4`, slider/cursor clamps) and then fan out via a 25-entry jump table:
+
+```asm
+801dd6ac  lw   a0, 0x204(v0)        ; a0 = state[0x204]  (= sub-mode)
+801dd6b0  jal  0x801e38d0            ; identity (jr ra ; _move v0,a0)
+...                                  ; input/cursor/screen-fade preamble
+801dd7f8  sltiu v0, s2, 0x19         ; clamp s2 < 25
+801dd7fc  beq  v0, zero, 0x801dfc3c  ; out-of-range → main body
+801dd800  _lui  v0, 0x801d
+801dd804  addiu v0, v0, -0xdbc       ; JT base = 0x801CF244
+801dd808  sll  v1, s2, 0x2
+801dd80c  addu v1, v1, v0
+801dd810  lw   v0, 0x0(v1)
+801dd818  jr   v0                    ; dispatch
+```
+
+`FUN_801E38D0` is a 2-instruction identity, so `s2 == state[0x204]` after the call. The 25-entry JT at `0x801CF244` (read directly out of `captures/boot_walk/overlay_title.bin`):
+
+| Mode | Handler PC | Mode | Handler PC | Mode | Handler PC |
+|------|------------|------|------------|------|------------|
+| `0x00` | `0x801dd820` | `0x09` | `0x801de638` | `0x12` | `0x801def38` |
+| `0x01` | `0x801dfc3c` (= tail) | `0x0a` | `0x801de798` | `0x13` | `0x801df404` |
+| `0x02` | `0x801dddfc` | `0x0b` | `0x801dea5c` | `0x14` | `0x801ddf30` |
+| `0x03` | `0x801df5bc` | `0x0c` | `0x801de680` | `0x15` | `0x801de260` |
+| `0x04` | `0x801df33c` | `0x0d` | `0x801de728` | `0x16` | `0x801df8d0` |
+| `0x05` | `0x801df82c` | `0x0e` | `0x801dec40` | `0x17` | `0x801df6f4` |
+| `0x06` | `0x801dfb5c` | `0x0f` | `0x801dee0c` | `0x18` | `0x801ddd94` |
+| `0x07` | `0x801de134` | `0x10` | `0x801ddb0c` | | |
+| `0x08` | `0x801de4a4` | `0x11` | `0x801dda90` | | |
+
+Mode `0x01` jumps directly to the post-dispatch tail (no-op for that frame). The eligible attract-fire mode is the one whose handler runs through the countdown decrement at `0x801DDCCC` (mode `0x10` per the cutscene-trigger watchpoint capture).
+
+### State struct (extended)
+
+Base `0x801F0000` (the `a0` arg). Sibling region at `0x801EF014..0x801EF200` reached via *negative* displacements off the same `lui 0x801f`.
+
+| Address | Off | Use |
+|---|---|---|
+| `0x801EF14C` | `-0xeb4` | Horizontal slider X, clamped `[0, 0x2c]`. Direction in `state[+0x1e0]` (`1`=left, `2`=right, else idle). Step per frame = `frame_scalar * 8`. |
+| `0x801EF160` | `-0xea0` | Fade/sweep accumulator (clamped `[0, 0x1000]`). |
+| `0x801EF16C` | `-0xe94` | Attract countdown (u32, init `0x8000`). |
+| `0x801EF170` | `-0xe90` | Tick counter (unconditional increment). |
+| `0x801EF190` | `-0xe70` | Alpha A, clamp `0x1000`. |
+| `0x801EF194` | `-0xe6c` | Alpha B, clamp `0x1000`. |
+| `0x801EF1A0` | `-0xe60` | Alpha C, clamp `0x1000`. |
+| `0x801F01E0` | `+0x1e0` | Slider direction. |
+| `0x801F01F4` | `+0x1f4` | X-cursor grid, clamp `[0, 4]`. |
+| `0x801F01F8` | `+0x1f8` | Y-cursor grid, clamp `[0, 2]`. |
+| `0x801F01FC` | `+0x1fc` | Linear cursor index, clamp `[0, s7-1]`. |
+| `0x801F0204` | `+0x204` | **Sub-mode dispatcher** (drives the JT above). |
+| `0x801F0230` | `+0x230` | Top-of-tick early-out guard. |
+
+The captured `overlay_title.bin` does NOT contain raw TIM-magic bytes - the title-screen TIM data is either uploaded to VRAM at an earlier boot phase and freed from main RAM, or it lives in a separately-mapped region. The `FUN_800198E0` "draw a sprite descriptor" calls from the tick body pass two in-overlay template addresses (`0x801E5120` and `0x801EE120`) whose payloads encode TPAGE/CLUT coords referencing data already in VRAM.
+
+### Pad-mask layout (important)
+
+The per-frame mask at `_DAT_8007B850` and the newly-pressed mask at `_DAT_8007B874` use a **packed** layout built by `FUN_8001822C` - not the raw 16-bit PSX pad word. The builder does `~((pad[2] << 8) | pad[3]) & 0xFFFF`, so the libpad face/shoulder byte (`pad[3]`) lives in bits 0..7 and the dpad/system byte (`pad[2]`) lives in bits 8..15:
+
+| Bit | Button | Bit | Button |
+|----:|--------|----:|--------|
+| 0 | L2 | 8 | Select |
+| 1 | R2 | 9 | L3 |
+| 2 | L1 | 10 | R3 |
+| 3 | R1 | 11 | Start |
+| 4 | Triangle | 12 | Up |
+| 5 | Circle | 13 | Right |
+| 6 | Cross | 14 | Down |
+| 7 | Square | 15 | Left |
+
+Masks the title tick exercises in this layout: `0x44 = L1|Cross` (confirm), `0x21 = L2|Circle` (cancel), `0x844 = Start|L1|Cross` (press-start / confirm), `0xf5` = all face buttons + L1 + L2 (generic "any interaction" filter). `crates/engine-core/src/input.rs::PadButton` uses the raw PSX layout (which is fine for host-side keyboard/gamepad plumbing); any code path that ingests retail RAM-side input directly needs a re-encoding step.
+
 A **town/field subsystem** uses a separate format-string pool at `0x80011079..0x80011109` (`"    town "`, `"mode %d"`, `"    baria mode "`, `"    walking set"`, `"end of mes works set"`, `"open port.dat"`, `"nt_group_table %x"`). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded — i.e. the "mode 17 / mode 16" runtime printfs are *town-subsystem* mode transitions, not the master 28-mode state machine index.
 
 ## Debug flags

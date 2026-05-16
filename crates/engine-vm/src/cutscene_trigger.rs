@@ -9,8 +9,8 @@
 //! one of the six runtime FMV-state struct slots at `0x801D0A6C` (see
 //! [`docs/formats/str-fmv-table.md`]).
 //!
-//! A backward sweep of every Ghidra dump in the corpus surfaces only
-//! **two** writers of `_DAT_8007B83C = 0x1A`:
+//! A backward sweep of every Ghidra dump in the corpus surfaces
+//! **three** writers of `_DAT_8007B83C = 0x1A`:
 //!
 //! 1. [`FIELD_VM_OP_4C_E2`] — the field-VM opcode `0x4C 0xE2 lo hi` handler
 //!    inside `FUN_801DE840`. Reachable only via the field-VM 2nd-stage
@@ -19,6 +19,15 @@
 //! 2. [`TITLE_ATTRACT_LOOP`] — the title-screen menu state machine in
 //!    `FUN_801DE234`, case `0x10`. Hardcodes `fmv_id = 0` (intro
 //!    `MV1.STR`) when the attract-loop timer at `DAT_801ef16c` underflows.
+//! 3. [`TITLE_TICK_INLINE`] — an inline fall-through path inside the
+//!    title-overlay per-frame tick `FUN_801DD35C` at `0x801DDCF0`. The
+//!    `bgez v0, 0x801DFC3C` at `0x801DDCC8` keeps the normal path
+//!    short-circuiting away when the countdown is still positive; once
+//!    it underflows, the function falls through and the very next
+//!    instructions zero `_DAT_8007BA78` and store `0x1A` to
+//!    `_DAT_8007B83C` before reaching the [`TITLE_ATTRACT_LOOP`] label
+//!    site downstream. PC-verified via a PCSX-Redux watchpoint on the
+//!    title-attract countdown (see `project_title_overlay_tick_pinned`).
 //!
 //! There is no static caller of the [`FIELD_VM_OP_4C_E2`] handler — the
 //! `FUN_801E30E4` label that the PRD refers to is reached **only** via
@@ -141,10 +150,47 @@ pub const TITLE_ATTRACT_LOOP: FmvTriggerSite = FmvTriggerSite {
          configured timeout",
 };
 
+/// Title-overlay per-frame-tick inline FMV trigger. Lives inside the
+/// title-overlay tick function `FUN_801DD35C` (which Ghidra also labels
+/// `FUN_801DE234` at an inner basic block). The countdown-decrement
+/// sequence at `0x801DDCB8..0x801DDCCC` reads the per-frame scalar
+/// `_DAT_1F800393`, subtracts it from `*0x801EF16C`, and uses
+/// `bgez v0, 0x801DFC3C` to short-circuit away when the result is
+/// still non-negative. On underflow the function falls through and the
+/// next two writes set up the STR-FMV transition:
+///
+/// ```text
+/// 801ddcc8  bgez v0,0x801dfc3c    ; if countdown >= 0, skip the writes
+/// 801ddccc  _sw v0,-0xe94(a0)     ; write back decremented countdown
+/// 801ddcd0  addiu s1,sp,0x38      ; (start of underflow path)
+/// ...
+/// 801ddce8  sh zero,-0x4588(v0)   ; *_DAT_8007BA78 = 0  (fmv_id, MV1.STR)
+/// 801ddcec  li v0,0x1a
+/// 801ddcf0  sh v0,-0x47c4(v1)     ; *_DAT_8007B83C = 0x1A (StrInit mode)
+/// ```
+///
+/// This is the site a live PCSX-Redux watchpoint pins (every frame
+/// passes through `0x801DDCCC`), and the writes here happen before the
+/// downstream [`TITLE_ATTRACT_LOOP`] label inside the same function -
+/// so practical capture of an attract-fire reports this PC, not the
+/// inner label.
+pub const TITLE_TICK_INLINE: FmvTriggerSite = FmvTriggerSite {
+    label: "title_tick_inline",
+    function: "FUN_801DD35C",
+    mode_write_addr: 0x801D_DCF0,
+    fmv_id_write_addr: Some(0x801D_DCE8),
+    fmv_id_source: FmvIdSource::Literal(0),
+    trigger_condition: "title-overlay per-frame tick: fall-through past the countdown decrement \
+         at 0x801DDCCC (`bgez v0, 0x801DFC3C` not taken). Inline writes \
+         _DAT_8007BA78 = 0 and _DAT_8007B83C = 0x1A before reaching the \
+         downstream TITLE_ATTRACT_LOOP label.",
+};
+
 /// The complete catalogue of static FMV-trigger sites observed in the
 /// corpus. Tests + tooling assert this is exhaustive against a fresh
 /// dump pass of `_DAT_8007B83C = 0x1a`.
-pub const FMV_TRIGGER_SITES: &[FmvTriggerSite] = &[FIELD_VM_OP_4C_E2, TITLE_ATTRACT_LOOP];
+pub const FMV_TRIGGER_SITES: &[FmvTriggerSite] =
+    &[FIELD_VM_OP_4C_E2, TITLE_ATTRACT_LOOP, TITLE_TICK_INLINE];
 
 /// `_DAT_8007B83C` (the global game-mode word). The STR FMV play loop
 /// only fires when this equals [`STR_INIT_MODE`].
@@ -164,7 +210,7 @@ mod tests {
 
     #[test]
     fn catalogue_contains_field_vm_and_title_attract() {
-        assert_eq!(FMV_TRIGGER_SITES.len(), 2);
+        assert_eq!(FMV_TRIGGER_SITES.len(), 3);
         assert!(
             FMV_TRIGGER_SITES
                 .iter()
@@ -175,6 +221,26 @@ mod tests {
                 .iter()
                 .any(|s| s.label == "title_attract_loop")
         );
+        assert!(
+            FMV_TRIGGER_SITES
+                .iter()
+                .any(|s| s.label == "title_tick_inline")
+        );
+    }
+
+    #[test]
+    fn title_tick_inline_site_hardcodes_fmv_id_zero() {
+        assert!(matches!(
+            TITLE_TICK_INLINE.fmv_id_source,
+            FmvIdSource::Literal(0)
+        ));
+    }
+
+    #[test]
+    fn title_tick_inline_site_writes_strinit_mode() {
+        // The mode-write at 0x801DDCF0 stores 0x1A to _DAT_8007B83C, matching STR_INIT_MODE.
+        assert_eq!(TITLE_TICK_INLINE.mode_write_addr, 0x801D_DCF0);
+        assert_eq!(TITLE_TICK_INLINE.fmv_id_write_addr, Some(0x801D_DCE8));
     }
 
     #[test]
