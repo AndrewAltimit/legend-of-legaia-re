@@ -221,6 +221,23 @@
     <div id="camera-hint" style="display: none; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-dim); padding: 0.25rem 0;">
       <strong>3D controls:</strong> drag to orbit · scroll to zoom · WASD to pan · space = pause/resume spin · R / double-click = reset
     </div>
+
+    <!-- Boot publisher logos (PROT 0895 init.pak). Only rendered when a
+         full disc is loaded - empty for raw PROT.DAT / single-TIM mode. -->
+    <details id="init-pak-section" style="display: none; margin-top: 1rem; border: 1px solid var(--border); background: var(--bg-card); padding: 0.6rem 0.8rem;">
+      <summary style="cursor: pointer; font-family: var(--font-mono); font-size: 0.85rem;">
+        Boot publisher logos (<code>PROT 0895 init.pak</code>)
+      </summary>
+      <p style="font-size: 0.82rem; color: var(--text-dim); margin: 0.5rem 0;">
+        The four uncompressed publisher-logo TIMs the retail boot sequence uploads to VRAM before
+        the title screen appears: PROKION, Contrail, SCEA Presents, and the WARNING screen. Decoded
+        here from the entry CDNAME mislabels as <code>bat_back_dat</code> &mdash; see
+        <a href="formats/prot.html"><code>docs/formats/prot.md</code></a>.
+      </p>
+      <div id="init-pak-logos" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start;">
+        <!-- one .logo-card per TIM, injected from JS -->
+      </div>
+    </details>
   </div>
 </section>
 
@@ -647,6 +664,67 @@
       }).join('');
   }
 
+  /* Render the four publisher-logo TIMs from PROT 0895 (init.pak).
+   * Called after load_disc(); returns silently when PROT 0895 isn't
+   * present (raw PROT.DAT without disc walk, single-TIM mode). */
+  function renderInitPakLogos() {
+    const section = document.getElementById('init-pak-section');
+    const host = document.getElementById('init-pak-logos');
+    if (!section || !host || !viewer) return;
+
+    let logos;
+    try {
+      logos = JSON.parse(viewer.init_pak_logos_json());
+    } catch (_) {
+      return;
+    }
+    if (!Array.isArray(logos) || logos.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    host.innerHTML = '';
+    for (let i = 0; i < logos.length; i++) {
+      const m = logos[i];
+      const card = document.createElement('div');
+      card.className = 'logo-card';
+      card.style.cssText = 'display: flex; flex-direction: column; gap: 0.25rem; align-items: center; font-family: var(--font-mono); font-size: 0.75rem;';
+      const title = document.createElement('div');
+      title.textContent = m.name;
+      title.style.cssText = 'color: var(--text); font-weight: 600;';
+      const sub = document.createElement('div');
+      sub.textContent = `${m.width}x${m.height} ${m.mode === 0 ? '4bpp' : m.mode === 1 ? '8bpp' : m.mode === 2 ? '15bpp' : '24bpp'}`;
+      sub.style.cssText = 'color: var(--text-dim);';
+      const c = document.createElement('canvas');
+      c.width = m.width;
+      c.height = m.height;
+      /* Scale large logos down to fit the row; CSS scales the canvas
+       * up/down independently of its backing-store size. */
+      const maxDisplayWidth = 200;
+      const scale = Math.min(1, maxDisplayWidth / m.width);
+      c.style.cssText = `width: ${Math.round(m.width * scale)}px; height: ${Math.round(m.height * scale)}px; image-rendering: pixelated; border: 1px solid var(--border); background: #000;`;
+
+      const rgba = viewer.init_pak_logo_rgba(i);
+      if (rgba && rgba.length === m.width * m.height * 4) {
+        const ctx = c.getContext('2d');
+        const img = new ImageData(new Uint8ClampedArray(rgba), m.width, m.height);
+        ctx.putImageData(img, 0, 0);
+      } else {
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#220'; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.fillStyle = '#f80'; ctx.font = '12px monospace';
+        ctx.fillText('decode failed', 4, 16);
+      }
+
+      card.appendChild(title);
+      card.appendChild(sub);
+      card.appendChild(c);
+      host.appendChild(card);
+    }
+    section.style.display = 'block';
+    section.open = true;
+  }
+
   fileInput.addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) {
@@ -711,6 +789,7 @@
         controls.style.display = 'flex';
         status.textContent = `Loaded: ${f.name} - ${count} viewable entries.`;
         refreshInfo();
+        renderInitPakLogos();
       } else {
         status.textContent = `Loaded: ${f.name} - standalone TIM rendered.`;
       }

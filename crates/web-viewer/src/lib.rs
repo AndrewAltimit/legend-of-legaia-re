@@ -1269,6 +1269,76 @@ impl LegaiaViewer {
         s
     }
 
+    /// JSON metadata for the boot publisher-logo TIMs from PROT 0895
+    /// (`init.pak`). Returns an empty array `"[]"` if the disc doesn't
+    /// have PROT 0895 or the entry doesn't parse as init.pak.
+    ///
+    /// Each element shape:
+    ///   `{ "name": str, "width": u32, "height": u32, "mode": u32,
+    ///      "fb_x": u32, "fb_y": u32 }`
+    pub fn init_pak_logos_json(&self) -> String {
+        let bytes = match self.prot_0895_bytes() {
+            Some(b) => b,
+            None => return "[]".into(),
+        };
+        let pak = match legaia_asset::init_pak::parse(bytes) {
+            Ok(p) => p,
+            Err(_) => return "[]".into(),
+        };
+        const NAMES: [&str; 4] = ["PROKION", "Contrail", "SCEA", "WARNING"];
+        let mut out = String::from("[");
+        for (i, logo) in pak.logos.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            // Decode TIM to get the bpp-corrected pixel dimensions.
+            let (w, h) = match legaia_tim::parse(logo.bytes) {
+                Ok(t) => (t.pixel_width() as u32, t.image.h as u32),
+                Err(_) => (logo.pixel_rect.2 as u32 * 2, logo.pixel_rect.3 as u32),
+            };
+            out.push_str(&format!(
+                r#"{{"name":"{}","width":{},"height":{},"mode":{},"fb_x":{},"fb_y":{}}}"#,
+                NAMES[i], w, h, logo.mode, logo.pixel_rect.0, logo.pixel_rect.1,
+            ));
+        }
+        out.push(']');
+        out
+    }
+
+    /// Decoded RGBA8 pixels for one publisher-logo TIM (0..3). Returns
+    /// an empty vec when the disc doesn't have PROT 0895 or `idx` is
+    /// out of range. Width / height come from [`init_pak_logos_json`].
+    pub fn init_pak_logo_rgba(&self, idx: u32) -> Vec<u8> {
+        let Some(bytes) = self.prot_0895_bytes() else {
+            return Vec::new();
+        };
+        let Ok(pak) = legaia_asset::init_pak::parse(bytes) else {
+            return Vec::new();
+        };
+        let Some(logo) = pak.logos.get(idx as usize) else {
+            return Vec::new();
+        };
+        let Ok(tim) = legaia_tim::parse(logo.bytes) else {
+            return Vec::new();
+        };
+        legaia_tim::decode_rgba8(&tim, 0).unwrap_or_default()
+    }
+
+    /// Locate PROT 0895's byte range in the loaded disc image. Returns
+    /// the entry bytes, or `None` when the disc isn't loaded or PROT
+    /// 0895 isn't present (single-TIM mode, raw PROT.DAT without the
+    /// disc walk, etc.).
+    fn prot_0895_bytes(&self) -> Option<&[u8]> {
+        let entries = parse_prot_toc(&self.disc)?;
+        let meta = entries.iter().find(|e| e.index == 895)?;
+        let off = meta.byte_offset as usize;
+        let end = (meta.byte_offset + meta.size_bytes) as usize;
+        if end > self.disc.len() {
+            return None;
+        }
+        Some(&self.disc[off..end])
+    }
+
     /// Resolve a MES message id to its first 64 bytes as a hex string (for
     /// preview in the inspector panel). Returns an empty string if the
     /// current entry isn't a MES container or `text_id` is out of range.
