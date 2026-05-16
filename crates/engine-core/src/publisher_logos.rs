@@ -19,6 +19,76 @@ const FRAMES_PER_LOGO: u16 = FADE_IN_FRAMES + HOLD_FRAMES + FADE_OUT_FRAMES;
 /// Total number of publisher logos shown during boot.
 pub const LOGO_COUNT: usize = 4;
 
+/// One logo's atlas placement: source rect `(x, y, w, h)` in atlas
+/// pixels.
+pub type LogoRect = (u32, u32, u32, u32);
+
+/// Pre-decoded publisher-logo atlas — vertically stacked RGBA pixels +
+/// per-logo source rects. Build once from PROT 0895 bytes via
+/// [`build_atlas_from_init_pak`], hand to engine-render's
+/// `upload_sprite_atlas`, then sample the rect for the current logo
+/// each frame.
+#[derive(Debug, Clone)]
+pub struct LogosAtlas {
+    /// Stacked RGBA bytes — `4 * width * height`.
+    pub rgba: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// Source rects in the same order the session walks (`PROKION,
+    /// Contrail, SCEA, WARNING`).
+    pub rects: [LogoRect; LOGO_COUNT],
+}
+
+/// Build a [`LogosAtlas`] by parsing PROT 0895 (`init.pak`) bytes and
+/// decoding each of the four TIMs.
+///
+/// Atlas layout: vertically stacked, widest logo's width. Each logo is
+/// flush-left within its row.
+pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<LogosAtlas> {
+    let pak = legaia_asset::init_pak::parse(prot_0895_bytes)?;
+    let mut tims = Vec::with_capacity(LOGO_COUNT);
+    for logo in &pak.logos {
+        let tim = legaia_tim::parse(logo.bytes)?;
+        let rgba = legaia_tim::decode_rgba8(&tim, 0)?;
+        let w = tim.pixel_width() as u32;
+        let h = tim.image.h as u32;
+        if rgba.len() != (w * h * 4) as usize {
+            anyhow::bail!(
+                "publisher-logo TIM decode size mismatch: rgba={} w*h*4={}",
+                rgba.len(),
+                w * h * 4
+            );
+        }
+        tims.push((rgba, w, h));
+    }
+
+    let atlas_w = tims.iter().map(|(_, w, _)| *w).max().unwrap_or(0);
+    let atlas_h: u32 = tims.iter().map(|(_, _, h)| *h).sum();
+    let mut atlas = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+
+    let mut rects: [LogoRect; LOGO_COUNT] = [(0, 0, 0, 0); LOGO_COUNT];
+    let mut y_cursor: u32 = 0;
+    for (i, (rgba, w, h)) in tims.iter().enumerate() {
+        // Copy row-by-row into the atlas at (0, y_cursor).
+        for row in 0..*h {
+            let src_off = (row * w * 4) as usize;
+            let dst_off = (((y_cursor + row) * atlas_w) * 4) as usize;
+            let bytes_per_row = (*w * 4) as usize;
+            atlas[dst_off..dst_off + bytes_per_row]
+                .copy_from_slice(&rgba[src_off..src_off + bytes_per_row]);
+        }
+        rects[i] = (0, y_cursor, *w, *h);
+        y_cursor += h;
+    }
+
+    Ok(LogosAtlas {
+        rgba: atlas,
+        width: atlas_w,
+        height: atlas_h,
+        rects,
+    })
+}
+
 /// Phase within a single logo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogoPhase {

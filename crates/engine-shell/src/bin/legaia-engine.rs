@@ -1955,6 +1955,16 @@ fn cmd_config(cmd: ConfigCmd) -> Result<()> {
 // play-window
 // ---------------------------------------------------------------------------
 
+/// Pre-decoded publisher-logos atlas + GPU upload. Created once at boot
+/// when the disc has a valid PROT 0895; reused by [`BootUiState::PublisherLogos`]
+/// to sample one logo per frame.
+struct PublisherLogosAssets {
+    /// Per-logo source rects in atlas pixels.
+    rects: [(u32, u32, u32, u32); legaia_engine_core::publisher_logos::LOGO_COUNT],
+    /// GPU-resident sprite atlas (vertically stacked logos).
+    atlas: legaia_engine_render::UploadedSpriteAtlas,
+}
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -1964,6 +1974,12 @@ struct PlayWindowApp {
     scene_res: Option<SceneResources>,
     win: EngineWindow,
     font_atlas: Option<UploadedFontAtlas>,
+    /// Publisher-logos atlas (built once from PROT 0895). `None` if the
+    /// disc isn't loaded or init.pak doesn't parse.
+    publisher_logos: Option<PublisherLogosAssets>,
+    /// CPU-side atlas data waiting for renderer upload. Moved into
+    /// `publisher_logos` on the first frame the renderer is available.
+    pending_publisher_logos_atlas: Option<legaia_engine_core::publisher_logos::LogosAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
@@ -2017,6 +2033,10 @@ struct PlayWindowApp {
 enum BootUiState {
     /// No boot UI - engine ticks the scene normally.
     Inactive,
+    /// Boot publisher logos (PROT 0895). Runs before the title screen.
+    /// The atlas + per-logo rects live on [`PlayWindowApp`] so the
+    /// renderer can sample one quad per frame.
+    PublisherLogos(legaia_engine_core::publisher_logos::PublisherLogosSession),
     /// Title screen is active. Pad input drives the
     /// [`legaia_engine_core::title::TitleSession`].
     Title(legaia_engine_core::title::TitleSession),
@@ -2069,6 +2089,27 @@ impl PlayWindowApp {
 
         match &mut self.boot_ui {
             BootUiState::Inactive => false,
+            BootUiState::PublisherLogos(session) => {
+                // Start (or Cross) skips the boot sequence.
+                if start || cross {
+                    session.request_skip();
+                }
+                session.tick();
+                if session.is_done() {
+                    // Hand off to the title screen with the
+                    // continue-enabled flag set per save-slot scan.
+                    let snapshots = scan_save_dir(&self.save_dir);
+                    let any_present = snapshots.iter().any(|s| s.present);
+                    self.boot_ui = if any_present {
+                        BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+                    } else {
+                        BootUiState::Title(
+                            legaia_engine_core::title::TitleSession::without_save_data(),
+                        )
+                    };
+                }
+                true
+            }
             BootUiState::Title(session) => {
                 use legaia_engine_core::title::{TitleEvent, TitleInput, TitleOutcome};
                 let input = TitleInput {
@@ -2324,6 +2365,11 @@ impl PlayWindowApp {
     fn boot_ui_draws(&self) -> Vec<TextDraw> {
         match &self.boot_ui {
             BootUiState::Inactive => Vec::new(),
+            BootUiState::PublisherLogos(_) => {
+                // The publisher logos are drawn via the sprite overlay
+                // (see `publisher_logo_sprite_draw`); no font text.
+                Vec::new()
+            }
             BootUiState::Title(s) => {
                 use legaia_engine_core::title::TitlePhase;
                 let (phase_id, cursor) = match s.phase() {
@@ -3005,6 +3051,27 @@ impl PlayWindowApp {
         if let Some(a) = font_opt {
             self.font_atlas = Some(a);
         }
+        // Upload the publisher-logos atlas (if pre-decoded at boot) now
+        // that the renderer is live.
+        if let (Some(atlas_data), Some(r)) = (
+            self.pending_publisher_logos_atlas.take(),
+            self.win.renderer.as_ref(),
+        ) {
+            match r.upload_sprite_atlas(&atlas_data.rgba, atlas_data.width, atlas_data.height) {
+                Ok(atlas) => {
+                    log::info!(
+                        "play-window: publisher-logos atlas uploaded ({}x{})",
+                        atlas_data.width,
+                        atlas_data.height
+                    );
+                    self.publisher_logos = Some(PublisherLogosAssets {
+                        rects: atlas_data.rects,
+                        atlas,
+                    });
+                }
+                Err(e) => log::warn!("publisher-logos atlas upload skipped: {e:#}"),
+            }
+        }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
@@ -3060,6 +3127,44 @@ impl PlayWindowApp {
             a.move_state.world_z as f32,
         );
         Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
+    /// Build a single [`legaia_engine_render::SpriteDraw`] that places the
+    /// active publisher logo centred on the surface, scaled with integer
+    /// up-scaling, with the session's current alpha. Returns `None` when
+    /// boot-UI isn't `PublisherLogos` or the atlas wasn't uploaded.
+    fn publisher_logo_sprite_draw(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Option<legaia_engine_render::SpriteDraw> {
+        let BootUiState::PublisherLogos(session) = &self.boot_ui else {
+            return None;
+        };
+        let assets = self.publisher_logos.as_ref()?;
+        let idx = session.current_logo();
+        if idx >= legaia_engine_core::publisher_logos::LOGO_COUNT {
+            return None;
+        }
+        let (sx, sy, sw, sh) = assets.rects[idx];
+        if sw == 0 || sh == 0 {
+            return None;
+        }
+        // Integer-multiple up-scale that fits inside the surface, then
+        // centre. Caps at 4x to keep logos crisp at typical 960x720.
+        let scale_w = surface_w / sw;
+        let scale_h = surface_h / sh;
+        let scale = scale_w.min(scale_h).clamp(1, 4);
+        let dst_w = sw * scale;
+        let dst_h = sh * scale;
+        let dst_x = (surface_w.saturating_sub(dst_w) / 2) as i32;
+        let dst_y = (surface_h.saturating_sub(dst_h) / 2) as i32;
+        let alpha = session.alpha().clamp(0.0, 1.0);
+        Some(legaia_engine_render::SpriteDraw {
+            dst: (dst_x, dst_y, dst_w, dst_h),
+            src: (sx, sy, sw, sh),
+            color: [1.0, 1.0, 1.0, alpha],
+        })
     }
 
     fn build_hud(&self, _w: u32, _h: u32) -> Vec<TextDraw> {
@@ -3459,11 +3564,29 @@ impl ApplicationHandler for PlayWindowApp {
                     }
                     let hud = self.build_hud(w, h);
                     let overlay = TextOverlay { atlas, draws: &hud };
+
+                    // Publisher-logos overlay: emitted only during the
+                    // PublisherLogos boot phase. The single sprite is
+                    // sampled against the pre-uploaded atlas.
+                    let logo_draw_vec = self
+                        .publisher_logo_sprite_draw(w, h)
+                        .map(|d| [d])
+                        .map(|arr| arr.to_vec())
+                        .unwrap_or_default();
+                    let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
+                        atlas: &p.atlas,
+                        draws: &logo_draw_vec,
+                    });
+
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
-                        overlay_sprites: None,
+                        overlay_sprites: if !logo_draw_vec.is_empty() {
+                            logo_overlay.as_ref()
+                        } else {
+                            None
+                        },
                         overlay_text: Some(&overlay),
                     };
                     if let Err(e) = r.render(RenderTarget::Scene(&scene)) {
@@ -3715,13 +3838,48 @@ fn cmd_play_window(
     } else {
         None
     };
+    // Try to decode the publisher logos from PROT 0895 (init.pak) up
+    // front. Falls back silently when the disc isn't loaded or the
+    // entry doesn't parse - retail discs always have it.
+    let publisher_logos_atlas_data = match session
+        .host
+        .index
+        .entry_bytes(legaia_asset::init_pak::PROT_INDEX as u32)
+    {
+        Ok(b) => match legaia_engine_core::publisher_logos::build_atlas_from_init_pak(&b) {
+            Ok(a) => {
+                log::info!(
+                    "play-window: publisher-logos atlas built ({}x{}, {} logos)",
+                    a.width,
+                    a.height,
+                    a.rects.len()
+                );
+                Some(a)
+            }
+            Err(e) => {
+                log::warn!("play-window: publisher-logos build failed: {e:#}");
+                None
+            }
+        },
+        Err(e) => {
+            log::warn!("play-window: PROT 0895 read failed: {e:#}");
+            None
+        }
+    };
+
     let initial_boot_ui = if boot_ui {
-        let snapshots = scan_save_dir(save_dir);
-        let any_present = snapshots.iter().any(|s| s.present);
-        if any_present {
-            BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+        if publisher_logos_atlas_data.is_some() {
+            BootUiState::PublisherLogos(
+                legaia_engine_core::publisher_logos::PublisherLogosSession::new(),
+            )
         } else {
-            BootUiState::Title(legaia_engine_core::title::TitleSession::without_save_data())
+            let snapshots = scan_save_dir(save_dir);
+            let any_present = snapshots.iter().any(|s| s.present);
+            if any_present {
+                BootUiState::Title(legaia_engine_core::title::TitleSession::new())
+            } else {
+                BootUiState::Title(legaia_engine_core::title::TitleSession::without_save_data())
+            }
         }
     } else {
         BootUiState::Inactive
@@ -3732,6 +3890,8 @@ fn cmd_play_window(
         scene_res: Some(scene_res),
         win: EngineWindow::new(),
         font_atlas: None,
+        publisher_logos: None,
+        pending_publisher_logos_atlas: publisher_logos_atlas_data,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
