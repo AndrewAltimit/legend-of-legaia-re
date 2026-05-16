@@ -79,6 +79,7 @@ pub mod motion_vm;
 pub mod move_vm;
 pub mod prim_dispatch;
 pub mod status_effects;
+pub mod title_overlay;
 pub mod world_map;
 pub mod world_map_draw_vm;
 
