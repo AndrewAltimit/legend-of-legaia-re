@@ -25,6 +25,18 @@ The 28-mode state machine table at `0x8007078C` is the top-level "what is the ga
 
 The script VM that drives every running script is **not** in `SCUS_942.54` - it lives in RAM overlays at `0x801C0000+`. The actor / sprite VM (`FUN_801D6628`) is in the title-screen overlay; the field/event VM (`FUN_801DE840`) is in the town/field overlay; the effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`) is in the battle overlay. See [actor VM](actor-vm.md), [field VM](script-vm.md), and [effect VM](effect-vm.md).
 
+## Title-screen overlay state
+
+The title-screen overlay loads into `0x801E0000+` during the boot sequence and keeps its mode state in a struct at `0x801EF018`. Known fields:
+
+| Offset | Width | Field |
+|---|---|---|
+| `+0x154` | u16 | Title-attract idle countdown (`_DAT_801EF16C`). Initialized to `0x8000`; decremented while the title sits idle; underflow fires the attract FMV via `FUN_801DE234` (hardcoded `fmv_id = 0` → `MV1.STR`). See [`cutscene.md`](cutscene.md). |
+
+Initial values come from a SCUS-side bulk-initializer at `FUN_8005DA40` (called via `0x8005C2D4`) that walks a pointer table at `_DAT_800795B4` and writes initial values into multiple overlay BSS regions in one pass. The countdown's `0x8000` sentinel is set during this init pass, before the overlay's tick function starts running. The same initializer writes other addresses sharing a `…116C` low-half offset, suggesting `_DAT_800795B4` is a list of struct bases the init pass walks with a common per-struct displacement.
+
+A **town/field subsystem** uses a separate format-string pool at `0x80011079..0x80011109` (`"    town "`, `"mode %d"`, `"    baria mode "`, `"    walking set"`, `"end of mes works set"`, `"open port.dat"`, `"nt_group_table %x"`). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded — i.e. the "mode 17 / mode 16" runtime printfs are *town-subsystem* mode transitions, not the master 28-mode state machine index.
+
 ## Debug flags
 
 - `_DAT_8007B8C2` - dev/retail build toggle. Several subsystems (sound init, field loader) carry an "if dev" branch keyed on this byte. No writers exist in `SCUS_942.54`; the writer must live in an unswept overlay or come from external POKE (TCRF GameShark codes confirm both this flag and `_DAT_8007B98F` are runtime-writable).

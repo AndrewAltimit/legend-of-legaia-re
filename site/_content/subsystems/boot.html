@@ -64,6 +64,19 @@
   </table>
 </section>
 
+<section class="doc-section" id="title-overlay-state">
+  <h2>Title-screen overlay state</h2>
+  <p>The title-screen overlay loads into <code>0x801E0000+</code> during the boot sequence and keeps its mode state in a struct at <code>0x801EF018</code>. Known fields:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Width</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x154</code></td><td>u16</td><td>Title-attract idle countdown (<code>_DAT_801EF16C</code>). Initialized to <code>0x8000</code>; decremented while the title sits idle; underflow fires the attract FMV via <code>FUN_801DE234</code> (hardcoded <code>fmv_id = 0</code> &rarr; <code>MV1.STR</code>). See <a href="cutscene.html">cutscene</a>.</td></tr>
+    </tbody>
+  </table>
+  <p>Initial values come from a SCUS-side bulk-initializer at <code>FUN_8005DA40</code> (called via <code>0x8005C2D4</code>) that walks a pointer table at <code>_DAT_800795B4</code> and writes initial values into multiple overlay BSS regions in one pass. The countdown's <code>0x8000</code> sentinel is set during this init pass, before the overlay's tick function starts running. The same initializer writes other addresses sharing a <code>&hellip;116C</code> low-half offset, suggesting <code>_DAT_800795B4</code> is a list of struct bases the init pass walks with a common per-struct displacement.</p>
+  <p>A <strong>town/field subsystem</strong> uses a separate format-string pool at <code>0x80011079..0x80011109</code> (<code>"    town "</code>, <code>"mode %d"</code>, <code>"    baria mode "</code>, <code>"    walking set"</code>, <code>"end of mes works set"</code>, <code>"open port.dat"</code>, <code>"nt_group_table %x"</code>). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded &mdash; i.e. the "mode 17 / mode 16" runtime printfs are <em>town-subsystem</em> mode transitions, not the master 28-mode state-machine index.</p>
+</section>
+
 <section class="doc-section" id="debug-flags">
   <h2>Debug flags</h2>
   <p>Two RAM bytes that several subsystems branch on at boot time and beyond:</p>

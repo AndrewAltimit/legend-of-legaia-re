@@ -19,7 +19,9 @@ use glam::{Mat4, Vec3};
 use legaia_engine_core::menu_runtime::{MenuInput, MenuRuntime, MenuState};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
 use legaia_engine_core::scene_assets::SceneAssets;
-use legaia_engine_core::scene_resources::{FIELD_SHARED_BLOCKS, SceneResources};
+use legaia_engine_core::scene_resources::{
+    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+};
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
@@ -3644,7 +3646,35 @@ fn cmd_play_window(
             .scene
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("no scene loaded after BootSession::open"))?;
-        SceneResources::build(s)?
+        // Load the shared blocks (`init_data` + `player_data`) so the
+        // player TMD + shared UI atlas stay resident across field
+        // transitions, then build with the targeted VRAM-upload
+        // heuristic. Without this every prim sampled non-uploaded
+        // VRAM regions and the filter dropped 100% of the mesh.
+        let mut shared_scenes: Vec<Scene> = Vec::new();
+        for name in FIELD_SHARED_BLOCKS {
+            match Scene::load(&session.host.index, name) {
+                Ok(sc) => shared_scenes.push(sc),
+                Err(e) => log::warn!("play-window: shared block '{name}' not loaded: {e:#}"),
+            }
+        }
+        let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+        // Use Battle kind so scene_tmd_stream entries are *included*:
+        // most town/field scenes ship their party-character meshes
+        // inside scene_tmd_stream-shaped entries, and the engine has
+        // no separate field-geometry dispatch yet. Switching to
+        // `SceneLoadKind::Field` (which retail uses for field-load)
+        // strips those TMDs and leaves the scene with zero meshes.
+        // Matches the diagnostic `info` subcommand. Revisit when a
+        // field-geometry dispatch lands.
+        let (res, _stats) = SceneResources::build_targeted_with_options(
+            s,
+            &shared_refs,
+            BuildOptions {
+                kind: SceneLoadKind::Battle,
+            },
+        )?;
+        res
     };
     log::info!(
         "play-window: scene '{}', {} TMDs, {} TIMs",
