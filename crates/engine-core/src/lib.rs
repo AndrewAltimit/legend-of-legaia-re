@@ -54,6 +54,7 @@ pub mod tactical_arts;
 pub mod tactical_arts_editor;
 pub mod target_picker;
 pub mod title;
+pub mod title_screen_atlas;
 pub mod world;
 pub mod world_map;
 
