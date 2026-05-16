@@ -73,6 +73,17 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin
 ```
 
+## Caveat: overlay-buffer captures are mixed content
+
+A captured 256 KiB slice of an overlay buffer at `0x801C0000` is **not equivalent to a single overlay file on disc**. The buffer holds interleaved data from multiple sources at any given moment:
+
+- Old overlay code/data from previous mode (only partially overwritten).
+- Streaming buffers that share address space (e.g. SEQ data from the BGM streamer).
+- Multi-pak loads where different ranges of the buffer come from different PROT entries.
+- Runtime-initialised BSS/state that has no on-disc counterpart.
+
+Concrete example: at title-screen showing, `captures/boot_walk/overlay_title.bin` contains PROT 1053 (`music_01`) SEQ data at `0x00000..~0x03000`, PROT 0899 options-menu data at `0x0E818..0x15818`, PROT 0897 trailing shared menu helpers at `0x0EFE8..0x10818`, and the title-overlay code proper at `0x0F000..0x25000`. Byte-search for a fingerprint from one region will only find the corresponding source PROT entry, not a single "title overlay" file. To pin a region's source: identify the region boundaries first (look for transitions in content type), pick a fingerprint UNIQUE to that region, then sweep PROT.
+
 ## Extracting TIMs from a RAM snapshot
 
 A captured RAM dump often contains transient TIMs that the game staged in main RAM before uploading to VRAM. These can be identified, decoded, and **traced back to their source PROT entry** even when the source is uncompressed - the on-disc CLUT + pixel data is byte-identical to the staged copy; only the RECT fields (VRAM target coords) get rewritten at runtime.
