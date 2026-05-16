@@ -130,6 +130,33 @@ Masks the title tick exercises in this layout: `0x44 = L1|Cross` (confirm), `0x2
 
 A **town/field subsystem** uses a separate format-string pool at `0x80011079..0x80011109` (`"    town "`, `"mode %d"`, `"    baria mode "`, `"    walking set"`, `"end of mes works set"`, `"open port.dat"`, `"nt_group_table %x"`). These print at retail-build runtime but have no LUI+ADDIU caller resident until the town/field overlay is loaded — i.e. the "mode 17 / mode 16" runtime printfs are *town-subsystem* mode transitions, not the master 28-mode state machine index.
 
+## Boot init.pak (PROT 0895)
+
+PROT entry `0895_bat_back_dat` is the **boot-time `init.pak` bundle** — despite the misleading CDNAME label. The first 16 bytes are a small pack header; the rest is a string pool followed by four uncompressed PSX TIMs:
+
+```
++0x0000  16 bytes  pack header (4 × u32 LE)
++0x0010  ~528 byte string pool with embedded dev paths:
+           "init program \n"
+           "h:\prot\field\init\init.pak"
+           "h:\prot\field\title\title.pak"
+           "h:\mpack\monster.snd"
+           "\XA\XA%d.XA;1", "not xa file %d"
+           "\LEGAIA\MOV\MV2.STR;1"
+           "card name %s ", "card_sts=%d old=%d"
+           "bu%1d%1d:*", "BISCUS-94254PRO-"
++0x21c4  TIM  PROKION         (8bpp, 176×256, ~45.6 KB) — boot logo
++0xd3e4  TIM  Contrail        (8bpp, 184×256, ~47.6 KB) — "A Contrail Production"
++0x18e04 TIM  SCEA Presents   (4bpp, 256×128, ~16.4 KB)
++0x1ce44 TIM  WARNING         (4bpp, 256×256, ~32.8 KB) — health warning
+```
+
+CLUT and pixel data are byte-identical to live RAM after boot extraction — only the RECT fields (VRAM target coords) are runtime-relocated. On-disc each TIM has CLUT `fb=(0, 480+N)` and pixel `fb=(640..800, 0..256)`; the boot loader rewrites these to per-logo VRAM regions before calling LoadImage.
+
+The `h:\prot\field\title\title.pak` string is **only a debug-print referent** — the title-screen content lives in a separate PROT entry referenced by integer constant from SCUS boot code, not by string lookup. SCUS does not contain the literal string `title.pak` anywhere.
+
+The TIM-upload helper for these (and for the title overlay's per-frame sprites) is `FUN_800198E0` — it consumes a packed struct with custom magic `0x11` OR a real PSX TIM (flags bit 3 = "has CLUT"), and dispatches to `FUN_800583C8` (the `LoadImage` wrapper, identified by the literal string `s_LoadImage_800156d4` it references for debug logging).
+
 ## Debug flags
 
 - `_DAT_8007B8C2` - dev/retail build toggle. Several subsystems (sound init, field loader) carry an "if dev" branch keyed on this byte. No writers exist in `SCUS_942.54`; the writer must live in an unswept overlay or come from external POKE (TCRF GameShark codes confirm both this flag and `_DAT_8007B98F` are runtime-writable).
