@@ -17,6 +17,9 @@
 #
 # Flags (each one also accepts the corresponding LEGAIA_* env var):
 #   --lua PATH           autorun lua to -dofile (default world_map probe)
+#   --spec PATH          declarative .probe.toml spec to run via
+#                        probes/_runner.lua (sets LEGAIA_PROBE_SPEC and
+#                        forces --lua to probes/_runner.lua)
 #   --sstate PATH        save state path (default sstate1)
 #   --scenario NAME      named scenario from scripts/scenarios.toml
 #                        (resolved to a per-emulator save-state path;
@@ -51,6 +54,7 @@ LEGAIA_OUT="${LEGAIA_OUT:-}"
 LEGAIA_OUT_DIR="${LEGAIA_OUT_DIR:-}"
 LEGAIA_LUA="${LEGAIA_LUA:-scripts/pcsx-redux/autorun_world_map_probe.lua}"
 LEGAIA_SCENARIO="${LEGAIA_SCENARIO:-}"
+LEGAIA_PROBE_SPEC="${LEGAIA_PROBE_SPEC:-}"
 LOG_FILE=""
 FAST=0
 
@@ -58,6 +62,7 @@ FAST=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --lua)       LEGAIA_LUA="$2"; shift 2 ;;
+        --spec)      LEGAIA_PROBE_SPEC="$2"; shift 2 ;;
         --sstate)    LEGAIA_SSTATE="$2"; shift 2 ;;
         --scenario)  LEGAIA_SCENARIO="$2"; shift 2 ;;
         --out)       LEGAIA_OUT="$2"; shift 2 ;;
@@ -119,6 +124,19 @@ PY
     LEGAIA_SSTATE="$resolved"
 fi
 
+# ---------- declarative spec dispatch (--spec / LEGAIA_PROBE_SPEC) ----------
+# If a .probe.toml spec was passed, force the autorun to be probes/_runner.lua
+# so it'll pick the spec up via $LEGAIA_PROBE_SPEC. The spec path is
+# preserved verbatim; the runner does the TOML parse + dispatch into the
+# probe lib.
+if [[ -n "$LEGAIA_PROBE_SPEC" ]]; then
+    if [[ ! -e "$LEGAIA_PROBE_SPEC" ]]; then
+        echo "ERROR: --spec file not found: $LEGAIA_PROBE_SPEC" >&2
+        exit 65
+    fi
+    LEGAIA_LUA="scripts/pcsx-redux/probes/_runner.lua"
+fi
+
 # ---------- preflight ----------
 required=("$PCSX_REDUX" "$LEGAIA_ISO" "$LEGAIA_BIOS")
 if [[ "${LEGAIA_NO_SSTATE:-0}" != "1" ]]; then
@@ -137,8 +155,15 @@ if [[ ! -e "$LEGAIA_LUA" ]]; then
 fi
 
 # Derive stem from the lua probe basename for downstream defaults.
-stem="$(basename "$LEGAIA_LUA" .lua)"
-stem="${stem#autorun_}"
+# When --spec is used, the lua is _runner.lua for every spec — derive the
+# stem from the spec basename so each spec's captures land in its own
+# captures/<spec-stem>/ subtree instead of captures/_runner/.
+if [[ -n "$LEGAIA_PROBE_SPEC" ]]; then
+    stem="$(basename "$LEGAIA_PROBE_SPEC" .probe.toml)"
+else
+    stem="$(basename "$LEGAIA_LUA" .lua)"
+    stem="${stem#autorun_}"
+fi
 
 # Default LEGAIA_OUT_DIR to captures/<stem>/<iso-ts>/ if neither
 # LEGAIA_OUT nor LEGAIA_OUT_DIR was supplied. This is what gives every
@@ -174,6 +199,7 @@ cd "$REPO_ROOT"
         && echo "  sstate     : (cold boot — LEGAIA_NO_SSTATE=1)" \
         || echo "  sstate     : $LEGAIA_SSTATE${LEGAIA_SCENARIO:+ (from --scenario $LEGAIA_SCENARIO)}"
     echo "  lua        : $LEGAIA_LUA"
+    [[ -n "$LEGAIA_PROBE_SPEC" ]] && echo "  spec       : $LEGAIA_PROBE_SPEC"
     echo "  frames     : $LEGAIA_FRAMES"
     [[ -n "$LEGAIA_OUT" ]]     && echo "  out        : $LEGAIA_OUT"
     [[ -n "$LEGAIA_OUT_DIR" ]] && echo "  out_dir    : $LEGAIA_OUT_DIR"
@@ -184,7 +210,7 @@ cd "$REPO_ROOT"
 } | tee "$LOG_FILE"
 
 # Pass through all the LEGAIA_* knobs the autorun reads.
-export LEGAIA_SSTATE LEGAIA_FRAMES LEGAIA_OUT LEGAIA_OUT_DIR LEGAIA_SCENARIO
+export LEGAIA_SSTATE LEGAIA_FRAMES LEGAIA_OUT LEGAIA_OUT_DIR LEGAIA_SCENARIO LEGAIA_PROBE_SPEC
 
 # ---------- run ----------
 # stdbuf forces line-buffered stdout/stderr so the log streams live rather

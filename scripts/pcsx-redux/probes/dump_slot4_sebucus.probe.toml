@@ -1,0 +1,12 @@
+# Dump the live slot-4 (world-map kingdom bundle, Sebucus) RAM region.
+# See dump_slot4_drake.probe.toml for the methodology.
+#
+# No matching scenario in scripts/scenarios.toml yet; pass the save state
+# explicitly via `run_probe.sh --sstate /path/to/world_map.sstate`.
+
+capture_frames = 120
+output_path    = "slot4_ram_sebucus.bin"
+
+[dump]
+addr = 0x8011A624
+size = 26964

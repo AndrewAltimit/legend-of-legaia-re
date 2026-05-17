@@ -294,13 +294,84 @@ The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
 
 ## Authoring a new probe
 
-The fastest path to a new probe:
+Two shapes are supported, in order of preference:
+
+### Declarative .probe.toml (simple probes)
+
+For "arm N breakpoints, dump K columns to CSV" or "settle then dump a
+RAM region", the probe is a single TOML file under
+[`scripts/pcsx-redux/probes/`](../../scripts/pcsx-redux/probes/) with
+no Lua code at all. The shared
+[`probes/_runner.lua`](../../scripts/pcsx-redux/probes/_runner.lua)
+parses the spec via
+[`lib/probe/toml.lua`](../../scripts/pcsx-redux/lib/probe/toml.lua)
+and dispatches into
+[`lib/probe/spec.lua`](../../scripts/pcsx-redux/lib/probe/spec.lua).
+
+Schema (see
+[`probes/xp_table_readers.probe.toml`](../../scripts/pcsx-redux/probes/xp_table_readers.probe.toml)
+for the breakpoint-fan-out case and
+[`probes/dump_full_ram.probe.toml`](../../scripts/pcsx-redux/probes/dump_full_ram.probe.toml)
+for the RAM-dump case):
+
+```toml
+scenario        = "title_attract"   # informational; LEGAIA_SSTATE wins
+capture_frames  = 600
+output_path     = "my_probe.csv"
+capture_columns = ["tick", "addr", "pc", "ra", "value_u32"]
+
+[detail]                            # optional: first N hits get full
+hits = 8                            # register/code/stack snapshots in a
+path = "my_probe.detail.txt"        # .detail.txt sidecar
+
+[[breakpoint]]                      # individual breakpoint
+addr  = 0x80017EC8
+kind  = "Exec"                      # "Exec" | "Read" | "Write"
+width = 4
+name  = "world_map_tick"
+
+[[breakpoint_range]]                # fan out N adjacent breakpoints
+base     = 0x8007123C
+length   = 196                      # bytes
+stride   = 4                        # bytes per bp
+kind     = "Read"
+name_fmt = "xp+0x%03X"              # %X / %x / %d = byte offset from base
+```
+
+Capture-column vocab (built into
+[`lib/probe/spec.lua`](../../scripts/pcsx-redux/lib/probe/spec.lua)):
+`tick`, `addr`, `offset`, `pc`, `ra`, `sp`, `width`,
+`value_u8` / `value_u16` / `value_u32`.
+
+Run it:
+
+```bash
+bash scripts/pcsx-redux/run_probe.sh \
+    --spec scripts/pcsx-redux/probes/my_probe.probe.toml \
+    --scenario title_attract     # or --sstate /path/to/state.sstate
+```
+
+Validate the schema (without launching PCSX-Redux):
+
+```bash
+python3 scripts/pcsx-redux/probes/_check_specs.py
+```
+
+If `lua5.1` is available, the validator also parses each spec via
+`lib/probe/toml.lua` and asserts the structural output matches Python's
+`tomllib` &mdash; catches divergence between the Lua TOML reader and
+the canonical TOML spec.
+
+### Lua autorun (bespoke probes)
+
+For anything more elaborate (per-hit logic that depends on register
+state, multi-state-machine probes, dynamic breakpoint arming, etc.),
+write a Lua autorun. The fastest path:
 
 1. Start from
    [`scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
-   &mdash; the canonical thin probe (~145 lines, kingdom-agnostic) that
-   uses the shared library for everything except the per-probe
-   breakpoint body.
+   &mdash; the canonical thin probe (~145 lines) that uses the shared
+   library for everything except the per-probe breakpoint body.
 2. Edit the `PROBE_OFFSETS` (or your own probe-address list), the CSV
    header, and the per-hit row written from inside the breakpoint
    callback. The boot-delay / capture-vsync / disarm state machine
