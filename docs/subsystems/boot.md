@@ -80,6 +80,60 @@ The SCUS-side CD I/O is layered. Bottom-up:
 
 `FUN_8003E360` shows a **dual-mode loader pattern** keyed on the dev/retail flag `_DAT_8007B8C2`: retail branch uses ISO9660 file system (`FUN_800608F0` open + `FUN_80060944` read), debug branch uses PROT TOC index (`FUN_8003E8A8` + `FUN_8003E800`). The two branches load the same data from different on-disc locations.
 
+### Pre-`init_data` system-UI gap (menu-glyph atlas + boot cursors)
+
+A separate 236 KB / 118-sector unindexed region sits **between the TOC and the first indexed entry** (`init_data` at LBA 121). The TOC ends at PROT.DAT offset `0x1800` (3 sectors); the first indexed payload starts at `0x3C800` (sector 121). Everything in between is uncovered by the per-entry extractor.
+
+The gap is a packed bundle of system-UI TIMs (boot-time cursors, the menu-glyph small-caps font, ornamental sprite strips). All TIMs are 4bpp + CLUT and target the bottom-right corner of PSX VRAM (the canonical "system UI" rectangle at `fb_x >= 640`).
+
+| PROT.DAT offset | TIM dims | VRAM target          | Purpose                                                      |
+|-----------------|----------|----------------------|--------------------------------------------------------------|
+| `0x01858`       | tiny     | `(896,256)` 1×4      | boot cursor variant                                          |
+| `0x018E0`       | 256×192  | `(896,256)` 64×192   | large UI sprite sheet                                        |
+| `0x07B00`       | 32×32    | `(928,352)` 16×32    | UI element                                                   |
+| `0x07F40`       | 256×256  | `(896,0)`   64×256   | dialog-font / large bitmap sheet                             |
+| `0x0FF80`       | 4×4      | `(896,448)` 1×4      | cursor                                                       |
+| `0x10028`       | 4×4      | `(896,448)` 1×4      | cursor                                                       |
+| `0x100D0`       | 4×4      | `(896,448)` 1×4      | cursor                                                       |
+| `0x10178`       | 256×32   | `(896,448)` 64×32    | AP / status-icon sprite sheet                                |
+| **`0x11218`**   | 256×256  | `(960,256)` 64×256   | **menu-glyph small-caps font** (NEW GAME / CONTINUE / …)     |
+| `0x19438`       | 240×24   | `(960,400)` 60×24    | UI sprite strip                                              |
+| `0x1AC90`       | 16×16    | `(976,256)` 4×16     | cursor part                                                  |
+| `0x1AD50`       | 16×16    | `(980,256)` 4×16     | cursor part                                                  |
+| `0x1AE10`       | 16×16    | `(984,256)` 4×16     | cursor part                                                  |
+| `0x1AED0`       | 32×32    | `(976,272)` 8×32     | cursor                                                       |
+| `0x1B80C`       | 256×256  | `(640,0)`   64×256   | system sprite sheet                                          |
+
+#### Menu-glyph atlas
+
+The TIM at `PROT.DAT[0x11218..0x11218 + 33312]` (256×256 @ 4bpp + 16×16 CLUT bank) is a small-caps glyph atlas used by the in-game menu UI (shop / inventory / status panels). Confirmed by pinning the in-RAM copy at vaddr `0x80106478` (sstate8, live title-menu state) against PROT.DAT — byte-equal modulo the runtime CLUT relocation. The atlas does NOT appear in any extracted PROT entry; it's strictly in this pre-`init_data` gap.
+
+| Glyph row  | Atlas Y    | Cell W | Cells | Content                                  |
+|------------|------------|--------|-------|------------------------------------------|
+| Digits     | 209..220   | 8      | 10    | `0123456789`                             |
+| Alphabet   | 224..238   | 8      | 26    | `ABCDEFGHIJKLMNOPQRSTUVWXYZ`             |
+
+Each cell is 8 px wide on a fixed 8 px pitch starting at `x = 8`. The atlas also carries non-glyph debug content (a `<DEMO>` row, the dev string `ここは常駐エフェクトが入る予定 / Pochi`, a `FONT CLUT` palette-bar indicator, and various cursor / arrow sprites) — all ignored by the engine.
+
+CLUT row 0 renders the alphabet in solid red with magenta highlights; retail switches CLUT rows per context to read white / gold / dim. The clean-room engine sidesteps the CLUT-switching logic by decoding once to a stencil (pixel-index 0 → transparent, indices 1..15 → opaque white) and applying a `SpriteDraw::color` tint at draw time — see `crates/engine-core/src/menu_glyph_atlas.rs`.
+
+**Note on title-screen "NEW GAME" / "CONTINUE":** The title menu rows are NOT rendered from this atlas — retail samples a pre-rendered band at `y=227..237` inside the title TIM itself (PROT 0888 / 0889 / 0890; see [`legaia_asset::title_pak::TITLE_BAND_MENU_NEW_GAME`] / [`TITLE_BAND_MENU_CONTINUE`]). The band carries both strings packed into a single 128×10 strip; the clean-room engine emits two `SpriteDraw`s sampling the left half (x=0..65) and right half (x=65..127) of that strip. Selection is colour-coded: bright/white for the cursor row, dim/gray otherwise — there's no arrow / cursor mark in retail.
+
+#### Extraction
+
+```rust
+use legaia_asset::menu_glyph_atlas;
+let prot_dat = std::fs::read("extracted/PROT.DAT")?;
+let tim = menu_glyph_atlas::extract_from_prot_dat(&prot_dat)?;
+// tim.bytes is the 33312-byte slice starting at PROT.DAT[0x11218].
+```
+
+The engine reads the slice directly via `ProtIndex::prot_dat_raw_bytes(byte_offset, len)` (added on top of the existing `entry_bytes` / `entry_bytes_extended` API).
+
+#### Loader pathway (hypothesis)
+
+These TIMs land in main RAM at vaddrs `0x80105000..0x80110200` (well below the `0x801C0000+` overlay window), which means they're treated as **shared static assets**, loaded once at boot before any overlay. The loader has not been pinned function-by-function yet; the most likely candidate is the same CD-DMA primitive (`FUN_8005D9A0`) that delivers the title overlay, driven from the SCUS-side bulk-initializer (`FUN_8005DA40` site). Confirming this requires a Write-breakpoint capture targeting the `0x80105000..0x80110200` range on cold boot, mirroring the title-overlay hunt in [`scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua).
+
 ### Title-overlay source on disc
 
 The title-overlay code (function `FUN_801DD35C` at `0x801DD35C`, the captured `overlay_title.bin` 256-KiB window) lives in an **unindexed 60-sector gap inside `PROT.DAT`** between TOC entries 899 and 900. The per-entry extractor stops at each TOC entry's claimed size, so the gap bytes never land in `extracted/PROT/`. To reach them, slice `PROT.DAT` directly.

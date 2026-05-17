@@ -117,6 +117,19 @@ pub const TITLE_BAND_TM_COPYRIGHT: (u32, u32, u32, u32) = (4, 195, 244, 14);
 /// Inc." copyright line. Drawn in all post-fade phases.
 pub const TITLE_BAND_C_COPYRIGHT: (u32, u32, u32, u32) = (8, 209, 234, 14);
 
+/// Source sub-rect of the **"NEW GAME"** menu row. Retail's two-row
+/// main-menu strings sit in a single horizontal strip at `y=227..237`
+/// inside the title TIM, in the same stylised small-caps font as the
+/// "PRESS START BUTTON" and copyright bands. Drawn during the
+/// `MainMenu` phase. Colour-based selection: bright/white when the
+/// cursor is on this row, dim/gray otherwise.
+pub const TITLE_BAND_MENU_NEW_GAME: (u32, u32, u32, u32) = (0, 227, 65, 10);
+
+/// Source sub-rect of the **"CONTINUE"** menu row. Same band as
+/// [`TITLE_BAND_MENU_NEW_GAME`]; sampled at a different `x` so retail
+/// can stack the two rows vertically on screen.
+pub const TITLE_BAND_MENU_CONTINUE: (u32, u32, u32, u32) = (65, 227, 62, 10);
+
 /// PSX TIM magic word (`0x00000010` LE).
 const TIM_MAGIC: u32 = 0x0000_0010;
 
@@ -324,6 +337,22 @@ mod tests {
                 prot_idx, alt_offset
             );
         }
+    }
+
+    #[test]
+    fn menu_band_constants_partition_the_packed_strip() {
+        // The "NEW GAME CONTINUE" footer band at title-TIM y=227..237
+        // is a single 128×10 strip. NEW_GAME samples the left half;
+        // CONTINUE samples the right half. The two rects must abut
+        // (NEW_GAME.x + NEW_GAME.w == CONTINUE.x) so engines can stack
+        // them vertically without re-extracting bytes.
+        let (ngx, ngy, ngw, ngh) = TITLE_BAND_MENU_NEW_GAME;
+        let (cox, coy, _cow, coh) = TITLE_BAND_MENU_CONTINUE;
+        assert_eq!(ngy, 227);
+        assert_eq!(coy, 227);
+        assert_eq!(ngh, 10);
+        assert_eq!(coh, 10);
+        assert_eq!(ngx + ngw, cox);
     }
 
     #[test]

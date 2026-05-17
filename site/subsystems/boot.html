@@ -106,6 +106,33 @@
   <p>The exact on-screen layout retail uses still has to be RE'd from the unlocated <a href="#title-overlay-state">title-overlay tick body</a> &mdash; the <code>STRIP_GRID</code> constants are hypothesis-fit-to-visible-content, not pinned to specific GPU draw commands.</p>
 </section>
 
+<section class="doc-section" id="system-ui-gap">
+  <h2>Pre-<code>init_data</code> system-UI gap (menu-glyph atlas + boot cursors)</h2>
+  <p>A separate 236&nbsp;KB / 118-sector unindexed region sits <strong>between the TOC and the first indexed entry</strong> (<code>init_data</code> at LBA&nbsp;121). The TOC ends at PROT.DAT offset <code>0x1800</code> (3 sectors); the first indexed payload starts at <code>0x3C800</code> (sector&nbsp;121). The gap is a packed bundle of system-UI TIMs &mdash; boot-time cursors, the menu-glyph small-caps font retail samples for the title menu rows ("NEW GAME" / "CONTINUE" / "OPTIONS"), and a handful of ornamental sprite strips. All TIMs are 4bpp + CLUT and target the bottom-right corner of PSX VRAM (<code>fb_x &gt;= 640</code>).</p>
+  <table>
+    <thead><tr><th>PROT.DAT offset</th><th>TIM dims</th><th>VRAM target</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x01858</code></td><td>tiny</td><td><code>(896,256)</code></td><td>boot cursor variant</td></tr>
+      <tr><td><code>0x018E0</code></td><td>256&times;192</td><td><code>(896,256)</code></td><td>large UI sprite sheet</td></tr>
+      <tr><td><code>0x07F40</code></td><td>256&times;256</td><td><code>(896,0)</code></td><td>dialog-font / large bitmap sheet</td></tr>
+      <tr><td><code>0x10178</code></td><td>256&times;32</td><td><code>(896,448)</code></td><td>AP / status-icon sprite sheet</td></tr>
+      <tr><td><strong><code>0x11218</code></strong></td><td><strong>256&times;256</strong></td><td><code>(960,256)</code></td><td><strong>menu-glyph small-caps font</strong> (NEW GAME / CONTINUE / &hellip;)</td></tr>
+      <tr><td><code>0x19438</code></td><td>240&times;24</td><td><code>(960,400)</code></td><td>UI sprite strip</td></tr>
+      <tr><td><code>0x1B80C</code></td><td>256&times;256</td><td><code>(640,0)</code></td><td>system sprite sheet</td></tr>
+    </tbody>
+  </table>
+  <h3>Menu-glyph atlas</h3>
+  <p>The TIM at <code>PROT.DAT[0x11218&hellip;0x11218 + 33312]</code> (256&times;256 @ 4bpp + 16&times;16 CLUT bank) is the small-caps font retail samples for the title-menu rows and the same shape elsewhere in the menu UI. Confirmed by pinning the in-RAM copy at vaddr <code>0x80106478</code> (sstate8, live title-menu state) against PROT.DAT &mdash; byte-equal modulo the runtime CLUT relocation. The atlas does NOT appear in any extracted PROT entry; it's strictly in this pre-<code>init_data</code> gap.</p>
+  <ul>
+    <li>Alphabet row: atlas <code>y=224&hellip;238</code>, 26 cells &times; 8 px wide on an 8 px pitch starting at <code>x=8</code>.</li>
+    <li>Digits row: atlas <code>y=209&hellip;220</code>, 10 cells with the same pitch.</li>
+    <li>Non-glyph debug content (a <code>&lt;DEMO&gt;</code> row, dev string, <code>FONT CLUT</code> palette-bar) is present but ignored by the engine.</li>
+  </ul>
+  <p>CLUT row 0 renders the alphabet in solid red with magenta highlights; retail switches CLUT rows per context to read white / gold / dim. The clean-room engine sidesteps the CLUT-switching logic by decoding once to a stencil (pixel-index 0 &rarr; transparent, indices 1&hellip;15 &rarr; opaque white) and applying a <code>SpriteDraw::color</code> tint at draw time. The atlas builder lives in <code>crates/asset/src/menu_glyph_atlas.rs</code> (source pin + per-character rect helper) and <code>crates/engine-core/src/menu_glyph_atlas.rs</code> (RGBA8 stencil decode).</p>
+  <p>Extraction reads PROT.DAT directly via the new <code>ProtIndex::prot_dat_raw_bytes(byte_offset, len)</code> accessor; the per-entry <code>entry_bytes</code> / <code>entry_bytes_extended</code> paths walk TOC indices and never visit this gap.</p>
+  <p><strong>Note on title-screen "NEW GAME" / "CONTINUE":</strong> The title menu rows are NOT rendered from this atlas &mdash; retail samples a pre-rendered band at <code>y=227..237</code> inside the title TIM itself (PROT 0888 / 0889 / 0890; see <code>TITLE_BAND_MENU_NEW_GAME</code> / <code>TITLE_BAND_MENU_CONTINUE</code> in <code>legaia_asset::title_pak</code>). The band carries both strings packed into a single 128&times;10 strip; the engine emits two <code>SpriteDraw</code>s sampling the left half (x=0..65) and right half (x=65..127). Selection is colour-coded: bright/white for the cursor row, dim/gray otherwise &mdash; there's no arrow cursor mark in retail.</p>
+</section>
+
 <section class="doc-section" id="title-overlay-source">
   <h2>Title-overlay source on disc</h2>
   <p>The title-overlay code (function <code>FUN_801DD35C</code> at <code>0x801DD35C</code>, the captured <code>overlay_title.bin</code> 256-KiB window) lives in an <strong>unindexed 60-sector gap inside <code>PROT.DAT</code></strong> between TOC entries 899 and 900. The per-entry extractor's size formula stops at each TOC entry's claimed end, so the gap bytes never landed in <code>extracted/PROT/</code> until the extractor was extended with the <code>max(indexed, footprint)</code> rule. The gap is now surfaced as the trailing portion of <code>extracted/PROT/0899_xxx_dat.BIN</code>.</p>

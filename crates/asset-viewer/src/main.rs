@@ -2098,6 +2098,7 @@ impl ApplicationHandler for BattleSceneApp {
                         draws: &draws,
                         overlay_lines: None,
                         overlay_sprites: None,
+                        overlay_sprites_2: None,
                         overlay_text: Some(&overlay),
                         clear_color: None,
                     };
@@ -2861,6 +2862,7 @@ impl ApplicationHandler for FieldApp {
                         draws: &draws,
                         overlay_lines: None,
                         overlay_sprites: None,
+                        overlay_sprites_2: None,
                         overlay_text: Some(&overlay),
                         clear_color: None,
                     };
@@ -3065,6 +3067,7 @@ impl ApplicationHandler for WorldApp {
                         draws: &draws,
                         overlay_lines: None,
                         overlay_sprites: None,
+                        overlay_sprites_2: None,
                         overlay_text: None,
                         clear_color: None,
                     };
