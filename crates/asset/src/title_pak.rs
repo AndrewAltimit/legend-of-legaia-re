@@ -95,6 +95,164 @@ pub const OVERLAY_SAVE_MENU_TIM_SIZE: usize = 33312;
 /// Total byte length of [`OVERLAY_CARD_ICON_TIM_OFFSET`]'s TIM.
 pub const OVERLAY_CARD_ICON_TIM_SIZE: usize = 2592;
 
+/// Source sub-rect, in atlas pixels `(x, y, w, h)`, of a horizontal
+/// **rounded-rectangle frame** sprite inside the 256x256 save-menu
+/// TIM at PROT 0899. **WRONG SOURCE — kept only until the engine is
+/// retargeted at [`OVERLAY_SYSTEM_UI_TIM_OFFSET`].** A VRAM dump from
+/// PCSX-Redux sstate9 (gunzip the save state → extract the GPU.vram
+/// protobuf field → decode 1024×512 BGR555) showed the load-screen
+/// panel's CLUT lives at VRAM `(fb_x=32, fb_y=511)`, which is CLUT
+/// row 2 of the system-UI sprite sheet TIM at `PROT.DAT[0x018E0]`.
+/// That CLUT signature is unique to that TIM in the entire disc
+/// corpus. The 9-slice tile geometry inside that sheet still needs
+/// to be pinned (GPULog probe pending — sliding-window template
+/// match on the captured panel peaks at 31.6% gold-pixel agreement,
+/// so retail composites the panel from multiple smaller tiles, not
+/// a single 81×29 sprite).
+pub const OVERLAY_SAVE_MENU_BAND_PANEL: (u32, u32, u32, u32) = (1, 0, 103, 16);
+
+/// Source sub-rect of the **SLOT 1 pill** (baked label "SLOT 1") inside
+/// the save-menu TIM. Best rendered with CLUT 7 for the bright-blue
+/// retail look.
+pub const OVERLAY_SAVE_MENU_BAND_SLOT1: (u32, u32, u32, u32) = (33, 97, 45, 15);
+
+/// Source sub-rect of the **SLOT 2 pill** (baked label "SLOT 2") inside
+/// the save-menu TIM. Stacked directly below [`OVERLAY_SAVE_MENU_BAND_SLOT1`].
+/// Best rendered with CLUT 7.
+pub const OVERLAY_SAVE_MENU_BAND_SLOT2: (u32, u32, u32, u32) = (33, 113, 45, 15);
+
+/// Source sub-rect of a **synthetic solid-blue 4×4 fill tile** the
+/// engine writes into an otherwise-empty region of the decoded save-
+/// menu atlas. **STOPGAP — to be deleted when the engine switches to
+/// [`OVERLAY_SYSTEM_UI_TIM_OFFSET`].** A VRAM dump confirms retail
+/// does NOT need a synthetic fill: it composites the panel by
+/// drawing 4bpp tiles from the system-UI sprite sheet over the
+/// dimmed title art, with the marbled interior emerging from
+/// semi-transparent blending of CLUT-row-2 entries 1..6 (a blue
+/// gradient) with the dimmed background — not from any solid fill
+/// pre-baked into a sprite. Of 51 distinct panel-interior framebuffer
+/// colors at parked sstate9, only 9 (the gold border) map directly
+/// to CLUT entries; the rest are blend products.
+///
+/// Engines must NOT sample these atlas coordinates from the raw TIM —
+/// the tile is filled in by [`crate::save_menu_atlas`] only.
+pub const OVERLAY_SAVE_MENU_BAND_PANEL_FILL: (u32, u32, u32, u32) = (200, 200, 4, 4);
+
+// -----------------------------------------------------------------------
+// System-UI sprite sheet — byte-confirmed source of the load-screen panel.
+//
+// Lives in the unindexed pre-`init_data` gap of PROT.DAT (a 236 KiB region
+// before entry 0; see [[project-title-tims-in-overlay]]). The TIM contains
+// the entire in-game menu UI atlas decoded with CLUT row 2: stat panels,
+// money/HP/MP displays, battle-menu chrome, equipment-slot frames, and the
+// load-screen "Load" panel.
+//
+// VRAM pin (byte-confirmed via PCSX-Redux sstate9 GPU.vram protobuf field):
+//   - CLUT block uploads to VRAM (fb_x=0,  fb_y=511) at 16x16 entries.
+//   - Pixel block uploads to VRAM (fb_x=896, fb_y=256) at 64x192 halfwords
+//     (= 256x192 4bpp source pixels).
+//   - Load-screen panel uses CLUT **row 2** specifically.
+// -----------------------------------------------------------------------
+
+/// File offset within `PROT.DAT` (extended-footprint walk) of the
+/// **system-UI sprite sheet** TIM. 4bpp + 16x16 CLUT block; 256x192
+/// source pixels. Byte-confirmed as the source of the load-screen
+/// "Load" panel via VRAM dump cross-reference (its CLUT row 2 is the
+/// only CLUT in the disc corpus whose bytes match the retail panel
+/// CLUT live at VRAM fb_y=511).
+pub const OVERLAY_SYSTEM_UI_TIM_OFFSET: usize = 0x018E0;
+
+/// Total byte length of [`OVERLAY_SYSTEM_UI_TIM_OFFSET`]'s TIM
+/// (header + CLUT block + pixel block).
+pub const OVERLAY_SYSTEM_UI_TIM_SIZE: usize = 0x07B00 - 0x018E0;
+
+/// CLUT block row that decodes the load-screen panel chrome. Row 2
+/// contains the 9-color gold-bronze gradient (entries 7..15) used by
+/// the panel border, and the 6-color blue gradient (entries 1..6)
+/// used by the marbled interior. Other CLUT rows in the same TIM
+/// decode different menu-UI elements (HP/MP/money panels, battle
+/// chrome, equipment frames).
+pub const OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW: u16 = 2;
+
+// -----------------------------------------------------------------------
+// Load-screen panel 9-slice source tiles
+//
+// Pinned via `scripts/pcsx-redux/scan_panel_prims.py` against
+// `load_screen_ram.bin` captured at sstate9 — the retail engine had
+// already queued 14 textured-sprite primitives (GP0 cmd 0x64) in the
+// panel rect, each one carrying its source u/v + CLUT inline. All
+// sample CLUT row 2 of `OVERLAY_SYSTEM_UI_TIM_OFFSET`.
+//
+// All rects are `(u, v, w, h)` in 256x192 source-page-pixel coords.
+// Retail uses NO interior fill sprite — the "marbled blue" look on
+// the load screen is the dimmed title art bleeding through the empty
+// middle of the frame.
+// -----------------------------------------------------------------------
+
+/// Panel **top-left corner** tile.
+pub const OVERLAY_SYSTEM_UI_PANEL_TL: (u32, u32, u32, u32) = (160, 0, 4, 4);
+/// Panel **top-right corner** tile.
+pub const OVERLAY_SYSTEM_UI_PANEL_TR: (u32, u32, u32, u32) = (188, 0, 4, 4);
+/// Panel **bottom-left corner** tile.
+pub const OVERLAY_SYSTEM_UI_PANEL_BL: (u32, u32, u32, u32) = (160, 28, 4, 4);
+/// Panel **bottom-right corner** tile.
+pub const OVERLAY_SYSTEM_UI_PANEL_BR: (u32, u32, u32, u32) = (188, 28, 4, 4);
+/// Panel **top edge** tile — repeated horizontally between the top
+/// corners. Stride = 24 in retail; the last instance is sampled at
+/// a smaller `w` to cover the remainder when the panel width isn't a
+/// multiple of 24 + 8 (the two corner widths).
+pub const OVERLAY_SYSTEM_UI_PANEL_TOP: (u32, u32, u32, u32) = (164, 0, 24, 4);
+/// Panel **bottom edge** tile — same dimensions as
+/// [`OVERLAY_SYSTEM_UI_PANEL_TOP`], 24 pixels lower.
+pub const OVERLAY_SYSTEM_UI_PANEL_BOT: (u32, u32, u32, u32) = (164, 28, 24, 4);
+/// Panel **left edge** tile — height matches the panel content
+/// area (retail's load-screen panel uses height=21).
+pub const OVERLAY_SYSTEM_UI_PANEL_LEFT: (u32, u32, u32, u32) = (160, 4, 4, 21);
+/// Panel **right edge** tile.
+pub const OVERLAY_SYSTEM_UI_PANEL_RIGHT: (u32, u32, u32, u32) = (188, 4, 4, 21);
+
+/// Retail framebuffer placement of the load-screen panel: dst
+/// origin `(6, 4)` with overall size `81 x 29` pixels. Engines that
+/// need to draw the panel elsewhere can use the 9-slice constants
+/// above with a different anchor.
+pub const OVERLAY_SAVE_PANEL_RETAIL_DST: (u32, u32, u32, u32) = (6, 4, 81, 29);
+
+/// **Panel interior fill** — the 32x29 marbled-blue source region
+/// retail samples to fill the 9-slice frame's interior. Byte-pinned
+/// via `scripts/pcsx-redux/scan_panel_prims.py` (extended to
+/// `0x3C..0x3F` gouraud-shaded textured-quad cmds): retail draws this
+/// region as 3 gouraud-shaded textured quads with vertical gray
+/// gradient `rgb(64,64,64) → rgb(136,136,136)` and CLUT row 2 — two
+/// full-width 32x29 copies + one 17-wide-remainder copy, tiling
+/// horizontally to fill the panel's 81-wide interior.
+pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR: (u32, u32, u32, u32) = (128, 0, 32, 29);
+
+/// Gouraud gradient applied to the interior: top vertex RGB.
+pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_TOP_RGB: (u8, u8, u8) = (64, 64, 64);
+/// Gouraud gradient applied to the interior: bottom vertex RGB.
+pub const OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB: (u8, u8, u8) = (136, 136, 136);
+
+/// **Pointing-finger cursor** sprite — the small white hand retail
+/// renders to the left of the highlighted slot pill. Lives in the
+/// same system-UI TIM as the panel chrome but uses a different CLUT
+/// row (white-ink, not gold-bronze). Byte-pinned via the same
+/// `scripts/pcsx-redux/scan_panel_prims.py` scan as the panel tiles
+/// — retail dispatches it as a single textured-sprite primitive
+/// with `dst=(114, 100)`, `src=(152, 64, 16, 16)`, CLUT at
+/// VRAM `(112, 511)`.
+pub const OVERLAY_SYSTEM_UI_CURSOR: (u32, u32, u32, u32) = (152, 64, 16, 16);
+
+/// CLUT block row used to render the pointing-finger cursor (white-
+/// ink with grey shading). Different from the panel's CLUT row 2 —
+/// row 7 of the same 16x16 CLUT block. Maps to VRAM `(112, 511)`.
+pub const OVERLAY_SYSTEM_UI_CURSOR_CLUT_ROW: u16 = 7;
+
+/// Retail framebuffer placement of the cursor: dst origin `(114, 100)`
+/// — directly left of the SLOT 1 pill at `(150, 100)`. The cursor's
+/// y coord stays fixed (100); engines change x or y for SLOT 2 by
+/// adjusting by `SAVE_SELECT_SLOT_PITCH_Y` (typically 16 stage pixels).
+pub const OVERLAY_SAVE_CURSOR_RETAIL_DST: (u32, u32) = (114, 100);
+
 /// Source sub-rect, in atlas pixels `(x, y, w, h)`, of the orb +
 /// "Legend of Legaia" wordmark band inside the 256×256 title TIM.
 /// Always drawn in PressStart and MainMenu phases - matches retail.
@@ -172,6 +330,27 @@ pub fn extract_overlay_save_menu_tim(bytes: &[u8]) -> Result<TitleTim<'_>> {
 /// [`OVERLAY_CARD_ICON_TIM_OFFSET`].
 pub fn extract_overlay_card_icon_tim(bytes: &[u8]) -> Result<TitleTim<'_>> {
     parse_tim_at(bytes, OVERLAY_CARD_ICON_TIM_OFFSET)
+}
+
+/// Extract the system-UI sprite sheet TIM from raw `PROT.DAT` bytes
+/// (not a per-PROT entry — this TIM lives in the unindexed pre-
+/// `init_data` gap; pass the whole disc-level PROT.DAT buffer).
+/// Returns the 256x192 4bpp TIM at [`OVERLAY_SYSTEM_UI_TIM_OFFSET`].
+/// Combine with [`OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW`] to render the
+/// load-screen panel chrome.
+pub fn extract_overlay_system_ui_tim(prot_dat_bytes: &[u8]) -> Result<TitleTim<'_>> {
+    parse_tim_at(prot_dat_bytes, OVERLAY_SYSTEM_UI_TIM_OFFSET)
+}
+
+/// Same as [`extract_overlay_system_ui_tim`] but accepts a slice that
+/// **already starts at the TIM header** (i.e. the bytes from
+/// `OVERLAY_SYSTEM_UI_TIM_OFFSET` for `OVERLAY_SYSTEM_UI_TIM_SIZE`
+/// bytes). Useful when the caller has already used
+/// `prot_dat_raw_bytes(OVERLAY_SYSTEM_UI_TIM_OFFSET, …)` to pull
+/// just the TIM region into memory — avoids holding the full
+/// ~115 MB PROT.DAT for one 25 KB parse.
+pub fn extract_overlay_system_ui_tim_from_slice(tim_bytes: &[u8]) -> Result<TitleTim<'_>> {
+    parse_tim_at(tim_bytes, 0)
 }
 
 fn parse_tim_at(bytes: &[u8], off: usize) -> Result<TitleTim<'_>> {
@@ -369,9 +548,60 @@ mod tests {
             OVERLAY_CARD_ICON_TIM_SIZE,
             8 + (12 + 256 * 2) + (12 + 128 * 16)
         );
+        // 256x192 4bpp + 16x16 CLUT block.
+        assert_eq!(
+            OVERLAY_SYSTEM_UI_TIM_SIZE,
+            8 + (12 + 16 * 16 * 2) + (12 + 64 * 192 * 2)
+        );
         // Alternate-source list shouldn't include the primary.
         for &(idx, _) in TITLE_TIM_ALTERNATE_SOURCES {
             assert_ne!(idx, PROT_INDEX_PRIMARY);
         }
+    }
+
+    #[test]
+    fn panel_9slice_tiles_partition_the_retail_panel() {
+        // The retail load-screen panel is 81x29 at dst (6, 4). It's
+        // composed from four 4x4 corners, top + bottom edges (24x4
+        // tiles repeated 3x with a 1x4 remainder), and left + right
+        // edges (4x21). Verify the geometry math is internally
+        // consistent: the corners + edges must exactly tile a 81x29
+        // frame border.
+        let (_, _, panel_w, panel_h) = OVERLAY_SAVE_PANEL_RETAIL_DST;
+        assert_eq!((panel_w, panel_h), (81, 29));
+
+        // Corner tile width / height.
+        let (_, _, tl_w, tl_h) = OVERLAY_SYSTEM_UI_PANEL_TL;
+        assert_eq!((tl_w, tl_h), (4, 4));
+        // All four corners share width/height (sanity).
+        for corner in [
+            OVERLAY_SYSTEM_UI_PANEL_TL,
+            OVERLAY_SYSTEM_UI_PANEL_TR,
+            OVERLAY_SYSTEM_UI_PANEL_BL,
+            OVERLAY_SYSTEM_UI_PANEL_BR,
+        ] {
+            assert_eq!((corner.2, corner.3), (tl_w, tl_h));
+        }
+
+        // Top + bottom edge tiles share dimensions: 24x4.
+        for edge in [OVERLAY_SYSTEM_UI_PANEL_TOP, OVERLAY_SYSTEM_UI_PANEL_BOT] {
+            assert_eq!((edge.2, edge.3), (24, 4));
+        }
+        // Left + right edge tiles share dimensions: 4x21.
+        for edge in [OVERLAY_SYSTEM_UI_PANEL_LEFT, OVERLAY_SYSTEM_UI_PANEL_RIGHT] {
+            assert_eq!((edge.2, edge.3), (4, 21));
+        }
+
+        // Top edge tiles between the two 4-wide corners must cover
+        // `81 - 4 - 4 = 73` horizontal pixels. Retail does this with
+        // 3x (24-wide) + 1x (1-wide remainder) = 72 + 1 = 73 ✓.
+        assert_eq!(panel_w - 2 * tl_w, 73);
+        assert_eq!(3 * OVERLAY_SYSTEM_UI_PANEL_TOP.2 + 1, 73);
+
+        // Vertical content between top + bottom edges must be 21
+        // (panel_h=29, minus two 4-tall edge bands = 21).
+        assert_eq!(panel_h - 2 * OVERLAY_SYSTEM_UI_PANEL_TOP.3, 21);
+        assert_eq!(OVERLAY_SYSTEM_UI_PANEL_LEFT.3, 21);
+        assert_eq!(OVERLAY_SYSTEM_UI_PANEL_RIGHT.3, 21);
     }
 }
