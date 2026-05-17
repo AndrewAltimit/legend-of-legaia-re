@@ -328,6 +328,35 @@ bash scripts/pcsx-redux/run_probe.sh --fast \
 The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
 `run_dump_slot4.sh` wrappers were folded into this one runner.
 
+### Analysing probe outputs (`probe.py`)
+
+[`probe.py`](../../scripts/pcsx-redux/probe.py) is the Python-side
+companion to a `.probe.toml` run. It operates on the CSV outputs and
+provides four operations the Lua side intentionally doesn't try to do
+in-emulator:
+
+| Subcommand | Use |
+|---|---|
+| `probe.py summary RUN` | Header + row count + canonical fingerprint. |
+| `probe.py fingerprint RUN` | SHA-256 over canonicalised rows. Independent of row order and of `--ignore`d columns. |
+| `probe.py diff BASELINE CURRENT` | Set-diff: added / removed rows. Useful for inspecting why two runs differ. |
+| `probe.py regress BASELINE CURRENT` | Fingerprint compare. Exits 0 on match, 1 on regression. Foundation for Phase G CI gating. |
+
+`--ignore COL[,COL...]` drops named columns before comparison /
+hashing. Use it for fields that naturally vary between runs without
+representing a regression &mdash; most commonly `tick` (the per-bp hit
+counter is order-dependent) and sometimes `pc` (when the same code path
+gets reached via different inlining decisions across overlay rebuilds).
+
+```bash
+# Re-run a probe spec, compare against a committed baseline:
+bash scripts/pcsx-redux/run_probe.sh --spec scripts/pcsx-redux/probes/xp_table_readers.probe.toml
+scripts/pcsx-redux/probe.py regress \
+    captures/baselines/xp_table_readers.csv \
+    captures/xp_table_readers/<latest>/xp_table_readers.csv \
+    --ignore tick
+```
+
 ## Authoring a new probe
 
 Two shapes are supported, in order of preference:
