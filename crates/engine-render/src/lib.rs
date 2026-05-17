@@ -786,6 +786,14 @@ fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
 /// `blink_on` toggles the prompt visibility on phase 1 every blink_period
 /// frames; engines drive this from the title session's blink phase.
 ///
+/// When the engine has uploaded the PROT 0888 title TIM atlas, pass
+/// `atlas_present = true` to suppress the font-rendered "PRESS START"
+/// prompt (phase 1) - the TIM's own "PRESS START BUTTON" band is drawn
+/// in its place by the sprite layer. The menu rows (phase 2) are
+/// still rendered via font because retail uses larger font glyphs
+/// there too, not the tiny "NEW GAME CONTINUE" band at the bottom of
+/// the TIM.
+///
 /// A natural anchor for a 320×240 surface is `pen = (96, 100)` - the
 /// renderer offsets each line from this top-left.
 pub fn title_draws_for(
@@ -794,6 +802,7 @@ pub fn title_draws_for(
     cursor: u8,
     continue_enabled: bool,
     blink_on: bool,
+    atlas_present: bool,
     pen: (i32, i32),
 ) -> Vec<TextDraw> {
     const LINE_H: i32 = 16;
@@ -805,7 +814,7 @@ pub fn title_draws_for(
 
     match phase {
         0 => {}
-        1 if blink_on => {
+        1 if blink_on && !atlas_present => {
             let l = font.layout_ascii("PRESS START");
             out.extend(text_draws_for(&l, pen, white));
         }
@@ -4676,7 +4685,7 @@ mod tests {
     #[test]
     fn title_phase_2_renders_three_rows() {
         let font = legaia_font::synthetic_for_tests();
-        let draws = title_draws_for(&font, 2, 0, true, true, (96, 100));
+        let draws = title_draws_for(&font, 2, 0, true, true, false, (96, 100));
         // At least three rows (NEW GAME / CONTINUE / OPTIONS) plus a cursor.
         assert!(!draws.is_empty());
     }
@@ -4684,7 +4693,7 @@ mod tests {
     #[test]
     fn title_phase_1_blink_off_is_empty() {
         let font = legaia_font::synthetic_for_tests();
-        let draws = title_draws_for(&font, 1, 0, true, false, (96, 100));
+        let draws = title_draws_for(&font, 1, 0, true, false, false, (96, 100));
         // blink off → no glyphs.
         assert!(draws.is_empty());
     }
@@ -4692,10 +4701,28 @@ mod tests {
     #[test]
     fn title_continue_dimmed_when_disabled() {
         let font = legaia_font::synthetic_for_tests();
-        let draws = title_draws_for(&font, 2, 0, false, true, (96, 100));
+        let draws = title_draws_for(&font, 2, 0, false, true, false, (96, 100));
         // dim color is [0.45,0.45,0.45]; gold is [1.0,0.85,0.3]; white is [1,1,1].
         let any_dim = draws.iter().any(|d| d.color[0] < 0.5 && d.color[3] >= 0.99);
         assert!(any_dim);
+    }
+
+    #[test]
+    fn title_phase_1_press_start_suppressed_with_atlas() {
+        let font = legaia_font::synthetic_for_tests();
+        // Without atlas: blink_on emits the font-rendered "PRESS START".
+        let without = title_draws_for(&font, 1, 0, true, true, false, (96, 100));
+        assert!(
+            !without.is_empty(),
+            "phase 1 with blink should emit text when no atlas"
+        );
+        // With atlas: the title TIM's "PRESS START BUTTON" band covers
+        // it, so the font overlay stays empty.
+        let with_atlas = title_draws_for(&font, 1, 0, true, true, true, (96, 100));
+        assert!(
+            with_atlas.is_empty(),
+            "phase 1 must not emit font text when title atlas is uploaded"
+        );
     }
 
     #[test]
