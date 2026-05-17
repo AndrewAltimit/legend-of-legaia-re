@@ -35,7 +35,7 @@
 --   LEGAIA_FRAMES=1800 \
 --   LEGAIA_OUT=captures/slot4_dispatcher/drake.csv \
 --   LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_dispatcher_args.lua \
---       timeout --kill-after=30s 600s bash scripts/pcsx-redux/run_world_map_probe.sh
+--       timeout --kill-after=30s 600s bash scripts/pcsx-redux/run_probe.sh
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -43,7 +43,7 @@ local probe = require("probe")
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate1")
 local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 1800)
-local OUT_PATH    = probe.getenv("LEGAIA_OUT", "slot4_dispatcher_args.csv")
+local OUT_PATH    = probe.out_path("slot4_dispatcher_args.csv")
 local HOLD_BUTTON = probe.getenv_num("LEGAIA_HOLD_BUTTON", 0)
 local HOLD_FRAMES = probe.getenv_num("LEGAIA_HOLD", 0)
 local MAX_HITS    = probe.getenv_num("LEGAIA_DISP_CAP", 200000)

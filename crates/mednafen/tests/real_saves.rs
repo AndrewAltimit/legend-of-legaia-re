@@ -19,7 +19,7 @@ fn manifest_path() -> std::path::PathBuf {
         .unwrap()
         .parent()
         .unwrap()
-        .join("scripts/mednafen/scenarios.toml")
+        .join("scripts/scenarios.toml")
 }
 
 fn save_for(slot: u8) -> Option<std::path::PathBuf> {
@@ -66,7 +66,7 @@ fn require_slot_scenes(test_name: &str, expected: &[(u8, &str)]) -> bool {
             Some(got) if got != want => {
                 eprintln!(
                     "[skip {test_name}] mc{slot} scene `{got}` != expected `{want}` \
-                     (corpus has been re-captured; see scripts/mednafen/scenarios.toml)"
+                     (corpus has been re-captured; see scripts/scenarios.toml)"
                 );
                 return false;
             }
@@ -204,7 +204,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
     // `engine_core::levelup::observations::noa_4_level_jump` codifies.
     //
     // Slot indices read here from the active corpus; see
-    // `scripts/mednafen/scenarios.toml` for the current assignment.
+    // `scripts/scenarios.toml` for the current assignment.
     if !require_slot_scenes(
         "noa_level_up_triplet",
         &[(4, "map01"), (5, "map01"), (6, "map01"), (7, "map01")],
@@ -323,7 +323,7 @@ fn gala_level_up_triplet_pins_phase_split_and_settled_deltas() {
     // `map01`. Mirrors the Noa test but with the Gala record at slot 2.
     //
     // Slot indices read here from the active corpus; see
-    // `scripts/mednafen/scenarios.toml` for the current assignment.
+    // `scripts/scenarios.toml` for the current assignment.
     if !require_slot_scenes(
         "gala_level_up_triplet",
         &[(7, "map01"), (8, "map01"), (9, "map01")],

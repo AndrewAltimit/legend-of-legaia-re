@@ -22,7 +22,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-MANIFEST="scripts/mednafen/scenarios.toml"
+MANIFEST="scripts/scenarios.toml"
 ONE_LABEL=""
 
 while [[ $# -gt 0 ]]; do

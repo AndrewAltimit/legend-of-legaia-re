@@ -105,7 +105,7 @@ Gala's level-up runs in two phases (record write, then live copy + settle
 collapsed into one frame).
 
 The slot indices that hold each frame in the active corpus live in
-[`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml);
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml);
 they rotate as the corpus is re-captured for new investigations.
 
 The phase split + per-character record bases (Vahn `0x80084708`,

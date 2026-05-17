@@ -74,7 +74,7 @@ Adjacent to the formation cell:
 | `0x8007BD0C` | `u8[4]` | Active formation: monster ids per slot, populated by the reader above. |
 | `0x8007BD11` | `u8` | Battle-data PROT-id selector. `FUN_800520F0` case-4 path reads this byte and chooses PROT entry **`0x367`** when it equals the case-1 character index, otherwise **`0x36D`**. The selected entry is loaded as a kind-2 streaming asset for the battle scene. |
 
-Snapshots of the formation cell across captures (see [`scripts/mednafen/scenarios.toml`](../tooling/mednafen-automation.md)):
+Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](../tooling/mednafen-automation.md)):
 
 | Save | `0x8007BD0C..0F` | Interpretation |
 |---|---|---|

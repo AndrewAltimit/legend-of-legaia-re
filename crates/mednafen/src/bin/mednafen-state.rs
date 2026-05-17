@@ -101,8 +101,8 @@ enum Cmd {
     Watch {
         /// Scenario label (looked up in scenarios.toml).
         label: String,
-        /// Scenario manifest (default: scripts/mednafen/scenarios.toml).
-        #[arg(long, default_value = "scripts/mednafen/scenarios.toml")]
+        /// Scenario manifest (default: scripts/scenarios.toml).
+        #[arg(long, default_value = "scripts/scenarios.toml")]
         manifest: PathBuf,
         /// Optional output JSON path.
         #[arg(long)]
@@ -127,7 +127,7 @@ enum Cmd {
     },
     /// List the scenarios known to the manifest.
     Scenarios {
-        #[arg(long, default_value = "scripts/mednafen/scenarios.toml")]
+        #[arg(long, default_value = "scripts/scenarios.toml")]
         manifest: PathBuf,
     },
     /// Byte-match decoded `battle_data` pack records against a save state's

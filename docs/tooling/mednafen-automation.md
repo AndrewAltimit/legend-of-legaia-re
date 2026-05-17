@@ -34,7 +34,7 @@ gameplay moment - the slot number itself is ephemeral, so the
 toolkit identifies scenarios by **label** rather than slot index.
 
 Slot → label → watchpoint mapping is declared in
-[`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml)
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml)
 and consumed by the `mednafen-state watch` subcommand. Sister-state
 pairings (e.g. "pre-encounter ↔ post-encounter", "pre-rank-up ↔
 post-rank-up") are the primary unit of analysis: the diff between a
@@ -62,7 +62,7 @@ canonical corpus; user-managed slots may differ.
 ### List the manifest
 
 ```bash
-target/release/mednafen-state scenarios --manifest scripts/mednafen/scenarios.toml
+target/release/mednafen-state scenarios --manifest scripts/scenarios.toml
 ```
 
 ### Inspect one save's section table
@@ -328,7 +328,7 @@ slots are interchangeable with the manifest.
 
 ## The scenarios manifest
 
-[`scripts/mednafen/scenarios.toml`](../../scripts/mednafen/scenarios.toml)
+[`scripts/scenarios.toml`](../../scripts/scenarios.toml)
 declares every scenario, its overlay slice, its watchpoint regions, and
 its `diff_against` sister-slot list. The schema:
 
@@ -361,7 +361,7 @@ each `diff_against` sister, writing a per-scenario JSON report.
 
 1. Capture a save state in mednafen at the moment you care about (`F5`
    in a free slot 0..9, or another slot if you free one up).
-2. Add a `[[scenarios]]` block to `scripts/mednafen/scenarios.toml` with
+2. Add a `[[scenarios]]` block to `scripts/scenarios.toml` with
    the slot index, a short label, and a description.
 3. Optionally add `[[scenarios.watchpoints]]` blocks for regions you
    suspect carry the writes the scenario should surface.

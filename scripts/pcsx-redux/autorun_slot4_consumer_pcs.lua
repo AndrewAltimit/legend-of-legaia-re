@@ -18,7 +18,7 @@
 --   LEGAIA_FRAMES=1800 \
 --   LEGAIA_OUT=/tmp/slot4_pcs_sebucus.csv \
 --   LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua \
---       bash scripts/pcsx-redux/run_world_map_probe.sh
+--       bash scripts/pcsx-redux/run_probe.sh
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -26,7 +26,7 @@ local probe = require("probe")
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate1")
 local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 1800)
-local OUT_PATH    = probe.getenv("LEGAIA_OUT", "slot4_consumer_pcs.csv")
+local OUT_PATH    = probe.out_path("slot4_consumer_pcs.csv")
 local HOLD_BUTTON = probe.getenv_num("LEGAIA_HOLD_BUTTON", 0)
 local HOLD_FRAMES = probe.getenv_num("LEGAIA_HOLD", 0)
 local DETAIL_PATH = OUT_PATH:gsub("%.csv$", ".detail.txt")

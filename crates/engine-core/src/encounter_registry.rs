@@ -9,7 +9,7 @@
 //! `mednafen-state diff` over the encounter-state RAM window
 //! (`0x801C9300..0x801CA000`) on a save-state pair captured immediately
 //! before vs. immediately after a battle trigger - see the
-//! `crates/mednafen` toolkit and `scripts/mednafen/scenarios.toml`.
+//! `crates/mednafen` toolkit and `scripts/scenarios.toml`.
 //!
 //! Until the disc-side resolver lands, this registry lets engines compose
 //! per-scene tables in *clean-room* form: keyed by CDNAME label, with

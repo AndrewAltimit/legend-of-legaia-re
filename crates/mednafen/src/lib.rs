@@ -14,7 +14,7 @@
 //! 3. [`diff`] - pairwise byte/word diff between two save states' main RAM,
 //!    surfacing addresses whose value changed (the watchpoint-equivalent
 //!    output that engine RE work needs).
-//! 4. [`scenarios`] - declarative scenario manifest (`scripts/mednafen/scenarios.toml`)
+//! 4. [`scenarios`] - declarative scenario manifest (`scripts/scenarios.toml`)
 //!    mapping each `.mc{0..9}` to a labelled scenario with watchpoint regions,
 //!    overlay slices, and downstream artefact paths.
 //! 5. [`bisect`] - given a known-good and known-bad state, suggests the

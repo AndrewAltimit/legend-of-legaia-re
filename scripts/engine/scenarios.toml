@@ -1,6 +1,6 @@
 # Engine integration scenarios manifest.
 #
-# Mirror of `scripts/mednafen/scenarios.toml` for the clean-room engine
+# Mirror of `scripts/scenarios.toml` for the clean-room engine
 # (clean-room engine track, not the byte-level state-diff track). Each
 # scenario boots `BootSession::open` with audio off, ticks N frames,
 # and asserts the SHA-256 of the engine's `SaveFile` byte stream matches

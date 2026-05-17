@@ -13,7 +13,7 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   Ghidra to look up writers.
 - Bisect a sequence of snapshots to find when a target address crossed a
   predicate boundary (zero → nonzero, etc.).
-- A declarative scenario manifest (`scripts/mednafen/scenarios.toml`) maps
+- A declarative scenario manifest (`scripts/scenarios.toml`) maps
   each save slot to a labelled scenario with watchpoint regions; the CLI's
   `watch` subcommand runs all configured watchpoints against sister
   scenarios in one shot.

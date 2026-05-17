@@ -57,7 +57,7 @@ BIOS or disc; those stay local.
 
 ## The harness
 
-[`scripts/pcsx-redux/run_world_map_probe.sh`](../../scripts/pcsx-redux/run_world_map_probe.sh)
+[`scripts/pcsx-redux/run_probe.sh`](../../scripts/pcsx-redux/run_probe.sh)
 is the canonical wrapper. Despite the name, every other Lua autorun
 re-uses it via the `LEGAIA_LUA` override:
 
@@ -66,7 +66,7 @@ LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-saved-state>.sstate \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_world_map_fog_probe.lua \
 LEGAIA_OUT=/tmp/fog_probe.csv \
 LEGAIA_FRAMES=600 \
-    bash scripts/pcsx-redux/run_world_map_probe.sh
+    bash scripts/pcsx-redux/run_probe.sh
 ```
 
 The wrapper:
@@ -234,22 +234,17 @@ is the high-level index.
 | `autorun_world_map_probe.lua` | Reads at `_DAT_8007BCD0..D8` (gate-arm params), gate flag `_DAT_801F351C` writes, and four `FUN_801D7EA0` entries | Pins the world-map POLY_FT4 emitter's one-shot gate flag + the three-param block driving it. |
 | `autorun_world_map_fog_probe.lua` | Reads at five fog fields (GP-relative `-0x2E0 / -0x2DC / -0x2D1 / -0x2BC / +0x90`) + 1 KiB LUT dump | Captures the per-Z fog-tint LUT the overlay leaves at `0x801F7644..0x801F8690` consult on every vertex. |
 | `autorun_prim_pool_writers.lua` | Writes across the 341 KB GPU prim pool at `0x800AD400+` | Confirms the eight overlay-resident high-mode renderers are the ones writing the pool (matches `FUN_80043390`'s dispatch table). |
-| `autorun_cd_dma_probe.lua` | CD-DMA reads during a town &rarr; world-map transition | Disproved the "continent prim pool comes from CD-DMA" hypothesis. |
 | `autorun_lzs_and_bundle_probe.lua` | LZS decode entries + bundle dispatcher (`FUN_8001F05C`) during world-map load | Pins which PROT entries get LZS-decoded for the world-map bundle. |
-| `autorun_deep_pool_probe.lua` | Writes to the deep Buffer-A / Buffer-B region | Matches GPU prim-pool writes to the overlay emit leaves. |
-| `autorun_slot4_readers.lua` | Reads at the live slot-4 RAM region (`0x8011A624+`) | **Drake-tuned**: probe offsets are tied to Drake's 15-body slot-4 layout, so they don't reliably land on records in Sebucus / Karisto. Pinned two distinct reader clusters at the Drake kingdom-bundle scene-load transition (held UP for 60 vsyncs from a Drake-on-map01 save): cluster A at `PC 0x80044B00..0x80045700` is a GTE-driven primitive emitter; cluster B at `PC 0x80059DE4` reads mid-body bytes. Steady-state dev-menu top-view reads nothing — the consumer only walks slot 4 at scene-load. `LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60` drives the warp input from inside the probe. `LEGAIA_S4_DETAIL=1` adds a first-hit call-context dump (32 GPRs, code window around PC, 32 stack words at sp). `LEGAIA_S4_QUIT_AFTER_ALL=1` ends the capture as soon as every probe has logged at least one hit. For cross-kingdom verification use `autorun_slot4_consumer_pcs.lua` instead. |
-| `autorun_slot4_consumer_pcs.lua` | Exec bps at the cluster-A + cluster-B LW PCs identified from the Drake Read-bp run | **Kingdom-agnostic**: hits the same SCUS function PCs regardless of where slot 4 lives in RAM for the destination kingdom. Confirmed cross-kingdom: cluster A and B fire on Drake, Sebucus (town → map02) and Karisto (town → map03) with the same caller RAs (cluster B's RA `0x80059C00` is byte-identical across all three; cluster A's RAs `0x8001B47C` inside `FUN_8001ada4` + `0x801F78D4` world-map overlay are present in every kingdom). Hit-count scales with per-kingdom record count. Output CSV is `probe_idx, cluster, pc, name, ra, a0..a3, s8`; `.detail.txt` sidecar captures first-hit call-context per PC. `LEGAIA_PC_CAP=N` raises the default 200-hit-per-PC cap for uncapped totals. |
-| `autorun_slot4_dispatcher_args.lua` | Exec bp at `0x80043390` (cluster A dispatcher entry) | Captures the *original* call args before the kind handlers clobber `a1` / `a2`: caller RA, descriptor pointer `a0`, packed `cmd_flags` (`a1`), `fade_flags` (`a2`), and the first command word's `kind` / `count`. Use this to classify which of the four dispatcher banks (`0x00` / `0x50` / `0xA0` / `0xF0`) each call lands in; the `consumer_pcs` probe records register state inside handlers and can't recover the original args. `LEGAIA_DISP_CAP=N` raises the default 200000-hit cap. |
-| `autorun_slot4_transcoder_hunt.lua` | Write bps across the `0x801BA000`-ish working buffer where cluster A's per-frame inputs live | Cross-kingdom Exec-bp captures show cluster A reads from `0x801BA000`-region per frame, not from slot 4's documented base — initial hypothesis was that slot 4 was transcoded into that buffer during world-map scene load. Probe ruled this out: writes at `+0x7F8` / `+0x8E4` come from `FUN_80028158`, a **per-frame procedural mesh builder** that reads only actor+0x9C struct fields (NOT slot 4). Deeper writes at `+0x6000` come from `FUN_8001E54C` (streaming chunk processor). Per-frame cluster-A is procedural rendering, not slot-4 walks. `LEGAIA_WB_BASE=0x801BA000` is overridable; `LEGAIA_WB_CAP=50` per-bp cap. |
-| `autorun_slot4_loader_hunt.lua` | Write bps tiled across slot-4 RAM (`0x8011A624+` for Drake, same offsets as `autorun_slot4_readers.lua`) | Identifies the function that **populates slot-4 RAM** during the kingdom warp transition. Result: all writes come from `FUN_8001A55C` (the LZS decoder) at PC `0x8001A604` etc., called via the standard asset-dispatcher chain (`FUN_8001F05C` in the call stack). Slot 4 is just LZS-decoded verbatim into RAM — no special transcoder. `LEGAIA_LOAD_CAP=50` per-bp cap. |
-| `autorun_dump_slot4.lua` | Dumps the slot-4 RAM region directly | Sister to the readers probe; produces the ground-truth byte buffer for `verify_slot4_in_ram.py`. |
-| `autorun_xp_table_reader.lua` | Read bps tiled across the XP increment table at `0x8007123C..0x80071300` (98 u16 entries) | Pins the runtime XP-table reader function. Static LUI+ADDIU scans return zero hits across SCUS + every captured overlay; the reader either lives in an unimported overlay or builds the pointer indirectly. The probe writes a CSV of every hit + a `.detail.txt` sidecar with call-context for the first 8 hits (so the leveling formula's call site can be lifted into the engine). |
-| `autorun_field_pack_projection.lua` | Exec bp at `FUN_8001F7C0` (scene asset loader) entry; one-shot Exec bp at the loader's return address; dumps post-load RAM window | Captures the loader's on-disc &rarr; RAM projection that a single save state can't observe. `LEGAIA_HOLD_BUTTON` / `LEGAIA_HOLD` drive the warp-tile input from inside the probe; the run quits ~30 vsyncs after the first post-load dump so the capture window terminates as soon as the data is on disk. Diff via [`scripts/diff_field_pack_projection.py`](../../scripts/diff_field_pack_projection.py) against the on-disc PROT bytes. Output is a per-slot diff over the canonical 97-slot field-pack schema, sorted by changed bytes. World-map scenes (`map01` / `map02` / `map03`) are not field-pack-formatted - running against them produces a 75 KB GP0-primitive pool projection at `_DAT_8007B8D0 - 0x12800` instead, useful as the consumer-side counterpart to the slot-4 readers probe. |
+| `autorun_slot4_consumer_pcs.lua` | Exec bps at the cluster-A + cluster-B LW PCs identified during the slot-4 RE | **Kingdom-agnostic**: hits the same SCUS function PCs regardless of where slot 4 lives in RAM for the destination kingdom. Confirmed cross-kingdom: cluster A and B fire on Drake, Sebucus (town → map02) and Karisto (town → map03) with the same caller RAs (cluster B's RA `0x80059C00` is byte-identical across all three; cluster A's RAs `0x8001B47C` inside `FUN_8001ada4` + `0x801F78D4` world-map overlay are present in every kingdom). Hit-count scales with per-kingdom record count. Output CSV is `probe_idx, cluster, pc, name, ra, a0..a3, s8`; `.detail.txt` sidecar captures first-hit call-context per PC. `LEGAIA_PC_CAP=N` raises the default 200-hit-per-PC cap for uncapped totals. |
+| `autorun_slot4_dispatcher_args.lua` | Exec bp at `0x80043390` (cluster A dispatcher entry) | Captures the *original* call args before the kind handlers clobber `a1` / `a2`: caller RA, descriptor pointer `a0`, packed `cmd_flags` (`a1`), `fade_flags` (`a2`), and the first command word's `kind` / `count`. Use this to classify which of the four dispatcher banks (`0x00` / `0x50` / `0xA0` / `0xF0`) each call lands in. `LEGAIA_DISP_CAP=N` raises the default 200000-hit cap. |
+| `autorun_dump_slot4.lua` | Dumps the slot-4 RAM region directly | Produces the ground-truth byte buffer for `verify_slot4_in_ram.py`. |
+| `autorun_xp_table_reader.lua` | Read bps tiled across the XP increment table at `0x8007123C..0x80071300` (98 u16 entries) | Pins the runtime XP-table reader function. Static LUI+ADDIU scans return zero hits across SCUS + every captured overlay; the reader either lives in an unimported overlay or builds the pointer indirectly. The probe writes a CSV of every hit + a `.detail.txt` sidecar with call-context for the first 8 hits. |
+| `autorun_field_pack_projection.lua` | Exec bp at `FUN_8001F7C0` (scene asset loader) entry; one-shot Exec bp at the loader's return address; dumps post-load RAM window | Captures the loader's on-disc &rarr; RAM projection that a single save state can't observe. `LEGAIA_HOLD_BUTTON` / `LEGAIA_HOLD` drive the warp-tile input from inside the probe; the run quits ~30 vsyncs after the first post-load dump. Diff via [`scripts/pcsx-redux/diff_field_pack_projection.py`](../../scripts/pcsx-redux/diff_field_pack_projection.py) against the on-disc PROT bytes. World-map scenes (`map01` / `map02` / `map03`) are not field-pack-formatted — running against them produces a 75 KB GP0-primitive pool projection at `_DAT_8007B8D0 - 0x12800` instead. |
 | `autorun_dump_full_ram.lua` | Dumps the full 2 MiB main RAM | One-shot snapshot for downstream analysis. **One dump per launch only** — see the `readAt(2 MiB)` caveat above. |
-| `autorun_boot_walk_snapshots.lua` | Multi-snapshot RAM-and-register probe; dumps at each emulator vsync in `LEGAIA_TARGETS` (comma-separated) with chunked reads spread across vsync callbacks | Walks a save state through several timeline points in one emulator launch. **Known limitation**: the chunked read workaround works for ~2-4 close-together snapshots but degrades past ~10 chunks; for high-vsync targets prefer chained single-shots of `autorun_dump_full_ram.lua`. Sidecar `.regs` file captures `$pc / $gp / $sp / $ra / $a0..$a3 / $s8` at each dump. |
-| `autorun_countdown_trigger.lua` | Memory write-watchpoint at `LEGAIA_WATCH_ADDR` (default `0x801EF16C`, the title-attract countdown); width-2 `Write` BP. Optional screenshot via `PCSX.GPU.takeScreenShot()` taken inside the BP callback before the deferred RAM dump. | **Watchpoint-driven RAM + screenshot snapshot**: fires the dump at the exact moment the game writes the watched register, instead of guessing a vsync target. The capture pins PC and RA, so the writer function is identifiable post-hoc. Reusable for any "snapshot when this register changes" probe via the env-var override. `LEGAIA_HIT_SKIP` ignores the first N hits before snapshotting (default `1` to skip the boot-time DMA write into the title state-struct buffer; set `0` for save states already past that init). The skipped first hit fires from inside `FUN_8005D9A0` (the CD-DMA-channel-3 read primitive) while it's DMA-loading disc bytes into `0x801EF018+`. Earlier notes called the writer `FUN_8005DA40`, but that address is just an instruction inside `FUN_8005D9A0` — Ghidra promotes intra-function labels to fake `FUN_xxxxx` entries; there's no real function at `0x8005DA40`. `LEGAIA_DUMP_BASE` / `LEGAIA_DUMP_LEN` restrict the dump to a window (default `0x801C0000` / `0x40000` = the overlay window) &mdash; avoids PCSX-Redux's interpreter+debugger segfault that fires after ~1.5 MiB of cumulative `readAt()` bytes. Outputs: `<OUT>` (RAM window), `<OUT>.regs` (PC/RA/etc.), `<OUT>.screen` (raw BGR555 / BGR888 framebuffer), `<OUT>.screen.meta` (width / height / bpp sidecar). Decode the screen to PNG via [`scripts/decode_pcsx_screen.py`](../../scripts/decode_pcsx_screen.py). The RAM dump is deferred one chunk per vsync (BP callback only takes regs + screenshot + opens the file). Pinned `FUN_801DD35C` as the title-overlay tick this way &mdash; see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function). |
-| `log_world_map_vm.lua` | Exec breakpoint on `FUN_801D362C` | Surfaces calls into the world-map drawing VM dispatcher. |
-| `probe_world_map_callchain.lua` | Multi-PC exec hooks | Diagnostic: traces why `log_world_map_vm.lua` saw zero dispatches. |
+| `autorun_boot_walk_snapshots.lua` | Multi-snapshot RAM-and-register probe; dumps at each emulator vsync in `LEGAIA_TARGETS` (comma-separated) with chunked reads spread across vsync callbacks | Walks a save state through several timeline points in one emulator launch. **Known limitation**: the chunked-read workaround works for ~2-4 close-together snapshots but degrades past ~10 chunks; for high-vsync targets prefer chained single-shots of `autorun_dump_full_ram.lua`. |
+| `autorun_countdown_trigger.lua` | Memory write-watchpoint at `LEGAIA_WATCH_ADDR` (default `0x801EF16C`, the title-attract countdown); width-2 `Write` BP. Optional screenshot via `PCSX.GPU.takeScreenShot()` taken inside the BP callback before the deferred RAM dump. | **Watchpoint-driven RAM + screenshot snapshot**: fires the dump at the exact moment the game writes the watched register. `LEGAIA_HIT_SKIP` ignores the first N hits before snapshotting (default `1` to skip the boot-time DMA write). `LEGAIA_DUMP_BASE` / `LEGAIA_DUMP_LEN` restrict the dump window (default `0x801C0000` / `0x40000` = overlay window). Decode the screen to PNG via [`scripts/pcsx-redux/decode_pcsx_screen.py`](../../scripts/pcsx-redux/decode_pcsx_screen.py). Pinned `FUN_801DD35C` as the title-overlay tick — see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function). |
+| `autorun_title_overlay_writer_hunt.lua` | Write bps at 8 anchor addresses across the title-overlay code region (`0x801CC000..0x801EF018`) | Pins the SCUS-side title-overlay loader: any write into the overlay window fires a BP whose `pc` + `ra` + call-context dump identify the writer function. Run cold-boot (`LEGAIA_NO_SSTATE=1`) since in-game saves are past the load point. |
+| `autorun_title_staging_capture.lua` | Exec bp at `FUN_8001A55C` (LZS decoder); per-decode src buffer dump | Pins the PROT source of the title overlay. Each fired decode dumps the compressed source bytes to `<OUT_DIR>/decode_NNN_*.bin`; an offline script byte-matches against PROT entries. Run cold-boot. |
 
 ### Save-state to Python (offline analysis)
 
@@ -261,26 +256,38 @@ is the high-level index.
 | `verify_slot4_in_ram.py` | `autorun_dump_slot4.lua` output | Confirms the live RAM region matches the disc-decoded slot-4 sub-bodies byte-for-byte. |
 | `diff_slot4_ram_vs_disc.py` | Live + disc slot-4 bytes | Generates the byte-level diff visualisation. |
 | `match_prim_groups_to_disc.py` | Live prim-pool dump + disc TMD pack | Matches POLY_FT4 prim groups back to their source TMD bodies. |
-| [`diff_field_pack_projection.py`](../../scripts/diff_field_pack_projection.py) (repo root) | `.post.NN.bin` + `.meta` from the field-pack projection probe; on-disc LZS-decoded PROT entry | Walks the canonical 97-slot field-pack schema; for each slot, compares runtime RAM bytes against on-disc bytes and prints a per-slot diff sorted by changed-byte count, plus a hex preview of the first divergence per slot. |
-| [`decode_pcsx_screen.py`](../../scripts/decode_pcsx_screen.py) (repo root) | `<OUT>.screen` + `.screen.meta` from `autorun_countdown_trigger.lua` (or any probe that calls `PCSX.GPU.takeScreenShot()`) | PNG of the visible framebuffer at the capture moment. Decodes BGR555 (`bpp=16`) or BGR888 (`bpp=24`). Pillow required for PNG output; falls back to raw RGB888 if Pillow is missing. |
+| [`diff_field_pack_projection.py`](../../scripts/pcsx-redux/diff_field_pack_projection.py) | `.post.NN.bin` + `.meta` from the field-pack projection probe; on-disc LZS-decoded PROT entry | Walks the canonical 97-slot field-pack schema; for each slot, compares runtime RAM bytes against on-disc bytes and prints a per-slot diff sorted by changed-byte count, plus a hex preview of the first divergence per slot. |
+| [`decode_pcsx_screen.py`](../../scripts/pcsx-redux/decode_pcsx_screen.py) | `<OUT>.screen` + `.screen.meta` from `autorun_countdown_trigger.lua` (or any probe that calls `PCSX.GPU.takeScreenShot()`) | PNG of the visible framebuffer at the capture moment. Decodes BGR555 (`bpp=16`) or BGR888 (`bpp=24`). Pillow required for PNG output; falls back to raw RGB888 if Pillow is missing. |
 
 ### One-shot wrappers
 
-- [`run_world_map_probe.sh`](../../scripts/pcsx-redux/run_world_map_probe.sh)
-  &mdash; the canonical shell harness; works as `LEGAIA_LUA=<path> \
-  run_world_map_probe.sh` for any autorun. Launches PCSX-Redux in
-  `-interpreter -debugger` mode (required for Lua breakpoints to fire).
-- [`run_fast_probe.sh`](../../scripts/pcsx-redux/run_fast_probe.sh)
-  &mdash; recompiler-mode variant of `run_world_map_probe.sh`. Drops
-  `-interpreter -debugger` so the emulator runs at default
-  recompiler speed (~10-50&times; faster). `GPU::Vsync` events still
-  fire under the recompiler, so vsync-event-only probes work; Lua
-  **breakpoints don't fire** under the recompiler, so any probe
-  arming Exec/Read/Write breakpoints must keep using
-  `run_world_map_probe.sh`. Same env-var contract.
-- [`run_dump_slot4.sh`](../../scripts/pcsx-redux/run_dump_slot4.sh)
-  &mdash; thin wrapper that calls the harness with the slot-4 dump
-  Lua + a sensible default output path.
+[`run_probe.sh`](../../scripts/pcsx-redux/run_probe.sh) is the single
+canonical shell harness for every probe. It accepts both env vars
+(`LEGAIA_LUA`, `LEGAIA_SSTATE`, `LEGAIA_OUT`, …) and matching `--lua`
+/ `--sstate` / `--out` / `--scenario` / `--fast` flags. Output
+defaults to `captures/<probe-stem>/<iso-timestamp>/` so each run gets
+a fresh per-run subtree.
+
+```bash
+# Default world-map probe (interpreter mode, Lua BPs fire).
+bash scripts/pcsx-redux/run_probe.sh
+
+# Pick a different probe.
+bash scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_dump_slot4.lua
+
+# Resolve the save state via a named scenario from scripts/scenarios.toml.
+bash scripts/pcsx-redux/run_probe.sh --scenario cold_boot_pre_init \
+    --lua scripts/pcsx-redux/autorun_countdown_trigger.lua
+
+# Fast (recompiler) mode — drops `-interpreter -debugger`. Lua **BPs do
+# NOT fire** under the recompiler, so this is only useful for
+# vsync-event-only probes (e.g. autorun_dump_full_ram.lua).
+bash scripts/pcsx-redux/run_probe.sh --fast \
+    --lua scripts/pcsx-redux/autorun_dump_full_ram.lua
+```
+
+The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
+`run_dump_slot4.sh` wrappers were folded into this one runner.
 
 ## Authoring a new probe
 
@@ -290,9 +297,7 @@ The fastest path to a new probe:
    [`scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
    &mdash; the canonical thin probe (~145 lines, kingdom-agnostic) that
    uses the shared library for everything except the per-probe
-   breakpoint body. (`autorun_slot4_readers.lua` is the Drake-tuned
-   precursor &mdash; kept as a historical reference but not the recommended
-   starting point.)
+   breakpoint body.
 2. Edit the `PROBE_OFFSETS` (or your own probe-address list), the CSV
    header, and the per-hit row written from inside the breakpoint
    callback. The boot-delay / capture-vsync / disarm state machine
@@ -301,7 +306,7 @@ The fastest path to a new probe:
    ```bash
    LEGAIA_LUA=scripts/pcsx-redux/autorun_your_thing.lua \
    LEGAIA_OUT=/tmp/your_probe.csv \
-       bash scripts/pcsx-redux/run_world_map_probe.sh
+       bash scripts/pcsx-redux/run_probe.sh
    ```
 4. Iterate on the live CSV. The harness re-launches the emulator
    per run; the CSV is overwritten each time. While the probe is

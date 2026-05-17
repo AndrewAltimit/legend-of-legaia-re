@@ -413,30 +413,15 @@ breakdown table above.
 
 ### Reproducing the capture
 
-The original
-[`autorun_slot4_readers.lua`](../../scripts/pcsx-redux/autorun_slot4_readers.lua)
-probe is **Drake-tuned** — its record-region offsets are Drake's
-15-body layout, and they don't reliably land on records in Sebucus
-(16 bodies) or Karisto (16 bodies, smaller total). The Drake-specific
-form:
-
-```bash
-LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-drake-on-map01-save>.sstate \
-LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60 \
-LEGAIA_S4_DETAIL=1 LEGAIA_S4_QUIT_AFTER_ALL=1 \
-LEGAIA_FRAMES=900 \
-LEGAIA_OUT=/tmp/slot4_drake.csv \
-LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_readers.lua \
-    bash scripts/pcsx-redux/run_world_map_probe.sh
-```
-
-`BTN.UP = 4` / `BTN.DOWN = 6` per
-[`probe.lua`](../../scripts/pcsx-redux/lib/probe.lua) drives the held-
-direction input that triggers the warp transition from inside the
-probe. For cross-kingdom verification, use
-[`autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
-instead — it arms Exec breakpoints at the eight identified cluster-A
-LW PCs + the cluster-B LW PC, so the probe is kingdom-agnostic:
+An earlier Drake-tuned `autorun_slot4_readers.lua` probe (now archived
+under `archive/pcsx-redux-probes/`) walked Read breakpoints across
+Drake's 15-body slot-4 layout to surface the original reader PCs. It
+doesn't generalise — the offsets are Drake-specific. The
+kingdom-agnostic replacement is
+[`autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua),
+which arms Exec breakpoints at the cluster-A + cluster-B PCs surfaced
+during that earlier capture and fires identically across all three
+kingdoms:
 
 ```bash
 LEGAIA_SSTATE=$HOME/Tools/pcsx-redux/<your-sebucus-warp-save>.sstate \
@@ -445,7 +430,7 @@ LEGAIA_FRAMES=1800 \
 LEGAIA_PC_CAP=50000 \
 LEGAIA_OUT=captures/slot4_uncapped/sebucus.csv \
 LEGAIA_LUA=scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua \
-    timeout --kill-after=30s 1500s bash scripts/pcsx-redux/run_world_map_probe.sh
+    timeout --kill-after=30s 1500s bash scripts/pcsx-redux/run_probe.sh
 ```
 
 Each CSV row records `probe_idx, cluster, pc, name, ra, a0..a3, s8`
@@ -539,7 +524,7 @@ purpose ("render the world-map wireframe") is no longer valid:
 | `cargo run -p legaia-asset --bin asset -- slot4-png --input <PROT>.BIN --out <png>` | Container PNG renderer. `--style row\|col\|pairs\|grid\|points` toggles between topology interpretations; `--axes xz\|xy\|zy` switches projection plane; `--only-body N` / `--frame-body N` isolate a single body. `--from-raw <bin>` renders a previously-dumped slot-4 payload. |
 | `cargo run -p legaia-asset --bin asset -- kingdom-slot <PROT>.BIN --slot 4` | Per-body inventory dump (counts, ranges, kind / flag_a). |
 | `legaia_asset::world_map_overlay::{parse, top_down_lines, record_points, body_axis_range}` | Rust API. |
-| `scripts/pcsx-redux/run_dump_slot4.sh` + `autorun_dump_slot4.lua` | PCSX-Redux closed-loop dumper: loads a save state, dumps the live slot-4 RAM region, quits. |
+| `scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_dump_slot4.lua` | PCSX-Redux closed-loop dumper: loads a save state, dumps the live slot-4 RAM region, quits. |
 | `scripts/pcsx-redux/autorun_dump_full_ram.lua` | Full 2 MiB main RAM dump. Use when the load base is unknown for a new build / state - signature-scan the dump for the 64-byte outer pack prefix. |
 | `scripts/pcsx-redux/diff_slot4_ram_vs_disc.py` | Byte-compare a RAM dump against the disc-decoded payload. |
 
@@ -552,10 +537,11 @@ draw interpretation.
 
 ### Slot-4 loader (loader-hunt probe)
 
-Running `autorun_slot4_loader_hunt.lua` against Drake (held UP
-for 60 vsyncs into the warp) with Write bps tiled across slot-4 RAM
-(`0x8011A624 + offset[0..7000]`) surfaced **the LZS decoder** as the
-sole writer:
+Running `autorun_slot4_loader_hunt.lua` (now archived under
+`archive/pcsx-redux-probes/` — investigation resolved) against Drake
+(held UP for 60 vsyncs into the warp) with Write bps tiled across
+slot-4 RAM (`0x8011A624 + offset[0..7000]`) surfaced **the LZS
+decoder** as the sole writer:
 
 | Caller chain | PC of write | Notes |
 |---|---|---|
@@ -581,8 +567,9 @@ the byte-verified `disc → RAM` finding documented in
 
 ### Working-buffer writers (transcoder-hunt probe, 2026-05-14)
 
-Running `autorun_slot4_transcoder_hunt.lua` against Drake (
-held UP for 60 vsyncs into the warp transition) with Write bps tiled
+Running `autorun_slot4_transcoder_hunt.lua` (now archived under
+`archive/pcsx-redux-probes/` — investigation resolved) against Drake
+(held UP for 60 vsyncs into the warp transition) with Write bps tiled
 across the `0x801BA000` working buffer surfaced **two distinct
 writers**, not a single transcoder:
 

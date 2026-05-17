@@ -19,7 +19,7 @@
 --       LEGAIA_SSTATE=/path/to/end_of_battle.sstate1 \
 --       LEGAIA_OUT=xp_table_readers.csv \
 --       LEGAIA_FRAMES=600 \
---       ./scripts/pcsx-redux/run_world_map_probe.sh
+--       ./scripts/pcsx-redux/run_probe.sh
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -27,7 +27,7 @@ local probe = require("probe")
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate1")
 local FRAMES   = probe.getenv_num("LEGAIA_FRAMES", 600)
-local OUT_PATH = probe.getenv("LEGAIA_OUT", "xp_table_readers.csv")
+local OUT_PATH = probe.out_path("xp_table_readers.csv")
 -- The XP table is 98 u16 entries; we cover the whole span by arming
 -- four overlapping 4-byte Read bps. PCSX-Redux exposes per-byte width
 -- breakpoints; one bp per word gives us the full range without

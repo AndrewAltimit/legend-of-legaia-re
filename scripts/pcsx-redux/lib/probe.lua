@@ -43,7 +43,7 @@
 --     a breakpoint callback silently disables the probe.
 --   - The driver requires both -interpreter and -debugger flags
 --     (psxinterpreter.cc:1652 only invokes Debug::process under
---     `if constexpr (debug)`). The shipping run_world_map_probe.sh
+--     `if constexpr (debug)`). The shipping run_probe.sh
 --     wrapper already passes both.
 
 local M = {}
@@ -61,6 +61,28 @@ function M.getenv_num(name, fallback)
     local v = os.getenv(name)
     if v == nil or v == "" then return fallback end
     return tonumber(v) or fallback
+end
+
+-- Resolve a probe's primary output path. Precedence:
+--   1. $LEGAIA_OUT      — explicit user override, used as-is.
+--   2. $LEGAIA_OUT_DIR  — runner-provided per-run dir; appends <default_name>.
+--   3. <default_name>   — fallback: bare filename in CWD (legacy behaviour).
+-- The runner script (scripts/pcsx-redux/run_probe.sh) sets LEGAIA_OUT_DIR
+-- to captures/<probe-stem>/<iso-timestamp>/ when neither LEGAIA_OUT nor
+-- LEGAIA_OUT_DIR is supplied, so by default every probe drops its
+-- artefacts into a per-run subtree.
+function M.out_path(default_name)
+    local explicit = os.getenv("LEGAIA_OUT")
+    if explicit ~= nil and explicit ~= "" then return explicit end
+    local dir = os.getenv("LEGAIA_OUT_DIR")
+    if dir ~= nil and dir ~= "" then
+        if dir:sub(-1) == "/" then
+            return dir .. default_name
+        else
+            return dir .. "/" .. default_name
+        end
+    end
+    return default_name
 end
 
 ------------------------------------------------------------------
@@ -96,6 +118,15 @@ function M.read_u32(addr)
     if off == nil or off + 4 > RAM_SIZE then return nil end
     local mf = get_mem_file()
     local ok, v = pcall(function() return mf:readU32At(off) end)
+    if not ok then return nil end
+    return tonumber(v)
+end
+
+function M.read_u8(addr)
+    local off = M.ram_offset(addr)
+    if off == nil or off + 1 > RAM_SIZE then return nil end
+    local mf = get_mem_file()
+    local ok, v = pcall(function() return mf:readU8At(off) end)
     if not ok then return nil end
     return tonumber(v)
 end
