@@ -30,6 +30,10 @@ use legaia_engine_render::{
     text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_engine_shell::mode_trace_oracle::{
+    ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
+    load_runtime_mode_trace_from_save, mode_trace_to_jsonl,
+};
 use legaia_engine_shell::vram_oracle::{
     TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
     load_runtime_vram_from_save, vram_to_le_bytes,
@@ -218,6 +222,64 @@ enum Cmd {
         /// known band is the regression signature this catches.
         #[arg(long, default_value_t = false)]
         clut_regions: bool,
+    },
+    /// Phase-E3 mode-trace oracle. Boots a `BootSession` on the
+    /// resolved scene, ticks it `--frames` times sampling
+    /// `(scene_mode, active_scene)` per frame, emits the engine trace
+    /// as JSONL, and (in scenario mode) compares the engine's settled
+    /// state to a snapshot lifted from the matching mednafen
+    /// `.mc{slot}` save.
+    ///
+    /// **Two modes:**
+    ///   - **Explicit**: `--scene <NAME>` runs the engine alone and
+    ///     emits its JSONL trace. No comparison.
+    ///   - **Scenario**: `--scenario <LABEL>` resolves both the scene
+    ///     (from `expected_active_scene` in `scripts/scenarios.toml`)
+    ///     and the retail snapshot (from the `.mc{slot}` save). With
+    ///     `--strict`, exits non-zero if no engine frame matches the
+    ///     retail snapshot's `(scene_mode, active_scene)`.
+    ///
+    /// **Asymmetry.** The engine port doesn't model the 28-mode
+    /// dispatcher yet, so engine-emitted frames have `game_mode = null`
+    /// in the JSONL. Retail snapshots fill it from `_DAT_8007B83C`.
+    /// See `crates/engine-shell/src/mode_trace_oracle.rs` for the
+    /// long-form rationale.
+    ModeTrace {
+        /// CDNAME scene name (e.g. `town01`). Required in explicit
+        /// mode; derived from the scenario's `expected_active_scene`
+        /// in scenario mode.
+        #[arg(long)]
+        scene: Option<String>,
+        /// Extracted-root directory containing `PROT.DAT` +
+        /// `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly
+        /// from a `.bin` disc image.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Scenario label looked up in the manifest. Resolves scene +
+        /// `.mc` save automatically. The scenario must have
+        /// `expected_active_scene` populated.
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Scenario manifest path.
+        #[arg(long, default_value = "scripts/scenarios.toml")]
+        manifest: PathBuf,
+        /// Engine frames to tick before sampling. Engine trace has
+        /// `frames + 1` entries (one for boot state, one per tick).
+        #[arg(long, default_value_t = 60)]
+        frames: u64,
+        /// Where to write the engine JSONL trace. Default `-` =
+        /// stdout.
+        #[arg(long, default_value = "-")]
+        out: PathBuf,
+        /// Strict mode: assert at least one engine frame matches the
+        /// retail snapshot's `(scene_mode, active_scene)`. Exits
+        /// non-zero with the last engine frame on divergence. Only
+        /// valid in scenario mode.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
     },
     /// List every distinct scene name the CDNAME map exposes, with the
     /// PROT entry range each one covers.
@@ -642,6 +704,25 @@ fn main() -> Result<()> {
             tiles,
             rows_csv: rows_csv.as_deref(),
             clut_regions,
+        }),
+        Cmd::ModeTrace {
+            scene,
+            extracted_root,
+            disc,
+            scenario,
+            manifest,
+            frames,
+            out,
+            strict,
+        } => cmd_mode_trace(ModeTraceArgs {
+            scene: scene.as_deref(),
+            extracted_root: &extracted_root,
+            disc: disc.as_deref(),
+            scenario: scenario.as_deref(),
+            manifest: &manifest,
+            frames,
+            out: &out,
+            strict,
         }),
         Cmd::Play {
             scene,
@@ -1443,6 +1524,137 @@ fn cmd_vram_oracle(args: VramOracleArgs<'_>) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Phase-E3 mode-trace oracle - args struct for `cmd_mode_trace`.
+struct ModeTraceArgs<'a> {
+    scene: Option<&'a str>,
+    extracted_root: &'a Path,
+    disc: Option<&'a Path>,
+    scenario: Option<&'a str>,
+    manifest: &'a Path,
+    frames: u64,
+    out: &'a Path,
+    strict: bool,
+}
+
+/// Resolved input triple - `(scene_name, retail_snapshot, source_label)`.
+/// `retail_snapshot` is `None` in explicit mode (no comparison).
+struct ResolvedModeTrace {
+    scene_name: String,
+    retail: Option<ModeTraceFrame>,
+    source_label: String,
+}
+
+fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTrace> {
+    use legaia_mednafen::ScenarioManifest;
+
+    match (args.scenario, args.scene) {
+        (Some(label), _) => {
+            let manifest = ScenarioManifest::from_path(args.manifest)?;
+            let scn = manifest.by_label(label).with_context(|| {
+                format!("scenario {label:?} not in {}", args.manifest.display())
+            })?;
+            let scene_name = scn.expected_active_scene.clone().with_context(|| {
+                format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene",)
+            })?;
+            let save_path = manifest.save_path(scn.slot)?;
+            if !save_path.exists() {
+                anyhow::bail!(
+                    "scenario {label:?} slot {} save not found at {}",
+                    scn.slot,
+                    save_path.display()
+                );
+            }
+            let retail = load_runtime_mode_trace_from_save(&save_path)?;
+            let source_label = format!(
+                "scenario {label:?} (slot {}, {})",
+                scn.slot,
+                save_path.display()
+            );
+            Ok(ResolvedModeTrace {
+                scene_name,
+                retail: Some(retail),
+                source_label,
+            })
+        }
+        (None, Some(scene_name)) => Ok(ResolvedModeTrace {
+            scene_name: scene_name.to_owned(),
+            retail: None,
+            source_label: "explicit (no retail comparison)".into(),
+        }),
+        _ => anyhow::bail!("mode-trace: provide either `--scenario <label>` or `--scene <name>`"),
+    }
+}
+
+fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
+    if args.strict && args.scenario.is_none() {
+        anyhow::bail!(
+            "mode-trace: `--strict` requires `--scenario` (no retail snapshot in explicit mode)"
+        );
+    }
+    let resolved = resolve_mode_trace_inputs(&args)?;
+    let trace = build_engine_mode_trace(
+        &resolved.scene_name,
+        args.extracted_root,
+        args.disc,
+        args.frames,
+    )?;
+    let jsonl = mode_trace_to_jsonl(&trace);
+
+    let out_label = if args.out.as_os_str() == "-" {
+        print!("{jsonl}");
+        "<stdout>".to_string()
+    } else {
+        std::fs::write(args.out, jsonl.as_bytes())
+            .with_context(|| format!("write mode-trace JSONL to {}", args.out.display()))?;
+        args.out.display().to_string()
+    };
+
+    eprintln!(
+        "scene '{}' vs {} (frames={}, trace_len={})  -> {}",
+        resolved.scene_name,
+        resolved.source_label,
+        args.frames,
+        trace.len(),
+        out_label
+    );
+
+    if let Some(retail) = resolved.retail.as_ref() {
+        let last = trace.last().unwrap();
+        eprintln!(
+            "  engine[last] scene_mode={:<10} active_scene={:?}",
+            last.scene_mode, last.active_scene
+        );
+        eprintln!(
+            "  retail       scene_mode={:<10} active_scene={:?}  game_mode={:?} ({})",
+            retail.scene_mode,
+            retail.active_scene,
+            retail.game_mode,
+            retail.game_mode_name.as_deref().unwrap_or("?"),
+        );
+        match first_mode_trace_divergence(&trace, retail) {
+            None => {
+                eprintln!("[ok] engine trace converges with retail snapshot");
+            }
+            Some(d) => {
+                let msg = format!(
+                    "[DRIFT] {:?}: engine(scene_mode={}, active_scene={:?}) vs retail(scene_mode={}, active_scene={:?})",
+                    d.kind,
+                    d.engine.scene_mode,
+                    d.engine.active_scene,
+                    d.retail.scene_mode,
+                    d.retail.active_scene,
+                );
+                if args.strict {
+                    anyhow::bail!("{msg}");
+                } else {
+                    eprintln!("{msg}");
+                }
+            }
+        }
+    }
     Ok(())
 }
 

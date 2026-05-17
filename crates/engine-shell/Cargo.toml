@@ -33,5 +33,6 @@ glam.workspace = true
 png = "0.17"
 winit = "0.30"
 serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
 toml = "0.8"
 sha2 = "0.10"
