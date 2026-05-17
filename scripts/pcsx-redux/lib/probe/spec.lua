@@ -14,6 +14,13 @@
 --   output_path     str  (default <probe-stem>.csv; LEGAIA_OUT wins)
 --   snapshot_path   str  (default derived from output_path)
 --
+-- Address-typed fields (dump.addr, breakpoint[i].addr, breakpoint_range[i].base)
+-- accept *either* an integer literal *or* a Ghidra symbol name string
+-- ("FUN_801DD35C", "_DAT_8007BCD0"). Symbol names resolve via
+-- ghidra/scripts/symbols.lua (regenerate with scripts/pcsx-redux/build-symbols.py).
+-- An unresolved symbol raises at spec-load time -- the probe never silently
+-- arms at address 0.
+--
 -- Optional [dump] table (RAM-region dump on settle; mutually exclusive
 -- with breakpoints / breakpoint_range):
 --   [dump]
@@ -61,8 +68,39 @@ local csv_lib  = require("probe.csv")
 local snapshot = require("probe.snapshot")
 local env      = require("probe.env")
 local sm       = require("probe.sm")
+local symbols_mod = require("probe.symbols")
 
 local M = {}
+
+------------------------------------------------------------------
+-- Symbol-name resolution. Lazy-load the symbols table so probes that
+-- only use literal addresses don't pay for the dofile().
+
+local _symbols_cache  -- nil until first symbol-typed field is seen
+
+local function symbols()
+    if _symbols_cache == nil then
+        _symbols_cache = symbols_mod.load()  -- raises if missing
+    end
+    return _symbols_cache
+end
+
+-- Accept int (taken as-is) or string (resolved via ghidra/scripts/symbols.lua).
+-- Anything else is a schema error. Symbol misses raise loudly (via the
+-- __index guard in probe.symbols) so a typo never silently arms at 0.
+local function resolve_addr(v, ctx)
+    if type(v) == "number" then return v end
+    if type(v) == "string" then
+        local ok, addr = pcall(function() return symbols()[v] end)
+        if ok and type(addr) == "number" then return addr end
+        error(string.format(
+            "probe.spec: cannot resolve symbol '%s' in %s: %s",
+            v, ctx, tostring(addr or "<unknown>")), 2)
+    end
+    error(string.format(
+        "probe.spec: %s must be an integer address or a symbol-name string (got %s)",
+        ctx, type(v)), 2)
+end
 
 ------------------------------------------------------------------
 -- Capture-column vocabulary
@@ -120,15 +158,18 @@ end
 local function bp_descriptors_from_list(list)
     local out = {}
     for i, entry in ipairs(list or {}) do
-        if type(entry.addr) ~= "number" then
-            error("probe.spec: breakpoint[" .. i .. "].addr missing/non-numeric")
-        end
+        local addr = resolve_addr(entry.addr,
+            "breakpoint[" .. i .. "].addr")
+        -- Default name uses the symbol string when given (more readable
+        -- in CSVs than a hex address).
+        local default_name = type(entry.addr) == "string"
+            and entry.addr or default_name_for(addr)
         out[#out + 1] = {
-            addr  = entry.addr,
+            addr  = addr,
             kind  = entry.kind  or "Exec",
             width = entry.width or 4,
-            name  = entry.name  or default_name_for(entry.addr),
-            base  = entry.addr,  -- offset column reads as 0 for non-range bps
+            name  = entry.name  or default_name,
+            base  = addr,  -- offset column reads as 0 for non-range bps
         }
     end
     return out
@@ -137,8 +178,10 @@ end
 local function bp_descriptors_from_range(list)
     local out = {}
     for r_idx, r in ipairs(list or {}) do
-        if type(r.base) ~= "number" or type(r.length) ~= "number" then
-            error("probe.spec: breakpoint_range[" .. r_idx .. "] missing base/length")
+        local base = resolve_addr(r.base,
+            "breakpoint_range[" .. r_idx .. "].base")
+        if type(r.length) ~= "number" then
+            error("probe.spec: breakpoint_range[" .. r_idx .. "].length missing/non-numeric")
         end
         local stride = r.stride or 4
         local kind   = r.kind   or "Read"
@@ -146,7 +189,7 @@ local function bp_descriptors_from_range(list)
         local off = 0
         while off < r.length do
             local w = math.min(stride, r.length - off)
-            local addr = r.base + off
+            local addr = base + off
             -- Try printf with the offset; if the format has no specifier
             -- the result is just the literal string.
             local ok, name = pcall(string.format, fmt, off)
@@ -156,7 +199,7 @@ local function bp_descriptors_from_range(list)
                 kind  = kind,
                 width = w,
                 name  = name,
-                base  = r.base,
+                base  = base,
             }
             off = off + stride
         end
@@ -170,9 +213,10 @@ end
 -- Shape 1: RAM dump on settle (no breakpoints).
 local function build_dump_run(spec, defaults)
     local d = spec.dump
+    local addr = resolve_addr(d.addr, "[dump].addr")
     local size = d.size_ram and mem.RAM_SIZE or d.size
-    if type(d.addr) ~= "number" or type(size) ~= "number" then
-        error("probe.spec: [dump] requires addr + size (or size_ram=true)")
+    if type(size) ~= "number" then
+        error("probe.spec: [dump] requires size or size_ram=true")
     end
     local out_path = env.out_path(d.output_path or defaults.output_path or "dump.bin")
 
@@ -186,10 +230,10 @@ local function build_dump_run(spec, defaults)
             return {}
         end,
         on_done = function(_, _)
-            local buf = mem.read_bytes(d.addr, size)
+            local buf = mem.read_bytes(addr, size)
             if buf == nil then
                 PCSX.log(string.format("[spec] dump: FATAL: cannot read %d bytes at 0x%08X",
-                    size, d.addr))
+                    size, addr))
                 return
             end
             local s = tostring(buf)

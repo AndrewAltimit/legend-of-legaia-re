@@ -1,0 +1,39 @@
+# Title-overlay tick observation probe.
+#
+# Arms an Exec breakpoint at FUN_801DD35C (the title-attract overlay's
+# per-frame tick) and captures the program counter + saved RA on every
+# hit, plus a snapshot of the title-overlay state struct at +0x154 (the
+# attract countdown register). Useful when the title flow is changing
+# under us and we want to confirm the tick is still being called.
+#
+# Address resolution: both `FUN_801DD35C` and `_DAT_801EF16C` resolve
+# at spec-load time via ghidra/scripts/symbols.lua. A typo'd symbol
+# raises loudly rather than silently arming a breakpoint at nil.
+# Regenerate symbols.lua via:
+#     python3 scripts/pcsx-redux/build-symbols.py
+#
+# No matching scenario in scripts/scenarios.toml yet; pass the save
+# state explicitly via `run_probe.sh --sstate /path/to/title_attract.sstate`.
+
+capture_frames  = 600
+output_path     = "title_overlay_tick.csv"
+capture_columns = ["tick", "pc", "ra", "value_u32"]
+
+[detail]
+hits = 4
+path = "title_overlay_tick.detail.txt"
+
+# Exec breakpoint at the title-attract tick body.
+[[breakpoint]]
+addr = "FUN_801DD35C"
+kind = "Exec"
+name = "title_tick"
+
+# Read-watch the attract-countdown register; this is the field the title
+# tick decrements when waiting to switch to the demo loop. Tracks every
+# read so we can see who else is observing the value.
+[[breakpoint]]
+addr  = "_DAT_801EF16C"
+kind  = "Read"
+width = 4
+name  = "countdown_read"

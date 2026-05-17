@@ -37,6 +37,7 @@ from typing import Any
 PROBE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROBE_DIR.parents[2]
 LIB_DIR = REPO_ROOT / "scripts" / "pcsx-redux" / "lib"
+SYMBOLS_JSON = REPO_ROOT / "ghidra" / "scripts" / "symbols.json"
 
 # Built-in capture-columns vocab. Must match COLUMN_BUILDERS in
 # scripts/pcsx-redux/lib/probe/spec.lua.
@@ -51,6 +52,55 @@ BP_KINDS = {"Exec", "Read", "Write"}
 
 class SpecError(Exception):
     """Raised when a .probe.toml fails schema validation."""
+
+
+_symbols_cache: dict[str, int] | None = None
+
+
+def load_symbols() -> dict[str, int]:
+    """Load ghidra/scripts/symbols.json once. Empty dict if missing."""
+    global _symbols_cache
+    if _symbols_cache is not None:
+        return _symbols_cache
+    if not SYMBOLS_JSON.exists():
+        _symbols_cache = {}
+        return _symbols_cache
+    with open(SYMBOLS_JSON, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    table = payload.get("symbols", {})
+    _symbols_cache = {k: int(v, 16) for k, v in table.items()}
+    return _symbols_cache
+
+
+def resolve_symbol(name: str) -> int:
+    """Resolve a Ghidra symbol name to its int address.
+
+    Mirrors the case-insensitive hex-suffix normaliser in
+    scripts/pcsx-redux/lib/probe/symbols.lua so the validator matches
+    runtime behaviour.
+    """
+    syms = load_symbols()
+    if name in syms:
+        return syms[name]
+    # Normalise the trailing hex run to lower case.
+    import re as _re
+    norm = _re.sub(r"([_A-Za-z])([0-9A-Fa-f]+)$",
+                   lambda m: m.group(1) + m.group(2).lower(), name)
+    if norm in syms:
+        return syms[norm]
+    raise SpecError(
+        f"symbol '{name}' not found in {SYMBOLS_JSON.relative_to(REPO_ROOT)}; "
+        "regenerate via scripts/pcsx-redux/build-symbols.py")
+
+
+def addr_or_symbol(v: Any, ctx: str) -> int:
+    """Schema check: accept int OR symbol-name string, return resolved int."""
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str):
+        return resolve_symbol(v)
+    raise SpecError(
+        f"{ctx} must be an integer or a symbol-name string (got {type(v).__name__})")
 
 
 def validate(spec: dict[str, Any], name: str) -> list[str]:
@@ -72,8 +122,10 @@ def validate(spec: dict[str, Any], name: str) -> list[str]:
 
     if has_dump:
         d = spec["dump"]
-        if not isinstance(d.get("addr"), int):
-            fail("[dump].addr must be an integer")
+        try:
+            addr_or_symbol(d.get("addr"), "[dump].addr")
+        except SpecError as e:
+            fail(str(e))
         if not d.get("size_ram") and not isinstance(d.get("size"), int):
             fail("[dump] requires either size_ram = true or size = <int>")
 
@@ -86,8 +138,10 @@ def validate(spec: dict[str, Any], name: str) -> list[str]:
                 fail(f"unknown capture column '{c}' (vocab: {sorted(CAPTURE_COLUMNS)})")
 
     for i, b in enumerate(spec.get("breakpoint") or []):
-        if not isinstance(b.get("addr"), int):
-            fail(f"[[breakpoint]][{i}].addr must be an integer")
+        try:
+            addr_or_symbol(b.get("addr"), f"[[breakpoint]][{i}].addr")
+        except SpecError as e:
+            fail(str(e))
         kind = b.get("kind", "Exec")
         if kind not in BP_KINDS:
             fail(f"[[breakpoint]][{i}].kind '{kind}' invalid (allowed: {sorted(BP_KINDS)})")
@@ -96,8 +150,10 @@ def validate(spec: dict[str, Any], name: str) -> list[str]:
             fail(f"[[breakpoint]][{i}].width must be 1/2/4")
 
     for i, r in enumerate(spec.get("breakpoint_range") or []):
-        if not isinstance(r.get("base"), int):
-            fail(f"[[breakpoint_range]][{i}].base must be an integer")
+        try:
+            addr_or_symbol(r.get("base"), f"[[breakpoint_range]][{i}].base")
+        except SpecError as e:
+            fail(str(e))
         if not isinstance(r.get("length"), int):
             fail(f"[[breakpoint_range]][{i}].length must be an integer")
         kind = r.get("kind", "Read")

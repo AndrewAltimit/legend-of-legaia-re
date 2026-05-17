@@ -179,24 +179,60 @@ end,
 ### Symbolic breakpoint addresses
 
 Hard-coded `0x801DA51C`-style breakpoint targets break across overlay
-re-imports that shift function entry points. Use the symbol resolver:
+re-imports that shift function entry points. The symbol resolver
+accepts Ghidra-canonical names from two sources:
+
+* **Function entry points** (`FUN_801DA51C`, slot-4 `k10_shared` labels,
+  named overlays). Source: per-function dump headers under
+  `ghidra/scripts/funcs/*.txt`.
+* **Global data labels** (`DAT_8007078C` / `_DAT_8007BCD0`, both case
+  forms accepted). Source: the same dump-header walk, plus a regex
+  harvest of `DAT_xxxxxxxx` references from the decomp body content
+  (so DAT names show up even before `dump_globals.py` has been run
+  for a given program), plus a dedicated `dump_globals.py` Jython
+  script for authoritative names + lengths.
+
+Three ways to use it:
 
 ```lua
-local symbols = require("probe.symbols").load()  -- ghidra/scripts/symbols.lua
+-- Bespoke autorun:
+local symbols = require("probe.symbols").load()
 probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)
 ```
 
-`ghidra/scripts/symbols.json` (canonical) and `ghidra/scripts/symbols.lua`
-(LuaJIT-loadable convenience) are both auto-generated from the per-function
-dump headers under `ghidra/scripts/funcs/*.txt`. Regenerate via
+```toml
+# .probe.toml: addr/base accept either an int or a symbol-name string.
+[[breakpoint]]
+addr = "FUN_801DD35C"     # resolves at spec-load time
+kind = "Exec"
+[[breakpoint]]
+addr  = "_DAT_801EF16C"
+kind  = "Read"
+width = 4
+```
 
 ```bash
+# Regenerate after adding new dumps (covers funcs/* dumps and globals_*).
 python3 scripts/pcsx-redux/build-symbols.py
 ```
 
-after adding new dumps. The resolver fails loudly on a typo'd symbol
-name &mdash; arming a breakpoint at `nil` otherwise silently captures
-zero hits and the probe runs to completion with no diagnostic.
+```bash
+# Authoritative globals (one-time per program; optional but lossless):
+docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
+    -process SCUS_942.54 -noanalysis -postScript /scripts/dump_globals.py
+# ... or pass `-process overlay_<name>.bin` for per-overlay globals.
+python3 scripts/pcsx-redux/build-symbols.py
+```
+
+The resolver fails loudly on a typo'd symbol name &mdash; arming a
+breakpoint at `nil` otherwise silently captures zero hits and the probe
+runs to completion with no diagnostic. The hex portion of the name is
+case-insensitive: docs use `FUN_801DD35C`, Ghidra emits
+`FUN_801dd35c`, both resolve identically.
+
+`scripts/pcsx-redux/probes/_check_specs.py` cross-validates every
+`.probe.toml` spec's symbol references against `symbols.json` so a
+typo'd symbol fails CI rather than the probe run.
 
 ### Things that catch people out
 
