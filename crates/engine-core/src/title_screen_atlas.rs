@@ -20,26 +20,60 @@ pub const ATLAS_WIDTH: u32 = 256;
 /// Height of the title atlas in pixels (matches the source 256×256 TIM).
 pub const ATLAS_HEIGHT: u32 = 256;
 
-/// Pre-decoded title atlas — RGBA8 pixels + the source rect to sample
-/// when emitting the sprite quad.
+/// Pre-decoded title atlas — RGBA8 pixels + the source rects engines
+/// sample to compose the retail title screen.
 ///
 /// Build once at boot from PROT 0888 bytes via
 /// [`build_atlas_from_prot_888`], hand to engine-render's
-/// `upload_sprite_atlas`, then sample [`rect`] each frame the title
-/// phase is active.
+/// `upload_sprite_atlas`, then emit one sprite quad per active band
+/// each frame the title phase is active.
 ///
-/// [`rect`]: TitleScreenAtlas::rect
+/// The 256×256 source TIM is a sprite sheet that bundles every band
+/// retail might draw plus one demo-build leftover (`<DEMO>`). Retail
+/// composes the screen by drawing the wordmark + copyright bands
+/// always, the press-start band only during the PressStart phase, and
+/// skipping the `<DEMO>` band entirely. The engine port mirrors that
+/// composition - see [`band_wordmark`], [`band_press_start`],
+/// [`band_tm_copyright`], [`band_c_copyright`].
+///
+/// [`band_wordmark`]: TitleScreenAtlas::band_wordmark
+/// [`band_press_start`]: TitleScreenAtlas::band_press_start
+/// [`band_tm_copyright`]: TitleScreenAtlas::band_tm_copyright
+/// [`band_c_copyright`]: TitleScreenAtlas::band_c_copyright
 #[derive(Debug, Clone)]
 pub struct TitleScreenAtlas {
     /// RGBA8 pixel data, exactly `4 * width * height` bytes.
     pub rgba: Vec<u8>,
     pub width: u32,
     pub height: u32,
-    /// Source rect in atlas pixels `(x, y, w, h)` to sample for the
-    /// title quad. Always `(0, 0, width, height)` for the single-TIM
-    /// layout; kept as a field for symmetry with
-    /// [`crate::publisher_logos::LogosAtlas::rects`].
+    /// Source rect in atlas pixels `(x, y, w, h)` covering the full
+    /// 256×256 TIM. Engines that want the legacy "single fullscreen
+    /// quad" behaviour can sample this; retail-faithful renderers
+    /// use the per-band rects below.
     pub rect: (u32, u32, u32, u32),
+}
+
+impl TitleScreenAtlas {
+    /// Orb + "Legend of Legaia" wordmark band - drawn in every
+    /// post-fade phase.
+    pub fn band_wordmark(&self) -> (u32, u32, u32, u32) {
+        title_pak::TITLE_BAND_WORDMARK
+    }
+    /// "PRESS START BUTTON" prompt label - drawn only during the
+    /// PressStart phase. Engines should suppress their font-rendered
+    /// "PRESS START" text when this band is drawn, to avoid the
+    /// duplicate text the early no-disc fallback emits.
+    pub fn band_press_start(&self) -> (u32, u32, u32, u32) {
+        title_pak::TITLE_BAND_PRESS_START
+    }
+    /// "TM of Sony..." copyright line - drawn in every post-fade phase.
+    pub fn band_tm_copyright(&self) -> (u32, u32, u32, u32) {
+        title_pak::TITLE_BAND_TM_COPYRIGHT
+    }
+    /// "© 1998,1999..." copyright line - drawn in every post-fade phase.
+    pub fn band_c_copyright(&self) -> (u32, u32, u32, u32) {
+        title_pak::TITLE_BAND_C_COPYRIGHT
+    }
 }
 
 /// Build a [`TitleScreenAtlas`] from a PROT 0888 byte buffer (or one

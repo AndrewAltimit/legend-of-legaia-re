@@ -2380,7 +2380,7 @@ impl PlayWindowApp {
     }
 
     /// Build text draws for the active boot UI (when applicable).
-    fn boot_ui_draws(&self) -> Vec<TextDraw> {
+    fn boot_ui_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
         match &self.boot_ui {
             BootUiState::Inactive => Vec::new(),
             BootUiState::PublisherLogos(_) => {
@@ -2400,13 +2400,37 @@ impl PlayWindowApp {
                     TitlePhase::PressStart { blink_phase } => blink_phase < s.blink_period / 2,
                     _ => true,
                 };
+                // When the PROT 0888 title atlas is loaded, anchor the
+                // menu text to the same centred + integer-scaled 256×256
+                // stage `title_screen_sprite_draws` uses, so the menu
+                // sits between the wordmark band (ends at src y=140)
+                // and the press-start / copyright bands (start at src
+                // y=178). Without an atlas we keep the legacy
+                // (96, 100) pen so the no-disc fallback still renders.
+                let atlas_present = self.title_screen.is_some();
+                let pen = if atlas_present {
+                    let atlas_w: u32 = 256;
+                    let atlas_h: u32 = 256;
+                    let scale = (surface_w / atlas_w.max(1))
+                        .min(surface_h / atlas_h.max(1))
+                        .clamp(1, 4) as i32;
+                    let stage_x0 = (surface_w as i32 - (atlas_w as i32) * scale) / 2;
+                    let stage_y0 = (surface_h as i32 - (atlas_h as i32) * scale) / 2;
+                    // src-y=148 sits between the wordmark and the
+                    // press-start/copyright bands; src-x=104 centres
+                    // a ~6-glyph menu row inside the 256-wide stage.
+                    (stage_x0 + 104 * scale, stage_y0 + 148 * scale)
+                } else {
+                    (96, 100)
+                };
                 legaia_engine_render::title_draws_for(
                     &self.font,
                     phase_id,
                     cursor,
                     s.continue_enabled,
                     blink_on,
-                    (96, 100),
+                    atlas_present,
+                    pen,
                 )
             }
             BootUiState::SaveSelect(s) => {
@@ -3241,10 +3265,19 @@ impl PlayWindowApp {
     }
 
     /// Build the [`legaia_engine_render::SpriteDraw`] list for the
-    /// title-screen quad. Renders one centred + integer-scaled copy of
-    /// the PROT 0888 title TIM. Returns an empty vec when boot-UI
-    /// isn't `Title`, the atlas wasn't uploaded, or the title session
-    /// has reached [`legaia_engine_core::title::TitlePhase::Done`].
+    /// title-screen quad. Composes the retail title screen by drawing
+    /// per-band sub-rects of the PROT 0888 title TIM: orb + wordmark
+    /// always, "PRESS START BUTTON" only during the PressStart phase,
+    /// and the two copyright lines in every post-fade phase. The
+    /// `<DEMO>` band and the small "NEW GAME CONTINUE" footer band are
+    /// intentionally skipped - the former is a demo-build leftover
+    /// retail never draws, the latter is replaced by larger
+    /// font-rendered menu labels (see [`Self::boot_ui_draws`]).
+    ///
+    /// Each band is positioned at its source `y` within a centred,
+    /// integer-scaled 256×256 stage. Returns an empty vec when
+    /// boot-UI isn't `Title`, the atlas wasn't uploaded, or the title
+    /// session has reached [`legaia_engine_core::title::TitlePhase::Done`].
     fn title_screen_sprite_draws(
         &self,
         surface_w: u32,
@@ -3262,20 +3295,20 @@ impl PlayWindowApp {
         let Some(assets) = self.title_screen.as_ref() else {
             return Vec::new();
         };
-        let (sx, sy, sw, sh) = assets.rect;
-        if sw == 0 || sh == 0 {
+        let (_atlas_x, _atlas_y, atlas_w, atlas_h) = assets.rect;
+        if atlas_w == 0 || atlas_h == 0 {
             return Vec::new();
         }
         // Integer-multiple up-scale that fits inside the surface,
         // matching the publisher-logos cap so the title art reads at
         // the same scale boundary.
-        let scale_w = surface_w / sw.max(1);
-        let scale_h = surface_h / sh.max(1);
+        let scale_w = surface_w / atlas_w.max(1);
+        let scale_h = surface_h / atlas_h.max(1);
         let scale = scale_w.min(scale_h).clamp(1, 4);
-        let dst_w = sw * scale;
-        let dst_h = sh * scale;
-        let dst_x = (surface_w as i32 - dst_w as i32) / 2;
-        let dst_y = (surface_h as i32 - dst_h as i32) / 2;
+        let stage_w = atlas_w * scale;
+        let stage_h = atlas_h * scale;
+        let stage_x0 = (surface_w as i32 - stage_w as i32) / 2;
+        let stage_y0 = (surface_h as i32 - stage_h as i32) / 2;
         // Fade-in alpha matches the title-session FadeIn phase so the
         // bitmap eases up alongside the existing text overlay.
         let alpha = match session.phase() {
@@ -3285,14 +3318,36 @@ impl PlayWindowApp {
             }
             _ => 1.0,
         };
-        vec![legaia_engine_render::SpriteDraw {
-            dst: (dst_x, dst_y, dst_w, dst_h),
-            src: (sx, sy, sw, sh),
-            color: [1.0, 1.0, 1.0, alpha],
-        }]
+        let color = [1.0, 1.0, 1.0, alpha];
+        let emit_press_start = matches!(
+            session.phase(),
+            legaia_engine_core::title::TitlePhase::PressStart { .. }
+        );
+        use legaia_asset::title_pak;
+        let mut bands: Vec<(u32, u32, u32, u32)> = Vec::with_capacity(4);
+        bands.push(title_pak::TITLE_BAND_WORDMARK);
+        if emit_press_start {
+            bands.push(title_pak::TITLE_BAND_PRESS_START);
+        }
+        bands.push(title_pak::TITLE_BAND_TM_COPYRIGHT);
+        bands.push(title_pak::TITLE_BAND_C_COPYRIGHT);
+        let scale_i32 = scale as i32;
+        bands
+            .into_iter()
+            .map(|(bx, by, bw, bh)| legaia_engine_render::SpriteDraw {
+                dst: (
+                    stage_x0 + (bx as i32) * scale_i32,
+                    stage_y0 + (by as i32) * scale_i32,
+                    bw * scale,
+                    bh * scale,
+                ),
+                src: (bx, by, bw, bh),
+                color,
+            })
+            .collect()
     }
 
-    fn build_hud(&self, _w: u32, _h: u32) -> Vec<TextDraw> {
+    fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
         };
@@ -3300,7 +3355,7 @@ impl PlayWindowApp {
         // Boot UI is fullscreen - when active, suppress every other HUD layer
         // and just render the active panel (title screen / save-select).
         if self.boot_ui.is_active() {
-            return self.boot_ui_draws();
+            return self.boot_ui_draws(w, h);
         }
         let white = [1.0f32, 1.0, 1.0, 1.0];
         let dim = [0.7f32, 0.85, 1.0, 1.0];

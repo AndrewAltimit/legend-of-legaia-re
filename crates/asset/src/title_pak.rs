@@ -95,6 +95,28 @@ pub const OVERLAY_SAVE_MENU_TIM_SIZE: usize = 33312;
 /// Total byte length of [`OVERLAY_CARD_ICON_TIM_OFFSET`]'s TIM.
 pub const OVERLAY_CARD_ICON_TIM_SIZE: usize = 2592;
 
+/// Source sub-rect, in atlas pixels `(x, y, w, h)`, of the orb +
+/// "Legend of Legaia" wordmark band inside the 256×256 title TIM.
+/// Always drawn in PressStart and MainMenu phases - matches retail.
+pub const TITLE_BAND_WORDMARK: (u32, u32, u32, u32) = (0, 17, 256, 124);
+
+/// Source sub-rect of the `<DEMO>` band. **Demo-only** - retail builds
+/// never draw this region, even though it sits in the same TIM. Kept
+/// here as a reference; engines should NOT emit a draw for this rect.
+pub const TITLE_BAND_DEMO: (u32, u32, u32, u32) = (96, 151, 64, 10);
+
+/// Source sub-rect of the "PRESS START BUTTON" prompt label. Drawn
+/// only during the PressStart phase, matching retail.
+pub const TITLE_BAND_PRESS_START: (u32, u32, u32, u32) = (60, 178, 196, 16);
+
+/// Source sub-rect of the "TM of Sony Computer Entertainment America
+/// Inc." copyright line. Drawn in all post-fade phases.
+pub const TITLE_BAND_TM_COPYRIGHT: (u32, u32, u32, u32) = (4, 195, 244, 14);
+
+/// Source sub-rect of the "© 1998,1999 Sony Computer Entertainment
+/// Inc." copyright line. Drawn in all post-fade phases.
+pub const TITLE_BAND_C_COPYRIGHT: (u32, u32, u32, u32) = (8, 209, 234, 14);
+
 /// PSX TIM magic word (`0x00000010` LE).
 const TIM_MAGIC: u32 = 0x0000_0010;
 
