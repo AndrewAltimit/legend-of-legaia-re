@@ -1,4 +1,4 @@
--- symbols.lua  -- Ghidra-resolved function-name -> address map for probes.
+-- probe/symbols.lua  -- Ghidra-resolved function-name -> address map.
 --
 -- The actual table is auto-generated at ghidra/scripts/symbols.lua
 -- (committed; regenerate via scripts/pcsx-redux/build-symbols.py).
@@ -11,11 +11,11 @@
 --
 -- Usage from an autorun:
 --   package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
---   local symbols = require("symbols").load()  -- default path
+--   local symbols = require("probe.symbols").load()  -- default path
 --   probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)
 --
 -- Or pass an explicit path if the probe runs from a different cwd:
---   local symbols = require("symbols").load("/abs/path/to/symbols.lua")
+--   local symbols = require("probe.symbols").load("/abs/path/to/symbols.lua")
 
 local M = {}
 

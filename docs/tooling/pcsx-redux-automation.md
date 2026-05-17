@@ -96,10 +96,13 @@ state machine:
    `PCSX.quit(0)`.
 
 This pattern is factored out as a shared library at
-[`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua).
-A new probe doesn't reimplement the state machine, the memory readers,
-the save-state loader, the pad-override helpers, the CSV writer, or the
-live-snapshot writer - it imports them:
+[`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua),
+which is an umbrella that re-exports the per-concern submodules under
+[`scripts/pcsx-redux/lib/probe/`](../../scripts/pcsx-redux/lib/probe/) -
+`env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, and
+`symbols`. A new probe doesn't reimplement the state machine, the
+memory readers, the save-state loader, the pad-override helpers, the
+CSV writer, or the live-snapshot writer - it imports them:
 
 ```lua
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
@@ -179,7 +182,7 @@ Hard-coded `0x801DA51C`-style breakpoint targets break across overlay
 re-imports that shift function entry points. Use the symbol resolver:
 
 ```lua
-local symbols = require("symbols").load()  -- ghidra/scripts/symbols.lua
+local symbols = require("probe.symbols").load()  -- ghidra/scripts/symbols.lua
 probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)
 ```
 
