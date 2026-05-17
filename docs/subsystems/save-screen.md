@@ -292,3 +292,69 @@ Minimum 4 records observed: Vahn, Noa, Gala, Terra. Empty slots have all-zero by
 `legaia_save::card::read_retail_char_records(sc_block, max_records)` implements extraction.
 Constants: `RETAIL_GAME_DATA_OFFSET` (0x200), `RETAIL_CHAR_RECORD_HEADER_SIZE` (0x66F),
 `RETAIL_CHAR_RECORD_STRIDE` (0x414). All re-exported from the `legaia_save` crate root.
+
+## Sprite asset sources (Continue → Load screen)
+
+The retail Continue → Load screen overlays a "Load" header panel and
+N blue SLOT pills on top of the dimmed title art. Asset sources:
+
+| Visible element | Confirmed source | Notes |
+|---|---|---|
+| Title art behind (wordmark, NEW GAME / CONTINUE, copyright) | `PROT 0888` title TIM | Same atlas the title menu samples; rendered dimmed during SaveSelect. |
+| **`Load` panel TIM + CLUT** | **`PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2** | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(fb_x=0, fb_y=511)`; the panel-specific row (row 2 of the 16x16 CLUT block) uploads to VRAM `(32, 511)`. Byte-confirmed: the 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset 0x1934). Constants exported by `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
+| `Load` panel **9-slice tile geometry** | **PINNED — engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. No interior fill sprite is drawn — the "marbled blue" look is the dimmed title art bleeding through the empty middle of the 9-slice frame. |
+| **"Load" text glyphs** | **PINNED at `PROT.DAT[0x11218]` menu-glyph atlas CLUT row 13** | 4 glyphs at source `(192,32)`, `(240,64)`, `(16,64)`, `(64,64)` — each 14x15. CLUT row 13 signature byte-equal at `PROT.DAT[0x113CC]`. Engine port currently renders this text via the engine font; wiring the menu-glyph atlas as the title-text source is a follow-up. |
+| `SLOT 1` pill | `PROT 0899 + 0x16908 (33, 97, 45, 15)` decoded with CLUT 7 | Saturated blue baked label; byte-equal to retail. |
+| `SLOT 2` pill | `PROT 0899 + 0x16908 (33, 113, 45, 15)` decoded with CLUT 7 | Stacked directly below the SLOT 1 pill in the source atlas. |
+| Hand cursor | **OPEN** | Neither the save-menu TIM nor the menu-glyph atlas carries it. Likely lives in another pre-`init_data` gap TIM. |
+
+### Pinned 9-slice tile rects (system-UI TIM CLUT row 2)
+
+All rects are `(u, v, w, h)` in 256x192 source-page-pixel coords;
+all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
+
+| Tile | dst (fb_x, fb_y) | src (u, v, w, h) |
+|---|---|---|
+| Top-left corner | (6, 4) | (160, 0, 4, 4) |
+| Top-right corner | (83, 4) | (188, 0, 4, 4) |
+| Bottom-left corner | (6, 29) | (160, 28, 4, 4) |
+| Bottom-right corner | (83, 29) | (188, 28, 4, 4) |
+| Top edge ×3 | (10, 4) / (34, 4) / (58, 4) | (164, 0, 24, 4) |
+| Top edge remainder | (82, 4) | (164, 0, 1, 4) |
+| Bottom edge ×3 | (10, 29) / (34, 29) / (58, 29) | (164, 28, 24, 4) |
+| Bottom edge remainder | (82, 29) | (164, 28, 1, 4) |
+| Left edge | (6, 8) | (160, 4, 4, 21) |
+| Right edge | (83, 8) | (188, 4, 4, 21) |
+
+### How the panel TIM was pinned
+
+A capture+decode pipeline against PCSX-Redux save state slot 9 (parked
+on the load screen):
+
+1. `bash scripts/pcsx-redux/run_probe.sh --lua scripts/pcsx-redux/autorun_load_screen_dump.lua --sstate ~/Tools/pcsx-redux/SCUS94254.sstate9 --frames 180`
+   writes `load_screen_fb.{raw,meta}` (the rendered 320×228 framebuffer)
+   and `load_screen_ram.bin` (full 2 MiB main RAM).
+2. `python3 scripts/pcsx-redux/extract_vram_from_sstate.py ~/Tools/pcsx-redux/SCUS94254.sstate9 captures/load_screen_dump/<iso>/`
+   gunzips the save state, finds the `GPU.vram` protobuf field (tag
+   `0x1A 0x80 0x80 0x40`), and writes the 1 MiB raw BGR555 VRAM blob.
+3. `python3 scripts/pcsx-redux/decode_vram.py vram.bin vram.png`
+   renders the 1024×512 VRAM as a PNG so texture pages and CLUT rows
+   are visible.
+4. Cross-reference the panel-CLUT bytes at VRAM (32, 511) against
+   `extracted/PROT.DAT` byte-by-byte: the 32-byte signature matches
+   exactly one location (offset 0x1934 = CLUT row 2 of the TIM at
+   0x018E0). That TIM's pixel block decoded with CLUT row 2 contains
+   the full in-game menu UI atlas (HP/MP panels, money displays,
+   battle chrome, equipment frames, and the load-screen panel
+   chrome).
+
+### Current engine port status
+
+The engine port (`legaia_engine_core::save_menu_atlas` +
+`legaia_engine_render::save_select_chrome_draws_for`) ships the SLOT
+pills byte-equal to retail and uses a **speculative** PROT 0899
+sub-rect for the panel pending the 9-slice tile-geometry pin. The
+byte-confirmed system-UI TIM is declared in
+`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET` /
+`OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW`; switching the atlas builder over
+to it is gated on the GPULog probe.

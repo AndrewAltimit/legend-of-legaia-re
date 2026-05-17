@@ -21,3 +21,28 @@ u32  flags       // bits 0..2 = pixel mode (0=4bit, 1=8bit, 2=16bit, 3=24bit)
   <p>Some character meshes reference CLUT rows that live in <strong>different PROT entries</strong> from their TMD source (the runtime asset chain stitches them together). The viewer's <code>--vram-extra-dir</code> flag is the workaround until the chain is fully traced for every scene type.</p>
 </section>
 
+<section class="doc-section" id="multi-row-clut">
+  <h2>Multi-row CLUT blocks</h2>
+  <p>The PSX TIM spec allows a 4bpp TIM's CLUT block to contain multiple CLUT rows (each row is 16 BGR555 entries = 32 bytes), so the same indexed pixel data can be re-rendered under different palettes. Legaia uses this extensively for system-UI sprite sheets:</p>
+  <table>
+    <thead><tr><th>Source TIM</th><th>Layout</th><th>CLUT-row usage</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>System-UI sprite sheet</strong> at <code>PROT.DAT[0x018E0]</code> (4bpp, 256&times;192, 16&times;16 CLUT block)</td>
+        <td>Lives in the unindexed pre-<code>init_data</code> gap &mdash; not reachable through the per-PROT-entry walker. Constants in <code>legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*</code>.</td>
+        <td><strong>Row 2</strong> = load-screen panel chrome (gold-bronze 9-slice border + marbled-blue interior region). <strong>Row 7</strong> = pointing-finger cursor. Other rows render HP/MP/money panels, battle chrome, equipment frames.</td>
+      </tr>
+      <tr>
+        <td><strong>Menu-glyph atlas</strong> at <code>PROT.DAT[0x11218]</code> (4bpp, 256&times;256, multi-row CLUT block)</td>
+        <td>Same pre-<code>init_data</code> gap. See <code>legaia_asset::menu_glyph_atlas</code>.</td>
+        <td><strong>Row 13</strong> carries the &ldquo;Load&rdquo; text glyphs the load screen draws inside its panel. Other rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Both TIMs are byte-confirmed against retail VRAM dumps. See <a href="../subsystems/save-screen.html#sprite-sources">subsystems/save-screen &mdash; sprite asset sources</a> for the pinning method.</p>
+  <p>Browse them in the asset viewer with:</p>
+<pre><code>asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 2   # system-UI panel CLUT
+asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # system-UI cursor CLUT
+asset-viewer tim extracted/PROT.DAT --offset 0x11218 --clut 13  # menu-glyph "Load" text CLUT</code></pre>
+</section>
+

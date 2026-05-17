@@ -40,6 +40,7 @@ pub mod monster_catalog;
 pub mod options;
 pub mod publisher_logos;
 pub mod ram_map;
+pub mod save_menu_atlas;
 pub mod save_select;
 pub mod scene;
 pub mod scene_assets;

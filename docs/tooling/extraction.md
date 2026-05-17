@@ -134,6 +134,14 @@ Once assets are extracted, browse them interactively:
 # Single TIM
 asset-viewer tim extracted/PROT/tim/<entry>.TIM
 
+# TIM at a non-zero offset within a larger file. Use this for TIMs in
+# the unindexed pre-`init_data` gap of PROT.DAT (system-UI sprite
+# sheet, menu-glyph atlas, etc.) — these aren't reachable through
+# the `prot` browser because no TOC entry covers them.
+asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 2   # system-UI panel CLUT
+asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # system-UI cursor CLUT
+asset-viewer tim extracted/PROT.DAT --offset 0x11218 --clut 13  # menu-glyph atlas, "Load" text CLUT
+
 # A Legaia TMD as a 3D mesh (auto-rotating)
 asset-viewer tmd extracted/streaming/<entry>/chunk##_TMD/####.tmd
 

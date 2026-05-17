@@ -59,12 +59,21 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Display a single TIM in a window.
+    /// Display a single TIM in a window. PATH may be a standalone
+    /// `.tim` file, a PROT entry containing a TIM at its start, or
+    /// `extracted/PROT.DAT` itself paired with `--offset` for TIMs
+    /// in the unindexed pre-`init_data` gap (system-UI sheet at
+    /// `0x018E0`, menu-glyph atlas at `0x11218`, etc.).
     Tim {
         path: PathBuf,
         /// CLUT index to use (0 by default, ignored for direct-color TIMs).
         #[arg(long, default_value_t = 0)]
         clut: usize,
+        /// Byte offset where the TIM header lives. Default 0 = read
+        /// from the start of the file. Use hex (e.g. `0x018E0`) for
+        /// known gap-resident TIMs in `PROT.DAT`.
+        #[arg(long, value_parser = parse_hex_u64, default_value_t = 0)]
+        offset: u64,
     },
     /// Play one VAG sample from a VAB bank.
     Vab {
@@ -479,6 +488,30 @@ fn load_tim(bytes: &[u8], clut_idx: usize) -> Result<(Vec<u8>, u32, u32)> {
 fn load_tim_path(path: &Path, clut_idx: usize) -> Result<(Vec<u8>, u32, u32)> {
     let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     load_tim(&bytes, clut_idx)
+}
+
+/// Same as [`load_tim_path`] but reads a TIM at a non-zero byte
+/// offset within `path`. Useful for parsing TIMs embedded in larger
+/// containers (PROT entries) and for TIMs in the unindexed pre-
+/// `init_data` gap of `PROT.DAT` (e.g. the system-UI sprite sheet at
+/// offset `0x018E0` or the menu-glyph atlas at offset `0x11218` —
+/// see [`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`]).
+fn load_tim_path_at_offset(
+    path: &Path,
+    offset: u64,
+    clut_idx: usize,
+) -> Result<(Vec<u8>, u32, u32)> {
+    let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let off = offset as usize;
+    if off >= bytes.len() {
+        anyhow::bail!(
+            "offset 0x{:X} past end of {} ({} bytes)",
+            off,
+            path.display(),
+            bytes.len()
+        );
+    }
+    load_tim(&bytes[off..], clut_idx)
 }
 
 /// Decode VAG sample `idx` from a VAB header located at `offset` in `path`.
@@ -3137,12 +3170,31 @@ fn main() -> Result<()> {
     }
 
     let (pending, browser, mesh_browser, stage_browser) = match args.cmd {
-        Cmd::Tim { path, clut } => {
-            let (rgba, w, h) = load_tim_path(&path, clut)?;
-            log::info!("loaded TIM {}x{} ({} bytes RGBA)", w, h, rgba.len());
+        Cmd::Tim { path, clut, offset } => {
+            let (rgba, w, h) = if offset > 0 {
+                load_tim_path_at_offset(&path, offset, clut)?
+            } else {
+                load_tim_path(&path, clut)?
+            };
+            log::info!(
+                "loaded TIM {}x{} ({} bytes RGBA){}",
+                w,
+                h,
+                rgba.len(),
+                if offset > 0 {
+                    format!(" @ 0x{offset:X}")
+                } else {
+                    String::new()
+                }
+            );
+            let title = if offset > 0 {
+                format!("TIM {} @ 0x{:X} (CLUT {})", path.display(), offset, clut)
+            } else {
+                format!("TIM {}", path.display())
+            };
             (
                 Some(Display {
-                    title: format!("TIM {}", path.display()),
+                    title,
                     image: Some((rgba, w, h)),
                     audio: None,
                     mesh: None,

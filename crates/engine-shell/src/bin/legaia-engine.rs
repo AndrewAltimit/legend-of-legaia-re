@@ -2319,6 +2319,22 @@ struct MenuGlyphAssets {
     atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
+/// Pre-decoded save-menu UI atlas + GPU upload. Created once at boot
+/// when the disc has both a readable PROT 0899 (carries the SLOT 1 /
+/// SLOT 2 pill sprites with CLUT 7) AND a readable PROT.DAT (carries
+/// the system-UI sprite sheet at offset `0x018E0` with the 9-slice
+/// panel chrome under CLUT row 2). Reused by [`BootUiState::SaveSelect`]
+/// to compose the retail 81×29 "Load" panel from 14 byte-pinned
+/// textured-sprite primitives + the 2 slot pills over the dimmed
+/// title background.
+struct SaveMenuAssets {
+    /// Source rects for the 9-slice panel tiles + slot pills.
+    rects: legaia_engine_render::SaveMenuAtlasRects,
+    /// GPU-resident sprite atlas (composite 256×256: panel tiles from
+    /// system-UI TIM + slot pills from PROT 0899's save-menu TIM).
+    atlas: legaia_engine_render::UploadedSpriteAtlas,
+}
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -2346,6 +2362,12 @@ struct PlayWindowApp {
     /// CPU-side menu-glyph atlas waiting for renderer upload. Moved
     /// into `menu_glyphs` on the first frame the renderer is available.
     pending_menu_glyph_atlas: Option<legaia_engine_core::menu_glyph_atlas::MenuGlyphAtlas>,
+    /// Save-menu UI atlas (built once from PROT 0899). `None` if the
+    /// disc isn't loaded or the save-menu TIM doesn't parse.
+    save_menu: Option<SaveMenuAssets>,
+    /// CPU-side save-menu atlas waiting for renderer upload. Moved
+    /// into `save_menu` on the first frame the renderer is available.
+    pending_save_menu_atlas: Option<legaia_engine_core::save_menu_atlas::SaveMenuAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
@@ -2819,13 +2841,20 @@ impl PlayWindowApp {
                     }
                     SelectPhase::Done(_) => return Vec::new(),
                 };
+                let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+                // Skip the ASCII `>` cursor when the sprite-based
+                // pointing-finger cursor is being emitted alongside
+                // (i.e. when the save-menu atlas is loaded).
+                let emit_text_cursor = self.save_menu.is_none();
                 legaia_engine_render::save_select_draws_for(
                     &self.font,
-                    "LOAD",
+                    "Load",
                     &rows,
                     cursor,
                     confirm,
-                    (16, 32),
+                    stage_origin,
+                    stage_scale,
+                    emit_text_cursor,
                 )
             }
             BootUiState::Options(s) => {
@@ -3016,13 +3045,25 @@ impl PlayWindowApp {
                     }
                     SelectPhase::Done(_) => return Vec::new(),
                 };
+                // Field-menu Save subsession reuses the load-screen
+                // chrome stage so the panel/pill sprites match retail
+                // positions even when entered mid-game.
+                let (sw, sh) = self
+                    .win
+                    .renderer()
+                    .map(|r| r.surface_size())
+                    .unwrap_or((1, 1));
+                let (stage_origin, stage_scale) = self.save_select_stage(sw, sh);
+                let emit_text_cursor = self.save_menu.is_none();
                 legaia_engine_render::save_select_draws_for(
                     &self.font,
-                    "SAVE",
+                    "Save",
                     &rows,
                     cursor,
                     confirm,
-                    (16, 32),
+                    stage_origin,
+                    stage_scale,
+                    emit_text_cursor,
                 )
             }
             FieldMenuSubsession::Spells(s) => {
@@ -3510,6 +3551,37 @@ impl PlayWindowApp {
                 Err(e) => log::warn!("menu-glyph atlas upload skipped: {e:#}"),
             }
         }
+        // Upload the save-menu UI atlas (PROT 0899) the same way.
+        if let (Some(atlas_data), Some(r)) = (
+            self.pending_save_menu_atlas.take(),
+            self.win.renderer.as_ref(),
+        ) {
+            match r.upload_sprite_atlas(&atlas_data.rgba, atlas_data.width, atlas_data.height) {
+                Ok(atlas) => {
+                    log::info!(
+                        "play-window: save-menu atlas uploaded ({}x{})",
+                        atlas_data.width,
+                        atlas_data.height
+                    );
+                    let rects = legaia_engine_render::SaveMenuAtlasRects {
+                        panel_tl: atlas_data.band_panel_tl(),
+                        panel_tr: atlas_data.band_panel_tr(),
+                        panel_bl: atlas_data.band_panel_bl(),
+                        panel_br: atlas_data.band_panel_br(),
+                        panel_top: atlas_data.band_panel_top(),
+                        panel_bot: atlas_data.band_panel_bot(),
+                        panel_left: atlas_data.band_panel_left(),
+                        panel_right: atlas_data.band_panel_right(),
+                        slot1: atlas_data.band_slot1(),
+                        slot2: atlas_data.band_slot2(),
+                        cursor: atlas_data.band_cursor(),
+                        panel_interior: atlas_data.band_panel_interior(),
+                    };
+                    self.save_menu = Some(SaveMenuAssets { rects, atlas });
+                }
+                Err(e) => log::warn!("save-menu atlas upload skipped: {e:#}"),
+            }
+        }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
@@ -3640,6 +3712,78 @@ impl PlayWindowApp {
         out
     }
 
+    /// Canonical PSX-framebuffer (320×240) stage origin + scale, shared
+    /// by every boot-UI element (title art, save-select chrome, slot
+    /// pills, cursor, menu glyphs). Every retail-pinned position is
+    /// expressed in 320×240 framebuffer pixels, so this is the single
+    /// stage transform that maps them to screen coords. Using the same
+    /// stage for the title art AND the save-select panel ensures
+    /// relative positions remain correct at any window resolution.
+    fn save_select_stage(&self, surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
+        let stage_w = legaia_engine_render::BOOT_UI_STAGE_W;
+        let stage_h = legaia_engine_render::BOOT_UI_STAGE_H;
+        let scale = (surface_w / stage_w).min(surface_h / stage_h).clamp(1, 4);
+        let sw = stage_w * scale;
+        let sh = stage_h * scale;
+        let x0 = (surface_w as i32 - sw as i32) / 2;
+        let y0 = (surface_h as i32 - sh as i32) / 2;
+        ((x0, y0), scale)
+    }
+
+    /// Build the [`legaia_engine_render::SpriteDraw`] list for the
+    /// retail save-screen chrome (panel frame + slot pills). Anchored
+    /// at the same 256×256 stage origin the title atlas uses so the
+    /// chrome overlays the title art at retail-equivalent positions.
+    ///
+    /// Returns an empty vec when the save-menu atlas wasn't uploaded
+    /// (e.g. running without a disc) or when the boot UI isn't in a
+    /// SaveSelect / field-Save sub-state.
+    fn save_select_chrome_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let Some(assets) = self.save_menu.as_ref() else {
+            return Vec::new();
+        };
+        let (slot_count, cursor_row): (usize, usize) = match &self.boot_ui {
+            BootUiState::SaveSelect(s) => {
+                (s.slots().len().min(2), (s.current_slot() as usize).min(1))
+            }
+            BootUiState::FieldMenu {
+                sub: Some(active), ..
+            } => {
+                use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+                if let FieldMenuSubsession::Save(s) = active {
+                    (s.slots().len().min(2), (s.current_slot() as usize).min(1))
+                } else {
+                    return Vec::new();
+                }
+            }
+            _ => return Vec::new(),
+        };
+        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        let mut draws = legaia_engine_render::save_select_chrome_draws_for(
+            &assets.rects,
+            slot_count,
+            stage_origin,
+            stage_scale,
+        );
+        // Pointing-finger cursor sprite — retail's small white hand
+        // pointing at the selected slot pill, byte-pinned to CLUT row
+        // 7 of the system-UI TIM. Emit last so it draws on top of
+        // the pills.
+        if slot_count > 0 {
+            draws.push(legaia_engine_render::save_select_cursor_draw_for(
+                &assets.rects,
+                cursor_row,
+                stage_origin,
+                stage_scale,
+            ));
+        }
+        draws
+    }
+
     /// Build the [`legaia_engine_render::SpriteDraw`] list for the
     /// title-screen quad. Composes the retail title screen by drawing
     /// per-band sub-rects of the PROT 0888 title TIM: orb + wordmark
@@ -3659,15 +3803,32 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
-        let BootUiState::Title(session) = &self.boot_ui else {
-            return Vec::new();
+        // Active during both the Title phases and the SaveSelect boot
+        // sub-state. SaveSelect dims the bands to ~45 % brightness so
+        // the panel + slot pills layered on top read clearly.
+        let title_session: Option<&legaia_engine_core::title::TitleSession> = match &self.boot_ui {
+            BootUiState::Title(s) => Some(s),
+            BootUiState::SaveSelect(_) => None,
+            _ => return Vec::new(),
         };
-        if matches!(
-            session.phase(),
-            legaia_engine_core::title::TitlePhase::Done(_)
-        ) {
-            return Vec::new();
-        }
+        let (alpha, dim) = if let Some(session) = title_session {
+            if matches!(
+                session.phase(),
+                legaia_engine_core::title::TitlePhase::Done(_)
+            ) {
+                return Vec::new();
+            }
+            let alpha = match session.phase() {
+                legaia_engine_core::title::TitlePhase::FadeIn { frames_remaining } => {
+                    let total = session.fade_in_frames.max(1) as f32;
+                    1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
+                }
+                _ => 1.0,
+            };
+            (alpha, false)
+        } else {
+            (1.0, true)
+        };
         let Some(assets) = self.title_screen.as_ref() else {
             return Vec::new();
         };
@@ -3675,29 +3836,20 @@ impl PlayWindowApp {
         if atlas_w == 0 || atlas_h == 0 {
             return Vec::new();
         }
-        // Integer-multiple up-scale that fits inside the surface,
-        // matching the publisher-logos cap so the title art reads at
-        // the same scale boundary.
-        let scale_w = surface_w / atlas_w.max(1);
-        let scale_h = surface_h / atlas_h.max(1);
-        let scale = scale_w.min(scale_h).clamp(1, 4);
-        let stage_w = atlas_w * scale;
-        let stage_h = atlas_h * scale;
-        let stage_x0 = (surface_w as i32 - stage_w as i32) / 2;
-        let stage_y0 = (surface_h as i32 - stage_h as i32) / 2;
-        // Fade-in alpha matches the title-session FadeIn phase so the
-        // bitmap eases up alongside the existing text overlay.
-        let alpha = match session.phase() {
-            legaia_engine_core::title::TitlePhase::FadeIn { frames_remaining } => {
-                let total = session.fade_in_frames.max(1) as f32;
-                1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
-            }
-            _ => 1.0,
-        };
-        let color = [1.0, 1.0, 1.0, alpha];
+        // Share the canonical PSX framebuffer (320×240) stage with
+        // every other boot-UI element so the title art aligns with
+        // the save-select panel, slot pills, and cursor — all of
+        // which use retail-pinned framebuffer coords. The title TIM's
+        // bands are sampled at their natural src (sx, sy) but drawn
+        // at dst (TITLE_ART_POS + sx, TITLE_ART_POS + sy), i.e.
+        // offset by retail's title-quad top-left placement.
+        let ((stage_x0, stage_y0), scale) = self.save_select_stage(surface_w, surface_h);
+        let lum = if dim { 0.45 } else { 1.0 };
+        let color = [lum, lum, lum, alpha];
         let emit_press_start = matches!(
-            session.phase(),
-            legaia_engine_core::title::TitlePhase::PressStart { .. }
+            &self.boot_ui,
+            BootUiState::Title(s)
+                if matches!(s.phase(), legaia_engine_core::title::TitlePhase::PressStart { .. })
         );
         use legaia_asset::title_pak;
         // Each entry: (src_rect, dst_x_src, dst_y_src, tint). Most
@@ -3708,6 +3860,11 @@ impl PlayWindowApp {
         // ~14 px apart between the wordmark and the copyright lines).
         let scale_i32 = scale as i32;
         let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        // `dst_src_x/y` are coords inside the title TIM's source rect
+        // (0..256, 0..256). We offset by TITLE_ART_POS so the result
+        // lands at retail's framebuffer position.
+        let title_pos_x = legaia_engine_render::TITLE_ART_POS.0;
+        let title_pos_y = legaia_engine_render::TITLE_ART_POS.1;
         let push_band = |out: &mut Vec<legaia_engine_render::SpriteDraw>,
                          src: (u32, u32, u32, u32),
                          dst_src_x: i32,
@@ -3716,8 +3873,8 @@ impl PlayWindowApp {
             let (sx, sy, sw, sh) = src;
             out.push(legaia_engine_render::SpriteDraw {
                 dst: (
-                    stage_x0 + dst_src_x * scale_i32,
-                    stage_y0 + dst_src_y * scale_i32,
+                    stage_x0 + (title_pos_x + dst_src_x) * scale_i32,
+                    stage_y0 + (title_pos_y + dst_src_y) * scale_i32,
                     sw * scale,
                     sh * scale,
                 ),
@@ -3736,24 +3893,42 @@ impl PlayWindowApp {
             push_band(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
         }
 
-        // Main-menu rows (NEW GAME / CONTINUE) only during MainMenu.
-        // Retail uses colour as the selection indicator — selected row
-        // bright/white, unselected row dim/gray. No arrow cursor.
-        if let legaia_engine_core::title::TitlePhase::MainMenu { cursor } = session.phase() {
+        // Main-menu rows (NEW GAME / CONTINUE) — drawn during MainMenu
+        // (selected row bright, unselected dim) and also during
+        // SaveSelect (both dim — they sit in the background behind the
+        // slot pills and don't reflect a live cursor).
+        let menu_state: Option<(u8, bool)> = match &self.boot_ui {
+            BootUiState::Title(s) => match s.phase() {
+                legaia_engine_core::title::TitlePhase::MainMenu { cursor } => Some((cursor, true)),
+                _ => None,
+            },
+            BootUiState::SaveSelect(_) => Some((1, false)),
+            _ => None,
+        };
+        if let Some((cursor, has_focus)) = menu_state {
             let row_white = color;
             let row_dim = [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, color[3]];
-            // Centre the menu strings horizontally inside the 256-wide
-            // stage. Stack them vertically with a 4 px gap between
-            // rows so the small-caps glyphs sit clearly apart.
             let ng = title_pak::TITLE_BAND_MENU_NEW_GAME;
             let co = title_pak::TITLE_BAND_MENU_CONTINUE;
-            let ng_x = ((256 - ng.2) / 2) as i32;
-            let co_x = ((256 - co.2) / 2) as i32;
+            // Center inside the title-art width so the rows sit on
+            // the screen's horizontal center (fb_x=160) after the
+            // TITLE_ART_POS.x=33 offset is applied by push_band.
+            let title_art_w = legaia_engine_render::TITLE_ART_SIZE.0 as u32;
+            let ng_x = ((title_art_w - ng.2) / 2) as i32;
+            let co_x = ((title_art_w - co.2) / 2) as i32;
             // Sit the menu between wordmark (ends y~141) and copyrights (start y~195).
             let ng_y: i32 = 154;
             let co_y: i32 = ng_y + ng.3 as i32 + 4;
-            let ng_tint = if cursor == 0 { row_white } else { row_dim };
-            let co_tint = if cursor == 1 { row_white } else { row_dim };
+            let ng_tint = if has_focus && cursor == 0 {
+                row_white
+            } else {
+                row_dim
+            };
+            let co_tint = if has_focus && cursor == 1 {
+                row_white
+            } else {
+                row_dim
+            };
             push_band(&mut out, ng, ng_x, ng_y, ng_tint);
             push_band(&mut out, co, co_x, co_y, co_tint);
         }
@@ -4255,6 +4430,7 @@ impl ApplicationHandler for PlayWindowApp {
                     let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
                     let title_draw_vec = self.title_screen_sprite_draws(w, h);
                     let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
+                    let save_chrome_draw_vec = self.save_select_chrome_sprite_draws(w, h);
                     let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                         atlas: &p.atlas,
                         draws: &logo_draw_vec,
@@ -4267,6 +4443,10 @@ impl ApplicationHandler for PlayWindowApp {
                         atlas: &m.atlas,
                         draws: &menu_glyph_draw_vec,
                     });
+                    let save_chrome_overlay = self.save_menu.as_ref().map(|sm| TextOverlay {
+                        atlas: &sm.atlas,
+                        draws: &save_chrome_draw_vec,
+                    });
 
                     // Force a pure-black background during boot UI so the
                     // logos / title / save-select panels read on PSX-style
@@ -4277,6 +4457,11 @@ impl ApplicationHandler for PlayWindowApp {
                         None
                     };
 
+                    // Slot 1: logos OR title-art bands (title still
+                    // emits during SaveSelect, dimmed). Slot 2: either
+                    // the save-menu chrome (panel + slot pills) when
+                    // SaveSelect is active, or the menu-glyph atlas
+                    // (deprecated no-disc title-menu fallback) otherwise.
                     let sprites_slot_1 = if !logo_draw_vec.is_empty() {
                         logo_overlay.as_ref()
                     } else if !title_draw_vec.is_empty() {
@@ -4284,7 +4469,9 @@ impl ApplicationHandler for PlayWindowApp {
                     } else {
                         None
                     };
-                    let sprites_slot_2 = if !menu_glyph_draw_vec.is_empty() {
+                    let sprites_slot_2 = if !save_chrome_draw_vec.is_empty() {
+                        save_chrome_overlay.as_ref()
+                    } else if !menu_glyph_draw_vec.is_empty() {
                         menu_glyph_overlay.as_ref()
                     } else {
                         None
@@ -4637,6 +4824,52 @@ fn cmd_play_window(
         }
     };
 
+    // Try to decode the save-menu UI atlas. Needs TWO disc sources:
+    //   1. PROT 0899's extended footprint @ `OVERLAY_SAVE_MENU_TIM_OFFSET`
+    //      carries the SLOT 1 / SLOT 2 pill sprites (CLUT 7).
+    //   2. Raw PROT.DAT @ `OVERLAY_SYSTEM_UI_TIM_OFFSET = 0x018E0`
+    //      carries the 9-slice panel chrome (CLUT row 2).
+    // The atlas builder composites both into one 256x256 RGBA atlas;
+    // see `crates/engine-core/src/save_menu_atlas.rs`. The 9-slice
+    // tile geometry was pinned via `scripts/pcsx-redux/scan_panel_prims.py`
+    // against sstate9's RAM dump — every primitive's source u/v + CLUT
+    // is byte-pinned to the retail render.
+    let save_menu_atlas_data = match (
+        session
+            .host
+            .index
+            .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32),
+        session.host.index.prot_dat_raw_bytes(
+            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
+            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_SIZE,
+        ),
+    ) {
+        (Ok(pill_bytes), Ok(panel_bytes)) => {
+            match legaia_engine_core::save_menu_atlas::build_atlas(&panel_bytes, &pill_bytes) {
+                Ok(a) => {
+                    log::info!(
+                        "play-window: save-menu atlas built ({}x{}) — 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
+                        a.width,
+                        a.height
+                    );
+                    Some(a)
+                }
+                Err(e) => {
+                    log::warn!("play-window: save-menu build failed: {e:#}");
+                    None
+                }
+            }
+        }
+        (Err(e), _) => {
+            log::warn!("play-window: PROT 0899 read failed: {e:#}");
+            None
+        }
+        (_, Err(e)) => {
+            log::warn!("play-window: PROT.DAT raw read failed: {e:#}");
+            None
+        }
+    };
+
     let initial_boot_ui = if boot_ui {
         if publisher_logos_atlas_data.is_some() {
             BootUiState::PublisherLogos(
@@ -4666,6 +4899,8 @@ fn cmd_play_window(
         pending_title_screen_atlas: title_screen_atlas_data,
         menu_glyphs: None,
         pending_menu_glyph_atlas: menu_glyph_atlas_data,
+        save_menu: None,
+        pending_save_menu_atlas: save_menu_atlas_data,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),

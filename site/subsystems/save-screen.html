@@ -97,6 +97,48 @@
   <p>The scratchpad word <code>_DAT_1F800394</code> is the field-VM transient that opcodes <code>0x2E</code> (set bit), <code>0x2F</code> (clear bit), and <code>0x30</code> (test bit) operate on. A static sweep across all dumped functions finds one non-RMW writer: <code>FUN_8001DCF8</code> at PC <code>0x8001E17C</code>, which seeds the lower 16 bits from <code>mode_table[mode_idx].param</code> on mode init. No retail code path copies between the wide bitmap and the scratchpad word, so the engine's <code>SaveExt::story_flags</code> (mirroring the scratchpad word) and <code>SaveExt::story_flag_bits</code> (mirroring the bitmap) round-trip independently &mdash; that matches retail behaviour.</p>
 </section>
 
+<section class="doc-section" id="sprite-sources">
+  <h2>Continue &rarr; Load screen sprite sources</h2>
+  <p>The retail Continue &rarr; Load screen overlays a &ldquo;Load&rdquo; header panel and N blue SLOT pills on top of dimmed title art, with a pointing-finger cursor next to the active pill. Every sprite source is byte-confirmed via VRAM dump + GP0 primitive scan at PCSX-Redux save state 9:</p>
+  <table>
+    <thead><tr><th>Element</th><th>Source</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Title art behind</td>
+        <td><code>PROT 0888</code> title TIM, dst <code>(33, 6)</code> &mdash; <code>(287, 154)</code></td>
+        <td>Same atlas the title menu samples; rendered dimmed during SaveSelect.</td>
+      </tr>
+      <tr>
+        <td><strong>&ldquo;Load&rdquo; panel chrome (9-slice)</strong></td>
+        <td><strong><code>PROT.DAT[0x018E0]</code> system-UI sprite sheet, CLUT row 2</strong></td>
+        <td>4bpp 256&times;192 TIM in the unindexed pre-<code>init_data</code> PROT.DAT gap. The 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset <code>0x1934</code>). Retail composes the 81&times;29 panel at dst <code>(6, 4)</code> from 14 textured-sprite primitives (cmd <code>0x64</code>): 4 corners (4&times;4 each), top/bottom edges (24&times;4 tiles repeated 3&times; with a 1&times;4 remainder), and left/right edges (4&times;21).</td>
+      </tr>
+      <tr>
+        <td>Panel interior fill</td>
+        <td>Same TIM, CLUT row 2, source (128, 0, 32, 29)</td>
+        <td>3 gouraud-shaded textured-quad primitives (cmd <code>0x3C</code>) with a vertical gray gradient <code>rgb(64,64,64) &rarr; rgb(136,136,136)</code> tile the marbled-blue stippled pattern across the panel interior (2 full 32-wide copies + 1 17-wide remainder).</td>
+      </tr>
+      <tr>
+        <td>&ldquo;Load&rdquo; text glyphs</td>
+        <td><code>PROT.DAT[0x11218]</code> menu-glyph atlas, CLUT row 13</td>
+        <td>4 glyphs at source <code>(192, 32)</code>, <code>(240, 64)</code>, <code>(16, 64)</code>, <code>(64, 64)</code> &mdash; each 14&times;15. CLUT row 13 signature byte-equal at <code>PROT.DAT[0x113CC]</code>.</td>
+      </tr>
+      <tr>
+        <td><strong>Pointing-finger cursor</strong></td>
+        <td><strong>Same system-UI TIM, CLUT row 7</strong>, source <code>(152, 64, 16, 16)</code></td>
+        <td>Retail dispatches as a single textured-sprite at dst <code>(114, 100)</code>; shifts down by 17 px for SLOT 2.</td>
+      </tr>
+      <tr>
+        <td>SLOT pills</td>
+        <td><code>PROT 0899 + 0x16908</code> save-menu TIM, CLUT 7, sources <code>(33, 97, 45, 15)</code> and <code>(33, 113, 45, 15)</code></td>
+        <td>Saturated blue with baked &ldquo;SLOT 1&rdquo; / &ldquo;SLOT 2&rdquo; labels. Byte-equal to retail.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Method</strong>: pin CLUT TIMs via PCSX-Redux save state &rarr; <code>extract_vram_from_sstate.py</code> &rarr; locate CLUT row in VRAM &rarr; grep the byte signature in <code>PROT.DAT</code>. Pin tile geometry by scanning the captured main RAM for GPU primitives (<code>scan_panel_prims.py</code> for textured sprites, <code>scan_textured_quads.py</code> for gouraud-shaded quads) and reading the source u/v + CLUT inline in each primitive. See the full tooling chain at <a href="../tooling/pcsx-redux-automation.html">tooling/pcsx-redux-automation</a>.</p>
+  <p><strong>Engine port</strong>: <code>legaia_engine_core::save_menu_atlas</code> composes a single 256&times;256 RGBA atlas containing the 9-slice panel tiles + cursor + slot pills, decoded with the correct CLUT row each, and <code>legaia_engine_render::save_select_chrome_draws_for</code> emits the retail-pinned tile composition. All retail framebuffer coordinates (panel <code>(6, 4)</code>, cursor <code>(114, 100)</code>, etc.) are expressed in the canonical <code>BOOT_UI_STAGE_W &times; BOOT_UI_STAGE_H = 320 &times; 240</code> stage so they remain in lockstep at any window resolution.</p>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
   <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <code>docs/subsystems/save-screen.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>.</p>
