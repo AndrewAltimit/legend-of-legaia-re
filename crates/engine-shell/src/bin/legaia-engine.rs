@@ -30,6 +30,10 @@ use legaia_engine_render::{
     text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_engine_shell::vram_oracle::{
+    TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
+    load_runtime_vram_from_save, vram_to_le_bytes,
+};
 use legaia_engine_shell::{BootConfig, BootSession};
 use legaia_font::Font;
 use legaia_prot::cdname;
@@ -141,10 +145,26 @@ enum Cmd {
     /// save state. Reports per-64x64-tile overlap and writes a
     /// colour-coded diff PNG (greyscale = exact match, blue = both
     /// non-zero but different, red = runtime-only, green = engine-only).
+    ///
+    /// Two modes:
+    ///   - **Explicit**: pass `--scene` + `--runtime-vram` to point at a
+    ///     CDNAME label and a 1 MiB VRAM dump produced by
+    ///     `mednafen-state vram-dump --out-bin`.
+    ///   - **Scenario**: pass `--scenario <label>` to resolve both from
+    ///     `scripts/scenarios.toml`. The scene comes from
+    ///     `expected_active_scene`, the VRAM is read live from the
+    ///     scenario's `.mc{slot}` save via `legaia-mednafen`'s GPU
+    ///     section parser. Optional `--frames N` boots a `BootSession`
+    ///     and ticks the engine before sampling, so dynamic VRAM
+    ///     uploads land before the diff. `--strict` asserts byte-exact
+    ///     match in the texpage region (y ≥ 256) and fails with the
+    ///     first divergent (row, col).
     VramOracle {
-        /// CDNAME scene name (e.g. `town01`).
+        /// CDNAME scene name (e.g. `town01`). Required in explicit mode;
+        /// derived from the scenario's `expected_active_scene` in
+        /// scenario mode.
         #[arg(long)]
-        scene: String,
+        scene: Option<String>,
         /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
         #[arg(long, default_value = "extracted")]
         extracted_root: PathBuf,
@@ -152,9 +172,33 @@ enum Cmd {
         /// a `.bin` disc image.
         #[arg(long)]
         disc: Option<PathBuf>,
-        /// Required: 1 MiB BGR555 LE VRAM blob from a save state.
+        /// Explicit-mode VRAM blob: 1 MiB BGR555 LE bytes from a save
+        /// state. Required when `--scenario` is not set; ignored when
+        /// `--scenario` is set.
         #[arg(long)]
-        runtime_vram: PathBuf,
+        runtime_vram: Option<PathBuf>,
+        /// Scenario-mode entry: scenario label looked up in the
+        /// manifest. Resolves scene + .mc save path automatically. The
+        /// scenario must have `expected_active_scene` populated.
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Scenario manifest path. Default: `scripts/scenarios.toml`.
+        #[arg(long, default_value = "scripts/scenarios.toml")]
+        manifest: PathBuf,
+        /// Scenario mode only: number of engine frames to tick before
+        /// sampling VRAM. Default 0 = pure pre-pass diff (no engine
+        /// involvement, identical to the legacy explicit-mode build).
+        /// Set > 0 to capture VRAM state after the engine has settled
+        /// dynamic uploads.
+        #[arg(long, default_value_t = 0)]
+        frames: u64,
+        /// Strict mode: assert byte-exact match in the texpage region
+        /// (y ≥ 256). Reports first divergent (row, col) with hex
+        /// values and exits non-zero. The framebuffer half (y < 256)
+        /// is reported but not asserted - the engine port renders
+        /// direct-to-wgpu, not to a simulated PSX framebuffer.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
         /// Optional: write a 1024x512 RGBA8 colour-coded diff PNG.
         #[arg(long)]
         diff_png: Option<PathBuf>,
@@ -577,20 +621,28 @@ fn main() -> Result<()> {
             extracted_root,
             disc,
             runtime_vram,
+            scenario,
+            manifest,
+            frames,
+            strict,
             diff_png,
             tiles,
             rows_csv,
             clut_regions,
-        } => cmd_vram_oracle(
-            &scene,
-            &extracted_root,
-            disc.as_deref(),
-            &runtime_vram,
-            diff_png.as_deref(),
+        } => cmd_vram_oracle(VramOracleArgs {
+            scene: scene.as_deref(),
+            extracted_root: &extracted_root,
+            disc: disc.as_deref(),
+            runtime_vram: runtime_vram.as_deref(),
+            scenario: scenario.as_deref(),
+            manifest: &manifest,
+            frames,
+            strict,
+            diff_png: diff_png.as_deref(),
             tiles,
-            rows_csv.as_deref(),
+            rows_csv: rows_csv.as_deref(),
             clut_regions,
-        ),
+        }),
         Cmd::Play {
             scene,
             extracted_root,
@@ -1212,32 +1264,93 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// per-band overlap and per-tile (64x64) diff if `tiles` is set; writes
 /// the colour-coded diff PNG when `diff_png` is provided.
 #[allow(clippy::too_many_arguments)]
-fn cmd_vram_oracle(
-    scene_name: &str,
-    extracted_root: &Path,
-    disc: Option<&Path>,
-    runtime_vram: &Path,
-    diff_png: Option<&Path>,
+struct VramOracleArgs<'a> {
+    scene: Option<&'a str>,
+    extracted_root: &'a Path,
+    disc: Option<&'a Path>,
+    runtime_vram: Option<&'a Path>,
+    scenario: Option<&'a str>,
+    manifest: &'a Path,
+    frames: u64,
+    strict: bool,
+    diff_png: Option<&'a Path>,
     tiles: bool,
-    rows_csv: Option<&Path>,
+    rows_csv: Option<&'a Path>,
     clut_regions: bool,
-) -> Result<()> {
-    let index = open_index_from_args(extracted_root, disc)?;
-    let scene =
-        Scene::load(&index, scene_name).with_context(|| format!("load scene '{scene_name}'"))?;
+}
 
-    let mut shared_scenes: Vec<Scene> = Vec::new();
-    for name in FIELD_SHARED_BLOCKS {
-        if let Ok(s) = Scene::load(&index, name) {
-            shared_scenes.push(s);
+/// Resolves the (scene_name, runtime_bytes, source_label) triple from
+/// either explicit args or a scenario lookup. Scenario mode reads the
+/// VRAM blob in-process via `legaia-mednafen`'s GPU section parser, so
+/// no temp file is needed.
+///
+/// In scenario mode with `frames > 0`, additionally boots a
+/// [`BootSession`] on the resolved scene and ticks it `frames` times
+/// before returning the sampled engine VRAM. This catches dynamic
+/// uploads (NPC palette swaps, fog ramps, per-frame CLUT mutations)
+/// that the pure pre-pass doesn't see.
+fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
+    use legaia_mednafen::ScenarioManifest;
+
+    match (args.scenario, args.scene, args.runtime_vram) {
+        (Some(label), _, _) => {
+            let manifest = ScenarioManifest::from_path(args.manifest)?;
+            let scn = manifest.by_label(label).with_context(|| {
+                format!("scenario {label:?} not in {}", args.manifest.display())
+            })?;
+            let scene_name = scn.expected_active_scene.clone().with_context(|| {
+                format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene",)
+            })?;
+            let save_path = manifest.save_path(scn.slot)?;
+            if !save_path.exists() {
+                anyhow::bail!(
+                    "scenario {label:?} slot {} save not found at {}",
+                    scn.slot,
+                    save_path.display()
+                );
+            }
+            let runtime_bytes = load_runtime_vram_from_save(&save_path)?;
+            let source_label = format!(
+                "scenario {label:?} (slot {}, {})",
+                scn.slot,
+                save_path.display()
+            );
+            Ok(ResolvedVram {
+                scene_name,
+                runtime_bytes,
+                source_label,
+            })
         }
+        (None, Some(scene_name), Some(runtime_path)) => {
+            let runtime_bytes = std::fs::read(runtime_path)
+                .with_context(|| format!("read runtime VRAM blob {}", runtime_path.display()))?;
+            Ok(ResolvedVram {
+                scene_name: scene_name.to_owned(),
+                runtime_bytes,
+                source_label: runtime_path.display().to_string(),
+            })
+        }
+        _ => anyhow::bail!(
+            "vram-oracle: provide either `--scenario <label>` or both `--scene` + `--runtime-vram`"
+        ),
     }
-    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-    let (resources, _) = SceneResources::build_targeted(&scene, &shared_refs)?;
+}
 
-    let engine_bytes = vram_to_le_bytes(&resources.vram);
-    let runtime_bytes = std::fs::read(runtime_vram)
-        .with_context(|| format!("read runtime VRAM blob {}", runtime_vram.display()))?;
+struct ResolvedVram {
+    scene_name: String,
+    runtime_bytes: Vec<u8>,
+    source_label: String,
+}
+
+fn cmd_vram_oracle(args: VramOracleArgs<'_>) -> Result<()> {
+    let resolved = resolve_vram_inputs(&args)?;
+    let engine_bytes = build_engine_vram_bytes_with_frames(
+        &resolved.scene_name,
+        args.extracted_root,
+        args.disc,
+        args.frames,
+    )?;
+    let runtime_bytes = resolved.runtime_bytes;
     if runtime_bytes.len() != engine_bytes.len() {
         anyhow::bail!(
             "runtime VRAM size {} != expected {} (1 MiB BGR555)",
@@ -1248,11 +1361,14 @@ fn cmd_vram_oracle(
 
     let report = vram_coverage_report(&engine_bytes, &runtime_bytes);
     println!(
-        "scene '{}'  vs runtime {}",
-        scene.name,
-        runtime_vram.display()
+        "scene '{}'  vs runtime {}  (frames={})",
+        resolved.scene_name, resolved.source_label, args.frames
     );
     print_vram_coverage(&report);
+    let diff_png = args.diff_png;
+    let tiles = args.tiles;
+    let rows_csv = args.rows_csv;
+    let clut_regions = args.clut_regions;
 
     if tiles {
         println!("  per-64x64-tile coverage (runtime non-zero / engine non-zero / overlap):");
@@ -1307,6 +1423,24 @@ fn cmd_vram_oracle(
 
     if clut_regions {
         print_vram_clut_region_report(&engine_bytes, &runtime_bytes);
+    }
+
+    if args.strict {
+        match first_texpage_divergence(&engine_bytes, &runtime_bytes) {
+            None => {
+                println!("[strict] texpage region (y >= 256): byte-exact match");
+            }
+            Some(TexpageDivergence {
+                y,
+                x,
+                engine_word,
+                runtime_word,
+            }) => {
+                anyhow::bail!(
+                    "[strict] texpage region diverged at row {y} col {x}: engine=0x{engine_word:04X} runtime=0x{runtime_word:04X}",
+                );
+            }
+        }
     }
 
     Ok(())
@@ -1426,21 +1560,6 @@ fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
             "  {label:<48} {rt:>5} {en:>5} {ov:>5} {rt_only:>6} {en_only:>6}  ({pct:5.1}%){flag}"
         );
     }
-}
-
-/// Serialise a software `Vram` into a 1 MiB little-endian BGR555 buffer
-/// matching `mednafen-state vram-dump --out-bin`.
-fn vram_to_le_bytes(vram: &legaia_tim::Vram) -> Vec<u8> {
-    const W: usize = 1024;
-    const H: usize = 512;
-    let mut out = Vec::with_capacity(W * H * 2);
-    for y in 0..H {
-        for x in 0..W {
-            let px = vram.pixel(x, y);
-            out.extend_from_slice(&px.to_le_bytes());
-        }
-    }
-    out
 }
 
 fn write_vram_png(path: &Path, bgr555_le: &[u8]) -> Result<()> {
