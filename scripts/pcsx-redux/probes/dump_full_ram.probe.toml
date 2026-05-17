@@ -1,0 +1,17 @@
+# Dump the full 2 MiB main RAM from a save state. One-shot capture +
+# quit; settles for capture_frames vsyncs after load before reading.
+#
+# The 2 MiB single readAt() permanently degrades subsequent vsync
+# delivery in PCSX-Redux, so this probe quits after the single dump.
+# Multi-snapshot probes should use the boot_walk_snapshots autorun's
+# chunked-per-vsync pattern instead.
+#
+# Migration target: scripts/pcsx-redux/autorun_dump_full_ram.lua
+
+scenario       = "title_attract"   # informational; LEGAIA_SSTATE wins
+capture_frames = 120                # settle vsyncs
+output_path    = "ram_full.bin"
+
+[dump]
+addr     = 0x80000000
+size_ram = true                     # 2 MiB full main-RAM

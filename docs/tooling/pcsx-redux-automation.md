@@ -96,10 +96,13 @@ state machine:
    `PCSX.quit(0)`.
 
 This pattern is factored out as a shared library at
-[`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua).
-A new probe doesn't reimplement the state machine, the memory readers,
-the save-state loader, the pad-override helpers, the CSV writer, or the
-live-snapshot writer - it imports them:
+[`scripts/pcsx-redux/lib/probe.lua`](../../scripts/pcsx-redux/lib/probe.lua),
+which is an umbrella that re-exports the per-concern submodules under
+[`scripts/pcsx-redux/lib/probe/`](../../scripts/pcsx-redux/lib/probe/) -
+`env`, `mem`, `sstate`, `pad`, `bp`, `csv`, `snapshot`, `sm`, and
+`symbols`. A new probe doesn't reimplement the state machine, the
+memory readers, the save-state loader, the pad-override helpers, the
+CSV writer, or the live-snapshot writer - it imports them:
 
 ```lua
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
@@ -176,24 +179,60 @@ end,
 ### Symbolic breakpoint addresses
 
 Hard-coded `0x801DA51C`-style breakpoint targets break across overlay
-re-imports that shift function entry points. Use the symbol resolver:
+re-imports that shift function entry points. The symbol resolver
+accepts Ghidra-canonical names from two sources:
+
+* **Function entry points** (`FUN_801DA51C`, slot-4 `k10_shared` labels,
+  named overlays). Source: per-function dump headers under
+  `ghidra/scripts/funcs/*.txt`.
+* **Global data labels** (`DAT_8007078C` / `_DAT_8007BCD0`, both case
+  forms accepted). Source: the same dump-header walk, plus a regex
+  harvest of `DAT_xxxxxxxx` references from the decomp body content
+  (so DAT names show up even before `dump_globals.py` has been run
+  for a given program), plus a dedicated `dump_globals.py` Jython
+  script for authoritative names + lengths.
+
+Three ways to use it:
 
 ```lua
-local symbols = require("symbols").load()  -- ghidra/scripts/symbols.lua
+-- Bespoke autorun:
+local symbols = require("probe.symbols").load()
 probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)
 ```
 
-`ghidra/scripts/symbols.json` (canonical) and `ghidra/scripts/symbols.lua`
-(LuaJIT-loadable convenience) are both auto-generated from the per-function
-dump headers under `ghidra/scripts/funcs/*.txt`. Regenerate via
+```toml
+# .probe.toml: addr/base accept either an int or a symbol-name string.
+[[breakpoint]]
+addr = "FUN_801DD35C"     # resolves at spec-load time
+kind = "Exec"
+[[breakpoint]]
+addr  = "_DAT_801EF16C"
+kind  = "Read"
+width = 4
+```
 
 ```bash
+# Regenerate after adding new dumps (covers funcs/* dumps and globals_*).
 python3 scripts/pcsx-redux/build-symbols.py
 ```
 
-after adding new dumps. The resolver fails loudly on a typo'd symbol
-name &mdash; arming a breakpoint at `nil` otherwise silently captures
-zero hits and the probe runs to completion with no diagnostic.
+```bash
+# Authoritative globals (one-time per program; optional but lossless):
+docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
+    -process SCUS_942.54 -noanalysis -postScript /scripts/dump_globals.py
+# ... or pass `-process overlay_<name>.bin` for per-overlay globals.
+python3 scripts/pcsx-redux/build-symbols.py
+```
+
+The resolver fails loudly on a typo'd symbol name &mdash; arming a
+breakpoint at `nil` otherwise silently captures zero hits and the probe
+runs to completion with no diagnostic. The hex portion of the name is
+case-insensitive: docs use `FUN_801DD35C`, Ghidra emits
+`FUN_801dd35c`, both resolve identically.
+
+`scripts/pcsx-redux/probes/_check_specs.py` cross-validates every
+`.probe.toml` spec's symbol references against `symbols.json` so a
+typo'd symbol fails CI rather than the probe run.
 
 ### Things that catch people out
 
@@ -289,15 +328,156 @@ bash scripts/pcsx-redux/run_probe.sh --fast \
 The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
 `run_dump_slot4.sh` wrappers were folded into this one runner.
 
+### GDB-stub bridge (`gdb_probe.py`)
+
+[`gdb_probe.py`](../../scripts/pcsx-redux/gdb_probe.py) is the
+one-shot escape hatch. PCSX-Redux exposes a GDB Remote Serial Protocol
+stub on TCP port 3333 (settings: *Emulator → GDB server port*); this
+script speaks the protocol directly. Use it when the `.probe.toml`
+state machine is overkill &mdash; ad-hoc reads, single-shot
+"break-here-read-there" investigations, register dumps.
+
+| Subcommand | Use |
+|---|---|
+| `read-mem ADDR LEN [--out F]` | Hex dump or raw bytes to file. ADDR is hex or a Ghidra symbol. |
+| `read-regs` | Dump 38 PSX MIPS GPRs + PC. |
+| `write-mem ADDR HEXBYTES` | Patch memory in-flight. |
+| `when-pc-hits ADDR --read-mem A,L [--out F]` | One-shot: arm exec BP, continue, read on hit, disarm. |
+| `watch ADDR LEN --kind {read,write,access}` | Insert a watchpoint, print the stop reply when it fires. |
+| `selftest` | Run protocol-codec + client self-tests against an in-process mock server (no live emulator needed). |
+
+When to use this vs `.probe.toml`:
+* `.probe.toml` for **repeatable captures** that produce a CSV which
+  `probe.py regress` can gate on.
+* `gdb_probe.py` for **one-shot ad-hoc queries** &mdash; no schema, no
+  scenario, no state machine to author.
+
+```bash
+# Read 512 bytes of the kingdom slot-4 region in-flight:
+scripts/pcsx-redux/gdb_probe.py read-mem 0x8011A624 512
+
+# Dump registers right now:
+scripts/pcsx-redux/gdb_probe.py read-regs
+
+# One-shot break-and-read: when the title overlay tick fires, dump the
+# attract-countdown register:
+scripts/pcsx-redux/gdb_probe.py when-pc-hits FUN_801DD35C \
+    --read-mem _DAT_801EF16C,16
+```
+
+Symbol names resolve via the same `ghidra/scripts/symbols.json` the Lua
+probe layer uses; misses raise with the regenerate-via hint. Hex
+(`0x801DE840`, `801de840`) is always accepted.
+
+### Analysing probe outputs (`probe.py`)
+
+[`probe.py`](../../scripts/pcsx-redux/probe.py) is the Python-side
+companion to a `.probe.toml` run. It operates on the CSV outputs and
+provides four operations the Lua side intentionally doesn't try to do
+in-emulator:
+
+| Subcommand | Use |
+|---|---|
+| `probe.py summary RUN` | Header + row count + canonical fingerprint. |
+| `probe.py fingerprint RUN` | SHA-256 over canonicalised rows. Independent of row order and of `--ignore`d columns. |
+| `probe.py diff BASELINE CURRENT` | Set-diff: added / removed rows. Useful for inspecting why two runs differ. |
+| `probe.py regress BASELINE CURRENT` | Fingerprint compare. Exits 0 on match, 1 on regression. Foundation for Phase G CI gating. |
+
+`--ignore COL[,COL...]` drops named columns before comparison /
+hashing. Use it for fields that naturally vary between runs without
+representing a regression &mdash; most commonly `tick` (the per-bp hit
+counter is order-dependent) and sometimes `pc` (when the same code path
+gets reached via different inlining decisions across overlay rebuilds).
+
+```bash
+# Re-run a probe spec, compare against a committed baseline:
+bash scripts/pcsx-redux/run_probe.sh --spec scripts/pcsx-redux/probes/xp_table_readers.probe.toml
+scripts/pcsx-redux/probe.py regress \
+    captures/baselines/xp_table_readers.csv \
+    captures/xp_table_readers/<latest>/xp_table_readers.csv \
+    --ignore tick
+```
+
 ## Authoring a new probe
 
-The fastest path to a new probe:
+Two shapes are supported, in order of preference:
+
+### Declarative .probe.toml (simple probes)
+
+For "arm N breakpoints, dump K columns to CSV" or "settle then dump a
+RAM region", the probe is a single TOML file under
+[`scripts/pcsx-redux/probes/`](../../scripts/pcsx-redux/probes/) with
+no Lua code at all. The shared
+[`probes/_runner.lua`](../../scripts/pcsx-redux/probes/_runner.lua)
+parses the spec via
+[`lib/probe/toml.lua`](../../scripts/pcsx-redux/lib/probe/toml.lua)
+and dispatches into
+[`lib/probe/spec.lua`](../../scripts/pcsx-redux/lib/probe/spec.lua).
+
+Schema (see
+[`probes/xp_table_readers.probe.toml`](../../scripts/pcsx-redux/probes/xp_table_readers.probe.toml)
+for the breakpoint-fan-out case and
+[`probes/dump_full_ram.probe.toml`](../../scripts/pcsx-redux/probes/dump_full_ram.probe.toml)
+for the RAM-dump case):
+
+```toml
+scenario        = "title_attract"   # informational; LEGAIA_SSTATE wins
+capture_frames  = 600
+output_path     = "my_probe.csv"
+capture_columns = ["tick", "addr", "pc", "ra", "value_u32"]
+
+[detail]                            # optional: first N hits get full
+hits = 8                            # register/code/stack snapshots in a
+path = "my_probe.detail.txt"        # .detail.txt sidecar
+
+[[breakpoint]]                      # individual breakpoint
+addr  = 0x80017EC8
+kind  = "Exec"                      # "Exec" | "Read" | "Write"
+width = 4
+name  = "world_map_tick"
+
+[[breakpoint_range]]                # fan out N adjacent breakpoints
+base     = 0x8007123C
+length   = 196                      # bytes
+stride   = 4                        # bytes per bp
+kind     = "Read"
+name_fmt = "xp+0x%03X"              # %X / %x / %d = byte offset from base
+```
+
+Capture-column vocab (built into
+[`lib/probe/spec.lua`](../../scripts/pcsx-redux/lib/probe/spec.lua)):
+`tick`, `addr`, `offset`, `pc`, `ra`, `sp`, `width`,
+`value_u8` / `value_u16` / `value_u32`.
+
+Run it:
+
+```bash
+bash scripts/pcsx-redux/run_probe.sh \
+    --spec scripts/pcsx-redux/probes/my_probe.probe.toml \
+    --scenario title_attract     # or --sstate /path/to/state.sstate
+```
+
+Validate the schema (without launching PCSX-Redux):
+
+```bash
+python3 scripts/pcsx-redux/probes/_check_specs.py
+```
+
+If `lua5.1` is available, the validator also parses each spec via
+`lib/probe/toml.lua` and asserts the structural output matches Python's
+`tomllib` &mdash; catches divergence between the Lua TOML reader and
+the canonical TOML spec.
+
+### Lua autorun (bespoke probes)
+
+For anything more elaborate (per-hit logic that depends on register
+state, multi-state-machine probes, dynamic breakpoint arming, etc.),
+write a Lua autorun. The fastest path:
 
 1. Start from
    [`scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua`](../../scripts/pcsx-redux/autorun_slot4_consumer_pcs.lua)
-   &mdash; the canonical thin probe (~145 lines, kingdom-agnostic) that
-   uses the shared library for everything except the per-probe
-   breakpoint body.
+   &mdash; the canonical thin probe (~145 lines) that uses the shared
+   library for everything except the per-probe breakpoint body.
 2. Edit the `PROBE_OFFSETS` (or your own probe-address list), the CSV
    header, and the per-hit row written from inside the breakpoint
    callback. The boot-delay / capture-vsync / disarm state machine

@@ -1,4 +1,4 @@
--- symbols.lua  -- Ghidra-resolved function-name -> address map for probes.
+-- probe/symbols.lua  -- Ghidra-resolved function-name -> address map.
 --
 -- The actual table is auto-generated at ghidra/scripts/symbols.lua
 -- (committed; regenerate via scripts/pcsx-redux/build-symbols.py).
@@ -11,11 +11,11 @@
 --
 -- Usage from an autorun:
 --   package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
---   local symbols = require("symbols").load()  -- default path
+--   local symbols = require("probe.symbols").load()  -- default path
 --   probe.arm_breakpoint(symbols.FUN_801DA51C, "Exec", 4, "world_map_sm", cb)
 --
 -- Or pass an explicit path if the probe runs from a different cwd:
---   local symbols = require("symbols").load("/abs/path/to/symbols.lua")
+--   local symbols = require("probe.symbols").load("/abs/path/to/symbols.lua")
 
 local M = {}
 
@@ -52,6 +52,17 @@ function M.load(path)
         .. table.concat(DEFAULTS, ", "), 2)
 end
 
+-- Normalise a symbol-name key. The auto-gen table emits hex in lower
+-- case (Ghidra's convention) but docs and user docstrings use upper
+-- case. Convert any trailing 8-char hex run to lower case so both
+-- `FUN_801DE840` and `FUN_801de840` resolve to the same entry.
+local function normalize(k)
+    if type(k) ~= "string" then return k end
+    return (k:gsub("([_A-Za-z])([0-9A-Fa-f]+)$", function(prefix, hex)
+        return prefix .. hex:lower()
+    end))
+end
+
 -- Wrap the raw {name=addr} table in a metatable that fails loudly on
 -- missing keys. A typo'd symbol name otherwise returns nil; arming a
 -- breakpoint at nil silently does nothing and the probe captures zero
@@ -59,7 +70,7 @@ end
 function M.wrap(table_, source_path)
     return setmetatable({}, {
         __index = function(_, k)
-            local v = rawget(table_, k)
+            local v = rawget(table_, k) or rawget(table_, normalize(k))
             if v == nil then
                 error(string.format(
                     "symbols.%s not found (loaded from %s; "

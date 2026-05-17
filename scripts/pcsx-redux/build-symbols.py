@@ -28,6 +28,40 @@ import re
 import sys
 from typing import Dict, List, Tuple
 
+# Address ranges in which a DAT_/`_DAT_` reference is a plausible global
+# symbol. Decomp output cites `_DAT_00000004`-style stack-offset names
+# that aren't symbols at all; filtering by these ranges drops the noise.
+DAT_RANGES = (
+    (0x80000000, 0x80200000),  # main RAM (mirrored)
+    (0x1F800000, 0x1F800400),  # scratchpad
+)
+
+
+def addr_in_dat_ranges(addr: int) -> bool:
+    for lo, hi in DAT_RANGES:
+        if lo <= addr < hi:
+            return True
+    return False
+
+
+# Decomp body references like `_DAT_8007BCD0` or `&DAT_8007078c`. Match
+# either form; the leading underscore is just Ghidra's pointer-syntax
+# decoration and points at the same address.
+DAT_REF_RE = re.compile(r"\b(_?DAT_)([0-9a-fA-F]{8})\b")
+
+
+def _record(symbols: Dict[str, int], name: str, addr: int,
+            source: str, warnings: List[str]) -> None:
+    """Add (name -> addr); warn on conflicting reassignment, keep first."""
+    prev = symbols.get(name)
+    if prev is None:
+        symbols[name] = addr
+    elif prev != addr:
+        warnings.append(
+            f"{name}: conflicting addresses 0x{prev:08X} vs 0x{addr:08X} "
+            f"(latter from {source}); keeping first"
+        )
+
 # Header-line shapes the dump scripts emit:
 #   "== FUN_801de840 801de840 (entry=801de840) =="            (canonical)
 #   "== FUN_8001fa34 0x8001fa34 (entry=0x8001fa34) =="        (0x-prefixed)
@@ -38,7 +72,9 @@ from typing import Dict, List, Tuple
 # We accept all four by anchoring on the name + entry= field and tolerating
 # any tail. The `entry=` address is the source of truth.
 HEADER_RE = re.compile(
-    r"^==\s*([A-Za-z_][\w]*)\s+(?:0x)?[0-9a-fA-F]+\s*\(entry=(?:0x)?([0-9a-fA-F]+)\)"
+    r"^==[^=]*?(FUN_[0-9a-fA-F]+|[A-Za-z_]\w*)\s+"
+    r"(?:(?:0x)?[0-9a-fA-F]+\s+)?"          # optional redundant ADDR before the paren
+    r"\(entry=(?:0x)?([0-9a-fA-F]+)(?:\s*,\s*label=([A-Za-z_]\w*))?\)"
 )
 # Data-table dumps use `(len=N)` instead of `(entry=ADDR)`. The address is
 # the symbol's location; we keep it the same as the function path.
@@ -71,11 +107,22 @@ def parse_funcs_dir(funcs_dir: str) -> Tuple[Dict[str, int], List[str]]:
 
     Returns (symbols, warnings). `symbols` maps the canonical FUN_/named
     symbol to its address as an int.
+
+    Each file is scanned twice:
+      1. The first line for the canonical entry-point header (FUN_*, named
+         data tables, data regions, OR per-line globals dumps emitted by
+         dump_globals.py).
+      2. The body for `DAT_xxxxxxxx` / `_DAT_xxxxxxxx` references. Each
+         in-range hit is added to the table as an alias-pair (both name
+         forms point at the same address). This gives the probe layer
+         immediate symbol coverage without requiring a separate Ghidra
+         run after every new function dump.
     """
     symbols: Dict[str, int] = {}
     warnings: List[str] = []
     skipped_known = 0
     skipped_unknown: List[str] = []
+    body_harvested = 0
 
     for entry in sorted(os.listdir(funcs_dir)):
         if not entry.endswith(".txt"):
@@ -83,11 +130,39 @@ def parse_funcs_dir(funcs_dir: str) -> Tuple[Dict[str, int], List[str]]:
         path = os.path.join(funcs_dir, entry)
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                first_line = fh.readline().rstrip("\r\n")
+                lines = fh.readlines()
         except OSError:
             warnings.append(f"cannot open {path}")
             continue
 
+        if not lines:
+            continue
+
+        # The globals_<program>.txt sidecar files have many `== NAME ADDR
+        # (len=N) ==` lines, not just one. Detect that shape up front and
+        # treat every matching line as a header.
+        is_globals_dump = entry.startswith("globals_")
+
+        if is_globals_dump:
+            for ln in lines:
+                ln = ln.rstrip("\r\n")
+                m = DATA_HEADER_RE.match(ln) or DATA_REGION_RE.match(ln)
+                if not m:
+                    continue
+                name, addr_hex = m.group(1), m.group(2)
+                addr = int(addr_hex, 16)
+                _record(symbols, name, addr, entry, warnings)
+                # Also record the alias form: DAT_xxx <-> _DAT_xxx point at
+                # the same address. Decomp output uses _DAT_ for indirect-
+                # value reads and DAT_ for address-of, but both names should
+                # resolve in probe specs.
+                if name.startswith("_DAT_"):
+                    _record(symbols, name[1:], addr, entry, warnings)
+                elif name.startswith("DAT_"):
+                    _record(symbols, "_" + name, addr, entry, warnings)
+            continue
+
+        first_line = lines[0].rstrip("\r\n")
         m = (HEADER_RE.match(first_line)
              or DATA_HEADER_RE.match(first_line)
              or DATA_REGION_RE.match(first_line))
@@ -96,20 +171,37 @@ def parse_funcs_dir(funcs_dir: str) -> Tuple[Dict[str, int], List[str]]:
                 skipped_known += 1
             else:
                 skipped_unknown.append(f"{entry}: {first_line[:80]!r}")
-            continue
+            # Note: we still harvest body refs from this file below even if
+            # the header didn't parse - the body content is still valuable.
+        else:
+            name = m.group(1)
+            entry_addr_hex = m.group(2)
+            addr = int(entry_addr_hex, 16)
+            _record(symbols, name, addr, entry, warnings)
+            # When the header carries `label=ALIAS`, also record that alias.
+            # HEADER_RE captures group 3 only; the data variants don't.
+            if m.lastindex and m.lastindex >= 3 and m.group(3):
+                _record(symbols, m.group(3), addr, entry, warnings)
 
-        name, entry_addr_hex = m.group(1), m.group(2)
-        addr = int(entry_addr_hex, 16)
+        # Harvest DAT_/`_DAT_` references from the body. Both forms point
+        # at the same address; add aliases so probe specs can use either.
+        body = "".join(lines[1:])
+        for prefix, addr_hex in DAT_REF_RE.findall(body):
+            addr = int(addr_hex, 16)
+            if not addr_in_dat_ranges(addr):
+                continue
+            canonical_dat = "DAT_" + addr_hex
+            canonical_under = "_DAT_" + addr_hex
+            if canonical_dat not in symbols and canonical_under not in symbols:
+                body_harvested += 1
+            _record(symbols, canonical_dat, addr, entry, warnings)
+            _record(symbols, canonical_under, addr, entry, warnings)
 
-        prev = symbols.get(name)
-        if prev is None:
-            symbols[name] = addr
-        elif prev != addr:
-            warnings.append(
-                f"{name}: conflicting addresses 0x{prev:08X} vs 0x{addr:08X} "
-                f"(latter from {entry}); keeping first"
-            )
-        # else: same name same address, just a mirror-dump file; ignore.
+    if body_harvested:
+        warnings.append(
+            f"harvested {body_harvested} DAT_*/_DAT_* references from body content "
+            "(set via dump_globals.py for authoritative names + lengths)"
+        )
 
     # Warn for genuinely unknown header shapes (signal that the regex
     # needs broadening). The known-skip count is informational only.

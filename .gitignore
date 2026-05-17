@@ -59,6 +59,25 @@
 # already covers them. /logs/ is the legacy default for run-time logs when
 # the wrapper falls back outside captures/.
 /logs/
+# Defensive: catch repo-root probe outputs from probes that were run
+# before the captures/<stem>/<ts>/ layout landed, or when the user
+# overrides LEGAIA_OUT to land outside captures/.
+/*_probe.csv
+/*_probe.hits.txt
+/*_probe.ot_cursor.csv
+/*_probe_*.csv
+/*.detail.txt
+/*_probe_*.hits.txt
+/*_writers.csv
+/*_writers.hits.txt
+/*_writers.ot_cursor.csv
+/world_map_vm_calls.csv
+/cd_dma_probe.csv
+/cd_dma_probe.hits.txt
+/lzs_bundle_probe.csv
+/lzs_bundle_probe.hits.txt
+/deep_pool_probe*.csv
+/deep_pool_probe*.hits.txt
 
 # User-local overlay sweep spec (path/label pairs; example committed as .example).
 scripts/overlays.spec

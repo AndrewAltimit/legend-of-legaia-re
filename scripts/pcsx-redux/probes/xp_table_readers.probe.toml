@@ -1,0 +1,38 @@
+# Pin the runtime XP-table reader by Read-watchpoint instead of static
+# LUI+ADDIU scanning.
+#
+# The retail XP increment table sits at 0x8007123C (98 u16 LE per-level
+# increments; total cum-sum ~34663). Static scans return zero LUI+ADDIU
+# pairs that synthesise the address across SCUS + every captured
+# overlay - the reader either lives in an uncaptured overlay or builds
+# the pointer indirectly. Either way an instruction watchpoint catches
+# it cleanly.
+#
+# Run with a save state captured at end-of-battle, just before the
+# level-up cutscene fires. The reader hits on the per-character "did
+# anyone level up?" check.
+#
+# Migration target: scripts/pcsx-redux/autorun_xp_table_reader.lua
+#
+# No matching scenario in scripts/scenarios.toml yet; pass the save state
+# explicitly via `run_probe.sh --sstate /path/to/end_of_battle.sstate`.
+
+capture_frames  = 600
+output_path     = "xp_table_readers.csv"
+capture_columns = ["tick", "addr", "offset", "pc", "width", "value_u16", "ra"]
+
+# First 8 hits also get a full register/code/stack snapshot in a
+# sidecar .detail.txt file.
+[detail]
+hits = 8
+path = "xp_table_readers.detail.txt"
+
+# Fan out 49 four-byte Read watchpoints covering the 196-byte XP table.
+# stride=4 is the maximum PCSX-Redux watchpoint width; one bp per word
+# gives full range without exhausting the slot pool.
+[[breakpoint_range]]
+base     = 0x8007123C
+length   = 196               # 98 * 2 bytes
+stride   = 4
+kind     = "Read"
+name_fmt = "xp+0x%03X"
