@@ -1977,6 +1977,17 @@ struct TitleScreenAssets {
     atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
 
+/// Pre-decoded menu-glyph atlas + GPU upload. Created once at boot
+/// when the disc has a readable `PROT.DAT` (the source TIM lives in
+/// the unindexed 240 KB pre-`init_data` gap; see
+/// [`legaia_asset::menu_glyph_atlas`]). Reused by [`BootUiState::Title`]
+/// to render the "NEW GAME" / "CONTINUE" / "OPTIONS" menu rows in
+/// the retail small-caps font.
+struct MenuGlyphAssets {
+    /// GPU-resident sprite atlas (the 256×256 menu-glyph TIM).
+    atlas: legaia_engine_render::UploadedSpriteAtlas,
+}
+
 /// Windowed engine runner state. Owned by the winit event loop.
 struct PlayWindowApp {
     session: BootSession,
@@ -1998,6 +2009,12 @@ struct PlayWindowApp {
     /// CPU-side title atlas waiting for renderer upload. Moved into
     /// `title_screen` on the first frame the renderer is available.
     pending_title_screen_atlas: Option<legaia_engine_core::title_screen_atlas::TitleScreenAtlas>,
+    /// Menu-glyph atlas (built once from raw `PROT.DAT` at 0x11218).
+    /// `None` if the disc isn't loaded or the TIM doesn't parse.
+    menu_glyphs: Option<MenuGlyphAssets>,
+    /// CPU-side menu-glyph atlas waiting for renderer upload. Moved
+    /// into `menu_glyphs` on the first frame the renderer is available.
+    pending_menu_glyph_atlas: Option<legaia_engine_core::menu_glyph_atlas::MenuGlyphAtlas>,
     uploaded_vram: Option<UploadedVram>,
     meshes: Vec<UploadedVramMesh>,
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
@@ -2396,6 +2413,17 @@ impl PlayWindowApp {
                     TitlePhase::MainMenu { cursor } => (2, cursor),
                     TitlePhase::Done(_) => return Vec::new(),
                 };
+                // When the title-screen atlas is uploaded, the
+                // main-menu rows render through the sprite path,
+                // sampling NEW GAME / CONTINUE sub-rects from the
+                // title TIM directly (retail-faithful). Suppress
+                // the dialog-font fallback for phase 2 so the rows
+                // aren't double-drawn. Earlier phases (fade /
+                // press-start) still use the dialog font for their
+                // prompt text.
+                if phase_id == 2 && self.title_screen.is_some() {
+                    return Vec::new();
+                }
                 let blink_on = match s.phase() {
                     TitlePhase::PressStart { blink_phase } => blink_phase < s.blink_period / 2,
                     _ => true,
@@ -3134,6 +3162,23 @@ impl PlayWindowApp {
                 Err(e) => log::warn!("title-screen atlas upload skipped: {e:#}"),
             }
         }
+        // Upload the menu-glyph atlas the same way.
+        if let (Some(atlas_data), Some(r)) = (
+            self.pending_menu_glyph_atlas.take(),
+            self.win.renderer.as_ref(),
+        ) {
+            match r.upload_sprite_atlas(&atlas_data.rgba, atlas_data.width, atlas_data.height) {
+                Ok(atlas) => {
+                    log::info!(
+                        "play-window: menu-glyph atlas uploaded ({}x{})",
+                        atlas_data.width,
+                        atlas_data.height
+                    );
+                    self.menu_glyphs = Some(MenuGlyphAssets { atlas });
+                }
+                Err(e) => log::warn!("menu-glyph atlas upload skipped: {e:#}"),
+            }
+        }
         self.meshes = meshes;
         self.scene_tmd_data = tmd_data;
         if lo[0].is_finite() {
@@ -3324,27 +3369,145 @@ impl PlayWindowApp {
             legaia_engine_core::title::TitlePhase::PressStart { .. }
         );
         use legaia_asset::title_pak;
-        let mut bands: Vec<(u32, u32, u32, u32)> = Vec::with_capacity(4);
-        bands.push(title_pak::TITLE_BAND_WORDMARK);
-        if emit_press_start {
-            bands.push(title_pak::TITLE_BAND_PRESS_START);
-        }
-        bands.push(title_pak::TITLE_BAND_TM_COPYRIGHT);
-        bands.push(title_pak::TITLE_BAND_C_COPYRIGHT);
+        // Each entry: (src_rect, dst_x_src, dst_y_src, tint). Most
+        // bands draw at their own (src_x, src_y); the menu rows are
+        // sampled from a packed single-row band and re-positioned so
+        // "NEW GAME" sits at src_y=143 and "CONTINUE" at src_y=159
+        // (matching the retail stacked layout, which puts these
+        // ~14 px apart between the wordmark and the copyright lines).
         let scale_i32 = scale as i32;
-        bands
-            .into_iter()
-            .map(|(bx, by, bw, bh)| legaia_engine_render::SpriteDraw {
+        let mut out: Vec<legaia_engine_render::SpriteDraw> = Vec::new();
+        let push_band = |out: &mut Vec<legaia_engine_render::SpriteDraw>,
+                         src: (u32, u32, u32, u32),
+                         dst_src_x: i32,
+                         dst_src_y: i32,
+                         tint: [f32; 4]| {
+            let (sx, sy, sw, sh) = src;
+            out.push(legaia_engine_render::SpriteDraw {
                 dst: (
-                    stage_x0 + (bx as i32) * scale_i32,
-                    stage_y0 + (by as i32) * scale_i32,
-                    bw * scale,
-                    bh * scale,
+                    stage_x0 + dst_src_x * scale_i32,
+                    stage_y0 + dst_src_y * scale_i32,
+                    sw * scale,
+                    sh * scale,
                 ),
-                src: (bx, by, bw, bh),
-                color,
-            })
-            .collect()
+                src: (sx, sy, sw, sh),
+                color: tint,
+            });
+        };
+
+        // Wordmark always.
+        let wm = title_pak::TITLE_BAND_WORDMARK;
+        push_band(&mut out, wm, wm.0 as i32, wm.1 as i32, color);
+
+        // PressStart prompt only during that phase.
+        if emit_press_start {
+            let ps = title_pak::TITLE_BAND_PRESS_START;
+            push_band(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
+        }
+
+        // Main-menu rows (NEW GAME / CONTINUE) only during MainMenu.
+        // Retail uses colour as the selection indicator — selected row
+        // bright/white, unselected row dim/gray. No arrow cursor.
+        if let legaia_engine_core::title::TitlePhase::MainMenu { cursor } = session.phase() {
+            let row_white = color;
+            let row_dim = [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, color[3]];
+            // Centre the menu strings horizontally inside the 256-wide
+            // stage. Stack them vertically with a 4 px gap between
+            // rows so the small-caps glyphs sit clearly apart.
+            let ng = title_pak::TITLE_BAND_MENU_NEW_GAME;
+            let co = title_pak::TITLE_BAND_MENU_CONTINUE;
+            let ng_x = ((256 - ng.2) / 2) as i32;
+            let co_x = ((256 - co.2) / 2) as i32;
+            // Sit the menu between wordmark (ends y~141) and copyrights (start y~195).
+            let ng_y: i32 = 154;
+            let co_y: i32 = ng_y + ng.3 as i32 + 4;
+            let ng_tint = if cursor == 0 { row_white } else { row_dim };
+            let co_tint = if cursor == 1 { row_white } else { row_dim };
+            push_band(&mut out, ng, ng_x, ng_y, ng_tint);
+            push_band(&mut out, co, co_x, co_y, co_tint);
+        }
+
+        // Copyright lines always (post-fade).
+        let tm = title_pak::TITLE_BAND_TM_COPYRIGHT;
+        push_band(&mut out, tm, tm.0 as i32, tm.1 as i32, color);
+        let cc = title_pak::TITLE_BAND_C_COPYRIGHT;
+        push_band(&mut out, cc, cc.0 as i32, cc.1 as i32, color);
+        out
+    }
+
+    /// **Deprecated path** kept as a no-disc fallback. The retail title
+    /// menu now renders via `title_screen_sprite_draws` sampling the
+    /// dedicated NEW GAME / CONTINUE sub-rects from the title TIM
+    /// (PROT 0888 @ y=227..237). When the title atlas is present this
+    /// method returns an empty vec so the title-TIM path is the
+    /// single source of menu glyphs.
+    ///
+    /// Returns an empty vec when:
+    /// - boot UI isn't [`BootUiState::Title`], or
+    /// - the title session has already reached
+    ///   [`legaia_engine_core::title::TitlePhase::Done`], or
+    /// - the title-screen atlas IS uploaded (retail-faithful path
+    ///   covers the menu rows itself), or
+    /// - the menu-glyph atlas wasn't uploaded, or
+    /// - the title phase isn't `MainMenu`.
+    fn title_menu_glyph_sprite_draws(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<legaia_engine_render::SpriteDraw> {
+        let BootUiState::Title(session) = &self.boot_ui else {
+            return Vec::new();
+        };
+        if self.menu_glyphs.is_none() {
+            return Vec::new();
+        }
+        // When the title-screen atlas is loaded, the retail-faithful
+        // path inside `title_screen_sprite_draws` already emits the
+        // NEW GAME / CONTINUE rows from the title TIM itself — skip
+        // the debug-atlas fallback to avoid double-rendering.
+        if self.title_screen.is_some() {
+            return Vec::new();
+        }
+        use legaia_engine_core::title::TitlePhase;
+        let (phase_id, cursor) = match session.phase() {
+            TitlePhase::MainMenu { cursor } => (2u8, cursor),
+            _ => return Vec::new(),
+        };
+        // Anchor inside the same centred + integer-scaled 256×256
+        // title stage that `title_screen_sprite_draws` uses. The menu
+        // rows sit between the wordmark band (ends at src y=140) and
+        // the copyright bands (start at src y=195) — the menu-glyph
+        // cell is 14 px tall at 1× and we render at 2× the title-art
+        // scale for retail-faithful sizing (~28 px atlas-pixels per
+        // row, two rows + gutter = ~60 px in source).
+        let atlas_w: u32 = 256;
+        let atlas_h: u32 = 256;
+        let title_scale = (surface_w / atlas_w.max(1))
+            .min(surface_h / atlas_h.max(1))
+            .clamp(1, 4);
+        let title_scale_i32 = title_scale as i32;
+        let stage_x0 = (surface_w as i32 - (atlas_w as i32) * title_scale_i32) / 2;
+        let stage_y0 = (surface_h as i32 - (atlas_h as i32) * title_scale_i32) / 2;
+        // Render menu glyphs at 2× the title-art scale so the letters
+        // match the retail proportion (~28 px tall in framebuffer
+        // pixels at 1×). "NEW GAME" is 8 cells × 8 px × 2 = 128 px at
+        // 1× glyph_scale, then × title_scale for the on-screen size.
+        let glyph_scale = title_scale;
+        let menu_w_src = 8 * 8; // 8 chars × 8 px (1× glyph multiplier)
+        // Centre horizontally inside the 256-wide title stage.
+        let pen_src_x = (atlas_w as i32 - menu_w_src) / 2;
+        let pen_src_y = 152;
+        let pen = (
+            stage_x0 + pen_src_x * title_scale_i32,
+            stage_y0 + pen_src_y * title_scale_i32,
+        );
+        legaia_engine_render::title_menu_draws_for(
+            phase_id,
+            cursor,
+            session.continue_enabled,
+            pen,
+            glyph_scale,
+        )
     }
 
     fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
@@ -3760,6 +3923,7 @@ impl ApplicationHandler for PlayWindowApp {
                     // TIM produce a single quad each.
                     let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
                     let title_draw_vec = self.title_screen_sprite_draws(w, h);
+                    let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
                     let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
                         atlas: &p.atlas,
                         draws: &logo_draw_vec,
@@ -3767,6 +3931,10 @@ impl ApplicationHandler for PlayWindowApp {
                     let title_overlay = self.title_screen.as_ref().map(|t| TextOverlay {
                         atlas: &t.atlas,
                         draws: &title_draw_vec,
+                    });
+                    let menu_glyph_overlay = self.menu_glyphs.as_ref().map(|m| TextOverlay {
+                        atlas: &m.atlas,
+                        draws: &menu_glyph_draw_vec,
                     });
 
                     // Force a pure-black background during boot UI so the
@@ -3778,17 +3946,24 @@ impl ApplicationHandler for PlayWindowApp {
                         None
                     };
 
+                    let sprites_slot_1 = if !logo_draw_vec.is_empty() {
+                        logo_overlay.as_ref()
+                    } else if !title_draw_vec.is_empty() {
+                        title_overlay.as_ref()
+                    } else {
+                        None
+                    };
+                    let sprites_slot_2 = if !menu_glyph_draw_vec.is_empty() {
+                        menu_glyph_overlay.as_ref()
+                    } else {
+                        None
+                    };
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
                         overlay_lines: None,
-                        overlay_sprites: if !logo_draw_vec.is_empty() {
-                            logo_overlay.as_ref()
-                        } else if !title_draw_vec.is_empty() {
-                            title_overlay.as_ref()
-                        } else {
-                            None
-                        },
+                        overlay_sprites: sprites_slot_1,
+                        overlay_sprites_2: sprites_slot_2,
                         overlay_text: Some(&overlay),
                         clear_color: scene_clear,
                     };
@@ -4102,6 +4277,35 @@ fn cmd_play_window(
         }
     };
 
+    // Try to decode the menu-glyph atlas from the unindexed pre-init_data
+    // gap in `PROT.DAT` (offset `0x11218`). Carries the small-caps font
+    // retail samples for "NEW GAME" / "CONTINUE" menu rows. The
+    // per-entry extractor never visits this gap, so we read PROT.DAT
+    // raw bytes — see `legaia_asset::menu_glyph_atlas`.
+    let menu_glyph_atlas_data = match session.host.index.prot_dat_raw_bytes(
+        legaia_asset::menu_glyph_atlas::PROT_DAT_OFFSET,
+        legaia_asset::menu_glyph_atlas::TIM_SIZE,
+    ) {
+        Ok(b) => match legaia_engine_core::menu_glyph_atlas::build_atlas_from_prot_dat_slice(&b) {
+            Ok(a) => {
+                log::info!(
+                    "play-window: menu-glyph atlas built ({}x{})",
+                    a.width,
+                    a.height
+                );
+                Some(a)
+            }
+            Err(e) => {
+                log::warn!("play-window: menu-glyph build failed: {e:#}");
+                None
+            }
+        },
+        Err(e) => {
+            log::warn!("play-window: PROT.DAT raw read failed: {e:#}");
+            None
+        }
+    };
+
     let initial_boot_ui = if boot_ui {
         if publisher_logos_atlas_data.is_some() {
             BootUiState::PublisherLogos(
@@ -4129,6 +4333,8 @@ fn cmd_play_window(
         pending_publisher_logos_atlas: publisher_logos_atlas_data,
         title_screen: None,
         pending_title_screen_atlas: title_screen_atlas_data,
+        menu_glyphs: None,
+        pending_menu_glyph_atlas: menu_glyph_atlas_data,
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
@@ -4156,10 +4362,17 @@ fn cmd_play_window(
 /// PSX memory card supports 15 blocks; engines wishing to scan more can
 /// drive their own scanner and feed the result into `SaveSelectSession`).
 fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
+    use legaia_engine_core::menu_runtime::SAVE_EXT;
     use legaia_engine_core::save_select::SlotSnapshot;
     let mut out = Vec::with_capacity(3);
     for slot in 0..3u8 {
-        let path = save_dir.join(format!("slot_{slot}.lgsf"));
+        // Saves are written by the field menu via `MenuRuntime` as
+        // `<dir>/slot_NN.<SAVE_EXT>` (zero-padded slot, see
+        // `menu_runtime::slot_path`). The title-screen and
+        // save-select scanners must use the same shape; an earlier
+        // mismatch (`slot_N.lgsf`) made every save invisible at boot,
+        // greying out Continue even with valid saves on disk.
+        let path = save_dir.join(format!("slot_{slot:02}.{SAVE_EXT}"));
         let snap = match std::fs::read(&path).ok().and_then(|b| {
             legaia_save::SaveFile::parse(&b)
                 .ok()

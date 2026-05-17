@@ -820,27 +820,91 @@ pub fn title_draws_for(
         }
         1 => {}
         2 => {
-            let rows = ["NEW GAME", "CONTINUE", "OPTIONS"];
+            // Retail title menu carries only two rows; Options lives in
+            // the in-game field menu. Color is the selection indicator
+            // (selected = white, unselected = dim) — no arrow / cursor
+            // mark in retail. The disabled-Continue row reads the same
+            // as a non-highlighted row.
+            let _ = (gold, continue_enabled);
+            let rows = ["NEW GAME", "CONTINUE"];
             for (i, label) in rows.iter().enumerate() {
                 let row_y = pen.1 + i as i32 * LINE_H;
                 let selected = i as u8 == cursor;
-                let row_disabled = i == 1 && !continue_enabled;
-                let color = if row_disabled {
-                    dim
-                } else if selected {
-                    gold
-                } else {
-                    white
-                };
-                if selected {
-                    let cur = font.layout_ascii(">");
-                    out.extend(text_draws_for(&cur, (pen.0 - 14, row_y), color));
-                }
+                let color = if selected { white } else { dim };
                 let l = font.layout_ascii(label);
                 out.extend(text_draws_for(&l, (pen.0, row_y), color));
             }
         }
         _ => {}
+    }
+    out
+}
+
+/// Build [`SpriteDraw`]s for the title-screen main-menu rows ("NEW GAME"
+/// / "CONTINUE") sampling the dedicated menu-glyph atlas from
+/// `PROT.DAT` (see [`legaia_asset::menu_glyph_atlas`]).
+///
+/// Retail-faithful equivalent of phase 2 in [`title_draws_for`] — same
+/// row labels and cursor / dim semantics, but each row is a horizontal
+/// strip of sprite cells sampled from the menu-glyph atlas instead of
+/// dialog-font glyphs. Selected row gets a gold tint; the Continue
+/// row is dimmed when `continue_enabled = false`. Retail's title menu
+/// only carries two rows (NEW GAME / CONTINUE); Options is reached via
+/// the in-game field menu, not from the title.
+///
+/// `cell_scale` is an integer multiplier applied to source-pixel sizes
+/// so engines can match the title-art's `play-window` stage scale
+/// (mirrors the per-band SpriteDraw scaling). `pen` is the top-left
+/// corner of the first row's first glyph in surface pixels.
+///
+/// Note: the menu-glyph atlas carries only uppercase letters and
+/// digits — no cursor marks.
+///
+/// Returns an empty vec for any phase other than 2.
+pub fn title_menu_draws_for(
+    phase: u8,
+    cursor: u8,
+    continue_enabled: bool,
+    pen: (i32, i32),
+    cell_scale: u32,
+) -> Vec<SpriteDraw> {
+    if phase != 2 {
+        return Vec::new();
+    }
+    // Retail uses color as the SELECTION INDICATOR: the highlighted row
+    // is bright white and unselected rows are dim gray. There is no
+    // arrow / cursor mark — the brightness IS the cursor. Disabled
+    // (Continue with no save) reads the same as a non-highlighted row.
+    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
+
+    use legaia_asset::menu_glyph_atlas as mga;
+    let cell_w = mga::GLYPH_W as i32;
+    let cell_h = mga::ALPHABET_GLYPH_H as i32;
+    let scale = cell_scale.max(1) as i32;
+    // One blank row of padding between rows so the small-caps glyphs
+    // sit clearly apart (matches the retail menu vertical pitch).
+    let line_h = cell_h + 2;
+
+    let rows = ["NEW GAME", "CONTINUE"];
+    let mut out = Vec::new();
+    for (i, label) in rows.iter().enumerate() {
+        let row_y = pen.1 + i as i32 * line_h * scale;
+        let selected = i as u8 == cursor;
+        let row_disabled = i == 1 && !continue_enabled;
+        let _ = row_disabled; // disabled rows render the same as unselected
+        let color = if selected { white } else { dim };
+        let mut x = pen.0;
+        for c in label.chars() {
+            if let Some((sx, sy, sw, sh)) = mga::glyph_rect(c) {
+                out.push(SpriteDraw {
+                    dst: (x, row_y, sw * scale as u32, sh * scale as u32),
+                    src: (sx, sy, sw, sh),
+                    color,
+                });
+            }
+            x += cell_w * scale;
+        }
     }
     out
 }
@@ -1994,6 +2058,12 @@ pub struct Scene<'a> {
     /// [`Self::overlay_text`]. Used by the actor sprite pipeline.
     pub overlay_sprites: Option<&'a SpriteOverlay<'a>>,
     pub overlay_text: Option<&'a TextOverlay<'a>>,
+    /// Optional second sprite-overlay slot drawn between
+    /// [`Self::overlay_sprites`] and [`Self::overlay_text`]. Used when
+    /// two distinct sprite atlases need to render on the same frame
+    /// (e.g. title-art bands + menu-glyph atlas during the title
+    /// menu phase).
+    pub overlay_sprites_2: Option<&'a SpriteOverlay<'a>>,
     /// Optional override of the surface clear colour (linear RGBA). When
     /// `None` the renderer falls back to its default dark-grey clear.
     /// Used during the boot publisher-logos phase to force pure black.
@@ -3388,8 +3458,11 @@ impl Renderer {
             }
             RenderTarget::Scene(scene) => {
                 self.stage_scene_uniforms(scene);
-                let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(2);
+                let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                 if let Some(s) = scene.overlay_sprites {
+                    overlays.push(s);
+                }
+                if let Some(s) = scene.overlay_sprites_2 {
                     overlays.push(s);
                 }
                 if let Some(t) = scene.overlay_text {
@@ -3545,8 +3618,11 @@ impl Renderer {
                         rp.set_index_buffer(lines.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                         rp.draw_indexed(0..lines.index_count, 0, 0..1);
                     }
-                    let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(2);
+                    let mut overlays: Vec<&TextOverlay<'_>> = Vec::with_capacity(3);
                     if let Some(s) = scene.overlay_sprites {
+                        overlays.push(s);
+                    }
+                    if let Some(s) = scene.overlay_sprites_2 {
                         overlays.push(s);
                     }
                     if let Some(t) = scene.overlay_text {

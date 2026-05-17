@@ -157,6 +157,22 @@ impl ProtIndex {
         Ok(bytes)
     }
 
+    /// Read raw bytes from `PROT.DAT` at an arbitrary file offset.
+    ///
+    /// Used to reach unindexed gap regions that don't belong to any TOC
+    /// entry — e.g. the 240 KB system-UI gap between the TOC and
+    /// `init_data` that carries the menu-glyph atlas and other
+    /// boot-time UI TIMs (see [`docs/subsystems/boot.md`]).
+    pub fn prot_dat_raw_bytes(&self, byte_offset: u64, len: usize) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        self.archive
+            .lock()
+            .unwrap()
+            .read_raw(byte_offset, len, &mut bytes)
+            .with_context(|| format!("read PROT.DAT raw at 0x{:X} +{}", byte_offset, len))?;
+        Ok(bytes)
+    }
+
     /// Detected class of an entry (lazy + cached).
     pub fn class_of(&self, idx: u32) -> Result<Class> {
         if let Some(c) = self.class_cache.lock().unwrap().get(&idx).copied() {

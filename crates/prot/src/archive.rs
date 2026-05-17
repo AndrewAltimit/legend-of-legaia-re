@@ -182,6 +182,27 @@ impl Archive {
             .size_sectors
             .saturating_sub(entry.indexed_size_sectors)
     }
+
+    /// Read arbitrary raw bytes from PROT.DAT at `byte_offset`. Used to
+    /// reach unindexed gap regions that don't belong to any TOC entry
+    /// (e.g. the 240 KB system-UI gap between the TOC and `init_data`
+    /// at LBA 0..120, which carries the menu-glyph atlas + boot-time
+    /// cursor / icon TIMs; see [`docs/subsystems/boot.md`]).
+    pub fn read_raw(&mut self, byte_offset: u64, len: usize, out: &mut Vec<u8>) -> Result<()> {
+        if byte_offset.saturating_add(len as u64) > self.file_len {
+            bail!(
+                "raw read [0x{:X}, +{}] past PROT.DAT end (0x{:X})",
+                byte_offset,
+                len,
+                self.file_len
+            );
+        }
+        out.clear();
+        out.resize(len, 0);
+        self.reader.seek(SeekFrom::Start(byte_offset))?;
+        self.reader.read_exact(out)?;
+        Ok(())
+    }
 }
 
 fn detect_header(reader: &mut dyn ReadSeek, len: u64) -> Result<Header> {

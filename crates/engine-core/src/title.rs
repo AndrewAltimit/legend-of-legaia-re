@@ -78,7 +78,9 @@ pub struct TitleSession {
     pub fade_in_frames: u16,
     /// Cursor blink period in frames. Default 30 (0.5s).
     pub blink_period: u16,
-    /// Number of menu rows. Default 3 (New Game / Continue / Options).
+    /// Number of menu rows. Default 2 (New Game / Continue). Retail
+    /// only carries those two rows; Options is reached through the
+    /// in-game field menu, not from the title screen.
     rows: u8,
     /// Set to `false` if no save data is present - disables the Continue
     /// row in the menu.
@@ -93,7 +95,7 @@ impl TitleSession {
             },
             fade_in_frames: 90,
             blink_period: 30,
-            rows: 3,
+            rows: 2,
             continue_enabled: true,
         }
     }
@@ -265,6 +267,9 @@ mod tests {
 
     #[test]
     fn cursor_skips_continue_when_disabled() {
+        // With only two rows (NewGame / Continue) and Continue disabled,
+        // pressing Down wraps right back to NewGame — that's the
+        // intended UX (don't land on a greyed-out row).
         let mut s = TitleSession::without_save_data();
         s.skip_fade_in();
         s.tick(TitleInput {
@@ -276,7 +281,7 @@ mod tests {
             ..Default::default()
         });
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 2),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
             _ => panic!(),
         }
     }
@@ -316,13 +321,15 @@ mod tests {
 
     #[test]
     fn cursor_wraps_around() {
+        // Two-row menu (NewGame / Continue). Start press lands cursor
+        // on Continue (1); Up goes to NewGame (0); Up again wraps back
+        // to Continue (1).
         let mut s = TitleSession::new();
         s.skip_fade_in();
         s.tick(TitleInput {
             start: true,
             ..Default::default()
         });
-        // From cursor 1 → up → 0 → up → 2.
         s.tick(TitleInput {
             up: true,
             ..Default::default()
@@ -336,7 +343,7 @@ mod tests {
             ..Default::default()
         });
         match s.phase() {
-            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 2),
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
             _ => panic!(),
         }
     }
