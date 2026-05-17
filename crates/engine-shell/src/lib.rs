@@ -7,6 +7,7 @@
 pub mod bgm;
 pub mod boot;
 pub mod scenarios;
+pub mod vram_oracle;
 
 pub use bgm::AudioBgmDirector;
 pub use boot::{BootConfig, BootSession};
