@@ -1315,6 +1315,7 @@ dependencies = [
  "log",
  "png",
  "serde",
+ "serde_json",
  "sha2",
  "toml",
  "winit",
