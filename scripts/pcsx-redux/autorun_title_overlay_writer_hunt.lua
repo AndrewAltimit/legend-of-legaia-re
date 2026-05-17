@@ -23,7 +23,7 @@
 --   LEGAIA_LUA=scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua \
 --   LEGAIA_FRAMES=2400 \
 --   LEGAIA_OUT=captures/boot_walk/title_overlay_writer.csv \
---       bash scripts/pcsx-redux/run_world_map_probe.sh
+--       bash scripts/pcsx-redux/run_probe.sh
 --
 -- Output:
 --   <OUT>                                 per-write CSV row
@@ -36,8 +36,7 @@ local probe = require("probe")
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate7")
 local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 2400)
-local OUT_PATH    = probe.getenv("LEGAIA_OUT",
-    "captures/boot_walk/title_overlay_writer.csv")
+local OUT_PATH    = probe.out_path("title_overlay_writer.csv")
 local DETAIL_PATH = OUT_PATH:gsub("%.csv$", ".detail.txt")
 local SNAP_PATH   = OUT_PATH:gsub("%.csv$", ".hits.txt")
 local NO_SSTATE   = probe.getenv("LEGAIA_NO_SSTATE", "") == "1"

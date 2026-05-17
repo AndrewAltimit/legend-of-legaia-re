@@ -10,7 +10,7 @@ For 16 bpp the pixels are PSX BGR555 + STP (0bMrrrrrgggggbbbbb little-endian).
 For 24 bpp the pixels are BGR888 byte-packed (one pixel = 3 bytes B, G, R).
 
 Usage:
-    scripts/decode_pcsx_screen.py captures/boot_walk/title_live.bin.screen \\
+    scripts/pcsx-redux/decode_pcsx_screen.py captures/boot_walk/title_live.bin.screen \\
         -o captures/boot_walk/title_live.png
 
 Requires Pillow.

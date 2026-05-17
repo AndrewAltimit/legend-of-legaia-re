@@ -16,7 +16,7 @@ Examples:
 
 The arguments `mc<N>` resolve via $LEGAIA_MEDNAFEN_DIR (defaulting to
 $HOME/.mednafen/mcs/) and the filename pattern in
-`scripts/mednafen/scenarios.toml`.
+`scripts/scenarios.toml`.
 """
 
 import argparse

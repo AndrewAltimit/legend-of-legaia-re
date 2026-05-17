@@ -1,15 +1,21 @@
 //! Declarative scenario manifest.
 //!
-//! `scripts/mednafen/scenarios.toml` maps each `.mc{0..9}` save state to a
-//! labelled scenario with:
+//! `scripts/scenarios.toml` is the unified save-state catalogue. Each
+//! scenario maps an investigation label to:
 //!   - a human-readable description ("loading into a new area"),
-//!   - the recommended overlay slice range,
+//!   - mednafen's `.mc{0..9}` slot + the recommended overlay slice range,
 //!   - watchpoint hints (regions of interest to diff against),
-//!   - downstream artefacts (output Ghidra program label, CSV path, etc).
+//!   - downstream artefacts (output Ghidra program label, CSV path, etc),
+//!   - cross-emulator save-state paths so PCSX-Redux probes and
+//!     Duckstation captures can resolve the same scenario by name,
+//!   - optional phase / expected-game-mode / expected-active-scene /
+//!     ram-fingerprint metadata used by `manage-states.py validate` to
+//!     detect save-state drift.
 //!
-//! The manifest is a single source of truth consumed by both the CLI
-//! (`mednafen-state scenarios`) and the shell scripts under
-//! `scripts/mednafen/`.
+//! The manifest is a single source of truth consumed by:
+//!   - `mednafen-state` CLI + the shell scripts under `scripts/mednafen/`,
+//!   - `run_probe.sh --scenario <label>` for PCSX-Redux probes,
+//!   - `scripts/manage-states.py` for cross-emulator state validation.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -62,6 +68,39 @@ pub struct Scenario {
     /// progressive diff set).
     #[serde(default)]
     pub diff_against: Vec<u8>,
+
+    // ------------------------------------------------------------------
+    // Cross-emulator state paths. Optional — a scenario may be captured
+    // in one emulator and not another. Paths may contain `$HOME` or
+    // `~`; consumers expand them at use time.
+    /// PCSX-Redux save-state path (resolved by `run_probe.sh --scenario`).
+    #[serde(default)]
+    pub pcsx_redux_sstate: Option<PathBuf>,
+    /// Duckstation `.sav` path.
+    #[serde(default)]
+    pub duckstation_sav: Option<PathBuf>,
+
+    // ------------------------------------------------------------------
+    // State-validation metadata. Populated by `manage-states.py
+    // fingerprint`; checked by `manage-states.py validate` to detect
+    // save-state drift.
+    /// Boot-arc phase: `boot` / `title` / `menu` / `field` / `battle` /
+    /// `world_map` / `cutscene`.
+    #[serde(default)]
+    pub phase: Option<String>,
+    /// Expected `_DAT_8007B83C` (game-mode register) value at scenario
+    /// start. `0x1A` = StrInit, etc.
+    #[serde(default)]
+    pub expected_game_mode: Option<u8>,
+    /// Expected CDNAME label of the active scene (e.g. `map01`, `town01`).
+    #[serde(default)]
+    pub expected_active_scene: Option<String>,
+    /// SHA-256 of the first 64 KiB of main RAM after the save-state
+    /// load settles (default 60 vsyncs). Reproducible across emulators
+    /// modulo non-deterministic uninitialised regions — validates the
+    /// save state hasn't drifted vs the committed manifest.
+    #[serde(default)]
+    pub ram_fingerprint_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

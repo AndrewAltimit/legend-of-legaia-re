@@ -24,7 +24,7 @@ schema, listing for each slot:
   * a hex preview of the first differing 32 bytes on each side
 
 USAGE
-    python3 scripts/diff_field_pack_projection.py \\
+    python3 scripts/pcsx-redux/diff_field_pack_projection.py \\
         --runtime-bin /tmp/fp_proj.post.00.bin \\
         --runtime-meta /tmp/fp_proj.post.00.bin.meta \\
         --disc-bytes extracted/prot/0003_town01.bin

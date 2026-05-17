@@ -21,7 +21,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-MANIFEST="scripts/mednafen/scenarios.toml"
+MANIFEST="scripts/scenarios.toml"
 DO_IMPORT=0
 ONLY_SLOT=""
 

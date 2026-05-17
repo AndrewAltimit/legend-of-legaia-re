@@ -1,103 +1,57 @@
 -- autorun_dump_full_ram.lua
 --
--- Dump the full 2 MiB main RAM from a PCSX-Redux save state to disk.
--- Companion to autorun_dump_slot4.lua: the slot-4-only variant requires
--- a known load base, but several captured save states keep the kingdom
--- data at addresses that drift between revisions / builds. Dumping the
--- whole RAM lets us run the slot-4 signature search (count = 15,
--- byte_offsets[0] = 64, body-0 marker = 0x080C) in post.
+-- Dump the full 2 MiB main RAM from a PCSX-Redux save state to disk. The
+-- 2 MiB single readAt() permanently degrades subsequent vsync delivery
+-- (see lib/probe.lua caveats), so this script does ONE dump and quits —
+-- multi-snapshot probes should use autorun_boot_walk_snapshots.lua's
+-- chunked-per-vsync pattern instead.
 --
--- Env vars (read at script load):
---   LEGAIA_SSTATE   path to .sstate file
---                   default: ~/Tools/pcsx-redux/SCUS94254.sstate2
---   LEGAIA_OUT      output .bin path
---                   default: ram_full.bin (in CWD)
---   LEGAIA_FRAMES   post-load vsyncs to wait before reading (default 120)
+-- Env vars:
+--   LEGAIA_SSTATE        save state path (default sstate2)
+--   LEGAIA_OUT           output .bin path (default ram_full.bin)
+--   LEGAIA_FRAMES        post-load settle vsyncs before dump (default 120)
 
-local function getenv(name, fallback)
-    local v = os.getenv(name)
-    if v == nil or v == "" then return fallback end
-    return v
-end
+package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
+local probe = require("probe")
 
-local SSTATE_PATH = getenv("LEGAIA_SSTATE",
+local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate2")
-local OUT_PATH    = getenv("LEGAIA_OUT", "ram_full.bin")
-local SETTLE_VSYNCS = tonumber(getenv("LEGAIA_FRAMES", "120"))
-
-local RAM_SIZE = 2 * 1024 * 1024
+local OUT_PATH    = probe.out_path("ram_full.bin")
+local SETTLE      = probe.getenv_num("LEGAIA_FRAMES", 120)
 
 PCSX.log(string.format(
-    "[dump_ram] sstate=%s out=%s size=%d",
-    SSTATE_PATH, OUT_PATH, RAM_SIZE))
+    "[dump_ram] sstate=%s out=%s size=%d settle=%d",
+    SSTATE_PATH, OUT_PATH, probe.RAM_SIZE, SETTLE))
 
-local STATE_WAIT_BOOT = 1
-local STATE_SETTLE    = 2
-local STATE_DONE      = 3
+probe.run({
+    sstate         = SSTATE_PATH,
+    capture_frames = SETTLE,
 
-local state            = STATE_WAIT_BOOT
-local vsync_count      = 0
-local load_complete_at = nil
-local BOOT_DELAY_VSYNCS = 60
-
-local function try_load_save_state()
-    local fh, err = Support.File.open(SSTATE_PATH, "READ")
-    if fh == nil or fh:failed() then
+    -- No breakpoints — the lib still runs the boot/load/settle state
+    -- machine for us. on_arm just announces the wait.
+    on_arm = function(_)
         PCSX.log(string.format(
-            "[dump_ram] FATAL: cannot open %s (%s)",
-            SSTATE_PATH, tostring(err)))
-        PCSX.quit(2)
-        return false
-    end
-    local zfh = Support.File.zReader(fh)
-    PCSX.loadSaveState(zfh)
-    zfh:close()
-    fh:close()
-    PCSX.log("[dump_ram] save state loaded")
-    return true
-end
+            "[dump_ram] settling %d vsyncs before dump", SETTLE))
+        return {}
+    end,
 
-local function dump_full_ram()
-    local mem_file = PCSX.getMemoryAsFile()
-    local buf = mem_file:readAt(RAM_SIZE, 0)
-    if buf == nil then
-        PCSX.log("[dump_ram] FATAL: cannot read main RAM")
-        return false
-    end
-    local s = tostring(buf)
-    local out_fh, ferr = io.open(OUT_PATH, "wb")
-    if out_fh == nil then
+    on_done = function(_, _)
+        local buf = probe.read_bytes(0x80000000, probe.RAM_SIZE)
+        if buf == nil then
+            PCSX.log("[dump_ram] FATAL: cannot read main RAM")
+            return
+        end
+        local s = tostring(buf)
+        local fh, err = io.open(OUT_PATH, "wb")
+        if fh == nil then
+            PCSX.log(string.format(
+                "[dump_ram] FATAL: cannot open %s: %s",
+                OUT_PATH, tostring(err)))
+            return
+        end
+        fh:write(s)
+        fh:close()
         PCSX.log(string.format(
-            "[dump_ram] FATAL: cannot open %s: %s",
-            OUT_PATH, tostring(ferr)))
-        return false
-    end
-    out_fh:write(s)
-    out_fh:close()
-    PCSX.log(string.format("[dump_ram] wrote %d bytes to %s", #s, OUT_PATH))
-    return true
-end
-
-local function on_vsync()
-    vsync_count = vsync_count + 1
-    if state == STATE_WAIT_BOOT then
-        if vsync_count >= BOOT_DELAY_VSYNCS then
-            if try_load_save_state() then
-                state            = STATE_SETTLE
-                load_complete_at = vsync_count
-            end
-        end
-    elseif state == STATE_SETTLE then
-        if vsync_count - load_complete_at >= SETTLE_VSYNCS then
-            dump_full_ram()
-            state = STATE_DONE
-            PCSX.log("[dump_ram] dump done; quitting in 30 vsyncs")
-        end
-    elseif state == STATE_DONE then
-        if vsync_count - load_complete_at >= SETTLE_VSYNCS + 30 then
-            PCSX.quit(0)
-        end
-    end
-end
-
-PCSX.Events.createEventListener("GPU::Vsync", on_vsync)
+            "[dump_ram] wrote %d bytes to %s", #s, OUT_PATH))
+    end,
+})

@@ -21,7 +21,7 @@ local M = {}
 
 -- Default candidate paths, tried in order. The first that loads wins.
 -- The repo-root form is used when probes are launched via the
--- run_world_map_probe.sh harness from the repo root. The fallback paths
+-- run_probe.sh harness from the repo root. The fallback paths
 -- cover working-directory variations.
 local DEFAULTS = {
     "ghidra/scripts/symbols.lua",

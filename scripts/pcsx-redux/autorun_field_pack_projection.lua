@@ -31,7 +31,7 @@
 --      from inside the probe (BTN.UP = 4 per probe.lua) so the run is
 --      unattended.
 --
--- A separate Python tool (scripts/diff_field_pack_projection.py) then
+-- A separate Python tool (scripts/pcsx-redux/diff_field_pack_projection.py) then
 -- diffs the captured RAM against the on-disc PROT bytes for the target
 -- scene's field-pack entry, surfacing the "0x4C 0xE2" instances and any
 -- other relocation residue.
@@ -42,7 +42,7 @@
 --       LEGAIA_HOLD_BUTTON=4 LEGAIA_HOLD=60 \
 --       LEGAIA_OUT=/tmp/fp_proj \
 --       LEGAIA_FRAMES=1200 \
---       ./scripts/pcsx-redux/run_world_map_probe.sh
+--       ./scripts/pcsx-redux/run_probe.sh
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -50,7 +50,7 @@ local probe = require("probe")
 local SSTATE_PATH = probe.getenv("LEGAIA_SSTATE",
     os.getenv("HOME") .. "/Tools/pcsx-redux/SCUS94254.sstate")
 local FRAMES      = probe.getenv_num("LEGAIA_FRAMES", 1200)
-local OUT_BASE    = probe.getenv("LEGAIA_OUT", "fp_proj")
+local OUT_BASE    = probe.out_path("fp_proj")
 local HOLD_BUTTON = probe.getenv_num("LEGAIA_HOLD_BUTTON", 0)
 local HOLD_FRAMES = probe.getenv_num("LEGAIA_HOLD", 0)
 local QUIT_AFTER_LOADS = probe.getenv_num("LEGAIA_QUIT_AFTER_LOADS", 0)
