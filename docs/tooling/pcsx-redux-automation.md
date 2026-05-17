@@ -328,6 +328,47 @@ bash scripts/pcsx-redux/run_probe.sh --fast \
 The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
 `run_dump_slot4.sh` wrappers were folded into this one runner.
 
+### GDB-stub bridge (`gdb_probe.py`)
+
+[`gdb_probe.py`](../../scripts/pcsx-redux/gdb_probe.py) is the
+one-shot escape hatch. PCSX-Redux exposes a GDB Remote Serial Protocol
+stub on TCP port 3333 (settings: *Emulator → GDB server port*); this
+script speaks the protocol directly. Use it when the `.probe.toml`
+state machine is overkill &mdash; ad-hoc reads, single-shot
+"break-here-read-there" investigations, register dumps.
+
+| Subcommand | Use |
+|---|---|
+| `read-mem ADDR LEN [--out F]` | Hex dump or raw bytes to file. ADDR is hex or a Ghidra symbol. |
+| `read-regs` | Dump 38 PSX MIPS GPRs + PC. |
+| `write-mem ADDR HEXBYTES` | Patch memory in-flight. |
+| `when-pc-hits ADDR --read-mem A,L [--out F]` | One-shot: arm exec BP, continue, read on hit, disarm. |
+| `watch ADDR LEN --kind {read,write,access}` | Insert a watchpoint, print the stop reply when it fires. |
+| `selftest` | Run protocol-codec + client self-tests against an in-process mock server (no live emulator needed). |
+
+When to use this vs `.probe.toml`:
+* `.probe.toml` for **repeatable captures** that produce a CSV which
+  `probe.py regress` can gate on.
+* `gdb_probe.py` for **one-shot ad-hoc queries** &mdash; no schema, no
+  scenario, no state machine to author.
+
+```bash
+# Read 512 bytes of the kingdom slot-4 region in-flight:
+scripts/pcsx-redux/gdb_probe.py read-mem 0x8011A624 512
+
+# Dump registers right now:
+scripts/pcsx-redux/gdb_probe.py read-regs
+
+# One-shot break-and-read: when the title overlay tick fires, dump the
+# attract-countdown register:
+scripts/pcsx-redux/gdb_probe.py when-pc-hits FUN_801DD35C \
+    --read-mem _DAT_801EF16C,16
+```
+
+Symbol names resolve via the same `ghidra/scripts/symbols.json` the Lua
+probe layer uses; misses raise with the regenerate-via hint. Hex
+(`0x801DE840`, `801de840`) is always accepted.
+
 ### Analysing probe outputs (`probe.py`)
 
 [`probe.py`](../../scripts/pcsx-redux/probe.py) is the Python-side
