@@ -79,6 +79,7 @@ pub mod field_disasm;
 pub mod field_helpers;
 pub mod menu;
 pub mod motion_vm;
+pub mod move_buffer;
 pub mod move_vm;
 pub mod prim_dispatch;
 pub mod status_effects;
