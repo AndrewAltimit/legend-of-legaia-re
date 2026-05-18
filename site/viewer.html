@@ -224,28 +224,17 @@
   </div>
 </section>
 
-<section class="doc-section">
-  <h2>What this viewer does</h2>
-  <p>When you load a full disc, the WASM module:</p>
-  <ol>
-    <li>Walks ISO9660 to find <code>PROT.DAT</code></li>
-    <li>Parses the PROT TOC to locate all 1232 entries (each entry's full on-disc footprint, including any trailing-overlay sectors past the TOC-indexed end — see <a href="formats/prot.html">PROT TOC</a>)</li>
-    <li>Classifies each entry through the same detector chain the native pipeline uses (<code>tim_passthrough</code>, <code>tim_pack</code>, <code>data_field_streaming</code>, <code>scene_tmd_stream</code>, <code>field_pack</code>, <code>effect_bundle</code>, etc.)</li>
-    <li>Runs <code>tim_scan</code> against each entry - including LZS decompression - and keeps only the entries with at least one decodable PSX TIM</li>
-    <li>Builds the filtered sidebar list, grouped by classification</li>
-  </ol>
-
-  <p>This typically narrows ~1232 raw entries down to ~300-400 viewable ones, sorted by PROT index. Use the filter dropdown to narrow further by class (e.g. only <code>scene_tmd_stream</code> for character meshes' textures, or only <code>tim_passthrough</code> for standalone images).</p>
-
-  <p>The 3D path renders Legaia TMDs in <strong>textured 3D</strong> by default: WebGL2-backed, with the same paletted fragment shader the native engine uses (1024×512 R16UI VRAM, per-prim CBA/TSB, 4/8/15bpp + CLUT lookup decoded per-fragment). Toggle "textured" off in the sidebar for a flat-shaded fallback (Canvas 2D, painter's-algorithm depth sort).</p>
-
-  <p class="hint">The native build (<code>./target/release/asset-viewer prot extracted/PROT.DAT</code>) additionally plays VAB samples, renders stage geometry, and supports <code>--vram-extra-dir</code> for cross-PROT-entry CLUT chains. Run that for the full experience.</p>
+<section class="doc-section" id="using-the-viewer">
+  <h2>Using the viewer</h2>
+  <p>The sidebar groups entries by scene category and classification. Filter by class (e.g. only <code>scene_tmd_stream</code> for character meshes, or <code>tim_passthrough</code> for standalone images) and jump by PROT index. By default the 3D path renders Legaia TMDs textured (WebGL2; same paletted fragment shader the native engine uses); toggle "textured" off in the sidebar for a flat-shaded fallback.</p>
+  <p class="hint">For the full experience &mdash; VAB sample playback, stage geometry, cross-PROT-entry CLUT chains via <code>--vram-extra-dir</code> &mdash; run the native build: <code>./target/release/asset-viewer prot extracted/PROT.DAT</code>.</p>
 </section>
 
-<section class="doc-section">
-  <h2>Privacy + legal</h2>
-  <p>This page never uploads your disc image anywhere. The WASM module reads bytes via the browser's <code>FileReader</code> API directly into WebAssembly memory, parses them locally, and renders to a canvas. No network requests for the disc data.</p>
-  <p>The legal model is the same as ScummVM, OpenRCT2, OpenMW, OpenLara: zero Sony bytes ship with this project; you supply your own disc image. <a href="subsystems/engine.html">Read the engine port plan</a> for the legal posture in detail.</p>
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <p>
+    Loaded disc data never leaves your browser &mdash; <code>FileReader</code> reads straight into WebAssembly memory; no network calls for the disc bytes. Project legal posture (zero Sony bytes shipped; bring your own disc) is on the <a href="subsystems/engine.html">engine port plan</a>. Detector chain + dispatcher: <a href="subsystems/asset-loader.html">asset loader</a> &middot; PROT TOC layout: <a href="formats/prot.html">PROT.DAT TOC</a>.
+  </p>
 </section>
 
 <script src="js/webgl-shaders.js"></script>

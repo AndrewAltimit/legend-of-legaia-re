@@ -49,6 +49,7 @@ const NAV = [
       { href: 'subsystems/battle-formulas.html',text: 'Battle formulas',          key: 'subsystems/battle-formulas' },
       // Per-domain runtime
       { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
+      { href: 'subsystems/world-overview-viewer.html', text: 'World-overview viewer', key: 'subsystems/world-overview-viewer' },
       { href: 'subsystems/save-screen.html',    text: 'Save screen',              key: 'subsystems/save-screen' },
       { href: 'subsystems/shop.html',           text: 'Shop',                     key: 'subsystems/shop' },
       { href: 'subsystems/inn.html',            text: 'Inn',                      key: 'subsystems/inn' },

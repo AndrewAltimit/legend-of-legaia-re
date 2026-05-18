@@ -6,16 +6,6 @@
   </p>
 </header>
 
-<section class="doc-section" id="how-this-works">
-  <h2>How this page works</h2>
-  <p>
-    The cards below pull from two sources that the project already curates: the gamedata TOML files in <code>data/gamedata/</code> (enemy / boss / shop tables from public walkthroughs) and the curated CDNAME map in <code>site/_gen.py</code> (label &rarr; PROT-block start). Click a card to deep-link into the asset viewer with the matching scene category pre-selected.
-  </p>
-  <div class="hint">
-    Note: walkthrough names &harr; CDNAME labels don't always match 1:1 (<code>balden</code> in CDNAME is the Japanese name for Vidna, <code>geremi</code> is Jeremi, etc.). Where the mapping is known, the card shows both. Some named locations are field maps without a settlement; those still appear here for their enemy rosters.
-  </p>
-</section>
-
 <section class="doc-section" id="towns">
   <h2>Towns</h2>
   <p>Visitable settlements - NPC dialog, shops, the inn, and the save crystal. Each entry maps to a <code>town*</code>, <code>izumi</code>, <code>vell</code>, <code>geremi</code>, <code>balden</code>, <code>rayman</code>, <code>conc</code>, <code>station</code>, or <code>deene</code> CDNAME block.</p>
@@ -32,9 +22,11 @@
   </div>
 </section>
 
-<section class="doc-section" id="open-q">
-  <h2>Open questions</h2>
-  <p>The walkthrough &harr; CDNAME mapping is firm for ~16 named towns. A handful of CDNAME labels (<code>town0b</code> / <code>town0c</code> / <code>town0e</code>, <code>doman</code>, <code>retock</code>, <code>kor*</code>, <code>juui*</code>, <code>rugi</code>) are field-pack scenes whose walkthrough names haven't been pinned. If you map one, the curated table in <code>site/_gen.py</code> (<code>CDNAME_SCENES</code> + <code>TOWN_TO_SCENE</code>) is the single source of truth.</p>
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <p>
+    Cards pull from <code>data/gamedata/*.toml</code> (curated enemy / boss / shop tables &mdash; see <a href="reference/gamedata.html">game-data reference</a>) joined against the <a href="formats/cdname.html">CDNAME map</a>. Walkthrough name &harr; CDNAME label isn't always 1:1 (<code>balden</code> = Vidna, <code>geremi</code> = Jeremi); a handful of field-pack labels (<code>town0b</code>, <code>doman</code>, <code>retock</code>, <code>kor*</code>, <code>juui*</code>, <code>rugi</code>) still have no walkthrough mapping &mdash; if you pin one, the source of truth is <code>CDNAME_SCENES</code> + <code>TOWN_TO_SCENE</code> in <code>site/_gen.py</code>.
+  </p>
 </section>
 
 <script>
