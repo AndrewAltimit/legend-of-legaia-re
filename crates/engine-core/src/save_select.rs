@@ -1,5 +1,7 @@
 //! Save-slot select session.
 //!
+//! PORT: FUN_801DD35C (save-UI dispatcher), FUN_801E08D8 (info-panel renderer), FUN_801E1C1C (slide-in animator)
+//!
 //! Drives the slot-list UI (read save metadata, browse, Load/Save/Delete
 //! confirmations). Renderer-agnostic - engines render the slot list
 //! against the existing text overlay; the session emits typed events for

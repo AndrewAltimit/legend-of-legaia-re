@@ -78,6 +78,9 @@ TARGETS = [
     "801d0eec",
     "801d0fe4",
     "801dfef4",
+
+    # Surfaced by second-pass PORT-tag backfill (port without dump)
+    "801e30e4",  # FMV opcode handler in cutscene_dialogue overlay
 ]
 
 OUT_DIR = "/scripts/funcs"

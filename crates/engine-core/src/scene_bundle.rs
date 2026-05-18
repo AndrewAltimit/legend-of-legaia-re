@@ -1,6 +1,8 @@
 //! Scene-bundle loader: locates the per-scene asset table inside a loaded
 //! [`crate::scene::Scene`] and walks the descriptors into typed sub-assets.
 //!
+//! PORT: FUN_8001F7C0, FUN_8001F05C
+//!
 //! Mirrors the runtime field-loader chain in [`docs/subsystems/asset-loader.md`]:
 //! `FUN_8001F7C0` reads the scene-name path, opens the bundle entry, and the
 //! dispatcher at `FUN_8001F05C` walks the 7 descriptors. The retail engine

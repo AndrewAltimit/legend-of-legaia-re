@@ -1,5 +1,7 @@
 //! World-map controller - camera state and top-view debug toggle.
 //!
+//! PORT: FUN_801E76D4
+//!
 //! Mirrors the globals and input logic documented from `FUN_801E76D4`
 //! (overlay_world_map.bin). One instance lives on [`crate::world::World`]
 //! when `SceneMode::WorldMap` is active.
