@@ -946,6 +946,18 @@ pub const SAVE_SELECT_PANEL_SIZE: (i32, i32) = (81, 29);
 /// sprite-top edge — drawing at that offset made the cursor finger
 /// look too high relative to the pill chrome.
 pub const SAVE_SELECT_SLOT1_POS: (i32, i32) = (137, 99);
+/// Retail pin of the SLOT 1 pill sprite top-left **after the user
+/// has committed to loading a slot** — once the load flow enters
+/// `NowChecking` / `SlotPreview`, retail relocates the active pill
+/// up under the Load panel. Pinned via the slide-in primitive
+/// `FUN_801E1C1C` mode 2 in `overlay_save_ui_select_801dd35c.txt`:
+/// the dispatcher calls `FUN_801e1c1c(2, DAT_801ef194, 0xa0, 0x60,
+/// 0x30, 0x28)` — slide from `(160, 96)` to **target `(48, 40)`**.
+/// Mode 2's GPU emit pre-shifts `sVar6 = param_3 - 0x18` so the
+/// composite's top-left lands at `(24, 40)`. The earlier
+/// screenshot-derived `(22, 41)` was ~2px off due to anti-aliased
+/// sprite-edge sampling. Pairs with [`SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE`].
+pub const SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE: (i32, i32) = (24, 40);
 /// Vertical pitch between consecutive slot pill sprite tops in
 /// framebuffer pixels. SLOT 1 sprite top at y=99, SLOT 2 at y=115.
 pub const SAVE_SELECT_SLOT_PITCH_Y: i32 = 16;
@@ -954,6 +966,14 @@ pub const SAVE_SELECT_SLOT_PITCH_Y: i32 = 16;
 /// [`legaia_asset::title_pak::OVERLAY_SAVE_CURSOR_RETAIL_DST`]. SLOT 2
 /// shifts the cursor down by [`SAVE_SELECT_SLOT_PITCH_Y`].
 pub const SAVE_SELECT_CURSOR_POS: (i32, i32) = (114, 100);
+/// Pin of the pointing-finger cursor sprite top-left during the
+/// Load-active states (NowChecking / SlotPreview), matching the
+/// SLOT 1 pill at [`SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE`]. Retail
+/// hides the pill cursor while the dialog is up and the grid
+/// emits its own cursor, so this constant is currently unused in
+/// emission — kept here for parity with the Browsing pin in case
+/// a future variant needs it.
+pub const SAVE_SELECT_CURSOR_POS_LOAD_ACTIVE: (i32, i32) = (10, 41);
 /// **DEPRECATED** — superseded by [`SAVE_SELECT_CURSOR_POS`]. Old
 /// callers used this with `SAVE_SELECT_SLOT1_POS` to derive cursor
 /// placement; new code should use [`SAVE_SELECT_CURSOR_POS`] directly.
@@ -1037,6 +1057,15 @@ pub struct SaveMenuAtlasRects {
     /// can draw the tile as a regular SpriteDraw, tiled horizontally
     /// 2× full-width + 1× 17-wide-remainder.
     pub panel_interior: (u32, u32, u32, u32),
+    /// Load-screen empty-cell frame sprite (32x32, 20x20 blue hollow
+    /// frame centered with 6px transparent margin). Used by the slot-
+    /// preview screen to draw the 5x3 grid of save-slot boxes. When
+    /// `None`, the slot-preview falls back to a solid blue rect.
+    pub load_empty_frame: Option<(u32, u32, u32, u32)>,
+    /// Up to 3 character portrait sub-rects (16x16 each, decoded
+    /// from PROT.DAT[0x1AC90..0x1AF30]). Index = char_id (0=Vahn,
+    /// 1=Noa, 2=Gala). `None` for char_ids past the 3-portrait atlas.
+    pub load_portrait_by_char: [Option<(u32, u32, u32, u32)>; 3],
 }
 
 /// Build [`SpriteDraw`]s for the retail save-screen chrome (9-slice
@@ -1061,17 +1090,27 @@ pub struct SaveMenuAtlasRects {
 ///                  SLOT 2  ← stacked at +SAVE_SELECT_SLOT_PITCH_Y
 /// ```
 ///
-/// `slot_count` controls how many pill rows are emitted (capped at
-/// 2 — retail-baked sprites cover SLOT 1 / SLOT 2; engines that
-/// expose more save slots fall back to the SLOT 2 sprite for the
-/// trailing rows).
+/// `pills` lists the slot indices whose pills are drawn. Pills are
+/// rendered at `pill_anchor + (0, slot_index * PITCH)`, and slot
+/// index `0` uses the SLOT 1 sprite while every other index falls
+/// back to the SLOT 2 sprite. Retail draws all pills during Browsing
+/// (`&[0, 1]`) but shows only the selected pill once a slot has been
+/// confirmed (`&[selected_slot]`) — the NowChecking dialog and
+/// SlotPreview grid both hide the non-selected pills.
+///
+/// `pill_anchor` is the framebuffer top-left of the slot-index-0
+/// pill. Pass [`SAVE_SELECT_SLOT1_POS`] during Browsing and
+/// [`SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE`] during the Load-active
+/// states (NowChecking / SlotPreview), matching retail's pill
+/// relocation up under the Load panel once a slot is committed.
 ///
 /// `stage_scale` multiplies every dst dimension so callers that
 /// upscale a 256x256 stage into a larger surface keep the chrome
 /// in lockstep with the title-art bands.
 pub fn save_select_chrome_draws_for(
     rects: &SaveMenuAtlasRects,
-    slot_count: usize,
+    pills: &[u8],
+    pill_anchor: (i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
@@ -1230,14 +1269,20 @@ pub fn save_select_chrome_draws_for(
         white,
     );
 
-    // --- Stacked SLOT pills (atlas decoded with CLUT 7) ---
-    for i in 0..slot_count {
-        let dst_y = SAVE_SELECT_SLOT1_POS.1 + (i as i32) * SAVE_SELECT_SLOT_PITCH_Y;
-        let src = if i == 0 { rects.slot1 } else { rects.slot2 };
+    // --- Slot pills (atlas decoded with CLUT 7) at their natural row
+    // positions anchored at `pill_anchor`. Each pill is drawn at
+    // `pill_anchor + (0, slot_index*PITCH)` so retail-pinned positions
+    // stay stable regardless of which subset of pills is currently
+    // visible (selected-only during NowChecking / SlotPreview vs. all
+    // pills during Browsing) AND so retail's Load-active relocation of
+    // SLOT 1 under the Load panel is just a different `pill_anchor`.
+    for &slot in pills {
+        let dst_y = pill_anchor.1 + (slot as i32) * SAVE_SELECT_SLOT_PITCH_Y;
+        let src = if slot == 0 { rects.slot1 } else { rects.slot2 };
         push(
             &mut out,
             src,
-            SAVE_SELECT_SLOT1_POS.0,
+            pill_anchor.0,
             dst_y,
             src.2 as i32,
             src.3 as i32,
@@ -1278,6 +1323,592 @@ pub fn save_select_cursor_draw_for(
         src,
         color: [1.0, 1.0, 1.0, 1.0],
     }
+}
+
+// -----------------------------------------------------------------------
+// Generic 9-slice panel composition + "Now checking" dialog + slot-preview
+// grid + slot-info panel rendering.
+//
+// All positions are stage pixels (32x240 boot-UI stage); `stage_scale`
+// upscales to surface pixels. Pinned against the captured retail
+// framebuffer in `captures/slot_info_dump/.../now_checking_fb.png`
+// (sstate9 → CROSS → ~30 vsyncs) and `slot_info_fb.png` (~170 vsyncs).
+// -----------------------------------------------------------------------
+
+/// Compose a 9-slice panel at arbitrary `(dst_x, dst_y, dst_w, dst_h)`
+/// stage pixels into `out`. Tiles the top/bottom 24-wide edges with a
+/// remainder, and tiles the left/right 4×21 edges vertically with a
+/// remainder. Used by both [`save_select_chrome_draws_for`] (which has
+/// its own legacy code path that retains byte-exact behaviour) and
+/// [`now_checking_panel_draws_for`].
+///
+/// Interior fill: a horizontal tiling of `rects.panel_interior` with
+/// the per-tile width narrowed on the last (partial) column. The
+/// retail engine emits the interior FIRST (3 gouraud-shaded quads
+/// covering 32+32+17 of the 81-wide panel), then the border on top.
+fn nine_slice_panel_into(
+    out: &mut Vec<SpriteDraw>,
+    rects: &SaveMenuAtlasRects,
+    dst_stage: (i32, i32, i32, i32), // (x, y, w, h)
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    let scale = stage_scale.max(1) as i32;
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let (px, py, pw, ph) = dst_stage;
+
+    let push = |out: &mut Vec<SpriteDraw>,
+                src: (u32, u32, u32, u32),
+                sx: i32,
+                sy: i32,
+                sw: i32,
+                sh: i32| {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                (sw as u32) * scale as u32,
+                (sh as u32) * scale as u32,
+            ),
+            src,
+            color: white,
+        });
+    };
+
+    let cw = rects.panel_tl.2 as i32;
+    let ch = rects.panel_tl.3 as i32;
+    let edge_w = rects.panel_top.2 as i32;
+    let edge_h = rects.panel_top.3 as i32;
+    let v_edge_h = rects.panel_left.3 as i32;
+
+    // Interior fill — horizontal tiling.
+    let int_w = rects.panel_interior.2 as i32;
+    let int_h = rects.panel_interior.3 as i32;
+    // Match interior tile height to actual panel height (retail's panel
+    // is 29 tall but here we may want 32+). If panel is taller than the
+    // 29-tall interior tile, stretch vertically by emitting a single
+    // sprite with full height.
+    let interior_h = ph.min(int_h.max(ph));
+    let mut x_int = px;
+    while x_int < px + pw {
+        let remaining = px + pw - x_int;
+        let this_w = remaining.min(int_w);
+        let (sx, sy, _, sh) = rects.panel_interior;
+        let actual_sh = sh.min(interior_h as u32);
+        let src = (sx, sy, this_w as u32, actual_sh);
+        push(out, src, x_int, py, this_w, interior_h);
+        x_int += this_w;
+    }
+
+    // Four corners.
+    push(out, rects.panel_tl, px, py, cw, ch);
+    push(out, rects.panel_tr, px + pw - cw, py, cw, ch);
+    push(out, rects.panel_bl, px, py + ph - ch, cw, ch);
+    push(out, rects.panel_br, px + pw - cw, py + ph - ch, cw, ch);
+
+    // Top + bottom edges with remainder.
+    let edge_span = pw - 2 * cw;
+    let full_tiles = edge_span / edge_w;
+    let remainder = edge_span - full_tiles * edge_w;
+    let edge_y_top = py;
+    let edge_y_bot = py + ph - edge_h;
+    let mut x = px + cw;
+    for _ in 0..full_tiles {
+        push(out, rects.panel_top, x, edge_y_top, edge_w, edge_h);
+        push(out, rects.panel_bot, x, edge_y_bot, edge_w, edge_h);
+        x += edge_w;
+    }
+    if remainder > 0 {
+        let (ux, uy, _, uh) = rects.panel_top;
+        let top_rem = (ux, uy, remainder as u32, uh);
+        let (bx, by, _, bh) = rects.panel_bot;
+        let bot_rem = (bx, by, remainder as u32, bh);
+        push(out, top_rem, x, edge_y_top, remainder, edge_h);
+        push(out, bot_rem, x, edge_y_bot, remainder, edge_h);
+    }
+
+    // Left + right edges. The source tile is 4x21; tile vertically
+    // with a remainder for taller-than-21 interiors.
+    let vert_span = ph - 2 * ch;
+    let v_full = vert_span / v_edge_h;
+    let v_rem = vert_span - v_full * v_edge_h;
+    let mut y = py + ch;
+    for _ in 0..v_full {
+        push(out, rects.panel_left, px, y, cw, v_edge_h);
+        push(out, rects.panel_right, px + pw - cw, y, cw, v_edge_h);
+        y += v_edge_h;
+    }
+    if v_rem > 0 {
+        let (lx, ly, lw, _) = rects.panel_left;
+        let left_rem = (lx, ly, lw, v_rem as u32);
+        let (rx, ry, rw, _) = rects.panel_right;
+        let right_rem = (rx, ry, rw, v_rem as u32);
+        push(out, left_rem, px, y, cw, v_rem);
+        push(out, right_rem, px + pw - cw, y, cw, v_rem);
+    }
+}
+
+/// Retail PSX framebuffer placement of the "Now checking" dialog panel.
+/// Pinned via gold-border pixel scan on
+/// `captures/slot_info_dump/2026-05-18T09-04-46Z/slot_info_fb.png`:
+/// dialog gold borders at fb-y rows 97 (top) and 135 (bottom), spanning
+/// fb-x 70..249 (width 180, height 39). The dialog is horizontally
+/// centered on the 320-wide stage (`(320 - 180) / 2 = 70`).
+pub const NOW_CHECKING_PANEL_POS: (i32, i32) = (70, 97);
+pub const NOW_CHECKING_PANEL_SIZE: (u32, u32) = (180, 39);
+
+/// Retail slide-in start position for the "Now checking" dialog's
+/// **center x** before it has slid into place. From Ghidra trace
+/// `FUN_801e1c1c(0, DAT_801ef160, 0x1a0, 0x70, 0xa0, 0x70)` — slide
+/// from `(0x1a0=416, 0x70=112)` to target `(0xa0=160, 0x70=112)`. The
+/// dialog starts off-screen to the right and slides left over 16
+/// frames. Engine code interpolates `slide_offset_x = (start - target) *
+/// (1 - t/4096)`, where `t = session.slide_anim_t()`.
+pub const NOW_CHECKING_SLIDE_START_X: i32 = 416;
+pub const NOW_CHECKING_SLIDE_TARGET_X: i32 = 160;
+
+/// Center X used by retail's dialog renderer for every messagebox
+/// text line. Pinned via Ghidra: every `FUN_801E3EE0(string, x, y)`
+/// call in `overlay_save_ui_select_801dd35c.txt` passes
+/// `x = 0xA0 = 160` (= stage horizontal center) and renders the
+/// glyphs at `(x - text_width/2, y + 7)`. The +7 offset is baked
+/// into the renderer itself (see `overlay_menu_801e3ee0.txt`).
+pub const DIALOG_TEXT_CENTER_X: i32 = 160;
+/// "Now checking." line: retail `FUN_801E3EE0(string, 0xA0, 0x60)`
+/// → text top y = 0x60 + 7 = 103. Source:
+/// `overlay_save_ui_select_801dd35c.txt:1054`.
+pub const NOW_CHECKING_TEXT_LINE1_Y: i32 = 103;
+/// "Do not remove MEMORY CARD" line: retail
+/// `FUN_801E3EE0(string, 0xA0, 0x70)` → text top y = 0x70 + 7 = 119.
+/// Source: `overlay_save_ui_select_801dd35c.txt:809`.
+pub const NOW_CHECKING_TEXT_LINE2_Y: i32 = 119;
+/// Backwards-compat: left-edge positions derived from
+/// `center_x - retail_text_width / 2` for the two lines (computed
+/// at runtime in `now_checking_text_draws_for` from the actual
+/// font metrics). Kept as inert constants for callers that don't
+/// have a font reference handy.
+pub const NOW_CHECKING_TEXT_LINE1: (i32, i32) = (122, NOW_CHECKING_TEXT_LINE1_Y);
+pub const NOW_CHECKING_TEXT_LINE2: (i32, i32) = (78, NOW_CHECKING_TEXT_LINE2_Y);
+
+/// Build [`SpriteDraw`]s for the "Now checking" dialog's 9-slice
+/// panel only (no text). `slide_offset` is added to the panel
+/// position so callers can drive the retail slide-in animation
+/// (Ghidra-pinned: dialog slides from x=416 to x=160 over 16 frames
+/// via `FUN_801E1C1C` mode 0). Pass `(0, 0)` for the static
+/// fully-arrived case.
+pub fn now_checking_panel_draws_for(
+    rects: &SaveMenuAtlasRects,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+    slide_offset: (i32, i32),
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(16);
+    let (px, py) = NOW_CHECKING_PANEL_POS;
+    let (pw, ph) = NOW_CHECKING_PANEL_SIZE;
+    nine_slice_panel_into(
+        &mut out,
+        rects,
+        (
+            px + slide_offset.0,
+            py + slide_offset.1,
+            pw as i32,
+            ph as i32,
+        ),
+        stage_origin,
+        stage_scale,
+    );
+    out
+}
+
+/// Build [`TextDraw`]s for the "Now checking. Do not remove MEMORY
+/// CARD" two-line dialog text. Each line is **horizontally centered
+/// on stage x = [`DIALOG_TEXT_CENTER_X`]** matching retail's
+/// `FUN_801E3EE0(string, center_x, top_y)` renderer
+/// (`overlay_menu_801e3ee0.txt`), with the layout's left edge
+/// computed as `center_x - text_width / 2` from the actual font
+/// metrics rather than hard-coded.
+pub fn now_checking_text_draws_for(
+    font: &legaia_font::Font,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+    slide_offset: (i32, i32),
+) -> Vec<TextDraw> {
+    let scale = stage_scale.max(1);
+    let color = SAVE_SELECT_TITLE_COLOR;
+    let mut out = Vec::with_capacity(40);
+
+    let emit_centered = |out: &mut Vec<TextDraw>, text: &str, top_y: i32| {
+        let layout = font.layout_ascii(text);
+        let left_x = DIALOG_TEXT_CENTER_X - (layout.advance_x as i32 / 2) + slide_offset.0;
+        let top_y = top_y + slide_offset.1;
+        for g in &layout.glyphs {
+            let sx = left_x + g.dst_x;
+            let sy = top_y + g.dst_y;
+            out.push(TextDraw {
+                dst: (
+                    stage_origin.0 + sx * scale as i32,
+                    stage_origin.1 + sy * scale as i32,
+                    g.width * scale,
+                    g.height * scale,
+                ),
+                src: (g.atlas_x, g.atlas_y, g.width, g.height),
+                color,
+            });
+        }
+    };
+
+    emit_centered(&mut out, "Now checking.", NOW_CHECKING_TEXT_LINE1_Y);
+    emit_centered(
+        &mut out,
+        "Do not remove MEMORY CARD",
+        NOW_CHECKING_TEXT_LINE2_Y,
+    );
+    out
+}
+
+/// Retail PSX framebuffer placement of the slot-preview 5×3 grid.
+/// Mirror of `legaia_asset::title_pak::OVERLAY_LOAD_SLOT_GRID_*` —
+/// retail-pinned via per-row/per-column blue-outline scan on
+/// `slot_info_fb.png`: cell visible top-left corners at fb-y rows
+/// 35 (row 0), 55 (row 1), 75 (row 2) and fb-x columns 104, 144,
+/// 184, 224, 264 (col 0..4). Pitch X = 40, pitch Y = 20.
+pub const SLOT_GRID_ORIGIN: (i32, i32) = (104, 35);
+pub const SLOT_GRID_PITCH_X: i32 = 40;
+pub const SLOT_GRID_PITCH_Y: i32 = 20;
+pub const SLOT_GRID_COLS: usize = 5;
+pub const SLOT_GRID_ROWS: usize = 3;
+
+/// Per-cell view passed into [`slot_preview_grid_draws_for`]. Each
+/// memory-card block becomes one cell; `present=false` cells render
+/// as plain empty frames. When a save is present, `portrait_char_id`
+/// (= lead party member's char_id) selects which 16×16 portrait
+/// (0=Vahn, 1=Noa, 2=Gala) is drawn inside the frame; `None` falls
+/// back to the empty frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SlotGridCell {
+    pub present: bool,
+    pub portrait_char_id: Option<u8>,
+}
+
+/// Build [`SpriteDraw`]s for the 5×3 slot-preview grid. Each cell
+/// gets the empty-frame sprite (32×32 with 20×20 visible border).
+/// Filled cells additionally get a 16×16 portrait centred in the
+/// frame. The cursor sprite sits to the left of the currently
+/// selected cell.
+pub fn slot_preview_grid_draws_for(
+    rects: &SaveMenuAtlasRects,
+    cells: &[SlotGridCell],
+    cursor_slot: u8,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let scale = stage_scale.max(1) as i32;
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let mut out = Vec::with_capacity(SLOT_GRID_COLS * SLOT_GRID_ROWS + 2);
+
+    let push = |out: &mut Vec<SpriteDraw>,
+                src: (u32, u32, u32, u32),
+                sx: i32,
+                sy: i32,
+                sw: i32,
+                sh: i32| {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + sx * scale,
+                stage_origin.1 + sy * scale,
+                (sw as u32) * scale as u32,
+                (sh as u32) * scale as u32,
+            ),
+            src,
+            color: white,
+        });
+    };
+
+    let max_slots = (SLOT_GRID_COLS * SLOT_GRID_ROWS).min(cells.len());
+    for (slot, cell) in cells.iter().take(max_slots).enumerate() {
+        let col = slot % SLOT_GRID_COLS;
+        let row = slot / SLOT_GRID_COLS;
+        // Empty-frame sprite top-left in stage pixels. The 32×32
+        // sprite has a 6px transparent margin; the visible 20×20
+        // frame's top-left should land at (origin.x + col*pitch_x,
+        // origin.y + row*pitch_y). So sprite origin = grid pos - 6.
+        let cell_x = SLOT_GRID_ORIGIN.0 + (col as i32) * SLOT_GRID_PITCH_X;
+        let cell_y = SLOT_GRID_ORIGIN.1 + (row as i32) * SLOT_GRID_PITCH_Y;
+        if let Some(frame) = rects.load_empty_frame {
+            // The full 32×32 sprite is drawn with its top-left at
+            // (cell_x - 6, cell_y - 6) so the visible 20×20 border
+            // sits at the cell position. Engines may instead sample
+            // sub-rect (6, 6, 20, 20) and skip the margin — both
+            // produce the same on-screen pixels.
+            push(&mut out, frame, cell_x - 6, cell_y - 6, 32, 32);
+        }
+        if cell.present
+            && let Some(char_id) = cell.portrait_char_id
+            && let Some(portrait) = rects
+                .load_portrait_by_char
+                .get(char_id as usize)
+                .copied()
+                .flatten()
+        {
+            // Portrait centred inside the 20×20 visible frame
+            // (16×16 portrait + 2px margin each side).
+            push(&mut out, portrait, cell_x + 2, cell_y + 2, 16, 16);
+        }
+    }
+
+    // Cursor sprite to the left of the currently-selected cell.
+    // Retail pin: in `slot_info_fb.png` the pointing-finger cursor
+    // bbox sits at fb-x 90..105 (16 wide) pointing at cell (0, 0) at
+    // fb-x 104. That puts the cursor's right edge 1 px shy of the
+    // cell's left edge — i.e. `cursor_x = cell_x - 14` (not -16).
+    let cursor_col = (cursor_slot as usize) % SLOT_GRID_COLS;
+    let cursor_row = (cursor_slot as usize) / SLOT_GRID_COLS;
+    let cursor_x = SLOT_GRID_ORIGIN.0 + (cursor_col as i32) * SLOT_GRID_PITCH_X - 14;
+    let cursor_y = SLOT_GRID_ORIGIN.1 + (cursor_row as i32) * SLOT_GRID_PITCH_Y;
+    push(&mut out, rects.cursor, cursor_x, cursor_y, 16, 16);
+
+    out
+}
+
+/// Retail PSX framebuffer placement of the slot-info panel (bottom
+/// of stage), parked / fully-slid-in. Pinned to FUN_801E08D8's
+/// `FUN_801e36c4(0xA0, local_34, 0x11c, 0x40)` call: panel chrome
+/// top at `local_34` (= 138 when `DAT_801ef1a0 = 0x1000`), width 293,
+/// height 77. Matches the visual gold-border scan in `slot_info_fb.png`.
+pub const SLOT_INFO_PANEL_POS: (i32, i32) = (11, 138);
+pub const SLOT_INFO_PANEL_SIZE: (u32, u32) = (293, 77);
+/// Panel-y origin when fully slid-in (= `local_34` at anim_t=0x1000).
+pub const SLOT_INFO_PANEL_PARKED_Y: i32 = 138;
+
+/// Per-element offsets relative to the panel-y origin (= `local_34`),
+/// derived from the Ghidra trace of `FUN_801E08D8`. The renderer adds
+/// the live `panel_y` (interpolated through the slide-in animation) to
+/// every offset.
+///
+/// Title-row offsets (`local_34 + 4` in retail = panel_y + 4):
+/// - `SLOT_INFO_NO_OFFSET`: "No." badge (retail emits a sprite via
+///   `FUN_801E3FF0` modes 2/3 at `(8, local_34 - 8)` with a CLUT row
+///   selected by `DAT_801e5062 = slot_index << 4`. The engine renders
+///   it as text at the same screen position, glyph-baseline corrected).
+/// - `SLOT_INFO_LOCATION_OFFSET`: kingdom name string.
+/// - `SLOT_INFO_TIME_LABEL_OFFSET`: "Time " prefix.
+/// - `SLOT_INFO_TIME_VALUE_OFFSET`: HH:MM:SS digits. Retail splits the
+///   digits across three calls (hours / minutes / seconds, with
+///   sprite-colon separators) at x=236/252/260/276/284; the engine
+///   renders one packed string at the leftmost x for simplicity.
+pub const SLOT_INFO_NO_OFFSET: (i32, i32) = (8, -8);
+pub const SLOT_INFO_LOCATION_OFFSET: (i32, i32) = (48, 4);
+pub const SLOT_INFO_TIME_LABEL_OFFSET: (i32, i32) = (208, 4);
+pub const SLOT_INFO_TIME_VALUE_OFFSET: (i32, i32) = (236, 4);
+
+/// Per-character row offsets (column 0 of the 3-column slot grid;
+/// retail loops `iVar4 = 0x10 + i*0x60` for columns 0/1/2 at
+/// x = 16/112/208). For slots with one party member (Vahn-only starter
+/// state) only column 0 renders. Y offsets relative to the panel y
+/// origin via the retail `s3 = local_34 + 0x14` (= 158) per-character
+/// base, then `s3 + N` for each row.
+pub const SLOT_INFO_PORTRAIT_OFFSET: (i32, i32) = (16, 16);
+pub const SLOT_INFO_NAME_OFFSET: (i32, i32) = (40, 20);
+pub const SLOT_INFO_LV_LABEL_OFFSET: (i32, i32) = (16, 33);
+pub const SLOT_INFO_LV_VALUE_OFFSET: (i32, i32) = (48, 33);
+pub const SLOT_INFO_HP_LABEL_OFFSET: (i32, i32) = (16, 46);
+pub const SLOT_INFO_HP_VALUE_OFFSET: (i32, i32) = (32, 46);
+pub const SLOT_INFO_MP_LABEL_OFFSET: (i32, i32) = (16, 59);
+pub const SLOT_INFO_MP_VALUE_OFFSET: (i32, i32) = (40, 59);
+
+/// Plain-data view of the per-slot info passed to the info-panel
+/// renderer. Engines build one from the `SlotSnapshot` of the
+/// currently-focused slot plus a `Party::from_retail_sc_block` lift
+/// for the leader's HP/MP.
+#[derive(Debug, Clone, Copy)]
+pub struct SlotInfoView<'a> {
+    pub slot_no: u8,
+    pub location: &'a str,
+    pub play_time: &'a str,
+    pub leader_name: &'a str,
+    pub leader_level: u8,
+    pub leader_hp: (u16, u16),
+    pub leader_mp: (u16, u16),
+    pub leader_char_id: u8,
+}
+
+/// Build the chrome [`SpriteDraw`]s for the slot-info panel (9-slice
+/// frame + optional leader portrait, no text). Pair with
+/// [`slot_info_panel_text_draws_for`] for the labels.
+///
+/// `panel_y_offset` is the slide-in delta from the parked y
+/// (positive = pushed below parked, used while the panel slides up).
+/// Engine callers compute it from `interpolate_anim((0, OFFSCREEN),
+/// (0, PARKED), session.info_panel_slide_anim_t()).1 - PARKED`.
+pub fn slot_info_panel_draws_for(
+    rects: &SaveMenuAtlasRects,
+    info: Option<&SlotInfoView<'_>>,
+    panel_y_offset: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::with_capacity(20);
+    let (px, py_base) = SLOT_INFO_PANEL_POS;
+    let py = py_base + panel_y_offset;
+    let (pw, ph) = SLOT_INFO_PANEL_SIZE;
+    nine_slice_panel_into(
+        &mut out,
+        rects,
+        (px, py, pw as i32, ph as i32),
+        stage_origin,
+        stage_scale,
+    );
+
+    // Leader portrait (16x16) inside the info panel — drawn only
+    // when a save is present at the current slot. Position pinned
+    // from FUN_801E08D8's `FUN_801e3ff0(0, _, iVar4=16, s3-4=154)`
+    // with s3 = local_34 + 20: portrait top-left at (16, panel_y+16).
+    if let Some(info) = info
+        && let Some(portrait) = rects
+            .load_portrait_by_char
+            .get(info.leader_char_id as usize)
+            .copied()
+            .flatten()
+    {
+        let scale = stage_scale.max(1) as i32;
+        let px = SLOT_INFO_PORTRAIT_OFFSET.0;
+        let pyy = py_base + SLOT_INFO_PORTRAIT_OFFSET.1 + panel_y_offset;
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + px * scale,
+                stage_origin.1 + pyy * scale,
+                16 * scale as u32,
+                16 * scale as u32,
+            ),
+            src: portrait,
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    }
+    out
+}
+
+/// Build [`TextDraw`]s for the slot-info panel labels (No., kingdom
+/// name, time, character stats). Returns empty when `info` is `None`.
+/// `panel_y_offset` matches the value passed to
+/// [`slot_info_panel_draws_for`].
+pub fn slot_info_panel_text_draws_for(
+    font: &legaia_font::Font,
+    info: Option<&SlotInfoView<'_>>,
+    panel_y_offset: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    let Some(info) = info else { return Vec::new() };
+    let scale = stage_scale.max(1);
+    let color = SAVE_SELECT_TITLE_COLOR;
+    let panel_y = SLOT_INFO_PANEL_PARKED_Y + panel_y_offset;
+    let mut out = Vec::with_capacity(80);
+
+    let emit_at = |out: &mut Vec<TextDraw>, text: &str, base: (i32, i32)| {
+        let layout = font.layout_ascii(text);
+        for g in &layout.glyphs {
+            let sx = base.0 + g.dst_x;
+            let sy = base.1 + g.dst_y;
+            out.push(TextDraw {
+                dst: (
+                    stage_origin.0 + sx * scale as i32,
+                    stage_origin.1 + sy * scale as i32,
+                    g.width * scale,
+                    g.height * scale,
+                ),
+                src: (g.atlas_x, g.atlas_y, g.width, g.height),
+                color,
+            });
+        }
+    };
+
+    // Title row.
+    emit_at(
+        &mut out,
+        &format!("No.{}", info.slot_no),
+        (SLOT_INFO_NO_OFFSET.0, panel_y + SLOT_INFO_NO_OFFSET.1),
+    );
+    emit_at(
+        &mut out,
+        info.location,
+        (
+            SLOT_INFO_LOCATION_OFFSET.0,
+            panel_y + SLOT_INFO_LOCATION_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        "Time",
+        (
+            SLOT_INFO_TIME_LABEL_OFFSET.0,
+            panel_y + SLOT_INFO_TIME_LABEL_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        info.play_time,
+        (
+            SLOT_INFO_TIME_VALUE_OFFSET.0,
+            panel_y + SLOT_INFO_TIME_VALUE_OFFSET.1,
+        ),
+    );
+
+    // Character row (column 0 only — multi-character party expansion
+    // would re-iterate at base_x += 96).
+    emit_at(
+        &mut out,
+        info.leader_name,
+        (SLOT_INFO_NAME_OFFSET.0, panel_y + SLOT_INFO_NAME_OFFSET.1),
+    );
+    emit_at(
+        &mut out,
+        "LV",
+        (
+            SLOT_INFO_LV_LABEL_OFFSET.0,
+            panel_y + SLOT_INFO_LV_LABEL_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        &format!("{}", info.leader_level),
+        (
+            SLOT_INFO_LV_VALUE_OFFSET.0,
+            panel_y + SLOT_INFO_LV_VALUE_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        "HP",
+        (
+            SLOT_INFO_HP_LABEL_OFFSET.0,
+            panel_y + SLOT_INFO_HP_LABEL_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        &format!("{}/{}", info.leader_hp.0, info.leader_hp.1),
+        (
+            SLOT_INFO_HP_VALUE_OFFSET.0,
+            panel_y + SLOT_INFO_HP_VALUE_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        "MP",
+        (
+            SLOT_INFO_MP_LABEL_OFFSET.0,
+            panel_y + SLOT_INFO_MP_LABEL_OFFSET.1,
+        ),
+    );
+    emit_at(
+        &mut out,
+        &format!("{}/{}", info.leader_mp.0, info.leader_mp.1),
+        (
+            SLOT_INFO_MP_VALUE_OFFSET.0,
+            panel_y + SLOT_INFO_MP_VALUE_OFFSET.1,
+        ),
+    );
+    out
 }
 
 /// Build [`TextDraw`]s for the save-select panel.
@@ -5351,6 +5982,12 @@ mod tests {
             slot2: (33, 113, 45, 15),
             cursor: (152, 64, 16, 16),
             panel_interior: (128, 0, 32, 29),
+            load_empty_frame: Some((200, 64, 32, 32)),
+            load_portrait_by_char: [
+                Some((200, 96, 16, 16)),
+                Some((216, 96, 16, 16)),
+                Some((232, 96, 16, 16)),
+            ],
         }
     }
 
@@ -5379,7 +6016,8 @@ mod tests {
     #[test]
     fn save_select_chrome_emits_9slice_panel_and_pills() {
         let rects = pinned_save_menu_rects();
-        let draws = save_select_chrome_draws_for(&rects, 2, (10, 20), 2);
+        let draws =
+            save_select_chrome_draws_for(&rects, &[0, 1], SAVE_SELECT_SLOT1_POS, (10, 20), 2);
         // 3 interior tiles + 14 border tiles + 2 pills = 19.
         // (Interior: 2 full 32-wide + 1 17-wide remainder for the 81-
         //  wide panel.) Border: 4 corners + 3 top + 3 bottom + 1 top-rem
@@ -5435,9 +6073,57 @@ mod tests {
     #[test]
     fn save_select_chrome_zero_slots_emits_panel_only() {
         let rects = pinned_save_menu_rects();
-        let draws = save_select_chrome_draws_for(&rects, 0, (0, 0), 1);
+        let draws = save_select_chrome_draws_for(&rects, &[], SAVE_SELECT_SLOT1_POS, (0, 0), 1);
         // 3 interior + 14 border = 17 panel tiles, no pills.
         assert_eq!(draws.len(), 17);
+    }
+
+    #[test]
+    fn save_select_chrome_selected_pill_only_draws_one_pill_at_natural_row() {
+        // Retail's NowChecking + SlotPreview phases hide every pill
+        // except the one the user picked, but the selected pill stays
+        // pinned to its natural row position. `pills = &[1]` must emit
+        // SLOT 2's sprite (at SLOT_PITCH_Y * 1 below SLOT 1) and no
+        // SLOT 1 sprite.
+        let rects = pinned_save_menu_rects();
+        let draws = save_select_chrome_draws_for(&rects, &[1], SAVE_SELECT_SLOT1_POS, (0, 0), 1);
+        // 17 panel tiles + 1 pill = 18.
+        assert_eq!(draws.len(), 18);
+        // SLOT 1 sprite (33, 97, 45, 15) must NOT appear.
+        let any_slot1 = draws.iter().any(|d| d.src == (33, 97, 45, 15));
+        assert!(!any_slot1, "SLOT 1 sprite must be suppressed");
+        // SLOT 2 sprite must appear at row 1's y (SLOT1.y + PITCH).
+        let slot2 = draws.iter().find(|d| d.src == (33, 113, 45, 15)).unwrap();
+        assert_eq!(slot2.dst.0, SAVE_SELECT_SLOT1_POS.0);
+        assert_eq!(
+            slot2.dst.1,
+            SAVE_SELECT_SLOT1_POS.1 + SAVE_SELECT_SLOT_PITCH_Y
+        );
+    }
+
+    #[test]
+    fn save_select_chrome_load_active_anchor_relocates_pill() {
+        // During NowChecking / SlotPreview retail moves the SLOT 1
+        // pill up to (22, 41) under the Load panel. Passing
+        // SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE as `pill_anchor` must
+        // land the pill there instead of the Browsing position.
+        let rects = pinned_save_menu_rects();
+        let draws = save_select_chrome_draws_for(
+            &rects,
+            &[0],
+            SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+            (0, 0),
+            1,
+        );
+        let slot1 = draws.iter().find(|d| d.src == (33, 97, 45, 15)).unwrap();
+        assert_eq!(
+            slot1.dst.0, SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE.0,
+            "Load-active anchor must relocate SLOT 1 pill X"
+        );
+        assert_eq!(
+            slot1.dst.1, SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE.1,
+            "Load-active anchor must relocate SLOT 1 pill Y"
+        );
     }
 
     #[test]
@@ -5448,7 +6134,7 @@ mod tests {
         // emitter mirrors the 14 border + 3 interior = 17 primitive
         // count.
         let rects = pinned_save_menu_rects();
-        let draws = save_select_chrome_draws_for(&rects, 0, (0, 0), 1);
+        let draws = save_select_chrome_draws_for(&rects, &[], SAVE_SELECT_SLOT1_POS, (0, 0), 1);
         assert_eq!(
             draws.len(),
             17,
@@ -5932,5 +6618,203 @@ mod tests {
             (16, 32),
         );
         assert!(draws2.len() > draws.len());
+    }
+
+    // ── Load-screen NowChecking + SlotPreview rendering ──────────────────
+
+    #[test]
+    fn now_checking_panel_draws_a_9_slice_frame_at_centered_pos() {
+        let rects = pinned_save_menu_rects();
+        let draws = now_checking_panel_draws_for(&rects, (0, 0), 1, (0, 0));
+        // 9-slice: 4 corners + N top/bot edge tiles + N left/right edge
+        // tiles + interior fill (variable). At minimum we expect the
+        // four corners + at least one top/bot/left/right tile each.
+        assert!(
+            draws.len() >= 4 + 4 + 2,
+            "expected at least 10 sprites for the 9-slice panel + interior; got {}",
+            draws.len()
+        );
+        // Every sprite's dst.x is within the panel rect bounds.
+        let (px, py) = NOW_CHECKING_PANEL_POS;
+        let (pw, ph) = NOW_CHECKING_PANEL_SIZE;
+        for d in &draws {
+            assert!(
+                d.dst.0 >= px && d.dst.0 < px + pw as i32 + 4,
+                "sprite dst.x {} outside panel x range [{}, {})",
+                d.dst.0,
+                px,
+                px + pw as i32
+            );
+            assert!(
+                d.dst.1 >= py && d.dst.1 < py + ph as i32 + 4,
+                "sprite dst.y {} outside panel y range [{}, {})",
+                d.dst.1,
+                py,
+                py + ph as i32
+            );
+        }
+    }
+
+    #[test]
+    fn now_checking_text_emits_two_lines_at_distinct_y() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = now_checking_text_draws_for(&font, (0, 0), 1, (0, 0));
+        // Two text lines → expect glyphs at two distinct y positions.
+        let ys: std::collections::HashSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+        assert!(
+            ys.len() >= 2,
+            "expected >= 2 distinct y positions, got {ys:?}"
+        );
+        // Sanity check: the message starts above the second line.
+        let min_y = ys.iter().min().copied().unwrap();
+        let max_y = ys.iter().max().copied().unwrap();
+        assert!(max_y > min_y, "line 2 must be below line 1");
+    }
+
+    #[test]
+    fn slot_preview_grid_emits_one_frame_per_cell_plus_portraits_plus_cursor() {
+        let rects = pinned_save_menu_rects();
+        // 4 of 15 slots present, slot 0 = Vahn portrait.
+        let mut cells = [SlotGridCell::default(); 15];
+        cells[0] = SlotGridCell {
+            present: true,
+            portrait_char_id: Some(0),
+        };
+        cells[6] = SlotGridCell {
+            present: true,
+            portrait_char_id: Some(1),
+        };
+        cells[7] = SlotGridCell {
+            present: true,
+            portrait_char_id: Some(2),
+        };
+        cells[8] = SlotGridCell {
+            present: true,
+            portrait_char_id: None,
+        };
+        let draws = slot_preview_grid_draws_for(&rects, &cells, 0, (0, 0), 1);
+        // 15 empty-frame sprites + 3 portraits (slot 8 has present=true
+        // but portrait_char_id=None so no portrait sprite) + 1 cursor.
+        assert_eq!(
+            draws.len(),
+            15 + 3 + 1,
+            "expected 15 frames + 3 portraits + 1 cursor; got {}",
+            draws.len()
+        );
+        // Cursor (the last sprite) sits to the left of slot 0's cell.
+        let cursor = draws.last().unwrap();
+        assert_eq!(cursor.src, rects.cursor);
+        // Retail pin: cursor right edge sits 1 px shy of cell left,
+        // giving a -14 (not -16) offset from the cell's top-left.
+        assert_eq!(cursor.dst.0, SLOT_GRID_ORIGIN.0 - 14);
+        assert_eq!(cursor.dst.1, SLOT_GRID_ORIGIN.1);
+    }
+
+    #[test]
+    fn slot_preview_grid_cursor_follows_selected_slot() {
+        let rects = pinned_save_menu_rects();
+        let cells = [SlotGridCell::default(); 15];
+        // Slot 7 = row 1 col 2.
+        let draws = slot_preview_grid_draws_for(&rects, &cells, 7, (0, 0), 1);
+        let cursor = draws.last().unwrap();
+        let expected_x = SLOT_GRID_ORIGIN.0 + 2 * SLOT_GRID_PITCH_X - 14;
+        let expected_y = SLOT_GRID_ORIGIN.1 + SLOT_GRID_PITCH_Y;
+        assert_eq!(
+            (cursor.dst.0, cursor.dst.1),
+            (expected_x, expected_y),
+            "cursor should anchor to row 1 col 2"
+        );
+    }
+
+    #[test]
+    fn slot_info_panel_skips_chrome_portrait_when_no_save() {
+        let rects = pinned_save_menu_rects();
+        let chrome_with = slot_info_panel_draws_for(
+            &rects,
+            Some(&SlotInfoView {
+                slot_no: 1,
+                location: "Drake Kingdom",
+                play_time: "00:43:09",
+                leader_name: "Vahn",
+                leader_level: 2,
+                leader_hp: (203, 221),
+                leader_mp: (27, 27),
+                leader_char_id: 0,
+            }),
+            0,
+            (0, 0),
+            1,
+        );
+        let chrome_none = slot_info_panel_draws_for(&rects, None, 0, (0, 0), 1);
+        // With Some, expect the chrome PLUS one portrait sprite.
+        assert!(
+            chrome_with.len() > chrome_none.len(),
+            "info-panel with save should emit at least one extra portrait sprite"
+        );
+        assert_eq!(
+            chrome_with.len() - chrome_none.len(),
+            1,
+            "delta should be exactly the leader portrait"
+        );
+    }
+
+    #[test]
+    fn slot_info_panel_text_emits_all_six_lines() {
+        let font = legaia_font::synthetic_for_tests();
+        let info = SlotInfoView {
+            slot_no: 1,
+            location: "Drake Kingdom",
+            play_time: "00:43:09",
+            leader_name: "Vahn",
+            leader_level: 2,
+            leader_hp: (203, 221),
+            leader_mp: (27, 27),
+            leader_char_id: 0,
+        };
+        let draws = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1);
+        // Empty-save case must emit zero glyphs.
+        assert!(slot_info_panel_text_draws_for(&font, None, 0, (0, 0), 1).is_empty());
+        // The panel emits 10 distinct text rows (No, location, Time
+        // label, time value, name, LV label, LV value, HP label,
+        // HP value, MP label, MP value). Their y-coords cluster into
+        // a few distinct rows; expect at least 4 distinct y values.
+        let ys: std::collections::HashSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+        assert!(
+            ys.len() >= 4,
+            "expected >= 4 distinct y positions across the info-panel rows; got {ys:?}"
+        );
+    }
+
+    #[test]
+    fn slot_info_panel_slide_offset_shifts_everything_below_parked() {
+        let rects = pinned_save_menu_rects();
+        let font = legaia_font::synthetic_for_tests();
+        let info = SlotInfoView {
+            slot_no: 1,
+            location: "Drake Kingdom",
+            play_time: "00:43:09",
+            leader_name: "Vahn",
+            leader_level: 2,
+            leader_hp: (203, 221),
+            leader_mp: (27, 27),
+            leader_char_id: 0,
+        };
+        let chrome_landed = slot_info_panel_draws_for(&rects, Some(&info), 0, (0, 0), 1);
+        let chrome_slid = slot_info_panel_draws_for(&rects, Some(&info), 50, (0, 0), 1);
+        assert_eq!(chrome_landed.len(), chrome_slid.len());
+        for (a, b) in chrome_landed.iter().zip(chrome_slid.iter()) {
+            assert_eq!(a.dst.0, b.dst.0, "x must not change with slide");
+            assert_eq!(
+                b.dst.1 - a.dst.1,
+                50,
+                "y must shift by exactly slide offset"
+            );
+        }
+        let text_landed = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1);
+        let text_slid = slot_info_panel_text_draws_for(&font, Some(&info), 50, (0, 0), 1);
+        assert_eq!(text_landed.len(), text_slid.len());
+        for (a, b) in text_landed.iter().zip(text_slid.iter()) {
+            assert_eq!(b.dst.1 - a.dst.1, 50);
+        }
     }
 }

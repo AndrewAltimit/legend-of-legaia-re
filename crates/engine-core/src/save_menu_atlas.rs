@@ -35,6 +35,19 @@ pub const ATLAS_HEIGHT: u32 = 256;
 /// white text.
 const PILL_CLUT: usize = 7;
 
+/// Atlas placement of the **load-screen empty-cell frame** (32x32
+/// sprite, hollow blue border). Chosen to sit inside unused atlas
+/// columns at the bottom-right corner.
+pub const ATLAS_RECT_EMPTY_FRAME: (u32, u32, u32, u32) = (200, 64, 32, 32);
+
+/// Atlas placement of the 3 character portrait TIMs (16x16 each).
+/// Stacked horizontally just below the empty-frame rect; each portrait
+/// occupies a 16x16 sub-region.
+pub const ATLAS_RECT_PORTRAIT_W: u32 = 16;
+pub const ATLAS_RECT_PORTRAIT_H: u32 = 16;
+pub const ATLAS_RECT_PORTRAIT_BASE_X: u32 = 200;
+pub const ATLAS_RECT_PORTRAIT_BASE_Y: u32 = 96;
+
 /// CLUT row of the system-UI TIM that decodes the panel chrome.
 /// Mirror of [`title_pak::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW`].
 const PANEL_CLUT_ROW: usize = title_pak::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW as usize;
@@ -109,6 +122,29 @@ impl SaveMenuAtlas {
     /// Panel interior fill tile (32x29, gradient-baked).
     pub fn band_panel_interior(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR
+    }
+    /// Empty-cell frame sprite for the load-screen slot grid (32x32,
+    /// 20x20 hollow blue border centred in the sprite — outer 6 px
+    /// margin is transparent).
+    pub fn band_load_empty_frame(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_EMPTY_FRAME
+    }
+    /// Character portrait sub-rect for the load-screen slot grid
+    /// (16x16). `char_id`: 0=Vahn, 1=Noa, 2=Gala. Returns `None` for
+    /// characters whose portrait isn't in the on-disc atlas (party
+    /// members past index 2 don't have load-screen icons; retail
+    /// renders them as plain empty-frame slots).
+    pub fn band_load_portrait(&self, char_id: u8) -> Option<(u32, u32, u32, u32)> {
+        if (char_id as usize) < title_pak::OVERLAY_LOAD_PORTRAIT_COUNT {
+            Some((
+                ATLAS_RECT_PORTRAIT_BASE_X + (char_id as u32) * ATLAS_RECT_PORTRAIT_W,
+                ATLAS_RECT_PORTRAIT_BASE_Y,
+                ATLAS_RECT_PORTRAIT_W,
+                ATLAS_RECT_PORTRAIT_H,
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -224,11 +260,113 @@ pub fn build_atlas(prot_dat_bytes: &[u8], prot_0899_bytes: &[u8]) -> anyhow::Res
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR_BOT_RGB,
     );
 
+    // Load-screen slot-grid: empty-cell frame + 3 character portrait
+    // TIMs. These live just past the system-UI sheet in the unindexed
+    // pre-`init_data` gap of PROT.DAT, so the caller needs to pass the
+    // full PROT.DAT buffer too (the system-UI-only slice can't reach
+    // them).
+    add_load_slot_grid_sprites(&mut out, prot_dat_bytes)?;
+
     Ok(SaveMenuAtlas {
         rgba: out,
         width: ATLAS_WIDTH,
         height: ATLAS_HEIGHT,
     })
+}
+
+/// Decode the 3 portrait TIMs + the 32x32 empty-cell frame from
+/// `PROT.DAT` (if the caller provided them) and stamp them into the
+/// atlas at the documented `ATLAS_RECT_*` positions.
+///
+/// `prot_dat_bytes` may be:
+///   * the full `PROT.DAT` buffer — portraits are loaded from
+///     absolute offsets;
+///   * the slice that already starts at the system-UI TIM header
+///     (offset `OVERLAY_SYSTEM_UI_TIM_OFFSET = 0x018E0`) — portraits
+///     are loaded from slice-relative offsets if the slice extends
+///     far enough;
+///   * any shorter slice — portrait / frame loading is skipped
+///     silently (atlas just won't have those rects populated).
+///
+/// Each portrait TIM ships with its own CLUT (single row, 16 entries);
+/// CLUT row 0 is the only meaningful row.
+fn add_load_slot_grid_sprites(dst: &mut [u8], prot_dat_bytes: &[u8]) -> anyhow::Result<()> {
+    // Pick the right base offset depending on whether we got the full
+    // PROT.DAT (offset 0 = file start) or the system-UI-rooted slice
+    // (offset 0 = system-UI TIM header).
+    let portrait_base = if prot_dat_bytes.len()
+        >= title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET + title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE
+    {
+        // Looks like a full PROT.DAT.
+        title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET
+    } else {
+        // System-UI-rooted slice — portraits live at
+        // `(portrait_off - system_ui_off)` into the slice. If the
+        // slice doesn't extend that far, skip portrait loading.
+        let system_ui_off = title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
+        let portrait_off = title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET;
+        match portrait_off.checked_sub(system_ui_off) {
+            Some(p) if p + title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE <= prot_dat_bytes.len() => p,
+            _ => return Ok(()), // slice too short, atlas-without-portraits is OK
+        }
+    };
+    let frame_base = portrait_base + title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        - title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET;
+
+    // Each portrait: a 16x16 4bpp TIM at portrait_base + idx*stride.
+    for idx in 0..title_pak::OVERLAY_LOAD_PORTRAIT_COUNT {
+        let off = portrait_base + idx * title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE;
+        if off + title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE > prot_dat_bytes.len() {
+            // Slice exhausted mid-atlas — stop after the portraits we
+            // could load.
+            break;
+        }
+        let tim_bytes = &prot_dat_bytes[off..off + title_pak::OVERLAY_LOAD_PORTRAIT_STRIDE];
+        let parsed = legaia_tim::parse(tim_bytes)
+            .map_err(|e| anyhow::anyhow!("portrait {idx} parse failed: {e:?}"))?;
+        let rgba = legaia_tim::decode_rgba8(&parsed, 0)
+            .map_err(|e| anyhow::anyhow!("portrait {idx} decode failed: {e:?}"))?;
+        let src_w = parsed.pixel_width() as u32;
+        let src_h = parsed.image.h as u32;
+        let dst_rect = (
+            ATLAS_RECT_PORTRAIT_BASE_X + (idx as u32) * ATLAS_RECT_PORTRAIT_W,
+            ATLAS_RECT_PORTRAIT_BASE_Y,
+            ATLAS_RECT_PORTRAIT_W,
+            ATLAS_RECT_PORTRAIT_H,
+        );
+        copy_rect(
+            dst,
+            ATLAS_WIDTH,
+            &rgba,
+            src_w,
+            (0, 0, src_w, src_h),
+            dst_rect,
+        );
+    }
+
+    // Empty-cell frame: a 32x32 4bpp TIM. Skip silently if the slice
+    // doesn't reach it.
+    if frame_base + title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE > prot_dat_bytes.len() {
+        return Ok(());
+    }
+    let frame_bytes =
+        &prot_dat_bytes[frame_base..frame_base + title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE];
+    let parsed = legaia_tim::parse(frame_bytes)
+        .map_err(|e| anyhow::anyhow!("empty-frame parse failed: {e:?}"))?;
+    let rgba = legaia_tim::decode_rgba8(&parsed, 0)
+        .map_err(|e| anyhow::anyhow!("empty-frame decode failed: {e:?}"))?;
+    let src_w = parsed.pixel_width() as u32;
+    let src_h = parsed.image.h as u32;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &rgba,
+        src_w,
+        (0, 0, src_w, src_h),
+        ATLAS_RECT_EMPTY_FRAME,
+    );
+
+    Ok(())
 }
 
 /// Pre-bake the gouraud gray gradient retail applies to the panel

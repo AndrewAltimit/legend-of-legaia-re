@@ -2828,11 +2828,11 @@ impl PlayWindowApp {
                         location: &snap.location,
                     })
                     .collect();
+                let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
                 let (cursor, confirm) = match s.phase() {
                     SelectPhase::Browsing { cursor } => (cursor as usize, None),
-                    SelectPhase::ConfirmLoad { slot, cursor } => {
-                        (slot as usize, Some(("Load this slot?", cursor)))
-                    }
+                    SelectPhase::NowChecking { slot, .. } => (slot as usize, None),
+                    SelectPhase::SlotPreview { slot } => (slot as usize, None),
                     SelectPhase::ConfirmOverwrite { slot, cursor } => {
                         (slot as usize, Some(("Overwrite slot?", cursor)))
                     }
@@ -2841,12 +2841,13 @@ impl PlayWindowApp {
                     }
                     SelectPhase::Done(_) => return Vec::new(),
                 };
-                let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+                // Always emit the base save-select chrome text ("Load"
+                // title) so it stays visible in every Load-mode phase.
                 // Skip the ASCII `>` cursor when the sprite-based
                 // pointing-finger cursor is being emitted alongside
                 // (i.e. when the save-menu atlas is loaded).
                 let emit_text_cursor = self.save_menu.is_none();
-                legaia_engine_render::save_select_draws_for(
+                let mut out = legaia_engine_render::save_select_draws_for(
                     &self.font,
                     "Load",
                     &rows,
@@ -2855,7 +2856,46 @@ impl PlayWindowApp {
                     stage_origin,
                     stage_scale,
                     emit_text_cursor,
-                )
+                );
+                // Phase-specific overlays.
+                match s.phase() {
+                    SelectPhase::NowChecking { .. } => {
+                        // Retail slide: dialog x slides from
+                        // NOW_CHECKING_SLIDE_START_X (416) to
+                        // NOW_CHECKING_SLIDE_TARGET_X (160) over 16
+                        // frames. Use the session's animation t to
+                        // compute the per-frame x offset relative to
+                        // the at-target rendering position.
+                        let pos_x = legaia_engine_core::save_select::interpolate_anim(
+                            (legaia_engine_render::NOW_CHECKING_SLIDE_START_X, 0),
+                            (legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0),
+                            s.slide_anim_t(),
+                        )
+                        .0;
+                        let slide_offset =
+                            (pos_x - legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0);
+                        out.extend(legaia_engine_render::now_checking_text_draws_for(
+                            &self.font,
+                            stage_origin,
+                            stage_scale,
+                            slide_offset,
+                        ));
+                    }
+                    SelectPhase::SlotPreview { slot } => {
+                        let info = build_slot_info_view(s.slots(), slot);
+                        let view = info.as_ref().map(|i| i.as_view());
+                        let panel_y_offset = info_panel_slide_offset(s);
+                        out.extend(legaia_engine_render::slot_info_panel_text_draws_for(
+                            &self.font,
+                            view.as_ref(),
+                            panel_y_offset,
+                            stage_origin,
+                            stage_scale,
+                        ));
+                    }
+                    _ => {}
+                }
+                out
             }
             BootUiState::Options(s) => {
                 let rows = s.state().rows();
@@ -3034,8 +3074,11 @@ impl PlayWindowApp {
                     .collect();
                 let (cursor, confirm) = match s.phase() {
                     SelectPhase::Browsing { cursor } => (cursor as usize, None),
-                    SelectPhase::ConfirmLoad { slot, cursor } => {
-                        (slot as usize, Some(("Load this slot?", cursor)))
+                    // Load-mode NowChecking / SlotPreview phases render
+                    // separately (see slot_preview_draws / now_checking
+                    // overlay below); pass through to a plain cursor.
+                    SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => {
+                        (slot as usize, None)
                     }
                     SelectPhase::ConfirmOverwrite { slot, cursor } => {
                         (slot as usize, Some(("Overwrite slot?", cursor)))
@@ -3576,6 +3619,12 @@ impl PlayWindowApp {
                         slot2: atlas_data.band_slot2(),
                         cursor: atlas_data.band_cursor(),
                         panel_interior: atlas_data.band_panel_interior(),
+                        load_empty_frame: Some(atlas_data.band_load_empty_frame()),
+                        load_portrait_by_char: [
+                            atlas_data.band_load_portrait(0),
+                            atlas_data.band_load_portrait(1),
+                            atlas_data.band_load_portrait(2),
+                        ],
                     };
                     self.save_menu = Some(SaveMenuAssets { rects, atlas });
                 }
@@ -3746,40 +3795,142 @@ impl PlayWindowApp {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        let (slot_count, cursor_row): (usize, usize) = match &self.boot_ui {
-            BootUiState::SaveSelect(s) => {
-                (s.slots().len().min(2), (s.current_slot() as usize).min(1))
-            }
+        use legaia_engine_core::save_select::{SaveSelectSession, SelectPhase};
+        // The save-select session (or field-menu Save sub-session) that
+        // drives both pill chrome and any retail Load-mode overlays.
+        let session: &SaveSelectSession = match &self.boot_ui {
+            BootUiState::SaveSelect(s) => s,
             BootUiState::FieldMenu {
                 sub: Some(active), ..
             } => {
                 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
                 if let FieldMenuSubsession::Save(s) = active {
-                    (s.slots().len().min(2), (s.current_slot() as usize).min(1))
+                    s
                 } else {
                     return Vec::new();
                 }
             }
             _ => return Vec::new(),
         };
+        let slot_count = session.slots().len().min(2);
+        let cursor_row = (session.current_slot() as usize).min(1);
+        // Retail draws every visible slot pill during Browsing and the
+        // Confirm prompts, but hides the non-selected pills once a
+        // slot has been confirmed for load (NowChecking + SlotPreview
+        // both show only the picked pill). Build the pill slice
+        // accordingly so the sprite chrome matches retail. AND retail
+        // relocates that single visible pill up under the Load panel
+        // (SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE) during Load-active.
+        // The relocation is animated — mode 2 of FUN_801E1C1C slides
+        // the slot composite linearly from screen `(136, 96)` (=
+        // param_3=0xa0 with `sVar6 -= 0x18` x-shift, param_4=0x60) to
+        // `(24, 40)` over 16 frames, driven by `DAT_801ef194`. We
+        // interpolate against `session.slide_anim_t()` so the engine
+        // matches retail's slide-in.
+        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = match session.phase() {
+            SelectPhase::NowChecking { slot, .. } | SelectPhase::SlotPreview { slot } => {
+                // Slide start: retail mode-2 start `(160, 96)` minus
+                // the `-0x18` x-shift baked into the inline emit
+                // before the GPU command -> top-left `(136, 96)`.
+                const SLIDE_START_TOPLEFT: (i32, i32) = (136, 96);
+                let pos = session.interpolate(
+                    SLIDE_START_TOPLEFT,
+                    legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
+                );
+                (vec![slot], pos)
+            }
+            _ => (
+                (0..slot_count as u8).collect(),
+                legaia_engine_render::SAVE_SELECT_SLOT1_POS,
+            ),
+        };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         let mut draws = legaia_engine_render::save_select_chrome_draws_for(
             &assets.rects,
-            slot_count,
+            &pills,
+            pill_anchor,
             stage_origin,
             stage_scale,
         );
         // Pointing-finger cursor sprite — retail's small white hand
         // pointing at the selected slot pill, byte-pinned to CLUT row
         // 7 of the system-UI TIM. Emit last so it draws on top of
-        // the pills.
-        if slot_count > 0 {
+        // the pills. Suppress during NowChecking (dialog covers the
+        // pill row) and SlotPreview (the grid emits its own cursor
+        // on the focused cell).
+        let emit_pill_cursor = !matches!(
+            session.phase(),
+            SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
+        );
+        if slot_count > 0 && emit_pill_cursor {
             draws.push(legaia_engine_render::save_select_cursor_draw_for(
                 &assets.rects,
                 cursor_row,
                 stage_origin,
                 stage_scale,
             ));
+        }
+        // Phase-specific overlays: SlotPreview shows the 5×3 grid + a
+        // bottom info panel; NowChecking shows a centered dialog box
+        // with the "Now checking. Do not remove MEMORY CARD" message.
+        match session.phase() {
+            SelectPhase::SlotPreview { slot } => {
+                // Build per-cell views from the session's slot
+                // snapshots. Each cell maps to one memory-card block;
+                // up to 15 cells (5×3 grid).
+                let cells: Vec<legaia_engine_render::SlotGridCell> = (0..15)
+                    .map(|i| {
+                        session
+                            .slots()
+                            .get(i)
+                            .map(|s| legaia_engine_render::SlotGridCell {
+                                present: s.present,
+                                portrait_char_id: if s.present {
+                                    Some(slot_leader_char_id(s))
+                                } else {
+                                    None
+                                },
+                            })
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                draws.extend(legaia_engine_render::slot_preview_grid_draws_for(
+                    &assets.rects,
+                    &cells,
+                    slot,
+                    stage_origin,
+                    stage_scale,
+                ));
+                let info = build_slot_info_view(session.slots(), slot);
+                let view = info.as_ref().map(|i| i.as_view());
+                let panel_y_offset = info_panel_slide_offset(session);
+                draws.extend(legaia_engine_render::slot_info_panel_draws_for(
+                    &assets.rects,
+                    view.as_ref(),
+                    panel_y_offset,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+            SelectPhase::NowChecking { .. } => {
+                // Slide the panel left-from-right alongside the text,
+                // matching retail mode-0's `pos = (416, 112) -> (160,
+                // 112)` interpolation.
+                let pos_x = legaia_engine_core::save_select::interpolate_anim(
+                    (legaia_engine_render::NOW_CHECKING_SLIDE_START_X, 0),
+                    (legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0),
+                    session.slide_anim_t(),
+                )
+                .0;
+                let slide_offset = (pos_x - legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0);
+                draws.extend(legaia_engine_render::now_checking_panel_draws_for(
+                    &assets.rects,
+                    stage_origin,
+                    stage_scale,
+                    slide_offset,
+                ));
+            }
+            _ => {}
         }
         draws
     }
@@ -3805,10 +3956,22 @@ impl PlayWindowApp {
     ) -> Vec<legaia_engine_render::SpriteDraw> {
         // Active during both the Title phases and the SaveSelect boot
         // sub-state. SaveSelect dims the bands to ~45 % brightness so
-        // the panel + slot pills layered on top read clearly.
+        // the panel + slot pills layered on top read clearly. Retail
+        // pivots to pure black once a slot is confirmed (NowChecking /
+        // SlotPreview): the dialog + portrait grid + info panel are
+        // composed against black, never the title art.
         let title_session: Option<&legaia_engine_core::title::TitleSession> = match &self.boot_ui {
             BootUiState::Title(s) => Some(s),
-            BootUiState::SaveSelect(_) => None,
+            BootUiState::SaveSelect(s) => {
+                use legaia_engine_core::save_select::SelectPhase;
+                if matches!(
+                    s.phase(),
+                    SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
+                ) {
+                    return Vec::new();
+                }
+                None
+            }
             _ => return Vec::new(),
         };
         let (alpha, dim) = if let Some(session) = title_session {
@@ -4839,10 +5002,21 @@ fn cmd_play_window(
             .host
             .index
             .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32),
-        session.host.index.prot_dat_raw_bytes(
-            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
-            legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_SIZE,
-        ),
+        // Pull a slice that covers BOTH the system-UI sheet (panel
+        // chrome, cursor) AND the load-screen portrait + frame TIMs
+        // (`OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`..end of
+        // `OVERLAY_LOAD_EMPTY_FRAME_TIM`). The slice starts at the
+        // system-UI TIM header so existing offsets stay
+        // slice-relative; `build_atlas` handles both shapes.
+        {
+            let base = legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET;
+            let end = legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+                + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+            session
+                .host
+                .index
+                .prot_dat_raw_bytes(base as u64, end - base)
+        },
     ) {
         (Ok(pill_bytes), Ok(panel_bytes)) => {
             match legaia_engine_core::save_menu_atlas::build_atlas(&panel_bytes, &pill_bytes) {
@@ -4927,11 +5101,92 @@ fn cmd_play_window(
 /// `SlotSnapshot::empty(slot)`. Up to 8 slots are scanned (the retail
 /// PSX memory card supports 15 blocks; engines wishing to scan more can
 /// drive their own scanner and feed the result into `SaveSelectSession`).
+/// Pluck the lead-character roster index out of a [`SlotSnapshot`] for
+/// the load-screen portrait grid. The snapshot already exposes the
+/// leader's char_id (scan_save_dir picks it from the parsed
+/// [`legaia_save::SaveFile`]); this thin helper exists so render-time
+/// call sites read clearly.
+fn slot_leader_char_id(snap: &legaia_engine_core::save_select::SlotSnapshot) -> u8 {
+    snap.leader_char_id
+}
+
+/// Build a per-frame [`legaia_engine_render::SlotInfoView`] for the
+/// info panel shown at the bottom of the slot-preview screen.
+/// Returns `None` for empty slots (the info panel renders only when
+/// a save is present).
+fn build_slot_info_view(
+    slots: &[legaia_engine_core::save_select::SlotSnapshot],
+    cursor_slot: u8,
+) -> Option<SlotInfoOwned> {
+    let snap = slots.get(cursor_slot as usize)?;
+    if !snap.present {
+        return None;
+    }
+    Some(SlotInfoOwned {
+        slot_no: snap.slot.saturating_add(1),
+        location: snap.location.clone(),
+        play_time: snap.play_time_string(),
+        leader_name: snap.leader_name.clone(),
+        leader_level: snap.party_lv,
+        leader_hp: snap.leader_hp,
+        leader_mp: snap.leader_mp,
+        leader_char_id: snap.leader_char_id,
+    })
+}
+
+/// Compute the slide-in y-offset (delta from parked y) for the
+/// bottom info panel. Mirrors retail FUN_801E08D8's inline
+/// `local_34 = (anim_t * -0x100) / 0xFFF >> 12 + 0x18A`: the panel
+/// slides from `INFO_PANEL_OFFSCREEN_Y = 394` (off-screen below) up
+/// to `INFO_PANEL_PARKED_Y = 138` (parked under load chrome) as
+/// `info_panel_slide_anim_t` ramps 0 → 4096. Returns the delta from
+/// parked y, so 0 = fully landed.
+fn info_panel_slide_offset(session: &legaia_engine_core::save_select::SaveSelectSession) -> i32 {
+    let (_, y) = legaia_engine_core::save_select::interpolate_anim(
+        (0, legaia_engine_core::save_select::INFO_PANEL_OFFSCREEN_Y),
+        (0, legaia_engine_core::save_select::INFO_PANEL_PARKED_Y),
+        session.info_panel_slide_anim_t(),
+    );
+    y - legaia_engine_core::save_select::INFO_PANEL_PARKED_Y
+}
+
+/// Owned-string flavour of [`legaia_engine_render::SlotInfoView`] used
+/// to keep the strings alive across the render call. The borrowed
+/// view referenced by the renderer is taken via [`Self::as_view`].
+struct SlotInfoOwned {
+    slot_no: u8,
+    location: String,
+    play_time: String,
+    leader_name: String,
+    leader_level: u8,
+    leader_hp: (u16, u16),
+    leader_mp: (u16, u16),
+    leader_char_id: u8,
+}
+
+impl SlotInfoOwned {
+    fn as_view(&self) -> legaia_engine_render::SlotInfoView<'_> {
+        legaia_engine_render::SlotInfoView {
+            slot_no: self.slot_no,
+            location: &self.location,
+            play_time: &self.play_time,
+            leader_name: &self.leader_name,
+            leader_level: self.leader_level,
+            leader_hp: self.leader_hp,
+            leader_mp: self.leader_mp,
+            leader_char_id: self.leader_char_id,
+        }
+    }
+}
+
 fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSnapshot> {
     use legaia_engine_core::menu_runtime::SAVE_EXT;
     use legaia_engine_core::save_select::SlotSnapshot;
-    let mut out = Vec::with_capacity(3);
-    for slot in 0..3u8 {
+    // Scan up to 15 slots (one per retail PSX memory-card block) so
+    // the load-screen 5×3 grid can render every potential slot.
+    const MAX_SLOTS: u8 = 15;
+    let mut out = Vec::with_capacity(MAX_SLOTS as usize);
+    for slot in 0..MAX_SLOTS {
         // Saves are written by the field menu via `MenuRuntime` as
         // `<dir>/slot_NN.<SAVE_EXT>` (zero-padded slot, see
         // `menu_runtime::slot_path`). The title-screen and
@@ -4950,17 +5205,29 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
                 // level-up observation triplet) and infer the level from
                 // the retail XP table.
                 // Engines that capture the actual level byte can override.
-                let lv = sf
-                    .party
-                    .members
-                    .first()
+                let leader = sf.party.members.first();
+                let lv = leader
                     .map(|r| legaia_save::level_for_cumulative_xp(r.cumulative_xp() as u32))
                     .unwrap_or(1);
-                let location = if sf.ext_v2.active_party.is_empty() {
-                    "Field".to_string()
-                } else {
-                    format!("Field (party x{})", sf.ext_v2.active_party.len())
-                };
+                let leader_hp = leader
+                    .map(|r| {
+                        let v = r.hp_mp_sp();
+                        (v.hp_cur, v.hp_max)
+                    })
+                    .unwrap_or((0, 0));
+                let leader_mp = leader
+                    .map(|r| {
+                        let v = r.hp_mp_sp();
+                        (v.mp_cur, v.mp_max)
+                    })
+                    .unwrap_or((0, 0));
+                // Retail saves serialise the scene name into the SC
+                // block (`+0x200..0x208`, ASCII null-padded). Our LGSF
+                // saves don't carry that field yet, so default to the
+                // most-common starting kingdom; engines that capture
+                // it can override.
+                let _ = sf.ext_v2.active_party.is_empty(); // kept-for-future-use
+                let location = "Drake Kingdom".to_string();
                 SlotSnapshot {
                     slot,
                     present: true,
@@ -4969,6 +5236,13 @@ fn scan_save_dir(save_dir: &Path) -> Vec<legaia_engine_core::save_select::SlotSn
                     party_lv: lv,
                     location,
                     money: sf.ext.money.max(0) as u32,
+                    // Lead char is always Vahn (char_id=0) in retail
+                    // Legaia — Vahn is the protagonist and slot 0 of
+                    // the SC character record array.
+                    leader_char_id: 0,
+                    leader_name: "Vahn".to_string(),
+                    leader_hp,
+                    leader_mp,
                 }
             }
             None => SlotSnapshot::empty(slot),
@@ -5458,6 +5732,10 @@ fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<()> {
                     party_lv: 5,
                     location: "Town01".into(),
                     money: 100,
+                    leader_char_id: 0,
+                    leader_name: "Vahn".into(),
+                    leader_hp: (100, 100),
+                    leader_mp: (20, 20),
                 }
             } else {
                 SlotSnapshot::empty(i as u8)
@@ -5490,6 +5768,18 @@ fn cmd_save_select(mode: &str, slots: &str, script: &str) -> Result<()> {
                     println!("  tick {i}: cancelled {:?} on slot {slot}", kind)
                 }
                 SelectEvent::InvalidConfirm => println!("  tick {i}: invalid confirm"),
+                SelectEvent::EnteredNowChecking { slot } => {
+                    println!("  tick {i}: entered NowChecking on slot {slot}")
+                }
+                SelectEvent::EnteredSlotPreview { slot } => {
+                    println!("  tick {i}: entered SlotPreview on slot {slot}")
+                }
+                SelectEvent::LoadConfirmed { slot } => {
+                    println!("  tick {i}: load confirmed on slot {slot}")
+                }
+                SelectEvent::SlotPreviewCancelled { slot } => {
+                    println!("  tick {i}: slot preview cancelled on slot {slot}")
+                }
                 SelectEvent::Cancelled => println!("  tick {i}: cancelled"),
             }
         }
