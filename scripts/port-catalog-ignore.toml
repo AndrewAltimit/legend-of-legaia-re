@@ -50,6 +50,8 @@
 
 # libc / PsyQ runtime glue. Each maps to a Rust stdlib equivalent.
 [libc]
+"80017888" = "malloc wrapper (alloc-count++, calls FUN_8002b468 best-fit allocator, on null increments OOM-size sum and prints 'malloc_err_size %d')"
+"80017b94" = "free wrapper (alloc-count--, on null prints 'free_err', calls FUN_8002b584 underlying free)"
 "800567b8" = "printf-class formatter (handles %d %x %o %s %f); writes into a static buffer"
 "80056b18" = "printf-class formatter (sister of 800567b8)"
 "80057024" = "memmove (overlap-safe direction-aware copy)"
@@ -98,8 +100,12 @@
 
 # libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
 # its own GP0 / OT / draw-env machinery; the retail PsyQ wrappers below are
-# 1:1 PsyQ entry points that wrap a vtable dispatch + dev-string printf.
+# 1:1 PsyQ entry points that wrap a vtable dispatch + dev-string printf, plus
+# a couple of inline addPrim-shape helpers Sony's build emitted as real
+# functions rather than macros (presumably to save code size given call counts
+# in the 100s).
 [libgs]
+"8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
 "80057c44" = "ResetGraph (vtable dispatch + dev-string printf wrapper)"
 "80057fec" = "GetGraphDebug (returns DAT_80078d54)"
 "8005800c" = "DrawSyncCallback"
@@ -120,8 +126,13 @@
 "80059de4" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
 
 
-# libetc / libcomb (VSync, frame-pacing).
+# libetc / libcomb (VSync, frame-pacing) plus SCUS-resident dev-instrumentation
+# helpers (in-game debug-string formatter, dev path-based file reader). The
+# engine uses Rust's logging stack (tracing / env_logger) and ISO9660 directly;
+# none of these have engine equivalents.
 [libetc]
+"8001a068" = "in-game dev-string formatter / on-screen log printer. Reads format string, writes RGB 0x808080 cell, %-escape walker. Called via 8001a09c-style wrapper that takes (fmt, args...) and pushes a text primitive."
+"8003e6bc" = "dev host-FS reader: (path, dest) -> fopen + fseek/SEEK_END for size + fread + zero-pad to 0x800 sector. Calls libapi 800608f0/80060920/80060944/80060910. The retail dual-mode loader's debug branch; clean-room engine reads from disc via ISO9660 only."
 "8005fb84" = "VSync(N) handler - wraps 8005fccc with frame-counter math"
 
 

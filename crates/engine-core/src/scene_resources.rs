@@ -3,7 +3,7 @@
 //! the legacy `tim_scan/<entry>/` filesystem intermediate the asset-viewer
 //! used.
 //!
-//! PORT: FUN_8001FE70
+//! PORT: FUN_8001FE70, FUN_80026B4C
 //!
 //! This is the engine-side mirror of the retail field-loader chain
 //! ([`docs/subsystems/asset-loader.md`]): the runtime DMAs every TIM in the
@@ -30,7 +30,7 @@
 //! [`SceneResources::build_with_shared`] and pass [`FIELD_SHARED_BLOCKS`]
 //! as the shared scene set. The default zero-arg [`SceneResources::build`]
 //! stays backward-compatible.
-//! REF: FUN_8001E890, FUN_80026B4C
+//! REF: FUN_8001E890
 
 use anyhow::Result;
 use legaia_asset::{anm_detect, battle_data_pack, scene_tmd_stream, tim_scan, tmd_scan};
