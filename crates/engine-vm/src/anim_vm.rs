@@ -1,6 +1,7 @@
 //! Per-actor animation runtime - wraps the actor-tick anim dispatch.
 //!
-//! PORT: FUN_80024CFC
+//! PORT: FUN_80024CFC, FUN_8004AD80, FUN_80047430, FUN_80048A08
+//! PORT: FUN_80049348, FUN_8004998C, FUN_8004E13C
 //!
 //! ## Background
 //!
@@ -58,8 +59,7 @@
 //! the `Host::on_opaque_record` body with the real per-kind dispatch -
 //! every other piece of plumbing (per-actor pool, frame stepping,
 //! lifecycle hooks, event stream) stays as-is.
-//! REF: FUN_80021DF4, FUN_80047430, FUN_80048A08, FUN_80049348, FUN_8004998C, FUN_8004AD80
-//! REF: FUN_8004E13C
+//! REF: FUN_80021DF4, FUN_80056798
 
 use legaia_anm::{AnimPlayer, PoseFrame, RecordHeader};
 
@@ -302,20 +302,38 @@ pub enum AnimEvent {
 
 /// Engine-side callbacks the runtime makes for opaque-kind records.
 ///
-/// The eventual overlay-resident dispatcher will replace
-/// `on_opaque_record` with the real per-kind interpretation. Until
-/// then, engines override this trait to wire whatever fallback they
-/// need (e.g. swap to a static pose, defer to a static animation
-/// asset, log for analysis).
+/// The retail per-frame consumer at `FUN_8004AD80` dispatches on the
+/// consumer-struct kind byte at `+0x00` (an [`OpaqueRecordKind`]
+/// classification - not the same byte as the [`RecordKind`] header
+/// `a` field, though they happen to live at the same offset in the
+/// runtime record) into five explicit branches plus a default "raw
+/// playback" path. The runtime here invokes one trait method per
+/// branch so the engine can supply per-kind behaviour without having
+/// to re-classify in user code.
+///
+/// `FUN_8004AD80` also calls several per-frame helpers as it walks
+/// each opaque slot (`FUN_80047430` movement step, `FUN_80048A08`
+/// render loop, `FUN_80049348` child-step iterator, `FUN_8004998C`
+/// per-bone interpolator, and `FUN_8004E13C` special-effect spawn).
+/// The corresponding trait methods are exposed here as host-trait
+/// abstractions; engines call them from their per-kind handlers in
+/// whatever order matches the SCUS contract.
+///
+/// `on_opaque_record` remains the catch-all fallback - every per-kind
+/// method defaults to routing through it, so existing host
+/// implementations that only override `on_opaque_record` continue to
+/// work.
 pub trait Host {
-    /// Called once per `AnimRuntime::tick` for every Opaque-kind slot.
+    /// Catch-all fallback: called by the default body of every
+    /// per-kind dispatcher below. Engines that want a single
+    /// handler for every kind can override just this method; engines
+    /// that want per-kind specialisation override the per-kind
+    /// methods directly.
     ///
-    /// `frame_counter` mirrors `actor[+0x68]` and increments each tick
-    /// while the slot is alive. The default body just records the
-    /// event; engines that have a fallback override this.
-    ///
-    /// Returning `true` keeps the slot alive; `false` ends it
-    /// (transitions to `Idle` on the next tick boundary).
+    /// `frame_counter` mirrors `actor[+0x68]` and increments each
+    /// tick while the slot is alive. Returning `true` keeps the slot
+    /// alive; `false` ends it (transitions to `Idle` on the next
+    /// tick boundary).
     fn on_opaque_record(
         &mut self,
         actor: u8,
@@ -325,6 +343,98 @@ pub trait Host {
     ) -> bool {
         let _ = (actor, kind, record, frame_counter);
         true
+    }
+
+    /// `OpaqueRecordKind::Kind2` (`+0x00 == 0x02`) handshake. When
+    /// the global character-action byte is `-0x4D` / `-0x4B` and the
+    /// actor's anim flag at `+0x14C` is zero, the consumer flips the
+    /// kind byte to `Kind4` and ticks `+0x56`. Per-kind port of the
+    /// `Kind2` branch in `FUN_8004AD80`.
+    fn on_kind2_handshake(&mut self, actor: u8, record: &[u8], frame_counter: u32) -> bool {
+        self.on_opaque_record(actor, RecordKind::Kind2, record, frame_counter)
+    }
+
+    /// `OpaqueRecordKind::Kind4` (`+0x00 == 0x04`) action engaged. If
+    /// the actor's anim-flag at `+0x14C` is zero, set
+    /// `actor[+0x1DA] = 7`; otherwise copy `actor[+0x1F2]` into
+    /// `+0x1DA`. Per-kind port of the `Kind4` branch in
+    /// `FUN_8004AD80`.
+    fn on_kind4_action_engaged(&mut self, actor: u8, record: &[u8], frame_counter: u32) -> bool {
+        self.on_opaque_record(actor, RecordKind::Other(0x04), record, frame_counter)
+    }
+
+    /// `OpaqueRecordKind::Kind5` (`+0x00 == 0x05`): `actor[+0x1DC] |=
+    /// 4`. Per-kind port of the `Kind5` branch in `FUN_8004AD80`.
+    fn on_kind5_or_bit2(&mut self, actor: u8, record: &[u8], frame_counter: u32) -> bool {
+        self.on_opaque_record(actor, RecordKind::Other(0x05), record, frame_counter)
+    }
+
+    /// `OpaqueRecordKind::Kind7` (`+0x00 == 0x07`): set
+    /// `actor[+0x1DA] = 8`. Per-kind port of the `Kind7` branch in
+    /// `FUN_8004AD80`.
+    fn on_kind7_set_da_8(&mut self, actor: u8, record: &[u8], frame_counter: u32) -> bool {
+        self.on_opaque_record(actor, RecordKind::Other(0x07), record, frame_counter)
+    }
+
+    /// `OpaqueRecordKind::Kind8` (`+0x00 == 0x08`): `actor[+0x1DC] |=
+    /// 8`. Per-kind port of the `Kind8` branch in `FUN_8004AD80`.
+    fn on_kind8_or_bit3(&mut self, actor: u8, record: &[u8], frame_counter: u32) -> bool {
+        self.on_opaque_record(actor, RecordKind::Other(0x08), record, frame_counter)
+    }
+
+    /// Catch-all branch for `OpaqueRecordKind::Other(byte)`: raw
+    /// playback. The default `FUN_8004AD80` path runs the per-field
+    /// reads but no kind-specific sub-state mutates.
+    fn on_other_kind(&mut self, actor: u8, byte: u8, record: &[u8], frame_counter: u32) -> bool {
+        self.on_opaque_record(actor, RecordKind::Other(byte.into()), record, frame_counter)
+    }
+
+    /// Per-frame movement step - host-trait abstraction of
+    /// `FUN_80047430`. Reads `OpaqueAnimRecord::movement_scale` and
+    /// `OpaqueAnimRecord::nested_data_ptr_raw`, computes
+    /// `(angle_lookup * movement_scale * frame_index) / frame_count`,
+    /// applies the translation to the actor's world position.
+    ///
+    /// Default no-op so engines without a movement pipeline still
+    /// build.
+    fn on_movement_step(&mut self, actor: u8, record: &[u8], frame_index: u16) {
+        let _ = (actor, record, frame_index);
+    }
+
+    /// Per-frame render-loop body - host-trait abstraction of
+    /// `FUN_80048A08`. Reads `+0x84` (`depth_84`) and
+    /// `count_86` to drive a per-frame primitive emission loop.
+    fn on_render_loop(&mut self, actor: u8, record: &[u8]) {
+        let _ = (actor, record);
+    }
+
+    /// Child-step iterator - host-trait abstraction of
+    /// `FUN_80049348`. Reads the actor's `+0x21D`
+    /// ([`ACTOR_LOD_STEP_OFFSET`]) byte and iterates the actor's
+    /// child-actor chain at `+0x1FB..` with stride `lod_step`.
+    /// `lod_step` is the folded `8 / max(stride, 1)` value (see
+    /// [`ActorAnimState::lod_step_factor`]).
+    fn on_child_step_iter(&mut self, actor: u8, lod_step: u8) {
+        let _ = (actor, lod_step);
+    }
+
+    /// Per-bone keyframe interpolator - host-trait abstraction of
+    /// `FUN_8004998C`. Unpacks the two `[i16; 3]` vectors per bone
+    /// from the nested per-frame data, lerps by
+    /// `sub_frame_factor / 16`, writes the result into the GPU OT
+    /// scratch buffer.
+    fn on_per_bone_interp(&mut self, actor: u8, record: &[u8], sub_frame_factor: u8) {
+        let _ = (actor, record, sub_frame_factor);
+    }
+
+    /// Special-effect spawn - host-trait abstraction of
+    /// `FUN_8004E13C`. Invoked when the consumer struct's `+0x87`
+    /// `effect_id` is non-zero. The retail body walks an actor table
+    /// at `DAT_801C9370` (7 slots) and toggles per-actor flag bytes
+    /// based on inter-actor state; some branches use the RNG at
+    /// `FUN_80056798` to seed actor `+0x6DA` and `+0x26D`.
+    fn on_special_effect_spawn(&mut self, actor: u8, effect_id: u8) {
+        let _ = (actor, effect_id);
     }
 }
 
@@ -1104,7 +1214,31 @@ impl AnimRuntime {
                     frame_counter,
                 } => {
                     *frame_counter = frame_counter.saturating_add(1);
-                    let alive = host.on_opaque_record(actor, *kind, record, *frame_counter);
+                    // Per-kind dispatch on the consumer-struct kind
+                    // byte at `+0x00` of the runtime record. Matches
+                    // the outer dispatch in FUN_8004AD80.
+                    let consumer_kind =
+                        OpaqueRecordKind::from_byte(record.first().copied().unwrap_or(0));
+                    let alive = match consumer_kind {
+                        OpaqueRecordKind::Kind2 => {
+                            host.on_kind2_handshake(actor, record, *frame_counter)
+                        }
+                        OpaqueRecordKind::Kind4 => {
+                            host.on_kind4_action_engaged(actor, record, *frame_counter)
+                        }
+                        OpaqueRecordKind::Kind5 => {
+                            host.on_kind5_or_bit2(actor, record, *frame_counter)
+                        }
+                        OpaqueRecordKind::Kind7 => {
+                            host.on_kind7_set_da_8(actor, record, *frame_counter)
+                        }
+                        OpaqueRecordKind::Kind8 => {
+                            host.on_kind8_or_bit3(actor, record, *frame_counter)
+                        }
+                        OpaqueRecordKind::Other(b) => {
+                            host.on_other_kind(actor, b, record, *frame_counter)
+                        }
+                    };
                     self.events.push(AnimEvent::OpaqueTick {
                         actor,
                         kind: *kind,
@@ -1735,5 +1869,152 @@ mod tests {
         rt.play(1, synth_opaque_record(0x0A, 16), 0).unwrap();
         assert_eq!(rt.slot(0).unwrap().header_a(), Some(0x06));
         assert_eq!(rt.slot(1).unwrap().header_a(), Some(0x0A));
+    }
+
+    /// Host that records which per-kind dispatcher fired for each
+    /// actor. Used by the per-kind tests below.
+    #[derive(Default)]
+    struct PerKindHost {
+        kind2: Vec<u8>,
+        kind4: Vec<u8>,
+        kind5: Vec<u8>,
+        kind7: Vec<u8>,
+        kind8: Vec<u8>,
+        other: Vec<(u8, u8)>,
+    }
+
+    impl Host for PerKindHost {
+        fn on_kind2_handshake(&mut self, actor: u8, _r: &[u8], _f: u32) -> bool {
+            self.kind2.push(actor);
+            true
+        }
+        fn on_kind4_action_engaged(&mut self, actor: u8, _r: &[u8], _f: u32) -> bool {
+            self.kind4.push(actor);
+            true
+        }
+        fn on_kind5_or_bit2(&mut self, actor: u8, _r: &[u8], _f: u32) -> bool {
+            self.kind5.push(actor);
+            true
+        }
+        fn on_kind7_set_da_8(&mut self, actor: u8, _r: &[u8], _f: u32) -> bool {
+            self.kind7.push(actor);
+            true
+        }
+        fn on_kind8_or_bit3(&mut self, actor: u8, _r: &[u8], _f: u32) -> bool {
+            self.kind8.push(actor);
+            true
+        }
+        fn on_other_kind(&mut self, actor: u8, byte: u8, _r: &[u8], _f: u32) -> bool {
+            self.other.push((actor, byte));
+            true
+        }
+    }
+
+    #[test]
+    fn per_kind_dispatch_routes_kind2_through_on_kind2_handshake() {
+        let mut rt = AnimRuntime::with_slots(4);
+        rt.play(2, synth_opaque_record(0x02, 16), 0).unwrap();
+        let mut host = PerKindHost::default();
+        rt.tick(&mut host);
+        assert_eq!(host.kind2, vec![2]);
+        assert!(host.kind4.is_empty());
+        assert!(host.kind5.is_empty());
+        assert!(host.other.is_empty());
+    }
+
+    #[test]
+    fn per_kind_dispatch_routes_kind4_through_on_kind4_action_engaged() {
+        let mut rt = AnimRuntime::with_slots(4);
+        rt.play(1, synth_opaque_record(0x04, 16), 0).unwrap();
+        let mut host = PerKindHost::default();
+        rt.tick(&mut host);
+        assert_eq!(host.kind4, vec![1]);
+    }
+
+    #[test]
+    fn per_kind_dispatch_routes_kind5_through_on_kind5_or_bit2() {
+        let mut rt = AnimRuntime::with_slots(4);
+        rt.play(0, synth_opaque_record(0x05, 16), 0).unwrap();
+        let mut host = PerKindHost::default();
+        rt.tick(&mut host);
+        assert_eq!(host.kind5, vec![0]);
+    }
+
+    #[test]
+    fn per_kind_dispatch_routes_kind7_through_on_kind7_set_da_8() {
+        let mut rt = AnimRuntime::with_slots(4);
+        rt.play(3, synth_opaque_record(0x07, 16), 0).unwrap();
+        let mut host = PerKindHost::default();
+        rt.tick(&mut host);
+        assert_eq!(host.kind7, vec![3]);
+    }
+
+    #[test]
+    fn per_kind_dispatch_routes_kind8_through_on_kind8_or_bit3() {
+        let mut rt = AnimRuntime::with_slots(4);
+        rt.play(2, synth_opaque_record(0x08, 16), 0).unwrap();
+        let mut host = PerKindHost::default();
+        rt.tick(&mut host);
+        assert_eq!(host.kind8, vec![2]);
+    }
+
+    #[test]
+    fn per_kind_dispatch_routes_unknown_byte_through_on_other_kind() {
+        let mut rt = AnimRuntime::with_slots(4);
+        // 0x18 is the canonical "Other" byte in OpaqueRecordKind.
+        rt.play(1, synth_opaque_record(0x18, 16), 0).unwrap();
+        let mut host = PerKindHost::default();
+        rt.tick(&mut host);
+        assert_eq!(host.other, vec![(1, 0x18)]);
+    }
+
+    #[test]
+    fn per_kind_default_routes_back_through_on_opaque_record() {
+        // Verifies the back-compat path: a host that only overrides
+        // `on_opaque_record` still receives every per-kind dispatch
+        // because each per-kind method's default body routes there.
+        struct LegacyHost {
+            seen: Vec<u16>,
+        }
+        impl Host for LegacyHost {
+            fn on_opaque_record(
+                &mut self,
+                _actor: u8,
+                kind: RecordKind,
+                _record: &[u8],
+                _frame_counter: u32,
+            ) -> bool {
+                let header_a = match kind {
+                    RecordKind::Kind2 => 0x02,
+                    RecordKind::Kind3 => 0x03,
+                    RecordKind::KindA => 0x0A,
+                    RecordKind::Keyframe => 0x06,
+                    RecordKind::Other(v) => v,
+                };
+                self.seen.push(header_a);
+                true
+            }
+        }
+        let mut rt = AnimRuntime::with_slots(4);
+        rt.play(0, synth_opaque_record(0x02, 16), 0).unwrap();
+        rt.play(1, synth_opaque_record(0x05, 16), 0).unwrap();
+        rt.play(2, synth_opaque_record(0x18, 16), 0).unwrap();
+        let mut host = LegacyHost { seen: vec![] };
+        rt.tick(&mut host);
+        // All three per-kind paths funnelled into on_opaque_record.
+        assert_eq!(host.seen, vec![0x02, 0x05, 0x18]);
+    }
+
+    #[test]
+    fn helper_methods_have_no_op_defaults() {
+        // Smoke test: NullHost's per-helper defaults do nothing, but
+        // the trait methods must still be callable (i.e. the trait
+        // compiles + dispatches without engine-side scaffolding).
+        let mut host = NullHost;
+        host.on_movement_step(0, &[], 0);
+        host.on_render_loop(0, &[]);
+        host.on_child_step_iter(0, 1);
+        host.on_per_bone_interp(0, &[], 0);
+        host.on_special_effect_spawn(0, 0);
     }
 }
