@@ -26,29 +26,41 @@ from ghidra.app.decompiler import DecompInterface, DecompileOptions
 from ghidra.util.task import ConsoleTaskMonitor
 
 TARGETS = [
-    # SCUS-resident
+    # SCUS-resident, first wave
     "80044798",  # 24 refs - slot-4 area, cited from FUN_800445b0
     "8005fde8",  # 4 refs
-    "8003d1ec",  # 3 refs
+    "8003d1ec",  # 3 refs (no-fn at first pass - may need force-disasm)
     "80059bd4",  # 2 refs - cited from FUN_80059c00
     "8005aa30",  # 2 refs
     "8005aa64",  # 2 refs
     "8001cd68",  # 1 ref
-    "8002b984",  # 1 ref
-    "8002b98c",  # 1 ref
+    "8002b984",  # 1 ref (no-fn at first pass)
+    "8002b98c",  # 1 ref (no-fn at first pass)
     "80034cc4",  # 1 ref - gp_drawable writers
     "80034fa0",  # 1 ref - gp_drawable writers
     "80055b6c",  # 1 ref
-    "8005bbf8",  # 1 ref - cited from overlay_str_fmv
+    "8005bbf8",  # 1 ref - cited from overlay_str_fmv (no-fn at first pass)
     "8005eb68",
     "8005ec7c",
     "8005ed64",
     "8005edc4",
-    "8005ee4c",
-    "8005ef40",
+    "8005ee4c",  # (no-fn at first pass)
+    "8005ef40",  # (no-fn at first pass)
     "8005f024",
 
-    # Overlay-resident
+    # SCUS-resident, surfaced by first-pass BFS
+    "80054a6c",
+    "8005567c",
+    "80055b20",
+    "8005c2e4",
+    "8005ebfc",
+    "8005ecd4",
+    "8005ef04",
+    "8005f004",
+    "8005f994",
+    "8005f9c8",
+
+    # Overlay-resident, first wave
     "801f33b4",  # 5 refs - overlay_baka_fighter
     "801c2520",  # 1 ref  - overlay_0897 family
     "801cf5e8",  # 1 ref  - overlay_world_map_top
@@ -59,6 +71,12 @@ TARGETS = [
     "801e249c",  # 1 ref  - overlay_0897 family
     "801f89b8",  # 1 ref  - overlay_world_map_top (or _ext variant)
     "801f8ab0",  # 1 ref  - overlay_0897 family
+
+    # Overlay-resident, surfaced by first-pass BFS
+    "801d0e78",
+    "801d0eec",
+    "801d0fe4",
+    "801dfef4",
 ]
 
 OUT_DIR = "/scripts/funcs"
