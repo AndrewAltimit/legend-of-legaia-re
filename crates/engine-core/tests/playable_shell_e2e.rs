@@ -69,14 +69,24 @@ fn save_select_load_outcome_round_trips() {
             party_lv: 5,
             location: "Town01".into(),
             money: 100,
+            leader_char_id: 0,
+            leader_name: "Vahn".into(),
+            leader_hp: (100, 100),
+            leader_mp: (20, 20),
         },
         SlotSnapshot::empty(1),
     ];
     let mut s = SaveSelectSession::new(SaveSelectMode::Load, snaps);
+    // Use a 0-frame timer so the test doesn't tick 120 times to skip
+    // the retail "Now checking" beat.
+    s.set_now_checking_frames(0);
     s.tick(SelectInput {
         cross: true,
         ..Default::default()
     });
+    // NowChecking { frames: 0 } → SlotPreview on next tick.
+    s.tick(SelectInput::default());
+    // X confirms the load from the preview.
     s.tick(SelectInput {
         cross: true,
         ..Default::default()

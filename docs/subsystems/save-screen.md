@@ -358,3 +358,178 @@ byte-confirmed system-UI TIM is declared in
 `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET` /
 `OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW`; switching the atlas builder over
 to it is gated on the GPULog probe.
+
+## Slide-in UI primitive (`FUN_801E1C1C`)
+
+The save-UI overlay's slide-in animations all flow through a single
+primitive,
+`FUN_801E1C1C(mode, anim_t, start_x, start_y, target_x, target_y)`.
+The function inlines its own 12-bit fixed-point linear interpolation,
+then dispatches per mode to emit the slid-in content at the
+interpolated `(x, y)`.
+
+```c
+// Entry-point interpolation, ghidra/scripts/funcs/overlay_save_ui_select_801e1c1c.txt:
+iVar10 = (param_5 - param_3) * param_2;       // (target_x - start_x) * t
+if (iVar10 < 0) iVar10 += 0xfff;               // round-toward-zero
+param_3 = param_3 + (iVar10 >> 0xc);           // start_x + delta * (t/4096)
+// same for param_4 vs param_6
+```
+
+`anim_t` is 12-bit fixed-point in `[0, 0x1000]`: `t=0` → at start,
+`t=0x1000` → at target. Each animated element has its own dedicated
+timer global, and each timer ramps `+0x100` per frame (16-frame
+slide). The five animator timers + their modes:
+
+| Mode | Timer global | Element | (start) → (target) |
+|---|---|---|---|
+| `0` | `DAT_801ef160` | "Now checking. Do not remove MEMORY CARD" dialog | `(416, 112) → (160, 112)` (slides in from right) |
+| `1` | (constant `0`) | Static header tabs (Load / Save) | held at `(48, 6)` (no animation) |
+| `2` | `DAT_801ef194` | "Load" tab + active-slot pill composite | `(160, 96) → (48, 40)` (slides up-left to upper-left, with `-0x18 = -24` x post-shift) |
+| `3` | `DAT_801ef1a4` | "Do you wish to load? / save? / overwrite?" confirm dialog | `(160, 344) → (160, 88)` (slides up from below stage) |
+| `4` | `_DAT_801f01cc` | Card-init / format dialog (variant of mode 0) | `(576, 112) → (160, 112)` (slides in from further-right) |
+
+The dispatcher increments each timer per frame and clamps:
+
+```c
+// pattern from FUN_801DD35C dispatcher loop:
+DAT_801ef194 = DAT_801ef194 + (uint)DAT_1f800393 * 0x100;
+if (0x1000 < DAT_801ef194) DAT_801ef194 = 0x1000;
+// slide-out direction: subtract until clamped to 0.
+```
+
+`DAT_1f800393` is the global frame-step multiplier (1 NTSC, 2 PAL),
+so PAL builds slide twice as fast in real time per the doubled
+per-tick rate.
+
+### Engine port
+
+`legaia_engine_core::save_select::SaveSelectSession::slide_anim_t()`
+mirrors retail timers 0/2 (collapsed into one timer since the engine
+doesn't currently break the slide into independent elements). The
+free function `interpolate_anim((start, target, t))` implements the
+12-bit fixed-point formula and the method `session.interpolate(start,
+target)` forwards it using the live `t`. The shell driver
+(`legaia-engine play-window --boot-ui`) interpolates two retail
+animations:
+
+- Slot composite pill: `(136, 96) → (24, 40)` (matches retail mode-2 with the inlined `-24` x-shift applied to the start).
+- NowChecking dialog: panel + text both interpolate `x ∈ {416 → 160}` via `now_checking_{panel,text}_draws_for`'s new `slide_offset` parameter.
+
+## Bottom info panel renderer (`FUN_801E08D8`)
+
+After the NowChecking dialog dismisses and the slot-preview screen
+appears, the save-UI overlay emits a bottom info panel showing the
+selected slot's kingdom name, game time, party leader portrait, and
+per-character stats. This is **`FUN_801E08D8(slot_index,
+view_mode)`** in the save_ui_select overlay (decompiled C at
+`ghidra/scripts/funcs/overlay_save_ui_select_801e08d8.txt`). It's
+called once per frame by the grid-renderer wrapper `FUN_801E06C0`,
+which iterates the 5×3 portrait grid and emits the info panel for
+the focused slot.
+
+### Slide-in animation (vertical)
+
+The info panel has its own bespoke vertical slide-in, distinct from
+the FUN_801E1C1C primitive — the primitive can only animate ONE
+element, while the info panel propagates a single `panel_y` across
+15+ separate sprite/text emit calls. Inlined math at the function
+entry:
+
+```c
+iVar4 = DAT_801ef1a0 * -0x100;
+if (iVar4 < 0) iVar4 += 0xfff;
+iVar4 >>= 0xc;
+local_34 = iVar4 + 0x18a;   // panel chrome top-y
+```
+
+`local_34` ramps from **394 (off-screen below)** at `anim_t = 0`
+down to **138 (parked under load chrome)** at `anim_t = 0x1000` —
+the SIXTH save-UI slide timer (after the four catalogued for the
+primitive). The timer `DAT_801ef1a0` is held to 0 while
+`DAT_801ef160` (NowChecking) is up, then increments once the
+NowChecking dialog has retracted.
+
+### View modes
+
+`view_mode` selects what fills the panel body:
+
+| Mode | Content |
+|---|---|
+| `1` | Normal slot preview (kingdom + time + per-character stats). |
+| `2` | "Not a Legend of Legaia save." (invalid save in this slot). |
+| `3` | "Able to save." / "No data" (save mode). |
+| `4` | "Return" prompt. |
+| `100` | Blank panel — forced when `DAT_801ef160 != 0` (NowChecking dialog up) or `_DAT_801f0204 - 0xC < 2`. |
+
+### Title row layout (mode 1, valid save)
+
+All emit at y = `local_34 + 4` (= 142 fully-landed). Pinned via the
+RDATA-loaded string `0x801CF340 "Time "` and the inline sprite emit
+constants:
+
+| Element | x | y |
+|---|---|---|
+| "No.X" badge (sprite via `FUN_801E3FF0` modes 2/3, CLUT row = `slot_index << 4`) | 8 / 30 | local_34 − 8 |
+| Kingdom name (from per-slot data buffer `+0`) | 48 | local_34 + 4 |
+| `Time` label | 208 | local_34 + 4 |
+| Hours digit | 236 | local_34 + 4 |
+| Colon `:` | 252 | local_34 + 4 |
+| Minutes digit | 260 | local_34 + 4 |
+| Colon `:` | 276 | local_34 + 4 |
+| Seconds digit | 284 | local_34 + 4 |
+
+### Per-character row layout (mode 1, char_count > 0)
+
+Iterates `i = 0..slot_buf[+0x28]` (party member count). Per-character
+horizontal stride = `+0x60 = 96 px` starting at base_x = `0x10 = 16`,
+so columns 0/1/2 emit at x = 16 / 112 / 208. Per-character vertical
+base `s3 = local_34 + 20` (= 158 fully-landed):
+
+| Element | x (relative to col base) | y |
+|---|---|---|
+| Character portrait icon (16×16) | base_x | s3 − 4 (= 154) |
+| Character name | base_x + 24 | s3 (= 158) |
+| `LV` separator + value | base_x / base_x + 32 | s3 + 13 (= 171) |
+| `HP` separator + current/max | base_x / +16 / +61 | s3 + 26 (= 184) |
+| `MP` separator + current/max | base_x / +24 / +69 | s3 + 39 (= 197) |
+
+HP / MP value colour ramp via `_DAT_8007b454`: 7 (green, default), 6
+(yellow, `cur ≤ max/2`), 9 (red, `cur ≤ max/4`).
+
+### Per-slot data buffer
+
+`FUN_801E08D8` reads slot N from `0x801EF1B8 + N * 0x100`:
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0x00` | char[24] | Kingdom name (null-padded) |
+| `+0x10` | char[14] | Save-card filename prefix (`BISCPS-10059PRO`) for validity check |
+| `+0x24` | u32 | Game time in seconds (capped at `99:59:59 = 357599`) |
+| `+0x28` | u8 | Party member count |
+| `+0x2C+i` | u8 | Per-character party ID (0=Vahn, 1=Noa, 2=Gala) |
+| `+0x30+i` | u8 | Per-character level (0..99) |
+| `+0x34` | s16 | Char 0 MP current |
+| `+0x3C` | s16 | Char 0 HP current |
+| `+0x44` | s16 | Char 0 MP max |
+| `+0x4C` | s16 | Char 0 HP max |
+| `+0x54 + i*0x0C` | char[8] | Per-character name |
+
+### Engine port
+
+`legaia_engine_core::save_select::SaveSelectSession::info_panel_slide_anim_t()`
+holds at 0 during Browsing / NowChecking / Done, ramps during
+SlotPreview / Confirm (matching retail's two-stage flow).
+`legaia_engine_render::INFO_PANEL_OFFSCREEN_Y = 394` and
+`INFO_PANEL_PARKED_Y = 138` drive the interpolation. The renderer
+functions `slot_info_panel_draws_for` (chrome + portrait) and
+`slot_info_panel_text_draws_for` (text rows) now take a
+`panel_y_offset: i32` parameter — caller-provided delta from the
+parked y. The shell driver
+(`legaia-engine play-window --boot-ui`) wires this via
+`info_panel_slide_offset(session)`. All per-element offset constants
+(`SLOT_INFO_LOCATION_OFFSET`, `SLOT_INFO_TIME_LABEL_OFFSET`,
+`SLOT_INFO_PORTRAIT_OFFSET`, `SLOT_INFO_NAME_OFFSET`,
+`SLOT_INFO_LV_*`, `SLOT_INFO_HP_*`, `SLOT_INFO_MP_*`) are exported
+panel-y-relative so future slides / layout shifts only need to touch
+the parked-y constant.

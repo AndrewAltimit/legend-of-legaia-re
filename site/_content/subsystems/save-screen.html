@@ -125,7 +125,71 @@
   <p><strong>Engine port</strong>: <code>legaia_engine_core::save_menu_atlas</code> composes a single 256&times;256 RGBA atlas containing the 9-slice panel tiles + cursor + slot pills, decoded with the correct CLUT row each, and <code>legaia_engine_render::save_select_chrome_draws_for</code> emits the retail-pinned tile composition. All retail framebuffer coordinates (panel <code>(6, 4)</code>, cursor <code>(114, 100)</code>, etc.) are expressed in the canonical <code>BOOT_UI_STAGE_W &times; BOOT_UI_STAGE_H = 320 &times; 240</code> stage so they remain in lockstep at any window resolution.</p>
 </section>
 
+<section class="doc-section" id="slide-in-primitive">
+  <h2>Slide-in UI primitive (<code>FUN_801E1C1C</code>)</h2>
+  <p>The save-UI overlay's slide-in animations all flow through a single primitive, <code>FUN_801E1C1C(mode, anim_t, start_x, start_y, target_x, target_y)</code>. The function inlines its own 12-bit fixed-point linear interpolation, then dispatches per mode to emit the slid-in content at the interpolated <code>(x, y)</code>:</p>
+  <pre><code>iVar10 = (param_5 - param_3) * param_2;       // (target_x - start_x) * t
+if (iVar10 &lt; 0) iVar10 += 0xfff;               // round-toward-zero
+param_3 = param_3 + (iVar10 &gt;&gt; 0xc);           // start_x + delta * (t/4096)</code></pre>
+  <p><code>anim_t</code> is 12-bit fixed-point in <code>[0, 0x1000]</code>: <code>t=0</code> at start, <code>t=0x1000</code> at target. Each animated element owns a dedicated timer global that the dispatcher (<code>FUN_801DD35C</code>) ramps <code>+0x100</code> per frame, clamped at <code>0x1000</code> &mdash; a 16-frame slide at NTSC.</p>
+  <table>
+    <thead><tr><th>Mode</th><th>Timer</th><th>Element</th><th>(start) &rarr; (target)</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td><code>DAT_801ef160</code></td><td>"Now checking" dialog</td><td><code>(416, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
+      <tr><td><code>1</code></td><td>const 0</td><td>Header tabs</td><td>held at <code>(48, 6)</code></td></tr>
+      <tr><td><code>2</code></td><td><code>DAT_801ef194</code></td><td>"Load" tab + active-slot pill</td><td><code>(160, 96)</code> &rarr; <code>(48, 40)</code></td></tr>
+      <tr><td><code>3</code></td><td><code>DAT_801ef1a4</code></td><td>Yes/No confirm dialog</td><td><code>(160, 344)</code> &rarr; <code>(160, 88)</code></td></tr>
+      <tr><td><code>4</code></td><td><code>_DAT_801f01cc</code></td><td>Card-init / format dialog</td><td><code>(576, 112)</code> &rarr; <code>(160, 112)</code></td></tr>
+    </tbody>
+  </table>
+  <p><strong>Engine port</strong>: <code>SaveSelectSession::slide_anim_t()</code> collapses retail timers 0/2 into one driver, and the free function <code>interpolate_anim((start, target, t))</code> implements the formula. The shell driver wires it for the slot composite pill <code>(136, 96)</code> &rarr; <code>(24, 40)</code> and the NowChecking dialog (panel + text both at <code>x ∈ {416 → 160}</code>) via the renderer's <code>slide_offset</code> parameter.</p>
+</section>
+
+<section class="doc-section" id="info-panel-renderer">
+  <h2>Bottom info panel (<code>FUN_801E08D8</code>)</h2>
+  <p>Once the "Now checking" dialog dismisses and the slot-preview screen appears, the save-UI overlay emits a bottom info panel showing the selected slot's kingdom, game time, party leader portrait, and per-character stats. <code>FUN_801E08D8(slot_index, view_mode)</code> renders the whole panel and is called once per frame by the grid-renderer wrapper <code>FUN_801E06C0</code>.</p>
+  <h3>Vertical slide-in (sixth save-UI animator)</h3>
+  <p>The info panel has its own bespoke vertical slide-in, distinct from the <code>FUN_801E1C1C</code> primitive &mdash; the primitive can only animate ONE element, while the info panel propagates a single <code>panel_y</code> across 15+ separate sprite/text emit calls. Entry math:</p>
+  <pre><code>iVar4 = DAT_801ef1a0 * -0x100;
+if (iVar4 &lt; 0) iVar4 += 0xfff;
+iVar4 &gt;&gt;= 0xc;
+local_34 = iVar4 + 0x18a;   // panel chrome top-y</code></pre>
+  <p><code>local_34</code> ramps from <strong>394 (off-screen below)</strong> at <code>anim_t = 0</code> down to <strong>138 (parked under load chrome)</strong> at <code>anim_t = 0x1000</code>. The timer <code>DAT_801ef1a0</code> is held to 0 while <code>DAT_801ef160</code> (NowChecking) is up, then increments once the NowChecking dialog has retracted &mdash; matching the engine's <code>SaveSelectSession::info_panel_slide_anim_t()</code> semantics.</p>
+  <h3>Title row layout (view mode 1)</h3>
+  <p>All emit at <code>y = local_34 + 4</code> (= 142 fully-landed). The "No.X" slot-number badge is rendered as a sprite via <code>FUN_801E3FF0</code> (CLUT row = <code>slot_index &lt;&lt; 4</code>) at <code>x = 8</code>; kingdom name at <code>x = 48</code>; "Time " label at <code>x = 208</code>; HH:MM:SS digits at <code>x = 236</code> / <code>260</code> / <code>284</code>.</p>
+  <h3>Per-character row layout</h3>
+  <p>Iterates <code>i = 0..slot_buf[+0x28]</code> (party member count). Horizontal stride <code>+0x60 = 96 px</code> starting at base_x = 16, so columns 0/1/2 emit at x = 16 / 112 / 208. Per-character vertical base <code>s3 = local_34 + 20</code> (= 158):</p>
+  <table>
+    <thead><tr><th>Element</th><th>x (relative to col base)</th><th>y</th></tr></thead>
+    <tbody>
+      <tr><td>16&times;16 portrait icon</td><td>base_x</td><td>s3 &minus; 4 (= 154)</td></tr>
+      <tr><td>Character name</td><td>base_x + 24</td><td>s3 (= 158)</td></tr>
+      <tr><td><code>LV</code> separator + value</td><td>base_x / +32</td><td>s3 + 13 (= 171)</td></tr>
+      <tr><td><code>HP</code> separator + cur/max</td><td>base_x / +16 / +61</td><td>s3 + 26 (= 184)</td></tr>
+      <tr><td><code>MP</code> separator + cur/max</td><td>base_x / +24 / +69</td><td>s3 + 39 (= 197)</td></tr>
+    </tbody>
+  </table>
+  <p>HP / MP value colour ramp: 7 (green, default), 6 (yellow, <code>cur &le; max/2</code>), 9 (red, <code>cur &le; max/4</code>).</p>
+  <h3>Per-slot data buffer</h3>
+  <p>The renderer reads slot N from <code>0x801EF1B8 + N * 0x100</code>:</p>
+  <table>
+    <thead><tr><th>Offset</th><th>Type</th><th>Field</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code></td><td>char[24]</td><td>Kingdom name (null-padded)</td></tr>
+      <tr><td><code>+0x10</code></td><td>char[14]</td><td>Save-card filename prefix (<code>BISCPS-10059PRO</code>) for validity</td></tr>
+      <tr><td><code>+0x24</code></td><td>u32</td><td>Game time in seconds</td></tr>
+      <tr><td><code>+0x28</code></td><td>u8</td><td>Party member count</td></tr>
+      <tr><td><code>+0x2C+i</code></td><td>u8</td><td>Per-character party ID (0=Vahn, 1=Noa, 2=Gala)</td></tr>
+      <tr><td><code>+0x30+i</code></td><td>u8</td><td>Per-character level</td></tr>
+      <tr><td><code>+0x34 / +0x44</code></td><td>s16</td><td>Char 0 MP current / max</td></tr>
+      <tr><td><code>+0x3C / +0x4C</code></td><td>s16</td><td>Char 0 HP current / max</td></tr>
+      <tr><td><code>+0x54 + i*0x0C</code></td><td>char[8]</td><td>Per-character name</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Engine port</strong>: <code>SaveSelectSession::info_panel_slide_anim_t()</code> drives the slide-in; <code>legaia_engine_render::slot_info_panel_draws_for</code> + <code>slot_info_panel_text_draws_for</code> take a <code>panel_y_offset: i32</code> parameter wired from <code>info_panel_slide_offset(session)</code> in the shell driver. All per-element offset constants are exported panel-y-relative so future layout shifts only need to touch the parked-y constant.</p>
+</section>
+
 <section class="doc-section" id="full-reference">
   <h2>Full reference</h2>
-  <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <code>docs/subsystems/save-screen.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>.</p>
+  <p>Complete state-machine and sub-screen tables with Ghidra provenance live at <code>docs/subsystems/save-screen.md</code> in the repo. Function dumps: <code>ghidra/scripts/funcs/overlay_menu_801dc6b4.txt</code>, <code>overlay_menu_801daef4.txt</code>, <code>overlay_menu_801dafd4.txt</code>, <code>overlay_save_ui_select_801e1c1c.txt</code>, <code>overlay_save_ui_select_801e08d8.txt</code>.</p>
 </section>

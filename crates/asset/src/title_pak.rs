@@ -253,6 +253,65 @@ pub const OVERLAY_SYSTEM_UI_CURSOR_CLUT_ROW: u16 = 7;
 /// adjusting by `SAVE_SELECT_SLOT_PITCH_Y` (typically 16 stage pixels).
 pub const OVERLAY_SAVE_CURSOR_RETAIL_DST: (u32, u32) = (114, 100);
 
+// -----------------------------------------------------------------------
+// Load-screen slot-preview portrait atlas + empty-cell frame
+//
+// Lives in the same pre-`init_data` unindexed gap of `PROT.DAT` as the
+// system-UI sheet. Used by the slot-info preview screen shown after the
+// "Now checking" memory-card dialog clears: a 5x3 grid of save slots,
+// each rendered as either a 16x16 character portrait (if the SC block is
+// a Legaia save and the lead char is one of the 3 main party members)
+// or the 32x32 hollow blue frame (empty slot or non-Legaia save).
+//
+// Source layout (byte-pinned by RAM-dump + disc-corpus byte-grep at
+// PCSX-Redux sstate9 driven past the "Now checking" beat with `CROSS`):
+//
+//   PROT.DAT[0x1AC90..0x1AF90]  — 3 portrait TIMs, 192 bytes each
+//   PROT.DAT[0x1AED0..0x1B110]  — 32x32 empty-frame TIM, 576 bytes
+//
+// All four TIMs are 4bpp + CLUT (flags 0x08). Portrait CLUTs stack at
+// VRAM (976, 304..306); frame CLUT at VRAM (976, 307). Pixel pages
+// upload to VRAM (976, 256..272). Engines combine portrait char_id
+// (= party[0].char_id) with the 5x3 slot index to render the grid.
+// -----------------------------------------------------------------------
+
+/// File offset within `PROT.DAT` of the first **16x16 4bpp character
+/// portrait TIM**. The retail save-card icon for a Legaia save is one
+/// of these three portraits — one per main party character ID
+/// (Vahn=0, Noa=1, Gala=2).
+pub const OVERLAY_LOAD_PORTRAIT_TIM_OFFSET: usize = 0x1AC90;
+
+/// Number of contiguous portrait TIMs starting at
+/// [`OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`]. Indexed by `char_id` for the
+/// main party members: 0=Vahn, 1=Noa, 2=Gala.
+pub const OVERLAY_LOAD_PORTRAIT_COUNT: usize = 3;
+
+/// Stride between contiguous portrait TIMs (each is 16x16 4bpp + CLUT,
+/// header + CLUT + image block = exactly 192 bytes).
+pub const OVERLAY_LOAD_PORTRAIT_STRIDE: usize = 192;
+
+/// File offset within `PROT.DAT` of the **32x32 4bpp empty-cell frame
+/// TIM**. Used as the per-slot box outline; the visible blue frame
+/// occupies the inner 20x20 of the 32x32 sprite (centred), the outer
+/// 6 pixels on each side are transparent CLUT-entry 0.
+pub const OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET: usize = 0x1AED0;
+
+/// Total byte length of [`OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET`]'s TIM
+/// (8 header + 44 CLUT block + 524 image block).
+pub const OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE: usize = 576;
+
+/// Retail framebuffer placement of the slot-grid: per-cell pitch and
+/// origin. The grid is 5 columns × 3 rows, with cells at framebuffer
+/// pixels `(SLOT_GRID_ORIGIN_X + col * SLOT_GRID_PITCH_X,
+/// SLOT_GRID_ORIGIN_Y + row * SLOT_GRID_PITCH_Y)`. Measured against
+/// the captured slot-info framebuffer at sstate9 → CROSS → 170 vsyncs
+/// (`captures/slot_info_dump/...slot_info_fb.png`).
+pub const OVERLAY_LOAD_SLOT_GRID_ORIGIN: (u32, u32) = (104, 32);
+pub const OVERLAY_LOAD_SLOT_GRID_PITCH_X: u32 = 40;
+pub const OVERLAY_LOAD_SLOT_GRID_PITCH_Y: u32 = 20;
+pub const OVERLAY_LOAD_SLOT_GRID_COLS: u32 = 5;
+pub const OVERLAY_LOAD_SLOT_GRID_ROWS: u32 = 3;
+
 /// Source sub-rect, in atlas pixels `(x, y, w, h)`, of the orb +
 /// "Legend of Legaia" wordmark band inside the 256×256 title TIM.
 /// Always drawn in PressStart and MainMenu phases - matches retail.
@@ -340,6 +399,31 @@ pub fn extract_overlay_card_icon_tim(bytes: &[u8]) -> Result<TitleTim<'_>> {
 /// load-screen panel chrome.
 pub fn extract_overlay_system_ui_tim(prot_dat_bytes: &[u8]) -> Result<TitleTim<'_>> {
     parse_tim_at(prot_dat_bytes, OVERLAY_SYSTEM_UI_TIM_OFFSET)
+}
+
+/// Extract one of the 3 character portrait TIMs (16x16 4bpp + CLUT)
+/// from raw `PROT.DAT` bytes. `idx` must be `< OVERLAY_LOAD_PORTRAIT_COUNT`
+/// and selects which character: 0=Vahn, 1=Noa, 2=Gala.
+pub fn extract_overlay_load_portrait_tim(
+    prot_dat_bytes: &[u8],
+    idx: usize,
+) -> Result<TitleTim<'_>> {
+    if idx >= OVERLAY_LOAD_PORTRAIT_COUNT {
+        anyhow::bail!(
+            "portrait index {} out of range (max {})",
+            idx,
+            OVERLAY_LOAD_PORTRAIT_COUNT
+        );
+    }
+    let off = OVERLAY_LOAD_PORTRAIT_TIM_OFFSET + idx * OVERLAY_LOAD_PORTRAIT_STRIDE;
+    parse_tim_at(prot_dat_bytes, off)
+}
+
+/// Extract the 32x32 empty-cell frame TIM (4bpp + CLUT) from raw
+/// `PROT.DAT` bytes. Used to draw the per-slot box outline in the
+/// load-screen slot grid.
+pub fn extract_overlay_load_empty_frame_tim(prot_dat_bytes: &[u8]) -> Result<TitleTim<'_>> {
+    parse_tim_at(prot_dat_bytes, OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET)
 }
 
 /// Same as [`extract_overlay_system_ui_tim`] but accepts a slice that
