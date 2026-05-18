@@ -1,6 +1,6 @@
 //! Overlay-resident move-VM extension dispatcher (`FUN_801D362C`).
 //!
-//! PORT: FUN_801D362C
+//! PORT: FUN_801D362C, FUN_801D31B0
 //!
 //! `FUN_801D362C` is the dispatcher reached from the move-VM
 //! (`FUN_80023070`) when the outer move-VM opcode is `0x2F` (overlay
@@ -77,7 +77,7 @@
 //! full decompilation and
 //! `ghidra/scripts/funcs/world_map_vm_jt_overlay_world_map.bin.txt`
 //! for the jump-table at `0x801CE868`.
-//! REF: FUN_80023070, FUN_801D31B0
+//! REF: FUN_80023070
 
 #![allow(clippy::needless_range_loop)]
 
