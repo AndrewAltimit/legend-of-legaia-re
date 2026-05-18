@@ -57,9 +57,13 @@ OUT_DIR = REPO / "target" / "port-catalog"
 CODE_ADDR_RE = re.compile(r"80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4}", re.IGNORECASE)
 
 # Citations of an address by some other piece of text. Covers Ghidra's auto-named
-# call forms plus raw disassembly forms. Matches `function-coverage.py`.
+# call forms plus raw disassembly forms. Matches `function-coverage.py` with one
+# addition: a negative lookbehind on `PTR_` so we don't false-positive on
+# `PTR_FUN_<addr>` symbols, which Ghidra emits for data-pointer tables that
+# happen to contain function pointers - the address there is a *table base*,
+# not a function entry. Same negative lookbehind on `_DAT_` for completeness.
 CITATION_RE = re.compile(
-    r"(?:FUN_|func_0x|jal\s+0x|jalr\s+\w+,0x|->\s*func_0x)"
+    r"(?<!PTR_)(?<!_DAT_)(?:FUN_|func_0x|jal\s+0x|jalr\s+\w+,0x|->\s*func_0x)"
     r"(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})"
 )
 

@@ -54,6 +54,7 @@ TARGETS = [
     "80055b20",
     "8005c2e4",
     "8005ebfc",
+    "8005ec1c",  # surfaced by second-pass BFS (cited from 8005bbf8)
     "8005ecd4",
     "8005ef04",
     "8005f004",
