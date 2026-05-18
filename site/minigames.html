@@ -120,15 +120,11 @@
   <div id="baka-fighter-rounds"></div>
 </section>
 
-<section class="doc-section" id="decomp">
-  <h2>What this means for decomp</h2>
-  <ul class="bullets">
-    <li>The casino + Sol Tower data are <em>ground-truth labels</em> for the field-VM bundle inside the <code>town0d</code> CDNAME block. Once the Sol overlay is captured, every entry on this page is a cross-validation target for the parsed NPC scripts, shop tables, and event triggers.</li>
-    <li>The Muscle Dome <code>encounter</code> records are likely a sequence of <a href="formats/encounter.html">encounter records</a> with the existing <code>[3 reserved][count: u8][monster_ids: u8[count]]</code> shape, except chained per-course. The <code>[[muscle_dome_round]]</code> table pins each round's monster slot, and <code>[[muscle_dome_boss]]</code> records the per-monster stats (HP / MP / ATK / UDF / LDF / INT / SPD / AGL / XP / G) and drop tables that should ground-truth the binary enemy records once the Sol Tower overlay is captured.</li>
-    <li>Baka Fighter round patterns are the input expectation for the per-round timer routine. The button-token set (<code>Square</code> / <code>X</code> / <code>O</code>) maps to the PSX controller's primary action buttons; the field-VM probably dispatches via a per-round bytecode block.</li>
-    <li>The Master Course "first clear after Jette" gate is a story-flag check, not a runtime check on Jette's HP - so the relevant story flag lives in the field-VM flag banks (one of the three 32-bit / 256-bit banks documented on <a href="subsystems/script-vm.html">the script-VM page</a>).</li>
-  </ul>
-  <p>For schema and library access see the <a href="reference/gamedata.html#casino--muscle-dome">curated game-data reference</a>.</p>
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <p>
+    Curated tables drive every prize and stat block on this page &mdash; <a href="reference/gamedata.html#casino--muscle-dome">game-data reference</a> for schema + library access. Muscle Dome rosters cross-validate the <a href="formats/encounter.html">on-disc encounter records</a>; Master-course gating + the Sol Tower side-quest beats hit the <a href="subsystems/script-vm.html">field-VM flag banks</a>.
+  </p>
 </section>
 
 <script>

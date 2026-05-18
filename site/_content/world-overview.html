@@ -2,31 +2,9 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld combines (a) a kingdom slot-1 TMD pack (40 / 36 / 56 meshes for Drake / Sebucus / Karisto) that holds both landmark meshes (castles, towers, bridges) and ground-tile meshes, and (b) a static <a href="formats/world-map-overlay.html">MAN placement table</a> that pins a subset of those meshes at world coordinates. The runtime additionally walks per-frame actor lists so the same pack supplies bulk terrain prims via a mode-switched per-prim renderer; the mechanism is now pinned (see <a href="subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">world-map &sect; bulk emit</a>). This page renders the landmark layer in real-time WebGL 3D straight from your disc image &mdash; no save state required &mdash; and an optional toggle drops the <em>unplaced</em> slot-1 TMDs (the 35 / 30 / 39 meshes the MAN table doesn't pin) onto a canonical grid for visual classification.
+    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image &mdash; no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately.
   </p>
 </header>
-
-<section class="doc-section" id="how-this-works">
-  <h2>What each mode needs and what it shows</h2>
-  <p>
-    <strong>Assembled scene (disc):</strong> with a disc image loaded, the page LZS-decodes the kingdom's 7-asset bundle &mdash; slot 0 (TIM_LIST) into a 1 MB software VRAM, slot 1 (TMD pack, <code>[u32 count, u32 word_offsets[count], TMD bodies]</code> walked via <code>FUN_8001F05C case 2</code>) into per-slot meshes. Every placement parsed from the type-3 &quot;Man&quot; asset is drawn at its world coordinates as a textured 3D mesh. Pack counts: <strong>Drake 40 TMDs / Sebucus 36 / Karisto 56</strong>. The MAN table only pins a handful of slots per kingdom (5 unique slots for Drake, 6 for Sebucus, 17 for Karisto); the rest are surfaced by the <em>show unplaced slot-1 TMDs</em> toggle below, laid out by class from <code><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/site/world-overview/slot1_classification.toml" target="_blank" rel="noopener">site/world-overview/slot1_classification.toml</a></code> (landmark / ground_tile / decoration / npc_token / unknown). For Drake the page also overlays 12 live-RAM-resolved actor placements baked into <code>site/world-overview-live.json</code> via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a> &mdash; the runtime field-VM positions these via mesh-chain pointers at <code>actor[+0x44]</code>, not from MAN. Distance-cue fog is applied by the runtime via <code>FUN_80043390</code>'s overlay-mode dispatch table (see below); this WebGL view doesn't replicate the fog yet, so meshes render flat-colored.
-  </p>
-  <p>
-    <strong>Mesh inspector:</strong> with a disc loaded, browse the per-kingdom TMD pack one mesh at a time (orbit camera, auto-rotate).
-  </p>
-  <p>
-    <strong>Placement table:</strong> the world-map actor positions baked into <code>site/world-overview.json</code> are parsed from each kingdom's type-3 &quot;Man&quot; asset via <code>FUN_8003A1E4</code>'s record walker. Drake reports <strong>43 world-placed</strong> / 50 records, Sebucus <strong>18</strong> / 23, Karisto <strong>23</strong> / 40 &mdash; the remainder are script-positioned (party members, story characters, etc.) and don't carry a static world coordinate. Each placement's <code>tmd_slot</code> resolves into the kingdom pack (max slot Drake 37, Sebucus 33, Karisto 54); placements with <code>tmd_slot &ge; 0xF0</code> address the global TMD pool (party-character overlays) instead. Drake additionally surfaces 12 live-RAM actor placements via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/pcsx-redux/resolve_actor_tmds.py" target="_blank" rel="noopener"><code>scripts/pcsx-redux/resolve_actor_tmds.py</code></a>: each world-map actor's <code>mesh_head[+0x44]</code> chain is walked to find the containing TMD via backward magic-word search, then mapped to a slot index. The result is baked into <code>site/world-overview-live.json</code>; the viewer overlays those placements on top of the MAN entities so the bridge towers, gates, small castle, and other actor-positioned features render correctly.
-  </p>
-  <p>
-    <strong>Bulk continent terrain (mechanism pinned).</strong> The ~4300 POLY_FT4 prims that tile the kingdom continent in the dev-menu top-view come out of ordinary case-5 TMD rendering whose per-prim dispatch is <em>mode-switched</em> to overlay-resident renderers when the world-map overlay is paged in. <code>FUN_80043390</code> selects one of two function-pointer tables based on <code>_DAT_1F800394 &amp; 1</code> &mdash; SCUS at <code>0x8007657C</code> when clear, world-map overlay at <code>0x801F8968</code> when set. The overlay table's eight high-mode renderers at <code>0x801F7644..0x801F8690</code> are the SCUS sibling bodies plus a per-vertex distance-cue fog post-process (GTE <code>dpcs</code> / <code>dpct</code> + a per-Z RGB LUT tint). The source mesh data is the same kingdom slot-1 TMD pack the landmarks draw from; the runtime just routes prims through the fog-enabled leaves when rendering the world map. Full mechanism + per-slot fog delta at <a href="subsystems/world-map.html#bulk-continent-terrain-emit-mechanism-pinned">world-map &sect; bulk emit</a>; CLI at <code>mednafen-state prim-dispatch-table &lt;save&gt;</code>.
-  </p>
-  <p>
-    <strong>Slot 4 of the kingdom bundle.</strong> Slot 4 (type byte <code>0x05</code>, ~32 KB) was previously hypothesized to be the dev-menu top-view wireframe / coastline data; visual inspection falsified that reading across every projection and topology mode. The container is solved (15 / 16 / 16 sub-bodies, byte-verified vs live RAM at <code>0x8011A624</code>). Exec-breakpoint capture across three kingdom transitions (Drake / Sebucus / Karisto, town &rarr; world warp tile) confirms two distinct SCUS-resident reader functions handle slot 4 in <em>all three kingdoms</em>: <strong>cluster A at PC <code>0x80044B00..0x80045700</code></strong> is a GTE-driven primitive emitter (MVMVA / NCLIP / SWC2 interleaved with LW reads) called from <code>0x8001B47C</code> (SCUS dispatcher) and <code>0x801F78D4</code> (world-map overlay) in every kingdom; <strong>cluster B at PC <code>0x80059DE4</code></strong> reads mid-body bytes with caller RA <code>0x80059C00</code> byte-identical across all three. Slot 4 is walked once at scene-load, transformed via the GTE, and emitted as GP0 primitive packets into the active scene's primitive pool at <code>_DAT_8007B8D0 - 0x12800</code> &mdash; the dev-menu top-view then sees the cooked GP0 packets and never re-reads slot 4 directly. Hit-count scales with per-kingdom record count (Karisto's smaller 24444-byte / 16-body slot 4 sees fewer cluster-A hits than Drake's 32304-byte / 15-body or Sebucus's 26964-byte / 16-body). Per-record semantic is the remaining open question (see the <a href="formats/world-map-overlay.html">slot-4 records doc</a>). Slot 4 is <em>not</em> the bulk continent terrain source &mdash; that puzzle is now answered by <code>FUN_80043390</code>'s dispatch table, above.
-  </p>
-  <p>
-    <strong>Ocean tile + wave animation.</strong> The world-map ocean is a static 4bpp tile + per-frame CLUT cycling, both shipped on disc inside slot 0 (TIM_LIST) of the same kingdom bundle. The texture sits at VRAM <code>(768, 256)</code> 64x256 halfwords with its base CLUT at <code>(0, 506)</code> 256x1; the wave-ramp data fills the top-left <strong>96x96 logical pixels</strong> of the texture page (the rest is shared with other tiles in 4bpp mode). The animation is <strong>13 frames x 16 BGR555 entries</strong> wrapped in 532-byte "CLUT-only TIM" records at TIM_LIST slots 3-5 (Sebucus / Karisto) or 10-15 (Drake); the runtime swaps one frame at a time onto the first 16 entries of the CLUT, cycling a bright-blue wave peak through indices 0-7. The animation table is <strong>byte-identical across all three kingdoms</strong> (verified by SHA-256, disc-gated <code>crates/web-viewer/tests/ocean_assets.rs</code>). The 3D viewer extracts these via <code>legaia_web_viewer::ocean::find_ocean_assets</code> at scene load and renders the ocean as a textured plane with per-frame CLUT swap in the fragment shader. Before a disc is loaded the renderer falls back to a solid kingdom tint (baked into <code>world-overview.json</code> by <code>scripts/mednafen/resolve_bulk_terrain.py</code>'s <code>pick_ocean_color</code>).
-  </p>
-</section>
 
 <section class="doc-section" id="disc-load">
   <h2>Load your disc image</h2>
@@ -36,7 +14,7 @@
       <input type="file" id="wo-disc-file" accept=".bin,.dat"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
     </div>
-    <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image above and the assembled scene (landmark TMDs placed at their world coordinates) renders immediately &mdash; no save state required.</div>
+    <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image above and the assembled scene renders immediately.</div>
     <div class="viewer-status" id="wo-fog-lut-status" style="margin-top: 0.4rem; font-size: 0.78rem;">Fog LUT: not yet loaded (auto-extracts from <code>SCUS_942.54</code> on disc load).</div>
   </div>
 </section>
@@ -61,11 +39,19 @@
         <span id="wo-mesh-label">no disc loaded</span>
         <button id="wo-next-mesh" type="button" disabled hidden>next mesh &rarr;</button>
         <label style="margin-left:1rem" hidden id="wo-auto-rotate-wrap"><input type="checkbox" id="wo-auto-rotate" checked> auto-rotate</label>
-        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference. Laid out by class from site/world-overview/slot1_classification.toml: landmarks south of the kingdom, ground tiles stacked at centre, decorations north, unknown to the east. Live-RAM actor-placed slots (Drake only today) draw at their real coordinates instead."><input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs</label>
-        <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Normalize each unplaced slot-1 TMD to a class-conditional target footprint (landmark ~600, decoration ~200, ground_tile ~1200) and pivot on its AABB centroid. Disable to see meshes at their TMD-native scale with the TMD-local origin as the pivot (ground-truth against retail)."><input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced</label>
-        <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the world-map distance-cue fog post-process. Mirrors the retail overlay leaves' dpcs/dpct tint. A 512-entry LUT captured from a top-view save state (scripts/pcsx-redux/autorun_world_map_fog_probe.lua, fog_probe.lut.bin) drives the per-tier color ramp; without a capture the renderer falls back to a kingdom-tinted baseline."><input type="checkbox" id="wo-fog-enable"> fog</label>
-        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the disc-side ocean tile + 13-frame CLUT animation pulled from slot 0 (TIM_LIST) of the kingdom bundle (PROT 0085/0244/0391). Texture and CLUT come from a 256x256 4bpp TIM at VRAM (768,256)/(0,506); the wave effect is CLUT cycling (16 entries swapped per frame, 13-frame cycle, byte-identical across kingdoms). Falls back to a solid sampled tint before the disc is loaded."><input type="checkbox" id="wo-ocean-enable" checked> ocean</label>
-        <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn (KINGDOM_CAM[].topView). Same anchor the retail dev menu enters with.">lock to retail top-view</button>
+        <label style="margin-left:1rem" id="wo-show-unplaced-wrap" title="Slot-1 TMDs that the static MAN placement table doesn't reference, laid out by class.">
+          <input type="checkbox" id="wo-show-unplaced"> show unplaced slot-1 TMDs
+        </label>
+        <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Normalize each unplaced slot-1 TMD to a class-conditional target footprint and pivot on its AABB centroid.">
+          <input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced
+        </label>
+        <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the world-map distance-cue fog post-process. Mirrors the retail overlay leaves' dpcs/dpct tint.">
+          <input type="checkbox" id="wo-fog-enable"> fog
+        </label>
+        <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the disc-side ocean tile + 13-frame CLUT animation from slot 0 of the kingdom bundle.">
+          <input type="checkbox" id="wo-ocean-enable" checked> ocean
+        </label>
+        <button id="wo-lock-topview" type="button" hidden title="Recenter the camera on the kingdom's captured top-view spawn. Same anchor the retail dev menu enters with.">lock to retail top-view</button>
         <button id="wo-reset-cam" type="button" hidden>reset camera</button>
       </div>
       <div class="wo-hover-3d" id="wo-mesh-info">Load a disc image above to see the kingdom's landmark TMDs assembled in 3D.</div>
@@ -89,9 +75,9 @@
 <section class="doc-section" id="quick-travel">
   <h2>World-map quick-travel menu (whole Legaia)</h2>
   <p>
-    The PSX retail build ships a 16-entry landmark name table at <code>DAT_80073B18</code> + a 20-record placement table at <code>DAT_80073A98</code> in <code>SCUS_942.54</code> &mdash; the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button. Each placement record is 6 bytes: <code>(name_idx, discovery_flag, scene_id, menu_x, menu_y)</code>. The walker (<code>FUN_80030628</code> case <code>0x19</code>) skips records whose discovery flag (offset +0x20 in the fourth flag bank) is still cleared, and dedupes consecutive entries that share a name &mdash; so 16 landmarks expose 20 entry-point records with 3 of them flagged with multiple sub-entries (Biron Monastery, Drake Castle, Rim Elm, Ratayu have 2-3 each).
+    The PSX retail build ships a 16-entry landmark name table at <code>DAT_80073B18</code> + a 20-record placement table at <code>DAT_80073A98</code> in <code>SCUS_942.54</code> &mdash; the data the in-game world-map menu uses to draw labelled markers when the player presses the &quot;visit&quot; button.
   </p>
-  <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu screen-space (<code>menu_x &isin; 22..102</code>, <code>menu_y &isin; 13..108</code>). Hover a dot for the name and the destination scene id. Data is parsed from <code>SCUS_942.54</code> at disc-load time; load a disc above to populate.</p>
+  <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu screen-space. Hover a dot for the name and the destination scene id. Load a disc above to populate.</p>
   <div class="wo-layout">
     <div>
       <canvas id="wo-qt-canvas" width="600" height="450" class="viewer-canvas" aria-label="Quick-travel menu map"></canvas>
@@ -104,19 +90,23 @@
   </div>
 </section>
 
-<section class="doc-section" id="reverse-engineering">
-  <h2>How the placement data was extracted</h2>
+<section class="doc-section" id="about-this-view">
+  <h2>About this view</h2>
   <p>
-    The page captures world-map state from top-view debug save states &mdash; the same view that <a href="subsystems/world-map.html"><code>FUN_801E76D4</code></a> enters when the debug toggle fires. Steps the extraction performs against each save state's main RAM:
+    The <strong>assembled scene</strong> mode loads a kingdom's 7-asset bundle from PROT (0085 / 0244 / 0391) and walks the landmark TMD pack (slot 1, <strong>40 / 36 / 56 meshes</strong> for Drake / Sebucus / Karisto). Each placement from the type-3 &ldquo;Man&rdquo; asset draws at its world coordinate. The MAN table only pins a handful of slots per kingdom; the <em>show unplaced slot-1 TMDs</em> toggle drops the rest onto a layout grid, classified into landmark / decoration / ground_tile / npc_token / unknown.
   </p>
-  <ol class="overview-steps">
-    <li>Read the active CDNAME label as ASCII at <code>0x80084548</code> and confirm it matches the expected kingdom (<code>map01</code> / <code>map02</code> / <code>map03</code>).</li>
-    <li>Walk the seven linked-list heads at <code>0x8007C34C..0x8007C36C</code>: each list starts at <code>*head_ptr</code> and chains via the actor's <code>+0x00</code> next-pointer.</li>
-    <li>For each actor, read <code>(X, Y, Z)</code> as three <code>i16</code> at <code>+0x14</code>, <code>flags</code> at <code>+0x10</code>, and the actor's id byte at <code>+0x50</code>.</li>
-    <li>Filter out zero-position entries (system actors that aren't placed in world-space).</li>
-  </ol>
   <p>
-    Results are baked into <code>site/world-overview.json</code> so the scatter view loads instantly without needing a save state at runtime.
+    The <strong>mesh inspector</strong> browses the kingdom TMD pack one mesh at a time. The <strong>top-down placement map</strong> visualises the parsed MAN actor positions; Drake additionally surfaces 12 live-RAM-resolved actor placements (gates, bridge towers, the small castle) overlaid on the MAN entities.
+  </p>
+  <p>
+    The <strong>ocean</strong> toggle samples the disc-side 4bpp tile + 13-frame CLUT animation pulled from slot 0 of the kingdom bundle. The <strong>fog</strong> toggle approximates the retail world-map distance-cue post-process via a 2048-entry LUT auto-extracted from <code>SCUS_942.54</code> on disc load.
+  </p>
+</section>
+
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <p>
+    Engine-runtime semantics behind the world map &mdash; controller, top-view debug toggle, per-frame render pipeline, bulk-terrain emit mechanism &mdash; live on the <a href="subsystems/world-map.html">world-map subsystem</a>. The reverse-engineering provenance specific to this WebGL viewer &mdash; slot-1 layout heuristics, distance-cue fog approximation, MAN <code>0x7F</code> sentinel resolver, ocean asset extraction, camera anchors &mdash; is on the <a href="subsystems/world-overview-viewer.html">world-overview viewer subsystem</a>. Slot-4 container layout (record interpretation still open): <a href="formats/world-map-overlay.html">slot-4 records format</a>.
   </p>
 </section>
 
@@ -129,8 +119,6 @@
   font-family: var(--font-mono);
   border: 1px solid rgba(244, 180, 26, 0.4);
 }
-.overview-steps { margin: 0.5rem 0 0.5rem 1.5rem; padding: 0; }
-.overview-steps li { margin: 0.35rem 0; }
 .wo-tabs {
   display: flex; gap: 0.4rem;
   margin-bottom: 0.75rem;

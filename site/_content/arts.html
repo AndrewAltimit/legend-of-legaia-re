@@ -103,13 +103,11 @@
   </div>
 </section>
 
-<section class="doc-section" id="decomp">
-  <h2>What this means for decomp</h2>
-  <ul class="bullets">
-    <li>Each art's <code>action_constant</code> (<code>0x1B..=0x32</code>) is the byte the runtime action queue stores when the art is queued for execution; cross-referenced against <code>crates/art/src/tables.rs</code> via the <code>arts_action_constants_match_legaia_art_tables</code> test.</li>
-    <li>The <code>directions</code> array is the exact prefix that lives in the on-disc Art Record at PROT entry <code>0x05C4</code> (per <a href="formats/art-data.html">Art data format</a>). The <code>command</code> tokens are the player-facing view; the byte sequence is what the binary actually compares against the in-progress input buffer.</li>
-    <li>AP costs align with kind: regulars <code>&le;36</code>, hypers <code>30..70</code>, supers <code>48..72</code>, miracles <code>=99</code>. Each character has exactly one Miracle Art (Vahn's Craze / Noa's Ark / Biron Rage).</li>
-  </ul>
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <p>
+    How these connect to the on-disc bytes &middot; <a href="formats/art-data.html">Art-data format reference</a> for the per-record schema (PROT entry <code>0x05C4</code>, <code>action_constant</code>, direction prefix, power bytes, AP cost). The <code>command</code> tokens shown here are the player-facing view; the <code>directions</code> array is what the binary compares against the input buffer.
+  </p>
 </section>
 
 <script>

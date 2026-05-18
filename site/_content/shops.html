@@ -34,15 +34,11 @@
   </div>
 </section>
 
-<section class="doc-section" id="data-anchors">
-  <h2>What "data anchor" means</h2>
-  <p>Each item's display panel cites a TOML key (<code>healing_leaf</code>, <code>survival_knife</code>) plus the table it lives in. Those keys are stable identifiers shared between the walkthrough-derived curated tables and the binary records being reverse-engineered:</p>
-  <ul class="bullets">
-    <li><strong>Items</strong> resolve to runtime inventory slots at <code>0x80085958+</code> (cheat-database pinned).</li>
-    <li><strong>Weapons / armor / accessories</strong> resolve to per-character equipment slots inside the <a href="formats/save-record.html">0x414-byte character record</a> (cheat-database offsets <code>+0x186</code>..<code>+0x1A1</code>).</li>
-    <li><strong>Shop inventories</strong> are still held inside the per-scene shop overlay (capture pending - see the open-work list on the <a href="index.html">home page</a>); the curated rows here are the cross-validation ground truth.</li>
-  </ul>
-  <p>The decomp narrative around buying / inn / level-up flows is on the <a href="subsystems/shop.html">Shop subsystem</a> page.</p>
+<section class="doc-section" id="related">
+  <h2>Related</h2>
+  <p>
+    Pricing &amp; effects come from <a href="reference/gamedata.html">curated game-data tables</a> (mined from public walkthroughs). The runtime mechanism &mdash; buying / inn / level-up flow, character-record equipment slots &mdash; lives on the <a href="subsystems/shop.html">Shop subsystem</a> and <a href="formats/save-record.html">per-character save record</a> pages.
+  </p>
 </section>
 
 <script>

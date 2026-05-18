@@ -6,53 +6,77 @@
   </p>
 </header>
 
-<section class="doc-section" id="do-something">
-  <h2>Jump in</h2>
-  <p>Five ways to interact with the project right now - everything below runs client-side in this browser.</p>
-  <div class="hero-grid">
-    <a class="hero-card hero-world" href="world.html">
-      <div class="hero-icon" aria-hidden="true">&#x29B5;</div>
-      <div class="hero-title">Game world</div>
-      <div class="hero-body">Every town and field area, joined with the enemy roster, bosses, and shop counts the walkthroughs name. Each card deep-links to the viewer pre-filtered to that scene.</div>
-      <div class="hero-cta">Explore the world &rarr;</div>
+<section class="doc-section" id="explore">
+  <h2>Explore</h2>
+  <p>Interactive surfaces that run client-side in this browser. No install; provide a disc image and the WASM build does the rest locally.</p>
+  <div class="card-grid">
+    <a class="card" href="world.html">
+      <div class="card-title">Game world</div>
+      <div class="card-body">Every town and field area, joined with enemy rosters, bosses, and shop counts. Each card deep-links into the viewer pre-filtered to that scene.</div>
     </a>
-    <a class="hero-card hero-shops" href="shops.html">
-      <div class="hero-icon" aria-hidden="true">&#x2696;</div>
-      <div class="hero-title">Shops &amp; vendors</div>
-      <div class="hero-body">Interactive three-pane browser: town &rarr; vendor &rarr; priced inventory &rarr; item detail. Resolves <code>shops.toml</code> against <code>items / weapons / armor / accessories</code> and surfaces the data anchors the binary work hangs on.</div>
-      <div class="hero-cta">Browse vendors &rarr;</div>
+    <a class="card" href="shops.html">
+      <div class="card-title">Shops &amp; vendors</div>
+      <div class="card-body">Three-pane interactive browser: town &rarr; vendor &rarr; priced inventory &rarr; item detail. Items resolve through items / weapons / armor / accessories.</div>
     </a>
-    <a class="hero-card hero-minigames" href="minigames.html">
-      <div class="hero-icon" aria-hidden="true">&#x2684;</div>
-      <div class="hero-title">Minigames &amp; Sol Tower</div>
-      <div class="hero-body">Sol Tower floor map, slot prize tables, Muscle Dome courses (with element-tagged enemies), Baka Fighter rounds, plus the side-quest chains: Mary's Diary, Music Score reunion, Sol Fever Disco, Genesis Tree.</div>
-      <div class="hero-cta">Browse minigames &rarr;</div>
+    <a class="card" href="minigames.html">
+      <div class="card-title">Minigames &amp; Sol Tower</div>
+      <div class="card-body">Sol Tower floor map, slot prize tables, Muscle Dome courses with element-tagged enemies, Baka Fighter rounds, plus side-quest chains.</div>
     </a>
-    <a class="hero-card hero-viewer" href="viewer.html">
-      <div class="hero-icon" aria-hidden="true">&#x25A1;</div>
-      <div class="hero-title">Asset viewer</div>
-      <div class="hero-body">Drop in your disc image, browse 1232 PROT entries grouped by scene category. Towns &middot; field areas &middot; battle data &middot; cutscenes &middot; audio. WebGL2 3D, paletted TIMs, software VRAM emulation.</div>
-      <div class="hero-cta">Open the viewer &rarr;</div>
+    <a class="card" href="arts.html">
+      <div class="card-title">Tactical Arts</div>
+      <div class="card-body">Per-character Regular / Hyper / Super / Miracle art lists with direction-token inputs and AP costs. Tabs per character; URL hash deep-links.</div>
     </a>
-    <a class="hero-card hero-engine" href="subsystems/engine.html">
-      <div class="hero-icon" aria-hidden="true">&#x269D;</div>
-      <div class="hero-title">Engine port</div>
-      <div class="hero-body">Clean-room Rust runtime ticking the actor / field / move / motion / effect VMs against real PROT bytes, the battle action SM, the formula damage path, plus the field / battle / menu loop. Native binary + WASM build.</div>
-      <div class="hero-cta">Read the plan &rarr;</div>
+    <a class="card" href="world-overview.html">
+      <div class="card-title">World overview (3D)</div>
+      <div class="card-body">Each kingdom's overworld in real-time WebGL 3D, straight from your disc. Distance-cue fog, ocean CLUT animation, retail top-view camera anchors.</div>
+    </a>
+    <a class="card" href="viewer.html">
+      <div class="card-title">Asset viewer</div>
+      <div class="card-body">Drop in your disc image; browse 1232 PROT entries grouped by scene category. WebGL2 3D, paletted TIMs, software VRAM emulation.</div>
     </a>
   </div>
 </section>
 
-<section class="doc-section" id="stack-overview">
-  <h2>Stack at a glance</h2>
-  <p>Top-to-bottom: disc &rarr; ISO9660 &rarr; PROT.DAT archive &rarr; per-entry containers &rarr; per-asset formats &rarr; engine VMs. Each layer is owned by exactly one crate.</p>
-  <ul class="bullets">
-    <li><a href="architecture.html">How the layers stack</a> &middot; the interactive layer diagram you click through.</li>
-    <li><a href="formats/index.html">Formats</a> &middot; byte-level specs for everything on the disc, each with a Ghidra dump citation.</li>
-    <li><a href="subsystems/index.html">Subsystems</a> &middot; how the engine works: boot, asset loader, five runtime VMs, renderer, audio, battle.</li>
-    <li><a href="tooling/index.html">Tooling</a> &middot; per-stage extraction CLIs, headless-Ghidra-in-Docker, mednafen automation.</li>
-    <li><a href="reference/index.html">Reference</a> &middot; key functions, PSX RAM map, cheats, curated game-data tables.</li>
-  </ul>
+<section class="doc-section" id="understand">
+  <h2>Understand the engine</h2>
+  <p>How the binary actually works &mdash; from raw sectors up through the runtime VMs. Start with <em>How it stacks</em> for the conceptual map.</p>
+  <div class="card-grid">
+    <a class="card" href="architecture.html">
+      <div class="card-title">How the layers stack</div>
+      <div class="card-body">Interactive layer diagram: disc &rarr; ISO9660 &rarr; PROT.DAT &rarr; per-entry containers &rarr; per-asset formats &rarr; engine VMs. Plus the five-runtime-VM grid + call graph.</div>
+    </a>
+    <a class="card" href="subsystems/index.html">
+      <div class="card-title">Subsystems</div>
+      <div class="card-body">How each subsystem works: boot path, asset loader, five runtime VMs, renderer, audio, battle, world map, save / shop / inn / level-up / cutscene.</div>
+    </a>
+    <a class="card" href="formats/index.html">
+      <div class="card-title">Formats</div>
+      <div class="card-body">Byte-level specs for everything on the disc &mdash; LZS, TIM, TMD, VAB, SEQ, MES, ANM, MDT, scene bundles, field-pack, effect bundles, save records. Each cites a Ghidra function dump.</div>
+    </a>
+    <a class="card" href="subsystems/engine.html">
+      <div class="card-title">Engine port plan</div>
+      <div class="card-body">Phase plan + crate layering for the clean-room Rust runtime. Native binary + WASM build; legal posture (zero Sony bytes shipped).</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="build">
+  <h2>Build &amp; reference</h2>
+  <p>Set up the workspace, run the extraction pipeline, and look up the anchor data the documentation hangs on.</p>
+  <div class="card-grid">
+    <a class="card" href="quickstart.html">
+      <div class="card-title">Quick start</div>
+      <div class="card-body">Build the workspace, run the extraction pipeline, browse the assets, stand up Ghidra in Docker. Four steps; each depends on the one before it.</div>
+    </a>
+    <a class="card" href="tooling/index.html">
+      <div class="card-title">Tooling</div>
+      <div class="card-body">Per-stage extraction CLIs, headless-Ghidra-in-Docker workflow, mednafen save-state automation, PCSX-Redux Lua probes for closed-loop overlay capture.</div>
+    </a>
+    <a class="card" href="reference/index.html">
+      <div class="card-title">Reference</div>
+      <div class="card-body">Key Ghidra-traced functions, the PSX RAM map, cheat-database offsets, and the curated game-data tables that ground-truth the binary records.</div>
+    </a>
+  </div>
 </section>
 
 <section class="doc-section" id="status">
