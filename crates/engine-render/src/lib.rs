@@ -1,5 +1,7 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
+//! PORT: FUN_80034b78
+//!
 //! Owns a wgpu device + surface, plus two render pipelines:
 //!
 //! * **Textured-quad** (Phase 1 TIM viewer) - `upload_texture` +

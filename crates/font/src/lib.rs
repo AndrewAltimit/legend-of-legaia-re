@@ -1,5 +1,7 @@
 //! Proportional dialog-font loader and layout helper.
 //!
+//! PORT: FUN_80036888
+//!
 //! Consumes `extracted/font/dialog_font_atlas.png` (224×210 RGBA atlas of
 //! 14×15-pixel glyph cells, 16 columns × 14 rows) and
 //! `dialog_font_widths.csv` (per-character pixel advance). Both artifacts are

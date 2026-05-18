@@ -1,5 +1,7 @@
 //! MES bytecode interpreter.
 //!
+//! PORT: FUN_80036514
+//!
 //! Reads tokens from [`crate::iter_tokens`] and surfaces higher-level
 //! [`MesEvent`]s the engine can consume: glyphs, substitution requests,
 //! spacing ops, page-control bytes, end-of-message sentinels.
