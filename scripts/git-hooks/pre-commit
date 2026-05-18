@@ -98,4 +98,14 @@ fi
 printf '[pre-commit] cargo clippy --all-targets --workspace -- -D warnings\n'
 cargo clippy --all-targets --workspace -- -D warnings
 
+# Port-tag drift check (warn-only). Surfaces newly-added `FUN_<addr>` citations
+# in engine-crate Rust files that lack a matching `// PORT:` or `// REF:` tag.
+# Non-fatal by design - the catalog stays in sync incrementally rather than
+# blocking unrelated PRs. Run scripts/check-port-tags.py --strict in CI when
+# you want to enforce.
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/check-port-tags.py" ]]; then
+    printf '[pre-commit] port-tag drift check (warn-only)\n'
+    python3 scripts/check-port-tags.py --staged --quiet || true
+fi
+
 printf '[pre-commit] OK\n'
