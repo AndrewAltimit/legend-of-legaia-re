@@ -109,7 +109,7 @@ impl Font {
     pub fn load_paths(atlas_png: &Path, widths_csv: &Path) -> Result<Self> {
         let widths = parse_widths_csv(widths_csv)
             .with_context(|| format!("parse widths CSV {}", widths_csv.display()))?;
-        let (atlas_rgba, atlas_w, atlas_h) = decode_atlas_png(atlas_png)
+        let (mut atlas_rgba, atlas_w, atlas_h) = decode_atlas_png(atlas_png)
             .with_context(|| format!("decode {}", atlas_png.display()))?;
         let expected_w = COLS * GLYPH_W;
         let expected_h = ROWS * GLYPH_H;
@@ -117,6 +117,32 @@ impl Font {
             bail!(
                 "atlas dimensions {atlas_w}x{atlas_h} don't match expected {expected_w}x{expected_h}",
             );
+        }
+        // Whitewash the fill pixels only. The extracted atlas bakes two
+        // CLUT-row colours into the texels: `(131,131,131)` for the
+        // glyph fill and `(32,32,32)` for a drop-shadow offset +1,+1
+        // from each fill pixel (retail PSX-era font convention; see
+        // `extracted/font/dialog_font_atlas.png` — the shadow is the
+        // visible second tone in every glyph cell).
+        //
+        // Retail's renderer picks the fill colour at draw time via
+        // per-context CLUT swaps. Our `texel.rgb * color.rgb` shader
+        // mirrors that, but only if the fill texel is pure white —
+        // otherwise the tint can never reach retail's brightness (e.g.
+        // the load-screen `(206,206,206)` requires a `>1.0` multiplier
+        // against the baked `(131,131,131)`, which clamps).
+        //
+        // The shadow texels are left at `(32,32,32)`: tinted by any
+        // typical foreground colour they fade to near-black, which
+        // blends into dark UI panels the same way retail's dim-CLUT-
+        // entry shadows do. Keeping shadow texels stops a one-pixel
+        // bold-outline halo when the tint goes bright (~white).
+        for px in atlas_rgba.chunks_exact_mut(4) {
+            if px[3] != 0 && px[0] >= 0x80 && px[1] >= 0x80 && px[2] >= 0x80 {
+                px[0] = 0xFF;
+                px[1] = 0xFF;
+                px[2] = 0xFF;
+            }
         }
         Ok(Self {
             widths,

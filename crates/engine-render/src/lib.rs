@@ -959,6 +959,28 @@ pub const SAVE_SELECT_CURSOR_POS: (i32, i32) = (114, 100);
 /// placement; new code should use [`SAVE_SELECT_CURSOR_POS`] directly.
 pub const SAVE_SELECT_CURSOR_X_OFFSET: i32 = -14;
 
+/// Retail PSX framebuffer position of the **left edge of the first
+/// title glyph** drawn inside the load-screen panel. Pinned via
+/// GPULog primitive scan at sstate9 (parked on the load screen):
+/// retail emits four 14x15 textured-sprite primitives at dst
+/// `(35, 13)`, `(42, 13)`, `(48, 13)`, `(55, 13)` for `L`, `o`, `a`,
+/// `d`. Stage coords; the engine applies `stage_origin + pos *
+/// stage_scale` when emitting screen-pixel draws.
+///
+/// Pairs with [`SAVE_SELECT_TITLE_COLOR`] (the bright-text CLUT entry
+/// retail picks from the menu CLUT block at VRAM `(208, 510)`).
+pub const SAVE_SELECT_TITLE_POS: (i32, i32) = (35, 13);
+
+/// RGBA tint applied to the dialog-font stencil when rendering the
+/// load-screen title word. Pinned to retail's framebuffer pixel
+/// colour at sstate9: every bright "Load" texel is RGB `(206, 206,
+/// 206)` (= entry `[15]` of the menu CLUT at VRAM `(208, 510)`).
+/// The dialog-font atlas is whitewashed at load (see
+/// `legaia_font::Font::load_paths`), so `color * texel = color` at
+/// opaque texels — making the tint the source of truth for the
+/// final pixel colour.
+pub const SAVE_SELECT_TITLE_COLOR: [f32; 4] = [206.0 / 255.0, 206.0 / 255.0, 206.0 / 255.0, 1.0];
+
 /// Retail PSX framebuffer position of the title-art atlas top-left.
 /// Pinned via GPU primitive scan at sstate9: retail draws the title
 /// quad at dst `(33, 6)..(287, 154)` sampling source `(0, 0, 254, 148)`
@@ -1339,46 +1361,27 @@ pub fn save_select_draws_for(
         }
     };
 
-    // Title word ("Load" / "Save") centered inside the 9-slice panel
-    // frame. Retail draws this from the menu-glyph atlas at byte-
-    // pinned positions (14x15 glyphs); we use the engine font as a
-    // stand-in until the menu-glyph atlas is wired in.
+    // Title word ("Load" / "Save") drawn from the dialog-font
+    // stencil. Retail emits one textured-sprite primitive per glyph
+    // from the VRAM-resident dialog font at byte-pinned dst
+    // positions starting at `SAVE_SELECT_TITLE_POS`, sampling the
+    // bright-text CLUT entry `SAVE_SELECT_TITLE_COLOR` at VRAM
+    // `(208, 510)`. The engine font's layout (variable advances
+    // from `dialog_font_widths.csv` + `INTER_GLYPH_PAD = 1`) is
+    // byte-equal to retail's per-glyph dst deltas, so a plain
+    // `font.layout_ascii` placed at the pinned origin lines up 1:1.
     //
-    // Unit discipline (avoid stage-pixel/screen-pixel mix-ups):
-    //   - `glyph_stage_factor` (= 2) is the multiplier in STAGE
-    //     pixels. 1 engine-glyph pixel renders as 2 stage pixels, so
-    //     each engine glyph (~7 px) covers ~14 stage pixels —
-    //     matching retail's 14x15 glyph size.
-    //   - `glyph_screen_scale` is the multiplier emit_scaled applies
-    //     to glyph dst offsets in screen pixels. Composed as
-    //     `glyph_stage_factor * stage_scale`, so we end up with
-    //     `engine_pixel * glyph_stage_factor * stage_scale` screen
-    //     pixels per glyph pixel — i.e. the glyph occupies the right
-    //     number of stage pixels at any window resolution.
-    //   - Centering math runs in STAGE pixels so it lines up with
-    //     SAVE_SELECT_PANEL_POS / SAVE_SELECT_PANEL_SIZE regardless
-    //     of stage_scale.
+    // Unit discipline: the layout runs in STAGE pixels and
+    // `glyph_screen_scale = stage_scale`, so each engine glyph
+    // pixel becomes exactly `stage_scale` screen pixels — matching
+    // the chrome sprites composed on the same 320x240 stage.
     let title_l = font.layout_ascii(title);
-    let title_glyph_w = title_l.advance_x as i32;
-    let title_glyph_h = title_l.advance_y as i32;
-    let (panel_w_stage, panel_h_stage) = SAVE_SELECT_PANEL_SIZE;
-    // Engine font is proportionally wider than retail's menu-glyph
-    // atlas, so 2x stage scaling overshoots the panel width even
-    // though it matches retail's height. Render at 1x stage scale —
-    // smaller than retail but proportionally clean; follow-up will
-    // swap to byte-perfect menu-glyph atlas glyphs.
-    let glyph_stage_factor: i32 = 1;
-    let title_w_stage = title_glyph_w * glyph_stage_factor;
-    let title_h_stage = title_glyph_h * glyph_stage_factor;
-    let title_x = SAVE_SELECT_PANEL_POS.0 + (panel_w_stage - title_w_stage) / 2;
-    let title_y = SAVE_SELECT_PANEL_POS.1 + (panel_h_stage - title_h_stage) / 2;
-    let glyph_screen_scale = (glyph_stage_factor as u32) * scale;
     emit_scaled(
         &mut out,
         &title_l,
-        (title_x, title_y),
-        glyph_screen_scale,
-        white,
+        SAVE_SELECT_TITLE_POS,
+        scale,
+        SAVE_SELECT_TITLE_COLOR,
     );
 
     // Cursor arrow next to the selected slot pill. Pills sit at
@@ -5249,6 +5252,62 @@ mod tests {
         ];
         let draws = save_select_draws_for(&font, "LOAD", &rows, 0, None, (0, 0), 1, true);
         assert!(!draws.is_empty());
+    }
+
+    /// Each char of the title word ("Load") must be emitted at the
+    /// retail-pinned dst position (stage `(35, 13)` for L; subsequent
+    /// glyphs advance by `width + INTER_GLYPH_PAD` per the dialog-font
+    /// widths CSV) and tinted with `SAVE_SELECT_TITLE_COLOR`, NOT pure
+    /// white. Retail-pinned at sstate9 — see `SAVE_SELECT_TITLE_POS` /
+    /// `SAVE_SELECT_TITLE_COLOR` doc comments. Regression-guard so a
+    /// future "tidy up the centering math" patch can't silently revert
+    /// the byte-equal alignment.
+    #[test]
+    fn save_select_title_uses_retail_pinned_pos_and_color() {
+        // `synthetic_for_tests` widths are not retail's, but the layout
+        // pen advances by `widths[c] + INTER_GLYPH_PAD` regardless of
+        // backing font — the property under test is that the FIRST
+        // glyph is placed at SAVE_SELECT_TITLE_POS in stage pixels and
+        // every title glyph carries SAVE_SELECT_TITLE_COLOR. That's
+        // what makes the engine port byte-equal to retail's 4-sprite
+        // emit at stage (35,13)/(42,13)/(48,13)/(55,13).
+        let font = legaia_font::synthetic_for_tests();
+        let rows: [SaveSelectRow<'_>; 0] = [];
+        let stage_origin = (0, 0);
+        let stage_scale = 1u32;
+        let draws = save_select_draws_for(
+            &font,
+            "Load",
+            &rows,
+            0,
+            None,
+            stage_origin,
+            stage_scale,
+            false,
+        );
+        // First glyph dst must equal SAVE_SELECT_TITLE_POS (1:1 stage).
+        assert!(!draws.is_empty(), "title must emit at least one glyph");
+        let first = &draws[0];
+        assert_eq!(
+            (first.dst.0, first.dst.1),
+            SAVE_SELECT_TITLE_POS,
+            "first title glyph must start at retail-pinned stage pos"
+        );
+        // First four draws are the title glyphs; assert all share the
+        // retail tint (no white / gold sneaking in).
+        for (i, d) in draws.iter().take(4).enumerate() {
+            assert_eq!(
+                d.color, SAVE_SELECT_TITLE_COLOR,
+                "title glyph {i} must use SAVE_SELECT_TITLE_COLOR (retail tint)"
+            );
+        }
+        // Sanity: the title tint is the dialog-font CLUT row 13 bright
+        // text entry (206, 206, 206) at VRAM (208, 510). Locked in
+        // hex/float so the constant can't drift to "true white".
+        assert_eq!(
+            SAVE_SELECT_TITLE_COLOR,
+            [206.0 / 255.0, 206.0 / 255.0, 206.0 / 255.0, 1.0]
+        );
     }
 
     #[test]
