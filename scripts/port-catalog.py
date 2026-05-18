@@ -49,6 +49,7 @@ DOCS_DIR = REPO / "docs"
 CRATES_DIR = REPO / "crates"
 OUT_DIR = REPO / "target" / "port-catalog"
 FEATURES_TOML = REPO / "scripts" / "features.toml"
+IGNORE_TOML = REPO / "scripts" / "port-catalog-ignore.toml"
 
 # Address ranges that correspond to executable code:
 #   SCUS_942.54   : 0x80010000 - 0x8006FFFF
@@ -259,15 +260,37 @@ def load_features() -> dict[str, dict]:
     return out
 
 
+def load_ignore() -> dict[str, tuple[str, str]]:
+    """Load `scripts/port-catalog-ignore.toml`. Returns `{addr: (category, reason)}`.
+
+    The TOML is organised as top-level tables (one per category) of
+    `addr = "reason"` rows. Addresses across different categories merge into
+    a single map; the category travels along for drill-down.
+    """
+    if not IGNORE_TOML.exists():
+        return {}
+    with IGNORE_TOML.open("rb") as f:
+        data = tomllib.load(f)
+    out: dict[str, tuple[str, str]] = {}
+    for category, body in data.items():
+        if not isinstance(body, dict):
+            continue
+        for addr, reason in body.items():
+            out[addr.lower()] = (category, str(reason))
+    return out
+
+
 def build_rows(
     dumped: dict[str, str],
     refs: Counter,
     sources: dict[str, list[str]],
     docs: dict[str, set[str]],
     ports: dict[str, set[str]],
+    ignore: dict[str, tuple[str, str]] | None = None,
 ) -> list[dict]:
     """Union the four signals into a per-address row list, sorted by address."""
     addrs = set(dumped) | set(refs) | set(docs) | set(ports)
+    ignore = ignore or {}
     rows: list[dict] = []
     for addr in sorted(addrs):
         dump_stem = dumped.get(addr, "")
@@ -276,6 +299,7 @@ def build_rows(
         port_crates = sorted(ports.get(addr, set()))
         is_documented = bool(doc_hits)
         is_ported = bool(port_crates)
+        ig = ignore.get(addr)
         bucket = "scus" if int(addr, 16) < 0x801C0000 else "overlay"
         rows.append(
             {
@@ -289,6 +313,9 @@ def build_rows(
                 "port_crates": port_crates,
                 "refs": refs.get(addr, 0),
                 "first_sources": sources.get(addr, [])[:3],
+                "ignored": ig is not None,
+                "ignore_category": ig[0] if ig else "",
+                "ignore_reason": ig[1] if ig else "",
             }
         )
     return rows
@@ -309,6 +336,9 @@ def render_csv(rows: list[dict], out_path: Path) -> None:
                 "dumped",
                 "documented",
                 "ported",
+                "ignored",
+                "ignore_category",
+                "ignore_reason",
                 "port_crates",
                 "doc_sources",
                 "refs",
@@ -323,6 +353,9 @@ def render_csv(rows: list[dict], out_path: Path) -> None:
                     int(r["dumped"]),
                     int(r["documented"]),
                     int(r["ported"]),
+                    int(r["ignored"]),
+                    r["ignore_category"],
+                    r["ignore_reason"],
                     "|".join(r["port_crates"]),
                     "|".join(r["doc_sources"]),
                     r["refs"],
@@ -340,16 +373,19 @@ def render_md(rows: list[dict], out_path: Path | None, title: str) -> str:
         "- **dumped** — Ghidra decompiler output exists under `ghidra/scripts/funcs/`.",
         "- **documented** — the address is cited from at least one file under `docs/`.",
         "- **ported** — the address appears in a `// PORT: FUN_<addr>` tag in a Rust source under `crates/`.",
+        "- **ignore** — address is listed in `scripts/port-catalog-ignore.toml` as non-port-site (PsyQ / BIOS / libgte / ...).",
         "",
-        "| addr | bucket | dumped | documented | ported (crates) | refs | first dump source |",
-        "|---|---|---|---|---|---|---|",
+        "| addr | bucket | dumped | documented | ported (crates) | ignore | refs | first dump source |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         crates = ", ".join(r["port_crates"]) if r["port_crates"] else "—"
         first_src = r["first_sources"][0] if r["first_sources"] else "—"
+        ignore_cell = r["ignore_category"] if r["ignored"] else "—"
         lines.append(
             f"| `{r['addr']}` | {r['bucket']} | {yesno(r['dumped'])} | "
-            f"{yesno(r['documented'])} | {crates} | {r['refs']} | `{first_src}` |"
+            f"{yesno(r['documented'])} | {crates} | {ignore_cell} | "
+            f"{r['refs']} | `{first_src}` |"
         )
     md = "\n".join(lines) + "\n"
     if out_path:
@@ -369,6 +405,11 @@ def summarize(rows: list[dict]) -> str:
     dd_not_p = sum(
         1 for r in rows if r["dumped"] and r["documented"] and not r["ported"]
     )
+    dd_not_p_ignored = sum(
+        1
+        for r in rows
+        if r["dumped"] and r["documented"] and not r["ported"] and r["ignored"]
+    )
     cited_not_dumped = sum(1 for r in rows if r["refs"] > 0 and not r["dumped"])
     ported_not_documented = sum(
         1 for r in rows if r["ported"] and not r["documented"]
@@ -383,7 +424,9 @@ def summarize(rows: list[dict]) -> str:
             "",
             f"dumped + documented           : {dd}",
             f"dumped + documented + ported  : {ddp}",
-            f"dumped + documented, NOT ported (port worklist) : {dd_not_p}",
+            f"dumped + documented, NOT ported                 : {dd_not_p}",
+            f"  of which ignored (PsyQ / BIOS / libgte / ...) : {dd_not_p_ignored}",
+            f"  remaining port worklist                       : {dd_not_p - dd_not_p_ignored}",
             "",
             f"cited but NOT dumped  (dump worklist)           : {cited_not_dumped}",
             f"ported but NOT documented (provenance gap)      : {ported_not_documented}",
@@ -401,12 +444,17 @@ def filter_rows(rows: list[dict], args: argparse.Namespace) -> list[dict]:
         out = [
             r for r in out if r["dumped"] and r["documented"] and not r["ported"]
         ]
+        if not args.include_ignored:
+            out = [r for r in out if not r["ignored"]]
         out.sort(key=lambda r: (-r["refs"], r["addr"]))
     if args.missing_dumps:
         out = [r for r in out if r["refs"] > 0 and not r["dumped"]]
         out.sort(key=lambda r: (-r["refs"], r["addr"]))
     if args.ported_only:
         out = [r for r in out if r["ported"]]
+    if args.ignored_only:
+        out = [r for r in out if r["ignored"]]
+        out.sort(key=lambda r: (r["ignore_category"], r["addr"]))
     if args.bucket:
         out = [r for r in out if r["bucket"] == args.bucket]
     if args.top:
@@ -437,6 +485,16 @@ def main() -> int:
         "--ported-only",
         action="store_true",
         help="filter: only addresses with a // PORT: tag",
+    )
+    ap.add_argument(
+        "--ignored-only",
+        action="store_true",
+        help="filter: only addresses in scripts/port-catalog-ignore.toml",
+    )
+    ap.add_argument(
+        "--include-ignored",
+        action="store_true",
+        help="don't exclude ignore-list entries from --missing-ports (default: exclude)",
     )
     ap.add_argument(
         "--bucket",
@@ -492,8 +550,9 @@ def main() -> int:
     refs, sources = collect_citations()
     docs = collect_doc_citations()
     ports = collect_ports()
+    ignore = load_ignore()
 
-    rows = build_rows(dumped, refs, sources, docs, ports)
+    rows = build_rows(dumped, refs, sources, docs, ports, ignore=ignore)
 
     # Always write the global catalog so the latest state is on disk even when
     # the user is also drilling into a feature filter.
@@ -555,17 +614,23 @@ def main() -> int:
     if filtered != rows:
         print()
         print(f"filtered rows ({len(filtered)}):")
-        print(f"{'addr':<10} {'bucket':<8} {'D/d/P':<6} {'refs':>4}  port crates / first src")
-        print(f"{'-' * 10} {'-' * 8} {'-' * 6} {'-' * 4}  {'-' * 60}")
+        print(f"{'addr':<10} {'bucket':<8} {'D/d/P/I':<8} {'refs':>4}  port crates / ignore / first src")
+        print(f"{'-' * 10} {'-' * 8} {'-' * 8} {'-' * 4}  {'-' * 60}")
         for r in filtered:
             flags = (
                 ("D" if r["dumped"] else ".")
                 + ("d" if r["documented"] else ".")
                 + ("P" if r["ported"] else ".")
+                + ("I" if r["ignored"] else ".")
             )
             crates = ",".join(r["port_crates"]) if r["port_crates"] else "—"
-            tail = crates if r["ported"] else (r["first_sources"][0] if r["first_sources"] else "—")
-            print(f"{r['addr']:<10} {r['bucket']:<8} {flags:<6} {r['refs']:>4}  {tail}")
+            if r["ported"]:
+                tail = crates
+            elif r["ignored"]:
+                tail = f"[{r['ignore_category']}] {r['ignore_reason']}"
+            else:
+                tail = r["first_sources"][0] if r["first_sources"] else "—"
+            print(f"{r['addr']:<10} {r['bucket']:<8} {flags:<8} {r['refs']:>4}  {tail}")
     if not args.no_write:
         print()
         print(f"wrote {OUT_DIR / 'catalog.csv'}")

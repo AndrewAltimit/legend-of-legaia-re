@@ -1,13 +1,16 @@
 # Port catalog
 
 A per-function status catalog that unifies three independent signals across the
-decompilation and engine-port tracks:
+decompilation and engine-port tracks, plus a fourth axis for scope-excluded
+addresses (statically-linked PsyQ library code that the engine maps to native
+equivalents rather than porting line-by-line):
 
 | Column | Source of truth |
 |---|---|
 | **dumped** | A Ghidra decompiler dump exists under `ghidra/scripts/funcs/` (gitignored — regenerable from the Ghidra project). |
 | **documented** | The address is cited from at least one file under `docs/` (`FUN_<addr>` or `0x<addr>`, case-insensitive). |
 | **ported** | A Rust source under `crates/` carries a `// PORT: FUN_<addr>` tag for that address. |
+| **ignored** | The address is listed in `scripts/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
 
 Tool: [`scripts/port-catalog.py`](../../scripts/port-catalog.py). Reuses helpers
 from [`scripts/function-coverage.py`](../../scripts/function-coverage.py) and
@@ -51,9 +54,11 @@ When porting a Ghidra function, add the tag once in the Rust function that
 
 ```bash
 python3 scripts/port-catalog.py                       # global catalog -> target/port-catalog/
-python3 scripts/port-catalog.py --missing-ports       # dumped + documented, not ported
+python3 scripts/port-catalog.py --missing-ports       # dumped + documented, not ported (excludes ignore-list)
+python3 scripts/port-catalog.py --missing-ports --include-ignored   # include ignore-list entries
 python3 scripts/port-catalog.py --missing-dumps       # cited but not dumped
 python3 scripts/port-catalog.py --ported-only         # show only ported addresses
+python3 scripts/port-catalog.py --ignored-only        # show only ignore-list entries
 python3 scripts/port-catalog.py --addr 801dd35c       # drill-down on one address
 python3 scripts/port-catalog.py --md                  # markdown to stdout
 python3 scripts/port-catalog.py --list-features       # list features in features.toml
@@ -96,14 +101,53 @@ Use feature views to:
 - Confirm a port is reachable from the feature root.
 - Spot shared-infrastructure spillover that wants a `stop_at` entry.
 
+## Ignore list
+
+`scripts/port-catalog-ignore.toml` lists addresses that the catalog should
+treat as out-of-scope for engine porting — statically-linked PsyQ kernel /
+runtime / SDK code. The clean-room port maps these clusters to native
+equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the
+PSX wrappers, so they shouldn't pollute the port worklist.
+
+```toml
+[bios]
+"80056678" = "EnterCriticalSection (syscall(0), a0=1)"
+"80056688" = "ExitCriticalSection (syscall(0), a0=2)"
+
+[libgte]
+"8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
+
+[libsnd]
+"80062340" = "SsSeqOpen (slot-bitmap walk + load)"
+```
+
+Categories are organisational (one TOML table per cluster — `bios` / `libc` /
+`libgte` / `libgs` / `libcd` / `libapi` / `libsnd` / `libspu` / `libetc`); the
+tool treats every entry the same way. Provenance for each entry lives in
+[`docs/reference/functions.md`](../reference/functions.md) and the audio /
+save-screen subsystem docs.
+
+Default behaviour:
+
+- `--missing-ports` excludes ignored entries. The summary line breaks the
+  count down (`of which ignored / remaining port worklist`).
+- `--include-ignored` opts back in for completeness checks.
+- `--ignored-only` lists the ignore-list itself (useful for auditing).
+
+Adding an entry: copy the address into the appropriate category table with a
+one-line reason that names the PsyQ function and (where known) the BIOS
+vector. Keep the reason factual — it shows up in catalog drill-down output.
+Provenance citations belong in `docs/reference/functions.md`, not in the TOML
+reason field.
+
 ## What the columns surface
 
 The point of the table is to make the cross-cuts cheap to read:
 
-- **`dumped + documented + not ported`** → port worklist. The function is
-  understood (we have a Ghidra dump and at least one doc citation) and not yet
-  implemented in the engine. Sort by citation count to find high-leverage
-  helpers first.
+- **`dumped + documented + not ported, not ignored`** → port worklist. The
+  function is understood (we have a Ghidra dump and at least one doc
+  citation), not yet implemented in the engine, and not statically-linked
+  PsyQ infra. Sort by citation count to find high-leverage helpers first.
 - **`cited but not dumped`** → dump worklist. Some other dump references this
   address but no dump exists for it yet. Add to `ghidra/scripts/dump_funcs.py`
   `TARGETS`.
@@ -123,3 +167,8 @@ The point of the table is to make the cross-cuts cheap to read:
 - **One `// PORT:` tag does not guarantee semantic equivalence.** The tag is a
   provenance link, not a correctness proof. Tests + retail-comparison still
   do that job.
+- **The ignore-list is curated, not exhaustive.** Newly-dumped PsyQ helpers
+  don't auto-classify — `--missing-ports` will surface them until they're
+  explicitly added to `port-catalog-ignore.toml`. Treat unfamiliar 16-byte
+  thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather
+  than ports.
