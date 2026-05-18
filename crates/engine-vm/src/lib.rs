@@ -1,6 +1,7 @@
 //! Actor / sprite script VM, ported clean-room from `FUN_801D6628`.
 //!
-//! PORT: FUN_801D6628
+//! PORT: FUN_801D6628, FUN_800319A8, FUN_800326AC, FUN_80035334, FUN_800357FC
+//! PORT: FUN_800358C0, FUN_80035978, FUN_80035A4C
 //!
 //! `FUN_801D6628` lives in the title-screen / field overlay loaded into the
 //! `0x801C0000+` window at runtime (see `docs/tooling/overlay-capture.md`). It is
@@ -63,8 +64,6 @@
 //! that trait belong to the engine layer.
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
-//! REF: FUN_800319A8, FUN_800326AC, FUN_80035334, FUN_800357FC, FUN_800358C0, FUN_80035978
-//! REF: FUN_80035A4C
 
 #![forbid(unsafe_code)]
 
