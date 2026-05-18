@@ -240,3 +240,12 @@
 # `crates/engine-vm/src/field.rs`), so there is no separate function to port.
 [field_vm_labels]
 "801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
+
+
+# Identity / no-op thunks at addresses outside the PsyQ region. These are
+# `jr ra; move v0, a0` two-instruction wrappers that return their input
+# verbatim - probably leftover dev scaffolding or placeholder slots in a
+# vtable-style dispatch. The engine port inlines what would be the identity
+# passthrough; there is nothing to model.
+[identity_thunks]
+"801e38d0" = "Overlay identity thunk (`jr ra; move v0, a0`). Called by FUN_801DD35C menu dispatcher (`a0 = state[+0x204]`) and the title-overlay tick at `801dd6b0`; the menu / title state code reads the input value back unmodified. See `docs/subsystems/boot.md` lines 216, 228."
