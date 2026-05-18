@@ -76,6 +76,7 @@
 "8003d344" = "GTE NCLIP (cop2 0x480012) - 9-instruction normal-clip helper; engine emits via wgpu winding test"
 "80026988" = "Euler-angle (x,y,z) -> 3x3 rotation matrix via sin/cos LUTs at DAT_8007B7F8 / DAT_8007B81C; engine uses glam::Mat3::from_euler"
 "800460ac" = "GTE NCDS (cop2 0x280030) - 3-iter normal color-depth color single loop; engine emits lighting via wgpu fragment shader"
+"800172c0" = "Camera / geometry init (Euler -> matrix via 80026988 + SetGeomScreen/Offset/Translation 8005B648/B3A8/B4B8 + NCLIP 8003D344); pure libgte chain replaced by glam Mat4 + wgpu pipeline"
 "8005bb48" = "InitGeom - exception-handler table install + FlushCache"
 
 

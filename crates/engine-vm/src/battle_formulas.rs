@@ -9,7 +9,9 @@
 //!
 //! PORT: FUN_80056798 (PsyQ rand; full per-formula attribution lives on
 //! the individual `pub fn` docs below).
-//! REF: FUN_800402F4, FUN_801E295C, FUN_801EED1C
+//! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
+//! module ports the arithmetic kernel the dispatch feeds into).
+//! REF: FUN_801E295C, FUN_801EED1C
 
 #![allow(clippy::too_many_arguments)]
 
