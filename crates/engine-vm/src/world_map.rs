@@ -1,7 +1,7 @@
 //! World-map entity state machine, ported clean-room from `FUN_801DA51C`
 //! (overlay_world_map.bin base `0x801C0000`).
 //!
-//! PORT: FUN_801DA51C
+//! PORT: FUN_801DA51C, FUN_801D9E1C
 //!
 //! One instance of [`WorldMapEntityCtx`] exists per on-map entity (NPCs,
 //! town-portal tiles, monster spawn zones). The retail engine stores the
@@ -24,7 +24,7 @@
 //! ## Source
 //!
 //! `ghidra/scripts/funcs/801da51c.txt` (decompiled from `overlay_world_map.bin`).
-//! REF: FUN_800243F0, FUN_801D9E1C
+//! REF: FUN_800243F0
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityState {
