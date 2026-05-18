@@ -53,6 +53,7 @@
 //! as `i16` by the keyframe arm). Both views are kept in sync via the
 //! `path_active` (i32) and `kf_shake[2]` (i16) fields - touching either
 //! field via the public API keeps the other in lockstep.
+//! REF: FUN_800204F8, FUN_800250D4, FUN_8002519C, FUN_80065034, FUN_800657D0, FUN_801D79E8
 
 use crate::anim_vm::DispatchByte;
 

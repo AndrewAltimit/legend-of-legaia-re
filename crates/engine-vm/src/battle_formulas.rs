@@ -9,6 +9,7 @@
 //!
 //! PORT: FUN_80056798 (PsyQ rand; full per-formula attribution lives on
 //! the individual `pub fn` docs below).
+//! REF: FUN_800402F4, FUN_801E295C, FUN_801EED1C
 
 #![allow(clippy::too_many_arguments)]
 

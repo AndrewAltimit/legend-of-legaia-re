@@ -25,6 +25,7 @@
 //!
 //! See [`docs/subsystems/`] for the menu-VM doc page (TODO: add when
 //! the second pass lands).
+//! REF: FUN_801E38D0
 
 // Menu is a state machine, not an opcode VM - no shared host dependency
 // with the actor / move / field VMs.

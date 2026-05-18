@@ -58,6 +58,8 @@
 //! the `Host::on_opaque_record` body with the real per-kind dispatch -
 //! every other piece of plumbing (per-actor pool, frame stepping,
 //! lifecycle hooks, event stream) stays as-is.
+//! REF: FUN_80021DF4, FUN_80047430, FUN_80048A08, FUN_80049348, FUN_8004998C, FUN_8004AD80
+//! REF: FUN_8004E13C
 
 use legaia_anm::{AnimPlayer, PoseFrame, RecordHeader};
 

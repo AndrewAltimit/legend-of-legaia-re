@@ -24,6 +24,7 @@
 //!
 //! No bytes from `SCUS_942.54` live here; the algorithms are described by
 //! their decompilation.
+//! REF: FUN_801DE840
 
 /// Length of one variable-length text/data packet, in bytes.
 ///

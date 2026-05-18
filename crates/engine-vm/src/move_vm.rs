@@ -46,6 +46,9 @@
 //! the actor pool is modeled).
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
+//! REF: FUN_80017888, FUN_8001A6C8, FUN_8001A78C, FUN_8001A8DC, FUN_800204F8, FUN_80021B04
+//! REF: FUN_80021DF4, FUN_80024C80, FUN_800583C8, FUN_8005842C, FUN_80058490, FUN_801D31B0
+//! REF: FUN_801E45BC
 
 #![allow(clippy::too_many_arguments)]
 

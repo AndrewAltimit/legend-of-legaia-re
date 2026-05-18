@@ -30,6 +30,7 @@
 //!
 //! See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md) for
 //! the full provenance.
+//! REF: FUN_800520F0
 
 use serde::{Deserialize, Serialize};
 

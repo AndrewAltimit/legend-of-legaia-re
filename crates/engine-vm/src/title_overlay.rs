@@ -106,6 +106,7 @@
 //!
 //! No Sony bytes are stored in this module - the JT entries are PSX
 //! virtual addresses (numbers), not extracted overlay contents.
+//! REF: FUN_801E38D0
 
 #![forbid(unsafe_code)]
 

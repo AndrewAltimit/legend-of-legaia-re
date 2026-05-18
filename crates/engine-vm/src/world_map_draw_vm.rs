@@ -77,6 +77,7 @@
 //! full decompilation and
 //! `ghidra/scripts/funcs/world_map_vm_jt_overlay_world_map.bin.txt`
 //! for the jump-table at `0x801CE868`.
+//! REF: FUN_80023070, FUN_801D31B0
 
 #![allow(clippy::needless_range_loop)]
 

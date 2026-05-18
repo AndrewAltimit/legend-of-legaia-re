@@ -28,6 +28,8 @@
 //! is the *spec*, not source. The [`BattleActionHost`] trait abstracts every
 //! call the original made into the engine layer. Tests use synthetic ctx /
 //! actor state.
+//! REF: FUN_8003F2B8, FUN_8004E2F0, FUN_801D5854, FUN_801D8DE8, FUN_801DABA4, FUN_801DBF9C
+//! REF: FUN_801DC0A0, FUN_801E7320, FUN_801EED1C, FUN_801EFE44
 
 #![allow(clippy::too_many_arguments)]
 

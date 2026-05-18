@@ -63,6 +63,8 @@
 //! that trait belong to the engine layer.
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
+//! REF: FUN_800319A8, FUN_800326AC, FUN_80035334, FUN_800357FC, FUN_800358C0, FUN_80035978
+//! REF: FUN_80035A4C
 
 #![forbid(unsafe_code)]
 

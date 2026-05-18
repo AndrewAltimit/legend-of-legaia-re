@@ -30,6 +30,7 @@
 //!
 //! Same rules as `crate::battle_action`: no Sony bytes embedded, the dump is
 //! the spec. Tests use synthetic stats.
+//! REF: FUN_8003CE64, FUN_80046898
 
 #![allow(clippy::too_many_arguments)]
 

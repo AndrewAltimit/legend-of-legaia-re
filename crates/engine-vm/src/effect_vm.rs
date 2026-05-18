@@ -32,6 +32,7 @@
 //! `overlay_battle_801dfdf8.txt`, and `overlay_battle_801e0088.txt` is the
 //! *spec*, not source. Tests use hand-authored synthetic scripts (no Sony
 //! bytes).
+//! REF: FUN_801D8DE8
 
 #![allow(clippy::too_many_arguments)]
 

@@ -24,6 +24,7 @@
 //! ## Source
 //!
 //! `ghidra/scripts/funcs/801da51c.txt` (decompiled from `overlay_world_map.bin`).
+//! REF: FUN_800243F0, FUN_801D9E1C
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityState {

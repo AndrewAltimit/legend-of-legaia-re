@@ -30,6 +30,7 @@
 //! [`SceneResources::build_with_shared`] and pass [`FIELD_SHARED_BLOCKS`]
 //! as the shared scene set. The default zero-arg [`SceneResources::build`]
 //! stays backward-compatible.
+//! REF: FUN_8001E890, FUN_80026B4C
 
 use anyhow::Result;
 use legaia_asset::{anm_detect, battle_data_pack, scene_tmd_stream, tim_scan, tmd_scan};

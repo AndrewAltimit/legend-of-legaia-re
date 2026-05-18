@@ -47,6 +47,7 @@
 //! No bytes from `SCUS_942.54` live in this crate. The Ghidra decompilation at
 //! `ghidra/scripts/funcs/8003774c.txt` is the *spec*. Tests use synthetic
 //! bytecode.
+//! REF: FUN_80019B28, FUN_80023070, FUN_801D6628
 
 /// Per-actor target the VM steps toward (when the bytecode's "select target"
 /// bit is set). The retail engine resolves this through engine-side actor
