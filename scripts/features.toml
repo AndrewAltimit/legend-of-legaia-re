@@ -57,3 +57,32 @@ roots = ["8001f05c", "8001a55c", "8001f7c0"]
 [actor-vm]
 description = "Actor/sprite script VM. Smallest VM in the engine, 13 opcodes, fixed 4-byte instructions."
 roots = ["801d6628"]
+
+[field-load]
+description = "Scene-asset loader frame. FUN_8001F7C0 walks the per-scene file list; FUN_800255B8 streams sub-assets per chunk. Distinct from `asset-loader` which is the type-byte dispatcher."
+roots = ["8001f7c0", "800255b8"]
+# Stop at the asset dispatcher + LZS decoder - those are shared infra.
+stop_at = ["8001f05c", "8001a55c"]
+
+[name-input]
+description = "Name-input overlay (post-intro NEW GAME naming UI). Lives in the overlay_dialog_typing slot."
+roots = ["801d01b0"]
+# Field VM and battle action live in adjacent overlay slots - don't follow.
+stop_at = ["801de840", "801e295c", "801dd35c"]
+
+[field-menu]
+description = "In-field pause menu (Items / Magic / Equip / Status / Save). Lives in the overlay_menu slot; dispatcher FUN_801DE234 is overlay_menu-specific."
+roots = ["801de234"]
+# Stop at the field VM, battle SM, title/save UI dispatcher.
+stop_at = ["801de840", "801e295c", "801dd35c", "801e08d8"]
+
+[shop]
+description = "Shop / inn UI. FUN_801DA2A0 is unique to the overlay_shop_save slot (everything else in shop_save also lives in overlay_menu)."
+roots = ["801da2a0"]
+stop_at = ["801de840", "801e295c", "801dd35c"]
+
+[debug-menu]
+description = "Dev cheat menu. Rendered by FUN_801EAD98 inside the world-map overlay."
+roots = ["801ead98"]
+# Stop at the field VM, world-map controller, world-map entity SM.
+stop_at = ["801de840", "801e76d4", "801da51c"]
