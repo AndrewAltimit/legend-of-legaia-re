@@ -1,5 +1,7 @@
 //! Per-character record at runtime offset `0x80084708 + n * 0x414`.
 //!
+//! PORT: FUN_80042558, FUN_80042DBC, FUN_800432BC, FUN_800431FC, FUN_80043264
+//!
 //! Field offsets come from `docs/subsystems/battle.md`'s "Character record
 //! layout" section, cross-referenced with the inventory / spell helpers
 //! `FUN_80042558` / `FUN_80042DBC` / `FUN_800432BC` / `FUN_800431FC` /

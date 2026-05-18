@@ -1,5 +1,7 @@
 //! Per-mode descriptor table for Legaia primitive groups.
 //!
+//! PORT: FUN_8002735C
+//!
 //! Reverse-engineered from `FUN_8002735c` (the renderer in `SCUS_942.54`)
 //! and the in-memory table at `DAT_8007326c`. The renderer indexes a
 //! 6-entry × 8-byte table to figure out, for each primitive group:

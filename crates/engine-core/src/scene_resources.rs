@@ -3,6 +3,8 @@
 //! the legacy `tim_scan/<entry>/` filesystem intermediate the asset-viewer
 //! used.
 //!
+//! PORT: FUN_8001FE70
+//!
 //! This is the engine-side mirror of the retail field-loader chain
 //! ([`docs/subsystems/asset-loader.md`]): the runtime DMAs every TIM in the
 //! scene's CDNAME block into VRAM up front (so cross-entry CLUT references

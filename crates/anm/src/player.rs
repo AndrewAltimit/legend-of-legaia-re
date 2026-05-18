@@ -1,5 +1,7 @@
 //! Per-frame ANM playback driver.
 //!
+//! PORT: FUN_80021DF4
+//!
 //! Wraps [`KeyframeReader`] + [`BoneKeyframe::interpolate`] in a small
 //! state machine engines call once per frame. Mirrors the slice of
 //! `FUN_80021DF4` (block at `0x80022ec4..0x80023040`) that walks the

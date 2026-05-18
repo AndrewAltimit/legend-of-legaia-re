@@ -1,5 +1,7 @@
 //! Legaia LZS decompressor.
 //!
+//! PORT: FUN_8001A55C
+//!
 //! Reverse-engineered from `FUN_8001a55c` in `SCUS_942.54`. The algorithm:
 //!
 //! - 4096-byte ring buffer initialized to zero, write position starts at 0xFEE.
