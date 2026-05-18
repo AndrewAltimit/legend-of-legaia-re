@@ -117,12 +117,14 @@ python3 scripts/port-catalog.py --addr 801dd35c       # drill-down on one addres
 python3 scripts/port-catalog.py --md                  # markdown to stdout
 python3 scripts/port-catalog.py --list-features       # list features in features.toml
 python3 scripts/port-catalog.py --feature title-screen   # BFS from a feature's roots
+python3 scripts/port-catalog.py --dashboard           # open-work rollup -> open-work.md
 ```
 
 Output is written to `target/port-catalog/` (gitignored):
 
 - `catalog.csv` / `catalog.md` — every tracked address, machine-readable + markdown.
 - `<feature>.csv` / `<feature>.md` — per-feature subset when `--feature` is used.
+- `open-work.md` — single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).
 
 ## Features (BFS from roots)
 
@@ -193,6 +195,32 @@ one-line reason that names the PsyQ function and (where known) the BIOS
 vector. Keep the reason factual — it shows up in catalog drill-down output.
 Provenance citations belong in `docs/reference/functions.md`, not in the TOML
 reason field.
+
+## Open-work dashboard
+
+`--dashboard` emits `target/port-catalog/open-work.md`, a single regenerable
+page that answers "what's left to port, in what scope" at a glance. The
+dashboard combines four signals:
+
+1. **Global counts** — dumped / documented / ported / ignored / remaining port
+   worklist.
+2. **Per-feature status table** — for each feature in
+   [`scripts/features.toml`](../../scripts/features.toml): reachable, ported,
+   port %, missing (port worklist within the feature, ignore-list excluded),
+   ignored.
+3. **Per-feature top-N missing-ports** — the highest-citation-count helpers
+   reachable from each feature's roots that don't yet carry a `// PORT:` tag.
+   Sorted high-leverage first, so a feature's blockers surface immediately.
+   Cap is `--dashboard-top N` (default 10).
+4. **Ignore-list summary** — count per category (bios / libc / libgte / libgs /
+   libcd / libapi / libsnd / libspu / libetc).
+5. **Provenance gaps** — addresses with a `// PORT:` tag but missing a dump or
+   doc citation (shown only when nonzero).
+
+The page is gitignored output (lives under `target/`). Re-run after landing a
+batch of ports to see which helpers are now top-of-list. The question-level
+companion — open *hunts* rather than per-function status — is
+[`docs/reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ## What the columns surface
 
