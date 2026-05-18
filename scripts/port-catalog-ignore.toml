@@ -72,6 +72,7 @@
 "8005af0c" = "isqrt-style normalise (wraps 8005ba1c)"
 "8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
 "8005ba68" = "GTE 3-point transform helper (RTPT)"
+"8005b038" = "GTE RTPS (perspective-transform-single) vertex-batch loop (cop2 0x198003D in a per-vertex stride-8 loop)"
 "8005bb48" = "InitGeom - exception-handler table install + FlushCache"
 
 

@@ -1,6 +1,6 @@
 //! Field / event script VM, ported clean-room from `FUN_801DE840`.
 //!
-//! PORT: FUN_801DE840
+//! PORT: FUN_801DE840, FUN_8003CE08, FUN_8003CE34, FUN_8003CE64, FUN_8003C83C
 //!
 //! `FUN_801DE840` lives in PROT entry `0897_xxx_dat` (the town/field overlay,
 //! see `docs/subsystems/script-vm.md`). It drives Legaia's overworld scripting - NPC
@@ -52,7 +52,7 @@
 //! implementation lives in the engine layer.
 //!
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
-//! REF: FUN_8003AEB0, FUN_8003C764, FUN_8003CA38, FUN_8003CE64, FUN_8003CE9C, FUN_8003CF04
+//! REF: FUN_8003AEB0, FUN_8003C764, FUN_8003CA38, FUN_8003CE9C, FUN_8003CF04
 //! REF: FUN_80042EE0, FUN_80056798, FUN_80058104, FUN_800583C8, FUN_8005842C, FUN_801D2D38
 //! REF: FUN_801D5630, FUN_801D596C, FUN_801D65D8, FUN_801D77F4, FUN_801D8280, FUN_801D835C
 //! REF: FUN_801DAA50, FUN_801DAB90, FUN_801DB8EC, FUN_801DBC20, FUN_801DC0BC, FUN_801DD9D4
