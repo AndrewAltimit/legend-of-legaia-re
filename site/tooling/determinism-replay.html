@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Determinism + replay - legend-of-legaia-re</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/styles.css">
+  
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; determinism + replay</div>
+  <h1>Engine determinism + scripted-input replay</h1>
+  <p class="lede">The engine ships a record/replay loop that captures per-frame pad input to a <code>.toml</code> file and plays it back deterministically. The same input file run twice produces a bit-identical state trace &mdash; that property is asserted by a disc-free regression test so any future change that introduces non-determinism fails CI.</p>
+</header>
+
+<section class="doc-section" id="pieces">
+  <h2>Three pieces</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Lives in</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>j-replay-v1</code> schema</td>
+        <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/src/replay.rs"><code>legaia_engine_shell::replay</code></a></td>
+        <td>TOML format + parser/writer/validator.</td>
+      </tr>
+      <tr>
+        <td>Determinism gate</td>
+        <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/tests/determinism_j2.rs"><code>crates/engine-shell/tests/determinism_j2.rs</code></a></td>
+        <td>Disc-free cargo-test; runs in CI without <code>LEGAIA_DISC_BIN</code>.</td>
+      </tr>
+      <tr>
+        <td><code>legaia-engine record</code> / <code>replay</code></td>
+        <td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/src/bin/legaia-engine.rs"><code>crates/engine-shell/src/bin/legaia-engine.rs</code></a></td>
+        <td>Headless playback + interactive capture.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="format">
+  <h2>File format (<code>j-replay-v1</code>)</h2>
+<pre><code>[meta]
+schema = "j-replay-v1"
+scenario = "title_attract"        # optional; resolves into scripts/scenarios.toml
+rng_seed = 0xDEADC0DE              # initial RNG seed (battle_formulas PsyQ PRNG)
+frames = 600                       # total frame count
+
+# Pad-mask transitions. Sparse: only frames where the bitmask changes
+# are stored. The dense per-frame stream has length `frames + 1` and
+# is reconstructed by `ReplayFile::expand_pad_stream` &mdash; the mask in
+# slot N is the mask in force on frame N.
+[[event]]
+frame = 0
+pad = 0x0000
+
+[[event]]
+frame = 42
+pad = 0x4000                       # Cross pressed
+
+[[event]]
+frame = 44
+pad = 0x0000                       # released
+
+# Optional regression fixture. Each row constrains the recorded
+# engine trace at a specific frame; comparison is by `frame` value,
+# not slice index. `active_scene = None` means don't-care.
+[[expected]]
+frame = 0
+scene_mode = "Title"
+
+[[expected]]
+frame = 600
+scene_mode = "Field"
+active_scene = "town01"</code></pre>
+  <p>Pad bits match <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/src/input.rs"><code>legaia_engine_core::input::PadButton::mask</code></a>: Cross = <code>0x4000</code>, Circle = <code>0x2000</code>, Up = <code>0x0010</code>, Down = <code>0x0040</code>, Left = <code>0x0080</code>, Right = <code>0x0020</code>, and so on. Stored as a plain <code>u16</code> so the on-disk wire form stays byte-readable.</p>
+  <p><code>ReplayFile::validate</code> rejects schema mismatches, out-of-order events, and frame indices past <code>meta.frames</code> at parse time. Writers MUST emit events in frame-ascending order; readers don't sort.</p>
+</section>
+
+<section class="doc-section" id="replay-subcommand">
+  <h2><code>legaia-engine replay</code></h2>
+  <p>Drives a synthetic <code>World</code> from a replay file and emits the per-frame mode trace as JSONL (the same shape as <code>legaia-engine mode-trace</code>):</p>
+<pre><code>legaia-engine replay --input my.replay.toml [--out trace.jsonl] [--strict]</code></pre>
+  <p>The synthetic driver mirrors the determinism-gate harness: <code>World::new</code> + an 8-slot actor pool, RNG seeded from <code>meta.rng_seed</code>, ticked once per replay frame. No disc required.</p>
+  <p><code>--strict</code> exits non-zero on the first divergence between the recorded trace and the file's <code>[[expected]]</code> fixture. Without it, divergence prints to stderr but the command succeeds.</p>
+</section>
+
+<section class="doc-section" id="record-subcommand">
+  <h2><code>legaia-engine record</code></h2>
+  <p>Thin wrapper over <code>play-window</code> with a pad-capture hook armed:</p>
+<pre><code>legaia-engine record --out my.replay.toml [--scene town01] [--scenario LABEL] [--rng-seed 0xDEADC0DE]</code></pre>
+  <p>Every keyboard transition that changes the pad mask is appended to a <code>RecordLog</code> hanging off <code>PlayWindowApp</code>. Escape, window-close, and event-loop drop all flush a <code>j-replay-v1</code> file to the configured output &mdash; a mid-session close still produces a usable replay. Auto-repeat deduplication collapses a stream of identical-mask press events to a single <code>PadEvent</code>.</p>
+  <p>The file's <code>meta.frames</code> reflects the actual recorded duration (highest <code>session.frames</code> observed during the run), so playback of the captured file replays exactly as long as the human session was.</p>
+</section>
+
+<section class="doc-section" id="gate">
+  <h2>Determinism gate</h2>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/tests/determinism_j2.rs"><code>crates/engine-shell/tests/determinism_j2.rs</code></a> is the load-bearing regression check. It drives a synthetic <code>World</code> twice through the same <code>ReplayFile</code> and asserts the per-frame state-trace bytes are bit-identical between runs.</p>
+  <p>The state digest covers:</p>
+  <ul class="bullets">
+    <li><code>frame</code> &mdash; wall-clock counter from <code>World::frame</code></li>
+    <li><code>scene_mode</code> &mdash; matches <code>ModeTraceFrame::scene_mode</code></li>
+    <li><code>pad</code> &mdash; the mask in effect on this frame (from the dense replay stream)</li>
+    <li><code>rng_state</code> &mdash; PsyQ PRNG running state, the single most important drift signal</li>
+    <li><code>money</code>, <code>party_hp_total</code>, <code>dialog_active</code> &mdash; structural gameplay state</li>
+  </ul>
+  <p>Three companion tests double-lock the gate's coverage: a different pad stream produces a different trace (input dimension is observed), a different RNG seed produces a different trace (seed dimension is observed), and an <code>[[expected]]</code> fixture round-trips through <code>ReplayFile::diff</code> so the regression-comparison side stays honest.</p>
+</section>
+
+<section class="doc-section" id="composition">
+  <h2>Composition with the other oracles</h2>
+  <p>The replay format is a peer to the existing parity gates:</p>
+  <ul class="bullets">
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/tests/vram_oracle_e1.rs"><code>vram_oracle_e1</code></a> compares engine VRAM against retail mednafen captures (byte-exact in the texpage region).</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/tests/mode_trace_e3.rs"><code>mode_trace_e3</code></a> compares engine <code>(scene_mode, active_scene)</code> per frame against retail snapshots.</li>
+    <li><code>determinism_j2</code> compares engine traces against <em>themselves</em>, no retail capture required &mdash; the disc-free side of the parity stack.</li>
+  </ul>
+  <p>Recorded replays bind a scenario label in their <code>meta.scenario</code> field, so a captured session can be paired back to its retail starting state via <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/scenarios.toml"><code>scripts/scenarios.toml</code></a>. Future work pairs <code>record</code> + <code>replay</code> with E1 / E3 to produce identical engine traces from canonical inputs.</p>
+</section>
+
+</main>
+</div>
+<script src="../js/layout.js"></script>
+<script>injectLayout({ active: 'tooling/determinism-replay' });</script>
+<script src="../js/main.js"></script>
+</body>
+</html>
