@@ -56,12 +56,45 @@ python3 scripts/port-catalog.py --missing-dumps       # cited but not dumped
 python3 scripts/port-catalog.py --ported-only         # show only ported addresses
 python3 scripts/port-catalog.py --addr 801dd35c       # drill-down on one address
 python3 scripts/port-catalog.py --md                  # markdown to stdout
+python3 scripts/port-catalog.py --list-features       # list features in features.toml
+python3 scripts/port-catalog.py --feature title-screen   # BFS from a feature's roots
 ```
 
 Output is written to `target/port-catalog/` (gitignored):
 
-- `catalog.csv` — every tracked address, machine-readable.
-- `catalog.md` — the same rows as a markdown table.
+- `catalog.csv` / `catalog.md` — every tracked address, machine-readable + markdown.
+- `<feature>.csv` / `<feature>.md` — per-feature subset when `--feature` is used.
+
+## Features (BFS from roots)
+
+A *feature* in this tool is a named set of seed Ghidra function addresses
+(`roots`) plus an optional list of `stop_at` boundaries. Running
+`--feature <name>` filters the catalog to the addresses reachable from those
+roots via the citation graph (one edge per "this dump cites that address").
+
+Features live in `scripts/features.toml`:
+
+```toml
+[title-screen]
+description = "Title overlay tick + boot UI"
+roots = ["801dd35c"]
+# Optional boundaries kept in the result but not recursed past.
+stop_at = ["801de840", "801e295c"]
+# Optional BFS depth cap.
+max_depth = 2
+```
+
+The citation graph only has edges between *dumped* functions — undumped
+helpers have no outgoing edges, so the BFS frontier widens as more dumps
+land. This is intentional: it lets you start tight (small feature with few
+dumps) and progressively widen as you dig in.
+
+Use feature views to:
+
+- Find unported helpers in scope of a specific feature (filter by
+  `--feature X --missing-ports`).
+- Confirm a port is reachable from the feature root.
+- Spot shared-infrastructure spillover that wants a `stop_at` entry.
 
 ## What the columns surface
 

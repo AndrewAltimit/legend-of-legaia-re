@@ -39,7 +39,8 @@ import argparse
 import csv
 import re
 import sys
-from collections import Counter, defaultdict
+import tomllib
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -47,6 +48,7 @@ FUNCS_DIR = REPO / "ghidra" / "scripts" / "funcs"
 DOCS_DIR = REPO / "docs"
 CRATES_DIR = REPO / "crates"
 OUT_DIR = REPO / "target" / "port-catalog"
+FEATURES_TOML = REPO / "scripts" / "features.toml"
 
 # Address ranges that correspond to executable code:
 #   SCUS_942.54   : 0x80010000 - 0x8006FFFF
@@ -177,6 +179,83 @@ def collect_ports() -> dict[str, set[str]]:
             for m in CODE_ADDR_RE.finditer(tag.group(1)):
                 addr = m.group(0).lower()
                 out[addr].add(crate)
+    return out
+
+
+def build_call_graph(sources: dict[str, list[str]]) -> dict[str, set[str]]:
+    """Build forward call-graph edges: `{src_addr: set(cited_addr)}`.
+
+    Each dump filename ends with an 8-hex-digit address that identifies the
+    function the dump documents. For every (cited_addr, [src_files]) entry in
+    `sources`, we derive an edge `src_file_addr -> cited_addr`.
+
+    Note: edges only exist between addresses that are *dumped*. Undumped
+    helpers have no outgoing edges - the BFS frontier widens only as more
+    dumps land.
+    """
+    graph: dict[str, set[str]] = defaultdict(set)
+    addr_re = re.compile(r"([0-9a-fA-F]{8})$", re.IGNORECASE)
+    for cited_addr, src_files in sources.items():
+        for src in src_files:
+            m = addr_re.search(src)
+            if not m:
+                continue
+            src_addr = m.group(1).lower()
+            if src_addr == cited_addr:
+                continue
+            graph[src_addr].add(cited_addr)
+    return graph
+
+
+def bfs_reachable(
+    graph: dict[str, set[str]],
+    roots: list[str],
+    stop_at: set[str] | None = None,
+    max_depth: int | None = None,
+) -> set[str]:
+    """Return the set of addresses reachable from `roots` via citation edges.
+
+    `stop_at` addresses are kept in the result but their callees aren't followed
+    - useful for stopping at shared-infrastructure boundaries (e.g. the generic
+    CD loader) so a feature filter doesn't pull in everything reachable.
+    """
+    visited: set[str] = set()
+    stop_at = stop_at or set()
+    queue: deque[tuple[str, int]] = deque()
+    for r in roots:
+        rl = r.lower()
+        if rl not in visited:
+            visited.add(rl)
+            queue.append((rl, 0))
+    while queue:
+        addr, depth = queue.popleft()
+        if addr in stop_at:
+            continue
+        if max_depth is not None and depth >= max_depth:
+            continue
+        for nxt in graph.get(addr, ()):
+            if nxt not in visited:
+                visited.add(nxt)
+                queue.append((nxt, depth + 1))
+    return visited
+
+
+def load_features() -> dict[str, dict]:
+    """Load feature definitions from scripts/features.toml. Returns {} if missing."""
+    if not FEATURES_TOML.exists():
+        return {}
+    with FEATURES_TOML.open("rb") as f:
+        data = tomllib.load(f)
+    out = {}
+    for name, body in data.items():
+        if not isinstance(body, dict):
+            continue
+        out[name] = {
+            "description": body.get("description", ""),
+            "roots": [r.lower() for r in body.get("roots", [])],
+            "stop_at": {a.lower() for a in body.get("stop_at", [])},
+            "max_depth": body.get("max_depth"),
+        }
     return out
 
 
@@ -369,7 +448,45 @@ def main() -> int:
         action="store_true",
         help="don't write CSV/MD artifacts to target/port-catalog/",
     )
+    ap.add_argument(
+        "--feature",
+        type=str,
+        default="",
+        help="filter to addresses reachable from a feature's roots (see scripts/features.toml)",
+    )
+    ap.add_argument(
+        "--list-features",
+        action="store_true",
+        help="list available features in scripts/features.toml and exit",
+    )
     args = ap.parse_args()
+
+    if args.list_features:
+        features = load_features()
+        if not features:
+            print(f"no features found in {FEATURES_TOML}")
+            return 0
+        print(f"features in {FEATURES_TOML}:")
+        for name, body in features.items():
+            roots = ", ".join(body["roots"]) or "(none)"
+            stop_at = (
+                f"  stop_at: {', '.join(sorted(body['stop_at']))}\n"
+                if body["stop_at"]
+                else ""
+            )
+            depth = (
+                f"  max_depth: {body['max_depth']}\n"
+                if body["max_depth"] is not None
+                else ""
+            )
+            print(f"\n[{name}]")
+            print(f"  description: {body['description']}")
+            print(f"  roots: {roots}")
+            if stop_at:
+                print(stop_at.rstrip())
+            if depth:
+                print(depth.rstrip())
+        return 0
 
     dumped = collect_dumped()
     refs, sources = collect_citations()
@@ -378,14 +495,43 @@ def main() -> int:
 
     rows = build_rows(dumped, refs, sources, docs, ports)
 
+    # Always write the global catalog so the latest state is on disk even when
+    # the user is also drilling into a feature filter.
     if not args.no_write:
         render_csv(rows, OUT_DIR / "catalog.csv")
         render_md(rows, OUT_DIR / "catalog.md", "Port catalog (global)")
+
+    # Feature filter trims rows to BFS-reachable addresses + writes a
+    # per-feature artifact under target/port-catalog/<feature>.{csv,md}.
+    feature_meta: dict | None = None
+    if args.feature:
+        features = load_features()
+        if args.feature not in features:
+            print(
+                f"unknown feature: {args.feature!r}. "
+                f"Available: {', '.join(features) or '(none — populate scripts/features.toml)'}"
+            )
+            return 1
+        feature_meta = features[args.feature]
+        graph = build_call_graph(sources)
+        reachable = bfs_reachable(
+            graph,
+            feature_meta["roots"],
+            stop_at=feature_meta["stop_at"],
+            max_depth=feature_meta["max_depth"],
+        )
+        rows = [r for r in rows if r["addr"] in reachable]
+        if not args.no_write:
+            title = f"Port catalog — feature: {args.feature}"
+            render_csv(rows, OUT_DIR / f"{args.feature}.csv")
+            render_md(rows, OUT_DIR / f"{args.feature}.md", title)
 
     filtered = filter_rows(rows, args)
 
     if args.md:
         title = "Port catalog"
+        if args.feature:
+            title += f" — feature: {args.feature}"
         if args.missing_ports:
             title += " — port worklist (dumped + documented, not ported)"
         elif args.missing_dumps:
@@ -397,6 +543,14 @@ def main() -> int:
         print(render_md(filtered, None, title))
         return 0
 
+    if feature_meta is not None:
+        print(f"[feature: {args.feature}]")
+        print(f"  description: {feature_meta['description']}")
+        print(f"  roots:       {', '.join(feature_meta['roots']) or '(none)'}")
+        if feature_meta["stop_at"]:
+            print(f"  stop_at:     {', '.join(sorted(feature_meta['stop_at']))}")
+        print(f"  reachable:   {len(rows)} addresses")
+        print()
     print(summarize(rows))
     if filtered != rows:
         print()

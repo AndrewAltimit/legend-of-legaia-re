@@ -1,0 +1,59 @@
+# Feature roots for scripts/port-catalog.py --feature <name>.
+#
+# Each entry defines a set of Ghidra function addresses to BFS from
+# through the citation graph. The resulting subgraph is the set of
+# functions reachable from those roots via outgoing call edges. The
+# catalog filter shows only addresses in that subgraph.
+#
+# Citations are only edges between *dumped* functions - undumped
+# helpers have no outgoing edges, so the BFS frontier widens as more
+# dumps land. See docs/tooling/port-catalog.md.
+#
+# Tunables per feature:
+#   roots:     list of seed addresses (hex, lowercase).
+#   stop_at:   addresses kept in the result but not recursed past.
+#              Use for shared infrastructure (BIOS thunks, CD loader,
+#              generic helpers) so the BFS doesn't spill into everything.
+#   max_depth: optional integer cap on BFS depth.
+#   description: human-readable summary.
+
+[title-screen]
+description = "Title overlay tick + boot UI. Drives fade-in, Press Start, New Game / Continue / Options menu."
+roots = ["801dd35c"]
+# Stop at the field-VM and battle dispatchers - they're not in scope of the title flow.
+stop_at = ["801de840", "801e295c"]
+
+[load-screen]
+description = "Save-slot select overlay. Slot list, info panel, slide-in animator, NowChecking / Confirm / Card-init dialogs."
+roots = ["801dd35c", "801e08d8", "801e1c1c"]
+stop_at = ["801de840", "801e295c"]
+
+[battle-action]
+description = "Per-actor battle action state machine + formulas. Six-band selector, 47 outer arms."
+roots = ["801e295c"]
+# Stop at the field VM and BIOS thunks - battle action is self-contained.
+stop_at = ["801de840", "80056798"]
+
+[world-map]
+description = "World-map controller + entity state machine. Camera, top-view debug, NPC pursue/patrol."
+roots = ["801e76d4", "801da51c", "801d362c"]
+stop_at = ["801de840"]
+
+[field-vm]
+description = "Field/event script VM. Largest dispatcher in the corpus (357 outgoing calls). Use max_depth to keep the subgraph tractable."
+roots = ["801de840"]
+max_depth = 2
+# Stop at the move VM extension and BIOS thunks.
+stop_at = ["801d362c", "80056798"]
+
+[cutscene]
+description = "STR FMV playback + cutscene-dialogue trigger paths. Game mode 26, MDEC + XA, six-slot runtime state table."
+roots = ["801cf098", "801e30e4"]
+
+[asset-loader]
+description = "Asset dispatcher + format detectors. FUN_8001F05C type-switch, scene-bundle field-loader chain, LZS decoder."
+roots = ["8001f05c", "8001a55c", "8001f7c0"]
+
+[actor-vm]
+description = "Actor/sprite script VM. Smallest VM in the engine, 13 opcodes, fixed 4-byte instructions."
+roots = ["801d6628"]
