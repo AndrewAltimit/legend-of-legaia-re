@@ -110,3 +110,28 @@ roots = ["8003e4e8"]
 [cd-io]
 description = "CD-IO primitive surface. CD-DMA channel-3 reader, ISO9660 directory lookup, streaming-read IRQ callback + starter. Shared infrastructure beneath asset-loader and any boot-time disc read."
 roots = ["8005d9a0", "8005dbb4", "8005e574", "8005e788"]
+
+# --- Minigame overlays. Each rooted at one or more overlay_<name>-unique addresses
+# (functions that appear in *only* this minigame's overlay dump).
+
+[dance]
+description = "Dance minigame overlay. Rooted at the two largest dance-unique functions; stops at the major shared dispatchers."
+roots = ["801cf470", "801d0750"]
+stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c"]
+
+[fishing]
+description = "Fishing minigame overlay. Single fishing-unique dispatcher; the rest of the overlay is reached transitively."
+roots = ["801cf3bc"]
+
+[slot-machine]
+description = "Casino slot-machine overlay. Two slot-unique entry points; stop_at trims overflow into the world-map / field-VM helpers."
+roots = ["801cf0d8", "801d13e8"]
+stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c"]
+
+[baka-fighter]
+description = "'Baka Fighter' Genesis Tree minigame overlay. Two baka-unique seed addresses."
+roots = ["801cf678", "801d2afc"]
+
+[muscle-dome]
+description = "Muscle Dome minigame overlay. Four muscle-unique addresses in the 0x801F0000+ band; needs more than two roots to expand past leaves."
+roots = ["801f0450", "801f2410", "801f30c4", "801f12d0"]
