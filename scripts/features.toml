@@ -86,3 +86,27 @@ description = "Dev cheat menu. Rendered by FUN_801EAD98 inside the world-map ove
 roots = ["801ead98"]
 # Stop at the field VM, world-map controller, world-map entity SM.
 stop_at = ["801de840", "801e76d4", "801da51c"]
+
+[field-battle-intro]
+description = "Field-to-battle transition overlay. Seven seed addresses unique to overlay_field_battle_intro, none shared with the battle SM or world-map dispatchers."
+roots = [
+    "801cf1b0",
+    "801cf5bc",
+    "801cfda0",
+    "801d0370",
+    "801d081c",
+    "801d0e54",
+    "801d11d0",
+]
+
+[move-vm]
+description = "Move-table opcode VM. FUN_80023070 dispatches 71 ops via JT 0x80010778; op 0x2F escapes to FUN_801D362C (overlay extension, 61 sub-ops, included in scope)."
+roots = ["80023070", "801d362c"]
+
+[boot-toc]
+description = "Boot-time PROT TOC loader. FUN_8003E4E8 reads the first three PROT.DAT sectors into 0x801C70F0 and initialises the dispatcher table."
+roots = ["8003e4e8"]
+
+[cd-io]
+description = "CD-IO primitive surface. CD-DMA channel-3 reader, ISO9660 directory lookup, streaming-read IRQ callback + starter. Shared infrastructure beneath asset-loader and any boot-time disc read."
+roots = ["8005d9a0", "8005dbb4", "8005e574", "8005e788"]
