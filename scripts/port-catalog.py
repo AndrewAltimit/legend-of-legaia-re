@@ -70,10 +70,14 @@ CITATION_RE = re.compile(
     r"(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})"
 )
 
-# Doc-side citation. More permissive: doc text uses `FUN_8003EBE4` (caps) and
-# also bare backtick-wrapped `0x8003e4e8` forms.
+# Doc-side citation. More permissive: doc text uses `FUN_8003EBE4` (caps),
+# bare `0x8003e4e8` forms, and backtick-wrapped bare addresses like
+# `` `80056678` `` (the shape `docs/reference/functions.md` uses in table
+# rows). The backtick form requires an OPENING backtick so we don't false-
+# positive on every hex literal in the SCUS range that happens to occur in
+# tables or paragraphs.
 DOC_CITATION_RE = re.compile(
-    r"(?:FUN_|0x)(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
+    r"(?:FUN_|0x|`)(80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4})",
     re.IGNORECASE,
 )
 
