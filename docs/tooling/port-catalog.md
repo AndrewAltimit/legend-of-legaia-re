@@ -50,6 +50,60 @@ Rules:
 When porting a Ghidra function, add the tag once in the Rust function that
 *implements* its behaviour. Don't tag every caller of the ported function.
 
+## The `// REF:` tag
+
+Sibling of `// PORT:`. Marks an address as a **cross-reference citation** —
+the file mentions `FUN_<addr>` in a docstring or comment but isn't claiming
+to port it. Same comment shapes as `// PORT:` (plain `//`, doc `//!`,
+outer-doc `///`) and same multi-address syntax.
+
+```rust
+//! PORT: FUN_801E30E4
+//! REF: FUN_801E7320, FUN_801CF098  -- callees, not yet ported
+```
+
+`port-catalog.py` ignores REF tags — they don't set the "ported" column —
+but the drift checker (`scripts/check-port-tags.py`, see below) treats them
+as equivalent to PORT for warning suppression.
+
+## Tag drift checker
+
+`scripts/check-port-tags.py` walks `crates/engine-*/src/**.rs` and warns
+when a `FUN_<addr>` citation lacks a matching `// PORT:` or `// REF:` tag
+*in the same file*. The goal is to catch the "I ported X but forgot the
+tag" pattern so the catalog stays in sync with what the engine actually
+implements.
+
+Default mode is `--staged` — only lines being added in the staging area
+are checked, which is what the pre-commit hook runs. `--scan-all` audits
+every line of every engine-crate file (full historical sweep). `--strict`
+turns warnings into a nonzero exit for CI.
+
+```bash
+python3 scripts/check-port-tags.py                  # default = --staged
+python3 scripts/check-port-tags.py --scan-all       # full audit
+python3 scripts/check-port-tags.py --strict         # exit 1 on warning
+python3 scripts/check-port-tags.py --addr 80019b28  # drill-down
+python3 scripts/check-port-tags.py --backfill-refs  # one-shot grandfather pass
+```
+
+**Scope rule:** only files that already carry a `// PORT:` tag are checked.
+Pure-docs files (no port tag anywhere) are treated as reference-only and
+skipped — they exist to describe retail behaviour without claiming ports,
+and requiring REF tags inside them would be churn for no signal.
+
+**Backfill workflow:** `--backfill-refs` rewrites in place. For each
+port-bearing file with untagged citations, it inserts a `//! REF: ...`
+block after the last `//!` line of the leading module-doc comment (or at
+the top of the file if there's no leading block). Re-run whenever new
+ports or citations land to keep the REF set fresh.
+
+**Pre-commit integration:** `scripts/git-hooks/pre-commit` runs
+`check-port-tags.py --staged --quiet` after `cargo clippy`. The hook is
+**warn-only** — drift output prints but never blocks the commit, so the
+checker doesn't gate unrelated PRs. CI can tighten by switching to
+`--strict`.
+
 ## Usage
 
 ```bash
