@@ -1,5 +1,8 @@
 //! Actor / sprite script VM, ported clean-room from `FUN_801D6628`.
 //!
+//! PORT: FUN_801D6628, FUN_800319A8, FUN_800326AC, FUN_80035334, FUN_800357FC
+//! PORT: FUN_800358C0, FUN_80035978, FUN_80035A4C
+//!
 //! `FUN_801D6628` lives in the title-screen / field overlay loaded into the
 //! `0x801C0000+` window at runtime (see `docs/tooling/overlay-capture.md`). It is
 //! the first script VM identified in retail Legaia. It is small (612 bytes,
@@ -65,6 +68,7 @@
 #![forbid(unsafe_code)]
 
 pub mod action_validator;
+pub mod actor_alloc;
 pub mod actor_tick;
 pub mod anim_vm;
 pub mod battle_action;
@@ -76,6 +80,7 @@ pub mod field_disasm;
 pub mod field_helpers;
 pub mod menu;
 pub mod motion_vm;
+pub mod move_buffer;
 pub mod move_vm;
 pub mod prim_dispatch;
 pub mod status_effects;

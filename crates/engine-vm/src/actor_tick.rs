@@ -1,5 +1,7 @@
 //! Per-actor physics tick - clean-room port of `FUN_80021DF4`.
 //!
+//! PORT: FUN_80021DF4, FUN_800250D4, FUN_801D79E8
+//!
 //! `FUN_8002519C` walks the per-frame actor list and calls this function on
 //! every active record. The dispatcher is **not** an "animation interpreter"
 //! the way [`legaia_anm::AnimPlayer`] is - it advances per-actor position /
@@ -51,6 +53,7 @@
 //! as `i16` by the keyframe arm). Both views are kept in sync via the
 //! `path_active` (i32) and `kf_shake[2]` (i16) fields - touching either
 //! field via the public API keeps the other in lockstep.
+//! REF: FUN_800204F8, FUN_8002519C, FUN_80065034, FUN_800657D0
 
 use crate::anim_vm::DispatchByte;
 

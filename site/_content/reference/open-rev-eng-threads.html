@@ -1,0 +1,180 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; open RE threads</div>
+  <h1>Open reverse-engineering threads</h1>
+  <p class="lede">An index of still-open hunts and the negative findings worth not re-walking. Rows are <em>questions</em>, not progress markers &mdash; each entry describes what is settled, what remains, and what would close it. Closing a thread removes or rewrites the row; nothing here counts ports, tests, or coverage.</p>
+</header>
+
+<section class="doc-section" id="overview">
+  <h2>How to use this page</h2>
+  <p>Use this page to find what's worth digging into next. The detailed write-ups, captures, and decompiler dumps live in the per-topic memory files (<code>~/.claude/projects/.../memory/project_&lt;slug&gt;.md</code>) and in the linked docs.</p>
+  <p>Status conventions:</p>
+  <ul class="bullets">
+    <li><strong>open</strong> &mdash; active hunt; concrete next step exists.</li>
+    <li><strong>partial</strong> &mdash; main result pinned; a residual sub-question remains.</li>
+    <li><strong>falsified</strong> &mdash; hypothesis disproved; row kept so the path isn't re-walked.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="world-map">
+  <h2>World map / kingdom bundles</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Kingdom slot 4 &mdash; per-record semantic</td>
+        <td><code>open</code></td>
+        <td>Identify which body bytes feed each per-kind handler in the slot-4 walker. Container layout + consumer (<code>FUN_80043390</code> + 22 kind handlers, kinds 8&ndash;19 across 3 banks) are already pinned.</td>
+        <td><code>project_slot4_is_wireframe_not_terrain.md</code></td>
+      </tr>
+      <tr>
+        <td>Slot-4 &rarr; cluster-A converter site</td>
+        <td><code>open</code></td>
+        <td>Find the function that walks the slot-4 outer pack and feeds cluster A. The converter does not run as a direct overlay read of <code>_DAT_8007B888</code>; the populating site is either an SCUS function-pointer table or an unscanned overlay.</td>
+        <td><code>project_open_work_slot4_cluster_a.md</code></td>
+      </tr>
+      <tr>
+        <td><code>DAT_8007C018[45..53]</code> mid-load vertex-pool pointers</td>
+        <td><code>open</code></td>
+        <td>Single Lua write-watchpoint capture on <code>0x8007C018 + 45*4</code> during scene load to disambiguate stale-pointer vs. live-data. Steady-state model says reads past <code>DAT_8007BB38</code> are stale and never consumed; the mid-load snapshot deserves direct confirmation.</td>
+        <td><code>project_dat_8007c018_global_tmd_table.md</code></td>
+      </tr>
+      <tr>
+        <td>PROT 0874 section-0 outer producer</td>
+        <td><code>partial</code></td>
+        <td>Find the dispatch site that funnels PROT 0874 section 0 through the 3-section <code>parse_player_lzs</code> shape into <code>FUN_80020224</code> &rarr; <code>FUN_8001F05C</code> case 2 &rarr; <code>FUN_80026B4C</code>. Inner dispatch is pinned; outer producer is not. Likely lives in an overlay-resident scene loader (e.g. <code>FUN_801D6704</code> family).</td>
+        <td><code>project_global_tmd_pool_source.md</code> + <code>project_next_session_backlog.md</code> &sect; D</td>
+      </tr>
+      <tr>
+        <td>Drake uncapped cluster-A totals</td>
+        <td><code>open</code></td>
+        <td>Re-run <code>autorun_slot4_dispatcher_args.lua</code> with <code>LEGAIA_PC_CAP=50000</code> and a <code>timeout --kill-after=30s 1500s</code> wrapper. Drake saturated 7 of 9 PCs at PC_CAP=5000; raising the cap closes the cross-kingdom delta table.</td>
+        <td><code>project_open_work_slot4_cluster_a.md</code></td>
+      </tr>
+      <tr>
+        <td>Slot-4 freeze flag <code>_DAT_8007B824</code></td>
+        <td><code>open</code></td>
+        <td>Write-breakpoint probe on <code>_DAT_8007B824</code> during retail play. Either an undumped overlay sets the freeze flag, or the BSS-init zero holds through retail and the "persistent slots" semantic is vestigial.</td>
+        <td><code>project_open_work_slot4_cluster_a.md</code></td>
+      </tr>
+      <tr>
+        <td>World-map outline / coastline reading</td>
+        <td><code>falsified</code></td>
+        <td>Visual inspection plus the slot-4 record-semantic work refuted the "world-map overlay outlines / coastline wireframe" interpretation. Bodies are most likely small object-local 3D meshes; treat any future "kingdom border lines" claim with suspicion.</td>
+        <td><code>project_slot4_is_wireframe_not_terrain.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="battle">
+  <h2>Battle / arts / level-up</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Encounter record carrier</td>
+        <td><code>open</code></td>
+        <td>Pin which PROT entry holds the per-scene encounter-record array (or confirm the carrier is per-actor and there is no array). Record shape + reader (<code>FUN_801DA51C</code> body <code>0x801DA620..0x801DA678</code>) + writer family are settled.</td>
+        <td><code>project_encounter_record_format.md</code></td>
+      </tr>
+      <tr>
+        <td>Super / Miracle Arts trigger logic</td>
+        <td><code>open</code></td>
+        <td>Port the find/replace trigger matcher into <code>engine-vm</code> battle action. Tables and constants are in <code>legaia-art</code>; the trigger SM driving "find string in queue &rarr; replace" is not yet ported.</td>
+        <td><code>project_arts_system.md</code></td>
+      </tr>
+      <tr>
+        <td>Seru growth-rate extraction</td>
+        <td><code>open</code></td>
+        <td>Extract per-Seru stat-growth bytes (Seru struct <code>+0x74</code>) from a Seru-data PROT entry, surface as typed <code>legaia_gamedata::SeruGrowth</code>, and wire into <code>apply_battle_loot</code> for level-up stat application.</td>
+        <td><code>project_shop_ui_and_levelup.md</code> + <code>project_next_session_backlog.md</code> &sect; H</td>
+      </tr>
+      <tr>
+        <td>Terra slot-3 / story-flag overlap</td>
+        <td><code>open</code></td>
+        <td>Diff a real Terra-in-party memory-card save against the slot layout. <code>RETAIL_CHAR_RECORD_HEADER_SIZE + 3 * 0x414 = 0x14AB</code> collides with the <code>0x14C0</code> story-flag region &mdash; either Terra's record is shorter than 0x414, or the engine special-cases slot 3, or the header-size constant drifts.</td>
+        <td><code>project_next_session_backlog.md</code> &sect; G</td>
+      </tr>
+      <tr>
+        <td>Navmesh / per-scene navigation data</td>
+        <td><code>falsified</code></td>
+        <td><code>0x80108EA4..0x80109550</code> is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in field-pack schema slots; the encounter-record path lives at <code>actor[+0x94]</code>.</td>
+        <td><code>project_navmesh_negative_finding.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="text-fonts">
+  <h2>Text / fonts / dialog</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Dialog font extraction</td>
+        <td><code>done &mdash; kept for reference</code></td>
+        <td>Earlier "blocked on runtime trace" framing was wrong; tile-page lives at VRAM <code>(896, 0)..(960, 256)</code>, extracted by <code>legaia-font::font-extract</code> from any in-game save state. Listed here only so the older "open" framing doesn't get re-opened.</td>
+        <td><code>project_dialog_font_hunt.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="title-boot">
+  <h2>Title / boot / overlays</h2>
+  <table>
+    <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th><th>Memory</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>title.pak</code> PROT entry</td>
+        <td><code>open</code></td>
+        <td>Locate the dedicated title-screen PROT entry. <code>PROT 0895 = init.pak</code> is pinned (publisher logos + dev strings); a separate <code>title.pak</code> PROT entry has not yet been pinned.</td>
+        <td><code>project_prot_0895_init_pak.md</code></td>
+      </tr>
+      <tr>
+        <td>Title screen mode-table PROT</td>
+        <td><code>open</code></td>
+        <td>Pin the PROT entry referenced by the title-screen mode in the 14-entry mode table at <code>0x8007078C</code>. Adjacent entries are settled (PROT 973 = slot machine, 899 = options menu); title is still open.</td>
+        <td><code>project_mode_table_structure.md</code></td>
+      </tr>
+      <tr>
+        <td>Load-screen panel 9-slice geometry</td>
+        <td><code>open</code></td>
+        <td>Determine the 9-slice tile geometry the load-screen panel uses to draw its frame. TIM + CLUT source is pinned (<code>PROT.DAT[0x018E0]</code> CLUT row 2, byte-equal to retail VRAM).</td>
+        <td><code>project_load_screen_panel_source_pinned.md</code></td>
+      </tr>
+      <tr>
+        <td>Debug flags <code>0x8007B8C2</code> / <code>0x8007B98F</code></td>
+        <td><code>open</code></td>
+        <td>Identify the overlay-resident writers of the two debug flags. Static analysis finds zero SCUS writers, but the dual-mode loader pattern at <code>FUN_8003E360</code> reads <code>_DAT_8007B8C2</code>, so at least one writer must exist in an unscanned overlay.</td>
+        <td><code>project_debug_flags.md</code></td>
+      </tr>
+      <tr>
+        <td>XP-table reader (LUI+ADDIU)</td>
+        <td><code>falsified</code></td>
+        <td>Zero LUI+ADDIU references to <code>0x8007123C</code> across SCUS plus every captured overlay. The XP table is still real (98 u16 increments, L1&rarr;2 = 50, mirrored in <code>retail_xp_table()</code>); the lookup is either through a <code>gp</code>-relative load or an indirection that LUI+ADDIU scans cannot catch.</td>
+        <td><code>project_xp_split_static_negative.md</code> + <code>project_xp_table_and_cutscene_overlays.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="adding-rows">
+  <h2>When to add a row</h2>
+  <p>A thread belongs here when:</p>
+  <ol class="bullets">
+    <li>There is something <em>specific</em> that would close it &mdash; a probe to run, a dump to read, a function to port. "Generally understand X better" is not closable; skip.</li>
+    <li>The next step is non-obvious from the code or git log. If <code>grep</code> would surface it, no row needed.</li>
+    <li>The detail lives elsewhere (a memory entry, a docs page, a Ghidra dump). The row is the pointer, not the analysis.</li>
+  </ol>
+  <p>When the thread closes, rewrite the row to a <code>falsified</code> or <code>done &mdash; kept for reference</code> line if the path was instructive enough to warrant a "do not re-walk" marker; otherwise delete the row. Rotating the page is part of using it.</p>
+</section>
+
+<section class="doc-section" id="related">
+  <h2>Related pages</h2>
+  <ul class="bullets">
+    <li><a href="../tooling/port-catalog.html"><code>tooling/port-catalog.html</code></a> &mdash; per-function dumped &times; documented &times; ported &times; ignored axes. <code>port-catalog.py --missing-ports</code> is the function-level companion to this page's question-level index.</li>
+    <li><a href="functions.html"><code>reference/functions.html</code></a> &mdash; canonical function directory; the place to learn what a <code>FUN_&lt;addr&gt;</code> mentioned in a row actually does.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/port-catalog-ignore.toml"><code>scripts/port-catalog-ignore.toml</code></a> &mdash; addresses explicitly <em>not</em> worth investigating (statically-linked PsyQ infra). Disjoint from this page.</li>
+  </ul>
+</section>

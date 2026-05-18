@@ -1,5 +1,7 @@
 //! Per-prim renderer dispatch (engine port of `FUN_80043390`).
 //!
+//! PORT: FUN_80043390
+//!
 //! Every per-actor case-5 TMD prim flows through a `(prim_mode,
 //! alpha_state)` lookup that selects one of 20 per-mode renderer
 //! leaves. On retail PSX, the table base is paged in two flavours:

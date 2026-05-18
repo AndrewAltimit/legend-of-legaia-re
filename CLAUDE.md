@@ -101,6 +101,7 @@ How the runtime engine works.
 | [`overlay-capture.md`](docs/tooling/overlay-capture.md) | Mednafen save-state slicing; one-shot pipeline. |
 | [`mednafen-automation.md`](docs/tooling/mednafen-automation.md) | Save-state diff / bisect / scenario manifest; watchpoint-equivalent observation across `.mc{0..9}` snapshots. |
 | [`pcsx-redux-automation.md`](docs/tooling/pcsx-redux-automation.md) | Closed-loop Lua probes layered on PCSX-Redux's breakpoint debugger. Save-state load → arm probes → capture N VSyncs → CSV / snapshot. Catalogue + authoring pattern. |
+| [`port-catalog.md`](docs/tooling/port-catalog.md) | Per-function status catalog: `dumped` (Ghidra) × `documented` (`docs/`) × `ported` (`// PORT: FUN_<addr>` tag in `crates/`) × `ignored` (PsyQ infra in `scripts/port-catalog-ignore.toml`). BFS-from-roots feature views in `scripts/features.toml`. `// REF:` sibling tag for cross-references. `--dashboard` mode emits a single regenerable open-work page. Drift checker `scripts/check-port-tags.py` (warn-only in pre-commit). |
 
 ### Reference - [`docs/reference/`](docs/reference/)
 
@@ -111,6 +112,7 @@ How the runtime engine works.
 | [`builds.md`](docs/reference/builds.md) | TCRF region data; known builds. |
 | [`cheats.md`](docs/reference/cheats.md) | GameShark / Mednafen cheat database parser + classifier; pinned RAM offsets for character record, inventory, battle actor, story flags. |
 | [`gamedata.md`](docs/reference/gamedata.md) | Curated arts/magic/items/weapons/armor/accessories/enemies/shops/casino/fishing tables mined from public walkthroughs. Ground-truth labels for binary records under reverse engineering. |
+| [`open-rev-eng-threads.md`](docs/reference/open-rev-eng-threads.md) | Index of still-open RE hunts + falsified hypotheses worth not re-walking. Question-level companion to `port-catalog.py --dashboard`. |
 
 ### Crates - [`crates/`](crates/)
 
@@ -177,7 +179,7 @@ Top-level pipeline (recommended for end-to-end runs):
 
 ### Disc-gated tests
 
-Two integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` points at a valid `.bin`:
+Several integration tests touch a real disc and only run when `LEGAIA_DISC_BIN` points at a valid `.bin`:
 
 - `crates/iso/tests/disc_pipeline.rs` - disc walk, file count, key file SHA-256s.
 - `crates/extract/tests/validation_suite.rs` - full pipeline, PROT entry count, sub-asset totals, TIM round-trip.

@@ -1,0 +1,251 @@
+# Catalog scope-ignore list for `scripts/port-catalog.py`.
+#
+# Lists Ghidra-traced addresses that are NOT engine-port sites. The clean-room
+# port maps the named clusters to Rust stdlib / wgpu / cpal / direct-API shims
+# rather than line-by-line porting, so they should not contribute to the
+# `--missing-ports` worklist.
+#
+# Format: per-category section, `addr = "reason"` rows.
+# Address must be lowercase 8-hex-digit in the SCUS / overlay code range.
+# The reason is human-readable and shows up in catalog drill-down output.
+#
+# Categories are organisational only - the tool treats all entries the same.
+# Provenance for each entry lives in `docs/reference/functions.md` and the
+# audio / save-screen subsystem docs.
+
+
+# PSX BIOS table dispatchers + syscall thunks. Statically linked PsyQ kernel
+# glue. Engine maps the surrounding logic to native equivalents (kernel events
+# -> std::sync, FlushCache -> no-op on a non-MIPS host, etc.).
+[bios]
+"80056658" = "TestEvent BIOS thunk (jr 0xB0, t1=0x0B)"
+"80056678" = "EnterCriticalSection (syscall(0), a0=1)"
+"80056688" = "ExitCriticalSection (syscall(0), a0=2)"
+"80056698" = "B-vector thunk (li t2,0xB0; jr t2) - one of nine byte-identical linker copies"
+"800566a8" = "B-vector thunk (li t2,0xB0; jr t2)"
+"800566b8" = "B-vector thunk (li t2,0xB0; jr t2)"
+"800566c8" = "B-vector thunk (li t2,0xB0; jr t2)"
+"800566d8" = "B-vector thunk (li t2,0xB0; jr t2)"
+"800566e8" = "B-vector thunk (li t2,0xB0; jr t2)"
+"800566f8" = "B-vector thunk (li t2,0xB0; jr t2)"
+"80056708" = "B-vector thunk (li t2,0xB0; jr t2)"
+"80056718" = "B-vector thunk (li t2,0xB0; jr t2)"
+"80056738" = "A-vector thunk (jr 0xA0) - libapi BIOS dispatcher"
+"80056748" = "strncmp (BIOS A0 0x18)"
+"80056768" = "strlen (BIOS A0 0x1B)"
+"80057014" = "rand (BIOS A0 0x2E)"
+"8005acd8" = "GPU_cw (BIOS A0 0x49)"
+"8005ace8" = "A-vector thunk (jr 0xA0)"
+"8005bbe8" = "FlushCache (BIOS A0 0x44)"
+"8005fd68" = "BIOS B0 0x5B (card init)"
+"8005fd78" = "ChangeClearRCnt (BIOS C0 0x0A)"
+"8006b844" = "WaitEvent BIOS thunk (jr 0xB0, t1=0x0A)"
+"8006d7a4" = "BIOS C0 thunk (li t2,0xC0; jr t2; li t1,0x3) - ChangeThreadSubFunction"
+"8006ee14" = "B-vector thunk (li t2,0xB0; jr t2) - menu/text helper cluster"
+"8006ee24" = "B-vector thunk (li t2,0xB0; jr t2) - menu/text helper cluster"
+"8006ee34" = "B-vector thunk (li t2,0xB0; jr t2) - menu/text helper cluster"
+"8006ee6c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x4E)"
+"8006ee7c" = "B-vector thunk (li t2,0xB0; jr t2; li t1,0x50)"
+
+
+# libc / PsyQ runtime glue. Each maps to a Rust stdlib equivalent.
+[libc]
+"80017888" = "malloc wrapper (alloc-count++, calls FUN_8002b468 best-fit allocator, on null increments OOM-size sum and prints 'malloc_err_size %d')"
+"80017b94" = "free wrapper (alloc-count--, on null prints 'free_err', calls FUN_8002b584 underlying free)"
+"800567b8" = "printf-class formatter (handles %d %x %o %s %f); writes into a static buffer"
+"80056b18" = "printf-class formatter (sister of 800567b8)"
+"80057024" = "memmove (overlap-safe direction-aware copy)"
+"8005acac" = "memset"
+"8005e540" = "memcpy (forward-only byte copy)"
+"8005fccc" = "VSync wait spin (frame-budget gated)"
+"8005ff04" = "irq_mask_swap16 (atomic swap on the 16-bit IRQ mask)"
+"80060a04" = "BREAK 0x105 debug trap"
+
+
+# libgte primitives. The engine emits GTE-equivalent matrix and projection
+# math directly in `crates/engine-render`; the retail wrappers are not
+# carried over.
+[libgte]
+"8005b7c0" = "SetRotMatrix (setCopControlWord(2, 0xD800, x))"
+"8005b7cc" = "SetTransMatrix (setCopControlWord(2, 0xE000, x))"
+"8005adb8" = "Fixed-point bit-rotation / arc helper (85-instr ladder)"
+"8005af0c" = "isqrt-style normalise (wraps 8005ba1c)"
+"8005ba1c" = "GTE sqrt / normalise (mtc2 0xF000 / mfc2 0xF800)"
+"8005ba68" = "GTE 3-point transform helper (RTPT)"
+"8005b038" = "GTE RTPS (perspective-transform-single) vertex-batch loop (cop2 0x198003D in a per-vertex stride-8 loop)"
+"8003d344" = "GTE NCLIP (cop2 0x480012) - 9-instruction normal-clip helper; engine emits via wgpu winding test"
+"80026988" = "Euler-angle (x,y,z) -> 3x3 rotation matrix via sin/cos LUTs at DAT_8007B7F8 / DAT_8007B81C; engine uses glam::Mat3::from_euler"
+"800460ac" = "GTE NCDS (cop2 0x280030) - 3-iter normal color-depth color single loop; engine emits lighting via wgpu fragment shader"
+"800172c0" = "Camera / geometry init (Euler -> matrix via 80026988 + SetGeomScreen/Offset/Translation 8005B648/B3A8/B4B8 + NCLIP 8003D344); pure libgte chain replaced by glam Mat4 + wgpu pipeline"
+"8005bb48" = "InitGeom - exception-handler table install + FlushCache"
+
+
+# libcd primitives and the ISO9660 / streaming-read stack above them.
+# The engine reads PROT.DAT through `legaia-iso` + `legaia-prot` directly.
+[libcd]
+"8005a78c" = "Pad / SIO init (SIO MMIO + RX/TX buffer clear)"
+"8005abd0" = "Pad-protocol-phase handshake (digital-pad protocol selector)"
+"8005bd70" = "getLoc-equivalent state-buffer getter (returns &DAT_800793c8)"
+"8005befc" = "CdControl wrapper (FUN_8005befc(2,...) issues CdlSetloc)"
+"8005c2c4" = "CdDiskReady (wraps 8005d9a0)"
+"8005c328" = "LBA -> BCD-MSF converter"
+"8005c42c" = "BCD-MSF -> LBA converter (((m*60 + s)*75 + f) - 150)"
+"8005c4ac" = "libcd internal poll/state target (CdSync recurses through here)"
+"8005ccb4" = "CdSync (179-instr poll loop)"
+"8005d9a0" = "CdControl_raw / CD-DMA-channel-3 synchronous read primitive"
+"8005dbb4" = "ISO9660 directory lookup"
+"8005dea0" = "Directory parser (caches up to 128 entries at 0x801C4BEC)"
+"8005e180" = "Directory-entry lookup by ID"
+"8005e228" = "File loader (reads sectors from a directory entry)"
+"8005e4d4" = "Synchronous LBA-based file reader (high-level open-then-read)"
+"8005e574" = "CD sector-reader state machine / streaming-read per-IRQ callback"
+"8005e788" = "Streaming-read starter (registers 8005e574 as IRQ callback)"
+"8005e9a4" = "Public streaming-read API (sector_count, dest_buffer, mode_flags)"
+
+
+# libgs / libgpu primitives. The clean-room renderer in `engine-render` emits
+# its own GP0 / OT / draw-env machinery; the retail PsyQ wrappers below are
+# 1:1 PsyQ entry points that wrap a vtable dispatch + dev-string printf, plus
+# a couple of inline addPrim-shape helpers Sony's build emitted as real
+# functions rather than macros (presumably to save code size given call counts
+# in the 100s).
+[libgs]
+"8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
+"80057c44" = "ResetGraph (vtable dispatch + dev-string printf wrapper)"
+"80057fec" = "GetGraphDebug (returns DAT_80078d54)"
+"8005800c" = "DrawSyncCallback"
+"80058068" = "SetDispMask"
+"80058104" = "DrawSync"
+"80058170" = "Internal RECT validator (debug-mode bounds check + printf)"
+"80058298" = "ClearImage (vtable dispatch + dev-string printf wrapper)"
+"800583c8" = "LoadImage (vtable dispatch + dev-string printf wrapper)"
+"8005842c" = "StoreImage (vtable dispatch + dev-string printf wrapper)"
+"80058490" = "MoveImage (vtable dispatch + dev-string printf wrapper)"
+"8005860c" = "ClearOTagR"
+"80058704" = "DrawOTag"
+"80058778" = "PutDrawEnv"
+"8005887c" = "DrawOTagEnv"
+"800589d0" = "PutDispEnv"
+"80059bd4" = "LoadImage2 / MoveImage internal (DMA over GPU MMIO ports DAT_80078e24/E28)"
+"80059c00" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
+"80059de4" = "Intra-function label inside FUN_80059bd4 (Ghidra-promoted fake entry)"
+
+
+# libetc / libcomb (VSync, frame-pacing) plus SCUS-resident dev-instrumentation
+# helpers (in-game debug-string formatter, dev path-based file reader). The
+# engine uses Rust's logging stack (tracing / env_logger) and ISO9660 directly;
+# none of these have engine equivalents.
+[libetc]
+"8001a068" = "in-game dev-string formatter / on-screen log printer. Reads format string, writes RGB 0x808080 cell, %-escape walker. Called via 8001a09c-style wrapper that takes (fmt, args...) and pushes a text primitive."
+"8003e6bc" = "dev host-FS reader: (path, dest) -> fopen + fseek/SEEK_END for size + fread + zero-pad to 0x800 sector. Calls libapi 800608f0/80060920/80060944/80060910. The retail dual-mode loader's debug branch; clean-room engine reads from disc via ISO9660 only."
+"8005fb84" = "VSync(N) handler - wraps 8005fccc with frame-counter math"
+
+
+# libapi file API + device-vtable trampoline. These back the dev branch's
+# fopen / fseek / fread / fclose path; the engine uses std::fs.
+[libapi]
+"800608e0" = "libapi fopen (kernel-call wrapper around BIOS A0 table)"
+"800608f0" = "libapi file-API leaf (fopen / fseek / fread / fclose cluster)"
+"80060910" = "libapi file-API leaf"
+"80060920" = "libapi file-API leaf"
+"80060944" = "libapi chunk reader (loops over 80060a04 BREAK 0x105 boundary)"
+"8005fd88" = "libapi device-vtable trampoline (slot +0xC of PTR_PTR_8007A860)"
+
+
+# Sony SsAPI sequencer (libsnd). The clean-room `engine-audio::Sequencer`
+# replaces this cluster end-to-end; see `docs/subsystems/audio.md`.
+[libsnd]
+"80061c68" = "_SsSeqGetVar (MIDI varint delta-time decoder)"
+"80061d18" = "SsSeqClose (full close - clears bitmap + memsets channels)"
+"80061e94" = "SsSeqClose short-arg shim (tail-calls 80061d18)"
+"80061edc" = "SsSeqSetVol"
+"8006206c" = "_SsSetSlideVolume (ramp from->to over N ticks)"
+"80062340" = "SsSeqOpen (slot-bitmap walk + load)"
+"80062410" = "_SsSeqInit (validates magic + reads PPQN / BPM / TPQ)"
+"8006275c" = "SsSeqPlay (clears stop/end flags, sets active bit)"
+"8006282c" = "SsSeqPlay 1-arg shim"
+"80062880" = "Pause/Resume shim (tail-calls 800628f0)"
+"800628f0" = "_SsSeqCtrl (Stop / Pause / Resume state core)"
+"80062aa0" = "SsSetMVol ([cmd=3, x*0x81, y*0x81] -> SPU cmd dispatcher)"
+"800641ec" = "SsSeqRewind / SsSeqReplay"
+"80065034" = "SsAPI key-on (called by actor-VM positional SFX emitter)"
+"800653c8" = "SsVabClose helper (validates VAB id, calls FUN_80067480)"
+"80065440" = "Single-shot SPU command ([cmd=6, p1*0x81, p2*0x81])"
+"800657d0" = "Volume-only update (actor-VM positional SFX)"
+"80065978" = "_SsVoKeyOnDirect (allocates voice, writes pitch/base note)"
+"80065b88" = "SsResetTranspose (zeros transpose base)"
+"80066e50" = "_SsPitchFromKey (12-entry pitch table at _DAT_8007A940)"
+"80067480" = "SsVabClose helper (per-slot record reset)"
+"80067550" = "_SsVoNoteOn (master-vol x velocity x pan square-law mix)"
+"80067e9c" = "_SsSeqNoteOn (sequence-driven keyon)"
+"800683d8" = "SsVabTransfer (VAB program-attr lookup)"
+"800684cc" = "SsVabClose (by VAB-ID search)"
+"80068b98" = "SsSeqOpen (slot/track-count bounds-check)"
+"80068c5c" = "SsSeq auto-poll on (_DAT_801CE330 = 1)"
+"80068c80" = "SsSeqClose (calls SpuFree on resident addr)"
+"80068d34" = "SsSeqPlay 1-shot wrapper"
+"80068d94" = "SsSepOpen / SEP loader core (988 bytes; 'VAP' magic validate + write to SPU)"
+"80069170" = "SsSeqPlayResolved (final play-start stage)"
+"80069230" = "Streaming SEP feeder (partial-buffer continuation)"
+"80069390" = "SsIsEos (tail-call to 8006bbc8)"
+"8006ca7c" = "SsSeqGetStatus"
+"8006cb3c" = "SsSeqGetAttr (attr_id switch)"
+"8006cdb0" = "SsSeqSetCallback"
+"8006ce30" = "SsSeqSetUserData"
+"8006d7b4" = "_SsSeqSetUserDataInner"
+"8006ddc8" = "SsSeqSetMarkCallback"
+
+
+# libspu primitives + SPU DMA transfer engine. Replaced by clean-room
+# software SPU in `engine-audio`.
+[libspu]
+"800697e0" = "_SpuTransfer outer wrapper (non-DMA CPU copy path)"
+"80069b18" = "_spu_t core (4-mode SPU transfer state machine)"
+"80069da8" = "SpuWrite (top-level; picks DMA vs CPU copy path)"
+"80069e98" = "_SpuSetReg16 (direct SPU register writer)"
+"80069ee0" = "_SpuAddrAlign"
+"8006a020" = "_spu_a (read direction)"
+"8006a04c" = "_spu_a (write direction)"
+"8006a078" = "SPU register-settling delay (60-iter busy-wait)"
+"8006a158" = "SsSpuMalloc core (block-table allocator)"
+"8006a420" = "SpuFree compactor"
+"8006a728" = "SpuFree (flips matching addr's high bit, calls compactor)"
+"8006a7a4" = "SpuSetReverbVol (3-mode wrapper)"
+"8006aa90" = "SpuSetReverbDepth"
+"8006ac30" = "SpuMallocCheck"
+"8006acbc" = "SpuSetVoiceAttr (mask-driven dispatcher, 1272 bytes)"
+"8006b1b4" = "SpuSetReverbModeParam (30-attr reverb commit, regs 0x1C0..0x1FE)"
+"8006b6a8" = "SpuSetReverbWorkAreaStart (SPU-RAM zero-fill via 0x400 chunks)"
+"8006ba50" = "SpuSetTransferStartAddr"
+"8006bab0" = "SpuGetTransferStartAddr"
+"8006bb08" = "SpuSetTransferMode"
+"8006bb3c" = "SpuWrite (streaming-write continuation)"
+"8006bbc8" = "SpuIsTransferCompleted (polls kernel event via TestEvent thunk)"
+"8006bc70" = "SpuSetTransferCallback (block flag)"
+"8006bc9c" = "SpuIsTransferPaused"
+"8006bcb4" = "SpuSetCommonAttr (master vol L/R + reverb regs)"
+"8006c048" = "SpuSetVoiceAttr broadcaster (24-voice loop, 1548 bytes)"
+"8006c6e4" = "_SsKey2Pitch (two-octave-table pitch math)"
+"8006d2ac" = "Audio subsystem init (wraps BIOS C0 thunk in Enter/ExitCriticalSection)"
+"8006ef18" = "SPU voice-state init sequence (calls 8006ef68 / 8006f088 / 8006f118 in order)"
+
+
+# Intra-function labels inside the field/event script-VM dispatcher
+# `FUN_801DE840` that Ghidra promoted to fake `FUN_xxxxxxxx` function names.
+# Each entry is really a `j epilogue` target with an `addiu s8, s8, N` PC-delta
+# prelude; calling "into" the label just supplies the PC delta and falls
+# through to the dispatcher tail. The catalogue lives in
+# `docs/subsystems/script-vm.md#intra-function-label-catalogue`. The engine
+# port models each label's PC delta directly inside its dispatcher (see
+# `crates/engine-vm/src/field.rs`), so there is no separate function to port.
+[field_vm_labels]
+"801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
+
+
+# Identity / no-op thunks at addresses outside the PsyQ region. These are
+# `jr ra; move v0, a0` two-instruction wrappers that return their input
+# verbatim - probably leftover dev scaffolding or placeholder slots in a
+# vtable-style dispatch. The engine port inlines what would be the identity
+# passthrough; there is nothing to model.
+[identity_thunks]
+"801e38d0" = "Overlay identity thunk (`jr ra; move v0, a0`). Called by FUN_801DD35C menu dispatcher (`a0 = state[+0x204]`) and the title-overlay tick at `801dd6b0`; the menu / title state code reads the input value back unmodified. See `docs/subsystems/boot.md` lines 216, 228."

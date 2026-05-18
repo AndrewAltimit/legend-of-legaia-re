@@ -1,5 +1,7 @@
 //! Dialog panel: clean-room port of the field VM's dialog opener path.
 //!
+//! PORT: FUN_8001FD44, FUN_801D84D0
+//!
 //! Wraps a [`legaia_mes::DialogPlayer`] in the runtime state the retail
 //! dialog renderer holds: the typed-out glyph buffer for the current page,
 //! a pen color tracked through `0xCF` color-change escapes, and an explicit
@@ -16,6 +18,7 @@
 //! Layout / GPU bridging lives in `legaia-engine-render` -
 //! [`text_draws_for`](../../legaia_engine_render/fn.text_draws_for.html)
 //! consumes the [`Self::page_glyphs`] byte stream via [`legaia_font::Font`].
+//! REF: FUN_80036888
 
 use legaia_mes::{DialogPlayer, Interpreter, MesEvent, PlayerState};
 use std::sync::Arc;

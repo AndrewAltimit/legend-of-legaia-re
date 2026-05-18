@@ -1,5 +1,7 @@
 //! FMV / pre-rendered cutscene helpers.
 //!
+//! PORT: FUN_801E30E4, FUN_801CF098
+//!
 //! The retail field VM triggers an FMV via opcode `0x4C 0xE2`
 //! (handler at `0x801E30E4` in the cutscene-dialogue overlay). The
 //! handler writes the s16 operand to `_DAT_8007BA78` (FMV index used

@@ -72,10 +72,14 @@ def find_function_end(a, max_instrs=2000):
 
 def dump_func(func, out_path):
     if os.path.exists(out_path):
+        print("[dump_func] skip {} (file exists)".format(out_path))
         return False
     body = func.getBody()
     instrs = list(listing.getInstructions(body, True))
-    if len(instrs) < 4:
+    if len(instrs) < 2:
+        # `< 2` lets through legitimate `jr ra; nop` PsyQ thunks while still
+        # rejecting completely empty regions or single-instruction garbage.
+        print("[dump_func] skip {} ({} instrs, too short)".format(out_path, len(instrs)))
         return False
     with open(out_path, "w") as fh:
         fh.write("== {} {} (entry={}) ==\n".format(
@@ -101,6 +105,7 @@ def dump_func(func, out_path):
 
 with open(ADDRS_FILE) as fh:
     target_addrs = [line.strip() for line in fh if line.strip()]
+print("[force_disasm] loaded {} targets from {}".format(len(target_addrs), ADDRS_FILE))
 
 count_dumped = 0
 count_failed = 0
@@ -108,6 +113,11 @@ count_failed = 0
 for hs in target_addrs:
     a = addr(hs)
     if a is None:
+        print("[force_disasm] bad addr: {!r}".format(hs))
+        continue
+    blk = mem.getBlock(a)
+    if blk is None:
+        print("[force_disasm] {} not in any block (skip)".format(hs))
         continue
     # Already a function?
     if fm.getFunctionAt(a) is not None:
@@ -128,7 +138,11 @@ for hs in target_addrs:
         count_failed += 1
         continue
     end_addr, n_instrs = find_function_end(a)
-    if end_addr is None or n_instrs < 8:
+    if end_addr is None or n_instrs < 2:
+        # < 2 still rejects empty / data regions but lets through legitimate
+        # 2-instruction stubs (`jr ra; nop` PsyQ thunks). The earlier < 8
+        # heuristic was tuned for noise avoidance on speculative force-disasm
+        # batches; explicit targets pre-filtered by port-catalog don't need it.
         print("skip {} (too short or no end: {} instrs)".format(hs, n_instrs))
         count_failed += 1
         continue

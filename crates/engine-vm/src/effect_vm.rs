@@ -1,5 +1,7 @@
 //! Battle-effect VM, ported clean-room from the `0898_xxx_dat` battle overlay.
 //!
+//! PORT: FUN_801DE914, FUN_801DFDF8, FUN_801E0088
+//!
 //! See [`docs/subsystems/effect-vm.md`](../../../docs/subsystems/effect-vm.md)
 //! for the authoritative byte-level reference. This crate ports the high-
 //! confidence pieces - the slot pool layout, the per-effect script header
@@ -30,6 +32,7 @@
 //! `overlay_battle_801dfdf8.txt`, and `overlay_battle_801e0088.txt` is the
 //! *spec*, not source. Tests use hand-authored synthetic scripts (no Sony
 //! bytes).
+//! REF: FUN_801D8DE8
 
 #![allow(clippy::too_many_arguments)]
 

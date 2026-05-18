@@ -1,5 +1,8 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
+//! PORT: FUN_80034b78, FUN_8002C69C, FUN_8002C488, FUN_8002B994, FUN_8003C310
+//! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC
+//!
 //! Owns a wgpu device + surface, plus two render pipelines:
 //!
 //! * **Textured-quad** (Phase 1 TIM viewer) - `upload_texture` +

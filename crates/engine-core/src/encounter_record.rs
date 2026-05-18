@@ -1,5 +1,7 @@
 //! Retail-shaped encounter record parser.
 //!
+//! PORT: FUN_801DA51C
+//!
 //! On retail hardware the field VM installs a pointer to one of these records
 //! at `actor[+0x94]` when an "encounter armed" op fires; the world-map /
 //! field entity tick (`FUN_801DA51C`, body at `0x801DA620..0x801DA678`)
@@ -28,6 +30,7 @@
 //!
 //! See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md) for
 //! the full provenance.
+//! REF: FUN_800520F0
 
 use serde::{Deserialize, Serialize};
 

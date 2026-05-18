@@ -1,5 +1,7 @@
 //! Per-actor status-effect tracker.
 //!
+//! PORT: FUN_801E295C
+//!
 //! Tracks the set of status conditions afflicting each battle actor and
 //! folds them down into per-turn ticks. The retail engine stores status
 //! flags as a packed bitfield on the battle-actor struct (`+0x130` per

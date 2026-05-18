@@ -1,5 +1,7 @@
 //! Legaia asset descriptor + dispatcher.
 //!
+//! PORT: FUN_8001F05C, FUN_8001A8B0
+//!
 //! The game's loader (`FUN_8001f05c` in `SCUS_942.54`) takes a buffer plus a
 //! single u32 packing `(type << 24) | (size & 0xFFFFFF)` and dispatches to a
 //! type-specific handler. Each asset can be either LZS-compressed (the common

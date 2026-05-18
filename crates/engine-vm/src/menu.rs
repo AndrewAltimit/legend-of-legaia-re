@@ -2,6 +2,8 @@
 //! overlay's top-level dispatcher (`FUN_801DD35C` in the captured
 //! `overlay_menu` program).
 //!
+//! PORT: FUN_801DD35C
+//!
 //! Shape: not an opcode VM (the menu doesn't run bytecode like the field
 //! / move VMs), but a state machine driven by input + a frame counter,
 //! with an outer `switch(state)` over ~28 numeric states. Mirrors the
@@ -23,6 +25,7 @@
 //!
 //! See [`docs/subsystems/`] for the menu-VM doc page (TODO: add when
 //! the second pass lands).
+//! REF: FUN_801E38D0
 
 // Menu is a state machine, not an opcode VM - no shared host dependency
 // with the actor / move / field VMs.

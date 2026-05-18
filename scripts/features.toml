@@ -1,0 +1,137 @@
+# Feature roots for scripts/port-catalog.py --feature <name>.
+#
+# Each entry defines a set of Ghidra function addresses to BFS from
+# through the citation graph. The resulting subgraph is the set of
+# functions reachable from those roots via outgoing call edges. The
+# catalog filter shows only addresses in that subgraph.
+#
+# Citations are only edges between *dumped* functions - undumped
+# helpers have no outgoing edges, so the BFS frontier widens as more
+# dumps land. See docs/tooling/port-catalog.md.
+#
+# Tunables per feature:
+#   roots:     list of seed addresses (hex, lowercase).
+#   stop_at:   addresses kept in the result but not recursed past.
+#              Use for shared infrastructure (BIOS thunks, CD loader,
+#              generic helpers) so the BFS doesn't spill into everything.
+#   max_depth: optional integer cap on BFS depth.
+#   description: human-readable summary.
+
+[title-screen]
+description = "Title overlay tick + boot UI. Drives fade-in, Press Start, New Game / Continue / Options menu."
+roots = ["801dd35c"]
+# Stop at the field-VM and battle dispatchers - they're not in scope of the title flow.
+stop_at = ["801de840", "801e295c"]
+
+[load-screen]
+description = "Save-slot select overlay. Slot list, info panel, slide-in animator, NowChecking / Confirm / Card-init dialogs."
+roots = ["801dd35c", "801e08d8", "801e1c1c"]
+stop_at = ["801de840", "801e295c"]
+
+[battle-action]
+description = "Per-actor battle action state machine + formulas. Six-band selector, 47 outer arms."
+roots = ["801e295c"]
+# Stop at the field VM and BIOS thunks - battle action is self-contained.
+stop_at = ["801de840", "80056798"]
+
+[world-map]
+description = "World-map controller + entity state machine. Camera, top-view debug, NPC pursue/patrol."
+roots = ["801e76d4", "801da51c", "801d362c"]
+stop_at = ["801de840"]
+
+[field-vm]
+description = "Field/event script VM. Largest dispatcher in the corpus (357 outgoing calls). Use max_depth to keep the subgraph tractable."
+roots = ["801de840"]
+max_depth = 2
+# Stop at the move VM extension and BIOS thunks.
+stop_at = ["801d362c", "80056798"]
+
+[cutscene]
+description = "STR FMV playback + cutscene-dialogue trigger paths. Game mode 26, MDEC + XA, six-slot runtime state table."
+roots = ["801cf098", "801e30e4"]
+
+[asset-loader]
+description = "Asset dispatcher + format detectors. FUN_8001F05C type-switch, scene-bundle field-loader chain, LZS decoder."
+roots = ["8001f05c", "8001a55c", "8001f7c0"]
+
+[actor-vm]
+description = "Actor/sprite script VM. Smallest VM in the engine, 13 opcodes, fixed 4-byte instructions."
+roots = ["801d6628"]
+
+[field-load]
+description = "Scene-asset loader frame. FUN_8001F7C0 walks the per-scene file list; FUN_800255B8 streams sub-assets per chunk. Distinct from `asset-loader` which is the type-byte dispatcher."
+roots = ["8001f7c0", "800255b8"]
+# Stop at the asset dispatcher + LZS decoder - those are shared infra.
+stop_at = ["8001f05c", "8001a55c"]
+
+[name-input]
+description = "Name-input overlay (post-intro NEW GAME naming UI). Lives in the overlay_dialog_typing slot."
+roots = ["801d01b0"]
+# Field VM and battle action live in adjacent overlay slots - don't follow.
+stop_at = ["801de840", "801e295c", "801dd35c"]
+
+[field-menu]
+description = "In-field pause menu (Items / Magic / Equip / Status / Save). Lives in the overlay_menu slot; dispatcher FUN_801DE234 is overlay_menu-specific."
+roots = ["801de234"]
+# Stop at the field VM, battle SM, title/save UI dispatcher.
+stop_at = ["801de840", "801e295c", "801dd35c", "801e08d8"]
+
+[shop]
+description = "Shop / inn UI. FUN_801DA2A0 is unique to the overlay_shop_save slot (everything else in shop_save also lives in overlay_menu)."
+roots = ["801da2a0"]
+stop_at = ["801de840", "801e295c", "801dd35c"]
+
+[debug-menu]
+description = "Dev cheat menu. Rendered by FUN_801EAD98 inside the world-map overlay."
+roots = ["801ead98"]
+# Stop at the field VM, world-map controller, world-map entity SM.
+stop_at = ["801de840", "801e76d4", "801da51c"]
+
+[field-battle-intro]
+description = "Field-to-battle transition overlay. Seven seed addresses unique to overlay_field_battle_intro, none shared with the battle SM or world-map dispatchers."
+roots = [
+    "801cf1b0",
+    "801cf5bc",
+    "801cfda0",
+    "801d0370",
+    "801d081c",
+    "801d0e54",
+    "801d11d0",
+]
+
+[move-vm]
+description = "Move-table opcode VM. FUN_80023070 dispatches 71 ops via JT 0x80010778; op 0x2F escapes to FUN_801D362C (overlay extension, 61 sub-ops, included in scope)."
+roots = ["80023070", "801d362c"]
+
+[boot-toc]
+description = "Boot-time PROT TOC loader. FUN_8003E4E8 reads the first three PROT.DAT sectors into 0x801C70F0 and initialises the dispatcher table."
+roots = ["8003e4e8"]
+
+[cd-io]
+description = "CD-IO primitive surface. CD-DMA channel-3 reader, ISO9660 directory lookup, streaming-read IRQ callback + starter. Shared infrastructure beneath asset-loader and any boot-time disc read."
+roots = ["8005d9a0", "8005dbb4", "8005e574", "8005e788"]
+
+# --- Minigame overlays. Each rooted at one or more overlay_<name>-unique addresses
+# (functions that appear in *only* this minigame's overlay dump).
+
+[dance]
+description = "Dance minigame overlay. Rooted at the two largest dance-unique functions; stops at the major shared dispatchers."
+roots = ["801cf470", "801d0750"]
+stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c"]
+
+[fishing]
+description = "Fishing minigame overlay. Single fishing-unique dispatcher; the rest of the overlay is reached transitively."
+roots = ["801cf3bc"]
+
+[slot-machine]
+description = "Casino slot-machine overlay. Two slot-unique entry points; stop_at trims overflow into the world-map / field-VM helpers."
+roots = ["801cf0d8", "801d13e8"]
+stop_at = ["801de840", "801e295c", "801e76d4", "801dd35c", "801da51c"]
+
+[baka-fighter]
+description = "'Baka Fighter' Genesis Tree minigame overlay. Two baka-unique seed addresses."
+roots = ["801cf678", "801d2afc"]
+
+[muscle-dome]
+description = "Muscle Dome minigame overlay. Four muscle-unique addresses in the 0x801F0000+ band; needs more than two roots to expand past leaves."
+roots = ["801f0450", "801f2410", "801f30c4", "801f12d0"]

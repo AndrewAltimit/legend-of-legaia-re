@@ -1,5 +1,7 @@
 //! Title-overlay sub-mode dispatcher.
 //!
+//! PORT: FUN_801DD35C
+//!
 //! The title-overlay per-frame tick `FUN_801DD35C` (in
 //! `ghidra/scripts/funcs/overlay_title_801ddccc.txt`) fans out via a
 //! 25-entry jump table at PSX virtual address `0x801CF244`. The selector
@@ -104,6 +106,7 @@
 //!
 //! No Sony bytes are stored in this module - the JT entries are PSX
 //! virtual addresses (numbers), not extracted overlay contents.
+//! REF: FUN_801E38D0
 
 #![forbid(unsafe_code)]
 

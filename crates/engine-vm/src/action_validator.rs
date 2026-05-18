@@ -1,5 +1,7 @@
 //! Action validator - clean-room port of `FUN_8003fb10`.
 //!
+//! PORT: FUN_8003FB10, FUN_80046898
+//!
 //! The retail battle / menu UI calls this routine before committing a player
 //! choice ("can party member N use this item / spell on slot M?"). It reads
 //! HP / MP / status / item-count / stat caps from the active record (a battle
@@ -28,6 +30,7 @@
 //!
 //! Same rules as `crate::battle_action`: no Sony bytes embedded, the dump is
 //! the spec. Tests use synthetic stats.
+//! REF: FUN_8003CE64
 
 #![allow(clippy::too_many_arguments)]
 

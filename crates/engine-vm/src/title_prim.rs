@@ -1,5 +1,7 @@
 //! SCUS-side GPU primitive helpers the title overlay calls directly.
 //!
+//! PORT: FUN_80058298, FUN_80058490, FUN_800198E0
+//!
 //! The title-overlay per-frame tick `FUN_801DD35C` (modelled in
 //! [`crate::title_overlay`]) reaches into three SCUS-side helpers to
 //! emit GPU primitives:
@@ -59,6 +61,7 @@
 //!
 //! No Sony bytes are stored in this module - only call shapes, struct
 //! layouts (numeric offsets), and the dispatch control flow.
+//! REF: FUN_800583C8, FUN_801DD35C, FUN_801E1C1C, FUN_801E36C4, FUN_801E373C, FUN_801E3EE0
 
 #![forbid(unsafe_code)]
 

@@ -1539,6 +1539,8 @@ impl World {
     }
 
     /// Activate a slot and return a mutable reference to the actor.
+    ///
+    /// PORT: FUN_80020DE0
     pub fn spawn_actor(&mut self, slot: usize) -> &mut Actor {
         let a = &mut self.actors[slot];
         a.active = true;

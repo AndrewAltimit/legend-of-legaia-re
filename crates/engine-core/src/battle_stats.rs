@@ -1,5 +1,7 @@
 //! Equipment-aware battle stat aggregator.
 //!
+//! PORT: FUN_80042558
+//!
 //! Clean-room port of the per-frame stat resolver in
 //! `ghidra/scripts/funcs/80042558.txt` (`FUN_80042558`). The retail
 //! routine reads the active character record's base stat block, walks

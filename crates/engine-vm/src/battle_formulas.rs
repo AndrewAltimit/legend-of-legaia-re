@@ -6,6 +6,12 @@
 //! selector-dispatch - that lives next to the state machine in
 //! [`crate::battle_action`]. This module is the **arithmetic kernel** that
 //! every selector eventually feeds into.
+//!
+//! PORT: FUN_80056798 (PsyQ rand; full per-formula attribution lives on
+//! the individual `pub fn` docs below).
+//! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
+//! module ports the arithmetic kernel the dispatch feeds into).
+//! REF: FUN_801E295C, FUN_801EED1C
 
 #![allow(clippy::too_many_arguments)]
 
