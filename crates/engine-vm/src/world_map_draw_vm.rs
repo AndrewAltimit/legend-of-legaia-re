@@ -1,5 +1,7 @@
 //! Overlay-resident move-VM extension dispatcher (`FUN_801D362C`).
 //!
+//! PORT: FUN_801D362C
+//!
 //! `FUN_801D362C` is the dispatcher reached from the move-VM
 //! (`FUN_80023070`) when the outer move-VM opcode is `0x2F` (overlay
 //! extension). It walks one inner sub-opcode and returns an advance

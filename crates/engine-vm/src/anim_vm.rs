@@ -1,5 +1,7 @@
 //! Per-actor animation runtime - wraps the actor-tick anim dispatch.
 //!
+//! PORT: FUN_80024CFC
+//!
 //! ## Background
 //!
 //! `FUN_80024CFC` in `SCUS_942.54` is the only static-binary entry point

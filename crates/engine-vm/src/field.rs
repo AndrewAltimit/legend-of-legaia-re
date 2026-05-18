@@ -1,5 +1,7 @@
 //! Field / event script VM, ported clean-room from `FUN_801DE840`.
 //!
+//! PORT: FUN_801DE840
+//!
 //! `FUN_801DE840` lives in PROT entry `0897_xxx_dat` (the town/field overlay,
 //! see `docs/subsystems/script-vm.md`). It drives Legaia's overworld scripting - NPC
 //! movement, dialog triggers, cutscene sequencing, story flag manipulation.

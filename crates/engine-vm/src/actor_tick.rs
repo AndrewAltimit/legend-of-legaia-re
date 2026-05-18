@@ -1,5 +1,7 @@
 //! Per-actor physics tick - clean-room port of `FUN_80021DF4`.
 //!
+//! PORT: FUN_80021DF4
+//!
 //! `FUN_8002519C` walks the per-frame actor list and calls this function on
 //! every active record. The dispatcher is **not** an "animation interpreter"
 //! the way [`legaia_anm::AnimPlayer`] is - it advances per-actor position /

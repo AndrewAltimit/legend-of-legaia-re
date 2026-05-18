@@ -52,7 +52,9 @@ OUT_DIR = REPO / "target" / "port-catalog"
 #   SCUS_942.54   : 0x80010000 - 0x8006FFFF
 #   Overlays      : 0x801C0000 - 0x8020FFFF
 # Match the same shape function-coverage.py uses so the two tools share a worldview.
-CODE_ADDR_RE = re.compile(r"80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4}")
+# IGNORECASE so PORT tags written `FUN_801DD35C` (uppercase) match as cleanly
+# as the lowercase form Ghidra emits.
+CODE_ADDR_RE = re.compile(r"80(?:0[1-6]|1[cdef]|20)[0-9a-fA-F]{4}", re.IGNORECASE)
 
 # Citations of an address by some other piece of text. Covers Ghidra's auto-named
 # call forms plus raw disassembly forms. Matches `function-coverage.py`.
@@ -69,8 +71,11 @@ DOC_CITATION_RE = re.compile(
 )
 
 # // PORT: FUN_801dd35c [, FUN_xxx]*  --  the only signal we trust for "ported".
+# Accepts plain `//`, doc `//!`, and outer-doc `///` so the tag can live inside
+# a rustdoc block (where the provenance is co-located with the human-readable
+# description) or as a standalone comment.
 PORT_TAG_RE = re.compile(
-    r"//\s*PORT\s*:\s*(.*)",
+    r"//[/!]?\s*PORT\s*:\s*(.*)",
     re.IGNORECASE,
 )
 

@@ -1,5 +1,7 @@
 //! GTE-style fixed-point math primitives.
 //!
+//! PORT: FUN_8002735C
+//!
 //! The retail TMD renderer at `FUN_8002735c` (60 GTE coprocessor ops) uses
 //! signed 16-bit fixed-point matrix coefficients (`q12.4` in the rotation
 //! matrix, `q14.16` for translation) to transform a vertex from object →

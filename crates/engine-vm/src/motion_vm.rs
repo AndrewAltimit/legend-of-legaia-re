@@ -2,6 +2,8 @@
 //! (SCUS_942.54). Distinct from the actor / sprite VM in [`super`] and the
 //! move-table VM in [`super::move_vm`]:
 //!
+//! PORT: FUN_8003774C
+//!
 //! - The actor VM (FUN_801D6628) handles sprite spawn / despawn, bytecode-driven.
 //! - The move VM (FUN_80023070) drives Tactical Arts / battle-action animation.
 //! - The motion VM here drives **per-actor pursue / patrol / face-target** logic

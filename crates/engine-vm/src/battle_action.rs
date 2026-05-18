@@ -3,6 +3,8 @@
 //! the layer between "the player picked Attack" and "the actor's body has
 //! finished swinging the sword and HP has been deducted."
 //!
+//! PORT: FUN_801E295C
+//!
 //! See [`docs/subsystems/battle-action.md`](../../../docs/subsystems/battle-action.md)
 //! for the byte-level reference. This is **not** a bytecode VM. It's a
 //! per-frame edge-triggered state machine: each `case ctx.action_state` body

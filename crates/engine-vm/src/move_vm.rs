@@ -1,6 +1,8 @@
 //! Move-table opcode VM, ported clean-room from `FUN_80023070` (main VM in
 //! `SCUS_942.54`) and `FUN_801D362C` (extension VM in the town overlay).
 //!
+//! PORT: FUN_80023070, FUN_801D362C
+//!
 //! See `docs/subsystems/move-vm.md` for the byte-level reference. The VM drives
 //! per-actor animation, motion, and combat moves (Tactical Arts) - distinct
 //! from the actor / sprite VM in [`super`] and the field / event VM in

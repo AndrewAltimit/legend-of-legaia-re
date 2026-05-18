@@ -1,6 +1,8 @@
 //! World-map entity state machine, ported clean-room from `FUN_801DA51C`
 //! (overlay_world_map.bin base `0x801C0000`).
 //!
+//! PORT: FUN_801DA51C
+//!
 //! One instance of [`WorldMapEntityCtx`] exists per on-map entity (NPCs,
 //! town-portal tiles, monster spawn zones). The retail engine stores the
 //! state in a per-entity record; the engine-side host trait bridges between

@@ -22,7 +22,13 @@ The catalog's "ported" column keys off a structured comment in Rust source:
 // PORT: FUN_801dd35c                       // single address
 // PORT: FUN_801dd35c, FUN_801cf244         // multiple on one line
 // PORT: FUN_801dd35c (sub-mode jump table) // trailing context allowed
+//! PORT: FUN_801dd35c                      // inside `//!` module doc
+/// PORT: FUN_801dd35c                      // inside `///` outer doc
 ```
+
+The tag may appear as plain `//`, doc `//!`, or outer-doc `///` — putting it in
+the doc block keeps the provenance co-located with the rustdoc description and
+makes it visible in generated docs.
 
 Rules:
 

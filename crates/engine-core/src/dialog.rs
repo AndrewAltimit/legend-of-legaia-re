@@ -1,5 +1,7 @@
 //! Dialog panel: clean-room port of the field VM's dialog opener path.
 //!
+//! PORT: FUN_8001FD44, FUN_801D84D0
+//!
 //! Wraps a [`legaia_mes::DialogPlayer`] in the runtime state the retail
 //! dialog renderer holds: the typed-out glyph buffer for the current page,
 //! a pen color tracked through `0xCF` color-change escapes, and an explicit

@@ -2,6 +2,8 @@
 //! ([`super::field`]) calls into, lifted out of the dispatcher arms so they
 //! can be unit-tested in isolation.
 //!
+//! PORT: FUN_8003CA38, FUN_8003CE64, FUN_80042EE0, FUN_8003CE9C, FUN_8003CEB8, FUN_8003CED8
+//!
 //! These three helpers are referenced from many of the still-Pending sub-ops
 //! in `FUN_801DE840`'s `case 0x4C` cluster. They are pure arithmetic - no
 //! globals, no overlay calls - so a clean-room port can match the original
