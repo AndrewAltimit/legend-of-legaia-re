@@ -228,3 +228,15 @@
 "8006c6e4" = "_SsKey2Pitch (two-octave-table pitch math)"
 "8006d2ac" = "Audio subsystem init (wraps BIOS C0 thunk in Enter/ExitCriticalSection)"
 "8006ef18" = "SPU voice-state init sequence (calls 8006ef68 / 8006f088 / 8006f118 in order)"
+
+
+# Intra-function labels inside the field/event script-VM dispatcher
+# `FUN_801DE840` that Ghidra promoted to fake `FUN_xxxxxxxx` function names.
+# Each entry is really a `j epilogue` target with an `addiu s8, s8, N` PC-delta
+# prelude; calling "into" the label just supplies the PC delta and falls
+# through to the dispatcher tail. The catalogue lives in
+# `docs/subsystems/script-vm.md#intra-function-label-catalogue`. The engine
+# port models each label's PC delta directly inside its dispatcher (see
+# `crates/engine-vm/src/field.rs`), so there is no separate function to port.
+[field_vm_labels]
+"801e3620" = "FUN_801de840 intra-function label (`code_r0x801e3620`): `param_2 + 4; break;` -> PC += 4"
