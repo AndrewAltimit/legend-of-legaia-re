@@ -68,6 +68,7 @@
 #![forbid(unsafe_code)]
 
 pub mod action_validator;
+pub mod actor_alloc;
 pub mod actor_tick;
 pub mod anim_vm;
 pub mod battle_action;
