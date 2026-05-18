@@ -34,6 +34,7 @@ use legaia_engine_shell::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, mode_trace_to_jsonl,
 };
+use legaia_engine_shell::replay::{PadEvent, ReplayFile, ReplayMeta};
 use legaia_engine_shell::vram_oracle::{
     TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
     load_runtime_vram_from_save, vram_to_le_bytes,
@@ -280,6 +281,70 @@ enum Cmd {
         /// valid in scenario mode.
         #[arg(long, default_value_t = false)]
         strict: bool,
+    },
+    /// Run an engine playthrough headless from a `j-replay-v1`
+    /// replay file (see `legaia_engine_shell::replay`). Drives a
+    /// synthetic [`World`](legaia_engine_core::world::World) for
+    /// `meta.frames` frames, samples per-frame `(scene_mode,
+    /// active_scene)` into JSONL, and (with `--strict`) compares
+    /// against the file's optional `[[expected]]` fixture.
+    ///
+    /// No disc required — the replay binds an RNG seed and a
+    /// scenario label, not a CDNAME scene. This is Phase J's
+    /// determinism + scripted-replay entry point; pair with `record`
+    /// to capture human input from a play-window session.
+    Replay {
+        /// Path to the `j-replay-v1` replay file.
+        #[arg(long)]
+        input: PathBuf,
+        /// Where to write the engine JSONL trace. Default `-` = stdout.
+        #[arg(long, default_value = "-")]
+        out: PathBuf,
+        /// Strict mode: exit non-zero on the first divergence between
+        /// the recorded engine trace and the replay's `[[expected]]`
+        /// fixture (if present).
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
+    /// Open a play-window session that captures pad transitions into
+    /// a `j-replay-v1` file on close. Thin shim over `play-window`:
+    /// every flag carries the same meaning, plus `--out` for the
+    /// replay file path.
+    Record {
+        /// Where to write the captured replay.
+        #[arg(long)]
+        out: PathBuf,
+        /// Starting scene name (CDNAME label). Default: `town01`.
+        #[arg(long, default_value = "town01")]
+        scene: String,
+        /// Extracted-root directory containing `PROT.DAT` + `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly from
+        /// a `.bin` disc image. When provided, `--extracted-root` is
+        /// ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Disable audio output. Useful for CI / headless capture where
+        /// cpal can't enumerate a device.
+        #[arg(long, default_value_t = false)]
+        no_audio: bool,
+        /// Open the world map controller instead of a field scene.
+        #[arg(long, default_value_t = false)]
+        world_map: bool,
+        /// Save directory the record's save-select reads / writes.
+        #[arg(long, default_value = "saves")]
+        save_dir: PathBuf,
+        /// Optional scenario label to bind into the recorded file's
+        /// `meta.scenario` field. Replays preserve this so paired
+        /// scenario state can be looked up from `scripts/scenarios.toml`.
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Initial RNG seed to bake into the recorded file's
+        /// `meta.rng_seed` field. Default matches the engine's
+        /// canonical `0xDEADC0DE`.
+        #[arg(long, default_value_t = 0xDEAD_C0DE)]
+        rng_seed: u32,
     },
     /// List every distinct scene name the CDNAME map exposes, with the
     /// PROT entry range each one covers.
@@ -724,6 +789,28 @@ fn main() -> Result<()> {
             out: &out,
             strict,
         }),
+        Cmd::Replay { input, out, strict } => cmd_replay(&input, &out, strict),
+        Cmd::Record {
+            out,
+            scene,
+            extracted_root,
+            disc,
+            no_audio,
+            world_map,
+            save_dir,
+            scenario,
+            rng_seed,
+        } => cmd_record(
+            &out,
+            &scene,
+            &extracted_root,
+            disc.as_deref(),
+            !no_audio,
+            world_map,
+            &save_dir,
+            scenario.as_deref(),
+            rng_seed,
+        ),
         Cmd::Play {
             scene,
             extracted_root,
@@ -1658,6 +1745,237 @@ fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// replay (J3 — headless engine playback from a `j-replay-v1` file)
+// ---------------------------------------------------------------------------
+
+/// Drive a synthetic [`World`] from a [`ReplayFile`] and write the
+/// resulting mode-trace JSONL. This mirrors the J2 determinism-gate
+/// harness verbatim - the gate asserts byte-identity across two runs of
+/// the same input, so the subcommand is just "the determinism gate's
+/// driver, plus JSONL output".
+///
+/// `--strict` exits non-zero when the recorded trace disagrees with the
+/// replay file's `[[expected]]` fixture; without it, divergence is
+/// printed to stderr but doesn't fail.
+fn cmd_replay(input: &Path, out: &Path, strict: bool) -> Result<()> {
+    let replay = ReplayFile::from_path(input)?;
+    let trace = synthetic_replay_trace(&replay);
+    let jsonl = mode_trace_to_jsonl(&trace);
+    let out_label = if out.as_os_str() == "-" {
+        print!("{jsonl}");
+        "<stdout>".to_string()
+    } else {
+        std::fs::write(out, jsonl.as_bytes())
+            .with_context(|| format!("write replay trace JSONL to {}", out.display()))?;
+        out.display().to_string()
+    };
+    eprintln!(
+        "replay '{}' (frames={}, events={}, expected={}) -> {}",
+        input.display(),
+        replay.meta.frames,
+        replay.events.len(),
+        replay.expected.len(),
+        out_label,
+    );
+    if let Some(d) = replay.diff(&trace) {
+        let msg = format!(
+            "[DRIFT] frame={} kind={:?}: expected(scene_mode={}, active_scene={:?}) vs recorded(scene_mode={}, active_scene={:?})",
+            d.frame,
+            d.kind,
+            d.expected.scene_mode,
+            d.expected.active_scene,
+            d.recorded.scene_mode,
+            d.recorded.active_scene,
+        );
+        if strict {
+            anyhow::bail!("{msg}");
+        }
+        eprintln!("{msg}");
+    } else if !replay.expected.is_empty() {
+        eprintln!("[ok] recorded trace matches replay [[expected]] fixture");
+    }
+    Ok(())
+}
+
+/// Build the engine-side mode trace by driving a synthetic [`World`]
+/// through `replay`'s frame count. Mirrors
+/// `crates/engine-shell/tests/determinism_j2.rs::build_mode_trace` so
+/// the subcommand's behaviour is the same the determinism gate tests.
+fn synthetic_replay_trace(replay: &ReplayFile) -> Vec<ModeTraceFrame> {
+    let pad_stream = replay.expand_pad_stream();
+    let mut world = legaia_engine_core::world::World::new();
+    while world.actors.len() < 8 {
+        world
+            .actors
+            .push(legaia_engine_core::world::Actor::default());
+    }
+    world.rng_state = replay.meta.rng_seed;
+    let mut out = Vec::with_capacity(pad_stream.len());
+    out.push(synthetic_replay_sample(&world));
+    for _ in pad_stream.iter().skip(1) {
+        let _ = world.tick();
+        out.push(synthetic_replay_sample(&world));
+    }
+    out
+}
+
+fn synthetic_replay_sample(world: &legaia_engine_core::world::World) -> ModeTraceFrame {
+    ModeTraceFrame {
+        frame: world.frame,
+        game_mode: None,
+        game_mode_name: None,
+        scene_mode: synthetic_replay_scene_mode_name(world.mode).to_string(),
+        active_scene: None,
+    }
+}
+
+fn synthetic_replay_scene_mode_name(m: legaia_engine_core::world::SceneMode) -> &'static str {
+    use legaia_engine_core::world::SceneMode;
+    match m {
+        SceneMode::Title => "Title",
+        SceneMode::Field => "Field",
+        SceneMode::Battle => "Battle",
+        SceneMode::Cutscene => "Cutscene",
+        SceneMode::WorldMap => "WorldMap",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// record (J3 — wraps `play-window` with pad-mask capture into ReplayFile)
+// ---------------------------------------------------------------------------
+
+/// Thin shim that opens a `play-window` session with the pad-capture
+/// hook armed. Identical UX to `play-window`; the only added behaviour
+/// is that every pad-mask transition is appended to a `Vec<PadEvent>`
+/// on `PlayWindowApp` and flushed to `out` as a `j-replay-v1` file on
+/// window close.
+#[allow(clippy::too_many_arguments)]
+fn cmd_record(
+    out: &Path,
+    scene: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    enable_audio: bool,
+    world_map: bool,
+    save_dir: &Path,
+    scenario: Option<&str>,
+    rng_seed: u32,
+) -> Result<()> {
+    cmd_play_window_with_record(
+        scene,
+        extracted_root,
+        disc,
+        enable_audio,
+        world_map,
+        None,
+        false,
+        save_dir,
+        None,
+        None,
+        false,
+        Some(RecordTarget {
+            out: out.to_path_buf(),
+            scenario: scenario.map(str::to_string),
+            rng_seed,
+        }),
+    )
+}
+
+/// Bundle of "where to write the captured replay + how to label it".
+/// Threaded through into [`PlayWindowApp::record_log`] so the keyboard
+/// handler can append events and the close handler can flush.
+struct RecordTarget {
+    out: std::path::PathBuf,
+    scenario: Option<String>,
+    rng_seed: u32,
+}
+
+/// Per-tick recorded-pad-event buffer + flush state. Lives on
+/// [`PlayWindowApp`] when the user invoked the `record` subcommand;
+/// `None` for plain `play-window` runs so the keyboard handler pays
+/// nothing in the common case.
+struct RecordLog {
+    out_path: std::path::PathBuf,
+    events: Vec<PadEvent>,
+    /// Previous pad value the log saw. The keyboard handler dedups so a
+    /// stream of "press, press, press" key events from auto-repeat
+    /// collapses to a single PadEvent.
+    last_pad: u16,
+    scenario: Option<String>,
+    rng_seed: u32,
+    /// Highest frame index observed during the run. Used to populate
+    /// `meta.frames` so the on-disk file faithfully describes the
+    /// recorded duration.
+    last_frame: u64,
+    /// Once the file has been written, additional Close events become
+    /// no-ops (winit can deliver CloseRequested + the loop's exit drop
+    /// both).
+    flushed: bool,
+}
+
+impl RecordLog {
+    fn from_target(target: RecordTarget) -> Self {
+        Self {
+            out_path: target.out,
+            events: Vec::new(),
+            last_pad: 0,
+            scenario: target.scenario,
+            rng_seed: target.rng_seed,
+            last_frame: 0,
+            flushed: false,
+        }
+    }
+
+    /// Record a pad transition iff `pad` differs from the previously
+    /// logged value. Caller is responsible for emitting events in
+    /// frame-ascending order (the keyboard handler always does).
+    fn record_transition(&mut self, frame: u64, pad: u16) {
+        if pad == self.last_pad {
+            return;
+        }
+        self.events.push(PadEvent { frame, pad });
+        self.last_pad = pad;
+        if frame > self.last_frame {
+            self.last_frame = frame;
+        }
+    }
+
+    /// Note the frame counter advanced past `frame` without a pad
+    /// change. Keeps `meta.frames` honest when the user closes the
+    /// window with no input held.
+    fn observe_frame(&mut self, frame: u64) {
+        if frame > self.last_frame {
+            self.last_frame = frame;
+        }
+    }
+
+    /// Flush to disk. Idempotent.
+    fn flush(&mut self) -> Result<()> {
+        if self.flushed {
+            return Ok(());
+        }
+        let meta = ReplayMeta {
+            schema: legaia_engine_shell::replay::REPLAY_SCHEMA_V1.to_string(),
+            scenario: self.scenario.clone(),
+            rng_seed: self.rng_seed,
+            frames: self.last_frame,
+        };
+        let mut file = ReplayFile::new(meta);
+        file.events = self.events.clone();
+        file.validate()?;
+        file.write_to(&self.out_path)?;
+        self.flushed = true;
+        eprintln!(
+            "record: wrote {} event(s) covering {} frame(s) -> {}",
+            file.events.len(),
+            file.meta.frames,
+            self.out_path.display()
+        );
+        Ok(())
+    }
+}
+
 /// VRAM regions known to carry CLUT (colour-lookup-table) data, by Y row
 /// and approximate X span. The renderer treats CLUTs as 16- or 256-entry
 /// rows of u16 BGR555 anywhere in VRAM; the project's RE has surfaced
@@ -2412,6 +2730,11 @@ struct PlayWindowApp {
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
     options_state: legaia_engine_core::options::OptionsState,
+    /// Phase J3 pad-capture state. `Some` when the user invoked the
+    /// `record` subcommand; the keyboard handler appends transitions
+    /// to `events` and the close handler flushes a `j-replay-v1` file
+    /// to disk. `None` in plain `play-window` runs.
+    record_log: Option<RecordLog>,
 }
 
 /// Boot-UI state machine. Drives the pre-scene UI when `--boot-ui` is
@@ -4377,7 +4700,16 @@ impl ApplicationHandler for PlayWindowApp {
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => evl.exit(),
+            WindowEvent::CloseRequested => {
+                // Flush any pending record log before exiting so an Escape /
+                // window-close mid-session produces a usable replay file.
+                if let Some(log) = self.record_log.as_mut()
+                    && let Err(e) = log.flush()
+                {
+                    log::error!("record: flush on CloseRequested failed: {e:#}");
+                }
+                evl.exit();
+            }
             WindowEvent::Resized(size) => self.win.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput {
                 event:
@@ -4389,15 +4721,29 @@ impl ApplicationHandler for PlayWindowApp {
                 ..
             } => {
                 if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
+                    if let Some(log) = self.record_log.as_mut()
+                        && let Err(e) = log.flush()
+                    {
+                        log::error!("record: flush on Escape failed: {e:#}");
+                    }
                     evl.exit();
                     return;
                 }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {
+                    let prev = self.pad;
                     if state == ElementState::Pressed {
                         self.pad |= button.mask();
                     } else {
                         self.pad &= !button.mask();
+                    }
+                    // Record the transition iff the pad actually changed
+                    // (auto-repeat sends a stream of Pressed events with
+                    // identical mask; dedup in RecordLog::record_transition).
+                    if self.pad != prev
+                        && let Some(log) = self.record_log.as_mut()
+                    {
+                        log.record_transition(self.session.frames, self.pad);
                     }
                 }
             }
@@ -4453,6 +4799,12 @@ impl ApplicationHandler for PlayWindowApp {
                         ctrl.tick(self.pad, newly_pressed);
                     }
                     self.prev_pad = self.pad;
+                    // Record-mode: advance the log's frame counter so
+                    // `meta.frames` reflects the recorded duration even
+                    // when the user closes mid-run with no pad transitions.
+                    if let Some(log) = self.record_log.as_mut() {
+                        log.observe_frame(self.session.frames);
+                    }
                     // Drain whatever battle events the SM fired this tick,
                     // fold their gameplay-state side into the world (HP /
                     // status), and ring them into the HUD log.
@@ -4747,6 +5099,37 @@ fn cmd_play_window(
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
+) -> Result<()> {
+    cmd_play_window_with_record(
+        scene,
+        extracted_root,
+        disc,
+        enable_audio,
+        world_map,
+        str_file,
+        boot_ui,
+        save_dir,
+        cutscene_map_path,
+        cheat_file,
+        cheat_strict,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_play_window_with_record(
+    scene: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    enable_audio: bool,
+    world_map: bool,
+    str_file: Option<&Path>,
+    boot_ui: bool,
+    save_dir: &Path,
+    cutscene_map_path: Option<&Path>,
+    cheat_file: Option<&Path>,
+    cheat_strict: bool,
+    record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Optional cutscene-map override layered on top of the heuristic.
     let cutscene_map = if let Some(p) = cutscene_map_path {
@@ -5089,10 +5472,20 @@ fn cmd_play_window(
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
         options_state: legaia_engine_core::options::OptionsState::default(),
+        record_log: record_to.map(RecordLog::from_target),
     };
 
     let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
+    // After the event loop returns, flush any pending record log. The
+    // Escape / CloseRequested handlers also flush proactively so a
+    // mid-run crash still produces a partial replay file - the trailing
+    // flush is the safety net.
+    if let Some(log) = app.record_log.as_mut()
+        && let Err(e) = log.flush()
+    {
+        log::error!("record: flush on exit failed: {e:#}");
+    }
     Ok(())
 }
 
