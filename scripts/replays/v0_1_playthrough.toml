@@ -1,70 +1,30 @@
-# v0.1 playthrough oracle replay — SCAFFOLD.
-#
-# Eventual goal: capture the shortest gameplay path that exercises every
-# deep subsystem (boot -> title -> load real save -> walk in field ->
-# fixed encounter -> battle victory -> XP/level/loot -> save back) as a
-# sparse pad-input timeline. The integration test at
-# crates/engine-shell/tests/v0_1_playthrough.rs drives:
-#
-#   - disc-free determinism gate: two synthetic-world replays produce
-#     bit-identical state-trace bytes.
-#   - disc-gated oracle convergence: VRAM + audio-trace + mode-trace +
-#     SC round-trip checks at frames named in [[expected]].
-#
-# CURRENT STATE: scaffold only. No `meta.scenario` binding, no
-# [[event]] rows, one minimal [[expected]] row covering the synthetic
-# world's frame-0 state so the determinism gate has something to lock
-# down. The disc-gated half of the test skip-passes loudly with a
-# "scaffold not yet populated" message until this file carries a real
-# recording.
-#
-# To populate (item 1 in the backlog):
-#
-#   1. Pick a scenario from `scripts/scenarios.toml` whose `.mc{slot}`
-#      save sits on or near a known fixed-encounter spawn point. Bind
-#      via `meta.scenario = "<label>"`.
-#   2. Run:
-#        legaia-engine record \
-#          --scenario <label> \
-#          --out scripts/replays/v0_1_playthrough.toml
-#      and play the slice with keyboard input in `play-window`.
-#   3. Bump `meta.frames` to the recorded length.
-#   4. Add [[expected]] rows at:
-#         - title-screen frame      (scene_mode = "Title")
-#         - field-load frame        (scene_mode = "Field", active_scene)
-#         - battle-start frame      (scene_mode = "Battle")
-#         - battle-end frame        (scene_mode = "Field")
-#         - save-write frame        (scene_mode = "Field")
-#      so the mode-trace oracle has anchor points across the path.
-#
-# Schema reference: crates/engine-shell/src/replay.rs.
-
 [meta]
 schema = "j-replay-v1"
-# Scenario binding: anchor C of the v0.1 slice taxonomy. Mednafen mc7
-# captures Vahn in Rim Elm (`town01`, game_mode 0x03 MainMode) one
-# button-press from the Tetsu tutorial battle trigger. Pressing Cross
-# (PSX X / keyboard `S` via DefaultInputMap) advances the dialogue
-# that fires the field-VM battle-init opcode. The replay's recorded
-# pad timeline drives this transition deterministically.
 scenario = "v0_1_pre_battle_tetsu"
-# Canonical engine seed (matches ReplayMeta::new default). Real
-# recordings can override; the scaffold uses the canonical so two-run
-# determinism is checked against the same starting RNG state the engine
-# defaults to.
-rng_seed = 0xDEAD_C0DE
-# Placeholder frame count. The synthetic-world determinism gate runs
-# `frames + 1` ticks; 10 is enough to produce a non-trivial trace
-# without inflating CI time. Bumped to the recorded length when a real
-# slice lands.
-frames = 10
+rng_seed = 3735929054
+frames = 366
 
-# Minimal expected fixture. The synthetic world starts in `Title` mode
-# and never transitions (no field bytecode is loaded by the default
-# constructor), so the engine should report `Title` for every sampled
-# frame. Asserting frame 0 locks the synthetic baseline; if a future
-# engine change drops the default world into a different mode, the
-# determinism gate's `ReplayFile::diff` call surfaces it on this row.
+[[event]]
+frame = 103
+pad = 8192
+
+[[event]]
+frame = 110
+pad = 0
+
+# v0.1 contract: by frame 250 (~2.5 seconds after the Circle press at
+# frame 103), the engine should have advanced the Tetsu dialogue and
+# entered BattleMode -- the retail capture at mc0 lands one frame
+# after BattleInit in this same window. RED state today: the engine
+# stays in scene_mode=Title for the whole 366-frame replay because
+# the field-VM dialog-advance path doesn't read `World.input` from a
+# cold boot. The failing diff captures the gap. This expected row
+# becomes a passing assertion once one of the following lands:
+#   - BootSession supports save-state load (mc7's RAM state replaces
+#     the cold-boot starting point), OR
+#   - field-VM dialog advance moves into the engine tick path and
+#     consumes `World.input` (the next field consumer to wire).
 [[expected]]
-frame = 0
-scene_mode = "Title"
+frame = 250
+scene_mode = "Battle"
+active_scene = "town01"

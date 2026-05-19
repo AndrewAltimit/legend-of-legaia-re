@@ -62,12 +62,41 @@ pub struct ModeTraceFrame {
 
 /// Run a [`BootSession`] on `scene_name`, sampling `(scene_mode,
 /// active_scene)` immediately after boot and again after every tick.
-/// Returns `frames + 1` records.
+/// Returns `frames + 1` records. No pad input is fed; the engine is
+/// effectively idle except for self-driving tick logic (e.g. field-VM
+/// scripts that run on their own without controller input). Callers
+/// that need to thread scripted pad input use
+/// [`build_engine_mode_trace_with_inputs`].
 pub fn build_engine_mode_trace(
     scene_name: &str,
     extracted_root: &Path,
     disc: Option<&Path>,
     frames: u64,
+) -> Result<Vec<ModeTraceFrame>> {
+    build_engine_mode_trace_with_inputs(scene_name, extracted_root, disc, frames, &[])
+}
+
+/// Variant of [`build_engine_mode_trace`] that drives the
+/// [`BootSession`] with a scripted pad timeline. `pad_stream[i]` is
+/// installed onto `World.input` just before tick `i+1`; frame `0` is
+/// sampled pre-tick with an all-zeros pad. `frames + 1` records are
+/// returned, same shape as the no-input variant.
+///
+/// If `pad_stream` is shorter than `frames`, the tail is held at zero.
+/// If longer, only the first `frames` entries are consumed.
+///
+/// Today the world-tick path doesn't consume `World.input` (the
+/// engine's field-VM dialog advance, menu navigation, and world-map
+/// controller all live in `play-window` rather than the engine tick).
+/// This function still routes the input so the slice's pad-threading
+/// contract is wired end-to-end and starts asserting real behavior as
+/// soon as the first consumer moves into the engine tick.
+pub fn build_engine_mode_trace_with_inputs(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    frames: u64,
+    pad_stream: &[u16],
 ) -> Result<Vec<ModeTraceFrame>> {
     let cfg = BootConfig {
         scene: scene_name.to_string(),
@@ -79,7 +108,9 @@ pub fn build_engine_mode_trace(
     };
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
     out.push(sample_engine_frame(&session));
-    for _ in 0..frames {
+    for i in 0..frames {
+        let pad = pad_stream.get(i as usize).copied().unwrap_or(0);
+        session.host.world.set_pad(pad);
         let _ = session.tick()?;
         out.push(sample_engine_frame(&session));
     }

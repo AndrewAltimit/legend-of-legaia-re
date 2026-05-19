@@ -44,7 +44,7 @@ use std::path::PathBuf;
 
 use legaia_engine_core::world::{Actor, SceneMode, World};
 use legaia_engine_shell::mode_trace_oracle::{
-    ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
+    ModeTraceFrame, build_engine_mode_trace_with_inputs, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save,
 };
 use legaia_engine_shell::replay::ReplayFile;
@@ -178,30 +178,6 @@ fn build_state_trace(replay: &ReplayFile) -> String {
     out
 }
 
-fn build_mode_trace(replay: &ReplayFile) -> Vec<ModeTraceFrame> {
-    let pad_stream = replay.expand_pad_stream();
-    let mut world = synthetic_world(replay.meta.rng_seed);
-    let mut out = Vec::with_capacity(pad_stream.len());
-    out.push(ModeTraceFrame {
-        frame: 0,
-        game_mode: None,
-        game_mode_name: None,
-        scene_mode: scene_mode_name(world.mode).to_string(),
-        active_scene: None,
-    });
-    for _ in pad_stream.iter().skip(1) {
-        let _ = world.tick();
-        out.push(ModeTraceFrame {
-            frame: world.frame,
-            game_mode: None,
-            game_mode_name: None,
-            scene_mode: scene_mode_name(world.mode).to_string(),
-            active_scene: None,
-        });
-    }
-    out
-}
-
 // ---------------------------------------------------------------------
 // Test 1: replay file smoke (always runs)
 // ---------------------------------------------------------------------
@@ -246,27 +222,24 @@ fn v0_1_determinism_two_runs_byte_identical() {
     h.update(trace_a.as_bytes());
     let _ = h.finalize();
 
-    // The expected-fixture path also needs to pass against the
-    // synthetic driver. If a future engine change drops the default
-    // world into a non-Title mode, the expected row in
-    // scripts/replays/v0_1_playthrough.toml fires here.
-    let mode_trace = build_mode_trace(&replay);
-    if let Some(d) = replay.diff(&mode_trace) {
-        panic!(
-            "v0.1 replay fixture drift at frame {}: kind={:?} expected={:?} recorded={:?}",
-            d.frame, d.kind, d.expected, d.recorded
-        );
-    }
+    // No fixture-diff here: the replay's [[expected]] rows describe
+    // disc-gated engine behaviour (e.g. reaching Battle at frame 250),
+    // not the synthetic-world driver. The fixture diff runs in
+    // `v0_1_oracle_convergence` where the real engine ticks. This gate
+    // is exclusively about the determinism invariant -- two runs
+    // produce byte-identical traces, full stop.
 }
 
 // ---------------------------------------------------------------------
 // Test 3: oracle convergence gate (disc-gated, scaffold skip-passes)
 // ---------------------------------------------------------------------
 
-/// How many engine frames to tick when the disc-gated path is live.
-/// Matches `mode_trace_e3::FRAMES`; bumped when the v0.1 replay carries
-/// a real path that needs more than one retail-second of evolution.
-const ORACLE_FRAMES: u64 = 60;
+/// Minimum tick count when the replay carries no `meta.frames`
+/// override. Most disc-gated convergence checks happen within the
+/// first second of boot (the engine reaches `town01` immediately).
+/// The actual frame budget is `max(MIN_ORACLE_FRAMES, replay.meta.frames)`
+/// so a recorded playthrough always runs to completion.
+const MIN_ORACLE_FRAMES: u64 = 60;
 
 #[test]
 fn v0_1_oracle_convergence() {
@@ -332,45 +305,108 @@ fn v0_1_oracle_convergence() {
         return;
     }
 
-    // -- mode-trace oracle (first of four to land) ---------------------
+    // -- pad-threaded mode-trace ---------------------------------------
     //
-    // VRAM oracle, audio-trace oracle, and SC round-trip wire here in
-    // follow-up commits once the replay carries enough frames + expected
-    // rows to anchor each. Each oracle takes a frame range; v0.1's
-    // contract is that the replay file names the anchor frames via
-    // [[expected]] rows.
-    let trace = build_engine_mode_trace(scene_name, &extracted, None, ORACLE_FRAMES)
-        .unwrap_or_else(|e| panic!("scenario {scenario_label:?}: build engine mode-trace: {e:#}"));
+    // Run the engine for `max(MIN_ORACLE_FRAMES, replay.meta.frames)`
+    // ticks, feeding the replay's expanded pad stream into
+    // `World.input` per frame. Today the world-tick path doesn't
+    // consume `World.input` directly (see
+    // `build_engine_mode_trace_with_inputs` doc) so the pad threading
+    // is contractual, not behavioural -- the engine evolves the same
+    // way it would with no input. That changes as soon as the first
+    // input consumer (field-VM dialog advance, menu navigation, world-
+    // map controller) moves into the engine tick path, at which point
+    // this oracle starts asserting real input-driven behaviour.
+    let pad_stream = replay.expand_pad_stream();
+    let oracle_frames = replay.meta.frames.max(MIN_ORACLE_FRAMES);
+    let trace = build_engine_mode_trace_with_inputs(
+        scene_name,
+        &extracted,
+        None,
+        oracle_frames,
+        &pad_stream,
+    )
+    .unwrap_or_else(|e| panic!("scenario {scenario_label:?}: build engine mode-trace: {e:#}"));
     let retail = load_runtime_mode_trace_from_save(&save_path)
         .unwrap_or_else(|e| panic!("scenario {scenario_label:?}: load retail snapshot: {e:#}"));
 
-    match first_mode_trace_divergence(&trace, &retail) {
-        None => {
-            eprintln!(
-                "[ok]    v0.1 mode-trace converged: scenario={scenario_label} scene={scene_name} \
-                 scene_mode={} active_scene={:?}",
-                retail.scene_mode, retail.active_scene,
-            );
-        }
-        Some(d) => {
-            panic!(
-                "v0.1 oracle convergence failed for scenario {scenario_label:?} (scene={scene_name}): \
-                 {:?}: engine(scene_mode={}, active_scene={:?}) vs \
-                 retail(scene_mode={}, active_scene={:?})",
-                d.kind,
-                d.engine.scene_mode,
-                d.engine.active_scene,
-                d.retail.scene_mode,
-                d.retail.active_scene,
-            );
-        }
+    // Diagnostic: print the unique scene_mode transitions across the
+    // trace. With no pad consumer wired into the engine tick today,
+    // the expected output is a single Title row -- the engine never
+    // leaves Title from a fresh boot. When dialogue advance lands,
+    // additional transitions (Title -> Field -> Battle) will surface
+    // here without changing the test code.
+    print_scene_mode_transitions(scenario_label, &trace);
+
+    // Retail-snapshot convergence (existing assertion shape from
+    // mode_trace_e3). Passes today because the engine reaches
+    // active_scene=town01 immediately at boot; first_mode_trace_divergence
+    // accepts "at least one engine frame matches retail" as convergence.
+    if let Some(d) = first_mode_trace_divergence(&trace, &retail) {
+        panic!(
+            "v0.1 retail-snapshot convergence failed for scenario {scenario_label:?} \
+             (scene={scene_name}): {:?}: engine(scene_mode={}, active_scene={:?}) vs \
+             retail(scene_mode={}, active_scene={:?})",
+            d.kind,
+            d.engine.scene_mode,
+            d.engine.active_scene,
+            d.retail.scene_mode,
+            d.retail.active_scene,
+        );
     }
+
+    // Replay-fixture diff (sharper assertion). The replay file's
+    // [[expected]] rows pin specific frames to specific scene_modes,
+    // typically aligned with the anchors captured in
+    // `scripts/scenarios.toml`. Today the engine can't drive the
+    // prologue from a cold boot, so any [[expected]] row past frame 0
+    // that asserts `scene_mode != "Title"` will RED this test -- that
+    // failure IS the v0.1 finding, not a scaffold defect.
+    if let Some(d) = replay.diff(&trace) {
+        panic!(
+            "v0.1 replay fixture drift at frame {}: kind={:?} expected={:?} recorded(scene_mode={}, active_scene={:?})",
+            d.frame, d.kind, d.expected, d.recorded.scene_mode, d.recorded.active_scene,
+        );
+    }
+
+    eprintln!(
+        "[ok]    v0.1 disc-gated oracle passed: scenario={scenario_label} scene={scene_name} \
+         retail(scene_mode={}, active_scene={:?}) over {} engine frames",
+        retail.scene_mode,
+        retail.active_scene,
+        trace.len(),
+    );
 
     // TODO(item 1 follow-ups):
     //   - VRAM oracle at the frame the replay marks as the title screen.
     //   - audio-trace oracle across field BGM transition frames.
     //   - SC round-trip on the final save block (post-replay World).
     //
-    // Each lands as its own `match ... { Some(d) => panic!(...) }`
-    // block once the corresponding `[[expected]]` row shape stabilises.
+    // Each lands as its own diff block once the corresponding
+    // [[expected]] row shape stabilises.
+}
+
+/// Walk `trace` left-to-right printing one row per `scene_mode`
+/// transition. Cheap visibility into what the engine actually did,
+/// without dumping all `frames` records. Active-scene changes within
+/// the same `scene_mode` are not printed -- they're rare and the
+/// retail-snapshot convergence check covers them.
+fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) {
+    if trace.is_empty() {
+        return;
+    }
+    eprintln!(
+        "[trace] {scenario_label}: {} engine frames; scene_mode transitions:",
+        trace.len(),
+    );
+    let mut prev: Option<&str> = None;
+    for f in trace {
+        if prev != Some(f.scene_mode.as_str()) {
+            eprintln!(
+                "[trace]   frame={:<5} scene_mode={:<8} active_scene={:?}",
+                f.frame, f.scene_mode, f.active_scene,
+            );
+            prev = Some(f.scene_mode.as_str());
+        }
+    }
 }

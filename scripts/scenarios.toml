@@ -94,7 +94,14 @@ ram_fingerprint_sha256 = "a6272a82f24bdee953e4f8dc19caa8df7621556e618d9bc9af7bc8
 description = "v0.1 slice anchor D: first frame inside the Tetsu tutorial battle (BattleMode running)"
 topics = ["v0.1 slice", "battle init", "Tetsu tutorial", "BattleMode", "town01"]
 phase = "battle"
-expected_active_scene = "town01"
+# `expected_active_scene` is intentionally unset. `mode_trace_e3`
+# treats that field as "engine reaches this scene_mode from a cold
+# boot on this scene" -- which this anchor cannot satisfy (the engine
+# boots into Title/town01, not Battle/town01). The actual scene under
+# the battle IS "town01" with game_mode 0x15 BattleMode; the v0.1
+# oracle picks this anchor up via [[expected]] frame comparisons in
+# scripts/replays/v0_1_playthrough.toml when the field-VM-to-battle
+# handoff exists in-engine.
 expected_game_mode = 0x15
 
 [scenarios.overlay_slice]
