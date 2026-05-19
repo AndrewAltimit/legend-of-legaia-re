@@ -41,6 +41,7 @@ pub mod mode;
 pub mod monster_catalog;
 pub mod move_buffer_host;
 pub mod options;
+pub mod overlay_loader;
 pub mod publisher_logos;
 pub mod ram_map;
 pub mod save_menu_atlas;
