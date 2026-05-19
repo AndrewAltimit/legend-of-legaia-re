@@ -1257,6 +1257,7 @@ dependencies = [
  "legaia-font",
  "legaia-iso",
  "legaia-lzs",
+ "legaia-mdt",
  "legaia-mes",
  "legaia-prot",
  "legaia-save",

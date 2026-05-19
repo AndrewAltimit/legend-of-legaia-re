@@ -1022,6 +1022,30 @@ impl SceneHost {
             self.world
                 .set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
         }
+        // Install the per-scene MOVE pool (retail `_DAT_8007B888`). The
+        // bytes come from the scene's `scene_asset_table` slot-4
+        // `Asset(0x05) = Move` descriptor (see `docs/formats/mdt.md`).
+        // The descriptor offsets reference positions in the full
+        // on-disc footprint (including trailing-overlay sectors), so
+        // we fetch via `entry_bytes_extended` rather than the indexed
+        // view that `Scene::load` keeps in `entry.bytes`. Without this
+        // the `MoveBufferHost` resolver returns `None` and the move-
+        // table cursor stays idle.
+        let move_install = self
+            .scene
+            .as_ref()
+            .and_then(|scene| crate::scene_bundle::find_bundle(scene).map(|b| (b.entry_idx(), b)));
+        if let Some((entry_idx, bundle)) = move_install {
+            match self
+                .index
+                .entry_bytes_extended(entry_idx)
+                .and_then(|bytes| crate::scene_bundle::extract_move_payload(&bundle, &bytes))
+            {
+                Ok(Some(bytes)) => self.world.set_move_buffer_root(bytes),
+                Ok(None) => self.world.set_move_buffer_root(Vec::new()),
+                Err(err) => eprintln!("[scene] move-table extract skipped: {err:#}"),
+            }
+        }
         // Seed the global TMD-pool head from PROT 0874 section 0 (the
         // 5 character-mesh TMDs that retail's `DAT_8007C018[0..4]`
         // resolves to). Byte-equality verified - see

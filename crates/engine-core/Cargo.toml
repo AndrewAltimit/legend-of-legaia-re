@@ -18,6 +18,7 @@ legaia-asset = { path = "../asset" }
 legaia-font = { path = "../font" }
 legaia-iso = { path = "../iso" }
 legaia-lzs = { path = "../lzs" }
+legaia-mdt = { path = "../mdt" }
 legaia-mes = { path = "../mes" }
 legaia-prot = { path = "../prot" }
 legaia-seq = { path = "../seq" }

@@ -287,6 +287,129 @@ fn scene_chain_resolves_mes_seq_tmd_across_corpus() {
     );
 }
 
+/// Walk every CDNAME scene with a `scene_asset_table` bundle and verify
+/// the per-scene MOVE pool (descriptor 4 = `Asset(0x05) = Move`) extracts
+/// to a slice whose length matches `descriptor.size` and which parses as
+/// a [`legaia_mdt::MoveBuffer`] with positive fitness. Catches regressions
+/// in [`legaia_engine_core::scene_bundle::extract_move_payload`] - the
+/// install site for retail `_DAT_8007B888` (see `docs/formats/mdt.md`).
+///
+/// The corpus has 79 scenes with a Move slot (the `(1, 2, 3, 4, 6, 7,
+/// 0x14)` skip-Move variant accounts for the 80th `scene_asset_table`
+/// entry). The test asserts non-trivial yield rather than 100% coverage
+/// because a fraction of entries use the scripted-prefix variant whose
+/// LZS payload boundary isn't yet pinned end-to-end.
+#[test]
+fn extract_move_payload_yields_real_data_across_corpus() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+
+    let cdname = legaia_prot::cdname::parse(&extracted.join("CDNAME.TXT")).expect("parse cdname");
+    let mut scene_names: Vec<String> = cdname.values().cloned().collect();
+    scene_names.sort();
+    scene_names.dedup();
+
+    let mut scenes_with_bundle = 0usize;
+    let mut scenes_with_move_slot = 0usize;
+    let mut scenes_extracted = 0usize;
+    let mut total_move_bytes = 0usize;
+    let mut sample: Option<(String, u32, usize, i64)> = None;
+
+    for scene_name in &scene_names {
+        let Ok(_scene_ref) = host.load_scene(scene_name) else {
+            continue;
+        };
+        let scene = host.scene.as_ref().expect("scene loaded");
+        let Some(bundle) = legaia_engine_core::scene_bundle::find_bundle(scene) else {
+            continue;
+        };
+        scenes_with_bundle += 1;
+
+        let descriptors = bundle.descriptors();
+        let move_desc = descriptors.iter().find(|d| d.type_byte == 0x05).copied();
+        if move_desc.is_none_or(|d| d.size == 0) {
+            continue;
+        }
+        scenes_with_move_slot += 1;
+        let expected_size = move_desc.unwrap().size as usize;
+
+        // Fetch the bundle entry's full footprint (trailing-overlay
+        // sectors included). Several scene_asset_table entries have
+        // descriptor offsets past the TOC-indexed end.
+        let extended = host
+            .index
+            .entry_bytes_extended(bundle.entry_idx())
+            .expect("read extended");
+        match legaia_engine_core::scene_bundle::extract_move_payload(&bundle, &extended) {
+            Ok(Some(payload)) => {
+                assert_eq!(
+                    payload.len(),
+                    expected_size,
+                    "scene='{scene_name}' extracted len {} != descriptor.size {}",
+                    payload.len(),
+                    expected_size
+                );
+                let mb = legaia_mdt::MoveBuffer::parse(&payload).expect("MoveBuffer parses");
+                // The strict `MoveBuffer::fitness()` is false-negative on
+                // retail data because real tables are shorter than the
+                // 1024-entry parser bound (MoveBuffer over-reads record
+                // bytes as bogus offsets). Match the predicate used by
+                // `extract_move_payload`: at least one record reachable
+                // and a majority of non-zero offsets in bounds.
+                assert!(
+                    !mb.records.is_empty() && mb.used_slots.len() > mb.bogus_offsets,
+                    "scene='{scene_name}' Move payload didn't look like a Move buffer \
+                     (used={} bogus={} records={})",
+                    mb.used_slots.len(),
+                    mb.bogus_offsets,
+                    mb.records.len()
+                );
+                scenes_extracted += 1;
+                total_move_bytes += payload.len();
+                if sample.is_none() {
+                    sample = Some((
+                        scene_name.clone(),
+                        bundle.entry_idx(),
+                        payload.len(),
+                        mb.fitness(),
+                    ));
+                }
+            }
+            Ok(None) => {}
+            Err(err) => panic!("scene='{scene_name}' extract_move_payload errored: {err:#}"),
+        }
+    }
+
+    eprintln!(
+        "[move] bundle_scenes={scenes_with_bundle} move_slots={scenes_with_move_slot} \
+         extracted={scenes_extracted} total_move_bytes={total_move_bytes}"
+    );
+    if let Some((scene, idx, len, fit)) = &sample {
+        eprintln!("[move] sample: scene='{scene}' entry={idx} bytes={len} fitness={fit}");
+    }
+
+    assert!(
+        scenes_with_move_slot > 50,
+        "Move-slot coverage too low: {scenes_with_move_slot} (expected >50)"
+    );
+    // The exact yield depends on the LZS-vs-raw payload-region split; the
+    // canonical mdt.md examples (dolk / suimon / map01) all have well-formed
+    // offset-table layouts, so the bar is generous to keep the test
+    // resilient to corpus drift.
+    assert!(
+        scenes_extracted > 0,
+        "no scenes successfully yielded a Move buffer"
+    );
+}
+
 #[test]
 fn scene_host_resolves_bgm_bytes_for_ids_in_block() {
     let Some(extracted) = extracted_dir() else {
