@@ -294,9 +294,9 @@ Entry points:
 
 - Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `first_audio_trace_divergence`, JSONL round-trip.
 - CLI: `legaia-engine audio-trace --scene NAME` (explicit) or `--scenario LABEL` (compares against `.mc{slot}` SPU).
-- Disc-gated test: [`audio_trace_i1`](../../crates/engine-shell/tests/audio_trace_i1.rs) auto-discovers every scenario in `scripts/scenarios.toml` with both `expected_active_scene` and an on-disk `.mc{slot}` save.
+- Disc-gated test: [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) auto-discovers every scenario in `scripts/scenarios.toml` with both `expected_active_scene` and an on-disk `.mc{slot}` save.
 
-The foundation cut does not drive BGM in the engine trace (no `--bgm-id` by default), so scenarios with retail-active voices report `NoFrameMatched` as expected-drift. Strengthening the engine side to play BGM in the trace (and a paired PCSX-Redux Lua probe to capture per-vsync retail SsAPI state) are follow-up work; the harness shape matches the VRAM and mode-trace oracles for downstream reuse.
+The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures. An external PCSX-Redux Lua probe for per-vsync retail SsAPI state remains a follow-up.
 
 ## What's left
 

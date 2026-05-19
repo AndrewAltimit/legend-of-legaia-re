@@ -1,6 +1,6 @@
-//! Disc-gated audio-trace oracle (Phase I1, foundation cut).
+//! Disc-gated audio-trace parity oracle.
 //!
-//! Sister test to [`vram_oracle_e1`] / [`mode_trace_e3`]. For every
+//! Sister test to the VRAM and mode-trace oracles. For every
 //! scenario in `scripts/scenarios.toml` that has BOTH an
 //! `expected_active_scene` AND an on-disk `.mc{slot}` mednafen save, this
 //! test:
@@ -10,7 +10,11 @@
 //!      boots a [`BootSession`](legaia_engine_shell::BootSession) headlessly
 //!      (`enable_audio = false`), runs a private standalone
 //!      [`legaia_engine_audio::Spu`] in parallel, ticks `FRAMES` frames,
-//!      and samples voice / master / reverb state each frame.
+//!      and samples voice / master / reverb state each frame. The trace
+//!      installs a private
+//!      [`TraceBgmDirector`](legaia_engine_shell::audio_trace_oracle::TraceBgmDirector)
+//!      so the field VM's op `0x35` events drive sequencer attach /
+//!      detach in lock-step with retail behaviour.
 //!   2. Lifts a single voice-state snapshot out of the matching
 //!      `.mc{slot}` save's `SPU` section via
 //!      [`legaia_engine_shell::audio_trace_oracle::load_runtime_audio_trace_from_save`].
@@ -26,15 +30,14 @@
 //!   - No scenario has both `expected_active_scene` and an on-disk
 //!     `.mc{slot}` save.
 //!
-//! **Foundation cut.** The engine side does not currently drive BGM
-//! playback through this oracle - the trace runs without an attached
-//! sequencer (`bgm_id = None`), so the engine emits all-quiescent frames.
-//! Retail saves captured mid-BGM will report `[DRIFT NoFrameMatched]`,
-//! which is the *expected* and *actionable* gap the I1 follow-up PRs
-//! close (Lua probe for retail per-vsync trace + engine BGM playback in
-//! the trace). To keep CI green on this cut, the test only fails when
-//! retail's active-voice mask is non-zero - i.e. it asserts the diff
-//! machinery works without asserting the engine matches retail audio yet.
+//! **Tolerable drift.** `NoFrameMatched` can still surface when a scene's
+//! prescript doesn't emit op `0x35` within the trace window or targets a
+//! different BGM than retail captured (a save state taken mid-track will
+//! diverge from a 1-second engine window starting at scene load). The
+//! test treats `NoFrameMatched` as expected-drift and only hard-fails on
+//! `VoiceStartAddrMismatch` / `MasterVolumeMismatch` - those indicate the
+//! engine *did* fire the same voices retail did but with wrong bank
+//! offsets or volume, which is a real port bug.
 //!
 //! Auto-discovery: scenarios opt in by populating
 //! `expected_active_scene`. Adding new captures requires no test edits.
@@ -47,8 +50,8 @@ use legaia_engine_shell::audio_trace_oracle::{
 };
 use legaia_mednafen::ScenarioManifest;
 
-/// How many engine frames to tick before sampling. Matches
-/// `mode_trace_e3`'s `FRAMES = 60` (one retail second).
+/// How many engine frames to tick before sampling. One retail second at
+/// 60 Hz, matching the mode-trace oracle's window.
 const FRAMES: u64 = 60;
 
 fn manifest_path() -> Option<PathBuf> {
@@ -76,7 +79,7 @@ fn extracted_dir() -> Option<PathBuf> {
 }
 
 #[test]
-fn audio_trace_i1_all_scenarios_converge() {
+fn audio_trace_all_scenarios_converge() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
@@ -114,6 +117,7 @@ fn audio_trace_i1_all_scenarios_converge() {
     }
 
     let mut hard_failures = Vec::new();
+    let mut converged = 0usize;
     let mut expected_drifts = 0usize;
     for (label, scene_name, save_path) in &qualifying {
         let trace = engine_trace_from_paths(scene_name, &extracted, None, FRAMES, None)
@@ -122,6 +126,7 @@ fn audio_trace_i1_all_scenarios_converge() {
             .unwrap_or_else(|e| panic!("scenario {label:?}: load retail SPU snapshot: {e:#}"));
         match first_audio_trace_divergence(&trace, &retail) {
             None => {
+                converged += 1;
                 eprintln!(
                     "[ok]    {label:<32} scene={scene_name:<10} converged active_mask=0b{:024b}",
                     retail.active_voice_mask
@@ -134,15 +139,18 @@ fn audio_trace_i1_all_scenarios_converge() {
                     hard_failures.push((label.clone(), d));
                     continue;
                 }
-                // Engine doesn't drive BGM in the foundation cut, so any
-                // scenario with retail-active voices is expected to drift
-                // with `NoFrameMatched`. Surface but don't fail.
-                let expected = matches!(d.kind, AudioDivergenceKind::NoFrameMatched);
-                if expected {
+                // NoFrameMatched is tolerable: the scene's prescript may
+                // not fire op 0x35 within the trace window or may target a
+                // different track than retail captured. Other divergence
+                // kinds (VoiceStartAddrMismatch / MasterVolumeMismatch)
+                // indicate the engine matched retail's voice indices but
+                // with wrong sample / volume - a real bug.
+                let tolerable = matches!(d.kind, AudioDivergenceKind::NoFrameMatched);
+                if tolerable {
                     expected_drifts += 1;
                     eprintln!(
-                        "[expected-drift] {label:<32} scene={scene_name:<10} {:?}: retail mask=0b{:024b} (foundation cut: engine doesn't drive BGM)",
-                        d.kind, d.retail.active_voice_mask,
+                        "[drift] {label:<32} scene={scene_name:<10} NoFrameMatched: retail mask=0b{:024b} (engine BGM did not converge in {FRAMES} frames)",
+                        d.retail.active_voice_mask,
                     );
                 } else {
                     hard_failures.push((label.clone(), d));
@@ -152,15 +160,16 @@ fn audio_trace_i1_all_scenarios_converge() {
     }
 
     eprintln!(
-        "audio-trace I1 (foundation): {} qualifying, {} expected drifts, {} hard failures",
+        "audio-trace oracle: {} qualifying, {} converged, {} tolerable drifts, {} hard failures",
         qualifying.len(),
+        converged,
         expected_drifts,
         hard_failures.len(),
     );
 
     assert!(
         hard_failures.is_empty(),
-        "audio-trace oracle I1: {} unexpected failure(s) {:?}",
+        "audio-trace oracle: {} unexpected failure(s) {:?}",
         hard_failures.len(),
         hard_failures
             .iter()
