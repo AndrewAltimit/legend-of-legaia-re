@@ -184,10 +184,37 @@ impl MoveBuffer {
     }
 
     /// Cheap fitness score: number of non-bogus offsets minus the number of
-    /// out-of-range ones. A real move buffer should score positive; an
-    /// arbitrary file scores negative.
+    /// out-of-range ones.
+    ///
+    /// **Caveat.** Real per-scene Move buffers have offset tables shorter
+    /// than the consumer-facing 1024-entry mask, and pack record data
+    /// densely past the real table end. `parse` keeps reading u32s past
+    /// the real boundary where record bytes masquerade as offsets, so most
+    /// real Move buffers score strongly negative (e.g. `0086_map01.BIN`:
+    /// used=1020 bogus=973 → fitness=-926). Use this score for synthetic
+    /// buffers only. For "is this LZS-decoded data a Move buffer?" on
+    /// retail inputs, use [`MoveBuffer::looks_like_move_buffer`] instead.
     pub fn fitness(&self) -> i64 {
         self.used_slots.len() as i64 - 2 * self.bogus_offsets as i64
+    }
+
+    /// Relaxed validity predicate that doesn't penalise the over-read past
+    /// the per-scene table boundary.
+    ///
+    /// Recognises:
+    /// - At least one decodable record (`records.len() > 0`).
+    /// - The majority of non-zero offsets actually point into the buffer
+    ///   (`used_slots > bogus_offsets`).
+    ///
+    /// Random / non-Move LZS-decoded data fails this: random u32 offsets
+    /// almost always land past the buffer end, so `bogus ≈ used` and the
+    /// `records` list is dominated by garbage slots. All-zero buffers
+    /// fail because `used_slots = 0`. 75/79 retail per-scene Move buffers
+    /// pass it - the canonical bar for per-scene MDT install. See
+    /// [`engine-core::scene_bundle::move_payload_looks_valid`] for the
+    /// engine-side usage.
+    pub fn looks_like_move_buffer(&self) -> bool {
+        !self.records.is_empty() && self.used_slots.len() > self.bogus_offsets
     }
 }
 
@@ -286,7 +313,11 @@ pub fn classify(buf: &[u8]) -> Result<Classification> {
     let rt = RecordTable::parse(buf);
     let off_fit = mb.fitness();
     let flat_fit = rt.non_empty_count() as i64;
-    let verdict = if off_fit > 32 && mb.bogus_offsets == 0 {
+    // `MoveBuffer::looks_like_move_buffer` tolerates the over-read past the
+    // real per-scene table boundary that `parse` always performs. See the
+    // doc comment on `fitness` for why the legacy `off_fit > 32 &&
+    // bogus_offsets == 0` predicate is false-negative on retail Move data.
+    let verdict = if mb.looks_like_move_buffer() {
         Verdict::OffsetTableLayout
     } else if flat_fit > 8 && rt.trailing_bytes == 0 {
         Verdict::FlatRecordTable

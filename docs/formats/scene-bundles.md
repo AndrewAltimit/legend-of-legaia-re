@@ -145,7 +145,7 @@ The on-disc form of the scene asset table that the field loader reads when enter
 
 Each descriptor is `(type_size, data_offset)`:
 - `type_size` packs `(type_byte << 24) | (size & 0x00FF_FFFF)` - the same packing the [asset-type dispatcher](asset-type.md) accepts directly.
-- `data_offset` for descriptor 0 is a file-relative byte offset (always `0x40`). For descriptors 1..6, it's a **runtime-buffer offset** within the loader's working RAM, *not* a file-relative offset. Many real entries have `data_offset > file_size` for descriptors past the first; the loader presumably decompresses the payload region into a working buffer and resolves the descriptor offsets there.
+- `data_offset` is a file-relative byte position of that descriptor's own independent LZS stream, addressed against the bundle entry's **extended on-disc footprint** (`Archive::read_entry`), *not* the TOC-indexed sub-region (`Archive::read_entry_indexed`). Descriptor 0's offset is always `0x40` (the byte after the descriptor table). Descriptors 1..6 frequently fall past the indexed end and into the trailing-overlay sectors that the per-PROT TOC crops off - e.g. `0588_juui1.BIN`'s indexed view is 67584 B but `desc[4].data_offset` is 177413, valid against the 186368 B extended footprint. `size` is the **decompressed** byte count passed to [`legaia_lzs::decompress`].
 
 Type-sequence variants found across the 80 entries:
 

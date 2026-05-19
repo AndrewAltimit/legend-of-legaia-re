@@ -358,14 +358,12 @@ fn extract_move_payload_yields_real_data_across_corpus() {
                     expected_size
                 );
                 let mb = legaia_mdt::MoveBuffer::parse(&payload).expect("MoveBuffer parses");
-                // The strict `MoveBuffer::fitness()` is false-negative on
-                // retail data because real tables are shorter than the
-                // 1024-entry parser bound (MoveBuffer over-reads record
-                // bytes as bogus offsets). Match the predicate used by
-                // `extract_move_payload`: at least one record reachable
-                // and a majority of non-zero offsets in bounds.
+                // Strict `MoveBuffer::fitness()` is false-negative on real
+                // retail data (the parser over-reads record bytes as bogus
+                // offsets past the real short-table end). Use the relaxed
+                // predicate that `extract_move_payload` gates on.
                 assert!(
-                    !mb.records.is_empty() && mb.used_slots.len() > mb.bogus_offsets,
+                    mb.looks_like_move_buffer(),
                     "scene='{scene_name}' Move payload didn't look like a Move buffer \
                      (used={} bogus={} records={})",
                     mb.used_slots.len(),

@@ -251,7 +251,9 @@ pub fn extract_descriptor_0_lzs(bundle: &BundleSource) -> Result<(Vec<u8>, usize
 ///    (the `(1, 2, 3, 4, 6, 7, 0x14)` skip-Move variant; 1/80 entries).
 ///  - Bundles whose Move descriptor has zero size.
 ///  - Bundles where the LZS-decoded payload doesn't validate as a
-///    `legaia_mdt::MoveBuffer` (positive fitness).
+///    `legaia_mdt::MoveBuffer` (via
+///    [`legaia_mdt::MoveBuffer::looks_like_move_buffer`], not the strict
+///    `fitness` score - see that method's doc).
 ///
 /// Returns `Err` only for genuinely malformed inputs (data offset past
 /// entry end, LZS decoder fails on the bytes). The "no Move table for
@@ -293,27 +295,14 @@ pub fn extract_move_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result
 
 /// Predicate used by [`extract_move_payload`] to gate installation.
 ///
-/// Real per-scene Move buffers have offset tables shorter than the
-/// consumer-facing 1024-entry mask, so [`legaia_mdt::MoveBuffer::parse`]
-/// over-reads past the real table boundary and surfaces what's really
-/// record data as bogus offsets. That makes the strict
-/// [`legaia_mdt::MoveBuffer::fitness`] check false-negative for real
-/// data (e.g. `0086_map01.BIN` parses to used=1020 bogus=973).
-///
-/// The shape we actually want to recognise is:
-///  - At least one record is reachable (`records.len() > 0`).
-///  - The majority of non-zero offsets point into the buffer
-///    (`used > bogus`).
-///
-/// Random / non-Move LZS-decoded data fails both: random u32 offsets
-/// almost always land past the buffer end, so `bogus ≈ used` and
-/// `records` is dominated by garbage slots; all-zero buffers parse to
-/// `used = 0`.
+/// Thin wrapper around [`legaia_mdt::MoveBuffer::looks_like_move_buffer`];
+/// see that method's doc for why the strict
+/// [`legaia_mdt::MoveBuffer::fitness`] check is false-negative on real
+/// per-scene Move data.
 fn move_payload_looks_valid(buf: &[u8]) -> bool {
-    let Ok(mb) = legaia_mdt::MoveBuffer::parse(buf) else {
-        return false;
-    };
-    !mb.records.is_empty() && mb.used_slots.len() > mb.bogus_offsets
+    legaia_mdt::MoveBuffer::parse(buf)
+        .map(|mb| mb.looks_like_move_buffer())
+        .unwrap_or(false)
 }
 
 /// Index every TIM that the scene exposes via the `TimList` descriptor

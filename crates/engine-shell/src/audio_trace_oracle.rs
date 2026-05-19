@@ -366,6 +366,17 @@ pub fn build_engine_audio_trace(
     Ok(out)
 }
 
+/// Re-exported wrapper for [`crate::pcm_oracle::build_engine_pcm_trace`].
+/// The PCM-trace loop wants the same per-frame voice-activity sampler
+/// but the function is otherwise private to this module.
+pub(crate) fn sample_engine_frame_for_pcm(
+    session: &BootSession,
+    spu: &legaia_engine_audio::Spu,
+    sequencer: Option<&legaia_engine_audio::Sequencer>,
+) -> AudioTraceFrame {
+    sample_engine_frame(session, spu, sequencer)
+}
+
 fn sample_engine_frame(
     session: &BootSession,
     spu: &legaia_engine_audio::Spu,

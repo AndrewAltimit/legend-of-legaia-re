@@ -16,9 +16,24 @@
 //! +0x08   7 × (u32 type_size, u32 data_offset)
 //!                                     ; each pair packs `(type<<24)|size`
 //!                                     ; first descriptor's `data_offset` = 0x40
-//! +0x40   asset payload region        ; LZS-compressed in ~26 / 80 entries,
-//!                                     ; stored raw in the rest
+//! +0x40   per-descriptor LZS streams  ; one independent LZS stream per
+//!                                     ; descriptor, addressed by
+//!                                     ; `data_offset` and decompressing to
+//!                                     ; exactly `size` bytes
 //! ```
+//!
+//! ### Descriptor offsets are file-relative against the EXTENDED footprint
+//!
+//! Each descriptor `(type, size, data_offset)` is its own LZS stream where
+//! `size` is the **decompressed** byte count. `data_offset` is the
+//! file-relative byte position of that stream inside the bundle entry's
+//! **full on-disc footprint** ([`legaia_prot::archive::Archive::read_entry`]),
+//! **not** the TOC-indexed sub-region (`Archive::read_entry_indexed`).
+//! Several entries (e.g. `0588_juui1`) carry descriptor offsets that fall
+//! past the indexed end and into the trailing-overlay sectors that the
+//! per-PROT TOC crops off; those offsets are valid against the extended
+//! footprint. See `legaia-engine-core::scene_bundle::extract_move_payload`
+//! for the canonical reader.
 //!
 //! ### Type-sequence variants (empirically observed)
 //!
@@ -74,13 +89,15 @@ const HEADER_END: u32 = 8 + (HEADER_COUNT * 8);
 const MAX_ASSET_SIZE: u32 = 4 * 1024 * 1024;
 
 /// Cap on the magnitude of `data_offset` for descriptors past the first.
-/// **Important:** descriptor offsets past the first are *not* file-relative
-/// byte offsets - they reference positions within a runtime-allocated
-/// decompression buffer (the loader's working RAM). Empirically these top
-/// out around 0x80000 (512 KB). 16 MB is a defensive cap that rejects
-/// pointer-shaped values like `0x801C0000` while accepting all real scene
-/// asset tables.
-const MAX_RUNTIME_OFFSET: u32 = 16 * 1024 * 1024;
+///
+/// Offsets are file-relative against the extended bundle footprint (see
+/// the module-level "Descriptor offsets" section). Empirically they top
+/// out around 0x80000 (512 KB) across the 80 retail bundles. 16 MB is a
+/// defensive cap that rejects pointer-shaped values like `0x801C0000`
+/// while accepting all real scene asset tables - the detector runs on raw
+/// PROT bytes before the extended footprint is loaded, so it can't
+/// validate `data_offset <= file_size` directly.
+const MAX_DATA_OFFSET: u32 = 16 * 1024 * 1024;
 
 /// Detection result.
 #[derive(Debug, Clone, Serialize)]
@@ -153,14 +170,17 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
         if size > MAX_ASSET_SIZE {
             return None;
         }
-        // First descriptor's offset MUST be a real file-relative byte offset
-        // (anchored at the byte after the descriptor table). The rest are
-        // runtime-buffer offsets that don't fit in the on-disc file.
+        // First descriptor's offset is anchored at the byte after the
+        // descriptor table (`HEADER_END = 0x40`). The remaining offsets
+        // are file-relative against the EXTENDED bundle footprint (see
+        // module doc) and only get sanity-checked against MAX_DATA_OFFSET
+        // here - the detector runs on raw PROT bytes before the extended
+        // footprint is materialised.
         if i == 0 {
             if data_offset != HEADER_END {
                 return None;
             }
-        } else if data_offset > MAX_RUNTIME_OFFSET {
+        } else if data_offset > MAX_DATA_OFFSET {
             return None;
         }
         *slot = DescriptorRecord {
@@ -288,14 +308,16 @@ mod tests {
     }
 
     #[test]
-    fn accepts_runtime_offset_past_file_size() {
-        // Real-world: descriptor offsets past desc[0] reference positions in a
-        // runtime decompression buffer, not the on-disc file. They legitimately
-        // exceed the file length (e.g. izumi.BIN is 96 KB but desc[2].off is
-        // 0x228be = 141 KB).
+    fn accepts_extended_footprint_offset_past_indexed_size() {
+        // Real-world: descriptor offsets past desc[0] are file-relative
+        // against the EXTENDED bundle footprint, which often runs past the
+        // TOC-indexed view. The detector runs on raw PROT bytes (which may
+        // be either view), so it only sanity-checks against MAX_DATA_OFFSET
+        // rather than the local buffer length. E.g. `0588_juui1.BIN`'s
+        // indexed view is 67584 B but desc[4].data_offset is 177413.
         let mut buf = synth([1, 2, 3, 4, 5, 6, 7], 0x100);
         // Patch descriptor[6].data_offset to a 256 KB value - well past the
-        // 256-byte file but within MAX_RUNTIME_OFFSET.
+        // 256-byte buffer but within MAX_DATA_OFFSET.
         buf[8 + 6 * 8 + 4..8 + 6 * 8 + 8].copy_from_slice(&0x0004_0000u32.to_le_bytes());
         assert!(detect(&buf).is_some());
     }

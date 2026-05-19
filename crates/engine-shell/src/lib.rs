@@ -8,6 +8,7 @@ pub mod audio_trace_oracle;
 pub mod bgm;
 pub mod boot;
 pub mod mode_trace_oracle;
+pub mod pcm_oracle;
 pub mod replay;
 pub mod scenarios;
 pub mod vram_oracle;
