@@ -279,6 +279,25 @@ Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.r
 
 `crates/xa` decodes the format spec correctly on synthetic inputs. The on-disc `.XA` files use a non-standard interleave - ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.
 
+## Audio-trace parity oracle (foundation)
+
+Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side lifts a single-cycle snapshot from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame.
+
+JSONL is the wire format - one `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }` per line. Convergence rule: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
+
+Two known asymmetries the diff function explicitly models:
+
+1. **Headless engine SPU.** `BootSession` only attaches a real cpal `AudioOut` when `enable_audio = true`, which fails in CI. The oracle constructs a standalone `Spu` in parallel and routes scene-resolved BGM events into it. Not bit-identical to the retail SPU, but the voice-activity envelope is.
+2. **Single retail frame vs. windowed engine.** Save states freeze one SPU cycle; the engine trace produces `frames + 1` records. Convergence is "any engine frame matches retail's voice mask".
+
+Entry points:
+
+- Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `first_audio_trace_divergence`, JSONL round-trip.
+- CLI: `legaia-engine audio-trace --scene NAME` (explicit) or `--scenario LABEL` (compares against `.mc{slot}` SPU).
+- Disc-gated test: [`audio_trace_i1`](../../crates/engine-shell/tests/audio_trace_i1.rs) auto-discovers every scenario in `scripts/scenarios.toml` with both `expected_active_scene` and an on-disk `.mc{slot}` save.
+
+The foundation cut does not drive BGM in the engine trace (no `--bgm-id` by default), so scenarios with retail-active voices report `NoFrameMatched` as expected-drift. Strengthening the engine side to play BGM in the trace (and a paired PCSX-Redux Lua probe to capture per-vsync retail SsAPI state) are follow-up work; the harness shape matches the VRAM and mode-trace oracles for downstream reuse.
+
 ## What's left
 
 The byte-level layouts of `.MAP / .PCH / .spk / .dpk / .pac` are still TBD. The dispatch chain *into* them is fully traced; the next move is to read the body of `FUN_8001FA88` for the `.dpk` byte layout (specifically the field accesses on `_DAT_8007B8D0` after the path-based opener returns - `_DAT_8007B8D0 + 2` is read as a `ushort` and used as a divisor, almost certainly a record count).

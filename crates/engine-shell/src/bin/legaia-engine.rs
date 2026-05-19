@@ -30,6 +30,10 @@ use legaia_engine_render::{
     text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
+use legaia_engine_shell::audio_trace_oracle::{
+    AudioTraceFrame, audio_trace_to_jsonl, engine_trace_from_paths, first_audio_trace_divergence,
+    load_runtime_audio_trace_from_save,
+};
 use legaia_engine_shell::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, mode_trace_to_jsonl,
@@ -279,6 +283,70 @@ enum Cmd {
         /// retail snapshot's `(scene_mode, active_scene)`. Exits
         /// non-zero with the last engine frame on divergence. Only
         /// valid in scenario mode.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
+    /// Phase-I1 audio-trace oracle (foundation). Boots a `BootSession`
+    /// on the resolved scene, runs a private headless SPU + sequencer
+    /// in parallel, ticks for `--frames` frames sampling
+    /// `(voice_mask, voices[24], master_volume)` per frame, emits the
+    /// engine trace as JSONL, and (in scenario mode) compares against
+    /// the SPU section lifted from the matching mednafen `.mc{slot}`
+    /// save.
+    ///
+    /// **Two modes:**
+    ///   - **Explicit**: `--scene <NAME>` runs the engine alone and
+    ///     emits its JSONL trace. No comparison.
+    ///   - **Scenario**: `--scenario <LABEL>` resolves both the scene
+    ///     (from `expected_active_scene`) and the retail snapshot
+    ///     (from the `.mc{slot}` save's SPU section). With `--strict`,
+    ///     exits non-zero on divergence.
+    ///
+    /// **Asymmetry.** The retail snapshot freezes one SPU cycle; the
+    /// engine trace runs over a window. Convergence rule: at least
+    /// one engine frame's active-voice mask must be a superset of
+    /// retail's mask. The follow-up Lua probe will turn the retail
+    /// side into a multi-frame trace.
+    ///
+    /// **No BGM by default.** Without `--bgm-id`, the engine plays no
+    /// sequencer and the trace shows all-quiescent voices. This is
+    /// the foundation cut - the long-form oracle wires the field-VM
+    /// BGM events into the private sequencer.
+    AudioTrace {
+        /// CDNAME scene name (e.g. `town01`). Required in explicit
+        /// mode; derived from the scenario's `expected_active_scene`
+        /// in scenario mode.
+        #[arg(long)]
+        scene: Option<String>,
+        /// Extracted-root directory containing `PROT.DAT` +
+        /// `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly
+        /// from a `.bin` disc image.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Scenario label looked up in the manifest. Resolves scene +
+        /// `.mc` save automatically.
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Scenario manifest path.
+        #[arg(long, default_value = "scripts/scenarios.toml")]
+        manifest: PathBuf,
+        /// Engine frames to tick before sampling. Engine trace has
+        /// `frames + 1` entries (one for boot state, one per tick).
+        #[arg(long, default_value_t = 60)]
+        frames: u64,
+        /// Optional: BGM id to start through the private sequencer
+        /// at boot. Without this the trace shows quiescent voices.
+        #[arg(long)]
+        bgm_id: Option<u16>,
+        /// Where to write the engine JSONL trace. Default `-` = stdout.
+        #[arg(long, default_value = "-")]
+        out: PathBuf,
+        /// Strict mode: exit non-zero on divergence between the
+        /// engine trace and the retail SPU snapshot. Only valid in
+        /// scenario mode.
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
@@ -786,6 +854,27 @@ fn main() -> Result<()> {
             scenario: scenario.as_deref(),
             manifest: &manifest,
             frames,
+            out: &out,
+            strict,
+        }),
+        Cmd::AudioTrace {
+            scene,
+            extracted_root,
+            disc,
+            scenario,
+            manifest,
+            frames,
+            bgm_id,
+            out,
+            strict,
+        } => cmd_audio_trace(AudioTraceArgs {
+            scene: scene.as_deref(),
+            extracted_root: &extracted_root,
+            disc: disc.as_deref(),
+            scenario: scenario.as_deref(),
+            manifest: &manifest,
+            frames,
+            bgm_id,
             out: &out,
             strict,
         }),
@@ -1733,6 +1822,137 @@ fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
                     d.engine.active_scene,
                     d.retail.scene_mode,
                     d.retail.active_scene,
+                );
+                if args.strict {
+                    anyhow::bail!("{msg}");
+                } else {
+                    eprintln!("{msg}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// audio-trace (Phase I1 - audio parity oracle, foundation cut)
+// ---------------------------------------------------------------------------
+
+/// Phase-I1 audio-trace oracle - args struct for `cmd_audio_trace`.
+struct AudioTraceArgs<'a> {
+    scene: Option<&'a str>,
+    extracted_root: &'a Path,
+    disc: Option<&'a Path>,
+    scenario: Option<&'a str>,
+    manifest: &'a Path,
+    frames: u64,
+    bgm_id: Option<u16>,
+    out: &'a Path,
+    strict: bool,
+}
+
+/// Resolved input triple - `(scene_name, retail_snapshot, source_label)`.
+/// `retail_snapshot` is `None` in explicit mode (no comparison).
+struct ResolvedAudioTrace {
+    scene_name: String,
+    retail: Option<AudioTraceFrame>,
+    source_label: String,
+}
+
+fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudioTrace> {
+    use legaia_mednafen::ScenarioManifest;
+
+    match (args.scenario, args.scene) {
+        (Some(label), _) => {
+            let manifest = ScenarioManifest::from_path(args.manifest)?;
+            let scn = manifest.by_label(label).with_context(|| {
+                format!("scenario {label:?} not in {}", args.manifest.display())
+            })?;
+            let scene_name = scn.expected_active_scene.clone().with_context(|| {
+                format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene")
+            })?;
+            let save_path = manifest.save_path(scn.slot)?;
+            if !save_path.exists() {
+                anyhow::bail!(
+                    "scenario {label:?} slot {} save not found at {}",
+                    scn.slot,
+                    save_path.display()
+                );
+            }
+            let retail = load_runtime_audio_trace_from_save(&save_path)?;
+            let source_label = format!(
+                "scenario {label:?} (slot {}, {})",
+                scn.slot,
+                save_path.display()
+            );
+            Ok(ResolvedAudioTrace {
+                scene_name,
+                retail: Some(retail),
+                source_label,
+            })
+        }
+        (None, Some(scene_name)) => Ok(ResolvedAudioTrace {
+            scene_name: scene_name.to_owned(),
+            retail: None,
+            source_label: "explicit (no retail comparison)".into(),
+        }),
+        _ => anyhow::bail!("audio-trace: provide either `--scenario <label>` or `--scene <name>`"),
+    }
+}
+
+fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
+    if args.strict && args.scenario.is_none() {
+        anyhow::bail!(
+            "audio-trace: `--strict` requires `--scenario` (no retail snapshot in explicit mode)"
+        );
+    }
+    let resolved = resolve_audio_trace_inputs(&args)?;
+    let trace = engine_trace_from_paths(
+        &resolved.scene_name,
+        args.extracted_root,
+        args.disc,
+        args.frames,
+        args.bgm_id,
+    )?;
+    let jsonl = audio_trace_to_jsonl(&trace);
+
+    let out_label = if args.out.as_os_str() == "-" {
+        print!("{jsonl}");
+        "<stdout>".to_string()
+    } else {
+        std::fs::write(args.out, jsonl.as_bytes())
+            .with_context(|| format!("write audio-trace JSONL to {}", args.out.display()))?;
+        args.out.display().to_string()
+    };
+
+    eprintln!(
+        "scene '{}' vs {} (frames={}, trace_len={}, bgm_id={:?})  -> {}",
+        resolved.scene_name,
+        resolved.source_label,
+        args.frames,
+        trace.len(),
+        args.bgm_id,
+        out_label
+    );
+
+    if let Some(retail) = resolved.retail.as_ref() {
+        let last = trace.last().unwrap();
+        eprintln!(
+            "  engine[last] mask=0b{:024b} master={:?} reverb_mode={:?}",
+            last.active_voice_mask, last.master_volume, last.reverb_mode,
+        );
+        eprintln!(
+            "  retail       mask=0b{:024b} master={:?} reverb_mode={:?}",
+            retail.active_voice_mask, retail.master_volume, retail.reverb_mode,
+        );
+        match first_audio_trace_divergence(&trace, retail) {
+            None => {
+                eprintln!("[ok] engine trace converges with retail snapshot");
+            }
+            Some(d) => {
+                let msg = format!(
+                    "[DRIFT] {:?}: engine(mask=0b{:024b}) vs retail(mask=0b{:024b})",
+                    d.kind, d.engine.active_voice_mask, d.retail.active_voice_mask,
                 );
                 if args.strict {
                     anyhow::bail!("{msg}");
