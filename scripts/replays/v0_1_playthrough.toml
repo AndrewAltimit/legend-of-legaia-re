@@ -41,6 +41,13 @@
 
 [meta]
 schema = "j-replay-v1"
+# Scenario binding: anchor C of the v0.1 slice taxonomy. Mednafen mc7
+# captures Vahn in Rim Elm (`town01`, game_mode 0x03 MainMode) one
+# button-press from the Tetsu tutorial battle trigger. Pressing Cross
+# (PSX X / keyboard `S` via DefaultInputMap) advances the dialogue
+# that fires the field-VM battle-init opcode. The replay's recorded
+# pad timeline drives this transition deterministically.
+scenario = "v0_1_pre_battle_tetsu"
 # Canonical engine seed (matches ReplayMeta::new default). Real
 # recordings can override; the scaffold uses the canonical so two-run
 # determinism is checked against the same starting RNG state the engine

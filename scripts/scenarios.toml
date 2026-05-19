@@ -47,7 +47,7 @@
 #
 #   mc2 → STR 0 (fmv_id 0)    mc3 → STR 1 (fmv_id 1)
 #   mc4 → STR 2 (fmv_id 2)    mc5 → STR 3 (fmv_id 3)
-#   mc6 → STR 4 (fmv_id 4)    mc7 → STR 5 (fmv_id 5)
+#   mc6 → STR 4 (fmv_id 4)    mc7 → ROTATED (v0.1 slice; was fmv_id 5)
 #   mc8 → STR 6 (fmv_id 6)    mc9 → STR 7 (fmv_id 7)
 #   mc0 → STR 8 (fmv_id 8)
 #
@@ -254,26 +254,36 @@ end = 0x8007BA7A
 hint = "_DAT_8007BA78 = `04 00` (fmv_id = 4)."
 
 # ----------------------------------------------------------------------
-# mc7 - fmv_id=5. Maps to slot[5] which points at \DATA\MOV15.STR;1
-# (cut path; not on retail disc). The trigger-side state is fully
-# pinned but the play-loop opens a non-existent path.
+# mc7 - v0.1 playthrough oracle anchor C: pre-battle field state.
+#
+# Player (Vahn) stands in Rim Elm (scene `town01`, game mode 0x03
+# MainMode) one button-press from the scripted Tetsu tutorial battle.
+# Pressing Cross (X / mapped to keyboard `S`) advances the dialogue
+# trigger that fires the field-VM battle-init opcode.
+#
+# Anchor in the v0.1 slice taxonomy (see backlog item 1): this is the
+# load-from-disk state. The replay's `meta.scenario` binds to this
+# save; downstream anchors (D = battle-init, E = post-victory) are
+# additional save captures that the oracle compares against at
+# specific frames in the recorded timeline.
+#
+# Supersedes the FMV-trigger-corpus `fmv_trigger_str_5` capture that
+# previously occupied this slot (the corpus comment at the top of
+# this file is now stale for slot 7).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 7
-label = "fmv_trigger_str_5"
-description = "Per-STR FMV trigger captured for fmv_id=5 (cut path slot)"
-topics = ["FMV trigger", "fmv_id 5", "cut path slot"]
-diff_against = [8]
+label = "v0_1_pre_battle_tetsu"
+ram_fingerprint_sha256 = "db4c3b06b5a362c9519702ba1fa7c6a3e3730288ecd07858ef5777d35bf92fab"
+description = "v0.1 slice anchor C: Vahn in Rim Elm, one button-press from the Tetsu tutorial battle trigger"
+topics = ["v0.1 slice", "pre-battle", "scripted encounter", "Tetsu tutorial", "town01"]
+phase = "field"
+expected_active_scene = "town01"
+expected_game_mode = 0x03
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `05 00` (fmv_id = 5). Slot[5] points at \\DATA\\MOV15.STR;1 - cut path."
 
 # ----------------------------------------------------------------------
 # mc8 - fmv_id=6. Maps to slot[6] which points at \DATA\MOV.STR;1 (cut).
