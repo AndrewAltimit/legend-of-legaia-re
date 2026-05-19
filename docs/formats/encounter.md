@@ -131,6 +131,96 @@ Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](
 | `mc2` (in-battle, `map01`) | `04 04 00 00` | Two-slot encounter, both slots monster id `0x04`. |
 | `mc3` (post-battle, `suimon`) | `0A 0D 00 00` | Two-slot encounter, monsters `0x0A` and `0x0D`. |
 
+## Random-encounter trigger path
+
+The script-VM install opcodes above describe **scripted** encounter
+arms. Random encounters use a separate path:
+
+**Roll function.** `FUN_801D9E1C` (in the world_map overlay; also paged
+in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing /
+debug_menu overlays — same code each time) runs once per movement
+update. It walks the per-scene **region table** at
+`*(_DAT_801C6EA4 + 0x28) + 1` and matches the player's `(x, y)` against
+each region's AABB at `pbVar9[0..3]`. The matching region descriptor
+supplies:
+
+- `pbVar9[4]`: per-step rate increment.
+- `pbVar9[6]`, `pbVar9[7]`: base + count of the formation slice the
+  region rolls into.
+
+The rate is then scaled by the user-config setting at `_DAT_8007B5F8`
+(`0` off, `1` low, `2` normal → `<< 2`, `3` high → `>> 2`; the world-map
+debug menu `ENCOUNT` row cycles this byte) and by accessory / status
+modifiers (`FUN_800431D0(0x3B)` / `(0x3C)` / `FUN_8003CE64(0x1D)` /
+`(0x1E)`), then subtracted from the step counter at `_DAT_8007B5FC`.
+When the counter goes ≤ 0, two RNG draws pick a formation id in
+`[pbVar9[6], pbVar9[6] + pbVar9[7])` and the roll function installs:
+
+```c
+*(short *)(actor + 0x88) = formation_id;
+*(short *)(actor + 0x8a) += 1;
+*(uint  *)(actor + 0x94) = formation_table_base + 1 + formation_id * stride;
+*(uint  *)(_DAT_8007c364 + 0x10) |= 0x80000;
+_DAT_8007b5fc = (RNG % 0x1e7) - ((RNG % 0x1e7) - 0x3ce);
+```
+
+Note the install at `+0x94` uses the same slot the scripted-encounter
+path uses, but raises a **different flag bit** (`0x80000`, not
+`0x400`). `FUN_801DA51C` reads `actor[+0x94]` without checking either
+flag, so a single reader serves both paths.
+
+**Encounter control block (`_DAT_801C6EA4`).** A 100-byte block
+allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
+("Mesworks set encount group table"). After scene load it carries:
+
+| Offset | Field |
+|---|---|
+| `+0x20` | Formation table base. Records of stride `+0x5d`; record at index `i` lives at `base + 1 + i * stride` (the `+1` skips a leading count byte). |
+| `+0x24` | Condition table base. Records of stride `+0x5e`. |
+| `+0x28` | Region table base. Records of stride `+0x5f` (AABB + rate + formation range). |
+| `+0x5d` | Formation record stride. |
+| `+0x5e` | Condition record stride. |
+| `+0x5f` | Region record stride. |
+
+**Per-scene MAN file (asset type `0x03`).** The encounter data lives as
+the `Man` asset in each scene's
+[`scene_asset_table`](scene-bundles.md#scene_asset_table---canonical-7-asset-bundle)
+7-asset bundle, descriptor index 2. The asset dispatcher
+(`FUN_8001F05C`) LZS-decompresses the Man payload into a heap buffer
+addressed by `_DAT_8007B898`; `FUN_8003AEB0` (the per-scene MAN
+walker, called from `FUN_801D6704` / family scene loaders) then walks
+the MAN's multi-section header (offsets at `+0x22 / +0x24 / +0x26`
+read as signed 16-bit LE) and finally writes the encounter-section
+pointer into `ctrl[+0x20]` before calling `FUN_8003A110`.
+
+The encounter-section header (consumed by `FUN_8003A110`) is 6 bytes
+followed by three count-prefixed record arrays:
+
+```text
++0x00..+0x02   reserved
++0x03          formation_stride (u8)
++0x04          condition_stride (u8)
++0x05          region_stride    (u8)
++0x06          formation_count (u8)
++0x07          formation_count × formation_stride bytes  ; encounter records
+                   record_i[+0..+2] = reserved (consumed elsewhere?)
+                   record_i[+3]     = monster_count
+                   record_i[+4..]   = monster_ids
++next          condition_count (u8) + condition_count × condition_stride bytes
++next          region_count (u8) + region_count × region_stride bytes
+                   region_j[+0..+3] = (x_min, y_min, x_max, y_max)
+                   region_j[+4]     = rate increment
+                   region_j[+6]     = formation-range base index
+                   region_j[+7]     = formation-range count
+                   region_j[+8..]   = battle-bg variant flags + extras
+```
+
+For `0086_map01` (Drake's kingdom field-scene bundle), the Man
+descriptor sits at file offset `0x3B238` (LZS-compressed, body
+0x55C8 bytes → decompresses to 11274 bytes); the in-MAN encounter
+section's exact byte position needs the MAN multi-section header
+fully decoded.
+
 ## What this doesn't tell us
 
 - **Per-opcode encoding of the trailing operand bytes.** Each install
@@ -139,27 +229,21 @@ Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](
   layout at `+0x3..` is fixed by the reader but the opcode-header
   bytes need a per-case decode in the dispatcher to interpret as
   "encounter trigger from script X at PC Y".
-- **The random-encounter trigger path.** The script-VM install opcodes
-  catalogued here describe **scripted** encounter arms. Random encounters
-  are gated by a per-step rate roll on `_DAT_8007B5F8` (see
-  [`subsystems/world-map.md`](../subsystems/world-map.md)). Whether a
-  successful roll invokes the script-VM with a "random encounter"
-  prologue script that then hits one of the install opcodes — or whether
-  the roll function writes the formation cell directly without going
-  through `actor[+0x94]` — has not been pinned down. Quick survey: the
-  `0085_map01` scene_event_scripts file (Drake's field) carries zero
-  install opcodes in its 46 indexed script bodies, despite map01 having
-  random encounters in play, which makes the "roll function populates
-  the formation cell directly, separately from `actor[+0x94]`"
-  hypothesis the more probable shape.
-- **The pre-encounter live-pointer state.** No save state in the current
-  scenario corpus (`scripts/scenarios.toml`) captures an actor with
-  `+0x94` mid-armed — `mc0` has a stale `0x0B33FF70` in that slot and
-  `+0x10 & 0x400 == 0`, and every other slot has either zero or a
-  `0xFFFFFFFF` sentinel. A byte-level verification of "the install
-  opcode bytes match `actor[+0x94]`" needs a fresh capture taken between
-  the install opcode dispatch and the `FUN_801DA51C` consumption — a
-  one-frame window during scene scripting.
+- **The MAN multi-section header.** `FUN_8003AEB0` walks past several
+  sub-sections (read at MAN offsets `+0x22`, `+0x24`, `+0x26`,
+  `+0x28`) before reaching the encounter section. The other
+  sub-sections almost certainly include the world-overview MAN actor
+  placement records (`FUN_8003A1E4`'s consumer, already documented in
+  [`subsystems/world-overview-viewer.md`](../subsystems/world-overview-viewer.md)).
+  Decoding the section layout in full would yield the encounter
+  section's exact in-MAN offset and stride for every scene.
+- **The pre-encounter live-pointer state.** No save state in the
+  current scenario corpus captures an actor with `+0x94` mid-armed —
+  the corpus's `mc0` carries a stale value and every other slot is
+  zero or `0xFFFFFFFF`. Byte-level verification of "the encounter
+  record bytes at the live `actor[+0x94]` match the parsed Man's
+  formation record" needs a fresh save-state capture taken in the
+  one-frame window between roll and `FUN_801DA51C` consumption.
 
 ## Files referencing this format
 
