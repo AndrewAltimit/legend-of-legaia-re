@@ -14,15 +14,31 @@ Reuses helpers from `function-coverage.py` where useful: same dump-file naming
 convention, same address regex shape (SCUS 0x80010000-0x8006FFFF and overlays
 0x801C0000-0x8020FFFF).
 
-PORT tag format (Rust source files under crates/):
+PORT tag format (Rust source files under crates/). The scanner accepts the
+tag inside any of three comment forms:
 
-    // PORT: FUN_801dd35c                  -- single
-    // PORT: FUN_801dd35c, FUN_801cf244    -- multiple on one line
-    // PORT: FUN_801dd35c (sub-mode jump table)   -- trailing context allowed
+    // PORT: FUN_801dd35c                  -- plain line comment
+    /// PORT: FUN_801dd35c                  -- outer doc-comment (attaches to next item)
+    //! PORT: FUN_801dd35c, FUN_801cf244    -- inner doc-comment (module-level)
 
-Whitespace and the `// PORT:` prefix are matched leniently; the addresses are
-matched strictly to the SCUS/overlay range so unrelated `// PORT: 80...` text
-in unrelated contexts is unlikely to false-positive.
+The dominant convention in this codebase is the `//!` module-level form: each
+crate file leads with a doc block that lists every dispatcher / top-level
+function ported into that module on one (or several) `//! PORT:` line(s). The
+catalog counts each distinct `FUN_<addr>` only once across all tag forms, so a
+quick sanity check is:
+
+    grep -rEi '//[/!]?\\s*PORT\\s*:' crates/ | grep -oEi 'FUN_8[0-9a-f]{7}' | sort -u | wc -l
+
+A plain `grep -r "// PORT:"` under-counts dramatically — most tags live in
+`//!` doc blocks that don't contain the literal substring `"// "`.
+
+Trailing context after the address list is allowed:
+
+    //! PORT: FUN_801dd35c (sub-mode jump table)
+
+Addresses are matched strictly to the SCUS/overlay range (0x80010000-0x8006FFFF
+and 0x801C0000-0x8020FFFF) so unrelated text in the tail of a tag won't
+false-positive.
 
 Usage:
     python3 scripts/port-catalog.py                       # build global catalog
