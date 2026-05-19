@@ -8,6 +8,10 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   `~/.mednafen/mcs/`).
 - Index PSX-module sections (`MAIN`, `GPU`, `SPU`, `CDC`, …) and resolve
   `MAIN.MainRAM.data8` as 2 MiB of main RAM.
+- Typed accessors over the `GPU` section (`PsxGpu` - VRAM bytes + control
+  registers) and the `SPU` section (`PsxSpu` - 512 KiB SPU RAM, per-voice
+  state snapshots, key-on/-off masks, master volume, reverb mode). The
+  SPU accessor backs the audio-trace parity oracle in `engine-shell`.
 - Diff main RAM between two snapshots - coalesce per-byte changes into
   contiguous "regions" with PSX virtual addresses, suitable for handing to
   Ghidra to look up writers.

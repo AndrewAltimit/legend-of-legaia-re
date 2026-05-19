@@ -4,6 +4,7 @@
 //! [`legaia_engine_core`] and [`legaia_engine_audio`] (the BGM director) so
 //! the binary and any embedding can share the same per-scene plumbing.
 
+pub mod audio_trace_oracle;
 pub mod bgm;
 pub mod boot;
 pub mod mode_trace_oracle;

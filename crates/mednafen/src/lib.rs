@@ -36,6 +36,7 @@ pub mod prim_pool;
 pub mod psx;
 pub mod scenarios;
 pub mod source_hunt;
+pub mod spu;
 
 pub use container::{SaveState, Section, SubEntry};
 pub use diff::{RamDiff, RegionDiff};
@@ -45,3 +46,4 @@ pub use gpu::{
 };
 pub use psx::{CpuRegs, PsxMain};
 pub use scenarios::{Scenario, ScenarioManifest, WatchpointSpec};
+pub use spu::{NUM_VOICES as SPU_NUM_VOICES, PsxSpu, SPU_RAM_BYTES, SpuVoiceState};
