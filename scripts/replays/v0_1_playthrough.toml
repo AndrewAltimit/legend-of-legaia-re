@@ -1,0 +1,30 @@
+[meta]
+schema = "j-replay-v1"
+scenario = "v0_1_pre_battle_tetsu"
+rng_seed = 3735929054
+frames = 366
+
+[[event]]
+frame = 103
+pad = 8192
+
+[[event]]
+frame = 110
+pad = 0
+
+# v0.1 contract: by frame 250 (~2.5 seconds after the Circle press at
+# frame 103), the engine should have advanced the Tetsu dialogue and
+# entered BattleMode -- the retail capture at mc0 lands one frame
+# after BattleInit in this same window. RED state today: the engine
+# stays in scene_mode=Title for the whole 366-frame replay because
+# the field-VM dialog-advance path doesn't read `World.input` from a
+# cold boot. The failing diff captures the gap. This expected row
+# becomes a passing assertion once one of the following lands:
+#   - BootSession supports save-state load (mc7's RAM state replaces
+#     the cold-boot starting point), OR
+#   - field-VM dialog advance moves into the engine tick path and
+#     consumes `World.input` (the next field consumer to wire).
+[[expected]]
+frame = 250
+scene_mode = "Battle"
+active_scene = "town01"
