@@ -412,6 +412,26 @@ fn sample_engine_frame(
     }
 }
 
+/// Load a multi-frame retail trace from a JSONL file emitted by
+/// `scripts/pcsx-redux/extract_audio_trace_from_sstates.py` (which itself
+/// decodes the binary stream produced by
+/// `scripts/pcsx-redux/autorun_audio_trace.lua`). Each line of the file
+/// is one [`AudioTraceFrame`] record; the `frame` field carries the
+/// vsync index at which the snapshot was taken in the live emulator.
+///
+/// This is the multi-frame sibling of
+/// [`load_runtime_audio_trace_from_save`] - the latter lifts a single
+/// SPU snapshot out of a mednafen save state, while this one consumes a
+/// trace of N snapshots captured per-vsync against a running emulator.
+/// The multi-frame trace is what
+/// [`first_audio_trace_divergence_multi`] consumes to do a
+/// frame-by-frame comparison against the engine trace.
+pub fn load_runtime_audio_trace_jsonl(path: &Path) -> Result<Vec<AudioTraceFrame>> {
+    let s = std::fs::read_to_string(path)
+        .with_context(|| format!("read retail audio-trace JSONL {}", path.display()))?;
+    parse_audio_trace_jsonl(&s)
+}
+
 /// Lift a single audio-trace sample out of a mednafen `.mc{slot}` save.
 /// Reads the SPU section via [`legaia_mednafen::PsxSpu`].
 ///
@@ -559,6 +579,41 @@ pub fn first_audio_trace_divergence(
                 engine: matched.clone(),
                 retail: retail.clone(),
             });
+        }
+    }
+    None
+}
+
+/// Multi-frame retail convergence walk. Sister to
+/// [`first_audio_trace_divergence`] but consumes a `retail: &[AudioTraceFrame]`
+/// trace captured per-vsync via the PCSX-Redux autorun probe.
+///
+/// Convergence rule (parallel to the single-frame rule, applied per
+/// retail frame): for each retail frame whose `active_voice_mask` is
+/// non-zero, there must exist some engine frame whose mask is a
+/// **superset** of retail's mask AND, for every retail-active voice, the
+/// engine's same voice index reports a matching `start_addr` (when both
+/// sides report one). The first retail frame that fails this rule is
+/// returned. Retail frames with `active_voice_mask == 0` are trivially
+/// satisfied and skipped.
+///
+/// Picking the engine frame: we walk the engine trace forward and use
+/// the first matching frame. This handles minor cross-fade timing
+/// drift - if the engine's voice allocations land a few frames before
+/// or after retail's, the convergence still triggers.
+pub fn first_audio_trace_divergence_multi(
+    engine: &[AudioTraceFrame],
+    retail: &[AudioTraceFrame],
+) -> Option<AudioTraceDivergence> {
+    if engine.is_empty() {
+        return None;
+    }
+    for rf in retail {
+        if rf.active_voice_mask == 0 {
+            continue;
+        }
+        if let Some(d) = first_audio_trace_divergence(engine, rf) {
+            return Some(d);
         }
     }
     None
@@ -776,6 +831,49 @@ mod tests {
         assert!(d.sequencer().is_none());
         assert!(!d.is_paused());
         assert_eq!(d.last_started, None);
+    }
+
+    /// Multi-frame divergence walk skips retail frames with no active
+    /// voices. Three retail frames quiet → no divergence.
+    #[test]
+    fn divergence_multi_skips_quiet_retail_frames() {
+        let engine = vec![frame_with(0, vec![voice(false, None)])];
+        let retail = vec![
+            frame_with(0, vec![voice(false, None)]),
+            frame_with(0, vec![voice(false, None)]),
+            frame_with(0, vec![voice(false, None)]),
+        ];
+        assert!(first_audio_trace_divergence_multi(&engine, &retail).is_none());
+    }
+
+    /// Multi-frame divergence: if any single retail frame fails the
+    /// single-frame convergence rule, the multi-frame walk reports it.
+    #[test]
+    fn divergence_multi_reports_first_failing_retail_frame() {
+        let engine = vec![frame_with(
+            0b0000_0010,
+            vec![voice(false, None), voice(true, Some(0x1200))],
+        )];
+        // Three retail frames: first quiet, second matched, third diverges.
+        let retail = vec![
+            frame_with(0, vec![voice(false, None)]),
+            frame_with(
+                0b0000_0010,
+                vec![voice(false, None), voice(true, Some(0x1200))],
+            ),
+            // Retail asks for voice 0 active, but engine never had it.
+            frame_with(0b0000_0001, vec![voice(true, Some(0xC0DE))]),
+        ];
+        let d = first_audio_trace_divergence_multi(&engine, &retail).unwrap();
+        assert_eq!(d.kind, AudioDivergenceKind::NoFrameMatched);
+    }
+
+    /// Multi-frame divergence handles an empty engine trace the same way
+    /// the single-frame walk does: returns None (nothing to compare).
+    #[test]
+    fn divergence_multi_empty_engine_returns_none() {
+        let retail = vec![frame_with(0b0000_0001, vec![voice(true, Some(0x1000))])];
+        assert!(first_audio_trace_divergence_multi(&[], &retail).is_none());
     }
 
     /// `queue` stashes pending bytes for a later `flush_queue` call. Calling
