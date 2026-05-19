@@ -36,6 +36,12 @@ pub struct ProtIndex {
     /// Snapshot of the entry table - kept outside the Mutex so callers can
     /// inspect it (length, sizes, byte offsets) without locking.
     entries: Vec<Entry>,
+    /// Snapshot of the raw PROT TOC dword array. The retail size-lookup
+    /// formula at `FUN_8003e8a8` reads `toc[idx+3] - toc[idx+2]` and the
+    /// start-LBA stash reads `toc[idx+2]`; we keep this slice handy for
+    /// [`CdDmaHost`](crate::cd_dma::CdDmaHost) implementations that mirror
+    /// those reads. Cloned out of [`Archive::toc`] at construction.
+    toc: Vec<u32>,
     /// Optional CDNAME map (PROT index → first scene label in block).
     cdname: Option<cdname::IndexMap>,
     /// Lazy entry-bytes cache. Populated on first `entry_bytes` call.
@@ -55,6 +61,7 @@ impl ProtIndex {
         let archive =
             Archive::open(&prot_path).with_context(|| format!("open {}", prot_path.display()))?;
         let entries = archive.entries.clone();
+        let toc = archive.toc.clone();
         let cdname_path = extracted_root.join("CDNAME.TXT");
         let cdname = if cdname_path.exists() {
             Some(
@@ -67,6 +74,7 @@ impl ProtIndex {
         Ok(Self {
             archive: Mutex::new(archive),
             entries,
+            toc,
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
@@ -80,10 +88,12 @@ impl ProtIndex {
     pub fn from_bytes(prot_bytes: Vec<u8>, cdname_text: Option<&str>) -> Result<Self> {
         let archive = Archive::from_bytes(prot_bytes).context("parse in-memory PROT.DAT")?;
         let entries = archive.entries.clone();
+        let toc = archive.toc.clone();
         let cdname = cdname_text.map(cdname::parse_str).transpose()?;
         Ok(Self {
             archive: Mutex::new(archive),
             entries,
+            toc,
             cdname,
             entry_cache: Mutex::new(HashMap::new()),
             class_cache: Mutex::new(HashMap::new()),
@@ -105,6 +115,32 @@ impl ProtIndex {
     /// Snapshot of the parsed entry table (size, byte_offset, etc).
     pub fn entries(&self) -> &[Entry] {
         &self.entries
+    }
+
+    /// Raw PROT TOC dword array (the contents of `0x801C70F0..` in retail).
+    /// Useful for the retail size-lookup / start-LBA formulas that index
+    /// `toc[idx+2]` / `toc[idx+3]` (see [`Self::entry_start_lba_retail`] and
+    /// [`Self::entry_lba_count_retail`]).
+    pub fn toc(&self) -> &[u32] {
+        &self.toc
+    }
+
+    /// Retail-formula PROT entry start LBA: `toc[idx+2]`. Mirrors the
+    /// stash into `gp[0x8F0]` inside `FUN_8003e8a8`. Returns `None` if
+    /// the TOC isn't large enough to index this entry (out of range).
+    pub fn entry_start_lba_retail(&self, idx: u16) -> Option<u32> {
+        self.toc.get(idx as usize + 2).copied()
+    }
+
+    /// Retail-formula PROT entry size in LBAs: `toc[idx+3] - toc[idx+2]`.
+    /// Mirrors the return of `FUN_8003e8a8`. Wraps on non-monotonic TOC
+    /// pairs (matching the retail `subu` semantic). Returns `None` if
+    /// either neighbouring slot is out of range.
+    pub fn entry_lba_count_retail(&self, idx: u16) -> Option<u32> {
+        let p = idx as usize;
+        let cur = self.toc.get(p + 2).copied()?;
+        let next = self.toc.get(p + 3).copied()?;
+        Some(next.wrapping_sub(cur))
     }
 
     /// Read entry bytes (lazy + cached). Returns the same `Arc` for repeated

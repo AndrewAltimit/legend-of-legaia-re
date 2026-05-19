@@ -254,6 +254,316 @@ pub trait CdDmaHost {
     fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome;
 }
 
+// =========================================================================
+// ProtCdDmaHost — concrete offline/WASM implementation
+// =========================================================================
+
+/// PSX main RAM size (2 MiB) used as the synthetic destination buffer.
+/// Retail CD-DMA writes target absolute addresses in `0x80000000..0x80200000`;
+/// the offline host masks the high bits and writes into a Vec of this size.
+pub const SYNTHETIC_MAIN_RAM_BYTES: usize = 0x0020_0000;
+
+/// Bit mask that folds PSX kseg0 / kseg1 / kuseg pointers into the 2 MiB
+/// main-RAM window. Retail uses `0x80xxxxxx` (cached) and `0xA0xxxxxx`
+/// (uncached) interchangeably for DMA targets; both alias the same physical
+/// RAM. The synthetic host accepts either form.
+pub const SYNTHETIC_MAIN_RAM_MASK: u32 = 0x001F_FFFF;
+
+/// PSX sector size in bytes (1 LBA = `0x800` bytes).
+pub const SECTOR_BYTES: u32 = 0x800;
+
+/// Internal state-machine register for the offline host. Mirrors the
+/// `gp[0x980]` register the retail state machine writes:
+///
+/// - `Idle`  → `0` (no read ever issued, or post-drain snap).
+/// - `Busy`  → `1` (kick issued, not yet drained).
+/// - `Ready` → `2` (read complete; consumer can use the destination buffer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PollState {
+    #[default]
+    Idle,
+    Busy,
+    Ready,
+}
+
+/// [`CdDmaHost`] implementation backed by a [`crate::scene::ProtIndex`]
+/// and a synthetic 2 MiB main-RAM buffer.
+///
+/// This is the **"MemoryVfs-backed WASM/offline"** implementation the
+/// backlog calls for: the engine port doesn't actually stream sectors
+/// from a CD device because `PROT.DAT` is loaded entirely into memory at
+/// startup, so the retail asynchronous state machine collapses to
+/// synchronous reads. Every [`CdDmaHost::kick_libcd_read`] / matching
+/// [`CdDmaHost::async_lba_load`] performs the byte copy immediately and
+/// the state machine transitions straight to [`ReadWaitOutcome::Ready`].
+///
+/// ## Destination buffer model
+///
+/// The retail SCUS treats [`DestAddr`] as an absolute PSX RAM pointer in
+/// the `0x80xxxxxx` window. The offline host carries a private
+/// [`SYNTHETIC_MAIN_RAM_BYTES`]-sized `Vec<u8>` and masks incoming `dst`
+/// values with [`SYNTHETIC_MAIN_RAM_MASK`] before writing - so callers can
+/// pass the same `0x801xxxxx` pointers used in the SCUS dumps and the
+/// host transparently routes them into its private buffer.
+///
+/// Consumers retrieve the loaded bytes via [`Self::main_ram`] (read-only
+/// slice over the full buffer) or [`Self::read`] (slice at an arbitrary
+/// `(addr, len)`).
+///
+/// ## Mirrored retail scratchpad
+///
+/// The retail SCUS keeps the state machine in a fixed `gp+0x8xx..+0x9xx`
+/// block of globals. The host carries the same fields as Rust members so
+/// the trait's `prot_index_size_lookup` / `async_lba_load` /
+/// `kick_libcd_read` / `read_wait_poll` paths can be implemented in a
+/// way that mirrors the retail dataflow without leaking into the engine.
+///
+/// | Retail global   | Field             | Role                                |
+/// |-----------------|-------------------|-------------------------------------|
+/// | `gp+0x90C`      | `last_prot_idx`   | last-resolved PROT entry index      |
+/// | `gp+0x8F0`      | `last_start_lba`  | last-resolved start LBA             |
+/// | `gp+0x894`      | `last_dst`        | destination buffer pointer          |
+/// | `gp+0x97C`      | `last_count`      | sector count                        |
+/// | `gp+0x980`      | `state`           | state-machine register              |
+/// | `gp+0x988`      | `read_in_progress`| "read in progress" flag             |
+/// | `gp+0x928`      | `error`           | error code                          |
+/// | `gp+0x91C`      | `timeout`         | read-wait countdown                 |
+/// | `gp+0x95C..+0x95E` | `last_msf`     | per-request BCD MSF (Some when set) |
+///
+/// The synthetic host always operates in the "retail" (`_DAT_8007B8C2 == 0`)
+/// branch of `read_wait_poll` - the offline replacement for libcd doesn't
+/// expose the dev-build state machine.
+pub struct ProtCdDmaHost {
+    prot: std::sync::Arc<crate::scene::ProtIndex>,
+    main_ram: Vec<u8>,
+    state: PollState,
+    last_prot_idx: ProtIndex,
+    last_start_lba: Lba,
+    last_dst: DestAddr,
+    last_count: u32,
+    last_msf: Option<(u8, u8, u8)>,
+    timeout: u32,
+    error: bool,
+    read_in_progress: bool,
+}
+
+impl ProtCdDmaHost {
+    /// Build a host over `prot`. The synthetic main-RAM buffer is allocated
+    /// up-front at [`SYNTHETIC_MAIN_RAM_BYTES`] and zero-initialised.
+    pub fn new(prot: std::sync::Arc<crate::scene::ProtIndex>) -> Self {
+        Self {
+            prot,
+            main_ram: vec![0u8; SYNTHETIC_MAIN_RAM_BYTES],
+            state: PollState::Idle,
+            last_prot_idx: 0,
+            last_start_lba: 0,
+            last_dst: 0,
+            last_count: 0,
+            last_msf: None,
+            timeout: 0,
+            error: false,
+            read_in_progress: false,
+        }
+    }
+
+    /// Read-only view over the synthetic main-RAM buffer.
+    pub fn main_ram(&self) -> &[u8] {
+        &self.main_ram
+    }
+
+    /// Read `len` bytes from the synthetic main-RAM buffer at `addr` (a
+    /// retail PSX pointer; the high bits are folded via
+    /// [`SYNTHETIC_MAIN_RAM_MASK`]). Returns `None` if the slice would
+    /// run past the buffer end.
+    pub fn read(&self, addr: DestAddr, len: usize) -> Option<&[u8]> {
+        let start = (addr & SYNTHETIC_MAIN_RAM_MASK) as usize;
+        let end = start.checked_add(len)?;
+        self.main_ram.get(start..end)
+    }
+
+    /// Last PROT index touched by [`CdDmaHost::prot_index_size_lookup`].
+    /// Mirrors the `gp+0x90C` retail global.
+    pub fn last_prot_idx(&self) -> ProtIndex {
+        self.last_prot_idx
+    }
+
+    /// Last start LBA stashed by [`CdDmaHost::prot_index_size_lookup`].
+    /// Mirrors the `gp+0x8F0` retail global.
+    pub fn last_start_lba(&self) -> Lba {
+        self.last_start_lba
+    }
+
+    /// Last destination buffer addr written by
+    /// [`CdDmaHost::async_lba_load`]. Mirrors the `gp+0x894` retail global.
+    pub fn last_dst(&self) -> DestAddr {
+        self.last_dst
+    }
+
+    /// Last sector count written by [`CdDmaHost::async_lba_load`].
+    /// Mirrors the `gp+0x97C` retail global.
+    pub fn last_count(&self) -> u32 {
+        self.last_count
+    }
+
+    /// Last BCD MSF stashed when [`CdDmaHost::prot_index_size_lookup`] was
+    /// called with `set_msf = true`. Mirrors `gp+0x95C..+0x95E`.
+    /// `None` when no `set_msf` call has happened yet.
+    pub fn last_msf(&self) -> Option<(u8, u8, u8)> {
+        self.last_msf
+    }
+
+    /// Synthesised libcd-equivalent read. Copies
+    /// `last_count * SECTOR_BYTES` bytes out of `PROT.DAT` (via
+    /// [`crate::scene::ProtIndex::prot_dat_raw_bytes`]) into
+    /// `main_ram[last_dst..]`. Sets `state = Ready` and clears
+    /// `read_in_progress`. Idempotent if no kick has been queued.
+    fn perform_synchronous_read(&mut self) -> Result<(), String> {
+        if !self.read_in_progress {
+            return Ok(());
+        }
+        let byte_offset = (self.last_start_lba as u64) * (SECTOR_BYTES as u64);
+        let len = (self.last_count as usize)
+            .checked_mul(SECTOR_BYTES as usize)
+            .ok_or_else(|| "lba count overflow".to_string())?;
+        let bytes = self
+            .prot
+            .prot_dat_raw_bytes(byte_offset, len)
+            .map_err(|e| format!("read PROT.DAT @ 0x{byte_offset:x} +{len}: {e}"))?;
+        let dst_start = (self.last_dst & SYNTHETIC_MAIN_RAM_MASK) as usize;
+        let dst_end = dst_start
+            .checked_add(len)
+            .ok_or_else(|| "dst overflow".to_string())?;
+        if dst_end > self.main_ram.len() {
+            return Err(format!(
+                "dst 0x{:x}..0x{:x} past main-RAM end (0x{:x})",
+                dst_start,
+                dst_end,
+                self.main_ram.len()
+            ));
+        }
+        self.main_ram[dst_start..dst_end].copy_from_slice(&bytes);
+        self.state = PollState::Ready;
+        self.read_in_progress = false;
+        Ok(())
+    }
+}
+
+impl CdDmaHost for ProtCdDmaHost {
+    /// Mirrors `FUN_8003e8a8(prot_idx, set_msf)`. Stashes the start LBA
+    /// and PROT index, optionally computes BCD MSF, returns the entry's
+    /// sector count via the retail `toc[idx+3] - toc[idx+2]` formula.
+    /// Out-of-range indices return zero (matches retail's `subu` wrap
+    /// on a TOC overread, which would yield garbage rather than panic).
+    fn prot_index_size_lookup(&mut self, prot_idx: ProtIndex, set_msf: bool) -> u32 {
+        let count = self.prot.entry_lba_count_retail(prot_idx).unwrap_or(0);
+        let start_lba = self.prot.entry_start_lba_retail(prot_idx).unwrap_or(0);
+        self.last_prot_idx = prot_idx;
+        self.last_start_lba = start_lba;
+        if set_msf {
+            self.last_msf = Some(lba_to_bcd_msf(start_lba));
+        }
+        count
+    }
+
+    /// Mirrors `FUN_8003e800(dst, count, flags)`. The offline path
+    /// collapses asynchrony: a stale `read_in_progress` is drained
+    /// immediately, `error` is cleared, then [`LoadFlags::ISSUE`] queues
+    /// the kick and [`LoadFlags::BLOCK`] is satisfied without a real
+    /// poll loop (the synchronous copy in [`Self::perform_synchronous_read`]
+    /// already left the state machine in [`PollState::Ready`]).
+    fn async_lba_load(&mut self, dst: DestAddr, count: u32, flags: LoadFlags) {
+        if self.read_in_progress {
+            // Drain any stale read first - retail's FUN_8003e800 calls
+            // FUN_8003de7c(0) when read_in_progress is set.
+            let _ = self.read_wait_poll(false);
+        }
+        if self.error {
+            self.error = false;
+        }
+        if flags.issue() {
+            self.last_count = count;
+            self.last_dst = dst;
+            self.kick_libcd_read();
+        }
+        if flags.block() {
+            let _ = self.read_wait_poll(false);
+        }
+        // Refresh the read-wait countdown to the retail magic value 0x78.
+        self.timeout = 0x78;
+    }
+
+    /// Mirrors `FUN_8003f128`. The offline host doesn't dispatch to libcd;
+    /// the synchronous PROT.DAT read happens here, and the state machine
+    /// snaps directly from `Idle`/`Busy` into `Ready` once the copy is
+    /// done. Errors from the underlying [`crate::scene::ProtIndex`] read
+    /// surface as `error = true` and `state = Idle`.
+    fn kick_libcd_read(&mut self) {
+        self.read_in_progress = true;
+        self.state = PollState::Busy;
+        if let Err(_msg) = self.perform_synchronous_read() {
+            self.error = true;
+            self.state = PollState::Idle;
+            self.read_in_progress = false;
+        }
+    }
+
+    /// Mirrors `FUN_8003de7c(gated)`. The retail return convention
+    /// gates on `read_in_progress` (`gp+0x988`):
+    ///
+    /// - `gated = true`  (per-frame poll): if `read_in_progress == 0`,
+    ///   return `Ready` immediately (matches the
+    ///   `lw v0,0x988(gp); beq v0,zero,...; clear v0` early-out at
+    ///   `0x8003df70..0x8003df7c`). Otherwise the synthetic kick is
+    ///   already done, but if a previous error stuck the state in
+    ///   `Busy` we surface `InProgress`.
+    /// - `gated = false` (drain stale read): snap `read_in_progress`
+    ///   off, return `Ready` unconditionally.
+    ///
+    /// The offline host never returns [`ReadWaitOutcome::Idle`]: that
+    /// return is reserved for the retail dev-build state machine gated
+    /// on `_DAT_8007BA70` / `_DAT_8007B8C2`, neither of which exist in
+    /// the offline replacement.
+    fn read_wait_poll(&mut self, gated: bool) -> ReadWaitOutcome {
+        if !gated {
+            self.read_in_progress = false;
+            self.state = PollState::Idle;
+            return ReadWaitOutcome::Ready;
+        }
+        if self.timeout > 0 {
+            self.timeout -= 1;
+        }
+        if !self.read_in_progress {
+            return ReadWaitOutcome::Ready;
+        }
+        match self.state {
+            PollState::Ready | PollState::Idle => ReadWaitOutcome::Ready,
+            PollState::Busy => ReadWaitOutcome::InProgress,
+        }
+    }
+}
+
+/// LBA → BCD `(minutes, seconds, frames)` triple. Mirrors the retail
+/// helper at `FUN_8005c42c` + `FUN_8005c328` chain used inside
+/// `FUN_8003e8a8` to materialise the per-request MSF into
+/// `gp+0x95C..+0x95E`. The 2-second pregap offset is folded in (the
+/// PSX clock starts the data area at MSF `00:02:00`, i.e. LBA 0 →
+/// `(0, 2, 0)`).
+fn lba_to_bcd_msf(lba: u32) -> (u8, u8, u8) {
+    let lba = lba.wrapping_add(150);
+    let mins = lba / (60 * 75);
+    let secs = (lba / 75) % 60;
+    let frames = lba % 75;
+    (
+        bin_to_bcd(mins as u8),
+        bin_to_bcd(secs as u8),
+        bin_to_bcd(frames as u8),
+    )
+}
+
+fn bin_to_bcd(v: u8) -> u8 {
+    ((v / 10) << 4) | (v % 10)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,5 +679,161 @@ mod tests {
         h.sizes.insert(100, 17);
         assert_eq!(h.prot_index_size_lookup(100, false), 17);
         assert_eq!(h.prot_index_size_lookup(101, false), 4); // default
+    }
+
+    // -- ProtCdDmaHost tests -------------------------------------------
+
+    /// Build a minimal valid PROT.DAT byte image with two entries:
+    ///
+    /// - entry 0: `start_lba = 1`, retail LBA count = 4 (footprint).
+    /// - entry 1: `start_lba = 5`, retail LBA count = 2.
+    ///
+    /// Entry 0's 4 sectors are filled with `0xAA`, entry 1's 2 sectors
+    /// with `0xBB`, so a successful read can be detected by checking
+    /// the destination buffer's first byte.
+    fn build_synthetic_prot_dat() -> Vec<u8> {
+        const TOTAL_BYTES: usize = 0x3800;
+        let mut buf = vec![0u8; TOTAL_BYTES];
+        // Header head at offset 0: [unused u32][file_num_minus_1 u32].
+        // `header_sectors` aliases `toc[0]` in the on-disc layout (the
+        // `detect_header` reader pulls bytes 8..12, and the TOC slice
+        // starts at byte 8). We set header_sectors = 1 via toc[0] below.
+        buf[0..4].copy_from_slice(&0u32.to_le_bytes());
+        buf[4..8].copy_from_slice(&2u32.to_le_bytes()); // file_num - 1 = 2 (file_num = 3)
+        // TOC starts at file offset 0x08. We write 7 dwords:
+        //   toc[0] = 1                       (= header_sectors)
+        //   toc[2] = 1, toc[3] = 5,
+        //   toc[4] = 7, toc[5] = 6, toc[6] = 5
+        // Retail-formula counts: toc[3]-toc[2]=4, toc[4]-toc[3]=2.
+        // Archive-parser indexed sizes: toc[5]-toc[3]+4=5, toc[6]-toc[4]+4=2.
+        const TOC: [u32; 7] = [1, 0, 1, 5, 7, 6, 5];
+        for (i, v) in TOC.iter().enumerate() {
+            let off = 0x08 + i * 4;
+            buf[off..off + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        // Entry 0 body: LBA 1..5 (4 sectors), filled with 0xAA.
+        for b in &mut buf[0x0800..0x2800] {
+            *b = 0xAA;
+        }
+        // Entry 1 body: LBA 5..7 (2 sectors), filled with 0xBB.
+        for b in &mut buf[0x2800..0x3800] {
+            *b = 0xBB;
+        }
+        buf
+    }
+
+    fn make_synthetic_host() -> ProtCdDmaHost {
+        let bytes = build_synthetic_prot_dat();
+        let prot =
+            crate::scene::ProtIndex::from_bytes(bytes, None).expect("parse synthetic PROT.DAT");
+        ProtCdDmaHost::new(std::sync::Arc::new(prot))
+    }
+
+    #[test]
+    fn synthetic_prot_dat_yields_two_entries() {
+        let host = make_synthetic_host();
+        assert_eq!(host.prot.entry_count(), 2);
+        // Retail formula matches what we crafted.
+        assert_eq!(host.prot.entry_start_lba_retail(0), Some(1));
+        assert_eq!(host.prot.entry_lba_count_retail(0), Some(4));
+        assert_eq!(host.prot.entry_start_lba_retail(1), Some(5));
+        assert_eq!(host.prot.entry_lba_count_retail(1), Some(2));
+    }
+
+    #[test]
+    fn prot_size_lookup_stashes_start_lba_and_returns_count() {
+        let mut host = make_synthetic_host();
+        let n = host.prot_index_size_lookup(0, false);
+        assert_eq!(n, 4);
+        assert_eq!(host.last_prot_idx(), 0);
+        assert_eq!(host.last_start_lba(), 1);
+        assert!(host.last_msf().is_none(), "set_msf=false must not set MSF");
+        let n = host.prot_index_size_lookup(1, true);
+        assert_eq!(n, 2);
+        assert_eq!(host.last_start_lba(), 5);
+        // BCD MSF: (5+150) sectors = 155 sectors = 0:02:05 + 2-sec pregap.
+        // Actually 155/75 = 2 seconds 5 frames. mins=0, secs=2, frames=5.
+        assert_eq!(host.last_msf(), Some((0x00, 0x02, 0x05)));
+    }
+
+    #[test]
+    fn prot_size_lookup_out_of_range_returns_zero() {
+        let mut host = make_synthetic_host();
+        // Way past the last valid TOC entry - retail formula wraps,
+        // but our None-on-out-of-range fallback yields zero.
+        let n = host.prot_index_size_lookup(u16::MAX, false);
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn one_shot_load_copies_entry_bytes_into_main_ram() {
+        let mut host = make_synthetic_host();
+        let dst: DestAddr = 0x8010_0000;
+        let n = host.prot_one_shot_load(0, dst, LoadFlags::SYNCHRONOUS);
+        assert_eq!(n, 4, "retail LBA count for entry 0");
+        // The 4 sectors (0x2000 bytes) of entry 0 are 0xAA.
+        let slice = host.read(dst, 0x2000).expect("read back");
+        assert!(slice.iter().all(|&b| b == 0xAA), "entry 0 bytes mismatch");
+        // Just past the read window the buffer is still zero.
+        let tail = host.read(dst + 0x2000, 1).unwrap();
+        assert_eq!(tail, &[0u8]);
+    }
+
+    #[test]
+    fn one_shot_load_for_entry_1_copies_at_a_different_offset() {
+        let mut host = make_synthetic_host();
+        let dst: DestAddr = 0x8014_0000;
+        let n = host.prot_one_shot_load(1, dst, LoadFlags::SYNCHRONOUS);
+        assert_eq!(n, 2);
+        let slice = host.read(dst, 0x1000).expect("read back");
+        assert!(slice.iter().all(|&b| b == 0xBB), "entry 1 bytes mismatch");
+    }
+
+    #[test]
+    fn poll_after_synchronous_kick_reports_ready() {
+        let mut host = make_synthetic_host();
+        // Boot state: no kick issued => poll returns Ready immediately
+        // (matches retail FUN_8003de7c's `read_in_progress == 0` early-out).
+        assert_eq!(host.read_wait_poll(true), ReadWaitOutcome::Ready);
+        // The synchronous one-shot load completes inline. Poll still Ready.
+        host.prot_one_shot_load(0, 0x8010_0000, LoadFlags::SYNCHRONOUS);
+        assert_eq!(host.read_wait_poll(true), ReadWaitOutcome::Ready);
+        // Drain returns Ready unconditionally and the post-drain poll is
+        // still Ready (state is back to the boot configuration).
+        assert_eq!(host.read_wait_poll(false), ReadWaitOutcome::Ready);
+        assert_eq!(host.read_wait_poll(true), ReadWaitOutcome::Ready);
+    }
+
+    #[test]
+    fn issue_without_block_still_drives_state_to_ready() {
+        // The offline host's "issue" path performs the copy synchronously,
+        // so the BLOCK bit doesn't gate anything in practice - the buffer
+        // is already populated after the kick.
+        let mut host = make_synthetic_host();
+        host.prot_index_size_lookup(0, false);
+        host.async_lba_load(0x8010_0000, 4, LoadFlags::ISSUE);
+        assert_eq!(host.read_wait_poll(true), ReadWaitOutcome::Ready);
+        assert_eq!(host.last_count(), 4);
+        assert_eq!(host.last_dst(), 0x8010_0000);
+    }
+
+    #[test]
+    fn high_psx_pointers_fold_into_synthetic_main_ram() {
+        // Retail uses both kseg0 (0x80xxxxxx) and kseg1 (0xA0xxxxxx) for
+        // DMA targets; both should alias the same offset.
+        let mut host = make_synthetic_host();
+        host.prot_one_shot_load(0, 0xA010_0000, LoadFlags::SYNCHRONOUS);
+        let folded = host.read(0x8010_0000, 0x2000).unwrap();
+        assert!(folded.iter().all(|&b| b == 0xAA));
+    }
+
+    #[test]
+    fn lba_to_bcd_msf_round_trips_known_landmarks() {
+        // LBA 0 is the PSX-pregap entry: MSF 00:02:00.
+        assert_eq!(lba_to_bcd_msf(0), (0x00, 0x02, 0x00));
+        // LBA 75 = 1 second past the pregap: MSF 00:03:00.
+        assert_eq!(lba_to_bcd_msf(75), (0x00, 0x03, 0x00));
+        // LBA 60*75 = 1 minute past pregap: MSF 01:02:00.
+        assert_eq!(lba_to_bcd_msf(60 * 75), (0x01, 0x02, 0x00));
     }
 }
