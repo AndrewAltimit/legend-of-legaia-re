@@ -23,16 +23,19 @@ use std::sync::Arc;
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
+use crate::move_buffer_host;
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
 use crate::world_map::WorldMapController;
 pub use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_vm as vm;
 use legaia_save;
+use vm::actor_tick::{ActorPhysics, ListenerState, TickEvent, TickResult, TickScalars};
 use vm::battle_action::{
     BattleActionCtx, BattleActionHost, BattleActor, BattleEndCause, Pose, StepOutcome,
 };
 use vm::effect_vm::{EffectHost, MasterSlot, Pool, StateOutcome};
 use vm::field::{CameraParam, FieldCtx, FieldHost, SceneFadeResult, StepResult as FieldStepResult};
+use vm::move_buffer::{MoveBufferState, cursor_advance};
 use vm::move_vm::{ActorState as MoveActorState, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 
@@ -161,6 +164,20 @@ pub struct Actor {
     /// Move-VM per-actor state.
     pub move_state: MoveActorState,
 
+    /// Per-actor physics tick state - port of `FUN_80021DF4`. Driven
+    /// each frame by [`World::tick_actor_physics`]. The dispatch byte
+    /// at [`ActorPhysics::dispatch_byte`] (`+0x5A`) selects the per-arm
+    /// behaviour; engines set it via [`Actor::set_physics_dispatch`].
+    pub physics: ActorPhysics,
+
+    /// Per-actor move-buffer cursor + envelope state, mirroring the
+    /// retail layout at `actor[+0x5C..+0xCC]`. Lives in its own struct
+    /// because retail aliases `+0xA0` / `+0xB8` / `+0xC8` with the
+    /// physics view; see [`vm::move_buffer::MoveBufferState`].
+    /// Updated by [`World::tick_actor_physics`] in response to the
+    /// per-arm [`TickEvent::MoveVmKick`] signal.
+    pub move_buffer: MoveBufferState,
+
     /// Battle-action per-actor state. Populated only when the world is in
     /// [`SceneMode::Battle`].
     pub battle: BattleActor,
@@ -250,6 +267,14 @@ impl Actor {
         self.active = true;
         self
     }
+
+    /// Engine-side hook: set the dispatch byte the per-actor physics
+    /// tick reads at `actor[+0x5A]`. See [`vm::actor_tick`] for the
+    /// dispatch ladder. Most actors run dispatch byte `0x06` (the
+    /// keyframe arm); engines set per-actor as scene assets are bound.
+    pub fn set_physics_dispatch(&mut self, b: u16) {
+        self.physics.set_dispatch(b);
+    }
 }
 
 /// Singleton world / scene held by an engine integration.
@@ -285,6 +310,31 @@ pub struct World {
     /// vec means "no active move" - the move VM is not ticked for that
     /// actor. Set via [`World::set_move_bytecode`].
     pub move_bytecode: Vec<Vec<u16>>,
+    /// MOVE buffer pool root, mirroring retail `_DAT_8007B888`. Populated
+    /// per scene from the slot-1 `Asset(0x05) = Move` descriptor (the
+    /// MDT-shaped offset-table blob parsed by [`legaia_mdt::MoveBuffer`]).
+    /// Consumed by the [`vm::move_buffer::MoveBufferHost`] impl in
+    /// `move_buffer_host.rs`. Empty when no scene MOVE table is wired
+    /// (the cursor's resolver returns `None` and the per-actor state
+    /// stays idle, matching retail when the table pointer is null).
+    pub move_buffer_root: Vec<u8>,
+    /// MOVE2 buffer pool root, mirroring retail `_DAT_8007B840`. Used
+    /// when the per-actor `cursor_requested` is `>= 0x400`. Empty
+    /// across most retail save states; only a small number of scenes
+    /// install this. See `docs/formats/mdt.md`.
+    pub move2_buffer_root: Vec<u8>,
+    /// Alternate MOVE buffer pool root, mirroring retail `_DAT_8007B75C`.
+    /// Selected by [`vm::move_buffer::STATUS_FLAG_ALT_POOL`] in the
+    /// per-actor status flag word. Populated by the world-map / battle
+    /// overlay paths.
+    pub move_buffer_alt_root: Vec<u8>,
+    /// Per-actor [`TickEvent`]s emitted by the last
+    /// [`World::tick_actor_physics`] pass. Engines that want to react
+    /// to audio cues, render submissions, or unlink requests drain
+    /// this each frame; the move-buffer cursor kick is dispatched
+    /// inline so callers do not need to inspect this list to keep
+    /// move-VM playback running.
+    pub last_tick_events: Vec<(u8, TickResult)>,
     /// Move-VM global predicate at `_DAT_801F22F4` (set by ext sub-op 0x08,
     /// cleared by 0x09; sub-ops 0x0A / 0x0B branch on it).
     pub move_predicate: u32,
@@ -694,6 +744,10 @@ impl World {
             field_bytecode: Vec::new(),
             field_pc: 0,
             move_bytecode: vec![Vec::new(); MAX_ACTORS],
+            move_buffer_root: Vec::new(),
+            move2_buffer_root: Vec::new(),
+            move_buffer_alt_root: Vec::new(),
+            last_tick_events: Vec::new(),
             move_predicate: 0,
             move_counter: 0,
             move_slot_table: [[0u8; 8]; 16],
@@ -1840,7 +1894,11 @@ impl World {
     /// Order of operations:
     ///  1. Effect pool tick - runs every frame regardless of mode.
     ///  2. Per-actor move-VM tick - only for actors with bytecode loaded.
-    ///  3. Mode-specific VM:
+    ///  3. Per-actor physics tick (`FUN_80021DF4`) - drains timer,
+    ///     advances motion, kicks the move-buffer cursor on
+    ///     [`TickEvent::MoveVmKick`]. Runs over every active actor.
+    ///  4. Per-actor keyframe / anim-player tick.
+    ///  5. Mode-specific VM:
     ///     - `Battle`     → battle-action state machine step.
     ///     - `Field`      → field-VM step (or no-op if no bytecode loaded).
     ///     - `Cutscene`   → field-VM step (cutscenes use the same script VM).
@@ -1849,6 +1907,7 @@ impl World {
         self.frame += 1;
         self.tick_effects();
         self.tick_move_vms();
+        self.tick_actor_physics();
         self.tick_actors();
         // Tick art-learned banner countdown - clear when it reaches zero.
         if let Some(banner) = &mut self.current_art_banner {
@@ -1911,6 +1970,81 @@ impl World {
     /// Backwards-compatible wrapper using `delta = 1`.
     pub fn tick_move_vms(&mut self) {
         self.tick_move_vms_with_delta(1);
+    }
+
+    /// Per-actor physics tick - clean-room port driver for
+    /// `engine-vm::actor_tick::tick_actor` (FUN_80021DF4). Runs
+    /// [`vm::actor_tick::tick_actor`] once per active slot, then dispatches
+    /// the emitted [`TickEvent`]s.
+    ///
+    /// At the moment the only event the engine reacts to is
+    /// [`TickEvent::MoveVmKick`], which drives
+    /// [`vm::move_buffer::cursor_advance`] against the actor's
+    /// [`MoveBufferState`]. The cursor's record source is the per-scene
+    /// MOVE pool installed via [`World::set_move_buffer_root`] (mirrors
+    /// retail `_DAT_8007B888` / `_DAT_8007B840` / `_DAT_8007B75C`).
+    ///
+    /// The other event variants (audio cues, render submissions,
+    /// unlink requests, keyframe pose writeback) are recorded in
+    /// [`World::last_tick_events`] for engines that want to consume
+    /// them but otherwise no-op. Wiring those is orthogonal to the
+    /// move-buffer cursor.
+    ///
+    /// `frame_delta` matches the retail `DAT_1F800393` ramp scalar
+    /// (idle = `1`). The default tick uses `1`.
+    pub fn tick_actor_physics_with(&mut self, scalars: TickScalars, listener: &ListenerState) {
+        self.last_tick_events.clear();
+        let host = move_buffer_host::WorldMoveBufferView {
+            move_buf: &self.move_buffer_root,
+            move2_buf: &self.move2_buffer_root,
+            alt_buf: &self.move_buffer_alt_root,
+        };
+        for (idx, actor) in self.actors.iter_mut().enumerate() {
+            if !actor.active {
+                continue;
+            }
+            let res = vm::actor_tick::tick_actor(&mut actor.physics, scalars, listener);
+            if !res.events.is_empty() {
+                // Drive the move-buffer cursor on any MoveVmKick event.
+                let kicked = res
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, TickEvent::MoveVmKick));
+                if kicked {
+                    cursor_advance(&mut actor.move_buffer, &host, scalars.frame_delta);
+                }
+                self.last_tick_events.push((idx as u8, res));
+            }
+        }
+    }
+
+    /// Backwards-compatible wrapper using idle scalars and a default
+    /// listener (no positional SFX integration yet).
+    pub fn tick_actor_physics(&mut self) {
+        let listener = ListenerState::unicast(0, 0, 0);
+        self.tick_actor_physics_with(TickScalars::idle(), &listener);
+    }
+
+    /// Install the MOVE buffer pool root (retail `_DAT_8007B888`). The
+    /// bytes are the MDT-shaped offset-table blob the scene-load path
+    /// extracts from the slot-1 `Asset(0x05) = Move` descriptor. Pass
+    /// an empty slice to clear it - the cursor's resolver will then
+    /// return `None` for every requested id.
+    pub fn set_move_buffer_root(&mut self, bytes: Vec<u8>) {
+        self.move_buffer_root = bytes;
+    }
+
+    /// Install the MOVE2 buffer pool root (retail `_DAT_8007B840`).
+    /// Selected when an actor's `cursor_requested` is `>= 0x400`.
+    pub fn set_move2_buffer_root(&mut self, bytes: Vec<u8>) {
+        self.move2_buffer_root = bytes;
+    }
+
+    /// Install the alternate MOVE buffer pool root (retail
+    /// `_DAT_8007B75C`). Selected when the actor's status flag word
+    /// has [`vm::move_buffer::STATUS_FLAG_ALT_POOL`] set.
+    pub fn set_move_buffer_alt_root(&mut self, bytes: Vec<u8>) {
+        self.move_buffer_alt_root = bytes;
     }
 
     /// Advance all active actor animations one frame. Mirrors the
@@ -5099,5 +5233,139 @@ mod tests {
         assert!(id.is_none());
         // No session installed.
         assert!(world.encounter.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // tick_actor_physics + MoveBufferHost wiring
+    // ------------------------------------------------------------------
+
+    /// Build a 1-record MOVE pool: index `id` -> offset `record_off`,
+    /// record body `[0, flag, fc_lo, fc_hi, 0, 0, divisor, 0]`.
+    fn make_move_pool(id: u16, record_off: usize, frame_count: u16, divisor: u8) -> Vec<u8> {
+        // Table size matches retail's hard-coded 1024-entry view.
+        let table_entries = 1024usize;
+        let table_bytes = table_entries * 4;
+        let total = (record_off + 16).max(table_bytes);
+        let mut pool = vec![0u8; total];
+        let off = (id as usize) * 4;
+        pool[off..off + 4].copy_from_slice(&(record_off as u32).to_le_bytes());
+        let fc = frame_count.to_le_bytes();
+        pool[record_off + 1] = 0; // flag
+        pool[record_off + 2] = fc[0];
+        pool[record_off + 3] = fc[1];
+        pool[record_off + 6] = divisor;
+        pool
+    }
+
+    #[test]
+    fn tick_actor_physics_skips_inactive_slots() {
+        let mut world = World::new();
+        // No actor active; should be a no-op (no panics, no events).
+        world.tick_actor_physics();
+        assert!(world.last_tick_events.is_empty());
+    }
+
+    #[test]
+    fn tick_actor_physics_records_keyframe_event_for_active_actor() {
+        let mut world = World::new();
+        // Activate slot 0 on the keyframe dispatch arm; populate the
+        // record pointer so the keyframe writeback fires.
+        world.actors[0].active = true;
+        world.actors[0].set_physics_dispatch(0x06);
+        world.actors[0].physics.set_record_ptr(0x80100000);
+        world.actors[0].physics.set_bone_count(8);
+        world.tick_actor_physics();
+        // One slot fired; events vector non-empty.
+        assert_eq!(world.last_tick_events.len(), 1);
+        let (slot, res) = &world.last_tick_events[0];
+        assert_eq!(*slot, 0);
+        assert!(
+            res.events
+                .iter()
+                .any(|e| matches!(e, TickEvent::KeyframePoseWritten { bone_count: 8 }))
+        );
+    }
+
+    #[test]
+    fn move_vm_kick_drives_cursor_advance_against_installed_pool() {
+        let mut world = World::new();
+        // Install a MOVE pool with id 3 -> record at offset 0x1010,
+        // frame_count = 8, divisor = 1.
+        world.set_move_buffer_root(make_move_pool(3, 0x1010, 8, 1));
+        // Activate slot 0; set the move_vm_kick flag so the physics
+        // tick's late-update emits TickEvent::MoveVmKick.
+        world.actors[0].active = true;
+        world.actors[0].set_physics_dispatch(0x06);
+        world.actors[0].physics.move_vm_kick = 1;
+        // Request move id 3; phase rate of 8 steps per frame.
+        world.actors[0].move_buffer.cursor_requested = 3;
+        world.actors[0].move_buffer.phase_rate = 8;
+        world.tick_actor_physics();
+        // MoveVmKick emitted.
+        let (_, res) = &world.last_tick_events[0];
+        assert!(
+            res.events
+                .iter()
+                .any(|e| matches!(e, TickEvent::MoveVmKick))
+        );
+        // Cursor latched the new id and stepped once.
+        assert_eq!(world.actors[0].move_buffer.cursor_active, 3);
+        // First frame after latch: cursor_active==3, phase started at
+        // 0, advanced by phase_rate * frame_delta = 8 * 1 = 8.
+        assert_eq!(world.actors[0].move_buffer.phase, 8);
+        // Move VM kick flag set by the latch (cursor_advance writes
+        // move_vm_kick = 1 whenever it latches a new record).
+        assert_eq!(world.actors[0].move_buffer.move_vm_kick, 1);
+    }
+
+    #[test]
+    fn move_vm_kick_no_record_is_graceful_noop() {
+        let mut world = World::new();
+        // No pool installed; cursor_advance's resolver returns None.
+        world.actors[0].active = true;
+        world.actors[0].set_physics_dispatch(0x06);
+        world.actors[0].physics.move_vm_kick = 1;
+        world.actors[0].move_buffer.cursor_requested = 5;
+        world.actors[0].move_buffer.phase_rate = 8;
+        world.tick_actor_physics();
+        // Kick emitted but cursor stays idle (no record source).
+        assert_eq!(world.actors[0].move_buffer.cursor_active, 0);
+        assert_eq!(world.actors[0].move_buffer.phase, 0);
+        assert_eq!(world.actors[0].move_buffer.move_vm_kick, 0);
+    }
+
+    #[test]
+    fn tick_does_not_advance_cursor_when_move_vm_kick_is_clear() {
+        let mut world = World::new();
+        world.set_move_buffer_root(make_move_pool(2, 0x1010, 4, 1));
+        // Activate slot 0 but leave move_vm_kick = 0 in physics; the
+        // late-update path does NOT emit MoveVmKick this frame, so
+        // the cursor stays untouched even though a request is pending.
+        world.actors[0].active = true;
+        world.actors[0].set_physics_dispatch(0x06);
+        world.actors[0].move_buffer.cursor_requested = 2;
+        world.actors[0].move_buffer.phase_rate = 4;
+        let before = world.actors[0].move_buffer.clone();
+        world.tick_actor_physics();
+        // Cursor unchanged (no kick).
+        assert_eq!(world.actors[0].move_buffer, before);
+    }
+
+    #[test]
+    fn world_tick_runs_physics_pass_in_order() {
+        // Smoke test: World::tick invokes tick_actor_physics. After
+        // one tick with the kick flag set + a record installed, the
+        // per-actor cursor should have advanced.
+        let mut world = World::new();
+        world.set_move_buffer_root(make_move_pool(1, 0x1010, 8, 1));
+        world.actors[0].active = true;
+        world.actors[0].set_physics_dispatch(0x06);
+        world.actors[0].physics.move_vm_kick = 1;
+        world.actors[0].move_buffer.cursor_requested = 1;
+        world.actors[0].move_buffer.phase_rate = 4;
+        // World::tick (no scene mode) returns None for Title; the
+        // physics pass still runs unconditionally.
+        world.tick();
+        assert_eq!(world.actors[0].move_buffer.cursor_active, 1);
     }
 }

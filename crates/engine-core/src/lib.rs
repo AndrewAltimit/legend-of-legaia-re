@@ -39,6 +39,7 @@ pub mod menu_glyph_atlas;
 pub mod menu_runtime;
 pub mod mode;
 pub mod monster_catalog;
+pub mod move_buffer_host;
 pub mod options;
 pub mod publisher_logos;
 pub mod ram_map;
