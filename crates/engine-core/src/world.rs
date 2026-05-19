@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use crate::battle_events::BattleEvent;
 use crate::field_events::FieldEvent;
+use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
 use crate::move_buffer_host;
 use crate::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
@@ -540,6 +541,20 @@ pub struct World {
     /// Frame counter incremented every [`World::tick`].
     pub frame: u64,
 
+    /// Per-frame pad / stick input snapshot. Hosts call
+    /// [`World::set_pad`] (or write directly via `input.set_pad`) before
+    /// each [`World::tick`]; subsystems that consume input read it from
+    /// here. Default-constructed [`InputState`] = no buttons held.
+    ///
+    /// Currently consumed by: nothing in the world-tick path. The
+    /// scaffold is in place so the v0.1 playthrough oracle can thread
+    /// recorded `j-replay-v1` pad events into the engine without a
+    /// separate input-routing wrapper. When field-VM dialog advance,
+    /// menu navigation, or world-map controller logic moves out of
+    /// `play-window` into the engine-tick path, those consumers read
+    /// here.
+    pub input: input::InputState,
+
     /// Per-actor move-VM outcomes from the most recent [`World::tick_move_vms`]
     /// call. Pairs of `(actor_slot, outcome)`. Engines drain or inspect this
     /// after `World::tick` to react to halts / pending opcodes.
@@ -792,6 +807,7 @@ impl World {
             inventory: std::collections::HashMap::new(),
             camera_state: CameraState::default(),
             frame: 0,
+            input: input::InputState::default(),
             move_outcomes: Vec::new(),
             tactical_arts: TacticalArtsTracker::new(),
             current_art_banner: None,
@@ -1885,6 +1901,15 @@ impl World {
             .wrapping_mul(1_664_525)
             .wrapping_add(1_013_904_223);
         self.rng_state
+    }
+
+    /// Replace the per-frame pad bitmask snapshot. Equivalent to
+    /// `self.input.set_pad(mask)` but available without importing
+    /// [`input::InputState`] at the call site. Hosts that drive the
+    /// world from a scripted timeline (`legaia-engine replay`, the
+    /// v0.1 playthrough oracle) call this before each [`Self::tick`].
+    pub fn set_pad(&mut self, mask: u16) {
+        self.input.set_pad(mask);
     }
 
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.

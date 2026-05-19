@@ -47,9 +47,10 @@
 #
 #   mc2 → STR 0 (fmv_id 0)    mc3 → STR 1 (fmv_id 1)
 #   mc4 → STR 2 (fmv_id 2)    mc5 → STR 3 (fmv_id 3)
-#   mc6 → STR 4 (fmv_id 4)    mc7 → STR 5 (fmv_id 5)
-#   mc8 → STR 6 (fmv_id 6)    mc9 → STR 7 (fmv_id 7)
-#   mc0 → STR 8 (fmv_id 8)
+#   mc6 → STR 4 (fmv_id 4)    mc7 → ROTATED (v0.1 slice C; was fmv_id 5)
+#   mc8 → ROTATED (v0.1 slice C+; was fmv_id 6)
+#   mc9 → STR 7 (fmv_id 7)
+#   mc0 → ROTATED (v0.1 slice D; was fmv_id 8)
 #
 # (mc1 is unrelated to the FMV corpus in this rotation.)
 #
@@ -69,40 +70,43 @@ filename_pattern = "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{s
 # (Left unset here so the manifest is portable.)
 
 # ----------------------------------------------------------------------
-# mc0 - per-STR FMV trigger corpus, slot 0 maps to STR 8 (fmv_id 8).
-# Active scene = `map01`. Game mode = 0x1A (StrInit). The runtime
-# FMV-state slot[8] points at \DATA\MOV.STR;1 (cut path; not on retail
-# disc). The save still autoplays the FMV via the str_fmv overlay's
-# fallback path, but no actual MV*.STR file is opened.
+# mc0 - v0.1 playthrough oracle anchor D: first frame of running
+# battle (Tetsu tutorial fight).
+#
+# game_mode = 0x15 (BattleMode); active_scene stays "town01" because
+# battles run as a scene-mode overlay on top of the loaded field scene,
+# not a scene swap. The transitional `BattleInit (0x14)` lasts a single
+# frame and is not captured here; mc0 is one frame later, in steady-
+# state BattleMode where the battle action SM is ticking.
+#
+# Anchor in the v0.1 slice taxonomy (see backlog item 1): the
+# comparison target for the recorded battle-start frame. The replay's
+# `[[expected]]` block (once recorded) will name the frame at which
+# the engine must reach scene_mode=Battle / active_scene=town01.
+#
+# Supersedes the FMV-trigger-corpus `fmv_trigger_str_8` capture that
+# previously occupied this slot.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 0
-label = "fmv_trigger_str_8"
-description = "Per-STR FMV trigger captured for fmv_id=8 (cut path slot, debug-menu driven)"
-topics = ["FMV trigger", "fmv_id 8", "str_fmv overlay", "cut path slot"]
-diff_against = [2]
+label = "v0_1_battle_first_frame_tetsu"
+ram_fingerprint_sha256 = "a6272a82f24bdee953e4f8dc19caa8df7621556e618d9bc9af7bc88712ad6f59"
+description = "v0.1 slice anchor D: first frame inside the Tetsu tutorial battle (BattleMode running)"
+topics = ["v0.1 slice", "battle init", "Tetsu tutorial", "BattleMode", "town01"]
+phase = "battle"
+# `expected_active_scene` is intentionally unset. `mode_trace_e3`
+# treats that field as "engine reaches this scene_mode from a cold
+# boot on this scene" -- which this anchor cannot satisfy (the engine
+# boots into Title/town01, not Battle/town01). The actual scene under
+# the battle IS "town01" with game_mode 0x15 BattleMode; the v0.1
+# oracle picks this anchor up via [[expected]] frame comparisons in
+# scripts/replays/v0_1_playthrough.toml when the field-VM-to-battle
+# handoff exists in-engine.
+expected_game_mode = 0x15
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 (s16 LE). mc0 reads `08 00` (fmv_id = 8). Set by the FMV-trigger op handler at FUN_801E30E4 from the bytecode operand."
-
-[[scenarios.watchpoints]]
-label = "next_game_mode_global"
-start = 0x8007B83C
-end = 0x8007B83D
-hint = "_DAT_8007B83C (u8). 0x1A across the corpus = next-game-mode StrInit. Constant: `cutscene_trigger_corpus::EXPECTED_GAME_MODE`."
-
-[[scenarios.watchpoints]]
-label = "scene_bundle_pool"
-start = 0x80084540
-end = 0x80084560
-hint = "Active scene: `map01` for every save in the FMV corpus. The user-side trigger sequence is debug-menu driven, all from this scene."
 
 # ----------------------------------------------------------------------
 # mc1 - unrelated to the FMV corpus in this rotation. Held for legacy
@@ -254,46 +258,67 @@ end = 0x8007BA7A
 hint = "_DAT_8007BA78 = `04 00` (fmv_id = 4)."
 
 # ----------------------------------------------------------------------
-# mc7 - fmv_id=5. Maps to slot[5] which points at \DATA\MOV15.STR;1
-# (cut path; not on retail disc). The trigger-side state is fully
-# pinned but the play-loop opens a non-existent path.
+# mc7 - v0.1 playthrough oracle anchor C: pre-battle field state.
+#
+# Player (Vahn) stands in Rim Elm (scene `town01`, game mode 0x03
+# MainMode) one button-press from the scripted Tetsu tutorial battle.
+# Pressing Cross (X / mapped to keyboard `S`) advances the dialogue
+# trigger that fires the field-VM battle-init opcode.
+#
+# Anchor in the v0.1 slice taxonomy (see backlog item 1): this is the
+# load-from-disk state. The replay's `meta.scenario` binds to this
+# save; downstream anchors (D = battle-init, E = post-victory) are
+# additional save captures that the oracle compares against at
+# specific frames in the recorded timeline.
+#
+# Supersedes the FMV-trigger-corpus `fmv_trigger_str_5` capture that
+# previously occupied this slot (the corpus comment at the top of
+# this file is now stale for slot 7).
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 7
-label = "fmv_trigger_str_5"
-description = "Per-STR FMV trigger captured for fmv_id=5 (cut path slot)"
-topics = ["FMV trigger", "fmv_id 5", "cut path slot"]
-diff_against = [8]
+label = "v0_1_pre_battle_tetsu"
+ram_fingerprint_sha256 = "db4c3b06b5a362c9519702ba1fa7c6a3e3730288ecd07858ef5777d35bf92fab"
+description = "v0.1 slice anchor C: Vahn in Rim Elm, one button-press from the Tetsu tutorial battle trigger"
+topics = ["v0.1 slice", "pre-battle", "scripted encounter", "Tetsu tutorial", "town01"]
+phase = "field"
+expected_active_scene = "town01"
+expected_game_mode = 0x03
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
 
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `05 00` (fmv_id = 5). Slot[5] points at \\DATA\\MOV15.STR;1 - cut path."
-
 # ----------------------------------------------------------------------
-# mc8 - fmv_id=6. Maps to slot[6] which points at \DATA\MOV.STR;1 (cut).
+# mc8 - v0.1 playthrough oracle anchor C+: post-accept, pre-battle.
+#
+# One field-VM tick after the player accepts the Tetsu fight at mc7.
+# Dialogue has advanced; the field-VM is ticking through the battle-
+# trigger sequence but BattleInit has not fired yet (`game_mode = 0x03`
+# MainMode is still live, `active_scene = "town01"`).
+#
+# Anchor in the v0.1 slice taxonomy: a mid-transition checkpoint
+# between C (mc7, pre-accept) and D (mc0, BattleMode running). Lets
+# the recorded replay's `[[expected]]` fixture name an intermediate
+# frame where the engine should still be in MainMode but with the
+# advanced dialogue queue state. Useful for catching the case where
+# the engine prematurely transitions to BattleInit.
+#
+# Supersedes the FMV-trigger-corpus `fmv_trigger_str_6` capture.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
-label = "fmv_trigger_str_6"
-description = "Per-STR FMV trigger captured for fmv_id=6 (cut path slot)"
-topics = ["FMV trigger", "fmv_id 6", "cut path slot"]
-diff_against = [9]
+label = "v0_1_post_accept_pre_battle"
+ram_fingerprint_sha256 = "f41310385f48bce6f553a0a4d5b4d87aec8a1eeae01a372480f12705c822257e"
+description = "v0.1 slice anchor C+: one tick past Tetsu-accept, still in MainMode walking toward BattleInit"
+topics = ["v0.1 slice", "pre-battle", "Tetsu tutorial", "MainMode", "town01"]
+phase = "field"
+expected_active_scene = "town01"
+expected_game_mode = 0x03
 
 [scenarios.overlay_slice]
 start = 0x801C0000
 end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `06 00` (fmv_id = 6). Slot[6] points at \\DATA\\MOV.STR;1 - cut path."
 
 # ----------------------------------------------------------------------
 # mc9 - fmv_id=7. Maps to slot[7] which points at \DATA\MOV.STR;1 (cut).
