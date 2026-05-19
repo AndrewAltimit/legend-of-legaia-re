@@ -223,6 +223,99 @@ pub fn extract_descriptor_0_lzs(bundle: &BundleSource) -> Result<(Vec<u8>, usize
     Ok((decoded, consumed))
 }
 
+/// Materialise the scene's `Asset(0x05) = Move` payload as a flat byte
+/// blob suitable for installing as the MOVE pool root (retail
+/// `_DAT_8007B888`). Mirrors the per-scene `move.mdt` install documented
+/// in [`docs/formats/mdt.md`]: when a field scene loads, descriptor 4 of
+/// the `scene_asset_table` bundle is the per-area move-table that
+/// `FUN_800204F8` reads via [`legaia_engine_vm::move_buffer`].
+///
+/// Each descriptor in the scene asset table is its own independently
+/// LZS-compressed stream. `data_offset` is the file-relative byte
+/// position of that stream and `size` is the **decompressed** payload
+/// size that the dispatcher passes to [`legaia_lzs::decompress`]. So
+/// the Move payload is `LZS.decode(entry_bytes[desc[4].data_offset..],
+/// desc[4].size)` directly.
+///
+/// `entry_bytes` is the **full on-disc footprint** of the bundle entry
+/// (from [`legaia_prot::archive::Archive::read_entry`] / the
+/// `entry_bytes_extended` accessor on `ProtIndex`), not the indexed
+/// sub-region. Several scene_asset_table entries (e.g. `0588_juui1`)
+/// have descriptor offsets that fall past the TOC-indexed end and into
+/// the trailing-overlay sectors; those offsets are valid against the
+/// extended footprint. See [`docs/formats/prot.md`] §"Trailing-overlay
+/// sectors".
+///
+/// Returns `Ok(None)` for:
+///  - Bundles whose descriptor table doesn't carry a Move slot
+///    (the `(1, 2, 3, 4, 6, 7, 0x14)` skip-Move variant; 1/80 entries).
+///  - Bundles whose Move descriptor has zero size.
+///  - Bundles where the LZS-decoded payload doesn't validate as a
+///    `legaia_mdt::MoveBuffer` (positive fitness).
+///
+/// Returns `Err` only for genuinely malformed inputs (data offset past
+/// entry end, LZS decoder fails on the bytes). The "no Move table for
+/// this scene" case is `Ok(None)` so callers can branch on `Option`
+/// rather than catching errors.
+pub fn extract_move_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+    let descriptors = bundle.descriptors();
+    let Some(move_desc) = descriptors
+        .iter()
+        .find(|d| matches!(d.asset_type(), AssetType::Move))
+        .copied()
+    else {
+        return Ok(None);
+    };
+    if move_desc.size == 0 || move_desc.data_offset == 0 {
+        return Ok(None);
+    }
+
+    let table_offset = bundle.table_offset();
+    let payload_start = table_offset + move_desc.data_offset as usize;
+    if payload_start >= entry_bytes.len() {
+        return Err(anyhow::anyhow!(
+            "Move descriptor offset 0x{:X} past entry end ({}b)",
+            payload_start,
+            entry_bytes.len()
+        ));
+    }
+    let body = &entry_bytes[payload_start..];
+
+    let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, move_desc.size as usize)?;
+    if decoded.len() != move_desc.size as usize {
+        return Ok(None);
+    }
+    if !move_payload_looks_valid(&decoded) {
+        return Ok(None);
+    }
+    Ok(Some(decoded))
+}
+
+/// Predicate used by [`extract_move_payload`] to gate installation.
+///
+/// Real per-scene Move buffers have offset tables shorter than the
+/// consumer-facing 1024-entry mask, so [`legaia_mdt::MoveBuffer::parse`]
+/// over-reads past the real table boundary and surfaces what's really
+/// record data as bogus offsets. That makes the strict
+/// [`legaia_mdt::MoveBuffer::fitness`] check false-negative for real
+/// data (e.g. `0086_map01.BIN` parses to used=1020 bogus=973).
+///
+/// The shape we actually want to recognise is:
+///  - At least one record is reachable (`records.len() > 0`).
+///  - The majority of non-zero offsets point into the buffer
+///    (`used > bogus`).
+///
+/// Random / non-Move LZS-decoded data fails both: random u32 offsets
+/// almost always land past the buffer end, so `bogus ≈ used` and
+/// `records` is dominated by garbage slots; all-zero buffers parse to
+/// `used = 0`.
+fn move_payload_looks_valid(buf: &[u8]) -> bool {
+    let Ok(mb) = legaia_mdt::MoveBuffer::parse(buf) else {
+        return false;
+    };
+    !mb.records.is_empty() && mb.used_slots.len() > mb.bogus_offsets
+}
+
 /// Index every TIM that the scene exposes via the `TimList` descriptor
 /// or as scattered `Class::SceneVabStream` / `Class::SceneTmdStream`
 /// neighbours.
@@ -478,5 +571,140 @@ mod tests {
         let scene = make_scene_with_plain_bundle(bytes);
         let bundle = find_bundle(&scene).unwrap();
         assert!(scripted_event_record_ranges(&bundle).is_none());
+    }
+
+    /// LZS-encode `input` as a literal-only stream: every input byte
+    /// becomes a literal under an all-ones control byte. Decoding via
+    /// `legaia_lzs::decompress(.., input.len())` yields `input` verbatim.
+    /// Used only by the test synth helpers since the production code
+    /// path never produces LZS bytes - the decoder consumes retail
+    /// streams that an external encoder produced.
+    fn lzs_encode_literals(input: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(input.len() + input.len().div_ceil(8));
+        for chunk in input.chunks(8) {
+            let mut control: u8 = 0;
+            for i in 0..chunk.len() {
+                control |= 1 << i;
+            }
+            out.push(control);
+            out.extend_from_slice(chunk);
+        }
+        out
+    }
+
+    /// Build a synthetic Move buffer (offset-table layout) whose id 7
+    /// maps to a single record past the 4 KB offset-table region.
+    fn synth_move_buffer() -> Vec<u8> {
+        let size: usize = 0x1100; // 4 KB table + 256 B record region
+        let id: usize = 7;
+        let record_off: u32 = 0x1000;
+        let mut buf = vec![0u8; size];
+        buf[id * 4..id * 4 + 4].copy_from_slice(&record_off.to_le_bytes());
+        buf[record_off as usize + 2] = 8; // max_position_x16 low
+        buf[record_off as usize + 6] = 1; // divisor
+        buf
+    }
+
+    /// Build a synthetic `scene_asset_table` PROT entry where each
+    /// descriptor's `data_offset` points at a per-descriptor LZS stream
+    /// (matching the on-disc layout that `extract_move_payload`
+    /// consumes). Descriptor 4 carries a Move buffer that
+    /// `legaia_mdt::MoveBuffer::parse` accepts with positive fitness.
+    fn synth_scene_with_valid_move_payload() -> Vec<u8> {
+        let header_end: u32 = 0x40;
+        let types: [u8; 7] = [1, 2, 3, 4, 5, 6, 7];
+        // Each descriptor's "size" is the decompressed payload size.
+        // Tiny non-Move sizes are fine - the production extractor only
+        // reads descriptor 4.
+        let small_size: u32 = 0x10;
+        let move_buffer = synth_move_buffer();
+        let move_size: u32 = move_buffer.len() as u32;
+        let sizes: [u32; 7] = [
+            small_size, small_size, small_size, small_size, move_size, small_size, small_size,
+        ];
+
+        // Empty (zero-length) LZS streams aren't decodable, so each
+        // non-Move slot still needs a literal stream of `size` bytes.
+        let small_zeroes = vec![0u8; small_size as usize];
+        let small_encoded = lzs_encode_literals(&small_zeroes);
+        let move_encoded = lzs_encode_literals(&move_buffer);
+
+        // Compute file-relative offsets for each descriptor's LZS stream.
+        let mut offsets = [0u32; 7];
+        let mut cursor = header_end;
+        for (i, slot) in offsets.iter_mut().enumerate() {
+            *slot = cursor;
+            cursor += if i == 4 {
+                move_encoded.len() as u32
+            } else {
+                small_encoded.len() as u32
+            };
+        }
+        let total = cursor as usize;
+
+        // Assemble.
+        let mut buf = Vec::with_capacity(total);
+        buf.extend_from_slice(&7u32.to_le_bytes()); // count
+        buf.extend_from_slice(&0u32.to_le_bytes()); // meta1
+        for ((t, sz), off) in types.iter().zip(sizes.iter()).zip(offsets.iter()) {
+            let type_size = ((*t as u32) << 24) | *sz;
+            buf.extend_from_slice(&type_size.to_le_bytes());
+            buf.extend_from_slice(&off.to_le_bytes());
+        }
+        // Pad to header_end.
+        buf.resize(header_end as usize, 0);
+        // Append per-descriptor LZS streams in offset order.
+        for i in 0..7 {
+            if i == 4 {
+                buf.extend_from_slice(&move_encoded);
+            } else {
+                buf.extend_from_slice(&small_encoded);
+            }
+        }
+        debug_assert_eq!(buf.len(), total);
+        buf
+    }
+
+    #[test]
+    fn extract_move_payload_returns_slice_when_move_slot_present() {
+        let bytes = synth_scene_with_valid_move_payload();
+        let scene = make_scene_with_plain_bundle(bytes.clone());
+        let bundle = find_bundle(&scene).expect("bundle present");
+        let payload = extract_move_payload(&bundle, &bytes)
+            .expect("no error")
+            .expect("Move slot present");
+        // The Move descriptor in the synth carries 0x1100 bytes.
+        assert_eq!(payload.len(), 0x1100);
+        let mb = legaia_mdt::MoveBuffer::parse(&payload).unwrap();
+        assert!(
+            mb.fitness() > 0,
+            "synthetic Move buffer should validate; got fitness {} bogus {}",
+            mb.fitness(),
+            mb.bogus_offsets
+        );
+        assert_eq!(mb.used_slots.len(), 1);
+        assert_eq!(mb.used_slots[0].move_id, 7);
+        assert_eq!(mb.used_slots[0].raw_offset, 0x1000);
+    }
+
+    #[test]
+    fn extract_move_payload_returns_none_when_move_slot_absent() {
+        // `(1, 2, 3, 4, 6, 7, 0x14)` is the skip-Move variant (1/80 in corpus).
+        let bytes = synth_scene_asset_table_bytes([1, 2, 3, 4, 6, 7, 0x14], 0x800);
+        let scene = make_scene_with_plain_bundle(bytes.clone());
+        let bundle = find_bundle(&scene).expect("bundle present");
+        assert!(extract_move_payload(&bundle, &bytes).unwrap().is_none());
+    }
+
+    #[test]
+    fn extract_move_payload_returns_none_for_unrecoverable_garbage() {
+        // Default zero-payload synthetic: the Move descriptor's
+        // `data_offset` points into a region of zeros, which LZS-decodes
+        // to zeros and parses to a `MoveBuffer` with fitness 0. The
+        // extractor should reject it rather than installing garbage.
+        let bytes = synth_scene_asset_table_bytes([1, 2, 3, 4, 5, 6, 7], 0x800);
+        let scene = make_scene_with_plain_bundle(bytes.clone());
+        let bundle = find_bundle(&scene).expect("bundle present");
+        assert!(extract_move_payload(&bundle, &bytes).unwrap().is_none());
     }
 }
