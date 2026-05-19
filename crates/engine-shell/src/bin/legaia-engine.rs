@@ -38,6 +38,10 @@ use legaia_engine_shell::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, mode_trace_to_jsonl,
 };
+use legaia_engine_shell::pcm_oracle::{
+    EnginePcmTrace, PcmStats, build_engine_pcm_trace, first_pcm_divergence, pcm_stats,
+    retail_reference_pcm, write_wav,
+};
 use legaia_engine_shell::replay::{PadEvent, ReplayFile, ReplayMeta};
 use legaia_engine_shell::vram_oracle::{
     TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
@@ -349,6 +353,76 @@ enum Cmd {
         /// Strict mode: exit non-zero on divergence between the
         /// engine trace and the retail SPU snapshot. Only valid in
         /// scenario mode.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
+    /// PCM-window parity oracle - the I2 sibling of `audio-trace`.
+    ///
+    /// Emits stereo PCM windows from both sides at 44.1 kHz:
+    ///
+    ///   - **Engine**: boots a headless `BootSession`, runs a private
+    ///     SPU + sequencer in parallel, routes field-VM op `0x35`
+    ///     events through a `TraceBgmDirector`, accumulates per-frame
+    ///     PCM over the trace window.
+    ///   - **Retail**: lifts the SPU section from a mednafen
+    ///     `.mc{slot}` save (or a path passed via `--retail-save`),
+    ///     seeds a clean-room SPU through `engine_spu_from_retail`,
+    ///     and renders one second of PCM. Voice mid-stream state is
+    ///     not preserved by the translator (engine-audio's `Voice`
+    ///     doesn't expose those internals), so this is "what the SPU
+    ///     would play given retail's voice config" rather than a
+    ///     bit-identical resume-from-snapshot.
+    ///
+    /// Two output flavours: WAV files (`--engine-wav`, `--retail-wav`)
+    /// for human listening, plus stderr stats (peak / RMS /
+    /// non-silent-sample count) for both sides.
+    ///
+    /// `--strict` enforces only the conservative bar exercised by the
+    /// disc-gated `pcm_oracle` test: retail audible AND engine silent
+    /// → exit non-zero. Anything finer is informational.
+    PcmTrace {
+        /// CDNAME scene name (e.g. `town01`). Required in explicit
+        /// mode; derived from the scenario's `expected_active_scene`
+        /// in scenario mode.
+        #[arg(long)]
+        scene: Option<String>,
+        /// Extracted-root directory containing `PROT.DAT` +
+        /// `CDNAME.TXT`.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Alternative source: read PROT.DAT + CDNAME.TXT directly
+        /// from a `.bin` disc image.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+        /// Scenario label looked up in the manifest. Resolves scene +
+        /// `.mc` save automatically.
+        #[arg(long)]
+        scenario: Option<String>,
+        /// Scenario manifest path.
+        #[arg(long, default_value = "scripts/scenarios.toml")]
+        manifest: PathBuf,
+        /// Engine frames to tick. PCM window length is `frames *
+        /// 44_100 / 60` stereo samples.
+        #[arg(long, default_value_t = 60)]
+        frames: u64,
+        /// Optional: BGM id started through the private sequencer
+        /// before the trace loop begins. Use when a scene's prescript
+        /// doesn't fire op `0x35` within the trace window.
+        #[arg(long)]
+        bgm_id: Option<u16>,
+        /// Explicit retail save path. Overrides the scenario's `.mc`
+        /// lookup; useful for ad-hoc captures.
+        #[arg(long)]
+        retail_save: Option<PathBuf>,
+        /// Where to write the engine PCM (WAV). Default: skipped.
+        #[arg(long)]
+        engine_wav: Option<PathBuf>,
+        /// Where to write the retail reference PCM (WAV). Default:
+        /// skipped.
+        #[arg(long)]
+        retail_wav: Option<PathBuf>,
+        /// Strict mode: exit non-zero when retail had audible output
+        /// and the engine produced silence over the trace window.
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
@@ -878,6 +952,31 @@ fn main() -> Result<()> {
             frames,
             bgm_id,
             out: &out,
+            strict,
+        }),
+        Cmd::PcmTrace {
+            scene,
+            extracted_root,
+            disc,
+            scenario,
+            manifest,
+            frames,
+            bgm_id,
+            retail_save,
+            engine_wav,
+            retail_wav,
+            strict,
+        } => cmd_pcm_trace(PcmTraceArgs {
+            scene: scene.as_deref(),
+            extracted_root: &extracted_root,
+            disc: disc.as_deref(),
+            scenario: scenario.as_deref(),
+            manifest: &manifest,
+            frames,
+            bgm_id,
+            retail_save: retail_save.as_deref(),
+            engine_wav: engine_wav.as_deref(),
+            retail_wav: retail_wav.as_deref(),
             strict,
         }),
         Cmd::Replay { input, out, strict } => cmd_replay(&input, &out, strict),
@@ -1964,6 +2063,183 @@ fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// pcm-trace - PCM-window parity oracle (I2 sibling of audio-trace)
+// ---------------------------------------------------------------------------
+
+struct PcmTraceArgs<'a> {
+    scene: Option<&'a str>,
+    extracted_root: &'a Path,
+    disc: Option<&'a Path>,
+    scenario: Option<&'a str>,
+    manifest: &'a Path,
+    frames: u64,
+    bgm_id: Option<u16>,
+    retail_save: Option<&'a Path>,
+    engine_wav: Option<&'a Path>,
+    retail_wav: Option<&'a Path>,
+    strict: bool,
+}
+
+struct ResolvedPcmTrace {
+    scene_name: String,
+    retail_save: Option<PathBuf>,
+    source_label: String,
+}
+
+fn resolve_pcm_trace_inputs(args: &PcmTraceArgs<'_>) -> Result<ResolvedPcmTrace> {
+    use legaia_mednafen::ScenarioManifest;
+
+    // Explicit `--retail-save` always wins; needs `--scene` to know what
+    // to boot.
+    if let Some(save) = args.retail_save {
+        let scene_name = args.scene.with_context(
+            || "pcm-trace: `--retail-save` requires `--scene` (no scenario lookup)",
+        )?;
+        if !save.exists() {
+            anyhow::bail!("pcm-trace: retail save not found at {}", save.display());
+        }
+        return Ok(ResolvedPcmTrace {
+            scene_name: scene_name.to_owned(),
+            retail_save: Some(save.to_path_buf()),
+            source_label: format!("explicit save ({})", save.display()),
+        });
+    }
+    match (args.scenario, args.scene) {
+        (Some(label), _) => {
+            let manifest = ScenarioManifest::from_path(args.manifest)?;
+            let scn = manifest.by_label(label).with_context(|| {
+                format!("scenario {label:?} not in {}", args.manifest.display())
+            })?;
+            let scene_name = scn.expected_active_scene.clone().with_context(|| {
+                format!("scenario {label:?} has no `expected_active_scene`; cannot derive scene")
+            })?;
+            let save_path = manifest.save_path(scn.slot)?;
+            if !save_path.exists() {
+                anyhow::bail!(
+                    "scenario {label:?} slot {} save not found at {}",
+                    scn.slot,
+                    save_path.display()
+                );
+            }
+            let source_label = format!(
+                "scenario {label:?} (slot {}, {})",
+                scn.slot,
+                save_path.display()
+            );
+            Ok(ResolvedPcmTrace {
+                scene_name,
+                retail_save: Some(save_path),
+                source_label,
+            })
+        }
+        (None, Some(scene_name)) => Ok(ResolvedPcmTrace {
+            scene_name: scene_name.to_owned(),
+            retail_save: None,
+            source_label: "explicit (no retail comparison)".into(),
+        }),
+        _ => anyhow::bail!(
+            "pcm-trace: provide either `--scenario`, `--scene`, or `--retail-save` + `--scene`"
+        ),
+    }
+}
+
+fn cmd_pcm_trace(args: PcmTraceArgs<'_>) -> Result<()> {
+    if args.strict && args.scenario.is_none() && args.retail_save.is_none() {
+        anyhow::bail!(
+            "pcm-trace: `--strict` requires a retail source (`--scenario` or `--retail-save`)"
+        );
+    }
+    let resolved = resolve_pcm_trace_inputs(&args)?;
+
+    let opts = legaia_engine_shell::audio_trace_oracle::AudioTraceBuildOptions {
+        scene: resolved.scene_name.clone(),
+        bgm_id: args.bgm_id,
+        us_per_frame: 1_000_000.0 / 60.0,
+        frames: args.frames,
+    };
+    let engine: EnginePcmTrace = build_engine_pcm_trace(args.extracted_root, args.disc, &opts)?;
+    let engine_stats = pcm_stats(&engine.pcm);
+
+    if let Some(path) = args.engine_wav {
+        write_wav(path, &engine.pcm)?;
+    }
+
+    eprintln!(
+        "scene '{}' vs {} (frames={}, samples_per_frame={}, total_samples={})",
+        resolved.scene_name,
+        resolved.source_label,
+        args.frames,
+        engine.samples_per_frame,
+        engine.pcm.len() / 2,
+    );
+    eprintln!(
+        "  engine peak_abs={} rms={} non_silent_samples={} sample_pairs={}",
+        engine_stats.peak_abs,
+        engine_stats.rms,
+        engine_stats.non_silent_samples,
+        engine_stats.sample_pairs,
+    );
+
+    let Some(save_path) = resolved.retail_save.as_deref() else {
+        return Ok(());
+    };
+    let retail = retail_reference_pcm(save_path, engine.pcm.len() / 2)?;
+    let retail_stats = pcm_stats(&retail);
+    if let Some(path) = args.retail_wav {
+        write_wav(path, &retail)?;
+    }
+
+    eprintln!(
+        "  retail peak_abs={} rms={} non_silent_samples={} sample_pairs={}",
+        retail_stats.peak_abs,
+        retail_stats.rms,
+        retail_stats.non_silent_samples,
+        retail_stats.sample_pairs,
+    );
+
+    // Conservative byte-level inspection: report first divergence at a
+    // generous tolerance so callers see "is engine even close" without
+    // false-positive spam.
+    if let Some(d) = first_pcm_divergence(&engine.pcm, &retail, 4096) {
+        eprintln!(
+            "  first divergence sample_pair={} channel={} engine={} retail={} delta={}",
+            d.sample_pair, d.channel, d.engine, d.retail, d.delta,
+        );
+    } else {
+        eprintln!("  engine and retail PCM agree within +/-4096 on every sample");
+    }
+
+    let hard_fail = retail_stats.rms >= 256 && engine_stats.rms == 0;
+    if hard_fail {
+        let msg = format!(
+            "[FAIL] retail had audible output (rms={}) but engine produced complete silence over {} frames",
+            retail_stats.rms, args.frames,
+        );
+        if args.strict {
+            anyhow::bail!("{msg}");
+        } else {
+            eprintln!("{msg}");
+        }
+    } else if engine_stats.rms == 0 {
+        eprintln!(
+            "[ok-quiet] retail also quiet (rms={}) - soft pass",
+            retail_stats.rms
+        );
+    } else {
+        eprintln!(
+            "[ok] engine produced non-zero PCM (rms={})",
+            engine_stats.rms
+        );
+    }
+
+    // PcmStats / EnginePcmTrace are re-exported but the CLI doesn't
+    // otherwise need them; reference the type to avoid an unused-import
+    // warning on the `EnginePcmTrace` binding.
+    let _ = std::mem::size_of::<PcmStats>();
     Ok(())
 }
 
