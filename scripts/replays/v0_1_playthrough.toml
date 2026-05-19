@@ -1,0 +1,63 @@
+# v0.1 playthrough oracle replay — SCAFFOLD.
+#
+# Eventual goal: capture the shortest gameplay path that exercises every
+# deep subsystem (boot -> title -> load real save -> walk in field ->
+# fixed encounter -> battle victory -> XP/level/loot -> save back) as a
+# sparse pad-input timeline. The integration test at
+# crates/engine-shell/tests/v0_1_playthrough.rs drives:
+#
+#   - disc-free determinism gate: two synthetic-world replays produce
+#     bit-identical state-trace bytes.
+#   - disc-gated oracle convergence: VRAM + audio-trace + mode-trace +
+#     SC round-trip checks at frames named in [[expected]].
+#
+# CURRENT STATE: scaffold only. No `meta.scenario` binding, no
+# [[event]] rows, one minimal [[expected]] row covering the synthetic
+# world's frame-0 state so the determinism gate has something to lock
+# down. The disc-gated half of the test skip-passes loudly with a
+# "scaffold not yet populated" message until this file carries a real
+# recording.
+#
+# To populate (item 1 in the backlog):
+#
+#   1. Pick a scenario from `scripts/scenarios.toml` whose `.mc{slot}`
+#      save sits on or near a known fixed-encounter spawn point. Bind
+#      via `meta.scenario = "<label>"`.
+#   2. Run:
+#        legaia-engine record \
+#          --scenario <label> \
+#          --out scripts/replays/v0_1_playthrough.toml
+#      and play the slice with keyboard input in `play-window`.
+#   3. Bump `meta.frames` to the recorded length.
+#   4. Add [[expected]] rows at:
+#         - title-screen frame      (scene_mode = "Title")
+#         - field-load frame        (scene_mode = "Field", active_scene)
+#         - battle-start frame      (scene_mode = "Battle")
+#         - battle-end frame        (scene_mode = "Field")
+#         - save-write frame        (scene_mode = "Field")
+#      so the mode-trace oracle has anchor points across the path.
+#
+# Schema reference: crates/engine-shell/src/replay.rs.
+
+[meta]
+schema = "j-replay-v1"
+# Canonical engine seed (matches ReplayMeta::new default). Real
+# recordings can override; the scaffold uses the canonical so two-run
+# determinism is checked against the same starting RNG state the engine
+# defaults to.
+rng_seed = 0xDEAD_C0DE
+# Placeholder frame count. The synthetic-world determinism gate runs
+# `frames + 1` ticks; 10 is enough to produce a non-trivial trace
+# without inflating CI time. Bumped to the recorded length when a real
+# slice lands.
+frames = 10
+
+# Minimal expected fixture. The synthetic world starts in `Title` mode
+# and never transitions (no field bytecode is loaded by the default
+# constructor), so the engine should report `Title` for every sampled
+# frame. Asserting frame 0 locks the synthetic baseline; if a future
+# engine change drops the default world into a different mode, the
+# determinism gate's `ReplayFile::diff` call surfaces it on this row.
+[[expected]]
+frame = 0
+scene_mode = "Title"
