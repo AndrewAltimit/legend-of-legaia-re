@@ -32,7 +32,8 @@ use legaia_engine_render::{
 };
 use legaia_engine_shell::audio_trace_oracle::{
     AudioTraceFrame, audio_trace_to_jsonl, engine_trace_from_paths, first_audio_trace_divergence,
-    load_runtime_audio_trace_from_save,
+    first_audio_trace_divergence_multi, load_runtime_audio_trace_from_save,
+    load_runtime_audio_trace_jsonl,
 };
 use legaia_engine_shell::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace, first_mode_trace_divergence,
@@ -306,11 +307,14 @@ enum Cmd {
     ///     (from the `.mc{slot}` save's SPU section). With `--strict`,
     ///     exits non-zero on divergence.
     ///
-    /// **Asymmetry.** The retail snapshot freezes one SPU cycle; the
-    /// engine trace runs over a window. Convergence rule: at least
-    /// one engine frame's active-voice mask must be a superset of
-    /// retail's mask. An external Lua probe (future work) would turn
-    /// the retail side into a multi-frame trace.
+    /// **Asymmetry.** A retail snapshot from a `.mc{slot}` save freezes
+    /// one SPU cycle; the engine trace runs over a window. The
+    /// `--retail-jsonl` mode consumes a multi-frame retail trace
+    /// captured by `scripts/pcsx-redux/autorun_audio_trace.lua` +
+    /// `scripts/pcsx-redux/extract_audio_trace_from_sstates.py`,
+    /// flipping the comparison to multi-frame-vs-multi-frame.
+    /// Convergence rule (per retail frame with active voices): some
+    /// engine frame's mask must be a superset of retail's mask.
     ///
     /// **BGM playback.** The trace installs a private
     /// [`TraceBgmDirector`] and routes field-VM op `0x35` events into
@@ -350,9 +354,16 @@ enum Cmd {
         /// Where to write the engine JSONL trace. Default `-` = stdout.
         #[arg(long, default_value = "-")]
         out: PathBuf,
+        /// Multi-frame retail trace (JSONL) produced by
+        /// `scripts/pcsx-redux/extract_audio_trace_from_sstates.py`.
+        /// Overrides the scenario's `.mc{slot}` single-snapshot path
+        /// for the convergence walk; `--scene` alone is enough in this
+        /// mode (no `--scenario` lookup needed).
+        #[arg(long)]
+        retail_jsonl: Option<PathBuf>,
         /// Strict mode: exit non-zero on divergence between the
-        /// engine trace and the retail SPU snapshot. Only valid in
-        /// scenario mode.
+        /// engine trace and retail. Valid in scenario mode and in
+        /// `--retail-jsonl` mode.
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
@@ -942,6 +953,7 @@ fn main() -> Result<()> {
             frames,
             bgm_id,
             out,
+            retail_jsonl,
             strict,
         } => cmd_audio_trace(AudioTraceArgs {
             scene: scene.as_deref(),
@@ -952,6 +964,7 @@ fn main() -> Result<()> {
             frames,
             bgm_id,
             out: &out,
+            retail_jsonl: retail_jsonl.as_deref(),
             strict,
         }),
         Cmd::PcmTrace {
@@ -1949,19 +1962,64 @@ struct AudioTraceArgs<'a> {
     frames: u64,
     bgm_id: Option<u16>,
     out: &'a Path,
+    retail_jsonl: Option<&'a Path>,
     strict: bool,
 }
 
-/// Resolved input triple - `(scene_name, retail_snapshot, source_label)`.
-/// `retail_snapshot` is `None` in explicit mode (no comparison).
+/// Resolved retail input for the convergence walk.
+enum ResolvedRetail {
+    /// Scenario-mode single SPU snapshot lifted from a mednafen `.mc{slot}`
+    /// save. Compared via [`first_audio_trace_divergence`].
+    Snapshot(AudioTraceFrame),
+    /// Multi-frame trace lifted from a PCSX-Redux per-vsync capture (Lua
+    /// probe → Python extractor → JSONL). Compared via
+    /// [`first_audio_trace_divergence_multi`].
+    Multi(Vec<AudioTraceFrame>),
+}
+
+/// Resolved input triple - `(scene_name, retail, source_label)`.
+/// `retail` is `None` in explicit mode (no comparison).
 struct ResolvedAudioTrace {
     scene_name: String,
-    retail: Option<AudioTraceFrame>,
+    retail: Option<ResolvedRetail>,
     source_label: String,
 }
 
 fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudioTrace> {
     use legaia_mednafen::ScenarioManifest;
+
+    // The retail-JSONL path is the multi-frame mode; it doesn't require a
+    // scenario lookup because the JSONL is self-contained.
+    if let Some(jsonl_path) = args.retail_jsonl {
+        let scene_name = match (args.scenario, args.scene) {
+            (Some(label), _) => {
+                let manifest = ScenarioManifest::from_path(args.manifest)?;
+                let scn = manifest.by_label(label).with_context(|| {
+                    format!("scenario {label:?} not in {}", args.manifest.display())
+                })?;
+                scn.expected_active_scene.clone().with_context(|| {
+                    format!(
+                        "scenario {label:?} has no `expected_active_scene`; cannot derive scene"
+                    )
+                })?
+            }
+            (None, Some(name)) => name.to_owned(),
+            _ => anyhow::bail!(
+                "audio-trace --retail-jsonl: provide `--scene` or `--scenario` for the engine side"
+            ),
+        };
+        let frames = load_runtime_audio_trace_jsonl(jsonl_path)?;
+        let source_label = format!(
+            "retail-jsonl {} ({} frame(s))",
+            jsonl_path.display(),
+            frames.len()
+        );
+        return Ok(ResolvedAudioTrace {
+            scene_name,
+            retail: Some(ResolvedRetail::Multi(frames)),
+            source_label,
+        });
+    }
 
     match (args.scenario, args.scene) {
         (Some(label), _) => {
@@ -1988,7 +2046,7 @@ fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudio
             );
             Ok(ResolvedAudioTrace {
                 scene_name,
-                retail: Some(retail),
+                retail: Some(ResolvedRetail::Snapshot(retail)),
                 source_label,
             })
         }
@@ -2002,9 +2060,9 @@ fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudio
 }
 
 fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
-    if args.strict && args.scenario.is_none() {
+    if args.strict && args.scenario.is_none() && args.retail_jsonl.is_none() {
         anyhow::bail!(
-            "audio-trace: `--strict` requires `--scenario` (no retail snapshot in explicit mode)"
+            "audio-trace: `--strict` requires `--scenario` or `--retail-jsonl` (no retail in explicit mode)"
         );
     }
     let resolved = resolve_audio_trace_inputs(&args)?;
@@ -2036,30 +2094,45 @@ fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
         out_label
     );
 
-    if let Some(retail) = resolved.retail.as_ref() {
-        let last = trace.last().unwrap();
-        eprintln!(
-            "  engine[last] mask=0b{:024b} master={:?} reverb_mode={:?}",
-            last.active_voice_mask, last.master_volume, last.reverb_mode,
-        );
-        eprintln!(
-            "  retail       mask=0b{:024b} master={:?} reverb_mode={:?}",
-            retail.active_voice_mask, retail.master_volume, retail.reverb_mode,
-        );
-        match first_audio_trace_divergence(&trace, retail) {
-            None => {
-                eprintln!("[ok] engine trace converges with retail snapshot");
-            }
-            Some(d) => {
-                let msg = format!(
-                    "[DRIFT] {:?}: engine(mask=0b{:024b}) vs retail(mask=0b{:024b})",
-                    d.kind, d.engine.active_voice_mask, d.retail.active_voice_mask,
-                );
-                if args.strict {
-                    anyhow::bail!("{msg}");
-                } else {
-                    eprintln!("{msg}");
-                }
+    let divergence = match resolved.retail.as_ref() {
+        None => return Ok(()),
+        Some(ResolvedRetail::Snapshot(retail)) => {
+            let last = trace.last().unwrap();
+            eprintln!(
+                "  engine[last] mask=0b{:024b} master={:?} reverb_mode={:?}",
+                last.active_voice_mask, last.master_volume, last.reverb_mode,
+            );
+            eprintln!(
+                "  retail       mask=0b{:024b} master={:?} reverb_mode={:?}",
+                retail.active_voice_mask, retail.master_volume, retail.reverb_mode,
+            );
+            first_audio_trace_divergence(&trace, retail)
+        }
+        Some(ResolvedRetail::Multi(retail_frames)) => {
+            let retail_active = retail_frames
+                .iter()
+                .filter(|f| f.active_voice_mask != 0)
+                .count();
+            eprintln!(
+                "  retail-trace frames={} ({} with active voices)",
+                retail_frames.len(),
+                retail_active,
+            );
+            first_audio_trace_divergence_multi(&trace, retail_frames)
+        }
+    };
+
+    match divergence {
+        None => eprintln!("[ok] engine trace converges with retail"),
+        Some(d) => {
+            let msg = format!(
+                "[DRIFT] {:?}: engine(mask=0b{:024b}) vs retail(mask=0b{:024b})",
+                d.kind, d.engine.active_voice_mask, d.retail.active_voice_mask,
+            );
+            if args.strict {
+                anyhow::bail!("{msg}");
+            } else {
+                eprintln!("{msg}");
             }
         }
     }

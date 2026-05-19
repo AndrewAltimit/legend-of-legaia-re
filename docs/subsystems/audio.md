@@ -279,24 +279,31 @@ Implementation: [`crates/engine-audio::sfx`](../../crates/engine-audio/src/sfx.r
 
 `crates/xa` decodes the format spec correctly on synthetic inputs. The on-disc `.XA` files use a non-standard interleave - ~90% of groups don't pass standard validation. Likely a custom event-trigger scheme rather than streamed audio. Pinning down the actual format needs runtime tracing.
 
-## Audio-trace parity oracle (foundation)
+## Audio-trace parity oracle
 
-Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side lifts a single-cycle snapshot from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame.
+Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, with the same `AudioTraceFrame` JSONL wire format on both:
 
-JSONL is the wire format - one `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }` per line. Convergence rule: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
+1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`. Convergence is "did any engine frame in the window match retail's voice mask?".
+2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/engine-shell/src/audio_trace_oracle.rs).
+
+The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. JSONL records: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }`. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
+
+PCSX-Redux's Lua API does not expose the SPU register file directly (`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on `PCSX.createSaveState()` which returns the full state as a protobuf slice (~20 MiB); the autorun script walks the slice in-place via FFI and writes only the ~600 KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt `GPU::Vsync` event delivery (same shape as the `readAt(2 MiB)` caveat in [`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The SPU schema is the one declared in PCSX-Redux's `src/core/sstate.h` + `src/spu/types.h`: `Channel.Data.on || .stop` is the retail-side "audible" criterion (`ADSRInfoEx.state` is the configured next-attack shape and reads as Sustain even for unused voices, so it's not a reliable audibility signal).
 
 Two known asymmetries the diff function explicitly models:
 
 1. **Headless engine SPU.** `BootSession` only attaches a real cpal `AudioOut` when `enable_audio = true`, which fails in CI. The oracle constructs a standalone `Spu` in parallel and routes scene-resolved BGM events into it. Not bit-identical to the retail SPU, but the voice-activity envelope is.
-2. **Single retail frame vs. windowed engine.** Save states freeze one SPU cycle; the engine trace produces `frames + 1` records. Convergence is "any engine frame matches retail's voice mask".
+2. **Retail capture shape.** The single-snapshot case freezes one SPU cycle; the multi-frame case carries per-vsync state. Engine produces `frames + 1` records either way. `NoFrameMatched` stays tolerable drift in both modes; `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
 
 Entry points:
 
-- Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `first_audio_trace_divergence`, JSONL round-trip.
-- CLI: `legaia-engine audio-trace --scene NAME` (explicit) or `--scenario LABEL` (compares against `.mc{slot}` SPU).
-- Disc-gated test: [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) auto-discovers every scenario in `scripts/scenarios.toml` with both `expected_active_scene` and an on-disk `.mc{slot}` save.
+- Library: [`engine_shell::audio_trace_oracle`](../../crates/engine-shell/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
+- CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), or `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture).
+- Disc-gated tests:
+  - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) — auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
+  - [`audio_trace_multi`](../../crates/engine-shell/tests/audio_trace_multi.rs) — same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
 
-The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures. An external PCSX-Redux Lua probe for per-vsync retail SsAPI state remains a follow-up.
+The engine drives BGM through a private `TraceBgmDirector` that routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `NoFrameMatched` is treated as tolerable drift (scene prescript may not emit op `0x35` within the trace window, or may target a different track than retail captured); `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
 
 ## What's left
 
