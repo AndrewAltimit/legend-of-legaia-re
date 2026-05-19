@@ -249,6 +249,71 @@ pub trait PrimHost {
     /// is to force every non-transparent pixel to gain the STP bit,
     /// effectively a "darken non-transparent pixels" toggle).
     fn alpha_or_gate_set(&self) -> bool;
+
+    // ------------------------------------------------------------------
+    // Overlay-side helpers consumed by [`exec_centered_bar`] /
+    // [`exec_centered_text`] / [`exec_card_init`]. These mirror the menu
+    // / shop / save UI overlays' primitive emitters - they live behind
+    // the same PrimHost so engines can wire them through a single GPU
+    // back-end. Default impls are no-ops where the leaf is purely a
+    // side-effect-free emit; engines override to wire to the renderer.
+    // ------------------------------------------------------------------
+
+    /// Equivalent of `FUN_80034b6c(packet_type)` - allocate a GPU
+    /// primitive packet of the given type tag.
+    ///
+    /// `FUN_801E36C4` calls this with `packet_type = 0x44` before
+    /// emitting its horizontal bar.
+    fn prim_packet_alloc(&mut self, _packet_type: u8) {}
+
+    /// Equivalent of `FUN_8002c69c(x, y, w, color)` - queue a horizontal
+    /// bar at `(x, y)` of width `w` with the supplied color/style word.
+    /// Consumed by [`exec_centered_bar`].
+    fn queue_horizontal_bar(&mut self, _x: i16, _y: i16, _w: i16, _color: u32) {}
+
+    /// Equivalent of `FUN_8003ca38()` - read the menu-text block height
+    /// in pixel units. Consumed by [`exec_centered_text`].
+    fn menu_text_block_height(&self) -> i32 {
+        0
+    }
+
+    /// Equivalent of `FUN_80035f04(label_ptr)` - measure the text
+    /// label's width in pixels. Consumed by [`exec_centered_text`].
+    fn menu_text_label_width(&self, _label_ptr: u32) -> i32 {
+        0
+    }
+
+    /// Equivalent of `FUN_80036888(label_ptr, mode_a, mode_b, x, y)` -
+    /// queue a centered text label. Consumed by [`exec_centered_text`].
+    fn queue_centered_text(
+        &mut self,
+        _label_ptr: u32,
+        _mode_a: u16,
+        _mode_b: u16,
+        _x: i16,
+        _y: i16,
+    ) {
+    }
+
+    /// Equivalent of [`FUN_801E373C`] in full - the "card init"
+    /// composite that clears three overlay globals
+    /// (`DAT_801ef134`, `DAT_801ef148`, `_DAT_801f0218 = 1`), debug-
+    /// prints `"init_card"`, calls `FUN_801E0598(arg)` for the
+    /// card-specific pre-init, sets two timer globals
+    /// (`_DAT_801f0228 = 0x78`, `_DAT_801f0224 = 1`), calls
+    /// `FUN_801E435C` for the per-card finalize, and zeroes the
+    /// 15-byte status buffer at `DAT_801F2A76` (rewinding from
+    /// `+0xE` to `+0x0`).
+    ///
+    /// PORT: FUN_801E373C
+    ///
+    /// The retail body is a flat sequence of opaque global writes; the
+    /// clean-room engine owns the UI state and rewires whatever
+    /// representation it uses for the "card init" lifecycle. The trait
+    /// method captures the spec; engine impls are free to map the
+    /// sub-helpers (FUN_801E0598 / FUN_801E435C) to their own card
+    /// state machine.
+    fn init_card_state(&mut self, _arg: u32) {}
 }
 
 /// Port of `FUN_80058298` (`ClearImage` rect-fill queue).
@@ -329,6 +394,90 @@ pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor
     }
 }
 
+/// Y-axis viewport gate used by [`exec_centered_bar`] / [`exec_centered_text`]
+/// to short-circuit emits that would land past the bottom of the title /
+/// menu drawable area. Retail tests `param_2 < 0xF1` (signed) at both call
+/// sites.
+pub const TITLE_PRIM_Y_GATE: i16 = 0xF1;
+
+/// Port of `FUN_801E36C4` - emit a centered horizontal bar at
+/// `(x - w/2 - 2, y + 6)` of width `w` with the supplied color/style
+/// word. The Y-axis viewport gate short-circuits when `y >= 0xF1`,
+/// matching retail's `slti v0,s1,0xf1; beq v0,zero,...` guard.
+///
+/// PORT: FUN_801E36C4
+///
+/// Sequence:
+///
+/// 1. Gate on `y < TITLE_PRIM_Y_GATE` (else no-op).
+/// 2. Allocate a primitive packet of type `0x44` via
+///    [`PrimHost::prim_packet_alloc`].
+/// 3. Emit the bar at `(x - w/2 - 2, y + 6, w, color)` via
+///    [`PrimHost::queue_horizontal_bar`].
+///
+/// The `w / 2` term is C-style signed-divide rounding toward zero
+/// (retail uses the `srl + addu + sra` idiom for signed division).
+pub fn exec_centered_bar<H: PrimHost + ?Sized>(host: &mut H, x: i16, y: i16, w: i16, color: u32) {
+    if y >= TITLE_PRIM_Y_GATE {
+        return;
+    }
+    host.prim_packet_alloc(0x44);
+    // Signed-divide-toward-zero matches retail's `srl+addu+sra` idiom:
+    // `(w + (w >> 31)) >> 1`. Rust's i16 `/` already rounds toward
+    // zero so a direct division is byte-equivalent.
+    let half_w = w / 2;
+    let bar_x = x.wrapping_sub(half_w).wrapping_sub(2);
+    let bar_y = y.wrapping_add(6);
+    host.queue_horizontal_bar(bar_x, bar_y, w, color);
+}
+
+/// Port of `FUN_801E3EE0` - emit a centered text label at
+/// `(x - text_width/2, y + 7)` and return `(text_height + 1) / 2`
+/// (half the text block height, useful for vertical-layout callers).
+///
+/// PORT: FUN_801E3EE0
+///
+/// Sequence:
+///
+/// 1. Gate on `y < TITLE_PRIM_Y_GATE` (else return `0`).
+/// 2. Read the menu text block height via
+///    [`PrimHost::menu_text_block_height`] (saved as `iVar1`).
+/// 3. Measure the label width via
+///    [`PrimHost::menu_text_label_width(label_ptr)`].
+/// 4. Emit the label via
+///    [`PrimHost::queue_centered_text(label, 0, 0, x - width/2, y + 7)`].
+/// 5. Return `(iVar1 + 1) / 2`.
+pub fn exec_centered_text<H: PrimHost + ?Sized>(
+    host: &mut H,
+    label_ptr: u32,
+    x: i16,
+    y: i16,
+) -> i32 {
+    if y >= TITLE_PRIM_Y_GATE {
+        return 0;
+    }
+    let block_height = host.menu_text_block_height();
+    let width = host.menu_text_label_width(label_ptr);
+    // Signed-divide-toward-zero for the width.
+    let half_w = (width / 2) as i16;
+    let text_x = x.wrapping_sub(half_w);
+    let text_y = y.wrapping_add(7);
+    host.queue_centered_text(label_ptr, 0, 0, text_x, text_y);
+    (block_height + 1) / 2
+}
+
+/// Port-thunk for `FUN_801E373C` (card-init composite).
+///
+/// PORT: FUN_801E373C
+///
+/// The retail body is a flat sequence of opaque global writes whose
+/// representation is engine-specific, so the port is a single
+/// trait-method dispatch into [`PrimHost::init_card_state`]. The
+/// trait method's docstring carries the full retail spec.
+pub fn exec_card_init<H: PrimHost + ?Sized>(host: &mut H, arg: u32) {
+    host.init_card_state(arg);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,12 +499,29 @@ mod tests {
             is_alpha: bool,
             variant: SpriteEmitVariant,
         },
+        PrimAlloc(u8),
+        HBar {
+            x: i16,
+            y: i16,
+            w: i16,
+            color: u32,
+        },
+        CenteredText {
+            label_ptr: u32,
+            mode_a: u16,
+            mode_b: u16,
+            x: i16,
+            y: i16,
+        },
+        CardInit(u32),
     }
 
     #[derive(Default)]
     struct RecHost {
         events: RefCell<Vec<Event>>,
         alpha_gate: bool,
+        text_block_height: i32,
+        text_label_widths: std::collections::HashMap<u32, i32>,
     }
 
     impl RecHost {
@@ -393,6 +559,39 @@ mod tests {
         }
         fn alpha_or_gate_set(&self) -> bool {
             self.alpha_gate
+        }
+        fn prim_packet_alloc(&mut self, packet_type: u8) {
+            self.events.borrow_mut().push(Event::PrimAlloc(packet_type));
+        }
+        fn queue_horizontal_bar(&mut self, x: i16, y: i16, w: i16, color: u32) {
+            self.events
+                .borrow_mut()
+                .push(Event::HBar { x, y, w, color });
+        }
+        fn menu_text_block_height(&self) -> i32 {
+            self.text_block_height
+        }
+        fn menu_text_label_width(&self, label_ptr: u32) -> i32 {
+            self.text_label_widths.get(&label_ptr).copied().unwrap_or(0)
+        }
+        fn queue_centered_text(
+            &mut self,
+            label_ptr: u32,
+            mode_a: u16,
+            mode_b: u16,
+            x: i16,
+            y: i16,
+        ) {
+            self.events.borrow_mut().push(Event::CenteredText {
+                label_ptr,
+                mode_a,
+                mode_b,
+                x,
+                y,
+            });
+        }
+        fn init_card_state(&mut self, arg: u32) {
+            self.events.borrow_mut().push(Event::CardInit(arg));
         }
     }
 
@@ -608,5 +807,128 @@ mod tests {
         let events = host.take();
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], Event::Sprite { is_alpha: true, .. }));
+    }
+
+    // ----- exec_centered_bar (FUN_801E36C4) ------------------------------
+
+    #[test]
+    fn exec_centered_bar_emits_packet_alloc_then_hbar() {
+        let mut host = RecHost::default();
+        exec_centered_bar(&mut host, 100, 50, 40, 0xAABBCCDD);
+        let events = host.take();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0], Event::PrimAlloc(0x44));
+        // x_centered = x - w/2 - 2 = 100 - 20 - 2 = 78; y = 50 + 6 = 56.
+        assert_eq!(
+            events[1],
+            Event::HBar {
+                x: 78,
+                y: 56,
+                w: 40,
+                color: 0xAABBCCDD,
+            }
+        );
+    }
+
+    #[test]
+    fn exec_centered_bar_gates_off_screen_y() {
+        let mut host = RecHost::default();
+        // y == 0xF1 should gate (retail: `slti v0,s1,0xf1; beq v0,zero,...`).
+        exec_centered_bar(&mut host, 100, 0xF1, 40, 0);
+        // y > 0xF1 also gates.
+        exec_centered_bar(&mut host, 100, 0xFF, 40, 0);
+        assert!(host.take().is_empty(), "off-screen y skips both calls");
+        // y = 0xF0 (just inside) does emit.
+        exec_centered_bar(&mut host, 100, 0xF0, 40, 0);
+        assert_eq!(host.take().len(), 2);
+    }
+
+    #[test]
+    fn exec_centered_bar_signed_divide_matches_retail_idiom() {
+        // The retail `srl+addu+sra` idiom is signed-divide-toward-zero.
+        // For w = -5: -5/2 == -2 (toward zero), so x_centered = x - (-2) - 2 = x.
+        let mut host = RecHost::default();
+        exec_centered_bar(&mut host, 50, 10, -5, 0);
+        let events = host.take();
+        match &events[1] {
+            Event::HBar { x, w, .. } => {
+                assert_eq!(*w, -5);
+                assert_eq!(*x, 50, "w=-5 → half_w=-2, x_centered = 50 - (-2) - 2 = 50");
+            }
+            other => panic!("expected HBar, got {other:?}"),
+        }
+    }
+
+    // ----- exec_centered_text (FUN_801E3EE0) -----------------------------
+
+    #[test]
+    fn exec_centered_text_returns_half_height_and_emits_at_centered_position() {
+        let mut host = RecHost {
+            text_block_height: 11, // odd value to verify rounding
+            ..Default::default()
+        };
+        host.text_label_widths.insert(0x8010_0000, 60);
+        let half = exec_centered_text(&mut host, 0x8010_0000, 160, 100);
+        // (11 + 1) / 2 = 6.
+        assert_eq!(half, 6);
+        // text_x = 160 - 60/2 = 130; text_y = 100 + 7 = 107.
+        let events = host.take();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            Event::CenteredText {
+                label_ptr: 0x8010_0000,
+                mode_a: 0,
+                mode_b: 0,
+                x: 130,
+                y: 107,
+            }
+        );
+    }
+
+    #[test]
+    fn exec_centered_text_gated_off_screen_returns_zero_with_no_emit() {
+        let mut host = RecHost {
+            text_block_height: 14,
+            ..Default::default()
+        };
+        host.text_label_widths.insert(0xDEAD_BEEF, 100);
+        let r = exec_centered_text(&mut host, 0xDEAD_BEEF, 160, 0xF1);
+        assert_eq!(r, 0, "off-screen y returns 0");
+        assert!(host.take().is_empty(), "no emit on gate");
+    }
+
+    #[test]
+    fn exec_centered_text_handles_zero_width_label() {
+        let mut host = RecHost {
+            text_block_height: 8,
+            ..Default::default()
+        };
+        // No widths registered → default 0; text_x = 160 - 0 = 160.
+        let r = exec_centered_text(&mut host, 0xFEED_FACE, 160, 50);
+        assert_eq!(r, (8 + 1) / 2);
+        let events = host.take();
+        match &events[0] {
+            Event::CenteredText { x, y, .. } => {
+                assert_eq!(*x, 160);
+                assert_eq!(*y, 57);
+            }
+            other => panic!("expected CenteredText, got {other:?}"),
+        }
+    }
+
+    // ----- exec_card_init (FUN_801E373C) ---------------------------------
+
+    #[test]
+    fn exec_card_init_dispatches_through_trait() {
+        let mut host = RecHost::default();
+        exec_card_init(&mut host, 0x42);
+        assert_eq!(host.take(), vec![Event::CardInit(0x42)]);
+    }
+
+    #[test]
+    fn y_gate_constant_matches_retail_literal() {
+        // Retail: `slti v0,s1,0xf1` in both FUN_801E36C4 and FUN_801E3EE0.
+        assert_eq!(TITLE_PRIM_Y_GATE, 0xF1);
     }
 }

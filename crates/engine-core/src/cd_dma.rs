@@ -345,6 +345,22 @@ pub struct ProtCdDmaHost {
     timeout: u32,
     error: bool,
     read_in_progress: bool,
+    // ---- OverlayLoaderHost state (FUN_8003EBE4 / FUN_8003EC70) ----
+    /// `gp+0x924` (Loader A cache slot, FUN_8003EBE4).
+    overlay_slot_a: i32,
+    /// `gp+0x934` (Loader B cache slot, FUN_8003EC70).
+    overlay_slot_b: i32,
+    /// `*DAT_8001038C` - Loader A destination buffer pointer.
+    overlay_dst_a: DestAddr,
+    /// `*DAT_80010390` - Loader B destination buffer pointer.
+    overlay_dst_b: DestAddr,
+    /// `_DAT_8007B83C` - mode-state word consumed by Loader B's
+    /// invalidate guard.
+    overlay_mode_state: u16,
+    /// `_DAT_8007B868` - dev/retail branch discriminator. Retail = 0;
+    /// dev builds set this to non-zero (the mode-table uses the value
+    /// as the return code in the dev short-circuit path).
+    overlay_dev_flag: u32,
 }
 
 impl ProtCdDmaHost {
@@ -363,6 +379,42 @@ impl ProtCdDmaHost {
             timeout: 0,
             error: false,
             read_in_progress: false,
+            overlay_slot_a: crate::overlay_loader::OVERLAY_CACHE_EMPTY,
+            overlay_slot_b: crate::overlay_loader::OVERLAY_CACHE_EMPTY,
+            overlay_dst_a: 0,
+            overlay_dst_b: 0,
+            overlay_mode_state: 0,
+            overlay_dev_flag: 0,
+        }
+    }
+
+    /// Configure the overlay-loader destination buffers. Retail's
+    /// `*DAT_8001038C` (Loader A) and `*DAT_80010390` (Loader B) are
+    /// populated at boot from the per-build mode table; engines call this
+    /// once after [`Self::new`] to wire the addresses.
+    pub fn set_overlay_destinations(&mut self, dst_a: DestAddr, dst_b: DestAddr) {
+        self.overlay_dst_a = dst_a;
+        self.overlay_dst_b = dst_b;
+    }
+
+    /// Set the mode-state word read by Loader B's invalidate guard
+    /// ([`crate::overlay_loader::load_overlay_b`]). Mirrors `_DAT_8007B83C`.
+    pub fn set_overlay_mode_state(&mut self, value: u16) {
+        self.overlay_mode_state = value;
+    }
+
+    /// Set the dev/retail branch discriminator. Mirrors `_DAT_8007B868`.
+    /// Retail = 0; dev builds set non-zero so the overlay loaders
+    /// short-circuit.
+    pub fn set_overlay_dev_flag(&mut self, value: u32) {
+        self.overlay_dev_flag = value;
+    }
+
+    /// Read the current state of an overlay cache slot.
+    pub fn overlay_slot(&self, slot: crate::overlay_loader::OverlayCacheSlot) -> i32 {
+        match slot {
+            crate::overlay_loader::OverlayCacheSlot::A => self.overlay_slot_a,
+            crate::overlay_loader::OverlayCacheSlot::B => self.overlay_slot_b,
         }
     }
 
@@ -539,6 +591,36 @@ impl CdDmaHost for ProtCdDmaHost {
             PollState::Ready | PollState::Idle => ReadWaitOutcome::Ready,
             PollState::Busy => ReadWaitOutcome::InProgress,
         }
+    }
+}
+
+/// Wires [`ProtCdDmaHost`] as the concrete offline implementation of
+/// [`crate::overlay_loader::OverlayLoaderHost`]. Cache slots, destinations
+/// and the dev/mode-state words live as inline fields on the host;
+/// configure them via [`ProtCdDmaHost::set_overlay_destinations`],
+/// [`ProtCdDmaHost::set_overlay_mode_state`], and
+/// [`ProtCdDmaHost::set_overlay_dev_flag`].
+impl crate::overlay_loader::OverlayLoaderHost for ProtCdDmaHost {
+    fn dev_branch_flag(&self) -> u32 {
+        self.overlay_dev_flag
+    }
+    fn cache_slot(&self, slot: crate::overlay_loader::OverlayCacheSlot) -> i32 {
+        self.overlay_slot(slot)
+    }
+    fn set_cache_slot(&mut self, slot: crate::overlay_loader::OverlayCacheSlot, value: i32) {
+        match slot {
+            crate::overlay_loader::OverlayCacheSlot::A => self.overlay_slot_a = value,
+            crate::overlay_loader::OverlayCacheSlot::B => self.overlay_slot_b = value,
+        }
+    }
+    fn overlay_dst(&self, slot: crate::overlay_loader::OverlayCacheSlot) -> DestAddr {
+        match slot {
+            crate::overlay_loader::OverlayCacheSlot::A => self.overlay_dst_a,
+            crate::overlay_loader::OverlayCacheSlot::B => self.overlay_dst_b,
+        }
+    }
+    fn mode_state_word(&self) -> u16 {
+        self.overlay_mode_state
     }
 }
 
@@ -825,6 +907,59 @@ mod tests {
         host.prot_one_shot_load(0, 0xA010_0000, LoadFlags::SYNCHRONOUS);
         let folded = host.read(0x8010_0000, 0x2000).unwrap();
         assert!(folded.iter().all(|&b| b == 0xAA));
+    }
+
+    #[test]
+    fn overlay_loader_a_drives_prot_cd_dma_host_end_to_end() {
+        use crate::overlay_loader::{
+            OVERLAY_CACHE_EMPTY, OVERLAY_PROT_BASE, OverlayCacheSlot, load_overlay_a,
+        };
+        let mut host = make_synthetic_host();
+        host.set_overlay_destinations(0x8010_0000, 0x8011_0000);
+        // The synthetic PROT only has 2 entries; the overlay loaders' real
+        // call site uses param values whose `+0x381` resolves to a real
+        // overlay PROT index. For the smoke test we accept the synthetic
+        // PROT's "garbage size" return - the wiring is what we verify.
+        let param = -(OVERLAY_PROT_BASE); // → prot_idx 0
+        let result = load_overlay_a(&mut host, param);
+        assert_eq!(result, param, "fresh load returns param");
+        assert_eq!(host.overlay_slot(OverlayCacheSlot::A), param);
+        assert_eq!(
+            host.overlay_slot(OverlayCacheSlot::B),
+            OVERLAY_CACHE_EMPTY,
+            "sister slot invalidated"
+        );
+        assert_eq!(host.last_prot_idx(), 0, "PROT 0 was looked up");
+        assert_eq!(host.last_dst(), 0x8010_0000);
+    }
+
+    #[test]
+    fn overlay_loader_b_drives_prot_cd_dma_host_end_to_end() {
+        use crate::overlay_loader::{OverlayCacheSlot, load_overlay_b};
+        let mut host = make_synthetic_host();
+        host.set_overlay_destinations(0x8010_0000, 0x8011_0000);
+        let param = -0x381; // → prot_idx 0
+        let result = load_overlay_b(&mut host, param);
+        assert_eq!(result, param);
+        assert_eq!(host.overlay_slot(OverlayCacheSlot::B), param);
+        assert_eq!(host.last_dst(), 0x8011_0000, "uses slot B's dst buffer");
+    }
+
+    #[test]
+    fn overlay_loader_dev_branch_short_circuits_real_host() {
+        use crate::overlay_loader::{OverlayCacheSlot, load_overlay_a};
+        let mut host = make_synthetic_host();
+        host.set_overlay_dev_flag(0x42);
+        // Dev branch: stash and return the flag value. No PROT load.
+        let last_dst_before = host.last_dst();
+        let result = load_overlay_a(&mut host, 100);
+        assert_eq!(result, 0x42);
+        assert_eq!(host.overlay_slot(OverlayCacheSlot::A), 100);
+        assert_eq!(
+            host.last_dst(),
+            last_dst_before,
+            "dev branch must not trigger a CD-DMA read"
+        );
     }
 
     #[test]
