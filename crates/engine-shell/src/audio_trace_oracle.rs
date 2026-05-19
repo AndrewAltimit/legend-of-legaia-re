@@ -1,5 +1,5 @@
 //! Audio-trace oracle plumbing shared between the `legaia-engine audio-trace`
-//! subcommand and the disc-gated `audio_trace_i1` integration test.
+//! subcommand and the disc-gated `audio_trace` integration test.
 //!
 //! Mirrors the shape of [`crate::mode_trace_oracle`] but the diff axis is
 //! the SPU's voice-activity state instead of the engine's high-level
@@ -15,22 +15,26 @@
 //!    device). The oracle constructs a standalone
 //!    [`legaia_engine_audio::Spu`] + [`legaia_engine_audio::Sequencer`] in
 //!    parallel with the BootSession's headless tick and routes
-//!    scene-resolved BGM events into it. This isn't bit-identical to the
-//!    retail SPU, but it captures the same voice-activity envelope: which
-//!    channel allocations happen when, which voices the sequencer key-ons.
+//!    scene-resolved BGM events into it via a private
+//!    [`TraceBgmDirector`]. This isn't bit-identical to the retail SPU,
+//!    but it captures the same voice-activity envelope: which channel
+//!    allocations happen when, which voices the sequencer key-ons.
 //! 2. **Single retail frame vs. windowed engine.** Save states freeze one
 //!    SPU cycle. The engine tick produces `frames + 1` records. The
 //!    convergence rule is "at least one engine frame matches retail's
 //!    active-voice mask", parallel to [`crate::mode_trace_oracle`]'s
 //!    "any engine frame matches retail's `(scene_mode, active_scene)`".
 //!
-//! JSONL is the wire format - one record per line, matching the Phase-I1
-//! spec "engine emits JSONL of (frame, sequencer_playhead_ticks,
-//! sequencer_finished, master_volume, voice_active_mask, voices)".
+//! JSONL is the wire format - one record per line of `(frame,
+//! sequencer_playhead_ticks, sequencer_finished, master_volume,
+//! voice_active_mask, voices)`.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use legaia_engine_audio::{Sequencer, Spu, SpuAllocator, VabBank};
+use legaia_engine_core::scene::BgmDirector;
+use legaia_seq::Seq;
 use serde::{Deserialize, Serialize};
 
 use crate::{BootConfig, BootSession};
@@ -78,7 +82,7 @@ pub struct AudioTraceFrame {
     /// Sequencer playhead in PPQN ticks. Engine: from
     /// [`legaia_engine_audio::Sequencer::playhead_ticks`]. Retail: `None`
     /// (the SPU section doesn't carry sequencer state - that lives in the
-    /// CPU-side libsnd workspace, which only the I1 Lua probe can read).
+    /// CPU-side libsnd workspace, only reachable via an external Lua probe).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub sequencer_playhead_ticks: Option<u64>,
     /// `true` if the engine's sequencer has run off the end (no looping).
@@ -123,11 +127,13 @@ impl AudioTraceFrame {
 pub struct AudioTraceBuildOptions {
     /// CDNAME scene name.
     pub scene: String,
-    /// Optional BGM id to attach to the private sequencer at boot. `None`
-    /// = no BGM played, all voices remain quiescent. The retail save state
-    /// most likely has BGM playing, so an engine trace with `bgm_id = None`
-    /// will diverge from retail - that's the actionable asymmetry the
-    /// follow-up Lua probe + BGM event routing will close.
+    /// Optional BGM id started against the private sequencer before the
+    /// trace loop begins. `None` lets the field VM drive playback through
+    /// the [`TraceBgmDirector`] - the usual case. Most scenes' prescripts
+    /// emit op `0x35` (BGM start) within the first few frames, so the
+    /// retail-active mask materialises naturally; pass `Some(id)` only for
+    /// scenes whose prescripts don't kick off audio or for manual
+    /// override.
     pub bgm_id: Option<u16>,
     /// Microseconds per engine frame. 60 Hz default (16_666.67).
     pub us_per_frame: f64,
@@ -146,21 +152,158 @@ impl Default for AudioTraceBuildOptions {
     }
 }
 
+/// Headless [`BgmDirector`] used by [`build_engine_audio_trace`].
+///
+/// Mirrors [`crate::bgm::AudioBgmDirector`] but doesn't hold an
+/// [`legaia_engine_audio::AudioOut`] (cpal is unavailable in CI). The
+/// director owns the cloned scene [`VabBank`] plus the currently-attached
+/// [`Sequencer`]; the trace loop calls
+/// [`legaia_engine_core::scene::SceneHost::route_bgm_events`] after each
+/// `tick` to deliver field-VM op `0x35` events.
+///
+/// Pause / resume gate the per-frame `tick_us` call inside
+/// [`build_engine_audio_trace`] - we don't have a "pause" hook on the
+/// clean-room [`Sequencer`] itself, so the flag lives here.
+pub struct TraceBgmDirector {
+    bank: Option<VabBank>,
+    sequencer: Option<Sequencer>,
+    /// Master volume forwarded to every freshly-attached sequencer.
+    pub master_vol: u8,
+    /// Loop-to event index for newly-started sequencers. `Some(0)` matches
+    /// the retail field-BGM default; `None` plays once.
+    pub loop_to: Option<usize>,
+    paused: bool,
+    pending: Option<(u16, Vec<u8>)>,
+    /// Last BGM id passed to `start`. Used to suppress duplicate starts
+    /// when the field VM re-emits op `0x35` without a state change.
+    pub last_started: Option<u16>,
+}
+
+impl TraceBgmDirector {
+    pub fn new() -> Self {
+        Self {
+            bank: None,
+            sequencer: None,
+            master_vol: 100,
+            loop_to: Some(0),
+            paused: false,
+            pending: None,
+            last_started: None,
+        }
+    }
+
+    /// Stash the scene's parsed [`VabBank`]. The trace loop calls this once
+    /// after uploading the bank into the private SPU.
+    pub fn set_bank(&mut self, bank: VabBank) {
+        self.bank = Some(bank);
+    }
+
+    /// Borrow the active sequencer - the trace loop ticks it each frame.
+    pub fn sequencer(&self) -> Option<&Sequencer> {
+        self.sequencer.as_ref()
+    }
+
+    /// Mutable borrow of the active sequencer for per-frame `tick_us`.
+    pub fn sequencer_mut(&mut self) -> Option<&mut Sequencer> {
+        self.sequencer.as_mut()
+    }
+
+    /// `true` if the director currently has a sequencer attached and is not
+    /// paused.
+    pub fn is_playing(&self) -> bool {
+        self.sequencer.is_some() && !self.paused
+    }
+
+    /// `true` if [`BgmDirector::pause`] was called and `resume` hasn't been
+    /// called since.
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Drain any [`BgmDirector::queue`] pending bytes and start them
+    /// playing. Returns `true` if a pending sequencer was attached.
+    pub fn flush_queue(&mut self) -> Result<bool> {
+        let Some((id, bytes)) = self.pending.take() else {
+            return Ok(false);
+        };
+        self.start_inner(id, &bytes)?;
+        Ok(true)
+    }
+
+    fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
+        let Some(bank) = self.bank.clone() else {
+            log::warn!("TraceBgmDirector::start({bgm_id}) ignored - no VAB bank loaded for scene");
+            return Ok(());
+        };
+        let seq = Seq::parse(seq_bytes).context("parse SEQ for BGM start")?;
+        let mut sequencer = Sequencer::new(seq, bank);
+        sequencer.set_master_vol(self.master_vol);
+        if let Some(loop_to) = self.loop_to {
+            sequencer.set_loop_to(loop_to);
+        }
+        self.sequencer = Some(sequencer);
+        self.paused = false;
+        self.last_started = Some(bgm_id);
+        Ok(())
+    }
+}
+
+impl Default for TraceBgmDirector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BgmDirector for TraceBgmDirector {
+    fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
+        // Suppress duplicate starts for the same id - mirrors the retail
+        // op `0x35` behaviour observed in `AudioBgmDirector::start`.
+        if self.last_started == Some(bgm_id) && !self.paused && self.sequencer.is_some() {
+            return;
+        }
+        if let Err(e) = self.start_inner(bgm_id, seq_bytes) {
+            log::warn!("TraceBgmDirector::start({bgm_id}) failed: {e:#}");
+        }
+    }
+
+    fn queue(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
+        self.pending = Some((bgm_id, seq_bytes.to_vec()));
+    }
+
+    fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    fn resume(&mut self) {
+        self.paused = false;
+    }
+
+    fn stop(&mut self) {
+        self.sequencer = None;
+        self.paused = false;
+        self.last_started = None;
+    }
+}
+
 /// Run a [`BootSession`] on the configured scene with a private headless
-/// SPU + sequencer in parallel. Samples per-frame voice / master / reverb
-/// state.
+/// SPU + [`TraceBgmDirector`] in parallel. Samples per-frame voice /
+/// master / reverb state.
 ///
 /// The audio side never touches cpal - the BootSession is constructed with
 /// `enable_audio = false` and we drive a standalone
 /// [`legaia_engine_audio::Spu`] on the side. This makes the oracle CI-safe.
+///
+/// The field VM drives BGM playback through the director: after each
+/// [`BootSession::tick`] we call
+/// [`legaia_engine_core::scene::SceneHost::route_bgm_events`] to deliver
+/// op `0x35` events. `opts.bgm_id` is a manual boot-time start that fires
+/// before the main loop - useful for scenes whose prescripts don't kick
+/// off audio.
 pub fn build_engine_audio_trace(
     extracted_root: &Path,
     disc: Option<&Path>,
     opts: &AudioTraceBuildOptions,
 ) -> Result<Vec<AudioTraceFrame>> {
-    use legaia_engine_audio::{Spu, SpuAllocator, VabBank};
-    use legaia_seq::Seq;
-
     let cfg = BootConfig {
         scene: opts.scene.clone(),
         enable_audio: false,
@@ -174,7 +317,7 @@ pub fn build_engine_audio_trace(
     // BootSession's own pre-boot bank staging (boot.rs `stage_scene_vab`)
     // but without an AudioOut handle.
     let mut spu = Spu::new();
-    let mut sequencer = None;
+    let mut director = TraceBgmDirector::new();
     if let Some(vab_bytes) = session
         .host
         .scene_vab_bytes()
@@ -188,38 +331,37 @@ pub fn build_engine_audio_trace(
         const SPU_RESERVED_BYTES: u32 = 0x1000;
         let mut alloc = SpuAllocator::new(SPU_RESERVED_BYTES, SPU_RAM_BYTES - SPU_RESERVED_BYTES);
         let bank = VabBank::upload(&mut spu, &mut alloc, &report, &vab_bytes);
+        director.set_bank(bank);
+    }
 
-        // Optional: attach a sequencer over the resolved BGM SEQ.
-        if let Some(id) = opts.bgm_id {
-            if let Some(seq_bytes) = session.host.bgm_seq_bytes(id)? {
-                let seq =
-                    Seq::parse(&seq_bytes).with_context(|| format!("parse SEQ for bgm_id={id}"))?;
-                let mut s = legaia_engine_audio::Sequencer::new(seq, bank);
-                s.set_loop_to(0);
-                sequencer = Some(s);
-            } else {
-                log::warn!("audio-trace: bgm_id {id} did not resolve to a SEQ entry");
-            }
+    // Optional manual boot-time start - the field VM normally kicks BGM
+    // via op `0x35`, but tests / overrides can preseed a track.
+    if let Some(id) = opts.bgm_id {
+        if let Some(seq_bytes) = session.host.bgm_seq_bytes(id)? {
+            director.start(id, &seq_bytes);
         } else {
-            // Bank parsed but no sequencer attached. Voices stay quiescent.
-            // Drop the bank - we don't need it without a sequencer.
-            drop(bank);
+            log::warn!("audio-trace: bgm_id {id} did not resolve to a SEQ entry");
         }
     }
 
     let mut out = Vec::with_capacity((opts.frames as usize).saturating_add(1));
-    out.push(sample_engine_frame(&session, &spu, sequencer.as_ref()));
+    out.push(sample_engine_frame(&session, &spu, director.sequencer()));
+    let samples_per_frame = (44_100_f64 * (opts.us_per_frame / 1_000_000.0)) as usize;
+    let mut sink = vec![0i16; samples_per_frame * 2];
     for _ in 0..opts.frames {
         let _ = session.tick()?;
-        if let Some(seq) = sequencer.as_mut() {
+        // Drain field-VM BGM events into the private director; resolved
+        // SEQ bytes flow through `SceneHost::bgm_seq_bytes`.
+        let _ = session.host.route_bgm_events(&mut director)?;
+        if !director.is_paused()
+            && let Some(seq) = director.sequencer_mut()
+        {
             seq.tick_us(&mut spu, opts.us_per_frame);
         }
         // Bring the SPU forward by exactly one frame of samples so envelope
         // / decoder state advances in lock-step with the sequencer.
-        let samples_per_frame = (44_100_f64 * (opts.us_per_frame / 1_000_000.0)) as usize;
-        let mut sink = vec![0i16; samples_per_frame * 2];
         spu.render_into(&mut sink);
-        out.push(sample_engine_frame(&session, &spu, sequencer.as_ref()));
+        out.push(sample_engine_frame(&session, &spu, director.sequencer()));
     }
     Ok(out)
 }
@@ -587,5 +729,56 @@ mod tests {
         let out = parse_audio_trace_jsonl(s).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].active_voice_mask, 0);
+    }
+
+    /// Trace director without a bank silently drops `start` - the warning
+    /// goes through `log::warn` (no panic). Pre-bank-stage races at scene
+    /// load should not crash the trace loop.
+    #[test]
+    fn trace_director_start_without_bank_is_noop() {
+        let mut d = TraceBgmDirector::new();
+        d.start(0, &[]);
+        assert!(d.sequencer().is_none());
+        assert!(!d.is_playing());
+        assert_eq!(d.last_started, None);
+    }
+
+    /// Pause + resume toggle without touching the sequencer slot. The
+    /// trace loop reads `is_paused()` to gate the per-frame `tick_us`.
+    #[test]
+    fn trace_director_pause_resume_toggle() {
+        let mut d = TraceBgmDirector::new();
+        BgmDirector::pause(&mut d);
+        assert!(d.is_paused());
+        BgmDirector::resume(&mut d);
+        assert!(!d.is_paused());
+    }
+
+    /// `stop` clears the sequencer slot, paused flag, and last_started id.
+    /// Idempotent on an empty director.
+    #[test]
+    fn trace_director_stop_clears_state() {
+        let mut d = TraceBgmDirector::new();
+        d.paused = true;
+        d.last_started = Some(7);
+        BgmDirector::stop(&mut d);
+        assert!(d.sequencer().is_none());
+        assert!(!d.is_paused());
+        assert_eq!(d.last_started, None);
+    }
+
+    /// `queue` stashes pending bytes for a later `flush_queue` call. Calling
+    /// `flush_queue` without a bank consumes the pending entry but doesn't
+    /// attach a sequencer (parity with `start_without_bank`).
+    #[test]
+    fn trace_director_queue_then_flush_consumes_pending() {
+        let mut d = TraceBgmDirector::new();
+        BgmDirector::queue(&mut d, 42, &[1, 2, 3]);
+        assert!(d.pending.is_some());
+        let drained = d.flush_queue().unwrap();
+        assert!(drained);
+        assert!(d.pending.is_none());
+        // No bank → no sequencer attached after the flush.
+        assert!(d.sequencer().is_none());
     }
 }

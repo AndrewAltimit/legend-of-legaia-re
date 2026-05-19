@@ -286,9 +286,9 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
-    /// Phase-I1 audio-trace oracle (foundation). Boots a `BootSession`
-    /// on the resolved scene, runs a private headless SPU + sequencer
-    /// in parallel, ticks for `--frames` frames sampling
+    /// Audio-trace parity oracle. Boots a `BootSession` on the
+    /// resolved scene, runs a private headless SPU + sequencer in
+    /// parallel, ticks for `--frames` frames sampling
     /// `(voice_mask, voices[24], master_volume)` per frame, emits the
     /// engine trace as JSONL, and (in scenario mode) compares against
     /// the SPU section lifted from the matching mednafen `.mc{slot}`
@@ -305,13 +305,14 @@ enum Cmd {
     /// **Asymmetry.** The retail snapshot freezes one SPU cycle; the
     /// engine trace runs over a window. Convergence rule: at least
     /// one engine frame's active-voice mask must be a superset of
-    /// retail's mask. The follow-up Lua probe will turn the retail
-    /// side into a multi-frame trace.
+    /// retail's mask. An external Lua probe (future work) would turn
+    /// the retail side into a multi-frame trace.
     ///
-    /// **No BGM by default.** Without `--bgm-id`, the engine plays no
-    /// sequencer and the trace shows all-quiescent voices. This is
-    /// the foundation cut - the long-form oracle wires the field-VM
-    /// BGM events into the private sequencer.
+    /// **BGM playback.** The trace installs a private
+    /// [`TraceBgmDirector`] and routes field-VM op `0x35` events into
+    /// a headless sequencer, so the engine drives BGM the same way the
+    /// retail engine does. `--bgm-id` is a manual boot-time override
+    /// for scenes whose prescripts don't kick off audio.
     AudioTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -337,8 +338,9 @@ enum Cmd {
         /// `frames + 1` entries (one for boot state, one per tick).
         #[arg(long, default_value_t = 60)]
         frames: u64,
-        /// Optional: BGM id to start through the private sequencer
-        /// at boot. Without this the trace shows quiescent voices.
+        /// Optional: BGM id started through the private sequencer
+        /// before the trace loop begins. Use when a scene's prescript
+        /// doesn't fire op `0x35` within the trace window.
         #[arg(long)]
         bgm_id: Option<u16>,
         /// Where to write the engine JSONL trace. Default `-` = stdout.
@@ -1835,10 +1837,10 @@ fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// audio-trace (Phase I1 - audio parity oracle, foundation cut)
+// audio-trace - audio parity oracle
 // ---------------------------------------------------------------------------
 
-/// Phase-I1 audio-trace oracle - args struct for `cmd_audio_trace`.
+/// Audio-trace oracle - args struct for `cmd_audio_trace`.
 struct AudioTraceArgs<'a> {
     scene: Option<&'a str>,
     extracted_root: &'a Path,
