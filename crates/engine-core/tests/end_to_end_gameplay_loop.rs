@@ -296,8 +296,11 @@ fn drive_battle_to_victory(world: &mut World) -> Result<u32, String> {
 ///
 /// The bulk of the cycle: load → install encounter → trigger → battle →
 /// rewards → save round-trip. Returns the bytes of the round-tripped
-/// save so callers can assert format-level invariants.
-fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
+/// save and the [`SaveFile`] captured immediately after rewards landed
+/// (pre-LGSF-buffer) so callers can assert format-level invariants and
+/// run additional round-trips (e.g. through the retail SC block path
+/// for Phase K1) without re-driving the entire loop.
+fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
     // 1. Boot from save.
     let mut world = World::new();
     while world.actors.len() < 8 {
@@ -415,6 +418,10 @@ fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
     let saved = world.save_full();
     let bytes = saved.write();
     let parsed = SaveFile::parse(&bytes).expect("LGSF round-trip must parse");
+    // K1 callers want the pre-buffer SaveFile so they can run their own
+    // round-trips (e.g. through the retail SC block path) against the
+    // same post-rewards state - clone it before we move into the reload.
+    let post_loop_save = saved.clone();
 
     let mut reloaded = World::new();
     while reloaded.actors.len() < 8 {
@@ -456,14 +463,149 @@ fn run_full_loop(starting_save: SaveFile) -> Vec<u8> {
         );
     }
 
-    bytes
+    (bytes, post_loop_save)
 }
 
 #[test]
 fn synthetic_party_completes_full_gameplay_loop() {
-    let bytes = run_full_loop(synthetic_save_file());
+    let (bytes, _post_loop) = run_full_loop(synthetic_save_file());
     // LGSF magic must lead the buffer.
     assert_eq!(&bytes[..4], b"LGSF");
+}
+
+/// Phase K1 - engine→retail SC round-trip parity.
+///
+/// Drive the full gameplay loop and then assert the post-rewards
+/// [`SaveFile`] survives a round-trip through the retail SC block
+/// layout (`write_into_retail_sc_block` → `from_retail_sc_block`).
+/// The SC layout has no slot for the engine's `money`, play time,
+/// active party, per-character ext, or saved chains; the schema
+/// fixture in `crates/save/tests/fixtures/` documents those as
+/// engine-only drops. Everything that *is* representable in retail
+/// SC (party records, full 512-byte story-flag bitmap, compact
+/// inventory) must come back byte-equal.
+///
+/// Closes the symmetric gap that `real_card_roundtrip` doesn't
+/// cover: it walks a retail card *into* the engine, but until this
+/// test there was nothing asserting engine-written saves round-trip
+/// back through the retail SC block path.
+#[test]
+fn synthetic_party_loop_round_trips_via_retail_sc_block() {
+    use legaia_save::{
+        BLOCK_SIZE, RETAIL_STORY_FLAGS_SIZE, SAVE_BLOCK_MAGIC, read_retail_inventory,
+        read_retail_story_flags,
+    };
+
+    let (_lgsf_bytes, post_loop) = run_full_loop(synthetic_save_file());
+
+    // Write the engine save into a retail SC block and verify the
+    // pinned-offset regions match before we round-trip.
+    let mut sc_block = vec![0u8; BLOCK_SIZE];
+    post_loop
+        .write_into_retail_sc_block(&mut sc_block)
+        .expect("write engine save into retail SC block");
+    assert_eq!(&sc_block[..2], &SAVE_BLOCK_MAGIC, "SC magic stamped at +0");
+    let bits_on_disk = read_retail_story_flags(&sc_block).expect("story flag region present");
+    // The writer right-pads bitmaps shorter than RETAIL_STORY_FLAGS_SIZE.
+    let mut expected_bits = post_loop.ext.story_flag_bits.clone();
+    expected_bits.resize(RETAIL_STORY_FLAGS_SIZE, 0);
+    assert_eq!(
+        bits_on_disk, expected_bits,
+        "story-flag bitmap lands at retail offset 0x14C0"
+    );
+    let inv_on_disk = read_retail_inventory(&sc_block).expect("inventory region present");
+    for (i, (id, count)) in post_loop.ext.inventory.iter().enumerate() {
+        assert_eq!(
+            inv_on_disk[i * 2],
+            *id,
+            "inventory slot {i} item id at retail offset"
+        );
+        assert_eq!(
+            inv_on_disk[i * 2 + 1],
+            *count,
+            "inventory slot {i} count at retail offset"
+        );
+    }
+
+    // Re-import via from_retail_sc_block. Walk only the active record
+    // count so the reader doesn't dip into the story-flag region in
+    // the slot-3 overlap.
+    let max_records = post_loop.party.members.len();
+    let parsed = SaveFile::from_retail_sc_block(&sc_block, max_records)
+        .expect("re-import engine save from retail SC block");
+
+    // SC-representable fields survive byte-equal.
+    assert_eq!(
+        parsed.party.members.len(),
+        post_loop.party.members.len(),
+        "all party slots survive the SC round-trip"
+    );
+    for (i, (a, b)) in parsed
+        .party
+        .members
+        .iter()
+        .zip(post_loop.party.members.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            a.raw, b.raw,
+            "char record {i} byte-equal through retail SC (post-rewards state)"
+        );
+    }
+    assert_eq!(
+        parsed.ext.story_flag_bits, expected_bits,
+        "512-byte story-flag bitmap round-trips through retail SC"
+    );
+    // The scratchpad u32 is derived from the first 4 bitmap bytes on
+    // the read path, so the engine save's `story_flags` must agree.
+    assert_eq!(
+        parsed.ext.story_flags,
+        u32::from_le_bytes([
+            expected_bits[0],
+            expected_bits[1],
+            expected_bits[2],
+            expected_bits[3]
+        ]),
+        "scratchpad story_flags derived from bitmap bytes"
+    );
+    assert_eq!(
+        parsed.ext.inventory, post_loop.ext.inventory,
+        "compact inventory survives the SC round-trip"
+    );
+
+    // Engine-only fields drop to defaults: money, play_time,
+    // active_party, per_char, saved_chains. See the K2 schema fixture
+    // for the documented field map.
+    assert_eq!(parsed.ext.money, 0, "money is engine-only - drops to 0");
+    assert_eq!(
+        parsed.ext_v2,
+        SaveExtV2::default(),
+        "v2 ext block is engine-only - drops to defaults"
+    );
+    assert!(
+        post_loop.ext.money != 0 || post_loop.ext_v2 != SaveExtV2::default(),
+        "this test only signals when the engine save actually populates \
+         engine-only fields - if both are default the engine-only drop \
+         contract isn't meaningfully exercised"
+    );
+
+    // Final consumer step: a fresh `World` accepts the parsed save
+    // through `load_full` and reports the dropped-fields state. This
+    // is how a real save-load flow would experience an SC-only save
+    // (e.g. a retail memory card slot the user just opened).
+    let mut reloaded = World::new();
+    while reloaded.actors.len() < 8 {
+        reloaded.actors.push(Actor::default());
+    }
+    reloaded.load_full(parsed);
+    assert_eq!(
+        reloaded.money, 0,
+        "World::load_full sees money as engine-only"
+    );
+    assert_eq!(
+        reloaded.play_time_seconds, 0,
+        "World::load_full sees play_time as engine-only"
+    );
 }
 
 #[test]
@@ -991,7 +1133,7 @@ fn real_psx_memory_card_save_drives_full_loop() {
         }
         rec.set_hp_mp_sp(hms);
     }
-    let bytes = run_full_loop(SaveFile {
+    let (bytes, _post_loop) = run_full_loop(SaveFile {
         party: three,
         ..save
     });

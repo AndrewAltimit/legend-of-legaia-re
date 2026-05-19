@@ -48,6 +48,10 @@
 *.mds
 *.mdf
 /SCUS_*
+# Synthetic save-file schema fixtures (no Sony bytes; built from a
+# deterministic in-test SaveFile via crates/save/tests/schema_fixture.rs).
+# Regenerable with LEGAIA_UPDATE_FIXTURES=1.
+!/crates/save/tests/fixtures/*.bin
 
 # Mednafen save states (referenced by scripts/analyze-overlay.sh; the
 # canonical location is ~/.mednafen/mcs/, but ignore stray copies here).
