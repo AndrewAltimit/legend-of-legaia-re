@@ -11,22 +11,38 @@
 //!
 //! This module mirrors that on-disc record shape so engines that already
 //! know which byte slice carries an encounter record can decode the four
-//! monster ids without re-reading the disassembly. The wider question of
-//! *which PROT entry* carries the encounter-record array is still open —
-//! see the `formats/encounter.md` doc and the `EncounterRegistry` for the
-//! clean-room composition path.
+//! monster ids without re-reading the disassembly.
+//!
+//! ## Where the bytes come from
+//!
+//! The dispatcher install handlers all assign `s0 = param_1 + param_2`
+//! (== `bytecode_buffer + pc_offset` == current opcode pointer in the
+//! field-VM script). So the bytes the reader consumes at `+0x3..+0x4+N`
+//! are the **trailing operand bytes of the install opcode itself**, inline
+//! in the per-scene field-VM script bytecode. There is no separate on-disc
+//! encounter-record table; each scripted encounter is its own opcode site
+//! in a [`scene_v12_table`](../../legaia-asset/src/scene_v12_table.rs)
+//! sister pair (or its `scene_event_scripts` sibling). See
+//! `docs/formats/encounter.md` for the install-opcode catalogue
+//! (0x37/0x41, 0x38, 0x43, 0x47, 0x4C). Random-encounter triggers
+//! (rate-roll on `_DAT_8007B5F8`) may populate the formation cell via a
+//! different path that bypasses `actor[+0x94]` — that's an open thread.
+//! The [`EncounterRegistry`](crate::encounter_registry) abstraction is a
+//! clean-room composition layer that lets engines synthesize per-scene
+//! tables until disc-side decoding catches up.
 //!
 //! ## Layout (4-byte minimum, monster-count-dependent total)
 //!
 //! ```text
-//! +0x00  u8[3]  reserved             ; cleared to zero by the reader
-//! +0x03  u8     monster_count         ; 0..=4
-//! +0x04  u8[N]  monster_ids           ; N == monster_count
+//! +0x00  u8[3]  opcode header        ; install-opcode + selector + flag,
+//!                                    ; consumed by the script-VM dispatcher
+//!                                    ; before the encounter reader runs
+//! +0x03  u8     monster_count        ; 0..=4
+//! +0x04  u8[N]  monster_ids          ; N == monster_count
 //! ```
 //!
 //! Bytes after `0x04 + monster_count` are not consumed by the formation
-//! copy; they may carry encounter-rate / safe-zone / ambush data the
-//! reader doesn't touch.
+//! copy; they're whatever script-VM bytecode follows the install opcode.
 //!
 //! See [`docs/formats/encounter.md`](../../../docs/formats/encounter.md) for
 //! the full provenance.

@@ -4,7 +4,21 @@ The on-disc encounter record installed onto a field actor when the script VM tri
 
 ## Confidence
 
-**Inferred — structural reading from a single tracer.** The reader (`FUN_801DA51C` body at `0x801DA620..0x801DA678`) is fully decoded. The on-disc *carrier* of these records (which PROT entry holds the encounter-record array) is not yet pinned — see "What this doesn't tell us" below.
+**Confirmed (record shape, reader, install path) — Inferred (encoding within scripts).**
+The reader (`FUN_801DA51C` body at `0x801DA620..0x801DA678`) is fully decoded.
+The install path is the script-VM dispatcher's set of "arm encounter" opcodes
+(0x37/0x41, 0x38, 0x43, 0x47, 0x4C); Ghidra's C decomp of `FUN_801de840`
+makes the install value explicit: `pbVar43 = (byte *)(param_1 + param_2)` —
+i.e. the **current script-bytecode opcode pointer**. So the encounter-record
+bytes (count at `+0x3`, ids at `+0x4..`) are the trailing operand bytes of
+the install opcode itself, inlined into the field-VM script for the scene
+that installs the record. **There is no separate on-disc
+encounter-record array**; the carriers are the per-scene field-VM script
+bundles ([`scene-v12-table.md`](scene-v12-table.md) sister pairs +
+[`scene-bundles.md`](scene-bundles.md) `scene_event_scripts`). The exact
+opcode encoding (how target / sub-op bytes pack into `+0x0..+0x2`) varies
+per opcode and is decoded case-by-case in the dispatcher (see
+[`subsystems/script-vm.md`](../subsystems/script-vm.md)).
 
 ## Layout
 
@@ -63,7 +77,42 @@ The script-VM dispatcher (`FUN_801DE840`, see [`subsystems/script-vm.md`](../sub
 801deeec  sw v0,0x10(s5)
 ```
 
-`s0` is loaded from the script-bytecode immediate operand earlier in the dispatcher; `s5` is the resolved target actor (from a context-pointer that may indirect through the system-channel resolver `FUN_8003C83C`). Several copies of this clause appear in the dispatcher (`0x801DEF08`, `0x801DEFA0`, `0x801DF038`, `0x801DF3FC`, `0x801E1C38`, `0x801E1F44`, `0x801E21C0` …); each is a different op handler that triggers an encounter on a different actor selector (self / system-channel / actor-by-id / etc.).
+`s0` is set once at the dispatcher prologue (`addu s0, a0, s8` at
+`0x801DE858`, i.e. `s0 = param_1 + param_2 = bytecode_buffer + pc_offset`)
+and is the **current opcode pointer in the field-VM script bytecode**.
+The Ghidra C decomp surfaces this as `pbVar43 = (byte *)(param_1 + param_2)`.
+`s5` is the resolved target actor — frequently the player context
+(`_DAT_8007C364`); when bit 7 of the opcode byte is set, byte +1 routes
+through the system-channel resolver `FUN_8003C83C`.
+
+Multiple opcodes install the same pointer; each pairs the install with
+its own pre-install gate (target-actor selector, sub-op switch, etc.) and
+each advances the PC by a different amount past the opcode:
+
+| Opcode | Install line | PC advance | Notes |
+|---|---|---|---|
+| `0x37` / `0x41` (shared case) | `0x801DEEDC` / `0x801DEF08` | `+3` | Bare arm-encounter. Second install on `param_3` if `iVar18 == _DAT_8007C364`. |
+| `0x38` | `0x801DEFA0` / `0x801DF038` | `+3` | Falls through to the same install clause; first branch reads a halfword table at `0x80073F04` into `actor[+0x26]` when low-7-bits of byte +1 are zero. |
+| `0x43` (sub-op `0/1/A/B`) | `0x801DF3FC` (decomp line 5223) | `+3` | Movement-target setup follows the install (`actor[+0x14..+0x1A]` from operand bytes); the encounter arms when the actor reaches the target. |
+| `0x47` | `0x801E1C38` (decomp line 5610) | `+3` | |
+| `0x4C` | `0x801E1F44` / `0x801E21C0` / `0x801E... ` (decomp lines 6341 / 6460 / 6556) | `+3` | Three internal install sites in the same case body — one per inner sub-op. |
+
+All install paths share the same pre-install gate:
+
+```
+if (actor[+0x94] != 0  ||  actor == _DAT_8007C364) &&
+   ((actor[+0x10] & 0x400) == 0  ||  *_DAT_801C6EA4[+8] != 0)
+```
+
+— the actor already has a record installed (re-arm), OR it's the player
+context (always allowed); AND the armed flag is clear OR the scene
+explicitly allows re-arm.
+
+Two non-encounter writes to `actor[+0x94]` also live in the dispatcher
+(case `0x34`: `pbVar47 + 0xe` and `pbVar47 + 3`). These do **not** raise
+the `0x400` flag and pair with `actor[+0x9c]`/`actor[+0x9e]` zero-writes;
+they're a separate "callback" pattern. Only the install sites listed in
+the table above are encounter-record arms.
 
 ## Formation cell + battle-data variant selector
 
@@ -84,9 +133,33 @@ Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](
 
 ## What this doesn't tell us
 
-- **The on-disc carrier of encounter records.** The records come from somewhere on the disc — most likely embedded in `0865_battle_data` (15.99 MB) or in a per-scene field-pack slot — but the writer that reads them off disc and installs the pointer at `actor[+0x94]` is in an overlay slice that hasn't been narrowed yet. Once located, the offset and stride of the on-disc encounter array can be lifted directly.
-- **The encounter selector logic.** The script-VM op stores a single `s0` value into `actor[+0x94]`; how the bytecode encodes "which encounter from the per-scene set" (an index? a byte offset? a fixed-record id?) needs the upstream operand decode.
-- **Per-scene encounter rate / safe-zone gating.** That's a different mechanism (per-step roll on a counter at `_DAT_8007B5F8` according to [`subsystems/world-map.md`](../subsystems/world-map.md)); the encounter record is the *result* of a successful trigger, not the rate input.
+- **Per-opcode encoding of the trailing operand bytes.** Each install
+  opcode (0x37/0x41, 0x38, 0x43, 0x47, 0x4C) packs its first 3 bytes
+  differently (target selector / sub-op / flag bits); the count + ids
+  layout at `+0x3..` is fixed by the reader but the opcode-header
+  bytes need a per-case decode in the dispatcher to interpret as
+  "encounter trigger from script X at PC Y".
+- **The random-encounter trigger path.** The script-VM install opcodes
+  catalogued here describe **scripted** encounter arms. Random encounters
+  are gated by a per-step rate roll on `_DAT_8007B5F8` (see
+  [`subsystems/world-map.md`](../subsystems/world-map.md)). Whether a
+  successful roll invokes the script-VM with a "random encounter"
+  prologue script that then hits one of the install opcodes — or whether
+  the roll function writes the formation cell directly without going
+  through `actor[+0x94]` — has not been pinned down. Quick survey: the
+  `0085_map01` scene_event_scripts file (Drake's field) carries zero
+  install opcodes in its 46 indexed script bodies, despite map01 having
+  random encounters in play, which makes the "roll function populates
+  the formation cell directly, separately from `actor[+0x94]`"
+  hypothesis the more probable shape.
+- **The pre-encounter live-pointer state.** No save state in the current
+  scenario corpus (`scripts/scenarios.toml`) captures an actor with
+  `+0x94` mid-armed — `mc0` has a stale `0x0B33FF70` in that slot and
+  `+0x10 & 0x400 == 0`, and every other slot has either zero or a
+  `0xFFFFFFFF` sentinel. A byte-level verification of "the install
+  opcode bytes match `actor[+0x94]`" needs a fresh capture taken between
+  the install opcode dispatch and the `FUN_801DA51C` consumption — a
+  one-frame window during scene scripting.
 
 ## Files referencing this format
 
