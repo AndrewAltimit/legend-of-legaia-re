@@ -149,7 +149,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
   <h1>Asset viewer</h1>
-  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) or just <code>PROT.DAT</code> - the WASM build parses it client-side, classifies every PROT entry, and filters to the ones with renderable TIMs. Nothing leaves your machine.</p>
+  <p class="lede">Browse Legend of Legaia assets directly in this browser. Provide your own disc image (<code>.bin</code> Mode2/2352) and the WASM build parses it client-side, classifies every PROT entry, and filters to the ones with renderable TIMs. Nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -158,7 +158,7 @@
   <div class="viewer-shell">
     <div class="file-input-group">
       <label for="viewer-file"><strong>Choose file:</strong></label>
-      <input type="file" id="viewer-file" accept=".bin,.dat,.tim,.tmd">
+      <input type="file" id="viewer-file" accept=".bin,.tim,.tmd">
       <span class="viewer-status" id="viewer-status">No file loaded.</span>
     </div>
 
@@ -202,7 +202,7 @@
       <div class="viewer-host" id="viewer-host">
         <div class="viewer-prompt">
           <h3>Bring your own disc</h3>
-          <p>This viewer doesn't ship any Sony bytes. Provide a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (NA SCUS-94254), the extracted <code>PROT.DAT</code>, or a single <code>.tim</code> file.</p>
+          <p>This viewer doesn't ship any Sony bytes. Provide a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (NA SCUS-94254). A single <code>.tim</code> file also works for one-off image previews.</p>
           <p style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.85rem;">
             Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly.
           </p>
@@ -227,7 +227,7 @@
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
   <p>The sidebar groups entries by scene category and classification. Filter by class (e.g. only <code>scene_tmd_stream</code> for character meshes, or <code>tim_passthrough</code> for standalone images) and jump by PROT index. By default the 3D path renders Legaia TMDs textured (WebGL2; same paletted fragment shader the native engine uses); toggle "textured" off in the sidebar for a flat-shaded fallback.</p>
-  <p class="hint">For the full experience &mdash; VAB sample playback, stage geometry, cross-PROT-entry CLUT chains via <code>--vram-extra-dir</code> &mdash; run the native build: <code>./target/release/asset-viewer prot extracted/PROT.DAT</code>.</p>
+  <p class="hint">Sound on disc is on the <a href="audio.html">audio browser</a>. For stage geometry and cross-PROT-entry CLUT chains via <code>--vram-extra-dir</code>, run the native build: <code>./target/release/asset-viewer prot extracted/PROT.DAT</code>.</p>
 </section>
 
 <section class="doc-section" id="related">
@@ -758,16 +758,13 @@
 
 <section class="doc-section">
   <h2>Run engine</h2>
-  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) - <code>PROT.DAT</code> and <code>CDNAME.TXT</code> are extracted automatically via ISO9660 walk. You can also drop a raw <code>PROT.DAT</code> with an optional <code>CDNAME.TXT</code>. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
-  <p class="hint">The same disc image you use in the asset browser above works here. For PROT.DAT-only access without a disc, also supply <code>CDNAME.TXT</code> (extracted by <code>./target/release/prot-extract</code>) to enable scene lookup by name.</p>
+  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) and <code>CDNAME.TXT</code> is extracted automatically via ISO9660 walk. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
+  <p class="hint">The same disc image you use in the asset browser above works here.</p>
 
   <div class="engine-panel" id="engine-panel">
     <div class="engine-row">
-      <label for="engine-prot-file"><strong>Disc image (.bin) or PROT.DAT:</strong></label>
-      <input type="file" id="engine-prot-file" accept=".bin,.dat"
-             style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
-      <label for="engine-cdname-file"><strong>CDNAME.TXT</strong> <span style="font-weight:normal">(optional - auto-extracted from disc)</span>:</label>
-      <input type="file" id="engine-cdname-file" accept=".txt"
+      <label for="engine-prot-file"><strong>Disc image (.bin):</strong></label>
+      <input type="file" id="engine-prot-file" accept=".bin"
              style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
       <button id="engine-load-btn" class="viewer-controls" style="padding: 0.4rem 0.75rem; cursor: pointer;">Load</button>
     </div>
@@ -841,9 +838,8 @@
   }
 
   loadBtn.addEventListener('click', async () => {
-    const discFile   = document.getElementById('engine-prot-file').files[0];
-    const cdnameFile = document.getElementById('engine-cdname-file').files[0];
-    if (!discFile) { engStatus.textContent = 'Select a disc image or PROT.DAT file first.'; return; }
+    const discFile = document.getElementById('engine-prot-file').files[0];
+    if (!discFile) { engStatus.textContent = 'Select a disc image first.'; return; }
 
     stopAutoTick();
     engStatus.textContent = 'Loading WASM module…';
@@ -853,24 +849,12 @@
         wasmMod = await import('./wasm/legaia_web_viewer.js');
         await wasmMod.default();
       }
-      const rawBytes   = new Uint8Array(await discFile.arrayBuffer());
-      const cdnameText = cdnameFile ? await cdnameFile.text() : '';
-
-      // Detect disc image by size: full Mode2/2352 disc is ~600 MB; PROT.DAT is ~25 MB.
-      const isDisc = rawBytes.length > 50 * 1024 * 1024;
-      const parseLabel = isDisc ? 'Walking ISO9660 and parsing PROT.DAT…' : 'Parsing PROT.DAT…';
-      engStatus.textContent = parseLabel;
+      const rawBytes = new Uint8Array(await discFile.arrayBuffer());
+      engStatus.textContent = 'Walking ISO9660 and parsing PROT.DAT…';
 
       runtime = new wasmMod.LegaiaRuntime();
-      const count = runtime.load_disc(rawBytes, cdnameText);
-
-      let msg = isDisc
-        ? `Loaded ${count} PROT entries from disc image (CDNAME auto-extracted).`
-        : `Loaded ${count} PROT entries from PROT.DAT.`;
-      if (!isDisc && !cdnameText) {
-        msg += ' No CDNAME - scene lookup by name requires CDNAME.TXT.';
-      }
-      engStatus.textContent = msg;
+      const count = runtime.load_disc(rawBytes, '');
+      engStatus.textContent = `Loaded ${count} PROT entries from disc image (CDNAME auto-extracted).`;
       sceneRow.style.display = 'flex';
       tickRow.style.display  = 'flex';
       stateEl.style.display  = 'block';

@@ -1235,6 +1235,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cpal",
+ "js-sys",
  "legaia-prot",
  "legaia-seq",
  "legaia-vab",
@@ -1518,6 +1519,7 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-vab",
+ "legaia-xa",
  "serde_json",
  "sha2",
  "toml",
