@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio browser (WASM) - legend-of-legaia-re</title>
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+.audio-shell { display: flex; flex-direction: column; gap: 1rem; }
+.audio-tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); }
+.audio-tab {
+  background: transparent; color: var(--text-muted);
+  border: none; border-bottom: 2px solid transparent;
+  padding: 0.5rem 1rem; cursor: pointer;
+  font-family: var(--font-mono); font-size: 0.9rem;
+}
+.audio-tab:hover { color: var(--text); }
+.audio-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.audio-panel { display: none; padding: 0.5rem 0; }
+.audio-panel.is-active { display: block; }
+
+.audio-list {
+  list-style: none; margin: 0; padding: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  font-family: var(--font-mono); font-size: 0.82rem;
+  max-height: 520px; overflow-y: auto;
+}
+.audio-list li {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.audio-list li:last-child { border-bottom: none; }
+.audio-list .ai-idx { color: var(--accent); font-weight: 500; }
+.audio-list .ai-meta { color: var(--text-muted); }
+.audio-list .ai-meta b { color: var(--text); font-weight: 500; }
+.audio-list .ai-actions { display: flex; gap: 0.4rem; }
+.audio-list button {
+  background: var(--bg-code); color: var(--text);
+  border: 1px solid var(--border); padding: 0.25rem 0.6rem;
+  font-family: inherit; font-size: 0.78rem;
+  cursor: pointer; white-space: nowrap;
+}
+.audio-list button:hover { border-color: var(--accent); color: var(--accent); }
+.audio-list button:disabled { opacity: 0.4; cursor: not-allowed; }
+.audio-list button.is-playing { color: var(--accent); border-color: var(--accent); }
+
+.audio-toolbar {
+  display: flex; gap: 0.75rem; align-items: center;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  font-family: var(--font-mono); font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.audio-toolbar input[type="search"] {
+  background: var(--bg-code); color: var(--text);
+  border: 1px solid var(--border); padding: 0.3rem 0.5rem;
+  font-family: inherit; font-size: 0.82rem;
+  min-width: 14rem;
+}
+.audio-summary {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem; font-family: var(--font-mono); font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.audio-summary b { color: var(--accent); font-weight: 500; }
+
+.audio-detail {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border); background: var(--bg-card);
+  padding: 0.75rem;
+  font-family: var(--font-mono); font-size: 0.82rem;
+}
+.audio-detail h4 { margin: 0 0 0.5rem 0; color: var(--accent); font-size: 0.9rem; }
+.audio-detail.is-hidden { display: none; }
+
+.audio-prompt {
+  border: 1px dashed var(--border);
+  background: var(--bg-code);
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+.audio-prompt h3 { color: var(--accent); margin-bottom: 0.5rem; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<div class="app">
+<main class="content wide-page" id="content">
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; audio</div>
+  <h1>Audio browser <span class="badge-wip">work in progress</span></h1>
+  <p class="lede">
+    Listen to every sound on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between <strong>BGM</strong> sequenced music and <strong>XA</strong> streaming audio. The same WASM build that powers the asset viewer parses, decodes, and plays everything locally &mdash; nothing leaves your machine.
+  </p>
+</header>
+
+<section class="doc-section" id="load">
+  <h2>Load your disc image</h2>
+  <div class="audio-shell">
+    <div class="file-input-group">
+      <label for="audio-file"><strong>Choose file:</strong></label>
+      <input type="file" id="audio-file" accept=".bin">
+      <span class="viewer-status" id="audio-status">No disc loaded.</span>
+    </div>
+    <p class="hint" style="margin: 0; font-size: 0.82rem;">
+      Requires the full Mode2/2352 <code>.bin</code> &mdash; XA streams live in CD sectors outside <code>PROT.DAT</code>. The browser autoplay policy means BGM will only start after you click <em>Play</em>.
+    </p>
+  </div>
+</section>
+
+<section class="doc-section" id="browse" style="display: none;" id="audio-browse-section">
+  <h2>Browse</h2>
+
+  <div class="audio-tabs" role="tablist">
+    <button class="audio-tab is-active" data-tab="bgm" role="tab">BGM (VAB + SEQ)</button>
+    <button class="audio-tab"            data-tab="xa"  role="tab">XA streams</button>
+  </div>
+
+  <!-- BGM panel -->
+  <div class="audio-panel is-active" data-panel="bgm">
+    <div class="audio-toolbar">
+      <input type="search" id="bgm-search" placeholder="Filter by PROT index…" autocomplete="off">
+      <span id="bgm-summary">&nbsp;</span>
+      <span style="margin-left:auto; display: flex; gap: 0.6rem; align-items: center;">
+        <label title="Post-mixer gain. SPU output sits ~1% of the i16 range; default 25x brings it to comfortable speaker level." style="display: flex; gap: 0.3rem; align-items: center;">
+          gain <input type="range" id="bgm-gain" min="1" max="100" step="1" value="25" style="width: 6rem;">
+          <span id="bgm-gain-value" style="min-width: 2.5rem; text-align: right;">25x</span>
+        </label>
+        <button id="bgm-stop" type="button" disabled>&#x25A0; stop</button>
+        <button id="bgm-pause" type="button" disabled>&#x23F8; pause</button>
+      </span>
+    </div>
+    <ul class="audio-list" id="bgm-list"></ul>
+    <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
+      BGM playback drives the same clean-room SPU + SEQ stack the engine port uses (<code>legaia_engine_audio::Sequencer</code> + <code>WebAudioOut</code> through a <code>ScriptProcessorNode</code>).
+    </p>
+  </div>
+
+  <!-- XA panel -->
+  <div class="audio-panel" data-panel="xa">
+    <div class="audio-toolbar">
+      <input type="search" id="xa-search" placeholder="Filter by filename…" autocomplete="off">
+      <span id="xa-summary">&nbsp;</span>
+    </div>
+    <ul class="audio-list" id="xa-list"></ul>
+    <p class="hint" style="margin-top: 0.5rem; font-size: 0.78rem;">
+      <code>MV*.STR</code> files carry interleaved MDEC video + XA audio &mdash; the demuxer pulls audio out cleanly via the Form 2 subheader filter. Decode can take a few seconds for the longer streams; the button stays in &ldquo;decoding…&rdquo; while it works.
+    </p>
+  </div>
+</section>
+
+<section class="doc-section" id="legal">
+  <h2>Notes</h2>
+  <p>
+    All decoded audio stays in your browser. Decoders live in <code>crates/web-viewer</code>: <a href="formats/vab.html">VAB</a> via <code>legaia-vab::decode_vag</code>, <a href="formats/seq.html">SEQ</a> via <code>legaia_engine_audio::Sequencer</code>, <a href="formats/xa.html">XA-ADPCM</a> via <code>legaia-xa::decode</code>. The clean-room <abbr title="Sound Processing Unit">SPU</abbr> behind BGM is documented at <a href="subsystems/audio.html">subsystems / audio</a>.
+  </p>
+  <p>
+    Browser playback sounding wrong? Hit the <code>.wav</code> button to download a raw PCM dump and play it in <code>VLC</code> / <code>ffplay</code>. The dumped bytes are byte-equal to <code>./target/release/xa demux-disc</code> output (proven by <code>audio_parity.rs</code>) - that's the canonical ground-truth reference. If the downloaded <code>.wav</code> sounds correct but in-browser playback doesn't, the disconnect is on the WebAudio side rather than in the decoder.
+  </p>
+</section>
+
+<script>
+(function () {
+  const fileInput   = document.getElementById('audio-file');
+  const status      = document.getElementById('audio-status');
+  const browseSec   = document.getElementById('browse');
+  const tabs        = document.querySelectorAll('.audio-tab');
+  const panels      = document.querySelectorAll('.audio-panel');
+
+
+  const bgmList     = document.getElementById('bgm-list');
+  const bgmSummary  = document.getElementById('bgm-summary');
+  const bgmSearch   = document.getElementById('bgm-search');
+  const bgmStopBtn  = document.getElementById('bgm-stop');
+  const bgmPauseBtn = document.getElementById('bgm-pause');
+  const bgmGain     = document.getElementById('bgm-gain');
+  const bgmGainVal  = document.getElementById('bgm-gain-value');
+
+  const xaList      = document.getElementById('xa-list');
+  const xaSummary   = document.getElementById('xa-summary');
+  const xaSearch    = document.getElementById('xa-search');
+
+  let wasmMod = null;
+  let audio = null;        // LegaiaAudio instance
+  let bgmEntries = [];
+  let xaEntries = [];
+  let audioCtx = null;     // shared AudioContext for XA one-shot playback
+  let activeSource = null; // current AudioBufferSourceNode (for XA preview)
+  let activeBgm = null;    // { prot_index, vab_offset, seq_offset } when BGM playing
+  let activeBgmSource = null;  // current BGM AudioBufferSourceNode
+  let activeBgmGain = null;    // its GainNode (for live volume slider)
+  /** How long a BGM chunk to pre-render per play. Larger = more upfront
+   * decode time but longer continuous playback before the buffer ends.
+   * 60 seconds covers most retail tracks before they loop. */
+  const BGM_RENDER_SECS = 60;
+
+  if (!fileInput) return;
+
+  // ---------------- Tab switching ----------------
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('is-active'));
+    panels.forEach(p => p.classList.remove('is-active'));
+    t.classList.add('is-active');
+    const k = t.dataset.tab;
+    document.querySelector(`.audio-panel[data-panel="${k}"]`).classList.add('is-active');
+  }));
+
+  // ---------------- WebAudio one-shot helpers ----------------
+  // AudioContext is created lazily on first user interaction. Most browsers
+  // start it in `suspended` state even when created inside a click handler;
+  // calling `.resume()` unblocks audio output. We re-resume on every play
+  // (idempotent) to recover from background-tab suspensions too.
+  function ensureAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    return audioCtx;
+  }
+
+  /** Stop any one-shot preview currently playing. */
+  function stopOneShot() {
+    if (activeSource) {
+      try { activeSource.stop(); } catch (_) {}
+      activeSource = null;
+    }
+    document.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
+  }
+
+  /**
+   * Play an interleaved Int16 PCM buffer through WebAudio. We build a
+   * standard RIFF WAV in memory and hand the bytes to `decodeAudioData`
+   * so the browser parses sample rate, channel count, and bit depth from
+   * the WAV header itself. This avoids cross-browser quirks with
+   * `AudioContext.createBuffer(channels, frames, sampleRate)` - notably
+   * that some engines snap the third arg to a nearby standard rate
+   * (44.1 / 48 kHz) and let you hear pitch-shifted playback for non-
+   * standard rates like XA's 37800.
+   */
+  async function playPcmI16(pcm, sampleRate, channels) {
+    stopOneShot();
+    const ctx = ensureAudioCtx();
+    const frames = Math.floor(pcm.length / channels);
+    if (frames === 0) return null;
+    const wav = pcmToWavBlob(pcm, sampleRate, channels);
+    const arrayBuf = await wav.arrayBuffer();
+    let buf;
+    try {
+      buf = await ctx.decodeAudioData(arrayBuf);
+    } catch (err) {
+      console.warn('[audio] decodeAudioData failed, falling back to createBuffer', err);
+      buf = ctx.createBuffer(channels, frames, sampleRate);
+      for (let c = 0; c < channels; c++) {
+        const f32 = new Float32Array(frames);
+        for (let i = 0; i < frames; i++) f32[i] = pcm[i * channels + c] / 32768.0;
+        buf.copyToChannel(f32, c);
+      }
+    }
+    console.log(
+      `[audio] play pcm=${pcm.length} frames=${frames} ch=${channels} rate=${sampleRate} `
+      + `decoded(rate=${buf.sampleRate}, len=${buf.length}, ch=${buf.numberOfChannels}) `
+      + `ctxState=${ctx.state} ctxRate=${ctx.sampleRate}`
+    );
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start();
+    activeSource = src;
+    return src;
+  }
+
+  /** Wrap an Int16Array of PCM as a downloadable mono / stereo WAV blob. */
+  function pcmToWavBlob(pcm, sampleRate, channels) {
+    const nBytes = pcm.length * 2;
+    const buf = new ArrayBuffer(44 + nBytes);
+    const view = new DataView(buf);
+    const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + nBytes, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);       // PCM
+    view.setUint16(22, channels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * channels * 2, true);
+    view.setUint16(32, channels * 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, nBytes, true);
+    const pcm8 = new Uint8Array(buf, 44, nBytes);
+    const src8 = new Uint8Array(pcm.buffer, pcm.byteOffset, nBytes);
+    pcm8.set(src8);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // ---------------- BGM list ----------------
+  function renderBgmList(filter) {
+    const f = (filter || '').trim();
+    const fNum = f === '' ? null : parseInt(f, 10);
+    const visible = bgmEntries.filter(e => {
+      if (fNum === null || isNaN(fNum)) return true;
+      return e.prot_index === fNum;
+    });
+    bgmSummary.textContent = `${visible.length} of ${bgmEntries.length} BGM pairs`;
+    bgmList.innerHTML = visible.map(e => {
+      return `<li data-prot="${e.prot_index}" data-vab="${e.vab_offset}" data-seq="${e.seq_offset}">
+        <span class="ai-idx">PROT ${e.prot_index}</span>
+        <span class="ai-meta"><b>${e.program_count}</b> progs &middot; <b>${e.sample_count}</b> samples &middot; ${e.bpm} BPM &middot; PPQN ${e.ppqn}</span>
+        <span class="ai-actions">
+          <button data-act="play">&#x25B6; play</button>
+          <button data-act="wav">.wav</button>
+        </span>
+      </li>`;
+    }).join('');
+    bgmList.querySelectorAll('li').forEach(li => {
+      const btn = li.querySelector('[data-act="play"]');
+      const wavBtn = li.querySelector('[data-act="wav"]');
+      wavBtn.addEventListener('click', () => {
+        const prot = parseInt(li.dataset.prot, 10);
+        const vab  = parseInt(li.dataset.vab, 10);
+        const seq  = parseInt(li.dataset.seq, 10);
+        const orig = wavBtn.textContent;
+        wavBtn.textContent = 'rendering…';
+        wavBtn.disabled = true;
+        setTimeout(() => {
+          try {
+            const pcm = audio.render_bgm_pcm_i16(prot, vab, seq, BGM_RENDER_SECS);
+            const rate = audio.bgm_render_rate();
+            triggerDownload(
+              pcmToWavBlob(pcm, rate, 2),
+              `bgm_prot${prot}_${BGM_RENDER_SECS}s.wav`
+            );
+            wavBtn.textContent = orig;
+          } catch (err) {
+            wavBtn.textContent = '(error)';
+            console.warn(err);
+          } finally {
+            wavBtn.disabled = false;
+          }
+        }, 10);
+      });
+      btn.addEventListener('click', async () => {
+        const prot = parseInt(li.dataset.prot, 10);
+        const vab  = parseInt(li.dataset.vab, 10);
+        const seq  = parseInt(li.dataset.seq, 10);
+        const orig = btn.textContent;
+        btn.textContent = 'rendering…';
+        btn.disabled = true;
+        try {
+          stopBgm();
+          stopOneShot();
+          // Pre-render `BGM_RENDER_SECS` of BGM PCM at the SPU's 44.1 kHz
+          // rate. Sample-accurate (driven by US_PER_SPU_TICK per output
+          // frame) - avoids the deprecated `ScriptProcessorNode` whose
+          // callback rate drifts on some browsers and otherwise lets
+          // sequencer events fire faster (or slower) than wall time.
+          const pcm = audio.render_bgm_pcm_i16(prot, vab, seq, BGM_RENDER_SECS);
+          if (pcm.length === 0) throw new Error('render_bgm_pcm_i16 returned empty');
+          const rate = audio.bgm_render_rate();
+          const ctx = ensureAudioCtx();
+          const wav = pcmToWavBlob(pcm, rate, 2);
+          const arrayBuf = await wav.arrayBuffer();
+          const buf = await ctx.decodeAudioData(arrayBuf);
+
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = parseFloat(bgmGain.value);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          src.start();
+
+          activeBgmSource = src;
+          activeBgmGain = gainNode;
+          activeBgm = { prot, vab, seq };
+          const bgm = bgmEntries.find(e =>
+            e.prot_index === prot && e.vab_offset === vab && e.seq_offset === seq);
+          console.log(
+            `[audio] BGM rendered prot=${prot} bpm=${bgm ? bgm.bpm : '?'} ppqn=${bgm ? bgm.ppqn : '?'} `
+            + `src_rate=${rate}Hz decoded(rate=${buf.sampleRate},len=${buf.length}) `
+            + `pcm_secs=${(pcm.length/2/rate).toFixed(2)} duration_secs=${(buf.length/buf.sampleRate).toFixed(2)} `
+            + `gain=${bgmGain.value}x`
+          );
+          btn.textContent = orig;
+          bgmStopBtn.disabled = false;
+          bgmList.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
+          btn.classList.add('is-playing');
+          src.onended = () => {
+            btn.classList.remove('is-playing');
+            bgmStopBtn.disabled = true;
+            if (activeBgmSource === src) {
+              activeBgmSource = null;
+              activeBgmGain = null;
+              activeBgm = null;
+            }
+          };
+        } catch (err) {
+          status.textContent = `BGM start failed: ${err.message || err}`;
+          btn.textContent = orig;
+          console.warn(err);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  /** Stop the currently-playing BGM (no-op when nothing is playing). */
+  function stopBgm() {
+    if (activeBgmSource) {
+      try { activeBgmSource.stop(); } catch (_) {}
+      try { activeBgmSource.disconnect(); } catch (_) {}
+      activeBgmSource = null;
+    }
+    if (activeBgmGain) {
+      try { activeBgmGain.disconnect(); } catch (_) {}
+      activeBgmGain = null;
+    }
+    activeBgm = null;
+    bgmStopBtn.disabled = true;
+    bgmList.querySelectorAll('button.is-playing').forEach(b => b.classList.remove('is-playing'));
+  }
+
+  bgmStopBtn.addEventListener('click', stopBgm);
+
+  bgmPauseBtn.disabled = true;  // pause/resume not supported in offline-render mode
+
+  bgmGain.addEventListener('input', () => {
+    const v = parseFloat(bgmGain.value);
+    bgmGainVal.textContent = `${v.toFixed(0)}x`;
+    if (activeBgmGain) activeBgmGain.gain.value = v;
+  });
+
+  // ---------------- XA list ----------------
+  function renderXaList(filter) {
+    const f = (filter || '').trim().toLowerCase();
+    const visible = xaEntries.filter(e => !f || e.path.toLowerCase().includes(f));
+    xaSummary.textContent = `${visible.length} of ${xaEntries.length} streams`;
+    xaList.innerHTML = visible.map(e => {
+      const mb = (e.size / 1024 / 1024).toFixed(2);
+      return `<li data-lba="${e.lba}" data-size="${e.size}" data-name="${e.path}">
+        <span class="ai-idx">${e.path}</span>
+        <span class="ai-meta">LBA ${e.lba} &middot; ${mb} MB</span>
+        <span class="ai-actions">
+          <button data-act="play">&#x25B6; play</button>
+          <button data-act="wav">.wav</button>
+        </span>
+      </li>`;
+    }).join('');
+    xaList.querySelectorAll('li').forEach(li => {
+      const lba  = parseInt(li.dataset.lba, 10);
+      const size = parseInt(li.dataset.size, 10);
+      const name = li.dataset.name;
+      const playBtn = li.querySelector('[data-act="play"]');
+      const wavBtn  = li.querySelector('[data-act="wav"]');
+
+      playBtn.addEventListener('click', () => {
+        const orig = playBtn.textContent;
+        playBtn.textContent = 'decoding…';
+        playBtn.disabled = true;
+        // Defer so the UI repaints, then run the async play path.
+        setTimeout(async () => {
+          try {
+            const meta = JSON.parse(audio.xa_metadata_json(lba, size));
+            if (meta.length === 0) {
+              playBtn.textContent = '(no audio)';
+              return;
+            }
+            const m = meta[0];
+            const pcm = audio.decode_xa_stream_i16(lba, size, 0);
+            const channels = m.stereo ? 2 : 1;
+            const src = await playPcmI16(pcm, m.sample_rate, channels);
+            playBtn.textContent = orig;
+            if (src) {
+              playBtn.classList.add('is-playing');
+              src.onended = () => playBtn.classList.remove('is-playing');
+            }
+          } catch (err) {
+            playBtn.textContent = '(error)';
+            console.warn(err);
+          } finally {
+            playBtn.disabled = false;
+          }
+        }, 10);
+      });
+
+      wavBtn.addEventListener('click', () => {
+        const orig = wavBtn.textContent;
+        wavBtn.textContent = 'decoding…';
+        wavBtn.disabled = true;
+        setTimeout(() => {
+          try {
+            const meta = JSON.parse(audio.xa_metadata_json(lba, size));
+            if (meta.length === 0) {
+              wavBtn.textContent = '(no audio)';
+              return;
+            }
+            const m = meta[0];
+            const pcm = audio.decode_xa_stream_i16(lba, size, 0);
+            const channels = m.stereo ? 2 : 1;
+            triggerDownload(
+              pcmToWavBlob(pcm, m.sample_rate, channels),
+              name.replace(/\//g, '_').replace(/\.[^.]+$/, '.wav')
+            );
+            wavBtn.textContent = orig;
+          } catch (err) {
+            wavBtn.textContent = '(error)';
+            console.warn(err);
+          } finally {
+            wavBtn.disabled = false;
+          }
+        }, 10);
+      });
+    });
+  }
+
+  // ---------------- Search wiring ----------------
+  bgmSearch.addEventListener('input', () => renderBgmList(bgmSearch.value));
+  xaSearch.addEventListener('input', () => renderXaList(xaSearch.value));
+
+  // ---------------- File load ----------------
+  fileInput.addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) { status.textContent = 'No file loaded.'; return; }
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — parsing…`;
+    try {
+      if (!wasmMod) {
+        wasmMod = await import('./wasm/legaia_web_viewer.js');
+        await wasmMod.default();
+      }
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      audio = new wasmMod.LegaiaAudio();
+      const protCount = audio.load_disc(bytes);
+      status.textContent = `Loaded ${f.name} — ${protCount} PROT entries; scanning audio…`;
+
+      bgmEntries = JSON.parse(audio.enumerate_bgm_pairs_json());
+      xaEntries  = JSON.parse(audio.enumerate_xa_files_json());
+      renderBgmList('');
+      renderXaList('');
+      browseSec.style.display = 'block';
+      status.textContent = `Loaded ${f.name} — ${bgmEntries.length} BGM pairs, ${xaEntries.length} XA streams.`;
+    } catch (err) {
+      status.textContent = `Couldn't load: ${err.message || err}.`;
+      console.warn(err);
+    }
+  });
+})();
+</script>
+
+</main>
+</div>
+<script src="js/layout.js"></script>
+<script>injectLayout({ active: 'audio' });</script>
+<script src="js/main.js"></script>
+</body>
+</html>

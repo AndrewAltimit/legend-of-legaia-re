@@ -1,6 +1,278 @@
 /* @ts-self-types="./legaia_web_viewer.d.ts" */
 
 /**
+ * In-browser audio extraction surface. Owns the loaded Mode2/2352 disc plus
+ * its extracted PROT.DAT bytes; exposes JSON enumerators for the three
+ * audio families (VAB / BGM / XA) and PCM-returning decoders for each.
+ *
+ * BGM playback uses [`legaia_engine_audio::WebAudioOut`] under the hood -
+ * constructed lazily on the first `start_bgm` call so the autoplay policy
+ * is satisfied (must happen inside a user-gesture handler on the JS side).
+ */
+export class LegaiaAudio {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LegaiaAudioFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_legaiaaudio_free(ptr, 0);
+    }
+    /**
+     * Sample rate of the browser's BGM `AudioContext`, or 0 when the BGM
+     * output hasn't been opened yet. Surfaced to the JS console for
+     * diagnostics when playback speed is off.
+     * @returns {number}
+     */
+    bgm_device_rate() {
+        const ret = wasm.legaiaaudio_bgm_device_rate(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Sample rate produced by [`Self::render_bgm_pcm_i16`] (the SPU's
+     * internal 44.1 kHz). Surfaced so the JS side can build a correct
+     * WAV header for `decodeAudioData`.
+     * @returns {number}
+     */
+    bgm_render_rate() {
+        const ret = wasm.legaiaaudio_bgm_render_rate(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Decode one VAG sample to mono i16 PCM at `vab_sample_rate()`.
+     * Empty when the sample doesn't exist or has zero length.
+     * @param {number} prot_index
+     * @param {number} vab_offset
+     * @param {number} sample_idx
+     * @returns {Int16Array}
+     */
+    decode_vab_sample_i16(prot_index, vab_offset, sample_idx) {
+        const ret = wasm.legaiaaudio_decode_vab_sample_i16(this.__wbg_ptr, prot_index, vab_offset, sample_idx);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Decode XA stream and return the i16 PCM for the channel at `stream_idx`
+     * (index into the `xa_metadata_json` array). Empty when out of range.
+     * @param {number} lba
+     * @param {number} size
+     * @param {number} stream_idx
+     * @returns {Int16Array}
+     */
+    decode_xa_stream_i16(lba, size, stream_idx) {
+        const ret = wasm.legaiaaudio_decode_xa_stream_i16(this.__wbg_ptr, lba, size, stream_idx);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * JSON list of every BGM pair (`pBAV` + `pQES` in the same PROT entry).
+     * Shape: `[{ prot_index, vab_offset, seq_offset, program_count, sample_count, ppqn, bpm }, ...]`.
+     * @returns {string}
+     */
+    enumerate_bgm_pairs_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_enumerate_bgm_pairs_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * JSON list of every VAB sound bank in the loaded disc.
+     * Shape: `[{ prot_index, vab_offset, version, program_count, sample_count, has_seq }, ...]`.
+     * @returns {string}
+     */
+    enumerate_vabs_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_enumerate_vabs_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * JSON list of every `*.STR` / `*.XA` file on the disc, with its raw LBA
+     * and byte size. Shape: `[{ path, lba, size }, ...]`.
+     * @returns {string}
+     */
+    enumerate_xa_files_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_enumerate_xa_files_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Load a full Mode2/2352 disc image. Extracts `PROT.DAT` via the same
+     * in-memory ISO walker the viewer uses, parses the TOC, and stashes
+     * both slices for later VAB / BGM / XA queries. Returns the PROT entry
+     * count for the JS UI.
+     * @param {Uint8Array} bytes
+     * @returns {number}
+     */
+    load_disc(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.legaiaaudio_load_disc(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    constructor() {
+        const ret = wasm.legaiaaudio_new();
+        this.__wbg_ptr = ret;
+        LegaiaAudioFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Render `duration_seconds` worth of interleaved stereo i16 PCM at
+     * the SPU's 44.1 kHz rate for the BGM pair at (`prot_index`,
+     * `vab_offset`, `seq_offset`). Used by the audio page to pre-render
+     * a chunk and play it through `AudioBufferSourceNode` (sample-
+     * accurate timing) instead of through `ScriptProcessorNode` (callback-
+     * paced, drifts on some browsers).
+     * @param {number} prot_index
+     * @param {number} vab_offset
+     * @param {number} seq_offset
+     * @param {number} duration_seconds
+     * @returns {Int16Array}
+     */
+    render_bgm_pcm_i16(prot_index, vab_offset, seq_offset, duration_seconds) {
+        const ret = wasm.legaiaaudio_render_bgm_pcm_i16(this.__wbg_ptr, prot_index, vab_offset, seq_offset, duration_seconds);
+        var v1 = getArrayI16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * Resume the BGM AudioContext. Browsers often construct the
+     * `AudioContext` in `suspended` state even when the constructor
+     * runs inside a user-gesture handler; the JS side calls this
+     * immediately after `start_bgm` to make the audio actually audible.
+     * @returns {Promise<any>}
+     */
+    resume_bgm() {
+        const ret = wasm.legaiaaudio_resume_bgm(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Set the BGM playback gain. Retail SEQ + clean-room SPU output sits
+     * around 1% of the i16 range, so the audio page defaults to ~25x to
+     * bring playback to a comfortable level. `1.0` matches the native
+     * engine-shell cpal path.
+     * @param {number} gain
+     */
+    set_bgm_gain(gain) {
+        wasm.legaiaaudio_set_bgm_gain(this.__wbg_ptr, gain);
+    }
+    /**
+     * Pause / resume the active BGM sequencer. Notes that are already
+     * sounding decay through their ADSR envelopes; the sequencer clock
+     * freezes.
+     * @param {boolean} paused
+     */
+    set_bgm_paused(paused) {
+        wasm.legaiaaudio_set_bgm_paused(this.__wbg_ptr, paused);
+    }
+    /**
+     * Start BGM playback for the given (`prot_index`, `vab_offset`,
+     * `seq_offset`) tuple. Constructs the WebAudio output on the first call
+     * (must be invoked from a user-gesture handler), parses VAB + SEQ,
+     * uploads the bank to the embedded clean-room SPU, and attaches the
+     * sequencer.
+     * @param {number} prot_index
+     * @param {number} vab_offset
+     * @param {number} seq_offset
+     */
+    start_bgm(prot_index, vab_offset, seq_offset) {
+        const ret = wasm.legaiaaudio_start_bgm(this.__wbg_ptr, prot_index, vab_offset, seq_offset);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Stop the currently-playing BGM. Safe to call even when nothing is
+     * playing (no-op).
+     */
+    stop_bgm() {
+        wasm.legaiaaudio_stop_bgm(this.__wbg_ptr);
+    }
+    /**
+     * JSON metadata for every VAG sample inside one VAB bank.
+     * Shape: `[{ size_bytes, decoded_samples, duration_ms }, ...]`.
+     * `decoded_samples` is the actual PCM length after walking the ADPCM
+     * blocks (which stop at the first loop-end / garbage block), so it
+     * reflects the audible length, not the raw on-disc body size. Useful
+     * for the UI to dim out tiny/zero-length samples that would be
+     * inaudible.
+     * @param {number} prot_index
+     * @param {number} vab_offset
+     * @returns {string}
+     */
+    vab_sample_list_json(prot_index, vab_offset) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_vab_sample_list_json(this.__wbg_ptr, prot_index, vab_offset);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Sample rate the JS side should use when playing a VAG-decoded buffer.
+     * @returns {number}
+     */
+    vab_sample_rate() {
+        const ret = wasm.legaiaaudio_vab_sample_rate(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Demux + decode an XA stream. Returns the decoded PCM of the first
+     * audio channel (file_no=0, ch_no=0 typically) along with metadata
+     * packed as JSON in the first method, then the PCM via this one.
+     *
+     * Two-step API so the JS side can show metadata (channels, sample rate)
+     * before paying the decode cost.
+     * @param {number} lba
+     * @param {number} size
+     * @returns {string}
+     */
+    xa_metadata_json(lba, size) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaaudio_xa_metadata_json(this.__wbg_ptr, lba, size);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) LegaiaAudio.prototype[Symbol.dispose] = LegaiaAudio.prototype.free;
+
+/**
  * Bridge object the JS shim instantiates once at page load. Holds a
  * `World` + a `MenuRuntime` for the headless path, and an optional
  * `SceneHost` once `load_disc` has been called.
@@ -987,6 +1259,10 @@ function __wbg_get_imports() {
         __wbg_copyToChannel_be740358a55f7ec4: function() { return handleError(function (arg0, arg1, arg2, arg3) {
             arg0.copyToChannel(getArrayF32FromWasm0(arg1, arg2), arg3);
         }, arguments); },
+        __wbg_createGain_33464d2fccb13fb8: function() { return handleError(function (arg0) {
+            const ret = arg0.createGain();
+            return ret;
+        }, arguments); },
         __wbg_createScriptProcessor_6af6560e010dc72e: function() { return handleError(function (arg0, arg1, arg2, arg3) {
             const ret = arg0.createScriptProcessor(arg1 >>> 0, arg2 >>> 0, arg3 >>> 0);
             return ret;
@@ -1019,6 +1295,10 @@ function __wbg_get_imports() {
         __wbg_fillText_9fbea3af94326c74: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
             arg0.fillText(getStringFromWasm0(arg1, arg2), arg3, arg4);
         }, arguments); },
+        __wbg_gain_c994bc21cdd2e1b9: function(arg0) {
+            const ret = arg0.gain;
+            return ret;
+        },
         __wbg_getContext_f17252002286474d: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.getContext(getStringFromWasm0(arg1, arg2));
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
@@ -1083,6 +1363,14 @@ function __wbg_get_imports() {
         __wbg_putImageData_3c24c64a03f8b92f: function() { return handleError(function (arg0, arg1, arg2, arg3) {
             arg0.putImageData(arg1, arg2, arg3);
         }, arguments); },
+        __wbg_resolve_9feb5d906ca62419: function(arg0) {
+            const ret = Promise.resolve(arg0);
+            return ret;
+        },
+        __wbg_resume_60c7fdf589dd7208: function() { return handleError(function (arg0) {
+            const ret = arg0.resume();
+            return ret;
+        }, arguments); },
         __wbg_sampleRate_b7f221c5b3d93248: function(arg0) {
             const ret = arg0.sampleRate;
             return ret;
@@ -1098,6 +1386,9 @@ function __wbg_get_imports() {
         },
         __wbg_set_onaudioprocess_60182ff0cf43770e: function(arg0, arg1) {
             arg0.onaudioprocess = arg1;
+        },
+        __wbg_set_value_78631e9dc5b69626: function(arg0, arg1) {
+            arg0.value = arg1;
         },
         __wbg_set_width_d2ec5d6689655fa9: function(arg0, arg1) {
             arg0.width = arg1 >>> 0;
@@ -1126,8 +1417,8 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 455, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 476, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
@@ -1152,10 +1443,13 @@ function __wbg_get_imports() {
 }
 
 const lAudioContext = (typeof AudioContext !== 'undefined' ? AudioContext : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : undefined));
-function wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df(arg0, arg1, arg2) {
-    wasm.wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df(arg0, arg1, arg2);
+function wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67(arg0, arg1, arg2) {
+    wasm.wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67(arg0, arg1, arg2);
 }
 
+const LegaiaAudioFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_legaiaaudio_free(ptr, 1));
 const LegaiaRuntimeFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_legaiaruntime_free(ptr, 1));
@@ -1243,6 +1537,11 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
+function getArrayI16FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getInt16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
+}
+
 function getArrayI32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
@@ -1282,6 +1581,14 @@ function getFloat32ArrayMemory0() {
         cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
     }
     return cachedFloat32ArrayMemory0;
+}
+
+let cachedInt16ArrayMemory0 = null;
+function getInt16ArrayMemory0() {
+    if (cachedInt16ArrayMemory0 === null || cachedInt16ArrayMemory0.byteLength === 0) {
+        cachedInt16ArrayMemory0 = new Int16Array(wasm.memory.buffer);
+    }
+    return cachedInt16ArrayMemory0;
 }
 
 let cachedInt32ArrayMemory0 = null;
@@ -1455,6 +1762,7 @@ function __wbg_finalize_init(instance, module) {
     wasmModule = module;
     cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
+    cachedInt16ArrayMemory0 = null;
     cachedInt32ArrayMemory0 = null;
     cachedUint16ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;

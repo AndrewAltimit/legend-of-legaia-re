@@ -2,6 +2,130 @@
 /* eslint-disable */
 
 /**
+ * In-browser audio extraction surface. Owns the loaded Mode2/2352 disc plus
+ * its extracted PROT.DAT bytes; exposes JSON enumerators for the three
+ * audio families (VAB / BGM / XA) and PCM-returning decoders for each.
+ *
+ * BGM playback uses [`legaia_engine_audio::WebAudioOut`] under the hood -
+ * constructed lazily on the first `start_bgm` call so the autoplay policy
+ * is satisfied (must happen inside a user-gesture handler on the JS side).
+ */
+export class LegaiaAudio {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Sample rate of the browser's BGM `AudioContext`, or 0 when the BGM
+     * output hasn't been opened yet. Surfaced to the JS console for
+     * diagnostics when playback speed is off.
+     */
+    bgm_device_rate(): number;
+    /**
+     * Sample rate produced by [`Self::render_bgm_pcm_i16`] (the SPU's
+     * internal 44.1 kHz). Surfaced so the JS side can build a correct
+     * WAV header for `decodeAudioData`.
+     */
+    bgm_render_rate(): number;
+    /**
+     * Decode one VAG sample to mono i16 PCM at `vab_sample_rate()`.
+     * Empty when the sample doesn't exist or has zero length.
+     */
+    decode_vab_sample_i16(prot_index: number, vab_offset: number, sample_idx: number): Int16Array;
+    /**
+     * Decode XA stream and return the i16 PCM for the channel at `stream_idx`
+     * (index into the `xa_metadata_json` array). Empty when out of range.
+     */
+    decode_xa_stream_i16(lba: number, size: number, stream_idx: number): Int16Array;
+    /**
+     * JSON list of every BGM pair (`pBAV` + `pQES` in the same PROT entry).
+     * Shape: `[{ prot_index, vab_offset, seq_offset, program_count, sample_count, ppqn, bpm }, ...]`.
+     */
+    enumerate_bgm_pairs_json(): string;
+    /**
+     * JSON list of every VAB sound bank in the loaded disc.
+     * Shape: `[{ prot_index, vab_offset, version, program_count, sample_count, has_seq }, ...]`.
+     */
+    enumerate_vabs_json(): string;
+    /**
+     * JSON list of every `*.STR` / `*.XA` file on the disc, with its raw LBA
+     * and byte size. Shape: `[{ path, lba, size }, ...]`.
+     */
+    enumerate_xa_files_json(): string;
+    /**
+     * Load a full Mode2/2352 disc image. Extracts `PROT.DAT` via the same
+     * in-memory ISO walker the viewer uses, parses the TOC, and stashes
+     * both slices for later VAB / BGM / XA queries. Returns the PROT entry
+     * count for the JS UI.
+     */
+    load_disc(bytes: Uint8Array): number;
+    constructor();
+    /**
+     * Render `duration_seconds` worth of interleaved stereo i16 PCM at
+     * the SPU's 44.1 kHz rate for the BGM pair at (`prot_index`,
+     * `vab_offset`, `seq_offset`). Used by the audio page to pre-render
+     * a chunk and play it through `AudioBufferSourceNode` (sample-
+     * accurate timing) instead of through `ScriptProcessorNode` (callback-
+     * paced, drifts on some browsers).
+     */
+    render_bgm_pcm_i16(prot_index: number, vab_offset: number, seq_offset: number, duration_seconds: number): Int16Array;
+    /**
+     * Resume the BGM AudioContext. Browsers often construct the
+     * `AudioContext` in `suspended` state even when the constructor
+     * runs inside a user-gesture handler; the JS side calls this
+     * immediately after `start_bgm` to make the audio actually audible.
+     */
+    resume_bgm(): Promise<any>;
+    /**
+     * Set the BGM playback gain. Retail SEQ + clean-room SPU output sits
+     * around 1% of the i16 range, so the audio page defaults to ~25x to
+     * bring playback to a comfortable level. `1.0` matches the native
+     * engine-shell cpal path.
+     */
+    set_bgm_gain(gain: number): void;
+    /**
+     * Pause / resume the active BGM sequencer. Notes that are already
+     * sounding decay through their ADSR envelopes; the sequencer clock
+     * freezes.
+     */
+    set_bgm_paused(paused: boolean): void;
+    /**
+     * Start BGM playback for the given (`prot_index`, `vab_offset`,
+     * `seq_offset`) tuple. Constructs the WebAudio output on the first call
+     * (must be invoked from a user-gesture handler), parses VAB + SEQ,
+     * uploads the bank to the embedded clean-room SPU, and attaches the
+     * sequencer.
+     */
+    start_bgm(prot_index: number, vab_offset: number, seq_offset: number): void;
+    /**
+     * Stop the currently-playing BGM. Safe to call even when nothing is
+     * playing (no-op).
+     */
+    stop_bgm(): void;
+    /**
+     * JSON metadata for every VAG sample inside one VAB bank.
+     * Shape: `[{ size_bytes, decoded_samples, duration_ms }, ...]`.
+     * `decoded_samples` is the actual PCM length after walking the ADPCM
+     * blocks (which stop at the first loop-end / garbage block), so it
+     * reflects the audible length, not the raw on-disc body size. Useful
+     * for the UI to dim out tiny/zero-length samples that would be
+     * inaudible.
+     */
+    vab_sample_list_json(prot_index: number, vab_offset: number): string;
+    /**
+     * Sample rate the JS side should use when playing a VAG-decoded buffer.
+     */
+    vab_sample_rate(): number;
+    /**
+     * Demux + decode an XA stream. Returns the decoded PCM of the first
+     * audio channel (file_no=0, ch_no=0 typically) along with metadata
+     * packed as JSON in the first method, then the PCM via this one.
+     *
+     * Two-step API so the JS side can show metadata (channels, sample rate)
+     * before paying the decode cost.
+     */
+    xa_metadata_json(lba: number, size: number): string;
+}
+
+/**
  * Bridge object the JS shim instantiates once at page load. Holds a
  * `World` + a `MenuRuntime` for the headless path, and an optional
  * `SceneHost` once `load_disc` has been called.
@@ -435,8 +559,27 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_legaiaaudio_free: (a: number, b: number) => void;
     readonly __wbg_legaiaruntime_free: (a: number, b: number) => void;
     readonly __wbg_legaiaviewer_free: (a: number, b: number) => void;
+    readonly legaiaaudio_bgm_device_rate: (a: number) => number;
+    readonly legaiaaudio_bgm_render_rate: (a: number) => number;
+    readonly legaiaaudio_decode_vab_sample_i16: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaaudio_decode_xa_stream_i16: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaaudio_enumerate_bgm_pairs_json: (a: number) => [number, number];
+    readonly legaiaaudio_enumerate_vabs_json: (a: number) => [number, number];
+    readonly legaiaaudio_enumerate_xa_files_json: (a: number) => [number, number];
+    readonly legaiaaudio_load_disc: (a: number, b: number, c: number) => [number, number, number];
+    readonly legaiaaudio_new: () => number;
+    readonly legaiaaudio_render_bgm_pcm_i16: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly legaiaaudio_resume_bgm: (a: number) => any;
+    readonly legaiaaudio_set_bgm_gain: (a: number, b: number) => void;
+    readonly legaiaaudio_set_bgm_paused: (a: number, b: number) => void;
+    readonly legaiaaudio_start_bgm: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly legaiaaudio_stop_bgm: (a: number) => void;
+    readonly legaiaaudio_vab_sample_list_json: (a: number, b: number, c: number) => [number, number];
+    readonly legaiaaudio_vab_sample_rate: (a: number) => number;
+    readonly legaiaaudio_xa_metadata_json: (a: number, b: number, c: number) => [number, number];
     readonly legaiaruntime_active_actor_count: (a: number) => number;
     readonly legaiaruntime_audio_init: (a: number) => number;
     readonly legaiaruntime_disc_loaded: (a: number) => number;
@@ -502,7 +645,7 @@ export interface InitOutput {
     readonly legaiaviewer_slot4_wireframe_points: (a: number, b: number, c: number, d: number) => [number, number];
     readonly legaiaviewer_status: (a: number) => [number, number];
     readonly legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-    readonly wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

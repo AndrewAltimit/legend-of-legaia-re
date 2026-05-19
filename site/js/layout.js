@@ -24,6 +24,7 @@ const NAV = [
     label: 'explore',
     items: [
       { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
+      { href: 'audio.html',                     text: 'Audio browser',            key: 'audio' },
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },

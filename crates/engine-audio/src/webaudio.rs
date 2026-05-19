@@ -15,6 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::closure::Closure;
 use web_sys::AudioProcessingEvent;
 
@@ -28,11 +29,16 @@ use crate::{Sequencer, StreamResampler};
 /// sequencer are advanced by the same [`StreamResampler`] that the native
 /// cpal path uses, so playback quality is identical on both targets.
 pub struct WebAudioOut {
-    _ctx: web_sys::AudioContext,
+    ctx: web_sys::AudioContext,
     /// Must be kept alive for the duration of the stream - dropping this
     /// de-registers the `onaudioprocess` callback and silences the node.
     _onaudioprocess: Closure<dyn FnMut(AudioProcessingEvent)>,
     state: Rc<RefCell<StreamResampler>>,
+    /// User-controllable gain stage between the `ScriptProcessorNode` and
+    /// the destination. Retail SEQs + clean-room SPU produce SPU samples at
+    /// roughly 1% of the i16 range, which is barely audible at normal
+    /// speaker volume - the JS host bumps this gain to compensate.
+    gain: web_sys::GainNode,
 }
 
 impl WebAudioOut {
@@ -75,16 +81,51 @@ impl WebAudioOut {
             });
 
         node.set_onaudioprocess(Some(closure.as_ref().unchecked_ref()));
-        // Connect to speakers. AudioDestinationNode derefs to AudioNode so
-        // the coercion works without an explicit cast.
-        node.connect_with_audio_node(&ctx.destination())
-            .map_err(|e| anyhow::anyhow!("AudioNode::connect: {:?}", e))?;
+
+        // Insert a `GainNode` between the script processor and the
+        // destination so the JS side can scale SPU output without
+        // re-mixing in WASM. Default gain matches the engine-shell
+        // cpal path (1.0); the site/audio.html page exposes a slider.
+        let gain = ctx
+            .create_gain()
+            .map_err(|e| anyhow::anyhow!("createGain: {:?}", e))?;
+        gain.gain().set_value(1.0);
+        node.connect_with_audio_node(&gain)
+            .map_err(|e| anyhow::anyhow!("AudioNode::connect(script -> gain): {:?}", e))?;
+        gain.connect_with_audio_node(&ctx.destination())
+            .map_err(|e| anyhow::anyhow!("AudioNode::connect(gain -> destination): {:?}", e))?;
 
         Ok(Self {
-            _ctx: ctx,
+            ctx,
             _onaudioprocess: closure,
             state,
+            gain,
         })
+    }
+
+    /// Set the post-mixer gain. `1.0` matches the native cpal path; the
+    /// audio page bumps this to ~25.0 because retail SEQ+SPU output sits
+    /// around 1% of the i16 range, which is inaudible at speaker level.
+    pub fn set_gain(&self, gain: f32) {
+        self.gain.gain().set_value(gain);
+    }
+
+    /// Sample rate of the underlying browser `AudioContext`. The
+    /// `StreamResampler` resamples SPU output from 44.1 kHz to this rate.
+    pub fn device_rate(&self) -> u32 {
+        self.ctx.sample_rate() as u32
+    }
+
+    /// Nudge the browser's `AudioContext` into `running` state. Browsers
+    /// typically construct AudioContexts in `suspended` state - even when
+    /// the constructor runs inside a user-gesture handler - and require a
+    /// `.resume()` call to actually produce sound. Returns the underlying
+    /// promise so callers can `await` the transition if they want to
+    /// sequence "audio is now audible" UI updates against it.
+    pub fn resume(&self) -> js_sys::Promise {
+        self.ctx
+            .resume()
+            .unwrap_or_else(|_| js_sys::Promise::resolve(&JsValue::UNDEFINED))
     }
 
     /// Run a closure with mutable access to the underlying SPU model.

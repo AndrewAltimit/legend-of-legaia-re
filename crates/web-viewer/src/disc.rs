@@ -121,6 +121,78 @@ pub fn is_mode2_2352_disc(disc: &[u8]) -> bool {
     }
 }
 
+/// One file enumerated from the on-disc ISO9660 filesystem.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileEntry {
+    /// Path relative to the ISO root (e.g. `MV1.STR`, `MOV/MV3.STR`).
+    pub path: String,
+    /// Start LBA on the raw disc (Mode2/2352 sector index).
+    pub lba: u32,
+    /// File size in bytes as declared by the directory record.
+    pub size: u32,
+}
+
+fn walk_directory_recursive(
+    disc: &[u8],
+    dir: &IsoRecord,
+    prefix: &str,
+    out: &mut Vec<FileEntry>,
+    depth: u32,
+) {
+    if depth > 8 {
+        return;
+    }
+    let Some(children) = list_directory(disc, dir) else {
+        return;
+    };
+    for c in children {
+        let full = if prefix.is_empty() {
+            c.name.clone()
+        } else {
+            format!("{prefix}/{}", c.name)
+        };
+        if c.is_dir {
+            walk_directory_recursive(disc, &c, &full, out, depth + 1);
+        } else {
+            out.push(FileEntry {
+                path: full,
+                lba: c.lba,
+                size: c.size,
+            });
+        }
+    }
+}
+
+/// Walk every directory on a Mode2/2352 disc and return a flat list of files
+/// with their (path, lba, size). Returns an empty vec when the disc isn't a
+/// valid Mode2/2352 image.
+pub fn walk_iso_files(disc: &[u8]) -> Vec<FileEntry> {
+    let mut out = Vec::new();
+    if !is_mode2_2352_disc(disc) {
+        return out;
+    }
+    let Some(pvd) = read_sector(disc, 16) else {
+        return out;
+    };
+    let Some(root) = parse_iso_record(&pvd[156..156 + 34]) else {
+        return out;
+    };
+    if !root.is_dir {
+        return out;
+    }
+    walk_directory_recursive(disc, &root, "", &mut out, 0);
+    out
+}
+
+/// Read the raw 2352-byte sector at `lba` (sync + header + subheader + user
+/// data + EDC). Used by the XA demuxer, which needs the subheader bytes.
+/// Returns `None` if the sector index is past the disc end.
+pub fn read_raw_sector(disc: &[u8], lba: u32) -> Option<&[u8]> {
+    let start = lba as usize * RAW_SECTOR_SIZE;
+    let end = start + RAW_SECTOR_SIZE;
+    (end <= disc.len()).then(|| &disc[start..end])
+}
+
 /// Walk a Mode2/2352 disc image, find a named file in the root directory,
 /// and return its bytes (sector-stripped, file-size-truncated).
 fn extract_root_file(disc: &[u8], name: &str) -> Option<Vec<u8>> {

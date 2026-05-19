@@ -1,8 +1,27 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_legaiaaudio_free: (a: number, b: number) => void;
 export const __wbg_legaiaruntime_free: (a: number, b: number) => void;
 export const __wbg_legaiaviewer_free: (a: number, b: number) => void;
+export const legaiaaudio_bgm_device_rate: (a: number) => number;
+export const legaiaaudio_bgm_render_rate: (a: number) => number;
+export const legaiaaudio_decode_vab_sample_i16: (a: number, b: number, c: number, d: number) => [number, number];
+export const legaiaaudio_decode_xa_stream_i16: (a: number, b: number, c: number, d: number) => [number, number];
+export const legaiaaudio_enumerate_bgm_pairs_json: (a: number) => [number, number];
+export const legaiaaudio_enumerate_vabs_json: (a: number) => [number, number];
+export const legaiaaudio_enumerate_xa_files_json: (a: number) => [number, number];
+export const legaiaaudio_load_disc: (a: number, b: number, c: number) => [number, number, number];
+export const legaiaaudio_new: () => number;
+export const legaiaaudio_render_bgm_pcm_i16: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+export const legaiaaudio_resume_bgm: (a: number) => any;
+export const legaiaaudio_set_bgm_gain: (a: number, b: number) => void;
+export const legaiaaudio_set_bgm_paused: (a: number, b: number) => void;
+export const legaiaaudio_start_bgm: (a: number, b: number, c: number, d: number) => [number, number];
+export const legaiaaudio_stop_bgm: (a: number) => void;
+export const legaiaaudio_vab_sample_list_json: (a: number, b: number, c: number) => [number, number];
+export const legaiaaudio_vab_sample_rate: (a: number) => number;
+export const legaiaaudio_xa_metadata_json: (a: number, b: number, c: number) => [number, number];
 export const legaiaruntime_active_actor_count: (a: number) => number;
 export const legaiaruntime_audio_init: (a: number) => number;
 export const legaiaruntime_disc_loaded: (a: number) => number;
@@ -68,7 +87,7 @@ export const legaiaviewer_slot4_wireframe_lines: (a: number, b: number, c: numbe
 export const legaiaviewer_slot4_wireframe_points: (a: number, b: number, c: number, d: number) => [number, number];
 export const legaiaviewer_status: (a: number) => [number, number];
 export const legaiaviewer_worldmap_menu_json: (a: number) => [number, number];
-export const wasm_bindgen__convert__closures_____invoke__h90bbf554010c78df: (a: number, b: number, c: any) => void;
+export const wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67: (a: number, b: number, c: any) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_exn_store: (a: number) => void;

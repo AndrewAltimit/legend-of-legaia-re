@@ -48,6 +48,31 @@ pub const DEFAULT_INPUT_RATE: u32 = 22_050;
 /// Microseconds elapsed per SPU internal sample period (1/44100 s).
 const US_PER_SPU_TICK: f64 = 1_000_000.0 / SPU_INTERNAL_RATE as f64;
 
+/// Render `duration_samples` interleaved stereo frames of BGM at the SPU's
+/// internal 44.1 kHz rate by driving `sequencer` + `spu` step-by-step.
+/// The sequencer is advanced by exactly `US_PER_SPU_TICK` microseconds per
+/// SPU sample, so output timing is locked to the SPU clock - no callback
+/// pacing dependency. Returns interleaved i16 PCM (`[l0, r0, l1, r1, ...]`).
+///
+/// Used by the WASM site to pre-render BGM chunks and play them through
+/// `AudioBufferSourceNode` instead of the deprecated `ScriptProcessorNode`,
+/// which fires its callback at variable wall-clock rates on some browsers
+/// and would otherwise let BGM drift faster or slower than retail.
+pub fn render_bgm_to_pcm(
+    sequencer: &mut Sequencer,
+    spu: &mut Spu,
+    duration_samples: usize,
+) -> Vec<i16> {
+    let mut out = Vec::with_capacity(duration_samples * 2);
+    for _ in 0..duration_samples {
+        sequencer.tick_us(spu, US_PER_SPU_TICK);
+        let (l, r) = spu.tick();
+        out.push(l);
+        out.push(r);
+    }
+    out
+}
+
 /// Decoded XA-ADPCM stream parked in the audio output for direct cpal-side
 /// mixing. Bypasses the SPU voice mixer (mirrors retail PSX hardware: XA
 /// audio is summed with the SPU output by the SPU's CD-input path, not by
