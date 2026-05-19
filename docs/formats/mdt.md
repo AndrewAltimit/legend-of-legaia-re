@@ -32,6 +32,12 @@ The CDNAME-named `0972` / `0973` `move_program_no.BIN` files are flat 128-byte s
 
 `crates/mdt` parses both layouts and surfaces a verdict (`OffsetTableLayout` / `FlatRecordTable` / `Unknown`).
 
+### Caveat: `MoveBuffer::parse` over-reads past the real table boundary
+
+Real per-scene Move buffers have offset tables shorter than the consumer-facing 1024-entry mask (most use 8-30 ids) and pack record data densely past the real table end. `MoveBuffer::parse` keeps reading u32s past the real boundary, where record bytes masquerade as offsets. Most of those over-read entries point past the buffer end and get counted as `bogus_offsets`, so the strict `MoveBuffer::fitness()` score (`used - 2*bogus`) is strongly negative for valid retail data (e.g. `0086_map01.BIN`: used=1020 bogus=973 → fitness=-926). Use `MoveBuffer::looks_like_move_buffer()` instead: it requires `records.len() > 0 && used > bogus`, which 75/79 retail per-scene Move buffers pass while random / non-Move data still fails.
+
+`classify()`'s `OffsetTableLayout` verdict also routes through `looks_like_move_buffer`, so the CLI reports the same shape the engine accepts.
+
 ## On-disc source - per-scene `scene_asset_table` slot 4
 
 The MOVE base pointer (`_DAT_8007B888`) is **populated per scene** during area transitions, not from a single boot-time PROT entry. Every per-scene CDNAME block's second PROT entry (the slot-1 entry classified as `scene_asset_table`) carries an `Asset(0x05) = Move` descriptor - that descriptor's payload is the runtime MOVE table for that scene.
@@ -52,7 +58,7 @@ Examples (verified by mednafen save-state diff against `_DAT_8007B888`):
 | `suimon` (77) | `0078_suimon.BIN` | `0x09A0` (2464) | Loaded as `MOVE` at `0x801355D0` (Suimon-block saves). |
 | `map01` (85) | `0086_map01.BIN` | `0x7E30` (32304) | Loaded as `MOVE` at `0x8011A624` (every `map01`-resident save, including the menu and battle states layered on top of `map01`). |
 
-The `meta1` u32 in the scene_asset_table header is the per-scene meta value the loader carries forward; the `data_offset` for descriptor[4] (and the other six) references positions inside a runtime-allocated decompression buffer rather than a file-relative byte offset, so the on-disc payload is decoded into a working buffer before the per-asset slicing runs.
+The `meta1` u32 in the scene_asset_table header is the per-scene meta value the loader carries forward. Each descriptor (including `desc[4]` = Move) is its own independently LZS-compressed stream at `data_offset` bytes into the bundle entry's **extended on-disc footprint** (`Archive::read_entry`), decompressing to exactly `size` bytes. Several scenes have Move descriptor offsets that fall past the TOC-indexed end and into trailing-overlay sectors - readers must use the extended footprint (or `ProtIndex::entry_bytes_extended`) rather than `Archive::read_entry_indexed`. See [`engine-core::scene_bundle::extract_move_payload`](../subsystems/engine.md) for the canonical pattern.
 
 `scene_asset_table::move_descriptor` exposes the slot lookup as a typed accessor:
 
