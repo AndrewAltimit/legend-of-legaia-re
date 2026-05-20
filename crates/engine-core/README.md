@@ -45,7 +45,16 @@ struct. `World::tick` runs:
    via `set_move_bytecode`.
 3. Mode-specific top-level VM:
    - `SceneMode::Battle` → battle-action state machine step.
-   - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step.
+   - `SceneMode::Field` / `SceneMode::Cutscene` → field-VM step. In
+     `Field` this is followed by `step_field_locomotion` - the free-movement
+     player controller (port of `FUN_801d01b0`): the held d-pad becomes a
+     camera-relative direction (remapped by `field_camera_azimuth`), the
+     player actor advances in 2-unit steps with per-axis collision against
+     the per-scene `field_collision_grid`, and facing is updated. The grid
+     (one byte per 128-unit tile, high nibble = 4 sub-cell wall bits) is
+     zeroed at field entry and painted by the field-VM `0x4C` outer-nibble-7
+     op as the prescript runs. See
+     [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
    - `SceneMode::Title` → no further VM.
 
 Engines that want a different storage layout (ECS, custom parallelism)

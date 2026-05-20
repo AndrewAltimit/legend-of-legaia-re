@@ -219,6 +219,28 @@ mod tests {
     }
 
     #[test]
+    fn follow_mode_tracks_player_after_locomotion() {
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        w.install_field_player(0);
+        w.actors[0].move_state.world_x = 100;
+        w.actors[0].move_state.world_z = 100;
+        let mut c = Camera {
+            follow_slot: 0,
+            ..Default::default()
+        };
+        // Walk +Z one frame (speed 8) then advance the camera.
+        w.set_pad(crate::input::PadButton::Up.mask());
+        let _ = w.tick();
+        c.tick(&w);
+        assert_eq!(w.actors[0].move_state.world_z, 108);
+        // Camera look-at Z tracks the moved player.
+        assert_eq!(c.look_at[2], 108.0);
+    }
+
+    #[test]
     fn follow_mode_yaw_offsets_eye() {
         let w = world_with_actor_at(0, 0, 0);
         let mut c = Camera {

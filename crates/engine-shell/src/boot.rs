@@ -143,6 +143,12 @@ impl BootSession {
     /// events, advance the camera follow, return the [`SceneTickEvent`] for
     /// engines that want to react to scene transitions.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // Feed the previous frame's camera azimuth into the world so the
+        // field free-movement controller remaps the d-pad camera-relative
+        // ("screen up" walks away from the camera). The follow camera's
+        // default yaw is 0, which maps straight to world +Z.
+        let azimuth = (self.camera.yaw / std::f32::consts::TAU * 4096.0).rem_euclid(4096.0);
+        self.host.world.field_camera_azimuth = azimuth as u16;
         let event = self.host.tick()?;
         self.camera.route_camera_events(&mut self.host.world);
         if let Some(bgm) = self.bgm.as_mut() {

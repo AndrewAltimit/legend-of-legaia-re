@@ -1014,6 +1014,11 @@ impl SceneHost {
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
+        // Configure the party leader (slot 0) as the free-movement player
+        // and clear the per-scene collision grid - the prescript repaints
+        // the wall bits via the field-VM `0x4C` nibble-7 op as it runs.
+        // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
+        self.world.install_field_player(0);
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
         // a handful of scenes carry VDF data (8/124 in the retail
