@@ -39,14 +39,18 @@ The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** o
 |---|---|---|---|
 | `+0x0C` | `+0x14C/+0x14E` (+`+0x172`) | HP | direct |
 | `+0x10` | `+0x150/+0x152` (+`+0x174`) | MP | direct |
-| `+0x0E` | `+0x154/+0x156` | `stat0` (role open) | outside the buffable block; feeds a spirit/damage-popup path |
+| `+0x0E` | `+0x154/+0x156` | **SP** | spirit/action gauge - AI spell-selection budget; spirit-charge source |
 | `+0x12` | `+0x158/+0x15A` | **ATK** | attacker's offense in the damage routine |
 | `+0x14` | `+0x15C/+0x15E` | **DEF↑** (high/upper) | defender defense, branch A |
 | `+0x16` | `+0x160/+0x162` | **DEF↓** (low/lower) | defender defense, branch B |
 | `+0x18` | `+0x168/+0x16A` | **AGL** | accuracy/evasion seed (selector 9) |
-| `+0x1A` | `+0x164/+0x166` | `stat5` (role open) | buffable; accumulated in `FUN_80051D84` |
+| `+0x1A` | `+0x164/+0x166` | **SPD** | turn-order initiative seed |
 
 `stat4` (`+0x18`) is also rescaled into the accuracy/evasion pair at copy time (`+0x168/+0x16A = stat4 + stat4/4` or `+ stat4/8` under the `_DAT_8007BD24+0x287` difficulty flag).
+
+**SPD** (`+0x164`): `overlay_0897_801e23ec` seeds each actor's per-turn initiative key from it: `+0x16C = speed + (rand() % (speed/2 + 1)) + 1`. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from AGL, which governs the hit/dodge roll rather than turn order.
+
+**SP** (`+0x154` current / `+0x156` base): a per-round spirit/action gauge. The enemy-AI spell picker (`overlay_0898_801e9fd4`) spends it - it deducts each candidate spell's cost byte (`spell_entry +0x74`) from `+0x154` and only queues spells it can still afford. Each round `FUN_801D88CC` resets `+0x154` to its base (`+0x156`), or, when the actor is spirit-charged (`+0x1DE == 4`), sets it to `(base*7/5)+8` capped at `0x120` (the same shape as the [spirit-damage formula](#spirit-damage-formula)). The damage popup (`_DAT_80076D7E`) reads `+0x154`. This corroborates the HP/MP/SP-triplet reading of `+0x14C..+0x156` in [battle.md](battle.md).
 
 ### Physical attack damage - `overlay_battle_action_801ec3e4`
 
@@ -181,6 +185,5 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
 ## What's still open
 
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
-- **`stat0` (record `+0x0E`, actor `+0x154`) and `stat5` (record `+0x1A`, actor `+0x164`) roles.** ATK / DEF↑ / DEF↓ / AGL are now pinned from the damage + accuracy formulas (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)). The two remaining stats are not yet named: `stat0` sits outside the buffable block and is read into the spirit/damage-popup path (`overlay_battle_action_801d388c`); `stat5` is buffable and accumulated in `FUN_80051D84`. Candidates are turn-order speed and a luck/critical term; a buff-spell save-state diff plus a wiki cross-check of decoded values would disambiguate.
-- **`+0x04` XP / drop sub-record interior.** The record's `xp_offset` word points at a sub-record (staged to actor `+0x230`) carrying EXP / gold / drop-item; its field layout isn't decoded, so `monster_def_from_record` defaults `exp` / `gold` / `drop_item`.
+- **`+0x04` XP / drop sub-record interior.** The record's `xp_offset` word points at a sub-record (staged to actor `+0x230`) carrying EXP / gold / drop-item; its field layout isn't decoded, so `monster_def_from_record` defaults `exp` / `gold` / `drop_item`. This is the last un-decoded piece of the monster record - all six stat halfwords are now named (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)).
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.

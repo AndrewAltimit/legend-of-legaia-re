@@ -119,8 +119,10 @@ impl MonsterCatalog {
 /// - `accuracy` / `evasion` <- `rec.agility()` (`stats[4]`) clamped to a byte
 ///   — the actor seeds both the accuracy and evasion roll from this stat.
 ///
-/// `exp` / `gold` / `drop_item` still default until the `+0x04` XP/drop
-/// sub-record interior is decoded; `stats[0]` / `stats[5]` roles are open.
+/// `stats[0]` (SP / spirit-action gauge) and `stats[5]` (SPD / turn-order
+/// speed) are now identified but have no `MonsterDef` field yet, so they're
+/// not consumed here. `exp` / `gold` / `drop_item` still default until the
+/// `+0x04` XP/drop sub-record interior is decoded.
 pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
     let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.attack());
     def.mp = rec.mp;

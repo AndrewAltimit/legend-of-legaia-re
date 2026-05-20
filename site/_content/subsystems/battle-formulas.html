@@ -23,15 +23,15 @@
     <tbody>
       <tr><td><code>+0x0C</code></td><td><code>+0x14C/+0x14E</code></td><td>HP</td><td>direct</td></tr>
       <tr><td><code>+0x10</code></td><td><code>+0x150/+0x152</code></td><td>MP</td><td>direct</td></tr>
-      <tr><td><code>+0x0E</code></td><td><code>+0x154/+0x156</code></td><td><code>stat0</code> (open)</td><td>outside the buffable block</td></tr>
+      <tr><td><code>+0x0E</code></td><td><code>+0x154/+0x156</code></td><td><strong>SP</strong></td><td>spirit/action gauge - AI spell-selection budget; spirit-charge source</td></tr>
       <tr><td><code>+0x12</code></td><td><code>+0x158/+0x15A</code></td><td><strong>ATK</strong></td><td>attacker's offense in the damage routine</td></tr>
       <tr><td><code>+0x14</code></td><td><code>+0x15C/+0x15E</code></td><td><strong>DEF&uarr;</strong></td><td>defender defense, branch A</td></tr>
       <tr><td><code>+0x16</code></td><td><code>+0x160/+0x162</code></td><td><strong>DEF&darr;</strong></td><td>defender defense, branch B</td></tr>
       <tr><td><code>+0x18</code></td><td><code>+0x168/+0x16A</code></td><td><strong>AGL</strong></td><td>accuracy/evasion seed (selector 9)</td></tr>
-      <tr><td><code>+0x1A</code></td><td><code>+0x164/+0x166</code></td><td><code>stat5</code> (open)</td><td>buffable; accumulated in <code>FUN_80051D84</code></td></tr>
+      <tr><td><code>+0x1A</code></td><td><code>+0x164/+0x166</code></td><td><strong>SPD</strong></td><td>turn-order initiative seed (<code>+0x16C = SPD + rand</code>); "Speed Up" buff</td></tr>
     </tbody>
   </table>
-  <p>Physical damage (<code>overlay_battle_action_801ec3e4</code>) reads the attacker's ATK (<code>+0x158</code>) and the target's defense - <code>+0x15C</code> (DEF&uarr;) when the attack move index satisfies <code>(move - 0xC) % 10 &lt; 5</code>, else <code>+0x160</code> (DEF&darr;). The single &ldquo;Defense Up&rdquo; buff raising both <code>+0x15C</code> and <code>+0x160</code> together confirms they are two facets of one defense. The parser exposes these via <code>legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility}</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy.</p>
+  <p>Physical damage (<code>overlay_battle_action_801ec3e4</code>) reads the attacker's ATK (<code>+0x158</code>) and the target's defense - <code>+0x15C</code> (DEF&uarr;) when the attack move index satisfies <code>(move - 0xC) % 10 &lt; 5</code>, else <code>+0x160</code> (DEF&darr;). The single &ldquo;Defense Up&rdquo; buff raising both <code>+0x15C</code> and <code>+0x160</code> together confirms they are two facets of one defense. <strong>SPD</strong> (<code>+0x164</code>) seeds the per-turn initiative key <code>+0x16C = SPD + rand(0..SPD/2) + 1</code>; <strong>SP</strong> (<code>+0x154</code>) is the spirit/action gauge the enemy AI spends to pick spells (deducting each spell's <code>+0x74</code> cost) and re-derives from base each round. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy.</p>
 </section>
 
 <section class="doc-section" id="spirit-damage">
@@ -74,8 +74,7 @@ else
   <h2>What's still open</h2>
   <ul class="bullets">
     <li><strong>Selectors <code>0x10..=0x83</code>.</strong> Beyond the status / buff / damage cases, these handle stat-up animations, status-clear, queue-end markers, and multi-target item slots. Mostly read-only ramps that don't affect game balance.</li>
-    <li><strong><code>stat0</code> / <code>stat5</code> roles.</strong> ATK / DEF&uarr; / DEF&darr; / AGL are pinned (above); the two remaining record stats (<code>+0x0E</code>, <code>+0x1A</code>) aren't named yet - <code>stat0</code> feeds a spirit/damage-popup path, <code>stat5</code> is buffable and accumulated in <code>FUN_80051D84</code>. Candidates are turn-order speed and a luck/critical term.</li>
-    <li><strong><code>+0x04</code> XP / drop sub-record.</strong> The record's <code>xp_offset</code> word points at an EXP / gold / drop-item sub-record (staged to actor <code>+0x230</code>) whose interior isn't decoded.</li>
+    <li><strong><code>+0x04</code> XP / drop sub-record.</strong> The record's <code>xp_offset</code> word points at an EXP / gold / drop-item sub-record (staged to actor <code>+0x230</code>) whose interior isn't decoded - the last un-decoded piece of the monster record now that all six stat halfwords are named.</li>
     <li><strong>Ability-bit catalogue.</strong> The bitfield at <code>+0xF4</code> has the documented MP-half / MP-quarter / HP-cap / MP-cap bits plus the <code>0x10</code> / <code>0x20</code> impact-step modifiers. The full per-character map comes out of save-data inspection.</li>
   </ul>
 </section>

@@ -25,40 +25,49 @@
 //! +0x04  u32  xp_offset     ; -> XP / drop sub-record (actor +0x230)
 //! +0x08  u32  record_size   ; stat-record allocation footprint
 //! +0x0C  u16  hp            ; -> actor +0x14C/+0x14E/+0x172
-//! +0x0E  u16  stat0         ; -> actor +0x154/+0x156  (role open)
+//! +0x0E  u16  stat0=SP      ; -> actor +0x154/+0x156  (spirit/action gauge)
 //! +0x10  u16  mp            ; -> actor +0x150/+0x152/+0x174
 //! +0x12  u16  stat1=ATK     ; -> actor +0x158/+0x15A  (attacker offense)
 //! +0x14  u16  stat2=DEF_hi  ; -> actor +0x15C/+0x15E  (defender defense A)
 //! +0x16  u16  stat3=DEF_lo  ; -> actor +0x160/+0x162  (defender defense B)
 //! +0x18  u16  stat4=AGL     ; -> actor +0x168/+0x16A  (accuracy/evasion)
-//! +0x1A  u16  stat5         ; -> actor +0x164/+0x166  (role open)
+//! +0x1A  u16  stat5=SPD     ; -> actor +0x164/+0x166  (turn-order speed)
 //! +0x4A  u8   magic_count   ; spell-entry count
 //! +0x4C  u32[] spell_offsets ; element-resistance source (first byte = element)
 //! ```
 //!
-//! ## Stat-name mapping (traced from `FUN_80054CB0` + the damage formula)
+//! ## Stat-name mapping (traced from `FUN_80054CB0` + the formula consumers)
 //!
 //! `FUN_80054CB0` copies each record halfword into a **pair** of adjacent
-//! actor halfwords (a working/base pair, both seeded to the same value).
+//! actor halfwords (a working value at the lower offset + a base at `+2`).
 //! Naming follows the consumers of those actor slots:
 //!
-//! - `stat1` (`+0x12`) is read as the **attacker's offensive value** in the
+//! - `stat1` (`+0x12`) is the **attacker's offensive value** in the
 //!   physical-damage routine (`overlay_battle_action_801ec3e4`, actor `+0x158`)
 //!   -> **ATK**.
-//! - `stat2` / `stat3` (`+0x14` / `+0x16`) are read as the **defender's
-//!   defense**; the routine picks one or the other by the attack's move index
-//!   (`+0x15C` vs `+0x160`), and the "Defense Up" buff raises both together
-//!   -> the two-facet **defense pair** (`MonsterDef::udf` / `ldf`).
+//! - `stat2` / `stat3` (`+0x14` / `+0x16`) are the **defender's defense**;
+//!   the routine picks one or the other by the attack's move index (`+0x15C`
+//!   vs `+0x160`), and the "Defense Up" buff raises both together -> the
+//!   two-facet **defense pair** (`MonsterDef::udf` / `ldf`).
 //! - `stat4` (`+0x18`) seeds the **accuracy/evasion** roll (`FUN_800402F4`
 //!   selector 9, actor `+0x168`) -> **AGL**.
-//! - `stat0` (`+0x0E`) and `stat5` (`+0x1A`) roles are still open: `stat0`
-//!   sits outside the buffable block and feeds a spirit/damage-popup path;
-//!   `stat5` is buffable and accumulated in `FUN_80051D84`.
+//! - `stat5` (`+0x1A`) seeds the per-turn **initiative roll**
+//!   (`+0x16C = stat5 + rand(0..stat5/2) + 1` in `overlay_0897_801e23ec`),
+//!   has a dedicated "Speed Up" buff, and resets to base each round -> **SPD**
+//!   (turn-order speed).
+//! - `stat0` (`+0x0E`) is the actor's **SP / spirit-action gauge** (actor
+//!   `+0x154` current, `+0x156` base): the AI spends it picking spells
+//!   (`overlay_0898_801e9fd4` deducts each spell's `+0x74` cost), it
+//!   regenerates to base each round, and the spirit-charge value derives from
+//!   it via the `(base*7/5)+8` cap-288 shape (`overlay_battle_action_801d88cc`).
+//!   Corroborates the HP/MP/SP-triplet reading in `docs/subsystems/battle.md`.
 //!
-//! Use the [`MonsterRecord::attack`] / [`defense_high`](MonsterRecord::defense_high)
-//! / [`defense_low`](MonsterRecord::defense_low) / [`agility`](MonsterRecord::agility)
-//! accessors for the confirmed stats; [`stats`](MonsterRecord::stats) keeps all
-//! six in raw record order.
+//! Use the named accessors ([`attack`](MonsterRecord::attack) /
+//! [`defense_high`](MonsterRecord::defense_high) /
+//! [`defense_low`](MonsterRecord::defense_low) /
+//! [`agility`](MonsterRecord::agility) / [`speed`](MonsterRecord::speed) /
+//! [`spirit`](MonsterRecord::spirit)); [`stats`](MonsterRecord::stats) keeps
+//! all six in raw record order.
 
 use anyhow::{Result, bail};
 
@@ -82,9 +91,10 @@ pub struct MonsterRecord {
     /// Max MP.
     pub mp: u16,
     /// The six stat halfwords at record `+0x0E/+0x12/+0x14/+0x16/+0x18/+0x1A`,
-    /// in raw record order. `stats[1]` = ATK, `stats[2]`/`stats[3]` = the
-    /// defense pair, `stats[4]` = AGL (accuracy/evasion); `stats[0]`/`stats[5]`
-    /// roles are open. Prefer the named accessors below.
+    /// in raw record order: `stats[0]` = SP, `stats[1]` = ATK,
+    /// `stats[2]`/`stats[3]` = the defense pair (DEF↑/DEF↓), `stats[4]` = AGL
+    /// (accuracy/evasion), `stats[5]` = SPD (turn-order speed). Prefer the
+    /// named accessors below.
     pub stats: [u16; 6],
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
@@ -115,6 +125,19 @@ impl MonsterRecord {
     /// accuracy/evasion roll (`FUN_800402F4` selector 9).
     pub fn agility(&self) -> u16 {
         self.stats[4]
+    }
+
+    /// Turn-order speed (`stats[5]`, record `+0x1A`, actor `+0x164`). Seeds the
+    /// per-turn initiative roll `+0x16C = speed + rand(0..speed/2) + 1`.
+    pub fn speed(&self) -> u16 {
+        self.stats[5]
+    }
+
+    /// SP / spirit-action gauge (`stats[0]`, record `+0x0E`, actor `+0x154`
+    /// current / `+0x156` base). The AI spends it selecting spells; it
+    /// regenerates to base each round and seeds the spirit-charge value.
+    pub fn spirit(&self) -> u16 {
+        self.stats[0]
     }
 }
 

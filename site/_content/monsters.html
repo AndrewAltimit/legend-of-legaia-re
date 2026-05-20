@@ -65,8 +65,8 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
             <th data-key="s2" title="Defense (high/upper facet) — record +0x14, actor +0x15C">DEF↑</th>
             <th data-key="s3" title="Defense (low/lower facet) — record +0x16, actor +0x160">DEF↓</th>
             <th data-key="s4" title="Agility — seeds the accuracy/evasion roll (record +0x18, actor +0x168)">AGL</th>
-            <th data-key="s0" title="Record +0x0E — role still being reverse-engineered">S0</th>
-            <th data-key="s5" title="Record +0x1A — role still being reverse-engineered">S5</th>
+            <th data-key="s5" title="Speed — seeds the per-turn initiative roll (record +0x1A, actor +0x164)">SPD</th>
+            <th data-key="s0" title="SP / spirit-action gauge — AI spell-selection budget; seeds the spirit-charge value (record +0x0E, actor +0x154)">SP</th>
             <th data-key="magic" title="number of spells the enemy can cast">Magic</th>
           </tr>
         </thead>
@@ -75,7 +75,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
     </div>
   </div>
 
-  <p class="hint"><strong>ATK / DEF↑ / DEF↓ / AGL</strong> are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the damage / accuracy formulas read ATK as the attacker's offense, DEF↑/DEF↓ as the two defense facets (selected by attack move index), and AGL as the accuracy/evasion seed. The two greyed columns (<code>S0</code> = record +0x0E, <code>S5</code> = +0x1A) are still being reverse-engineered. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
+  <p class="hint">All six stats are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the formula consumers name them — <strong>ATK</strong> (attacker offense), <strong>DEF↑/DEF↓</strong> (the two defense facets, selected by attack move index), <strong>AGL</strong> (accuracy/evasion roll seed), <strong>SPD</strong> (turn-order initiative seed), and <strong>SP</strong> (the spirit/action gauge the AI spends selecting spells). Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
 </section>
 
 <section class="doc-section">
@@ -139,8 +139,8 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
         <td>${r.s2}</td>
         <td>${r.s3}</td>
         <td>${r.s4}</td>
-        <td class="dim">${r.s0}</td>
-        <td class="dim">${r.s5}</td>
+        <td>${r.s5}</td>
+        <td>${r.s0}</td>
         <td class="${r.magic ? '' : 'dim'}">${r.magic}</td>
       </tr>`).join('');
 
