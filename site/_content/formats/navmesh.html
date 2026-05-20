@@ -39,5 +39,11 @@ python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc3.bin \
 
 <section class="doc-section" id="actual-pathing">
   <h2>What the actual pathing data is</h2>
-  <p>Real per-scene region / event-trigger data for actor pathing is not in this RAM window. The encounter-record pointer (one piece of pathing-adjacent data) lives in actor records at <code>actor[+0x94]</code> — see <a href="encounter.html">encounter record format</a> and the <a href="../subsystems/world-map.html">world-map subsystem</a> for that flow. NPC region / collision-box records live in the field-pack schema slots (slot kinds <code>NpcRecord</code> / <code>CollisionBox</code> / <code>EventTrigger</code> from the <a href="field-pack.html">field-pack page</a>).</p>
+  <p>Real per-scene region / event-trigger data for actor pathing is not in this RAM window. The actual systems:</p>
+  <ul>
+    <li><strong>General town/field free-movement locomotion + collision</strong> is <code>FUN_801d01b0</code> (player controller) + <code>FUN_801cfe4c</code> (collision), which sample a per-scene walkability tile map through the base pointer <code>_DAT_1f8003ec</code> (grid at <code>+0x4000</code>, 4 sub-cell wall bits per byte, one byte per 128-unit tile). See <a href="../subsystems/field-locomotion.html">field locomotion</a>. This is the resolved answer to "where is the collision data" — a nibble grid keyed on the player tile, not a RAM table in this window.</li>
+    <li>A <strong>tile-board grid</strong> (cell <code>2</code> = wall) is installed inline in the field-VM event script by op <code>0x49</code>, but that drives the puzzle / board minigame mode, not general locomotion.</li>
+    <li>Per-scene <strong>region / zone boxes</strong> are 18-byte records at the MAN control block <code>_DAT_801c6ea4 + 0x4</code>, queried by player tile via <code>FUN_801dba20</code> (bbox in <code>bytes[1..4]</code>).</li>
+    <li>The <strong>encounter-record pointer</strong> lives in actor records at <code>actor[+0x94]</code> — see <a href="encounter.html">encounter record format</a> and the <a href="../subsystems/world-map.html">world-map subsystem</a> for that flow.</li>
+  </ul>
 </section>

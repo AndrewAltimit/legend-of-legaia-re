@@ -38,4 +38,9 @@ Both invocations return zero hits. The narrow `--target-lo`/`--target-hi` bounds
 
 ## What the actual navmesh / pathing data is
 
-Real per-scene region / event-trigger data for actor pathing is NOT in this RAM window. A **tile-board grid** (cell `2` = wall) is installed inline in the field-VM event script by op `0x49` — but that drives the puzzle / board minigame mode, not general town locomotion (see [`subsystems/tile-board.md`](../subsystems/tile-board.md)). General town/field locomotion (free movement) and its collision are still open. The encounter-record pointer (one piece of pathing-adjacent data) lives in actor records at `actor[+0x94]` — see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow.
+Real per-scene region / event-trigger data for actor pathing is NOT in this RAM window. The actual systems:
+
+- **General town/field free-movement locomotion + collision** is `FUN_801d01b0` (player controller) + `FUN_801cfe4c` (collision), which sample a per-scene walkability tile map through the base pointer `_DAT_1f8003ec` (grid at `+0x4000`, 4 sub-cell wall bits per byte). See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). This is the resolved answer to "where is the collision data" — a nibble grid keyed on the player tile, not a RAM table in this window.
+- A **tile-board grid** (cell `2` = wall) is installed inline in the field-VM event script by op `0x49`, but that drives the puzzle / board minigame mode, not general locomotion (see [`subsystems/tile-board.md`](../subsystems/tile-board.md)).
+- Per-scene **region / zone boxes** are 18-byte records at the MAN control block `_DAT_801c6ea4 + 0x4`, queried by player tile via `FUN_801dba20` (bbox in `bytes[1..4]`).
+- The **encounter-record pointer** lives in actor records at `actor[+0x94]` — see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow.

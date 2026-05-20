@@ -1,0 +1,77 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field locomotion</div>
+  <h1>Field free-movement locomotion</h1>
+  <p class="lede">The player free-movement controller for towns, dungeons, and walkable field areas is <code>FUN_801d01b0</code> in the field overlay. Each frame it turns the held pad into a camera-relative direction, advances the player position a fixed step with per-axis collision, and updates facing. This is the general locomotion path &mdash; <strong>not</strong> the <a href="../formats/navmesh.html">tile-board minigame</a> that shares the overlay.</p>
+</header>
+
+<section class="doc-section" id="how-pinned">
+  <h2>How it was pinned</h2>
+  <p><code>FUN_801d01b0</code> was found with a runtime write-watchpoint on the player position fields (<code>scripts/pcsx-redux/autorun_player_pos_watch.lua</code>): walking in a field scene fires write hits at the four <code>sh</code> stores <code>0x801D0684 / 06E4 / 0744 / 07B4</code> (player Z&plusmn; / X&plusmn;), all inside <code>FUN_801d01b0</code>. Static analysis alone never surfaced it because the writes are buried in a 1964-byte function and the field overlay only loads at runtime. The cluster previously suspected to be locomotion (<code>801db81c..801dbf9c</code>) turned out to be the field <em>camera</em> system, which only <em>reads</em> the player position.</p>
+</section>
+
+<section class="doc-section" id="actor-fields">
+  <h2>Player actor fields</h2>
+  <p>The player actor pointer is the global <code>_DAT_8007c364</code>. Confirmed fields:</p>
+  <table>
+    <thead><tr><th>offset</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x10</code></td><td>flags; bit <code>0x80000</code> = movement disabled (encounter pending / cutscene), bit <code>0x1000000</code> = action/interact requested</td></tr>
+      <tr><td><code>+0x14</code></td><td>world X (<code>s16</code>)</td></tr>
+      <tr><td><code>+0x16</code></td><td>renderer facing angle (<code>s16</code>)</td></tr>
+      <tr><td><code>+0x18</code></td><td>world Z (<code>s16</code>)</td></tr>
+      <tr><td><code>+0x26</code></td><td>heading (8-direction movement angle, set from the pad direction)</td></tr>
+      <tr><td><code>+0x5c</code></td><td>run/dash state counter (<code>&gt; 0</code> switches the walk-animation select)</td></tr>
+      <tr><td><code>+0x72</code></td><td>per-actor speed multiplier (fixed-point, <code>&gt;&gt; 12</code>)</td></tr>
+      <tr><td><code>+0x94</code></td><td>encounter-record pointer</td></tr>
+      <tr><td><code>+0x98</code></td><td>interaction-target actor pointer</td></tr>
+    </tbody>
+  </table>
+  <p>World coordinates are plain <code>s16</code> in 1-unit resolution; one collision tile is <code>0x80</code> (128) units. The field camera derives its origin by negating these.</p>
+</section>
+
+<section class="doc-section" id="per-frame">
+  <h2>Per-frame flow</h2>
+  <ol>
+    <li><strong>Disabled gate.</strong> If <code>player.flags &amp; 0x80000</code> is set, skip all movement (an encounter is queued or a cutscene owns the player).</li>
+    <li><strong>Action button.</strong> An edge-pad action bit (<code>_DAT_8007b874 &amp; 4</code>) plays the confirm SFX and raises <code>player.flags |= 0x1000000</code> (talk / examine), short-circuiting movement that frame.</li>
+    <li><strong>Direction decode.</strong> <code>func_0x800467e8(&amp;_DAT_8007b850)</code> rewrites the held pad in place into a <em>camera-relative</em> mask. <code>FUN_80046494(player)</code> reads that mask and returns the movement direction in bits <code>&amp; 0xf000</code>, resolving diagonals. The heading <code>+0x26</code> is set to one of eight angle constants.
+      <table>
+        <thead><tr><th>mask bit (post-remap)</th><th>axis delta</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x1000</code></td><td>Z +</td></tr>
+          <tr><td><code>0x4000</code></td><td>Z &minus;</td></tr>
+          <tr><td><code>0x2000</code></td><td>X +</td></tr>
+          <tr><td><code>0x8000</code></td><td>X &minus;</td></tr>
+        </tbody>
+      </table>
+    </li>
+    <li><strong>Speed.</strong> <code>speed = ((base_step * player[+0x72]) &gt;&gt; 12) * DAT_1f800393</code>, where <code>base_step</code> is <code>8</code> walking (other values in run / forced states) and <code>DAT_1f800393</code> is the per-frame delta scalar. Modifiers: terrain-slow (<code>speed &gt;&gt;= 1</code> on a <code>0x4000</code>-flagged tile when scene byte <code>_DAT_801c6ea4[+0x61] == 1</code>) and diagonal normalise (<code>speed -= speed &gt;&gt; 2</code>).</li>
+    <li><strong>Step loop.</strong> Advances <strong>2 units per iteration</strong> until <code>speed</code> units are consumed; each iteration collision-checks the candidate axis and commits only if clear:
+      <pre><code>if (dir &amp; 0x1000) and collide(player, scene, 2) == clear:  player.Z += 2
+else if (dir &amp; 0x4000) and collide(player, scene, 0) == clear:  player.Z -= 2
+if (dir &amp; 0x2000) and collide(player, scene, 3) == clear:  player.X += 2
+else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 2</code></pre>
+      <code>collide</code> is <code>FUN_801cfe4c</code>; <code>dir</code>-codes are <code>0 = Z&minus;, 1 = X&minus;, 2 = Z+, 3 = X+</code>. The per-frame delta vector is stored at <code>_DAT_8007bde0</code> (X) / <code>_DAT_8007bde4</code> (Z) for the transform-commit + camera follow. Step SFX <code>func_0x80035b50(0x20)</code>; a fully-blocked move plays the bonk <code>func_0x80035bd0(0x23)</code>.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="collision">
+  <h2>Collision &mdash; FUN_801cfe4c</h2>
+  <p><code>FUN_801cfe4c(player, scene, dir)</code> returns <code>0</code> when the move is clear and <code>2</code> when a static wall blocks it (plus bits <code>1</code>/<code>4</code> from the finer <code>FUN_801cfc40</code> actor/edge probe). It samples a <strong>per-scene collision tile map</strong> through the base pointer <code>_DAT_1f8003ec</code>:</p>
+  <ul>
+    <li>The walkability grid lives at <code>*(_DAT_1f8003ec) + 0x4000</code>.</li>
+    <li>The player world position is converted to tile space by <code>(coord + bias) &gt;&gt; 6</code>; the byte index is <code>(tileX / 2 &amp; 0x7f) + (tileZ * 0x40 &amp; 0x3f80)</code> &mdash; rows of <code>0x40</code> bytes, up to <code>0x80</code> rows.</li>
+    <li>Each map <strong>byte's high nibble holds 4 sub-cell walkability bits</strong>: the tile is split into a 2&times;2 quadrant grid, and <code>byte &gt;&gt; 4 &amp; quadrant_mask</code> selects the relevant quadrant. A set bit = wall. So one map byte covers a <code>128&times;128</code> world tile, divided into four <code>64&times;64</code> sub-cells.</li>
+    <li>Direction-specific probe offsets come from tables <code>DAT_801f21b4</code> / <code>DAT_801f2214</code> (16-byte stride per direction); three nearby points are probed so the player footprint, not just its centre, is tested.</li>
+  </ul>
+  <p>The sibling sampler <code>FUN_801d5718</code> reads the same grid with the identical nibble-and-mask shape, confirming the layout.</p>
+</section>
+
+<section class="doc-section" id="open">
+  <h2>Open</h2>
+  <ul>
+    <li><strong>Collision-map source.</strong> Where the scene loader populates <code>*(_DAT_1f8003ec) + 0x4000</code> (which field-pack slot or MAN section carries the on-disc walkability grid) is not yet pinned.</li>
+    <li><strong>Town vs. field parity.</strong> The controller was pinned on a walkable field scene (game mode <code>0x03</code>); towns run the same overlay and game mode and almost certainly use the same controller, but a confirming watchpoint run on a town save has not been done.</li>
+    <li><code>FUN_801cfc40</code> (the finer actor/edge collision probe) is not fully decoded.</li>
+  </ul>
+</section>
