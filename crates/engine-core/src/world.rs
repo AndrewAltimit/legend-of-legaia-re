@@ -1515,6 +1515,23 @@ impl World {
         self.field_ctx = FieldCtx::default();
     }
 
+    /// Load a field-VM bytecode buffer and begin interpretation at `pc`
+    /// instead of 0.
+    ///
+    /// Used to run a MAN-resolved **scene-entry system script** (retail
+    /// `FUN_8003ab2c`, context channel `0xFB`): the buffer is the MAN slice
+    /// taken from the script block's start, and `pc` is the first opcode's
+    /// offset into that slice (past the `[local-count][locals][record-header]`
+    /// prefix). Slicing from the script start keeps relative jumps wrapping
+    /// against the slice base (index 0), matching the retail
+    /// `buffer_base = script_start` convention. See
+    /// [`crate::scene::Scene::field_man_entry_script`].
+    pub fn load_field_script_at(&mut self, bytecode: Vec<u8>, pc: usize) {
+        self.field_bytecode = bytecode;
+        self.field_pc = pc;
+        self.field_ctx = FieldCtx::default();
+    }
+
     /// Load one event-script record into the field VM, skipping the leading
     /// `0xFFFF 0x0000` frame-divider sentinel when present.
     ///

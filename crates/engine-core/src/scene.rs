@@ -678,6 +678,51 @@ impl Scene {
             .get(FIELD_MAP_COLLISION_OFFSET..FIELD_MAP_COLLISION_OFFSET + FIELD_COLLISION_GRID_LEN)
             .map(<[u8]>::to_vec))
     }
+
+    /// Resolve the scene's field-VM **scene-entry system script** (context
+    /// channel `0xFB`) from the MAN asset, mirroring retail `FUN_8003ab2c`:
+    /// the entry script is partition 1's first record in the scene's MAN
+    /// container.
+    ///
+    /// Returns `Ok(Some((bytecode, pc0)))` where `bytecode` is the MAN
+    /// buffer sliced from the script block's start (so relative jumps wrap
+    /// against the slice base, matching the retail `buffer_base =
+    /// script_start`) and `pc0` is the first opcode's offset into that slice.
+    /// Feed both to [`crate::world::World::load_field_script_at`].
+    ///
+    /// Returns `Ok(None)` for scenes whose static bundle carries no MAN
+    /// asset - notably standalone [`Class::SceneEventScripts`] scenes such as
+    /// `town01`, whose runtime `_DAT_8007B898` source is fed at load time and
+    /// is not present in the static bundle. Those scenes keep running
+    /// event-script record 0 instead. Only the kingdom-bundle
+    /// [`Class::SceneScriptedAssetTable`] scenes (e.g. `map03`) carry the MAN
+    /// inline.
+    ///
+    /// Note that the entry script's `0x4C` nibble-7 wall-paint deltas are
+    /// gated behind system-flag tests, so they only fire once the world's
+    /// story flags are seeded to a matching scene-entry state; the base
+    /// collision grid ([`Self::field_collision_grid`]) is independent of the
+    /// entry script.
+    pub fn field_man_entry_script(&self, index: &ProtIndex) -> Result<Option<(Vec<u8>, usize)>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        else {
+            return Ok(None);
+        };
+        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+            return Ok(None);
+        };
+        let Some((start, pc0)) = man.scene_entry_script(&man_bytes) else {
+            return Ok(None);
+        };
+        match man_bytes.get(start..) {
+            Some(slice) => Ok(Some((slice.to_vec(), pc0))),
+            None => Ok(None),
+        }
+    }
 }
 
 /// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME
@@ -1089,6 +1134,31 @@ impl SceneHost {
         };
         if let Some(grid) = base_grid {
             self.world.load_field_collision_grid(&grid);
+        }
+        // Prefer the real scene-entry system script (ctx 0xFB) over event-
+        // script record 0. Record 0 is a per-scene trigger/dispatch table,
+        // not linear bytecode, so the field VM halts at its pc 0 and the
+        // scene-entry logic (actor placement, BGM, conditional wall deltas)
+        // never runs. The retail per-frame driver `FUN_8003ab2c` builds the
+        // system script from the MAN asset's partition[1][0]; resolve and run
+        // that instead. Only kingdom-bundle scenes carry the MAN in their
+        // static bundle - standalone `SceneEventScripts` scenes (e.g. town01)
+        // return `None` here and keep the record-0 load above as a fallback
+        // until their runtime `_DAT_8007B898` source is pinned. Flag-gated
+        // nibble-7 wall deltas in the entry script still need seeded story
+        // flags to fire; the base grid loaded above is independent.
+        let entry_script = match self.scene.as_ref() {
+            Some(scene) => match scene.field_man_entry_script(&self.index) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("[scene] MAN entry-script resolve skipped: {err:#}");
+                    None
+                }
+            },
+            None => None,
+        };
+        if let Some((bytecode, pc0)) = entry_script {
+            self.world.load_field_script_at(bytecode, pc0);
         }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only

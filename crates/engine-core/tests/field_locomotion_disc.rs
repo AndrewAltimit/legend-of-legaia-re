@@ -115,15 +115,35 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
     // have room to move without clipping a real wall.
     let (sx, sz) = open_spawn(&host.world.field_collision_grid);
 
-    // Let any prescript ops run (one field-VM op per tick).
+    // Whether this scene runs a real MAN-resolved scene-entry system
+    // script (kingdom-bundle scenes) rather than falling back to event-
+    // script record 0 (which is a trigger table and halts the VM at pc 0).
+    let has_man_entry = host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_entry_script(&host.index).ok().flatten())
+        .is_some();
+
+    // Let any prescript ops run (one field-VM op per tick) and track how
+    // many distinct PCs the field VM visits.
+    let mut visited = std::collections::BTreeSet::new();
     for _ in 0..4_000 {
         host.world.set_pad(0);
         let _ = host.world.tick();
+        visited.insert(host.world.field_pc);
     }
     eprintln!(
-        "[{scene}] collision-grid wall tiles after prescript: {}",
-        wall_byte_count(&host.world.field_collision_grid)
+        "[{scene}] collision-grid wall tiles after prescript: {} (man_entry={has_man_entry}, distinct field PCs visited={})",
+        wall_byte_count(&host.world.field_collision_grid),
+        visited.len()
     );
+    if has_man_entry {
+        assert!(
+            visited.len() > 1,
+            "[{scene}] MAN-backed scene should run its entry script (the VM \
+             must advance past pc 0), but the field VM stayed at a single PC"
+        );
+    }
 
     // Locomotion: each direction moves the player on the expected world
     // axis (camera azimuth 0: Up=+Z, Down=-Z, Right=+X, Left=-X).
