@@ -76,23 +76,35 @@ The sibling sampler `FUN_801d5718` reads the same `*(_DAT_1f8003ec) + 0x4000` gr
 
 | Offset from base | Content | Filled by |
 |---|---|---|
-| `+0x0000` | object / actor records (0x20-byte stride) | scene loader / field VM |
-| `+0x4000` | **collision walkability grid** — 1 byte/tile, high nibble = 4 sub-cell wall bits, `0x80`-byte rows | field-VM `0x4C` opcode, outer-nibble 7 (`op0` in `0x70..0x7F`; handler `0x801e1c64`) — rectangular wall paint from inline script operands |
-| `+0x8000` | terrain-flag grid (e.g. the `0x4000` slow-tile flag) — `u16`/tile | `FUN_8003aeb0` from the MAN asset (`_DAT_8007b898`) |
+| `+0x0000` | object / actor records (0x20-byte stride; up to 512) | scene loader / field VM |
+| `+0x4000` | **collision + floor grid** — 1 byte/tile, `0x80`-byte rows: **high nibble** = 4 sub-cell wall bits, **low nibble** = floor-elevation tier | high nibble: field-VM `0x4C` opcode, outer-nibble 7; low nibble: scene data |
+| `+0x8000` | **per-tile object/attribute map** — `u16`/tile, `0x80`-byte rows: low 9 bits = object-record index into the `+0x0000` table, high bits = per-tile flags (bit `0x400` = object footprint) | object placement at scene load; bit `0x400` ORed in by `FUN_8003aeb0` from field-pack records |
 | `+0x12000` | field-pack region; `_DAT_8007b8d0 = base + 0x12800` | `FUN_8001f7c0` (scene asset loader) |
 
-So the **collision data is authored in the scene event script**: the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, 7-byte op `[4C, 0x7s, b1, b2, b3, b4, mask]`) is a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask). There is no separate on-disc collision-grid blob — walls are inline operands in the prescript, the same pattern as encounter records and the tile board. See the nibble-7 row of the [0x4C dispatch table in `script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch). The `+0x8000` terrain grid, by contrast, *is* a MAN-asset section (`FUN_8003aeb0` writes it from `_DAT_8007b898`).
+### Collision byte: walls + floor height
+
+Each `+0x4000` byte packs two nibbles for its 128-unit tile:
+
+- **High nibble — walls.** Four sub-cell wall bits (the `2×2` quadrant grid the collision check samples; see above).
+- **Low nibble — floor-elevation tier.** A 4-bit index `0..15` into a 16-entry `short` height LUT at scratchpad `0x1f80035c` (`= 0x1f800314 + 0x48`). The object/actor spawn iterator `FUN_8003a55c` reads `LUT[byte & 0xf]` and adds it to each placed object's Y, so a tile's collision byte also encodes its floor height (raised platforms, multi-level rooms). The LUT is filled at scene entry by `FUN_8003aeb0` from the MAN asset header (`_DAT_8007b898 + 2`, 16 negated `short`s).
+
+So the **wall data is authored in the scene event script**: the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, 7-byte op `[4C, 0x7s, b1, b2, b3, b4, mask]`) is a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask). There is no separate on-disc wall blob — walls are inline operands in the prescript, the same pattern as encounter records and the tile board. See the nibble-7 row of the [0x4C dispatch table in `script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch).
+
+The `+0x8000` map is **not** a terrain-flag grid (an earlier reading). It is a per-tile object/attribute word: its low 9 bits index the `+0x0000` object-record table, which `FUN_8003a55c` walks at scene entry to spawn the NPCs/objects occupying each tile. `FUN_8003aeb0` (the field/town scene-entry map-init — note its `town_mode` / `baria_mode` debug strings) ORs the `0x400` footprint flag into these cells from the field-pack region records (`+0x12000`, offset/count at `+0x12006` / `+0x12008`, 4-byte records).
 
 ## Provenance
 
 - Controller `FUN_801d01b0`, position writes `0x801D0684 / 06E4 / 0744 / 07B4` — see `ghidra/scripts/funcs/overlay_0897_801d0684.txt`.
 - Collision `FUN_801cfe4c`, finer probe `FUN_801cfc40`, interaction `FUN_801cf9f4` — `ghidra/scripts/funcs/overlay_0897_801cfe4c.txt`.
 - Pad remap `func_0x800467e8`, direction mask `FUN_80046494` — `ghidra/scripts/funcs/800467e8.txt` / `80046494.txt`.
+- Scene-entry map-init `FUN_8003aeb0` (height LUT fill, `+0x8000` footprint OR, player-actor setup) — `ghidra/scripts/funcs/8003aeb0.txt`. Object spawn iterator `FUN_8003a55c` (low-nibble floor-height read, `+0x8000` index walk) — `ghidra/scripts/funcs/8003a55c.txt`.
 - Runtime pin: `scripts/pcsx-redux/autorun_player_pos_watch.lua` (write-watchpoint on `*(0x8007c364) + 0x14/0x18`).
+
+## Town / field parity
+
+The controller is selected by **game mode**: mode `0x03` loads the field overlay (`overlay_0897`), which contains the single free-movement controller `FUN_801d01b0`. `FUN_801d01b0` was runtime-pinned on a walkable field scene (`map03`, mode `0x03`). Rim Elm — scene `town01` — also runs at game mode `0x03` (see `scripts/scenarios.toml`, the `v0_1_pre_battle_tetsu` anchor), so it loads the same overlay and the same controller. The shared scene-entry init `FUN_8003aeb0` corroborates this: it has an explicit `town_mode` debug-string branch and configures the same player actor (`_DAT_8007c364`: speed mult `+0x72 = 0x1000`, `+0x6a = 8`) for both towns and fields. So town locomotion is `FUN_801d01b0`, identical to the field.
 
 ## Open
 
-- **Collision-grid zero-init site.** The high-nibble wall bits are painted by opcode `0x70..0x7F`, but where the `+0x4000` grid is first cleared to "all walkable" at scene entry (vs. relying on the prescript to paint every cell) is not pinned. The scene loader `FUN_8001f7c0` clears the `+0x12000` field-pack region but no explicit `+0x4000..+0x8000` memset was found in the dumped functions.
-- **Low nibble of the `+0x4000` byte.** The collision check reads only the high nibble (walls); `FUN_8003a55c` reads the *low* nibble (`& 0xf`) alongside the MAN asset and the `+0x8000` grid — likely a floor/terrain-type field, not yet decoded.
-- **Town vs. field parity.** `FUN_801d01b0` was pinned on a walkable field/overworld scene (`map03`, game mode `0x03`); towns (`town01`) run the same overlay and game mode and almost certainly use the same controller, but a confirming watchpoint run on a town save has not been done.
+- **Collision-grid zero-init site.** The high-nibble wall bits are painted by opcode `0x70..0x7F`, but where the `+0x4000` grid is first cleared to "all walkable" at scene entry is not pinned. Ruled out: `FUN_8001f7c0` (clears only the `+0x12000` field-pack region, and only when the field file is missing), `FUN_8003a024` (allocates the 100-byte scene control block `_DAT_801c6ea4`), `FUN_800513f0` (allocates the 190 KB *battle* work buffer, not the field buffer). The clear is likely a wholesale memset of the field buffer by the scene-boot allocator that sets `_DAT_1f8003ec` — not yet dumped.
 - `FUN_801cfc40` (the finer actor/edge collision probe contributing bits `1`/`4`) is not fully decoded.
