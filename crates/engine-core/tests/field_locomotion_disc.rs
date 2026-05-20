@@ -4,15 +4,15 @@
 //! `play-window` uses, asserting the player advances on the correct world
 //! axes and that movement is deterministic across two identical runs.
 //!
-//! Note on collision: the per-scene wall grid is painted by the field-VM
-//! `0x4C` nibble-7 op as the scene's live event script runs. On the
-//! currently-loaded record-0 prologue the VM halts at its first op, and
-//! the wall paints for these scenes live elsewhere (town01: record 62 on
-//! disc; map03: runtime-projected from the field-pack preamble, not on
-//! disc at all). So the grid stays empty here and there is nothing to
-//! clip into - this test verifies the movement half end-to-end and
-//! reports the painted-wall count for visibility. The collision math
-//! itself is covered by the synthetic-grid unit tests in `world.rs`.
+//! Collision: the per-scene base walkable grid is loaded from the field
+//! map file (`DATA\FIELD\<scene>.MAP`, the unique 0x12000-byte block entry)
+//! by `enter_field_scene` - its `+0x4000..+0x8000` region copies verbatim
+//! into the collision grid (verified byte-exact against live RAM for
+//! town01). The field-VM `0x4C` nibble-7 ops layer story-conditional deltas
+//! on top as the prescript runs. This test asserts the base grid loads
+//! non-empty, then drives the player from a known-walkable spawn and checks
+//! each d-pad axis. The collision math itself is covered by the
+//! synthetic-grid unit tests in `world.rs`.
 //!
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing - CI
 //! runs without disc data.
@@ -35,6 +35,46 @@ fn extracted_dir() -> Option<PathBuf> {
 
 fn wall_byte_count(grid: &[u8]) -> usize {
     grid.iter().filter(|b| **b & 0xF0 != 0).count()
+}
+
+/// Find a tile whose 5x5 neighbourhood is fully walkable and return its
+/// world-space centre `(x, z)`. Gives the locomotion checks room to move
+/// ~1 tile on each axis without clipping a real wall. Falls back to a fixed
+/// coordinate if the grid is empty / no open block exists.
+fn open_spawn(grid: &[u8]) -> (i16, i16) {
+    const STRIDE: usize = 0x80;
+    if grid.len() >= STRIDE * STRIDE {
+        for row in 2usize..STRIDE - 2 {
+            for col in 2usize..STRIDE - 2 {
+                let open = (row - 2..=row + 2)
+                    .all(|r| (col - 2..=col + 2).all(|c| grid[r * STRIDE + c] & 0xF0 == 0));
+                if open {
+                    return ((col * 128 + 64) as i16, (row * 128 + 64) as i16);
+                }
+            }
+        }
+    }
+    (1000, 1000)
+}
+
+/// Find a walkable tile with a solid wall two tiles to the east, so walking
+/// `+X` into it is reliably blocked. Returns the walkable tile's world centre.
+fn wall_to_east(grid: &[u8]) -> Option<(i16, i16)> {
+    const STRIDE: usize = 0x80;
+    if grid.len() < STRIDE * STRIDE {
+        return None;
+    }
+    for row in 0usize..STRIDE {
+        for col in 1usize..STRIDE - 2 {
+            let walkable = grid[row * STRIDE + col] & 0xF0 == 0;
+            let wall_east = grid[row * STRIDE + col + 1] & 0xF0 == 0xF0
+                && grid[row * STRIDE + col + 2] & 0xF0 == 0xF0;
+            if walkable && wall_east {
+                return Some(((col * 128 + 64) as i16, (row * 128 + 64) as i16));
+            }
+        }
+    }
+    None
 }
 
 /// Drive `scene` for `frames` of held `btn` and return the player's net
@@ -62,6 +102,19 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
         "field entry installs the party leader as the player"
     );
 
+    // The base walkable grid is loaded from the scene's `.MAP` file at
+    // entry (before any tick). Every field/town scene carries one.
+    let base_walls = wall_byte_count(&host.world.field_collision_grid);
+    eprintln!("[{scene}] base collision-grid wall tiles (from .MAP): {base_walls}");
+    assert!(
+        base_walls > 0,
+        "[{scene}] expected a non-empty base collision grid loaded from the .MAP file"
+    );
+
+    // Pick a known-walkable spawn from the loaded grid so the axis checks
+    // have room to move without clipping a real wall.
+    let (sx, sz) = open_spawn(&host.world.field_collision_grid);
+
     // Let any prescript ops run (one field-VM op per tick).
     for _ in 0..4_000 {
         host.world.set_pad(0);
@@ -74,8 +127,8 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
 
     // Locomotion: each direction moves the player on the expected world
     // axis (camera azimuth 0: Up=+Z, Down=-Z, Right=+X, Left=-X).
-    host.world.actors[0].move_state.world_x = 1000;
-    host.world.actors[0].move_state.world_z = 1000;
+    host.world.actors[0].move_state.world_x = sx;
+    host.world.actors[0].move_state.world_z = sz;
     let up = walk(host, PadButton::Up, 20);
     assert!(
         up.1 > 0 && up.0 == 0,
@@ -97,6 +150,23 @@ fn verify_scene(host: &mut SceneHost, scene: &str) {
         "[{scene}] Left should move -X only, got {left:?}"
     );
     eprintln!("[{scene}] locomotion OK: up={up:?} down={down:?} left={left:?} right={right:?}");
+
+    // Walls work: place the player one tile west of a real base wall and
+    // walk hard into it. In open space 40 frames travels ~320 units; the
+    // base wall (loaded from the .MAP) must stop the player well short.
+    if let Some((wx, wz)) = wall_to_east(&host.world.field_collision_grid) {
+        host.world.actors[0].move_state.world_x = wx;
+        host.world.actors[0].move_state.world_z = wz;
+        let into_wall = walk(host, PadButton::Right, 40);
+        assert!(
+            into_wall.0 < 200,
+            "[{scene}] base wall should block +X movement, got {into_wall:?}"
+        );
+        eprintln!(
+            "[{scene}] base wall blocks: walked +X only {} units into wall",
+            into_wall.0
+        );
+    }
 }
 
 #[test]

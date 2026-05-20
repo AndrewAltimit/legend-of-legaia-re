@@ -26,6 +26,16 @@ use legaia_prot::Region;
 use legaia_prot::archive::{Archive, Entry};
 use legaia_prot::cdname;
 
+/// Size of the per-scene field map file (retail `DATA\FIELD\<scene>.MAP`):
+/// the field buffer's used region from the base through the field-pack
+/// boundary at `+0x12000`. Used to identify the map entry in a CDNAME block.
+pub const FIELD_MAP_LEN: usize = 0x12000;
+/// Offset of the collision/floor grid within the field map file (= the
+/// runtime `*(_DAT_1f8003ec) + 0x4000`).
+pub const FIELD_MAP_COLLISION_OFFSET: usize = 0x4000;
+/// Length of the collision/floor grid (`0x80 x 0x80` bytes, 1 byte/tile).
+pub const FIELD_COLLISION_GRID_LEN: usize = 0x80 * 0x80;
+
 /// Index over PROT.DAT + CDNAME.TXT. Built once and shared for the whole
 /// scene-host's lifetime. Thread-safe - the underlying file handle and the
 /// caches are guarded by Mutexes.
@@ -625,6 +635,49 @@ impl Scene {
         }
         out
     }
+
+    /// PROT index of the per-scene **field map file** - retail
+    /// `DATA\FIELD\<scene>.MAP`, the first file `FUN_8001f7c0` streams into the
+    /// field-buffer base (`_DAT_1f8003ec`). It is the unique CDNAME-block entry
+    /// whose **extended on-disc footprint** is exactly [`FIELD_MAP_LEN`]
+    /// (`0x12000`) bytes - the field buffer's used region from the base through
+    /// the field-pack boundary. Every field/town scene has exactly one (101 of
+    /// 124 blocks; the rest are battle / pure-asset blocks with no field map).
+    ///
+    /// The footprint matters: the TOC-indexed payload is only the first
+    /// `0x4000` bytes (the object-record region); the collision grid at
+    /// `+0x4000` and beyond lives in the entry's **trailing-gap sectors**, so
+    /// callers must read the extended footprint, not [`SceneEntry::bytes`].
+    ///
+    /// See [`docs/subsystems/field-locomotion.md`] for the load chain.
+    pub fn field_map_index(&self, index: &ProtIndex) -> Option<u32> {
+        let entries = index.entries();
+        (self.start..self.end).find(|&idx| {
+            entries
+                .get(idx as usize)
+                .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
+        })
+    }
+
+    /// The per-scene base collision/floor grid: the `+0x4000..+0x8000` region
+    /// of the [`field_map`](Self::field_map_index) file (`0x80 x 0x80` bytes,
+    /// high nibble = sub-cell wall bits, low nibble = floor-elevation tier).
+    /// This is the engine's source for the base walkable grid; the field-VM
+    /// `0x4C` nibble-7 ops layer story-conditional deltas on top as the
+    /// prescript runs. Verified byte-exact against live RAM (town01).
+    ///
+    /// Reads the field map entry's **extended** footprint (the grid is past
+    /// the TOC-indexed payload). Returns `Ok(None)` if the scene has no field
+    /// map or the entry is too short to hold a full grid.
+    pub fn field_collision_grid(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(bytes
+            .get(FIELD_MAP_COLLISION_OFFSET..FIELD_MAP_COLLISION_OFFSET + FIELD_COLLISION_GRID_LEN)
+            .map(<[u8]>::to_vec))
+    }
 }
 
 /// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME
@@ -1014,11 +1067,29 @@ impl SceneHost {
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
-        // Configure the party leader (slot 0) as the free-movement player
-        // and clear the per-scene collision grid - the prescript repaints
-        // the wall bits via the field-VM `0x4C` nibble-7 op as it runs.
+        // Configure the party leader (slot 0) as the free-movement player.
+        // (This also clears the collision grid; we repopulate it below.)
         // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
         self.world.install_field_player(0);
+        // Load the per-scene base collision/floor grid from the field map
+        // file (retail `DATA\FIELD\<scene>.MAP`, the unique 0x12000-byte block
+        // entry). The grid is the file's `+0x4000..+0x8000` region; the
+        // field-VM `0x4C` nibble-7 ops layer story-conditional deltas on top
+        // as the prescript runs. Verified byte-exact against live RAM
+        // (town01). See `docs/subsystems/field-locomotion.md`.
+        let base_grid: Option<Vec<u8>> = match self.scene.as_ref() {
+            Some(scene) => match scene.field_collision_grid(&self.index) {
+                Ok(grid) => grid,
+                Err(err) => {
+                    eprintln!("[scene] field collision-grid load skipped: {err:#}");
+                    None
+                }
+            },
+            None => None,
+        };
+        if let Some(grid) = base_grid {
+            self.world.load_field_collision_grid(&grid);
+        }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
         // a handful of scenes carry VDF data (8/124 in the retail

@@ -2433,6 +2433,23 @@ impl World {
         self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
     }
 
+    /// Load the per-scene base collision/floor grid from the field map file's
+    /// `+0x4000` region (the `DATA\FIELD\<scene>.MAP` slice exposed by
+    /// [`crate::scene::Scene::field_collision_grid`]). `grid` is the raw
+    /// `0x80 x 0x80` byte grid: high nibble = sub-cell wall bits, low nibble =
+    /// floor-elevation tier - the same byte format the runtime grid uses, so
+    /// it copies verbatim. The field-VM `0x4C` nibble-7 ops then layer
+    /// story-conditional deltas on top as the prescript runs.
+    ///
+    /// PORT: the `+0x4000` sub-region streamed by `FUN_8001f7c0` into the
+    /// field buffer at `*(_DAT_1f8003ec)`. Byte-exact vs live RAM (town01).
+    pub fn load_field_collision_grid(&mut self, grid: &[u8]) {
+        let n = grid.len().min(FIELD_GRID_LEN);
+        self.field_collision_grid.clear();
+        self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
+        self.field_collision_grid[..n].copy_from_slice(&grid[..n]);
+    }
+
     /// Apply one field-VM `0x4C` outer-nibble-7 rectangular wall paint to
     /// the collision grid. `x_range` / `z_range` are the half-open tile
     /// spans the VM dispatcher already computed from the op operands; `sub`
@@ -3801,6 +3818,39 @@ mod tests {
         let _ = world.tick();
         // The hook routed the paint into the grid.
         assert!(world.field_tile_is_wall(320, 448));
+    }
+
+    #[test]
+    fn load_field_collision_grid_copies_map_region_and_nibble7_layers_on_top() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        // Synthesize a base grid: block tile (col=5, row=6) in all four
+        // sub-cells (high nibble 0xF), floor tier 2 (low nibble) elsewhere.
+        let mut grid = vec![0u8; FIELD_GRID_LEN];
+        grid[6 * FIELD_GRID_STRIDE + 5] = 0xF2;
+        world.load_field_collision_grid(&grid);
+        // tile (5,6) -> world x in [640,768), z in [768,896).
+        assert!(world.field_tile_is_wall(700, 800), "base grid wall loaded");
+        assert!(!world.field_tile_is_wall(700, 600), "other tiles walkable");
+        // Low nibble (floor tier) is preserved, not treated as a wall bit.
+        assert_eq!(world.field_collision_grid[6 * FIELD_GRID_STRIDE + 5], 0xF2);
+        // A nibble-7 paint layers a delta on top of the loaded base.
+        world.paint_field_collision(1, (8, 9), (8, 9), 0);
+        assert!(world.field_tile_is_wall(8 * 128 + 10, 8 * 128 + 10));
+        // The base wall is still present after the delta.
+        assert!(world.field_tile_is_wall(700, 800));
+    }
+
+    #[test]
+    fn load_field_collision_grid_pads_short_input() {
+        let mut world = World::new();
+        world.load_field_collision_grid(&[0xF0, 0x00]);
+        assert_eq!(world.field_collision_grid.len(), FIELD_GRID_LEN);
+        assert!(
+            world.field_tile_is_wall(10, 10),
+            "first tile wall from input"
+        );
     }
 
     #[test]
