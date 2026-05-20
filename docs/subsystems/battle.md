@@ -115,11 +115,15 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x4A` | u8 | Magic-slot count. |
 | `+0x4C` | u32[] | Spell-entry pointers (count at `+0x4A`); each entry's first byte is the element type (2/3/4/5/0xB) that sets per-element magic-resistance at actor `+0x1EF..+0x1F3`. |
 
-### Monster-archive source (open)
+### Monster archive (PROT entry 867)
 
-The records are streamed by `FUN_800542C8` as **per-monster `0x14000`-byte LZS blocks** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~175 entries). The block's head is the record above; the name/XP/spell payloads follow at the fixed-up offsets.
+`FUN_800542C8` streams the records as **per-monster `0x14000`-byte LZS slots** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~194 fixed slots). Each slot is `[u32 decompressed_size][Legaia LZS stream]`; the decoded block's head is the stat record above, with the name / XP / spell payloads at the block-relative offsets the loader fixes up.
 
-The **archive source bytes are not yet located**. The retail path builds `data\battle\<8-byte name of PROT 869 monster_data>` (name from the per-entry filename table `DAT_8007B31C + idx*8`) and opens it via `FUN_800608F0`, a `break 0x103` host-PC kernel trap — a build-time dev-host artifact with no matching ISO9660 file on the retail disc. PROT.DAT entry 869 is only `0x30000` and is **not** a valid `(id-1)*0x14000` archive (its slot 0 LZS-decodes to all-zeros — an LZS false positive). Locating the real bytes needs a runtime watchpoint on the monster-record load during a live battle (capture the CD-DMA source LBA), the same technique used to pin the [base-collision grid](field-locomotion.md) and the [title overlay](boot.md) sources. Until then the encounter formations resolve monster-ids but not stat blocks. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+The archive is **PROT entry `0867_battle_data`** (the EXTENDED footprint — the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). The CDNAME label `monster_data` (PROT 869) is a misleading stub: it's only `0x30000` bytes and its `(id-1)*0x14000` slots don't decode. The shipped retail build takes the debug `FUN_8003E8A8(0x365)` PROT-index path (`_DAT_8007B8C2 != 0`); the alternate `data\battle\<name>` open via the `break 0x103` host trap (`FUN_800608F0`) is a build-time dev-host artifact with no matching ISO9660 file on the disc.
+
+Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the loader's relative seek `(id-1)*40` sectors + the `disc_read` CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actor stats byte-for-byte (Gimard id 10 = HP 99 / MP 20, Killer Bee id 62 = 288 / 288, Queen Bee id 63 = 888 / 888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu id 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 — Tetsu being the 999/999 tutorial sparring partner).
+
+Parser: [`legaia_asset::monster_archive`](../../crates/asset/README.md) (`record(entry, id)` / `records(entry)`; CLI `asset monster-archive`). Engine bridge: `legaia_engine_core::monster_catalog::catalog_from_monster_archive`, merged into the catalog by `SceneHost::enter_field_scene` for the scene's encounter ids so triggered battles spawn real stats.
 
 ## Stat aggregator (`FUN_80042558`)
 

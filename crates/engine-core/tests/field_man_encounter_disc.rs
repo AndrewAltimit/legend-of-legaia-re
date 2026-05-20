@@ -101,3 +101,51 @@ fn field_entry_installs_man_encounter_table() {
         }
     }
 }
+
+/// Field entry merges real monster stats from the disc archive (PROT 867)
+/// for the scene's encounter ids. town01's Rim Elm scripted-battle set
+/// resolves to named monsters with the byte-validated HP/MP.
+#[test]
+fn field_entry_installs_real_monster_stats_from_archive() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+    host.enter_field_scene("town01", 0).expect("enter town01");
+
+    // (id, name, hp, mp) - byte-validated vs live battle RAM.
+    let expect: &[(u16, &str, u16, u16)] = &[
+        (4, "Gobu Gobu", 76, 15),
+        (7, "Green Slime", 69, 24),
+        (10, "Gimard", 99, 20),
+        (62, "Killer Bee", 288, 288),
+        (63, "Queen Bee", 888, 888),
+        (79, "Tetsu", 999, 999),
+    ];
+    for &(id, name, hp, mp) in expect {
+        let def = host.world.monster_catalog.get(id).unwrap_or_else(|| {
+            panic!("monster id {id} missing from the catalog after field entry")
+        });
+        assert_eq!(def.name, name, "id {id} name");
+        assert_eq!(def.hp, hp, "id {id} HP");
+        assert_eq!(def.mp, mp, "id {id} MP");
+    }
+
+    // Every encounter-formation monster-id resolves to a catalog entry, so a
+    // triggered battle spawns concrete monsters (not an unknown id).
+    for def in host.world.formation_table.by_id.values() {
+        for slot in &def.slots {
+            assert!(
+                host.world.monster_catalog.get(slot.monster_id).is_some(),
+                "formation monster-id {} has no catalog entry",
+                slot.monster_id
+            );
+        }
+    }
+}

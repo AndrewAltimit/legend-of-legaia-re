@@ -924,6 +924,11 @@ pub struct SceneHost {
     /// Default is [`NullMapIdResolver`] so transitions are silently
     /// dropped until the engine wires its own table.
     pub map_resolver: Box<dyn MapIdResolver + Send + Sync>,
+    /// Lazily-loaded monster stat archive (PROT entry 867, extended
+    /// footprint). Cached because it's 15.9 MB and the same global table
+    /// serves every scene. Populated on the first field entry that needs
+    /// real monster stats. See [`legaia_asset::monster_archive`].
+    monster_archive_cache: Option<Arc<Vec<u8>>>,
 }
 
 impl SceneHost {
@@ -937,7 +942,27 @@ impl SceneHost {
             resources: None,
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
+            monster_archive_cache: None,
         }
+    }
+
+    /// Lazily load + cache the monster stat archive (PROT 867, extended
+    /// footprint - the archive lives in the entry's trailing-gap sectors,
+    /// not the small indexed payload, so `entry_bytes` would truncate it).
+    /// Returns `None` if the entry can't be read.
+    fn monster_archive_bytes(&mut self) -> Option<Arc<Vec<u8>>> {
+        if self.monster_archive_cache.is_none() {
+            match self.index.entry_bytes_extended(MONSTER_ARCHIVE_PROT_ENTRY) {
+                Ok(b) => self.monster_archive_cache = Some(Arc::new(b)),
+                Err(err) => {
+                    eprintln!(
+                        "[scene] monster archive (PROT {MONSTER_ARCHIVE_PROT_ENTRY}) load skipped: {err:#}"
+                    );
+                    return None;
+                }
+            }
+        }
+        self.monster_archive_cache.clone()
     }
 
     /// Open the host directly from an extracted directory.
@@ -1225,7 +1250,28 @@ impl SceneHost {
             None => None,
         };
         if let Some((table, formations)) = man_encounter {
+            // Collect the formation monster-ids before `install_man_encounter`
+            // consumes the defs.
+            let mut ids: Vec<u16> = formations
+                .iter()
+                .flat_map(|f| f.slots.iter().map(|s| s.monster_id))
+                .collect();
+            ids.sort_unstable();
+            ids.dedup();
             self.world.install_man_encounter(table, formations);
+            // Merge real per-id monster stats from the disc archive (PROT 867)
+            // over the catalog so the just-installed formations resolve to
+            // genuine HP/MP/attack at battle-load instead of synthetic
+            // placeholders. Archive entries win for the scene's ids; ids the
+            // archive doesn't cover keep whatever catalog was installed.
+            if !ids.is_empty()
+                && let Some(archive) = self.monster_archive_bytes()
+            {
+                let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &ids);
+                for def in cat.by_id.into_values() {
+                    self.world.monster_catalog.insert(def);
+                }
+            }
         }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
@@ -1356,6 +1402,12 @@ impl SceneHost {
 /// `project_global_tmd_pool_source.md` via byte-equality vs a Drake post-warp
 /// RAM snapshot.
 const PROT_BEFECT_DATA_ENTRY: u32 = 874;
+
+/// PROT entry holding the global monster stat archive (one `0x14000`-byte
+/// LZS slot per monster id; the CDNAME label `battle_data` is shared across
+/// 0865-0868). The misleading `monster_data` label (PROT 869) is a stub.
+/// See [`legaia_asset::monster_archive`] + `docs/subsystems/battle.md`.
+const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
 
 /// Number of slots PROT 0874 section 0 contributes to the head of the
 /// global TMD pool. Set by the section's TMD-pack `count` field; the

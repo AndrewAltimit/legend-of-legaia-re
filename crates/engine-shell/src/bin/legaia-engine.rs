@@ -5771,16 +5771,15 @@ fn cmd_play_window_with_record(
     // concrete monster set.
     //
     // `enter_field_scene` already installs the disc-resident per-scene
-    // encounter table + formations straight from the scene's MAN asset (now
-    // incl. the `count=6` town scenes). The MAN carries formation monster-ids
-    // but not stat blocks, so the stat catalog is always the vanilla one.
-    // Only fall back to the synthetic-pattern registry + vanilla formation
-    // table when no MAN encounter was installed (scenes whose bundle carries
-    // no MAN, or towns with no rollable formations).
+    // encounter table + formations from the scene's MAN asset (incl. the
+    // `count=6` town scenes) AND merges real per-id monster stats from the
+    // monster archive (PROT 867) for those formations. Only fall back to the
+    // synthetic-pattern registry + vanilla formation/monster tables when no
+    // MAN encounter was installed (scenes whose bundle carries no MAN, or
+    // towns with no rollable formations).
     {
         let world = &mut session.host.world;
         world.set_active_scene_label(scene);
-        world.set_monster_catalog(legaia_engine_core::monster_catalog::vanilla_monster_catalog());
         if world.encounter.is_none() && matches!(world.mode, SceneMode::Field) {
             world.set_formation_table(
                 legaia_engine_core::monster_catalog::vanilla_formation_table(),

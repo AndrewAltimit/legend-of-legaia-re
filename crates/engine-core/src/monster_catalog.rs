@@ -106,6 +106,39 @@ impl MonsterCatalog {
     }
 }
 
+/// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
+/// entry 867; see [`legaia_asset::monster_archive`]).
+///
+/// Confidently mapped fields: `id`, `name`, `hp`, `mp`, plus `attack` from
+/// the record's dominant offensive stat (`stats[0]`, record `+0x0E`) and the
+/// defense pair from the "defense-like" stat (`stats[1]`, record `+0x12`,
+/// the value the monster-init halves in the magic-defense term). The
+/// remaining record stats (`stats[2..6]`) map to agility / accuracy /
+/// evasion-class actor fields whose exact split isn't pinned yet, so
+/// `accuracy` / `evasion` keep [`MonsterDef::new`]'s defaults; `exp` / `gold`
+/// likewise default until the `+0x04` XP/drop sub-record is decoded.
+pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
+    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.stats[0]);
+    def.mp = rec.mp;
+    def.udf = rec.stats[1];
+    def.ldf = rec.stats[1];
+    def
+}
+
+/// Build a [`MonsterCatalog`] from the monster archive (PROT entry 867) for
+/// the given monster ids. Ids that don't resolve to a record (out of range,
+/// filler slot, or a decode error) are skipped. Pass the ids a scene's MAN
+/// encounter formations reference so triggered battles resolve real stats.
+pub fn catalog_from_monster_archive(entry867: &[u8], ids: &[u16]) -> MonsterCatalog {
+    let mut cat = MonsterCatalog::new();
+    for &id in ids {
+        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(entry867, id) {
+            cat.insert(monster_def_from_record(&rec));
+        }
+    }
+    cat
+}
+
 /// One slot in a formation row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormationSlot {

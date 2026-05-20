@@ -399,7 +399,8 @@ slot = 255
 label = "title_menu_idle"
 description = "Title menu visible (NEW GAME / CONTINUE). The user has interrupted the attract countdown but not yet pressed X; menu-glyph atlas at 0x80106478 is live; sub-mode VM in title-overlay tick is on the menu branch."
 phase = "title"
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate8"
+# (live slot reused for the rim_elm_queen_bee_battle capture; re-capture to a
+# fresh slot + back it up to re-attach a durable reference here)
 topics = ["title overlay", "title menu", "menu glyph atlas"]
 
 [[scenarios]]
@@ -533,6 +534,14 @@ topics = ["field", "scene transition", "world map", "Drake", "scene-load", "nibb
 # `_DAT_8007b898` -> the count=6 scene_asset_table variant in the town's
 # own PROT block (see autorun_man_source.lua + docs/formats/scene-bundles.md).
 # ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "rim_elm_queen_bee_battle"
+backup_fingerprint = "3d22fa5fd53d47cd22999a7b377ec8ece057fdb5ca164357be0f96a65147ddf3"
+description = "Queen Bee boss-ambush battle in Rim Elm (town01). The fight auto-starts a few seconds after load and is lost in ~15s (no game over). Battle-init runs the monster archive loader (FUN_800542C8 -> FUN_80054CB0), so this is the capture point for the monster stat-record source + format validation. Monster ids overlap town01's encounter formations {4,7,10,61,62,63,79}."
+phase = "battle"
+topics = ["battle", "monster record", "monster stats", "FUN_80054CB0", "FUN_800542C8", "monster_data", "encounter"]
 
 [[scenarios]]
 slot = 255
