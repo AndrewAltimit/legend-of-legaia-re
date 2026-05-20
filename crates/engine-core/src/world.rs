@@ -3832,11 +3832,17 @@ mod tests {
         world.mode = SceneMode::Field;
         world.install_field_player(0);
         // 0x4C outer-nibble-7 sub-1 (block all): bytes
-        // [0x4C, 0x71, x0, z0, x1_src, z1_src, mask] painting tile (2,3).
+        // [0x4C, 0x71, col0, row0, col1, row1, mask]. The paint covers
+        // columns [col0, col1+1) and rows [row0+1, row1+2) (the row bounds
+        // carry an extra +1 the column bounds do not - see FUN_801de840
+        // case 7), so [2, 3, 2, 3] paints column 2, row 4.
         world.load_field_script(vec![0x4C, 0x71, 2, 3, 2, 3, 0x00]);
         let _ = world.tick();
-        // The hook routed the paint into the grid.
-        assert!(world.field_tile_is_wall(320, 448));
+        // The hook routed the paint into the grid: tile (col 2, row 4) ->
+        // world x in [256, 384), z in [512, 640).
+        assert!(world.field_tile_is_wall(320, 576));
+        // The unshifted tile (col 2, row 3) is NOT painted.
+        assert!(!world.field_tile_is_wall(320, 448));
     }
 
     #[test]

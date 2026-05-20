@@ -3651,31 +3651,46 @@ pub fn step<H: FieldHost>(
                     }
                     _ => StepResult::Halt { final_pc: pc },
                 },
-                // Outer nibble 7 - VRAM tile-flag bulk operation. 7-byte
-                // instruction. Sub-0/1 yield via STATE_RESUME; sub-2/3
-                // advance directly; other sub-ops halt at PC.
+                // Outer nibble 7 - collision-grid bulk wall paint
+                // `[4C, 0x7s, col0, row0, col1, row1 (, mask)]`. Other
+                // sub-ops halt at PC.
+                //
+                // Two operand shapes (FUN_801de840 case 7, dump 6364-6444):
+                // - sub-0 (`& 0xf`, clear walls) / sub-1 (`| 0xf0`, block all)
+                //   ignore the mask, so they are **6-byte** ops and exit via
+                //   the `s8 += 6` PC-delta idiom (yield via STATE_RESUME).
+                // - sub-2 (`& ~(mask<<4)`) / sub-3 (`| mask<<4`) consume a
+                //   trailing mask byte, so they are **7-byte** ops and
+                //   `return param_2 + 7` (advance directly).
+                //
+                // Paint range: columns `[col0, col1+1)` but rows
+                // `[row0+1, row1+2)` - the row bounds carry an extra `+1` the
+                // column bounds do not (`uVar27 = pbVar47[2] + 1` ranged
+                // against `pbVar47[4] + 2`, vs `uVar32 = pbVar47[1]` against
+                // `pbVar47[3] + 1`).
                 7 => {
                     let sub = op0 & 0x0F;
                     if !matches!(sub, 0..=3) {
                         return StepResult::Halt { final_pc: pc };
                     }
-                    if operand + 6 > bytecode.len() {
+                    let has_mask = sub >= 2;
+                    let last_operand = if has_mask { operand + 5 } else { operand + 4 };
+                    if last_operand >= bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }
                     let x0 = bytecode[operand + 1];
                     let x1 = bytecode[operand + 3].wrapping_add(1);
-                    let z0 = bytecode[operand + 2];
-                    let z1 = bytecode[operand + 4].wrapping_add(1);
-                    let mask = bytecode[operand + 5];
+                    let z0 = bytecode[operand + 2].wrapping_add(1);
+                    let z1 = bytecode[operand + 4].wrapping_add(2);
+                    let mask = if has_mask { bytecode[operand + 5] } else { 0 };
                     host.op4c_n7_tile_flag_bulk(sub, (x0, x1), (z0, z1), mask);
-                    let advance_pc = pc + header_size + 6;
-                    if sub <= 1 {
-                        StepResult::Yield {
-                            resume_pc: advance_pc,
+                    if has_mask {
+                        StepResult::Advance {
+                            next_pc: pc + header_size + 6,
                         }
                     } else {
-                        StepResult::Advance {
-                            next_pc: advance_pc,
+                        StepResult::Yield {
+                            resume_pc: pc + header_size + 5,
                         }
                     }
                 }
@@ -9494,16 +9509,16 @@ mod tests {
 
     #[test]
     fn op_4c_n7_sub_0_yields_at_next_pc() {
-        // [4C, 0x70, x0=1, z0=2, x1=3, z1=4, mask=0xFF]
-        let bytecode = [0x4Cu8, 0x70, 1, 2, 3, 4, 0xFF];
+        // [4C, 0x70, col0=1, row0=2, col1=3, row1=4]. Sub-0 has no mask
+        // byte, so it is a 6-byte op (yield at pc+6). Columns
+        // [col0, col1+1) = [1, 4); rows [row0+1, row1+2) = [3, 6). The
+        // trailing 0xAA is the next op's first byte, not consumed here.
+        let bytecode = [0x4Cu8, 0x70, 1, 2, 3, 4, 0xAA];
         let mut host = TestHost::default();
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bytecode, 0);
-        assert_eq!(r, StepResult::Yield { resume_pc: 7 });
-        assert_eq!(
-            host.n7_tile_calls,
-            vec![(0u8, (1u8, 4u8), (2u8, 5u8), 0xFFu8)]
-        );
+        assert_eq!(r, StepResult::Yield { resume_pc: 6 });
+        assert_eq!(host.n7_tile_calls, vec![(0u8, (1u8, 4u8), (3u8, 6u8), 0u8)]);
     }
 
     #[test]
