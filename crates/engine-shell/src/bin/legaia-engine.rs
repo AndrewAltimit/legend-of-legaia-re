@@ -23,7 +23,6 @@ use legaia_engine_core::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
-use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
     UploadedFontAtlas, UploadedVram, UploadedVramMesh, level_up_draws_for, shop_draws_for,
@@ -3270,11 +3269,8 @@ struct PlayWindowApp {
     /// Menu runtime - drives shop / inn / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
     menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
-    /// World-map camera controller. `Some` when `--world-map` was passed;
-    /// ticked each frame alongside the session.
-    world_map_ctrl: Option<WorldMapController>,
     /// Pad state from the previous frame - used to compute newly-pressed bits
-    /// for the world-map toggle combo.
+    /// for boot-UI edge detection.
     prev_pad: u16,
     /// Rolling battle-event log surfaced in the HUD. Each tick drains
     /// `World::pending_battle_events` and folds the most recent N entries
@@ -5112,7 +5108,7 @@ impl PlayWindowApp {
         );
         let layout2 = self.font.layout_ascii(&line2);
         out.extend(text_draws_for(&layout2, (8, 26), dim));
-        if let Some(ctrl) = &self.world_map_ctrl {
+        if let Some(ctrl) = &self.session.host.world.world_map_ctrl {
             let mode_str = if ctrl.is_top_view() {
                 "top-view"
             } else {
@@ -5348,6 +5344,11 @@ impl ApplicationHandler for PlayWindowApp {
                         self.prev_pad = self.pad;
                         continue;
                     }
+                    // Route this frame's pad into the engine before the
+                    // tick so World::tick's mode dispatch (world-map
+                    // controller, field-VM dialog-advance poll) sees real
+                    // input. Edge detection lives in World.input.
+                    self.session.host.world.set_pad(self.pad);
                     if let Err(e) = self.session.tick() {
                         log::error!("session tick: {e:#}");
                     }
@@ -5364,10 +5365,6 @@ impl ApplicationHandler for PlayWindowApp {
                             right: p & 0x0020 != 0,
                         };
                         self.menu_runtime.tick(&mut self.session.host.world, input);
-                    }
-                    if let Some(ctrl) = &mut self.world_map_ctrl {
-                        let newly_pressed = self.pad & !self.prev_pad;
-                        ctrl.tick(self.pad, newly_pressed);
                     }
                     self.prev_pad = self.pad;
                     // Record-mode: advance the log's frame counter so
@@ -5743,7 +5740,9 @@ fn cmd_play_window_with_record(
         None => BootSession::open(extracted_root, &cfg)?,
     };
     if world_map {
-        session.host.world.mode = SceneMode::WorldMap;
+        // Installs the controller; World::tick drives it from the pad
+        // routed via world.set_pad each frame.
+        session.host.world.enter_world_map();
     } else {
         // Enter the field scene's first event-script record (the init
         // prologue) so the field VM actually runs on subsequent ticks.
@@ -5846,11 +5845,6 @@ fn cmd_play_window_with_record(
     let mapping = legaia_engine_core::input::Mapping::load_or_default(&std::path::PathBuf::from(
         "legaia-input.toml",
     ));
-    let world_map_ctrl = if world_map {
-        Some(WorldMapController::new())
-    } else {
-        None
-    };
     // Try to decode the publisher logos from PROT 0895 (init.pak) up
     // front. Falls back silently when the disc isn't loaded or the
     // entry doesn't parse - retail discs always have it.
@@ -6036,7 +6030,6 @@ fn cmd_play_window_with_record(
         pad: 0,
         mapping,
         menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
-        world_map_ctrl,
         prev_pad: 0,
         battle_event_log: std::collections::VecDeque::new(),
         pending_dynamic_mesh_slots: Vec::new(),

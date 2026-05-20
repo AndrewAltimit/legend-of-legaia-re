@@ -1958,7 +1958,30 @@ impl World {
                 self.step_field();
                 None
             }
-            SceneMode::Title | SceneMode::WorldMap => None,
+            SceneMode::WorldMap => {
+                self.tick_world_map();
+                None
+            }
+            SceneMode::Title => None,
+        }
+    }
+
+    /// Drive the world-map controller from this frame's pad.
+    ///
+    /// The pad word is whatever the host installed via [`World::set_pad`]
+    /// before this [`World::tick`]; the "held" mask is the just-pressed
+    /// edge (`pad & !pad_prev`), matching the retail newly-pressed word
+    /// (`_DAT_8007B874`) that [`WorldMapController::tick`] expects. No-ops
+    /// when no controller is installed (e.g. world-map mode entered
+    /// without [`World::enter_world_map`]).
+    ///
+    /// Reads only pad bits, never wall-clock state, so the resulting
+    /// controller mutation is deterministic across identical pad streams.
+    fn tick_world_map(&mut self) {
+        let pad = self.input.pad();
+        let pad_held = pad & !self.input.pad_prev();
+        if let Some(ctrl) = &mut self.world_map_ctrl {
+            ctrl.tick(pad, pad_held);
         }
     }
 
@@ -2188,6 +2211,23 @@ impl World {
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
+    }
+
+    /// Place the world into [`SceneMode::WorldMap`] and install a
+    /// [`WorldMapController`] if one isn't already present. After this,
+    /// [`World::tick`] drives the controller from the per-frame pad set
+    /// via [`World::set_pad`] - scroll, azimuth, zoom, and the top-view
+    /// debug toggle all respond to input through the engine tick rather
+    /// than a host-side controller.
+    ///
+    /// Idempotent: re-entering world-map mode keeps the existing
+    /// controller (and its accumulated camera state) instead of resetting
+    /// it.
+    pub fn enter_world_map(&mut self) {
+        self.mode = SceneMode::WorldMap;
+        if self.world_map_ctrl.is_none() {
+            self.world_map_ctrl = Some(WorldMapController::new());
+        }
     }
 
     /// Build the per-frame sprite list for the renderer. One
@@ -3375,6 +3415,62 @@ mod tests {
         // Even if asked for more party than the cap, we clamp to 3.
         world.enter_battle(8, 0, 100);
         assert_eq!(world.party_count, 3);
+    }
+
+    #[test]
+    fn enter_world_map_installs_controller() {
+        let mut world = World::default();
+        assert!(world.world_map_ctrl.is_none());
+        world.enter_world_map();
+        assert_eq!(world.mode, SceneMode::WorldMap);
+        assert!(world.world_map_ctrl.is_some());
+        // Idempotent: re-entry keeps the existing controller + state.
+        world.world_map_ctrl.as_mut().unwrap().camera_x = 42;
+        world.enter_world_map();
+        assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, 42);
+    }
+
+    #[test]
+    fn world_tick_drives_world_map_from_pad() {
+        // A pad installed via set_pad() before tick() flows into the
+        // world-map controller through World::tick's WorldMap arm. This is
+        // the A1 keystone: input changes per-frame World state through the
+        // tick path, not via a host-side controller.
+        let mut world = World::default();
+        world.enter_world_map();
+        world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+
+        // Frame 1: the toggle combo (0x4A held, edge includes 0x40) flips
+        // the view into top-view.
+        world.set_pad(0x4A);
+        let _ = world.tick();
+        assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+
+        // Frame 2: in top-view, the left-scroll bit (0x1000) moves the
+        // camera. Releasing the toggle bits first so this frame is a clean
+        // scroll, not another toggle.
+        world.set_pad(0);
+        let _ = world.tick();
+        world.set_pad(0x1000);
+        let _ = world.tick();
+        assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, -8);
+    }
+
+    #[test]
+    fn world_map_tick_is_deterministic_across_identical_pad_streams() {
+        let pad_stream = [0x4Au16, 0x0000, 0x1000, 0x0020, 0x0002];
+        let drive = |stream: &[u16]| {
+            let mut world = World::default();
+            world.enter_world_map();
+            world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+            for &pad in stream {
+                world.set_pad(pad);
+                let _ = world.tick();
+            }
+            let c = world.world_map_ctrl.unwrap();
+            (c.view_mode, c.camera_x, c.camera_z, c.azimuth, c.zoom)
+        };
+        assert_eq!(drive(&pad_stream), drive(&pad_stream));
     }
 
     #[test]

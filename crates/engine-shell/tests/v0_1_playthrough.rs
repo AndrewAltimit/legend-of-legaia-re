@@ -309,14 +309,15 @@ fn v0_1_oracle_convergence() {
     //
     // Run the engine for `max(MIN_ORACLE_FRAMES, replay.meta.frames)`
     // ticks, feeding the replay's expanded pad stream into
-    // `World.input` per frame. Today the world-tick path doesn't
-    // consume `World.input` directly (see
-    // `build_engine_mode_trace_with_inputs` doc) so the pad threading
-    // is contractual, not behavioural -- the engine evolves the same
-    // way it would with no input. That changes as soon as the first
-    // input consumer (field-VM dialog advance, menu navigation, world-
-    // map controller) moves into the engine tick path, at which point
-    // this oracle starts asserting real input-driven behaviour.
+    // `World.input` per frame. The world-tick path now consumes
+    // `World.input` for the field-VM dialog-advance poll
+    // (`SceneMode::Field`) and the world-map controller
+    // (`SceneMode::WorldMap`); see `build_engine_mode_trace_with_inputs`
+    // doc. The prologue path is `SceneMode::Field`, where player
+    // locomotion isn't yet input-driven, so a fresh boot still doesn't
+    // reach Battle from the pad stream alone -- that leg lands with the
+    // field locomotion + encounter->battle work. The pad threading is
+    // behavioural for the consumers above and contractual for the rest.
     let pad_stream = replay.expand_pad_stream();
     let oracle_frames = replay.meta.frames.max(MIN_ORACLE_FRAMES);
     let trace = build_engine_mode_trace_with_inputs(
