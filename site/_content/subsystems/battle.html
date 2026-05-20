@@ -141,6 +141,10 @@
     <li>Walks the spell list at <code>+0x4C</code> (count at <code>+0x4A</code>) and indexes into a per-element resistance table.</li>
     <li>Final XP / drop record into <code>+0x230</code>.</li>
   </ul>
+  <h3>Monster-record source layout</h3>
+  <p><code>param_1</code> is the in-RAM monster record (after offset&rarr;pointer fixups). Field map from <code>FUN_80054CB0</code>: <code>+0x00</code> name string ptr (&rarr; actor <code>+0x1BC</code>); <code>+0x04</code> XP/drop ptr (&rarr; <code>+0x230</code>); <code>+0x08</code> record byte size; <code>+0x0C</code> u16 <strong>HP</strong>; <code>+0x0E</code> stat; <code>+0x10</code> u16 <strong>MP</strong>; <code>+0x12</code> stat (defense-like); <code>+0x14/0x16/0x18/0x1A</code> base stats; <code>+0x4A</code> magic-slot count; <code>+0x4C</code> spell-entry ptr array (each entry's first byte = element type 2/3/4/5/0xB &rarr; magic-resist at <code>+0x1EF..0x1F3</code>).</p>
+  <h3>Monster-archive source (open)</h3>
+  <p>Records are streamed by <code>FUN_800542C8</code> as per-monster <code>0x14000</code>-byte LZS blocks at <code>(id-1)*0x14000</code> (monster id = global monster-table index, ~175 entries). The <strong>source bytes are not located</strong>: retail builds <code>data\battle\&lt;8-byte name of PROT 869 monster_data&gt;</code> and opens it via <code>FUN_800608F0</code>, a <code>break 0x103</code> host-PC trap (a build-time dev-host artifact with no matching disc file); PROT.DAT entry 869 is only <code>0x30000</code> and is not a valid <code>(id-1)*0x14000</code> archive (slot 0 decodes to all-zeros &mdash; an LZS false positive). Locating the real bytes needs a runtime watchpoint on the monster-record load during a live battle (capture the CD-DMA source LBA), the same technique used for the base-collision grid and title-overlay sources. See <a href="../reference/open-rev-eng-threads.html">open-rev-eng-threads</a>.</p>
 </section>
 
 <section class="doc-section" id="stat-aggregator">

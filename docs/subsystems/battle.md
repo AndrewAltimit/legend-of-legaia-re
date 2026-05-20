@@ -98,6 +98,29 @@ Called from `FUN_800542C8` (secondary battle archive loader). Populates a battle
 
 This is the canonical "monster spawn" path. Engine port reads the record once, populates the actor struct, and lets `FUN_801E295C` take over.
 
+### Monster-record source layout
+
+`param_1` is the in-RAM monster record (after the loader's offset→pointer fixups). Field map traced from `FUN_80054CB0`:
+
+| Offset | Type | Use |
+|---|---|---|
+| `+0x00` | u32 | Name string pointer (disc offset → pointer; `strlen` copied into actor `+0x1BC`). |
+| `+0x04` | u32 | XP / drop record pointer → actor `+0x230`. |
+| `+0x08` | u32 | Record byte size (allocation footprint). |
+| `+0x0C` | u16 | **HP** → actor `+0x14C/+0x14E/+0x172`. |
+| `+0x0E` | u16 | Stat → actor `+0x154/+0x156`. |
+| `+0x10` | u16 | **MP** → actor `+0x150/+0x152/+0x174`. |
+| `+0x12` | u16 | Stat → actor `+0x158/+0x15A` (defense-like; halved in the `+0x287`-flag branch). |
+| `+0x14` / `+0x16` / `+0x18` / `+0x1A` | u16 | Base stats → actor `+0x15C/+0x160/+0x168/+0x164`. |
+| `+0x4A` | u8 | Magic-slot count. |
+| `+0x4C` | u32[] | Spell-entry pointers (count at `+0x4A`); each entry's first byte is the element type (2/3/4/5/0xB) that sets per-element magic-resistance at actor `+0x1EF..+0x1F3`. |
+
+### Monster-archive source (open)
+
+The records are streamed by `FUN_800542C8` as **per-monster `0x14000`-byte LZS blocks** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~175 entries). The block's head is the record above; the name/XP/spell payloads follow at the fixed-up offsets.
+
+The **archive source bytes are not yet located**. The retail path builds `data\battle\<8-byte name of PROT 869 monster_data>` (name from the per-entry filename table `DAT_8007B31C + idx*8`) and opens it via `FUN_800608F0`, a `break 0x103` host-PC kernel trap — a build-time dev-host artifact with no matching ISO9660 file on the retail disc. PROT.DAT entry 869 is only `0x30000` and is **not** a valid `(id-1)*0x14000` archive (its slot 0 LZS-decodes to all-zeros — an LZS false positive). Locating the real bytes needs a runtime watchpoint on the monster-record load during a live battle (capture the CD-DMA source LBA), the same technique used to pin the [base-collision grid](field-locomotion.md) and the [title overlay](boot.md) sources. Until then the encounter formations resolve monster-ids but not stat blocks. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+
 ## Stat aggregator (`FUN_80042558`)
 
 Per-frame helper that walks the 3 active party members (stride `0x414` - see [character record layout](#character-record-layout)) and:

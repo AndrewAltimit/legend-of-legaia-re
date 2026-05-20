@@ -90,6 +90,12 @@
         <td><code>project_shop_ui_and_levelup.md</code> + <code>project_next_session_backlog.md</code> &sect; H</td>
       </tr>
       <tr>
+        <td>Monster stat-record archive source</td>
+        <td><code>open</code></td>
+        <td>The monster-record <strong>format</strong> is pinned from <code>FUN_80054CB0</code> (name ptr <code>@0x00</code>, XP/drop <code>@0x04</code>, HP <code>@0x0C</code>, MP <code>@0x10</code>, stat u16s <code>@0x0E/0x12/0x14/0x16/0x18/0x1A</code>, magic count <code>@0x4A</code>, spell-ptr array <code>@0x4C</code>); <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS blocks at <code>(id-1)*0x14000</code>. But the <strong>source bytes</strong> aren't located: retail opens <code>data\battle\&lt;8-byte name of PROT 869&gt;</code> via the <code>break 0x103</code> host-PC trap (a dev-host artifact, no matching disc file), and PROT.DAT entry 869 is not a valid <code>(id-1)*0x14000</code> archive (slot 0 LZS-decodes to all-zeros &mdash; a false positive). Closing it needs a runtime watchpoint on the monster-record load during a live battle (capture the CD-DMA source LBA), since the archive is likely an unindexed disc region. Encounter formations already resolve monster-ids; only the stat blocks are missing.</td>
+        <td><code>project_monster_stat_archive.md</code></td>
+      </tr>
+      <tr>
         <td>Terra slot-3 / story-flag overlap</td>
         <td><code>open</code></td>
         <td>Diff a real Terra-in-party memory-card save against the slot layout. <code>RETAIL_CHAR_RECORD_HEADER_SIZE + 3 * 0x414 = 0x14AB</code> collides with the <code>0x14C0</code> story-flag region &mdash; either Terra's record is shorter than 0x414, or the engine special-cases slot 3, or the header-size constant drifts.</td>
