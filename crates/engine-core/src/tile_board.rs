@@ -1,19 +1,23 @@
-//! Field tile-grid movement + collision.
+//! Tile-board grid movement + collision (puzzle / board minigame mode).
 //!
-//! PORT: overlay_0897_801ef2b0 (field-walk state machine) + field-VM op
-//! `0x49` (`_DAT_8007b450` grid install).
+//! PORT: walk state machine `overlay_0897_801ef2b0`; grid header install
+//! field-VM op `0x49` (`overlay_0897_801de840`, `_DAT_8007b450`).
 //!
-//! Player field movement is grid-based: the scene is a `width × height`
-//! array of byte cells, the player occupies one `(col, row)` cell, and
-//! each accepted d-pad press advances the player exactly one cell. The
-//! cell array *is* the collision data - a destination cell value of
-//! [`CELL_WALL`] (`2`) is a wall. See
-//! [`docs/subsystems/field-walk.md`](../../../docs/subsystems/field-walk.md).
+//! This is **not** general town/field locomotion (Legaia towns use free
+//! movement). It is the discrete tile-board mode used by puzzle rooms /
+//! board minigames within the field overlay: the board is a
+//! `width × height` array of byte cells, the player occupies one
+//! `(col, row)` cell, and each accepted d-pad press advances exactly one
+//! cell. The cell array *is* the collision data - a destination cell
+//! value of [`CELL_WALL`] (`2`) is a wall. Each cell value also indexes
+//! a tile-actor table the board renderer draws. See
+//! [`docs/subsystems/tile-board.md`](../../../docs/subsystems/tile-board.md).
 //!
-//! The grid (header + cells) is installed inline in the field-VM event
-//! script by op `0x49`; this module models the runtime view the walk SM
-//! consumes (`overlay_0897_801ef2b0`), not the on-disc parse (the exact
-//! inline cell-array offset is still open - see the doc).
+//! The board is installed inline in the field-VM event script by op
+//! `0x49`; some instances are procedurally generated (the board filler
+//! `overlay_0897_801e0b1c` seeds cells from BIOS `rand`). This module
+//! models the runtime view the walk SM consumes, not the on-disc /
+//! generated fill.
 
 /// World units per tile (`0x80`). Retail multiplies the tile index by
 /// this when mapping a cell to a world position.
@@ -29,27 +33,27 @@ pub const CELL_WALL: u8 = 2;
 /// One of the four grid-step directions. The retail walk SM decodes
 /// these from the camera-facing-remapped pad
 /// (`func_0x800467e8` then mask bits `0x1000`/`0x2000`/`0x4000`/`0x8000`);
-/// the engine maps screen d-pad directions to grid axes here. The
+/// callers map screen d-pad directions to board axes here. The
 /// camera-relative remap is not yet ported (the facing transform is an
 /// open RE item), so this is the camera-neutral mapping: screen-up
 /// decrements the row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WalkDir {
+pub enum TileStep {
     Up,
     Down,
     Left,
     Right,
 }
 
-/// Runtime field grid: dimensions, world-tile origin, the mutable cell
+/// Runtime tile board: dimensions, world-tile origin, the mutable cell
 /// array, and the player's logical cell. Mirrors the runtime state the
 /// walk SM reads (`DAT_801f35c0` cells, `_DAT_8007b450` header fields,
 /// `DAT_801f35c8/cc` player cell).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FieldGrid {
-    /// Grid width in columns (`_DAT_8007b450 + 3`).
+pub struct TileBoard {
+    /// Board width in columns (`_DAT_8007b450 + 3`).
     pub width: u8,
-    /// Grid height in rows (`_DAT_8007b450 + 4`).
+    /// Board height in rows (`_DAT_8007b450 + 4`).
     pub height: u8,
     /// World tile origin X, added to `col` before the world mapping
     /// (`_DAT_8007b450 + 1`).
@@ -64,8 +68,8 @@ pub struct FieldGrid {
     pub player_row: u8,
 }
 
-impl FieldGrid {
-    /// Build a grid from raw parts. `cells` must be `width * height`
+impl TileBoard {
+    /// Build a board from raw parts. `cells` must be `width * height`
     /// bytes (row-major); shorter inputs read as walls past their end
     /// via [`Self::cell`] returning `None`.
     pub fn new(width: u8, height: u8, origin_x: u8, origin_z: u8, cells: Vec<u8>) -> Self {
@@ -116,14 +120,14 @@ impl FieldGrid {
     /// Candidate `(col, row)` one step from the player in `dir`. May be
     /// out of bounds (negative or past the edge); callers gate it
     /// through [`Self::is_blocked`].
-    pub fn neighbor(&self, dir: WalkDir) -> (i32, i32) {
+    pub fn neighbor(&self, dir: TileStep) -> (i32, i32) {
         let c = self.player_col as i32;
         let r = self.player_row as i32;
         match dir {
-            WalkDir::Up => (c, r - 1),
-            WalkDir::Down => (c, r + 1),
-            WalkDir::Left => (c - 1, r),
-            WalkDir::Right => (c + 1, r),
+            TileStep::Up => (c, r - 1),
+            TileStep::Down => (c, r + 1),
+            TileStep::Left => (c - 1, r),
+            TileStep::Right => (c + 1, r),
         }
     }
 
@@ -132,7 +136,7 @@ impl FieldGrid {
     /// at decision time) and return the destination's world-position
     /// target the actor interpolates toward. Returns `None` when the
     /// step is blocked - the player stays put.
-    pub fn try_step(&mut self, dir: WalkDir) -> Option<(i32, i32)> {
+    pub fn try_step(&mut self, dir: TileStep) -> Option<(i32, i32)> {
         let (col, row) = self.neighbor(dir);
         if self.is_blocked(col, row) {
             return None;
@@ -147,74 +151,74 @@ impl FieldGrid {
 mod tests {
     use super::*;
 
-    /// 3x3 grid, all floor (cell 1) except the centre column row 1 is a
+    /// 3x3 board, all floor (cell 1) except the centre column row 1 is a
     /// wall (cell 2). Player starts at (0,0).
-    fn grid_3x3() -> FieldGrid {
+    fn board_3x3() -> TileBoard {
         // row-major: (col,row)
         // row0: 1 1 1
         // row1: 1 2 1
         // row2: 1 1 1
         let cells = vec![1, 1, 1, 1, CELL_WALL, 1, 1, 1, 1];
-        FieldGrid::new(3, 3, 0, 0, cells)
+        TileBoard::new(3, 3, 0, 0, cells)
     }
 
     #[test]
     fn cell_out_of_bounds_is_none() {
-        let g = grid_3x3();
-        assert_eq!(g.cell(0, 0), Some(1));
-        assert_eq!(g.cell(1, 1), Some(CELL_WALL));
-        assert_eq!(g.cell(-1, 0), None);
-        assert_eq!(g.cell(3, 0), None);
-        assert_eq!(g.cell(0, 3), None);
+        let b = board_3x3();
+        assert_eq!(b.cell(0, 0), Some(1));
+        assert_eq!(b.cell(1, 1), Some(CELL_WALL));
+        assert_eq!(b.cell(-1, 0), None);
+        assert_eq!(b.cell(3, 0), None);
+        assert_eq!(b.cell(0, 3), None);
     }
 
     #[test]
     fn wall_and_oob_block() {
-        let g = grid_3x3();
-        assert!(g.is_blocked(1, 1)); // wall
-        assert!(g.is_blocked(-1, 0)); // oob
-        assert!(g.is_blocked(3, 3)); // oob
-        assert!(!g.is_blocked(0, 0)); // floor
-        assert!(!g.is_blocked(2, 2)); // floor
+        let b = board_3x3();
+        assert!(b.is_blocked(1, 1)); // wall
+        assert!(b.is_blocked(-1, 0)); // oob
+        assert!(b.is_blocked(3, 3)); // oob
+        assert!(!b.is_blocked(0, 0)); // floor
+        assert!(!b.is_blocked(2, 2)); // floor
     }
 
     #[test]
     fn tile_world_centres_on_tile() {
-        let g = FieldGrid::new(4, 4, 2, 5, vec![1; 16]);
+        let b = TileBoard::new(4, 4, 2, 5, vec![1; 16]);
         // (origin + idx) * 0x80 + 0x40
-        assert_eq!(g.tile_world(0, 0), (2 * 0x80 + 0x40, 5 * 0x80 + 0x40));
-        assert_eq!(g.tile_world(1, 1), (3 * 0x80 + 0x40, 6 * 0x80 + 0x40));
+        assert_eq!(b.tile_world(0, 0), (2 * 0x80 + 0x40, 5 * 0x80 + 0x40));
+        assert_eq!(b.tile_world(1, 1), (3 * 0x80 + 0x40, 6 * 0x80 + 0x40));
     }
 
     #[test]
     fn step_into_floor_commits_and_returns_target() {
-        let mut g = grid_3x3();
+        let mut b = board_3x3();
         // (0,0) -> Right -> (1,0) floor
-        let target = g.try_step(WalkDir::Right);
-        assert_eq!((g.player_col, g.player_row), (1, 0));
-        assert_eq!(target, Some(g.tile_world(1, 0)));
+        let target = b.try_step(TileStep::Right);
+        assert_eq!((b.player_col, b.player_row), (1, 0));
+        assert_eq!(target, Some(b.tile_world(1, 0)));
     }
 
     #[test]
     fn step_into_wall_is_rejected() {
-        let mut g = grid_3x3();
+        let mut b = board_3x3();
         // move to (1,0) then Down into the (1,1) wall.
-        g.try_step(WalkDir::Right);
-        assert_eq!((g.player_col, g.player_row), (1, 0));
-        let blocked = g.try_step(WalkDir::Down);
+        b.try_step(TileStep::Right);
+        assert_eq!((b.player_col, b.player_row), (1, 0));
+        let blocked = b.try_step(TileStep::Down);
         assert_eq!(blocked, None);
         // stayed put
-        assert_eq!((g.player_col, g.player_row), (1, 0));
+        assert_eq!((b.player_col, b.player_row), (1, 0));
     }
 
     #[test]
     fn step_off_edge_is_rejected() {
-        let mut g = grid_3x3();
+        let mut b = board_3x3();
         // (0,0) -> Up would be (0,-1), out of bounds.
-        assert_eq!(g.try_step(WalkDir::Up), None);
-        assert_eq!((g.player_col, g.player_row), (0, 0));
+        assert_eq!(b.try_step(TileStep::Up), None);
+        assert_eq!((b.player_col, b.player_row), (0, 0));
         // Left also oob.
-        assert_eq!(g.try_step(WalkDir::Left), None);
-        assert_eq!((g.player_col, g.player_row), (0, 0));
+        assert_eq!(b.try_step(TileStep::Left), None);
+        assert_eq!((b.player_col, b.player_row), (0, 0));
     }
 }
