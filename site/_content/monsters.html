@@ -61,12 +61,12 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
             <th class="col-name" data-key="name">Name</th>
             <th data-key="hp">HP</th>
             <th data-key="mp">MP</th>
-            <th data-key="s0" title="stat0 - dominant offensive value (≈ attack)">S0*</th>
-            <th data-key="s1" title="stat1 - defense-like value (≈ defense)">S1*</th>
-            <th data-key="s2" title="stat2 - mapping still being reverse-engineered">S2</th>
-            <th data-key="s3" title="stat3 - mapping still being reverse-engineered">S3</th>
-            <th data-key="s4" title="stat4 - mapping still being reverse-engineered">S4</th>
-            <th data-key="s5" title="stat5 - mapping still being reverse-engineered">S5</th>
+            <th data-key="s1" title="Attack — attacker's offensive stat (record +0x12, actor +0x158)">ATK</th>
+            <th data-key="s2" title="Defense (high/upper facet) — record +0x14, actor +0x15C">DEF↑</th>
+            <th data-key="s3" title="Defense (low/lower facet) — record +0x16, actor +0x160">DEF↓</th>
+            <th data-key="s4" title="Agility — seeds the accuracy/evasion roll (record +0x18, actor +0x168)">AGL</th>
+            <th data-key="s0" title="Record +0x0E — role still being reverse-engineered">S0</th>
+            <th data-key="s5" title="Record +0x1A — role still being reverse-engineered">S5</th>
             <th data-key="magic" title="number of spells the enemy can cast">Magic</th>
           </tr>
         </thead>
@@ -75,7 +75,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
     </div>
   </div>
 
-  <p class="hint">* The first two stat columns are tentatively mapped (S0 ≈ attack, S1 ≈ defense); the remaining stat slots are still being pinned, so they're shown as raw record values. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle.html">battle subsystem page</a>.</p>
+  <p class="hint"><strong>ATK / DEF↑ / DEF↓ / AGL</strong> are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the damage / accuracy formulas read ATK as the attacker's offense, DEF↑/DEF↓ as the two defense facets (selected by attack move index), and AGL as the accuracy/evasion seed. The two greyed columns (<code>S0</code> = record +0x0E, <code>S5</code> = +0x1A) are still being reverse-engineered. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
 </section>
 
 <section class="doc-section">
@@ -135,11 +135,11 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
         <td class="col-name">${escapeHtml(r.name)}</td>
         <td>${r.hp}</td>
         <td class="${r.mp ? '' : 'dim'}">${r.mp}</td>
-        <td>${r.s0}</td>
         <td>${r.s1}</td>
-        <td class="dim">${r.s2}</td>
-        <td class="dim">${r.s3}</td>
-        <td class="dim">${r.s4}</td>
+        <td>${r.s2}</td>
+        <td>${r.s3}</td>
+        <td>${r.s4}</td>
+        <td class="dim">${r.s0}</td>
         <td class="dim">${r.s5}</td>
         <td class="${r.magic ? '' : 'dim'}">${r.magic}</td>
       </tr>`).join('');

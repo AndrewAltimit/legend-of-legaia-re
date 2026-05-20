@@ -109,19 +109,26 @@ impl MonsterCatalog {
 /// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
 /// entry 867; see [`legaia_asset::monster_archive`]).
 ///
-/// Confidently mapped fields: `id`, `name`, `hp`, `mp`, plus `attack` from
-/// the record's dominant offensive stat (`stats[0]`, record `+0x0E`) and the
-/// defense pair from the "defense-like" stat (`stats[1]`, record `+0x12`,
-/// the value the monster-init halves in the magic-defense term). The
-/// remaining record stats (`stats[2..6]`) map to agility / accuracy /
-/// evasion-class actor fields whose exact split isn't pinned yet, so
-/// `accuracy` / `evasion` keep [`MonsterDef::new`]'s defaults; `exp` / `gold`
-/// likewise default until the `+0x04` XP/drop sub-record is decoded.
+/// Mapping traced from `FUN_80054CB0` (record→actor field copy) plus the
+/// damage / accuracy formulas (see `legaia_asset::monster_archive` and
+/// `docs/subsystems/battle-formulas.md`):
+/// - `attack` <- `rec.attack()` (`stats[1]`, record `+0x12`) — the value the
+///   physical-damage routine reads as the attacker's offense (actor `+0x158`).
+/// - `udf` / `ldf` <- `rec.defense_high()` / `rec.defense_low()` (`stats[2]` /
+///   `stats[3]`) — the two defense facets the routine selects by move index.
+/// - `accuracy` / `evasion` <- `rec.agility()` (`stats[4]`) clamped to a byte
+///   — the actor seeds both the accuracy and evasion roll from this stat.
+///
+/// `exp` / `gold` / `drop_item` still default until the `+0x04` XP/drop
+/// sub-record interior is decoded; `stats[0]` / `stats[5]` roles are open.
 pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
-    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.stats[0]);
+    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.attack());
     def.mp = rec.mp;
-    def.udf = rec.stats[1];
-    def.ldf = rec.stats[1];
+    def.udf = rec.defense_high();
+    def.ldf = rec.defense_low();
+    let agl = rec.agility().min(u8::MAX as u16) as u8;
+    def.accuracy = agl;
+    def.evasion = agl;
     def
 }
 

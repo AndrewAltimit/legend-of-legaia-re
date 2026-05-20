@@ -20,14 +20,48 @@ Before the switch, the function fills four local 8-pointer arrays (one entry per
 
 | Local | Actor offset | Meaning |
 |---|---|---|
-| `local_90[i]` | `+0x14C` | Current HP |
-| `local_30[i]` | `+0x14E` | (paired with HP - likely a saved/working copy) |
-| `local_50[i]` | `+0x150` | Current MP |
-| `local_70[i]` | `+0x152` | (paired with MP) |
+| `local_b0[i]` | `+0x14C` | Current HP |
+| `local_90[i]` | `+0x14E` | HP working/base (paired with current) |
+| `local_70[i]` | `+0x150` | Current MP |
+| `local_50[i]` | `+0x152` | MP working/base (paired) |
+
+(Release setup at lines 2014-2017; the debug branch at 2027-2030 aliases the same windows over the per-character record at `0x80084708 + slot*0x414`, offsets `+0x104..+0x10A`.)
 
 In the **debug** branch (when the condition at `0x80040314` selects), the loop iterates 7 times over the 8-slot pointer table; in the **release** branch it iterates the 3-slot party-only path using the character-record stride `0x414` from base `0x80084708`.
 
 Cited in `ghidra/scripts/funcs/800402f4.txt` lines 22-87 (release setup), 1986-2034 (decomp).
+
+## Actor stat block + monster record mapping
+
+The per-actor stat block runs `+0x14C..+0x16A`, each stat stored as a **pair** of adjacent halfwords (the lower offset is the working value the formulas read; `+2` is the base used to restore after a buff wears off). For enemies, `FUN_80054CB0` (`ghidra/scripts/funcs/80054cb0.txt`, lines 629-699) copies the [monster stat record](battle.md) field-by-field into this block:
+
+| Record offset | Actor pair | Stat | How named |
+|---|---|---|---|
+| `+0x0C` | `+0x14C/+0x14E` (+`+0x172`) | HP | direct |
+| `+0x10` | `+0x150/+0x152` (+`+0x174`) | MP | direct |
+| `+0x0E` | `+0x154/+0x156` | `stat0` (role open) | outside the buffable block; feeds a spirit/damage-popup path |
+| `+0x12` | `+0x158/+0x15A` | **ATK** | attacker's offense in the damage routine |
+| `+0x14` | `+0x15C/+0x15E` | **DEF↑** (high/upper) | defender defense, branch A |
+| `+0x16` | `+0x160/+0x162` | **DEF↓** (low/lower) | defender defense, branch B |
+| `+0x18` | `+0x168/+0x16A` | **AGL** | accuracy/evasion seed (selector 9) |
+| `+0x1A` | `+0x164/+0x166` | `stat5` (role open) | buffable; accumulated in `FUN_80051D84` |
+
+`stat4` (`+0x18`) is also rescaled into the accuracy/evasion pair at copy time (`+0x168/+0x16A = stat4 + stat4/4` or `+ stat4/8` under the `_DAT_8007BD24+0x287` difficulty flag).
+
+### Physical attack damage - `overlay_battle_action_801ec3e4`
+
+Lines 2716-2826. The raw hit value is built from the **attacker's ATK** (`actor[+0x158]`) and reduced by the **defender's defense** - the routine reads `actor[+0x15C]` (DEF↑) when the attack's move index satisfies `(move - 0xC) % 10 < 5`, else `actor[+0x160]` (DEF↓):
+
+```c
+atk = attacker[+0x158];                                  // stat1 = ATK
+def = ((move - 0xC) % 10 < 5) ? target[+0x15C]           // DEF↑ (stat2)
+                              : target[+0x160];           // DEF↓ (stat3)
+raw   = (atk + rand() % (atk/8 + 1)) * armor_factor>>4 + … ;
+guard = def + rand() % (def/8 + 1) + … ;
+// damage applied when raw exceeds guard, scaled by the difference
+```
+
+This is the binding that names ATK / DEF↑ / DEF↓; the `legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` / `defense_low()`) and `engine-core`'s `monster_def_from_record` follow it.
 
 ### Selector 0 - basic damage (Attack / item / generic spell)
 
@@ -46,7 +80,7 @@ if (sub_index < 3) {                              // party-side cap
 
 Reads:
 
-1. The base hit value is the difference between two stat slots whose pointer-table indices come from the per-actor stat layout (the function aliases `local_90` and `local_b0` over the same 0x14C..+0x162 range with different starting offsets).
+1. This is the HP **applicator**, not the attack-vs-defense calc: the base value is `actor[+0x14E] - actor[+0x14C]` (HP working minus current) *within the target actor* - i.e. the pending HP delta. The atk/def hit value is computed earlier in `overlay_battle_action_801ec3e4` (see above) and staged into the actor before this selector applies it.
 2. Result is capped at `DAT_8007655C[sub_index]` for party slots 0..2. The cap table is 6 halfwords (twelve bytes) and represents per-character damage caps.
 3. The capped value is then handed to a downstream applicator (the case body keeps writing it back into the actor record at `+0x14C`).
 
@@ -70,22 +104,18 @@ if (target_evasion < roll) {
 
 ### Stat-buff selectors (1..7)
 
-These cases multiply `actor_record + 0x158..+0x16A` by `6/5` (decompiles to the constant `0x4cccccccd >> 0x22` shift pattern) per visible step, with a clamp to `0xFFFF`. They are the +20% stat-up animations for buff spells.
+These cases multiply the actor stat block by `6/5` (decompiles to `0x4cccccccd >> 0x22` then `+ uVar13/5`, clamped to `0xFFFF`) - the +20% stat-up animations for buff spells. The earlier "one distinct stat per halfword across `+0x158..+0x16A`" reading was wrong: the actor stores each stat as a **pair of adjacent halfwords** (working + base, both seeded to the same value by `FUN_80054CB0`), so a buff touches two halfwords per stat. See the [actor stat block mapping](#actor-stat-block--monster-record-mapping) below.
 
-Hit one halfword per call:
+Selector 7's `param_2` sub-index picks which stat group to buff (lines 2473-2574 of `800402f4.txt`):
 
-| Offset | Semantic (inferred from buff order) |
-|---|---|
-| `+0x158` | ATK |
-| `+0x15A` | DEF |
-| `+0x15C` | (one of MAG / SPR / AGL - order not yet pinned) |
-| `+0x15E` | |
-| `+0x160` | |
-| `+0x162` | |
-| `+0x168` | accuracy/evasion (see selector 9) |
-| `+0x16A` | (paired with accuracy) |
+| `param_2` | Actor pairs raised | Stat(s) |
+|---|---|---|
+| 3 | `+0x158/+0x15A` | ATK |
+| 2 | `+0x15C/+0x15E` and `+0x160/+0x162` | both defense facets (DEF↑ + DEF↓) |
+| 1 | `+0x164/+0x166` | `stat5` (role open) |
+| 4 | `+0x164/+0x166` + `+0x15C/+0x15E` | `stat5` + DEF↑ |
 
-The stat semantics need a runtime trace to disambiguate - capturing actor record bytes before/after a known buff (e.g. Power Up) would resolve the pairing.
+The single "Defense Up" buff (sub 2) raising **both** `+0x15C` and `+0x160` together is what confirms those two are the two facets of one defense, not separate stats.
 
 ## Spirit damage formula
 
@@ -151,5 +181,6 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
 ## What's still open
 
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
-- **Stat-field semantics inside the actor record at `+0x158..+0x16A`.** The buff order in selectors 1..7 implies an ordering, but mapping each halfword to ATK / DEF / MAG / SPR / AGL / LUCK requires capturing actor records before / after each buff spell. Mednafen save state diff is the unblock.
+- **`stat0` (record `+0x0E`, actor `+0x154`) and `stat5` (record `+0x1A`, actor `+0x164`) roles.** ATK / DEF↑ / DEF↓ / AGL are now pinned from the damage + accuracy formulas (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)). The two remaining stats are not yet named: `stat0` sits outside the buffable block and is read into the spirit/damage-popup path (`overlay_battle_action_801d388c`); `stat5` is buffable and accumulated in `FUN_80051D84`. Candidates are turn-order speed and a luck/critical term; a buff-spell save-state diff plus a wiki cross-check of decoded values would disambiguate.
+- **`+0x04` XP / drop sub-record interior.** The record's `xp_offset` word points at a sub-record (staged to actor `+0x230`) carrying EXP / gold / drop-item; its field layout isn't decoded, so `monster_def_from_record` defaults `exp` / `gold` / `drop_item`.
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.
