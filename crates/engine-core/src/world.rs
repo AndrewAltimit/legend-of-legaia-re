@@ -62,6 +62,45 @@ pub const FIELD_SPAWN_START_SLOT: u8 = 8;
 /// engine. 4096 is well above the largest real Tactical-Arts move script.
 pub const MOVE_VM_BUDGET: usize = 4096;
 
+/// World units the player actor advances per frame while interpolating
+/// to a target tile centre during a tile-board step. Retail derives the
+/// per-frame delta from the frame-speed scalar `DAT_1f800393`
+/// (`overlay_0897_801ef2b0` case 2); the engine uses a fixed cadence of
+/// `TILE / 8` (16 units) - eight frames to cross one 128-unit tile.
+const TILE_BOARD_SPEED: i32 = crate::tile_board::TILE / 8;
+
+/// Move `cur` toward `target` by at most `max_delta`, snapping exactly
+/// onto `target` when within range. Used by the tile-board interpolator.
+fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
+    let d = target - cur;
+    if d.abs() <= max_delta {
+        target
+    } else if d > 0 {
+        cur + max_delta
+    } else {
+        cur - max_delta
+    }
+}
+
+/// Decode one tile-step direction from the pad. Mirrors the single-
+/// direction decode in the walk SM (`overlay_0897_801ef2b0` case 4):
+/// vertical takes priority over horizontal, and only one axis moves per
+/// step. D-pad only (board movement is digital).
+fn tile_step_from_input(input: &input::InputState) -> Option<crate::tile_board::TileStep> {
+    use crate::tile_board::TileStep;
+    if input.pressed(input::PadButton::Up) {
+        Some(TileStep::Up)
+    } else if input.pressed(input::PadButton::Down) {
+        Some(TileStep::Down)
+    } else if input.pressed(input::PadButton::Left) {
+        Some(TileStep::Left)
+    } else if input.pressed(input::PadButton::Right) {
+        Some(TileStep::Right)
+    } else {
+        None
+    }
+}
+
 /// One queued fade request. Move-VM ext sub-op 0x3C writes either an
 /// immediate fade (`ticks == 0`) or a ramp (`ticks > 0`) - engines drain
 /// `pending_fade` each frame to drive the screen overlay.
@@ -591,6 +630,21 @@ pub struct World {
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
 
+    /// Tile-board grid (puzzle / board minigame mode; movement +
+    /// collision). `Some` when a field scene has installed a tile board
+    /// (retail field-VM op `0x49`). Drives discrete cell-to-cell player
+    /// movement in the `SceneMode::Field` tick. This is *not* general
+    /// town locomotion (Legaia towns use free movement). See
+    /// [`crate::tile_board`].
+    pub tile_board: Option<crate::tile_board::TileBoard>,
+
+    /// While stepping on a tile board, the world `(x, z)` the player
+    /// actor is interpolating toward (the destination tile centre).
+    /// `None` when the player is idle and ready to accept a new
+    /// direction. Mirrors the walk SM's "interpolate to target" state
+    /// (`overlay_0897_801ef2b0` case 2).
+    pub tile_board_target: Option<(i32, i32)>,
+
     /// Per-actor status-effect tracker (Burned / Shocked / Poisoned /
     /// Asleep / Confused / Silenced / Stunned / Petrified). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -816,6 +870,8 @@ impl World {
             level_up_tracker: LevelUpTracker::new(),
             current_level_up_banner: None,
             world_map_ctrl: None,
+            tile_board: None,
+            tile_board_target: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
@@ -1954,11 +2010,90 @@ impl World {
         }
         match self.mode {
             SceneMode::Battle => Some(self.step_battle()),
-            SceneMode::Field | SceneMode::Cutscene => {
+            SceneMode::Field => {
+                self.step_field();
+                self.tick_tile_board();
+                None
+            }
+            SceneMode::Cutscene => {
                 self.step_field();
                 None
             }
-            SceneMode::Title | SceneMode::WorldMap => None,
+            SceneMode::WorldMap => {
+                self.tick_world_map();
+                None
+            }
+            SceneMode::Title => None,
+        }
+    }
+
+    /// Tile-board player step: read one d-pad direction from
+    /// [`World.input`](Self::input), gate it against the board's
+    /// collision cells, and interpolate the player actor toward the
+    /// destination tile centre. Drives the puzzle / board minigame mode,
+    /// not general town locomotion.
+    ///
+    /// PORT: the walk state machine in `overlay_0897_801ef2b0`. The
+    /// player is either *idle* (`tile_board_target == None`, accepting a
+    /// new direction) or *interpolating* toward a committed target tile
+    /// (case 2). A direction is only consumed while idle, so holding the
+    /// d-pad steps tile-by-tile - matching retail, where the SM re-reads
+    /// the pad only after the previous step's interpolation completes.
+    ///
+    /// No-ops without a player actor slot or an installed
+    /// [`tile_board`](crate::tile_board), and while a dialog box is up
+    /// (the field VM owns the frame). Reads only pad bits + board state,
+    /// so it is deterministic across identical pad streams.
+    fn tick_tile_board(&mut self) {
+        if self.current_dialog.is_some() {
+            return;
+        }
+        let Some(player_slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = player_slot as usize;
+        if self.tile_board.is_none() || slot >= self.actors.len() {
+            return;
+        }
+
+        // Interpolating toward a committed target tile.
+        if let Some((tx, tz)) = self.tile_board_target {
+            let ms = &mut self.actors[slot].move_state;
+            let nx = step_toward(ms.world_x as i32, tx, TILE_BOARD_SPEED);
+            let nz = step_toward(ms.world_z as i32, tz, TILE_BOARD_SPEED);
+            ms.world_x = nx as i16;
+            ms.world_z = nz as i16;
+            if nx == tx && nz == tz {
+                self.tile_board_target = None;
+            }
+            return;
+        }
+
+        // Idle: decode one direction and try to step.
+        let Some(dir) = tile_step_from_input(&self.input) else {
+            return;
+        };
+        if let Some((tx, tz)) = self.tile_board.as_mut().and_then(|b| b.try_step(dir)) {
+            self.tile_board_target = Some((tx, tz));
+        }
+    }
+
+    /// Drive the world-map controller from this frame's pad.
+    ///
+    /// The pad word is whatever the host installed via [`World::set_pad`]
+    /// before this [`World::tick`]; the "held" mask is the just-pressed
+    /// edge (`pad & !pad_prev`), matching the retail newly-pressed word
+    /// (`_DAT_8007B874`) that [`WorldMapController::tick`] expects. No-ops
+    /// when no controller is installed (e.g. world-map mode entered
+    /// without [`World::enter_world_map`]).
+    ///
+    /// Reads only pad bits, never wall-clock state, so the resulting
+    /// controller mutation is deterministic across identical pad streams.
+    fn tick_world_map(&mut self) {
+        let pad = self.input.pad();
+        let pad_held = pad & !self.input.pad_prev();
+        if let Some(ctrl) = &mut self.world_map_ctrl {
+            ctrl.tick(pad, pad_held);
         }
     }
 
@@ -2188,6 +2323,23 @@ impl World {
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch).
         self.effect_pool = vm::effect_vm::Pool::new();
+    }
+
+    /// Place the world into [`SceneMode::WorldMap`] and install a
+    /// [`WorldMapController`] if one isn't already present. After this,
+    /// [`World::tick`] drives the controller from the per-frame pad set
+    /// via [`World::set_pad`] - scroll, azimuth, zoom, and the top-view
+    /// debug toggle all respond to input through the engine tick rather
+    /// than a host-side controller.
+    ///
+    /// Idempotent: re-entering world-map mode keeps the existing
+    /// controller (and its accumulated camera state) instead of resetting
+    /// it.
+    pub fn enter_world_map(&mut self) {
+        self.mode = SceneMode::WorldMap;
+        if self.world_map_ctrl.is_none() {
+            self.world_map_ctrl = Some(WorldMapController::new());
+        }
     }
 
     /// Build the per-frame sprite list for the renderer. One
@@ -3375,6 +3527,175 @@ mod tests {
         // Even if asked for more party than the cap, we clamp to 3.
         world.enter_battle(8, 0, 100);
         assert_eq!(world.party_count, 3);
+    }
+
+    #[test]
+    fn enter_world_map_installs_controller() {
+        let mut world = World::default();
+        assert!(world.world_map_ctrl.is_none());
+        world.enter_world_map();
+        assert_eq!(world.mode, SceneMode::WorldMap);
+        assert!(world.world_map_ctrl.is_some());
+        // Idempotent: re-entry keeps the existing controller + state.
+        world.world_map_ctrl.as_mut().unwrap().camera_x = 42;
+        world.enter_world_map();
+        assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, 42);
+    }
+
+    #[test]
+    fn world_tick_drives_world_map_from_pad() {
+        // A pad installed via set_pad() before tick() flows into the
+        // world-map controller through World::tick's WorldMap arm. This is
+        // the A1 keystone: input changes per-frame World state through the
+        // tick path, not via a host-side controller.
+        let mut world = World::default();
+        world.enter_world_map();
+        world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+
+        // Frame 1: the toggle combo (0x4A held, edge includes 0x40) flips
+        // the view into top-view.
+        world.set_pad(0x4A);
+        let _ = world.tick();
+        assert!(world.world_map_ctrl.as_ref().unwrap().is_top_view());
+
+        // Frame 2: in top-view, the left-scroll bit (0x1000) moves the
+        // camera. Releasing the toggle bits first so this frame is a clean
+        // scroll, not another toggle.
+        world.set_pad(0);
+        let _ = world.tick();
+        world.set_pad(0x1000);
+        let _ = world.tick();
+        assert_eq!(world.world_map_ctrl.as_ref().unwrap().camera_x, -8);
+    }
+
+    #[test]
+    fn world_map_tick_is_deterministic_across_identical_pad_streams() {
+        let pad_stream = [0x4Au16, 0x0000, 0x1000, 0x0020, 0x0002];
+        let drive = |stream: &[u16]| {
+            let mut world = World::default();
+            world.enter_world_map();
+            world.world_map_ctrl.as_mut().unwrap().debug_enabled = true;
+            for &pad in stream {
+                world.set_pad(pad);
+                let _ = world.tick();
+            }
+            let c = world.world_map_ctrl.unwrap();
+            (c.view_mode, c.camera_x, c.camera_z, c.azimuth, c.zoom)
+        };
+        assert_eq!(drive(&pad_stream), drive(&pad_stream));
+    }
+
+    // ---- tile-board step + collision (A2) ----
+
+    /// Tile-board world: 3x3 board, all floor except a wall at (1,1);
+    /// player actor in slot 0 placed at its start-tile centre.
+    fn tile_board_world() -> World {
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.player_actor_slot = Some(0);
+        w.actors[0].active = true;
+        let cells = vec![1, 1, 1, 1, crate::tile_board::CELL_WALL, 1, 1, 1, 1];
+        let board = crate::tile_board::TileBoard::new(3, 3, 0, 0, cells);
+        w.tile_board = Some(board);
+        let (x, z) = w.tile_board.as_ref().unwrap().player_world();
+        w.actors[0].move_state.world_x = x as i16;
+        w.actors[0].move_state.world_z = z as i16;
+        w
+    }
+
+    fn pad_held(world: &mut World, mask: u16, frames: usize) {
+        for _ in 0..frames {
+            world.set_pad(mask);
+            let _ = world.tick();
+        }
+    }
+
+    #[test]
+    fn tile_board_holding_right_steps_to_edge() {
+        let mut w = tile_board_world();
+        // Hold Right long enough to cross two tiles (8 frames/tile) and
+        // bump the east edge.
+        pad_held(&mut w, input::PadButton::Right.mask(), 40);
+        let b = w.tile_board.as_ref().unwrap();
+        // col advances 0 -> 1 -> 2, then (3,_) is out of bounds -> stops.
+        assert_eq!(b.player_col, 2);
+        assert_eq!(b.player_row, 0);
+        // Actor settled on the (2,0) tile centre and the step is idle.
+        let (tx, _tz) = b.tile_world(2, 0);
+        assert_eq!(w.actors[0].move_state.world_x as i32, tx);
+        assert_eq!(w.tile_board_target, None);
+    }
+
+    #[test]
+    fn tile_board_takes_multiple_frames_per_tile() {
+        let mut w = tile_board_world();
+        // One tick: direction committed (col 0 -> 1), target set, but the
+        // actor hasn't reached the next tile centre yet.
+        w.set_pad(input::PadButton::Right.mask());
+        let _ = w.tick();
+        assert_eq!(w.tile_board.as_ref().unwrap().player_col, 1);
+        assert!(w.tile_board_target.is_some());
+        let (tx, _) = w.tile_board.as_ref().unwrap().tile_world(1, 0);
+        assert!((w.actors[0].move_state.world_x as i32) < tx);
+    }
+
+    #[test]
+    fn tile_board_blocked_by_wall() {
+        let mut w = tile_board_world();
+        // Start the player directly north of the (1,1) wall.
+        {
+            let b = w.tile_board.as_mut().unwrap();
+            b.player_col = 1;
+            b.player_row = 0;
+        }
+        let (x, z) = w.tile_board.as_ref().unwrap().player_world();
+        w.actors[0].move_state.world_x = x as i16;
+        w.actors[0].move_state.world_z = z as i16;
+        let before = w.actors[0].move_state.world_z;
+        // Down would step into the (1,1) wall - rejected, player stays.
+        pad_held(&mut w, input::PadButton::Down.mask(), 20);
+        let b = w.tile_board.as_ref().unwrap();
+        assert_eq!((b.player_col, b.player_row), (1, 0));
+        assert_eq!(w.actors[0].move_state.world_z, before);
+        assert_eq!(w.tile_board_target, None);
+    }
+
+    #[test]
+    fn tile_board_gated_by_dialog() {
+        let mut w = tile_board_world();
+        w.current_dialog = Some(DialogRequest {
+            text_id: 0,
+            inline: Vec::new(),
+            world_x: 0,
+            world_z: 0,
+            depth_id: 0,
+        });
+        pad_held(&mut w, input::PadButton::Right.mask(), 20);
+        let b = w.tile_board.as_ref().unwrap();
+        assert_eq!((b.player_col, b.player_row), (0, 0));
+        assert_eq!(w.tile_board_target, None);
+    }
+
+    #[test]
+    fn tile_board_is_deterministic() {
+        let drive = || {
+            let mut w = tile_board_world();
+            for &mask in &[
+                input::PadButton::Right.mask(),
+                input::PadButton::Down.mask(),
+                input::PadButton::Right.mask(),
+            ] {
+                pad_held(&mut w, mask, 12);
+            }
+            let b = w.tile_board.as_ref().unwrap().clone();
+            (
+                b.player_col,
+                b.player_row,
+                w.actors[0].move_state.world_x,
+                w.actors[0].move_state.world_z,
+            )
+        };
+        assert_eq!(drive(), drive());
     }
 
     #[test]

@@ -202,6 +202,10 @@ The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scrip
 | `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |
 | `asset_table_xrefs.py` | Xrefs to and around `0x801C70F0` (the in-RAM PROT TOC). |
 | `find_effect_bundle_consumers.py` | Effect-bundle init / spawn / walker (run on an imported battle overlay). |
+| `dump_field_locomotion_cluster.py` | Re-decompile the 0897 field camera / region cluster (`801db81c` / `801dbec4` / `801f5748`) + raw-disassemble the surrounding window. Read-only; surfaces the data holes that corrupt the decompiles. |
+| `fix_field_locomotion_flow.py` | DB-modifying repair for the same cluster: force-disassemble the `jal 0x8003ce9c` (non-returning operand reader) data holes, drop mid-block fake `FUN_` entries, re-create functions at real `addiu sp,sp,-N` prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole. |
+| `dump_player_locomotion_integrator.py` | Dumps the player free-movement controller `FUN_801d01b0` + collision `FUN_801cfe4c` / `FUN_801cf9f4` + pad-remap `func_0x800467e8` / `FUN_80046494`, pinned by the `autorun_player_pos_watch.lua` write-watchpoint. `in_program` guards run it across SCUS + overlay_0897. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
+| `dump_4c_jumptables.py` | Dumps the field-VM main dispatcher JT (`0x801E00F4`) + the `0x4C` outer-nibble JT (`0x801CEE60`, 16 entries) with each target's containing function. Use to pin a `0x4C` sub-opcode's exact nibble when the decompiler's reconstructed `case` numbering is ambiguous — e.g. confirmed the collision-grid paint is nibble-7 (`0x801e1c64`), not the decompile's misleading "case 5". |
 
 **Game-mode state-machine recon**
 

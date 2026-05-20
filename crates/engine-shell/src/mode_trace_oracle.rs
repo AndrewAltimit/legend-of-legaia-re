@@ -85,12 +85,14 @@ pub fn build_engine_mode_trace(
 /// If `pad_stream` is shorter than `frames`, the tail is held at zero.
 /// If longer, only the first `frames` entries are consumed.
 ///
-/// Today the world-tick path doesn't consume `World.input` (the
-/// engine's field-VM dialog advance, menu navigation, and world-map
-/// controller all live in `play-window` rather than the engine tick).
-/// This function still routes the input so the slice's pad-threading
-/// contract is wired end-to-end and starts asserting real behavior as
-/// soon as the first consumer moves into the engine tick.
+/// `World::tick` consumes `World.input` for the modes whose consumer
+/// lives in the engine tick today: the field-VM dialog-advance poll
+/// (`SceneMode::Field`) and the world-map controller
+/// (`SceneMode::WorldMap`). Modes whose input consumer is still
+/// host-side (battle command selection, field locomotion) evolve as
+/// they would with no input until those consumers move into the tick;
+/// the pad threading here keeps the contract end-to-end so each new
+/// consumer starts asserting real behavior the moment it lands.
 pub fn build_engine_mode_trace_with_inputs(
     scene_name: &str,
     extracted_root: &Path,
