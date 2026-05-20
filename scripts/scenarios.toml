@@ -25,15 +25,27 @@
 #   expected_game_mode         u8     _DAT_8007B83C value at scenario start
 #   expected_active_scene      str    CDNAME label (e.g. "map01")
 #   ram_fingerprint_sha256     hex    sha256 of first 64 KiB main RAM after settle
+#   backup_fingerprint         hex    sha256 of an IMMUTABLE copy stashed in
+#                                     saves/library/<emulator>/<fp>.<ext>. Live
+#                                     emulator slots (SCUS94254.sstateN, mc{N})
+#                                     get overwritten the next time you save, so
+#                                     a scenario worth keeping must be backed up.
+#                                     When set, manage-states.py + run_probe.sh
+#                                     resolve THIS copy in preference to the live
+#                                     path. The library is gitignored (Sony RAM);
+#                                     this fingerprint is the committed pointer.
 #   [scenarios.overlay_slice]  block  mednafen overlay-slice range
 #   [[scenarios.watchpoints]]  block  mednafen diff watchpoint regions
 #
 # Adding a scenario:
-#   1. Pick a slot, capture in mednafen + (optionally) PCSX-Redux + Duckstation.
-#   2. Add a [[scenarios]] block here with the label / paths.
-#   3. Run `scripts/manage-states.py fingerprint <label>` to populate
-#      ram_fingerprint_sha256 + observed phase/game_mode/active_scene.
-#   4. Commit.
+#   1. Capture the state in an emulator (mednafen mc{N} / PCSX-Redux sstateN).
+#   2. Back it up so it survives a slot overwrite, and record the pointer:
+#        scripts/manage-states.py backup pcsx-redux <path> --label <label>
+#      (copies to saves/library/, sets backup_fingerprint on the scenario).
+#   3. Add/extend the [[scenarios]] block here with label / phase / scene.
+#   4. (mednafen only) `manage-states.py fingerprint <label>` for the RAM
+#      fingerprint; `manage-states.py library` lists what's backed up.
+#   5. Commit (the manifest only - the save bytes stay local + gitignored).
 #
 # See `docs/tooling/mednafen-automation.md` for the diff-sweep workflow
 # and `docs/tooling/pcsx-redux-automation.md` for the probe workflow.
@@ -387,7 +399,8 @@ slot = 255
 label = "title_menu_idle"
 description = "Title menu visible (NEW GAME / CONTINUE). The user has interrupted the attract countdown but not yet pressed X; menu-glyph atlas at 0x80106478 is live; sub-mode VM in title-overlay tick is on the menu branch."
 phase = "title"
-pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate8"
+# (live slot reused for the rim_elm_queen_bee_battle capture; re-capture to a
+# fresh slot + back it up to re-attach a durable reference here)
 topics = ["title overlay", "title menu", "menu glyph atlas"]
 
 [[scenarios]]
@@ -467,3 +480,82 @@ description = "Mid-transition to the first field scene via either NEW GAME (afte
 phase = "field"
 # pcsx_redux_sstate = "$HOME/Tools/pcsx-redux/SCUS94254.sstate6"   # uncomment after capture
 topics = ["field load", "scene asset loader", "town01"]
+
+# ----------------------------------------------------------------------
+# Walkable field scene with a fully-painted collision grid - the state
+# the field free-movement controller (FUN_801d01b0) was runtime-pinned
+# on. Captured live as PCSX-Redux SCUS94254.sstate6 and BACKED UP to the
+# immutable library (the live slot is overwritten by any later save).
+#
+# Verified via scripts/pcsx-redux/autorun_town01_script_flow.lua:
+#   - field buffer _DAT_1f8003ec = 0x80139530
+#   - collision grid (+0x4000) has 7455 / 16384 wall tiles painted
+#   - steady state runs ONE field-VM context: script_id 0xFB (system
+#     channel), bytecode at 0x8010F092, looping pc 0x0102..0x0297 - the
+#     same per-frame loop the clean-room engine's static trace settles
+#     into, and the nibble-7 paint ops fire 0 times (walls are painted
+#     at scene-load, not per frame).
+# Use this as the reference state for collision-grid / locomotion parity.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "field_walled_collision_pin"
+backup_fingerprint = "35e640510858f62cf07db77975d0e434466fa9fa079a40a23ea8adb8c30e78ea"
+description = "Walkable field scene, game_mode 0x03, collision grid +0x4000 has 7455 painted wall tiles; system script 0xFB loops pc 0x102..0x297. Runtime-pin save for FUN_801d01b0 locomotion + collision parity."
+phase = "field"
+expected_game_mode = 0x03
+topics = ["field", "collision grid", "locomotion", "FUN_801d01b0", "nibble-7 paint"]
+
+# ----------------------------------------------------------------------
+# Pre-transition save: player stands in Drake Castle (a field scene); a
+# brief Up press walks into a scene exit that transitions to the Drake
+# Kingdom world map. Captured live as PCSX-Redux SCUS94254.sstate1 and
+# backed up immutably. Use this to capture the scene-LOAD script flow:
+# replay it driving Up so FUN_8003aeb0 / FUN_8003ab2c / the nibble-7
+# collision-paint sites fire during the transition (the load-time flow a
+# steady-state save can't show).
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "drake_castle_to_worldmap"
+backup_fingerprint = "0f659b1f3186f549a2cbac7617b4e5597c5bf4ba91e4f9c8fefe38c4e65b58a5"
+description = "Drake Castle field scene, ~half-second Up press triggers a transition to the Drake Kingdom world map. Pre-transition save for capturing scene-load script flow (FUN_8003aeb0 + nibble-7 wall paints)."
+phase = "field"
+topics = ["field", "scene transition", "world map", "Drake", "scene-load", "nibble-7 paint"]
+
+# ----------------------------------------------------------------------
+# Pre-transition save: player stands on a walkable area; a brief Down
+# press walks into a town entrance that loads a standalone town scene.
+# Use this to capture a town scene's MAN load: replay it driving Down so
+# the asset dispatcher FUN_8001F05C fires its MAN (type 0x03) dispatch
+# during the transition. This capture pinned the runtime MAN source
+# `_DAT_8007b898` -> the count=6 scene_asset_table variant in the town's
+# own PROT block (see autorun_man_source.lua + docs/formats/scene-bundles.md).
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "rim_elm_queen_bee_battle"
+backup_fingerprint = "3d22fa5fd53d47cd22999a7b377ec8ece057fdb5ca164357be0f96a65147ddf3"
+description = "Queen Bee boss-ambush battle in Rim Elm (town01). The fight auto-starts a few seconds after load and is lost in ~15s (no game over). Battle-init runs the monster archive loader (FUN_800542C8 -> FUN_80054CB0), so this is the capture point for the monster stat-record source + format validation. Monster ids overlap town01's encounter formations {4,7,10,61,62,63,79}."
+phase = "battle"
+topics = ["battle", "monster record", "monster stats", "FUN_80054CB0", "FUN_800542C8", "monster_data", "encounter"]
+
+[[scenarios]]
+slot = 255
+label = "rim_elm_gimard_victory"
+backup_fingerprint = "eaa8d800571dd9c144bcac7c740d1f9dcbeae4b0f7787a4b3e07acd1e82f1a73"
+description = "Rim Elm (town01) scripted Gimard fight captured mid-combo, just before Gimard's death - the fight resolves on its own (no input) into the victory-spoils path. Capture point for the battle reward path (EXP / gold / drop): write-watchpoints on the XP accumulator 0x80084440, party gold 0x8008459C, and party XP bank 0x800845A4 catch the per-monster reward summation. Gimard is a lone enemy, so the staged totals are his EXP/gold. Drives autorun_battle_reward_source.lua."
+phase = "battle"
+topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "monster record"]
+
+[[scenarios]]
+slot = 255
+label = "overworld_into_town_man_load"
+backup_fingerprint = "bdbacd378093e730c0967a0c27822955f7561875c6c8e0adb2881fc1bc42f597"
+description = "Walkable area; a ~0.75s Down press walks into a town entrance, loading a standalone town scene. Pre-transition save for capturing the town MAN load via the asset dispatcher (FUN_8001F05C case 3 -> _DAT_8007b898)."
+phase = "field"
+expected_game_mode = 0x03
+topics = ["field", "scene transition", "town", "MAN", "scene_asset_table", "FUN_8001F05C", "_DAT_8007b898"]

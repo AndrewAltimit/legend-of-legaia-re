@@ -267,6 +267,17 @@ enum Cmd {
         #[arg(long, default_value_t = true)]
         only_hits: bool,
     },
+    /// Decode the monster stat archive (PROT entry `0867_battle_data`, the
+    /// EXTENDED footprint). Prints one row per populated monster id with its
+    /// name + HP/MP/stats. Pass `--id N` for a single monster.
+    MonsterArchive {
+        /// PROT entry 867 bytes (use the extended-footprint extract, e.g.
+        /// `extracted/PROT/0867_battle_data.BIN`).
+        input: PathBuf,
+        /// Decode only this monster id (1-based).
+        #[arg(long)]
+        id: Option<u16>,
+    },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
     /// event-script prescript at `+0x800`.
@@ -577,6 +588,7 @@ fn main() -> Result<()> {
             max_regions,
         } => man_one(&input, with_encounter, max_formations, max_regions),
         Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
+        Cmd::MonsterArchive { input, id } => monster_archive_one(&input, id),
         Cmd::Validate {
             dir,
             cdname,
@@ -3115,6 +3127,62 @@ fn load_man_bytes(
     }
     let (decoded, _) = legaia_lzs::decompress_tracked(&buf[start..], man.size as usize)?;
     Ok((decoded, man))
+}
+
+fn monster_archive_one(input: &Path, id: Option<u16>) -> Result<()> {
+    use legaia_asset::monster_archive;
+    let bytes = std::fs::read(input)?;
+    println!(
+        "monster archive: {} bytes, {} slots of 0x{:X}",
+        bytes.len(),
+        monster_archive::slot_count(&bytes),
+        monster_archive::SLOT_STRIDE
+    );
+    let print_rec = |r: &monster_archive::MonsterRecord| {
+        println!(
+            "  id {:3}  {:<22} HP {:5}  MP {:5}  stats {:?}  magic {}  \
+             gold {:5}  exp {:5}  drop {:3}@{:3}%",
+            r.id,
+            r.name,
+            r.hp,
+            r.mp,
+            r.stats,
+            r.magic_count,
+            r.gold,
+            r.exp,
+            r.drop_item,
+            r.drop_chance_pct
+        );
+        if !r.spells.is_empty() {
+            let spells: Vec<String> = r
+                .spells
+                .iter()
+                .map(|s| {
+                    let cost = if s.sp_cost == 0xFF {
+                        "--".to_string()
+                    } else {
+                        s.sp_cost.to_string()
+                    };
+                    format!("0x{:02X}@{}", s.id, cost)
+                })
+                .collect();
+            println!("        spells: {}", spells.join(" "));
+        }
+    };
+    match id {
+        Some(id) => match monster_archive::record(&bytes, id)? {
+            Some(r) => print_rec(&r),
+            None => println!("  id {id}: no record (out of range / filler slot)"),
+        },
+        None => {
+            let recs = monster_archive::records(&bytes)?;
+            println!("populated records: {}", recs.len());
+            for r in &recs {
+                print_rec(r);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn man_one(

@@ -130,34 +130,42 @@ The post-header dense data is the [scene_event_scripts](#scene_event_scripts---p
 
 Each scene block on the disc carries **both** a v12 entry (this format, prescript at `+0x800`) and a sister `scene_event_scripts` entry (prescript at offset 0, no v12 header). The two scripts likely serve different runtime phases — scene-enter triggers vs. per-actor / per-region triggers — though the exact split isn't pinned down yet; both are walked by the same field VM.
 
-## scene_asset_table - canonical 7-asset bundle
+## scene_asset_table - count-prefixed asset bundle
 
-The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: `crates/asset/src/scene_asset_table.rs`. 80 PROT entries match.
+The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: `crates/asset/src/scene_asset_table.rs`.
 
 ```text
-+0x00   u32  count = 7              ; literal `07 00 00 00`
++0x00   u32  count                  ; descriptor count (6 or 7)
 +0x04   u32  meta1                  ; varies - purpose unknown
-+0x08   7 × (u32 type_size, u32 data_offset)
++0x08   count × (u32 type_size, u32 data_offset)
                                     ; each pair packs `(type<<24)|size`
-+0x40   asset payload region        ; LZS-compressed in some entries,
++H      asset payload region        ; LZS-compressed in some entries,
                                     ; raw in the rest
+        (H = 8 + count*8: 0x40 for count 7, 0x38 for count 6)
 ```
+
+The table is **`count`-prefixed**, not fixed-7: the runtime walker `FUN_80020224` reads `count` from `+0x00` and loops that many descriptors, calling the [asset-type dispatcher](asset-type.md) `FUN_8001F05C` with `source = table_base + descriptor.data_offset`. Two `count` values appear in the retail corpus:
+
+- **`count = 7`** - kingdom-bundle scenes (most towns/dungeons; first descriptor `TimList`). First descriptor's `data_offset` is `0x40`.
+- **`count = 6`** - the early standalone-town scenes (`town01` = Rim Elm, `town0c`, …) whose CDNAME block has no separate scripted-table entry. First descriptor is `Tmd` (`town01`) or `Flag(0x0A)` (`town0c`); first `data_offset` is `0x38`. These were the scenes that previously appeared to "have no MAN in the static bundle" - their table sits in the block's 2nd PROT entry (e.g. `town01` = entry 4, `town0c` = entry 22) and is `count=6`, so a strict `count==7 && first_offset==0x40` detector skipped it. Pinned via a runtime write-watchpoint on the MAN buffer `_DAT_8007b898` (`scripts/pcsx-redux/autorun_man_source.lua`) and byte-verified against the live RAM MAN.
 
 Each descriptor is `(type_size, data_offset)`:
 - `type_size` packs `(type_byte << 24) | (size & 0x00FF_FFFF)` - the same packing the [asset-type dispatcher](asset-type.md) accepts directly.
-- `data_offset` is a file-relative byte position of that descriptor's own independent LZS stream, addressed against the bundle entry's **extended on-disc footprint** (`Archive::read_entry`), *not* the TOC-indexed sub-region (`Archive::read_entry_indexed`). Descriptor 0's offset is always `0x40` (the byte after the descriptor table). Descriptors 1..6 frequently fall past the indexed end and into the trailing-overlay sectors that the per-PROT TOC crops off - e.g. `0588_juui1.BIN`'s indexed view is 67584 B but `desc[4].data_offset` is 177413, valid against the 186368 B extended footprint. `size` is the **decompressed** byte count passed to [`legaia_lzs::decompress`].
+- `data_offset` is a file-relative byte position of that descriptor's own independent LZS stream, addressed against the bundle entry's **extended on-disc footprint** (`Archive::read_entry`), *not* the TOC-indexed sub-region (`Archive::read_entry_indexed`). Descriptor 0's offset is always the header end `8 + count*8`. Later descriptors frequently fall past the indexed end and into the trailing-overlay sectors that the per-PROT TOC crops off - e.g. `0588_juui1.BIN`'s indexed view is 67584 B but `desc[4].data_offset` is 177413, valid against the 186368 B extended footprint. `size` is the **decompressed** byte count passed to [`legaia_lzs::decompress`].
 
-Type-sequence variants found across the 80 entries:
+Type-sequence variants (count=7 unless noted):
 
-| Tuple | Count | Notes |
-|---|---|---|
-| `(1, 2, 3, 4, 5, 6, 7)` | 67 | Standard scene bundle: `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)`. |
-| `(1, 3, 4, 5, 6, 7, 0x14)` | 7 | Skips Tmd; trailing `0x14 = Flag(0x14)` sentinel. |
-| `(2, 3, 4, 5, 6, 7, 0x14)` | 4 | Skips TimList. |
-| `(10, 2, 3, 4, 5, 6, 7)` | 1 | Leading `Flag(0xA)` sentinel. |
-| `(1, 2, 3, 4, 6, 7, 0x14)` | 1 | Skips Move. |
+| Tuple | Notes |
+|---|---|
+| `(1, 2, 3, 4, 5, 6, 7)` | Standard count-7 bundle: `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)`. |
+| `(1, 3, 4, 5, 6, 7, 0x14)` | Skips Tmd; trailing `0x14 = Flag(0x14)` sentinel. |
+| `(2, 3, 4, 5, 6, 7, 0x14)` | Skips TimList. |
+| `(10, 2, 3, 4, 5, 6, 7)` | Leading `Flag(0xA)` sentinel. |
+| `(1, 2, 3, 4, 6, 7, 0x14)` | Skips Move. |
+| `(2, 3, 5, 6, 7, 0x14)` | **count-6** early-town variant (`town01`): `(Tmd, Man, Move, Anm, Vdf, Flag)`. MAN at index 1. |
+| `(10, 2, 3, 5, 6, 7)` | **count-6** early-town variant (`town0c`): leading `Flag(0xA)`, MAN at index 2. |
 
-All scene-named (`izumi`, `cave01`, `bylon`, `dolk`, `vell`, `urudre1`, `chitei2`, `nilboa`, `keikoku`, `concnow`, `jouina/b/c/e`, …). Sizes ~60 KB to ~452 KB.
+Sizes ~60 KB to ~452 KB.
 
 Reading:
 

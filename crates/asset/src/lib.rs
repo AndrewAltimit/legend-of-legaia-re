@@ -28,6 +28,7 @@ pub mod kingdom_bundle;
 pub mod man_section;
 pub mod menu_glyph_atlas;
 pub mod mips_overlay;
+pub mod monster_archive;
 pub mod overlay_ptr_table;
 pub mod pack;
 pub mod scene_asset_table;

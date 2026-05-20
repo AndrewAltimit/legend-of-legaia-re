@@ -926,6 +926,65 @@ impl LegaiaViewer {
         }
     }
 
+    /// Decode the global monster stat archive (PROT entry 867, the
+    /// `battle_data` block's extended footprint) into a JSON array of every
+    /// populated record. Sony bytes never leave the browser — the archive is
+    /// LZS-decoded from the user's own loaded disc, the same client-side model
+    /// the rest of this viewer uses; nothing is shipped with the static site.
+    ///
+    /// Shape:
+    /// ```json
+    /// { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
+    ///                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
+    ///                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
+    ///                  "spells": [ { "id": u8, "sp_cost": u8,
+    ///                               "castable": bool } ] }, ... ] }
+    /// ```
+    ///
+    /// Returns `{"records":[]}` when the entry isn't present (a standalone-TIM
+    /// or regional load that lacks PROT 867), or `{"error":...}` on a genuine
+    /// LZS decode failure.
+    pub fn monster_archive_json(&self) -> String {
+        const MONSTER_ARCHIVE_INDEX: u32 = 867;
+        let Some(meta) = parse_prot_toc(&self.disc)
+            .and_then(|es| es.into_iter().find(|e| e.index == MONSTER_ARCHIVE_INDEX))
+        else {
+            return "{\"records\":[]}".to_string();
+        };
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        if end > self.disc.len() {
+            return "{\"records\":[]}".to_string();
+        }
+        let records = match legaia_asset::monster_archive::records(&self.disc[off..end]) {
+            Ok(r) => r,
+            Err(e) => return format!("{{\"error\":\"monster archive decode failed: {e}\"}}"),
+        };
+        let arr: Vec<serde_json::Value> = records
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id,
+                    "name": r.name,
+                    "hp": r.hp,
+                    "mp": r.mp,
+                    "stats": r.stats,
+                    "magic_count": r.magic_count,
+                    "gold": r.gold,
+                    "exp": r.exp,
+                    "drop_item": r.drop_item,
+                    "drop_chance_pct": r.drop_chance_pct,
+                    "spells": r.spells.iter().map(|s| serde_json::json!({
+                        "id": s.id,
+                        "sp_cost": s.sp_cost,
+                        "castable": s.is_castable(),
+                    })).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        serde_json::json!({ "records": arr }).to_string()
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

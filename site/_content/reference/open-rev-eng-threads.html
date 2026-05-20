@@ -90,6 +90,12 @@
         <td><code>project_shop_ui_and_levelup.md</code> + <code>project_next_session_backlog.md</code> &sect; H</td>
       </tr>
       <tr>
+        <td>Monster stat-record archive source</td>
+        <td><code>resolved</code></td>
+        <td>The monster archive is <strong>PROT entry <code>0867_battle_data</code></strong> (extended footprint; the 15.9 MB archive lives in the entry's trailing-gap sectors). <code>FUN_800542C8</code> streams per-monster <code>0x14000</code> LZS slots at <code>(id-1)*0x14000</code>, each <code>[u32 dec_size][LZS]</code> decoding to a block whose head is the <code>FUN_80054CB0</code> stat record (name <code>@0x00</code>, XP/drop <code>@0x04</code>, HP <code>@0x0C</code>, MP <code>@0x10</code>, stat u16s <code>@0x0E/0x12/0x14/0x16/0x18/0x1A</code>, magic count <code>@0x4A</code>). Pinned by a live-battle PCSX-Redux watchpoint (<code>autorun_monster_record_source.lua</code>) &mdash; relative seek <code>(id-1)*40</code> sectors + <code>disc_read</code> CdlLOC &rarr; PROT.DAT <code>0x38AF000</code> = entry 867; three records match live actor stats byte-for-byte. The <code>monster_data</code> label (PROT 869) is a stub. Parser <code>legaia_asset::monster_archive</code>; bridge <code>catalog_from_monster_archive</code> wired into <code>enter_field_scene</code>. Residual: the <code>stat1..stat5</code> name split and the <code>+0x04</code> XP/drop sub-record layout aren't fully decoded.</td>
+        <td><code>project_monster_stat_archive.md</code></td>
+      </tr>
+      <tr>
         <td>Terra slot-3 / story-flag overlap</td>
         <td><code>open</code></td>
         <td>Diff a real Terra-in-party memory-card save against the slot layout. <code>RETAIL_CHAR_RECORD_HEADER_SIZE + 3 * 0x414 = 0x14AB</code> collides with the <code>0x14C0</code> story-flag region &mdash; either Terra's record is shorter than 0x414, or the engine special-cases slot 3, or the header-size constant drifts.</td>

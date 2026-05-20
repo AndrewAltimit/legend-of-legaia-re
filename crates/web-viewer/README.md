@@ -13,9 +13,15 @@ instead of every raw entry.
 
 - `legaia-iso` - disc reader.
 - `legaia-prot` - TOC + CDNAME.
-- `legaia-asset` - categorize + tim_scan.
+- `legaia-asset` - categorize + tim_scan + `monster_archive`.
 - `legaia-lzs` - LZS decoder.
 - `legaia-tmd` - mesh parser.
+
+`LegaiaViewer::monster_archive_json` decodes the global monster stat
+archive (PROT entry 867, extended footprint) into a JSON array of every
+populated record (id / name / HP / MP / stats). It drives the static
+site's `monsters.html` enemy-table page entirely client-side - the disc
+bytes never leave the browser.
 
 Rendering targets the canvas's 2D context (`CanvasRenderingContext2d` +
 `ImageData`) for TIM blits and the canvas's WebGL2 context for textured

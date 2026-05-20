@@ -79,11 +79,24 @@ use serde::Serialize;
 
 use crate::AssetType;
 
-/// Literal lead u32 - `07 00 00 00`.
+/// Canonical lead u32 for kingdom-bundle scenes - `07 00 00 00`.
 const HEADER_COUNT: u32 = 7;
 
-/// `8 + 7 * 8` - the byte after the descriptor table.
-const HEADER_END: u32 = 8 + (HEADER_COUNT * 8);
+/// Maximum descriptor count the fixed-size [`SceneAssetTable::descriptors`]
+/// array can hold. Two variants exist in the retail corpus: kingdom-bundle
+/// scenes use `count = 7` (first descriptor `TimList`), and the early
+/// standalone-town scenes (e.g. `town01`, `town0c`) use `count = 6` (first
+/// descriptor `Tmd`/type-0x0A). Both are walked by `FUN_80020224`, which
+/// reads `count` from the file and loops that many descriptors.
+const MAX_DESCRIPTORS: usize = 7;
+
+/// Header-end byte offset for a table with `count` descriptors: the 8-byte
+/// `[count][meta]` header plus `count` 8-byte descriptor records. The first
+/// descriptor's `data_offset` is always anchored here (`0x40` for count 7,
+/// `0x38` for count 6).
+fn header_end(count: u32) -> u32 {
+    8 + count * 8
+}
 
 /// Per-asset size cap. Real entries top out at ~3 MB - 4 MB leaves headroom.
 const MAX_ASSET_SIZE: u32 = 4 * 1024 * 1024;
@@ -105,8 +118,12 @@ pub struct SceneAssetTable {
     /// `meta[1]` from the 8-byte header. Not currently understood; surfaced
     /// for future runtime tracing.
     pub meta1: u32,
-    /// Per-descriptor `(type_byte, size, data_offset)`. Always 7 entries.
-    pub descriptors: [DescriptorRecord; 7],
+    /// Number of real descriptors (`6` or `7`). Only `descriptors[..count]`
+    /// are populated; the rest are zero padding.
+    pub count: usize,
+    /// Per-descriptor `(type_byte, size, data_offset)`. Indices `>= count`
+    /// are zero padding (the table is `count`-prefixed, not fixed-7).
+    pub descriptors: [DescriptorRecord; MAX_DESCRIPTORS],
 }
 
 impl SceneAssetTable {
@@ -119,13 +136,19 @@ impl SceneAssetTable {
     /// this is what populates `_DAT_8007B888` (the move-table base
     /// pointer read by `FUN_800204F8`) when the scene loads.
     pub fn move_descriptor(&self) -> Option<&DescriptorRecord> {
-        self.descriptors.iter().find(|d| d.type_byte == 0x05)
+        self.used().iter().find(|d| d.type_byte == 0x05)
     }
 
     /// Same as [`move_descriptor`](Self::move_descriptor) but returns the
     /// descriptor's index in the table.
     pub fn move_descriptor_index(&self) -> Option<usize> {
-        self.descriptors.iter().position(|d| d.type_byte == 0x05)
+        self.used().iter().position(|d| d.type_byte == 0x05)
+    }
+
+    /// The populated descriptor slice (`descriptors[..count]`), excluding the
+    /// zero padding that follows for the `count == 6` variant.
+    pub fn used(&self) -> &[DescriptorRecord] {
+        &self.descriptors[..self.count]
     }
 }
 
@@ -143,11 +166,17 @@ pub struct DescriptorRecord {
 /// Try to detect a scene asset table. Returns `None` when the buffer doesn't
 /// match the strict 7-asset header.
 pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
-    if buf.len() < HEADER_END as usize {
+    let count_u32 = read_u32_le(buf, 0)?;
+    // Two header shapes in the retail corpus: kingdom bundles use `count = 7`
+    // (canonical), early standalone-town scenes use `count = 6`. Constrain to
+    // the observed values - the anchor check below is the strong signal, but
+    // an unbounded count would let arbitrary small leading words through.
+    if count_u32 != HEADER_COUNT && count_u32 != HEADER_COUNT - 1 {
         return None;
     }
-    let count = read_u32_le(buf, 0)?;
-    if count != HEADER_COUNT {
+    let count = count_u32 as usize;
+    let table_end = header_end(count_u32) as usize;
+    if buf.len() < table_end {
         return None;
     }
     let meta1 = read_u32_le(buf, 4)?;
@@ -156,8 +185,8 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
         type_byte: 0,
         size: 0,
         data_offset: 0,
-    }; 7];
-    for (i, slot) in descriptors.iter_mut().enumerate() {
+    }; MAX_DESCRIPTORS];
+    for (i, slot) in descriptors.iter_mut().take(count).enumerate() {
         let p = 8 + i * 8;
         let type_size = read_u32_le(buf, p)?;
         let data_offset = read_u32_le(buf, p + 4)?;
@@ -171,13 +200,13 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
             return None;
         }
         // First descriptor's offset is anchored at the byte after the
-        // descriptor table (`HEADER_END = 0x40`). The remaining offsets
-        // are file-relative against the EXTENDED bundle footprint (see
-        // module doc) and only get sanity-checked against MAX_DATA_OFFSET
-        // here - the detector runs on raw PROT bytes before the extended
-        // footprint is materialised.
+        // `count`-prefixed descriptor table (`0x40` for count 7, `0x38` for
+        // count 6). The remaining offsets are file-relative against the
+        // EXTENDED bundle footprint (see module doc) and only get
+        // sanity-checked against MAX_DATA_OFFSET here - the detector runs on
+        // raw PROT bytes before the extended footprint is materialised.
         if i == 0 {
-            if data_offset != HEADER_END {
+            if data_offset as usize != table_end {
                 return None;
             }
         } else if data_offset > MAX_DATA_OFFSET {
@@ -190,7 +219,11 @@ pub fn detect(buf: &[u8]) -> Option<SceneAssetTable> {
         };
     }
 
-    Some(SceneAssetTable { meta1, descriptors })
+    Some(SceneAssetTable {
+        meta1,
+        count,
+        descriptors,
+    })
 }
 
 /// Returns `true` when the type byte is a legal asset-type from the
@@ -210,11 +243,17 @@ mod tests {
 
     /// Build a minimal valid scene asset table with caller-chosen type sequence.
     fn synth(types: [u8; 7], total_size: usize) -> Vec<u8> {
+        synth_n(&types, total_size)
+    }
+
+    /// Build a table with a caller-chosen descriptor count (6 or 7).
+    fn synth_n(types: &[u8], total_size: usize) -> Vec<u8> {
+        let count = types.len() as u32;
         let mut buf = Vec::with_capacity(total_size);
-        buf.extend_from_slice(&HEADER_COUNT.to_le_bytes());
+        buf.extend_from_slice(&count.to_le_bytes());
         buf.extend_from_slice(&0u32.to_le_bytes()); // meta1
-        let mut data_off: u32 = HEADER_END;
-        for &t in &types {
+        let mut data_off: u32 = header_end(count);
+        for &t in types {
             let sz: u32 = 0x100;
             let type_size = ((t as u32) << 24) | sz;
             buf.extend_from_slice(&type_size.to_le_bytes());
@@ -249,9 +288,27 @@ mod tests {
     fn detects_canonical_scene_bundle() {
         let buf = synth([1, 2, 3, 4, 5, 6, 7], 0x10000);
         let s = detect(&buf).expect("should detect");
+        assert_eq!(s.count, 7);
         assert_eq!(s.descriptors[0].type_byte, 1);
         assert_eq!(s.descriptors[6].type_byte, 7);
-        assert_eq!(s.descriptors[0].data_offset, HEADER_END);
+        assert_eq!(s.descriptors[0].data_offset, header_end(7));
+    }
+
+    #[test]
+    fn detects_count6_town_variant() {
+        // Early standalone towns (town01 / town0c) use a 6-descriptor table
+        // whose first descriptor is anchored at 0x38 (= 8 + 6*8). The MAN is
+        // descriptor index 1 (town01) / 2 (town0c).
+        let buf = synth_n(&[0x02, 0x03, 0x05, 0x06, 0x07, 0x14], 0x8000);
+        let s = detect(&buf).expect("count-6 table should detect");
+        assert_eq!(s.count, 6);
+        assert_eq!(s.descriptors[0].data_offset, header_end(6));
+        assert_eq!(s.descriptors[0].data_offset, 0x38);
+        // The MAN descriptor (type 0x03) resolves through `used()`.
+        let man = s.used().iter().find(|d| d.type_byte == 0x03);
+        assert!(man.is_some(), "count-6 table exposes its MAN descriptor");
+        // Padding slot is not surfaced.
+        assert_eq!(s.used().len(), 6);
     }
 
     #[test]

@@ -34,6 +34,7 @@
 //! for the byte-level MAN layout.
 
 use crate::encounter::{EncounterEntry, EncounterTable};
+use crate::monster_catalog::{FormationDef, FormationSlot};
 use legaia_asset::man_section;
 
 /// Decode a MAN buffer and synthesize an [`EncounterTable`] for the scene.
@@ -106,6 +107,60 @@ pub fn encounter_table_from_man(scene_label: &str, man_bytes: &[u8]) -> Option<E
         return None;
     }
     Some(table)
+}
+
+/// Build the per-row [`FormationDef`]s for a scene's MAN encounter section.
+///
+/// Each formation row becomes one def whose `formation_id` is the row
+/// index - matching the [`EncounterEntry::formation_id`] values that
+/// [`encounter_table_from_man`] emits, so the installed encounter table's
+/// entries resolve straight through `formation_table` at battle-load.
+/// Slots are the row's monster ids (the battle max is 4); zero-monster
+/// rows are skipped (they never spawn).
+///
+/// Returns an empty vec when the MAN header / encounter section fails to
+/// parse - the caller treats that the same as "no MAN encounters".
+pub fn formation_defs_from_man(man_bytes: &[u8]) -> Vec<FormationDef> {
+    let Ok(man) = man_section::parse(man_bytes) else {
+        return Vec::new();
+    };
+    let Some(body) = man.encounter_section_body(man_bytes) else {
+        return Vec::new();
+    };
+    let Ok(es) = man_section::parse_encounter_section(body) else {
+        return Vec::new();
+    };
+    let mut defs = Vec::new();
+    for (i, f) in man_section::formation_records(body, &es).enumerate() {
+        let Some(f) = f else {
+            continue;
+        };
+        if f.monster_count == 0 {
+            continue;
+        }
+        let n = (f.monster_count as usize).min(4);
+        let slots: Vec<FormationSlot> = f.monster_ids[..n]
+            .iter()
+            .map(|&id| FormationSlot::new(id as u16))
+            .collect();
+        defs.push(FormationDef::new(i as u16, slots));
+    }
+    defs
+}
+
+/// Resolve both the [`EncounterTable`] and its per-row [`FormationDef`]s for
+/// a scene in one call - the pair the field scene-entry path installs via
+/// [`crate::world::World::install_man_encounter`].
+///
+/// Returns `None` when [`encounter_table_from_man`] does (invalid MAN, or
+/// no rollable formations).
+pub fn scene_encounter_from_man(
+    scene_label: &str,
+    man_bytes: &[u8],
+) -> Option<(EncounterTable, Vec<FormationDef>)> {
+    let table = encounter_table_from_man(scene_label, man_bytes)?;
+    let defs = formation_defs_from_man(man_bytes);
+    Some((table, defs))
 }
 
 /// Resolve a formation row to its [`crate::encounter_record::EncounterRecord`]
@@ -225,6 +280,26 @@ mod tests {
         }
 
         assert!(encounter_table_from_man("zero", &buf).is_none());
+    }
+
+    #[test]
+    fn formation_defs_track_table_entries_by_row_index() {
+        let man = build_test_man();
+        let (table, defs) = scene_encounter_from_man("test", &man).expect("pair built");
+        // One def per rollable formation row; ids are the row indices, so
+        // the table's entries resolve straight through.
+        assert_eq!(defs.len(), table.entries.len());
+        assert_eq!(defs[0].formation_id, 0);
+        assert_eq!(defs[1].formation_id, 1);
+        // Slots mirror the formation row's monster ids.
+        assert_eq!(defs[0].slots.len(), 1);
+        assert_eq!(defs[0].slots[0].monster_id, 4);
+        assert_eq!(defs[1].slots.len(), 2);
+        assert_eq!(defs[1].slots[1].monster_id, 4);
+        // Every table entry's formation_id has a matching def.
+        for e in &table.entries {
+            assert!(defs.iter().any(|d| d.formation_id == e.formation_id));
+        }
     }
 
     #[test]

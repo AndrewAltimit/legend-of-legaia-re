@@ -29,6 +29,7 @@ TARGETS = [
     # Battle archive loaders
     "80052fa0",
     "800542c8",
+    "8004f0e8",  # battle-victory reward writer (writes party gold 0x8008459C)
 
     # Asset-table init
     "8001e1b4",  # writes _DAT_8007b85c (in-RAM asset table base)
@@ -249,6 +250,16 @@ TARGETS = [
     "8005fdb8",  # cited by 80062164
     "8006d2ac",  # cited by 8006ca04
     "8006ef18",  # cited by 8002035c
+
+    # CD-DMA loader for the per-scene field buffer (collision grid +0x4000).
+    # Runtime Write-watchpoint on the live grid caught 0x8005DA50 as the sole
+    # writer: CD-DMA ch3 transfer, a0 = _DAT_1f8003ec+0x4000 (dest), a1 =
+    # 0x10200 (size), a2 = CD source LBA. Dump to pin how the LBA is derived
+    # from the scene bundle. See docs/subsystems/field-locomotion.md.
+    "8005da50",  # CD-DMA store site (field-buffer load)
+    "8005c2d4",  # caller of 0x8005DA50 (thin bool wrapper FUN_8005c2c4)
+    "8003ef68",  # scene-loader that sets dest/size for the field-buffer DMA
+                 # (FUN_8005c2c4's saved-ra from the runtime grid-writer capture)
 ]
 
 OUT_DIR = "/scripts/funcs"
@@ -306,7 +317,10 @@ def dump(addr_str):
     print("wrote {}".format(out_path))
 
 
-for t in TARGETS:
+# DUMP_ONLY=<addr> dumps just that one function (fast one-off); otherwise
+# the whole TARGETS catalog is re-dumped.
+_only = os.environ.get("DUMP_ONLY")
+for t in ([_only] if _only else TARGETS):
     dump(t)
 
 print("done")

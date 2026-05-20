@@ -106,6 +106,55 @@ impl MonsterCatalog {
     }
 }
 
+/// Build a [`MonsterDef`] from a disc-resident monster stat record (PROT
+/// entry 867; see [`legaia_asset::monster_archive`]).
+///
+/// Mapping traced from `FUN_80054CB0` (record→actor field copy) plus the
+/// damage / accuracy formulas (see `legaia_asset::monster_archive` and
+/// `docs/subsystems/battle-formulas.md`):
+/// - `attack` <- `rec.attack()` (`stats[1]`, record `+0x12`) — the value the
+///   physical-damage routine reads as the attacker's offense (actor `+0x158`).
+/// - `udf` / `ldf` <- `rec.defense_high()` / `rec.defense_low()` (`stats[2]` /
+///   `stats[3]`) — the two defense facets the routine selects by move index.
+/// - `accuracy` / `evasion` <- `rec.agility()` (`stats[4]`) clamped to a byte
+///   — the actor seeds both the accuracy and evasion roll from this stat.
+///
+/// `stats[0]` (SP / spirit-action gauge) and `stats[5]` (SPD / turn-order
+/// speed) are identified but have no `MonsterDef` field yet, so they're not
+/// consumed here. `exp` / `gold` / `drop_item` / `drop_rate_q8` come from the
+/// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
+/// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
+/// the party; gold `(Σ base>>1) * 0.5`). The drop chance is stored as a `u8`
+/// percent in the record and converted to the engine's `1/256` rate.
+pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
+    let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.attack());
+    def.mp = rec.mp;
+    def.udf = rec.defense_high();
+    def.ldf = rec.defense_low();
+    let agl = rec.agility().min(u8::MAX as u16) as u8;
+    def.accuracy = agl;
+    def.evasion = agl;
+    def.exp = rec.exp;
+    def.gold = rec.gold;
+    def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
+    def.drop_rate_q8 = ((rec.drop_chance_pct as u16 * 256 / 100).min(255)) as u8;
+    def
+}
+
+/// Build a [`MonsterCatalog`] from the monster archive (PROT entry 867) for
+/// the given monster ids. Ids that don't resolve to a record (out of range,
+/// filler slot, or a decode error) are skipped. Pass the ids a scene's MAN
+/// encounter formations reference so triggered battles resolve real stats.
+pub fn catalog_from_monster_archive(entry867: &[u8], ids: &[u16]) -> MonsterCatalog {
+    let mut cat = MonsterCatalog::new();
+    for &id in ids {
+        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(entry867, id) {
+            cat.insert(monster_def_from_record(&rec));
+        }
+    }
+    cat
+}
+
 /// One slot in a formation row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormationSlot {

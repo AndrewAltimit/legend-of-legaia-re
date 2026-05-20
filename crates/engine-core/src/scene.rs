@@ -26,6 +26,16 @@ use legaia_prot::Region;
 use legaia_prot::archive::{Archive, Entry};
 use legaia_prot::cdname;
 
+/// Size of the per-scene field map file (retail `DATA\FIELD\<scene>.MAP`):
+/// the field buffer's used region from the base through the field-pack
+/// boundary at `+0x12000`. Used to identify the map entry in a CDNAME block.
+pub const FIELD_MAP_LEN: usize = 0x12000;
+/// Offset of the collision/floor grid within the field map file (= the
+/// runtime `*(_DAT_1f8003ec) + 0x4000`).
+pub const FIELD_MAP_COLLISION_OFFSET: usize = 0x4000;
+/// Length of the collision/floor grid (`0x80 x 0x80` bytes, 1 byte/tile).
+pub const FIELD_COLLISION_GRID_LEN: usize = 0x80 * 0x80;
+
 /// Index over PROT.DAT + CDNAME.TXT. Built once and shared for the whole
 /// scene-host's lifetime. Thread-safe - the underlying file handle and the
 /// caches are guarded by Mutexes.
@@ -625,6 +635,137 @@ impl Scene {
         }
         out
     }
+
+    /// PROT index of the per-scene **field map file** - retail
+    /// `DATA\FIELD\<scene>.MAP`, the first file `FUN_8001f7c0` streams into the
+    /// field-buffer base (`_DAT_1f8003ec`). It is the unique CDNAME-block entry
+    /// whose **extended on-disc footprint** is exactly [`FIELD_MAP_LEN`]
+    /// (`0x12000`) bytes - the field buffer's used region from the base through
+    /// the field-pack boundary. Every field/town scene has exactly one (101 of
+    /// 124 blocks; the rest are battle / pure-asset blocks with no field map).
+    ///
+    /// The footprint matters: the TOC-indexed payload is only the first
+    /// `0x4000` bytes (the object-record region); the collision grid at
+    /// `+0x4000` and beyond lives in the entry's **trailing-gap sectors**, so
+    /// callers must read the extended footprint, not [`SceneEntry::bytes`].
+    ///
+    /// See [`docs/subsystems/field-locomotion.md`] for the load chain.
+    pub fn field_map_index(&self, index: &ProtIndex) -> Option<u32> {
+        let entries = index.entries();
+        (self.start..self.end).find(|&idx| {
+            entries
+                .get(idx as usize)
+                .is_some_and(|e| e.size_bytes as usize == FIELD_MAP_LEN)
+        })
+    }
+
+    /// The per-scene base collision/floor grid: the `+0x4000..+0x8000` region
+    /// of the [`field_map`](Self::field_map_index) file (`0x80 x 0x80` bytes,
+    /// high nibble = sub-cell wall bits, low nibble = floor-elevation tier).
+    /// This is the engine's source for the base walkable grid; the field-VM
+    /// `0x4C` nibble-7 ops layer story-conditional deltas on top as the
+    /// prescript runs. Verified byte-exact against live RAM (town01).
+    ///
+    /// Reads the field map entry's **extended** footprint (the grid is past
+    /// the TOC-indexed payload). Returns `Ok(None)` if the scene has no field
+    /// map or the entry is too short to hold a full grid.
+    pub fn field_collision_grid(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        let Some(idx) = self.field_map_index(index) else {
+            return Ok(None);
+        };
+        let bytes = index.entry_bytes_extended(idx)?;
+        Ok(bytes
+            .get(FIELD_MAP_COLLISION_OFFSET..FIELD_MAP_COLLISION_OFFSET + FIELD_COLLISION_GRID_LEN)
+            .map(<[u8]>::to_vec))
+    }
+
+    /// Resolve the scene's field-VM **scene-entry system script** (context
+    /// channel `0xFB`) from the MAN asset, mirroring retail `FUN_8003ab2c`:
+    /// the entry script is partition 1's first record in the scene's MAN
+    /// container.
+    ///
+    /// Returns `Ok(Some((bytecode, pc0)))` where `bytecode` is the MAN
+    /// buffer sliced from the script block's start (so relative jumps wrap
+    /// against the slice base, matching the retail `buffer_base =
+    /// script_start`) and `pc0` is the first opcode's offset into that slice.
+    /// Feed both to [`crate::world::World::load_field_script_at`].
+    ///
+    /// Returns `Ok(None)` for scenes whose static bundle carries no MAN
+    /// asset - notably standalone [`Class::SceneEventScripts`] scenes such as
+    /// `town01`, whose runtime `_DAT_8007B898` source is fed at load time and
+    /// is not present in the static bundle. Those scenes keep running
+    /// event-script record 0 instead. Only the kingdom-bundle
+    /// [`Class::SceneScriptedAssetTable`] scenes (e.g. `map03`) carry the MAN
+    /// inline.
+    ///
+    /// Note that the entry script's `0x4C` nibble-7 wall-paint deltas are
+    /// gated behind system-flag tests, so they only fire once the world's
+    /// story flags are seeded to a matching scene-entry state; the base
+    /// collision grid ([`Self::field_collision_grid`]) is independent of the
+    /// entry script.
+    ///
+    /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
+    pub fn field_man_entry_script(&self, index: &ProtIndex) -> Result<Option<(Vec<u8>, usize)>> {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        else {
+            return Ok(None);
+        };
+        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+            return Ok(None);
+        };
+        let Some((start, pc0)) = man.scene_entry_script(&man_bytes) else {
+            return Ok(None);
+        };
+        match man_bytes.get(start..) {
+            Some(slice) => Ok(Some((slice.to_vec(), pc0))),
+            None => Ok(None),
+        }
+    }
+
+    /// Resolve the scene's disc-resident random-encounter table plus its
+    /// per-row formation defs from the same MAN asset (retail
+    /// `_DAT_8007B898`) the scene-entry script comes from.
+    ///
+    /// Returns `Ok(None)` when the scene's static bundle carries no MAN (the
+    /// same detector gap [`Self::field_man_entry_script`] documents) or when
+    /// the MAN's encounter section declares no rollable formations (towns
+    /// with no encounters). Resolves now for the `count=6`
+    /// [`legaia_asset::scene_asset_table`] field scenes (town01 etc.) thanks
+    /// to the relaxed detector.
+    ///
+    /// Wire the pair via [`crate::world::World::install_man_encounter`].
+    ///
+    /// REF: FUN_8003AEB0 (installs the encounter section into the runtime
+    /// control block); the byte-level walk lives in
+    /// `legaia_asset::man_section` and the runtime bridge in
+    /// [`crate::encounter_man`].
+    pub fn field_man_encounter_table(
+        &self,
+        index: &ProtIndex,
+        scene_label: &str,
+    ) -> Result<
+        Option<(
+            crate::encounter::EncounterTable,
+            Vec<crate::monster_catalog::FormationDef>,
+        )>,
+    > {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        else {
+            return Ok(None);
+        };
+        Ok(crate::encounter_man::scene_encounter_from_man(
+            scene_label,
+            &man_bytes,
+        ))
+    }
 }
 
 /// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME
@@ -783,6 +924,11 @@ pub struct SceneHost {
     /// Default is [`NullMapIdResolver`] so transitions are silently
     /// dropped until the engine wires its own table.
     pub map_resolver: Box<dyn MapIdResolver + Send + Sync>,
+    /// Lazily-loaded monster stat archive (PROT entry 867, extended
+    /// footprint). Cached because it's 15.9 MB and the same global table
+    /// serves every scene. Populated on the first field entry that needs
+    /// real monster stats. See [`legaia_asset::monster_archive`].
+    monster_archive_cache: Option<Arc<Vec<u8>>>,
 }
 
 impl SceneHost {
@@ -796,7 +942,27 @@ impl SceneHost {
             resources: None,
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
+            monster_archive_cache: None,
         }
+    }
+
+    /// Lazily load + cache the monster stat archive (PROT 867, extended
+    /// footprint - the archive lives in the entry's trailing-gap sectors,
+    /// not the small indexed payload, so `entry_bytes` would truncate it).
+    /// Returns `None` if the entry can't be read.
+    fn monster_archive_bytes(&mut self) -> Option<Arc<Vec<u8>>> {
+        if self.monster_archive_cache.is_none() {
+            match self.index.entry_bytes_extended(MONSTER_ARCHIVE_PROT_ENTRY) {
+                Ok(b) => self.monster_archive_cache = Some(Arc::new(b)),
+                Err(err) => {
+                    eprintln!(
+                        "[scene] monster archive (PROT {MONSTER_ARCHIVE_PROT_ENTRY}) load skipped: {err:#}"
+                    );
+                    return None;
+                }
+            }
+        }
+        self.monster_archive_cache.clone()
     }
 
     /// Open the host directly from an extracted directory.
@@ -1014,6 +1180,99 @@ impl SceneHost {
         };
         self.world.mode = crate::world::SceneMode::Field;
         self.world.load_field_record(&record_bytes);
+        // Configure the party leader (slot 0) as the free-movement player.
+        // (This also clears the collision grid; we repopulate it below.)
+        // Mirrors the retail scene-entry player setup in `FUN_8003aeb0`.
+        self.world.install_field_player(0);
+        // Load the per-scene base collision/floor grid from the field map
+        // file (retail `DATA\FIELD\<scene>.MAP`, the unique 0x12000-byte block
+        // entry). The grid is the file's `+0x4000..+0x8000` region; the
+        // field-VM `0x4C` nibble-7 ops layer story-conditional deltas on top
+        // as the prescript runs. Verified byte-exact against live RAM
+        // (town01). See `docs/subsystems/field-locomotion.md`.
+        let base_grid: Option<Vec<u8>> = match self.scene.as_ref() {
+            Some(scene) => match scene.field_collision_grid(&self.index) {
+                Ok(grid) => grid,
+                Err(err) => {
+                    eprintln!("[scene] field collision-grid load skipped: {err:#}");
+                    None
+                }
+            },
+            None => None,
+        };
+        if let Some(grid) = base_grid {
+            self.world.load_field_collision_grid(&grid);
+        }
+        // Prefer the real scene-entry system script (ctx 0xFB) over event-
+        // script record 0. Record 0 is a per-scene trigger/dispatch table,
+        // not linear bytecode, so the field VM halts at its pc 0 and the
+        // scene-entry logic (actor placement, BGM, conditional wall deltas)
+        // never runs. The retail per-frame driver `FUN_8003ab2c` builds the
+        // system script from the MAN asset's partition[1][0]; resolve and run
+        // that instead. Only kingdom-bundle scenes carry the MAN in their
+        // static bundle - standalone `SceneEventScripts` scenes (e.g. town01)
+        // return `None` here and keep the record-0 load above as a fallback
+        // until their runtime `_DAT_8007B898` source is pinned. Flag-gated
+        // nibble-7 wall deltas in the entry script still need seeded story
+        // flags to fire; the base grid loaded above is independent.
+        let entry_script = match self.scene.as_ref() {
+            Some(scene) => match scene.field_man_entry_script(&self.index) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("[scene] MAN entry-script resolve skipped: {err:#}");
+                    None
+                }
+            },
+            None => None,
+        };
+        if let Some((bytecode, pc0)) = entry_script {
+            self.world.load_field_script_at(bytecode, pc0);
+        }
+        // Install the scene's random-encounter table straight from its MAN
+        // asset (the disc-resident `_DAT_8007B898` source) - the retail
+        // per-scene table, not a synthetic pattern. Resolves for the
+        // `count=6` `scene_asset_table` field scenes (town01 etc.) now that
+        // the detector covers them, same as the entry script above. The
+        // per-row formation defs are merged into the formation table so the
+        // table's row-index ids resolve to monster sets at battle-load.
+        // Scenes whose static bundle carries no MAN - or towns whose MAN has
+        // no rollable formations - leave the encounter unset here; the host
+        // falls back to the synthetic registry (`install_encounter_for_scene`).
+        self.world.set_active_scene_label(name);
+        let man_encounter = match self.scene.as_ref() {
+            Some(scene) => match scene.field_man_encounter_table(&self.index, name) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("[scene] MAN encounter-table resolve skipped: {err:#}");
+                    None
+                }
+            },
+            None => None,
+        };
+        if let Some((table, formations)) = man_encounter {
+            // Collect the formation monster-ids before `install_man_encounter`
+            // consumes the defs.
+            let mut ids: Vec<u16> = formations
+                .iter()
+                .flat_map(|f| f.slots.iter().map(|s| s.monster_id))
+                .collect();
+            ids.sort_unstable();
+            ids.dedup();
+            self.world.install_man_encounter(table, formations);
+            // Merge real per-id monster stats from the disc archive (PROT 867)
+            // over the catalog so the just-installed formations resolve to
+            // genuine HP/MP/attack at battle-load instead of synthetic
+            // placeholders. Archive entries win for the scene's ids; ids the
+            // archive doesn't cover keep whatever catalog was installed.
+            if !ids.is_empty()
+                && let Some(archive) = self.monster_archive_bytes()
+            {
+                let cat = crate::monster_catalog::catalog_from_monster_archive(&archive, &ids);
+                for def in cat.by_id.into_values() {
+                    self.world.monster_catalog.insert(def);
+                }
+            }
+        }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
         // a handful of scenes carry VDF data (8/124 in the retail
@@ -1143,6 +1402,12 @@ impl SceneHost {
 /// `project_global_tmd_pool_source.md` via byte-equality vs a Drake post-warp
 /// RAM snapshot.
 const PROT_BEFECT_DATA_ENTRY: u32 = 874;
+
+/// PROT entry holding the global monster stat archive (one `0x14000`-byte
+/// LZS slot per monster id; the CDNAME label `battle_data` is shared across
+/// 0865-0868). The misleading `monster_data` label (PROT 869) is a stub.
+/// See [`legaia_asset::monster_archive`] + `docs/subsystems/battle.md`.
+const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
 
 /// Number of slots PROT 0874 section 0 contributes to the head of the
 /// global TMD pool. Set by the section's TMD-pack `count` field; the

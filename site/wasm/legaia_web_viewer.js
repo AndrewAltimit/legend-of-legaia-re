@@ -757,6 +757,39 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Decode the global monster stat archive (PROT entry 867, the
+     * `battle_data` block's extended footprint) into a JSON array of every
+     * populated record. Sony bytes never leave the browser — the archive is
+     * LZS-decoded from the user's own loaded disc, the same client-side model
+     * the rest of this viewer uses; nothing is shipped with the static site.
+     *
+     * Shape:
+     * ```json
+     * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
+     *                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
+     *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
+     *                  "spells": [ { "id": u8, "sp_cost": u8,
+     *                               "castable": bool } ] }, ... ] }
+     * ```
+     *
+     * Returns `{"records":[]}` when the entry isn't present (a standalone-TIM
+     * or regional load that lacks PROT 867), or `{"error":...}` on a genuine
+     * LZS decode failure.
+     * @returns {string}
+     */
+    monster_archive_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.legaiaviewer_monster_archive_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @param {string} canvas_id
      */
     constructor(canvas_id) {
@@ -1417,7 +1450,7 @@ function __wbg_get_imports() {
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 476, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("AudioProcessingEvent")], shim_idx: 496, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__hba2c483fb165cd67);
             return ret;
         },

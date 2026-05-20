@@ -69,6 +69,21 @@ pub const MOVE_VM_BUDGET: usize = 4096;
 /// `TILE / 8` (16 units) - eight frames to cross one 128-unit tile.
 const TILE_BOARD_SPEED: i32 = crate::tile_board::TILE / 8;
 
+/// Bytes per row of the field collision grid (retail `0x80`-byte rows at
+/// `*(_DAT_1F8003EC) + 0x4000`).
+const FIELD_GRID_STRIDE: usize = 0x80;
+/// Total field-collision-grid size: `0x80` rows of `0x80` bytes.
+const FIELD_GRID_LEN: usize = FIELD_GRID_STRIDE * 0x80;
+/// Base walk step (retail `base_step = 8` in `FUN_801d01b0`). Scaled by the
+/// player's `+0x72` speed multiplier and the per-frame delta scalar.
+const FIELD_BASE_STEP: i32 = 8;
+/// Per-iteration advance of the locomotion step loop (retail commits in
+/// 2-unit increments per axis).
+const FIELD_STEP_UNIT: i32 = 2;
+/// Retail player speed multiplier installed by the scene-entry map-init
+/// `FUN_8003aeb0` (`player[+0x72] = 0x1000`, a `12.0` fixed-point `1.0`).
+const FIELD_PLAYER_SPEED_MULT: u16 = 0x1000;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
@@ -401,6 +416,24 @@ pub struct World {
     /// / 0x36 / 0x39 read `actors[slot].move_state.world_{x,y,z}` as the
     /// player position. `None` falls back to the origin (default impl).
     pub player_actor_slot: Option<u8>,
+    /// Per-scene field collision / floor grid. Retail equivalent: the
+    /// walkability map at `*(_DAT_1F8003EC) + 0x4000` that the locomotion
+    /// collision check (`FUN_801cfe4c`) samples. One byte per 128-unit
+    /// tile, `0x80`-byte rows, up to `0x80` rows (`0x4000` bytes). The
+    /// **high nibble** holds 4 sub-cell wall bits (a `2x2` quadrant grid of
+    /// `64x64` cells); the **low nibble** is a floor-elevation tier
+    /// (unused by the wall check). Painted incrementally by the field-VM
+    /// `0x4C` outer-nibble-7 op as the scene prescript runs; zeroed (all
+    /// walkable) at field entry via [`World::reset_field_collision_grid`].
+    /// Empty until the first field scene is entered.
+    pub field_collision_grid: Vec<u8>,
+    /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
+    /// d-pad locomotion camera-relative. Retail equivalent: the view
+    /// direction `func_0x800467e8` remaps the held pad against. `0` maps
+    /// "screen up" to world `+Z` (the default follow camera looking down
+    /// `+Z`). Engines that orbit the camera write the current azimuth here
+    /// each frame; the locomotion remap quantises it to the nearest 90°.
+    pub field_camera_azimuth: u16,
     /// Party-member actor slots - `party_actor_slots[i] = Some(actor_slot)`
     /// resolves move-VM ext sub-op 0x3B (`ext_party_member_lookup`) to the
     /// world-coords of the actor at that slot. Default empty (the lookup
@@ -826,6 +859,8 @@ impl World {
             move_ramp_ratio: 0,
             map_origin_xz: (0, 0),
             player_actor_slot: None,
+            field_collision_grid: Vec::new(),
+            field_camera_azimuth: 0,
             party_actor_slots: Vec::new(),
             pending_fade: None,
             move_dat_8007b9d8: 0,
@@ -1480,6 +1515,25 @@ impl World {
         self.field_ctx = FieldCtx::default();
     }
 
+    /// Load a field-VM bytecode buffer and begin interpretation at `pc`
+    /// instead of 0.
+    ///
+    /// Used to run a MAN-resolved **scene-entry system script** (retail
+    /// `FUN_8003ab2c`, context channel `0xFB`): the buffer is the MAN slice
+    /// taken from the script block's start, and `pc` is the first opcode's
+    /// offset into that slice (past the `[local-count][locals][record-header]`
+    /// prefix). Slicing from the script start keeps relative jumps wrapping
+    /// against the slice base (index 0), matching the retail
+    /// `buffer_base = script_start` convention. See
+    /// [`crate::scene::Scene::field_man_entry_script`].
+    ///
+    /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
+    pub fn load_field_script_at(&mut self, bytecode: Vec<u8>, pc: usize) {
+        self.field_bytecode = bytecode;
+        self.field_pc = pc;
+        self.field_ctx = FieldCtx::default();
+    }
+
     /// Load one event-script record into the field VM, skipping the leading
     /// `0xFFFF 0x0000` frame-divider sentinel when present.
     ///
@@ -1852,6 +1906,43 @@ impl World {
         }
     }
 
+    /// Install a fully-built [`crate::encounter::EncounterTable`] plus its
+    /// per-row [`crate::monster_catalog::FormationDef`]s as the active
+    /// scene's encounter source.
+    ///
+    /// This is the disc-resident path: the field scene-entry flow resolves
+    /// the table + formations straight from the scene's MAN asset (retail
+    /// `_DAT_8007B898`) via [`crate::encounter_man::scene_encounter_from_man`]
+    /// and installs them here, in place of the synthetic-pattern
+    /// [`Self::install_encounter_for_scene`] fallback. The formation defs are
+    /// merged into `formation_table` so the table's row-index `formation_id`s
+    /// resolve to concrete monster sets at battle-load.
+    ///
+    /// Returns whether the installed table is non-empty (an empty table is
+    /// still installed-but-quiet so engines can call [`Self::on_field_step`]
+    /// without nil checks).
+    pub fn install_man_encounter(
+        &mut self,
+        table: crate::encounter::EncounterTable,
+        formations: Vec<crate::monster_catalog::FormationDef>,
+    ) -> bool {
+        for def in formations {
+            self.formation_table.insert(def);
+        }
+        let nonempty = !table.is_empty();
+        let tracker = crate::encounter::EncounterTracker::new(table);
+        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        nonempty
+    }
+
+    /// Replace just the monster stat catalog, leaving `formation_table`
+    /// untouched. The MAN encounter source carries formation monster-ids but
+    /// not stat blocks, so the host installs the stat catalog separately when
+    /// the formations come from [`Self::install_man_encounter`].
+    pub fn set_monster_catalog(&mut self, catalog: crate::monster_catalog::MonsterCatalog) {
+        self.monster_catalog = catalog;
+    }
+
     /// Install a formation + monster catalog pair. Boot wires this once;
     /// engines read it at battle-load time.
     pub fn set_formation_table(
@@ -2013,6 +2104,7 @@ impl World {
             SceneMode::Field => {
                 self.step_field();
                 self.tick_tile_board();
+                self.step_field_locomotion();
                 None
             }
             SceneMode::Cutscene => {
@@ -2382,6 +2474,278 @@ impl World {
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.sprite_frame = frame;
         }
+    }
+
+    // --- field collision grid + free-movement locomotion ----------------
+
+    /// Reset the per-scene field collision grid to "all walkable" (every
+    /// byte zero). Called at field entry; the scene prescript repaints the
+    /// wall bits via the field-VM `0x4C` outer-nibble-7 op. Mirrors the
+    /// retail wholesale clear of `*(_DAT_1F8003EC) + 0x4000` at scene boot
+    /// (the exact retail clear site is unpinned; zeroing here is the
+    /// engine-side equivalent - see `docs/subsystems/field-locomotion.md`).
+    pub fn reset_field_collision_grid(&mut self) {
+        self.field_collision_grid.clear();
+        self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
+    }
+
+    /// Load the per-scene base collision/floor grid from the field map file's
+    /// `+0x4000` region (the `DATA\FIELD\<scene>.MAP` slice exposed by
+    /// [`crate::scene::Scene::field_collision_grid`]). `grid` is the raw
+    /// `0x80 x 0x80` byte grid: high nibble = sub-cell wall bits, low nibble =
+    /// floor-elevation tier - the same byte format the runtime grid uses, so
+    /// it copies verbatim. The field-VM `0x4C` nibble-7 ops then layer
+    /// story-conditional deltas on top as the prescript runs.
+    ///
+    /// PORT: the `+0x4000` sub-region streamed by `FUN_8001f7c0` into the
+    /// field buffer at `*(_DAT_1f8003ec)`. Byte-exact vs live RAM (town01).
+    pub fn load_field_collision_grid(&mut self, grid: &[u8]) {
+        let n = grid.len().min(FIELD_GRID_LEN);
+        self.field_collision_grid.clear();
+        self.field_collision_grid.resize(FIELD_GRID_LEN, 0);
+        self.field_collision_grid[..n].copy_from_slice(&grid[..n]);
+    }
+
+    /// Apply one field-VM `0x4C` outer-nibble-7 rectangular wall paint to
+    /// the collision grid. `x_range` / `z_range` are the half-open tile
+    /// spans the VM dispatcher already computed from the op operands; `sub`
+    /// selects the per-byte high-nibble mutation:
+    ///
+    /// | sub | op |
+    /// |---|---|
+    /// | 0 | `byte &= 0x0F` (clear walls - make walkable) |
+    /// | 1 | `byte |= 0xF0` (block all four sub-cells) |
+    /// | 2 | `byte &= ~(mask << 4)` (clear selected wall bits) |
+    /// | 3 | `byte |= (mask << 4)` (set selected wall bits) |
+    ///
+    /// Out-of-range tiles are skipped. The low nibble (floor-elevation
+    /// tier) is preserved.
+    fn paint_field_collision(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
+        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+            self.reset_field_collision_grid();
+        }
+        let hi = mask << 4;
+        for row in z_range.0..z_range.1 {
+            let row_base = (row as usize) * FIELD_GRID_STRIDE;
+            for col in x_range.0..x_range.1 {
+                let idx = row_base + col as usize;
+                let Some(byte) = self.field_collision_grid.get_mut(idx) else {
+                    continue;
+                };
+                match sub {
+                    0 => *byte &= 0x0F,
+                    1 => *byte |= 0xF0,
+                    2 => *byte &= !hi,
+                    3 => *byte |= hi,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Sample the collision grid at world coords `(x, z)` and return `true`
+    /// if the covering sub-cell is a wall.
+    ///
+    /// PORT: FUN_801cfe4c
+    ///
+    /// Mirrors `FUN_801cfe4c`'s grid
+    /// sample: world coords convert to 64-unit sub-cells (`>> 6`), the
+    /// 128-unit tile column/row is `sub_cell >> 1` (rows of `0x80` bytes),
+    /// and the wall bit is `byte >> 4 & quadrant_mask` where the quadrant
+    /// is selected by `(sub_cell_z & 1) * 2 + (sub_cell_x & 1)`.
+    pub fn field_tile_is_wall(&self, x: i16, z: i16) -> bool {
+        if self.field_collision_grid.len() < FIELD_GRID_LEN {
+            return false;
+        }
+        if x < 0 || z < 0 {
+            return true; // off the grid origin reads as a wall (clamp inside)
+        }
+        let sx = (x as i32) >> 6;
+        let sz = (z as i32) >> 6;
+        let col = (sx >> 1) & 0x7F;
+        let row = (sz >> 1) & 0x7F;
+        let idx = (col + row * FIELD_GRID_STRIDE as i32) as usize;
+        let Some(&byte) = self.field_collision_grid.get(idx) else {
+            return false;
+        };
+        let quad = ((sz & 1) << 1 | (sx & 1)) as u32;
+        (byte >> 4) & (1u8 << quad) != 0
+    }
+
+    /// Decode this frame's held d-pad into a camera-relative movement
+    /// direction and an 8-direction heading angle. Returns
+    /// `(dir_bits, heading)` where `dir_bits` uses the retail post-remap
+    /// convention (`0x1000` = Z+, `0x4000` = Z-, `0x2000` = X+, `0x8000` =
+    /// X-) and `heading` is a PSX 12-bit angle (`4096` = full turn).
+    /// `dir_bits == 0` means no direction is held.
+    ///
+    /// The raw screen direction (up / down / left / right) is remapped by
+    /// [`World::field_camera_azimuth`] quantised to the nearest 90° so
+    /// "screen up" always walks away from the camera, the same job
+    /// `func_0x800467e8` does in retail.
+    fn decode_field_direction(&self) -> (u16, i16) {
+        let up = self.input.pressed(input::PadButton::Up);
+        let down = self.input.pressed(input::PadButton::Down);
+        let left = self.input.pressed(input::PadButton::Left);
+        let right = self.input.pressed(input::PadButton::Right);
+
+        // Screen-space delta: +Y forward (away from camera), +X right.
+        let mut sx: i32 = 0;
+        let mut sy: i32 = 0;
+        if up {
+            sy += 1;
+        }
+        if down {
+            sy -= 1;
+        }
+        if right {
+            sx += 1;
+        }
+        if left {
+            sx -= 1;
+        }
+        if sx == 0 && sy == 0 {
+            return (0, 0);
+        }
+
+        // Quantise the camera azimuth to one of four cardinal rotations and
+        // rotate the screen delta into world space. quadrant 0 = identity
+        // (screen-up -> +Z, screen-right -> +X).
+        let quadrant = (((self.field_camera_azimuth as u32) + 512) / 1024) & 3;
+        let (mut wx, mut wz) = match quadrant {
+            0 => (sx, sy),
+            1 => (sy, -sx),
+            2 => (-sx, -sy),
+            _ => (-sy, sx),
+        };
+        wx = wx.clamp(-1, 1);
+        wz = wz.clamp(-1, 1);
+
+        let mut bits = 0u16;
+        if wz > 0 {
+            bits |= 0x1000; // Z+
+        } else if wz < 0 {
+            bits |= 0x4000; // Z-
+        }
+        if wx > 0 {
+            bits |= 0x2000; // X+
+        } else if wx < 0 {
+            bits |= 0x8000; // X-
+        }
+
+        // Heading: atan2(wx, wz) in 12-bit units. Z+ = 0, X+ = quarter turn.
+        let heading = (((wx as f32).atan2(wz as f32) / std::f32::consts::TAU * 4096.0).round()
+            as i32
+            & 0x0FFF) as i16;
+        (bits, heading)
+    }
+
+    /// Free-movement locomotion step - the engine-side port of
+    /// `FUN_801d01b0` (field overlay `overlay_0897`).
+    ///
+    /// PORT: FUN_801d01b0
+    ///
+    /// Reads this frame's
+    /// pad, turns it into a camera-relative direction + facing, and
+    /// advances the player actor in 2-unit increments with per-axis
+    /// collision against [`World::field_collision_grid`].
+    ///
+    /// No-ops when there is no player actor, while a dialog box is up (the
+    /// field VM owns the frame), while the tile-board minigame is installed
+    /// (that mode runs its own digital stepper), or while the player's
+    /// movement-disabled flag (`+0x10 & 0x80000`) is set (encounter queued
+    /// / cutscene owns the player). Reads only pad bits + grid + actor
+    /// state, so it is deterministic across identical pad streams.
+    pub fn step_field_locomotion(&mut self) {
+        if self.current_dialog.is_some() || self.tile_board.is_some() {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = slot as usize;
+        if slot >= self.actors.len() || !self.actors[slot].active {
+            return;
+        }
+        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
+            return;
+        }
+
+        let (dir_bits, heading) = self.decode_field_direction();
+        if dir_bits == 0 {
+            return;
+        }
+        self.actors[slot].move_state.render_26 = heading;
+
+        // speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393.
+        let mult = self.actors[slot].move_state.field_72 as i32;
+        let ratio = self.move_ramp_ratio.max(1) as i32;
+        let mut speed = ((FIELD_BASE_STEP * mult) >> 12) * ratio;
+        // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
+        let z_pressed = dir_bits & 0x5000 != 0;
+        let x_pressed = dir_bits & 0xA000 != 0;
+        if z_pressed && x_pressed {
+            speed -= speed >> 2;
+        }
+        if speed <= 0 {
+            return;
+        }
+
+        // Step loop: advance FIELD_STEP_UNIT per iteration with per-axis
+        // collision, committing only the axes that stay clear.
+        let mut remaining = speed;
+        while remaining > 0 {
+            let ms = &self.actors[slot].move_state;
+            let (cx, cz) = (ms.world_x, ms.world_z);
+            // Z axis.
+            if dir_bits & 0x1000 != 0 {
+                let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
+                if !self.field_tile_is_wall(cx, nz) {
+                    self.actors[slot].move_state.world_z = nz;
+                }
+            } else if dir_bits & 0x4000 != 0 {
+                let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
+                if !self.field_tile_is_wall(cx, nz) {
+                    self.actors[slot].move_state.world_z = nz;
+                }
+            }
+            // X axis (re-read X in case Z committed; X collision uses the
+            // committed Z so footprints don't tunnel diagonally).
+            let cz2 = self.actors[slot].move_state.world_z;
+            if dir_bits & 0x2000 != 0 {
+                let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
+                if !self.field_tile_is_wall(nx, cz2) {
+                    self.actors[slot].move_state.world_x = nx;
+                }
+            } else if dir_bits & 0x8000 != 0 {
+                let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
+                if !self.field_tile_is_wall(nx, cz2) {
+                    self.actors[slot].move_state.world_x = nx;
+                }
+            }
+            remaining -= FIELD_STEP_UNIT;
+        }
+    }
+
+    /// Configure the actor at `slot` as the field player and reset the
+    /// per-scene collision grid.
+    ///
+    /// REF: FUN_8003aeb0
+    ///
+    /// Mirrors the player-actor setup in the
+    /// scene-entry map-init `FUN_8003aeb0` (`player[+0x72] = 0x1000`) plus
+    /// the per-frame delta scalar `DAT_1f800393` (defaulted to `1` when the
+    /// world hasn't installed one). Idempotent across scene transitions.
+    pub fn install_field_player(&mut self, slot: u8) {
+        self.player_actor_slot = Some(slot);
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.active = true;
+            actor.move_state.field_72 = FIELD_PLAYER_SPEED_MULT;
+        }
+        if self.move_ramp_ratio == 0 {
+            self.move_ramp_ratio = 1;
+        }
+        self.reset_field_collision_grid();
     }
 
     /// One field-VM step. Drives `field_ctx` + `field_pc` from the loaded
@@ -2832,6 +3196,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             return false;
         }
         true
+    }
+
+    /// Field-VM op `0x4C` outer-nibble-7 - rectangular collision-grid wall
+    /// paint. Writes the high-nibble wall bits of the per-scene collision
+    /// grid (`*(_DAT_1F8003EC) + 0x4000`), the same grid
+    /// [`World::step_field_locomotion`] reads. The VM dispatcher has
+    /// already turned the op operands into half-open tile ranges; we just
+    /// apply the per-byte mutation. See [`World::paint_field_collision`].
+    fn op4c_n7_tile_flag_bulk(&mut self, sub: u8, x_range: (u8, u8), z_range: (u8, u8), mask: u8) {
+        self.world
+            .paint_field_collision(sub, x_range, z_range, mask);
     }
 
     fn add_money(&mut self, delta: i32) {
@@ -3457,6 +3832,199 @@ mod tests {
         // field_pc.
         let _ = world.tick();
         assert_eq!(world.field_pc, 0);
+    }
+
+    // --- field collision grid + free-movement locomotion ---------------
+
+    #[test]
+    fn field_grid_block_all_then_clear() {
+        let mut world = World::new();
+        world.reset_field_collision_grid();
+        // Block tile (col=2, row=3) - covers world x in [256,384), z in
+        // [384,512).
+        world.paint_field_collision(1, (2, 3), (3, 4), 0);
+        assert!(world.field_tile_is_wall(320, 448), "painted tile is a wall");
+        // Neighbour tile (col=1) stays walkable.
+        assert!(!world.field_tile_is_wall(160, 448));
+        // Clearing the same rectangle makes it walkable again.
+        world.paint_field_collision(0, (2, 3), (3, 4), 0);
+        assert!(!world.field_tile_is_wall(320, 448));
+    }
+
+    #[test]
+    fn field_grid_set_mask_selects_quadrant() {
+        let mut world = World::new();
+        world.reset_field_collision_grid();
+        // Set wall bit for quadrant 0 (sub-cell x even, z even) of tile
+        // (0,0) only.
+        world.paint_field_collision(3, (0, 1), (0, 1), 0b0001);
+        assert!(world.field_tile_is_wall(10, 10), "quadrant 0 is a wall");
+        // Quadrant 1 (sub-cell x odd) of the same tile is untouched.
+        assert!(!world.field_tile_is_wall(64 + 10, 10));
+    }
+
+    #[test]
+    fn field_vm_nibble7_paints_collision_grid() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        // 0x4C outer-nibble-7 sub-1 (block all): bytes
+        // [0x4C, 0x71, col0, row0, col1, row1, mask]. The paint covers
+        // columns [col0, col1+1) and rows [row0+1, row1+2) (the row bounds
+        // carry an extra +1 the column bounds do not - see FUN_801de840
+        // case 7), so [2, 3, 2, 3] paints column 2, row 4.
+        world.load_field_script(vec![0x4C, 0x71, 2, 3, 2, 3, 0x00]);
+        let _ = world.tick();
+        // The hook routed the paint into the grid: tile (col 2, row 4) ->
+        // world x in [256, 384), z in [512, 640).
+        assert!(world.field_tile_is_wall(320, 576));
+        // The unshifted tile (col 2, row 3) is NOT painted.
+        assert!(!world.field_tile_is_wall(320, 448));
+    }
+
+    #[test]
+    fn load_field_collision_grid_copies_map_region_and_nibble7_layers_on_top() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        // Synthesize a base grid: block tile (col=5, row=6) in all four
+        // sub-cells (high nibble 0xF), floor tier 2 (low nibble) elsewhere.
+        let mut grid = vec![0u8; FIELD_GRID_LEN];
+        grid[6 * FIELD_GRID_STRIDE + 5] = 0xF2;
+        world.load_field_collision_grid(&grid);
+        // tile (5,6) -> world x in [640,768), z in [768,896).
+        assert!(world.field_tile_is_wall(700, 800), "base grid wall loaded");
+        assert!(!world.field_tile_is_wall(700, 600), "other tiles walkable");
+        // Low nibble (floor tier) is preserved, not treated as a wall bit.
+        assert_eq!(world.field_collision_grid[6 * FIELD_GRID_STRIDE + 5], 0xF2);
+        // A nibble-7 paint layers a delta on top of the loaded base.
+        world.paint_field_collision(1, (8, 9), (8, 9), 0);
+        assert!(world.field_tile_is_wall(8 * 128 + 10, 8 * 128 + 10));
+        // The base wall is still present after the delta.
+        assert!(world.field_tile_is_wall(700, 800));
+    }
+
+    #[test]
+    fn load_field_collision_grid_pads_short_input() {
+        let mut world = World::new();
+        world.load_field_collision_grid(&[0xF0, 0x00]);
+        assert_eq!(world.field_collision_grid.len(), FIELD_GRID_LEN);
+        assert!(
+            world.field_tile_is_wall(10, 10),
+            "first tile wall from input"
+        );
+    }
+
+    #[test]
+    fn locomotion_moves_player_on_dpad() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.actors[0].move_state.world_x = 200;
+        world.actors[0].move_state.world_z = 200;
+        // Up -> +Z. speed = (8 * 0x1000 >> 12) * 1 = 8 -> +8 in 2-unit steps.
+        world.set_pad(input::PadButton::Up.mask());
+        let _ = world.tick();
+        assert_eq!(world.actors[0].move_state.world_z, 208);
+        assert_eq!(world.actors[0].move_state.world_x, 200);
+    }
+
+    #[test]
+    fn locomotion_diagonal_normalises_speed() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.actors[0].move_state.world_x = 400;
+        world.actors[0].move_state.world_z = 400;
+        // Up+Right -> Z+ and X+. speed = 8, diagonal -= 8>>2 = 6 -> +6 each.
+        world.set_pad(input::PadButton::Up.mask() | input::PadButton::Right.mask());
+        let _ = world.tick();
+        assert_eq!(world.actors[0].move_state.world_z, 406);
+        assert_eq!(world.actors[0].move_state.world_x, 406);
+    }
+
+    #[test]
+    fn locomotion_stops_at_wall() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.actors[0].move_state.world_x = 200;
+        world.actors[0].move_state.world_z = 250;
+        // Block tile (col=1, row=2) - the tile the +Z walk crosses into at
+        // z=256.
+        world.paint_field_collision(1, (1, 2), (2, 3), 0);
+        world.set_pad(input::PadButton::Up.mask());
+        let _ = world.tick();
+        // Player advances 250 -> 254, then the candidate 256 lands in the
+        // blocked tile and is rejected. Without the wall it would reach 258.
+        assert_eq!(world.actors[0].move_state.world_z, 254);
+        assert_eq!(world.actors[0].move_state.world_x, 200);
+    }
+
+    #[test]
+    fn locomotion_gated_by_movement_disabled_flag() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.actors[0].move_state.world_z = 200;
+        world.actors[0].move_state.flags |= 0x0008_0000; // encounter / cutscene owns player
+        world.set_pad(input::PadButton::Up.mask());
+        let _ = world.tick();
+        assert_eq!(
+            world.actors[0].move_state.world_z, 200,
+            "no movement while disabled"
+        );
+    }
+
+    #[test]
+    fn locomotion_gated_by_active_dialog() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.actors[0].move_state.world_z = 200;
+        world.current_dialog = Some(DialogRequest {
+            text_id: 1,
+            inline: Vec::new(),
+            world_x: 0,
+            world_z: 0,
+            depth_id: 0,
+        });
+        world.set_pad(input::PadButton::Up.mask());
+        let _ = world.tick();
+        assert_eq!(
+            world.actors[0].move_state.world_z, 200,
+            "dialog owns the frame"
+        );
+    }
+
+    #[test]
+    fn locomotion_deterministic_across_identical_pad_stream() {
+        fn drive(pads: &[u16]) -> (i16, i16) {
+            let mut world = World::new();
+            world.mode = SceneMode::Field;
+            world.install_field_player(0);
+            world.actors[0].move_state.world_x = 300;
+            world.actors[0].move_state.world_z = 300;
+            // A couple of deterministic walls so collision rejection is in
+            // the path being compared.
+            world.paint_field_collision(1, (0, 3), (0, 3), 0);
+            for &p in pads {
+                world.set_pad(p);
+                let _ = world.tick();
+            }
+            let ms = &world.actors[0].move_state;
+            (ms.world_x, ms.world_z)
+        }
+        let up = input::PadButton::Up.mask();
+        let down = input::PadButton::Down.mask();
+        let left = input::PadButton::Left.mask();
+        let right = input::PadButton::Right.mask();
+        let seq = [up, up | right, right, down, down | left, left, 0, up];
+        assert_eq!(
+            drive(&seq),
+            drive(&seq),
+            "identical pad stream is bit-identical"
+        );
     }
 
     #[test]

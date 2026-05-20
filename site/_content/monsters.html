@@ -1,0 +1,235 @@
+<!--HEAD: <style>
+.enemy-table-shell { display: flex; flex-direction: column; gap: 1rem; }
+.file-input-group {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+  padding: 0.75rem; border: 1px solid var(--border); background: var(--bg-card);
+}
+.file-input-group input[type="file"] { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem; }
+.enemy-table-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
+.enemy-table-toolbar {
+  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
+}
+.enemy-table-toolbar input[type="search"] {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem; font-family: var(--font-mono); font-size: 0.85rem; min-width: 220px;
+}
+.enemy-table-count { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.8rem; }
+.enemy-table-table-wrap { border: 1px solid var(--border); background: var(--bg-card); overflow-x: auto; }
+table.enemy-table {
+  border-collapse: collapse; width: 100%;
+  font-family: var(--font-mono); font-size: 0.8rem;
+}
+table.enemy-table thead th {
+  position: sticky; top: 0; background: var(--bg-raised); color: var(--text);
+  text-align: right; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border);
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+table.enemy-table thead th.col-name { text-align: left; }
+table.enemy-table thead th .arrow { color: var(--accent); font-size: 0.7rem; margin-left: 0.2rem; }
+table.enemy-table tbody td { padding: 0.4rem 0.7rem; border-bottom: 1px solid var(--border); text-align: right; }
+table.enemy-table tbody td.col-name { text-align: left; color: var(--text); }
+table.enemy-table tbody td.col-id { color: var(--accent); }
+table.enemy-table tbody tr:hover { background: var(--bg-raised); }
+table.enemy-table tbody td.dim { color: var(--text-dim); }
+</style>
+-->
+<header>
+  <div class="breadcrumb"><a href="index.html">home</a> · enemy table</div>
+  <h1>Enemy table</h1>
+  <p class="lede">Decode every enemy's stat record straight from your own disc image. The full archive — names, HP, MP, and combat stats for the whole roster — is LZS-decompressed in your browser via WebAssembly. No game data ships with this site; bring your own <code>.bin</code> and nothing leaves your machine.</p>
+</header>
+
+<section class="doc-section">
+  <h2>Open a disc image</h2>
+  <div class="enemy-table-shell">
+    <div class="file-input-group">
+      <label for="enemy-table-file"><strong>Choose file:</strong></label>
+      <input type="file" id="enemy-table-file" accept=".bin,.DAT,.dat">
+      <span class="enemy-table-status" id="enemy-table-status">No file loaded. Provide a <code>.bin</code> Mode2/2352 image (or a raw <code>PROT.DAT</code>).</span>
+    </div>
+
+    <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
+      <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
+      <span class="enemy-table-count" id="enemy-table-count"></span>
+    </div>
+
+    <div class="enemy-table-table-wrap" id="enemy-table-table-wrap" style="display: none;">
+      <table class="enemy-table">
+        <thead>
+          <tr id="enemy-table-head">
+            <th class="col-id"   data-key="id">#</th>
+            <th class="col-name" data-key="name">Name</th>
+            <th data-key="hp">HP</th>
+            <th data-key="mp">MP</th>
+            <th data-key="s1" title="Attack — attacker's offensive stat (record +0x12, actor +0x158)">ATK</th>
+            <th data-key="s2" title="Defense (high/upper facet) — record +0x14, actor +0x15C">DEF↑</th>
+            <th data-key="s3" title="Defense (low/lower facet) — record +0x16, actor +0x160">DEF↓</th>
+            <th data-key="s4" title="Agility — seeds the accuracy/evasion roll (record +0x18, actor +0x168)">AGL</th>
+            <th data-key="s5" title="Speed — seeds the per-turn initiative roll (record +0x1A, actor +0x164)">SPD</th>
+            <th data-key="s0" title="SP / spirit-action gauge — AI spell-selection budget; seeds the spirit-charge value (record +0x0E, actor +0x154)">SP</th>
+            <th data-key="magic" title="total spell slots (record +0x4A); includes passive/affinity markers">Magic</th>
+            <th data-key="castable" class="col-name" title="Offensive castable spells (entry id 0x0C–0x1F) with SP cost (entry +0x74); the AI rolls these when current SP ≥ cost">Spells (SP)</th>
+            <th data-key="exp" title="Base EXP reward (record +0x46); retail scales x3/4 and splits among the party">EXP</th>
+            <th data-key="gold" title="Base gold reward (record +0x44); a lone enemy yields floor((gold>>1)/2)">Gold</th>
+            <th data-key="drop_chance" title="Drop item id @ drop chance % (record +0x48 / +0x49)">Drop</th>
+          </tr>
+        </thead>
+        <tbody id="enemy-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="hint">All six stats are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the formula consumers name them — <strong>ATK</strong> (attacker offense), <strong>DEF↑/DEF↓</strong> (the two defense facets, selected by attack move index), <strong>AGL</strong> (accuracy/evasion roll seed), <strong>SPD</strong> (turn-order initiative seed), and <strong>SP</strong> (the spirit/action gauge the AI spends selecting spells). <strong>EXP / Gold / Drop</strong> are the victory-spoils fields (record <code>+0x44..+0x49</code>); these are the <em>base</em> values - the retail spoils formula scales them (EXP &times;3/4 split among the party; a lone enemy's gold yields <code>floor((gold&gt;&gt;1)/2)</code>). Drop shows <code>#item-id @ chance%</code>. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
+</section>
+
+<section class="doc-section">
+  <h2>How it works</h2>
+  <p>The stat archive is the extended footprint of PROT entry <code>867</code>. Each monster id <code>n</code> (1-based) maps to slot <code>(n−1)·0x14000</code>, framed as <code>[u32 decoded-size][Legaia LZS stream]</code>; the decoded block's head is the stat record the battle loader copies into a live actor. The same <code>legaia_asset::monster_archive</code> parser used by the native tools and the engine runs here, compiled to WebAssembly.</p>
+  <p style="color: var(--text-dim); font-size: 0.85rem;">Files are read with the browser's <code>FileReader</code> API directly into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring-your-own-disc). Native equivalent: <code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code> (add <code>--id N</code> for a single record).</p>
+</section>
+
+<script type="module">
+(() => {
+  const fileInput = document.getElementById('enemy-table-file');
+  const status = document.getElementById('enemy-table-status');
+  const toolbar = document.getElementById('enemy-table-toolbar');
+  const tableWrap = document.getElementById('enemy-table-table-wrap');
+  const filterInput = document.getElementById('enemy-table-filter');
+  const countEl = document.getElementById('enemy-table-count');
+  const body = document.getElementById('enemy-table-body');
+  const head = document.getElementById('enemy-table-head');
+  if (!fileInput) return;
+
+  let records = [];        // normalized {id,name,hp,mp,s0..s5,magic}
+  let sortKey = 'id';
+  let sortDir = 1;         // 1 = asc, -1 = desc
+
+  function normalize(r) {
+    const s = r.stats || [];
+    return {
+      id: r.id, name: r.name, hp: r.hp, mp: r.mp,
+      s0: s[0] ?? 0, s1: s[1] ?? 0, s2: s[2] ?? 0,
+      s3: s[3] ?? 0, s4: s[4] ?? 0, s5: s[5] ?? 0,
+      magic: r.magic_count ?? 0,
+      spells: r.spells || [],
+      castable: (r.spells || []).filter(sp => sp.castable).length,
+      exp: r.exp ?? 0, gold: r.gold ?? 0,
+      drop_item: r.drop_item ?? 0, drop_chance: r.drop_chance_pct ?? 0,
+    };
+  }
+
+  function fmtSpells(spells) {
+    const cast = (spells || []).filter(sp => sp.castable);
+    if (cast.length === 0) return '—';
+    return cast.map(sp =>
+      '0x' + sp.id.toString(16).toUpperCase().padStart(2, '0') + '@' + sp.sp_cost
+    ).join(' ');
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  function render() {
+    const q = (filterInput.value || '').trim().toLowerCase();
+    let rows = records;
+    if (q) {
+      rows = rows.filter(r =>
+        r.name.toLowerCase().includes(q) || String(r.id) === q);
+    }
+    rows = rows.slice().sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      if (sortKey === 'name') return sortDir * av.localeCompare(bv);
+      return sortDir * (av - bv);
+    });
+
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td class="col-id">${r.id}</td>
+        <td class="col-name">${escapeHtml(r.name)}</td>
+        <td>${r.hp}</td>
+        <td class="${r.mp ? '' : 'dim'}">${r.mp}</td>
+        <td>${r.s1}</td>
+        <td>${r.s2}</td>
+        <td>${r.s3}</td>
+        <td>${r.s4}</td>
+        <td>${r.s5}</td>
+        <td>${r.s0}</td>
+        <td class="${r.magic ? '' : 'dim'}">${r.magic}</td>
+        <td class="col-name ${r.castable ? '' : 'dim'}">${escapeHtml(fmtSpells(r.spells))}</td>
+        <td>${r.exp}</td>
+        <td>${r.gold}</td>
+        <td class="${r.drop_item ? '' : 'dim'}">${r.drop_item ? ('#' + r.drop_item + '@' + r.drop_chance + '%') : '—'}</td>
+      </tr>`).join('');
+
+    countEl.textContent = q
+      ? `${rows.length} of ${records.length} enemies`
+      : `${records.length} enemies`;
+
+    head.querySelectorAll('th').forEach(th => {
+      const arrow = th.querySelector('.arrow');
+      if (arrow) arrow.remove();
+      if (th.dataset.key === sortKey) {
+        const span = document.createElement('span');
+        span.className = 'arrow';
+        span.textContent = sortDir > 0 ? '▲' : '▼';
+        th.appendChild(span);
+      }
+    });
+  }
+
+  head.querySelectorAll('th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (sortKey === key) { sortDir = -sortDir; }
+      else { sortKey = key; sortDir = (key === 'name') ? 1 : -1; }
+      render();
+    });
+  });
+  filterInput.addEventListener('input', render);
+
+  fileInput.addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) { status.textContent = 'No file loaded.'; return; }
+    status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — decoding enemy table…`;
+
+    /* The LegaiaViewer constructor validates a canvas id even though the
+     * enemy-table path never draws to it. Inject a throwaway one. */
+    let canvas = document.getElementById('enemy-table-canvas');
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.id = 'enemy-table-canvas';
+      canvas.style.display = 'none';
+      document.body.appendChild(canvas);
+    }
+
+    try {
+      const mod = await import('./wasm/legaia_web_viewer.js');
+      await mod.default();
+      const buf = new Uint8Array(await f.arrayBuffer());
+      const viewer = new mod.LegaiaViewer('enemy-table-canvas');
+      viewer.load_disc(buf);
+
+      const parsed = JSON.parse(viewer.monster_archive_json());
+      if (parsed.error) {
+        status.textContent = `Error: ${parsed.error}`;
+        return;
+      }
+      records = (parsed.records || []).map(normalize);
+      if (records.length === 0) {
+        status.textContent = `Loaded: ${f.name} — no enemy data found (PROT entry 867 absent). Is this a full Legaia disc / PROT.DAT?`;
+        return;
+      }
+      status.textContent = `Loaded: ${f.name} — decoded ${records.length} enemy records.`;
+      toolbar.style.display = 'flex';
+      tableWrap.style.display = 'block';
+      render();
+    } catch (err) {
+      status.textContent = `Failed to decode: ${err}`;
+      console.error(err);
+    }
+  });
+})();
+</script>

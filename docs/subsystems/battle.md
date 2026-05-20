@@ -76,12 +76,12 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x34` / `+0x38` | i16 | Current world X / Z. |
 | `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
 | `+0x4A` | u8 | Magic-slot count. |
-| `+0x4C` | int* | Magic-slot list pointer (each entry is `[byte type, …]`). |
+| `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 SP cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
 | `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
 | `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
-| `+0x1EF..+0x1F3` | u8 | Magic-resistance per element (5 elements). |
-| `+0x230` | u32 | Monster XP / drop record (set from `param_1[1]` in the monster init). |
+| `+0x1EF..+0x1F3` | u8 | Per-element spell-slot index (from the spell ids `2,3,4,5,0xB`). |
+| `+0x230` | u32 | Attack-effect / animation data pointer (set from record `+0x04`; **not** XP/drop). |
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
@@ -93,10 +93,54 @@ Called from `FUN_800542C8` (secondary battle archive loader). Populates a battle
 
 - HP / MP / SP triplets at `+0x14C..0x158` and `+0x172..0x174`.
 - Magic-resistance bytes at `+0x1EF..+0x1F3` (5 elements; one nibble per element).
-- Walks the spell list at `+0x4C` (count at `+0x4A`) and indexes into a per-element resistance table.
-- Final XP / drop record into `+0x230`.
+- Walks the spell list at `+0x4C` (count at `+0x4A`): for the elemental ids (`2,3,4,5,0xB`) it records the matching spell's slot index into the per-element table at `+0x1EF..+0x1F3`.
+- Attack-effect / animation data pointer (record `+0x04`) into `+0x230`.
 
 This is the canonical "monster spawn" path. Engine port reads the record once, populates the actor struct, and lets `FUN_801E295C` take over.
+
+### Monster-record source layout
+
+`param_1` is the in-RAM monster record (after the loader's offset→pointer fixups). Field map traced from `FUN_80054CB0`:
+
+| Offset | Type | Use |
+|---|---|---|
+| `+0x00` | u32 | Name string pointer (disc offset → pointer; `strlen` copied into actor `+0x1BC`). |
+| `+0x04` | u32 | Attack-effect / animation data pointer → actor `+0x230` (walked as `0x1C`-stride geometry records by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. |
+| `+0x08` | u32 | Shared-resource pointer (fixed up at load). |
+| `+0x0C` | u16 | **HP** → actor `+0x14C/+0x14E/+0x172`. |
+| `+0x0E` | u16 | **SP** → actor `+0x154/+0x156` (spirit/action gauge - AI spell-selection budget; spirit-charge source). |
+| `+0x10` | u16 | **MP** → actor `+0x150/+0x152/+0x174`. |
+| `+0x12` | u16 | **ATK** → actor `+0x158/+0x15A` (attacker offense in the damage routine). |
+| `+0x14` | u16 | **DEF↑** → actor `+0x15C/+0x15E` (defender defense, high facet). |
+| `+0x16` | u16 | **DEF↓** → actor `+0x160/+0x162` (defender defense, low facet). |
+| `+0x18` | u16 | **AGL** → actor `+0x168/+0x16A` (rescaled into the accuracy/evasion seed). |
+| `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
+| `+0x44` | u16 | **gold** (base victory-spoils gold). |
+| `+0x46` | u16 | **EXP** (base victory-spoils experience). |
+| `+0x48` | u8 | **drop item id** (`0` = no drop). |
+| `+0x49` | u8 | **drop chance** in percent (`rand() % 100 < pct`). |
+| `+0x4A` | u8 | Magic-slot count. |
+| `+0x4C` | u32[] | Spell-entry offsets (count at `+0x4A`; block-relative, fixed to pointers at load). Each entry's first byte is a **spell/action id**: ids `2,3,4,5,0x0B` are elemental resist/affinity markers (`FUN_80054CB0` writes the slot index into actor `+0x1EF..+0x1F3`); ids `0x0C..0x1F` are offensive castable spells; `0x23` is special. Entry `+0x74` is the **SP cost**. See [battle-formulas.md → spell list](battle-formulas.md#spell-list-record-0x4c). |
+
+All six stat names are pinned by the consumers of those actor slots - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}`.
+
+**Rewards (EXP / gold / drop)** are inline in the record head at `+0x44..+0x49` (*not* at `+0x04`, which is the effect/animation data above). The victory-spoils function `FUN_8004E568` reads them from the per-enemy **record-pointer table at `0x801C9348`** (the loader `FUN_800542C8` populates it, so the actor *does* retain its record there - that's why monster-init never needed to copy the reward fields):
+
+- **gold** (`+0x44`, u16): summed `>> 1` across dead enemies, optionally `* 1.25` (a living party member with ability bit `0x10000`), then the total is halved. A lone enemy yields `floor((gold >> 1) / 2)` - Gimard `60` → `15`, confirmed by a runtime write-watchpoint on party gold (`0x8008459C`).
+- **EXP** (`+0x46`, u16): summed `* 3/4`, then split evenly among living party members.
+- **drop** (`+0x48` item id, `+0x49` chance %): per dead enemy, `rand() % 100 < chance` grants the item (id added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`).
+
+The reward **commit** side: `FUN_80026018` adds an accumulator (`0x80084440` = SC + `0x300`) into the party XP bank (`0x800845A4`); it's generic (the minigames share it). Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
+
+### Monster archive (PROT entry 867)
+
+`FUN_800542C8` streams the records as **per-monster `0x14000`-byte LZS slots** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~194 fixed slots). Each slot is `[u32 decompressed_size][Legaia LZS stream]`; the decoded block's head is the stat record above, with the name and spell-entry payloads at the block-relative offsets the loader fixes up.
+
+The archive is **PROT entry `0867_battle_data`** (the EXTENDED footprint — the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). The CDNAME label `monster_data` (PROT 869) is a misleading stub: it's only `0x30000` bytes and its `(id-1)*0x14000` slots don't decode. The shipped retail build takes the debug `FUN_8003E8A8(0x365)` PROT-index path (`_DAT_8007B8C2 != 0`); the alternate `data\battle\<name>` open via the `break 0x103` host trap (`FUN_800608F0`) is a build-time dev-host artifact with no matching ISO9660 file on the disc.
+
+Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the loader's relative seek `(id-1)*40` sectors + the `disc_read` CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actor stats byte-for-byte (Gimard id 10 = HP 99 / MP 20, Killer Bee id 62 = 288 / 288, Queen Bee id 63 = 888 / 888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu id 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 — Tetsu being the 999/999 tutorial sparring partner).
+
+Parser: [`legaia_asset::monster_archive`](../../crates/asset/README.md) (`record(entry, id)` / `records(entry)`; CLI `asset monster-archive`). Engine bridge: `legaia_engine_core::monster_catalog::catalog_from_monster_archive`, merged into the catalog by `SceneHost::enter_field_scene` for the scene's encounter ids so triggered battles spawn real stats.
 
 ## Stat aggregator (`FUN_80042558`)
 
