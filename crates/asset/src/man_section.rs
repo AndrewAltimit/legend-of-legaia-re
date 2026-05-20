@@ -427,6 +427,34 @@ impl ManFile {
         }
         Some(abs)
     }
+
+    /// Resolve the field-VM **scene-entry system script** (context channel
+    /// `0xFB`) within the MAN buffer.
+    ///
+    /// PORT: FUN_8003ab2c
+    ///
+    /// `FUN_8003ab2c` is the per-frame field-VM driver. At scene entry it
+    /// builds the system script from partition 1's first record: the script
+    /// block begins at `data_region_offset + partitions[1][0]` and opens
+    /// with a `[u8 local_count N][N*2 bytes][4-byte record header]` prefix,
+    /// so the first opcode is `1 + N*2 + 4` bytes in (the original computes
+    /// `pcVar12 + 4 - pcVar11` after walking the `N` two-byte local
+    /// entries).
+    ///
+    /// Returns `(script_start, pc0)` where `script_start` is the script
+    /// block's byte offset in `man` and `pc0` is the first opcode's offset
+    /// **relative to `script_start`** (the VM's `buffer_base` is
+    /// `script_start`, matching the retail `iVar2[+0x90] = pcVar11`). Returns
+    /// `None` when partition 1 is empty or the offsets run past the buffer.
+    pub fn scene_entry_script(&self, man: &[u8]) -> Option<(usize, usize)> {
+        let script_start = self.actor_placement_record_offset(0, man.len())?;
+        let n = *man.get(script_start)? as usize;
+        let pc0 = 1 + n * 2 + 4;
+        if script_start.checked_add(pc0)? >= man.len() {
+            return None;
+        }
+        Some((script_start, pc0))
+    }
 }
 
 fn u24_le(buf: &[u8], pos: usize) -> u32 {
@@ -836,6 +864,45 @@ mod tests {
             err,
             ManError::NegativePartitionCount { idx: 0, value: -1 }
         ));
+    }
+
+    #[test]
+    fn scene_entry_script_resolves_partition1_first_record() {
+        // Hand-build a ManFile whose partition-1 first record points at a
+        // crafted script block: [u8 N=2][N*2 local bytes][4-byte header]
+        // [opcode...]. The first opcode is at +1 + 2*2 + 4 = +9.
+        let data_region_offset = 0x40usize;
+        let p1_0 = 0x10u32;
+        let script_start = data_region_offset + p1_0 as usize; // 0x50
+        let mut man = vec![0u8; 0x80];
+        man[script_start] = 2; // local-entry count N
+        man[script_start + 9] = 0x25; // first real opcode
+
+        let mf = ManFile {
+            header: ManHeader {
+                status_flags: 0,
+                low_flag: false,
+                depth_lut: [0; 16],
+                partition_counts: [1, 1, 0],
+                u24_at_28: 0,
+            },
+            partitions: [vec![0], vec![p1_0], vec![]],
+            data_region_offset,
+            sections: [SectionRef {
+                offset: 0,
+                length: 0,
+            }; SECTION_COUNT],
+        };
+        let (start, pc0) = mf.scene_entry_script(&man).expect("entry script resolves");
+        assert_eq!(start, script_start);
+        assert_eq!(pc0, 9);
+        assert_eq!(man[start + pc0], 0x25);
+
+        // Empty partition 1 -> no entry script.
+        let mut mf_empty = mf.clone();
+        mf_empty.partitions[1].clear();
+        mf_empty.header.partition_counts[1] = 0;
+        assert!(mf_empty.scene_entry_script(&man).is_none());
     }
 
     #[test]
