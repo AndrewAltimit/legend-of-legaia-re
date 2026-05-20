@@ -2471,7 +2471,11 @@ impl World {
     }
 
     /// Sample the collision grid at world coords `(x, z)` and return `true`
-    /// if the covering sub-cell is a wall. Mirrors `FUN_801cfe4c`'s grid
+    /// if the covering sub-cell is a wall.
+    ///
+    /// PORT: FUN_801cfe4c
+    ///
+    /// Mirrors `FUN_801cfe4c`'s grid
     /// sample: world coords convert to 64-unit sub-cells (`>> 6`), the
     /// 128-unit tile column/row is `sub_cell >> 1` (rows of `0x80` bytes),
     /// and the wall bit is `byte >> 4 & quadrant_mask` where the quadrant
@@ -2564,7 +2568,11 @@ impl World {
     }
 
     /// Free-movement locomotion step - the engine-side port of
-    /// `FUN_801d01b0` (field overlay `overlay_0897`). Reads this frame's
+    /// `FUN_801d01b0` (field overlay `overlay_0897`).
+    ///
+    /// PORT: FUN_801d01b0
+    ///
+    /// Reads this frame's
     /// pad, turns it into a camera-relative direction + facing, and
     /// advances the player actor in 2-unit increments with per-axis
     /// collision against [`World::field_collision_grid`].
@@ -2647,7 +2655,11 @@ impl World {
     }
 
     /// Configure the actor at `slot` as the field player and reset the
-    /// per-scene collision grid. Mirrors the player-actor setup in the
+    /// per-scene collision grid.
+    ///
+    /// REF: FUN_8003aeb0
+    ///
+    /// Mirrors the player-actor setup in the
     /// scene-entry map-init `FUN_8003aeb0` (`player[+0x72] = 0x1000`) plus
     /// the per-frame delta scalar `DAT_1f800393` (defaulted to `1` when the
     /// world hasn't installed one). Idempotent across scene transitions.
