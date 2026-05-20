@@ -319,6 +319,24 @@ export class LegaiaViewer {
      */
     mesh_positions(): Float32Array;
     mesh_uvs(): Uint8Array;
+    /**
+     * Decode the global monster stat archive (PROT entry 867, the
+     * `battle_data` block's extended footprint) into a JSON array of every
+     * populated record. Sony bytes never leave the browser — the archive is
+     * LZS-decoded from the user's own loaded disc, the same client-side model
+     * the rest of this viewer uses; nothing is shipped with the static site.
+     *
+     * Shape:
+     * ```json
+     * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
+     *                  "stats": [u16; 6], "magic_count": u8 }, ... ] }
+     * ```
+     *
+     * Returns `{"records":[]}` when the entry isn't present (a standalone-TIM
+     * or regional load that lacks PROT 867), or `{"error":...}` on a genuine
+     * LZS decode failure.
+     */
+    monster_archive_json(): string;
     constructor(canvas_id: string);
     next_entry(): number;
     /**
@@ -618,6 +636,7 @@ export interface InitOutput {
     readonly legaiaviewer_mesh_indices: (a: number) => [number, number];
     readonly legaiaviewer_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_mesh_uvs: (a: number) => [number, number];
+    readonly legaiaviewer_monster_archive_json: (a: number) => [number, number];
     readonly legaiaviewer_new: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_next_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_ocean_animation_frames: (a: number) => [number, number];

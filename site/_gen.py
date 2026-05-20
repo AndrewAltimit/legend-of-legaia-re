@@ -39,6 +39,7 @@ WIDE_PAGES: set[str] = {
     "world",
     "minigames",
     "arts",
+    "monsters",
     "viewer",
     "audio",
     "architecture",
@@ -89,6 +90,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
     ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
     ("arts.html",                  "Tactical Arts",                 "arts",                       "arts.html"),
+    ("monsters.html",              "Bestiary (WASM)",               "monsters",                   "monsters.html"),
     ("world-overview.html",        "World overview (3D)",           "world-overview",             "world-overview.html"),
     # depth = 1
     ("subsystems/index.html",      "Subsystems",                    "subsystems/index",           "subsystems/index.html"),

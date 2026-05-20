@@ -60,6 +60,7 @@ export const legaiaviewer_mesh_cba_tsb: (a: number) => [number, number];
 export const legaiaviewer_mesh_indices: (a: number) => [number, number];
 export const legaiaviewer_mesh_positions: (a: number) => [number, number];
 export const legaiaviewer_mesh_uvs: (a: number) => [number, number];
+export const legaiaviewer_monster_archive_json: (a: number) => [number, number];
 export const legaiaviewer_new: (a: number, b: number) => [number, number, number];
 export const legaiaviewer_next_entry: (a: number) => [number, number, number];
 export const legaiaviewer_ocean_animation_frames: (a: number) => [number, number];
