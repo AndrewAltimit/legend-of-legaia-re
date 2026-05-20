@@ -403,6 +403,37 @@ enum Cmd {
         #[arg(long)]
         wireframe_obj: Option<PathBuf>,
     },
+    /// Inspect one PROT entry's MAN (asset type 0x03) sub-asset:
+    /// LZS-decode the third descriptor of a `scene_asset_table` bundle
+    /// and walk the multi-section header at FUN_8003AEB0. Prints the
+    /// header fields, every section's offset+length, and (when `--with-encounter`)
+    /// decodes section 0 as the encounter section (FUN_8003A110).
+    Man {
+        /// PROT entry (`extracted/PROT/0086_map01.BIN`).
+        input: PathBuf,
+        /// Also decode and print the section-0 (encounter) interior.
+        #[arg(long, default_value_t = false)]
+        with_encounter: bool,
+        /// Limit how many formation records to print when `--with-encounter`.
+        #[arg(long, default_value_t = 16)]
+        max_formations: usize,
+        /// Limit how many region records to print when `--with-encounter`.
+        #[arg(long, default_value_t = 16)]
+        max_regions: usize,
+    },
+    /// Bulk-scan a directory of PROT entries for the MAN multi-section
+    /// shape (asset 0x03 inside `scene_asset_table` bundles). Reports
+    /// per-scene the partition counts, encounter-section offset, and
+    /// section 1..4 lengths.
+    ManScan {
+        dir: PathBuf,
+        /// CDNAME.TXT for nicer entry titles. Optional.
+        #[arg(long)]
+        cdname: Option<PathBuf>,
+        /// Emit JSON instead of a formatted table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
     /// Targeted validation: walk PROT entries that correspond to the first
     /// entry of each named CDNAME block. Each is tested with strict layout
     /// and (when applicable) magic checks.
@@ -539,6 +570,13 @@ fn main() -> Result<()> {
             &style,
             &axes,
         ),
+        Cmd::Man {
+            input,
+            with_encounter,
+            max_formations,
+            max_regions,
+        } => man_one(&input, with_encounter, max_formations, max_regions),
+        Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
         Cmd::Validate {
             dir,
             cdname,
@@ -3048,6 +3086,267 @@ fn scene_v12_scan(dir: &Path, cdname_path: Option<&Path>, only_hits: bool) -> Re
     println!(
         "{hits} matches, {total_scripts} total event-script records, {high_fo} with frame-opener rate ≥ 50%"
     );
+    Ok(())
+}
+
+/// LZS-decode the MAN sub-asset out of a scene_asset_table bundle entry.
+///
+/// Returns the decompressed MAN bytes plus the descriptor that pointed
+/// at them. Bails when the buffer isn't a scene_asset_table or doesn't
+/// have a type-0x03 (MAN) descriptor.
+fn load_man_bytes(
+    buf: &[u8],
+) -> Result<(Vec<u8>, legaia_asset::scene_asset_table::DescriptorRecord)> {
+    let table = legaia_asset::scene_asset_table::detect(buf)
+        .ok_or_else(|| anyhow::anyhow!("not a scene_asset_table"))?;
+    let man = table
+        .descriptors
+        .iter()
+        .find(|d| d.type_byte == 0x03)
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("bundle has no MAN (type 0x03) descriptor"))?;
+    let start = man.data_offset as usize;
+    if start >= buf.len() {
+        anyhow::bail!(
+            "MAN descriptor data_offset 0x{:X} past entry end ({})",
+            start,
+            buf.len()
+        );
+    }
+    let (decoded, _) = legaia_lzs::decompress_tracked(&buf[start..], man.size as usize)?;
+    Ok((decoded, man))
+}
+
+fn man_one(
+    input: &Path,
+    with_encounter: bool,
+    max_formations: usize,
+    max_regions: usize,
+) -> Result<()> {
+    let buf = std::fs::read(input)?;
+    let (man_bytes, desc) = load_man_bytes(&buf)?;
+    let man = legaia_asset::man_section::parse(&man_bytes)
+        .map_err(|e| anyhow::anyhow!("MAN parse: {e}"))?;
+
+    println!(
+        "MAN @ {} (LZS in→out: {}→{})",
+        input.display(),
+        desc.size,
+        man_bytes.len()
+    );
+    println!(
+        "  status_flags    : 0x{:04X} (low_flag={}, world_map_bulk_terrain={})",
+        man.header.status_flags,
+        man.header.low_flag,
+        man.header.world_map_bulk_terrain(),
+    );
+    print!("  depth_lut[16]   :");
+    for v in man.header.depth_lut {
+        print!(" {:>5}", v);
+    }
+    println!();
+    println!(
+        "  partitions      : N0={} N1={} N2={} (total {} records, 3-byte each)",
+        man.header.partition_counts[0],
+        man.header.partition_counts[1],
+        man.header.partition_counts[2],
+        man.header.total_records(),
+    );
+    println!(
+        "  u24[0x28]       : 0x{:06X}  (section-0 byte offset into data region)",
+        man.header.u24_at_28
+    );
+    println!("  data region @ 0x{:X}", man.data_region_offset);
+    println!();
+    println!("sections:");
+    for (i, s) in man.sections.iter().enumerate() {
+        let tag = match i {
+            0 => " (encounter, ctrl[+0x20])",
+            1 => " (ctrl[+0x00])",
+            2 => " (_DAT_801C6EA0)",
+            3 => " (ctrl[+0x04])",
+            4 => " (DAT_80073ED8)",
+            5 => " (terminator, DAT_80073EE0)",
+            _ => "",
+        };
+        println!(
+            "  [{}] @ 0x{:06X}  len=0x{:06X}  body=0x{:06X}..0x{:06X}{}",
+            i,
+            s.offset,
+            s.length,
+            s.body_offset(),
+            s.end_offset(),
+            tag,
+        );
+    }
+
+    if with_encounter {
+        println!();
+        let body = man
+            .encounter_section_body(&man_bytes)
+            .ok_or_else(|| anyhow::anyhow!("encounter section body out of range"))?;
+        let es = legaia_asset::man_section::parse_encounter_section(body)
+            .map_err(|e| anyhow::anyhow!("encounter-section parse: {e}"))?;
+        println!("encounter section (FUN_8003A110):");
+        println!(
+            "  strides: formation={} condition={} region={}",
+            es.formation_stride, es.condition_stride, es.region_stride
+        );
+        println!(
+            "  counts:  formation={} condition={} region={}  (uses {}/{} body bytes)",
+            es.formation_count,
+            es.condition_count,
+            es.region_count,
+            es.total_bytes(),
+            body.len(),
+        );
+
+        let f_take = (es.formation_count as usize).min(max_formations);
+        println!("  formations [{}/{}]", f_take, es.formation_count);
+        for (i, f) in legaia_asset::man_section::formation_records(body, &es)
+            .take(f_take)
+            .enumerate()
+        {
+            match f {
+                Some(f) => println!(
+                    "    [{:3}] count={} ids=[{:>3}, {:>3}, {:>3}, {:>3}] hdr=[{:02X}, {:02X}, {:02X}] pad={}b",
+                    i,
+                    f.monster_count,
+                    f.monster_ids[0],
+                    f.monster_ids[1],
+                    f.monster_ids[2],
+                    f.monster_ids[3],
+                    f.header_bytes[0],
+                    f.header_bytes[1],
+                    f.header_bytes[2],
+                    f.trailing_byte_count,
+                ),
+                None => println!("    [{:3}] (malformed)", i),
+            }
+        }
+
+        let r_take = (es.region_count as usize).min(max_regions);
+        println!("  regions [{}/{}]", r_take, es.region_count);
+        for (i, r) in legaia_asset::man_section::region_records(body, &es)
+            .take(r_take)
+            .enumerate()
+        {
+            match r {
+                Some(r) => println!(
+                    "    [{:3}] aabb=({:3},{:3})..({:3},{:3}) rate+={} formations=[{}..+{})",
+                    i,
+                    r.aabb_x_min,
+                    r.aabb_y_min,
+                    r.aabb_x_max,
+                    r.aabb_y_max,
+                    r.rate_increment,
+                    r.formation_range_base,
+                    r.formation_range_count,
+                ),
+                None => println!("    [{:3}] (malformed)", i),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn man_scan(dir: &Path, cdname_path: Option<&Path>, json: bool) -> Result<()> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    entries.sort();
+
+    let names = match cdname_path {
+        Some(p) => Some(cdname::parse(p)?),
+        None => None,
+    };
+
+    #[derive(serde::Serialize)]
+    struct ManScanEntry {
+        entry: String,
+        partition_counts: [i16; 3],
+        section_lengths: [u32; 5],
+        encounter_offset: usize,
+        encounter_formations: Option<u8>,
+        encounter_regions: Option<u8>,
+        status_flags: u16,
+    }
+
+    let mut results: Vec<ManScanEntry> = Vec::new();
+
+    for path in &entries {
+        let Ok(buf) = std::fs::read(path) else {
+            continue;
+        };
+        let Ok((man_bytes, _)) = load_man_bytes(&buf) else {
+            continue;
+        };
+        let Ok(man) = legaia_asset::man_section::parse(&man_bytes) else {
+            continue;
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let display = display_name_for(&stem, names.as_ref());
+
+        let (f_n, r_n) = match man.encounter_section_body(&man_bytes) {
+            Some(body) => match legaia_asset::man_section::parse_encounter_section(body) {
+                Ok(es) => (Some(es.formation_count), Some(es.region_count)),
+                Err(_) => (None, None),
+            },
+            None => (None, None),
+        };
+
+        results.push(ManScanEntry {
+            entry: display,
+            partition_counts: man.header.partition_counts,
+            section_lengths: [
+                man.sections[0].length,
+                man.sections[1].length,
+                man.sections[2].length,
+                man.sections[3].length,
+                man.sections[4].length,
+            ],
+            encounter_offset: man.sections[0].offset,
+            encounter_formations: f_n,
+            encounter_regions: r_n,
+            status_flags: man.header.status_flags,
+        });
+    }
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&results)?);
+    } else {
+        println!(
+            "{:<28}  {:>3} {:>3} {:>3}  enc@      s0      s1     s2     s3     s4   forms regs  flags",
+            "entry", "N0", "N1", "N2"
+        );
+        println!("{}", "-".repeat(110));
+        for r in &results {
+            println!(
+                "{:<28}  {:>3} {:>3} {:>3}  {:>6X}  {:>5X}  {:>5X}  {:>5X}  {:>5X}  {:>5X}  {:>4}  {:>3}  0x{:04X}",
+                r.entry,
+                r.partition_counts[0],
+                r.partition_counts[1],
+                r.partition_counts[2],
+                r.encounter_offset,
+                r.section_lengths[0],
+                r.section_lengths[1],
+                r.section_lengths[2],
+                r.section_lengths[3],
+                r.section_lengths[4],
+                r.encounter_formations.map(|n| n as i32).unwrap_or(-1),
+                r.encounter_regions.map(|n| n as i32).unwrap_or(-1),
+                r.status_flags,
+            );
+        }
+        println!();
+        println!("{} scenes with a parseable MAN", results.len());
+    }
     Ok(())
 }
 

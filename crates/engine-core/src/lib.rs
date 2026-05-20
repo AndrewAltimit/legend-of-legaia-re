@@ -21,6 +21,7 @@ pub mod cheat_applier;
 pub mod cutscene;
 pub mod dialog;
 pub mod encounter;
+pub mod encounter_man;
 pub mod encounter_record;
 pub mod encounter_registry;
 pub mod equip_session;

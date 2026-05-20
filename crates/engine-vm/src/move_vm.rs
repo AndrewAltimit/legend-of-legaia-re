@@ -49,6 +49,7 @@
 //! Tests use hand-authored synthetic bytecode (no Sony bytes).
 //! REF: FUN_80017888, FUN_800204F8, FUN_80021B04
 //! REF: FUN_80021DF4, FUN_800583C8, FUN_8005842C, FUN_80058490, FUN_801D31B0
+//! REF: FUN_80020DE0
 
 #![allow(clippy::too_many_arguments)]
 
