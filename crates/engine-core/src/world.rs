@@ -62,6 +62,45 @@ pub const FIELD_SPAWN_START_SLOT: u8 = 8;
 /// engine. 4096 is well above the largest real Tactical-Arts move script.
 pub const MOVE_VM_BUDGET: usize = 4096;
 
+/// World units the player actor advances per frame while interpolating
+/// to a target tile centre during a field walk. Retail derives the
+/// per-frame delta from the frame-speed scalar `DAT_1f800393`
+/// (`overlay_0897_801ef2b0` case 2); the engine uses a fixed cadence of
+/// `TILE / 8` (16 units) - eight frames to cross one 128-unit tile.
+const FIELD_WALK_SPEED: i32 = crate::field_grid::TILE / 8;
+
+/// Move `cur` toward `target` by at most `max_delta`, snapping exactly
+/// onto `target` when within range. Used by the field-walk interpolator.
+fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {
+    let d = target - cur;
+    if d.abs() <= max_delta {
+        target
+    } else if d > 0 {
+        cur + max_delta
+    } else {
+        cur - max_delta
+    }
+}
+
+/// Decode one grid-step direction from the pad. Mirrors the single-
+/// direction decode in the walk SM (`overlay_0897_801ef2b0` case 4):
+/// vertical takes priority over horizontal, and only one axis moves per
+/// step. D-pad only (field movement is digital).
+fn field_dir_from_input(input: &input::InputState) -> Option<crate::field_grid::WalkDir> {
+    use crate::field_grid::WalkDir;
+    if input.pressed(input::PadButton::Up) {
+        Some(WalkDir::Up)
+    } else if input.pressed(input::PadButton::Down) {
+        Some(WalkDir::Down)
+    } else if input.pressed(input::PadButton::Left) {
+        Some(WalkDir::Left)
+    } else if input.pressed(input::PadButton::Right) {
+        Some(WalkDir::Right)
+    } else {
+        None
+    }
+}
+
 /// One queued fade request. Move-VM ext sub-op 0x3C writes either an
 /// immediate fade (`ticks == 0`) or a ramp (`ticks > 0`) - engines drain
 /// `pending_fade` each frame to drive the screen overlay.
@@ -591,6 +630,19 @@ pub struct World {
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
 
+    /// Field tile-grid (movement + collision). `Some` when a field scene
+    /// has installed a walk grid (retail field-VM op `0x49`). Drives
+    /// grid-based player movement in the `SceneMode::Field` tick. See
+    /// [`crate::field_grid`].
+    pub field_grid: Option<crate::field_grid::FieldGrid>,
+
+    /// While walking, the world `(x, z)` the player actor is
+    /// interpolating toward (the destination tile centre). `None` when
+    /// the player is idle and ready to accept a new direction. Mirrors
+    /// the walk SM's "interpolate to target" state
+    /// (`overlay_0897_801ef2b0` case 2).
+    pub field_walk_target: Option<(i32, i32)>,
+
     /// Per-actor status-effect tracker (Burned / Shocked / Poisoned /
     /// Asleep / Confused / Silenced / Stunned / Petrified). Populated by
     /// [`World::fold_battle_event`] on `ApplyArtStrike` events whose
@@ -816,6 +868,8 @@ impl World {
             level_up_tracker: LevelUpTracker::new(),
             current_level_up_banner: None,
             world_map_ctrl: None,
+            field_grid: None,
+            field_walk_target: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
@@ -1954,7 +2008,12 @@ impl World {
         }
         match self.mode {
             SceneMode::Battle => Some(self.step_battle()),
-            SceneMode::Field | SceneMode::Cutscene => {
+            SceneMode::Field => {
+                self.step_field();
+                self.tick_field_walk();
+                None
+            }
+            SceneMode::Cutscene => {
                 self.step_field();
                 None
             }
@@ -1963,6 +2022,56 @@ impl World {
                 None
             }
             SceneMode::Title => None,
+        }
+    }
+
+    /// Grid-based player walk: read one d-pad direction from
+    /// [`World.input`](Self::input), gate it against the field grid's
+    /// collision cells, and interpolate the player actor toward the
+    /// destination tile centre.
+    ///
+    /// PORT: the walk state machine in `overlay_0897_801ef2b0`. The
+    /// player is either *idle* (`field_walk_target == None`, accepting a
+    /// new direction) or *interpolating* toward a committed target tile
+    /// (case 2). A direction is only consumed while idle, so holding the
+    /// d-pad walks tile-by-tile - matching retail, where the SM re-reads
+    /// the pad only after the previous step's interpolation completes.
+    ///
+    /// No-ops without a player actor slot or an installed
+    /// [`field_grid`](crate::field_grid), and while a dialog box is up
+    /// (the field VM owns the frame). Reads only pad bits + grid state,
+    /// so it is deterministic across identical pad streams.
+    fn tick_field_walk(&mut self) {
+        if self.current_dialog.is_some() {
+            return;
+        }
+        let Some(player_slot) = self.player_actor_slot else {
+            return;
+        };
+        let slot = player_slot as usize;
+        if self.field_grid.is_none() || slot >= self.actors.len() {
+            return;
+        }
+
+        // Interpolating toward a committed target tile.
+        if let Some((tx, tz)) = self.field_walk_target {
+            let ms = &mut self.actors[slot].move_state;
+            let nx = step_toward(ms.world_x as i32, tx, FIELD_WALK_SPEED);
+            let nz = step_toward(ms.world_z as i32, tz, FIELD_WALK_SPEED);
+            ms.world_x = nx as i16;
+            ms.world_z = nz as i16;
+            if nx == tx && nz == tz {
+                self.field_walk_target = None;
+            }
+            return;
+        }
+
+        // Idle: decode one direction and try to step.
+        let Some(dir) = field_dir_from_input(&self.input) else {
+            return;
+        };
+        if let Some((tx, tz)) = self.field_grid.as_mut().and_then(|g| g.try_step(dir)) {
+            self.field_walk_target = Some((tx, tz));
         }
     }
 
@@ -3471,6 +3580,119 @@ mod tests {
             (c.view_mode, c.camera_x, c.camera_z, c.azimuth, c.zoom)
         };
         assert_eq!(drive(&pad_stream), drive(&pad_stream));
+    }
+
+    // ---- field walk + tile-grid collision (A2) ----
+
+    /// Field world: 3x3 grid, all floor except a wall at (1,1); player
+    /// actor in slot 0 placed at its start-tile centre.
+    fn field_walk_world() -> World {
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.player_actor_slot = Some(0);
+        w.actors[0].active = true;
+        let cells = vec![1, 1, 1, 1, crate::field_grid::CELL_WALL, 1, 1, 1, 1];
+        let grid = crate::field_grid::FieldGrid::new(3, 3, 0, 0, cells);
+        w.field_grid = Some(grid);
+        let (x, z) = w.field_grid.as_ref().unwrap().player_world();
+        w.actors[0].move_state.world_x = x as i16;
+        w.actors[0].move_state.world_z = z as i16;
+        w
+    }
+
+    fn pad_held(world: &mut World, mask: u16, frames: usize) {
+        for _ in 0..frames {
+            world.set_pad(mask);
+            let _ = world.tick();
+        }
+    }
+
+    #[test]
+    fn field_walk_holding_right_walks_to_edge() {
+        let mut w = field_walk_world();
+        // Hold Right long enough to cross two tiles (8 frames/tile) and
+        // bump the east edge.
+        pad_held(&mut w, input::PadButton::Right.mask(), 40);
+        let g = w.field_grid.as_ref().unwrap();
+        // col advances 0 -> 1 -> 2, then (3,_) is out of bounds -> stops.
+        assert_eq!(g.player_col, 2);
+        assert_eq!(g.player_row, 0);
+        // Actor settled on the (2,0) tile centre and the walk is idle.
+        let (tx, _tz) = g.tile_world(2, 0);
+        assert_eq!(w.actors[0].move_state.world_x as i32, tx);
+        assert_eq!(w.field_walk_target, None);
+    }
+
+    #[test]
+    fn field_walk_takes_multiple_frames_per_tile() {
+        let mut w = field_walk_world();
+        // One tick: direction committed (col 0 -> 1), target set, but the
+        // actor hasn't reached the next tile centre yet.
+        w.set_pad(input::PadButton::Right.mask());
+        let _ = w.tick();
+        assert_eq!(w.field_grid.as_ref().unwrap().player_col, 1);
+        assert!(w.field_walk_target.is_some());
+        let (tx, _) = w.field_grid.as_ref().unwrap().tile_world(1, 0);
+        assert!((w.actors[0].move_state.world_x as i32) < tx);
+    }
+
+    #[test]
+    fn field_walk_blocked_by_wall() {
+        let mut w = field_walk_world();
+        // Start the player directly north of the (1,1) wall.
+        {
+            let g = w.field_grid.as_mut().unwrap();
+            g.player_col = 1;
+            g.player_row = 0;
+        }
+        let (x, z) = w.field_grid.as_ref().unwrap().player_world();
+        w.actors[0].move_state.world_x = x as i16;
+        w.actors[0].move_state.world_z = z as i16;
+        let before = w.actors[0].move_state.world_z;
+        // Down would step into the (1,1) wall - rejected, player stays.
+        pad_held(&mut w, input::PadButton::Down.mask(), 20);
+        let g = w.field_grid.as_ref().unwrap();
+        assert_eq!((g.player_col, g.player_row), (1, 0));
+        assert_eq!(w.actors[0].move_state.world_z, before);
+        assert_eq!(w.field_walk_target, None);
+    }
+
+    #[test]
+    fn field_walk_gated_by_dialog() {
+        let mut w = field_walk_world();
+        w.current_dialog = Some(DialogRequest {
+            text_id: 0,
+            inline: Vec::new(),
+            world_x: 0,
+            world_z: 0,
+            depth_id: 0,
+        });
+        pad_held(&mut w, input::PadButton::Right.mask(), 20);
+        let g = w.field_grid.as_ref().unwrap();
+        assert_eq!((g.player_col, g.player_row), (0, 0));
+        assert_eq!(w.field_walk_target, None);
+    }
+
+    #[test]
+    fn field_walk_is_deterministic() {
+        let drive = || {
+            let mut w = field_walk_world();
+            for &mask in &[
+                input::PadButton::Right.mask(),
+                input::PadButton::Down.mask(),
+                input::PadButton::Right.mask(),
+            ] {
+                pad_held(&mut w, mask, 12);
+            }
+            let g = w.field_grid.as_ref().unwrap().clone();
+            (
+                g.player_col,
+                g.player_row,
+                w.actors[0].move_state.world_x,
+                w.actors[0].move_state.world_z,
+            )
+        };
+        assert_eq!(drive(), drive());
     }
 
     #[test]

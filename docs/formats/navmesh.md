@@ -38,4 +38,4 @@ Both invocations return zero hits. The narrow `--target-lo`/`--target-hi` bounds
 
 ## What the actual navmesh / pathing data is
 
-Real per-scene region / event-trigger data for actor pathing is NOT in this RAM window. The encounter-record pointer (one piece of pathing-adjacent data) lives in actor records at `actor[+0x94]` — see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow. NPC region / collision-box records live in the field-pack schema slots (slot kinds `NpcRecord` / `CollisionBox` / `EventTrigger` from [`field-pack.md`](field-pack.md)).
+Real per-scene region / event-trigger data for actor pathing is NOT in this RAM window. The player's walkable-area collision is a **tile grid** installed inline in the field-VM event script (field-VM op `0x49`), not a field-pack slot — see [`subsystems/field-walk.md`](../subsystems/field-walk.md). The encounter-record pointer (one piece of pathing-adjacent data) lives in actor records at `actor[+0x94]` — see [`subsystems/world-map.md`](../subsystems/world-map.md#encounter-record-installation) for that flow.
