@@ -121,6 +121,30 @@ Selector 7's `param_2` sub-index picks which stat group to buff (lines 2473-2574
 
 The single "Defense Up" buff (sub 2) raising **both** `+0x15C` and `+0x160` together is what confirms those two are the two facets of one defense, not separate stats.
 
+## Victory spoils (rewards)
+
+The post-battle EXP / gold / drop are inline in each monster record at
+`+0x44..+0x49` (the global archive head; see
+[`legaia_asset::monster_archive`](../formats/battle-data-pack.md) and
+[battle.md](battle.md)). The spoils function `FUN_8004E568` walks the dead
+enemies through the per-enemy **record-pointer table at `0x801C9348`** (populated
+by the loader `FUN_800542C8`) and computes:
+
+| Record | Field | Formula |
+|---|---|---|
+| `+0x44` u16 | base gold | `Σ (gold >> 1)` over dead enemies, `* 1.25` if a living party member has ability bit `0x10000`, then total halved. Lone enemy: `floor((gold >> 1) / 2)`. |
+| `+0x46` u16 | base EXP | `Σ (exp)` then `* 3/4` (`v - v>>2`), split evenly among living party members. |
+| `+0x48` u8 | drop item id | `0` = no drop. |
+| `+0x49` u8 | drop chance % | per dead enemy, `rand() % 100 < (chance + bonus)` grants the item (added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`). |
+
+Gold commits to party gold `0x8008459C` (clamp `99,999,999`); EXP commits via
+the generic `FUN_80026018` (accumulator `0x80084440` → party XP bank
+`0x800845A4`, clamp `9,999,999`), which the minigames share. Runtime-confirmed:
+the Gimard fight (`+0x44`=60) credited exactly `+15` gold
+(`60>>1=30`, `30-(30>>1)=15`) via a write-watchpoint on `0x8008459C`. Drop ids
+cross-check against `legaia-gamedata` (Gimard `+0x48`=119 @ 10% drops Healing
+Leaf).
+
 ## Spirit damage formula
 
 From [battle-action.md state `0x3E` and `0x46`](battle-action.md):
@@ -185,5 +209,5 @@ The unit tests there pin the documented formulas as fixtures - a future runtime 
 ## What's still open
 
 - **Selector dispatch for selectors `0x10..=0x83`.** The cases beyond status / buff / damage handle stat-up animations, status-clear, queue-end markers, and the multi-target item slot used by Smelly Glove etc. They're mostly read-only stat ramps that don't affect game balance, so leaving them un-decoded is fine for a first port.
-- **Monster reward fields (EXP / gold / drop).** All six stat halfwords are named (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)); the rewards are *not* in the record at `+0x04` (effect/animation data). The **commit** is pinned: `FUN_80026018` adds an accumulator `0x80084440` into the party XP bank `0x800845A4` (clamp `9,999,999`); gold (`0x8008459C`) commits the same way. But that commit is generic (the fishing / dance / slot / Baka minigames call it too), the battle FSM (`FUN_801E295C`, dumped) never touches the accumulator, and neither monster-init nor the loader reads the reward fields - so the per-monster **read** (and the record offsets, candidates in `+0x1C..+0x49`) isn't statically locatable. Pinning it needs a runtime write-watchpoint on `0x80084440` / `0x8008459C` during a battle win. Drop / steal items are curated in `legaia-gamedata`.
+- The monster record is now fully decoded: all six stat halfwords (see [actor stat block mapping](#actor-stat-block--monster-record-mapping)) plus the reward fields (see [victory spoils](#victory-spoils-rewards)). No record fields remain open.
 - **Ability-bit catalogue.** The ability bitfield at `+0xF4` of the character record has at least the documented MP-half / MP-quarter / HP-cap / MP-cap bits in use, plus the impact-step modifier (`0x10` / `0x20`) on attack actions. The full per-character mapping comes out of save-data (the 0x414 record's `+0xF4..+0xF8` is one row in the save schema's character block) - a few new-game saves with different early-game characters resolve it.

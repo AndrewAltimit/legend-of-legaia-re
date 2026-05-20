@@ -115,14 +115,22 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x16` | u16 | **DEF↓** → actor `+0x160/+0x162` (defender defense, low facet). |
 | `+0x18` | u16 | **AGL** → actor `+0x168/+0x16A` (rescaled into the accuracy/evasion seed). |
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
+| `+0x44` | u16 | **gold** (base victory-spoils gold). |
+| `+0x46` | u16 | **EXP** (base victory-spoils experience). |
+| `+0x48` | u8 | **drop item id** (`0` = no drop). |
+| `+0x49` | u8 | **drop chance** in percent (`rand() % 100 < pct`). |
 | `+0x4A` | u8 | Magic-slot count. |
 | `+0x4C` | u32[] | Spell-entry pointers (count at `+0x4A`); each entry's first byte is the element type (2/3/4/5/0xB) that sets per-element magic-resistance at actor `+0x1EF..+0x1F3`. |
 
 All six stat names are pinned by the consumers of those actor slots - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}`.
 
-**Rewards (EXP / gold / drop) are still open.** They are *not* at `+0x04` (that's the effect/animation data above). The **commit** side is pinned: `FUN_80026018` adds an accumulator (`0x80084440` = SC base `0x80084140` + `0x300`) into the party XP bank (`0x800845A4` = SC + `0x464`) and clamps to `9,999,999`. That commit is *generic* - the minigames (fishing / dance / slot / Baka Fighter) call it too - and party gold (`0x8008459C`) commits the same way; the victory banner is the actor dialog buffer at `+0xA9` (`"Gained N Experience and M G."`).
+**Rewards (EXP / gold / drop)** are inline in the record head at `+0x44..+0x49` (*not* at `+0x04`, which is the effect/animation data above). The victory-spoils function `FUN_8004E568` reads them from the per-enemy **record-pointer table at `0x801C9348`** (the loader `FUN_800542C8` populates it, so the actor *does* retain its record there - that's why monster-init never needed to copy the reward fields):
 
-What's *not* pinned is the per-monster **read** that fills the accumulator (and thus the reward fields' record offsets, candidates in the unexplored `+0x1C..+0x49` head region). The battle-action FSM (`FUN_801E295C`, dumped) never references the accumulator, and neither monster-init (`FUN_80054CB0`) nor the loader (`FUN_800542C8`) reads the reward fields - so the record isn't retained per-actor and the summation isn't statically locatable. Pinning it needs a runtime **write-watchpoint on `0x80084440`/`0x8008459C` during a battle win** (the same method that cracked the [archive source](#monster-archive-prot-entry-867)). Drop / steal *items* are curated from walkthroughs in [`legaia-gamedata`](../reference/gamedata.md).
+- **gold** (`+0x44`, u16): summed `>> 1` across dead enemies, optionally `* 1.25` (a living party member with ability bit `0x10000`), then the total is halved. A lone enemy yields `floor((gold >> 1) / 2)` - Gimard `60` → `15`, confirmed by a runtime write-watchpoint on party gold (`0x8008459C`).
+- **EXP** (`+0x46`, u16): summed `* 3/4`, then split evenly among living party members.
+- **drop** (`+0x48` item id, `+0x49` chance %): per dead enemy, `rand() % 100 < chance` grants the item (id added to the win banner at actor `+0xA9` and to inventory via `FUN_800421D4`).
+
+The reward **commit** side: `FUN_80026018` adds an accumulator (`0x80084440` = SC + `0x300`) into the party XP bank (`0x800845A4`); it's generic (the minigames share it). Drop *item names* cross-check against [`legaia-gamedata`](../reference/gamedata.md) (Gimard `+0x48`=119 @ 10% — drops Healing Leaf). The reward formula detail lives in [battle-formulas.md](battle-formulas.md#victory-spoils-rewards).
 
 ### Monster archive (PROT entry 867)
 

@@ -3140,8 +3140,18 @@ fn monster_archive_one(input: &Path, id: Option<u16>) -> Result<()> {
     );
     let print_rec = |r: &monster_archive::MonsterRecord| {
         println!(
-            "  id {:3}  {:<22} HP {:5}  MP {:5}  stats {:?}  magic {}",
-            r.id, r.name, r.hp, r.mp, r.stats, r.magic_count
+            "  id {:3}  {:<22} HP {:5}  MP {:5}  stats {:?}  magic {}  \
+             gold {:5}  exp {:5}  drop {:3}@{:3}%",
+            r.id,
+            r.name,
+            r.hp,
+            r.mp,
+            r.stats,
+            r.magic_count,
+            r.gold,
+            r.exp,
+            r.drop_item,
+            r.drop_chance_pct
         );
     };
     match id {

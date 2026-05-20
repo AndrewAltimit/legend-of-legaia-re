@@ -29,6 +29,7 @@ TARGETS = [
     # Battle archive loaders
     "80052fa0",
     "800542c8",
+    "8004f0e8",  # battle-victory reward writer (writes party gold 0x8008459C)
 
     # Asset-table init
     "8001e1b4",  # writes _DAT_8007b85c (in-RAM asset table base)
@@ -316,7 +317,10 @@ def dump(addr_str):
     print("wrote {}".format(out_path))
 
 
-for t in TARGETS:
+# DUMP_ONLY=<addr> dumps just that one function (fast one-off); otherwise
+# the whole TARGETS catalog is re-dumped.
+_only = os.environ.get("DUMP_ONLY")
+for t in ([_only] if _only else TARGETS):
     dump(t)
 
 print("done")

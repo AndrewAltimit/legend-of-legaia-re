@@ -68,6 +68,9 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
             <th data-key="s5" title="Speed — seeds the per-turn initiative roll (record +0x1A, actor +0x164)">SPD</th>
             <th data-key="s0" title="SP / spirit-action gauge — AI spell-selection budget; seeds the spirit-charge value (record +0x0E, actor +0x154)">SP</th>
             <th data-key="magic" title="number of spells the enemy can cast">Magic</th>
+            <th data-key="exp" title="Base EXP reward (record +0x46); retail scales x3/4 and splits among the party">EXP</th>
+            <th data-key="gold" title="Base gold reward (record +0x44); a lone enemy yields floor((gold>>1)/2)">Gold</th>
+            <th data-key="drop_chance" title="Drop item id @ drop chance % (record +0x48 / +0x49)">Drop</th>
           </tr>
         </thead>
         <tbody id="enemy-table-body"></tbody>
@@ -75,7 +78,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
     </div>
   </div>
 
-  <p class="hint">All six stats are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the formula consumers name them — <strong>ATK</strong> (attacker offense), <strong>DEF↑/DEF↓</strong> (the two defense facets, selected by attack move index), <strong>AGL</strong> (accuracy/evasion roll seed), <strong>SPD</strong> (turn-order initiative seed), and <strong>SP</strong> (the spirit/action gauge the AI spends selecting spells). Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
+  <p class="hint">All six stats are pinned from the battle code: <code>FUN_80054CB0</code> copies each record halfword into the live actor, and the formula consumers name them — <strong>ATK</strong> (attacker offense), <strong>DEF↑/DEF↓</strong> (the two defense facets, selected by attack move index), <strong>AGL</strong> (accuracy/evasion roll seed), <strong>SPD</strong> (turn-order initiative seed), and <strong>SP</strong> (the spirit/action gauge the AI spends selecting spells). <strong>EXP / Gold / Drop</strong> are the victory-spoils fields (record <code>+0x44..+0x49</code>); these are the <em>base</em> values - the retail spoils formula scales them (EXP &times;3/4 split among the party; a lone enemy's gold yields <code>floor((gold&gt;&gt;1)/2)</code>). Drop shows <code>#item-id @ chance%</code>. Source layout: PROT entry <code>0867_battle_data</code>, one fixed <code>0x14000</code>-byte LZS slot per monster id. Details on the <a href="subsystems/battle-formulas.html">battle formulas page</a>.</p>
 </section>
 
 <section class="doc-section">
@@ -107,6 +110,8 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
       s0: s[0] ?? 0, s1: s[1] ?? 0, s2: s[2] ?? 0,
       s3: s[3] ?? 0, s4: s[4] ?? 0, s5: s[5] ?? 0,
       magic: r.magic_count ?? 0,
+      exp: r.exp ?? 0, gold: r.gold ?? 0,
+      drop_item: r.drop_item ?? 0, drop_chance: r.drop_chance_pct ?? 0,
     };
   }
 
@@ -142,6 +147,9 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
         <td>${r.s5}</td>
         <td>${r.s0}</td>
         <td class="${r.magic ? '' : 'dim'}">${r.magic}</td>
+        <td>${r.exp}</td>
+        <td>${r.gold}</td>
+        <td class="${r.drop_item ? '' : 'dim'}">${r.drop_item ? ('#' + r.drop_item + '@' + r.drop_chance + '%') : '—'}</td>
       </tr>`).join('');
 
     countEl.textContent = q

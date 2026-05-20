@@ -34,6 +34,10 @@
 //! +0x16  u16  stat3=DEF_lo  ; -> actor +0x160/+0x162  (defender defense B)
 //! +0x18  u16  stat4=AGL     ; -> actor +0x168/+0x16A  (accuracy/evasion)
 //! +0x1A  u16  stat5=SPD     ; -> actor +0x164/+0x166  (turn-order speed)
+//! +0x44  u16  gold          ; base gold reward (victory spoils)
+//! +0x46  u16  exp           ; base EXP reward (victory spoils)
+//! +0x48  u8   drop_item     ; drop item id (0 = no drop)
+//! +0x49  u8   drop_chance   ; drop chance, percent (rand()%100 < pct)
 //! +0x4A  u8   magic_count   ; spell-entry count
 //! +0x4C  u32[] spell_offsets ; element-resistance source (first byte = element)
 //! ```
@@ -71,16 +75,25 @@
 //! [`spirit`](MonsterRecord::spirit)); [`stats`](MonsterRecord::stats) keeps
 //! all six in raw record order.
 //!
-//! ## Rewards (EXP / gold / drop) — open
+//! ## Rewards (EXP / gold / drop)
 //!
-//! These are **not** at record `+0x04` (that's the effect/animation data; the
-//! earlier "XP/drop sub-record" reading was wrong). The victory-spoils path
-//! credits party gold (`0x8008459C`) and formats the banner in the actor's
-//! dialog buffer (`+0xA9`, `"Gained N Experience and M G."`), but that code
-//! lives in the un-dumped battle-action FSM region (`FUN_801E295C`), so the
-//! reward fields' record offsets aren't pinned. Candidate inline halfwords sit
-//! in the unexplored `+0x1C..+0x49` head region. Drop / steal *items* are
-//! curated from public walkthroughs in `legaia-gamedata` (`enemies.toml`).
+//! These are inline in the record head at `+0x44..+0x49` (**not** at `+0x04`,
+//! which is effect/animation data). The victory-spoils function `FUN_8004E568`
+//! reads them from the per-enemy record-pointer table at `0x801C9348`:
+//!
+//! - `+0x44` (u16) — base gold. Summed `>> 1` across dead enemies, optionally
+//!   `* 1.25` (if a living party member has ability bit `0x10000`), then the
+//!   total is halved: a lone enemy yields `floor((gold >> 1) / 2)` gold
+//!   (Gimard `60` -> `15`, runtime-confirmed).
+//! - `+0x46` (u16) — base EXP. Summed `* 3/4` across dead enemies, then split
+//!   evenly among living party members.
+//! - `+0x48` (u8) — drop item id (`0` = no drop).
+//! - `+0x49` (u8) — drop chance in percent (`rand() % 100 < chance`).
+//!
+//! See [`MonsterRecord::gold`] / [`exp`](MonsterRecord::exp) /
+//! [`drop_item`](MonsterRecord::drop_item) /
+//! [`drop_chance_pct`](MonsterRecord::drop_chance_pct). Drop *item names* are
+//! cross-checked against `legaia-gamedata` (`enemies.toml`).
 
 use anyhow::{Result, bail};
 
@@ -109,6 +122,15 @@ pub struct MonsterRecord {
     /// (accuracy/evasion), `stats[5]` = SPD (turn-order speed). Prefer the
     /// named accessors below.
     pub stats: [u16; 6],
+    /// Base gold reward (`+0x44`). Victory spoils scale this; see the
+    /// module docs for the lone-enemy `(gold >> 1) / 2` formula.
+    pub gold: u16,
+    /// Base EXP reward (`+0x46`). Summed `* 3/4` then split among the party.
+    pub exp: u16,
+    /// Drop item id (`+0x48`; `0` = no drop).
+    pub drop_item: u8,
+    /// Drop chance in percent (`+0x49`; `rand() % 100 < drop_chance_pct`).
+    pub drop_chance_pct: u8,
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
 }
@@ -226,6 +248,10 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         read_u16(block, 0x18)?,
         read_u16(block, 0x1A)?,
     ];
+    let gold = read_u16(block, 0x44)?;
+    let exp = read_u16(block, 0x46)?;
+    let drop_item = *block.get(0x48)?;
+    let drop_chance_pct = *block.get(0x49)?;
     let magic_count = *block.get(0x4A)?;
     Some(MonsterRecord {
         id,
@@ -233,6 +259,10 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         hp,
         mp,
         stats,
+        gold,
+        exp,
+        drop_item,
+        drop_chance_pct,
         magic_count,
     })
 }
@@ -295,9 +325,10 @@ mod tests {
     #[test]
     fn parse_block_reads_named_record() {
         let mut block = vec![0u8; 0x60];
-        // name at 0x40; +0x04 effect-data offset is not parsed into a field.
-        block[0x00..0x04].copy_from_slice(&0x40u32.to_le_bytes());
-        block[0x04..0x08].copy_from_slice(&0x50u32.to_le_bytes());
+        // name at 0x50 (clear of the reward fields at 0x44..0x4A); +0x04
+        // effect-data offset is not parsed into a field.
+        block[0x00..0x04].copy_from_slice(&0x50u32.to_le_bytes());
+        block[0x04..0x08].copy_from_slice(&0x40u32.to_le_bytes());
         block[0x0C..0x0E].copy_from_slice(&99u16.to_le_bytes()); // HP
         block[0x0E..0x10].copy_from_slice(&60u16.to_le_bytes()); // stat0
         block[0x10..0x12].copy_from_slice(&20u16.to_le_bytes()); // MP
@@ -306,9 +337,13 @@ mod tests {
         block[0x16..0x18].copy_from_slice(&15u16.to_le_bytes());
         block[0x18..0x1A].copy_from_slice(&16u16.to_le_bytes());
         block[0x1A..0x1C].copy_from_slice(&22u16.to_le_bytes());
+        block[0x44..0x46].copy_from_slice(&60u16.to_le_bytes()); // gold
+        block[0x46..0x48].copy_from_slice(&55u16.to_le_bytes()); // exp
+        block[0x48] = 119; // drop item id
+        block[0x49] = 10; // drop chance %
         block[0x4A] = 9; // magic count
         // name "^A Gimard\0" at 0x40 (caret color-escape + space stripped).
-        block[0x40..0x49].copy_from_slice(b"^A Gimard");
+        block[0x50..0x59].copy_from_slice(b"^A Gimard");
 
         let rec = parse_block(10, &block).expect("record parses");
         assert_eq!(rec.id, 10);
@@ -321,6 +356,10 @@ mod tests {
         assert_eq!(rec.defense_high(), 12);
         assert_eq!(rec.speed(), 22);
         assert_eq!(rec.spirit(), 60);
+        assert_eq!(rec.gold, 60);
+        assert_eq!(rec.exp, 55);
+        assert_eq!(rec.drop_item, 119);
+        assert_eq!(rec.drop_chance_pct, 10);
     }
 
     #[test]

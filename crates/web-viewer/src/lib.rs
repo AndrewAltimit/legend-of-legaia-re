@@ -935,7 +935,8 @@ impl LegaiaViewer {
     /// Shape:
     /// ```json
     /// { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
-    ///                  "stats": [u16; 6], "magic_count": u8 }, ... ] }
+    ///                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
+    ///                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8 }, ... ] }
     /// ```
     ///
     /// Returns `{"records":[]}` when the entry isn't present (a standalone-TIM
@@ -967,6 +968,10 @@ impl LegaiaViewer {
                     "mp": r.mp,
                     "stats": r.stats,
                     "magic_count": r.magic_count,
+                    "gold": r.gold,
+                    "exp": r.exp,
+                    "drop_item": r.drop_item,
+                    "drop_chance_pct": r.drop_chance_pct,
                 })
             })
             .collect();

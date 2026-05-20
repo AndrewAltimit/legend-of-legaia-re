@@ -48,6 +48,21 @@
   <p>Physical damage (<code>overlay_battle_action_801ec3e4</code>) reads the attacker's ATK (<code>+0x158</code>) and the target's defense - <code>+0x15C</code> (DEF&uarr;) when the attack move index satisfies <code>(move - 0xC) % 10 &lt; 5</code>, else <code>+0x160</code> (DEF&darr;). The single &ldquo;Defense Up&rdquo; buff raising both <code>+0x15C</code> and <code>+0x160</code> together confirms they are two facets of one defense. <strong>SPD</strong> (<code>+0x164</code>) seeds the per-turn initiative key <code>+0x16C = SPD + rand(0..SPD/2) + 1</code>; <strong>SP</strong> (<code>+0x154</code>) is the spirit/action gauge the enemy AI spends to pick spells (deducting each spell's <code>+0x74</code> cost) and re-derives from base each round. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy.</p>
 </section>
 
+<section class="doc-section" id="victory-spoils">
+  <h2>Victory spoils (rewards)</h2>
+  <p>EXP / gold / drop are inline in each monster record at <code>+0x44..+0x49</code>. The spoils function <code>FUN_8004E568</code> walks the dead enemies via the per-enemy record-pointer table at <code>0x801C9348</code> (populated by the loader <code>FUN_800542C8</code>):</p>
+  <table class="data-table">
+    <thead><tr><th>Record</th><th>Field</th><th>Formula</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x44</code> u16</td><td>base gold</td><td>&Sigma;(gold&gt;&gt;1) over dead enemies, &times;1.25 if a living party member has ability bit 0x10000, then halved. Lone enemy: <code>floor((gold&gt;&gt;1)/2)</code>.</td></tr>
+      <tr><td><code>+0x46</code> u16</td><td>base EXP</td><td>&Sigma;(exp) then &times;3/4, split evenly among living party members.</td></tr>
+      <tr><td><code>+0x48</code> u8</td><td>drop item id</td><td>0 = no drop.</td></tr>
+      <tr><td><code>+0x49</code> u8</td><td>drop chance %</td><td>per dead enemy, <code>rand()%100 &lt; chance</code> grants the item (win banner at actor <code>+0xA9</code> + inventory).</td></tr>
+    </tbody>
+  </table>
+  <p>Gold commits to <code>0x8008459C</code> (clamp 99,999,999); EXP via the generic <code>FUN_80026018</code> (accumulator <code>0x80084440</code> &rarr; party XP bank <code>0x800845A4</code>). Runtime-confirmed: Gimard (<code>+0x44</code>=60) credited exactly +15 gold via a write-watchpoint on <code>0x8008459C</code>; drop ids cross-check against <code>legaia-gamedata</code> (Gimard <code>+0x48</code>=119 @ 10% drops Healing Leaf). The <a href="../monsters.html">enemy table</a> renders EXP / Gold / Drop per enemy.</p>
+</section>
+
 <section class="doc-section" id="spirit-damage">
   <h2>Spirit damage formula</h2>
   <p>Hard-coded per Spirit super-art: <code>damage = ((target_HP * 7) / 5) + 8</code>, capped at <code>0x120</code> (288) for the larger arts and <code>100</code> for the smaller ones. This is the one place the engine reproduces a non-obvious arithmetic path; everything else is selector-dispatch driven.</p>
@@ -88,7 +103,7 @@ else
   <h2>What's still open</h2>
   <ul class="bullets">
     <li><strong>Selectors <code>0x10..=0x83</code>.</strong> Beyond the status / buff / damage cases, these handle stat-up animations, status-clear, queue-end markers, and multi-target item slots. Mostly read-only ramps that don't affect game balance.</li>
-    <li><strong>Monster reward fields (EXP / gold / drop).</strong> All six stat halfwords are named; the rewards are <em>not</em> at record <code>+0x04</code> (effect/animation data). The <em>commit</em> is pinned - <code>FUN_80026018</code> adds an accumulator (<code>0x80084440</code>) into the party XP bank (<code>0x800845A4</code>, clamp 9,999,999); gold (<code>0x8008459C</code>) commits the same way - but it's generic (fishing / dance / slot / Baka minigames share it), the dumped battle FSM (<code>FUN_801E295C</code>) never touches the accumulator, and neither monster-init nor the loader reads the reward fields. So the per-monster <em>read</em> (and the record offsets, candidates in <code>+0x1C..+0x49</code>) isn't statically locatable; pinning it needs a runtime write-watchpoint on the accumulator during a battle win. Drop / steal items are curated in <code>legaia-gamedata</code>.</li>
+    <li>The monster record is fully decoded - all six stat halfwords plus the reward fields (EXP / gold / drop at <code>+0x44..+0x49</code>, see below). No record fields remain open.</li>
     <li><strong>Ability-bit catalogue.</strong> The bitfield at <code>+0xF4</code> has the documented MP-half / MP-quarter / HP-cap / MP-cap bits plus the <code>0x10</code> / <code>0x20</code> impact-step modifiers. The full per-character map comes out of save-data inspection.</li>
   </ul>
 </section>

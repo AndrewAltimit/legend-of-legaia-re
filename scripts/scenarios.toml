@@ -545,6 +545,14 @@ topics = ["battle", "monster record", "monster stats", "FUN_80054CB0", "FUN_8005
 
 [[scenarios]]
 slot = 255
+label = "rim_elm_gimard_victory"
+backup_fingerprint = "eaa8d800571dd9c144bcac7c740d1f9dcbeae4b0f7787a4b3e07acd1e82f1a73"
+description = "Rim Elm (town01) scripted Gimard fight captured mid-combo, just before Gimard's death - the fight resolves on its own (no input) into the victory-spoils path. Capture point for the battle reward path (EXP / gold / drop): write-watchpoints on the XP accumulator 0x80084440, party gold 0x8008459C, and party XP bank 0x800845A4 catch the per-monster reward summation. Gimard is a lone enemy, so the staged totals are his EXP/gold. Drives autorun_battle_reward_source.lua."
+phase = "battle"
+topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "monster record"]
+
+[[scenarios]]
+slot = 255
 label = "overworld_into_town_man_load"
 backup_fingerprint = "bdbacd378093e730c0967a0c27822955f7561875c6c8e0adb2881fc1bc42f597"
 description = "Walkable area; a ~0.75s Down press walks into a town entrance, loading a standalone town scene. Pre-transition save for capturing the town MAN load via the asset dispatcher (FUN_8001F05C case 3 -> _DAT_8007b898)."

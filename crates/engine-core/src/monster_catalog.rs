@@ -120,9 +120,12 @@ impl MonsterCatalog {
 ///   — the actor seeds both the accuracy and evasion roll from this stat.
 ///
 /// `stats[0]` (SP / spirit-action gauge) and `stats[5]` (SPD / turn-order
-/// speed) are now identified but have no `MonsterDef` field yet, so they're
-/// not consumed here. `exp` / `gold` / `drop_item` still default until the
-/// `+0x04` XP/drop sub-record interior is decoded.
+/// speed) are identified but have no `MonsterDef` field yet, so they're not
+/// consumed here. `exp` / `gold` / `drop_item` / `drop_rate_q8` come from the
+/// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
+/// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
+/// the party; gold `(Σ base>>1) * 0.5`). The drop chance is stored as a `u8`
+/// percent in the record and converted to the engine's `1/256` rate.
 pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecord) -> MonsterDef {
     let mut def = MonsterDef::new(rec.id, rec.name.clone(), rec.hp, rec.attack());
     def.mp = rec.mp;
@@ -131,6 +134,10 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     let agl = rec.agility().min(u8::MAX as u16) as u8;
     def.accuracy = agl;
     def.evasion = agl;
+    def.exp = rec.exp;
+    def.gold = rec.gold;
+    def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
+    def.drop_rate_q8 = ((rec.drop_chance_pct as u16 * 256 / 100).min(255)) as u8;
     def
 }
 
