@@ -505,3 +505,21 @@ description = "Walkable field scene, game_mode 0x03, collision grid +0x4000 has 
 phase = "field"
 expected_game_mode = 0x03
 topics = ["field", "collision grid", "locomotion", "FUN_801d01b0", "nibble-7 paint"]
+
+# ----------------------------------------------------------------------
+# Pre-transition save: player stands in Drake Castle (a field scene); a
+# brief Up press walks into a scene exit that transitions to the Drake
+# Kingdom world map. Captured live as PCSX-Redux SCUS94254.sstate1 and
+# backed up immutably. Use this to capture the scene-LOAD script flow:
+# replay it driving Up so FUN_8003aeb0 / FUN_8003ab2c / the nibble-7
+# collision-paint sites fire during the transition (the load-time flow a
+# steady-state save can't show).
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "drake_castle_to_worldmap"
+backup_fingerprint = "0f659b1f3186f549a2cbac7617b4e5597c5bf4ba91e4f9c8fefe38c4e65b58a5"
+description = "Drake Castle field scene, ~half-second Up press triggers a transition to the Drake Kingdom world map. Pre-transition save for capturing scene-load script flow (FUN_8003aeb0 + nibble-7 wall paints)."
+phase = "field"
+topics = ["field", "scene transition", "world map", "Drake", "scene-load", "nibble-7 paint"]
