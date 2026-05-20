@@ -48,6 +48,19 @@
   <p>Physical damage (<code>overlay_battle_action_801ec3e4</code>) reads the attacker's ATK (<code>+0x158</code>) and the target's defense - <code>+0x15C</code> (DEF&uarr;) when the attack move index satisfies <code>(move - 0xC) % 10 &lt; 5</code>, else <code>+0x160</code> (DEF&darr;). The single &ldquo;Defense Up&rdquo; buff raising both <code>+0x15C</code> and <code>+0x160</code> together confirms they are two facets of one defense. <strong>SPD</strong> (<code>+0x164</code>) seeds the per-turn initiative key <code>+0x16C = SPD + rand(0..SPD/2) + 1</code>; <strong>SP</strong> (<code>+0x154</code>) is the spirit/action gauge the enemy AI spends to pick spells (deducting each spell's <code>+0x74</code> cost) and re-derives from base each round. The parser exposes all six via <code>legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}</code>; the <a href="../monsters.html">enemy table</a> renders them per enemy.</p>
 </section>
 
+<section class="doc-section" id="spell-list">
+  <h2>Spell list (<code>record +0x4C</code>)</h2>
+  <p><code>record +0x4A</code> (u8) is the spell count; <code>record +0x4C</code> is an array of that many u32 <strong>block-relative offsets</strong>, each pointing at a spell entry inside the same decoded monster block. The battle loader <code>FUN_800542C8</code> fixes every offset to an absolute pointer at battle init (<code>record[+0x4C + i*4] += block_base</code>, exactly like <code>name_offset</code>), and also fixes each entry's <code>+0x04</code>/<code>+0x08</code> sub-pointers plus a <code>+0x88</code> self-pointer. Each spell entry's head:</p>
+  <table class="data-table">
+    <thead><tr><th>Entry offset</th><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x00</code> u8</td><td>spell/action id</td><td>Category selector: ids <code>2,3,4,5,0x0B</code> are <strong>elemental resist/affinity</strong> markers (<code>FUN_80054CB0</code> writes the slot index into actor <code>+0x1EF..+0x1F3</code>); <code>0x0C..0x1F</code> are <strong>offensive castable spells</strong>; <code>0x23</code> (<code>'#'</code>) is a special category.</td></tr>
+      <tr><td><code>+0x74</code> u8</td><td>SP cost</td><td>The AI picker rolls a spell only when <code>cost != 0xFF</code> and current SP (<code>+0x154</code>) <code>&ge; cost</code>, then subtracts it.</td></tr>
+    </tbody>
+  </table>
+  <p>Real-data check: Gimard (id 10, SP 60) has 9 slots - the affinity prefix <code>0,1,2,4,5,0x0B</code> (cost 0), two castable spells <code>0x0D @ 28</code> and <code>0x0F @ 32</code> (both &le; 60), and the <code>0x23</code> special. Hornet (id 61, SP 88) has <code>0x0C @ 88</code> and <code>0x13 @ 88</code>. Across every populated record the decoded list length equals the declared count and no offset escapes the block. The <code>MonsterRecord::spells</code> field (<code>MonsterSpell { id, sp_cost, offset }</code>, with <code>is_castable()</code>) exposes this; the <a href="../monsters.html">enemy table</a> renders the castable set with SP cost.</p>
+</section>
+
 <section class="doc-section" id="victory-spoils">
   <h2>Victory spoils (rewards)</h2>
   <p>EXP / gold / drop are inline in each monster record at <code>+0x44..+0x49</code>. The spoils function <code>FUN_8004E568</code> walks the dead enemies via the per-enemy record-pointer table at <code>0x801C9348</code> (populated by the loader <code>FUN_800542C8</code>):</p>
@@ -103,7 +116,7 @@ else
   <h2>What's still open</h2>
   <ul class="bullets">
     <li><strong>Selectors <code>0x10..=0x83</code>.</strong> Beyond the status / buff / damage cases, these handle stat-up animations, status-clear, queue-end markers, and multi-target item slots. Mostly read-only ramps that don't affect game balance.</li>
-    <li>The monster record is fully decoded - all six stat halfwords plus the reward fields (EXP / gold / drop at <code>+0x44..+0x49</code>, see below). No record fields remain open.</li>
+    <li>The monster record is fully decoded - all six stat halfwords, the reward fields (EXP / gold / drop at <code>+0x44..+0x49</code>), and the spell-offset list (<code>+0x4C</code>, see above). No record fields remain open; only the spell entries' interior effect-script sub-pointers (<code>+0x04</code>/<code>+0x08</code>) are left undecoded.</li>
     <li><strong>Ability-bit catalogue.</strong> The bitfield at <code>+0xF4</code> has the documented MP-half / MP-quarter / HP-cap / MP-cap bits plus the <code>0x10</code> / <code>0x20</code> impact-step modifiers. The full per-character map comes out of save-data inspection.</li>
   </ul>
 </section>

@@ -767,7 +767,9 @@ export class LegaiaViewer {
      * ```json
      * { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
      *                  "stats": [u16; 6], "magic_count": u8, "gold": u16,
-     *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8 }, ... ] }
+     *                  "exp": u16, "drop_item": u8, "drop_chance_pct": u8,
+     *                  "spells": [ { "id": u8, "sp_cost": u8,
+     *                               "castable": bool } ] }, ... ] }
      * ```
      *
      * Returns `{"records":[]}` when the entry isn't present (a standalone-TIM

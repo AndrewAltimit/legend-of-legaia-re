@@ -39,8 +39,32 @@
 //! +0x48  u8   drop_item     ; drop item id (0 = no drop)
 //! +0x49  u8   drop_chance   ; drop chance, percent (rand()%100 < pct)
 //! +0x4A  u8   magic_count   ; spell-entry count
-//! +0x4C  u32[] spell_offsets ; element-resistance source (first byte = element)
+//! +0x4C  u32[] spell_offsets ; magic_count block-relative offsets -> spell entries
 //! ```
+//!
+//! ## Spell list (`+0x4C`)
+//!
+//! `+0x4A` (u8) is the spell count; `+0x4C` is an array of that many u32
+//! **block-relative byte offsets**, each pointing at a spell entry inside the
+//! same decoded block. The loader `FUN_800542C8` fixes every offset to an
+//! absolute pointer at battle init (`record[+0x4C + i*4] += block_base`),
+//! exactly like `name_offset`; this parser keeps them block-relative.
+//!
+//! Each spell entry's head:
+//!
+//! - `+0x00` (u8) — spell/action id. The id doubles as a category selector:
+//!   ids `2,3,4,5,0x0B` mark an **elemental resist/affinity** (`FUN_80054CB0`
+//!   stores the matching spell index into actor `+0x1EF..+0x1F3`); ids in
+//!   `0x0C..=0x1F` are **offensive castable spells** the battle AI may roll
+//!   (`overlay_0898_801e9fd4`); `0x23` (`'#'`) is a special category.
+//! - `+0x74` (u8) — **SP (spirit) cost**. The enemy-AI spell picker only
+//!   considers a spell when `cost != 0xFF` and the actor's current SP
+//!   (`+0x154`) is `>= cost`, then subtracts it on cast. `0xFF` = unavailable.
+//! - `+0x04` / `+0x08` (u32) — block-relative sub-pointers (spell effect /
+//!   animation script data; fixed up at load), `+0x88` a self-pointer the
+//!   loader initialises to `entry+0x8C`. Their interior layout is the same
+//!   attack-effect geometry as the monster's own `+0x04` data and is left
+//!   undecoded here.
 //!
 //! ## Stat-name mapping (traced from `FUN_80054CB0` + the formula consumers)
 //!
@@ -104,6 +128,29 @@ pub const SLOT_STRIDE: usize = 0x14000;
 /// Minimum decoded-block size that can hold the stat record head.
 const MIN_RECORD_BYTES: usize = 0x4C;
 
+/// One spell entry referenced by a monster record's `+0x4C` offset array.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonsterSpell {
+    /// Spell/action id (entry `+0x00`). Ids `2,3,4,5,0x0B` mark an elemental
+    /// resist/affinity, `0x0C..=0x1F` are offensive castable spells, `0x23`
+    /// (`'#'`) is a special category.
+    pub id: u8,
+    /// SP (spirit) cost (entry `+0x74`). `0xFF` = unavailable (the AI never
+    /// picks it; treated as a non-castable / passive slot).
+    pub sp_cost: u8,
+    /// Block-relative byte offset of this spell entry (the `+0x4C` array
+    /// element, before the loader's add-block-base fixup).
+    pub offset: u32,
+}
+
+impl MonsterSpell {
+    /// True when the entry is an offensive castable spell (id `0x0C..=0x1F`)
+    /// with a usable cost (`!= 0xFF`) — the slots the battle AI rolls over.
+    pub fn is_castable(&self) -> bool {
+        (0x0C..=0x1F).contains(&self.id) && self.sp_cost != 0xFF
+    }
+}
+
 /// One monster's parsed stat record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonsterRecord {
@@ -133,6 +180,9 @@ pub struct MonsterRecord {
     pub drop_chance_pct: u8,
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
+    /// The `magic_count` spell entries the `+0x4C` offset array points at.
+    /// Empty when `magic_count == 0` or an offset falls outside the block.
+    pub spells: Vec<MonsterSpell>,
 }
 
 impl MonsterRecord {
@@ -253,6 +303,7 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     let drop_item = *block.get(0x48)?;
     let drop_chance_pct = *block.get(0x49)?;
     let magic_count = *block.get(0x4A)?;
+    let spells = parse_spells(block, magic_count);
     Some(MonsterRecord {
         id,
         name,
@@ -264,7 +315,31 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         drop_item,
         drop_chance_pct,
         magic_count,
+        spells,
     })
+}
+
+/// Read the `+0x4C` spell-offset array (`magic_count` block-relative u32s) and
+/// resolve each to a [`MonsterSpell`]. Offsets that fall outside the block (or
+/// whose `+0x74` cost byte would read past the end) are skipped, so a partly
+/// corrupt / filler record yields a shorter list rather than failing.
+fn parse_spells(block: &[u8], magic_count: u8) -> Vec<MonsterSpell> {
+    let mut out = Vec::with_capacity(magic_count as usize);
+    for i in 0..magic_count as usize {
+        let Some(offset) = read_u32(block, 0x4C + i * 4) else {
+            break;
+        };
+        let entry = offset as usize;
+        let (Some(&id), Some(&sp_cost)) = (block.get(entry), block.get(entry + 0x74)) else {
+            continue;
+        };
+        out.push(MonsterSpell {
+            id,
+            sp_cost,
+            offset,
+        });
+    }
+    out
 }
 
 /// Read a NUL-terminated monster name at `off` and clean it to a display
@@ -324,10 +399,11 @@ mod tests {
     /// block and only exercise the byte parser via [`parse_block`].
     #[test]
     fn parse_block_reads_named_record() {
-        let mut block = vec![0u8; 0x60];
-        // name at 0x50 (clear of the reward fields at 0x44..0x4A); +0x04
+        // Big enough to hold the name at 0x80 plus two spell entries past it.
+        let mut block = vec![0u8; 0x200];
+        // name at 0x80 (clear of the reward fields at 0x44..0x4A); +0x04
         // effect-data offset is not parsed into a field.
-        block[0x00..0x04].copy_from_slice(&0x50u32.to_le_bytes());
+        block[0x00..0x04].copy_from_slice(&0x80u32.to_le_bytes());
         block[0x04..0x08].copy_from_slice(&0x40u32.to_le_bytes());
         block[0x0C..0x0E].copy_from_slice(&99u16.to_le_bytes()); // HP
         block[0x0E..0x10].copy_from_slice(&60u16.to_le_bytes()); // stat0
@@ -341,9 +417,18 @@ mod tests {
         block[0x46..0x48].copy_from_slice(&55u16.to_le_bytes()); // exp
         block[0x48] = 119; // drop item id
         block[0x49] = 10; // drop chance %
-        block[0x4A] = 9; // magic count
-        // name "^A Gimard\0" at 0x40 (caret color-escape + space stripped).
-        block[0x50..0x59].copy_from_slice(b"^A Gimard");
+        block[0x4A] = 2; // magic count
+        // +0x4C spell-offset array: two block-relative offsets.
+        block[0x4C..0x50].copy_from_slice(&0x100u32.to_le_bytes());
+        block[0x50..0x54].copy_from_slice(&0x180u32.to_le_bytes());
+        // name "^A Gimard\0" at 0x80 (caret color-escape + space stripped).
+        block[0x80..0x89].copy_from_slice(b"^A Gimard");
+        // spell entry 0 @ 0x100: id 0x0D (castable), SP cost 12.
+        block[0x100] = 0x0D;
+        block[0x100 + 0x74] = 12;
+        // spell entry 1 @ 0x180: id 0x03 (elemental affinity), cost 0xFF.
+        block[0x180] = 0x03;
+        block[0x180 + 0x74] = 0xFF;
 
         let rec = parse_block(10, &block).expect("record parses");
         assert_eq!(rec.id, 10);
@@ -351,7 +436,7 @@ mod tests {
         assert_eq!(rec.hp, 99);
         assert_eq!(rec.mp, 20);
         assert_eq!(rec.stats, [60, 23, 12, 15, 16, 22]);
-        assert_eq!(rec.magic_count, 9);
+        assert_eq!(rec.magic_count, 2);
         assert_eq!(rec.attack(), 23);
         assert_eq!(rec.defense_high(), 12);
         assert_eq!(rec.speed(), 22);
@@ -360,6 +445,23 @@ mod tests {
         assert_eq!(rec.exp, 55);
         assert_eq!(rec.drop_item, 119);
         assert_eq!(rec.drop_chance_pct, 10);
+        assert_eq!(
+            rec.spells,
+            vec![
+                MonsterSpell {
+                    id: 0x0D,
+                    sp_cost: 12,
+                    offset: 0x100,
+                },
+                MonsterSpell {
+                    id: 0x03,
+                    sp_cost: 0xFF,
+                    offset: 0x180,
+                },
+            ]
+        );
+        assert!(rec.spells[0].is_castable());
+        assert!(!rec.spells[1].is_castable());
     }
 
     #[test]

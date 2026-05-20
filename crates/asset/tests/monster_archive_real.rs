@@ -64,3 +64,46 @@ fn known_monster_ids_decode_to_expected_records() {
         all.len()
     );
 }
+
+#[test]
+fn spell_list_decodes_from_record_offset_array() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Gimard (id 10): magic_count 9; the +0x4C offsets resolve to the
+    // passive/affinity prefix (ids 0,1,2,4,5,0x0B at cost 0), two offensive
+    // castable spells (0x0D @ 28 SP, 0x0F @ 32 SP, both <= its SP stat 60),
+    // and the 0x23 ('#') special slot. Spirit (stats[0]) gates casting.
+    let gimard = monster_archive::record(&entry, 10).unwrap().unwrap();
+    assert_eq!(gimard.magic_count as usize, gimard.spells.len());
+    assert_eq!(gimard.magic_count, 9);
+    let castable: Vec<(u8, u8)> = gimard
+        .spells
+        .iter()
+        .filter(|s| s.is_castable())
+        .map(|s| (s.id, s.sp_cost))
+        .collect();
+    assert_eq!(castable, vec![(0x0D, 28), (0x0F, 32)]);
+    for (id, cost) in &castable {
+        assert!(
+            (*cost as u16) <= gimard.spirit(),
+            "Gimard spell 0x{id:02X} cost {cost} should be <= SP {}",
+            gimard.spirit()
+        );
+    }
+
+    // Every populated record's spell list length matches its declared count,
+    // and no offset escaped the block (the parser would have dropped it).
+    for r in monster_archive::records(&entry).unwrap() {
+        assert_eq!(
+            r.magic_count as usize,
+            r.spells.len(),
+            "id {} magic_count {} != decoded spells {}",
+            r.id,
+            r.magic_count,
+            r.spells.len()
+        );
+    }
+}

@@ -3153,6 +3153,21 @@ fn monster_archive_one(input: &Path, id: Option<u16>) -> Result<()> {
             r.drop_item,
             r.drop_chance_pct
         );
+        if !r.spells.is_empty() {
+            let spells: Vec<String> = r
+                .spells
+                .iter()
+                .map(|s| {
+                    let cost = if s.sp_cost == 0xFF {
+                        "--".to_string()
+                    } else {
+                        s.sp_cost.to_string()
+                    };
+                    format!("0x{:02X}@{}", s.id, cost)
+                })
+                .collect();
+            println!("        spells: {}", spells.join(" "));
+        }
     };
     match id {
         Some(id) => match monster_archive::record(&bytes, id)? {

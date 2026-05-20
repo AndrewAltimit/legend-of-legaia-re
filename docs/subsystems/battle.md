@@ -76,12 +76,12 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x34` / `+0x38` | i16 | Current world X / Z. |
 | `+0x3C` / `+0x40` | i16 | Previous-frame X / Z (for delta tracking). |
 | `+0x4A` | u8 | Magic-slot count. |
-| `+0x4C` | int* | Magic-slot list pointer (each entry is `[byte type, …]`). |
+| `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 SP cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
 | `+0x1BC..+0x1BE` | u8 | "Show damage" overlay byte triplet. |
 | `+0x1DF` | u8 | Monster size byte (read from a monster record at `+0x1F` and stored here at init). |
-| `+0x1EF..+0x1F3` | u8 | Magic-resistance per element (5 elements). |
-| `+0x230` | u32 | Monster XP / drop record (set from `param_1[1]` in the monster init). |
+| `+0x1EF..+0x1F3` | u8 | Per-element spell-slot index (from the spell ids `2,3,4,5,0xB`). |
+| `+0x230` | u32 | Attack-effect / animation data pointer (set from record `+0x04`; **not** XP/drop). |
 
 ## Range / line-of-sight (`FUN_8004E2F0`)
 
@@ -93,8 +93,8 @@ Called from `FUN_800542C8` (secondary battle archive loader). Populates a battle
 
 - HP / MP / SP triplets at `+0x14C..0x158` and `+0x172..0x174`.
 - Magic-resistance bytes at `+0x1EF..+0x1F3` (5 elements; one nibble per element).
-- Walks the spell list at `+0x4C` (count at `+0x4A`) and indexes into a per-element resistance table.
-- Final XP / drop record into `+0x230`.
+- Walks the spell list at `+0x4C` (count at `+0x4A`): for the elemental ids (`2,3,4,5,0xB`) it records the matching spell's slot index into the per-element table at `+0x1EF..+0x1F3`.
+- Attack-effect / animation data pointer (record `+0x04`) into `+0x230`.
 
 This is the canonical "monster spawn" path. Engine port reads the record once, populates the actor struct, and lets `FUN_801E295C` take over.
 
@@ -120,7 +120,7 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x48` | u8 | **drop item id** (`0` = no drop). |
 | `+0x49` | u8 | **drop chance** in percent (`rand() % 100 < pct`). |
 | `+0x4A` | u8 | Magic-slot count. |
-| `+0x4C` | u32[] | Spell-entry pointers (count at `+0x4A`); each entry's first byte is the element type (2/3/4/5/0xB) that sets per-element magic-resistance at actor `+0x1EF..+0x1F3`. |
+| `+0x4C` | u32[] | Spell-entry offsets (count at `+0x4A`; block-relative, fixed to pointers at load). Each entry's first byte is a **spell/action id**: ids `2,3,4,5,0x0B` are elemental resist/affinity markers (`FUN_80054CB0` writes the slot index into actor `+0x1EF..+0x1F3`); ids `0x0C..0x1F` are offensive castable spells; `0x23` is special. Entry `+0x74` is the **SP cost**. See [battle-formulas.md → spell list](battle-formulas.md#spell-list-record-0x4c). |
 
 All six stat names are pinned by the consumers of those actor slots - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}`.
 
@@ -134,7 +134,7 @@ The reward **commit** side: `FUN_80026018` adds an accumulator (`0x80084440` = S
 
 ### Monster archive (PROT entry 867)
 
-`FUN_800542C8` streams the records as **per-monster `0x14000`-byte LZS slots** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~194 fixed slots). Each slot is `[u32 decompressed_size][Legaia LZS stream]`; the decoded block's head is the stat record above, with the name / XP / spell payloads at the block-relative offsets the loader fixes up.
+`FUN_800542C8` streams the records as **per-monster `0x14000`-byte LZS slots** at archive offset `(id-1)*0x14000` (the monster id is the global monster-table index, ~194 fixed slots). Each slot is `[u32 decompressed_size][Legaia LZS stream]`; the decoded block's head is the stat record above, with the name and spell-entry payloads at the block-relative offsets the loader fixes up.
 
 The archive is **PROT entry `0867_battle_data`** (the EXTENDED footprint — the 15.9 MB archive lives in the entry's trailing-gap sectors, not its small indexed payload). The CDNAME label `monster_data` (PROT 869) is a misleading stub: it's only `0x30000` bytes and its `(id-1)*0x14000` slots don't decode. The shipped retail build takes the debug `FUN_8003E8A8(0x365)` PROT-index path (`_DAT_8007B8C2 != 0`); the alternate `data\battle\<name>` open via the `break 0x103` host trap (`FUN_800608F0`) is a build-time dev-host artifact with no matching ISO9660 file on the disc.
 
