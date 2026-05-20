@@ -2212,6 +2212,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
         E::Bgm { .. } => "Bgm",
         E::PlaySfx { .. } => "PlaySfx",
         E::OpenDialog { .. } => "OpenDialog",
+        E::DialogDismissed => "DialogDismissed",
         E::AddMoney { .. } => "AddMoney",
         E::SetItemCount { .. } => "SetItemCount",
         E::PartyAdd { .. } => "PartyAdd",

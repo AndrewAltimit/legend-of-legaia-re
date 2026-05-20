@@ -62,6 +62,8 @@
 //! No Sony bytes are stored in this module - only call shapes, struct
 //! layouts (numeric offsets), and the dispatch control flow.
 //! REF: FUN_800583C8, FUN_801DD35C, FUN_801E1C1C, FUN_801E36C4, FUN_801E373C, FUN_801E3EE0
+//! REF: FUN_8002C69C, FUN_80034B6C, FUN_80035F04, FUN_80036888, FUN_8003CA38, FUN_801E0598
+//! REF: FUN_801E435C
 
 #![forbid(unsafe_code)]
 

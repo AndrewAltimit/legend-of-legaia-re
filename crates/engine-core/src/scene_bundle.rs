@@ -13,6 +13,7 @@
 //! The descriptor table format is documented in
 //! [`docs/formats/scene-bundles.md`] under `scene_asset_table` and
 //! `scene_scripted_asset_table`.
+//! REF: FUN_800204F8
 
 use anyhow::Result;
 use legaia_asset::categorize::Class;
@@ -303,6 +304,52 @@ fn move_payload_looks_valid(buf: &[u8]) -> bool {
     legaia_mdt::MoveBuffer::parse(buf)
         .map(|mb| mb.looks_like_move_buffer())
         .unwrap_or(false)
+}
+
+/// Materialise the scene's `Asset(0x03) = Man` payload as a flat byte
+/// blob (the same buffer addressed by `_DAT_8007B898` at runtime). Each
+/// MAN descriptor is independently LZS-compressed; this is
+/// `LZS.decode(entry_bytes[desc[2].data_offset..], desc[2].size)`.
+///
+/// Suitable for feeding directly to [`legaia_asset::man_section::parse`]
+/// or [`crate::encounter_man::encounter_table_from_man`].
+///
+/// Returns `Ok(None)` for bundles whose descriptor table doesn't carry a
+/// MAN slot (rare - the canonical scene tuple includes it at index 2)
+/// or whose MAN descriptor has zero size. Returns `Err` only for
+/// genuinely malformed inputs (offset past entry end, LZS decoder
+/// fails).
+pub fn extract_man_payload(bundle: &BundleSource, entry_bytes: &[u8]) -> Result<Option<Vec<u8>>> {
+    let descriptors = bundle.descriptors();
+    let Some(man_desc) = descriptors
+        .iter()
+        .find(|d| matches!(d.asset_type(), AssetType::Man))
+        .copied()
+    else {
+        return Ok(None);
+    };
+    if man_desc.size == 0 || man_desc.data_offset == 0 {
+        return Ok(None);
+    }
+    let table_offset = bundle.table_offset();
+    let payload_start = table_offset + man_desc.data_offset as usize;
+    if payload_start >= entry_bytes.len() {
+        return Err(anyhow::anyhow!(
+            "MAN descriptor offset 0x{:X} past entry end ({}b)",
+            payload_start,
+            entry_bytes.len()
+        ));
+    }
+    let body = &entry_bytes[payload_start..];
+    let (decoded, _consumed) = legaia_lzs::decompress_tracked(body, man_desc.size as usize)?;
+    // Some scene_asset_table bundles have descriptor offsets that fall
+    // past the indexed footprint and need the extended footprint. In
+    // that case the decompressor may stop short; treat short reads as
+    // "no MAN" so callers can fall back rather than error out.
+    if decoded.len() != man_desc.size as usize {
+        return Ok(None);
+    }
+    Ok(Some(decoded))
 }
 
 /// Index every TIM that the scene exposes via the `TimList` descriptor

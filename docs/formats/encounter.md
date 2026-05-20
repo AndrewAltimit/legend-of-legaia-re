@@ -189,25 +189,81 @@ the `Man` asset in each scene's
 (`FUN_8001F05C`) LZS-decompresses the Man payload into a heap buffer
 addressed by `_DAT_8007B898`; `FUN_8003AEB0` (the per-scene MAN
 walker, called from `FUN_801D6704` / family scene loaders) then walks
-the MAN's multi-section header (offsets at `+0x22 / +0x24 / +0x26`
-read as signed 16-bit LE) and finally writes the encounter-section
-pointer into `ctrl[+0x20]` before calling `FUN_8003A110`.
+the MAN's multi-section header and finally writes the encounter-
+section pointer into `ctrl[+0x20]` before calling `FUN_8003A110`.
 
-The encounter-section header (consumed by `FUN_8003A110`) is 6 bytes
+The MAN multi-section header is byte-exact across all 80 retail
+`scene_asset_table` bundles and lives at MAN offset `0`:
+
+```text
++0x00..+0x02   u16 LE  status_flags                 ; return value;
+                                                    ; bit 0x400 hints
+                                                    ; world-map bulk
+                                                    ; terrain (set on
+                                                    ; map01/map02/map03)
++0x01          u8      low_bit_DAT_8007B6A8         ; secondary flag
++0x02..+0x22   16 × s16 LE  depth_lut               ; written negated to
+                                                    ; the GTE scratchpad
+                                                    ; (0x1F800314+0x48)
+                                                    ; for per-scene fog
+                                                    ; / depth-of-field
++0x22..+0x24   s16 LE  N0                           ; partition-0 record
+                                                    ; count (open)
++0x24..+0x26   s16 LE  N1                           ; partition-1 record
+                                                    ; count (consumed by
+                                                    ; FUN_8003A1E4 as the
+                                                    ; per-scene NPC /
+                                                    ; actor placement
+                                                    ; list)
++0x26..+0x28   s16 LE  N2                           ; partition-2 (open)
++0x28..+0x2B   u24 LE  u24_28                       ; in-table byte
+                                                    ; offset of section
+                                                    ; 0's length prefix
+                                                    ; within the data
+                                                    ; region (relative
+                                                    ; to records-end)
++0x2B..+0x2B+3*(N0+N1+N2)  3-byte records           ; concatenated
+                                                    ; [P0..P1..P2]
+                                                    ; partitions; each
+                                                    ; record is a u24 LE
+                                                    ; byte offset into
+                                                    ; the data region
++0x2B + 3*(N0+N1+N2)     data region                ; encounter section,
+                                                    ; actor-placement
+                                                    ; payloads, etc.
+```
+
+Section 0 (the encounter section) lives at
+`records_end + u24_28`. Sections 1..=5 chain via a 3-byte length
+prefix: each section is `[u24 LE length][length payload bytes]` and
+the next section starts at `current + 3 + length`. Section 5 is
+universally a zero-length terminator across the retail corpus.
+
+The six sections install into different globals (per FUN_8003AEB0):
+
+| Index | Install target | Role |
+|---|---|---|
+| 0 | `_DAT_801C6EA4[+0x20]` | Encounter / formation tables (consumed by `FUN_8003A110`; see below). |
+| 1 | `_DAT_801C6EA4[+0x00]` | (Open) - referenced by the field-script context dispatcher; the pointer is advanced past its length prefix immediately after the walk. |
+| 2 | `_DAT_801C6EA0` | (Open) - same advance-by-3 treatment. |
+| 3 | `_DAT_801C6EA4[+0x04]` | (Open) - same advance-by-3 treatment. |
+| 4 | `DAT_80073ED8` | (Open) - advances by 4 (skipping length + 1 byte); the byte at `+3` is copied into `DAT_80073EDC`, and a zero terminator there detaches the pointer (`DAT_80073ED8 = NULL`). |
+| 5 | `DAT_80073EE0` | Universally a zero-length terminator. Reserved-but-unused sentinel. |
+
+The encounter-section header (consumed by `FUN_8003A110`) is 4 bytes
 followed by three count-prefixed record arrays:
 
 ```text
-+0x00..+0x02   reserved
-+0x03          formation_stride (u8)
-+0x04          condition_stride (u8)
-+0x05          region_stride    (u8)
-+0x06          formation_count (u8)
-+0x07          formation_count × formation_stride bytes  ; encounter records
-                   record_i[+0..+2] = reserved (consumed elsewhere?)
++0x00          u8      formation_stride
++0x01          u8      condition_stride
++0x02          u8      region_stride
++0x03          u8      formation_count
++0x04          formation_count × formation_stride bytes   ; encounter records
+                   record_i[+0..+2] = reserved (other-path scratch)
                    record_i[+3]     = monster_count
                    record_i[+4..]   = monster_ids
-+next          condition_count (u8) + condition_count × condition_stride bytes
-+next          region_count (u8) + region_count × region_stride bytes
++next          u8 condition_count + condition_count × condition_stride bytes
++next          u8 region_count + region_count × region_stride bytes
                    region_j[+0..+3] = (x_min, y_min, x_max, y_max)
                    region_j[+4]     = rate increment
                    region_j[+6]     = formation-range base index
@@ -215,11 +271,28 @@ followed by three count-prefixed record arrays:
                    region_j[+8..]   = battle-bg variant flags + extras
 ```
 
-For `0086_map01` (Drake's kingdom field-scene bundle), the Man
-descriptor sits at file offset `0x3B238` (LZS-compressed, body
-0x55C8 bytes → decompresses to 11274 bytes); the in-MAN encounter
-section's exact byte position needs the MAN multi-section header
-fully decoded.
+For `0086_map01` (Drake's kingdom field-scene bundle), the MAN
+descriptor sits at file offset `0x3B238` (LZS in 6537 → out 11274
+bytes). The decoded layout is:
+
+```
+status_flags=0x01B2, N0=12, N1=9, N2=42, u24_28=0x21D8,
+data_region @ 0xE8, section_0 (encounter) @ 0x22C0 len 0x43E
+section_1 @ 0x2701 len 0x15
+section_2 @ 0x2719 len 0x0E
+section_3 @ 0x272A len 0xC7
+section_4 @ 0x27F4 len 0x6F
+section_5 @ 0x2866 (terminator)
+
+encounter: formation_stride=8, condition_stride=4, region_stride=12;
+37 formations, 4 conditions, 64 regions.
+```
+
+Formation 3 = `[00 00 00 02 04 04 00 00]` matches `mc2`'s in-RAM
+formation cell `04 04 00 00` byte-for-byte. The
+[`legaia_asset::man_section`](../../crates/asset/src/man_section.rs)
+crate exposes this parser plus per-record decoders for formation +
+region rows.
 
 ## What this doesn't tell us
 
@@ -229,14 +302,13 @@ fully decoded.
   layout at `+0x3..` is fixed by the reader but the opcode-header
   bytes need a per-case decode in the dispatcher to interpret as
   "encounter trigger from script X at PC Y".
-- **The MAN multi-section header.** `FUN_8003AEB0` walks past several
-  sub-sections (read at MAN offsets `+0x22`, `+0x24`, `+0x26`,
-  `+0x28`) before reaching the encounter section. The other
-  sub-sections almost certainly include the world-overview MAN actor
-  placement records (`FUN_8003A1E4`'s consumer, already documented in
-  [`subsystems/world-overview-viewer.md`](../subsystems/world-overview-viewer.md)).
-  Decoding the section layout in full would yield the encounter
-  section's exact in-MAN offset and stride for every scene.
+- **Sibling section roles (sections 1..4).** The MAN multi-section
+  walker pins exact offsets and lengths for every section across all
+  80 retail scene bundles, but the interior layout of sections 1..4
+  (the three pointers `_DAT_801C6EA4 + 0/+4`, `_DAT_801C6EA0`, and
+  `DAT_80073ED8` install onto) is still open. The lengths cluster
+  small (often 1 byte, occasionally a few hundred), suggesting per-
+  scene callbacks / inline state rather than record arrays.
 - **The pre-encounter live-pointer state.** No save state in the
   current scenario corpus captures an actor with `+0x94` mid-armed —
   the corpus's `mc0` carries a stale value and every other slot is

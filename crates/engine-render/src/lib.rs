@@ -15,6 +15,8 @@
 //! Both pipelines share the same surface + depth attachment. Future phases
 //! will add PSX-style affine texturing, sub-pixel jitter, GTE emulation,
 //! and batched draws.
+//! REF: FUN_801D0148, FUN_801D5DE0, FUN_801D84D0, FUN_801E08D8, FUN_801E1C1C, FUN_801E36C4
+//! REF: FUN_801E3EE0, FUN_801E3FF0
 
 use anyhow::{Context, Result};
 use glam::Mat4;

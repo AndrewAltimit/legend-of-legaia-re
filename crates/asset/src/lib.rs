@@ -25,6 +25,7 @@ pub mod effect_bundle;
 pub mod field_pack;
 pub mod init_pak;
 pub mod kingdom_bundle;
+pub mod man_section;
 pub mod menu_glyph_atlas;
 pub mod mips_overlay;
 pub mod overlay_ptr_table;

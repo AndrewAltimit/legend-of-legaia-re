@@ -33,6 +33,11 @@ pub enum FieldEvent {
         world_z: u16,
         depth_id: u8,
     },
+    /// Emitted when [`crate::world::World`]'s field-VM dialog-advance host
+    /// hook (`op 0x4C n5 sub-4`) clears `current_dialog` in response to a
+    /// just-pressed Cross/Circle. Engines that mirror dialog state in
+    /// their own HUD drain this to fade the dialog box out.
+    DialogDismissed,
     /// Field-VM op 0x3A (add or subtract money). Already sign-extended
     /// from the 24-bit operand.
     AddMoney { delta: i32 },
@@ -171,6 +176,7 @@ impl FieldEvent {
                     inline.len()
                 )
             }
+            FieldEvent::DialogDismissed => "DialogDismissed".into(),
             FieldEvent::AddMoney { delta } => format!("AddMoney({delta})"),
             FieldEvent::SetItemCount { slot_byte, count } => {
                 format!("SetItemCount(slot={slot_byte:#x}, count={count})")

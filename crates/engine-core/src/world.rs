@@ -17,6 +17,8 @@
 //!
 //! Engines that want a different layout - say, ECS storage - should
 //! implement the VM `Host` traits themselves; this is the default.
+//! REF: FUN_8001E890, FUN_80021DF4, FUN_80026B4C, FUN_8003CA38, FUN_8003CE08, FUN_800520F0
+//! REF: FUN_801D65D8, FUN_801D77F4, FUN_801D8DE8, FUN_801DE840, FUN_801DFDF8
 
 use std::sync::Arc;
 
@@ -2650,6 +2652,36 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
     }
 
+    /// Field-VM op 0x4C n5 sub-4 — dialog-advance poll.
+    ///
+    /// The retail dispatcher calls `FUN_801D65D8(0)` (dialog "advance one
+    /// frame" query); a non-zero return halts the VM at `pc`, a zero
+    /// return advances `pc += 2`. Our world tracks dialog activity via
+    /// `current_dialog` (cleared by the engine after the user dismisses
+    /// the box). When a dismiss button (Cross / Circle) was just-pressed
+    /// this frame, drop the dialog request inline so the VM transitions
+    /// without the host having to round-trip another event.
+    ///
+    /// Returns `true` while a dialog is showing and the user has *not*
+    /// dismissed it this frame. Returns `false` when there's no active
+    /// dialog or when the dismiss button just fired (clears the request
+    /// and unblocks the VM in one step).
+    fn op4c_n_5_sub_4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+        if self.world.current_dialog.is_none() {
+            return false;
+        }
+        let dismissed = self.world.input.just_pressed(input::PadButton::Cross)
+            || self.world.input.just_pressed(input::PadButton::Circle);
+        if dismissed {
+            self.world.current_dialog = None;
+            self.world
+                .pending_field_events
+                .push(FieldEvent::DialogDismissed);
+            return false;
+        }
+        true
+    }
+
     fn add_money(&mut self, delta: i32) {
         let new_total = (self.world.money as i64 + delta as i64).clamp(0, 9_999_999) as i32;
         self.world.money = new_total;
@@ -4003,6 +4035,82 @@ mod tests {
             "expected OpenDialog event, got {evs:?}"
         );
         assert_eq!(world.current_dialog.as_ref().map(|d| d.text_id), Some(0xAB));
+    }
+
+    /// Dialog-advance host hook (`op 0x4C n5 sub-4`): when `current_dialog`
+    /// is set, the VM halts at the poll site. A just-pressed Cross /
+    /// Circle clears the request inline and unblocks the VM the same
+    /// frame, with a `DialogDismissed` event surfaced for downstream
+    /// HUD consumers.
+    #[test]
+    fn dialog_advance_halts_then_clears_on_just_pressed_cross() {
+        use crate::input::PadButton;
+
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+
+        // Open dialog then arm a poll (4C 54) followed by a sentinel op.
+        // 0x3F header: text_id=0xAB, len=0, then xb/zb/depth (3 bytes).
+        // 0x4C 0x54: dialog-advance poll (2 bytes).
+        // 0x1A: bgm-end-style nop / unknown — anything that makes
+        //   `step_field` advance further when the dialog clears.
+        let bc = vec![0x3F, 0xAB, 0x00, 0x00, 0x01, 0x02, 0x03, 0x4C, 0x54, 0x00];
+        world.load_field_script(bc);
+
+        // Tick 1: open the dialog. The 4C 54 poll runs next tick.
+        let _ = world.tick();
+        assert!(world.current_dialog.is_some(), "dialog should be open");
+
+        // No buttons pressed: the poll halts at the same PC.
+        world.input.set_pad(0);
+        let pc_before = world.field_pc;
+        let _ = world.tick();
+        assert!(
+            world.current_dialog.is_some(),
+            "dialog persists with no input"
+        );
+        assert_eq!(
+            world.field_pc, pc_before,
+            "VM should halt at the poll PC while dialog is active"
+        );
+
+        // Cross just-pressed: the host clears the request inline and
+        // advances PC by 2 (past the poll).
+        world.input.set_pad(PadButton::Cross.mask());
+        let _ = world.tick();
+        assert!(
+            world.current_dialog.is_none(),
+            "dialog should clear on just-pressed Cross",
+        );
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(e, FieldEvent::DialogDismissed)),
+            "expected DialogDismissed event, got {evs:?}",
+        );
+        assert!(
+            world.field_pc > pc_before,
+            "VM should advance past poll PC ({} > {})",
+            world.field_pc,
+            pc_before,
+        );
+    }
+
+    /// Dialog-advance hook returns `false` (advance) when no dialog is
+    /// active. Mirrors the retail dispatcher's behavior when
+    /// `FUN_801D65D8(0)` returns zero (dialog done).
+    #[test]
+    fn dialog_advance_no_op_when_no_dialog() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // Just the poll + sentinel - no preceding 0x3F.
+        let bc = vec![0x4C, 0x54, 0x00];
+        world.load_field_script(bc);
+        let pc_before = world.field_pc;
+        let _ = world.tick();
+        assert!(
+            world.field_pc > pc_before,
+            "VM should advance immediately when no dialog is showing",
+        );
     }
 
     /// Op 0x3A (add_money) clamps to `[0, 9_999_999]` and emits `AddMoney`.
