@@ -100,13 +100,23 @@ if [[ -n "$LEGAIA_SCENARIO" ]]; then
         echo "ERROR: --scenario requires python3 (for tomllib)" >&2
         exit 65
     fi
-    resolved="$(python3 - "$MANIFEST" "$LEGAIA_SCENARIO" <<'PY'
-import os, sys, tomllib
-manifest_path, label = sys.argv[1], sys.argv[2]
+    # Resolution order: an immutable library backup (backup_fingerprint ->
+    # saves/library/pcsx-redux/<fp>.*) is preferred over the wipe-prone live
+    # pcsx_redux_sstate path, so probes don't break when a slot is overwritten.
+    resolved="$(python3 - "$MANIFEST" "$LEGAIA_SCENARIO" "$REPO_ROOT" <<'PY'
+import os, sys, glob, tomllib
+manifest_path, label, repo_root = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(manifest_path, "rb") as f:
     data = tomllib.load(f)
 for s in data.get("scenarios", []):
     if s.get("label") == label:
+        fp = s.get("backup_fingerprint")
+        if fp:
+            hits = sorted(glob.glob(os.path.join(
+                repo_root, "saves", "library", "pcsx-redux", fp + "*")))
+            if hits:
+                print(hits[0])
+                sys.exit(0)
         v = s.get("pcsx_redux_sstate")
         if v:
             print(os.path.expanduser(os.path.expandvars(v)))
@@ -118,7 +128,7 @@ PY
         exit 65
     }
     if [[ -z "$resolved" ]]; then
-        echo "ERROR: scenario '$LEGAIA_SCENARIO' exists but has no pcsx_redux_sstate field in $MANIFEST" >&2
+        echo "ERROR: scenario '$LEGAIA_SCENARIO' has neither backup_fingerprint nor pcsx_redux_sstate in $MANIFEST" >&2
         exit 65
     fi
     LEGAIA_SSTATE="$resolved"

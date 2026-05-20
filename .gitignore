@@ -9,6 +9,13 @@
 # Sony-derived runtime state; regenerable from the probe + a local save.
 /captures/
 
+# Immutable save-state library: fingerprint-named backups of ephemeral
+# emulator save states (PCSX-Redux .sstate, mednafen .mcr, ...). These
+# contain Sony game RAM and are NEVER committed. The committed catalogue
+# is scripts/scenarios.toml (per-scenario `backup_fingerprint` field) -
+# metadata only, no Sony bytes. Populate via `manage-states.py backup`.
+/saves/library/
+
 # Local-only archive for retired automation. Resolved investigations live
 # here so the on-disk record survives without cluttering the active
 # tooling tree. The committed catalogue in

@@ -55,6 +55,31 @@ Override any of these via env vars (`PCSX_REDUX`, `LEGAIA_BIOS`,
 `LEGAIA_SSTATE`, `LEGAIA_ISO`). The repo doesn't ship the binary or
 BIOS or disc; those stay local.
 
+### Save-state library (immutable backups)
+
+PCSX-Redux quicksave slots (`<TITLE_ID>.sstate<N>`) and mednafen `mc{N}`
+cards are **ephemeral** — the next time you save in that slot, the bytes
+are gone, and a save you reverse-engineered against has to be recaptured
+from scratch. To stop that, back interesting states up into a
+fingerprint-named library:
+
+```
+scripts/manage-states.py backup pcsx-redux ~/Tools/pcsx-redux/SCUS94254.sstate6 \
+    --label field_walled_collision_pin
+scripts/manage-states.py library          # list what's backed up + catalogue status
+```
+
+`backup` copies the file to `saves/library/<emulator>/<sha256>.<ext>`
+(immutable; the sha256 is the filename, so it never collides or gets
+overwritten) and records the fingerprint on the named `scripts/scenarios.toml`
+scenario as `backup_fingerprint`. The library directory is **gitignored**
+(it holds Sony game RAM); the committed pointer is the manifest's
+`backup_fingerprint` field. When a scenario has one, both
+`scripts/manage-states.py` and `run_probe.sh --scenario` resolve the
+**library copy in preference** to the live slot — so probes keep working
+after you've saved over the original slot. See the field schema +
+workflow at the top of [`scripts/scenarios.toml`](../../scripts/scenarios.toml).
+
 ## The harness
 
 [`scripts/pcsx-redux/run_probe.sh`](../../scripts/pcsx-redux/run_probe.sh)
@@ -286,6 +311,7 @@ is the high-level index.
 | `autorun_title_overlay_writer_hunt.lua` | Write bps at 8 anchor addresses across the title-overlay code region (`0x801CC000..0x801EF018`) | Pins the SCUS-side title-overlay loader: any write into the overlay window fires a BP whose `pc` + `ra` + call-context dump identify the writer function. Run cold-boot (`LEGAIA_NO_SSTATE=1`) since in-game saves are past the load point. |
 | `autorun_title_staging_capture.lua` | Exec bp at `FUN_8001A55C` (LZS decoder); per-decode src buffer dump | Pins the PROT source of the title overlay. Each fired decode dumps the compressed source bytes to `<OUT_DIR>/decode_NNN_*.bin`; an offline script byte-matches against PROT entries. Run cold-boot. |
 | `autorun_load_screen_dump.lua` | Loads sstate9 (parked on the Continue → Load screen), settles `LEGAIA_FRAMES` vsyncs, then dumps the rendered framebuffer via `PCSX.GPU.takeScreenShot()` + full 2 MiB main RAM | Ground-truth capture for pinning the load-screen panel border + slot-pill source sprites. Output `load_screen_fb.raw` + `.meta` decode to PNG via [`scripts/pcsx-redux/decode_load_screen.py`](../../scripts/pcsx-redux/decode_load_screen.py). The framebuffer pixels match PSX 320×240 coords 1:1, so sprite-rect dst positions can be measured directly. For full ground-truth VRAM (not just the rendered framebuffer), pair with `extract_vram_from_sstate.py` + `decode_vram.py` on the same save state — that pipeline pinned the load-screen panel CLUT to row 2 of the system-UI TIM at `PROT.DAT[0x018E0]`. The probe arms no breakpoints, so it runs with `--fast` for ~30s end-to-end. See [`subsystems/save-screen.md` § Sprite asset sources](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen). |
+| `autorun_town01_script_flow.lua` | Exec bps at the scene-load init `FUN_8003aeb0`, the system-script prologue runner `FUN_8003ab2c`, the per-frame VM step `FUN_801de840` (deduped into a per-context table keyed by `a2` = ctx ptr: script_id `ctx+0x50`, bytecode `ctx+0x90`, pc range, hits), and the three nibble-7 collision-grid write sites `0x801e1d00 / 0x801e1d74 / 0x801e1e84`. Dumps the live collision grid (`*_DAT_1f8003ec + 0x4000`, scratchpad-resolved) at first + last frame with a wall-tile count + ASCII map. | Pins a field scene's **script execution model** — which contexts run, their scripts, and whether walls are painted per-frame or only at load. On the `field_walled_collision_pin` scenario it showed: 7455 painted wall tiles, a single steady-state context (script_id `0xFB`, bytecode `0x8010F092`, looping pc `0x102..0x297` — matching the clean-room engine's static trace), and **zero** nibble-7 paints while standing still (walls are load-time only). To capture the load-time paint flow, replay a pre-transition save / drive a step into a scene exit so `FUN_8003aeb0` + the nibble-7 BPs fire. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Calls `PCSX.createSaveState()` every `LEGAIA_INTERVAL` vsyncs; walks the protobuf in-place via FFI pointer arithmetic; slices out only the SPU sub-message (~600 KiB per capture vs. 20 MiB for the full state); appends to one binary stream prefixed with `LEGSPU01` | Multi-frame retail-trace input for the I1b(b) audio-trace parity oracle. Pair with [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py) to decode into the JSONL `AudioTraceFrame` shape that `legaia-engine audio-trace --retail-jsonl` consumes. The probe runs against any save state — best signal comes from one parked mid-BGM. PCSX-Redux's Lua API does not expose the SPU register file directly, so `createSaveState` is the load-bearing primitive; the FFI walk avoids materialising the full 20 MiB state per vsync (which would degrade `GPU::Vsync` delivery via Lua GC pressure, same shape as the `readAt(2 MiB)` caveat above). |
 
 ### Save-state to Python (offline analysis)

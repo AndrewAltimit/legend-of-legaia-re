@@ -51,6 +51,47 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST = REPO_ROOT / "scripts" / "scenarios.toml"
 MEDNAFEN_BIN = REPO_ROOT / "target" / "release" / "mednafen-state"
 
+# Immutable, fingerprint-named backups of ephemeral emulator save states.
+# Gitignored (Sony game RAM). The committed catalogue is the manifest's
+# per-scenario `backup_fingerprint` field; the library is the bytes.
+LIBRARY_DIR = REPO_ROOT / "saves" / "library"
+
+# Default file extension per emulator (used when --ext is omitted and the
+# source path has no informative suffix).
+EMULATOR_EXT = {
+    "pcsx-redux": "sstate",
+    "mednafen": "mcr",
+    "duckstation": "sav",
+}
+
+
+def file_sha256(path: Path) -> str:
+    """Full lowercase hex sha256 of a file's bytes."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def library_path(emulator: str, fingerprint: str, ext: str) -> Path:
+    """Resolve the immutable library path for a backed-up save state."""
+    return LIBRARY_DIR / emulator / f"{fingerprint}.{ext}"
+
+
+def find_library_file(fingerprint: str) -> Path | None:
+    """Locate a backed-up save by (full or prefix) fingerprint, across all
+    emulator subdirs. Returns the path or None."""
+    if not LIBRARY_DIR.is_dir():
+        return None
+    for emu_dir in sorted(LIBRARY_DIR.iterdir()):
+        if not emu_dir.is_dir():
+            continue
+        for f in sorted(emu_dir.iterdir()):
+            if f.is_file() and f.stem.startswith(fingerprint):
+                return f
+    return None
+
 
 # --------------------------------------------------------------------
 # Manifest loading + per-emulator path resolution
@@ -65,8 +106,28 @@ def expand_path(s: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(s)))
 
 
+def backup_resolved_path(emulator: str, fingerprint: str | None) -> Path | None:
+    """If `fingerprint` names a file in the immutable library for this
+    emulator, return that path. The library is the preferred source: live
+    emulator slots get overwritten, so a scenario with a `backup_fingerprint`
+    resolves to the stable copy first."""
+    if not fingerprint:
+        return None
+    emu_dir = LIBRARY_DIR / emulator
+    if not emu_dir.is_dir():
+        return None
+    for f in sorted(emu_dir.iterdir()):
+        if f.is_file() and f.stem.startswith(fingerprint):
+            return f
+    return None
+
+
 def mednafen_path(manifest: dict, scenario: dict) -> Path | None:
-    """Resolve the mednafen .mc{N} path for a scenario via defaults."""
+    """Resolve the mednafen .mc{N} path for a scenario. Prefers an immutable
+    library backup (via `backup_fingerprint`) over the wipe-prone live slot."""
+    bp = backup_resolved_path("mednafen", scenario.get("backup_fingerprint"))
+    if bp:
+        return bp
     slot = scenario.get("slot")
     if slot is None:
         return None
@@ -82,11 +143,17 @@ def mednafen_path(manifest: dict, scenario: dict) -> Path | None:
 
 
 def pcsx_redux_path(scenario: dict) -> Path | None:
+    bp = backup_resolved_path("pcsx-redux", scenario.get("backup_fingerprint"))
+    if bp:
+        return bp
     v = scenario.get("pcsx_redux_sstate")
     return expand_path(v) if v else None
 
 
 def duckstation_path(scenario: dict) -> Path | None:
+    bp = backup_resolved_path("duckstation", scenario.get("backup_fingerprint"))
+    if bp:
+        return bp
     v = scenario.get("duckstation_sav")
     return expand_path(v) if v else None
 
@@ -353,6 +420,98 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return rc
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    """Copy an ephemeral save state into the immutable, fingerprint-named
+    library, and (optionally) record its fingerprint on a manifest scenario."""
+    src = expand_path(args.path)
+    if not src.is_file():
+        print(f"ERROR: source save not found: {src}", file=sys.stderr)
+        return 1
+    emulator = args.emulator
+    # Prefer the emulator's canonical extension (the source suffix is
+    # misleading for PCSX-Redux, where ".sstate6" carries a slot digit).
+    ext = args.ext or EMULATOR_EXT.get(emulator) \
+        or (src.suffix.lstrip(".") if src.suffix else "bin")
+    fingerprint = file_sha256(src)
+    dest = library_path(emulator, fingerprint, ext)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        print(f"EXISTS  {dest.relative_to(REPO_ROOT)}  (already backed up; immutable)")
+    else:
+        shutil.copy2(src, dest)
+        print(f"BACKED  {src}\n     -> {dest.relative_to(REPO_ROOT)}")
+    print(f"        fingerprint = {fingerprint}")
+    print(f"        emulator    = {emulator}   ext = {ext}   size = {dest.stat().st_size} bytes")
+
+    if args.label:
+        ok = set_scenario_field(
+            args.manifest, args.label, "backup_fingerprint", fingerprint
+        )
+        if ok:
+            print(f"        manifest scenario '{args.label}' -> backup_fingerprint set")
+        else:
+            print(
+                f"WARN  scenario '{args.label}' not found in {args.manifest.name}; "
+                f"add a [[scenarios]] block with backup_fingerprint = \"{fingerprint}\"",
+                file=sys.stderr,
+            )
+    else:
+        print("        (no --label given; add backup_fingerprint to a "
+              "[[scenarios]] block manually to catalogue it)")
+    return 0
+
+
+def cmd_library(args: argparse.Namespace) -> int:
+    """List the immutable save-state library and cross-reference which
+    manifest scenario (if any) points at each backed-up file."""
+    manifest = load_manifest(args.manifest)
+    # fingerprint -> scenario label
+    by_fp: dict[str, str] = {}
+    for s in manifest.get("scenarios", []):
+        fp = s.get("backup_fingerprint")
+        if fp:
+            by_fp[fp] = s.get("label", "?")
+
+    if not LIBRARY_DIR.is_dir():
+        print(f"# no library yet at {LIBRARY_DIR.relative_to(REPO_ROOT)}")
+        print("# back up an ephemeral save with: manage-states.py backup <emulator> <path>")
+        return 0
+
+    print(f"# {LIBRARY_DIR.relative_to(REPO_ROOT)}  (immutable, gitignored)")
+    header = f"  {'fingerprint':<20} {'emulator':<12} {'ext':<7} {'MiB':<6} {'scenario':<28} status"
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    n = 0
+    for emu_dir in sorted(LIBRARY_DIR.iterdir()):
+        if not emu_dir.is_dir():
+            continue
+        for f in sorted(emu_dir.iterdir()):
+            if not f.is_file():
+                continue
+            n += 1
+            fp = f.stem
+            mib = f.stat().st_size / (1024 * 1024)
+            label = ""
+            status = "uncatalogued"
+            for cat_fp, cat_label in by_fp.items():
+                if fp.startswith(cat_fp) or cat_fp.startswith(fp):
+                    label, status = cat_label, "catalogued"
+                    break
+            print(f"  {fp[:18] + '..':<20} {emu_dir.name:<12} {f.suffix.lstrip('.'):<7} "
+                  f"{mib:<6.2f} {label:<28} {status}")
+    # Catalogued-but-missing: manifest references a fingerprint with no file.
+    present = set()
+    for emu_dir in (p for p in LIBRARY_DIR.iterdir() if p.is_dir()):
+        for f in emu_dir.iterdir():
+            if f.is_file():
+                present.add(f.stem)
+    for fp, label in by_fp.items():
+        if not any(p.startswith(fp) or fp.startswith(p) for p in present):
+            print(f"  {fp[:18] + '..':<20} {'?':<12} {'?':<7} {'--':<6} {label:<28} MISSING (re-capture)")
+    print(f"\n  {n} backed-up save(s); {len(by_fp)} catalogued in {args.manifest.name}")
+    return 0
+
+
 # --------------------------------------------------------------------
 # Argparse driver
 
@@ -388,6 +547,21 @@ def main(argv: list[str] | None = None) -> int:
         help="scenarios to validate (default: all)",
     )
     pv.set_defaults(func=cmd_validate)
+
+    pb = sub.add_parser(
+        "backup",
+        help="Copy an ephemeral save into the immutable fingerprint-named library",
+    )
+    pb.add_argument("emulator", choices=sorted(EMULATOR_EXT.keys()),
+                    help="which emulator produced the save")
+    pb.add_argument("path", help="path to the ephemeral save state to back up")
+    pb.add_argument("--label", help="manifest scenario to record backup_fingerprint on")
+    pb.add_argument("--ext", help="override the library file extension")
+    pb.set_defaults(func=cmd_backup)
+
+    sub.add_parser(
+        "library", help="List the immutable save-state library + catalogue status"
+    ).set_defaults(func=cmd_library)
 
     args = p.parse_args(argv)
     return args.func(args)
