@@ -2506,6 +2506,20 @@ fn grid_to_world(b: u8) -> u16 {
     if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
+/// Relative-jump target, faithful to retail's 16-bit `short` PC.
+///
+/// The original stores each script's PC as a signed 16-bit value at
+/// `ctx[+0x9e]`, so every relative branch target wraps mod `0x10000`. A delta
+/// with the high bit set is therefore a *backward* jump (e.g. `0xFFFE` = -2),
+/// not a `+65534` forward one. Computing `base + delta` in `usize` (no wrap)
+/// sends every backward jump off the end of the buffer (the classic
+/// "PC runs away to 0x10102" symptom). `base` is the post-operand address the
+/// delta is measured from.
+fn rel_jump(base: usize, lo: u8, hi: u8) -> usize {
+    let delta = u16::from_le_bytes([lo, hi]);
+    usize::from((base as u16).wrapping_add(delta))
+}
+
 /// MES-shape bytecode walker. Mirrors `FUN_8003ca38`: counts payload bytes
 /// starting at `buf[0]` until a terminator (`≤ 0x1E`), with a one-byte
 /// peek-extension for `0xCx` prefix bytes (each consumes its trailing pair
@@ -2630,8 +2644,7 @@ pub fn step<H: FieldHost>(
             let Some(&hi) = bytecode.get(operand + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let delta = u16::from_le_bytes([lo, hi]) as usize;
-            let target = (pc + header_size).wrapping_add(delta);
+            let target = rel_jump(pc + header_size, lo, hi);
             StepResult::Advance { next_pc: target }
         }
 
@@ -2982,10 +2995,10 @@ pub fn step<H: FieldHost>(
                 }
             } else {
                 // Take the jump. The original computes
-                // `iVar18 = param_2 + 3; return iVar18 + LE_u16(lo, hi)`.
-                let delta = u16::from_le_bytes([lo, hi]) as usize;
+                // `iVar18 = param_2 + 3; return iVar18 + LE_u16(lo, hi)`,
+                // then stores the result back into the 16-bit PC.
                 StepResult::Advance {
-                    next_pc: pc + header_size + 2 + delta,
+                    next_pc: rel_jump(pc + header_size + 2, lo, hi),
                 }
             }
         }
@@ -4848,9 +4861,8 @@ pub fn step<H: FieldHost>(
                     next_pc: pc + header_size + 6,
                 }
             } else {
-                let delta = u16::from_le_bytes([skip_lo, skip_hi]) as usize;
                 StepResult::Advance {
-                    next_pc: pc + header_size + 4 + delta,
+                    next_pc: rel_jump(pc + header_size + 4, skip_lo, skip_hi),
                 }
             }
         }
@@ -4981,9 +4993,8 @@ pub fn step<H: FieldHost>(
                         _ => false,
                     };
                     if taken {
-                        let delta = u16::from_le_bytes([skip_lo, skip_hi]) as usize;
                         StepResult::Advance {
-                            next_pc: pc + header_size + 4 + delta,
+                            next_pc: rel_jump(pc + header_size + 4, skip_lo, skip_hi),
                         }
                     } else {
                         StepResult::Advance {
@@ -5046,9 +5057,8 @@ pub fn step<H: FieldHost>(
                         _ => false,
                     };
                     if taken {
-                        let delta = u16::from_le_bytes([skip_lo, skip_hi]) as usize;
                         StepResult::Advance {
-                            next_pc: pc + header_size + 4 + delta,
+                            next_pc: rel_jump(pc + header_size + 4, skip_lo, skip_hi),
                         }
                     } else {
                         StepResult::Advance {
@@ -5642,8 +5652,7 @@ pub fn step<H: FieldHost>(
                         return StepResult::Unknown { opcode, pc };
                     };
                     if host.system_flag_test(idx) {
-                        let delta = u16::from_le_bytes([off_lo, off_hi]) as usize;
-                        let target = (pc + header_size + 1).wrapping_add(delta);
+                        let target = rel_jump(pc + header_size + 1, off_lo, off_hi);
                         StepResult::Advance { next_pc: target }
                     } else {
                         StepResult::Advance {
@@ -6565,6 +6574,49 @@ mod tests {
         let mut ctx = FieldCtx::default();
         let r = step(&mut host, &mut ctx, &bc, 0);
         assert_eq!(r, StepResult::Advance { next_pc: 0x0101 });
+    }
+
+    #[test]
+    fn jmp_rel_backward_wraps_at_16_bits() {
+        // Retail stores PC as a 16-bit `short`, so a delta with the high bit
+        // set is a *backward* jump - `0xFFFE` = -2. From base = pc + 1 this
+        // must land 2 bytes back, NOT race off to base + 0xFFFE. This is the
+        // "PC runs away to 0x10102" bug: real field scripts use backward
+        // JMP_REL for per-frame wait loops, so without the 16-bit wrap every
+        // parked script explodes off the end of its buffer.
+        let mut bc = vec![0u8; 0x80];
+        bc[0x42] = 0x26;
+        bc[0x43] = 0xFE;
+        bc[0x44] = 0xFF;
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        // base = pc(0x42) + header_size(1) = 0x43; 0x43 + (-2) = 0x41.
+        let r = step(&mut host, &mut ctx, &bc, 0x42);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x41 });
+        // From PC 0 the same -2 delta wraps to 0xFFFF (a deliberately
+        // out-of-range PC, matching retail's 16-bit truncation).
+        let bc0 = [0x26, 0xFE, 0xFF];
+        let r0 = step(&mut host, &mut ctx, &bc0, 0);
+        assert_eq!(r0, StepResult::Advance { next_pc: 0xFFFF });
+    }
+
+    #[test]
+    fn flag_test_backward_jump_wraps_at_16_bits() {
+        // The 0x7x flag-TEST conditional jump shares the same 16-bit-wrap
+        // rule. With the bit set and a `0xFFF0` (-16) delta from base
+        // pc+header+1, a backward jump must wrap rather than overflow.
+        let mut bc = vec![0u8; 0x80];
+        bc[0x30] = 0x70;
+        bc[0x31] = 0x00;
+        bc[0x32] = 0xF0;
+        bc[0x33] = 0xFF;
+        let mut host = TestHost::default();
+        host.system_flags.resize(8192, 0);
+        host.system_flags[0] = 0x80; // idx 0 set (0x80 >> 0)
+        let mut ctx = FieldCtx::default();
+        // base = pc(0x30) + header(1) + 1 = 0x32; 0x32 + (-16) = 0x22.
+        let r = step(&mut host, &mut ctx, &bc, 0x30);
+        assert_eq!(r, StepResult::Advance { next_pc: 0x22 });
     }
 
     // -- Local flag triplet 0x2B / 0x2C / 0x2D ---------------------------
