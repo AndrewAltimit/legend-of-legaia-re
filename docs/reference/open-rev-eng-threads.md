@@ -36,6 +36,13 @@ Status conventions:
 | Terra slot-3 / story-flag overlap | open | Diff a real Terra-in-party memory-card save against the slot layout. `RETAIL_CHAR_RECORD_HEADER_SIZE + 3 * 0x414 = 0x14AB` collides with the `0x14C0` story-flag region — either Terra's record is shorter than 0x414, or the engine special-cases slot 3, or the header-size constant drifts. | `project_next_session_backlog.md` § G |
 | Navmesh / per-scene navigation data | falsified | `0x80108EA4..0x80109550` is per-scene GPU primitive scratch, not a 24-byte stride navmesh. Pointer hunts find zero RAM cells pointing into the window. Real per-scene region / collision / event-trigger data lives in field-pack schema slots; the encounter-record path lives at `actor[+0x94]`. | `project_navmesh_negative_finding.md` |
 
+## Field / locomotion
+
+| Thread | Status | What would close it | Memory |
+|---|---|---|---|
+| Town/field free-movement locomotion | open | Pin the function that turns the d-pad into player free movement in normal towns (position/heading update of `_DAT_8007c364`). Candidate cluster: the small register-arg functions `overlay_0897_801db81c..801dbf9c` plus the field main loop `overlay_0897_801f5748`; `FUN_801dbec4` updates player facing (`+0x16` via `func_0x80019278`) and camera origin (`_DAT_80089118/120`). The existing dumps pass args in registers so the decompiles are noisy (`unaff_*`) - a Ghidra re-decomp with proper signatures, or a runtime watchpoint on `_DAT_8007c364 + 0x14/0x18` during town walking, would pin the movement math. NOT the tile-board grid (that's a minigame - see below). | `project_tile_board_grid.md` |
+| Tile-board grid mode | resolved (re-scoped) | The `_DAT_8007b450`/`DAT_801f35c0`/`801ef2b0` tile-grid walk is a puzzle / board minigame (procedural `rand`-filled board, per-cell drawn tiles), not town locomotion. Documented in `docs/subsystems/tile-board.md`. Open sub-questions: which minigames use it; whether any board is fixed (inline-script cells) vs. always procedural; the inline cell-array offset. | `project_tile_board_grid.md` |
+
 ## Text / fonts / dialog
 
 | Thread | Status | What would close it | Memory |
