@@ -20,7 +20,7 @@ instead of every raw entry.
 `LegaiaViewer::monster_archive_json` decodes the global monster stat
 archive (PROT entry 867, extended footprint) into a JSON array of every
 populated record (id / name / HP / MP / stats). It drives the static
-site's `monsters.html` bestiary page entirely client-side - the disc
+site's `monsters.html` enemy-table page entirely client-side - the disc
 bytes never leave the browser.
 
 Rendering targets the canvas's 2D context (`CanvasRenderingContext2d` +
