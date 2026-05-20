@@ -725,6 +725,47 @@ impl Scene {
             None => Ok(None),
         }
     }
+
+    /// Resolve the scene's disc-resident random-encounter table plus its
+    /// per-row formation defs from the same MAN asset (retail
+    /// `_DAT_8007B898`) the scene-entry script comes from.
+    ///
+    /// Returns `Ok(None)` when the scene's static bundle carries no MAN (the
+    /// same detector gap [`Self::field_man_entry_script`] documents) or when
+    /// the MAN's encounter section declares no rollable formations (towns
+    /// with no encounters). Resolves now for the `count=6`
+    /// [`legaia_asset::scene_asset_table`] field scenes (town01 etc.) thanks
+    /// to the relaxed detector.
+    ///
+    /// Wire the pair via [`crate::world::World::install_man_encounter`].
+    ///
+    /// REF: FUN_8003AEB0 (installs the encounter section into the runtime
+    /// control block); the byte-level walk lives in
+    /// `legaia_asset::man_section` and the runtime bridge in
+    /// [`crate::encounter_man`].
+    pub fn field_man_encounter_table(
+        &self,
+        index: &ProtIndex,
+        scene_label: &str,
+    ) -> Result<
+        Option<(
+            crate::encounter::EncounterTable,
+            Vec<crate::monster_catalog::FormationDef>,
+        )>,
+    > {
+        let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
+            return Ok(None);
+        };
+        let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+        let Some(man_bytes) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)?
+        else {
+            return Ok(None);
+        };
+        Ok(crate::encounter_man::scene_encounter_from_man(
+            scene_label,
+            &man_bytes,
+        ))
+    }
 }
 
 /// Resolver from a field-VM `scene_transition(map_id)` byte to a CDNAME
@@ -1161,6 +1202,30 @@ impl SceneHost {
         };
         if let Some((bytecode, pc0)) = entry_script {
             self.world.load_field_script_at(bytecode, pc0);
+        }
+        // Install the scene's random-encounter table straight from its MAN
+        // asset (the disc-resident `_DAT_8007B898` source) - the retail
+        // per-scene table, not a synthetic pattern. Resolves for the
+        // `count=6` `scene_asset_table` field scenes (town01 etc.) now that
+        // the detector covers them, same as the entry script above. The
+        // per-row formation defs are merged into the formation table so the
+        // table's row-index ids resolve to monster sets at battle-load.
+        // Scenes whose static bundle carries no MAN - or towns whose MAN has
+        // no rollable formations - leave the encounter unset here; the host
+        // falls back to the synthetic registry (`install_encounter_for_scene`).
+        self.world.set_active_scene_label(name);
+        let man_encounter = match self.scene.as_ref() {
+            Some(scene) => match scene.field_man_encounter_table(&self.index, name) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("[scene] MAN encounter-table resolve skipped: {err:#}");
+                    None
+                }
+            },
+            None => None,
+        };
+        if let Some((table, formations)) = man_encounter {
+            self.world.install_man_encounter(table, formations);
         }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only

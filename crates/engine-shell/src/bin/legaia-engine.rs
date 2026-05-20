@@ -5767,24 +5767,26 @@ fn cmd_play_window_with_record(
         }
     }
 
-    // Wire vanilla encounter + monster tables so triggered encounters can
-    // resolve to a concrete monster set. Engines that load real disc-side
-    // tables override this via `World::set_formation_table` later.
+    // Wire monster + encounter tables so triggered encounters resolve to a
+    // concrete monster set.
     //
-    // The encounter session itself comes from the registry: the vanilla
-    // pattern set decides per scene-label whether the table is a field
-    // encounter, a quiet town/cutscene, or no session at all. This is the
-    // path engines extend with disc-loaded tables once `0865_battle_data`
-    // surfaces a per-scene encounter offset.
+    // `enter_field_scene` already installs the disc-resident per-scene
+    // encounter table + formations straight from the scene's MAN asset (now
+    // incl. the `count=6` town scenes). The MAN carries formation monster-ids
+    // but not stat blocks, so the stat catalog is always the vanilla one.
+    // Only fall back to the synthetic-pattern registry + vanilla formation
+    // table when no MAN encounter was installed (scenes whose bundle carries
+    // no MAN, or towns with no rollable formations).
     {
         let world = &mut session.host.world;
         world.set_active_scene_label(scene);
-        world.set_formation_table(
-            legaia_engine_core::monster_catalog::vanilla_formation_table(),
-            legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
-        );
-        let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
-        if matches!(world.mode, SceneMode::Field) {
+        world.set_monster_catalog(legaia_engine_core::monster_catalog::vanilla_monster_catalog());
+        if world.encounter.is_none() && matches!(world.mode, SceneMode::Field) {
+            world.set_formation_table(
+                legaia_engine_core::monster_catalog::vanilla_formation_table(),
+                legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
+            );
+            let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
             world.install_encounter_for_scene(&registry, scene);
         }
     }

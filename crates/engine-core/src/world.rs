@@ -1906,6 +1906,43 @@ impl World {
         }
     }
 
+    /// Install a fully-built [`crate::encounter::EncounterTable`] plus its
+    /// per-row [`crate::monster_catalog::FormationDef`]s as the active
+    /// scene's encounter source.
+    ///
+    /// This is the disc-resident path: the field scene-entry flow resolves
+    /// the table + formations straight from the scene's MAN asset (retail
+    /// `_DAT_8007B898`) via [`crate::encounter_man::scene_encounter_from_man`]
+    /// and installs them here, in place of the synthetic-pattern
+    /// [`Self::install_encounter_for_scene`] fallback. The formation defs are
+    /// merged into `formation_table` so the table's row-index `formation_id`s
+    /// resolve to concrete monster sets at battle-load.
+    ///
+    /// Returns whether the installed table is non-empty (an empty table is
+    /// still installed-but-quiet so engines can call [`Self::on_field_step`]
+    /// without nil checks).
+    pub fn install_man_encounter(
+        &mut self,
+        table: crate::encounter::EncounterTable,
+        formations: Vec<crate::monster_catalog::FormationDef>,
+    ) -> bool {
+        for def in formations {
+            self.formation_table.insert(def);
+        }
+        let nonempty = !table.is_empty();
+        let tracker = crate::encounter::EncounterTracker::new(table);
+        self.encounter = Some(crate::encounter::EncounterSession::new(tracker));
+        nonempty
+    }
+
+    /// Replace just the monster stat catalog, leaving `formation_table`
+    /// untouched. The MAN encounter source carries formation monster-ids but
+    /// not stat blocks, so the host installs the stat catalog separately when
+    /// the formations come from [`Self::install_man_encounter`].
+    pub fn set_monster_catalog(&mut self, catalog: crate::monster_catalog::MonsterCatalog) {
+        self.monster_catalog = catalog;
+    }
+
     /// Install a formation + monster catalog pair. Boot wires this once;
     /// engines read it at battle-load time.
     pub fn set_formation_table(
