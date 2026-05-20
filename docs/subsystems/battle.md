@@ -105,8 +105,8 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | Offset | Type | Use |
 |---|---|---|
 | `+0x00` | u32 | Name string pointer (disc offset → pointer; `strlen` copied into actor `+0x1BC`). |
-| `+0x04` | u32 | XP / drop record pointer → actor `+0x230`. |
-| `+0x08` | u32 | Record byte size (allocation footprint). |
+| `+0x04` | u32 | Attack-effect / animation data pointer → actor `+0x230` (walked as `0x1C`-stride geometry records by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. |
+| `+0x08` | u32 | Shared-resource pointer (fixed up at load). |
 | `+0x0C` | u16 | **HP** → actor `+0x14C/+0x14E/+0x172`. |
 | `+0x0E` | u16 | **SP** → actor `+0x154/+0x156` (spirit/action gauge - AI spell-selection budget; spirit-charge source). |
 | `+0x10` | u16 | **MP** → actor `+0x150/+0x152/+0x174`. |
@@ -119,6 +119,8 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x4C` | u32[] | Spell-entry pointers (count at `+0x4A`); each entry's first byte is the element type (2/3/4/5/0xB) that sets per-element magic-resistance at actor `+0x1EF..+0x1F3`. |
 
 All six stat names are pinned by the consumers of those actor slots - see [battle-formulas.md](battle-formulas.md#actor-stat-block--monster-record-mapping). The parser exposes them via `legaia_asset::monster_archive::MonsterRecord::{attack, defense_high, defense_low, agility, speed, spirit}`.
+
+**Rewards (EXP / gold / drop) are still open.** They are *not* at `+0x04` (that's the effect/animation data above). The victory-spoils path credits party gold at `0x8008459C` and writes the banner into the actor dialog buffer at `+0xA9` (`"Gained N Experience and M G."`), but that logic lives in the un-dumped battle-action FSM (`FUN_801E295C`), so the reward fields' record offsets aren't pinned - candidates sit in the unexplored `+0x1C..+0x49` head region. Drop / steal *items* are curated from walkthroughs in [`legaia-gamedata`](../reference/gamedata.md).
 
 ### Monster archive (PROT entry 867)
 

@@ -74,7 +74,7 @@ else
   <h2>What's still open</h2>
   <ul class="bullets">
     <li><strong>Selectors <code>0x10..=0x83</code>.</strong> Beyond the status / buff / damage cases, these handle stat-up animations, status-clear, queue-end markers, and multi-target item slots. Mostly read-only ramps that don't affect game balance.</li>
-    <li><strong><code>+0x04</code> XP / drop sub-record.</strong> The record's <code>xp_offset</code> word points at an EXP / gold / drop-item sub-record (staged to actor <code>+0x230</code>) whose interior isn't decoded - the last un-decoded piece of the monster record now that all six stat halfwords are named.</li>
+    <li><strong>Monster reward fields (EXP / gold / drop).</strong> All six stat halfwords are named, but the rewards are <em>not</em> at record <code>+0x04</code> - that word is the attack-effect / animation data pointer (actor <code>+0x230</code>, walked by <code>FUN_80049858</code> / <code>FUN_800495C8</code>). The victory-spoils path credits party gold (<code>0x8008459C</code>) and the banner at actor <code>+0xA9</code>, but lives in the un-dumped battle-action FSM (<code>FUN_801E295C</code>); pinning the reward offsets (in the unexplored <code>+0x1C..+0x49</code> head region) needs that function dumped. Drop / steal items are curated in <code>legaia-gamedata</code>.</li>
     <li><strong>Ability-bit catalogue.</strong> The bitfield at <code>+0xF4</code> has the documented MP-half / MP-quarter / HP-cap / MP-cap bits plus the <code>0x10</code> / <code>0x20</code> impact-step modifiers. The full per-character map comes out of save-data inspection.</li>
   </ul>
 </section>

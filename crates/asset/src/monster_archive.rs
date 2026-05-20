@@ -17,13 +17,15 @@
 //! ## Record layout (decoded block head)
 //!
 //! All multi-byte fields are little-endian. Offsets are into the LZS-decoded
-//! block; `name_offset` / `xp_offset` are block-relative byte offsets the
-//! loader fixes up to absolute pointers at load.
+//! block; `name_offset` and `effect_offset` are block-relative byte offsets
+//! the loader fixes up to absolute pointers at load.
 //!
 //! ```text
 //! +0x00  u32  name_offset   ; -> NUL-terminated name string in the block
-//! +0x04  u32  xp_offset     ; -> XP / drop sub-record (actor +0x230)
-//! +0x08  u32  record_size   ; stat-record allocation footprint
+//! +0x04  u32  effect_offset ; -> attack-effect / animation data (actor +0x230;
+//!                           ;    walked as 0x1C-stride geometry records by
+//!                           ;    FUN_80049858 / FUN_800495C8). NOT XP/drop.
+//! +0x08  u32  ptr3          ; -> shared resource pointer (fixed up at load)
 //! +0x0C  u16  hp            ; -> actor +0x14C/+0x14E/+0x172
 //! +0x0E  u16  stat0=SP      ; -> actor +0x154/+0x156  (spirit/action gauge)
 //! +0x10  u16  mp            ; -> actor +0x150/+0x152/+0x174
@@ -68,6 +70,17 @@
 //! [`agility`](MonsterRecord::agility) / [`speed`](MonsterRecord::speed) /
 //! [`spirit`](MonsterRecord::spirit)); [`stats`](MonsterRecord::stats) keeps
 //! all six in raw record order.
+//!
+//! ## Rewards (EXP / gold / drop) — open
+//!
+//! These are **not** at record `+0x04` (that's the effect/animation data; the
+//! earlier "XP/drop sub-record" reading was wrong). The victory-spoils path
+//! credits party gold (`0x8008459C`) and formats the banner in the actor's
+//! dialog buffer (`+0xA9`, `"Gained N Experience and M G."`), but that code
+//! lives in the un-dumped battle-action FSM region (`FUN_801E295C`), so the
+//! reward fields' record offsets aren't pinned. Candidate inline halfwords sit
+//! in the unexplored `+0x1C..+0x49` head region. Drop / steal *items* are
+//! curated from public walkthroughs in `legaia-gamedata` (`enemies.toml`).
 
 use anyhow::{Result, bail};
 
@@ -98,8 +111,6 @@ pub struct MonsterRecord {
     pub stats: [u16; 6],
     /// Spell-slot count (`+0x4A`).
     pub magic_count: u8,
-    /// Raw XP / drop sub-record word (`u32` at the block's `xp_offset`).
-    pub xp_drop_raw: u32,
 }
 
 impl MonsterRecord {
@@ -196,7 +207,6 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         return None;
     }
     let name_offset = read_u32(block, 0)? as usize;
-    let xp_offset = read_u32(block, 4)? as usize;
     // A real record's name offset points inside the block at a printable,
     // NUL-terminated string. Reject slots that don't.
     if name_offset == 0 || name_offset >= block.len() {
@@ -217,7 +227,6 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         read_u16(block, 0x1A)?,
     ];
     let magic_count = *block.get(0x4A)?;
-    let xp_drop_raw = read_u32(block, xp_offset).unwrap_or(0);
     Some(MonsterRecord {
         id,
         name,
@@ -225,7 +234,6 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         mp,
         stats,
         magic_count,
-        xp_drop_raw,
     })
 }
 
@@ -287,7 +295,7 @@ mod tests {
     #[test]
     fn parse_block_reads_named_record() {
         let mut block = vec![0u8; 0x60];
-        // name at 0x40, xp record at 0x50.
+        // name at 0x40; +0x04 effect-data offset is not parsed into a field.
         block[0x00..0x04].copy_from_slice(&0x40u32.to_le_bytes());
         block[0x04..0x08].copy_from_slice(&0x50u32.to_le_bytes());
         block[0x0C..0x0E].copy_from_slice(&99u16.to_le_bytes()); // HP
@@ -301,8 +309,6 @@ mod tests {
         block[0x4A] = 9; // magic count
         // name "^A Gimard\0" at 0x40 (caret color-escape + space stripped).
         block[0x40..0x49].copy_from_slice(b"^A Gimard");
-        // xp word at 0x50.
-        block[0x50..0x54].copy_from_slice(&0x1234u32.to_le_bytes());
 
         let rec = parse_block(10, &block).expect("record parses");
         assert_eq!(rec.id, 10);
@@ -311,7 +317,10 @@ mod tests {
         assert_eq!(rec.mp, 20);
         assert_eq!(rec.stats, [60, 23, 12, 15, 16, 22]);
         assert_eq!(rec.magic_count, 9);
-        assert_eq!(rec.xp_drop_raw, 0x1234);
+        assert_eq!(rec.attack(), 23);
+        assert_eq!(rec.defense_high(), 12);
+        assert_eq!(rec.speed(), 22);
+        assert_eq!(rec.spirit(), 60);
     }
 
     #[test]
