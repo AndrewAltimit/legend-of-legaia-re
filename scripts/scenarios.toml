@@ -523,3 +523,22 @@ backup_fingerprint = "0f659b1f3186f549a2cbac7617b4e5597c5bf4ba91e4f9c8fefe38c4e6
 description = "Drake Castle field scene, ~half-second Up press triggers a transition to the Drake Kingdom world map. Pre-transition save for capturing scene-load script flow (FUN_8003aeb0 + nibble-7 wall paints)."
 phase = "field"
 topics = ["field", "scene transition", "world map", "Drake", "scene-load", "nibble-7 paint"]
+
+# ----------------------------------------------------------------------
+# Pre-transition save: player stands on a walkable area; a brief Down
+# press walks into a town entrance that loads a standalone town scene.
+# Use this to capture a town scene's MAN load: replay it driving Down so
+# the asset dispatcher FUN_8001F05C fires its MAN (type 0x03) dispatch
+# during the transition. This capture pinned the runtime MAN source
+# `_DAT_8007b898` -> the count=6 scene_asset_table variant in the town's
+# own PROT block (see autorun_man_source.lua + docs/formats/scene-bundles.md).
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "overworld_into_town_man_load"
+backup_fingerprint = "bdbacd378093e730c0967a0c27822955f7561875c6c8e0adb2881fc1bc42f597"
+description = "Walkable area; a ~0.75s Down press walks into a town entrance, loading a standalone town scene. Pre-transition save for capturing the town MAN load via the asset dispatcher (FUN_8001F05C case 3 -> _DAT_8007b898)."
+phase = "field"
+expected_game_mode = 0x03
+topics = ["field", "scene transition", "town", "MAN", "scene_asset_table", "FUN_8001F05C", "_DAT_8007b898"]

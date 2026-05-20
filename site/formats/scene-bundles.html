@@ -127,51 +127,58 @@ if let Some(s) = scene_vab_stream::detect(buf) {
 </section>
 
 <section class="doc-section" id="scene-asset-table-canonical-7-asset-bundle">
-  <h2>scene_asset_table - canonical 7-asset bundle</h2>
-  <p>The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: <code>crates/asset/src/scene_asset_table.rs</code>. 80 PROT entries match.</p>
-<pre><code>+0x00   u32  count = 7              ; literal `07 00 00 00`
+  <h2>scene_asset_table - count-prefixed asset bundle</h2>
+  <p>The on-disc form of the scene asset table that the field loader reads when entering a town/dungeon. Implementation: <code>crates/asset/src/scene_asset_table.rs</code>.</p>
+<pre><code>+0x00   u32  count                  ; descriptor count (6 or 7)
 +0x04   u32  meta1                  ; varies - purpose unknown
-+0x08   7 × (u32 type_size, u32 data_offset)
++0x08   count × (u32 type_size, u32 data_offset)
                                     ; each pair packs `(type&lt;&lt;24)|size`
-+0x40   asset payload region        ; LZS-compressed in some entries,
-                                    ; raw in the rest</code></pre>
++H      asset payload region        ; LZS-compressed in some entries, raw in the rest
+        (H = 8 + count*8: 0x40 for count 7, 0x38 for count 6)</code></pre>
+  <p>The table is <strong><code>count</code>-prefixed</strong>, not fixed-7: the runtime walker <code>FUN_80020224</code> reads <code>count</code> from <code>+0x00</code> and loops that many descriptors, calling the dispatcher <code>FUN_8001F05C</code> with <code>source = table_base + descriptor.data_offset</code>. Two <code>count</code> values appear:</p>
+  <ul class="bullets">
+    <li><strong><code>count = 7</code></strong> - kingdom-bundle scenes (first descriptor <code>TimList</code>); first <code>data_offset</code> = <code>0x40</code>.</li>
+    <li><strong><code>count = 6</code></strong> - early standalone towns (<code>town01</code> = Rim Elm, <code>town0c</code>, …); first <code>data_offset</code> = <code>0x38</code>. These previously looked like they "had no MAN in the static bundle"; in fact their table sits in the block's 2nd PROT entry (<code>town01</code> = entry 4, MAN at descriptor 1; <code>town0c</code> = entry 22, MAN at descriptor 2) and is <code>count=6</code>, so a strict <code>count==7 &amp;&amp; first_offset==0x40</code> detector skipped it. Pinned via a runtime write-watchpoint on the MAN buffer <code>_DAT_8007b898</code> (<code>autorun_man_source.lua</code>) and byte-verified against the live RAM MAN.</li>
+  </ul>
   <p>Each descriptor is <code>(type_size, data_offset)</code>:</p>
   <ul class="bullets">
     <li><code>type_size</code> packs <code>(type_byte &lt;&lt; 24) | (size &amp; 0x00FF_FFFF)</code> - the same packing the <a href="asset-type.html">asset-type dispatcher</a> accepts directly.</li>
-    <li><code>data_offset</code> for descriptor 0 is a file-relative byte offset (always <code>0x40</code>). For descriptors 1..6, it's a <strong>runtime-buffer offset</strong> within the loader's working RAM, <em>not</em> a file-relative offset. Many real entries have <code>data_offset &gt; file_size</code> for descriptors past the first; the loader presumably decompresses the payload region into a working buffer and resolves the descriptor offsets there.</li>
+    <li><code>data_offset</code> is a file-relative byte position of that descriptor's own LZS stream, addressed against the bundle entry's <strong>extended on-disc footprint</strong>, <em>not</em> the TOC-indexed sub-region. Descriptor 0's offset is the header end <code>8 + count*8</code>; later descriptors frequently fall past the indexed end into the trailing-overlay sectors the per-PROT TOC crops off. <code>size</code> is the <strong>decompressed</strong> byte count.</li>
   </ul>
-  <p>Type-sequence variants found across the 80 entries:</p>
+  <p>Type-sequence variants (count=7 unless noted):</p>
 <table>
 <thead><tr>
 <th>Tuple</th>
-<th>Count</th>
 <th>Notes</th>
 </tr></thead>
 <tbody>
 <tr>
 <td><code>(1, 2, 3, 4, 5, 6, 7)</code></td>
-<td>67</td>
-<td>Standard scene bundle: <code>(TimList, Tmd, Man, Mes, Move, Anm, Vdf)</code>.</td>
+<td>Standard count-7 bundle: <code>(TimList, Tmd, Man, Mes, Move, Anm, Vdf)</code>.</td>
 </tr>
 <tr>
 <td><code>(1, 3, 4, 5, 6, 7, 0x14)</code></td>
-<td>7</td>
 <td>Skips Tmd; trailing <code>0x14 = Flag(0x14)</code> sentinel.</td>
 </tr>
 <tr>
 <td><code>(2, 3, 4, 5, 6, 7, 0x14)</code></td>
-<td>4</td>
 <td>Skips TimList.</td>
 </tr>
 <tr>
 <td><code>(10, 2, 3, 4, 5, 6, 7)</code></td>
-<td>1</td>
 <td>Leading <code>Flag(0xA)</code> sentinel.</td>
 </tr>
 <tr>
 <td><code>(1, 2, 3, 4, 6, 7, 0x14)</code></td>
-<td>1</td>
 <td>Skips Move.</td>
+</tr>
+<tr>
+<td><code>(2, 3, 5, 6, 7, 0x14)</code></td>
+<td><strong>count-6</strong> early-town variant (<code>town01</code>): MAN at index 1.</td>
+</tr>
+<tr>
+<td><code>(10, 2, 3, 5, 6, 7)</code></td>
+<td><strong>count-6</strong> early-town variant (<code>town0c</code>): leading <code>Flag(0xA)</code>, MAN at index 2.</td>
 </tr>
 </tbody>
 </table>
