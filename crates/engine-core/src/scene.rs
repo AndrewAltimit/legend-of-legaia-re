@@ -703,6 +703,8 @@ impl Scene {
     /// story flags are seeded to a matching scene-entry state; the base
     /// collision grid ([`Self::field_collision_grid`]) is independent of the
     /// entry script.
+    ///
+    /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
     pub fn field_man_entry_script(&self, index: &ProtIndex) -> Result<Option<(Vec<u8>, usize)>> {
         let Some(bundle) = crate::scene_bundle::find_bundle(self) else {
             return Ok(None);

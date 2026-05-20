@@ -1526,6 +1526,8 @@ impl World {
     /// against the slice base (index 0), matching the retail
     /// `buffer_base = script_start` convention. See
     /// [`crate::scene::Scene::field_man_entry_script`].
+    ///
+    /// REF: FUN_8003ab2c (the port lives in `legaia_asset::man_section`).
     pub fn load_field_script_at(&mut self, bytecode: Vec<u8>, pc: usize) {
         self.field_bytecode = bytecode;
         self.field_pc = pc;
