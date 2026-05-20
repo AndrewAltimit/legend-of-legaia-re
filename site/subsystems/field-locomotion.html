@@ -81,10 +81,26 @@ else if (dir &amp; 0x8000) and collide(player, scene, 1) == clear:  player.X -= 
   <p>The sibling sampler <code>FUN_801d5718</code> reads the same grid with the identical nibble-and-mask shape, confirming the layout.</p>
 </section>
 
+<section class="doc-section" id="grid-source">
+  <h2>Where the collision grid comes from</h2>
+  <p><code>_DAT_1f8003ec</code> is the base of the <strong>per-scene field buffer</strong> (a scratchpad-resident pointer at <code>0x1F8003EC</code>). Its sub-regions:</p>
+  <table>
+    <thead><tr><th>offset from base</th><th>content</th><th>filled by</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x0000</code></td><td>object / actor records (0x20-byte stride)</td><td>scene loader / field VM</td></tr>
+      <tr><td><code>+0x4000</code></td><td><strong>collision walkability grid</strong> &mdash; 1 byte/tile, high nibble = 4 sub-cell wall bits, <code>0x80</code>-byte rows</td><td>field-VM <code>0x4C</code> opcode, outer-nibble 7 (rectangular wall paint)</td></tr>
+      <tr><td><code>+0x8000</code></td><td>terrain-flag grid (e.g. the <code>0x4000</code> slow-tile flag) &mdash; <code>u16</code>/tile</td><td><code>FUN_8003aeb0</code> from the MAN asset (<code>_DAT_8007b898</code>)</td></tr>
+      <tr><td><code>+0x12000</code></td><td>field-pack region; <code>_DAT_8007b8d0 = base + 0x12800</code></td><td><code>FUN_8001f7c0</code> (scene asset loader)</td></tr>
+    </tbody>
+  </table>
+  <p>So the <strong>collision data is authored in the scene event script</strong>: the field VM's <code>0x4C</code> (MENU_CTRL) opcode with outer-nibble 7 (<code>op0</code> &isin; <code>0x70..0x7F</code>, 7-byte op <code>[4C, 0x7s, b1, b2, b3, b4, mask]</code>, handler <code>0x801e1c64</code>) is a rectangular paint that sets/clears the high-nibble wall bits over a tile range (<code>col &isin; [b1, b3+1)</code>, <code>row &isin; [b2+1, b4+2)</code>; sub-op <code>s</code> = clear-walkable / block-all / clear-mask / set-mask). There is no separate on-disc collision-grid blob &mdash; walls are inline operands in the prescript, the same pattern as encounter records and the tile board. The <code>+0x8000</code> terrain grid, by contrast, <em>is</em> a MAN-asset section.</p>
+</section>
+
 <section class="doc-section" id="open">
   <h2>Open</h2>
   <ul>
-    <li><strong>Collision-map source.</strong> Where the scene loader populates <code>*(_DAT_1f8003ec) + 0x4000</code> (which field-pack slot or MAN section carries the on-disc walkability grid) is not yet pinned.</li>
+    <li><strong>Collision-grid zero-init site.</strong> The walls are painted by opcode <code>0x4C</code>/nibble-7, but where the <code>+0x4000</code> grid is first cleared to "all walkable" at scene entry is not pinned; the loader <code>FUN_8001f7c0</code> clears the <code>+0x12000</code> field-pack region but no explicit <code>+0x4000</code> memset was found.</li>
+    <li><strong>Low nibble of the <code>+0x4000</code> byte.</strong> Collision reads only the high nibble (walls); <code>FUN_8003a55c</code> reads the low nibble &mdash; likely a floor/terrain-type field, not yet decoded.</li>
     <li><strong>Town vs. field parity.</strong> The controller was pinned on a walkable field scene (game mode <code>0x03</code>); towns run the same overlay and game mode and almost certainly use the same controller, but a confirming watchpoint run on a town save has not been done.</li>
     <li><code>FUN_801cfc40</code> (the finer actor/edge collision probe) is not fully decoded.</li>
   </ul>
