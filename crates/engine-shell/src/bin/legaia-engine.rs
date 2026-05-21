@@ -3281,6 +3281,20 @@ struct PlayWindowApp {
     /// Retained TMD data (struct + raw bytes) parallel to `meshes`, used to
     /// re-pose animated actor meshes each frame via `tmd_to_vram_mesh_posed`.
     scene_tmd_data: Vec<(legaia_tmd::Tmd, Vec<u8>)>,
+    /// Pristine CPU-side scene VRAM, cloned at scene-load before any battle
+    /// edits. A battle injects monster texture pools into a working copy and
+    /// re-uploads; leaving battle restores this base so the field renders
+    /// with clean VRAM. `None` until the first scene loads.
+    cpu_vram_base: Option<legaia_tim::Vram>,
+    /// Scene-mode from the previous frame, used to detect Field<->Battle
+    /// transitions so monster meshes are uploaded / dropped exactly once.
+    prev_scene_mode: Option<SceneMode>,
+    /// Lazily-cached monster stat archive (PROT 867) bytes, decoded once and
+    /// reused for every battle so each transition doesn't re-decompress 16 MB.
+    monster_archive: Option<std::sync::Arc<Vec<u8>>>,
+    /// `meshes.len()` at battle entry: the boundary appended battle monster
+    /// meshes start at, so leaving battle truncates back to it.
+    battle_mesh_base: usize,
     scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.
     pad: u16,
@@ -4440,6 +4454,9 @@ impl PlayWindowApp {
             }
             (vram, font, meshes, tmd_data, lo, hi)
         };
+        // Keep a clean CPU copy of the scene VRAM so a battle can inject
+        // monster textures into a throwaway clone and restore this on exit.
+        self.cpu_vram_base = Some(res.vram.clone());
         if let Some(v) = vram_opt {
             self.uploaded_vram = Some(v);
         }
@@ -4596,6 +4613,134 @@ impl PlayWindowApp {
             a.move_state.world_z as f32,
         );
         Mat4::from_translation(pos) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
+    /// The monster stat archive (PROT 867) bytes, decoded + cached on first
+    /// use. `None` if no disc is attached or the entry can't be read.
+    fn monster_archive_bytes(&mut self) -> Option<std::sync::Arc<Vec<u8>>> {
+        if self.monster_archive.is_none() {
+            const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
+            match self
+                .session
+                .host
+                .index
+                .entry_bytes_extended(MONSTER_ARCHIVE_PROT_ENTRY)
+            {
+                Ok(b) => self.monster_archive = Some(std::sync::Arc::new(b)),
+                Err(e) => {
+                    log::warn!("play-window: monster archive (PROT 867) load skipped: {e:#}");
+                    return None;
+                }
+            }
+        }
+        self.monster_archive.clone()
+    }
+
+    /// React to a `Field <-> Battle` scene-mode change once per transition:
+    /// on entering battle, decode each enemy's mesh and inject it; on leaving,
+    /// restore the clean field VRAM and drop the battle meshes. Called each
+    /// frame before the render borrows `uploaded_vram`.
+    fn sync_battle_render(&mut self) {
+        let mode = self.session.host.world.mode;
+        let prev = self.prev_scene_mode.replace(mode);
+        if prev == Some(mode) {
+            return;
+        }
+        match (prev, mode) {
+            (_, SceneMode::Battle) => self.enter_battle_render(),
+            (Some(SceneMode::Battle), _) => self.exit_battle_render(),
+            _ => {}
+        }
+    }
+
+    /// Bridge the decoded monster meshes for the current battle into the draw
+    /// list: inject each enemy's texture pool into a clone of the field VRAM
+    /// at the loader's per-slot coords, upload the relocated mesh, and bind it
+    /// to the enemy actor. Re-uploads the edited VRAM so the injected texture
+    /// pages resolve.
+    fn enter_battle_render(&mut self) {
+        let monsters = self.session.host.world.battle_monster_slots();
+        if monsters.is_empty() {
+            return;
+        }
+        let Some(base) = self.cpu_vram_base.clone() else {
+            return;
+        };
+        let Some(archive) = self.monster_archive_bytes() else {
+            return;
+        };
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+
+        // Work on a throwaway copy so the field VRAM stays clean for the
+        // restore on battle exit.
+        let mut vram = base;
+        self.battle_mesh_base = self.meshes.len();
+        let mut bound = 0usize;
+        for (actor_idx, monster_id, slot) in monsters {
+            let mesh = match legaia_asset::monster_archive::mesh(&archive, monster_id) {
+                Ok(Some(m)) => m,
+                Ok(None) => continue,
+                Err(e) => {
+                    log::warn!("play-window: monster {monster_id} mesh decode failed: {e:#}");
+                    continue;
+                }
+            };
+            // Parse the embedded TMD up front so it can be retained parallel
+            // to `meshes`; `battle_render_mesh` only yields a mesh when this
+            // same parse succeeds.
+            let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+                continue;
+            };
+            let Some(vmesh) = mesh.battle_render_mesh(slot, &mut vram) else {
+                continue;
+            };
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            match r.upload_vram_mesh(
+                &vmesh.positions,
+                &vmesh.uvs,
+                &vmesh.cba_tsb,
+                &vmesh.normals,
+                &vmesh.indices,
+            ) {
+                Ok(m) => {
+                    let idx = self.meshes.len();
+                    self.meshes.push(m);
+                    // Keep `scene_tmd_data` length-parallel with `meshes`.
+                    self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
+                    self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
+                    bound += 1;
+                }
+                Err(e) => log::warn!("play-window: monster {monster_id} mesh upload: {e:#}"),
+            }
+        }
+
+        if bound > 0 {
+            match r.upload_vram(&vram) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("play-window: battle VRAM re-upload: {e:#}"),
+            }
+            log::info!("play-window: battle render bound {bound} monster mesh(es)");
+        }
+    }
+
+    /// Leave battle: restore the clean field VRAM and drop the appended
+    /// battle monster meshes (the field actor table was already restored from
+    /// the pre-battle snapshot, so those slots no longer reference them).
+    fn exit_battle_render(&mut self) {
+        if let (Some(r), Some(base)) = (self.win.renderer.as_ref(), self.cpu_vram_base.as_ref()) {
+            match r.upload_vram(base) {
+                Ok(v) => self.uploaded_vram = Some(v),
+                Err(e) => log::error!("play-window: field VRAM restore: {e:#}"),
+            }
+        }
+        let keep = self.battle_mesh_base.min(self.meshes.len());
+        self.meshes.truncate(keep);
+        self.scene_tmd_data
+            .truncate(keep.min(self.scene_tmd_data.len()));
     }
 
     /// Build the per-strip [`legaia_engine_render::SpriteDraw`] list for
@@ -5516,6 +5661,10 @@ impl ApplicationHandler for PlayWindowApp {
                     // so spawn-record actors appear in the scene.
                     self.drain_and_route_field_events();
                 }
+                // On a Field<->Battle transition, upload/drop monster meshes
+                // and swap the VRAM. Must run before the render borrows
+                // `uploaded_vram` below (this method may re-upload it).
+                self.sync_battle_render();
                 if let (Some(r), Some(vram), Some(atlas)) = (
                     self.win.renderer.as_ref(),
                     self.uploaded_vram.as_ref(),
@@ -6187,6 +6336,10 @@ fn cmd_play_window_with_record(
         uploaded_vram: None,
         meshes: Vec::new(),
         scene_tmd_data: Vec::new(),
+        cpu_vram_base: None,
+        prev_scene_mode: None,
+        monster_archive: None,
+        battle_mesh_base: 0,
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,
         mapping,
