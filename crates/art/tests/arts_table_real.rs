@@ -4,6 +4,7 @@
 
 use legaia_art::arts_table::{self, ArtTableEntry};
 use legaia_art::queue::{Character, Command};
+use legaia_art::{ArtsOracle, parse_record};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
@@ -74,4 +75,62 @@ fn decodes_the_arts_name_table_or_skips() {
     for a in arts.iter().filter(|a| !a.is_miracle) {
         assert!(!a.commands.is_empty(), "{} has no decoded commands", a.name);
     }
+}
+
+/// Contract test between the best-effort PROT `0x05C4` art-record parser
+/// (`parse_record`) and the SCUS arts-name table oracle.
+///
+/// `parse_record` decodes a raw record's leading command bytes
+/// (`1..=4` until a `0` terminator). For every art the executable names, build
+/// the canonical record-opening bytes from the ground-truth command sequence,
+/// run it through `parse_record`, and assert the parser's decoded commands
+/// resolve back through the oracle to *the same named art*. This pins the
+/// parser's command-decode step against the executable: if the record's
+/// command-byte encoding ever drifts from `1=L,2=R,3=D,4=U`, this fails.
+#[test]
+fn prot_record_parser_command_decode_agrees_with_scus_oracle_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let oracle = ArtsOracle::from_scus(&bytes).expect("build oracle");
+
+    let mut checked = 0usize;
+    for entry in oracle.entries() {
+        // Miracle rows carry only the separator marker (no directional
+        // command); the PROT record encodes them with an empty command list,
+        // which the oracle deliberately won't resolve. Skip them here.
+        if entry.commands.is_empty() {
+            continue;
+        }
+        // Canonical PROT-record opening: command bytes (1..=4), 0 terminator,
+        // an art action constant, an anim index.
+        let mut raw: Vec<u8> = entry.commands.iter().map(|c| *c as u8).collect();
+        raw.push(0x00); // command terminator
+        raw.push(0x1B); // an art action constant (0x1B..=0x32)
+        raw.push(0x00); // anim index
+
+        let parsed = parse_record(&raw).expect("parse synthesised record");
+        assert_eq!(
+            parsed.record.commands, entry.commands,
+            "parser decoded a different command for {}",
+            entry.name
+        );
+
+        // The parser's output resolves through the oracle to this exact art.
+        let resolved = oracle
+            .by_command(entry.character, &parsed.record.commands)
+            .unwrap_or_else(|| panic!("oracle could not resolve {}", entry.name));
+        // Command sequences are not globally unique (a few arts share a
+        // sequence per character is possible), so assert the resolved entry
+        // matches on character + the decoded commands rather than identity.
+        assert_eq!(resolved.character, entry.character);
+        assert_eq!(resolved.commands, entry.commands);
+        checked += 1;
+    }
+    assert!(
+        checked >= 40,
+        "expected to validate most arts, got {checked}"
+    );
 }

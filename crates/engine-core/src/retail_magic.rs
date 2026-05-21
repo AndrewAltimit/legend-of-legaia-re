@@ -27,10 +27,15 @@
 //! table, not inline), and `0x25..=0x7f` are the monster / capture-class
 //! spells - neither is reproduced here.
 //!
-//! Per-spell base **power** is *not* in this table (retail derives damage
-//! from the caster's magic stat × a separate per-spell multiplier); the
-//! catalog below uses MP-scaled placeholders for the damage figure pending an
-//! overlay capture of the multiplier table.
+//! Per-spell base **power** is *not* in this table, and there is no separate
+//! static multiplier array to capture. The player Seru block all share
+//! `cat = 0x32 / sub = 0`, and the cast-begin state (`0x28`) reads only MP +
+//! capture flag + name; the per-summon effect (and its damage) is dispatched by
+//! `(id - 0x81)` through `PTR_801f6734` in state `0x29`, i.e. it lives in the
+//! battle effect scripts, not a scalar table. The static atk/def kernel
+//! `FUN_801ec3e4` is melee/arts-only (gated on an action-queue head in
+//! `0xC..=0x1F`). See `docs/formats/spell-table.md` for the full trace. The
+//! `base_power` figures below are therefore explicit MP-scaled placeholders.
 
 use crate::spells::{SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget};
 

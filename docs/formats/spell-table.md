@@ -79,10 +79,35 @@ the save-state pin recorded in `legaia_engine_core::capture_observations::seru_c
 | `0x8a` | Freed | water | 40 | all enemies |
 | `0x8b` | Nova | wind | 48 | one enemy |
 
-Per-spell **damage power** is not in this table — retail derives it from the
-caster's magic stat × a separate per-spell multiplier (not yet located). The
-`base_power` figures in `legaia_engine_core::retail_magic` are MP-scaled
-placeholders.
+### Per-spell damage power is not static data
+
+There is **no per-spell magic-power / multiplier field anywhere in this table**,
+and it isn't a separate static array either. Verified bytes + trace:
+
+- Record bytes `+5..+8` are zero for every spell; `+0`/`+1` are the
+  class/sub-index category selectors, not a power scalar. The whole player Seru
+  block `0x81..=0x8b` shares `cat = 0x32`, `sub = 0` — so the SCUS table cannot
+  even *distinguish* Gimard (weakest) from Nova; their damage must live
+  elsewhere.
+- State `0x28` of the action SM (`overlay_0898_801e295c.txt` case `0x28`) reads
+  only `+3` (MP, deducted from actor `+0x150`), `+0` (`'c'` capture flag), and
+  the name pointer. No power read.
+- The per-summon effect/animation is dispatched by **`(spell_id - 0x81)`**:
+  state `0x29` sets `_DAT_8007ba2c = (&PTR_s_re_check_801f6734)[spell_id - 0x81]`
+  and calls `func_0x8003ec70(spell_id - 0x79, 0)`. Each summon's damage is
+  produced inside that effect script (the `efect.dat` battle-effect path), not a
+  scalar table.
+- The static attack-vs-defense kernel `FUN_801ec3e4` (line 2582:
+  `power = stat[+0x164] + (stat[+0x158]*4)/5 + buff`) is **melee/arts only** — it
+  returns early unless the action-queue head is in `0xC..=0x1F` (line 2552,
+  `0x13 < *param_2 - 0xc`), which magic (`ActionConstant::Magic = 0x02`) never
+  enters.
+
+So the per-spell power the engine wants requires decoding the per-summon effect
+scripts at `PTR_801f6734[id - 0x81]`, an open thread (see
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)). Until then
+the `base_power` figures in `legaia_engine_core::retail_magic` are explicitly
+MP-scaled placeholders.
 
 The mirror lives at `legaia_engine_core::retail_magic` (`SERU_MAGIC` +
 `retail_seru_magic_catalog`); the Seru that teach these ids are wired in

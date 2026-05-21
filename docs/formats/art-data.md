@@ -236,6 +236,24 @@ walkthrough error (Vahn's *Hyper Elbow* is `L R L` on disc, not `Arms / Ra-Seru
 / High`). Decoded by `legaia_art::arts_table::parse_from_scus`; dump it with
 `art arts-table`.
 
+### Validation oracle
+
+Because the glyph string is byte-exact ground truth, it serves as the
+validation oracle for the two derived command sources:
+
+- **The best-effort PROT `0x05C4` parser** ([`legaia_art::parse_record`]).
+  `legaia_art::ArtsOracle::by_command(character, &commands)` resolves a decoded
+  command sequence back to a named art; the disc-gated contract test
+  `crates/art/tests/arts_table_real.rs` runs every art's canonical record bytes
+  through `parse_record` and asserts the decode round-trips through the oracle.
+  This pins the parser's `1=L,2=R,3=D,4=U` command-byte decode against the
+  executable without needing the (still-unpinned) full record stride.
+- **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
+  The disc-gated test `crates/gamedata/tests/arts_scus_oracle.rs` matches each
+  curated art to its SCUS row by name and asserts AP + directions agree, with a
+  small explicit allowlist for documented walkthrough errors (currently only
+  *Hyper Elbow*). A new undocumented divergence fails the test.
+
 ## See also
 
 - [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) - battle action state machine that consumes the queue and resolves damage.

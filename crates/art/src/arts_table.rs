@@ -197,9 +197,120 @@ pub fn parse_from_scus(scus: &[u8]) -> Option<Vec<ArtTableEntry>> {
     Some(out)
 }
 
+/// A queryable view over the decoded arts-name table.
+///
+/// The SCUS table is the executable's **ground-truth** source for each art's
+/// command sequence + AP. This wrapper is the validation oracle the
+/// best-effort PROT `0x05C4` art-record parser ([`crate::parse::parse_record`])
+/// and the curated `legaia-gamedata` `directions` column are checked against:
+/// a decoded command sequence either resolves to a named art here or it
+/// disagrees with the executable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtsOracle {
+    entries: Vec<ArtTableEntry>,
+}
+
+impl ArtsOracle {
+    /// Build the oracle from a `SCUS_942.54` image. `None` if the image isn't
+    /// a PSX-EXE or the table is out of range (see [`parse_from_scus`]).
+    pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        Some(Self {
+            entries: parse_from_scus(scus)?,
+        })
+    }
+
+    /// Build directly from a decoded entry list (tests / non-SCUS callers).
+    pub fn from_entries(entries: Vec<ArtTableEntry>) -> Self {
+        Self { entries }
+    }
+
+    /// All decoded entries.
+    pub fn entries(&self) -> &[ArtTableEntry] {
+        &self.entries
+    }
+
+    /// Find an art by case-insensitive display-name match.
+    pub fn by_name(&self, name: &str) -> Option<&ArtTableEntry> {
+        let n = name.trim().to_ascii_lowercase();
+        self.entries
+            .iter()
+            .find(|e| e.name.to_ascii_lowercase() == n)
+    }
+
+    /// Find the art whose decoded command sequence exactly matches
+    /// `commands` for `character`. This is the contract a command decoder
+    /// (the PROT `0x05C4` parser, or a player's live input) must satisfy:
+    /// the bytes it produced map to exactly one named art. Empty sequences
+    /// (the Miracle-art rows carry only the separator marker) never match.
+    pub fn by_command(&self, character: Character, commands: &[Command]) -> Option<&ArtTableEntry> {
+        if commands.is_empty() {
+            return None;
+        }
+        self.entries
+            .iter()
+            .find(|e| e.character == character && e.commands == commands)
+    }
+
+    /// Find an art by `(character, display index)`.
+    pub fn by_character_index(&self, character: Character, index: u8) -> Option<&ArtTableEntry> {
+        self.entries
+            .iter()
+            .find(|e| e.character == character && e.index == index)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(character: Character, index: u8, name: &str, commands: Vec<Command>) -> ArtTableEntry {
+        ArtTableEntry {
+            character,
+            index,
+            name: name.to_string(),
+            ap: 0,
+            is_miracle: index == 0,
+            commands,
+        }
+    }
+
+    #[test]
+    fn oracle_resolves_a_decoded_command_sequence_to_one_art() {
+        use Command::*;
+        let oracle = ArtsOracle::from_entries(vec![
+            entry(Character::Vahn, 1, "Power Punch", vec![Right, Right]),
+            entry(Character::Vahn, 2, "Hyper Elbow", vec![Left, Right, Left]),
+            entry(Character::Noa, 1, "Twin Cut", vec![Right, Right]),
+        ]);
+
+        // A parser that decodes [L,R,L] for Vahn must land on Hyper Elbow.
+        let hit = oracle
+            .by_command(Character::Vahn, &[Left, Right, Left])
+            .expect("command resolves");
+        assert_eq!(hit.name, "Hyper Elbow");
+
+        // Same command bytes, different character -> different art.
+        assert_eq!(
+            oracle
+                .by_command(Character::Noa, &[Right, Right])
+                .map(|e| e.name.as_str()),
+            Some("Twin Cut")
+        );
+
+        // A sequence no art uses doesn't resolve.
+        assert!(oracle.by_command(Character::Vahn, &[Up, Up, Up]).is_none());
+        // The empty Miracle-marker sequence never matches.
+        assert!(oracle.by_command(Character::Vahn, &[]).is_none());
+
+        // Name + index lookups.
+        assert_eq!(oracle.by_name("hyper elbow").map(|e| e.index), Some(2));
+        assert_eq!(
+            oracle
+                .by_character_index(Character::Noa, 1)
+                .map(|e| e.name.as_str()),
+            Some("Twin Cut")
+        );
+    }
 
     #[test]
     fn glyph_map_is_a_bijection_over_the_four_arrows() {
