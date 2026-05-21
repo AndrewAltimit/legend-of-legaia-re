@@ -43,10 +43,20 @@ A 2-bit shape: bit `0x40` targets enemies (else allies), bit `0x20` is "all"
 
 | Ids | Contents |
 |---|---|
-| `0x00..=0x24` | elemental enemy-attack tiers; names composed via the [MES substitution table](mes.md) (`DAT_80075EC4`), not inline |
+| `0x00..=0x24` | elemental enemy-attack tiers; **empty inline name pointers** (see below) |
 | `0x25..=0x7f` | monster / capture-class spells (`'c'` at `+0`) |
 | `0x80` | "Flip Frog" — boundary entry below the player block (`mp`/`anim` both 0), not part of the sequential set |
 | `0x81..=0x8b` | **player Seru-magic** — 11 named summon spells, `anim` ids `0x25..=0x2f` |
+
+There is **no global elemental-spell name table**. The `0x00..=0x24` records
+carry MP / element / target but their `name_ptr` is an empty string - these are
+internal enemy-attack ids, named per-monster in the [monster archive's spell
+records](../subsystems/battle-formulas.md) (name at the spell entry `+0`), not
+from a shared table. The only spells with inline names in this table are the
+player Seru-magic block. (The `0xC5` MES substitution table at `DAT_80075EC4`,
+once mistaken for a spell-name source, is the [Tactical Arts name
+table](art-data.md#arts-name-table-dat_80075ec4) - per-character art names, no
+spells.)
 
 ## Player Seru-magic block (`0x81..=0x8b`)
 

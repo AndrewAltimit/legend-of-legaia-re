@@ -59,7 +59,7 @@ Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#f
 | `0xC2 XX` | 2 | Substitute item name from `PTR_DAT_8007436C[XX*3]`. |
 | `0xC3 XX` | 2 | Substitute magic name from `PTR_s_Magic_800754D0[XX*3]`. |
 | `0xC4 XX` | 2 | Substitute item name (different consumer site than `0xC2`; same `PTR_DAT_8007436C` table). |
-| `0xC5 XX` | 2 | Substitute spell name from 2D table at `DAT_80075EC4`, keyed by `(XX>>6, XX&0x3F)`. |
+| `0xC5 XX` | 2 | Substitute **Tactical Art name** from the [arts-name table](art-data.md#arts-name-table-dat_80075ec4) at `DAT_80075EC4`, keyed by `(character = XX>>6, art index = XX&0x3F)`. (Despite the "spell" naming this is the per-character *art* table, not magic - magic names use `0xC3`.) |
 | `0xC6 XX` | 2 | 2-byte wide glyph (no substitution; not in any switch case). |
 | `0xC7 XX` | 2 | Substitute terrain / quest name from `DAT_80073F24 + XX*8`. |
 | `0xC8..0xCD XX` | 2 | 2-byte wide glyph (stride only). |
