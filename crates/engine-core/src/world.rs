@@ -1537,6 +1537,27 @@ impl World {
                 // Refund AP into the active actor's gauge if it's a party slot.
                 self.ap_gauges[idx].refund(amount);
             }
+            crate::items::ItemOutcome::DamageDealt { amount } => {
+                // Offensive item (e.g. Bomb): subtract HP from the enemy slot
+                // and down it if it reaches zero.
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.hp = a.battle.hp.saturating_sub(amount);
+                    if a.battle.hp == 0 {
+                        a.battle.liveness = 0;
+                    }
+                }
+            }
+            crate::items::ItemOutcome::CaptureRolled { strength } => {
+                // Capture item: roll against the enemy's missing-HP fraction
+                // (shared with the Magic capture path); a success downs the
+                // monster and logs its id into `battle_captures`.
+                self.resolve_capture(target_slot, strength.min(u8::MAX as u16) as u8);
+            }
+            crate::items::ItemOutcome::EscapeRequested => {
+                // Escape item (e.g. Goblin Foot): flag the encounter to end;
+                // the battle item-menu tick returns to the field.
+                self.battle_escaped = true;
+            }
             _ => {}
         }
         outcome
@@ -3808,10 +3829,11 @@ impl World {
     }
 
     /// Build the battle-context inventory submenu from live world state:
-    /// every item the player holds (`count > 0`) plus one party-member
-    /// target row per living party slot, with live battle HP / MP. Targets
-    /// are party-only - the curated battle-usable items are heals / cures /
-    /// revives that apply to allies; offensive items aren't wired yet.
+    /// every item the player holds (`count > 0`), one party-member target row
+    /// per configured party slot, then one enemy row per live monster slot
+    /// (tagged `is_enemy`). Healing / cure / revive items validate against the
+    /// party rows; offensive items (Bomb / capture / escape) validate against
+    /// the enemy rows - the session routes the cursor to the correct side.
     fn build_battle_item_session(&self) -> crate::inventory_use::InventoryUseSession {
         use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow};
         let names = crate::field_menu_dispatch::roster_names(self);
@@ -3821,7 +3843,7 @@ impl World {
             .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
             .collect();
         let pc = self.party_count.clamp(1, 3) as usize;
-        let targets: Vec<TargetRow> = (0..pc)
+        let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
                 let a = self.actors.get(i)?;
                 // Skip unconfigured party slots (no battle stats).
@@ -3843,6 +3865,26 @@ impl World {
                 Some(row)
             })
             .collect();
+        // Enemy rows: every monster slot that's configured for battle. Tagged
+        // `is_enemy` so the session only accepts offensive items here.
+        for slot in pc..self.actors.len() {
+            let Some(a) = self.actors.get(slot) else {
+                break;
+            };
+            if a.battle.max_hp == 0 || a.battle_monster_id.is_none() {
+                continue;
+            }
+            let name = a
+                .battle_monster_id
+                .and_then(|id| self.monster_catalog.get(id))
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| format!("Enemy {}", slot - pc + 1));
+            let mut row = TargetRow::new(slot as u8, name)
+                .with_stats(a.battle.hp, a.battle.max_hp, 0, 0)
+                .with_enemy(true);
+            row.alive = a.battle.liveness != 0;
+            targets.push(row);
+        }
         InventoryUseSession::new(
             self.item_catalog.clone(),
             items,
@@ -3898,9 +3940,16 @@ impl World {
                 self.consume_item(item_id);
                 self.push_item_use_fx(target_slot, outcome);
             }
-            // Using an item is the actor's whole turn: park at EndOfAction so
-            // the live loop's re-arm block cycles to the next combatant.
-            self.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+            if self.battle_escaped {
+                // Escape item succeeded: leave the encounter now (no loot, no
+                // game-over) instead of cycling the turn.
+                self.finish_battle();
+            } else {
+                // Using an item is the actor's whole turn: park at EndOfAction
+                // so the live loop's re-arm block cycles to the next combatant.
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
             return;
         }
 
@@ -3929,15 +3978,17 @@ impl World {
     }
 
     /// Surface a cosmetic HUD popup for a resolved item use. Heals / MP
-    /// restores / revives push a heal-coloured number; cures push the status
-    /// letter. The HP / status side is already applied by [`Self::use_item`];
-    /// this is presentation-only (drained via [`Self::drain_battle_hit_fx`]).
+    /// restores / revives push a heal-coloured number; offensive items push a
+    /// damage-coloured number; cures push the status letter. The HP / status
+    /// side is already applied by [`Self::use_item`]; this is presentation-only
+    /// (drained via [`Self::drain_battle_hit_fx`]).
     fn push_item_use_fx(&mut self, target_slot: u8, outcome: crate::items::ItemOutcome) {
         use crate::items::ItemOutcome;
-        let amount = match outcome {
-            ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => amount,
-            ItemOutcome::Revived { hp_after } => hp_after,
-            // Cures / stat boosts / no-effect: no number to float.
+        let (amount, is_heal) = match outcome {
+            ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => (amount, true),
+            ItemOutcome::Revived { hp_after } => (hp_after, true),
+            ItemOutcome::DamageDealt { amount } => (amount, false),
+            // Cures / capture / escape / stat boosts / no-effect: no number.
             _ => return,
         };
         if amount == 0 {
@@ -3946,7 +3997,7 @@ impl World {
         self.battle_hit_fx.push(BattleHitFx {
             target_slot,
             amount,
-            is_heal: true,
+            is_heal,
             is_crit: false,
         });
     }
@@ -7511,6 +7562,151 @@ mod tests {
         assert_eq!(world.battle_command.as_ref().unwrap().actor, 0);
         // No item was consumed on a cancel.
         assert_eq!(world.inventory.get(&0x01).copied(), Some(1));
+    }
+
+    /// Build a 1-party-member, 1-monster battle world for the offensive-item
+    /// tests. The monster sits at slot 1 (party_count = 1) with the supplied
+    /// HP and a `battle_monster_id` so it shows up as an enemy target row.
+    #[cfg(test)]
+    fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
+        use crate::items::ItemCatalog;
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_item_catalog(ItemCatalog::vanilla());
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = monster_hp;
+        world.actors[1].battle.hp = monster_hp;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(monster_id);
+        world.battle_ctx.active_actor = 0;
+        world
+    }
+
+    #[test]
+    fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
+        use crate::input::PadButton;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = offensive_item_world(500, 7);
+        // Bomb (0x13) deals 200 HP to an enemy.
+        world.inventory.insert(0x13, 1);
+        world.battle_item_menu = Some(world.build_battle_item_session());
+        {
+            let m = world.battle_item_menu.as_ref().unwrap();
+            assert_eq!(m.targets.len(), 2, "one ally + one enemy target");
+            assert!(!m.targets[0].is_enemy, "ally row first");
+            assert!(m.targets[1].is_enemy, "enemy row second");
+        }
+
+        // Frame 1: Cross confirms the Bomb -> target select. The cursor must
+        // skip the ally and land on the enemy row (offensive item).
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+        {
+            let m = world.battle_item_menu.as_ref().unwrap();
+            match m.state {
+                crate::inventory_use::InventoryUseState::TargetSelect { cursor, .. } => {
+                    assert_eq!(cursor, 1, "cursor positioned on the enemy row");
+                }
+                other => panic!("expected TargetSelect, got {other:?}"),
+            }
+        }
+
+        // Frame 2: Cross confirms the enemy -> 200 damage.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+
+        assert_eq!(world.actors[1].battle.hp, 300, "500 -> 300 after Bomb");
+        assert_eq!(world.inventory.get(&0x13).copied(), None, "Bomb consumed");
+        assert!(world.battle_item_menu.is_none(), "menu closed after use");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert!(!fx[0].is_heal, "damage-coloured popup");
+        assert_eq!(fx[0].amount, 200);
+        assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_item_bomb_downs_a_low_hp_enemy() {
+        use crate::input::PadButton;
+
+        let mut world = offensive_item_world(120, 7);
+        world.inventory.insert(0x13, 1); // Bomb, 200 dmg vs 120 HP.
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm item -> target
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm enemy
+
+        assert_eq!(world.actors[1].battle.hp, 0, "HP floored at zero");
+        assert_eq!(world.actors[1].battle.liveness, 0, "monster downed");
+    }
+
+    #[test]
+    fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
+        use crate::input::PadButton;
+
+        // Weakened monster (10/500 HP) so the missing-HP capture roll is
+        // near-certain; pin the RNG so the roll (23) lands.
+        let mut world = offensive_item_world(500, 42);
+        world.actors[1].battle.hp = 10;
+        world.rng_state = 0;
+        world.inventory.insert(0x11, 1); // Genocide Crystal (capture).
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // item -> target (lands on enemy)
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm enemy
+
+        assert_eq!(
+            world.actors[1].battle.liveness, 0,
+            "captured monster downed"
+        );
+        assert_eq!(
+            world.drain_battle_captures(),
+            vec![42],
+            "monster id logged for post-battle Seru learning"
+        );
+    }
+
+    #[test]
+    fn battle_item_escape_returns_to_field() {
+        use crate::input::PadButton;
+
+        let mut world = offensive_item_world(500, 7);
+        world.inventory.insert(0x12, 1); // Goblin Foot (escape).
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // item -> target
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm
+
+        assert_eq!(world.mode, SceneMode::Field, "escaped back to the field");
+        assert!(!world.battle_escaped, "escape flag reset by finish_battle");
+        assert!(world.battle_item_menu.is_none(), "battle menus cleared");
+        assert_eq!(world.inventory.get(&0x12).copied(), None, "item consumed");
     }
 
     #[test]

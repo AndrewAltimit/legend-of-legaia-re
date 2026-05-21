@@ -59,6 +59,9 @@ pub struct TargetRow {
     pub name: String,
     /// `true` if the target is `is_dead == false`.
     pub alive: bool,
+    /// `true` for an enemy (monster) row. Offensive items (Damage / Capture)
+    /// require this; heals / cures / revives require it to be `false`.
+    pub is_enemy: bool,
     pub hp: u16,
     pub hp_max: u16,
     pub mp: u16,
@@ -71,6 +74,7 @@ impl TargetRow {
             slot,
             name: name.into(),
             alive: true,
+            is_enemy: false,
             hp: 0,
             hp_max: 0,
             mp: 0,
@@ -83,6 +87,12 @@ impl TargetRow {
         self.hp_max = hp_max;
         self.mp = mp;
         self.mp_max = mp_max;
+        self
+    }
+
+    /// Mark this row as an enemy (monster) target. Offensive items route here.
+    pub fn with_enemy(mut self, is_enemy: bool) -> Self {
+        self.is_enemy = is_enemy;
         self
     }
 
@@ -255,9 +265,22 @@ impl InventoryUseSession {
                     self.events.push(InventoryUseEvent::InvalidConfirm);
                     return;
                 }
+                // Start the cursor on the first target that's valid for this
+                // item's effect, so offensive items land on an enemy and heals
+                // land on an ally without the player scrolling past the wrong
+                // side. Falls back to row 0 when nothing matches.
+                let start = self
+                    .current_item()
+                    .map(|e| e.effect)
+                    .and_then(|eff| {
+                        self.targets
+                            .iter()
+                            .position(|t| target_valid_for_effect(&eff, t))
+                    })
+                    .unwrap_or(0);
                 self.state = InventoryUseState::TargetSelect {
                     item_cursor: cursor,
-                    cursor: 0,
+                    cursor: start,
                 };
                 self.events.push(InventoryUseEvent::EnteredTargetSelect);
             }
@@ -339,13 +362,18 @@ fn filter_items(items: &[u8], catalog: &ItemCatalog, context: InventoryContext) 
     out
 }
 
-/// Validate that the picked target makes sense for the chosen effect.
-/// Revive needs a dead target; everything else needs a live one.
+/// Validate that the picked target makes sense for the chosen effect, and
+/// that it is on the right side of the field. Revive needs a dead ally;
+/// offensive items (Damage / Capture) need a living enemy; Escape doesn't
+/// care which side; key items are never usable here; everything else
+/// (heals / cures / stat boosts / spirit) needs a living ally.
 fn target_valid_for_effect(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
-        ItemEffect::Revive { .. } => target.is_dead(),
+        ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        _ => target.alive,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.alive && target.is_enemy,
+        ItemEffect::Escape => target.alive,
+        _ => target.alive && !target.is_enemy,
     }
 }
 
@@ -402,6 +430,57 @@ mod tests {
         ));
         let evs = s.drain_events();
         assert_eq!(evs, vec![InventoryUseEvent::EnteredTargetSelect]);
+    }
+
+    fn mixed_targets() -> Vec<TargetRow> {
+        vec![
+            TargetRow::new(0, "Vahn").with_stats(100, 200, 10, 30),
+            TargetRow::new(3, "Slug")
+                .with_stats(60, 60, 0, 0)
+                .with_enemy(true),
+        ]
+    }
+
+    #[test]
+    fn offensive_item_starts_cursor_on_the_enemy_row() {
+        // Bomb (0x13) is offensive: confirming from browsing should skip the
+        // ally row and land the target cursor on the enemy.
+        let mut s = InventoryUseSession::new(
+            ItemCatalog::vanilla(),
+            vec![0x13],
+            mixed_targets(),
+            InventoryContext::Battle,
+        );
+        s.input(InventoryUseInput::Confirm);
+        match s.state {
+            InventoryUseState::TargetSelect { cursor, .. } => assert_eq!(cursor, 1),
+            other => panic!("expected TargetSelect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn healing_item_buzzes_when_confirmed_on_an_enemy_row() {
+        // Healing Leaf (0x01) is ally-only. Force the cursor onto the enemy
+        // row and confirm - it must reject with InvalidConfirm.
+        let mut s = InventoryUseSession::new(
+            ItemCatalog::vanilla(),
+            vec![0x01],
+            mixed_targets(),
+            InventoryContext::Battle,
+        );
+        s.input(InventoryUseInput::Confirm); // -> TargetSelect, cursor on ally (0)
+        s.input(InventoryUseInput::Down); // move onto the enemy row
+        s.drain_events();
+        s.input(InventoryUseInput::Confirm);
+        assert!(
+            matches!(s.state, InventoryUseState::TargetSelect { .. }),
+            "still selecting - the enemy is not a valid heal target"
+        );
+        assert!(
+            s.drain_events()
+                .contains(&InventoryUseEvent::InvalidConfirm),
+            "buzzed on the wrong-side target"
+        );
     }
 
     #[test]

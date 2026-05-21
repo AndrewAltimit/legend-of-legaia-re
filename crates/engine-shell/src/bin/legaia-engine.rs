@@ -6373,6 +6373,13 @@ fn cmd_play_window_with_record(
             // boot save, and the item list on the live inventory.
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
             world.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
+            // Seed a couple of demo items when the boot save carries none, so
+            // both the ally-heal and offensive (Bomb) item paths are
+            // exercisable in the window. (No-op when the save has inventory.)
+            if world.inventory.is_empty() {
+                world.inventory.insert(0x01, 5); // Healing Leaf
+                world.inventory.insert(0x13, 3); // Bomb (offensive)
+            }
             // Seed a couple of demo saved chains when the boot save carries
             // none, so the Arts submenu is exercisable in the window. (No-op
             // when the save already has a chain library.)
