@@ -289,6 +289,10 @@ enum Cmd {
         /// to the first textured prim's palette.
         #[arg(long)]
         palette: Option<usize>,
+        /// List the monster's decoded action animations (part/frame counts and
+        /// the idle action's per-object motion ranges). Requires `--id`.
+        #[arg(long)]
+        anim: bool,
     },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
@@ -606,7 +610,15 @@ fn main() -> Result<()> {
             obj,
             texture_png,
             palette,
-        } => monster_archive_one(&input, id, obj.as_deref(), texture_png.as_deref(), palette),
+            anim,
+        } => monster_archive_one(
+            &input,
+            id,
+            obj.as_deref(),
+            texture_png.as_deref(),
+            palette,
+            anim,
+        ),
         Cmd::Validate {
             dir,
             cdname,
@@ -3153,6 +3165,7 @@ fn monster_archive_one(
     obj: Option<&Path>,
     texture_png: Option<&Path>,
     palette: Option<usize>,
+    anim: bool,
 ) -> Result<()> {
     use legaia_asset::monster_archive;
     let bytes = std::fs::read(input)?;
@@ -3251,6 +3264,40 @@ fn monster_archive_one(
                 None => println!("  id {id}: no texture pool"),
             },
             None => println!("  id {id}: no mesh / texture (filler slot)"),
+        }
+    }
+    if anim {
+        let Some(id) = id else {
+            anyhow::bail!("--anim requires --id <N>");
+        };
+        match monster_archive::animations(&bytes, id)? {
+            Some(anims) if !anims.is_empty() => {
+                println!("  action animations: {}", anims.len());
+                for (i, a) in anims.iter().enumerate() {
+                    // Per-part motion range over the whole animation, so the
+                    // idle (index 0) is easy to eyeball vs the big move actions.
+                    let (mut max_t, mut max_r) = (0i32, 0u16);
+                    for f in &a.frames {
+                        for p in f {
+                            max_t = max_t
+                                .max((p.tx as i32).abs())
+                                .max((p.ty as i32).abs())
+                                .max((p.tz as i32).abs());
+                            max_r = max_r.max(p.rx).max(p.ry).max(p.rz);
+                        }
+                    }
+                    println!(
+                        "    [{i}] action 0x{:02X}{}  parts {:2}  frames {:3}  max|trans| {:5}  max rot {:5} (4096=turn)",
+                        a.action_id,
+                        if i == 0 { " (idle)" } else { "       " },
+                        a.part_count,
+                        a.frame_count,
+                        max_t,
+                        max_r,
+                    );
+                }
+            }
+            _ => println!("  id {id}: no action animations (filler slot / no mesh)"),
         }
     }
     Ok(())

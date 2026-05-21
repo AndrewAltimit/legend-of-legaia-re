@@ -141,6 +141,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/xa.html",            "XA-ADPCM",                      "formats/xa",                 "formats/xa.html"),
     ("formats/mes.html",           "MES dialog",                    "formats/mes",                "formats/mes.html"),
     ("formats/anm.html",           "ANM animation",                 "formats/anm",                "formats/anm.html"),
+    ("formats/monster-animation.html","Monster animation",           "formats/monster-animation",  "formats/monster-animation.html"),
     ("formats/mdt.html",           "MDT move table",                "formats/mdt",                "formats/mdt.html"),
     ("formats/art-data.html",      "Art data",                      "formats/art-data",           "formats/art-data.html"),
     ("formats/dialog-font.html",   "Dialog font",                   "formats/dialog-font",        "formats/dialog-font.html"),

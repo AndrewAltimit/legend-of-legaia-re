@@ -53,7 +53,8 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`tmd.md`](docs/formats/tmd.md) | Legaia TMD variant - magic `0x80000002`, custom primitive grouping (8-byte group header + `count × ilen*4` body), per-mode descriptor table at `DAT_8007326c`. |
 | [`vab.md`](docs/formats/vab.md) | VAB sound bank. |
 | [`mes.md`](docs/formats/mes.md) | MES dialog containers (Compact + Records variants). |
-| [`anm.md`](docs/formats/anm.md) | ANM animation pack. |
+| [`anm.md`](docs/formats/anm.md) | ANM animation pack (player / field actors). |
+| [`monster-animation.md`](docs/formats/monster-animation.md) | Enemy battle animation: per-object rigid-transform keyframes inside the monster archive (PROT 867). Per-action packed stream at entry `+0x8c` (`[u8 parts][u8 frames][9-byte TRS records]`); action 0 = idle. Decoder `FUN_8004998c`. |
 | [`mdt.md`](docs/formats/mdt.md) | Move table (Tactical Arts). |
 | [`art-data.md`](docs/formats/art-data.md) | Art records: per-character ActionConstants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
 | [`encounter.md`](docs/formats/encounter.md) | Encounter record installed at `actor[+0x94]`: `[3 reserved][count: u8][monster_ids: u8[count]]`. Reader at `FUN_801DA51C` body `0x801DA620..0x801DA678`. |

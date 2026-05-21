@@ -212,3 +212,89 @@ fn monster_texture_pool_decodes_palettes_and_4bpp_page() {
         "some palette uses a transparent index-0"
     );
 }
+
+#[test]
+fn animation_streams_decode_one_part_per_tmd_object() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Gimard (id 10): action index 0 is the idle animation. Its packed stream
+    // at entry +0x8c carries one part per TMD object (11) across 40 frames.
+    let mesh = monster_archive::mesh(&entry, 10).unwrap().unwrap();
+    let nobj = legaia_tmd::parse(mesh.tmd_bytes()).unwrap().objects.len();
+    assert_eq!(nobj, 11, "Gimard TMD object count");
+
+    let idle = monster_archive::idle_animation(&entry, 10)
+        .unwrap()
+        .expect("Gimard has an idle animation");
+    assert_eq!(idle.action_id, 0, "action index 0 is the idle action");
+    assert_eq!(idle.part_count, nobj, "one animated part per TMD object");
+
+    // The site animates per object, so the VRAM mesh must expose a per-vertex
+    // object id parallel to its positions, every id within the object count.
+    let (vmesh, object_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(
+        &legaia_tmd::parse(mesh.tmd_bytes()).unwrap(),
+        mesh.tmd_bytes(),
+    );
+    assert_eq!(
+        object_ids.len(),
+        vmesh.positions.len(),
+        "one object id per vertex"
+    );
+    assert!(
+        object_ids.iter().all(|&o| (o as usize) < nobj),
+        "object ids in range"
+    );
+    assert_eq!(idle.frame_count, 40, "Gimard idle has 40 frames");
+    assert_eq!(idle.frames.len(), 40);
+    assert!(idle.frames.iter().all(|f| f.len() == nobj));
+    // Rotations are 12-bit angles (< 4096); the idle has some motion.
+    assert!(
+        idle.frames
+            .iter()
+            .flatten()
+            .all(|p| p.rx < 4096 && p.ry < 4096 && p.rz < 4096)
+    );
+    let f0 = &idle.frames[0];
+    let f_mid = &idle.frames[idle.frame_count / 2];
+    assert!(
+        f0.iter().zip(f_mid).any(|(a, b)| a != b),
+        "idle animation actually moves between frame 0 and the midpoint"
+    );
+
+    // Across the whole roster: every monster with a mesh decodes at least one
+    // action animation, and (with one known exception) each action's part count
+    // matches the monster's TMD object count.
+    let (mut with_anim, mut total_mesh, mut part_match, mut action_total) = (0, 0, 0, 0);
+    for id in 1..=monster_archive::slot_count(&entry) as u16 {
+        let Some(mesh) = monster_archive::mesh(&entry, id).unwrap() else {
+            continue;
+        };
+        let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+            continue;
+        };
+        total_mesh += 1;
+        let nobj = tmd.objects.len();
+        let anims = monster_archive::animations(&entry, id).unwrap().unwrap();
+        if !anims.is_empty() {
+            with_anim += 1;
+        }
+        for a in &anims {
+            action_total += 1;
+            if a.part_count == nobj {
+                part_match += 1;
+            }
+        }
+    }
+    assert!(total_mesh > 100, "expected >100 meshes, got {total_mesh}");
+    assert!(
+        with_anim as f64 / total_mesh as f64 > 0.95,
+        "expected >95% of meshes to carry action animations, got {with_anim}/{total_mesh}"
+    );
+    assert!(
+        part_match as f64 / action_total as f64 > 0.98,
+        "expected >98% of actions to animate one part per TMD object, got {part_match}/{action_total}"
+    );
+}
