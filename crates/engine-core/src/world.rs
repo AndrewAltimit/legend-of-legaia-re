@@ -343,6 +343,26 @@ impl Actor {
     }
 }
 
+/// One active stat buff / debuff produced by a battle Magic cast.
+///
+/// The applied delta is the exact change written into the per-slot scalar
+/// ([`World::battle_attack`] / [`World::battle_defense`] / [`World::battle_magic`]),
+/// so [`World::finish_battle`] (or natural expiry) can revert it precisely.
+/// Stats with no live-loop scalar (Accuracy / Evasion / Speed) are tracked
+/// with a zero delta so the timer still expires cleanly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleBuff {
+    /// Actor-table slot the buff applies to.
+    pub slot: u8,
+    /// Buffed stat.
+    pub stat: crate::spells::BuffStat,
+    /// Signed delta actually written into the per-slot scalar (`0` for stats
+    /// that have no live-loop scalar).
+    pub applied_delta: i16,
+    /// Turns remaining before the buff expires.
+    pub turns: u8,
+}
+
 /// Singleton world / scene held by an engine integration.
 ///
 /// Holds the actor table, the active battle-action ctx (when the scene mode
@@ -886,6 +906,24 @@ pub struct World {
     /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
 
+    /// Active stat buffs / debuffs applied by battle Magic, one entry per
+    /// `(slot, stat)`. Each holds the exact delta written into the per-slot
+    /// scalar so expiry can undo it, plus the remaining turn count (decremented
+    /// at the start of the buffed actor's turn). Cleared - and their deltas
+    /// reverted - by [`World::finish_battle`].
+    pub battle_buffs: Vec<BattleBuff>,
+
+    /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
+    /// The captured monster is downed immediately; the host drains this for
+    /// post-battle Seru-learning resolution (the live loop carries no Seru
+    /// registry, so the learn step itself lives outside the battle tick).
+    pub battle_captures: Vec<u16>,
+
+    /// Set when an escape spell (`SpellEffect::Escape`) resolves. The live
+    /// battle tick returns to the field on the next pass (no loot, no
+    /// game-over). Cleared by [`World::finish_battle`].
+    pub battle_escaped: bool,
+
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
     /// outside battle.
@@ -1057,6 +1095,9 @@ impl World {
             item_catalog: crate::items::ItemCatalog::default(),
             spell_catalog: crate::spells::SpellCatalog::default(),
             art_records: std::collections::HashMap::new(),
+            battle_buffs: Vec::new(),
+            battle_captures: Vec::new(),
+            battle_escaped: false,
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
@@ -3483,8 +3524,14 @@ impl World {
             }) => {
                 let caster = menu.actor;
                 self.apply_battle_spell(caster, spell_id, target_row, target_slot);
-                self.battle_ctx.action_state =
-                    vm::battle_action::ActionState::EndOfAction.as_byte();
+                if self.battle_escaped {
+                    // Escape spell succeeded: leave the encounter now (no loot,
+                    // no game-over) instead of cycling the turn.
+                    self.finish_battle();
+                } else {
+                    self.battle_ctx.action_state =
+                        vm::battle_action::ActionState::EndOfAction.as_byte();
+                }
             }
             Some(SpellResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -3502,8 +3549,8 @@ impl World {
     /// (single → the picked slot; `AllEnemies` / `AllAllies` → the whole band),
     /// each resolved through [`crate::spells::cast_spell`]. Caster magic comes
     /// from [`Self::battle_magic`]; target magic-defense reuses
-    /// [`Self::battle_defense`]. Buff / capture / escape outcomes have no
-    /// live-loop application yet and are skipped.
+    /// [`Self::battle_defense`]. Damage / heal / cure / revive / buff / capture
+    /// / escape all fold through [`Self::fold_spell_outcome`].
     fn apply_battle_spell(
         &mut self,
         caster: u8,
@@ -3571,7 +3618,10 @@ impl World {
     /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
     /// state and surface a HUD popup. Damage subtracts HP (and downs the
     /// target at zero); heals / revives add HP (capped); cures clear the
-    /// target's status. Buff / capture / escape / failed are no-ops here.
+    /// target's status; buffs adjust a per-slot scalar with a turn timer
+    /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
+    /// state ([`Self::resolve_capture`]); escape flags a return to the field
+    /// ([`Self::battle_escaped`]). `Failed` is a no-op (MP already spent).
     fn fold_spell_outcome(&mut self, outcome: crate::spells::SpellOutcome) {
         use crate::spells::SpellOutcome as O;
         match outcome {
@@ -3619,10 +3669,142 @@ impl World {
                     is_crit: false,
                 });
             }
-            // Multi-target variants aren't produced by per-slot casts; buff /
-            // capture / escape / failed have no live-loop application yet.
+            O::Buff {
+                target,
+                stat,
+                magnitude,
+                turns,
+            } => {
+                self.apply_battle_buff(target, stat, magnitude, turns);
+            }
+            O::CaptureRoll { target, hit_pct } => {
+                self.resolve_capture(target, hit_pct);
+            }
+            O::Escape => {
+                self.battle_escaped = true;
+            }
+            // Multi-target variants aren't produced by per-slot casts; Failed
+            // is a no-op (MP was already spent up front).
             _ => {}
         }
+    }
+
+    /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
+    /// straight into the matching per-slot battle scalar so it changes damage
+    /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
+    /// [`Self::battle_attack`] / [`Self::battle_magic`] / [`Self::battle_defense`]
+    /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy). The
+    /// scalar is `u16`, so a negative magnitude saturates at zero and the
+    /// recorded `applied_delta` is the exact change (for precise undo on
+    /// expiry). Accuracy / Evasion / Speed have no live-loop scalar; the buff
+    /// is tracked with a zero delta so the turn timer still runs. Re-casting
+    /// the same `(slot, stat)` refreshes: the old delta is reverted first.
+    fn apply_battle_buff(
+        &mut self,
+        slot: u8,
+        stat: crate::spells::BuffStat,
+        magnitude: i16,
+        turns: u8,
+    ) {
+        // Refresh: revert + drop any existing buff on this (slot, stat).
+        if let Some(pos) = self
+            .battle_buffs
+            .iter()
+            .position(|b| b.slot == slot && b.stat == stat)
+        {
+            let old = self.battle_buffs.remove(pos);
+            self.add_to_buff_scalar(old.slot, old.stat, -old.applied_delta);
+        }
+        if turns == 0 {
+            return;
+        }
+        let applied_delta = self.add_to_buff_scalar(slot, stat, magnitude);
+        self.battle_buffs.push(BattleBuff {
+            slot,
+            stat,
+            applied_delta,
+            turns,
+        });
+    }
+
+    /// Add `delta` to the per-slot scalar backing `stat` and return the exact
+    /// change made (after `u16` saturation). Stats with no live-loop scalar
+    /// return `0`.
+    fn add_to_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat, delta: i16) -> i16 {
+        use crate::spells::BuffStat;
+        let scalar = match stat {
+            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Defense | BuffStat::MagicDefense => {
+                self.battle_defense.get_mut(slot as usize)
+            }
+            BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
+        };
+        let Some(scalar) = scalar else { return 0 };
+        let before = *scalar as i32;
+        let after = (before + delta as i32).clamp(0, u16::MAX as i32);
+        *scalar = after as u16;
+        (after - before) as i16
+    }
+
+    /// Tick the buffs on `slot` at the start of its turn: decrement each, and
+    /// revert + drop those that reach zero.
+    fn tick_battle_buffs_on_turn(&mut self, slot: u8) {
+        let mut expired: Vec<BattleBuff> = Vec::new();
+        self.battle_buffs.retain_mut(|b| {
+            if b.slot != slot {
+                return true;
+            }
+            b.turns = b.turns.saturating_sub(1);
+            if b.turns == 0 {
+                expired.push(*b);
+                false
+            } else {
+                true
+            }
+        });
+        for b in expired {
+            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+        }
+    }
+
+    /// Resolve a capture-spell roll against the monster in `target`. The
+    /// effective chance scales with the monster's missing-HP fraction (full
+    /// `hit_pct` only near death, zero at full HP) - mirroring retail capture,
+    /// which is reliable only on a weakened Seru. On success the monster is
+    /// downed (so it counts toward the wipe) and its id is logged into
+    /// [`Self::battle_captures`] for post-battle Seru learning.
+    fn resolve_capture(&mut self, target: u8, hit_pct: u8) {
+        let (hp, max, monster_id, alive) = match self.actors.get(target as usize) {
+            Some(a) => (
+                a.battle.hp as u32,
+                a.battle.max_hp as u32,
+                a.battle_monster_id,
+                a.battle.liveness != 0,
+            ),
+            None => return,
+        };
+        if !alive || max == 0 {
+            return;
+        }
+        let missing = max.saturating_sub(hp);
+        let effective = (hit_pct as u32 * missing / max).min(100);
+        let roll = self.next_rng() % 100;
+        if roll >= effective {
+            return;
+        }
+        if let Some(a) = self.actors.get_mut(target as usize) {
+            a.battle.hp = 0;
+            a.battle.liveness = 0;
+        }
+        if let Some(id) = monster_id {
+            self.battle_captures.push(id);
+        }
+    }
+
+    /// Drain the monster ids captured this battle (see [`Self::battle_captures`]).
+    pub fn drain_battle_captures(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.battle_captures)
     }
 
     /// Build the battle-context inventory submenu from live world state:
@@ -3903,6 +4085,9 @@ impl World {
             && monsters_alive
             && let Some(next) = self.next_living_combatant(self.battle_ctx.active_actor)
         {
+            // Start-of-turn: age this actor's buffs / debuffs, reverting any
+            // that expire this turn.
+            self.tick_battle_buffs_on_turn(next);
             let next_is_party = next < party_count;
             if next_is_party && self.battle_player_driven {
                 // Party turn under player control: pause the SM and let the
@@ -4016,6 +4201,15 @@ impl World {
         }
         self.active_formation = None;
         self.battle_end = None;
+        self.battle_escaped = false;
+        // Revert any lingering buff deltas so the per-slot scalars return to
+        // base, then drop the trackers + captured-id log (a new battle re-inits
+        // these).
+        let buffs = std::mem::take(&mut self.battle_buffs);
+        for b in buffs {
+            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+        }
+        self.battle_captures.clear();
         // Drop any open command / item / spell session - they belong to the
         // finished battle.
         self.battle_command = None;
@@ -7384,6 +7578,164 @@ mod tests {
         assert_eq!(fx.len(), 1);
         assert!(!fx[0].is_heal, "offensive spell is damage, not heal");
         assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
+        use crate::spells::{BuffStat, SpellOutcome};
+
+        let mut world = World::default();
+        world.set_battle_attack(0, 50);
+
+        // Power Up: +20 Attack for 2 turns.
+        world.fold_spell_outcome(SpellOutcome::Buff {
+            target: 0,
+            stat: BuffStat::Attack,
+            magnitude: 20,
+            turns: 2,
+        });
+        assert_eq!(world.battle_attack[0], 70, "buff adds to the scalar");
+        assert_eq!(world.battle_buffs.len(), 1);
+
+        // Re-casting refreshes (reverts the old delta first, no stacking).
+        world.fold_spell_outcome(SpellOutcome::Buff {
+            target: 0,
+            stat: BuffStat::Attack,
+            magnitude: 20,
+            turns: 2,
+        });
+        assert_eq!(world.battle_attack[0], 70, "refresh does not stack");
+        assert_eq!(world.battle_buffs.len(), 1);
+
+        // Ages one turn per the buffed actor's turn; expires on the 2nd.
+        world.tick_battle_buffs_on_turn(0);
+        assert_eq!(world.battle_attack[0], 70);
+        world.tick_battle_buffs_on_turn(0);
+        assert_eq!(
+            world.battle_attack[0], 50,
+            "expiry reverts the delta exactly"
+        );
+        assert!(world.battle_buffs.is_empty());
+    }
+
+    #[test]
+    fn battle_magic_debuff_saturates_at_zero_and_reverts_exactly() {
+        use crate::spells::{BuffStat, SpellOutcome};
+
+        let mut world = World::default();
+        // Power Down on an enemy with a small attack: -25 saturates the u16
+        // scalar at 0, and the recorded delta is the actual change (-10).
+        world.set_battle_attack(3, 10);
+        world.fold_spell_outcome(SpellOutcome::Buff {
+            target: 3,
+            stat: BuffStat::Attack,
+            magnitude: -25,
+            turns: 1,
+        });
+        assert_eq!(world.battle_attack[3], 0, "debuff saturates at zero");
+
+        // One tick expires it; the exact -10 delta is reverted back to 10.
+        world.tick_battle_buffs_on_turn(3);
+        assert_eq!(world.battle_attack[3], 10);
+        assert!(world.battle_buffs.is_empty());
+    }
+
+    #[test]
+    fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
+        use crate::spells::SpellOutcome;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // rng_state 0 -> first next_rng() % 100 == 23 (deterministic).
+        world.rng_state = 0;
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 10; // missing 90
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(42);
+
+        // hit_pct 60, missing 90/100 -> effective 54; roll 23 < 54 -> captured.
+        world.fold_spell_outcome(SpellOutcome::CaptureRoll {
+            target: 1,
+            hit_pct: 60,
+        });
+        assert_eq!(
+            world.actors[1].battle.liveness, 0,
+            "captured monster is downed"
+        );
+        assert_eq!(world.actors[1].battle.hp, 0);
+        assert_eq!(world.drain_battle_captures(), vec![42]);
+
+        // A near-full-HP monster has a tiny effective chance -> the same roll
+        // misses and the monster is untouched.
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.rng_state = 0; // roll 23
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 95; // missing 5 -> effective 3
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(7);
+        world.fold_spell_outcome(SpellOutcome::CaptureRoll {
+            target: 1,
+            hit_pct: 60,
+        });
+        assert_eq!(
+            world.actors[1].battle.liveness, 1,
+            "healthy monster resists"
+        );
+        assert!(world.battle_captures.is_empty());
+    }
+
+    #[test]
+    fn battle_magic_escape_returns_to_field() {
+        use crate::input::PadButton;
+        use crate::spells::SpellCatalog;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 100;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.mp = 20;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = 200;
+        world.actors[1].battle.hp = 200;
+        world.actors[1].battle.liveness = 1;
+        world.spell_catalog = SpellCatalog::vanilla();
+
+        // Open the spell submenu with Warp (0x41, SelfOnly escape) learned.
+        world.battle_ctx.active_actor = 0;
+        world.battle_spell_menu = Some(crate::battle_magic::BattleSpellSession::new(
+            0,
+            0,
+            &[0x41],
+            &world.spell_catalog,
+            20,
+        ));
+
+        // SelfOnly target resolves immediately, so one Cross casts Warp.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+
+        assert_eq!(world.mode, SceneMode::Field, "escape returns to the field");
+        assert!(
+            world.battle_spell_menu.is_none(),
+            "submenu dropped on escape"
+        );
+        assert!(
+            !world.battle_escaped,
+            "escape flag cleared by finish_battle"
+        );
+        assert!(world.last_battle_rewards.is_none(), "escape grants no loot");
     }
 
     #[test]
