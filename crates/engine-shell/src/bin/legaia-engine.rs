@@ -3312,6 +3312,11 @@ struct PlayWindowApp {
     /// the target's `BattleActor::hp` via `World::fold_battle_event`). The
     /// log is empty until a battle SM actually fires.
     battle_event_log: std::collections::VecDeque<String>,
+    /// Damage-popup / status model for the battle HUD. Fed each frame from
+    /// `World::drain_battle_hit_fx` (floating numbers) + the live status
+    /// tracker (per-slot icons); aged by `BattleHud::tick`. Popups + status
+    /// letters are drawn anchored to the per-slot HP rows in `build_hud`.
+    battle_hud: legaia_engine_core::battle_hud::BattleHud,
     /// Actor slots queued for render-side mesh upload. Populated when a
     /// `FieldEvent::ActorSpawned` fires with a non-`None` `Actor::tmd_ref`
     /// (the field-VM `0x4C 0xD8` synchronous-spawn path); drained in the
@@ -3914,6 +3919,40 @@ impl PlayWindowApp {
             }
             self.battle_event_log.push_back(ev.summary());
         }
+
+        // Floating damage / heal numbers: the live battle loop resolves and
+        // applies HP itself, then queues a presentation-only FX per strike.
+        // Feed those into the popup model and log the magnitude (the typed
+        // events above are consumed inside the live loop, so this is the
+        // only place per-strike damage surfaces while live).
+        let fx = self.session.host.world.drain_battle_hit_fx();
+        for f in fx {
+            if f.is_heal {
+                self.battle_hud.push_heal(f.target_slot, f.amount);
+            } else if f.is_crit {
+                self.battle_hud.push_popup(
+                    legaia_engine_core::battle_hud::DamagePopup::damage(f.target_slot, f.amount)
+                        .crit(),
+                );
+            } else {
+                self.battle_hud.push_damage(f.target_slot, f.amount);
+            }
+            if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
+                self.battle_event_log.pop_front();
+            }
+            let sign = if f.is_heal { '+' } else { '-' };
+            self.battle_event_log
+                .push_back(format!("slot {} {}{} HP", f.target_slot, sign, f.amount));
+        }
+
+        // Refresh per-slot status icons + age the popups one frame.
+        if self.session.host.world.mode == SceneMode::Battle {
+            for slot in 0..self.battle_hud.slots.len() as u8 {
+                self.battle_hud
+                    .sync_status(slot, &self.session.host.world.status_effects);
+            }
+        }
+        self.battle_hud.tick();
     }
 
     /// Build [`TextDraw`]s for an active field-menu sub-session. Each
@@ -5417,6 +5456,10 @@ impl PlayWindowApp {
             let down_color = [0.6f32, 0.6, 0.6, 1.0];
             let enemy_color = [1.0f32, 0.7, 0.6, 1.0];
 
+            // Per-actor-index row Y, recorded as rows are drawn so popups +
+            // status icons anchor to the right slot even though the monster
+            // loop skips empty slots.
+            let mut row_y: [Option<i32>; 8] = [None; 8];
             let mut y = 60i32;
             for (i, a) in bw.actors.iter().take(pc).enumerate() {
                 let line = format!("P{}  HP {:>4}/{:<4}", i + 1, a.battle.hp, a.battle.max_hp);
@@ -5430,6 +5473,9 @@ impl PlayWindowApp {
                     (8, y),
                     color,
                 ));
+                if i < row_y.len() {
+                    row_y[i] = Some(y);
+                }
                 y += 16;
             }
             y += 8;
@@ -5451,7 +5497,58 @@ impl PlayWindowApp {
                     (8, y),
                     color,
                 ));
+                let actor_idx = pc + mi;
+                if actor_idx < row_y.len() {
+                    row_y[actor_idx] = Some(y);
+                }
                 y += 16;
+            }
+
+            // Status-effect icon strip per slot (single-letter abbreviations
+            // from the live tracker), drawn to the right of the HP row.
+            let status_color = [1.0f32, 0.95, 0.4, 1.0];
+            for (slot, anchor) in row_y.iter().enumerate() {
+                let Some(ry) = anchor else { continue };
+                let letters = self.battle_hud.slots[slot].status_letters();
+                for (k, letter) in letters.iter().enumerate() {
+                    let s = (*letter as char).to_string();
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii(&s),
+                        (170 + k as i32 * 8, *ry),
+                        status_color,
+                    ));
+                }
+            }
+
+            // Floating damage / heal numbers, anchored just above each slot's
+            // HP row and fading with the popup's remaining lifetime.
+            let dmg_color = [0.5f32, 0.85, 1.0, 1.0];
+            let heal_color = [0.5f32, 1.0, 0.5, 1.0];
+            let crit_color = [1.0f32, 0.95, 0.4, 1.0];
+            for p in self.battle_hud.popup_views() {
+                let Some(Some(ry)) = row_y.get(p.slot as usize) else {
+                    continue;
+                };
+                let base = if p.is_heal {
+                    heal_color
+                } else if p.is_crit {
+                    crit_color
+                } else {
+                    dmg_color
+                };
+                let color = [base[0], base[1], base[2], base[3] * p.alpha.clamp(0.0, 1.0)];
+                let text = if let Some(letter) = p.status_letter {
+                    format!("[{}]", letter as char)
+                } else if p.is_heal {
+                    format!("+{}", p.amount)
+                } else {
+                    format!("-{}", p.amount)
+                };
+                out.extend(text_draws_for(
+                    &self.font.layout_ascii(&text),
+                    (120, *ry - 14),
+                    color,
+                ));
             }
 
             // Player-driven command menu / target cursor.
@@ -6346,6 +6443,7 @@ fn cmd_play_window_with_record(
         menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
         prev_pad: 0,
         battle_event_log: std::collections::VecDeque::new(),
+        battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),

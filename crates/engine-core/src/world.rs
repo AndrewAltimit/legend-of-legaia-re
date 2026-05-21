@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use crate::battle_events::BattleEvent;
+use crate::battle_events::{BattleEvent, BattleHitFx};
 use crate::field_events::FieldEvent;
 use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
@@ -588,6 +588,15 @@ pub struct World {
     /// [`BattleEvent`]: crate::battle_events::BattleEvent
     pub pending_battle_events: Vec<BattleEvent>,
 
+    /// Presentation-only per-strike HP deltas surfaced for HUD damage
+    /// popups. The gameplay-state HP mutation has *already* happened by
+    /// the time an entry lands here (the live battle loop folds art-strike
+    /// damage and applies the generic physical strike before queuing the
+    /// matching FX), so engines must NOT re-apply these to HP - they only
+    /// drive the floating-number / status overlay. Drained by the host via
+    /// [`World::drain_battle_hit_fx`]; cleared on battle exit.
+    pub battle_hit_fx: Vec<BattleHitFx>,
+
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
     /// a scene starts one. Updated synchronously when the VM emits the
     /// corresponding `Bgm` event.
@@ -973,6 +982,7 @@ impl World {
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
+            battle_hit_fx: Vec::new(),
             current_bgm: None,
             current_dialog: None,
             last_field_interact: None,
@@ -1202,6 +1212,14 @@ impl World {
     /// Returns events in emission order.
     pub fn drain_battle_events(&mut self) -> Vec<BattleEvent> {
         std::mem::take(&mut self.pending_battle_events)
+    }
+
+    /// Drain the presentation-only per-strike HP deltas queued by the live
+    /// battle loop. Engines feed these into a damage-popup model; the HP
+    /// mutation has already happened, so they are never re-applied. Returns
+    /// the FX in the order they were resolved this frame.
+    pub fn drain_battle_hit_fx(&mut self) -> Vec<BattleHitFx> {
+        std::mem::take(&mut self.battle_hit_fx)
     }
 
     /// Apply the gameplay-state side of a single battle event - currently
@@ -3087,8 +3105,25 @@ impl World {
         let events = std::mem::take(&mut self.pending_battle_events);
         let mut art_strike_applied = false;
         for e in &events {
-            if matches!(e, BattleEvent::ApplyArtStrike { .. }) {
+            if let BattleEvent::ApplyArtStrike {
+                target_slot,
+                outcome,
+                ..
+            } = e
+            {
                 art_strike_applied = true;
+                // Surface the resolved strike damage for HUD popups (the
+                // fold below applies the HP side; this is cosmetic only).
+                if let Some(dmg) = outcome.damage
+                    && dmg > 0
+                {
+                    self.battle_hit_fx.push(BattleHitFx {
+                        target_slot: *target_slot,
+                        amount: dmg,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+                }
             }
             self.fold_battle_event(e);
         }
@@ -3180,6 +3215,13 @@ impl World {
         if a.battle.hp == 0 {
             a.battle.liveness = 0;
         }
+        // Surface the strike for HUD damage popups.
+        self.battle_hit_fx.push(BattleHitFx {
+            target_slot: target as u8,
+            amount: dmg,
+            is_heal: false,
+            is_crit: false,
+        });
     }
 
     /// Resolve a finished battle and return to the field.
@@ -3208,6 +3250,8 @@ impl World {
         self.battle_end = None;
         // Drop any open command session - it belongs to the finished battle.
         self.battle_command = None;
+        // Stale damage popups must not bleed into the next encounter / field.
+        self.battle_hit_fx.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Restore the field actor table captured at the transition.
@@ -6234,6 +6278,32 @@ mod tests {
         let rewards = world.apply_battle_loot(&formation, &cat);
         assert_eq!(rewards.drops, vec![0x42]);
         assert_eq!(world.inventory.get(&0x42).copied(), Some(1));
+    }
+
+    #[test]
+    fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        // Slot 0 attacker, slot 1 a living monster.
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.hp = 60;
+        world.actors[1].battle.max_hp = 60;
+        world.actors[1].battle.liveness = 1;
+        world.battle_ctx.active_actor = 0;
+        // Give the attacker enough ATK to chip the monster (>defense).
+        world.battle_attack[0] = 40;
+        world.battle_defense[1] = 10;
+        world.apply_basic_attack();
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert_eq!(fx[0].target_slot, 1);
+        assert!(fx[0].amount > 0);
+        assert!(!fx[0].is_heal);
+        // Drain empties the queue.
+        assert!(world.drain_battle_hit_fx().is_empty());
     }
 
     #[test]

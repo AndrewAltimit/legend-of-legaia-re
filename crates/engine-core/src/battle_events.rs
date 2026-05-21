@@ -87,6 +87,26 @@ pub enum BattleEvent {
     },
 }
 
+/// One resolved per-strike HP delta, surfaced purely for HUD presentation
+/// (floating damage / heal numbers).
+///
+/// This is a *cosmetic* signal: the gameplay-state HP mutation has already
+/// been applied by the battle loop before an entry is queued, so engines
+/// feed these straight into a damage-popup model and never re-subtract HP.
+/// Distinct from [`BattleEvent`], which carries state-machine side effects
+/// the engine still has to act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleHitFx {
+    /// Actor table index the number floats over (0..=2 party, 3.. monsters).
+    pub target_slot: u8,
+    /// Magnitude of the HP delta (always positive; `is_heal` gives sign).
+    pub amount: u16,
+    /// `true` when the delta restored HP (rendered green / `+N`).
+    pub is_heal: bool,
+    /// `true` for a critical / all-stars hit (rendered with emphasis).
+    pub is_crit: bool,
+}
+
 impl BattleEvent {
     /// One-line description for logging / asset-viewer overlays.
     pub fn summary(&self) -> String {
