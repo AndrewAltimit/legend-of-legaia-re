@@ -355,10 +355,41 @@ export class LegaiaViewer {
      */
     monster_mesh_normals(id: number): Float32Array;
     /**
+     * Per-vertex palette index (`cba & 0x3F`) for monster `id`'s mesh, as
+     * floats (parallel to [`Self::monster_mesh_positions`]). The JS shader
+     * uses it to pick the row of the palette texture.
+     */
+    monster_mesh_palette_index(id: number): Float32Array;
+    /**
      * Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
      * 3 floats per vertex). Empty if the id has no mesh.
      */
     monster_mesh_positions(id: number): Float32Array;
+    /**
+     * Per-vertex texture coords for monster `id`'s mesh, normalised to
+     * `[0, 1]` against the texture-page dimensions (parallel to
+     * [`Self::monster_mesh_positions`], 2 floats per vertex). Empty if the id
+     * has no mesh or no texture.
+     */
+    monster_mesh_uvs(id: number): Float32Array;
+    /**
+     * `[width, height]` of monster `id`'s texture page in texels (128 or 256
+     * wide, always 256 tall). `[0, 0]` if the id has no texture.
+     */
+    monster_texture_dims(id: number): Uint32Array;
+    /**
+     * Monster `id`'s 4bpp texture page as one palette index (`0..=15`) per
+     * texel, row-major (`width * height` bytes). Upload as an `R8UI`/`R8`
+     * texture and pair with [`Self::monster_texture_palette_rgba`]. Empty if
+     * the id has no texture.
+     */
+    monster_texture_indices(id: number): Uint8Array;
+    /**
+     * Monster `id`'s 15 palettes flattened to a `15 * 16` RGBA8 row (palette
+     * `p`, colour `c` at pixel `p * 16 + c`). Index-0 transparent colours
+     * carry alpha 0. Empty if the id has no texture.
+     */
+    monster_texture_palette_rgba(id: number): Uint8Array;
     constructor(canvas_id: string);
     next_entry(): number;
     /**
@@ -662,7 +693,12 @@ export interface InitOutput {
     readonly legaiaviewer_monster_mesh_bounds: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_indices: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_palette_index: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_positions: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_uvs: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_texture_dims: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_texture_indices: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_texture_palette_rgba: (a: number, b: number) => [number, number];
     readonly legaiaviewer_new: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_next_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_ocean_animation_frames: (a: number) => [number, number];

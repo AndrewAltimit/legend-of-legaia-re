@@ -154,3 +154,61 @@ fn monster_mesh_is_an_embedded_tmd_at_record_plus_4() {
         "expected >95% of populated records to carry a parseable mesh, got {with_mesh}/{total}"
     );
 }
+
+#[test]
+fn monster_texture_pool_decodes_palettes_and_4bpp_page() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // The texture-pool layout (`FUN_80055468`): 0x1E0-byte CLUT region of 15
+    // sixteen-colour palettes, then a 4bpp page that is always 256 rows tall
+    // and 128 (narrow) or 256 (wide) texels across. The byte arithmetic is
+    // exact: pool_len == 0x1E0 + width_texels * 256 / 2.
+    let gimard = monster_archive::mesh(&entry, 10).unwrap().unwrap();
+    let gt = gimard.texture().expect("Gimard has a texture pool");
+    assert_eq!(gt.height, 256, "page is 256 rows tall");
+    assert_eq!(gt.width, 128, "Gimard is a narrow (128-texel) page");
+    assert_eq!(gt.palettes.len(), 15, "15 palettes");
+    assert_eq!(
+        gt.indices.len(),
+        gt.width * gt.height,
+        "one index per texel"
+    );
+    assert!(
+        gt.indices.iter().all(|&i| i < 16),
+        "every texel index fits a 16-colour palette"
+    );
+    let pool_len = gimard.texture_pool_bytes().unwrap().len();
+    assert_eq!(
+        pool_len,
+        0x1E0 + gt.width * gt.height / 2,
+        "pool length is exactly CLUT region + 4bpp page"
+    );
+
+    // Tetsu (id 79) is a wide humanoid: a 256-texel page (double the bytes).
+    let tetsu = monster_archive::mesh(&entry, 79).unwrap().unwrap();
+    let tt = tetsu.texture().expect("Tetsu has a texture pool");
+    assert_eq!(tt.width, 256, "Tetsu is a wide (256-texel) page");
+    assert_eq!(tt.height, 256);
+    assert_eq!(
+        tetsu.texture_pool_bytes().unwrap().len(),
+        0x1E0 + tt.width * tt.height / 2
+    );
+
+    // The baked RGBA image is the right size and carries opaque texels.
+    let rgba = gt.to_rgba(0);
+    assert_eq!(rgba.len(), gt.width * gt.height * 4);
+    assert!(
+        rgba.chunks_exact(4).any(|p| p[3] == 255),
+        "atlas has opaque texels"
+    );
+    // PSX transparency is per-palette: a texel is transparent when its palette
+    // colour is 0x0000. At least one of Gimard's palettes uses index 0 as the
+    // transparent background (e.g. palette 1 starts `00 00`).
+    assert!(
+        gt.palettes.iter().any(|p| p[0] == [0, 0, 0, 0]),
+        "some palette uses a transparent index-0"
+    );
+}

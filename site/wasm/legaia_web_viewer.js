@@ -825,6 +825,19 @@ export class LegaiaViewer {
         return v1;
     }
     /**
+     * Per-vertex palette index (`cba & 0x3F`) for monster `id`'s mesh, as
+     * floats (parallel to [`Self::monster_mesh_positions`]). The JS shader
+     * uses it to pick the row of the palette texture.
+     * @param {number} id
+     * @returns {Float32Array}
+     */
+    monster_mesh_palette_index(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_palette_index(this.__wbg_ptr, id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
      * 3 floats per vertex). Empty if the id has no mesh.
      * @param {number} id
@@ -834,6 +847,59 @@ export class LegaiaViewer {
         const ret = wasm.legaiaviewer_monster_mesh_positions(this.__wbg_ptr, id);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex texture coords for monster `id`'s mesh, normalised to
+     * `[0, 1]` against the texture-page dimensions (parallel to
+     * [`Self::monster_mesh_positions`], 2 floats per vertex). Empty if the id
+     * has no mesh or no texture.
+     * @param {number} id
+     * @returns {Float32Array}
+     */
+    monster_mesh_uvs(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_uvs(this.__wbg_ptr, id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * `[width, height]` of monster `id`'s texture page in texels (128 or 256
+     * wide, always 256 tall). `[0, 0]` if the id has no texture.
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    monster_texture_dims(id) {
+        const ret = wasm.legaiaviewer_monster_texture_dims(this.__wbg_ptr, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Monster `id`'s 4bpp texture page as one palette index (`0..=15`) per
+     * texel, row-major (`width * height` bytes). Upload as an `R8UI`/`R8`
+     * texture and pair with [`Self::monster_texture_palette_rgba`]. Empty if
+     * the id has no texture.
+     * @param {number} id
+     * @returns {Uint8Array}
+     */
+    monster_texture_indices(id) {
+        const ret = wasm.legaiaviewer_monster_texture_indices(this.__wbg_ptr, id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Monster `id`'s 15 palettes flattened to a `15 * 16` RGBA8 row (palette
+     * `p`, colour `c` at pixel `p * 16 + c`). Index-0 transparent colours
+     * carry alpha 0. Empty if the id has no texture.
+     * @param {number} id
+     * @returns {Uint8Array}
+     */
+    monster_texture_palette_rgba(id) {
+        const ret = wasm.legaiaviewer_monster_texture_palette_rgba(this.__wbg_ptr, id);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
     }
     /**

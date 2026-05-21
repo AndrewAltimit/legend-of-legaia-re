@@ -129,7 +129,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   <p>The stat archive is the extended footprint of PROT entry <code>867</code>. Each monster id <code>n</code> (1-based) maps to slot <code>(n−1)·0x14000</code>, framed as <code>[u32 decoded-size][Legaia LZS stream]</code>; the decoded block's head is the stat record the battle loader copies into a live actor. The same <code>legaia_asset::monster_archive</code> parser used by the native tools and the engine runs here, compiled to WebAssembly.</p>
   <p style="color: var(--text-dim); font-size: 0.85rem;">Files are read with the browser's <code>FileReader</code> API directly into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring-your-own-disc). Native equivalent: <code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code> (add <code>--id N</code> for a single record).</p>
   <h2>The 3D model</h2>
-  <p>The same decoded block carries the enemy's <strong>battle model</strong>: a <a href="formats/tmd.html">Legaia TMD</a> embedded at the block-relative offset in the stat record's <code>+0x04</code> field (right after the name string) — the same pointer the battle loader installs at actor <code>+0x230</code>. <strong>186 of the 194 archive slots</strong> carry a clean TMD here (the rest are filler ids). The viewer renders it directional-lit and untextured: the geometry is exact, but the texture / palette pool at record <code>+0x08</code> isn't yet placed in VRAM (its layout and the per-battle VRAM relocation are an open reverse-engineering thread). Native mesh export: <code>asset monster-archive … --id N --obj enemy.obj</code>.</p>
+  <p>The same decoded block carries the enemy's <strong>battle model</strong>: a <a href="formats/tmd.html">Legaia TMD</a> embedded at the block-relative offset in the stat record's <code>+0x04</code> field (right after the name string) — the same pointer the battle loader installs at actor <code>+0x230</code>. <strong>186 of the 194 archive slots</strong> carry a clean TMD here (the rest are filler ids). The viewer renders it <strong>textured</strong> and directional-lit: the colours come from the <strong>texture / palette pool</strong> at record <code>+0x08</code>, decoded from the battle loader <code>FUN_80055468</code> — a 0x1E0-byte region of fifteen 16-colour palettes followed by a 4bpp page (always 256 rows tall, 128 or 256 texels wide). Each primitive picks its palette from its CBA (<code>cba &amp; 0x3F</code>) and samples the page at its UVs, exactly as the PSX GPU does from VRAM. Native export: <code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code>.</p>
 </section>
 
 <script type="module">
@@ -249,22 +249,38 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     if (Number.isFinite(id)) selectMonster(id);
   });
 
-  // ---- 3D mesh viewer (WebGL2, directional-lit, untextured) ----------------
+  // ---- 3D mesh viewer (WebGL2, directional-lit, textured) ------------------
+  // Textures come from the decoded monster texture pool (record +0x08): a 4bpp
+  // index page (uploaded as an R8 texture) + a 15x16 palette LUT (RGBA). The
+  // fragment shader does the index->palette lookup the PSX GPU does in VRAM,
+  // picking the palette by the prim's CBA (a_pal = cba & 0x3F). Falls back to
+  // flat directional shading when a slot has no texture.
 
   const MESH_VS = `#version 300 es
   in vec3 a_pos;
   in vec3 a_nrm;
+  in vec2 a_uv;
+  in float a_pal;
   uniform mat4 u_mvp;
   uniform mat3 u_nrm;
   out vec3 v_n;
+  out vec2 v_uv;
+  out float v_pal;
   void main() {
     v_n = u_nrm * a_nrm;
+    v_uv = a_uv;
+    v_pal = a_pal;
     gl_Position = u_mvp * vec4(a_pos, 1.0);
   }`;
 
   const MESH_FS = `#version 300 es
   precision highp float;
   in vec3 v_n;
+  in vec2 v_uv;
+  in float v_pal;
+  uniform sampler2D u_idx;   // R8: palette index per texel (value*255)
+  uniform sampler2D u_pal;   // RGBA8: 15*16 palette LUT (one row)
+  uniform bool u_textured;
   out vec4 o_col;
   void main() {
     float ln = length(v_n);
@@ -274,9 +290,19 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     vec3 L = normalize(vec3(0.4, 0.65, 0.8));
     float key = abs(dot(N, L));
     float amb = 0.42 + 0.18 * N.y;
-    vec3 base = vec3(0.66, 0.70, 0.78);
-    vec3 col = base * (amb + key * 0.78);
-    o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+    if (u_textured) {
+      float idx = floor(texture(u_idx, v_uv).r * 255.0 + 0.5);
+      float u = (v_pal * 16.0 + idx + 0.5) / 240.0;
+      vec4 t = texture(u_pal, vec2(u, 0.5));
+      if (t.a < 0.5) discard;            // PSX index-0 transparent texel
+      // PSX textures carry their own shading; modulate gently by the light.
+      vec3 col = t.rgb * (0.74 + key * 0.40);
+      o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+    } else {
+      vec3 base = vec3(0.66, 0.70, 0.78);
+      vec3 col = base * (amb + key * 0.78);
+      o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+    }
   }`;
 
   class MonsterMeshView {
@@ -289,13 +315,23 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this.loc = {
         pos: gl.getAttribLocation(this.prog, 'a_pos'),
         nrm: gl.getAttribLocation(this.prog, 'a_nrm'),
+        uv: gl.getAttribLocation(this.prog, 'a_uv'),
+        pal: gl.getAttribLocation(this.prog, 'a_pal'),
         mvp: gl.getUniformLocation(this.prog, 'u_mvp'),
         nmat: gl.getUniformLocation(this.prog, 'u_nrm'),
+        idxTex: gl.getUniformLocation(this.prog, 'u_idx'),
+        palTex: gl.getUniformLocation(this.prog, 'u_pal'),
+        textured: gl.getUniformLocation(this.prog, 'u_textured'),
       };
       this.vao = gl.createVertexArray();
       this.posBuf = gl.createBuffer();
       this.nrmBuf = gl.createBuffer();
+      this.uvBuf = gl.createBuffer();
+      this.palBuf = gl.createBuffer();
       this.idxBuf = gl.createBuffer();
+      this.idxTex = gl.createTexture();   // 4bpp index page (R8)
+      this.palTex = gl.createTexture();   // 15*16 palette LUT (RGBA8)
+      this.textured = false;
       this.indexCount = 0;
       this.center = [0, 0, 0];
       this.radius = 1;
@@ -308,7 +344,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this._raf = requestAnimationFrame(this._loop);
     }
 
-    setMesh(positions, normals, indices, bounds) {
+    // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(15*16*4), w, h } or null.
+    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex) {
       const gl = this.gl;
       gl.bindVertexArray(this.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
@@ -319,6 +356,39 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(this.loc.nrm);
       gl.vertexAttribPointer(this.loc.nrm, 3, gl.FLOAT, false, 0, 0);
+
+      this.textured = !!(tex && uvs && uvs.length && palIdx && palIdx.length);
+      if (this.textured) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(this.loc.uv);
+        gl.vertexAttribPointer(this.loc.uv, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.palBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, palIdx, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(this.loc.pal);
+        gl.vertexAttribPointer(this.loc.pal, 1, gl.FLOAT, false, 0, 0);
+
+        // 4bpp index page as a single-channel R8 texture (NEAREST, no mips).
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.bindTexture(gl.TEXTURE_2D, this.idxTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, tex.w, tex.h, 0, gl.RED, gl.UNSIGNED_BYTE, tex.idx);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // Palette LUT: 15*16 = 240 RGBA colours in one row.
+        gl.bindTexture(gl.TEXTURE_2D, this.palTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 240, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex.pal);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      } else {
+        gl.disableVertexAttribArray(this.loc.uv);
+        gl.disableVertexAttribArray(this.loc.pal);
+      }
+
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
       gl.bindVertexArray(null);
@@ -373,6 +443,15 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         gl.useProgram(this.prog);
         gl.uniformMatrix4fv(this.loc.mvp, false, m.mvp);
         gl.uniformMatrix3fv(this.loc.nmat, false, m.normalMat);
+        gl.uniform1i(this.loc.textured, this.textured ? 1 : 0);
+        if (this.textured) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.idxTex);
+          gl.uniform1i(this.loc.idxTex, 0);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, this.palTex);
+          gl.uniform1i(this.loc.palTex, 1);
+        }
         gl.bindVertexArray(this.vao);
         gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
         gl.bindVertexArray(null);
@@ -437,11 +516,12 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             </div>
             <p class="mesh-viewer-hint">
               Drag to orbit · scroll to zoom · double-click to reset.
-              Directional-lit, untextured: the geometry is the enemy's battle
-              TMD (record <code>+0x04</code>); the texture / palette pool
-              (<code>+0x08</code>) is decoded but not yet placed in VRAM, so
-              the model renders shaded. Native: <code>asset monster-archive
-              … --id N --obj enemy.obj</code>.
+              Textured + directional-lit: the geometry is the enemy's battle
+              TMD (record <code>+0x04</code>); the colours come from the decoded
+              texture pool (<code>+0x08</code>) — a 4bpp page plus 16-colour
+              palettes, looked up by each prim's CBA the way the PSX GPU does.
+              Native: <code>asset monster-archive … --id N --obj enemy.obj
+              --texture-png enemy.png</code>.
             </p>
           </div>
         </div>
@@ -493,6 +573,15 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       statsEl.innerHTML = '<span style="color:var(--text-dim)">No mesh for this id (filler slot, or no TMD at +0x04).</span>';
       return;
     }
+    // Texture pool (record +0x08): 4bpp index page + 15x16 palette LUT.
+    const uvs = viewer.monster_mesh_uvs(id);
+    const palIdx = viewer.monster_mesh_palette_index(id);
+    const texIdx = viewer.monster_texture_indices(id);
+    const texPal = viewer.monster_texture_palette_rgba(id);
+    const dims = viewer.monster_texture_dims(id);
+    const tex = (texIdx.length && texPal.length && dims[0])
+      ? { idx: Uint8Array.from(texIdx), pal: Uint8Array.from(texPal), w: dims[0], h: dims[1] }
+      : null;
     try {
       if (!meshView) {
         meshView = new MonsterMeshView(detailRow.querySelector('#mesh-viewer-canvas'));
@@ -502,11 +591,15 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         Float32Array.from(normals),
         Uint32Array.from(indices),
         bounds,
+        uvs.length ? Float32Array.from(uvs) : null,
+        palIdx.length ? Float32Array.from(palIdx) : null,
+        tex,
       );
       meshView.resetView();
       statsEl.innerHTML =
         `<b>${(indices.length / 3) | 0}</b> triangles · <b>${(positions.length / 3) | 0}</b> vertices` +
-        ` · TMD at block <code>+0x04</code>`;
+        ` · TMD at <code>+0x04</code>` +
+        (tex ? ` · ${tex.w}×${tex.h} texture at <code>+0x08</code>` : ' · untextured');
     } catch (err) {
       statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
     }

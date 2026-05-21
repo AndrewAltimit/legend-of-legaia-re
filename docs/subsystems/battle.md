@@ -165,25 +165,40 @@ spells spell-entry blobs       ; each carries its own attack-effect geometry
 +0x08→ texture / CLUT pool     ; per-monster palettes + 4bpp texture pages
 ```
 
-The mesh's primitives are textured: they reference CLUT rows + a 4bpp texture
-page via per-prim CBA/TSB (e.g. Gimard samples four 16-colour CLUTs at VRAM
-row 481 and a 4bpp page at `(320, 0)`). The matching palette + pixel bytes
-live in the **texture pool at record `+0x08`**, but its internal layout (CLUT
-count, per-page extents) and the runtime VRAM placement are **not yet
-reverse-engineered**: the on-disc CBA/TSB are nominal defaults that the battle
-loader relocates per battle slot, exactly like the
-[battle-data pack](../formats/battle-data-pack.md) descriptor. Pinning it needs
-a byte-match of the decoded pool against a captured battle VRAM (load the
-catalogued save `saves/library/<backup_fingerprint>.sstate` — e.g. the
-`rim_elm_gimard_victory` scenario — not a live mc slot). Until then the mesh
-renders **untextured / directional-lit** (the enemy-table page's per-row 3D
-viewer, and `legaia_asset::monster_archive::mesh(entry, id)`).
+The mesh's primitives are textured: they reference a CLUT + a 4bpp texture page
+via per-prim CBA/TSB. The matching palette + pixel bytes live in the **texture
+pool at record `+0x08`**, whose layout is pinned from the battle loader
+`FUN_80055468` (the streaming archive loader `FUN_800542C8` calls it with the
+pool pointer, the embedded TMD, and the battle-slot index):
+
+```
++0x000  15 x [16 BGR555 colours]   ; CLUT region (0x1E0 bytes; zero-padded for
+                                   ;   monsters that use fewer than 15)
++0x1E0  4bpp indices               ; texture page, width x 256 texels, row-major
+```
+
+The loader uploads the CLUT region to VRAM `(0, 484 + slot)` (256 colours wide,
+STP bit set on non-zero entries) and the page to `(slot*64 + 320, 256)`. The
+page is **always 256 rows tall**; its width is **128 texels** (32 fb-units) for
+most monsters or **256 texels** (64 fb-units) when the per-monster wide flag is
+set — so `width_texels = (pool_len - 0x1E0) / 256 * 2`. A primitive selects its
+palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`; PSX
+index 0 (colour `0x0000`) is transparent. The byte arithmetic is exact: Gimard
+`0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to
+their pool sizes. (The on-disc CBA/TSB are nominal defaults the loader relocates
+per slot, so the raw pool bytes do not appear verbatim in a battle VRAM dump —
+the `FUN_80055468` layout is the ground truth; see
+`ghidra/scripts/funcs/80055468.txt`.)
 
 Parser: `legaia_asset::monster_archive::mesh(entry, id) -> Option<MonsterMesh>`
-(returns the decoded block + the TMD/pool offsets; CLI `asset monster-archive
---id N --obj <out>` exports the mesh as Wavefront OBJ). WASM: the
-`LegaiaViewer::monster_mesh_{positions,normals,indices,bounds}(id)` accessors
-feed the in-browser WebGL viewer on the enemy-table site page.
+(returns the decoded block + the TMD/pool offsets); `MonsterMesh::texture()`
+decodes the pool into `MonsterTexture { palettes, indices, width, height }`. CLI
+`asset monster-archive --id N --obj <out>` exports the mesh as Wavefront OBJ and
+`--texture-png <out>` bakes the texture page. WASM: the
+`LegaiaViewer::monster_mesh_{positions,normals,indices,bounds,uvs,palette_index}`
+and `monster_texture_{indices,palette_rgba,dims}` accessors feed the in-browser
+WebGL viewer on the enemy-table site page, which textures the model with the
+index→palette lookup the PSX GPU does in VRAM.
 
 ## Stat aggregator (`FUN_80042558`)
 

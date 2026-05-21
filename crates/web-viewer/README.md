@@ -21,7 +21,11 @@ instead of every raw entry.
 archive (PROT entry 867, extended footprint) into a JSON array of every
 populated record (id / name / HP / MP / stats). It drives the static
 site's `monsters.html` enemy-table page entirely client-side - the disc
-bytes never leave the browser.
+bytes never leave the browser. Per row, the page also renders the enemy's
+3D battle model: `monster_mesh_{positions,normals,indices,bounds,uvs,palette_index}`
+plus `monster_texture_{indices,palette_rgba,dims}` feed a textured WebGL2
+viewer (the embedded TMD at record `+0x04`, coloured from the decoded
+texture pool at `+0x08` via the prim-CBA palette lookup).
 
 Rendering targets the canvas's 2D context (`CanvasRenderingContext2d` +
 `ImageData`) for TIM blits and the canvas's WebGL2 context for textured

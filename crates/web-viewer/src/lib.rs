@@ -1000,15 +1000,26 @@ impl LegaiaViewer {
 
     /// Build monster `id`'s embedded mesh (the Legaia TMD at archive-block
     /// `+0x04`) as a [`legaia_tmd::mesh::VramMesh`]. All monster prims are
-    /// textured, so this keeps the full geometry; the JS side renders it
-    /// flat / directional-lit via the per-vertex normals (textures are a
-    /// separate, still-open RE thread — the texture pool at `+0x08` is not
-    /// yet decoded). Returns `None` for a filler / out-of-range id.
+    /// textured, so this keeps the full geometry with per-vertex UVs +
+    /// CBA/TSB; the JS side textures it from the decoded pool (see
+    /// [`Self::monster_texture_indices`]) and directional-lights it via the
+    /// per-vertex normals. Returns `None` for a filler / out-of-range id.
     fn build_monster_mesh(&self, id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
         let slice = self.monster_archive_slice()?;
         let mesh = legaia_asset::monster_archive::mesh(slice, id).ok()??;
         let tmd = legaia_tmd::parse(mesh.tmd_bytes()).ok()?;
         Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, mesh.tmd_bytes()))
+    }
+
+    /// Decode monster `id`'s texture pool (archive-block `+0x08`). `None` for a
+    /// filler / out-of-range id or a slot with no pool.
+    fn build_monster_texture(
+        &self,
+        id: u16,
+    ) -> Option<legaia_asset::monster_archive::MonsterTexture> {
+        let slice = self.monster_archive_slice()?;
+        let mesh = legaia_asset::monster_archive::mesh(slice, id).ok()??;
+        mesh.texture()
     }
 
     /// Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
@@ -1066,6 +1077,61 @@ impl LegaiaViewer {
         ];
         let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
         vec![c[0], c[1], c[2], r]
+    }
+
+    /// Per-vertex texture coords for monster `id`'s mesh, normalised to
+    /// `[0, 1]` against the texture-page dimensions (parallel to
+    /// [`Self::monster_mesh_positions`], 2 floats per vertex). Empty if the id
+    /// has no mesh or no texture.
+    pub fn monster_mesh_uvs(&self, id: u16) -> Vec<f32> {
+        let (Some(mesh), Some(tex)) = (self.build_monster_mesh(id), self.build_monster_texture(id))
+        else {
+            return Vec::new();
+        };
+        // Texel-centre offset so the JS shader's NEAREST sample lands on the
+        // intended texel rather than rounding to its neighbour at edges.
+        let (w, h) = (tex.width as f32, tex.height as f32);
+        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
+        for uv in &mesh.uvs {
+            out.extend_from_slice(&[(uv[0] as f32 + 0.5) / w, (uv[1] as f32 + 0.5) / h]);
+        }
+        out
+    }
+
+    /// Per-vertex palette index (`cba & 0x3F`) for monster `id`'s mesh, as
+    /// floats (parallel to [`Self::monster_mesh_positions`]). The JS shader
+    /// uses it to pick the row of the palette texture.
+    pub fn monster_mesh_palette_index(&self, id: u16) -> Vec<f32> {
+        self.build_monster_mesh(id)
+            .map(|m| m.cba_tsb.iter().map(|ct| (ct[0] & 0x3F) as f32).collect())
+            .unwrap_or_default()
+    }
+
+    /// Monster `id`'s 4bpp texture page as one palette index (`0..=15`) per
+    /// texel, row-major (`width * height` bytes). Upload as an `R8UI`/`R8`
+    /// texture and pair with [`Self::monster_texture_palette_rgba`]. Empty if
+    /// the id has no texture.
+    pub fn monster_texture_indices(&self, id: u16) -> Vec<u8> {
+        self.build_monster_texture(id)
+            .map(|t| t.indices)
+            .unwrap_or_default()
+    }
+
+    /// Monster `id`'s 15 palettes flattened to a `15 * 16` RGBA8 row (palette
+    /// `p`, colour `c` at pixel `p * 16 + c`). Index-0 transparent colours
+    /// carry alpha 0. Empty if the id has no texture.
+    pub fn monster_texture_palette_rgba(&self, id: u16) -> Vec<u8> {
+        self.build_monster_texture(id)
+            .map(|t| t.palette_rgba())
+            .unwrap_or_default()
+    }
+
+    /// `[width, height]` of monster `id`'s texture page in texels (128 or 256
+    /// wide, always 256 tall). `[0, 0]` if the id has no texture.
+    pub fn monster_texture_dims(&self, id: u16) -> Vec<u32> {
+        self.build_monster_texture(id)
+            .map(|t| vec![t.width as u32, t.height as u32])
+            .unwrap_or_else(|| vec![0, 0])
     }
 
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
