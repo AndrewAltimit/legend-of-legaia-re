@@ -54,6 +54,14 @@ One part maps to one [TMD](tmd.md) object (a rigid body part). Across the retail
 roster the part count equals the TMD object count for >98% of actions (one model
 carries an extra non-animated object).
 
+The transform is **absolute model-space**, not a delta from a rest pose: each TMD
+object is modelled at its own local origin (all parts overlap near `(0,0,0)`),
+and the per-part `[tx, ty, tz]` places that object at its socket while
+`[rx, ry, rz]` orients it about its local origin. The assembled vertex is
+`world = Rz·Ry·Rx · v_local + t`. **Frame 0 is therefore the assembled rest
+pose** — the translations of a humanoid's left/right limb objects are mirror-symmetric (e.g. Gobu Gobu's arm sockets at `tx ≈ +120` / `-115`), and assembling
+frame 0 spreads the collapsed model into its full silhouette.
+
 ## Playback
 
 The renderer (`FUN_80048a08`) keeps a 12.4 fixed-point phase in the per-actor
