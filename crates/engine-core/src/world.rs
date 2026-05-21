@@ -620,13 +620,14 @@ pub struct World {
     /// each [`World::tick`]; subsystems that consume input read it from
     /// here. Default-constructed [`InputState`] = no buttons held.
     ///
-    /// Currently consumed by: nothing in the world-tick path. The
-    /// scaffold is in place so the v0.1 playthrough oracle can thread
-    /// recorded `j-replay-v1` pad events into the engine without a
-    /// separate input-routing wrapper. When field-VM dialog advance,
-    /// menu navigation, or world-map controller logic moves out of
-    /// `play-window` into the engine-tick path, those consumers read
-    /// here.
+    /// Consumed in the world-tick path by: field free-movement locomotion
+    /// ([`Self::step_field_locomotion`]), the tile-board walk SM
+    /// ([`Self::tick_tile_board`]), the world-map controller
+    /// ([`Self::enter_world_map`]), and the field-VM dialog-advance poll.
+    /// Hosts that drive a scripted timeline (`legaia-engine replay`, the
+    /// v0.1 playthrough oracle) thread recorded `j-replay-v1` pad events
+    /// here via [`Self::set_pad`] before each tick. Menu navigation still
+    /// runs through the host-side `play-window` loop.
     pub input: input::InputState,
 
     /// Per-actor move-VM outcomes from the most recent [`World::tick_move_vms`]
@@ -781,6 +782,60 @@ pub struct World {
     /// Read by the field-VM `0x4C 0xD8` host hook to populate
     /// [`Actor::tmd_ref`] on synchronous-spawn.
     pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
+
+    // --- live gameplay loop (Field <-> Battle round trip) -----------------
+    /// Master opt-in for the in-`tick` Field <-> Battle round trip.
+    ///
+    /// When `false` (the default) [`World::tick`] keeps its historical
+    /// behaviour: the Field branch runs the field VM + locomotion but never
+    /// rolls encounters, and the Battle branch runs a single
+    /// [`World::step_battle`] without applying damage or re-arming the SM
+    /// (engines / tests drive those externally). When `true`, [`World::tick`]
+    /// drives the whole loop itself - step-driven encounter roll, automatic
+    /// `Field -> Battle` transition resolving a real formation, an in-engine
+    /// physical-attack battle resolver, and the `Battle -> Field` return with
+    /// loot applied. Hosts that want a playable slice (`legaia-engine
+    /// play-window`, the v0.1 playthrough oracle) set this once after boot.
+    pub live_gameplay_loop: bool,
+
+    /// Formation currently being fought, captured at the `Field -> Battle`
+    /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
+    /// outside battle.
+    pub active_formation: Option<crate::monster_catalog::FormationDef>,
+
+    /// Aggregated rewards from the most recent victory - surfaced for the
+    /// post-battle banner / HUD. `None` until the first battle resolves.
+    pub last_battle_rewards: Option<BattleRewards>,
+
+    /// Set when the live loop resolves a battle to
+    /// [`BattleEndCause::PartyWipe`]. v0.1 has no game-over screen, so the
+    /// loop returns to the field with this flag raised; hosts read it to
+    /// surface a defeat state.
+    pub game_over: bool,
+
+    /// Field state captured at the `Field -> Battle` transition so the live
+    /// loop can restore it on victory. The retail engine re-enters the field
+    /// scene from scratch; the clean-room loop snapshots the actor table +
+    /// player slot instead. `None` outside battle. Managed by the live loop;
+    /// hosts read [`Self::mode`] / [`Self::active_formation`] instead.
+    pub field_return: Option<FieldReturnState>,
+
+    /// Player tile `(col, row)` on the previous live-loop field tick. A
+    /// change between ticks is one "step" and drives the encounter roll,
+    /// mirroring the retail per-step counter rather than a per-frame roll.
+    /// `None` until the first field tick records a tile. Managed by the live
+    /// loop.
+    pub field_last_tile: Option<(i16, i16)>,
+}
+
+/// Field state snapshot taken at the `Field -> Battle` transition and
+/// restored when the live loop returns from battle. See
+/// [`World::live_gameplay_loop`].
+#[derive(Debug, Clone, Default)]
+pub struct FieldReturnState {
+    pub actors: Vec<Actor>,
+    pub player_actor_slot: Option<u8>,
+    pub party_count: u8,
 }
 
 /// Pending dialog request for the field-VM op 0x3F handler. The engine
@@ -921,6 +976,12 @@ impl World {
             active_scene_label: String::new(),
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
+            live_gameplay_loop: false,
+            active_formation: None,
+            last_battle_rewards: None,
+            game_over: false,
+            field_return: None,
+            field_last_tile: None,
         }
     }
 
@@ -2100,11 +2161,20 @@ impl World {
             }
         }
         match self.mode {
-            SceneMode::Battle => Some(self.step_battle()),
+            SceneMode::Battle => {
+                if self.live_gameplay_loop {
+                    self.live_battle_tick()
+                } else {
+                    Some(self.step_battle())
+                }
+            }
             SceneMode::Field => {
                 self.step_field();
                 self.tick_tile_board();
                 self.step_field_locomotion();
+                if self.live_gameplay_loop {
+                    self.live_field_tick();
+                }
                 None
             }
             SceneMode::Cutscene => {
@@ -2725,6 +2795,277 @@ impl World {
             }
             remaining -= FIELD_STEP_UNIT;
         }
+    }
+
+    // --- live gameplay loop: Field <-> Battle round trip ------------------
+
+    /// Per-frame field-side driver for the live gameplay loop. Gated by
+    /// [`Self::live_gameplay_loop`] in [`Self::tick`]; never called when the
+    /// flag is off.
+    ///
+    /// Composes the already-existing encounter pieces into the per-frame
+    /// flow the retail field loop runs:
+    ///
+    /// 1. **Step detection.** A "step" is the player actor crossing into a
+    ///    new 128-unit collision tile (`pos >> 7`). Each step drives one
+    ///    [`Self::on_field_step`] roll - matching the retail per-step
+    ///    counter rather than rolling every frame.
+    /// 2. **Timers.** [`Self::tick_encounter`] advances the session's
+    ///    `Transition` / `Grace` countdowns every frame regardless of
+    ///    movement.
+    /// 3. **Transition.** When the session reaches `Triggered`,
+    ///    [`Self::drain_encounter_formation`] yields the rolled formation and
+    ///    [`Self::begin_encounter_battle`] flips `Field -> Battle`.
+    fn live_field_tick(&mut self) {
+        // (1) step detection on tile crossing.
+        if let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get(slot as usize)
+        {
+            let tile = (actor.move_state.world_x >> 7, actor.move_state.world_z >> 7);
+            match self.field_last_tile {
+                Some(prev) if prev != tile => {
+                    self.field_last_tile = Some(tile);
+                    self.on_field_step();
+                }
+                None => self.field_last_tile = Some(tile),
+                _ => {}
+            }
+        }
+        // (2) advance transition / grace timers.
+        self.tick_encounter();
+        // (3) Triggered -> begin battle.
+        if let Some(roll) = self.drain_encounter_formation() {
+            self.begin_encounter_battle(roll);
+        }
+    }
+
+    /// Resolve `roll` to a concrete formation and flip into battle.
+    ///
+    /// Snapshots the field actor table (restored verbatim on victory),
+    /// remembers the formation for [`Self::apply_battle_loot`], and seeds the
+    /// battle actor table from the formation + monster catalog. No-op when
+    /// the roll's `formation_id` isn't registered in
+    /// [`Self::formation_table`] (the session has already advanced to
+    /// `Battling`, so the next [`Self::end_encounter_battle`] cleans it up).
+    fn begin_encounter_battle(&mut self, roll: crate::encounter::EncounterRoll) {
+        let Some(formation) = self.formation_table.formation(roll.formation_id).cloned() else {
+            // Unknown formation: bail back to the field by ending the (empty)
+            // battle so the session leaves `Battling`.
+            self.end_encounter_battle();
+            return;
+        };
+        self.field_return = Some(FieldReturnState {
+            actors: self.actors.clone(),
+            player_actor_slot: self.player_actor_slot,
+            party_count: self.party_count,
+        });
+        self.enter_battle_from_formation(&formation);
+        self.active_formation = Some(formation);
+    }
+
+    /// Seed the battle actor table from `formation` and enter
+    /// [`SceneMode::Battle`].
+    ///
+    /// Party slots `0..party_count` keep their HP / MP (seeded from the
+    /// roster by the boot path); monster slots take HP / attack / defense
+    /// from [`Self::monster_catalog`]. Every combatant is marked alive,
+    /// `action_category = Attack`, and party members target the first
+    /// monster. The battle-action context is seeded at `Begin` with the
+    /// Attack action queued. This is the live-loop counterpart to the
+    /// generic [`Self::enter_battle`] placement helper.
+    fn enter_battle_from_formation(&mut self, formation: &crate::monster_catalog::FormationDef) {
+        let party_count = self.party_count.clamp(1, 3);
+        let monster_count = formation.slots.len().min(5) as u8;
+        // Reuse the placement helper for actor spawn + spacing, then overlay
+        // per-slot stats.
+        self.enter_battle(party_count, monster_count, 600);
+        let first_monster = party_count;
+        for slot in 0..party_count as usize {
+            let a = &mut self.actors[slot];
+            a.battle.liveness = 1;
+            a.battle.action_category = 3; // Attack
+            a.battle.active_target = first_monster;
+        }
+        for (i, fslot) in formation.slots.iter().take(5).enumerate() {
+            let mslot = party_count as usize + i;
+            if mslot >= self.actors.len() {
+                break;
+            }
+            if let Some(def) = self.monster_catalog.get(fslot.monster_id) {
+                let a = &mut self.actors[mslot];
+                a.battle.hp = def.hp;
+                a.battle.max_hp = def.hp;
+                a.battle.mp = def.mp;
+                a.battle.liveness = 1;
+                a.battle.action_category = 3;
+                if let Some(s) = self.battle_attack.get_mut(mslot) {
+                    *s = def.attack;
+                }
+                if let Some(s) = self.battle_defense.get_mut(mslot) {
+                    *s = def.udf.max(def.ldf);
+                }
+            }
+        }
+        self.battle_ctx.queued_action = 3;
+        self.battle_ctx.active_actor = 0;
+    }
+
+    /// Per-frame battle-side driver for the live gameplay loop. Gated by
+    /// [`Self::live_gameplay_loop`] in [`Self::tick`].
+    ///
+    /// Wraps [`Self::step_battle`] with the host-side glue retail performs
+    /// through the render + animation systems, so the battle resolves from
+    /// `tick` alone:
+    ///
+    /// - **Damage application.** Drains this step's [`BattleEvent`]s and
+    ///   folds [`BattleEvent::ApplyArtStrike`] damage into target HP. A
+    ///   generic physical attack (no art) is applied on the
+    ///   `AttackChain -> AttackRecovery` edge via [`Self::apply_basic_attack`].
+    /// - **Liveness.** Any combatant whose HP hit zero is marked dead so the
+    ///   SM's wipe scan sees it.
+    /// - **Turn cycling.** When the SM idles at `EndOfAction` with monsters
+    ///   still alive, the next party member is re-armed (v0.1 keeps monsters
+    ///   passive - party turns only).
+    /// - **Recovery edge.** Clears `ADVANCE_DONE` at `AttackRecovery`, the
+    ///   edge the retail recovery animation drives.
+    ///
+    /// On [`StepOutcome::BattleComplete`] it runs [`Self::finish_battle`] to
+    /// apply loot and return to the field.
+    fn live_battle_tick(&mut self) -> Option<StepOutcome> {
+        use vm::battle_action::{ActionState, ActorFlags};
+
+        let outcome = self.step_battle();
+
+        // Apply this step's damage events (art strikes carry a damage value;
+        // the loop owns folding while live, so events are consumed here).
+        let events = std::mem::take(&mut self.pending_battle_events);
+        let mut art_strike_applied = false;
+        for e in &events {
+            if matches!(e, BattleEvent::ApplyArtStrike { .. }) {
+                art_strike_applied = true;
+            }
+            self.fold_battle_event(e);
+        }
+
+        // Generic physical attack: deal damage on the strike-landed edge when
+        // no art strike already did.
+        if let StepOutcome::Transition { from, to } = outcome
+            && from == ActionState::AttackChain.as_byte()
+            && to == ActionState::AttackRecovery.as_byte()
+            && !art_strike_applied
+        {
+            self.apply_basic_attack();
+        }
+
+        // Mark the dead so the SM's liveness scan resolves the wipe.
+        for a in self.actors.iter_mut() {
+            if a.battle.max_hp > 0 && a.battle.hp == 0 {
+                a.battle.liveness = 0;
+            }
+        }
+
+        // Recovery-edge ADVANCE_DONE clear (retail clears this when the
+        // recovery animation finishes; we simulate the same edge inline).
+        let attacker = self.battle_ctx.active_actor as usize;
+        if attacker < self.actors.len()
+            && self.actors[attacker]
+                .battle
+                .flag_bits
+                .has(ActorFlags::ADVANCE_DONE)
+            && self.battle_ctx.action_state == ActionState::AttackRecovery.as_byte()
+        {
+            self.actors[attacker]
+                .battle
+                .flag_bits
+                .clear(ActorFlags::ADVANCE_DONE);
+        }
+
+        // Re-arm the next party attacker when the SM idles at EndOfAction
+        // with monsters still alive.
+        let party_count = self.party_count.max(1);
+        let monsters_alive = (party_count..self.actors.len() as u8)
+            .any(|i| self.actors[i as usize].battle.liveness != 0);
+        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte() && monsters_alive {
+            let next = (self.battle_ctx.active_actor + 1) % party_count;
+            self.battle_ctx.active_actor = next;
+            self.battle_ctx.queued_action = 3;
+            self.battle_ctx.action_state = ActionState::Begin.as_byte();
+            let target = (party_count..self.actors.len() as u8)
+                .find(|&i| self.actors[i as usize].battle.liveness != 0)
+                .unwrap_or(party_count);
+            for slot in 0..party_count as usize {
+                self.actors[slot].battle.active_target = target;
+                self.actors[slot].battle.action_category = 3;
+            }
+        }
+
+        if matches!(outcome, StepOutcome::BattleComplete) {
+            self.finish_battle();
+        }
+        Some(outcome)
+    }
+
+    /// Apply one generic physical strike from the active attacker to the
+    /// first living monster. v0.1 stand-in for the art-driven strike path:
+    /// `damage = art_strike_damage_default(attack, defense, 16)` (≈
+    /// `attack - defense`, floored at 1) so a party with no configured
+    /// weapon attack still chips the monster down. Always hits (no accuracy
+    /// roll) to guarantee the loop resolves.
+    fn apply_basic_attack(&mut self) {
+        let attacker = self.battle_ctx.active_actor as usize;
+        let party_count = self.party_count.max(1);
+        let Some(target) = (party_count..self.actors.len() as u8)
+            .find(|&i| self.actors[i as usize].battle.liveness != 0)
+        else {
+            return;
+        };
+        let target = target as usize;
+        let attack = self.battle_attack.get(attacker).copied().unwrap_or(0);
+        let defense = self.battle_defense.get(target).copied().unwrap_or(0);
+        let dmg = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
+        let a = &mut self.actors[target];
+        a.battle.hp = a.battle.hp.saturating_sub(dmg);
+        if a.battle.hp == 0 {
+            a.battle.liveness = 0;
+        }
+    }
+
+    /// Resolve a finished battle and return to the field.
+    ///
+    /// On [`BattleEndCause::MonsterWipe`] applies loot (XP / gold / drops /
+    /// level-ups) via [`Self::apply_battle_loot`] against the captured
+    /// formation; on [`BattleEndCause::PartyWipe`] raises [`Self::game_over`]
+    /// (v0.1 has no defeat screen). Either way the field actor snapshot is
+    /// restored, the encounter session drops into its grace window, and the
+    /// scene mode flips back to [`SceneMode::Field`].
+    fn finish_battle(&mut self) {
+        if self.battle_end == Some(BattleEndCause::MonsterWipe)
+            && let Some(formation) = self.active_formation.clone()
+        {
+            // `apply_battle_loot` borrows the catalog while mutating self, so
+            // swap it out and back around the call.
+            let catalog = std::mem::take(&mut self.monster_catalog);
+            let rewards = self.apply_battle_loot(&formation, &catalog);
+            self.monster_catalog = catalog;
+            self.last_battle_rewards = Some(rewards);
+        }
+        if self.battle_end == Some(BattleEndCause::PartyWipe) {
+            self.game_over = true;
+        }
+        self.active_formation = None;
+        self.battle_end = None;
+        // Post-battle grace + suppression on the session.
+        self.end_encounter_battle();
+        // Restore the field actor table captured at the transition.
+        if let Some(ret) = self.field_return.take() {
+            self.actors = ret.actors;
+            self.player_actor_slot = ret.player_actor_slot;
+            self.party_count = ret.party_count;
+        }
+        self.mode = SceneMode::Field;
+        // Reset step tracking so the post-battle position doesn't count as a
+        // step on the next field tick.
+        self.field_last_tile = None;
     }
 
     /// Configure the actor at `slot` as the field player and reset the
