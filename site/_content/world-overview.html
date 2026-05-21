@@ -2,7 +2,7 @@
   <div class="breadcrumb"><a href="index.html">home</a> &middot; world overview (3D)</div>
   <h1>World overview <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image &mdash; no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately.
+    Each kingdom's overworld in real-time WebGL 3D, straight from your disc image &mdash; no save state, no emulator. Load a <code>.bin</code> below and the assembled scene renders immediately. Your disc is cached locally in the browser (shared with the viewer, audio, and monster pages), so it auto-loads on reload &mdash; use <em>Forget</em> on the chip to clear.
   </p>
 </header>
 
@@ -235,6 +235,8 @@
 
 <!-- Bump ?v= any time webgl-{shaders,math,tmd}.js gains a method JS code
      below this point relies on, so users don't hit a stale cached copy. -->
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
 <script src="js/webgl-shaders.js?v=fog-scalar-3"></script>
 <script src="js/webgl-math.js?v=fog-scalar-3"></script>
 <script src="js/webgl-tmd.js?v=fog-scalar-3"></script>

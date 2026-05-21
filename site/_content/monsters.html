@@ -61,6 +61,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 .mesh-viewer-controls button:hover { border-color: var(--accent); }
 .mesh-viewer-hint { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.5rem; line-height: 1.5; max-width: 42ch; }
 </style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>
 -->
 <header>
   <div class="breadcrumb"><a href="index.html">home</a> · enemy table</div>
@@ -115,7 +117,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 <section class="doc-section">
   <h2>How it works</h2>
   <p>The stat archive is the extended footprint of PROT entry <code>867</code>. Each monster id <code>n</code> (1-based) maps to slot <code>(n−1)·0x14000</code>, framed as <code>[u32 decoded-size][Legaia LZS stream]</code>; the decoded block's head is the stat record the battle loader copies into a live actor. The same <code>legaia_asset::monster_archive</code> parser used by the native tools and the engine runs here, compiled to WebAssembly.</p>
-  <p style="color: var(--text-dim); font-size: 0.85rem;">Files are read with the browser's <code>FileReader</code> API directly into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring-your-own-disc). Native equivalent: <code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code> (add <code>--id N</code> for a single record).</p>
+  <p style="color: var(--text-dim); font-size: 0.85rem;">Files are read with the browser's <code>FileReader</code> API directly into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring-your-own-disc). Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear). Native equivalent: <code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code> (add <code>--id N</code> for a single record).</p>
   <h2>The 3D model</h2>
   <p>The same decoded block carries the enemy's <strong>battle model</strong>: a <a href="formats/tmd.html">Legaia TMD</a> embedded at the block-relative offset in the stat record's <code>+0x04</code> field (right after the name string) — the same pointer the battle loader installs at actor <code>+0x230</code>. <strong>186 of the 194 archive slots</strong> carry a clean TMD here (the rest are filler ids). The viewer renders it <strong>textured</strong> and directional-lit: the colours come from the <strong>texture / palette pool</strong> at record <code>+0x08</code>, decoded from the battle loader <code>FUN_80055468</code> — a 0x1E0-byte region of fifteen 16-colour palettes followed by a 4bpp page (always 256 rows tall, 128 or 256 texels wide). Each primitive picks its palette from its CBA (<code>cba &amp; 0x3F</code>) and samples the page at its UVs, exactly as the PSX GPU does from VRAM. Native export: <code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code>.</p>
   <h2>Idle animation</h2>
@@ -726,8 +728,9 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     }
   }
 
-  fileInput.addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
+  /* `f` is a fresh File pick or a RomCache cache-backed source; both
+   * expose name / size / arrayBuffer(). */
+  async function loadEnemyTable(f) {
     if (!f) { status.textContent = 'No file loaded.'; return; }
     status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — decoding enemy table…`;
 
@@ -741,33 +744,46 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       document.body.appendChild(canvas);
     }
 
+    const prog = LoadProgress.create(status);
     try {
+      const buf = await prog.read(f, `Reading ${f.name}`);
+      prog.indeterminate('Initialising decoder…');
       const mod = await import('./wasm/legaia_web_viewer.js');
       await mod.default();
-      const buf = new Uint8Array(await f.arrayBuffer());
       viewer = new mod.LegaiaViewer('enemy-table-canvas');
+      prog.indeterminate('Parsing PROT.DAT — this can take a few seconds…');
+      await prog.paint(); // let the bar render before the blocking parse
       viewer.load_disc(buf);
       selectedId = null;
 
+      prog.indeterminate('Decoding enemy archive…');
+      await prog.paint();
       const parsed = JSON.parse(viewer.monster_archive_json());
       if (parsed.error) {
         status.textContent = `Error: ${parsed.error}`;
+        prog.fail(`Error: ${parsed.error}`);
         return;
       }
       records = (parsed.records || []).map(normalize);
       if (records.length === 0) {
         status.textContent = `Loaded: ${f.name} — no enemy data found (PROT entry 867 absent). Is this a full Legaia disc / PROT.DAT?`;
+        prog.fail('No enemy data found in this file.');
         return;
       }
       status.textContent = `Loaded: ${f.name} — decoded ${records.length} enemy records.`;
       toolbar.style.display = 'flex';
       tableWrap.style.display = 'block';
       render();
+      prog.done(`Decoded ${records.length} enemy records.`);
     } catch (err) {
       status.textContent = `Failed to decode: ${err}`;
+      prog.fail(`Failed to decode: ${err.message || err}`);
       console.error(err);
     }
-  });
+  }
+
+  /* Cache the picked disc and auto-load it on return visits / reloads. */
+  RomCache.attach(fileInput, { onLoad: loadEnemyTable });
 })();
 </script>
 

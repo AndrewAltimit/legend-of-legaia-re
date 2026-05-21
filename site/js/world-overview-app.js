@@ -380,11 +380,19 @@
    * (so there's no separate "Load" button to click). The same path is
    * also reachable programmatically via `loadDisc()` if we ever add a
    * "reload" affordance. */
-  async function loadDisc() {
-    const f = $file.files[0];
+  async function loadDisc(src) {
+    /* `src` is a fresh File pick or a RomCache cache-backed source; both
+     * expose name / size / arrayBuffer(). Fall back to the input's
+     * current file if called with no argument (legacy reload path). */
+    const f = src || $file.files[0];
     if (!f) { $status.textContent = 'Pick a .bin or .dat file first.'; return; }
+    const prog = window.LoadProgress ? LoadProgress.create($status) : null;
     try {
-      $status.textContent = 'Loading WASM ...';
+      $status.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB) ...`;
+      const bytes = prog
+        ? await prog.read(f, `Reading ${f.name}`)
+        : new Uint8Array(await f.arrayBuffer());
+      if (prog) prog.indeterminate('Initialising WASM decoder…');
       if (!wasmMod) {
         // ES module import paths resolve relative to the importing JS
         // file (site/js/), not the host HTML page. wasm-pack output
@@ -392,9 +400,8 @@
         wasmMod = await import('../wasm/legaia_web_viewer.js');
         await wasmMod.default();
       }
-      $status.textContent = `Reading ${f.name} (${(f.size/1024/1024).toFixed(1)} MB) ...`;
-      const bytes = new Uint8Array(await f.arrayBuffer());
       $status.textContent = 'Classifying PROT entries ...';
+      if (prog) { prog.indeterminate('Parsing PROT.DAT + classifying entries…'); await prog.paint(); }
       /* CRITICAL: replace the canvas before constructing the viewer.
        *
        * `load_disc` ends with `render_current()`, which for any TIM-only
@@ -428,6 +435,7 @@
       }
       const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
       $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
+      if (prog) prog.done(`${count} PROT entries, ${tot} world-map TMDs.`);
       /* Auto-extract the world-map fog LUT from SCUS. The runtime
        * adds these per-Z scalar entries to vertex SXY+offset words in
        * the overlay leaves at 0x801F7644..0x801F8690; the WebGL port
@@ -469,9 +477,17 @@
     } catch (err) {
       console.error(err);
       $status.textContent = 'Load failed: ' + (err.message || err);
+      if (prog) prog.fail('Load failed: ' + (err.message || err));
     }
   }
-  $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
+  /* Cache the picked disc and auto-load it on return visits / reloads.
+   * RomCache wires the input's change event (caching the pick) and, when
+   * a disc is already cached, calls loadDisc(cachedSource) on init. */
+  if (window.RomCache) {
+    RomCache.attach($file, { onLoad: (f) => loadDisc(f) });
+  } else {
+    $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
+  }
 
   /* Status line for the auto-extracted fog LUT. The disc-load path
    * populates this; there is no manual upload affordance because the

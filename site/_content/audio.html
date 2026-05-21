@@ -79,13 +79,15 @@
   color: var(--text-muted);
 }
 .audio-prompt h3 { color: var(--accent); margin-bottom: 0.5rem; }
-</style>-->
+</style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>-->
 
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> &middot; audio</div>
   <h1>Audio browser <span class="badge-wip">work in progress</span></h1>
   <p class="lede">
-    Listen to every sound on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between <strong>BGM</strong> sequenced music and <strong>XA</strong> streaming audio. The same WASM build that powers the asset viewer parses, decodes, and plays everything locally &mdash; nothing leaves your machine.
+    Listen to every sound on the disc straight from your browser. Pick your <code>.bin</code> Mode2/2352 image once, then flip between <strong>BGM</strong> sequenced music and <strong>XA</strong> streaming audio. The same WASM build that powers the asset viewer parses, decodes, and plays everything locally &mdash; nothing leaves your machine. Your disc is cached locally in the browser and shared across pages, so it auto-loads on reload (use <em>Forget</em> to clear).
   </p>
 </header>
 
@@ -526,30 +528,42 @@
   xaSearch.addEventListener('input', () => renderXaList(xaSearch.value));
 
   // ---------------- File load ----------------
-  fileInput.addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
+  /* `f` is a fresh File pick or a RomCache cache-backed source; both
+   * expose name / size / arrayBuffer(). */
+  async function loadAudioDisc(f) {
     if (!f) { status.textContent = 'No file loaded.'; return; }
     status.textContent = `Loaded: ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB) — parsing…`;
+    const prog = LoadProgress.create(status);
     try {
+      const bytes = await prog.read(f, `Reading ${f.name}`);
+      prog.indeterminate('Initialising decoder…');
       if (!wasmMod) {
         wasmMod = await import('./wasm/legaia_web_viewer.js');
         await wasmMod.default();
       }
-      const bytes = new Uint8Array(await f.arrayBuffer());
       audio = new wasmMod.LegaiaAudio();
+      prog.indeterminate('Parsing PROT.DAT — this can take a few seconds…');
+      await prog.paint(); // let the bar render before the blocking parse
       const protCount = audio.load_disc(bytes);
       status.textContent = `Loaded ${f.name} — ${protCount} PROT entries; scanning audio…`;
 
+      prog.indeterminate('Scanning for BGM + XA audio…');
+      await prog.paint();
       bgmEntries = JSON.parse(audio.enumerate_bgm_pairs_json());
       xaEntries  = JSON.parse(audio.enumerate_xa_files_json());
       renderBgmList('');
       renderXaList('');
       browseSec.style.display = 'block';
       status.textContent = `Loaded ${f.name} — ${bgmEntries.length} BGM pairs, ${xaEntries.length} XA streams.`;
+      prog.done(`${bgmEntries.length} BGM pairs, ${xaEntries.length} XA streams.`);
     } catch (err) {
       status.textContent = `Couldn't load: ${err.message || err}.`;
+      prog.fail(`Couldn't load: ${err.message || err}`);
       console.warn(err);
     }
-  });
+  }
+
+  /* Cache the picked disc and auto-load it on return visits / reloads. */
+  RomCache.attach(fileInput, { onLoad: loadAudioDisc });
 })();
 </script>
