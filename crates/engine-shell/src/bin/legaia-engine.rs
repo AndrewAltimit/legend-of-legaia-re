@@ -5769,7 +5769,31 @@ impl ApplicationHandler for PlayWindowApp {
                 ) {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
-                    let cam = self.camera_mvp(aspect);
+                    // World-map mode frames the loaded map with the
+                    // controller-driven camera (azimuth / zoom / pan);
+                    // every other mode uses the orbit camera.
+                    let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
+                    let cam = if in_world_map {
+                        let (az, zoom, px, pz) = self
+                            .session
+                            .host
+                            .world
+                            .world_map_ctrl
+                            .as_ref()
+                            .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z))
+                            .unwrap_or((0, 0, 0, 0));
+                        legaia_engine_render::window::world_map_camera_mvp(
+                            self.scene_aabb.0,
+                            self.scene_aabb.1,
+                            az,
+                            zoom,
+                            px,
+                            pz,
+                            aspect,
+                        )
+                    } else {
+                        self.camera_mvp(aspect)
+                    };
                     // Drain queued spawn slots: build a VRAM mesh from each
                     // actor's `tmd_ref` (global-pool TMD that the field-VM
                     // 0x4C 0xD8 host hook installed) and append it to
@@ -5863,7 +5887,23 @@ impl ApplicationHandler for PlayWindowApp {
                     // last-loaded scene (e.g. a town) doesn't show through
                     // behind publisher logos / title / save-select.
                     let mut draws: Vec<SceneDraw<'_>> = Vec::new();
-                    if !self.boot_ui.is_active() {
+                    if self.boot_ui.is_active() {
+                        // Boot UI is fullscreen - suppress 3D draws.
+                    } else if in_world_map {
+                        // World map has no per-actor bindings: draw the whole
+                        // loaded kingdom mesh pack at its pack-local
+                        // coordinates (Y-flipped to match the geometry
+                        // convention). Per-mesh world placement from the live
+                        // actor table is a separate, still-open RE thread; the
+                        // meshes render where the pack puts them.
+                        let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                        for mesh in &self.meshes {
+                            draws.push(SceneDraw {
+                                mesh,
+                                mvp: cam * model,
+                            });
+                        }
+                    } else {
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
@@ -6129,6 +6169,14 @@ fn cmd_play_window_with_record(
         // Installs the controller; World::tick drives it from the pad
         // routed via world.set_pad each frame.
         session.host.world.enter_world_map();
+        // Start in the navigable top-view so the player can orbit / zoom /
+        // pan the map immediately (L1/R1 rotate, the dpad pans, the
+        // shoulder/face zoom bits change height). Without this the
+        // controller stays in walk mode and ignores camera input.
+        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
+            ctrl.debug_enabled = true;
+            ctrl.view_mode = 1;
+        }
     } else {
         // Enter the field scene's first event-script record (the init
         // prologue) so the field VM actually runs on subsequent ticks.
