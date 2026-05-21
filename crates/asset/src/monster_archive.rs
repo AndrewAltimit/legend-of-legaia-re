@@ -517,6 +517,8 @@ impl MonsterMesh {
     /// `None` if the embedded TMD doesn't parse; otherwise a mesh with the
     /// relocated CBA/TSB (possibly empty if the monster has no textured
     /// prims). `slot` is the 0-based battle monster slot (`0..=4`).
+    ///
+    /// PORT: FUN_80055468
     pub fn battle_render_mesh(
         &self,
         slot: u8,
