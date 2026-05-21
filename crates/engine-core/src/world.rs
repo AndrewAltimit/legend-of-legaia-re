@@ -798,6 +798,25 @@ pub struct World {
     /// play-window`, the v0.1 playthrough oracle) set this once after boot.
     pub live_gameplay_loop: bool,
 
+    /// Opt-in for a **player-driven** battle inside the live loop. When
+    /// `false` (the default) the live loop auto-resolves each party turn with
+    /// a physical Attack on the first living monster (the historical spine
+    /// behaviour). When `true`, every party turn pauses the action SM and runs
+    /// a [`crate::battle_input::BattleCommandSession`] that reads
+    /// [`World::input`]: the player selects a command from the battle command
+    /// menu and a target before the strike commits. Requires
+    /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
+    /// (`legaia-engine play-window`) set both after boot. v0.1 enables only
+    /// the Attack command.
+    pub battle_player_driven: bool,
+
+    /// Active command-selection session for the player-driven battle. `Some`
+    /// only while a party member is choosing a command/target (the action SM
+    /// is parked meanwhile); `None` when the SM is running or outside battle.
+    /// Managed by the live loop; hosts read it to draw the command menu /
+    /// target cursor.
+    pub battle_command: Option<crate::battle_input::BattleCommandSession>,
+
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
     /// outside battle.
@@ -977,6 +996,8 @@ impl World {
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
             live_gameplay_loop: false,
+            battle_player_driven: false,
+            battle_command: None,
             active_formation: None,
             last_battle_rewards: None,
             game_over: false,
@@ -2908,6 +2929,108 @@ impl World {
         }
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
+        if self.battle_player_driven {
+            // Player-driven: don't pre-arm the first attack - open the command
+            // menu for party member 0 and let the SM idle until the player
+            // confirms (handled in `live_battle_tick`).
+            self.open_battle_command(0);
+        }
+    }
+
+    /// Open the player-driven command menu for party member `actor` and park
+    /// the action SM. The action context's `active_actor` is set now; the
+    /// queued action / target is filled in by [`Self::tick_battle_command`]
+    /// once the player confirms. No-op unless [`Self::battle_player_driven`].
+    fn open_battle_command(&mut self, actor: u8) {
+        if !self.battle_player_driven {
+            return;
+        }
+        self.battle_ctx.active_actor = actor;
+        self.battle_command = Some(crate::battle_input::BattleCommandSession::new(actor, actor));
+    }
+
+    /// Drive the open command session one frame from [`World::input`]. When the
+    /// session resolves, arm the action SM with the chosen command + target
+    /// (v0.1: a physical Attack) and clear the session so the SM resumes.
+    /// On an abort (no valid target) it falls back to the first living monster
+    /// so the loop never deadlocks.
+    fn tick_battle_command(&mut self) {
+        use crate::battle_input::{BattleCommandInput, Resolution};
+        use crate::input::PadButton;
+        use crate::target_picker::{CursorRow, SlotState};
+
+        let Some(mut session) = self.battle_command.take() else {
+            return;
+        };
+
+        let party_count = self.party_count.clamp(1, 3);
+        let slot_at = |idx: usize| -> SlotState {
+            match self.actors.get(idx) {
+                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
+                _ => SlotState::default(),
+            }
+        };
+        let mut party = [SlotState::default(); 3];
+        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
+            *p = slot_at(i);
+        }
+        let mut monsters = [SlotState::default(); 5];
+        for (i, m) in monsters.iter_mut().enumerate() {
+            *m = slot_at(party_count as usize + i);
+        }
+
+        let ev = BattleCommandInput {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+        };
+        session.input(ev, party, monsters);
+
+        match session.resolved() {
+            Some(Resolution::Confirmed {
+                // v0.1 only enables Attack, so `command` is always Attack here;
+                // Arts/Magic/Item aren't wired into the live loop yet.
+                command: _,
+                target_row,
+                target_slot,
+            }) => {
+                let target = match target_row {
+                    CursorRow::Enemy => party_count + target_slot,
+                    CursorRow::Ally => target_slot,
+                };
+                let actor = session.actor;
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3; // Attack
+                }
+                self.battle_ctx.active_actor = actor;
+                self.battle_ctx.queued_action = 3;
+                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+                // Session done; SM resumes next tick.
+            }
+            Some(Resolution::Aborted) => {
+                // No valid target the player could pick - arm a default strike
+                // on the first living monster so the loop progresses.
+                let actor = session.actor;
+                let target = (party_count..self.actors.len() as u8)
+                    .find(|&i| self.actors[i as usize].battle.liveness != 0)
+                    .unwrap_or(party_count);
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3;
+                }
+                self.battle_ctx.active_actor = actor;
+                self.battle_ctx.queued_action = 3;
+                self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+            }
+            None => {
+                // Still selecting - keep the session open for the next frame.
+                self.battle_command = Some(session);
+            }
+        }
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
@@ -2933,6 +3056,14 @@ impl World {
     /// apply loot and return to the field.
     fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
+
+        // Player-driven: while a command session is open the action SM is
+        // parked - drive the command picker from the pad and return without
+        // advancing the SM until the player confirms.
+        if self.battle_command.is_some() {
+            self.tick_battle_command();
+            return None;
+        }
 
         let outcome = self.step_battle();
 
@@ -2987,15 +3118,21 @@ impl World {
             .any(|i| self.actors[i as usize].battle.liveness != 0);
         if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte() && monsters_alive {
             let next = (self.battle_ctx.active_actor + 1) % party_count;
-            self.battle_ctx.active_actor = next;
-            self.battle_ctx.queued_action = 3;
-            self.battle_ctx.action_state = ActionState::Begin.as_byte();
-            let target = (party_count..self.actors.len() as u8)
-                .find(|&i| self.actors[i as usize].battle.liveness != 0)
-                .unwrap_or(party_count);
-            for slot in 0..party_count as usize {
-                self.actors[slot].battle.active_target = target;
-                self.actors[slot].battle.action_category = 3;
+            if self.battle_player_driven {
+                // Pause the SM and let the player pick the next member's
+                // command. `tick_battle_command` arms the SM on confirm.
+                self.open_battle_command(next);
+            } else {
+                self.battle_ctx.active_actor = next;
+                self.battle_ctx.queued_action = 3;
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+                let target = (party_count..self.actors.len() as u8)
+                    .find(|&i| self.actors[i as usize].battle.liveness != 0)
+                    .unwrap_or(party_count);
+                for slot in 0..party_count as usize {
+                    self.actors[slot].battle.active_target = target;
+                    self.actors[slot].battle.action_category = 3;
+                }
             }
         }
 
@@ -3054,6 +3191,8 @@ impl World {
         }
         self.active_formation = None;
         self.battle_end = None;
+        // Drop any open command session - it belongs to the finished battle.
+        self.battle_command = None;
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Restore the field actor table captured at the transition.

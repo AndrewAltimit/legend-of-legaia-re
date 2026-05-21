@@ -93,6 +93,14 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   transitions, and advances to the next attacker on `EndOfAction`. The
   `Resolve → RoundOutro → Victory / Defeat` transition observes the
   routed `BattleEnd` event. See `docs/subsystems/battle.md#battlesession-resolve-driver`.
+- `battle_input` - `BattleCommandSession`: the player-driven command
+  picker for the live gameplay loop. A small state machine (command menu
+  → target select → confirm) driven a frame at a time from `World::input`.
+  Target selection reuses `target_picker`. When
+  `World::battle_player_driven` is set, `World::live_battle_tick` opens
+  one per party turn and parks the action SM until the player confirms;
+  otherwise the loop auto-resolves with a physical Attack. v0.1 enables
+  only the Attack command. See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
 - `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
