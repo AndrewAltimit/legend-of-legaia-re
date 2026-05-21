@@ -107,3 +107,50 @@ fn spell_list_decodes_from_record_offset_array() {
         );
     }
 }
+
+#[test]
+fn monster_mesh_is_an_embedded_tmd_at_record_plus_4() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+
+    // Gimard (id 10): the embedded mesh sits at block +0x7c (= the value of
+    // stat record +0x04), parses as a Legaia TMD, and has real geometry.
+    let m = monster_archive::mesh(&entry, 10)
+        .expect("mesh decode")
+        .expect("Gimard has a mesh");
+    assert_eq!(m.id, 10);
+    assert_eq!(m.tmd_offset, 0x7c);
+    let tmd = legaia_tmd::parse(m.tmd_bytes()).expect("Gimard TMD parses");
+    let st = tmd.stats();
+    assert_eq!(st.total_vertices, 200, "Gimard vertex count");
+    assert!(st.total_primitives > 0, "Gimard has primitives");
+    // The texture/CLUT pool pointer (+0x08) lands inside the block.
+    assert!(
+        m.texture_pool_bytes().is_some(),
+        "Gimard has a texture pool"
+    );
+
+    // Almost every populated stat record carries a parseable mesh; only a
+    // handful of slots are empty/filler. Assert the overwhelming majority of
+    // the roster has a TMD at +0x04 that the parser walks without error.
+    let mut with_mesh = 0usize;
+    let mut total = 0usize;
+    for id in 1..=monster_archive::slot_count(&entry) as u16 {
+        if monster_archive::record(&entry, id).unwrap().is_none() {
+            continue; // empty / filler slot
+        }
+        total += 1;
+        if let Some(mesh) = monster_archive::mesh(&entry, id).unwrap()
+            && legaia_tmd::parse(mesh.tmd_bytes()).is_ok()
+        {
+            with_mesh += 1;
+        }
+    }
+    assert!(total > 100, "expected >100 populated records, got {total}");
+    assert!(
+        with_mesh as f64 / total as f64 > 0.95,
+        "expected >95% of populated records to carry a parseable mesh, got {with_mesh}/{total}"
+    );
+}

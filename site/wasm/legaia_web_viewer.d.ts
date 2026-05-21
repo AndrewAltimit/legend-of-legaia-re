@@ -340,6 +340,25 @@ export class LegaiaViewer {
      * LZS decode failure.
      */
     monster_archive_json(): string;
+    /**
+     * Bounding-sphere `[cx, cy, cz, r]` for monster `id`'s mesh, so the JS
+     * side can frame the model without re-parsing the geometry.
+     */
+    monster_mesh_bounds(id: number): Float32Array;
+    /**
+     * Triangle indices for monster `id`'s mesh (`u32`, multiple of 3).
+     */
+    monster_mesh_indices(id: number): Uint32Array;
+    /**
+     * Per-vertex smooth normals for monster `id`'s mesh (parallel to
+     * [`Self::monster_mesh_positions`]).
+     */
+    monster_mesh_normals(id: number): Float32Array;
+    /**
+     * Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
+     * 3 floats per vertex). Empty if the id has no mesh.
+     */
+    monster_mesh_positions(id: number): Float32Array;
     constructor(canvas_id: string);
     next_entry(): number;
     /**
@@ -640,6 +659,10 @@ export interface InitOutput {
     readonly legaiaviewer_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_monster_archive_json: (a: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_bounds: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_indices: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_positions: (a: number, b: number) => [number, number];
     readonly legaiaviewer_new: (a: number, b: number) => [number, number, number];
     readonly legaiaviewer_next_entry: (a: number) => [number, number, number];
     readonly legaiaviewer_ocean_animation_frames: (a: number) => [number, number];

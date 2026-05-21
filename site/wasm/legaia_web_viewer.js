@@ -790,6 +790,53 @@ export class LegaiaViewer {
         }
     }
     /**
+     * Bounding-sphere `[cx, cy, cz, r]` for monster `id`'s mesh, so the JS
+     * side can frame the model without re-parsing the geometry.
+     * @param {number} id
+     * @returns {Float32Array}
+     */
+    monster_mesh_bounds(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_bounds(this.__wbg_ptr, id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Triangle indices for monster `id`'s mesh (`u32`, multiple of 3).
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    monster_mesh_indices(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_indices(this.__wbg_ptr, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex smooth normals for monster `id`'s mesh (parallel to
+     * [`Self::monster_mesh_positions`]).
+     * @param {number} id
+     * @returns {Float32Array}
+     */
+    monster_mesh_normals(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_normals(this.__wbg_ptr, id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
+     * 3 floats per vertex). Empty if the id has no mesh.
+     * @param {number} id
+     * @returns {Float32Array}
+     */
+    monster_mesh_positions(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_positions(this.__wbg_ptr, id);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * @param {string} canvas_id
      */
     constructor(canvas_id) {

@@ -985,6 +985,89 @@ impl LegaiaViewer {
         serde_json::json!({ "records": arr }).to_string()
     }
 
+    /// Slice of the disc holding the monster stat archive (PROT entry 867,
+    /// extended footprint). Shared by [`Self::monster_archive_json`] and the
+    /// per-monster mesh accessors.
+    fn monster_archive_slice(&self) -> Option<&[u8]> {
+        const MONSTER_ARCHIVE_INDEX: u32 = 867;
+        let meta = parse_prot_toc(&self.disc)?
+            .into_iter()
+            .find(|e| e.index == MONSTER_ARCHIVE_INDEX)?;
+        let off = meta.byte_offset as usize;
+        let end = off.saturating_add(meta.size_bytes as usize);
+        self.disc.get(off..end)
+    }
+
+    /// Build monster `id`'s embedded mesh (the Legaia TMD at archive-block
+    /// `+0x04`) as a [`legaia_tmd::mesh::VramMesh`]. All monster prims are
+    /// textured, so this keeps the full geometry; the JS side renders it
+    /// flat / directional-lit via the per-vertex normals (textures are a
+    /// separate, still-open RE thread — the texture pool at `+0x08` is not
+    /// yet decoded). Returns `None` for a filler / out-of-range id.
+    fn build_monster_mesh(&self, id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
+        let slice = self.monster_archive_slice()?;
+        let mesh = legaia_asset::monster_archive::mesh(slice, id).ok()??;
+        let tmd = legaia_tmd::parse(mesh.tmd_bytes()).ok()?;
+        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, mesh.tmd_bytes()))
+    }
+
+    /// Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
+    /// 3 floats per vertex). Empty if the id has no mesh.
+    pub fn monster_mesh_positions(&self, id: u16) -> Vec<f32> {
+        let Some(mesh) = self.build_monster_mesh(id) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.positions.len() * 3);
+        for p in &mesh.positions {
+            out.extend_from_slice(&[p[0], p[1], p[2]]);
+        }
+        out
+    }
+
+    /// Per-vertex smooth normals for monster `id`'s mesh (parallel to
+    /// [`Self::monster_mesh_positions`]).
+    pub fn monster_mesh_normals(&self, id: u16) -> Vec<f32> {
+        let Some(mesh) = self.build_monster_mesh(id) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(mesh.normals.len() * 3);
+        for n in &mesh.normals {
+            out.extend_from_slice(&[n[0], n[1], n[2]]);
+        }
+        out
+    }
+
+    /// Triangle indices for monster `id`'s mesh (`u32`, multiple of 3).
+    pub fn monster_mesh_indices(&self, id: u16) -> Vec<u32> {
+        self.build_monster_mesh(id)
+            .map(|m| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// Bounding-sphere `[cx, cy, cz, r]` for monster `id`'s mesh, so the JS
+    /// side can frame the model without re-parsing the geometry.
+    pub fn monster_mesh_bounds(&self, id: u16) -> Vec<f32> {
+        let Some(mesh) = self.build_monster_mesh(id) else {
+            return vec![0.0; 4];
+        };
+        if mesh.positions.is_empty() {
+            return vec![0.0; 4];
+        }
+        let (lo, hi) = mesh.aabb();
+        let c = [
+            (lo[0] + hi[0]) * 0.5,
+            (lo[1] + hi[1]) * 0.5,
+            (lo[2] + hi[2]) * 0.5,
+        ];
+        let d = [
+            (hi[0] - lo[0]) * 0.5,
+            (hi[1] - lo[1]) * 0.5,
+            (hi[2] - lo[2]) * 0.5,
+        ];
+        let r = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1.0);
+        vec![c[0], c[1], c[2], r]
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

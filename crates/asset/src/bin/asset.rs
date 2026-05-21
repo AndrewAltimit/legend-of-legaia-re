@@ -277,6 +277,10 @@ enum Cmd {
         /// Decode only this monster id (1-based).
         #[arg(long)]
         id: Option<u16>,
+        /// Export the monster's embedded 3D mesh (the TMD at record +0x04) as
+        /// a Wavefront OBJ to this path. Requires `--id`.
+        #[arg(long)]
+        obj: Option<PathBuf>,
     },
     /// Inspect a single PROT entry as a scene v12 table: print the header
     /// fields, the inline records at `+0x14`, and a summary of the
@@ -588,7 +592,7 @@ fn main() -> Result<()> {
             max_regions,
         } => man_one(&input, with_encounter, max_formations, max_regions),
         Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
-        Cmd::MonsterArchive { input, id } => monster_archive_one(&input, id),
+        Cmd::MonsterArchive { input, id, obj } => monster_archive_one(&input, id, obj.as_deref()),
         Cmd::Validate {
             dir,
             cdname,
@@ -3129,7 +3133,7 @@ fn load_man_bytes(
     Ok((decoded, man))
 }
 
-fn monster_archive_one(input: &Path, id: Option<u16>) -> Result<()> {
+fn monster_archive_one(input: &Path, id: Option<u16>, obj: Option<&Path>) -> Result<()> {
     use legaia_asset::monster_archive;
     let bytes = std::fs::read(input)?;
     println!(
@@ -3182,7 +3186,47 @@ fn monster_archive_one(input: &Path, id: Option<u16>) -> Result<()> {
             }
         }
     }
+    if let Some(obj_path) = obj {
+        let Some(id) = id else {
+            anyhow::bail!("--obj requires --id <N>");
+        };
+        match monster_archive::mesh(&bytes, id)? {
+            Some(m) => {
+                let tmd = legaia_tmd::parse(m.tmd_bytes())?;
+                let s = monster_mesh_to_obj(&tmd, m.tmd_bytes(), id);
+                std::fs::write(obj_path, s)?;
+                let st = tmd.stats();
+                println!(
+                    "  wrote mesh OBJ -> {} (TMD @ block+0x{:x}: {} verts, {} prims)",
+                    obj_path.display(),
+                    m.tmd_offset,
+                    st.total_vertices,
+                    st.total_primitives,
+                );
+            }
+            None => println!("  id {id}: no mesh (out of range / filler / no TMD at +0x04)"),
+        }
+    }
     Ok(())
+}
+
+/// Wavefront OBJ string for a monster's embedded TMD: all objects' vertices
+/// concatenated, faces triangulated via the shared mesh builder.
+fn monster_mesh_to_obj(tmd: &legaia_tmd::Tmd, buf: &[u8], id: u16) -> String {
+    let mesh = legaia_tmd::mesh::tmd_to_mesh(tmd, buf);
+    let mut s = format!(
+        "# Legend of Legaia monster mesh (PROT 867 archive, id {id})\n# {} verts, {} tris\n",
+        mesh.positions.len(),
+        mesh.triangle_count(),
+    );
+    for p in &mesh.positions {
+        s.push_str(&format!("v {} {} {}\n", p[0], p[1], p[2]));
+    }
+    // OBJ vertex indices are 1-based.
+    for tri in mesh.indices.chunks_exact(3) {
+        s.push_str(&format!("f {} {} {}\n", tri[0] + 1, tri[1] + 1, tri[2] + 1));
+    }
+    s
 }
 
 fn man_one(

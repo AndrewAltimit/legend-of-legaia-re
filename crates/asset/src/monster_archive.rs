@@ -246,6 +246,19 @@ fn read_u16(b: &[u8], off: usize) -> Option<u16> {
 /// `Err` only when the slot claims a valid `dec_size` but the LZS stream
 /// fails to decode to that length.
 pub fn record(entry: &[u8], id: u16) -> Result<Option<MonsterRecord>> {
+    match decode_block(entry, id)? {
+        Some(block) => Ok(parse_block(id, &block)),
+        None => Ok(None),
+    }
+}
+
+/// LZS-decode monster id `id`'s archive slot into its raw block bytes.
+///
+/// Returns `Ok(None)` for an out-of-range id or an empty / filler slot (one
+/// whose `dec_size` header fails the plausibility bounds). Returns `Err` only
+/// when the slot claims a valid `dec_size` but the LZS stream fails to decode
+/// to that length. Shared by [`record`] and [`mesh`].
+fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     if id == 0 {
         return Ok(None);
     }
@@ -269,7 +282,7 @@ pub fn record(entry: &[u8], id: u16) -> Result<Option<MonsterRecord>> {
             block.len()
         );
     }
-    Ok(parse_block(id, &block))
+    Ok(Some(block))
 }
 
 /// Parse a decoded monster block into a [`MonsterRecord`]. Returns `None`
@@ -387,6 +400,81 @@ pub fn records(entry: &[u8]) -> Result<Vec<MonsterRecord>> {
         }
     }
     Ok(out)
+}
+
+/// TMD magic of the Legaia variant the monster meshes use (custom PSX TMD).
+const TMD_MAGIC: u32 = 0x8000_0002;
+
+/// A monster's embedded 3D model, located inside its decoded archive block.
+///
+/// The monster mesh is a [Legaia TMD](../../tmd) stored verbatim in the block
+/// at the offset held in the stat record's `+0x04` field (the same pointer the
+/// battle loader fixes up into the actor's `+0x230` attack-effect/animation
+/// data slot — the "0x1C-stride geometry records" walked by `FUN_80049858`
+/// are this TMD's per-object table). The matching texture / CLUT pool is at
+/// `+0x08`; its byte layout (CLUT count + 4bpp pixel pages) and runtime VRAM
+/// relocation are not yet pinned, so this struct exposes the pool only as a
+/// raw slice for callers that render untextured / flat-shaded geometry.
+#[derive(Debug, Clone)]
+pub struct MonsterMesh {
+    /// 1-based monster id (archive slot index + 1).
+    pub id: u16,
+    /// The full LZS-decoded archive block. The TMD and texture pool are slices
+    /// into this buffer.
+    pub block: Vec<u8>,
+    /// Block-relative byte offset of the embedded TMD (stat record `+0x04`).
+    pub tmd_offset: usize,
+    /// Block-relative byte offset of the texture / CLUT pool (stat record
+    /// `+0x08`). `0` when the record carries no pool pointer.
+    pub texture_pool_offset: usize,
+}
+
+impl MonsterMesh {
+    /// The embedded TMD bytes (from [`tmd_offset`](Self::tmd_offset) to the end
+    /// of the block). The TMD parser stops at the model's own extent, so the
+    /// trailing pool/spell bytes are harmless. Parse with `legaia_tmd::parse`.
+    pub fn tmd_bytes(&self) -> &[u8] {
+        &self.block[self.tmd_offset..]
+    }
+
+    /// The texture / CLUT pool bytes (from
+    /// [`texture_pool_offset`](Self::texture_pool_offset) to the end of the
+    /// block), or `None` when the record carries no pool pointer or the
+    /// offset is out of range. Layout is not yet reverse-engineered.
+    pub fn texture_pool_bytes(&self) -> Option<&[u8]> {
+        if self.texture_pool_offset == 0 || self.texture_pool_offset >= self.block.len() {
+            return None;
+        }
+        Some(&self.block[self.texture_pool_offset..])
+    }
+}
+
+/// Locate monster id `id`'s embedded 3D mesh.
+///
+/// Returns `Ok(None)` for an out-of-range id, an empty / filler slot, or a slot
+/// whose `+0x04` pointer does not land on a TMD magic (`0x80000002`). Returns
+/// `Err` only on a genuine LZS decode failure. The mesh is a Legaia TMD; see
+/// [`MonsterMesh`].
+pub fn mesh(entry: &[u8], id: u16) -> Result<Option<MonsterMesh>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    // The stat record's +0x04 holds the block-relative TMD offset (and +0x08
+    // the texture pool). Validate the TMD magic before trusting the pointer so
+    // filler / non-mesh slots return None rather than a bogus offset.
+    let Some(tmd_offset) = read_u32(&block, 0x04).map(|v| v as usize) else {
+        return Ok(None);
+    };
+    if tmd_offset + 4 > block.len() || read_u32(&block, tmd_offset) != Some(TMD_MAGIC) {
+        return Ok(None);
+    }
+    let texture_pool_offset = read_u32(&block, 0x08).unwrap_or(0) as usize;
+    Ok(Some(MonsterMesh {
+        id,
+        block,
+        tmd_offset,
+        texture_pool_offset,
+    }))
 }
 
 #[cfg(test)]
