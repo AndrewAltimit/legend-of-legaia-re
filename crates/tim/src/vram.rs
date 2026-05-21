@@ -326,7 +326,19 @@ impl Vram {
         // is `clut_w * 16` for 4bpp (= 256-wide row legitimate) and
         // proportional for 8bpp. Anything past that is a real mismatch.
         if clut_w != 0 && clut_w < 256 {
-            let populated_width = self.row_populated_width(cx, cy, VRAM_WIDTH) as u16;
+            // Measure the populated run as a *contiguous* palette band: stop at
+            // the first large zero gap so an unrelated texture region sharing
+            // this scanline isn't counted as part of the palette. This matters
+            // for the battle monster layout, where the per-slot CLUT rows
+            // (`484 + slot`) fall inside the 256-tall texture-page y-band
+            // (`y = 256`), so the slot's own 4bpp page sits far to the right of
+            // the CLUT on the *same* scanline; an unbounded scan would walk
+            // across the empty gap into the page and report a bogus ~480-wide
+            // palette. `MAX_CLUT_GAP` tolerates a few fully-transparent palette
+            // entries inside the band while staying well below the 80+ px gap
+            // that separates the CLUT region from any texture page.
+            const MAX_CLUT_GAP: usize = 64;
+            let populated_width = self.row_run_width(cx, cy, VRAM_WIDTH, MAX_CLUT_GAP) as u16;
             let max_legitimate_width = match depth_bits {
                 4 => clut_w * 16, // 16 distinct 16-entry palettes per row
                 8 => clut_w * 2,  // 8bpp has 1 palette per row; 2x slack for stray pixels
@@ -392,6 +404,35 @@ impl Vram {
         for col in x..end {
             if self.pixels[base + col] != 0 {
                 last_nonzero = Some(col);
+            }
+        }
+        last_nonzero.map(|c| c + 1 - x).unwrap_or(0)
+    }
+
+    /// Width (in pixels) of the *contiguous* populated run starting at
+    /// `(x, y)`, tolerating internal gaps of up to `max_gap` consecutive zero
+    /// pixels but stopping at the first larger gap. Unlike
+    /// [`Self::row_populated_width`] (which reports the distance to the last
+    /// non-zero pixel within the window, crossing arbitrary gaps), this keeps a
+    /// palette-row width measurement from leaking into an unrelated VRAM region
+    /// that merely shares the same scanline. `max_w` bounds the scan.
+    pub fn row_run_width(&self, x: usize, y: usize, max_w: usize, max_gap: usize) -> usize {
+        if y >= VRAM_HEIGHT || x >= VRAM_WIDTH {
+            return 0;
+        }
+        let end = (x + max_w).min(VRAM_WIDTH);
+        let base = y * VRAM_WIDTH;
+        let mut last_nonzero: Option<usize> = None;
+        let mut gap = 0usize;
+        for col in x..end {
+            if self.pixels[base + col] != 0 {
+                last_nonzero = Some(col);
+                gap = 0;
+            } else if last_nonzero.is_some() {
+                gap += 1;
+                if gap > max_gap {
+                    break;
+                }
             }
         }
         last_nonzero.map(|c| c + 1 - x).unwrap_or(0)
@@ -594,6 +635,51 @@ mod tests {
         vram.write_words(5, 100, 1, 1, &[0xFFFF]);
         // Run length is "last non-zero column + 1 - start" = 6.
         assert_eq!(vram.row_populated_width(0, 100, 256), 6);
+    }
+
+    #[test]
+    fn row_run_width_stops_at_a_large_gap() {
+        let mut vram = Vram::new();
+        // 240-wide palette band, then an empty gap, then unrelated data at 448.
+        vram.write_words(0, 200, 240, 1, &[0x1234; 240]);
+        vram.write_words(448, 200, 32, 1, &[0x4567; 32]);
+        // Unbounded last-nonzero scan crosses the gap to col 479 -> 480.
+        assert_eq!(vram.row_populated_width(0, 200, VRAM_WIDTH), 480);
+        // Gap-tolerant run stops at the palette band (gap 240..448 = 208 > 64).
+        assert_eq!(vram.row_run_width(0, 200, VRAM_WIDTH, 64), 240);
+        // A small internal gap (<= max_gap) is tolerated and spanned.
+        let mut vram = Vram::new();
+        vram.write_words(0, 10, 16, 1, &[0xAAAA; 16]);
+        vram.write_words(24, 10, 16, 1, &[0xBBBB; 16]); // gap of 8 zeros at 16..24
+        assert_eq!(vram.row_run_width(0, 10, VRAM_WIDTH, 64), 40);
+    }
+
+    #[test]
+    fn prim_texture_status_ok_when_clut_shares_scanline_with_a_distant_page() {
+        // Reproduce the battle monster VRAM layout: a 4bpp prim whose CLUT row
+        // sits inside the texture-page y-band, with the page far to the right
+        // on the *same* scanline. The depth-mismatch heuristic must not count
+        // the distant page as part of the palette. (Mirrors
+        // legaia_asset::monster_archive::battle_render_mesh for slot 2: CLUT row
+        // 486, page at x=448, both on row 486.)
+        let row = 486u16;
+        let cba = row << 6; // palette 0 on the monster CLUT row
+        let tsb = 0x0007 | (1 << 4); // tpage_x col 7 (=448px), tpage_y=256, 4bpp
+        let uvs = [(62, 38), (41, 0), (79, 0)];
+
+        let mut vram = Vram::new();
+        // 15 packed 16-colour palettes (240 cells) at x=0 on the CLUT row.
+        vram.write_words(0, row, 240, 1, &[0x1234; 240]);
+        // The slot's own 4bpp page: x=448, y=256, 256 rows tall, 32 cells wide
+        // (128 texels). Row 486 is inside [256, 512), so the page shares the
+        // CLUT's scanline.
+        vram.write_words(448, 256, 32, 256, &[0x4567; 32 * 256]);
+
+        assert_eq!(
+            vram.prim_texture_status(cba, tsb, &uvs),
+            PrimTextureStatus::Ok,
+            "monster prim must render despite the CLUT row sharing a scanline with the page"
+        );
     }
 
     #[test]
