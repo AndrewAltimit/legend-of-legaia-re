@@ -246,6 +246,19 @@ fn read_u16(b: &[u8], off: usize) -> Option<u16> {
 /// `Err` only when the slot claims a valid `dec_size` but the LZS stream
 /// fails to decode to that length.
 pub fn record(entry: &[u8], id: u16) -> Result<Option<MonsterRecord>> {
+    match decode_block(entry, id)? {
+        Some(block) => Ok(parse_block(id, &block)),
+        None => Ok(None),
+    }
+}
+
+/// LZS-decode monster id `id`'s archive slot into its raw block bytes.
+///
+/// Returns `Ok(None)` for an out-of-range id or an empty / filler slot (one
+/// whose `dec_size` header fails the plausibility bounds). Returns `Err` only
+/// when the slot claims a valid `dec_size` but the LZS stream fails to decode
+/// to that length. Shared by [`record`] and [`mesh`].
+fn decode_block(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     if id == 0 {
         return Ok(None);
     }
@@ -269,7 +282,7 @@ pub fn record(entry: &[u8], id: u16) -> Result<Option<MonsterRecord>> {
             block.len()
         );
     }
-    Ok(parse_block(id, &block))
+    Ok(Some(block))
 }
 
 /// Parse a decoded monster block into a [`MonsterRecord`]. Returns `None`
@@ -387,6 +400,205 @@ pub fn records(entry: &[u8]) -> Result<Vec<MonsterRecord>> {
         }
     }
     Ok(out)
+}
+
+/// TMD magic of the Legaia variant the monster meshes use (custom PSX TMD).
+const TMD_MAGIC: u32 = 0x8000_0002;
+
+/// A monster's embedded 3D model, located inside its decoded archive block.
+///
+/// The monster mesh is a [Legaia TMD](../../tmd) stored verbatim in the block
+/// at the offset held in the stat record's `+0x04` field (the same pointer the
+/// battle loader fixes up into the actor's `+0x230` attack-effect/animation
+/// data slot — the "0x1C-stride geometry records" walked by `FUN_80049858`
+/// are this TMD's per-object table). The matching texture / CLUT pool is at
+/// `+0x08`; [`texture`](MonsterMesh::texture) decodes it into palettes + a 4bpp
+/// page (layout pinned from the loader `FUN_80055468`; see [`MonsterTexture`]).
+#[derive(Debug, Clone)]
+pub struct MonsterMesh {
+    /// 1-based monster id (archive slot index + 1).
+    pub id: u16,
+    /// The full LZS-decoded archive block. The TMD and texture pool are slices
+    /// into this buffer.
+    pub block: Vec<u8>,
+    /// Block-relative byte offset of the embedded TMD (stat record `+0x04`).
+    pub tmd_offset: usize,
+    /// Block-relative byte offset of the texture / CLUT pool (stat record
+    /// `+0x08`). `0` when the record carries no pool pointer.
+    pub texture_pool_offset: usize,
+}
+
+impl MonsterMesh {
+    /// The embedded TMD bytes (from [`tmd_offset`](Self::tmd_offset) to the end
+    /// of the block). The TMD parser stops at the model's own extent, so the
+    /// trailing pool/spell bytes are harmless. Parse with `legaia_tmd::parse`.
+    pub fn tmd_bytes(&self) -> &[u8] {
+        &self.block[self.tmd_offset..]
+    }
+
+    /// The texture / CLUT pool bytes (from
+    /// [`texture_pool_offset`](Self::texture_pool_offset) to the end of the
+    /// block), or `None` when the record carries no pool pointer or the
+    /// offset is out of range. See [`texture`](Self::texture) for the decoded
+    /// palettes + 4bpp page.
+    pub fn texture_pool_bytes(&self) -> Option<&[u8]> {
+        if self.texture_pool_offset == 0 || self.texture_pool_offset >= self.block.len() {
+            return None;
+        }
+        Some(&self.block[self.texture_pool_offset..])
+    }
+
+    /// Decode the texture pool into its palettes + 4bpp page.
+    ///
+    /// Returns `None` when there is no pool or it's too small to hold the CLUT
+    /// region plus at least one texture row. See [`MonsterTexture`] for the
+    /// layout and the `FUN_80055468` provenance.
+    pub fn texture(&self) -> Option<MonsterTexture> {
+        let pool = self.texture_pool_bytes()?;
+        if pool.len() <= CLUT_REGION_BYTES {
+            return None;
+        }
+        // 15 sequential 16-colour CLUTs at the head; the loader uploads the
+        // whole 240-colour region to one VRAM row and a prim picks palette
+        // `cba & 0x3F`. Index-0 colour 0x0000 is the PSX transparent texel.
+        let palettes: Vec<[[u8; 4]; 16]> = (0..CLUT_COUNT)
+            .map(|c| {
+                let mut pal = [[0u8; 4]; 16];
+                for (i, slot) in pal.iter_mut().enumerate() {
+                    let raw = read_u16(pool, c * 32 + i * 2).unwrap_or(0);
+                    *slot = bgr555_to_rgba(raw);
+                }
+                pal
+            })
+            .collect();
+
+        // The 4bpp page is always 256 rows tall (StoreImage RECT.h); width is
+        // whatever the remaining bytes divide into across those rows (64 B/row
+        // = 128 texels for narrow monsters, 128 B/row = 256 texels for wide).
+        let pixels = &pool[CLUT_REGION_BYTES..];
+        let bytes_per_row = pixels.len() / TEXTURE_HEIGHT;
+        if bytes_per_row == 0 {
+            return None;
+        }
+        let width = bytes_per_row * 2;
+        let mut indices = vec![0u8; width * TEXTURE_HEIGHT];
+        for y in 0..TEXTURE_HEIGHT {
+            for xb in 0..bytes_per_row {
+                let b = pixels[y * bytes_per_row + xb];
+                indices[y * width + xb * 2] = b & 0x0F;
+                indices[y * width + xb * 2 + 1] = b >> 4;
+            }
+        }
+        Some(MonsterTexture {
+            palettes,
+            indices,
+            width,
+            height: TEXTURE_HEIGHT,
+        })
+    }
+}
+
+/// Size of the CLUT region at the head of the texture pool: 15 sequential
+/// 16-colour palettes (`15 * 16 * 2` bytes). The loader (`FUN_80055468`)
+/// uploads this region to VRAM row `484 + battle_slot`, 256 colours wide.
+pub const CLUT_REGION_BYTES: usize = 0x1E0;
+/// Number of 16-colour palettes in the CLUT region. A prim selects palette
+/// `cba & 0x3F`; the rest are zero-padded for monsters that use fewer.
+pub const CLUT_COUNT: usize = 15;
+/// Texture-page height in texels. Always 256 (the `FUN_80055468` StoreImage
+/// `RECT.h`); the page width varies (128 or 256 texels).
+pub const TEXTURE_HEIGHT: usize = 256;
+
+/// Convert a PSX BGR555 colour to RGBA8. The all-zero colour (`0x0000`) is the
+/// PSX transparent texel and maps to alpha 0; every other colour is opaque.
+fn bgr555_to_rgba(v: u16) -> [u8; 4] {
+    let r = ((v & 0x1F) << 3) as u8;
+    let g = (((v >> 5) & 0x1F) << 3) as u8;
+    let b = (((v >> 10) & 0x1F) << 3) as u8;
+    let a = if v == 0 { 0 } else { 255 };
+    [r, g, b, a]
+}
+
+/// A monster's decoded battle texture: the palette set plus the 4bpp page.
+///
+/// Reverse-engineered from the battle loader `FUN_80055468` (see
+/// `ghidra/scripts/funcs/80055468.txt`), which the streaming archive loader
+/// `FUN_800542C8` calls with the pool pointer (record `+0x08`), the embedded
+/// TMD (record `+0x04`), and the battle slot index. The pool is laid out as:
+///
+/// ```text
+/// +0x000  15 x [16 BGR555 colours]   ; CLUT region (0x1E0 bytes, zero-padded)
+/// +0x1E0  4bpp indices               ; width x 256 texels, row-major
+/// ```
+///
+/// A textured prim references CLUT base `cba` (palette = `cba & 0x3F`) and
+/// samples the page at its per-vertex `(u, v)`; index 0 is transparent.
+#[derive(Debug, Clone)]
+pub struct MonsterTexture {
+    /// The 15 palettes, each 16 RGBA8 colours. A prim with CLUT base `cba`
+    /// uses `palettes[(cba & 0x3F) as usize]` (clamp to `CLUT_COUNT`).
+    pub palettes: Vec<[[u8; 4]; 16]>,
+    /// One 4bpp palette index per texel, row-major (`width * height` bytes).
+    pub indices: Vec<u8>,
+    /// Page width in texels (128 for narrow monsters, 256 for wide ones).
+    pub width: usize,
+    /// Page height in texels (always [`TEXTURE_HEIGHT`] = 256).
+    pub height: usize,
+}
+
+impl MonsterTexture {
+    /// Bake the page into a flat RGBA8 image using the given palette index
+    /// (`cba & 0x3F` of the prim you want to preview). Transparent texels keep
+    /// alpha 0. `width * height * 4` bytes, row-major top-to-bottom.
+    pub fn to_rgba(&self, palette: usize) -> Vec<u8> {
+        let pal = &self.palettes[palette.min(self.palettes.len() - 1)];
+        let mut out = Vec::with_capacity(self.indices.len() * 4);
+        for &idx in &self.indices {
+            out.extend_from_slice(&pal[idx as usize]);
+        }
+        out
+    }
+
+    /// Flatten the 15 palettes into a single `15 * 16` RGBA8 row, suitable for
+    /// uploading as a palette lookup texture (palette `p`, colour `c` is at
+    /// pixel `p * 16 + c`).
+    pub fn palette_rgba(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(CLUT_COUNT * 16 * 4);
+        for pal in &self.palettes {
+            for colour in pal {
+                out.extend_from_slice(colour);
+            }
+        }
+        out
+    }
+}
+
+/// Locate monster id `id`'s embedded 3D mesh.
+///
+/// Returns `Ok(None)` for an out-of-range id, an empty / filler slot, or a slot
+/// whose `+0x04` pointer does not land on a TMD magic (`0x80000002`). Returns
+/// `Err` only on a genuine LZS decode failure. The mesh is a Legaia TMD; see
+/// [`MonsterMesh`].
+pub fn mesh(entry: &[u8], id: u16) -> Result<Option<MonsterMesh>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    // The stat record's +0x04 holds the block-relative TMD offset (and +0x08
+    // the texture pool). Validate the TMD magic before trusting the pointer so
+    // filler / non-mesh slots return None rather than a bogus offset.
+    let Some(tmd_offset) = read_u32(&block, 0x04).map(|v| v as usize) else {
+        return Ok(None);
+    };
+    if tmd_offset + 4 > block.len() || read_u32(&block, tmd_offset) != Some(TMD_MAGIC) {
+        return Ok(None);
+    }
+    let texture_pool_offset = read_u32(&block, 0x08).unwrap_or(0) as usize;
+    Ok(Some(MonsterMesh {
+        id,
+        block,
+        tmd_offset,
+        texture_pool_offset,
+    }))
 }
 
 #[cfg(test)]

@@ -105,7 +105,7 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | Offset | Type | Use |
 |---|---|---|
 | `+0x00` | u32 | Name string pointer (disc offset → pointer; `strlen` copied into actor `+0x1BC`). |
-| `+0x04` | u32 | Attack-effect / animation data pointer → actor `+0x230` (walked as `0x1C`-stride geometry records by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. |
+| `+0x04` | u32 | Block-relative offset of the monster's **battle-model TMD** → actor `+0x230` (walked as `0x1C`-stride geometry records — a TMD object-table entry is `0x1C` bytes — by `FUN_80049858` / `FUN_800495C8`). **Not** XP/drop. See [Monster mesh](#monster-mesh-record-0x04). |
 | `+0x08` | u32 | Shared-resource pointer (fixed up at load). |
 | `+0x0C` | u16 | **HP** → actor `+0x14C/+0x14E/+0x172`. |
 | `+0x0E` | u16 | **SP** → actor `+0x154/+0x156` (spirit/action gauge - AI spell-selection budget; spirit-charge source). |
@@ -141,6 +141,64 @@ The archive is **PROT entry `0867_battle_data`** (the EXTENDED footprint — the
 Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the loader's relative seek `(id-1)*40` sectors + the `disc_read` CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actor stats byte-for-byte (Gimard id 10 = HP 99 / MP 20, Killer Bee id 62 = 288 / 288, Queen Bee id 63 = 888 / 888). town01's encounter formations resolve to the Rim Elm Mist-attack set (Gobu Gobu id 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63, Tetsu 79 — Tetsu being the 999/999 tutorial sparring partner).
 
 Parser: [`legaia_asset::monster_archive`](../../crates/asset/README.md) (`record(entry, id)` / `records(entry)`; CLI `asset monster-archive`). Engine bridge: `legaia_engine_core::monster_catalog::catalog_from_monster_archive`, merged into the catalog by `SceneHost::enter_field_scene` for the scene's encounter ids so triggered battles spawn real stats.
+
+### Monster mesh (record `+0x04`)
+
+Each decoded monster block carries the monster's **battle model**: a
+[Legaia TMD](../formats/tmd.md) embedded at the block-relative offset held in
+the stat record's `+0x04` field (immediately after the name string). This is
+the same pointer the loader installs at battle-actor `+0x230` and that
+`FUN_80049858` / `FUN_800495C8` walk as `0x1C`-stride records — a TMD
+object-table entry is exactly `0x1C` bytes, so that walk is iterating the
+mesh's per-object table. Verified across the archive: **186 of the 194 slots
+carry a Legaia TMD at `+0x04` that the parser walks cleanly** (the other 8 are
+empty / filler ids); e.g. Gimard (id 10) = 200 vertices / 269 textured prims
+at block `+0x7c`.
+
+Decoded-block layout (after the stat-record head at `+0x00`):
+
+```
++0x00  stat record head (name_offset, +0x04 mesh offset, +0x08 pool offset, stats, rewards, spells)
+name   NUL-terminated name string (at name_offset, typically just before the mesh)
++0x04→ Legaia TMD              ; the monster's battle model (magic 0x80000002)
+spells spell-entry blobs       ; each carries its own attack-effect geometry
++0x08→ texture / CLUT pool     ; per-monster palettes + 4bpp texture pages
+```
+
+The mesh's primitives are textured: they reference a CLUT + a 4bpp texture page
+via per-prim CBA/TSB. The matching palette + pixel bytes live in the **texture
+pool at record `+0x08`**, whose layout is pinned from the battle loader
+`FUN_80055468` (the streaming archive loader `FUN_800542C8` calls it with the
+pool pointer, the embedded TMD, and the battle-slot index):
+
+```
++0x000  15 x [16 BGR555 colours]   ; CLUT region (0x1E0 bytes; zero-padded for
+                                   ;   monsters that use fewer than 15)
++0x1E0  4bpp indices               ; texture page, width x 256 texels, row-major
+```
+
+The loader uploads the CLUT region to VRAM `(0, 484 + slot)` (256 colours wide,
+STP bit set on non-zero entries) and the page to `(slot*64 + 320, 256)`. The
+page is **always 256 rows tall**; its width is **128 texels** (32 fb-units) for
+most monsters or **256 texels** (64 fb-units) when the per-monster wide flag is
+set — so `width_texels = (pool_len - 0x1E0) / 256 * 2`. A primitive selects its
+palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`; PSX
+index 0 (colour `0x0000`) is transparent. The byte arithmetic is exact: Gimard
+`0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to
+their pool sizes. (The on-disc CBA/TSB are nominal defaults the loader relocates
+per slot, so the raw pool bytes do not appear verbatim in a battle VRAM dump —
+the `FUN_80055468` layout is the ground truth; see
+`ghidra/scripts/funcs/80055468.txt`.)
+
+Parser: `legaia_asset::monster_archive::mesh(entry, id) -> Option<MonsterMesh>`
+(returns the decoded block + the TMD/pool offsets); `MonsterMesh::texture()`
+decodes the pool into `MonsterTexture { palettes, indices, width, height }`. CLI
+`asset monster-archive --id N --obj <out>` exports the mesh as Wavefront OBJ and
+`--texture-png <out>` bakes the texture page. WASM: the
+`LegaiaViewer::monster_mesh_{positions,normals,indices,bounds,uvs,palette_index}`
+and `monster_texture_{indices,palette_rgba,dims}` accessors feed the in-browser
+WebGL viewer on the enemy-table site page, which textures the model with the
+index→palette lookup the PSX GPU does in VRAM.
 
 ## Stat aggregator (`FUN_80042558`)
 

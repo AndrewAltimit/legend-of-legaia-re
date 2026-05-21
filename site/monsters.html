@@ -37,8 +37,37 @@ table.enemy-table thead th .arrow { color: var(--accent); font-size: 0.7rem; mar
 table.enemy-table tbody td { padding: 0.4rem 0.7rem; border-bottom: 1px solid var(--border); text-align: right; }
 table.enemy-table tbody td.col-name { text-align: left; color: var(--text); }
 table.enemy-table tbody td.col-id { color: var(--accent); }
-table.enemy-table tbody tr:hover { background: var(--bg-raised); }
+table.enemy-table tbody tr:hover { background: var(--bg-raised); cursor: pointer; }
+table.enemy-table tbody tr.selected { background: var(--bg-raised); outline: 1px solid var(--accent); }
 table.enemy-table tbody td.dim { color: var(--text-dim); }
+table.enemy-table tbody td.col-mesh { color: var(--accent); text-align: center; }
+table.enemy-table tbody tr.selected td.col-mesh { color: var(--accent); }
+
+/* Inline per-row 3D mesh viewer: an expanded detail row injected right
+   beneath the clicked row. */
+tr.mesh-detail-row > td { padding: 0 !important; background: var(--bg-code); border-bottom: 1px solid var(--border); }
+.mesh-detail-inner {
+  display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start;
+  padding: 0.85rem 0.9rem;
+}
+.mesh-viewer-canvas-wrap { position: relative; }
+canvas.mesh-viewer-canvas {
+  width: 360px; height: 320px; max-width: 100%;
+  background: radial-gradient(circle at 50% 38%, #1c2026 0%, #0c0e12 100%);
+  border: 1px solid var(--border); display: block; cursor: grab;
+}
+canvas.mesh-viewer-canvas:active { cursor: grabbing; }
+.mesh-viewer-side { flex: 1 1 240px; min-width: 220px; font-family: var(--font-mono); font-size: 0.82rem; }
+.mesh-viewer-side h3 { margin: 0 0 0.3rem; color: var(--text); font-size: 1rem; }
+.mesh-viewer-side .mesh-stat { color: var(--text-muted); }
+.mesh-viewer-side .mesh-stat b { color: var(--text); }
+.mesh-viewer-controls { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
+.mesh-viewer-controls button {
+  background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem; font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer;
+}
+.mesh-viewer-controls button:hover { border-color: var(--accent); }
+.mesh-viewer-hint { color: var(--text-dim); font-size: 0.74rem; margin-top: 0.5rem; line-height: 1.5; max-width: 42ch; }
 </style>
 </head>
 <body>
@@ -48,7 +77,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
 <header>
   <div class="breadcrumb"><a href="index.html">home</a> · enemy table</div>
   <h1>Enemy table</h1>
-  <p class="lede">Decode every enemy's stat record straight from your own disc image. The full archive — names, HP, MP, and combat stats for the whole roster — is LZS-decompressed in your browser via WebAssembly. No game data ships with this site; bring your own <code>.bin</code> and nothing leaves your machine.</p>
+  <p class="lede">Decode every enemy's stat record <em>and 3D battle model</em> straight from your own disc image. The full archive — names, HP, MP, combat stats, and the embedded mesh for the whole roster — is LZS-decompressed in your browser via WebAssembly. Click any row to spin its model. No game data ships with this site; bring your own <code>.bin</code> and nothing leaves your machine.</p>
 </header>
 
 <section class="doc-section">
@@ -84,6 +113,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
             <th data-key="exp" title="Base EXP reward (record +0x46); retail scales x3/4 and splits among the party">EXP</th>
             <th data-key="gold" title="Base gold reward (record +0x44); a lone enemy yields floor((gold>>1)/2)">Gold</th>
             <th data-key="drop_chance" title="Drop item id @ drop chance % (record +0x48 / +0x49)">Drop</th>
+            <th class="col-mesh" title="Click a row to view the enemy's embedded 3D battle model (TMD at archive-block +0x04)">3D</th>
           </tr>
         </thead>
         <tbody id="enemy-table-body"></tbody>
@@ -98,6 +128,8 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
   <h2>How it works</h2>
   <p>The stat archive is the extended footprint of PROT entry <code>867</code>. Each monster id <code>n</code> (1-based) maps to slot <code>(n−1)·0x14000</code>, framed as <code>[u32 decoded-size][Legaia LZS stream]</code>; the decoded block's head is the stat record the battle loader copies into a live actor. The same <code>legaia_asset::monster_archive</code> parser used by the native tools and the engine runs here, compiled to WebAssembly.</p>
   <p style="color: var(--text-dim); font-size: 0.85rem;">Files are read with the browser's <code>FileReader</code> API directly into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring-your-own-disc). Native equivalent: <code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code> (add <code>--id N</code> for a single record).</p>
+  <h2>The 3D model</h2>
+  <p>The same decoded block carries the enemy's <strong>battle model</strong>: a <a href="formats/tmd.html">Legaia TMD</a> embedded at the block-relative offset in the stat record's <code>+0x04</code> field (right after the name string) — the same pointer the battle loader installs at actor <code>+0x230</code>. <strong>186 of the 194 archive slots</strong> carry a clean TMD here (the rest are filler ids). The viewer renders it <strong>textured</strong> and directional-lit: the colours come from the <strong>texture / palette pool</strong> at record <code>+0x08</code>, decoded from the battle loader <code>FUN_80055468</code> — a 0x1E0-byte region of fifteen 16-colour palettes followed by a 4bpp page (always 256 rows tall, 128 or 256 texels wide). Each primitive picks its palette from its CBA (<code>cba &amp; 0x3F</code>) and samples the page at its UVs, exactly as the PSX GPU does from VRAM. Native export: <code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code>.</p>
 </section>
 
 <script type="module">
@@ -115,6 +147,9 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
   let records = [];        // normalized {id,name,hp,mp,s0..s5,magic}
   let sortKey = 'id';
   let sortDir = 1;         // 1 = asc, -1 = desc
+  let viewer = null;       // WASM LegaiaViewer (hoisted so the mesh view can call it)
+  let selectedId = null;   // currently-rendered monster id
+  let meshView = null;     // MonsterMeshView (lazily created on first selection)
 
   function normalize(r) {
     const s = r.stats || [];
@@ -158,7 +193,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
     });
 
     body.innerHTML = rows.map(r => `
-      <tr>
+      <tr data-id="${r.id}" class="${r.id === selectedId ? 'selected' : ''}">
         <td class="col-id">${r.id}</td>
         <td class="col-name">${escapeHtml(r.name)}</td>
         <td>${r.hp}</td>
@@ -174,6 +209,7 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
         <td>${r.exp}</td>
         <td>${r.gold}</td>
         <td class="${r.drop_item ? '' : 'dim'}">${r.drop_item ? ('#' + r.drop_item + '@' + r.drop_chance + '%') : '—'}</td>
+        <td class="col-mesh" title="View 3D model">${r.id === selectedId ? '▾' : '▸'}</td>
       </tr>`).join('');
 
     countEl.textContent = q
@@ -190,6 +226,9 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
         th.appendChild(span);
       }
     });
+
+    // Re-attach the persistent expanded mesh row beneath the selected row.
+    placeDetailRow();
   }
 
   head.querySelectorAll('th').forEach(th => {
@@ -201,6 +240,370 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
     });
   });
   filterInput.addEventListener('input', render);
+
+  // Click a row -> render that monster's mesh.
+  body.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const id = Number(tr.dataset.id);
+    if (Number.isFinite(id)) selectMonster(id);
+  });
+
+  // ---- 3D mesh viewer (WebGL2, directional-lit, textured) ------------------
+  // Textures come from the decoded monster texture pool (record +0x08): a 4bpp
+  // index page (uploaded as an R8 texture) + a 15x16 palette LUT (RGBA). The
+  // fragment shader does the index->palette lookup the PSX GPU does in VRAM,
+  // picking the palette by the prim's CBA (a_pal = cba & 0x3F). Falls back to
+  // flat directional shading when a slot has no texture.
+
+  const MESH_VS = `#version 300 es
+  in vec3 a_pos;
+  in vec3 a_nrm;
+  in vec2 a_uv;
+  in float a_pal;
+  uniform mat4 u_mvp;
+  uniform mat3 u_nrm;
+  out vec3 v_n;
+  out vec2 v_uv;
+  out float v_pal;
+  void main() {
+    v_n = u_nrm * a_nrm;
+    v_uv = a_uv;
+    v_pal = a_pal;
+    gl_Position = u_mvp * vec4(a_pos, 1.0);
+  }`;
+
+  const MESH_FS = `#version 300 es
+  precision highp float;
+  in vec3 v_n;
+  in vec2 v_uv;
+  in float v_pal;
+  uniform sampler2D u_idx;   // R8: palette index per texel (value*255)
+  uniform sampler2D u_pal;   // RGBA8: 15*16 palette LUT (one row)
+  uniform bool u_textured;
+  out vec4 o_col;
+  void main() {
+    float ln = length(v_n);
+    vec3 N = ln > 1e-4 ? v_n / ln : vec3(0.0, 0.0, 1.0);
+    // Two-sided key light from upper-front-right + hemispheric ambient so
+    // back faces (whose TMD winding may flip) still read as solid.
+    vec3 L = normalize(vec3(0.4, 0.65, 0.8));
+    float key = abs(dot(N, L));
+    float amb = 0.42 + 0.18 * N.y;
+    if (u_textured) {
+      float idx = floor(texture(u_idx, v_uv).r * 255.0 + 0.5);
+      float u = (v_pal * 16.0 + idx + 0.5) / 240.0;
+      vec4 t = texture(u_pal, vec2(u, 0.5));
+      if (t.a < 0.5) discard;            // PSX index-0 transparent texel
+      // PSX textures carry their own shading; modulate gently by the light.
+      vec3 col = t.rgb * (0.74 + key * 0.40);
+      o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+    } else {
+      vec3 base = vec3(0.66, 0.70, 0.78);
+      vec3 col = base * (amb + key * 0.78);
+      o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+    }
+  }`;
+
+  class MonsterMeshView {
+    constructor(canvas) {
+      this.canvas = canvas;
+      const gl = canvas.getContext('webgl2', { antialias: true });
+      if (!gl) throw new Error('WebGL2 unavailable');
+      this.gl = gl;
+      this.prog = compileProgram(gl, MESH_VS, MESH_FS);
+      this.loc = {
+        pos: gl.getAttribLocation(this.prog, 'a_pos'),
+        nrm: gl.getAttribLocation(this.prog, 'a_nrm'),
+        uv: gl.getAttribLocation(this.prog, 'a_uv'),
+        pal: gl.getAttribLocation(this.prog, 'a_pal'),
+        mvp: gl.getUniformLocation(this.prog, 'u_mvp'),
+        nmat: gl.getUniformLocation(this.prog, 'u_nrm'),
+        idxTex: gl.getUniformLocation(this.prog, 'u_idx'),
+        palTex: gl.getUniformLocation(this.prog, 'u_pal'),
+        textured: gl.getUniformLocation(this.prog, 'u_textured'),
+      };
+      this.vao = gl.createVertexArray();
+      this.posBuf = gl.createBuffer();
+      this.nrmBuf = gl.createBuffer();
+      this.uvBuf = gl.createBuffer();
+      this.palBuf = gl.createBuffer();
+      this.idxBuf = gl.createBuffer();
+      this.idxTex = gl.createTexture();   // 4bpp index page (R8)
+      this.palTex = gl.createTexture();   // 15*16 palette LUT (RGBA8)
+      this.textured = false;
+      this.indexCount = 0;
+      this.center = [0, 0, 0];
+      this.radius = 1;
+      this.cam = { yaw: 0.5, pitch: 0.2, distance: 2.6, autoRotate: true };
+      gl.enable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE); // PSX winding isn't consistent; draw both sides
+      gl.clearColor(0, 0, 0, 0);
+      this._attachControls();
+      this._loop = this._loop.bind(this);
+      this._raf = requestAnimationFrame(this._loop);
+    }
+
+    // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(15*16*4), w, h } or null.
+    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex) {
+      const gl = this.gl;
+      gl.bindVertexArray(this.vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.loc.pos);
+      gl.vertexAttribPointer(this.loc.pos, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(this.loc.nrm);
+      gl.vertexAttribPointer(this.loc.nrm, 3, gl.FLOAT, false, 0, 0);
+
+      this.textured = !!(tex && uvs && uvs.length && palIdx && palIdx.length);
+      if (this.textured) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(this.loc.uv);
+        gl.vertexAttribPointer(this.loc.uv, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.palBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, palIdx, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(this.loc.pal);
+        gl.vertexAttribPointer(this.loc.pal, 1, gl.FLOAT, false, 0, 0);
+
+        // 4bpp index page as a single-channel R8 texture (NEAREST, no mips).
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.bindTexture(gl.TEXTURE_2D, this.idxTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, tex.w, tex.h, 0, gl.RED, gl.UNSIGNED_BYTE, tex.idx);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // Palette LUT: 15*16 = 240 RGBA colours in one row.
+        gl.bindTexture(gl.TEXTURE_2D, this.palTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 240, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex.pal);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      } else {
+        gl.disableVertexAttribArray(this.loc.uv);
+        gl.disableVertexAttribArray(this.loc.pal);
+      }
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      gl.bindVertexArray(null);
+      this.indexCount = indices.length;
+      this.center = [bounds[0], bounds[1], bounds[2]];
+      this.radius = bounds[3] || 1;
+    }
+
+    resetView() {
+      this.cam = { yaw: 0.5, pitch: 0.2, distance: 2.6, autoRotate: true };
+      updateSpinLabel(this.cam.autoRotate);
+    }
+
+    // Pointer-event controls scoped to the canvas (with pointer capture) so
+    // drag/zoom never leak listeners to window even though the canvas lives
+    // for the lifetime of the page.
+    _attachControls() {
+      const c = this.canvas;
+      let drag = false, lx = 0, ly = 0;
+      c.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        drag = true; lx = e.clientX; ly = e.clientY;
+        c.setPointerCapture(e.pointerId);
+        this.cam.autoRotate = false; updateSpinLabel(false); e.preventDefault();
+      });
+      c.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        this.cam.yaw += (e.clientX - lx) * 0.01;
+        this.cam.pitch += (e.clientY - ly) * 0.01;
+        const lim = Math.PI / 2 - 0.05;
+        this.cam.pitch = Math.max(-lim, Math.min(lim, this.cam.pitch));
+        lx = e.clientX; ly = e.clientY;
+      });
+      const end = (e) => { drag = false; try { c.releasePointerCapture(e.pointerId); } catch (_) {} };
+      c.addEventListener('pointerup', end);
+      c.addEventListener('pointercancel', end);
+      c.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.cam.distance = Math.max(0.4, Math.min(40, this.cam.distance * Math.exp(e.deltaY * 0.001)));
+      }, { passive: false });
+      c.addEventListener('dblclick', () => this.resetView());
+    }
+
+    _loop() {
+      const gl = this.gl;
+      const w = this.canvas.width, h = this.canvas.height;
+      gl.viewport(0, 0, w, h);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      if (this.indexCount > 0) {
+        if (this.cam.autoRotate) this.cam.yaw += 0.012;
+        const m = buildMatrices(this.cam, this.center, this.radius, w, h);
+        gl.useProgram(this.prog);
+        gl.uniformMatrix4fv(this.loc.mvp, false, m.mvp);
+        gl.uniformMatrix3fv(this.loc.nmat, false, m.normalMat);
+        gl.uniform1i(this.loc.textured, this.textured ? 1 : 0);
+        if (this.textured) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.idxTex);
+          gl.uniform1i(this.loc.idxTex, 0);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, this.palTex);
+          gl.uniform1i(this.loc.palTex, 1);
+        }
+        gl.bindVertexArray(this.vao);
+        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+        gl.bindVertexArray(null);
+      }
+      this._raf = requestAnimationFrame(this._loop);
+    }
+  }
+
+  // Build {mvp, normalMat} from the shared webgl-math helpers. The model is
+  // centered + uniformly scaled to a unit sphere (Y-flip for PSX +Y-down),
+  // then orbited by the camera. Normals use the modelview's upper-3x3 so
+  // lighting stays anchored to the camera as the model spins.
+  function buildMatrices(cam, center, radius, w, h) {
+    const s = 1.0 / radius;
+    const T = translate(-center[0], -center[1], -center[2]);
+    const S = scaleMat(s);
+    S[5] = -s; // flip Y
+    const M = mulMat4(S, T);
+    const dist = Math.max(cam.distance, 0.01);
+    const V = mulMat4(translate(0, 0, -dist), mulMat4(rotateX(cam.pitch), rotateY(cam.yaw)));
+    const MV = mulMat4(V, M);
+    const P = perspective(1.1, w / h, 0.01, 100.0);
+    const mvp = mulMat4(P, MV);
+    // Upper-3x3 of MV (column-major) for normals.
+    const normalMat = new Float32Array([
+      MV[0], MV[1], MV[2],
+      MV[4], MV[5], MV[6],
+      MV[8], MV[9], MV[10],
+    ]);
+    return { mvp, normalMat };
+  }
+
+  function updateSpinLabel(on) {
+    const btn = document.getElementById('mesh-spin-btn');
+    if (btn) btn.textContent = on ? '⏸ stop spin' : '▶ start spin';
+  }
+
+  // Number of <th> columns the expanded detail cell must span.
+  const COLSPAN = head.querySelectorAll('th').length;
+  let detailRow = null;   // persistent <tr> node (canvas + GL context survive re-renders)
+
+  // Build the persistent expandable detail row once. The canvas/WebGL viewer
+  // are created lazily on first use and reused; we only ever move the row in
+  // the DOM (re-parenting keeps the GL context alive).
+  function ensureDetailRow() {
+    if (detailRow) return;
+    detailRow = document.createElement('tr');
+    detailRow.className = 'mesh-detail-row';
+    detailRow.innerHTML = `
+      <td colspan="${COLSPAN}">
+        <div class="mesh-detail-inner">
+          <div class="mesh-viewer-canvas-wrap">
+            <canvas class="mesh-viewer-canvas" id="mesh-viewer-canvas" width="360" height="320"></canvas>
+          </div>
+          <div class="mesh-viewer-side">
+            <h3 id="mesh-viewer-name">—</h3>
+            <div class="mesh-stat" id="mesh-viewer-stats"></div>
+            <div class="mesh-viewer-controls">
+              <button id="mesh-spin-btn" type="button">⏸ stop spin</button>
+              <button id="mesh-reset-btn" type="button">↺ reset view</button>
+              <button id="mesh-close-btn" type="button">✕ close</button>
+            </div>
+            <p class="mesh-viewer-hint">
+              Drag to orbit · scroll to zoom · double-click to reset.
+              Textured + directional-lit: the geometry is the enemy's battle
+              TMD (record <code>+0x04</code>); the colours come from the decoded
+              texture pool (<code>+0x08</code>) — a 4bpp page plus 16-colour
+              palettes, looked up by each prim's CBA the way the PSX GPU does.
+              Native: <code>asset monster-archive … --id N --obj enemy.obj
+              --texture-png enemy.png</code>.
+            </p>
+          </div>
+        </div>
+      </td>`;
+    // Stop row clicks inside the detail row from re-toggling the parent row.
+    detailRow.addEventListener('click', (e) => e.stopPropagation());
+    detailRow.querySelector('#mesh-spin-btn').addEventListener('click', () => {
+      if (!meshView) return;
+      meshView.cam.autoRotate = !meshView.cam.autoRotate;
+      updateSpinLabel(meshView.cam.autoRotate);
+    });
+    detailRow.querySelector('#mesh-reset-btn').addEventListener('click', () => meshView?.resetView());
+    detailRow.querySelector('#mesh-close-btn').addEventListener('click', () => {
+      selectedId = null;
+      render();
+    });
+  }
+
+  // After each render(), drop the detail row in beneath the selected data row
+  // (or leave it detached when nothing is selected / the row is filtered out).
+  function placeDetailRow() {
+    if (selectedId === null || !detailRow) {
+      if (detailRow && detailRow.parentNode) detailRow.remove();
+      return;
+    }
+    const tr = body.querySelector(`tr[data-id="${selectedId}"]`);
+    if (!tr) { detailRow.remove(); return; } // selected row filtered out
+    tr.after(detailRow);
+  }
+
+  function selectMonster(id) {
+    if (!viewer) return;
+    if (id === selectedId) { selectedId = null; render(); return; } // toggle off
+
+    ensureDetailRow();
+    selectedId = id;
+    render(); // inserts detailRow (now in the DOM, so the canvas resolves)
+
+    const rec = records.find(r => r.id === id);
+    const nameEl = detailRow.querySelector('#mesh-viewer-name');
+    const statsEl = detailRow.querySelector('#mesh-viewer-stats');
+    nameEl.textContent = rec ? `${rec.name} (id ${id})` : `id ${id}`;
+
+    const positions = viewer.monster_mesh_positions(id);
+    const normals = viewer.monster_mesh_normals(id);
+    const indices = viewer.monster_mesh_indices(id);
+    const bounds = viewer.monster_mesh_bounds(id);
+    if (!positions.length || !indices.length) {
+      statsEl.innerHTML = '<span style="color:var(--text-dim)">No mesh for this id (filler slot, or no TMD at +0x04).</span>';
+      return;
+    }
+    // Texture pool (record +0x08): 4bpp index page + 15x16 palette LUT.
+    const uvs = viewer.monster_mesh_uvs(id);
+    const palIdx = viewer.monster_mesh_palette_index(id);
+    const texIdx = viewer.monster_texture_indices(id);
+    const texPal = viewer.monster_texture_palette_rgba(id);
+    const dims = viewer.monster_texture_dims(id);
+    const tex = (texIdx.length && texPal.length && dims[0])
+      ? { idx: Uint8Array.from(texIdx), pal: Uint8Array.from(texPal), w: dims[0], h: dims[1] }
+      : null;
+    try {
+      if (!meshView) {
+        meshView = new MonsterMeshView(detailRow.querySelector('#mesh-viewer-canvas'));
+      }
+      meshView.setMesh(
+        Float32Array.from(positions),
+        Float32Array.from(normals),
+        Uint32Array.from(indices),
+        bounds,
+        uvs.length ? Float32Array.from(uvs) : null,
+        palIdx.length ? Float32Array.from(palIdx) : null,
+        tex,
+      );
+      meshView.resetView();
+      statsEl.innerHTML =
+        `<b>${(indices.length / 3) | 0}</b> triangles · <b>${(positions.length / 3) | 0}</b> vertices` +
+        ` · TMD at <code>+0x04</code>` +
+        (tex ? ` · ${tex.w}×${tex.h} texture at <code>+0x08</code>` : ' · untextured');
+    } catch (err) {
+      statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
+    }
+  }
 
   fileInput.addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
@@ -221,8 +624,9 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
       const mod = await import('./wasm/legaia_web_viewer.js');
       await mod.default();
       const buf = new Uint8Array(await f.arrayBuffer());
-      const viewer = new mod.LegaiaViewer('enemy-table-canvas');
+      viewer = new mod.LegaiaViewer('enemy-table-canvas');
       viewer.load_disc(buf);
+      selectedId = null;
 
       const parsed = JSON.parse(viewer.monster_archive_json());
       if (parsed.error) {
@@ -245,6 +649,12 @@ table.enemy-table tbody td.dim { color: var(--text-dim); }
   });
 })();
 </script>
+
+<!-- Shared WebGL matrix + program helpers (compileProgram, mulMat4,
+     perspective, translate, rotateX/Y, scaleMat). Classic global script,
+     loaded after the module above declares its handlers; the module reads
+     these as window globals when a row is first clicked. -->
+<script src="js/webgl-math.js?v=monster-mesh-1"></script>
 
 </main>
 </div>

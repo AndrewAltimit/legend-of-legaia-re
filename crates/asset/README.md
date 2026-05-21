@@ -35,7 +35,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 | `effect_bundle` | `efect.dat` and friends - magic `0x02018B0C`. |
 | `field_pack` | Field bundles - magic `0x01059B84`. |
 | `battle_data_pack` | `battle_data` pack: streaming preamble + 12-byte record table + per-record LZS streams. |
-| `monster_archive` | Global monster stat archive (PROT 867, extended footprint): per-id `0x14000` LZS slot; `record(entry, id)` → name / HP / MP / stats. See [`battle.md`](../../docs/subsystems/battle.md). |
+| `monster_archive` | Global monster stat archive (PROT 867, extended footprint): per-id `0x14000` LZS slot; `record(entry, id)` → name / HP / MP / stats, `mesh(entry, id)` → the monster's embedded battle-model TMD (record `+0x04`), and `MonsterMesh::texture()` → the decoded texture pool (record `+0x08`: fifteen 16-colour CLUTs at `[0..0x1E0]` + a 4bpp page, layout from the loader `FUN_80055468`; palette = `cba & 0x3F`). CLI `asset monster-archive --id N --obj <out>` exports the mesh and `--texture-png <out>` bakes the texture page. See [`battle.md`](../../docs/subsystems/battle.md#monster-mesh-record-0x04). |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. |
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`. |
