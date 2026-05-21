@@ -8,16 +8,17 @@
 //! pad: the player picks a command from the battle command menu, then a target,
 //! before the strike commits.
 //!
-//! **Attack**, **Magic** and **Item** are wired into the live loop. Attack
-//! opens a target cursor and commits a physical strike. Magic and Item resolve
-//! to [`Resolution::OpenSpellMenu`] / [`Resolution::OpenItemMenu`] hand-offs:
-//! the command session can't run those pickers itself (they need the caster's
-//! learned spells / live MP / inventory + party stats), so the live loop opens
-//! a host-owned [`crate::battle_magic::BattleSpellSession`] /
-//! [`crate::inventory_use::InventoryUseSession`] instead. Arts still appears in
-//! the menu but is not selectable yet (it hangs off [`crate::battle_session`]).
-//! Target selection reuses [`crate::target_picker`] so the cursor behaviour
-//! matches the rest of the battle UI.
+//! All four commands are wired into the live loop. **Attack** opens a target
+//! cursor and commits a physical strike. **Arts**, **Magic** and **Item**
+//! resolve to [`Resolution::OpenArtsMenu`] / [`Resolution::OpenSpellMenu`] /
+//! [`Resolution::OpenItemMenu`] hand-offs: the command session can't run those
+//! pickers itself (they need the caster's saved chains / learned spells / live
+//! MP / inventory + party stats), so the live loop opens a host-owned
+//! [`crate::battle_arts::BattleArtsSession`] /
+//! [`crate::battle_magic::BattleSpellSession`] /
+//! [`crate::inventory_use::InventoryUseSession`] instead. Target selection
+//! reuses [`crate::target_picker`] so the cursor behaviour matches the rest of
+//! the battle UI.
 //!
 //! The session is a small state machine - [`CommandPhase`] - driven one frame
 //! at a time by [`BattleCommandSession::input`] with an edge-triggered
@@ -34,7 +35,8 @@ use crate::target_picker::{
 pub enum BattleCommand {
     /// Physical attack - opens a target cursor and commits a strike.
     Attack,
-    /// Tactical Arts. Listed but not selectable yet (see [`crate::tactical_arts`]).
+    /// Tactical Arts - hands off to the host saved-chain submenu (see
+    /// [`crate::battle_arts`]).
     Arts,
     /// Magic spell - hands off to the host battle spell submenu (see
     /// [`crate::battle_magic`]).
@@ -54,12 +56,15 @@ impl BattleCommand {
     ];
 
     /// `true` when the command can actually be selected in the live loop.
-    /// Attack (physical strike), Magic (spell submenu) and Item (inventory
-    /// submenu) are wired; Arts is still pending its submenu.
+    /// All four commands are wired: Attack (physical strike), Arts (saved-chain
+    /// submenu), Magic (spell submenu) and Item (inventory submenu).
     pub fn enabled(self) -> bool {
         matches!(
             self,
-            BattleCommand::Attack | BattleCommand::Magic | BattleCommand::Item
+            BattleCommand::Attack
+                | BattleCommand::Arts
+                | BattleCommand::Magic
+                | BattleCommand::Item
         )
     }
 
@@ -116,6 +121,10 @@ pub enum CommandPhase {
         target_row: CursorRow,
         target_slot: u8,
     },
+    /// The player picked Arts. Hands off (like Magic / Item): the live loop
+    /// opens a [`crate::battle_arts::BattleArtsSession`] over the caster's saved
+    /// chains, executes the chosen art, then cycles the turn.
+    OpenArtsMenu,
     /// The player picked Magic. Like Item, the command session can't run the
     /// spell picker itself (it needs the caster's learned spells + live MP), so
     /// it hands off: the live loop opens a
@@ -189,6 +198,7 @@ impl BattleCommandSession {
                 target_row: *target_row,
                 target_slot: *target_slot,
             }),
+            CommandPhase::OpenArtsMenu => Some(Resolution::OpenArtsMenu),
             CommandPhase::OpenSpellMenu => Some(Resolution::OpenSpellMenu),
             CommandPhase::OpenItemMenu => Some(Resolution::OpenItemMenu),
             CommandPhase::Aborted => Some(Resolution::Aborted),
@@ -240,6 +250,7 @@ impl BattleCommandSession {
                 }
             }
             CommandPhase::Confirmed { .. }
+            | CommandPhase::OpenArtsMenu
             | CommandPhase::OpenSpellMenu
             | CommandPhase::OpenItemMenu
             | CommandPhase::Aborted => {}
@@ -256,6 +267,9 @@ pub enum Resolution {
         target_row: CursorRow,
         target_slot: u8,
     },
+    /// The player picked Arts; the live loop should open the saved-chain
+    /// submenu (it owns the caster's chain library).
+    OpenArtsMenu,
     /// The player picked Magic; the live loop should open the spell submenu
     /// (it owns the caster's learned spells + live MP).
     OpenSpellMenu,
@@ -296,8 +310,12 @@ fn step_menu(
 
     if ev.cross {
         let command = BattleCommand::MENU[cursor as usize];
-        // Magic / Item hand off to the host's own submenus instead of opening
-        // a target cursor here - the picker can't show spell / item rows.
+        // Arts / Magic / Item hand off to the host's own submenus instead of
+        // opening a target cursor here - the picker can't show chain / spell /
+        // item rows.
+        if command == BattleCommand::Arts {
+            return CommandPhase::OpenArtsMenu;
+        }
         if command == BattleCommand::Magic {
             return CommandPhase::OpenSpellMenu;
         }
@@ -447,21 +465,10 @@ mod tests {
     }
 
     #[test]
-    fn disabled_commands_are_not_selectable() {
-        let mut s = BattleCommandSession::new(0, 0);
-        // Move down to Arts (index 1) and try to confirm: stays in the menu.
-        s.input(
-            BattleCommandInput {
-                down: true,
-                ..Default::default()
-            },
-            party3(),
-            one_monster(),
-        );
-        assert_eq!(s.menu_command(), Some(BattleCommand::Arts));
-        s.input(press_cross(), party3(), one_monster());
-        assert!(s.resolved().is_none());
-        assert_eq!(s.menu_command(), Some(BattleCommand::Arts));
+    fn all_four_commands_are_selectable() {
+        // Every command is now wired (Attack strike + Arts / Magic / Item
+        // hand-offs), so none should bounce in the menu.
+        assert!(BattleCommand::MENU.iter().all(|c| c.enabled()));
     }
 
     #[test]
@@ -503,6 +510,23 @@ mod tests {
         assert_eq!(s.menu_command(), Some(BattleCommand::Magic));
         s.input(press_cross(), party3(), one_monster());
         assert_eq!(s.resolved(), Some(Resolution::OpenSpellMenu));
+    }
+
+    #[test]
+    fn arts_command_resolves_to_open_arts_menu() {
+        let mut s = BattleCommandSession::new(0, 0);
+        // Down once: Attack (0) -> Arts (1).
+        s.input(
+            BattleCommandInput {
+                down: true,
+                ..Default::default()
+            },
+            party3(),
+            one_monster(),
+        );
+        assert_eq!(s.menu_command(), Some(BattleCommand::Arts));
+        s.input(press_cross(), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::OpenArtsMenu));
     }
 
     #[test]

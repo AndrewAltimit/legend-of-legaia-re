@@ -5551,10 +5551,71 @@ impl PlayWindowApp {
                 ));
             }
 
-            // Player-driven submenus (opened from the Magic / Item commands).
-            // Each parks both the SM and the command session while open, so it
-            // takes priority over the command menu.
-            if let Some(spell) = &bw.battle_spell_menu {
+            // Player-driven submenus (opened from the Arts / Magic / Item
+            // commands). Each parks both the SM and the command session while
+            // open, so it takes priority over the command menu.
+            if let Some(arts) = &bw.battle_arts_menu {
+                use legaia_engine_core::battle_arts::ArtsPhase;
+                let menu_x = 8i32;
+                let mut my = 210i32;
+                match &arts.phase {
+                    ArtsPhase::Select { cursor } => {
+                        let header = format!("P{} - arts:", arts.actor + 1);
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&header),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 16;
+                        if arts.arts.is_empty() {
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii("  (no saved arts)"),
+                                (menu_x + 8, my),
+                                down_color,
+                            ));
+                        }
+                        for (i, row) in arts.arts.iter().enumerate() {
+                            let sel = i as u8 == *cursor;
+                            let marker = if sel { ">" } else { " " };
+                            let line = format!("{} {} x{}", marker, row.name, row.hits);
+                            let color = if sel { white } else { dim };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x + 8, my),
+                                color,
+                            ));
+                            my += 14;
+                        }
+                    }
+                    ArtsPhase::Targeting { picker, .. } => {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Enemy,
+                                slot,
+                            } => format!("art -> target M{}", slot + 1),
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("art -> target P{}", slot + 1),
+                            _ => "art -> select target".to_string(),
+                        };
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&line),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 14;
+                        out.extend(text_draws_for(
+                            &self
+                                .font
+                                .layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
+                            (menu_x, my),
+                            dim,
+                        ));
+                    }
+                    _ => {}
+                }
+            } else if let Some(spell) = &bw.battle_spell_menu {
                 use legaia_engine_core::battle_magic::SpellPhase;
                 let menu_x = 8i32;
                 let mut my = 210i32;
@@ -6312,6 +6373,24 @@ fn cmd_play_window_with_record(
             // boot save, and the item list on the live inventory.
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
             world.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
+            // Seed a couple of demo saved chains when the boot save carries
+            // none, so the Arts submenu is exercisable in the window. (No-op
+            // when the save already has a chain library.)
+            if world.saved_chains.is_empty() {
+                use legaia_save::SavedChainRecord;
+                for slot in 0u8..3 {
+                    world.saved_chains.push(SavedChainRecord {
+                        char_slot: slot,
+                        name: "Quick".into(),
+                        sequence: vec![1, 2],
+                    });
+                    world.saved_chains.push(SavedChainRecord {
+                        char_slot: slot,
+                        name: "Combo".into(),
+                        sequence: vec![1, 2, 3, 4],
+                    });
+                }
+            }
         }
         if world.live_gameplay_loop {
             log::info!(

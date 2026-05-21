@@ -835,9 +835,10 @@ pub struct World {
     /// [`World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
     /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
-    /// (`legaia-engine play-window`) set both after boot. Attack, Magic and
-    /// Item are wired (Magic opens [`Self::battle_spell_menu`], Item opens
-    /// [`Self::battle_item_menu`]); Arts is pending.
+    /// (`legaia-engine play-window`) set both after boot. All four commands
+    /// are wired: Attack strikes; Arts / Magic / Item open
+    /// [`Self::battle_arts_menu`] / [`Self::battle_spell_menu`] /
+    /// [`Self::battle_item_menu`].
     pub battle_player_driven: bool,
 
     /// Active command-selection session for the player-driven battle. `Some`
@@ -863,6 +864,14 @@ pub struct World {
     /// World owns it because building the spell list needs the caster's
     /// learned spells + live MP. Hosts read it to draw the spell overlay.
     pub battle_spell_menu: Option<crate::battle_magic::BattleSpellSession>,
+
+    /// Active Arts submenu for the player-driven battle, opened when the player
+    /// picks **Arts** from the command menu. `Some` while the player browses
+    /// saved chains / picks a target (the action SM and [`Self::battle_command`]
+    /// are parked meanwhile); `None` otherwise. The World owns it because the
+    /// chain list comes from [`Self::saved_chains`]. Hosts read it to draw the
+    /// arts overlay.
+    pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
 
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
@@ -1050,6 +1059,7 @@ impl World {
             battle_command: None,
             battle_item_menu: None,
             battle_spell_menu: None,
+            battle_arts_menu: None,
             active_formation: None,
             last_battle_rewards: None,
             game_over: false,
@@ -3093,6 +3103,18 @@ impl World {
                 self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
                 // Session done; SM resumes next tick.
             }
+            Some(Resolution::OpenArtsMenu) => {
+                // Player picked Arts: hand off to the saved-chain submenu (same
+                // pattern as Magic / Item). `tick_battle_arts_menu` drives until
+                // the player runs an art (turn cycles via EndOfAction) or backs
+                // out.
+                self.battle_ctx.active_actor = session.actor;
+                self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+                    session.actor,
+                    session.actor,
+                    &self.saved_chains,
+                ));
+            }
             Some(Resolution::OpenSpellMenu) => {
                 // Player picked Magic: hand off to the spell submenu (same
                 // pattern as Item). `tick_battle_spell_menu` drives until the
@@ -3133,6 +3155,126 @@ impl World {
                 // Still selecting - keep the session open for the next frame.
                 self.battle_command = Some(session);
             }
+        }
+    }
+
+    /// Drive the open battle Arts submenu one frame from [`World::input`].
+    ///
+    /// Edge-triggered pad → one [`crate::battle_arts::BattleArtsInput`] per
+    /// frame. On a confirmed execution the art runs via [`Self::apply_battle_art`]
+    /// (a multi-hit strike) and the action SM parks at `EndOfAction` so the live
+    /// loop cycles to the next combatant. Backing out reopens the command menu.
+    fn tick_battle_arts_menu(&mut self) {
+        use crate::battle_arts::{ArtsResolution, BattleArtsInput};
+        use crate::input::PadButton;
+        use crate::target_picker::SlotState;
+
+        let Some(mut menu) = self.battle_arts_menu.take() else {
+            return;
+        };
+
+        let party_count = self.party_count.clamp(1, 3);
+        let slot_at = |idx: usize| -> SlotState {
+            match self.actors.get(idx) {
+                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
+                _ => SlotState::default(),
+            }
+        };
+        let mut party = [SlotState::default(); 3];
+        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
+            *p = slot_at(i);
+        }
+        let mut monsters = [SlotState::default(); 5];
+        for (i, m) in monsters.iter_mut().enumerate() {
+            *m = slot_at(party_count as usize + i);
+        }
+
+        let ev = BattleArtsInput {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+        };
+        menu.input(ev, party, monsters);
+
+        match menu.resolved() {
+            Some(ArtsResolution::Confirmed {
+                art_index,
+                target_row,
+                target_slot,
+            }) => {
+                let caster = menu.actor;
+                let hits = menu
+                    .arts
+                    .get(art_index as usize)
+                    .map(|a| a.hits)
+                    .unwrap_or(1);
+                self.apply_battle_art(caster, hits, target_row, target_slot);
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
+            Some(ArtsResolution::Aborted) => {
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            None => {
+                self.battle_arts_menu = Some(menu);
+            }
+        }
+    }
+
+    /// Execute an art as a `hits`-strike combo against the picked target.
+    ///
+    /// Each hit deals one generic strike of
+    /// [`vm::battle_formulas::art_strike_damage_default`] (`battle_attack` vs
+    /// `battle_defense`, the same kernel [`Self::apply_basic_attack`] uses), so
+    /// a longer saved chain hits more times - the live-loop stand-in for the
+    /// full per-art power table. The summed damage is surfaced as one HUD
+    /// popup; the target is downed if its HP reaches zero.
+    fn apply_battle_art(
+        &mut self,
+        caster: u8,
+        hits: u8,
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        use crate::target_picker::CursorRow;
+        let party_count = self.party_count.clamp(1, 3);
+        let target = match target_row {
+            CursorRow::Enemy => party_count + target_slot,
+            CursorRow::Ally => target_slot,
+        } as usize;
+        if target >= self.actors.len() {
+            return;
+        }
+        let attack = self
+            .battle_attack
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
+        let defense = self.battle_defense.get(target).copied().unwrap_or(0);
+        let per_hit = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
+        let mut total: u32 = 0;
+        for _ in 0..hits.max(1) {
+            if self.actors[target].battle.liveness == 0 {
+                break;
+            }
+            let a = &mut self.actors[target].battle;
+            a.hp = a.hp.saturating_sub(per_hit);
+            total = total.saturating_add(per_hit as u32);
+            if a.hp == 0 {
+                a.liveness = 0;
+            }
+        }
+        if total > 0 {
+            self.battle_hit_fx.push(BattleHitFx {
+                target_slot: target as u8,
+                amount: total.min(u16::MAX as u32) as u16,
+                is_heal: false,
+                is_crit: hits > 1,
+            });
         }
     }
 
@@ -3524,6 +3666,14 @@ impl World {
     fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // Player-driven: while the Arts submenu is open the action SM is
+        // parked - drive it from the pad and return until the player runs an
+        // art (turn cycles) or backs out (reopens the command menu).
+        if self.battle_arts_menu.is_some() {
+            self.tick_battle_arts_menu();
+            return None;
+        }
+
         // Player-driven: while the spell submenu is open the action SM is
         // parked - drive it from the pad and return until the player casts
         // (turn cycles) or backs out (reopens the command menu).
@@ -3744,6 +3894,7 @@ impl World {
         self.battle_command = None;
         self.battle_item_menu = None;
         self.battle_spell_menu = None;
+        self.battle_arts_menu = None;
         // Stale damage popups must not bleed into the next encounter / field.
         self.battle_hit_fx.clear();
         // Post-battle grace + suppression on the session.
@@ -7105,6 +7256,67 @@ mod tests {
         let fx = world.drain_battle_hit_fx();
         assert_eq!(fx.len(), 1);
         assert!(!fx[0].is_heal, "offensive spell is damage, not heal");
+        assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_arts_run_multi_hit_strike_and_cycles_turn() {
+        use crate::input::PadButton;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 40);
+        world.actors[1].battle.max_hp = 500;
+        world.actors[1].battle.hp = 500;
+        world.actors[1].battle.liveness = 1;
+        world.set_battle_defense(1, 10);
+        // One saved chain for the caster: 3 commands -> 3 hits.
+        world.saved_chains.push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Combo".into(),
+            sequence: vec![1, 2, 3],
+        });
+
+        world.battle_ctx.active_actor = 0;
+        world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+            0,
+            0,
+            &world.saved_chains,
+        ));
+        assert_eq!(world.battle_arts_menu.as_ref().unwrap().arts[0].hits, 3);
+
+        // Frame 1: Cross opens the target cursor.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+        assert!(world.battle_arts_menu.is_some(), "still picking a target");
+
+        // Frame 2: Cross confirms the monster; the art runs.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+
+        assert!(world.battle_arts_menu.is_none(), "arts menu closed");
+        // Three hits of (40*16/16 - 10) = 30 each => 90 total.
+        let per_hit = legaia_engine_vm::battle_formulas::art_strike_damage_default(40, 10, 16);
+        assert_eq!(world.actors[1].battle.hp, 500 - per_hit * 3);
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction so the loop cycles"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1, "one summed popup for the combo");
+        assert!(!fx[0].is_heal);
+        assert_eq!(fx[0].amount, per_hit * 3);
         assert_eq!(fx[0].target_slot, 1);
     }
 
