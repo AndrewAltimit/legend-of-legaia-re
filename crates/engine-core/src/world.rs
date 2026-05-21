@@ -627,6 +627,26 @@ pub struct World {
     /// corresponding `Bgm` event.
     pub current_bgm: Option<u16>,
 
+    /// BGM id to swap to when a live-loop encounter begins, restored to the
+    /// field track when the battle ends. `None` (the default) leaves music
+    /// untouched across the Battle transition - set it via
+    /// [`World::set_battle_bgm`] to enable the swap. The swap is routed as an
+    /// ordinary `FieldEvent::Bgm` start (sub-op 1), so the host's existing
+    /// BGM director resolves the SEQ and cross-fades exactly like a field
+    /// op-`0x35` start.
+    pub battle_bgm: Option<u16>,
+
+    /// Field track stashed at battle entry so [`World::restore_field_bgm`]
+    /// can resume it after the encounter. Managed by the swap helpers; not
+    /// meant to be set directly.
+    pub field_bgm_resume: Option<u16>,
+
+    /// `true` while the battle track is playing (set by
+    /// [`World::swap_to_battle_bgm`], cleared by
+    /// [`World::restore_field_bgm`]). Guards against double-swap / spurious
+    /// restore.
+    pub battle_bgm_active: bool,
+
     /// Active dialog request - populated by the field-VM op 0x3F handler,
     /// cleared by the engine after the user dismisses the box. The MES
     /// renderer reads `text_id` + `inline`; the world-coords + depth feed
@@ -1095,6 +1115,9 @@ impl World {
             pending_battle_events: Vec::new(),
             battle_hit_fx: Vec::new(),
             current_bgm: None,
+            battle_bgm: None,
+            field_bgm_resume: None,
+            battle_bgm_active: false,
             current_dialog: None,
             last_field_interact: None,
             party_leader_slot: None,
@@ -3183,6 +3206,61 @@ impl World {
     /// monster. The battle-action context is seeded at `Begin` with the
     /// Attack action queued. This is the live-loop counterpart to the
     /// generic [`Self::enter_battle`] placement helper.
+    /// Configure the battle BGM track id. `Some(id)` enables the
+    /// Battle↔Field music swap (the live loop switches to `id` on encounter
+    /// and restores the field track on battle end); `None` disables it. See
+    /// [`World::battle_bgm`].
+    pub fn set_battle_bgm(&mut self, bgm_id: Option<u16>) {
+        self.battle_bgm = bgm_id;
+    }
+
+    /// Switch to the configured battle track at encounter start. No-op when
+    /// [`World::battle_bgm`] is `None` or the swap is already active. Stashes
+    /// the current field track for [`World::restore_field_bgm`] and queues a
+    /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
+    fn swap_to_battle_bgm(&mut self) {
+        let Some(battle) = self.battle_bgm else {
+            return;
+        };
+        if self.battle_bgm_active || self.current_bgm == Some(battle) {
+            return;
+        }
+        self.field_bgm_resume = self.current_bgm;
+        self.current_bgm = Some(battle);
+        self.battle_bgm_active = true;
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: battle,
+            sub_op: 1,
+        });
+    }
+
+    /// Restore the field track stashed by [`World::swap_to_battle_bgm`] when
+    /// a battle ends. No-op unless a battle swap is active. Queues a
+    /// `FieldEvent::Bgm` start for the stashed track, or a stop (sub-op 4)
+    /// when no field track was playing at encounter start.
+    fn restore_field_bgm(&mut self) {
+        if !self.battle_bgm_active {
+            return;
+        }
+        self.battle_bgm_active = false;
+        match self.field_bgm_resume.take() {
+            Some(track) => {
+                self.current_bgm = Some(track);
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: track,
+                    sub_op: 1,
+                });
+            }
+            None => {
+                self.current_bgm = None;
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: 0,
+                    sub_op: 4,
+                });
+            }
+        }
+    }
+
     fn enter_battle_from_formation(&mut self, formation: &crate::monster_catalog::FormationDef) {
         let party_count = self.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
@@ -3224,6 +3302,9 @@ impl World {
         }
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
+        // Switch to the battle track (if configured) - the host's BGM
+        // director cross-fades from the field music.
+        self.swap_to_battle_bgm();
         if self.battle_player_driven {
             // Player-driven: don't pre-arm the first attack - open the command
             // menu for party member 0 and let the SM idle until the player
@@ -4388,6 +4469,9 @@ impl World {
         self.active_formation = None;
         self.battle_end = None;
         self.battle_escaped = false;
+        // Restore the field track stashed at encounter start (cross-fades
+        // back from the battle music). No-op if no swap was active.
+        self.restore_field_bgm();
         // Revert any lingering buff deltas so the per-slot scalars return to
         // base, then drop the trackers + captured-id log (a new battle re-inits
         // these).
@@ -8190,6 +8274,107 @@ mod tests {
             .expect("capture banner set even without a learn");
         assert_eq!(banner.seru_name(), "Slow");
         assert!(banner.learns().is_empty());
+    }
+
+    #[test]
+    fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.current_bgm = Some(0x0A); // field track playing
+        world.set_battle_bgm(Some(0x40)); // configured battle track
+        let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+
+        world.enter_battle_from_formation(&formation);
+
+        // Swapped to the battle track, with a start event queued for the host.
+        assert_eq!(world.current_bgm, Some(0x40));
+        assert!(world.battle_bgm_active);
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::Bgm {
+                    text_id: 0x40,
+                    sub_op: 1
+                }
+            )),
+            "battle BGM start queued: {evs:?}"
+        );
+
+        // Finish (no formation/loot) restores the field track + queues its start.
+        world.finish_battle();
+        assert_eq!(world.current_bgm, Some(0x0A));
+        assert!(!world.battle_bgm_active);
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::Bgm {
+                    text_id: 0x0A,
+                    sub_op: 1
+                }
+            )),
+            "field BGM restore queued: {evs:?}"
+        );
+    }
+
+    #[test]
+    fn battle_bgm_unset_leaves_music_untouched() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.current_bgm = Some(0x0A);
+        // No battle_bgm configured (default None) -> no swap, no events.
+        let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+        world.enter_battle_from_formation(&formation);
+        assert_eq!(world.current_bgm, Some(0x0A));
+        assert!(!world.battle_bgm_active);
+        assert!(
+            !world
+                .drain_field_events()
+                .iter()
+                .any(|e| matches!(e, FieldEvent::Bgm { .. })),
+            "no BGM events when battle_bgm is unset"
+        );
+        world.finish_battle();
+        assert_eq!(world.current_bgm, Some(0x0A));
+    }
+
+    #[test]
+    fn battle_bgm_with_silent_field_stops_on_finish() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.current_bgm = None; // no field music playing
+        world.set_battle_bgm(Some(0x40));
+        let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+
+        world.enter_battle_from_formation(&formation);
+        assert_eq!(world.current_bgm, Some(0x40));
+        let _ = world.drain_field_events();
+
+        world.finish_battle();
+        // Nothing to resume -> battle music stops (sub-op 4) and id clears.
+        assert_eq!(world.current_bgm, None);
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter()
+                .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 4, .. })),
+            "BGM stop queued when no field track to resume: {evs:?}"
+        );
     }
 
     #[test]

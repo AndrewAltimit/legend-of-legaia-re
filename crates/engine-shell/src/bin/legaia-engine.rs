@@ -657,6 +657,13 @@ enum Cmd {
         /// the Attack command.
         #[arg(long, default_value_t = false)]
         player_battle: bool,
+        /// BGM id to cross-fade to when a live-loop encounter starts; the
+        /// field track resumes when the battle ends. Routed through the same
+        /// BGM director as field op-`0x35` starts, so the id must resolve in
+        /// the current scene's asset table. Omit to leave music untouched
+        /// across the Battle transition.
+        #[arg(long)]
+        battle_bgm: Option<u16>,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -1060,6 +1067,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            battle_bgm,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -1074,6 +1082,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            battle_bgm,
         ),
         Cmd::Save {
             extracted_root,
@@ -2464,6 +2473,7 @@ fn cmd_record(
         false,
         false,
         false,
+        None,
         Some(RecordTarget {
             out: out.to_path_buf(),
             scenario: scenario.map(str::to_string),
@@ -6228,6 +6238,7 @@ fn cmd_play_window(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    battle_bgm: Option<u16>,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -6243,6 +6254,7 @@ fn cmd_play_window(
         cheat_strict,
         live_loop,
         player_battle,
+        battle_bgm,
         None,
     )
 }
@@ -6262,6 +6274,7 @@ fn cmd_play_window_with_record(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Optional cutscene-map override layered on top of the heuristic.
@@ -6372,6 +6385,10 @@ fn cmd_play_window_with_record(
         if live_loop || player_battle {
             world.live_gameplay_loop = true;
         }
+        // Optional Battle<->Field BGM swap: the live loop cross-fades to this
+        // track on encounter and resumes the field track on battle end. The
+        // id must resolve through the current scene's BGM table.
+        world.set_battle_bgm(battle_bgm);
         if player_battle {
             world.battle_player_driven = true;
             // Give the player-driven battle usable Magic / Item submenus.
