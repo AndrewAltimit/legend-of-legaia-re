@@ -25,8 +25,8 @@ use legaia_engine_core::scene_resources::{
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
-    UploadedFontAtlas, UploadedVram, UploadedVramMesh, level_up_draws_for, shop_draws_for,
-    text_draws_for,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, capture_banner_draws_for,
+    level_up_draws_for, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::audio_trace_oracle::{
@@ -5759,6 +5759,13 @@ impl PlayWindowApp {
                 (8, 60),
             );
             out.extend(draws);
+        }
+        // Seru-capture banner: shown after a battle in which a Seru was
+        // captured (and, if a threshold was crossed, a spell learned).
+        if let Some(banner) = &self.session.host.world.current_capture_banner
+            && let Some(text) = banner.current_banner()
+        {
+            out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
         out
     }

@@ -703,6 +703,14 @@ pub struct World {
     /// Engines render this as a dialog-font overlay after battle.
     pub current_level_up_banner: Option<LevelUpBanner>,
 
+    /// Active post-battle Seru-capture banner. Set by [`World::resolve_captures`]
+    /// when a capture is accepted; advanced one frame per [`World::tick`] and
+    /// cleared when its [`crate::seru_learning::SeruCaptureSession`] reaches
+    /// `Done`. Engines render [`crate::seru_learning::SeruCaptureSession::current_banner`]
+    /// as a dialog-font overlay after battle, the sibling of
+    /// [`Self::current_level_up_banner`].
+    pub current_capture_banner: Option<crate::seru_learning::SeruCaptureSession>,
+
     /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
@@ -1100,6 +1108,7 @@ impl World {
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),
             current_level_up_banner: None,
+            current_capture_banner: None,
             world_map_ctrl: None,
             tile_board: None,
             tile_board_target: None,
@@ -2452,6 +2461,13 @@ impl World {
                 banner.frames_remaining -= 1;
             } else {
                 self.current_level_up_banner = None;
+            }
+        }
+        // Advance the post-battle Seru-capture banner; clear when it finishes.
+        if let Some(banner) = &mut self.current_capture_banner {
+            banner.tick_frame();
+            if banner.is_done() {
+                self.current_capture_banner = None;
             }
         }
         match self.mode {
@@ -3891,6 +3907,7 @@ impl World {
     fn resolve_captures(&mut self) {
         let captures = std::mem::take(&mut self.battle_captures);
         self.last_capture_outcomes.clear();
+        self.current_capture_banner = None;
         if captures.is_empty() || self.seru_registry.is_empty() {
             return;
         }
@@ -3899,6 +3916,7 @@ impl World {
             .iter()
             .filter_map(|&mid| self.monster_catalog.get(mid).and_then(|d| d.seru_id))
             .collect();
+        let mut first_accepted: Option<(u16, crate::seru_learning::CaptureOutcome)> = None;
         for sid in seru_ids {
             let outcome = crate::seru_learning::record_capture(
                 &self.seru_registry,
@@ -3907,8 +3925,36 @@ impl World {
                 &party_slots,
             );
             if outcome.accepted {
+                if first_accepted.is_none() {
+                    first_accepted = Some((sid, outcome.clone()));
+                }
                 self.last_capture_outcomes.push(outcome);
             }
+        }
+        // Build the host-facing banner for the first accepted capture (a
+        // single battle captures at most one Seru in practice). Names resolve
+        // the Seru from the registry and the learned spell from the catalog.
+        if let Some((sid, outcome)) = first_accepted {
+            let seru_name = self
+                .seru_registry
+                .get(sid)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| format!("Seru {sid:#04X}"));
+            let spell_catalog = &self.spell_catalog;
+            let banner = crate::seru_learning::SeruCaptureSession::new(
+                seru_name,
+                sid,
+                outcome,
+                |char_slot, spell_id| {
+                    let char_name = format!("Character {}", char_slot + 1);
+                    let spell_name = spell_catalog
+                        .get(spell_id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+                    (char_name, spell_name)
+                },
+            );
+            self.current_capture_banner = Some(banner);
         }
     }
 
@@ -8099,6 +8145,51 @@ mod tests {
         let outcomes = world.drain_last_capture_outcomes();
         assert_eq!(outcomes.len(), 1);
         assert!(outcomes[0].learns.is_empty());
+    }
+
+    #[test]
+    fn capture_sets_the_banner_and_it_clears_on_tick() {
+        use crate::seru_learning::CaptureState;
+
+        let mut world = capture_world(1);
+        world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+        world.battle_captures = vec![7]; // Killer Bee -> Seru 1 (Spark), learns
+        world.finish_battle();
+
+        // The banner opens on the capture phase naming the captured Seru.
+        let banner = world
+            .current_capture_banner
+            .as_ref()
+            .expect("capture banner set");
+        assert_eq!(banner.seru_name(), "Spark");
+        assert!(matches!(banner.state(), CaptureState::Capturing { .. }));
+        assert_eq!(banner.current_banner().as_deref(), Some("Captured: Spark!"));
+        // A learn event was recorded (party slot 0 crossed the threshold).
+        assert_eq!(banner.learns().len(), 1);
+
+        // Drive the banner to completion via World::tick (Field mode after the
+        // battle). The default durations are 60 capture + 90 announce frames.
+        for _ in 0..(60 + 90 + 4) {
+            world.tick();
+        }
+        assert!(
+            world.current_capture_banner.is_none(),
+            "banner clears after its phases elapse"
+        );
+    }
+
+    #[test]
+    fn sub_threshold_capture_banner_shows_no_learn_line() {
+        let mut world = capture_world(1);
+        world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100, no learn
+        world.finish_battle();
+
+        let banner = world
+            .current_capture_banner
+            .as_ref()
+            .expect("capture banner set even without a learn");
+        assert_eq!(banner.seru_name(), "Slow");
+        assert!(banner.learns().is_empty());
     }
 
     #[test]
