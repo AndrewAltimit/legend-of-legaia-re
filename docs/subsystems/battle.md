@@ -200,6 +200,26 @@ and `monster_texture_{indices,palette_rgba,dims}` accessors feed the in-browser
 WebGL viewer on the enemy-table site page, which textures the model with the
 index→palette lookup the PSX GPU does in VRAM.
 
+### Native renderer bridge (clean-room engine)
+
+The clean-room engine renders the decoded monster directly through its standard
+PSX-VRAM texture path rather than the site's index→palette shortcut.
+`MonsterMesh::battle_render_mesh(slot, &mut vram)` reproduces the loader's
+per-slot relocation: it writes the CLUT region to VRAM row `484 + slot` and the
+4bpp page to `((5 + slot) * 64, 256)`, then rewrites every prim's CBA/TSB to
+point at those regions (`relocate_cba` / `relocate_tsb`), keeping the
+page-local UVs untouched. Because the on-disc CBA/TSB are nominal defaults the
+loader relocates, this is what makes the textures resolve against the injected
+VRAM. The CLUT region (`x < 240`) and the texture pages (`x >= 320`) never
+overlap, so up to five monster slots coexist in one VRAM.
+
+`World::battle_monster_slots()` reports the active enemies as
+`(actor_index, monster_id, battle_slot)`; the engine itself never loads the
+archive, so the host resolves each id to a `MonsterMesh`, injects it, and binds
+the relocated mesh to the actor. `play-window --live-loop` / `--player-battle`
+does this on each `Field → Battle` transition (against a throwaway clone of the
+field VRAM, restored on the way back) so the enemy is drawn, not a stand-in.
+
 ## Stat aggregator (`FUN_80042558`)
 
 Per-frame helper that walks the 3 active party members (stride `0x414` - see [character record layout](#character-record-layout)) and:
