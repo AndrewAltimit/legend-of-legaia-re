@@ -298,3 +298,74 @@ fn animation_streams_decode_one_part_per_tmd_object() {
         "expected >98% of actions to animate one part per TMD object, got {part_match}/{action_total}"
     );
 }
+
+#[test]
+fn battle_render_mesh_injects_pool_and_relocates_cba_tsb() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    use legaia_tim::Vram;
+
+    // Render Gimard (id 10) into battle slot 2: inject its texture pool into a
+    // fresh VRAM at the loader's per-slot coords and relocate every prim's
+    // CBA/TSB to match. This is the bridge the native battle renderer uses.
+    let slot = 2u8;
+    let mesh = monster_archive::mesh(&entry, 10).unwrap().unwrap();
+    let mut vram = Vram::new();
+    let vmesh = mesh
+        .battle_render_mesh(slot, &mut vram)
+        .expect("Gimard renders");
+
+    assert!(!vmesh.indices.is_empty(), "Gimard has textured prims");
+    assert_eq!(vmesh.cba_tsb.len(), vmesh.positions.len());
+
+    // Every relocated CBA points at the slot's CLUT row; every relocated TSB
+    // at the slot's 4bpp page column with tpage_y=256.
+    let (page_x, page_y) = monster_archive::monster_page_origin(slot);
+    for ct in &vmesh.cba_tsb {
+        assert_eq!(
+            (ct[0] >> 6) & 0x1FF,
+            monster_archive::MONSTER_CLUT_ROW_BASE + slot as u16,
+            "CBA relocated to CLUT row 484 + slot"
+        );
+        assert_eq!((ct[1] & 0xF) * 64, page_x, "TSB page x = (5+slot)*64");
+        assert_eq!((ct[1] >> 4) & 1, 1, "tpage_y = 256");
+        assert_eq!((ct[1] >> 7) & 0x3, 0, "4bpp depth");
+    }
+
+    // The injection actually populated the loader's VRAM regions (Gimard is a
+    // 128-texel = 32-cell-wide page) and the CLUT row.
+    assert!(
+        vram.region_has_data(page_x as usize, page_y as usize, 32, 256),
+        "monster texture page injected at the slot's VRAM coords"
+    );
+    assert!(
+        vram.region_has_data(
+            0,
+            (monster_archive::MONSTER_CLUT_ROW_BASE + slot as u16) as usize,
+            240,
+            1
+        ),
+        "monster CLUT region injected at row 484 + slot"
+    );
+
+    // The relocated prims now resolve against populated VRAM: sample the first
+    // triangle's CBA/TSB + UVs through the same predicate the targeted VRAM
+    // builder uses to decide a prim is renderable.
+    let tri = [
+        vmesh.indices[0] as usize,
+        vmesh.indices[1] as usize,
+        vmesh.indices[2] as usize,
+    ];
+    let uvs: Vec<(u8, u8)> = tri
+        .iter()
+        .map(|&i| (vmesh.uvs[i][0], vmesh.uvs[i][1]))
+        .collect();
+    let cba = vmesh.cba_tsb[tri[0]][0];
+    let tsb = vmesh.cba_tsb[tri[0]][1];
+    assert!(
+        vram.prim_has_texture_data(cba, tsb, &uvs),
+        "a relocated prim samples populated VRAM after injection"
+    );
+}

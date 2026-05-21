@@ -168,6 +168,27 @@ impl Vram {
         self.write_words(fb_x, fb_y, halfwords.len() as u16, 1, &halfwords);
     }
 
+    /// Write a `w_words` x `h` packed image block from raw little-endian
+    /// halfword bytes into VRAM at `(fb_x, fb_y)`. One VRAM cell holds one
+    /// halfword, so a 4bpp page that is `n` texels wide occupies `n / 4`
+    /// cells per row; the caller is responsible for that texel->word
+    /// conversion. Pixels falling outside VRAM are skipped.
+    ///
+    /// Used by engine consumers that inject a bare (header-less) image
+    /// block - e.g. the `legaia_asset::monster_archive` battle texture
+    /// page, whose 4bpp pixel run lives after the CLUT region inside an
+    /// LZS-decompressed archive block.
+    pub fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
+        if bytes.is_empty() || w_words == 0 || h == 0 {
+            return;
+        }
+        let halfwords: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        self.write_words(fb_x, fb_y, w_words, h, &halfwords);
+    }
+
     /// Write `w * h` 16-bit words into VRAM starting at `(x, y)`.
     /// Pixels falling outside `[0..VRAM_WIDTH) × [0..VRAM_HEIGHT)` are skipped.
     fn write_words(&mut self, x: u16, y: u16, w: u16, h: u16, src: &[u16]) {
