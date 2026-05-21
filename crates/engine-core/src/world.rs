@@ -6432,6 +6432,62 @@ mod tests {
     }
 
     #[test]
+    fn multi_monster_battle_all_monsters_act_and_party_can_win() {
+        use legaia_engine_vm::battle_action::ActionState;
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.live_gameplay_loop = true;
+        world.mode = SceneMode::Battle;
+        // Lone party member: enough HP to survive three weak monsters, enough
+        // attack to chip each down over a few rounds.
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 30);
+        // Three monsters in slots 1..=3, each with modest HP + a light hit.
+        for s in 1..=3 {
+            world.actors[s].battle.hp = 40;
+            world.actors[s].battle.max_hp = 40;
+            world.actors[s].battle.liveness = 1;
+            world.set_battle_attack(s as u8, 3);
+        }
+        // Arm the party member's first swing.
+        world.battle_ctx.active_actor = 0;
+        world.battle_ctx.queued_action = 3;
+        world.battle_ctx.action_state = ActionState::Begin.as_byte();
+        world.actors[0].battle.active_target = 1;
+        world.actors[0].battle.action_category = 3;
+
+        let start_hp = world.actors[0].battle.hp;
+        let mut ended = false;
+        for _ in 0..8000 {
+            world.tick();
+            if world.mode == SceneMode::Field {
+                ended = true;
+                break;
+            }
+        }
+        assert!(ended, "the multi-monster battle must resolve");
+        // Party wiped all three monsters (victory, not a party wipe).
+        assert!(!world.game_over, "party should survive and win");
+        for s in 1..=3 {
+            assert_eq!(
+                world.actors[s].battle.liveness, 0,
+                "monster slot {s} should be defeated"
+            );
+        }
+        // The monsters got turns: the party took at least some damage from
+        // three light attackers over the fight.
+        assert!(
+            world.actors[0].battle.hp < start_hp,
+            "monsters should have damaged the party over the multi-round fight"
+        );
+    }
+
+    #[test]
     fn apply_battle_loot_never_drops_when_rate_zero() {
         use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
         let mut cat = MonsterCatalog::new();
