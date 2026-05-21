@@ -132,7 +132,9 @@
   color: var(--text-muted);
 }
 .engine-state b { color: var(--accent); font-weight: 500; }
-</style>-->
+</style>
+<script src="js/rom-cache.js"></script>
+<script src="js/load-progress.js"></script>-->
 
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · asset viewer</div>
@@ -192,7 +194,7 @@
           <h3>Bring your own disc</h3>
           <p>This viewer doesn't ship any Sony bytes. Provide a <code>.bin</code> Mode2/2352 image of <em>Legend of Legaia</em> (NA SCUS-94254). A single <code>.tim</code> file also works for one-off image previews.</p>
           <p style="margin-top: 0.75rem; color: var(--text-dim); font-size: 0.85rem;">
-            Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly.
+            Files are read with the browser's <code>FileReader</code> API. Nothing is uploaded; everything happens locally in WebAssembly. Your disc is cached locally in the browser (IndexedDB) and shared across the viewer, audio, monster, and world-overview pages, so it auto-loads on reload &mdash; hit <em>Forget</em> on the chip to clear it.
           </p>
         </div>
       </div>
@@ -624,8 +626,10 @@
       }).join('');
   }
 
-  fileInput.addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
+  /* `f` is a File (fresh pick) or a cache-backed source from RomCache;
+   * both expose name / size / arrayBuffer(), so this path is identical
+   * either way. RomCache.attach wires the input change + auto-load. */
+  async function loadAssetBrowser(f) {
     if (!f) {
       status.textContent = 'No file loaded.';
       return;
@@ -635,11 +639,15 @@
     /* Set up canvas before WASM init so the viewer can resolve it. */
     host.innerHTML = '<canvas id="viewer-canvas" class="viewer-canvas" width="1024" height="768"></canvas>';
 
+    const prog = LoadProgress.create(status);
     try {
+      const buf = await prog.read(f, `Reading ${f.name}`);
+      prog.indeterminate('Initialising decoder…');
       const mod = await import('./wasm/legaia_web_viewer.js');
       await mod.default();
-      const buf = new Uint8Array(await f.arrayBuffer());
       viewer = new mod.LegaiaViewer('viewer-canvas');
+      prog.indeterminate('Parsing PROT.DAT + classifying entries…');
+      await prog.paint(); // let the bar render before the blocking parse
       const count = viewer.load_disc(buf);
 
       if (count > 0) {
@@ -688,8 +696,10 @@
         controls.style.display = 'flex';
         status.textContent = `Loaded: ${f.name} - ${count} viewable entries.`;
         refreshInfo();
+        prog.done(`${count} viewable entries.`);
       } else {
         status.textContent = `Loaded: ${f.name} - standalone TIM rendered.`;
+        prog.done('Standalone TIM rendered.');
       }
 
       classFilter.addEventListener('change', rebuildList);
@@ -738,15 +748,19 @@
       });
     } catch (err) {
       status.textContent = `Couldn't load: ${err.message || err}.`;
+      prog.fail(`Couldn't load: ${err.message || err}`);
       console.warn(err);
     }
-  });
+  }
+
+  /* Cache the picked disc and auto-load it on return visits / reloads. */
+  RomCache.attach(fileInput, { onLoad: loadAssetBrowser });
 })();
 </script>
 
 <section class="doc-section">
   <h2>Run engine</h2>
-  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) and <code>CDNAME.TXT</code> is extracted automatically via ISO9660 walk. Files are read locally via <code>FileReader</code>; nothing is uploaded.</p>
+  <p>Tick the Legaia engine VMs in-browser using the same <code>LegaiaRuntime</code> the native engine-shell uses. Provide your disc image (<code>.bin</code> Mode2/2352) and <code>CDNAME.TXT</code> is extracted automatically via ISO9660 walk. Files are read locally via <code>FileReader</code>; nothing is uploaded. The shared browser-cached disc (from any of these pages) is reused here &mdash; just hit <strong>Load engine</strong>, no need to re-pick.</p>
   <p class="hint">The same disc image you use in the asset browser above works here.</p>
 
   <div class="engine-panel" id="engine-panel">
@@ -825,30 +839,41 @@
     rafId = requestAnimationFrame(loop);
   }
 
+  const engineFileInput = document.getElementById('engine-prot-file');
+  /* Cache picks + show the chip, but don't auto-run the engine on load -
+   * the engine section is button-driven. The Load button below pulls a
+   * freshly-picked file or falls back to the cached disc via resolve(). */
+  RomCache.attach(engineFileInput, { autoLoad: false });
+
   loadBtn.addEventListener('click', async () => {
-    const discFile = document.getElementById('engine-prot-file').files[0];
+    const discFile = await RomCache.resolve(engineFileInput);
     if (!discFile) { engStatus.textContent = 'Select a disc image first.'; return; }
 
     stopAutoTick();
     engStatus.textContent = 'Loading WASM module…';
     loadBtn.disabled = true;
+    const prog = LoadProgress.create(engStatus);
     try {
+      const rawBytes = await prog.read(discFile, `Reading ${discFile.name}`);
+      prog.indeterminate('Initialising runtime…');
       if (!wasmMod) {
         wasmMod = await import('./wasm/legaia_web_viewer.js');
         await wasmMod.default();
       }
-      const rawBytes = new Uint8Array(await discFile.arrayBuffer());
-      engStatus.textContent = 'Walking ISO9660 and parsing PROT.DAT…';
-
       runtime = new wasmMod.LegaiaRuntime();
+      engStatus.textContent = 'Walking ISO9660 and parsing PROT.DAT…';
+      prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
+      await prog.paint(); // let the bar render before the blocking parse
       const count = runtime.load_disc(rawBytes, '');
       engStatus.textContent = `Loaded ${count} PROT entries from disc image (CDNAME auto-extracted).`;
       sceneRow.style.display = 'flex';
       tickRow.style.display  = 'flex';
       stateEl.style.display  = 'block';
       updateState();
+      prog.done(`${count} PROT entries loaded.`);
     } catch (err) {
       engStatus.textContent = `Error: ${err.message || err}`;
+      prog.fail(`Error: ${err.message || err}`);
       console.warn(err);
     }
     loadBtn.disabled = false;
