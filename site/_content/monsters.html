@@ -118,6 +118,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   <p style="color: var(--text-dim); font-size: 0.85rem;">Files are read with the browser's <code>FileReader</code> API directly into WebAssembly memory. Nothing is uploaded; the project ships zero Sony bytes (bring-your-own-disc). Native equivalent: <code>asset monster-archive extracted/PROT/0867_battle_data.BIN</code> (add <code>--id N</code> for a single record).</p>
   <h2>The 3D model</h2>
   <p>The same decoded block carries the enemy's <strong>battle model</strong>: a <a href="formats/tmd.html">Legaia TMD</a> embedded at the block-relative offset in the stat record's <code>+0x04</code> field (right after the name string) — the same pointer the battle loader installs at actor <code>+0x230</code>. <strong>186 of the 194 archive slots</strong> carry a clean TMD here (the rest are filler ids). The viewer renders it <strong>textured</strong> and directional-lit: the colours come from the <strong>texture / palette pool</strong> at record <code>+0x08</code>, decoded from the battle loader <code>FUN_80055468</code> — a 0x1E0-byte region of fifteen 16-colour palettes followed by a 4bpp page (always 256 rows tall, 128 or 256 texels wide). Each primitive picks its palette from its CBA (<code>cba &amp; 0x3F</code>) and samples the page at its UVs, exactly as the PSX GPU does from VRAM. Native export: <code>asset monster-archive … --id N --obj enemy.obj --texture-png enemy.png</code>.</p>
+  <h2>Idle animation</h2>
+  <p>The model isn't static in battle: the monster's <a href="formats/monster-animation.html">animation data</a> lives in the same block. Each of its action entries (idle, attack, spells) carries a packed transform-keyframe stream at entry <code>+0x8c</code> — <code>[u8 part_count][u8 frame_count]</code> then one nine-byte record per part per frame, six 12-bit fields decoding to a <strong>per-object translation + Euler rotation</strong> (one part per TMD object). The viewer plays <strong>action 0, the idle loop</strong> the engine runs when the monster isn't acting, re-posing each body part relative to the rest frame (decoder <code>FUN_8004998c</code>). Native list: <code>asset monster-archive … --id N --anim</code>.</p>
 </section>
 
 <script type="module">
@@ -333,15 +335,25 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     }
 
     // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(15*16*4), w, h } or null.
-    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex) {
+    // `anim` is { objectIds: Uint32Array(nverts), partCount, frameCount,
+    //   frames: Int32Array(frameCount*partCount*6) } or null. When present, the
+    //   idle animation (action 0) is played by re-posing each TMD object
+    //   relative to frame 0 (so frame 0 == the static rest pose).
+    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex, anim) {
       const gl = this.gl;
+      this._setupAnim(positions, normals, anim);
+      // When animating, the raw TMD objects are all modelled at the origin and
+      // the per-part transforms assemble them; upload the assembled rest pose.
+      const pos0 = this.anim ? this.anim.out : positions;
+      const nrm0 = this.anim ? this.anim.outN : normals;
       gl.bindVertexArray(this.vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      // DYNAMIC when animating (re-uploaded per frame), STATIC otherwise.
+      gl.bufferData(gl.ARRAY_BUFFER, pos0, this.anim ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
       gl.enableVertexAttribArray(this.loc.pos);
       gl.vertexAttribPointer(this.loc.pos, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, normals, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, nrm0, this.anim ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
       gl.enableVertexAttribArray(this.loc.nrm);
       gl.vertexAttribPointer(this.loc.nrm, 3, gl.FLOAT, false, 0, 0);
 
@@ -383,6 +395,111 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this.indexCount = indices.length;
       this.center = [bounds[0], bounds[1], bounds[2]];
       this.radius = bounds[3] || 1;
+      // The static bounds frame the collapsed mesh; the assembled rest pose is
+      // larger and re-centred, so frame that instead when animating.
+      if (this.anim) { this.center = this.anim.viewCenter.slice(); this.radius = this.anim.viewRadius; }
+    }
+
+    // Precompute the idle-animation state. The monster TMD models each body
+    // part (object) at its own local origin, all overlapping; the per-part
+    // animation keyframes carry the *absolute* model-space transform that
+    // assembles them at their sockets (translation + 12-bit Euler rotation).
+    // Frame 0 is the rest pose. We store the base geometry plus scratch
+    // buffers and the assembled rest-pose bounds (for camera framing). Stores
+    // `this.anim` (null when there's no animation).
+    _setupAnim(positions, normals, anim) {
+      this.anim = null;
+      if (!anim || !anim.frameCount || anim.frameCount < 2 || !anim.objectIds.length) return;
+      this.anim = {
+        base: positions.slice(),          // pristine per-object local verts
+        baseN: normals.slice(),           // matching per-object local normals
+        out: new Float32Array(positions), // posed positions, re-uploaded /frame
+        outN: new Float32Array(normals),  // posed normals, re-uploaded /frame
+        objectIds: anim.objectIds,
+        partCount: anim.partCount,
+        frameCount: anim.frameCount,
+        frames: anim.frames,              // Int32Array, 6 per part per frame
+        startMs: performance.now(),
+      };
+      // Assemble the rest pose (frame 0) into the scratch buffers and frame the
+      // camera on it - the static AABB only covers the collapsed model.
+      this._assemble(this._frameTransforms(0, 0, 0));
+      let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      const o = this.anim.out, n = o.length / 3;
+      for (let v = 0; v < n; v++) for (let k = 0; k < 3; k++) {
+        const x = o[v * 3 + k]; if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x;
+      }
+      this.anim.viewCenter = [(lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2];
+      this.anim.viewRadius = Math.max(1, Math.hypot((hi[0]-lo[0])/2, (hi[1]-lo[1])/2, (hi[2]-lo[2])/2));
+    }
+
+    // Read part `p`'s six pose values for frame `f` -> {t:[x,y,z], r:[x,y,z]}.
+    _pose(f, p) {
+      const o = (f * this.anim.partCount + p) * 6, a = this.anim.frames;
+      return { t: [a[o], a[o + 1], a[o + 2]], r: [a[o + 3], a[o + 4], a[o + 5]] };
+    }
+
+    // Per-part absolute transform interpolated between keyframes `f0` and `f1`
+    // by `frac`: translation lerps linearly, rotation takes the shortest-path
+    // angle step (matching the engine's wrap) and converts to radians.
+    _frameTransforms(f0, f1, frac) {
+      const A = this.anim, A2R = (Math.PI * 2) / 4096;
+      const tr = new Float32Array(A.partCount * 3);
+      const ro = new Float32Array(A.partCount * 3);
+      for (let p = 0; p < A.partCount; p++) {
+        const pa = this._pose(f0, p), pb = this._pose(f1, p);
+        for (let k = 0; k < 3; k++) {
+          tr[p * 3 + k] = pa.t[k] + (pb.t[k] - pa.t[k]) * frac;
+          const step = ((pb.r[k] - pa.r[k] + 6144) % 4096) - 2048;
+          ro[p * 3 + k] = (pa.r[k] + step * frac) * A2R;
+        }
+      }
+      return { tr, ro };
+    }
+
+    // Apply the per-part absolute transforms to assemble the model: every
+    // vertex/normal is rotated about its object's local origin (Rz*Ry*Rx) and
+    // the vertex is translated to its socket. Writes `this.anim.out`/`outN`.
+    _assemble(xf) {
+      const A = this.anim, base = A.base, baseN = A.baseN, out = A.out, outN = A.outN;
+      const ids = A.objectIds, tr = xf.tr, ro = xf.ro, n = base.length / 3;
+      for (let v = 0; v < n; v++) {
+        const o = ids[v];
+        if (o >= A.partCount) {
+          for (let k = 0; k < 3; k++) { out[v*3+k] = base[v*3+k]; outN[v*3+k] = baseN[v*3+k]; }
+          continue;
+        }
+        const rx = ro[o*3], ry = ro[o*3+1], rz = ro[o*3+2];
+        const cx = Math.cos(rx), sx = Math.sin(rx);
+        const cy = Math.cos(ry), sy = Math.sin(ry);
+        const cz = Math.cos(rz), sz = Math.sin(rz);
+        // Rz * Ry * Rx applied to a vector (shared by position and normal).
+        const rot = (x, y, z) => {
+          let ny = y*cx - z*sx, nz = y*sx + z*cx; y = ny; z = nz;        // Rx
+          let nx = x*cy + z*sy; nz = -x*sy + z*cy; x = nx; z = nz;       // Ry
+          nx = x*cz - y*sz; ny = x*sz + y*cz;                            // Rz
+          return [nx, ny, z];
+        };
+        const p = rot(base[v*3], base[v*3+1], base[v*3+2]);
+        out[v*3] = p[0] + tr[o*3]; out[v*3+1] = p[1] + tr[o*3+1]; out[v*3+2] = p[2] + tr[o*3+2];
+        const nrm = rot(baseN[v*3], baseN[v*3+1], baseN[v*3+2]);
+        outN[v*3] = nrm[0]; outN[v*3+1] = nrm[1]; outN[v*3+2] = nrm[2];
+      }
+    }
+
+    // Rebuild the posed buffers for the current wall-clock time and re-upload.
+    _poseFrame() {
+      const A = this.anim, FPS = 14; // keyframes/sec; idle loops the whole set
+      const t = (performance.now() - A.startMs) / 1000 * FPS;
+      const f0 = ((Math.floor(t) % A.frameCount) + A.frameCount) % A.frameCount;
+      const f1 = (f0 + 1) % A.frameCount;
+      const frac = t - Math.floor(t);
+      this._assemble(this._frameTransforms(f0, f1, frac));
+      const gl = this.gl;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, A.out);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nrmBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, A.outN);
     }
 
     resetView() {
@@ -426,6 +543,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       gl.viewport(0, 0, w, h);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       if (this.indexCount > 0) {
+        if (this.anim) this._poseFrame();
         if (this.cam.autoRotate) this.cam.yaw += 0.012;
         const m = buildMatrices(this.cam, this.center, this.radius, w, h);
         gl.useProgram(this.prog);
@@ -570,6 +688,19 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const tex = (texIdx.length && texPal.length && dims[0])
       ? { idx: Uint8Array.from(texIdx), pal: Uint8Array.from(texPal), w: dims[0], h: dims[1] }
       : null;
+    // Idle animation (action 0): per-object transform keyframes + per-vertex
+    // object id. See formats/monster-animation.html.
+    const objIds = viewer.monster_mesh_object_ids(id);
+    const animHdr = viewer.monster_idle_animation_header(id);
+    const animFrames = viewer.monster_idle_animation_frames(id);
+    const anim = (objIds.length && animHdr[0] && animHdr[1] > 1 && animFrames.length)
+      ? {
+          objectIds: Uint32Array.from(objIds),
+          partCount: animHdr[0],
+          frameCount: animHdr[1],
+          frames: Int32Array.from(animFrames),
+        }
+      : null;
     try {
       if (!meshView) {
         meshView = new MonsterMeshView(detailRow.querySelector('#mesh-viewer-canvas'));
@@ -582,12 +713,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         uvs.length ? Float32Array.from(uvs) : null,
         palIdx.length ? Float32Array.from(palIdx) : null,
         tex,
+        anim,
       );
       meshView.resetView();
       statsEl.innerHTML =
         `<b>${(indices.length / 3) | 0}</b> triangles · <b>${(positions.length / 3) | 0}</b> vertices` +
         ` · TMD at <code>+0x04</code>` +
-        (tex ? ` · ${tex.w}×${tex.h} texture at <code>+0x08</code>` : ' · untextured');
+        (tex ? ` · ${tex.w}×${tex.h} texture at <code>+0x08</code>` : ' · untextured') +
+        (anim ? ` · <b>idle</b> ${anim.frameCount}f animation` : '');
     } catch (err) {
       statsEl.innerHTML = `<span style="color:var(--text-dim)">WebGL2 unavailable: ${escapeHtml(String(err))}</span>`;
     }

@@ -790,6 +790,34 @@ export class LegaiaViewer {
         }
     }
     /**
+     * Monster `id`'s idle animation keyframes as a flat `i32` array, six values
+     * per part per frame: `[tx, ty, tz, rx, ry, rz]`. Frame `f`, part `p`,
+     * component `c` is at `(f * part_count + p) * 6 + c`. Translations are
+     * signed model units; rotations are unsigned 12-bit angles (`4096` = a full
+     * turn). Empty if the slot has no decodable idle animation.
+     * @param {number} id
+     * @returns {Int32Array}
+     */
+    monster_idle_animation_frames(id) {
+        const ret = wasm.legaiaviewer_monster_idle_animation_frames(this.__wbg_ptr, id);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * `[part_count, frame_count]` for monster `id`'s **idle** animation (action
+     * index 0). `[0, 0]` if the slot has no decodable animation. Pair with
+     * [`Self::monster_idle_animation_frames`].
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    monster_idle_animation_header(id) {
+        const ret = wasm.legaiaviewer_monster_idle_animation_header(this.__wbg_ptr, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Bounding-sphere `[cx, cy, cz, r]` for monster `id`'s mesh, so the JS
      * side can frame the model without re-parsing the geometry.
      * @param {number} id
@@ -821,6 +849,19 @@ export class LegaiaViewer {
     monster_mesh_normals(id) {
         const ret = wasm.legaiaviewer_monster_mesh_normals(this.__wbg_ptr, id);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Per-vertex TMD object (body-part) index for monster `id`'s mesh, parallel
+     * to [`Self::monster_mesh_positions`]. The JS idle-animation player uses it
+     * to apply each animated part's per-frame transform. Empty if no mesh.
+     * @param {number} id
+     * @returns {Uint32Array}
+     */
+    monster_mesh_object_ids(id) {
+        const ret = wasm.legaiaviewer_monster_mesh_object_ids(this.__wbg_ptr, id);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }

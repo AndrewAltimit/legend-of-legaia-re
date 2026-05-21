@@ -341,6 +341,20 @@ export class LegaiaViewer {
      */
     monster_archive_json(): string;
     /**
+     * Monster `id`'s idle animation keyframes as a flat `i32` array, six values
+     * per part per frame: `[tx, ty, tz, rx, ry, rz]`. Frame `f`, part `p`,
+     * component `c` is at `(f * part_count + p) * 6 + c`. Translations are
+     * signed model units; rotations are unsigned 12-bit angles (`4096` = a full
+     * turn). Empty if the slot has no decodable idle animation.
+     */
+    monster_idle_animation_frames(id: number): Int32Array;
+    /**
+     * `[part_count, frame_count]` for monster `id`'s **idle** animation (action
+     * index 0). `[0, 0]` if the slot has no decodable animation. Pair with
+     * [`Self::monster_idle_animation_frames`].
+     */
+    monster_idle_animation_header(id: number): Uint32Array;
+    /**
      * Bounding-sphere `[cx, cy, cz, r]` for monster `id`'s mesh, so the JS
      * side can frame the model without re-parsing the geometry.
      */
@@ -354,6 +368,12 @@ export class LegaiaViewer {
      * [`Self::monster_mesh_positions`]).
      */
     monster_mesh_normals(id: number): Float32Array;
+    /**
+     * Per-vertex TMD object (body-part) index for monster `id`'s mesh, parallel
+     * to [`Self::monster_mesh_positions`]. The JS idle-animation player uses it
+     * to apply each animated part's per-frame transform. Empty if no mesh.
+     */
+    monster_mesh_object_ids(id: number): Uint32Array;
     /**
      * Per-vertex palette index (`cba & 0x3F`) for monster `id`'s mesh, as
      * floats (parallel to [`Self::monster_mesh_positions`]). The JS shader
@@ -690,9 +710,12 @@ export interface InitOutput {
     readonly legaiaviewer_mesh_positions: (a: number) => [number, number];
     readonly legaiaviewer_mesh_uvs: (a: number) => [number, number];
     readonly legaiaviewer_monster_archive_json: (a: number) => [number, number];
+    readonly legaiaviewer_monster_idle_animation_frames: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_idle_animation_header: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_bounds: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_indices: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_normals: (a: number, b: number) => [number, number];
+    readonly legaiaviewer_monster_mesh_object_ids: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_palette_index: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_positions: (a: number, b: number) => [number, number];
     readonly legaiaviewer_monster_mesh_uvs: (a: number, b: number) => [number, number];

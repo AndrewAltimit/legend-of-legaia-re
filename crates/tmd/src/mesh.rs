@@ -193,12 +193,22 @@ impl VramMesh {
 /// anything meaningful from VRAM, and emitting them would draw black /
 /// transparent triangles that obscure other geometry.
 pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
+    tmd_to_vram_mesh_with_object_ids(tmd, buf).0
+}
+
+/// Same as [`tmd_to_vram_mesh`] but also returns a per-vertex **object id**
+/// (the TMD object / body-part index each emitted vertex came from), parallel
+/// to `mesh.positions`. Animated monster meshes use this to apply a per-object
+/// transform per frame (see [`legaia_asset::monster_archive::MonsterAnimation`]).
+/// `tmd_to_vram_mesh` is this function's mesh half, so the two never drift.
+pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>) {
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
     let mut indices = Vec::new();
+    let mut object_ids = Vec::new();
 
-    for o in &tmd.objects {
+    for (o_idx, o) in tmd.objects.iter().enumerate() {
         let object_vert_count = o.header.n_vert;
         let groups = legaia_prims::iter_groups_lenient(
             buf,
@@ -223,6 +233,7 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
                     let (u8v, v8v) = prim.uvs.get(uv_idx).copied().unwrap_or((0, 0));
                     uvs.push([u8v, v8v]);
                     cba_tsb.push(ct);
+                    object_ids.push(o_idx as u32);
                     i
                 };
                 match raw_idx.len() {
@@ -246,13 +257,16 @@ pub fn tmd_to_vram_mesh(tmd: &Tmd, buf: &[u8]) -> VramMesh {
     }
 
     let normals = compute_smooth_normals(&positions, &indices);
-    VramMesh {
-        positions,
-        uvs,
-        cba_tsb,
-        indices,
-        normals,
-    }
+    (
+        VramMesh {
+            positions,
+            uvs,
+            cba_tsb,
+            indices,
+            normals,
+        },
+        object_ids,
+    )
 }
 
 /// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't

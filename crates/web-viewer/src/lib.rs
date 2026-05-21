@@ -1134,6 +1134,69 @@ impl LegaiaViewer {
             .unwrap_or_else(|| vec![0, 0])
     }
 
+    /// Per-vertex TMD object (body-part) index for monster `id`'s mesh, parallel
+    /// to [`Self::monster_mesh_positions`]. The JS idle-animation player uses it
+    /// to apply each animated part's per-frame transform. Empty if no mesh.
+    pub fn monster_mesh_object_ids(&self, id: u16) -> Vec<u32> {
+        let Some(slice) = self.monster_archive_slice() else {
+            return Vec::new();
+        };
+        let Some(Some(mesh)) = legaia_asset::monster_archive::mesh(slice, id).ok() else {
+            return Vec::new();
+        };
+        let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+            return Vec::new();
+        };
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1
+    }
+
+    /// `[part_count, frame_count]` for monster `id`'s **idle** animation (action
+    /// index 0). `[0, 0]` if the slot has no decodable animation. Pair with
+    /// [`Self::monster_idle_animation_frames`].
+    pub fn monster_idle_animation_header(&self, id: u16) -> Vec<u32> {
+        let Some(slice) = self.monster_archive_slice() else {
+            return vec![0, 0];
+        };
+        match legaia_asset::monster_archive::idle_animation(slice, id)
+            .ok()
+            .flatten()
+        {
+            Some(a) => vec![a.part_count as u32, a.frame_count as u32],
+            None => vec![0, 0],
+        }
+    }
+
+    /// Monster `id`'s idle animation keyframes as a flat `i32` array, six values
+    /// per part per frame: `[tx, ty, tz, rx, ry, rz]`. Frame `f`, part `p`,
+    /// component `c` is at `(f * part_count + p) * 6 + c`. Translations are
+    /// signed model units; rotations are unsigned 12-bit angles (`4096` = a full
+    /// turn). Empty if the slot has no decodable idle animation.
+    pub fn monster_idle_animation_frames(&self, id: u16) -> Vec<i32> {
+        let Some(slice) = self.monster_archive_slice() else {
+            return Vec::new();
+        };
+        let Some(anim) = legaia_asset::monster_archive::idle_animation(slice, id)
+            .ok()
+            .flatten()
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(anim.frame_count * anim.part_count * 6);
+        for frame in &anim.frames {
+            for p in frame {
+                out.extend_from_slice(&[
+                    p.tx as i32,
+                    p.ty as i32,
+                    p.tz as i32,
+                    p.rx as i32,
+                    p.ry as i32,
+                    p.rz as i32,
+                ]);
+            }
+        }
+        out
+    }
+
     /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
     /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
     /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex

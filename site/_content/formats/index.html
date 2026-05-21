@@ -109,6 +109,10 @@
       <div class="card-title">ANM animation</div>
       <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Keyframe pose decoder ported in <code>legaia_anm::AnimPlayer</code>.</div>
     </a>
+    <a class="card" id="monster-animation" href="monster-animation.html">
+      <div class="card-title">Monster animation</div>
+      <div class="card-body">Enemy battle animation inside the monster archive (PROT 867). Per-action transform-keyframe stream at entry <code>+0x8c</code>: <code>[u8 parts][u8 frames]</code> + nine-byte TRS records (one part per TMD object). Action 0 is the idle loop; decoder <code>FUN_8004998c</code>.</div>
+    </a>
     <a class="card" id="mdt" href="mdt.html">
       <div class="card-title">MDT - move tables</div>
       <div class="card-body">Tactical Arts move records. Both layouts parse cleanly; the consumer is <code>FUN_800204F8</code>. The runtime <code>MOVE</code> base is sourced per-scene from a CDNAME slot, not from a single boot-time PROT entry.</div>
