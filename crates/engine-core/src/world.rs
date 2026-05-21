@@ -312,6 +312,15 @@ pub struct Actor {
     /// `None` for actors spawned through paths that don't reference the
     /// global TMD pool (the actor VM's own `Spawn*` opcodes, etc.).
     pub tmd_ref: Option<Arc<GlobalTmd>>,
+
+    /// Monster id (1-based, into the PROT 867 monster archive) when this
+    /// actor is an enemy spawned for a battle formation. `None` for party
+    /// members and for actors outside a formation-driven battle. Set by
+    /// [`World::enter_battle_from_formation`]; lets a renderer fetch the
+    /// monster's battle mesh + texture pool (the on-disc CBA/TSB are
+    /// relocated per battle slot - see
+    /// `legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`).
+    pub battle_monster_id: Option<u16>,
 }
 
 impl Actor {
@@ -2906,12 +2915,18 @@ impl World {
             a.battle.liveness = 1;
             a.battle.action_category = 3; // Attack
             a.battle.active_target = first_monster;
+            // Party members are not monsters - clear any id left from a
+            // previous battle that placed an enemy in this slot.
+            a.battle_monster_id = None;
         }
         for (i, fslot) in formation.slots.iter().take(5).enumerate() {
             let mslot = party_count as usize + i;
             if mslot >= self.actors.len() {
                 break;
             }
+            // Tag the slot with its monster id so a renderer can fetch the
+            // battle mesh, even if the catalog has no stats for it.
+            self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
             if let Some(def) = self.monster_catalog.get(fslot.monster_id) {
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;
@@ -3205,6 +3220,31 @@ impl World {
         // Reset step tracking so the post-battle position doesn't count as a
         // step on the next field tick.
         self.field_last_tile = None;
+    }
+
+    /// Active enemy actors in the current battle as `(actor_index,
+    /// monster_id, battle_slot)`, where `battle_slot` is the 0-based monster
+    /// index the battle texture loader keys VRAM placement on (feed it to
+    /// `legaia_asset::monster_archive::MonsterMesh::battle_render_mesh`).
+    /// Empty unless the world is in [`SceneMode::Battle`].
+    ///
+    /// A renderer uses this to bridge each decoded monster mesh into its draw
+    /// list: the engine itself never loads the archive, so the actor only
+    /// carries the id - the host resolves it to a mesh.
+    pub fn battle_monster_slots(&self) -> Vec<(usize, u16, u8)> {
+        if !matches!(self.mode, SceneMode::Battle) {
+            return Vec::new();
+        }
+        let first_monster = self.party_count as usize;
+        self.actors
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, a)| {
+                let id = a.battle_monster_id?;
+                let slot = idx.checked_sub(first_monster)? as u8;
+                Some((idx, id, slot))
+            })
+            .collect()
     }
 
     /// Configure the actor at `slot` as the field player and reset the

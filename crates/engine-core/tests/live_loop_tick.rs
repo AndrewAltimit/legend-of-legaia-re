@@ -133,6 +133,48 @@ fn walking_triggers_battle_and_returns_to_field_with_loot() {
 }
 
 #[test]
+fn battle_tags_monster_slots_for_rendering() {
+    // A renderer bridges decoded monster meshes into its draw list via
+    // `World::battle_monster_slots`. Drive a real formation-triggered battle
+    // and assert the enemy actors are tagged with their archive ids + slots.
+    let mut w = build_field_world();
+    let up = InputState::mask_of([PadButton::Up]);
+
+    let mut slots = Vec::new();
+    for _ in 0..6000 {
+        w.set_pad(up);
+        w.tick();
+        if w.mode == SceneMode::Battle {
+            slots = w.battle_monster_slots();
+            break;
+        }
+    }
+
+    assert!(
+        !slots.is_empty(),
+        "battle should tag at least one monster slot for rendering"
+    );
+    // Monsters follow the party in the actor table; the first is battle slot 0.
+    let (actor_idx, monster_id, battle_slot) = slots[0];
+    assert_eq!(battle_slot, 0, "first monster is battle slot 0");
+    assert_eq!(
+        actor_idx, w.party_count as usize,
+        "monster actors follow the party slots"
+    );
+    assert!(monster_id > 0, "monster id is the 1-based archive id");
+    assert_eq!(
+        w.actors[actor_idx].battle_monster_id,
+        Some(monster_id),
+        "the tagged actor carries the same id the helper reports"
+    );
+
+    // Slots are contiguous and 0-based across however many monsters spawned.
+    for (i, (_, _, slot)) in slots.iter().enumerate() {
+        assert_eq!(*slot as usize, i, "battle slots are contiguous and 0-based");
+    }
+}
+
+#[test]
 fn live_loop_off_never_transitions_on_its_own() {
     // Same setup but with the live loop disabled: walking must not roll an
     // encounter or enter battle. Guards the opt-in contract that keeps
