@@ -628,6 +628,18 @@ Implementation: [`crates/engine-core::tactical_arts_editor`](../../crates/engine
 
 Monster ids missing from the catalog contribute zero (silently skipped) so a partially-populated catalog still drives a battle-end transition. Implementation: [`crates/engine-core::world::World::apply_battle_loot`](../../crates/engine-core/src/world.rs).
 
+## Live gameplay loop — Field ↔ Battle in `tick`
+
+`World::tick` drives the full Field → Battle → Field round trip itself when `World::live_gameplay_loop` is set. The flag is an opt-in: with it clear (the default), the `Field` branch runs the field VM + locomotion but never rolls encounters, and the `Battle` branch runs a single `step_battle` without applying damage or re-arming — preserving every existing caller and test that drives those externally.
+
+With the flag set, the per-frame flow is:
+
+- **Field tick** (`World::live_field_tick`): a *step* is the player actor crossing into a new 128-unit collision tile (`pos >> 7`). Each step drives one `World::on_field_step` encounter roll; `World::tick_encounter` advances the session's `Transition` / `Grace` countdowns every frame. When the `EncounterSession` reaches `Triggered`, `World::begin_encounter_battle` resolves the rolled `formation_id` against `World::formation_table`, snapshots the field actor table into `World::field_return`, seeds the battle actor table from the formation + `MonsterCatalog` (`enter_battle_from_formation`), and flips `mode` to `Battle`.
+- **Battle tick** (`World::live_battle_tick`): wraps `step_battle` with the host-side glue the retail engine performs through its render + animation systems, so the battle resolves from `tick` alone. It folds this frame's `BattleEvent::ApplyArtStrike` damage into target HP; applies a generic physical strike (`apply_basic_attack`, `damage = art_strike_damage_default(attack, defense, 16)`) on the `AttackChain → AttackRecovery` edge when no art strike did; marks zero-HP combatants dead so the SM's wipe scan resolves; clears `ADVANCE_DONE` at `AttackRecovery`; and re-arms the next party attacker at `EndOfAction`. On `StepOutcome::BattleComplete` it calls `World::finish_battle`.
+- **Return** (`World::finish_battle`): on `BattleEndCause::MonsterWipe` it credits loot via `World::apply_battle_loot` (recorded in `World::last_battle_rewards`); on `PartyWipe` it raises `World::game_over`. Either way it ends the encounter session's battle (post-battle grace + suppression), restores the `field_return` actor snapshot, and flips `mode` back to `Field`.
+
+v0.1 scope: party turns only (monsters are passive), physical attack only (no Arts/Magic/AP command picker), single-formation. The damage path for art-driven strikes already flows through `apply_art_strike` → `fold_battle_event` and is unchanged. Command-picker input (`BattleRunner::push_command` from `World::input`), monster AI turns, and multi-formation battles layer on top of this spine. Implementation: [`crates/engine-core::world`](../../crates/engine-core/src/world.rs); integration test `crates/engine-core/tests/live_loop_tick.rs` drives boot → walk → encounter → victory → return-to-field through `tick` alone with no test-side battle glue.
+
 ## End-to-end gameplay loop integration test
 
 `crates/engine-core/tests/end_to_end_gameplay_loop.rs` stitches every gameplay-side subsystem into one cycle:
