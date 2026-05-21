@@ -8,11 +8,15 @@
 //! pad: the player picks a command from the battle command menu, then a target,
 //! before the strike commits.
 //!
-//! v0.1 enables only the **Attack** command - Arts / Magic / Item appear in the
-//! menu but are not selectable yet (they hang off [`crate::battle_session`] /
-//! [`crate::spell_menu`] / [`crate::inventory_use`], which aren't wired into the
-//! live loop). Target selection reuses [`crate::target_picker`] so the cursor
-//! behaviour matches the rest of the battle UI.
+//! **Attack** and **Item** are wired into the live loop. Attack opens a target
+//! cursor and commits a physical strike; Item resolves to
+//! [`Resolution::OpenItemMenu`], which the live loop turns into a battle-context
+//! [`crate::inventory_use::InventoryUseSession`] (pick item → pick target →
+//! apply) that the host owns because it needs the live inventory + party stats.
+//! Arts / Magic still appear in the menu but are not selectable yet (they hang
+//! off [`crate::battle_session`] / [`crate::spell_menu`]). Target selection
+//! reuses [`crate::target_picker`] so the cursor behaviour matches the rest of
+//! the battle UI.
 //!
 //! The session is a small state machine - [`CommandPhase`] - driven one frame
 //! at a time by [`BattleCommandSession::input`] with an edge-triggered
@@ -27,13 +31,14 @@ use crate::target_picker::{
 /// A top-level battle command, as listed in the battle command menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleCommand {
-    /// Physical attack - the only command wired into the live loop in v0.1.
+    /// Physical attack - opens a target cursor and commits a strike.
     Attack,
     /// Tactical Arts. Listed but not selectable yet (see [`crate::tactical_arts`]).
     Arts,
     /// Magic spell. Listed but not selectable yet (see [`crate::spell_menu`]).
     Magic,
-    /// Use an item. Listed but not selectable yet (see [`crate::inventory_use`]).
+    /// Use an item - hands off to the host inventory submenu (see
+    /// [`crate::inventory_use`]).
     Item,
 }
 
@@ -47,9 +52,10 @@ impl BattleCommand {
     ];
 
     /// `true` when the command can actually be selected in the live loop.
-    /// Only [`BattleCommand::Attack`] is enabled in v0.1.
+    /// Attack (physical strike) and Item (inventory submenu) are wired;
+    /// Arts / Magic are still pending their submenus.
     pub fn enabled(self) -> bool {
-        matches!(self, BattleCommand::Attack)
+        matches!(self, BattleCommand::Attack | BattleCommand::Item)
     }
 
     /// Short label for the HUD / command menu.
@@ -105,6 +111,11 @@ pub enum CommandPhase {
         target_row: CursorRow,
         target_slot: u8,
     },
+    /// The player picked Item. The command session can't run the inventory
+    /// picker itself (it needs the live inventory + party stats), so it hands
+    /// off: the live loop opens an [`crate::inventory_use::InventoryUseSession`]
+    /// and applies the chosen item, then cycles the turn.
+    OpenItemMenu,
     /// No valid action was possible (e.g. nothing left to target). The live
     /// loop should fall back to a default strike so it never deadlocks.
     Aborted,
@@ -167,6 +178,7 @@ impl BattleCommandSession {
                 target_row: *target_row,
                 target_slot: *target_slot,
             }),
+            CommandPhase::OpenItemMenu => Some(Resolution::OpenItemMenu),
             CommandPhase::Aborted => Some(Resolution::Aborted),
             _ => None,
         }
@@ -215,7 +227,8 @@ impl BattleCommandSession {
                     };
                 }
             }
-            CommandPhase::Confirmed { .. } | CommandPhase::Aborted => {}
+            CommandPhase::Confirmed { .. } | CommandPhase::OpenItemMenu | CommandPhase::Aborted => {
+            }
         }
     }
 }
@@ -229,6 +242,9 @@ pub enum Resolution {
         target_row: CursorRow,
         target_slot: u8,
     },
+    /// The player picked Item; the live loop should open the inventory
+    /// submenu (it owns the live inventory + party stats).
+    OpenItemMenu,
     /// No valid action existed; the live loop should fall back to a default
     /// strike on the first living enemy.
     Aborted,
@@ -263,6 +279,11 @@ fn step_menu(
 
     if ev.cross {
         let command = BattleCommand::MENU[cursor as usize];
+        // Item hands off to the host's inventory submenu instead of opening a
+        // target cursor here - the picker can't show item rows / stats.
+        if command == BattleCommand::Item {
+            return CommandPhase::OpenItemMenu;
+        }
         if command.enabled() {
             let picker =
                 TargetPickerSession::new(command.target_kind(), party_slot, party, monsters);
@@ -421,6 +442,28 @@ mod tests {
         s.input(press_cross(), party3(), one_monster());
         assert!(s.resolved().is_none());
         assert_eq!(s.menu_command(), Some(BattleCommand::Arts));
+    }
+
+    #[test]
+    fn item_command_resolves_to_open_item_menu() {
+        let mut s = BattleCommandSession::new(0, 0);
+        // Walk the cursor down to Item (index 3) - Arts/Magic are skipped over
+        // even though they're disabled, the cursor still moves through them.
+        for _ in 0..3 {
+            s.input(
+                BattleCommandInput {
+                    down: true,
+                    ..Default::default()
+                },
+                party3(),
+                one_monster(),
+            );
+        }
+        assert_eq!(s.menu_command(), Some(BattleCommand::Item));
+        s.input(press_cross(), party3(), one_monster());
+        // Item hands off to the host's inventory submenu rather than opening a
+        // target cursor here.
+        assert_eq!(s.resolved(), Some(Resolution::OpenItemMenu));
     }
 
     #[test]

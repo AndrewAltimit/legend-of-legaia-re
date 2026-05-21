@@ -824,8 +824,8 @@ pub struct World {
     /// [`World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
     /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
-    /// (`legaia-engine play-window`) set both after boot. v0.1 enables only
-    /// the Attack command.
+    /// (`legaia-engine play-window`) set both after boot. Attack and Item are
+    /// wired (Item opens [`Self::battle_item_menu`]); Arts / Magic are pending.
     pub battle_player_driven: bool,
 
     /// Active command-selection session for the player-driven battle. `Some`
@@ -834,6 +834,15 @@ pub struct World {
     /// Managed by the live loop; hosts read it to draw the command menu /
     /// target cursor.
     pub battle_command: Option<crate::battle_input::BattleCommandSession>,
+
+    /// Active inventory submenu for the player-driven battle, opened when the
+    /// player picks **Item** from the command menu. `Some` while the player
+    /// browses items / picks a target (both the action SM and
+    /// [`Self::battle_command`] are parked meanwhile); `None` otherwise. The
+    /// World owns it - not [`crate::battle_input::BattleCommandSession`] -
+    /// because it needs the live inventory + party stats. Hosts read it to
+    /// draw the item overlay.
+    pub battle_item_menu: Option<crate::inventory_use::InventoryUseSession>,
 
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
@@ -1017,6 +1026,7 @@ impl World {
             live_gameplay_loop: false,
             battle_player_driven: false,
             battle_command: None,
+            battle_item_menu: None,
             active_formation: None,
             last_battle_rewards: None,
             game_over: false,
@@ -3044,6 +3054,15 @@ impl World {
                 self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
                 // Session done; SM resumes next tick.
             }
+            Some(Resolution::OpenItemMenu) => {
+                // Player picked Item: hand off to the inventory submenu. The
+                // command session is dropped (already taken) and the action SM
+                // stays parked; `tick_battle_item_menu` drives until the player
+                // uses an item (turn cycles via EndOfAction) or backs out
+                // (the command menu reopens for the same actor).
+                self.battle_ctx.active_actor = session.actor;
+                self.battle_item_menu = Some(self.build_battle_item_session());
+            }
             Some(Resolution::Aborted) => {
                 // No valid target the player could pick - arm a default strike
                 // on the first living monster so the loop progresses.
@@ -3064,6 +3083,150 @@ impl World {
                 self.battle_command = Some(session);
             }
         }
+    }
+
+    /// Build the battle-context inventory submenu from live world state:
+    /// every item the player holds (`count > 0`) plus one party-member
+    /// target row per living party slot, with live battle HP / MP. Targets
+    /// are party-only - the curated battle-usable items are heals / cures /
+    /// revives that apply to allies; offensive items aren't wired yet.
+    fn build_battle_item_session(&self) -> crate::inventory_use::InventoryUseSession {
+        use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow};
+        let names = crate::field_menu_dispatch::roster_names(self);
+        let items: Vec<u8> = self
+            .inventory
+            .iter()
+            .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
+            .collect();
+        let pc = self.party_count.clamp(1, 3) as usize;
+        let targets: Vec<TargetRow> = (0..pc)
+            .filter_map(|i| {
+                let a = self.actors.get(i)?;
+                // Skip unconfigured party slots (no battle stats).
+                if a.battle.max_hp == 0 {
+                    return None;
+                }
+                let mp_max = self.character_max_mp.get(i).copied().unwrap_or(0);
+                let name = names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("P{}", i + 1));
+                let mut row = TargetRow::new(i as u8, name).with_stats(
+                    a.battle.hp,
+                    a.battle.max_hp,
+                    a.battle.mp,
+                    mp_max,
+                );
+                row.alive = a.battle.liveness != 0;
+                Some(row)
+            })
+            .collect();
+        InventoryUseSession::new(
+            self.item_catalog.clone(),
+            items,
+            targets,
+            InventoryContext::Battle,
+        )
+    }
+
+    /// Drive the open battle inventory submenu one frame from [`World::input`].
+    ///
+    /// Edge-triggered pad → one [`crate::inventory_use::InventoryUseInput`] per
+    /// frame. On a completed use the chosen item is applied authoritatively via
+    /// [`Self::use_item`], one copy is consumed from the inventory, a heal /
+    /// cure popup is surfaced for the HUD, and the action SM is parked at
+    /// `EndOfAction` so the live loop cycles to the next combatant (no strike
+    /// fires - using an item is the actor's whole turn). Backing out reopens
+    /// the command menu for the same actor.
+    fn tick_battle_item_menu(&mut self) {
+        use crate::input::PadButton;
+        use crate::inventory_use::{InventoryUseEvent, InventoryUseInput, InventoryUseState};
+
+        let Some(mut menu) = self.battle_item_menu.take() else {
+            return;
+        };
+
+        let ev = if self.input.just_pressed(PadButton::Up) {
+            Some(InventoryUseInput::Up)
+        } else if self.input.just_pressed(PadButton::Down) {
+            Some(InventoryUseInput::Down)
+        } else if self.input.just_pressed(PadButton::Cross) {
+            Some(InventoryUseInput::Confirm)
+        } else if self.input.just_pressed(PadButton::Circle) {
+            Some(InventoryUseInput::Cancel)
+        } else {
+            None
+        };
+
+        // The item under the cursor before the input - `current_item` reads
+        // the `item_cursor` in TargetSelect, so this is the item that a Confirm
+        // on a target row resolves to (the Done state no longer exposes it).
+        let item_before = menu.current_item().map(|e| e.id);
+        if let Some(ev) = ev {
+            menu.input(ev);
+        }
+        let used = menu.drain_events().into_iter().find_map(|e| match e {
+            InventoryUseEvent::Used { slot, .. } => Some(slot),
+            _ => None,
+        });
+
+        if let Some(target_slot) = used {
+            if let Some(item_id) = item_before {
+                let outcome = self.use_item(item_id, target_slot);
+                self.consume_item(item_id);
+                self.push_item_use_fx(target_slot, outcome);
+            }
+            // Using an item is the actor's whole turn: park at EndOfAction so
+            // the live loop's re-arm block cycles to the next combatant.
+            self.battle_ctx.action_state = vm::battle_action::ActionState::EndOfAction.as_byte();
+            return;
+        }
+
+        match menu.state {
+            InventoryUseState::Aborted => {
+                // Backed out without using an item - reopen the command menu.
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            _ => {
+                // Still browsing / target-selecting - keep the menu open.
+                self.battle_item_menu = Some(menu);
+            }
+        }
+    }
+
+    /// Remove one copy of `item_id` from the inventory, dropping the entry
+    /// when the count reaches zero. No-op when the player holds none.
+    pub fn consume_item(&mut self, item_id: u8) {
+        if let Some(qty) = self.inventory.get_mut(&item_id) {
+            *qty = qty.saturating_sub(1);
+            if *qty == 0 {
+                self.inventory.remove(&item_id);
+            }
+        }
+    }
+
+    /// Surface a cosmetic HUD popup for a resolved item use. Heals / MP
+    /// restores / revives push a heal-coloured number; cures push the status
+    /// letter. The HP / status side is already applied by [`Self::use_item`];
+    /// this is presentation-only (drained via [`Self::drain_battle_hit_fx`]).
+    fn push_item_use_fx(&mut self, target_slot: u8, outcome: crate::items::ItemOutcome) {
+        use crate::items::ItemOutcome;
+        let amount = match outcome {
+            ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => amount,
+            ItemOutcome::Revived { hp_after } => hp_after,
+            // Cures / stat boosts / no-effect: no number to float.
+            _ => return,
+        };
+        if amount == 0 {
+            return;
+        }
+        self.battle_hit_fx.push(BattleHitFx {
+            target_slot,
+            amount,
+            is_heal: true,
+            is_crit: false,
+        });
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
@@ -3089,6 +3252,14 @@ impl World {
     /// apply loot and return to the field.
     fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
+
+        // Player-driven: while the inventory submenu is open the action SM is
+        // parked - drive it from the pad and return until the player uses an
+        // item (turn cycles) or backs out (reopens the command menu).
+        if self.battle_item_menu.is_some() {
+            self.tick_battle_item_menu();
+            return None;
+        }
 
         // Player-driven: while a command session is open the action SM is
         // parked - drive the command picker from the pad and return without
@@ -3289,8 +3460,10 @@ impl World {
         }
         self.active_formation = None;
         self.battle_end = None;
-        // Drop any open command session - it belongs to the finished battle.
+        // Drop any open command / item session - they belong to the finished
+        // battle.
         self.battle_command = None;
+        self.battle_item_menu = None;
         // Stale damage popups must not bleed into the next encounter / field.
         self.battle_hit_fx.clear();
         // Post-battle grace + suppression on the session.
@@ -6485,6 +6658,107 @@ mod tests {
             world.actors[0].battle.hp < start_hp,
             "monsters should have damaged the party over the multi-round fight"
         );
+    }
+
+    #[test]
+    fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
+        use crate::input::PadButton;
+        use crate::items::ItemCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 2,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_item_catalog(ItemCatalog::vanilla());
+        // Two party members (slot 0 wounded), one monster.
+        for i in 0..2usize {
+            world.actors[i].battle.max_hp = 200;
+            world.actors[i].battle.hp = 200;
+            world.actors[i].battle.liveness = 1;
+            world.set_character_max_mp(i as u8, 30);
+        }
+        world.actors[0].battle.hp = 50;
+        world.actors[2].battle.max_hp = 80;
+        world.actors[2].battle.hp = 80;
+        world.actors[2].battle.liveness = 1;
+        // Healing Leaf (id 0x01) heals 100 HP; hold two.
+        world.inventory.insert(0x01, 2);
+
+        // Open the item submenu for the active party member.
+        world.battle_ctx.active_actor = 0;
+        world.battle_item_menu = Some(world.build_battle_item_session());
+        {
+            let m = world.battle_item_menu.as_ref().unwrap();
+            assert_eq!(m.filtered_items.len(), 1, "one battle-usable item");
+            assert_eq!(m.targets.len(), 2, "two party targets");
+        }
+
+        // Frame 1: Cross confirms the item -> target select.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+        assert!(world.battle_item_menu.is_some(), "still picking a target");
+
+        // Frame 2: Cross confirms the first target (the wounded slot 0).
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+
+        assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
+        assert_eq!(
+            world.inventory.get(&0x01).copied(),
+            Some(1),
+            "one Healing Leaf consumed"
+        );
+        assert!(world.battle_item_menu.is_none(), "menu closed after use");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction so the loop cycles"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert!(fx[0].is_heal);
+        assert_eq!(fx[0].amount, 100);
+        assert_eq!(fx[0].target_slot, 0);
+    }
+
+    #[test]
+    fn battle_item_menu_cancel_reopens_command_menu() {
+        use crate::input::PadButton;
+        use crate::items::ItemCatalog;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_item_catalog(ItemCatalog::vanilla());
+        world.actors[0].battle.max_hp = 100;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.inventory.insert(0x01, 1);
+
+        world.battle_ctx.active_actor = 0;
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        // Circle from the item list backs all the way out.
+        world.set_pad(0);
+        world.set_pad(PadButton::Circle.mask());
+        world.tick_battle_item_menu();
+
+        assert!(world.battle_item_menu.is_none(), "item menu closed");
+        assert!(
+            world.battle_command.is_some(),
+            "command menu reopened for the same actor"
+        );
+        assert_eq!(world.battle_command.as_ref().unwrap().actor, 0);
+        // No item was consumed on a cancel.
+        assert_eq!(world.inventory.get(&0x01).copied(), Some(1));
     }
 
     #[test]

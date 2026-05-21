@@ -5551,8 +5551,12 @@ impl PlayWindowApp {
                 ));
             }
 
-            // Player-driven command menu / target cursor.
-            if let Some(cmd) = &bw.battle_command {
+            // Player-driven inventory submenu (opened from the Item command).
+            // Takes priority over the command menu since it parks both the SM
+            // and the command session while open.
+            if let Some(menu) = &bw.battle_item_menu {
+                out.extend(self.items_session_draws(menu));
+            } else if let Some(cmd) = &bw.battle_command {
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &cmd.phase {
