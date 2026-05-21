@@ -6396,11 +6396,12 @@ fn cmd_play_window_with_record(
             // list still gates on each character's learned spells from the
             // boot save, and the item list on the live inventory.
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-            world.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
-            // Master Seru registry so a successful capture banks points and can
-            // teach a spell (the vanilla monster catalog links a handful of
-            // monsters to Seru ids).
-            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::vanilla());
+            // Real player Seru-magic ids (0x81..=0x8b, pinned from SCUS) on top
+            // of the demo entries, paired with a Seru registry that teaches
+            // those real ids - so a captured Seru learns a correctly-named
+            // retail spell (e.g. Gimard = 0x81, matching the save-state pin).
+            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
             // Seed a couple of demo items when the boot save carries none, so
             // both the ally-heal and offensive (Bomb) item paths are
             // exercisable in the window. (No-op when the save has inventory.)
@@ -7585,7 +7586,7 @@ fn cmd_chain_editor(char_slot: u8, script: &str) -> Result<()> {
 
 fn cmd_seru_capture(seru: u16, count: u32, party: &str) -> Result<()> {
     use legaia_engine_core::seru_learning::{SeruCaptureLog, SeruRegistry, record_capture};
-    let registry = SeruRegistry::vanilla();
+    let registry = SeruRegistry::retail();
     let party: Vec<u8> = party
         .split(',')
         .filter_map(|s| s.trim().parse::<u8>().ok())

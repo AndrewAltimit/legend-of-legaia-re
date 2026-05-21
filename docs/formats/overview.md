@@ -37,6 +37,7 @@ Every format documented here has a clean-room Rust parser somewhere in the works
 | [Monster animation](monster-animation.md) | Per-object rigid-transform keyframes inside the monster archive (PROT 867). Per-action stream at entry `+0x8c`: `[u8 parts][u8 frames][parts×frames × 9-byte TRS]`. Action 0 = idle. |
 | [MDT move table](mdt.md) | Tactical Arts move tables. Two on-disc layouts the consumer accepts. |
 | [Art data](art-data.md) | Per-character art records: Action Constants, command sequences, power-byte encoding, Miracle/Super Art trigger tables. PROT entry `0x05C4`. |
+| [Spell table](spell-table.md) | Static `SCUS_942.54` spell table (`DAT_800754C8`/`DAT_800754D0`, 12-byte stride). MP cost + target + name per id; player Seru-magic block `0x81..=0x8b` pinned. |
 | [Per-character save record](save-record.md) | Runtime `0x414`-byte record at `0x80084708 + slot * 0x414`. Cheat-database-pinned offset table for stats / level / magic rank / spells / summons / equipment. |
 
 ## Streaming + scene containers

@@ -198,6 +198,48 @@ impl SeruRegistry {
         });
         r
     }
+
+    /// Like [`Self::vanilla`] but the Seru teach the **real** retail spell
+    /// ids pinned from `SCUS_942.54` (see [`crate::retail_magic`]). The Seru
+    /// ids are kept aligned with `vanilla_monster_catalog`'s monster->Seru
+    /// links, and each Seru is named after the spell it teaches so the
+    /// capture banner reads correctly (e.g. capturing the Gimard Seru learns
+    /// spell `0x81` "Gimard", matching the save-state pin in
+    /// [`crate::capture_observations::seru_capture`]). The monster->Seru
+    /// attachment itself is still a clean-room approximation - only the
+    /// spell-id space is pinned.
+    pub fn retail() -> Self {
+        let mut r = Self::new();
+        let all = 0b0000_0111u8;
+        // (seru_id, real spell id from retail_magic::SERU_MAGIC, capture pts).
+        let rows: &[(u16, u8, u16)] = &[
+            (0x0001, 0x81, 25), // Gimard  (fire)
+            (0x0002, 0x82, 50), // Theeder (thunder)
+            (0x0003, 0x84, 25), // Gizam   (water)
+            (0x0004, 0x87, 50), // Viguro  (thunder)
+            (0x0005, 0x88, 25), // Swordie (wind)
+            (0x0006, 0x85, 25), // Nighto  (dark)
+            (0x0007, 0x8b, 50), // Nova    (wind)
+            (0x0010, 0x83, 25), // Vera    (light, heal)
+            (0x0011, 0x89, 50), // Orb     (light, heal)
+            (0x0020, 0x86, 25), // Zenoir  (fire)
+            (0x0021, 0x8a, 50), // Freed   (water)
+        ];
+        for &(seru_id, spell_id, capture_points) in rows {
+            let name = crate::retail_magic::get(spell_id)
+                .map(|s| s.name.to_string())
+                .unwrap_or_else(|| format!("Seru {seru_id:#06x}"));
+            r.insert(SeruDef {
+                id: seru_id,
+                name,
+                spell_id,
+                capture_points,
+                learnable_mask: all,
+                learn_threshold: if capture_points >= 50 { 200 } else { 100 },
+            });
+        }
+        r
+    }
 }
 
 /// One row in the per-character capture log.
@@ -629,6 +671,22 @@ mod tests {
     #[test]
     fn vanilla_registry_non_empty() {
         let r = SeruRegistry::vanilla();
+        assert!(r.len() >= 10);
+    }
+
+    #[test]
+    fn retail_registry_teaches_real_spell_ids() {
+        let r = SeruRegistry::retail();
+        // Seru 0x0001 teaches the real Gimard id (matches the save pin).
+        let gimard = r.get(0x0001).expect("Gimard Seru present");
+        assert_eq!(gimard.spell_id, 0x81);
+        assert_eq!(gimard.name, "Gimard");
+        // Every taught id is a real pinned spell, and the name agrees.
+        for s in r.iter() {
+            let real = crate::retail_magic::get(s.spell_id)
+                .unwrap_or_else(|| panic!("Seru {:#06x} teaches unknown id", s.id));
+            assert_eq!(s.name, real.name);
+        }
         assert!(r.len() >= 10);
     }
 
