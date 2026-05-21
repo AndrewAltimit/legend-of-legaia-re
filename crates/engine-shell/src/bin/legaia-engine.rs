@@ -6373,6 +6373,10 @@ fn cmd_play_window_with_record(
             // boot save, and the item list on the live inventory.
             world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
             world.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
+            // Master Seru registry so a successful capture banks points and can
+            // teach a spell (the vanilla monster catalog links a handful of
+            // monsters to Seru ids).
+            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::vanilla());
             // Seed a couple of demo items when the boot save carries none, so
             // both the ally-heal and offensive (Bomb) item paths are
             // exercisable in the window. (No-op when the save has inventory.)

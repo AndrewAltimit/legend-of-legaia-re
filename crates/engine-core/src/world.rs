@@ -792,6 +792,19 @@ pub struct World {
     /// through [`legaia_save::SaveExtV2::per_char`].
     pub seru_log: crate::seru_learning::SeruCaptureLog,
 
+    /// Master Seru registry (Seru id -> spell taught + capture points).
+    /// Engines install via [`World::set_seru_registry`]; [`World::finish_battle`]
+    /// resolves [`World::battle_captures`] against it into [`World::seru_log`].
+    /// Empty by default - captures then bank no points (the monster is still
+    /// downed + logged, but nothing is learned).
+    pub seru_registry: crate::seru_learning::SeruRegistry,
+
+    /// Capture outcomes produced by the most recently finished battle, one per
+    /// captured Seru that the registry accepted. Hosts drain this with
+    /// [`World::drain_last_capture_outcomes`] to drive the "captured / learned"
+    /// banner ([`crate::seru_learning::SeruCaptureSession`]).
+    pub last_capture_outcomes: Vec<crate::seru_learning::CaptureOutcome>,
+
     /// Total game time in wall-clock seconds since the world was
     /// instantiated or loaded. Engines tick this independently of
     /// `frame` (which can pause-skip during dialogs / cutscenes).
@@ -1103,6 +1116,8 @@ impl World {
             per_char_ext: Vec::new(),
             saved_chains: Vec::new(),
             seru_log: crate::seru_learning::SeruCaptureLog::new(),
+            seru_registry: crate::seru_learning::SeruRegistry::new(),
+            last_capture_outcomes: Vec::new(),
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
@@ -1960,10 +1975,18 @@ impl World {
             }
             // Spells: the per-character learned spell list from the seru log.
             ce.spells = self.seru_log.learned_spells(slot).to_vec();
-            // Seru captures: walk the ext mirror - fall back to empty for
-            // characters that haven't captured anything yet.
+            // Seru captures: export the live log's per-Seru capture-point
+            // progress (real seru_id -> points) so sub-threshold progress
+            // survives a save/load. Sorted for deterministic output.
+            ce.seru_captures = self
+                .seru_log
+                .iter_rows()
+                .filter(|(s, _, _)| *s == slot)
+                .map(|(_, sid, row)| (sid, row.points))
+                .collect();
+            ce.seru_captures.sort_by_key(|&(sid, _)| sid);
+            // Active-chain selection still lives in the per-char ext mirror.
             if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
-                ce.seru_captures = src.seru_captures.clone();
                 ce.active_chains = src.active_chains;
             }
             per_char.push((slot, ce));
@@ -2028,14 +2051,26 @@ impl World {
                     self.tactical_arts.mark_known(*slot, art_id);
                 }
             }
-            // Re-seed the seru log's learned-spells list. We synthesise
-            // a placeholder seru_id for each spell since the save layer
-            // only persists the spell ids - engines can rebuild the
-            // capture-points totals from the saved seru_captures pairs.
+            // Restore per-Seru capture-point progress. When the registry is
+            // installed, a row that's already over threshold restores as
+            // learned (with its spell), so a later capture doesn't re-fire
+            // the learn event.
+            for &(sid, pts) in &ce.seru_captures {
+                let def = self.seru_registry.get(sid);
+                let learned = def.is_some_and(|d| pts >= d.learn_threshold);
+                let spell_id = def.map(|d| d.spell_id);
+                self.seru_log
+                    .restore_row(*slot, sid, pts, 0, learned, spell_id);
+            }
+            // Ensure every persisted learned spell lands in the learned list,
+            // even with no registry installed: map it back to its teaching
+            // Seru when known, else key by the spell id as a surrogate.
             for &spell_id in &ce.spells {
-                // seru_id is unknown without the registry; use spell_id
-                // as a surrogate key (preserves uniqueness within a slot).
-                self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
+                if let Some(def) = self.seru_registry.seru_for_spell(spell_id) {
+                    self.seru_log.mark_learned(*slot, def.id, spell_id);
+                } else {
+                    self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
+                }
             }
         }
     }
@@ -3479,7 +3514,15 @@ impl World {
         let member = self.roster.members.get(caster as usize)?;
         let list = member.spell_list();
         let n = (list.count as usize).min(list.ids.len());
-        let learned = &list.ids[..n];
+        // Union the roster's saved spell list with anything learned via Seru
+        // capture this session, so a freshly-learned spell is immediately
+        // castable without waiting for a save/load round-trip.
+        let mut learned: Vec<u8> = list.ids[..n].to_vec();
+        for &sid in self.seru_log.learned_spells(caster) {
+            if !learned.contains(&sid) {
+                learned.push(sid);
+            }
+        }
         let caster_mp = self
             .actors
             .get(caster as usize)
@@ -3488,7 +3531,7 @@ impl World {
         Some(crate::battle_magic::BattleSpellSession::new(
             caster,
             caster,
-            learned,
+            &learned,
             &self.spell_catalog,
             caster_mp,
         ))
@@ -3826,6 +3869,52 @@ impl World {
     /// Drain the monster ids captured this battle (see [`Self::battle_captures`]).
     pub fn drain_battle_captures(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.battle_captures)
+    }
+
+    /// Install the master [`crate::seru_learning::SeruRegistry`]. Boot wires
+    /// this once; [`Self::finish_battle`] consults it to bank capture points.
+    pub fn set_seru_registry(&mut self, registry: crate::seru_learning::SeruRegistry) {
+        self.seru_registry = registry;
+    }
+
+    /// Resolve this battle's captured monsters into Seru-learning progress.
+    ///
+    /// Drains [`Self::battle_captures`] (so the list is always cleared), maps
+    /// each captured monster id to its Seru id via [`Self::monster_catalog`],
+    /// and banks capture points against [`Self::seru_log`] for every active
+    /// party slot through [`crate::seru_learning::record_capture`]. Any Seru
+    /// that crosses its learn threshold adds its spell to the character's
+    /// learned list (which [`Self::build_battle_spell_session`] then offers).
+    /// Accepted outcomes are stashed in [`Self::last_capture_outcomes`] for the
+    /// host to drive the capture / learned banner. Monsters with no Seru, or
+    /// any capture when the registry is empty, bank nothing.
+    fn resolve_captures(&mut self) {
+        let captures = std::mem::take(&mut self.battle_captures);
+        self.last_capture_outcomes.clear();
+        if captures.is_empty() || self.seru_registry.is_empty() {
+            return;
+        }
+        let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3)).collect();
+        let seru_ids: Vec<u16> = captures
+            .iter()
+            .filter_map(|&mid| self.monster_catalog.get(mid).and_then(|d| d.seru_id))
+            .collect();
+        for sid in seru_ids {
+            let outcome = crate::seru_learning::record_capture(
+                &self.seru_registry,
+                &mut self.seru_log,
+                sid,
+                &party_slots,
+            );
+            if outcome.accepted {
+                self.last_capture_outcomes.push(outcome);
+            }
+        }
+    }
+
+    /// Drain the capture outcomes from the most recently finished battle.
+    pub fn drain_last_capture_outcomes(&mut self) -> Vec<crate::seru_learning::CaptureOutcome> {
+        std::mem::take(&mut self.last_capture_outcomes)
     }
 
     /// Build the battle-context inventory submenu from live world state:
@@ -4260,7 +4349,8 @@ impl World {
         for b in buffs {
             self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
         }
-        self.battle_captures.clear();
+        // Bank any captured Seru into learning progress (drains battle_captures).
+        self.resolve_captures();
         // Drop any open command / item / spell session - they belong to the
         // finished battle.
         self.battle_command = None;
@@ -7932,6 +8022,138 @@ mod tests {
             "escape flag cleared by finish_battle"
         );
         assert!(world.last_battle_rewards.is_none(), "escape grants no loot");
+    }
+
+    /// A registry whose Seru hits its learn threshold in one capture, and a
+    /// monster catalog linking monster id 7 -> Seru 1.
+    #[cfg(test)]
+    fn capture_world(party_count: u8) -> World {
+        use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+        use crate::seru_learning::{SeruDef, SeruRegistry};
+
+        let mut world = World {
+            party_count,
+            ..World::default()
+        };
+        // Zeroed roster (empty spell lists) so `build_battle_spell_session`
+        // resolves a member per party slot; learned spells come from the log.
+        world.roster = legaia_save::Party::zeroed(party_count.max(1) as usize);
+        let mut reg = SeruRegistry::new();
+        reg.insert(SeruDef {
+            id: 1,
+            name: "Spark".into(),
+            spell_id: 0x20,
+            capture_points: 100,
+            learnable_mask: 0b0000_0111,
+            learn_threshold: 100,
+        });
+        reg.insert(SeruDef {
+            id: 2,
+            name: "Slow".into(),
+            spell_id: 0x21,
+            capture_points: 40, // below threshold in one capture
+            learnable_mask: 0b0000_0111,
+            learn_threshold: 100,
+        });
+        world.set_seru_registry(reg);
+        let mut cat = MonsterCatalog::new();
+        cat.insert(MonsterDef::new(7, "Killer Bee", 25, 9).with_seru(1));
+        cat.insert(MonsterDef::new(8, "Slime", 40, 8).with_seru(2));
+        cat.insert(MonsterDef::new(9, "Wolf", 35, 12)); // no Seru
+        world.set_monster_catalog(cat);
+        world
+    }
+
+    #[test]
+    fn capture_banks_points_and_learns_on_finish_battle() {
+        let mut world = capture_world(2);
+        // Two monsters captured this battle: Killer Bee (Seru 1, learns) and
+        // Wolf (no Seru, banks nothing).
+        world.battle_captures = vec![7, 9];
+
+        world.finish_battle();
+
+        // battle_captures always drained.
+        assert!(world.battle_captures.is_empty());
+        // Both party slots learned Spark (id 0x20).
+        assert!(world.seru_log.has_learned(0, 1));
+        assert!(world.seru_log.has_learned(1, 1));
+        assert_eq!(world.seru_log.learned_spells(0), &[0x20]);
+        // One accepted outcome (the Wolf had no Seru), with two learn events.
+        let outcomes = world.drain_last_capture_outcomes();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].learns.len(), 2);
+        // Outcomes drained.
+        assert!(world.drain_last_capture_outcomes().is_empty());
+    }
+
+    #[test]
+    fn capture_below_threshold_banks_points_without_learning() {
+        let mut world = capture_world(1);
+        world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100
+
+        world.finish_battle();
+
+        assert!(!world.seru_log.has_learned(0, 2), "not learned yet");
+        assert_eq!(world.seru_log.row(0, 2).points, 40, "points banked");
+        let outcomes = world.drain_last_capture_outcomes();
+        assert_eq!(outcomes.len(), 1);
+        assert!(outcomes[0].learns.is_empty());
+    }
+
+    #[test]
+    fn learned_spell_is_offered_in_the_battle_spell_session() {
+        let mut world = capture_world(1);
+        world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+        // Caster has an empty roster spell list; learning Spark via capture
+        // should still surface it in the battle spell menu.
+        world.battle_captures = vec![7];
+        world.finish_battle();
+        world.actors[0].battle.mp = 99;
+
+        let session = world
+            .build_battle_spell_session(0)
+            .expect("session builds for slot 0");
+        assert!(
+            session.spells.iter().any(|s| s.id == 0x20),
+            "captured Spark is castable: {:?}",
+            session.spells.iter().map(|s| s.id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn capture_progress_round_trips_through_save_load() {
+        // Bank a sub-threshold capture, save, reload into a fresh world that
+        // has the registry installed, and confirm the points + learned state
+        // survive.
+        let mut world = capture_world(1);
+        world.battle_captures = vec![7, 8]; // Seru 1 learns; Seru 2 banks 40
+        world.finish_battle();
+        assert!(world.seru_log.has_learned(0, 1));
+        assert_eq!(world.seru_log.row(0, 2).points, 40);
+
+        let save = world.save_full();
+
+        let mut reloaded = capture_world(1);
+        reloaded.load_full(save);
+        assert!(
+            reloaded.seru_log.has_learned(0, 1),
+            "learned Spark restored"
+        );
+        assert_eq!(
+            reloaded.seru_log.learned_spells(0),
+            &[0x20],
+            "spell list restored"
+        );
+        assert_eq!(
+            reloaded.seru_log.row(0, 2).points,
+            40,
+            "sub-threshold progress restored"
+        );
+        assert!(
+            !reloaded.seru_log.has_learned(0, 2),
+            "still below threshold after reload"
+        );
     }
 
     #[test]

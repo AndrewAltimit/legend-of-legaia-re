@@ -85,6 +85,12 @@ impl SeruRegistry {
         self.by_id.values()
     }
 
+    /// Find the Seru that teaches `spell_id`, if any. Used when rebuilding the
+    /// capture log from a save that only persisted learned spell ids.
+    pub fn seru_for_spell(&self, spell_id: u8) -> Option<&SeruDef> {
+        self.by_id.values().find(|s| s.spell_id == spell_id)
+    }
+
     /// Build a vanilla registry approximating the early-game Legaia roster.
     /// Spell ids align with [`crate::spells::SpellCatalog::vanilla`].
     pub fn vanilla() -> Self {
@@ -225,6 +231,39 @@ impl SeruCaptureLog {
             .get(&(char_slot, seru_id))
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Iterate every `(char_slot, seru_id, row)` in the log. Engines use this
+    /// to export the per-character capture-point progress into a save file.
+    pub fn iter_rows(&self) -> impl Iterator<Item = (u8, u16, SeruCaptureRow)> + '_ {
+        self.rows
+            .iter()
+            .map(|(&(slot, sid), &row)| (slot, sid, row))
+    }
+
+    /// Restore a single capture row from a save. Sets the accumulated points
+    /// (and optionally the learned flag + spell-list entry) without running
+    /// the capture arithmetic. `capture_count` is diagnostic; pass `0` when a
+    /// save only persisted the points total.
+    pub fn restore_row(
+        &mut self,
+        char_slot: u8,
+        seru_id: u16,
+        points: u16,
+        capture_count: u16,
+        learned: bool,
+        spell_id: Option<u8>,
+    ) {
+        let row = self.rows.entry((char_slot, seru_id)).or_default();
+        row.points = points;
+        row.capture_count = capture_count;
+        row.learned = learned;
+        if learned && let Some(sid) = spell_id {
+            let list = self.learned_spells.entry(char_slot).or_default();
+            if !list.contains(&sid) {
+                list.push(sid);
+            }
+        }
     }
 
     /// Mark a spell as already learned (e.g. from a loaded save).

@@ -56,6 +56,10 @@ pub struct MonsterDef {
     /// `1/256` drop-rate. Engines roll one byte; if it falls below this the
     /// drop fires. `0` means never; `255` means always.
     pub drop_rate_q8: u8,
+    /// Seru id attached to this monster, if it carries one. A successful
+    /// capture (capture spell / Genocide Crystal) feeds this id into the
+    /// [`crate::seru_learning::SeruRegistry`]. `None` = no Seru to capture.
+    pub seru_id: Option<u16>,
 }
 
 impl MonsterDef {
@@ -74,7 +78,15 @@ impl MonsterDef {
             gold: hp / 4,
             drop_item: None,
             drop_rate_q8: 0,
+            seru_id: None,
         }
+    }
+
+    /// Builder: attach a Seru id so a successful capture feeds the
+    /// [`crate::seru_learning::SeruRegistry`].
+    pub fn with_seru(mut self, seru_id: u16) -> Self {
+        self.seru_id = Some(seru_id);
+        self
     }
 }
 
@@ -287,8 +299,23 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             gold,
             drop_item: None,
             drop_rate_q8: 0,
+            seru_id: None,
         };
         cat.insert(def_struct);
+    }
+    // Attach a few Seru so the capture → learn path is exercisable against
+    // the vanilla SeruRegistry (ids align with `SeruRegistry::vanilla`).
+    for &(monster_id, seru_id) in &[
+        (7u16, 0x0001u16), // Killer Bee  -> Spark
+        (11, 0x0002),      // Lizard Man  -> Flame
+        (8, 0x0003),       // Slime       -> Aqua
+        (15, 0x0004),      // Crystal Bat -> Storm
+        (6, 0x0006),       // Skeleton    -> Frost
+        (10, 0x0010),      // Frog        -> Heal
+    ] {
+        if let Some(def) = cat.by_id.get_mut(&monster_id) {
+            def.seru_id = Some(seru_id);
+        }
     }
     cat
 }
