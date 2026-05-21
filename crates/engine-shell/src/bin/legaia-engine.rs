@@ -643,6 +643,20 @@ enum Cmd {
         /// etc. style cheats).
         #[arg(long, default_value_t = false)]
         cheat_strict: bool,
+        /// Enable the live gameplay loop: walking a field scene rolls
+        /// step-driven random encounters, transitions Field -> Battle,
+        /// resolves the battle, and returns to the field with loot on
+        /// victory. Without this the scene only runs the field VM +
+        /// locomotion (the legacy "explore but never fight" behaviour).
+        #[arg(long, default_value_t = false)]
+        live_loop: bool,
+        /// Make battles player-driven (implies `--live-loop`): each party
+        /// turn opens a battle command menu - select Attack (Up/Down) and a
+        /// target (Left/Right), confirm with Cross - before the strike
+        /// commits, instead of the loop auto-attacking. v0.1 enables only
+        /// the Attack command.
+        #[arg(long, default_value_t = false)]
+        player_battle: bool,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -1044,6 +1058,8 @@ fn main() -> Result<()> {
             cutscene_map,
             cheat_file,
             cheat_strict,
+            live_loop,
+            player_battle,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -1056,6 +1072,8 @@ fn main() -> Result<()> {
             cutscene_map.as_deref(),
             cheat_file.as_deref(),
             cheat_strict,
+            live_loop,
+            player_battle,
         ),
         Cmd::Save {
             extracted_root,
@@ -2443,6 +2461,8 @@ fn cmd_record(
         save_dir,
         None,
         None,
+        false,
+        false,
         false,
         Some(RecordTarget {
             out: out.to_path_buf(),
@@ -5240,6 +5260,120 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&layout, (220, y), log_color));
             }
         }
+        // Battle HUD: party + monster HP plus, when the battle is
+        // player-driven, the live command menu / target cursor. Only drawn in
+        // SceneMode::Battle; harmless when the live loop is off (it just never
+        // enters battle).
+        if self.session.host.world.mode == SceneMode::Battle {
+            use legaia_engine_core::battle_input::{BattleCommand, CommandPhase};
+            use legaia_engine_core::target_picker::{CursorRow, PickerState};
+            let bw = &self.session.host.world;
+            let pc = (bw.party_count.clamp(1, 3) as usize).min(bw.actors.len());
+            let down_color = [0.6f32, 0.6, 0.6, 1.0];
+            let enemy_color = [1.0f32, 0.7, 0.6, 1.0];
+
+            let mut y = 60i32;
+            for (i, a) in bw.actors.iter().take(pc).enumerate() {
+                let line = format!("P{}  HP {:>4}/{:<4}", i + 1, a.battle.hp, a.battle.max_hp);
+                let color = if a.battle.liveness != 0 {
+                    white
+                } else {
+                    down_color
+                };
+                out.extend(text_draws_for(
+                    &self.font.layout_ascii(&line),
+                    (8, y),
+                    color,
+                ));
+                y += 16;
+            }
+            y += 8;
+            for (mi, a) in bw.actors.iter().skip(pc).enumerate() {
+                if a.battle.max_hp == 0 {
+                    continue;
+                }
+                let alive = a.battle.liveness != 0;
+                let line = format!(
+                    "M{}  HP {:>4}/{:<4}{}",
+                    mi + 1,
+                    a.battle.hp,
+                    a.battle.max_hp,
+                    if alive { "" } else { "  DOWN" }
+                );
+                let color = if alive { enemy_color } else { down_color };
+                out.extend(text_draws_for(
+                    &self.font.layout_ascii(&line),
+                    (8, y),
+                    color,
+                ));
+                y += 16;
+            }
+
+            // Player-driven command menu / target cursor.
+            if let Some(cmd) = &bw.battle_command {
+                let menu_x = 8i32;
+                let mut my = 210i32;
+                match &cmd.phase {
+                    CommandPhase::Menu { .. } => {
+                        let header = format!("P{} - command:", cmd.actor + 1);
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&header),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 16;
+                        let cur = cmd.menu_command();
+                        for c in BattleCommand::MENU {
+                            let marker = if Some(c) == cur { ">" } else { " " };
+                            let line = if c.enabled() {
+                                format!("{} {}", marker, c.label())
+                            } else {
+                                format!("{} {} --", marker, c.label())
+                            };
+                            let color = if Some(c) == cur {
+                                white
+                            } else if c.enabled() {
+                                dim
+                            } else {
+                                down_color
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x + 8, my),
+                                color,
+                            ));
+                            my += 14;
+                        }
+                    }
+                    CommandPhase::Targeting { command, picker } => {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Enemy,
+                                slot,
+                            } => format!("{} -> target M{}", command.label(), slot + 1),
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("{} -> target P{}", command.label(), slot + 1),
+                            _ => format!("{} -> select target", command.label()),
+                        };
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&line),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 14;
+                        let hint = "Left/Right=move  Cross=confirm  Circle=back";
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(hint),
+                            (menu_x, my),
+                            dim,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
         // Level-up banner: rendered near the top when active after a battle win.
         if let Some(banner) = &self.session.host.world.current_level_up_banner {
             let draws = level_up_draws_for(
@@ -5667,6 +5801,8 @@ fn cmd_play_window(
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
+    live_loop: bool,
+    player_battle: bool,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -5680,6 +5816,8 @@ fn cmd_play_window(
         cutscene_map_path,
         cheat_file,
         cheat_strict,
+        live_loop,
+        player_battle,
         None,
     )
 }
@@ -5697,6 +5835,8 @@ fn cmd_play_window_with_record(
     cutscene_map_path: Option<&Path>,
     cheat_file: Option<&Path>,
     cheat_strict: bool,
+    live_loop: bool,
+    player_battle: bool,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Optional cutscene-map override layered on top of the heuristic.
@@ -5787,6 +5927,26 @@ fn cmd_play_window_with_record(
             );
             let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
             world.install_encounter_for_scene(&registry, scene);
+        }
+    }
+
+    // Live gameplay loop opt-in. `--player-battle` implies `--live-loop`
+    // (a player-driven battle is meaningless without the loop that enters
+    // one). Both default off, so the legacy "explore but never fight"
+    // behaviour is unchanged unless a flag is passed.
+    {
+        let world = &mut session.host.world;
+        if live_loop || player_battle {
+            world.live_gameplay_loop = true;
+        }
+        if player_battle {
+            world.battle_player_driven = true;
+        }
+        if world.live_gameplay_loop {
+            log::info!(
+                "play-window: live gameplay loop ON (player-driven battle: {})",
+                world.battle_player_driven
+            );
         }
     }
 
