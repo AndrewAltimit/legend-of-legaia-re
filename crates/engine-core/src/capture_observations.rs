@@ -1067,6 +1067,71 @@ pub mod cutscene_trigger_corpus {
     }
 }
 
+/// Seru-capture (spell-learn) observation captured from a before/after
+/// save pair during the Rim Elm (`town01`) Gimard fight. `before` is the
+/// frame just before the capture lands; `after` is during the "captured!"
+/// banner.
+///
+/// **Finding (pinned).** Across the entire 4-record character table
+/// (`0x80084708 .. +4*0x414`) exactly **three** bytes differ between the
+/// two saves, all inside Vahn's record (base `0x80084708`):
+///
+/// ```text
+/// +0x13C  00 -> 01    spell-list count: 0 -> 1
+/// +0x13D  00 -> 0x81  spell-id array[0] = 0x81 (the spell Gimard teaches)
+/// +0x161  00 -> 01    spell-level array[0] = 1
+/// ```
+///
+/// **Interpretation (confirmed).** This validates the
+/// [`legaia_save::character::CharacterRecord::spell_list`] schema against
+/// retail: the per-character spell list is `[u8 count @ +0x13C][u8 ids[]
+/// @ +0x13D..+0x160][u8 levels[] @ +0x161..+0x184]`. Capturing a story
+/// Seru (Gimard) is an **immediate** grant - the spell appears at level 1
+/// in one step, with **no** capture-points accumulation visible in the
+/// record (contrast the optional points-threshold model the engine's
+/// [`crate::seru_learning`] approximates for Genocide-Crystal captures).
+///
+/// **Real spell ids run high.** Gimard's spell id `0x81` sits far above the
+/// clean-room [`crate::spells::SpellCatalog::vanilla`] id range
+/// (`0x10..=0x51`). The retail spell-id space is therefore distinct from
+/// the engine's placeholder catalog - a single data point, not yet a full
+/// re-map.
+///
+/// Catalogued saves: `rim_elm_gimard_seru_capture_before` /
+/// `rim_elm_gimard_seru_capture_after` in `scripts/scenarios.toml`
+/// (library-only, resolved by `backup_fingerprint`).
+pub mod seru_capture {
+    /// Vahn's character-record base in retail RAM (the capturer here).
+    pub const VAHN_RECORD_BASE: u32 = 0x80084708;
+
+    /// Offset of the spell-list count byte within the record.
+    pub const SPELL_COUNT_OFFSET: u32 = 0x13C;
+    /// Offset of the spell-id array (first entry) within the record.
+    pub const SPELL_IDS_OFFSET: u32 = 0x13D;
+    /// Offset of the spell-level array (first entry) within the record.
+    pub const SPELL_LEVELS_OFFSET: u32 = 0x161;
+
+    /// Spell id Gimard teaches, observed at `+0x13D` post-capture.
+    pub const GIMARD_SPELL_ID: u8 = 0x81;
+    /// Spell level a freshly-captured story Seru is granted at.
+    pub const GRANTED_LEVEL: u8 = 1;
+
+    /// `(count, id[0], level[0])` before the capture - an empty spell list.
+    pub const BEFORE: (u8, u8, u8) = (0, 0, 0);
+    /// `(count, id[0], level[0])` after the capture.
+    pub const AFTER: (u8, u8, u8) = (1, GIMARD_SPELL_ID, GRANTED_LEVEL);
+
+    /// Read `(count, id[0], level[0])` for the given record base from a
+    /// main-RAM image. Returns `None` if the window is out of range.
+    pub fn read_spell_head(main_ram: &[u8], record_base: u32) -> Option<(u8, u8, u8)> {
+        let base = (record_base - 0x80000000) as usize;
+        let count = *main_ram.get(base + SPELL_COUNT_OFFSET as usize)?;
+        let id0 = *main_ram.get(base + SPELL_IDS_OFFSET as usize)?;
+        let lvl0 = *main_ram.get(base + SPELL_LEVELS_OFFSET as usize)?;
+        Some((count, id0, lvl0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1115,6 +1180,39 @@ mod tests {
         let addr = vahn_fire_book_use::changed_addr();
         assert!(addr >= vahn_fire_book_use::VAHN_RECORD_BASE);
         assert!(addr < vahn_fire_book_use::VAHN_RECORD_BASE + 0x414);
+    }
+
+    #[test]
+    fn seru_capture_reader_lifts_planted_before_after() {
+        let mut ram = vec![0u8; 0x200000];
+        let base = (seru_capture::VAHN_RECORD_BASE - 0x80000000) as usize;
+        // BEFORE: empty spell list.
+        assert_eq!(
+            seru_capture::read_spell_head(&ram, seru_capture::VAHN_RECORD_BASE),
+            Some(seru_capture::BEFORE)
+        );
+        // Plant the AFTER bytes: count=1, id[0]=0x81, level[0]=1.
+        ram[base + seru_capture::SPELL_COUNT_OFFSET as usize] = 1;
+        ram[base + seru_capture::SPELL_IDS_OFFSET as usize] = seru_capture::GIMARD_SPELL_ID;
+        ram[base + seru_capture::SPELL_LEVELS_OFFSET as usize] = seru_capture::GRANTED_LEVEL;
+        assert_eq!(
+            seru_capture::read_spell_head(&ram, seru_capture::VAHN_RECORD_BASE),
+            Some(seru_capture::AFTER)
+        );
+    }
+
+    #[test]
+    fn seru_capture_offsets_match_save_crate_spell_list_schema() {
+        // The pinned offsets must agree with the typed reader the save crate
+        // exposes, so a captured record round-trips through `spell_list`.
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        rec.raw[seru_capture::SPELL_COUNT_OFFSET as usize] = 1;
+        rec.raw[seru_capture::SPELL_IDS_OFFSET as usize] = seru_capture::GIMARD_SPELL_ID;
+        rec.raw[seru_capture::SPELL_LEVELS_OFFSET as usize] = seru_capture::GRANTED_LEVEL;
+        let list = rec.spell_list();
+        assert_eq!(list.count, 1);
+        assert_eq!(list.ids[0], seru_capture::GIMARD_SPELL_ID);
+        assert_eq!(list.levels[0], seru_capture::GRANTED_LEVEL);
     }
 
     #[test]
