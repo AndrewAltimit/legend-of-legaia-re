@@ -496,6 +496,102 @@ impl MonsterMesh {
             height: TEXTURE_HEIGHT,
         })
     }
+
+    /// Build a renderable, battle-slot-relocated [`legaia_tmd::mesh::VramMesh`]
+    /// for this monster and inject its texture pool into `vram` at the
+    /// coordinates the battle loader `FUN_80055468` uses for `slot`.
+    ///
+    /// The on-disc CBA/TSB in the embedded TMD are nominal defaults; the
+    /// loader relocates them per battle slot. This mirrors that relocation so
+    /// the standard PSX VRAM texture path renders the monster directly:
+    ///
+    /// - the CLUT region ([`CLUT_REGION_BYTES`], 15 palettes) is written to
+    ///   VRAM row `484 + slot` at x=0, and every prim's CBA is rewritten to
+    ///   that row by [`relocate_cba`] (the palette index `cba & 0x3F` is kept);
+    /// - the 4bpp page is written at [`monster_page_origin`] (`((5+slot)*64,
+    ///   256)`), and every prim's TSB is rewritten to that texture page by
+    ///   [`relocate_tsb`] (4bpp, `tpage_y = 256`, abr bits preserved).
+    ///
+    /// Per-vertex UVs are page-local and left untouched - they resolve
+    /// correctly once the page sits at the relocated tpage origin. Returns
+    /// `None` if the embedded TMD doesn't parse; otherwise a mesh with the
+    /// relocated CBA/TSB (possibly empty if the monster has no textured
+    /// prims). `slot` is the 0-based battle monster slot (`0..=4`).
+    pub fn battle_render_mesh(
+        &self,
+        slot: u8,
+        vram: &mut legaia_tim::Vram,
+    ) -> Option<legaia_tmd::mesh::VramMesh> {
+        let tmd = legaia_tmd::parse(self.tmd_bytes()).ok()?;
+        let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, self.tmd_bytes());
+
+        // Inject the texture pool at the loader's per-slot VRAM coords so the
+        // relocated CBA/TSB resolve against populated VRAM.
+        if let Some(pool) = self.texture_pool_bytes()
+            && pool.len() > CLUT_REGION_BYTES
+        {
+            vram.write_clut_row(0, monster_clut_row(slot), &pool[..CLUT_REGION_BYTES]);
+
+            let page = &pool[CLUT_REGION_BYTES..];
+            let bytes_per_row = page.len() / TEXTURE_HEIGHT;
+            if bytes_per_row != 0 {
+                let (page_x, page_y) = monster_page_origin(slot);
+                // One VRAM cell is one halfword = 4 4bpp texels = 2 source
+                // bytes, so the per-row cell count is `bytes_per_row / 2`.
+                vram.write_block(
+                    page_x,
+                    page_y,
+                    (bytes_per_row / 2) as u16,
+                    TEXTURE_HEIGHT as u16,
+                    page,
+                );
+            }
+        }
+
+        for ct in &mut mesh.cba_tsb {
+            ct[0] = relocate_cba(ct[0], slot);
+            ct[1] = relocate_tsb(ct[1], slot);
+        }
+        Some(mesh)
+    }
+}
+
+/// VRAM row the battle loader (`FUN_80055468`) uploads a monster's CLUT
+/// region to: row `484 + slot`, palettes packed from x=0.
+pub const MONSTER_CLUT_ROW_BASE: u16 = 484;
+/// Texture-page x-origin in VRAM tpage columns (64 px each). The loader bases
+/// the monster page at 320 px = column 5, then offsets by the battle slot.
+const MONSTER_PAGE_TPAGE_BASE: u16 = 5;
+/// Texture-page y-origin in VRAM rows (always 256; the loader's StoreImage
+/// `RECT.y`).
+const MONSTER_PAGE_Y: u16 = 256;
+
+/// VRAM row of the monster CLUT region for battle `slot`.
+fn monster_clut_row(slot: u8) -> u16 {
+    MONSTER_CLUT_ROW_BASE + slot as u16
+}
+
+/// Top-left `(x, y)` in VRAM pixels of the monster 4bpp texture page for
+/// battle `slot`: `((5 + slot) * 64, 256)`.
+pub fn monster_page_origin(slot: u8) -> (u16, u16) {
+    ((MONSTER_PAGE_TPAGE_BASE + slot as u16) * 64, MONSTER_PAGE_Y)
+}
+
+/// Relocate a prim's CBA to battle `slot`: preserve the palette index
+/// (`cba & 0x3F`) but point the CLUT row at `484 + slot` (where
+/// [`MonsterMesh::battle_render_mesh`] writes the palettes).
+pub fn relocate_cba(cba: u16, slot: u8) -> u16 {
+    let palette = cba & 0x3F;
+    (monster_clut_row(slot) << 6) | palette
+}
+
+/// Relocate a prim's TSB to battle `slot`: a 4bpp page at tpage column
+/// `5 + slot`, `tpage_y = 256`, with the original abr (blend) bits preserved.
+pub fn relocate_tsb(tsb: u16, slot: u8) -> u16 {
+    let abr = (tsb >> 5) & 0x3;
+    let tpage_x_field = (MONSTER_PAGE_TPAGE_BASE + slot as u16) & 0xF;
+    // tpage column (bits 0..3); tpage_y=256 -> bit 4; depth bits 7..8 = 0 (4bpp).
+    tpage_x_field | (1 << 4) | (abr << 5)
 }
 
 /// Size of the CLUT region at the head of the texture pool: 15 sequential
@@ -898,5 +994,60 @@ mod tests {
         let mut g = vec![0u8; 0x20];
         g[..12].copy_from_slice(b"^A Gimard $2");
         assert_eq!(read_cstr(&g, 0).as_deref(), Some("Gimard $2"));
+    }
+
+    /// `relocate_cba` keeps the palette index but re-homes the CLUT row to
+    /// `484 + slot`, matching where `battle_render_mesh` writes the palettes.
+    #[test]
+    fn relocate_cba_preserves_palette_and_sets_row() {
+        for slot in 0u8..5 {
+            for palette in 0u16..15 {
+                // Build an on-disc CBA with that palette and an arbitrary
+                // (to-be-discarded) original row of 256.
+                let on_disc = (256u16 << 6) | palette;
+                let relocated = relocate_cba(on_disc, slot);
+                // Decode the way `Prim::cba_xy` does.
+                assert_eq!(relocated & 0x3F, palette, "palette preserved");
+                assert_eq!(
+                    (relocated >> 6) & 0x1FF,
+                    MONSTER_CLUT_ROW_BASE + slot as u16,
+                    "CLUT row = 484 + slot"
+                );
+            }
+        }
+    }
+
+    /// `relocate_tsb` points the page at tpage column `5 + slot`, `tpage_y =
+    /// 256`, 4bpp depth, and preserves the original abr bits.
+    #[test]
+    fn relocate_tsb_sets_page_and_keeps_abr() {
+        for slot in 0u8..5 {
+            for abr in 0u16..4 {
+                // On-disc TSB with some other column, 8bpp, tpage_y=0.
+                let on_disc = 0x03 | (abr << 5) | (1 << 7);
+                let relocated = relocate_tsb(on_disc, slot);
+                // Decode the way `Prim::tpage_xy` does.
+                let tpage_x = (relocated & 0xF) * 64;
+                let tpage_y = ((relocated >> 4) & 1) * 256;
+                let depth = (relocated >> 7) & 0x3; // 0 == 4bpp
+                let abr_out = (relocated >> 5) & 0x3;
+                assert_eq!(tpage_x, monster_page_origin(slot).0, "page x = (5+slot)*64");
+                assert_eq!(tpage_y, 256, "tpage_y = 256");
+                assert_eq!(depth, 0, "4bpp depth");
+                assert_eq!(abr_out, abr, "abr preserved");
+            }
+        }
+    }
+
+    /// The texture page never overlaps any slot's CLUT row: palettes occupy
+    /// x in `0..240`, pages start at x>=320, so injection slots are disjoint.
+    #[test]
+    fn monster_page_clear_of_clut_region() {
+        for slot in 0u8..5 {
+            let (px, py) = monster_page_origin(slot);
+            assert!(px >= 320, "page x past the 240-wide CLUT region");
+            assert_eq!(py, 256);
+            assert!(MONSTER_CLUT_ROW_BASE + slot as u16 >= 484);
+        }
     }
 }
