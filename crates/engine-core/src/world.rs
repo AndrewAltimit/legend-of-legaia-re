@@ -3161,27 +3161,38 @@ impl World {
                 .clear(ActorFlags::ADVANCE_DONE);
         }
 
-        // Re-arm the next party attacker when the SM idles at EndOfAction
-        // with monsters still alive.
+        // Re-arm the next combatant when the SM idles at EndOfAction, cycling
+        // across the whole actor table (party AND monsters) in slot order so
+        // monsters take their turns. Only re-arm while BOTH sides still have a
+        // living member - if either side is wiped we leave the SM at
+        // EndOfAction so its liveness scan resolves the wipe into
+        // BattleComplete next step.
         let party_count = self.party_count.max(1);
-        let monsters_alive = (party_count..self.actors.len() as u8)
-            .any(|i| self.actors[i as usize].battle.liveness != 0);
-        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte() && monsters_alive {
-            let next = (self.battle_ctx.active_actor + 1) % party_count;
-            if self.battle_player_driven {
-                // Pause the SM and let the player pick the next member's
-                // command. `tick_battle_command` arms the SM on confirm.
+        let n = self.actors.len() as u8;
+        let party_alive = (0..party_count).any(|i| self.actors[i as usize].battle.liveness != 0);
+        let monsters_alive = (party_count..n).any(|i| self.actors[i as usize].battle.liveness != 0);
+        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            && party_alive
+            && monsters_alive
+            && let Some(next) = self.next_living_combatant(self.battle_ctx.active_actor)
+        {
+            let next_is_party = next < party_count;
+            if next_is_party && self.battle_player_driven {
+                // Party turn under player control: pause the SM and let the
+                // player pick the command. `tick_battle_command` arms the SM
+                // on confirm.
                 self.open_battle_command(next);
             } else {
+                // Auto-resolved turn (any monster turn, or a party turn when
+                // not player-driven). Arm a generic physical attack against
+                // the first living opponent.
+                let target = self.first_living_opponent_of(next).unwrap_or(next);
                 self.battle_ctx.active_actor = next;
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
-                let target = (party_count..self.actors.len() as u8)
-                    .find(|&i| self.actors[i as usize].battle.liveness != 0)
-                    .unwrap_or(party_count);
-                for slot in 0..party_count as usize {
-                    self.actors[slot].battle.active_target = target;
-                    self.actors[slot].battle.action_category = 3;
+                if let Some(a) = self.actors.get_mut(next as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3;
                 }
             }
         }
@@ -3193,17 +3204,18 @@ impl World {
     }
 
     /// Apply one generic physical strike from the active attacker to the
-    /// first living monster. v0.1 stand-in for the art-driven strike path:
-    /// `damage = art_strike_damage_default(attack, defense, 16)` (≈
-    /// `attack - defense`, floored at 1) so a party with no configured
-    /// weapon attack still chips the monster down. Always hits (no accuracy
-    /// roll) to guarantee the loop resolves.
+    /// first living combatant on the opposing side. v0.1 stand-in for the
+    /// art-driven strike path: `damage = art_strike_damage_default(attack,
+    /// defense, 16)` (≈ `attack - defense`, floored at 1) so a party with no
+    /// configured weapon attack still chips the monster down - and, for a
+    /// monster attacker, a monster with no configured attack still chips the
+    /// party. Always hits (no accuracy roll) to guarantee the loop resolves.
+    ///
+    /// The opposing side is chosen by the attacker's slot: party slots
+    /// (`< party_count`) strike monsters; monster slots strike the party.
     fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor as usize;
-        let party_count = self.party_count.max(1);
-        let Some(target) = (party_count..self.actors.len() as u8)
-            .find(|&i| self.actors[i as usize].battle.liveness != 0)
-        else {
+        let Some(target) = self.first_living_opponent_of(attacker as u8) else {
             return;
         };
         let target = target as usize;
@@ -3222,6 +3234,35 @@ impl World {
             is_heal: false,
             is_crit: false,
         });
+    }
+
+    /// First living actor on the side opposing `attacker`. Party slots
+    /// (`< party_count`) oppose the monster band (`party_count..`); monster
+    /// slots oppose the party. `None` if that side is wiped.
+    fn first_living_opponent_of(&self, attacker: u8) -> Option<u8> {
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
+        (lo..hi).find(|&i| {
+            self.actors
+                .get(i as usize)
+                .is_some_and(|a| a.battle.liveness != 0)
+        })
+    }
+
+    /// Next living combatant after `after` in round-robin slot order across
+    /// the whole actor table (party then monsters, wrapping). Drives the live
+    /// loop's turn cycling so monsters take turns interleaved with the party.
+    /// `None` only when no actor is alive.
+    fn next_living_combatant(&self, after: u8) -> Option<u8> {
+        let n = self.actors.len();
+        if n == 0 {
+            return None;
+        }
+        (1..=n).find_map(|step| {
+            let idx = (after as usize + step) % n;
+            (self.actors[idx].battle.liveness != 0).then_some(idx as u8)
+        })
     }
 
     /// Resolve a finished battle and return to the field.
@@ -6304,6 +6345,90 @@ mod tests {
         assert!(!fx[0].is_heal);
         // Drain empties the queue.
         assert!(world.drain_battle_hit_fx().is_empty());
+    }
+
+    #[test]
+    fn first_living_opponent_is_chosen_by_attacker_side() {
+        let mut world = World {
+            party_count: 2,
+            ..World::default()
+        };
+        // Party slots 0,1 dead+alive; monster slots 2,3.
+        world.actors[0].battle.liveness = 0;
+        world.actors[1].battle.liveness = 1;
+        world.actors[2].battle.liveness = 0;
+        world.actors[3].battle.liveness = 1;
+        // Party attacker -> first living monster (slot 3, since 2 is dead).
+        assert_eq!(world.first_living_opponent_of(1), Some(3));
+        // Monster attacker -> first living party member (slot 1, since 0 dead).
+        assert_eq!(world.first_living_opponent_of(3), Some(1));
+    }
+
+    #[test]
+    fn next_living_combatant_round_robins_skipping_dead() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        world.actors[0].battle.liveness = 1; // party
+        world.actors[2].battle.liveness = 1; // monster
+        // After party (0) comes monster (2); after monster (2) wraps to party (0).
+        assert_eq!(world.next_living_combatant(0), Some(2));
+        assert_eq!(world.next_living_combatant(2), Some(0));
+    }
+
+    #[test]
+    fn monsters_take_turns_and_can_wipe_the_party() {
+        use legaia_engine_vm::battle_action::ActionState;
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.live_gameplay_loop = true;
+        world.mode = SceneMode::Battle;
+        // Lone party member: low HP, weak attack so the fight lasts several
+        // rounds and the monster gets turns.
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 40;
+        world.actors[0].battle.max_hp = 40;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 4);
+        // Lone monster: tanky + hits hard enough to kill the party member.
+        world.actors[1].battle.hp = 500;
+        world.actors[1].battle.max_hp = 500;
+        world.actors[1].battle.liveness = 1;
+        world.set_battle_attack(1, 25);
+        // Arm the first turn (party member swings at the monster).
+        world.battle_ctx.active_actor = 0;
+        world.battle_ctx.queued_action = 3;
+        world.battle_ctx.action_state = ActionState::Begin.as_byte();
+        world.actors[0].battle.active_target = 1;
+        world.actors[0].battle.action_category = 3;
+
+        let start_party_hp = world.actors[0].battle.hp;
+        let mut party_took_damage = false;
+        let mut ended = false;
+        for _ in 0..4000 {
+            world.tick();
+            if world.actors[0].battle.hp < start_party_hp {
+                party_took_damage = true;
+            }
+            // finish_battle flips back to Field (and raises game_over on a
+            // party wipe).
+            if world.mode == SceneMode::Field {
+                ended = true;
+                break;
+            }
+        }
+        assert!(
+            party_took_damage,
+            "the monster must take turns and damage the party"
+        );
+        assert!(ended, "the battle must resolve (party wiped)");
+        assert!(world.game_over, "a party wipe raises game_over");
     }
 
     #[test]
