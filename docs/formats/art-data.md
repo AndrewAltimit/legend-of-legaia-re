@@ -211,6 +211,31 @@ The AP costs are byte-exact against the curated [`gamedata`](../reference/gameda
 arts table (every matched art agrees), which makes this the on-disc provenance
 for that table's `ap` column + the canonical art display order.
 
+### Command-glyph string (`+8`)
+
+The `+8` pointer is the **command-input display string** - the arrow sequence
+shown in the arts menu, and an independent on-disc source for each art's
+directional command (the PROT `0x05C4` art-record command bytes are a
+best-effort parse pending a watchpoint). Encoding: `[count u8]` then `count`
+two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence (`0xFF06`
+for regular arts, `0xFF09` for Miracle arts) and is **not** a direction. The
+arrow glyphs map to physical d-pad directions:
+
+| Glyph | Direction | dir code |
+|---|---|---|
+| `0x81A9` | ← Left | 1 |
+| `0x81A8` | → Right | 2 |
+| `0x81AB` | ↓ Down | 3 |
+| `0x81AA` | ↑ Up | 4 |
+
+The string stores the **physical** direction; the logical action (Arms /
+Ra-Seru) depends on the character's handedness (Noa's Arms / Ra-Seru are
+swapped). The codes match the `Left=1 / Right=2 / Down=3 / Up=4` encoding the
+PROT records use. Cross-checking against gamedata surfaces at least one
+walkthrough error (Vahn's *Hyper Elbow* is `L R L` on disc, not `Arms / Ra-Seru
+/ High`). Decoded by `legaia_art::arts_table::parse_from_scus`; dump it with
+`art arts-table`.
+
 ## See also
 
 - [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) - battle action state machine that consumes the queue and resolves damage.

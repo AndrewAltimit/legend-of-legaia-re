@@ -19,7 +19,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use legaia_art::{
     ActionConstant, ActionQueue, Character, Command, MIRACLE_ARTS, MiracleMatcher, SUPER_ARTS,
@@ -73,6 +73,12 @@ enum Cmd {
     },
     /// List Miracle Arts.
     MiracleArts,
+    /// Decode the arts-name table (name + AP + command directions) from a
+    /// `SCUS_942.54` image.
+    ArtsTable {
+        #[arg(long, default_value = "extracted/SCUS_942.54")]
+        scus: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -105,7 +111,40 @@ fn main() -> Result<()> {
         Cmd::Super { character, bytes } => cmd_super(character.into(), &bytes),
         Cmd::SuperArts { character } => cmd_super_arts(character.into()),
         Cmd::MiracleArts => cmd_miracle_arts(),
+        Cmd::ArtsTable { scus } => cmd_arts_table(&scus),
     }
+}
+
+fn cmd_arts_table(scus: &std::path::Path) -> Result<()> {
+    let bytes =
+        std::fs::read(scus).with_context(|| format!("read SCUS image {}", scus.display()))?;
+    let entries = legaia_art::arts_table::parse_from_scus(&bytes)
+        .context("not a PSX-EXE / arts table out of range")?;
+    println!("char  idx  ap   command            name");
+    for e in &entries {
+        let cmd: String = e
+            .commands
+            .iter()
+            .map(|c| match c {
+                Command::Left => 'L',
+                Command::Right => 'R',
+                Command::Down => 'D',
+                Command::Up => 'U',
+            })
+            .collect();
+        let tag = if e.is_miracle { " [Miracle]" } else { "" };
+        println!(
+            "{:<5} {:>3}  {:>3}  {:<18} {}{}",
+            e.character.name(),
+            e.index,
+            e.ap,
+            cmd,
+            e.name,
+            tag
+        );
+    }
+    println!("({} arts)", entries.len());
+    Ok(())
 }
 
 fn cmd_constants() -> Result<()> {
