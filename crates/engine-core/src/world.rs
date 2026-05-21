@@ -516,6 +516,11 @@ pub struct World {
     /// character record's weapon power. Default zero - un-populated slots
     /// produce floor-clamped damage (`= 1`).
     pub battle_attack: [u16; 8],
+    /// Per-slot magic attack scalar used by [`spells::cast_spell`] for the
+    /// caster's `mag` column when resolving a player-driven battle Magic cast.
+    /// Engines populate from the active character record; default zero (which
+    /// floors damage spells at 1).
+    pub battle_magic: [u16; 8],
     /// Per-slot defense facing the strike. The retail engine selects UDF
     /// or LDF based on the strike's `power_target`; this single field is a
     /// minimum-viable substitute that engines wishing to model both can
@@ -717,6 +722,12 @@ pub struct World {
     /// the field VM doesn't trigger item effects in non-battle scenes.
     pub item_catalog: crate::items::ItemCatalog,
 
+    /// Spell catalog used by the player-driven battle Magic submenu to resolve
+    /// spell ids → names / MP cost / effect. Populated at battle init from
+    /// [`crate::spells::SpellCatalog::vanilla`] (or a custom catalog via
+    /// [`World::set_spell_catalog`]); empty by default.
+    pub spell_catalog: crate::spells::SpellCatalog,
+
     /// Per-actor character max MP. The retail `BattleActor` holds only
     /// the running `mp` value (not the cap); the cap lives on the
     /// character record at `+0x140`. Engines populate this from the
@@ -824,8 +835,9 @@ pub struct World {
     /// [`World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
     /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
-    /// (`legaia-engine play-window`) set both after boot. Attack and Item are
-    /// wired (Item opens [`Self::battle_item_menu`]); Arts / Magic are pending.
+    /// (`legaia-engine play-window`) set both after boot. Attack, Magic and
+    /// Item are wired (Magic opens [`Self::battle_spell_menu`], Item opens
+    /// [`Self::battle_item_menu`]); Arts is pending.
     pub battle_player_driven: bool,
 
     /// Active command-selection session for the player-driven battle. `Some`
@@ -843,6 +855,14 @@ pub struct World {
     /// because it needs the live inventory + party stats. Hosts read it to
     /// draw the item overlay.
     pub battle_item_menu: Option<crate::inventory_use::InventoryUseSession>,
+
+    /// Active spell submenu for the player-driven battle, opened when the
+    /// player picks **Magic** from the command menu. `Some` while the player
+    /// browses spells / picks a target (both the action SM and
+    /// [`Self::battle_command`] are parked meanwhile); `None` otherwise. The
+    /// World owns it because building the spell list needs the caster's
+    /// learned spells + live MP. Hosts read it to draw the spell overlay.
+    pub battle_spell_menu: Option<crate::battle_magic::BattleSpellSession>,
 
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
@@ -979,6 +999,7 @@ impl World {
             character_ability_bits: [0; 8],
             range_table: Default::default(),
             battle_attack: [0; 8],
+            battle_magic: [0; 8],
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
             prev_action_cleared: true,
@@ -1012,6 +1033,7 @@ impl World {
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
+            spell_catalog: crate::spells::SpellCatalog::default(),
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
@@ -1027,6 +1049,7 @@ impl World {
             battle_player_driven: false,
             battle_command: None,
             battle_item_menu: None,
+            battle_spell_menu: None,
             active_formation: None,
             last_battle_rewards: None,
             game_over: false,
@@ -1300,6 +1323,13 @@ impl World {
         self.item_catalog = catalog;
     }
 
+    /// Install the spell catalog used by the player-driven battle Magic
+    /// submenu. Engines call this at battle init (commonly
+    /// [`crate::spells::SpellCatalog::vanilla`]).
+    pub fn set_spell_catalog(&mut self, catalog: crate::spells::SpellCatalog) {
+        self.spell_catalog = catalog;
+    }
+
     /// Use an item from the catalog against a target slot. Wraps the
     /// `items::apply_effect` resolution and folds the outcome back into
     /// world state (HP/MP deltas, status cure, revive HP). Returns the
@@ -1398,6 +1428,15 @@ impl World {
     pub fn set_battle_attack(&mut self, slot: u8, atk: u16) {
         if let Some(s) = self.battle_attack.get_mut(slot as usize) {
             *s = atk;
+        }
+    }
+
+    /// Set the per-slot magic attack scalar used by battle Magic damage
+    /// resolution. Engines call this at battle init from the active stat
+    /// record's magic stat.
+    pub fn set_battle_magic(&mut self, slot: u8, mag: u16) {
+        if let Some(s) = self.battle_magic.get_mut(slot as usize) {
+            *s = mag;
         }
     }
 
@@ -3054,6 +3093,18 @@ impl World {
                 self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
                 // Session done; SM resumes next tick.
             }
+            Some(Resolution::OpenSpellMenu) => {
+                // Player picked Magic: hand off to the spell submenu (same
+                // pattern as Item). `tick_battle_spell_menu` drives until the
+                // player casts (turn cycles via EndOfAction) or backs out.
+                self.battle_ctx.active_actor = session.actor;
+                match self.build_battle_spell_session(session.actor) {
+                    Some(menu) => self.battle_spell_menu = Some(menu),
+                    // No caster record / no catalog - don't strand the SM;
+                    // reopen the command menu so the player can pick again.
+                    None => self.open_battle_command(session.actor),
+                }
+            }
             Some(Resolution::OpenItemMenu) => {
                 // Player picked Item: hand off to the inventory submenu. The
                 // command session is dropped (already taken) and the action SM
@@ -3082,6 +3133,226 @@ impl World {
                 // Still selecting - keep the session open for the next frame.
                 self.battle_command = Some(session);
             }
+        }
+    }
+
+    /// Build the battle Magic submenu for `caster` (an actor-table / party-row
+    /// index). Reads the caster's learned spells off their roster record and
+    /// their live battle MP to grey out unaffordable rows. Returns `None` when
+    /// there's no roster record for the slot (the caller reopens the command
+    /// menu so the SM isn't stranded).
+    fn build_battle_spell_session(
+        &self,
+        caster: u8,
+    ) -> Option<crate::battle_magic::BattleSpellSession> {
+        let member = self.roster.members.get(caster as usize)?;
+        let list = member.spell_list();
+        let n = (list.count as usize).min(list.ids.len());
+        let learned = &list.ids[..n];
+        let caster_mp = self
+            .actors
+            .get(caster as usize)
+            .map(|a| a.battle.mp)
+            .unwrap_or(0);
+        Some(crate::battle_magic::BattleSpellSession::new(
+            caster,
+            caster,
+            learned,
+            &self.spell_catalog,
+            caster_mp,
+        ))
+    }
+
+    /// Drive the open battle Magic submenu one frame from [`World::input`].
+    ///
+    /// Edge-triggered pad → one [`crate::battle_magic::BattleSpellInput`] per
+    /// frame. On a confirmed cast the spell applies via [`Self::apply_battle_spell`]
+    /// (MP deducted, HP / heal / cure / revive folded, popups surfaced) and the
+    /// action SM parks at `EndOfAction` so the live loop cycles to the next
+    /// combatant - a cast is the caster's whole turn, no strike fires. Backing
+    /// out reopens the command menu for the same actor.
+    fn tick_battle_spell_menu(&mut self) {
+        use crate::battle_magic::{BattleSpellInput, SpellResolution};
+        use crate::input::PadButton;
+        use crate::target_picker::SlotState;
+
+        let Some(mut menu) = self.battle_spell_menu.take() else {
+            return;
+        };
+
+        let party_count = self.party_count.clamp(1, 3);
+        let slot_at = |idx: usize| -> SlotState {
+            match self.actors.get(idx) {
+                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
+                _ => SlotState::default(),
+            }
+        };
+        let mut party = [SlotState::default(); 3];
+        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
+            *p = slot_at(i);
+        }
+        let mut monsters = [SlotState::default(); 5];
+        for (i, m) in monsters.iter_mut().enumerate() {
+            *m = slot_at(party_count as usize + i);
+        }
+
+        let ev = BattleSpellInput {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+        };
+        menu.input(ev, &self.spell_catalog, party, monsters);
+
+        match menu.resolved() {
+            Some(SpellResolution::Confirmed {
+                spell_id,
+                target_row,
+                target_slot,
+            }) => {
+                let caster = menu.actor;
+                self.apply_battle_spell(caster, spell_id, target_row, target_slot);
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
+            Some(SpellResolution::Aborted) => {
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            None => {
+                self.battle_spell_menu = Some(menu);
+            }
+        }
+    }
+
+    /// Cast `spell_id` from `caster` against the picked target and fold the
+    /// outcome into world state. MP is deducted once up-front; the spell's
+    /// [`crate::spells::SpellTarget`] shape decides which slots are affected
+    /// (single → the picked slot; `AllEnemies` / `AllAllies` → the whole band),
+    /// each resolved through [`crate::spells::cast_spell`]. Caster magic comes
+    /// from [`Self::battle_magic`]; target magic-defense reuses
+    /// [`Self::battle_defense`]. Buff / capture / escape outcomes have no
+    /// live-loop application yet and are skipped.
+    fn apply_battle_spell(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        use crate::spells::{SpellSnapshot, SpellTarget, cast_spell};
+        use crate::target_picker::CursorRow;
+
+        let Some(def) = self.spell_catalog.get(spell_id).cloned() else {
+            return;
+        };
+        let cost = def.mp_cost as u16;
+        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
+            Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
+            None => return,
+        };
+        if caster_mp_before < cost {
+            return;
+        }
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.mp = a.battle.mp.saturating_sub(cost);
+        }
+
+        let party_count = self.party_count.clamp(1, 3);
+        let targets: Vec<u8> = match def.target {
+            SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
+                let abs = match target_row {
+                    CursorRow::Enemy => party_count + target_slot,
+                    CursorRow::Ally => target_slot,
+                };
+                vec![abs]
+            }
+            SpellTarget::AllEnemies => (party_count..self.actors.len() as u8).collect(),
+            SpellTarget::AllAllies => (0..party_count).collect(),
+        };
+        let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
+
+        for t in targets {
+            let Some(actor) = self.actors.get(t as usize) else {
+                continue;
+            };
+            // Skip empty monster slots (no configured HP).
+            if actor.battle.max_hp == 0 {
+                continue;
+            }
+            let snap = SpellSnapshot {
+                caster_mag,
+                caster_hp,
+                caster_max_hp,
+                caster_mp: caster_mp_before,
+                target_mdef: self.battle_defense.get(t as usize).copied().unwrap_or(0),
+                target_hp: actor.battle.hp,
+                target_hp_max: actor.battle.max_hp,
+                target_mp: actor.battle.mp,
+                target_alive: actor.battle.liveness != 0,
+                target_weakness: crate::spells::ElementMask::default(),
+            };
+            let outcome = cast_spell(&def, t, &snap);
+            self.fold_spell_outcome(outcome);
+        }
+    }
+
+    /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
+    /// state and surface a HUD popup. Damage subtracts HP (and downs the
+    /// target at zero); heals / revives add HP (capped); cures clear the
+    /// target's status. Buff / capture / escape / failed are no-ops here.
+    fn fold_spell_outcome(&mut self, outcome: crate::spells::SpellOutcome) {
+        use crate::spells::SpellOutcome as O;
+        match outcome {
+            O::Damage { target, amount, .. } => {
+                if let Some(a) = self.actors.get_mut(target as usize) {
+                    a.battle.hp = a.battle.hp.saturating_sub(amount);
+                    if a.battle.hp == 0 {
+                        a.battle.liveness = 0;
+                    }
+                }
+                self.battle_hit_fx.push(BattleHitFx {
+                    target_slot: target,
+                    amount,
+                    is_heal: false,
+                    is_crit: false,
+                });
+            }
+            O::Heal { target, amount } => {
+                if let Some(a) = self.actors.get_mut(target as usize) {
+                    a.battle.hp = a.battle.hp.saturating_add(amount).min(a.battle.max_hp);
+                }
+                if amount > 0 {
+                    self.battle_hit_fx.push(BattleHitFx {
+                        target_slot: target,
+                        amount,
+                        is_heal: true,
+                        is_crit: false,
+                    });
+                }
+            }
+            O::Cure { target, .. } => {
+                self.status_effects.cure_all(target);
+            }
+            O::Revive { target, hp } => {
+                if let Some(a) = self.actors.get_mut(target as usize) {
+                    a.battle.hp = hp.min(a.battle.max_hp);
+                    if a.battle.hp > 0 {
+                        a.battle.liveness = 1;
+                    }
+                }
+                self.battle_hit_fx.push(BattleHitFx {
+                    target_slot: target,
+                    amount: hp,
+                    is_heal: true,
+                    is_crit: false,
+                });
+            }
+            // Multi-target variants aren't produced by per-slot casts; buff /
+            // capture / escape / failed have no live-loop application yet.
+            _ => {}
         }
     }
 
@@ -3252,6 +3523,14 @@ impl World {
     /// apply loot and return to the field.
     fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
+
+        // Player-driven: while the spell submenu is open the action SM is
+        // parked - drive it from the pad and return until the player casts
+        // (turn cycles) or backs out (reopens the command menu).
+        if self.battle_spell_menu.is_some() {
+            self.tick_battle_spell_menu();
+            return None;
+        }
 
         // Player-driven: while the inventory submenu is open the action SM is
         // parked - drive it from the pad and return until the player uses an
@@ -3460,10 +3739,11 @@ impl World {
         }
         self.active_formation = None;
         self.battle_end = None;
-        // Drop any open command / item session - they belong to the finished
-        // battle.
+        // Drop any open command / item / spell session - they belong to the
+        // finished battle.
         self.battle_command = None;
         self.battle_item_menu = None;
+        self.battle_spell_menu = None;
         // Stale damage popups must not bleed into the next encounter / field.
         self.battle_hit_fx.clear();
         // Post-battle grace + suppression on the session.
@@ -6759,6 +7039,73 @@ mod tests {
         assert_eq!(world.battle_command.as_ref().unwrap().actor, 0);
         // No item was consumed on a cancel.
         assert_eq!(world.inventory.get(&0x01).copied(), Some(1));
+    }
+
+    #[test]
+    fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
+        use crate::input::PadButton;
+        use crate::spells::SpellCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        // Caster with a magic stat + MP; one monster.
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.mp = 50;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_magic(0, 100);
+        world.actors[1].battle.max_hp = 300;
+        world.actors[1].battle.hp = 300;
+        world.actors[1].battle.liveness = 1;
+        // Give the caster a learned offensive spell: Flame (0x20, 5 MP).
+        let mut party = legaia_save::Party::zeroed(1);
+        let mut list = party.members[0].spell_list();
+        list.count = 1;
+        list.ids[0] = 0x20;
+        party.members[0].set_spell_list(list);
+        world.roster = party;
+
+        // Open the spell submenu for the caster.
+        world.battle_ctx.active_actor = 0;
+        world.battle_spell_menu = world.build_battle_spell_session(0);
+        {
+            let m = world.battle_spell_menu.as_ref().expect("spell menu built");
+            assert_eq!(m.spells.len(), 1, "one learned spell");
+            assert!(m.spells[0].affordable, "50 MP covers a 5 MP spell");
+        }
+
+        // Frame 1: Cross opens the target cursor on the lone monster.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+        assert!(world.battle_spell_menu.is_some(), "still picking a target");
+
+        // Frame 2: Cross confirms the monster; the cast resolves.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+
+        assert!(world.battle_spell_menu.is_none(), "spell menu closed");
+        assert_eq!(world.actors[0].battle.mp, 45, "5 MP spent on Flame");
+        assert!(
+            world.actors[1].battle.hp < 300,
+            "Flame should have damaged the monster"
+        );
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction so the loop cycles"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert!(!fx[0].is_heal, "offensive spell is damage, not heal");
+        assert_eq!(fx[0].target_slot, 1);
     }
 
     #[test]

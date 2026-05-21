@@ -5551,10 +5551,77 @@ impl PlayWindowApp {
                 ));
             }
 
-            // Player-driven inventory submenu (opened from the Item command).
-            // Takes priority over the command menu since it parks both the SM
-            // and the command session while open.
-            if let Some(menu) = &bw.battle_item_menu {
+            // Player-driven submenus (opened from the Magic / Item commands).
+            // Each parks both the SM and the command session while open, so it
+            // takes priority over the command menu.
+            if let Some(spell) = &bw.battle_spell_menu {
+                use legaia_engine_core::battle_magic::SpellPhase;
+                let menu_x = 8i32;
+                let mut my = 210i32;
+                match &spell.phase {
+                    SpellPhase::Select { cursor } => {
+                        let header = format!("P{} - magic:", spell.actor + 1);
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&header),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 16;
+                        if spell.spells.is_empty() {
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii("  (no spells)"),
+                                (menu_x + 8, my),
+                                down_color,
+                            ));
+                        }
+                        for (i, row) in spell.spells.iter().enumerate() {
+                            let sel = i as u8 == *cursor;
+                            let marker = if sel { ">" } else { " " };
+                            let line = format!("{} {} {:>2}MP", marker, row.name, row.mp_cost);
+                            let color = if !row.affordable {
+                                down_color
+                            } else if sel {
+                                white
+                            } else {
+                                dim
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x + 8, my),
+                                color,
+                            ));
+                            my += 14;
+                        }
+                    }
+                    SpellPhase::Targeting { picker, .. } => {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Enemy,
+                                slot,
+                            } => format!("cast -> target M{}", slot + 1),
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("cast -> target P{}", slot + 1),
+                            _ => "cast -> select target".to_string(),
+                        };
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&line),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 14;
+                        out.extend(text_draws_for(
+                            &self
+                                .font
+                                .layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
+                            (menu_x, my),
+                            dim,
+                        ));
+                    }
+                    _ => {}
+                }
+            } else if let Some(menu) = &bw.battle_item_menu {
                 out.extend(self.items_session_draws(menu));
             } else if let Some(cmd) = &bw.battle_command {
                 let menu_x = 8i32;
@@ -6239,6 +6306,12 @@ fn cmd_play_window_with_record(
         }
         if player_battle {
             world.battle_player_driven = true;
+            // Give the player-driven battle usable Magic / Item submenus.
+            // Without catalogs both submenus would render empty; the spell
+            // list still gates on each character's learned spells from the
+            // boot save, and the item list on the live inventory.
+            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            world.set_spell_catalog(legaia_engine_core::spells::SpellCatalog::vanilla());
         }
         if world.live_gameplay_loop {
             log::info!(
