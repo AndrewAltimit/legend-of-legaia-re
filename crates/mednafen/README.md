@@ -20,7 +20,9 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
 - A declarative scenario manifest (`scripts/scenarios.toml`) maps
   each save slot to a labelled scenario with watchpoint regions; the CLI's
   `watch` subcommand runs all configured watchpoints against sister
-  scenarios in one shot.
+  scenarios in one shot. `ScenarioManifest::mednafen_save_path` resolves a
+  scenario's save preferring its immutable `saves/library` backup (by
+  `backup_fingerprint`) over the wipe-prone live `.mc{slot}`.
 
 ## CLI
 
