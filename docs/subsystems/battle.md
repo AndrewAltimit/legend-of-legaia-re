@@ -402,6 +402,46 @@ exercises the full pipeline — encounter trigger → BattleSession setup →
 `push_command` per slot → commit via `SessionInput { start: true, .. }` →
 Resolve → `BattlePhase::Victory`.
 
+## Live gameplay-loop battle driver
+
+`World::tick` can drive the whole Field ↔ Battle round trip itself when
+`World::live_gameplay_loop` is set (hosts opt in after boot). The
+battle-side per-frame driver is `World::live_battle_tick`: it wraps
+`step_battle` with the host glue retail performs through its render +
+animation systems (folding `ApplyArtStrike` damage, applying a generic
+physical strike on the `AttackChain → AttackRecovery` edge, marking the
+dead, clearing `ADVANCE_DONE` at recovery, re-arming the next party
+attacker at `EndOfAction`), so a battle resolves from `tick` alone. On
+`StepOutcome::BattleComplete` it runs `finish_battle` to apply loot and
+restore the field.
+
+This driver has two modes:
+
+- **Auto-resolve (default).** Every party turn commits a physical Attack
+  on the first living monster with no player choice — the integration
+  spine. Monsters are passive.
+- **Player-driven** (`World::battle_player_driven`, requires the live
+  loop). Each party turn pauses the action SM and opens a
+  `battle_input::BattleCommandSession`: the player selects a command from
+  the battle command menu and a target before the strike commits. While a
+  session is open `live_battle_tick` skips the SM advance and drives the
+  picker from `World::input` instead; on confirm it arms
+  `battle_ctx.{active_actor, queued_action, action_state}` plus the
+  acting actor's `active_target` and resumes the SM. Target selection
+  reuses the [battle target picker](#battle-target-picker), so the cursor behaviour
+  matches the rest of the battle UI. v0.1 enables only the **Attack**
+  command — Arts / Magic / Item appear in the menu but aren't selectable
+  yet (those paths live in `battle_session` / `spell_menu` /
+  `inventory_use` and aren't wired into the live loop). An abort (no valid
+  target) falls back to a default strike so the loop never deadlocks.
+
+Implementation: [`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs);
+the live driver lives in `World::live_battle_tick` /
+`World::tick_battle_command`. Coverage:
+[`crates/engine-core/tests/battle_player_driven.rs`](../../crates/engine-core/tests/battle_player_driven.rs)
+walks into a battle, asserts no strike lands until the player confirms a
+command, then drives the picker to a monster wipe + loot.
+
 ## Battle HUD model
 
 Renderer-agnostic UI state for the in-battle screen. Holds per-slot HP / MP / AP / status-icon state plus a queue of damage popups and battle-event log lines. `engine-render::battle_hud_draws_for` turns one of these into a `Vec<TextDraw>` for the GPU pipeline; engines that render via a different path (web / terminal) read the same struct directly.

@@ -10,6 +10,7 @@ pub mod ap_gauge;
 pub mod art_strike;
 pub mod battle_events;
 pub mod battle_hud;
+pub mod battle_input;
 pub mod battle_round;
 pub mod battle_runner;
 pub mod battle_session;
