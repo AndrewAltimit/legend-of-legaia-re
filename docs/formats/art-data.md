@@ -179,6 +179,81 @@ Triggers:
 
 Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are in [`crates/art/src/super_art.rs`](../../crates/art/src/super_art.rs).
 
+## Arts-name table (`DAT_80075EC4`)
+
+The display names + AP costs of every Tactical Art live in a static table in
+`SCUS_942.54` at `DAT_80075EC4`. It's the table the MES interpreter's `0xC5`
+substitution code reads (see [mes.md](mes.md#bytecode-encoding)) - the `0xC5`
+operand `XX` keys it as `(character = XX>>6, art index = XX&0x3F)`.
+
+The expander (`FUN_80036514`) scans 20-byte (`0x14`) records sorted by
+character, matching `(record[+0], record[+1])` against the key, and returns the
+`+0xC` name pointer (`(&PTR_DAT_80075ED0)[match_index * 5]`).
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0` | u8 | character: `0` Vahn, `1` Noa, `2` Gala |
+| `+1` | u8 | art display index within the character |
+| `+2` | u8 | **AP cost** |
+| `+3` | u8 | padding |
+| `+4` | u16 | round value (≈ power/score; exact meaning unconfirmed) |
+| `+6` | u16 | zero |
+| `+8` | u32 | pointer to the command-input display string (MES arrow-glyph sequence; its first byte is the input count) |
+| `+0xC` | u32 | pointer to the name string |
+| `+0x10` | u32 | aux pointer (second string) |
+
+A `(99, 99)` record named `"End"` terminates the table. Each character's index
+`0` entry is the **Miracle Art** (AP byte `99`; the name string opens with a
+`0xCE 0x09` character-name-substitution control, e.g. *"&'s Ark"* / Gala's
+*"Biron Rage"*).
+
+The AP costs are byte-exact against the curated [`gamedata`](../reference/gamedata.md)
+arts table (every matched art agrees), which makes this the on-disc provenance
+for that table's `ap` column + the canonical art display order.
+
+### Command-glyph string (`+8`)
+
+The `+8` pointer is the **command-input display string** - the arrow sequence
+shown in the arts menu, and an independent on-disc source for each art's
+directional command (the PROT `0x05C4` art-record command bytes are a
+best-effort parse pending a watchpoint). Encoding: `[count u8]` then `count`
+two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence (`0xFF06`
+for regular arts, `0xFF09` for Miracle arts) and is **not** a direction. The
+arrow glyphs map to physical d-pad directions:
+
+| Glyph | Direction | dir code |
+|---|---|---|
+| `0x81A9` | ← Left | 1 |
+| `0x81A8` | → Right | 2 |
+| `0x81AB` | ↓ Down | 3 |
+| `0x81AA` | ↑ Up | 4 |
+
+The string stores the **physical** direction; the logical action (Arms /
+Ra-Seru) depends on the character's handedness (Noa's Arms / Ra-Seru are
+swapped). The codes match the `Left=1 / Right=2 / Down=3 / Up=4` encoding the
+PROT records use. Cross-checking against gamedata surfaces at least one
+walkthrough error (Vahn's *Hyper Elbow* is `L R L` on disc, not `Arms / Ra-Seru
+/ High`). Decoded by `legaia_art::arts_table::parse_from_scus`; dump it with
+`art arts-table`.
+
+### Validation oracle
+
+Because the glyph string is byte-exact ground truth, it serves as the
+validation oracle for the two derived command sources:
+
+- **The best-effort PROT `0x05C4` parser** ([`legaia_art::parse_record`]).
+  `legaia_art::ArtsOracle::by_command(character, &commands)` resolves a decoded
+  command sequence back to a named art; the disc-gated contract test
+  `crates/art/tests/arts_table_real.rs` runs every art's canonical record bytes
+  through `parse_record` and asserts the decode round-trips through the oracle.
+  This pins the parser's `1=L,2=R,3=D,4=U` command-byte decode against the
+  executable without needing the (still-unpinned) full record stride.
+- **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
+  The disc-gated test `crates/gamedata/tests/arts_scus_oracle.rs` matches each
+  curated art to its SCUS row by name and asserts AP + directions agree, with a
+  small explicit allowlist for documented walkthrough errors (currently only
+  *Hyper Elbow*). A new undocumented divergence fails the test.
+
 ## See also
 
 - [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) - battle action state machine that consumes the queue and resolves damage.

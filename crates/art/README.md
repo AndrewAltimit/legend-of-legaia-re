@@ -9,6 +9,8 @@ Tactical Arts data system: Action Constants, per-character art tables, Miracle A
 - `MiracleMatcher` - command-string → full action queue replacement. The 4 leading bytes of each replacement carry the on-disc MSB-set quirk, normalised here.
 - `SuperMatcher` - find/replace pattern matcher applied to the **tail** of the action queue. Returns the longest match per character.
 - `ArtRecord` / `parse_record` - schema for the 40-field art binary record. The strict parser reads the leading command sequence + action constant + animation index; the rest is variable-width and surfaced via the `tail` bytes for downstream tooling.
+- `arts_table::parse_from_scus` - decodes the SCUS arts-name table (`DAT_80075EC4`): per-character name + AP cost + command-input direction sequence, recovered from the menu's arrow-glyph display string. An independent, byte-exact source for each art's command (validates the best-effort PROT `0x05C4` parse and the curated gamedata AP column).
+- `ArtsOracle` - queryable view over the decoded table (`by_name` / `by_command` / `by_character_index`). The ground-truth oracle the best-effort `parse_record` command-decode is contract-tested against, and the source the curated `legaia-gamedata` `directions` / `ap` columns are cross-validated against (disc-gated tests in `crates/art/tests/` and `crates/gamedata/tests/`).
 
 The data tables (Action Constants, art names, Miracle/Super patterns) come from external reverse-engineering of RAM addresses `0x80160EFC` (Vahn), `0x80176998` (Noa), `0x8018BA54` (Gala) and PROT entry `0x05C4`.
 
@@ -26,6 +28,8 @@ art super-arts vahn                            # list a character's Super Arts
 ```
 
 `art parse <PATH>` runs the best-effort record decoder over a binary blob.
+`art arts-table` decodes the SCUS arts-name table (name + AP + command
+directions, e.g. `Burning Flare  RDLDL`); defaults to `extracted/SCUS_942.54`.
 
 ## Cross-crate integration
 

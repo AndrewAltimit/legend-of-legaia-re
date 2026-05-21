@@ -535,6 +535,23 @@ pub fn level_up_draws_for(
     out
 }
 
+/// Build [`TextDraw`]s for the post-battle Seru-capture banner.
+///
+/// `text` is the single active banner line from
+/// `SeruCaptureSession::current_banner` (e.g. `"Captured: Spark!"` or
+/// `"Character 1 learned Aqua!"`). Drawn in cyan, the sibling of
+/// [`level_up_draws_for`]; a natural anchor near the top of a 320×240 surface
+/// is `(8, 40)`.
+pub fn capture_banner_draws_for(
+    font: &legaia_font::Font,
+    text: &str,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let cyan: [f32; 4] = [0.4, 0.9, 1.0, 1.0];
+    let layout = font.layout_ascii(text);
+    text_draws_for(&layout, pen, cyan)
+}
+
 /// One row in the battle HUD's per-slot panel (built by
 /// [`battle_hud_draws_for`]).
 ///
@@ -5585,6 +5602,17 @@ mod tests {
         let draws = level_up_draws_for(&font, 0, 5, 10, 5, (8, 60));
         // Two non-empty lines - at minimum the title line must produce glyphs.
         assert!(!draws.is_empty());
+    }
+
+    #[test]
+    fn capture_banner_draws_for_produces_glyphs_at_the_pen() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = capture_banner_draws_for(&font, "Captured: Spark!", (8, 40));
+        assert!(!draws.is_empty(), "banner text produces glyph draws");
+        assert!(
+            draws.iter().all(|d| d.dst.1 >= 40),
+            "all glyphs render at or below the banner pen y"
+        );
     }
 
     #[test]

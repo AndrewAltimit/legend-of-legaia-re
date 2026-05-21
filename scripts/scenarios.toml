@@ -551,6 +551,39 @@ description = "Rim Elm (town01) scripted Gimard fight captured mid-combo, just b
 phase = "battle"
 topics = ["battle", "reward", "exp", "gold", "drop", "spoils", "FUN_80026018", "monster record"]
 
+# ----------------------------------------------------------------------
+# Seru-capture (spell learn) before/after pair, captured during the Rim
+# Elm Gimard fight. `before` is the frame just prior to the capture; `after`
+# is during the "captured!" banner. Diffing the two pins the persistent
+# spell-learn write into the character record: ONLY 3 bytes change in the
+# whole 4-record character table, all in Vahn's record (base 0x80084708):
+#   +0x13C  00 -> 01    spell-list count 0 -> 1
+#   +0x13D  00 -> 0x81  spell-id array[0] = 0x81 (Gimard's spell)
+#   +0x161  00 -> 01    spell-level array[0] = 1
+# This validates legaia_save::CharacterRecord::spell_list (count @ +0x13C,
+# ids @ +0x13D, levels @ +0x161) against retail, and shows a story-Seru
+# capture is an IMMEDIATE grant (no capture-points accumulation in the
+# record) at spell level 1. Real spell ids (0x81) sit far above the
+# clean-room SpellCatalog approximations. See
+# capture_observations::seru_capture.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "rim_elm_gimard_seru_capture_before"
+backup_fingerprint = "3edf5fb14cd0687603febd774cc1a5e197a9f38e711d089bf5c9c02fa66dac5b"
+description = "Rim Elm (town01) Gimard fight, frame just before the Seru capture lands. Vahn's spell list at record +0x13C is still all-zero. Pair with rim_elm_gimard_seru_capture_after to diff the spell-learn write."
+phase = "battle"
+topics = ["battle", "seru", "capture", "spell learn", "spell_list", "Gimard", "character record"]
+
+[[scenarios]]
+slot = 255
+label = "rim_elm_gimard_seru_capture_after"
+backup_fingerprint = "7f91f1f0d2b3504b528a66b43fdb052a6e4f54421240b7c457a7eb34fe6a2810"
+description = "Rim Elm (town01) Gimard fight, during the 'captured!' banner. Vahn's spell list (record +0x13C) now reads count=1, id[0]=0x81, level[0]=1. Capture point for the persistent Seru spell-learn write. See capture_observations::seru_capture."
+phase = "battle"
+topics = ["battle", "seru", "capture", "spell learn", "spell_list", "Gimard", "character record"]
+
 [[scenarios]]
 slot = 255
 label = "overworld_into_town_man_load"

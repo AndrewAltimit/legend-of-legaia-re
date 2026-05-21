@@ -30,6 +30,7 @@ use std::path::PathBuf;
 
 use legaia_engine_shell::mode_trace_oracle::{
     build_engine_mode_trace, first_mode_trace_divergence, load_runtime_mode_trace_from_save,
+    save_ram_fingerprint,
 };
 use legaia_mednafen::ScenarioManifest;
 
@@ -63,6 +64,19 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
+/// Repo-relative `saves/library` root, if present. Holds the immutable,
+/// fingerprint-named save backups that the manifest's `backup_fingerprint`
+/// field points at.
+fn library_dir() -> Option<PathBuf> {
+    for c in ["saves/library", "../saves/library", "../../saves/library"] {
+        let d = PathBuf::from(c);
+        if d.is_dir() {
+            return Some(d);
+        }
+    }
+    None
+}
+
 #[test]
 fn mode_trace_e3_all_scenarios_converge() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -78,25 +92,58 @@ fn mode_trace_e3_all_scenarios_converge() {
         return;
     };
     let manifest = ScenarioManifest::from_path(&manifest_path).expect("parse scenarios manifest");
+    let library = library_dir();
 
+    // Resolve each qualifying scenario's save, preferring the immutable
+    // library backup over the wipe-prone live slot, then drop any whose
+    // resolved save no longer matches the catalogued `ram_fingerprint_sha256`
+    // (a live `.mc{slot}` that's been overwritten). Trusting a drifted slot
+    // would compare the engine against an arbitrary save, so it's skipped
+    // rather than failed - the same convention `manage-states.py validate`
+    // uses for live-slot drift.
     let mut qualifying = Vec::new();
+    let mut drifted = Vec::new();
     for scn in &manifest.scenarios {
         let Some(scene_name) = scn.expected_active_scene.as_deref() else {
             continue;
         };
-        let Ok(save_path) = manifest.save_path(scn.slot) else {
+        let Ok(save_path) = manifest.mednafen_save_path(scn, library.as_deref()) else {
             continue;
         };
         if !save_path.exists() {
             continue;
+        }
+        // Fingerprint gate: only run scenarios whose resolved save matches the
+        // documented RAM fingerprint (when one is recorded).
+        if let Some(expected) = scn.ram_fingerprint_sha256.as_deref() {
+            match save_ram_fingerprint(&save_path) {
+                Ok(actual) if actual.eq_ignore_ascii_case(expected) => {}
+                Ok(actual) => {
+                    eprintln!(
+                        "[drift] {:<32} {} != catalogued {} - save slot overwritten, skipping",
+                        scn.label,
+                        &actual[..16.min(actual.len())],
+                        &expected[..16.min(expected.len())]
+                    );
+                    drifted.push(scn.label.clone());
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!("[drift] {:<32} fingerprint read failed: {e:#}", scn.label);
+                    drifted.push(scn.label.clone());
+                    continue;
+                }
+            }
         }
         qualifying.push((scn.label.clone(), scene_name.to_owned(), save_path));
     }
 
     if qualifying.is_empty() {
         eprintln!(
-            "[skip] no scenarios qualify: need both `expected_active_scene` and an on-disk .mc save in {}",
-            std::env::var("LEGAIA_MEDNAFEN_DIR").unwrap_or_else(|_| "~/.mednafen/mcs".into())
+            "[skip] no scenarios qualify: need `expected_active_scene` + a fingerprint-matched save (live mcs dir {}; {} drifted slot(s) skipped: {:?})",
+            std::env::var("LEGAIA_MEDNAFEN_DIR").unwrap_or_else(|_| "~/.mednafen/mcs".into()),
+            drifted.len(),
+            drifted,
         );
         return;
     }

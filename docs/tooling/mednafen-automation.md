@@ -342,6 +342,9 @@ label = "pre_encounter"
 description = "Walking the field, one step before an encounter triggers (`map01`)"
 topics = ["encounter table base", "field state", "navmesh"]
 diff_against = [2, 3]
+# Optional drift guards (see "Save resolution" below):
+# backup_fingerprint   = "<sha256 of an immutable saves/library copy>"
+# ram_fingerprint_sha256 = "<sha256 of first 64 KiB of main RAM>"
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -356,6 +359,27 @@ hint = "133 KB battle overlay. Loaded between the pre-encounter and post-encount
 
 `mednafen-state watch <label>` runs the scenario's watchpoints against
 each `diff_against` sister, writing a per-scenario JSON report.
+
+### Save resolution: library backups vs live slots
+
+Live `.mc{slot}` files get overwritten every time you play, so a slot can
+silently drift away from the scenario it's catalogued as. Two fields guard
+against trusting a drifted slot:
+
+- **`backup_fingerprint`** — sha256 of an immutable copy stashed in
+  `saves/library/<emulator>/<fingerprint>.<ext>` (gitignored; the manifest
+  field is the committed catalogue, the library is the bytes). When set,
+  consumers resolve this stable copy *in preference to* the live slot.
+  `scripts/manage-states.py` and `ScenarioManifest::mednafen_save_path` both
+  honour it.
+- **`ram_fingerprint_sha256`** — sha256 of the first 64 KiB of main RAM in the
+  save state. Computed directly from the save (no emulator re-run) by
+  `legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint`. The mode-trace
+  oracle tests (`mode_trace_e3`, `v0_1_playthrough`) gate the live-slot fallback
+  on this digest: a slot that no longer matches the catalogued value is
+  **skipped, not failed** — comparing the engine against an arbitrary save
+  proves nothing. A scenario with a `backup_fingerprint` resolves to the stable
+  library copy and passes the gate by construction.
 
 ## Adding a new scenario
 

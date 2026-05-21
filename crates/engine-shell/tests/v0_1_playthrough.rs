@@ -45,7 +45,7 @@ use std::path::PathBuf;
 use legaia_engine_core::world::{Actor, SceneMode, World};
 use legaia_engine_shell::mode_trace_oracle::{
     ModeTraceFrame, build_engine_mode_trace_with_inputs, first_mode_trace_divergence,
-    load_runtime_mode_trace_from_save,
+    load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_mednafen::ScenarioManifest;
@@ -85,6 +85,16 @@ fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
         let d = PathBuf::from(c);
         if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
+            return Some(d);
+        }
+    }
+    None
+}
+
+fn library_dir() -> Option<PathBuf> {
+    for c in ["saves/library", "../saves/library", "../../saves/library"] {
+        let d = PathBuf::from(c);
+        if d.is_dir() {
             return Some(d);
         }
     }
@@ -292,18 +302,43 @@ fn v0_1_oracle_convergence() {
         );
         return;
     };
-    let Ok(save_path) = manifest.save_path(scn.slot) else {
-        eprintln!("[skip] scenario {scenario_label:?}: save_path resolution failed");
+    // Prefer the immutable library backup over the wipe-prone live slot.
+    let Ok(save_path) = manifest.mednafen_save_path(scn, library_dir().as_deref()) else {
+        eprintln!("[skip] scenario {scenario_label:?}: save path resolution failed");
         return;
     };
     if !save_path.exists() {
         eprintln!(
-            "[skip] scenario {scenario_label:?}: no .mc{} save at {}",
-            scn.slot,
+            "[skip] scenario {scenario_label:?}: no save at {}",
             save_path.display(),
         );
         return;
     }
+    // Only trust the resolved save for the retail-snapshot convergence check
+    // when it still matches the catalogued RAM fingerprint — a live `.mc{slot}`
+    // that's been overwritten no longer holds the documented scenario, so
+    // comparing the engine against it proves nothing. A scenario with a
+    // `backup_fingerprint` resolves to the stable library copy above and passes
+    // this gate by construction. The save-independent replay-fixture diff below
+    // still runs either way.
+    let retail_usable = match scn.ram_fingerprint_sha256.as_deref() {
+        None => true,
+        Some(expected) => match save_ram_fingerprint(&save_path) {
+            Ok(actual) if actual.eq_ignore_ascii_case(expected) => true,
+            Ok(actual) => {
+                eprintln!(
+                    "[drift] scenario {scenario_label:?}: save slot {} != catalogued {} — overwritten, skipping retail convergence",
+                    &actual[..16.min(actual.len())],
+                    &expected[..16.min(expected.len())],
+                );
+                false
+            }
+            Err(e) => {
+                eprintln!("[drift] scenario {scenario_label:?}: fingerprint read failed: {e:#}");
+                false
+            }
+        },
+    };
 
     // -- pad-threaded mode-trace ---------------------------------------
     //
@@ -328,8 +363,15 @@ fn v0_1_oracle_convergence() {
         &pad_stream,
     )
     .unwrap_or_else(|e| panic!("scenario {scenario_label:?}: build engine mode-trace: {e:#}"));
-    let retail = load_runtime_mode_trace_from_save(&save_path)
-        .unwrap_or_else(|e| panic!("scenario {scenario_label:?}: load retail snapshot: {e:#}"));
+    let retail = if retail_usable {
+        Some(
+            load_runtime_mode_trace_from_save(&save_path).unwrap_or_else(|e| {
+                panic!("scenario {scenario_label:?}: load retail snapshot: {e:#}")
+            }),
+        )
+    } else {
+        None
+    };
 
     // Diagnostic: print the unique scene_mode transitions across the
     // trace. With no pad consumer wired into the engine tick today,
@@ -343,7 +385,10 @@ fn v0_1_oracle_convergence() {
     // mode_trace_e3). Passes today because the engine reaches
     // active_scene=town01 immediately at boot; first_mode_trace_divergence
     // accepts "at least one engine frame matches retail" as convergence.
-    if let Some(d) = first_mode_trace_divergence(&trace, &retail) {
+    // Skipped when the save slot drifted (see `retail_usable`).
+    if let Some(retail) = &retail
+        && let Some(d) = first_mode_trace_divergence(&trace, retail)
+    {
         panic!(
             "v0.1 retail-snapshot convergence failed for scenario {scenario_label:?} \
              (scene={scene_name}): {:?}: engine(scene_mode={}, active_scene={:?}) vs \
@@ -370,13 +415,20 @@ fn v0_1_oracle_convergence() {
         );
     }
 
-    eprintln!(
-        "[ok]    v0.1 disc-gated oracle passed: scenario={scenario_label} scene={scene_name} \
-         retail(scene_mode={}, active_scene={:?}) over {} engine frames",
-        retail.scene_mode,
-        retail.active_scene,
-        trace.len(),
-    );
+    match &retail {
+        Some(retail) => eprintln!(
+            "[ok]    v0.1 disc-gated oracle passed: scenario={scenario_label} scene={scene_name} \
+             retail(scene_mode={}, active_scene={:?}) over {} engine frames",
+            retail.scene_mode,
+            retail.active_scene,
+            trace.len(),
+        ),
+        None => eprintln!(
+            "[ok]    v0.1 disc-gated oracle passed (replay-fixture diff only; retail save drifted): \
+             scenario={scenario_label} scene={scene_name} over {} engine frames",
+            trace.len(),
+        ),
+    }
 
     // TODO(item 1 follow-ups):
     //   - VRAM oracle at the frame the replay marks as the title screen.

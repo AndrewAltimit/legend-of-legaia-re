@@ -180,6 +180,40 @@ fn game_mode_label(gm: legaia_engine_core::mode::GameMode) -> &'static str {
     legaia_engine_core::mode::TABLE[gm.as_index()].name
 }
 
+/// Number of leading main-RAM bytes the manifest's `ram_fingerprint_sha256`
+/// hashes (the first 64 KiB - the scratch + low-globals window that settles
+/// deterministically after a save-state load).
+pub const RAM_FINGERPRINT_BYTES: usize = 0x10000;
+
+/// Lowercase-hex SHA-256 of the first [`RAM_FINGERPRINT_BYTES`] of a mednafen
+/// save state's main RAM. This is the same digest `scripts/manage-states.py`
+/// records as a scenario's `ram_fingerprint_sha256`, computed directly from
+/// the save state (no emulator re-run), so a live `.mc{slot}` can be checked
+/// against the catalogued fingerprint to detect that it has been overwritten
+/// and no longer holds the documented scenario.
+pub fn save_ram_fingerprint(save: &Path) -> Result<String> {
+    use legaia_mednafen::SaveState;
+    use sha2::{Digest, Sha256};
+
+    let state = SaveState::from_path(save)
+        .with_context(|| format!("load mednafen save {}", save.display()))?;
+    let ram = state
+        .main_ram()
+        .with_context(|| format!("save state {} has no main RAM entry", save.display()))?;
+    let window = ram.get(..RAM_FINGERPRINT_BYTES).unwrap_or(ram);
+    let digest = Sha256::digest(window);
+    Ok(hex_lower(&digest))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
 /// Serialise a list of frames as JSON Lines (`\n`-terminated JSON objects,
 /// one per frame). Round-trips through [`parse_mode_trace_jsonl`].
 pub fn mode_trace_to_jsonl(frames: &[ModeTraceFrame]) -> String {

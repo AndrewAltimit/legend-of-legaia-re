@@ -25,8 +25,8 @@ use legaia_engine_core::scene_resources::{
 use legaia_engine_core::world::{AnimPlayer, SceneMode};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, ShopRow, TextDraw, TextOverlay,
-    UploadedFontAtlas, UploadedVram, UploadedVramMesh, level_up_draws_for, shop_draws_for,
-    text_draws_for,
+    UploadedFontAtlas, UploadedVram, UploadedVramMesh, capture_banner_draws_for,
+    level_up_draws_for, shop_draws_for, text_draws_for,
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_shell::audio_trace_oracle::{
@@ -657,6 +657,13 @@ enum Cmd {
         /// the Attack command.
         #[arg(long, default_value_t = false)]
         player_battle: bool,
+        /// BGM id to cross-fade to when a live-loop encounter starts; the
+        /// field track resumes when the battle ends. Routed through the same
+        /// BGM director as field op-`0x35` starts, so the id must resolve in
+        /// the current scene's asset table. Omit to leave music untouched
+        /// across the Battle transition.
+        #[arg(long)]
+        battle_bgm: Option<u16>,
     },
     /// Open a window and play back a raw PSX STR video file (2048-byte sectors,
     /// no CD subheaders) using the MDEC decoder.  Audio is not yet wired;
@@ -1060,6 +1067,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            battle_bgm,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -1074,6 +1082,7 @@ fn main() -> Result<()> {
             cheat_strict,
             live_loop,
             player_battle,
+            battle_bgm,
         ),
         Cmd::Save {
             extracted_root,
@@ -2464,6 +2473,7 @@ fn cmd_record(
         false,
         false,
         false,
+        None,
         Some(RecordTarget {
             out: out.to_path_buf(),
             scenario: scenario.map(str::to_string),
@@ -3312,6 +3322,11 @@ struct PlayWindowApp {
     /// the target's `BattleActor::hp` via `World::fold_battle_event`). The
     /// log is empty until a battle SM actually fires.
     battle_event_log: std::collections::VecDeque<String>,
+    /// Damage-popup / status model for the battle HUD. Fed each frame from
+    /// `World::drain_battle_hit_fx` (floating numbers) + the live status
+    /// tracker (per-slot icons); aged by `BattleHud::tick`. Popups + status
+    /// letters are drawn anchored to the per-slot HP rows in `build_hud`.
+    battle_hud: legaia_engine_core::battle_hud::BattleHud,
     /// Actor slots queued for render-side mesh upload. Populated when a
     /// `FieldEvent::ActorSpawned` fires with a non-`None` `Actor::tmd_ref`
     /// (the field-VM `0x4C 0xD8` synchronous-spawn path); drained in the
@@ -3914,6 +3929,40 @@ impl PlayWindowApp {
             }
             self.battle_event_log.push_back(ev.summary());
         }
+
+        // Floating damage / heal numbers: the live battle loop resolves and
+        // applies HP itself, then queues a presentation-only FX per strike.
+        // Feed those into the popup model and log the magnitude (the typed
+        // events above are consumed inside the live loop, so this is the
+        // only place per-strike damage surfaces while live).
+        let fx = self.session.host.world.drain_battle_hit_fx();
+        for f in fx {
+            if f.is_heal {
+                self.battle_hud.push_heal(f.target_slot, f.amount);
+            } else if f.is_crit {
+                self.battle_hud.push_popup(
+                    legaia_engine_core::battle_hud::DamagePopup::damage(f.target_slot, f.amount)
+                        .crit(),
+                );
+            } else {
+                self.battle_hud.push_damage(f.target_slot, f.amount);
+            }
+            if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
+                self.battle_event_log.pop_front();
+            }
+            let sign = if f.is_heal { '+' } else { '-' };
+            self.battle_event_log
+                .push_back(format!("slot {} {}{} HP", f.target_slot, sign, f.amount));
+        }
+
+        // Refresh per-slot status icons + age the popups one frame.
+        if self.session.host.world.mode == SceneMode::Battle {
+            for slot in 0..self.battle_hud.slots.len() as u8 {
+                self.battle_hud
+                    .sync_status(slot, &self.session.host.world.status_effects);
+            }
+        }
+        self.battle_hud.tick();
     }
 
     /// Build [`TextDraw`]s for an active field-menu sub-session. Each
@@ -5417,6 +5466,10 @@ impl PlayWindowApp {
             let down_color = [0.6f32, 0.6, 0.6, 1.0];
             let enemy_color = [1.0f32, 0.7, 0.6, 1.0];
 
+            // Per-actor-index row Y, recorded as rows are drawn so popups +
+            // status icons anchor to the right slot even though the monster
+            // loop skips empty slots.
+            let mut row_y: [Option<i32>; 8] = [None; 8];
             let mut y = 60i32;
             for (i, a) in bw.actors.iter().take(pc).enumerate() {
                 let line = format!("P{}  HP {:>4}/{:<4}", i + 1, a.battle.hp, a.battle.max_hp);
@@ -5430,6 +5483,9 @@ impl PlayWindowApp {
                     (8, y),
                     color,
                 ));
+                if i < row_y.len() {
+                    row_y[i] = Some(y);
+                }
                 y += 16;
             }
             y += 8;
@@ -5451,11 +5507,194 @@ impl PlayWindowApp {
                     (8, y),
                     color,
                 ));
+                let actor_idx = pc + mi;
+                if actor_idx < row_y.len() {
+                    row_y[actor_idx] = Some(y);
+                }
                 y += 16;
             }
 
-            // Player-driven command menu / target cursor.
-            if let Some(cmd) = &bw.battle_command {
+            // Status-effect icon strip per slot (single-letter abbreviations
+            // from the live tracker), drawn to the right of the HP row.
+            let status_color = [1.0f32, 0.95, 0.4, 1.0];
+            for (slot, anchor) in row_y.iter().enumerate() {
+                let Some(ry) = anchor else { continue };
+                let letters = self.battle_hud.slots[slot].status_letters();
+                for (k, letter) in letters.iter().enumerate() {
+                    let s = (*letter as char).to_string();
+                    out.extend(text_draws_for(
+                        &self.font.layout_ascii(&s),
+                        (170 + k as i32 * 8, *ry),
+                        status_color,
+                    ));
+                }
+            }
+
+            // Floating damage / heal numbers, anchored just above each slot's
+            // HP row and fading with the popup's remaining lifetime.
+            let dmg_color = [0.5f32, 0.85, 1.0, 1.0];
+            let heal_color = [0.5f32, 1.0, 0.5, 1.0];
+            let crit_color = [1.0f32, 0.95, 0.4, 1.0];
+            for p in self.battle_hud.popup_views() {
+                let Some(Some(ry)) = row_y.get(p.slot as usize) else {
+                    continue;
+                };
+                let base = if p.is_heal {
+                    heal_color
+                } else if p.is_crit {
+                    crit_color
+                } else {
+                    dmg_color
+                };
+                let color = [base[0], base[1], base[2], base[3] * p.alpha.clamp(0.0, 1.0)];
+                let text = if let Some(letter) = p.status_letter {
+                    format!("[{}]", letter as char)
+                } else if p.is_heal {
+                    format!("+{}", p.amount)
+                } else {
+                    format!("-{}", p.amount)
+                };
+                out.extend(text_draws_for(
+                    &self.font.layout_ascii(&text),
+                    (120, *ry - 14),
+                    color,
+                ));
+            }
+
+            // Player-driven submenus (opened from the Arts / Magic / Item
+            // commands). Each parks both the SM and the command session while
+            // open, so it takes priority over the command menu.
+            if let Some(arts) = &bw.battle_arts_menu {
+                use legaia_engine_core::battle_arts::ArtsPhase;
+                let menu_x = 8i32;
+                let mut my = 210i32;
+                match &arts.phase {
+                    ArtsPhase::Select { cursor } => {
+                        let header = format!("P{} - arts:", arts.actor + 1);
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&header),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 16;
+                        if arts.arts.is_empty() {
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii("  (no saved arts)"),
+                                (menu_x + 8, my),
+                                down_color,
+                            ));
+                        }
+                        for (i, row) in arts.arts.iter().enumerate() {
+                            let sel = i as u8 == *cursor;
+                            let marker = if sel { ">" } else { " " };
+                            let line = format!("{} {} x{}", marker, row.name, row.hits());
+                            let color = if sel { white } else { dim };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x + 8, my),
+                                color,
+                            ));
+                            my += 14;
+                        }
+                    }
+                    ArtsPhase::Targeting { picker, .. } => {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Enemy,
+                                slot,
+                            } => format!("art -> target M{}", slot + 1),
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("art -> target P{}", slot + 1),
+                            _ => "art -> select target".to_string(),
+                        };
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&line),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 14;
+                        out.extend(text_draws_for(
+                            &self
+                                .font
+                                .layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
+                            (menu_x, my),
+                            dim,
+                        ));
+                    }
+                    _ => {}
+                }
+            } else if let Some(spell) = &bw.battle_spell_menu {
+                use legaia_engine_core::battle_magic::SpellPhase;
+                let menu_x = 8i32;
+                let mut my = 210i32;
+                match &spell.phase {
+                    SpellPhase::Select { cursor } => {
+                        let header = format!("P{} - magic:", spell.actor + 1);
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&header),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 16;
+                        if spell.spells.is_empty() {
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii("  (no spells)"),
+                                (menu_x + 8, my),
+                                down_color,
+                            ));
+                        }
+                        for (i, row) in spell.spells.iter().enumerate() {
+                            let sel = i as u8 == *cursor;
+                            let marker = if sel { ">" } else { " " };
+                            let line = format!("{} {} {:>2}MP", marker, row.name, row.mp_cost);
+                            let color = if !row.affordable {
+                                down_color
+                            } else if sel {
+                                white
+                            } else {
+                                dim
+                            };
+                            out.extend(text_draws_for(
+                                &self.font.layout_ascii(&line),
+                                (menu_x + 8, my),
+                                color,
+                            ));
+                            my += 14;
+                        }
+                    }
+                    SpellPhase::Targeting { picker, .. } => {
+                        let line = match picker.state() {
+                            PickerState::Cursor {
+                                row: CursorRow::Enemy,
+                                slot,
+                            } => format!("cast -> target M{}", slot + 1),
+                            PickerState::Cursor {
+                                row: CursorRow::Ally,
+                                slot,
+                            } => format!("cast -> target P{}", slot + 1),
+                            _ => "cast -> select target".to_string(),
+                        };
+                        out.extend(text_draws_for(
+                            &self.font.layout_ascii(&line),
+                            (menu_x, my),
+                            white,
+                        ));
+                        my += 14;
+                        out.extend(text_draws_for(
+                            &self
+                                .font
+                                .layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
+                            (menu_x, my),
+                            dim,
+                        ));
+                    }
+                    _ => {}
+                }
+            } else if let Some(menu) = &bw.battle_item_menu {
+                out.extend(self.items_session_draws(menu));
+            } else if let Some(cmd) = &bw.battle_command {
                 let menu_x = 8i32;
                 let mut my = 210i32;
                 match &cmd.phase {
@@ -5530,6 +5769,13 @@ impl PlayWindowApp {
                 (8, 60),
             );
             out.extend(draws);
+        }
+        // Seru-capture banner: shown after a battle in which a Seru was
+        // captured (and, if a threshold was crossed, a spell learned).
+        if let Some(banner) = &self.session.host.world.current_capture_banner
+            && let Some(text) = banner.current_banner()
+        {
+            out.extend(capture_banner_draws_for(&self.font, &text, (8, 40)));
         }
         out
     }
@@ -5672,7 +5918,31 @@ impl ApplicationHandler for PlayWindowApp {
                 ) {
                     let (w, h) = r.surface_size();
                     let aspect = w as f32 / h.max(1) as f32;
-                    let cam = self.camera_mvp(aspect);
+                    // World-map mode frames the loaded map with the
+                    // controller-driven camera (azimuth / zoom / pan);
+                    // every other mode uses the orbit camera.
+                    let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
+                    let cam = if in_world_map {
+                        let (az, zoom, px, pz) = self
+                            .session
+                            .host
+                            .world
+                            .world_map_ctrl
+                            .as_ref()
+                            .map(|c| (c.azimuth, c.zoom, c.camera_x, c.camera_z))
+                            .unwrap_or((0, 0, 0, 0));
+                        legaia_engine_render::window::world_map_camera_mvp(
+                            self.scene_aabb.0,
+                            self.scene_aabb.1,
+                            az,
+                            zoom,
+                            px,
+                            pz,
+                            aspect,
+                        )
+                    } else {
+                        self.camera_mvp(aspect)
+                    };
                     // Drain queued spawn slots: build a VRAM mesh from each
                     // actor's `tmd_ref` (global-pool TMD that the field-VM
                     // 0x4C 0xD8 host hook installed) and append it to
@@ -5766,7 +6036,23 @@ impl ApplicationHandler for PlayWindowApp {
                     // last-loaded scene (e.g. a town) doesn't show through
                     // behind publisher logos / title / save-select.
                     let mut draws: Vec<SceneDraw<'_>> = Vec::new();
-                    if !self.boot_ui.is_active() {
+                    if self.boot_ui.is_active() {
+                        // Boot UI is fullscreen - suppress 3D draws.
+                    } else if in_world_map {
+                        // World map has no per-actor bindings: draw the whole
+                        // loaded kingdom mesh pack at its pack-local
+                        // coordinates (Y-flipped to match the geometry
+                        // convention). Per-mesh world placement from the live
+                        // actor table is a separate, still-open RE thread; the
+                        // meshes render where the pack puts them.
+                        let model = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                        for mesh in &self.meshes {
+                            draws.push(SceneDraw {
+                                mesh,
+                                mvp: cam * model,
+                            });
+                        }
+                    } else {
                         for (i, actor) in self.session.host.world.actors.iter().enumerate() {
                             let Some(tmd_idx) = actor.tmd_binding else {
                                 continue;
@@ -5952,6 +6238,7 @@ fn cmd_play_window(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    battle_bgm: Option<u16>,
 ) -> Result<()> {
     cmd_play_window_with_record(
         scene,
@@ -5967,6 +6254,7 @@ fn cmd_play_window(
         cheat_strict,
         live_loop,
         player_battle,
+        battle_bgm,
         None,
     )
 }
@@ -5986,6 +6274,7 @@ fn cmd_play_window_with_record(
     cheat_strict: bool,
     live_loop: bool,
     player_battle: bool,
+    battle_bgm: Option<u16>,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
     // Optional cutscene-map override layered on top of the heuristic.
@@ -6032,6 +6321,14 @@ fn cmd_play_window_with_record(
         // Installs the controller; World::tick drives it from the pad
         // routed via world.set_pad each frame.
         session.host.world.enter_world_map();
+        // Start in the navigable top-view so the player can orbit / zoom /
+        // pan the map immediately (L1/R1 rotate, the dpad pans, the
+        // shoulder/face zoom bits change height). Without this the
+        // controller stays in walk mode and ignores camera input.
+        if let Some(ctrl) = session.host.world.world_map_ctrl.as_mut() {
+            ctrl.debug_enabled = true;
+            ctrl.view_mode = 1;
+        }
     } else {
         // Enter the field scene's first event-script record (the init
         // prologue) so the field VM actually runs on subsequent ticks.
@@ -6088,8 +6385,78 @@ fn cmd_play_window_with_record(
         if live_loop || player_battle {
             world.live_gameplay_loop = true;
         }
+        // Optional Battle<->Field BGM swap: the live loop cross-fades to this
+        // track on encounter and resumes the field track on battle end. The
+        // id must resolve through the current scene's BGM table.
+        world.set_battle_bgm(battle_bgm);
         if player_battle {
             world.battle_player_driven = true;
+            // Give the player-driven battle usable Magic / Item submenus.
+            // Without catalogs both submenus would render empty; the spell
+            // list still gates on each character's learned spells from the
+            // boot save, and the item list on the live inventory.
+            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            // Real player Seru-magic ids (0x81..=0x8b, pinned from SCUS) on top
+            // of the demo entries, paired with a Seru registry that teaches
+            // those real ids - so a captured Seru learns a correctly-named
+            // retail spell (e.g. Gimard = 0x81, matching the save-state pin).
+            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
+            // Seed a couple of demo items when the boot save carries none, so
+            // both the ally-heal and offensive (Bomb) item paths are
+            // exercisable in the window. (No-op when the save has inventory.)
+            if world.inventory.is_empty() {
+                world.inventory.insert(0x01, 5); // Healing Leaf
+                world.inventory.insert(0x13, 3); // Bomb (offensive)
+            }
+            // Seed a couple of demo saved chains when the boot save carries
+            // none, so the Arts submenu is exercisable in the window. (No-op
+            // when the save already has a chain library.)
+            if world.saved_chains.is_empty() {
+                use legaia_save::SavedChainRecord;
+                for slot in 0u8..3 {
+                    world.saved_chains.push(SavedChainRecord {
+                        char_slot: slot,
+                        name: "Quick".into(),
+                        sequence: vec![1, 2],
+                    });
+                    world.saved_chains.push(SavedChainRecord {
+                        char_slot: slot,
+                        name: "Combo".into(),
+                        sequence: vec![1, 2, 3, 4],
+                    });
+                }
+                // Stage a demo art record per character so the "Combo" chain
+                // (it ends in Up) resolves through the real art-power path -
+                // two damage strikes that burn the target. "Quick" has no
+                // matching record and falls back to the synthetic profile.
+                use legaia_art::power::PowerByte;
+                use legaia_art::queue::{ActionConstant, Command};
+                use legaia_art::record::EnemyEffect;
+                for character in legaia_art::Character::all() {
+                    world.set_art_record(
+                        character,
+                        ActionConstant::Art1B,
+                        legaia_art::ArtRecord {
+                            action: ActionConstant::Art1B,
+                            commands: vec![Command::Up],
+                            anim_index: 0,
+                            anim_extra: vec![],
+                            name: None,
+                            power: vec![PowerByte::from_byte(0x18), PowerByte::from_byte(0x1D)],
+                            dmg_timing: vec![],
+                            effect_cues: Default::default(),
+                            hit_cues: vec![],
+                            identifier: 0,
+                            anim_speed: 0,
+                            enemy_effect: EnemyEffect::Burned,
+                            repeat_frames: Default::default(),
+                            background: 0,
+                            runtime_address: None,
+                        },
+                    );
+                }
+            }
         }
         if world.live_gameplay_loop {
             log::info!(
@@ -6346,6 +6713,7 @@ fn cmd_play_window_with_record(
         menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
         prev_pad: 0,
         battle_event_log: std::collections::VecDeque::new(),
+        battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
         pending_dynamic_mesh_slots: Vec::new(),
         boot_ui: initial_boot_ui,
         save_dir: save_dir.to_path_buf(),
@@ -7218,7 +7586,7 @@ fn cmd_chain_editor(char_slot: u8, script: &str) -> Result<()> {
 
 fn cmd_seru_capture(seru: u16, count: u32, party: &str) -> Result<()> {
     use legaia_engine_core::seru_learning::{SeruCaptureLog, SeruRegistry, record_capture};
-    let registry = SeruRegistry::vanilla();
+    let registry = SeruRegistry::retail();
     let party: Vec<u8> = party
         .split(',')
         .filter_map(|s| s.trim().parse::<u8>().ok())

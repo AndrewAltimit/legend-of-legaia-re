@@ -1,0 +1,136 @@
+//! Parse the real arts-name table out of `extracted/SCUS_942.54` if present.
+//! Skips and passes when the executable isn't on disk - same gating pattern as
+//! the disc-dependent integration tests so CI doesn't need Sony bytes.
+
+use legaia_art::arts_table::{self, ArtTableEntry};
+use legaia_art::queue::{Character, Command};
+use legaia_art::{ArtsOracle, parse_record};
+use std::path::PathBuf;
+
+fn scus_path() -> Option<PathBuf> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest.parent()?.parent()?;
+    let p = workspace.join("extracted").join("SCUS_942.54");
+    p.is_file().then_some(p)
+}
+
+fn find<'a>(arts: &'a [ArtTableEntry], ch: Character, name: &str) -> &'a ArtTableEntry {
+    arts.iter()
+        .find(|a| a.character == ch && a.name == name)
+        .unwrap_or_else(|| panic!("art {name:?} not found for {ch:?}"))
+}
+
+#[test]
+fn decodes_the_arts_name_table_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let arts = arts_table::parse_from_scus(&bytes).expect("parse arts table");
+
+    // 15 arts per character (1 Miracle at index 0 + 14 regular) = 45.
+    assert_eq!(arts.len(), 45, "art record count");
+    for ch in Character::all() {
+        assert_eq!(
+            arts.iter().filter(|a| a.character == ch).count(),
+            15,
+            "{ch:?} art count"
+        );
+    }
+
+    // Each character's index-0 entry is the Miracle Art.
+    assert!(find(&arts, Character::Vahn, "Hyper Elbow").index == 14);
+    assert!(
+        arts.iter().filter(|a| a.is_miracle).all(|a| a.index == 0),
+        "miracle arts are the index-0 rows"
+    );
+    assert_eq!(arts.iter().filter(|a| a.is_miracle).count(), 3);
+
+    // Pinned commands + AP (byte-exact from SCUS; arrow glyphs -> directions).
+    use Command::*;
+    let burning_flare = find(&arts, Character::Vahn, "Burning Flare");
+    assert_eq!(burning_flare.ap, 50);
+    assert_eq!(
+        burning_flare.commands,
+        vec![Right, Down, Left, Down, Left],
+        "Burning Flare command"
+    );
+
+    let hyper_elbow = find(&arts, Character::Vahn, "Hyper Elbow");
+    assert_eq!(hyper_elbow.ap, 18);
+    // On-disc command is L,R,L - note this differs from the curated gamedata
+    // table (which lists the third input as High); the executable is the
+    // ground truth.
+    assert_eq!(hyper_elbow.commands, vec![Left, Right, Left]);
+
+    let hurricane_kick = find(&arts, Character::Noa, "Hurricane Kick");
+    assert_eq!(hurricane_kick.ap, 70);
+    assert_eq!(
+        hurricane_kick.commands,
+        vec![Left, Up, Up, Up, Up, Down, Right]
+    );
+
+    // Every non-Miracle art has at least one decoded direction.
+    for a in arts.iter().filter(|a| !a.is_miracle) {
+        assert!(!a.commands.is_empty(), "{} has no decoded commands", a.name);
+    }
+}
+
+/// Contract test between the best-effort PROT `0x05C4` art-record parser
+/// (`parse_record`) and the SCUS arts-name table oracle.
+///
+/// `parse_record` decodes a raw record's leading command bytes
+/// (`1..=4` until a `0` terminator). For every art the executable names, build
+/// the canonical record-opening bytes from the ground-truth command sequence,
+/// run it through `parse_record`, and assert the parser's decoded commands
+/// resolve back through the oracle to *the same named art*. This pins the
+/// parser's command-decode step against the executable: if the record's
+/// command-byte encoding ever drifts from `1=L,2=R,3=D,4=U`, this fails.
+#[test]
+fn prot_record_parser_command_decode_agrees_with_scus_oracle_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let oracle = ArtsOracle::from_scus(&bytes).expect("build oracle");
+
+    let mut checked = 0usize;
+    for entry in oracle.entries() {
+        // Miracle rows carry only the separator marker (no directional
+        // command); the PROT record encodes them with an empty command list,
+        // which the oracle deliberately won't resolve. Skip them here.
+        if entry.commands.is_empty() {
+            continue;
+        }
+        // Canonical PROT-record opening: command bytes (1..=4), 0 terminator,
+        // an art action constant, an anim index.
+        let mut raw: Vec<u8> = entry.commands.iter().map(|c| *c as u8).collect();
+        raw.push(0x00); // command terminator
+        raw.push(0x1B); // an art action constant (0x1B..=0x32)
+        raw.push(0x00); // anim index
+
+        let parsed = parse_record(&raw).expect("parse synthesised record");
+        assert_eq!(
+            parsed.record.commands, entry.commands,
+            "parser decoded a different command for {}",
+            entry.name
+        );
+
+        // The parser's output resolves through the oracle to this exact art.
+        let resolved = oracle
+            .by_command(entry.character, &parsed.record.commands)
+            .unwrap_or_else(|| panic!("oracle could not resolve {}", entry.name));
+        // Command sequences are not globally unique (a few arts share a
+        // sequence per character is possible), so assert the resolved entry
+        // matches on character + the decoded commands rather than identity.
+        assert_eq!(resolved.character, entry.character);
+        assert_eq!(resolved.commands, entry.commands);
+        checked += 1;
+    }
+    assert!(
+        checked >= 40,
+        "expected to validate most arts, got {checked}"
+    );
+}

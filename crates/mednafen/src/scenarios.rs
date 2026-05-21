@@ -101,6 +101,13 @@ pub struct Scenario {
     /// save state hasn't drifted vs the committed manifest.
     #[serde(default)]
     pub ram_fingerprint_sha256: Option<String>,
+    /// SHA-256 of the **save-state file bytes** of an immutable copy stashed
+    /// in `saves/library/<emulator>/<fingerprint>.<ext>`. When set, consumers
+    /// resolve this stable copy in preference to the wipe-prone live `.mc{slot}`
+    /// (live emulator slots get overwritten as the user plays). Mirrors the
+    /// `backup_fingerprint` field `scripts/manage-states.py` reads.
+    #[serde(default)]
+    pub backup_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -167,6 +174,51 @@ impl ScenarioManifest {
             .replace("{slot}", &slot.to_string());
         Ok(dir.join(filename))
     }
+
+    /// Resolve the mednafen save for a scenario, **preferring an immutable
+    /// library backup** over the wipe-prone live slot.
+    ///
+    /// If the scenario carries a [`Scenario::backup_fingerprint`] and a file
+    /// in `library_dir/mednafen/` has a stem starting with that fingerprint,
+    /// that stable copy is returned. Otherwise this falls back to
+    /// [`Self::save_path`] for the scenario's live `.mc{slot}`. Mirrors
+    /// `scripts/manage-states.py`'s `mednafen_path`. Pass `library_dir = None`
+    /// to skip the library and use the live slot only.
+    pub fn mednafen_save_path(
+        &self,
+        scenario: &Scenario,
+        library_dir: Option<&Path>,
+    ) -> Result<PathBuf> {
+        if let (Some(lib), Some(fp)) = (library_dir, scenario.backup_fingerprint.as_deref())
+            && let Some(p) = library_backup_for("mednafen", lib, fp)
+        {
+            return Ok(p);
+        }
+        self.save_path(scenario.slot)
+    }
+}
+
+/// Look up an immutable library backup by `(emulator, fingerprint)`: the first
+/// file in `library_dir/<emulator>/` whose stem starts with `fingerprint`.
+/// Returns `None` when the directory or a matching file is absent.
+pub fn library_backup_for(
+    emulator: &str,
+    library_dir: &Path,
+    fingerprint: &str,
+) -> Option<PathBuf> {
+    let emu_dir = library_dir.join(emulator);
+    let entries = std::fs::read_dir(&emu_dir).ok()?;
+    let mut hits: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.is_file()
+                && p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|stem| stem.starts_with(fingerprint))
+        })
+        .collect();
+    hits.sort();
+    hits.into_iter().next()
 }
 
 #[cfg(test)]
@@ -224,6 +276,45 @@ diff_against = [2, 3]
         let m = ScenarioManifest::parse_toml(sample_toml()).unwrap();
         assert!(m.by_label("title").is_some());
         assert!(m.by_label("missing").is_none());
+    }
+
+    #[test]
+    fn mednafen_save_path_prefers_library_backup_then_falls_back_to_live_slot() {
+        let m = ScenarioManifest::parse_toml(sample_toml()).unwrap();
+        // Hermetic mcs dir for the live-slot fallback.
+        // SAFETY: test-controlled environment.
+        unsafe {
+            std::env::set_var("LEGAIA_MEDNAFEN_DIR", "/tmp/scenario_test_mcs");
+        }
+
+        // A stable library backup dir with one mednafen save.
+        let tmp = std::env::temp_dir().join(format!("legaia_lib_{}", std::process::id()));
+        let emu = tmp.join("mednafen");
+        std::fs::create_dir_all(&emu).unwrap();
+        let fp = "deadbeefcafef00d";
+        std::fs::write(emu.join(format!("{fp}.mcr")), b"x").unwrap();
+
+        // Scenario with a backup_fingerprint resolves to the library copy.
+        let mut scn = m.scenarios[0].clone();
+        scn.backup_fingerprint = Some(fp.to_string());
+        let p = m.mednafen_save_path(&scn, Some(&tmp)).unwrap();
+        assert_eq!(p, emu.join(format!("{fp}.mcr")));
+
+        // Without a backup_fingerprint, it falls back to the live slot path.
+        let scn_no_fp = m.scenarios[0].clone();
+        let p = m.mednafen_save_path(&scn_no_fp, Some(&tmp)).unwrap();
+        assert_eq!(p, PathBuf::from("/tmp/scenario_test_mcs/test.0"));
+
+        // A backup_fingerprint with no matching library file also falls back.
+        let mut scn_missing = m.scenarios[0].clone();
+        scn_missing.backup_fingerprint = Some("0000notpresent".to_string());
+        let p = m.mednafen_save_path(&scn_missing, Some(&tmp)).unwrap();
+        assert_eq!(p, PathBuf::from("/tmp/scenario_test_mcs/test.0"));
+
+        std::fs::remove_dir_all(&tmp).ok();
+        unsafe {
+            std::env::remove_var("LEGAIA_MEDNAFEN_DIR");
+        }
     }
 
     #[test]

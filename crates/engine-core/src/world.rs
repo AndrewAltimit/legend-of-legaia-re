@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use crate::battle_events::BattleEvent;
+use crate::battle_events::{BattleEvent, BattleHitFx};
 use crate::field_events::FieldEvent;
 use crate::input;
 use crate::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
@@ -343,6 +343,26 @@ impl Actor {
     }
 }
 
+/// One active stat buff / debuff produced by a battle Magic cast.
+///
+/// The applied delta is the exact change written into the per-slot scalar
+/// ([`World::battle_attack`] / [`World::battle_defense`] / [`World::battle_magic`]),
+/// so [`World::finish_battle`] (or natural expiry) can revert it precisely.
+/// Stats with no live-loop scalar (Accuracy / Evasion / Speed) are tracked
+/// with a zero delta so the timer still expires cleanly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleBuff {
+    /// Actor-table slot the buff applies to.
+    pub slot: u8,
+    /// Buffed stat.
+    pub stat: crate::spells::BuffStat,
+    /// Signed delta actually written into the per-slot scalar (`0` for stats
+    /// that have no live-loop scalar).
+    pub applied_delta: i16,
+    /// Turns remaining before the buff expires.
+    pub turns: u8,
+}
+
 /// Singleton world / scene held by an engine integration.
 ///
 /// Holds the actor table, the active battle-action ctx (when the scene mode
@@ -516,6 +536,11 @@ pub struct World {
     /// character record's weapon power. Default zero - un-populated slots
     /// produce floor-clamped damage (`= 1`).
     pub battle_attack: [u16; 8],
+    /// Per-slot magic attack scalar used by [`spells::cast_spell`] for the
+    /// caster's `mag` column when resolving a player-driven battle Magic cast.
+    /// Engines populate from the active character record; default zero (which
+    /// floors damage spells at 1).
+    pub battle_magic: [u16; 8],
     /// Per-slot defense facing the strike. The retail engine selects UDF
     /// or LDF based on the strike's `power_target`; this single field is a
     /// minimum-viable substitute that engines wishing to model both can
@@ -588,10 +613,39 @@ pub struct World {
     /// [`BattleEvent`]: crate::battle_events::BattleEvent
     pub pending_battle_events: Vec<BattleEvent>,
 
+    /// Presentation-only per-strike HP deltas surfaced for HUD damage
+    /// popups. The gameplay-state HP mutation has *already* happened by
+    /// the time an entry lands here (the live battle loop folds art-strike
+    /// damage and applies the generic physical strike before queuing the
+    /// matching FX), so engines must NOT re-apply these to HP - they only
+    /// drive the floating-number / status overlay. Drained by the host via
+    /// [`World::drain_battle_hit_fx`]; cleared on battle exit.
+    pub battle_hit_fx: Vec<BattleHitFx>,
+
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
     /// a scene starts one. Updated synchronously when the VM emits the
     /// corresponding `Bgm` event.
     pub current_bgm: Option<u16>,
+
+    /// BGM id to swap to when a live-loop encounter begins, restored to the
+    /// field track when the battle ends. `None` (the default) leaves music
+    /// untouched across the Battle transition - set it via
+    /// [`World::set_battle_bgm`] to enable the swap. The swap is routed as an
+    /// ordinary `FieldEvent::Bgm` start (sub-op 1), so the host's existing
+    /// BGM director resolves the SEQ and cross-fades exactly like a field
+    /// op-`0x35` start.
+    pub battle_bgm: Option<u16>,
+
+    /// Field track stashed at battle entry so [`World::restore_field_bgm`]
+    /// can resume it after the encounter. Managed by the swap helpers; not
+    /// meant to be set directly.
+    pub field_bgm_resume: Option<u16>,
+
+    /// `true` while the battle track is playing (set by
+    /// [`World::swap_to_battle_bgm`], cleared by
+    /// [`World::restore_field_bgm`]). Guards against double-swap / spurious
+    /// restore.
+    pub battle_bgm_active: bool,
 
     /// Active dialog request - populated by the field-VM op 0x3F handler,
     /// cleared by the engine after the user dismisses the box. The MES
@@ -669,6 +723,14 @@ pub struct World {
     /// Engines render this as a dialog-font overlay after battle.
     pub current_level_up_banner: Option<LevelUpBanner>,
 
+    /// Active post-battle Seru-capture banner. Set by [`World::resolve_captures`]
+    /// when a capture is accepted; advanced one frame per [`World::tick`] and
+    /// cleared when its [`crate::seru_learning::SeruCaptureSession`] reaches
+    /// `Done`. Engines render [`crate::seru_learning::SeruCaptureSession::current_banner`]
+    /// as a dialog-font overlay after battle, the sibling of
+    /// [`Self::current_level_up_banner`].
+    pub current_capture_banner: Option<crate::seru_learning::SeruCaptureSession>,
+
     /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
     /// `None` otherwise.
     pub world_map_ctrl: Option<WorldMapController>,
@@ -708,6 +770,24 @@ pub struct World {
     /// the field VM doesn't trigger item effects in non-battle scenes.
     pub item_catalog: crate::items::ItemCatalog,
 
+    /// Spell catalog used by the player-driven battle Magic submenu to resolve
+    /// spell ids → names / MP cost / effect. Populated at battle init from
+    /// [`crate::spells::SpellCatalog::vanilla`] (or a custom catalog via
+    /// [`World::set_spell_catalog`]); empty by default.
+    pub spell_catalog: crate::spells::SpellCatalog,
+
+    /// Art-record catalog used by the player-driven battle Arts submenu to
+    /// resolve a saved chain → its real per-strike power profile. Keyed by
+    /// `(character, art constant)`; populated from disc art data (PROT entry
+    /// `0x05C4`) via [`World::set_art_record`] when available. Empty by
+    /// default - the Arts submenu then falls back to a synthetic power profile
+    /// derived from the chain's directional commands
+    /// (see [`crate::battle_arts::synthetic_power`]).
+    pub art_records: std::collections::HashMap<
+        (legaia_art::Character, legaia_art::ActionConstant),
+        legaia_art::ArtRecord,
+    >,
+
     /// Per-actor character max MP. The retail `BattleActor` holds only
     /// the running `mp` value (not the cap); the cap lives on the
     /// character record at `+0x140`. Engines populate this from the
@@ -739,6 +819,19 @@ pub struct World {
     /// learned!" banner and the in-menu spell list. Pure data; saved
     /// through [`legaia_save::SaveExtV2::per_char`].
     pub seru_log: crate::seru_learning::SeruCaptureLog,
+
+    /// Master Seru registry (Seru id -> spell taught + capture points).
+    /// Engines install via [`World::set_seru_registry`]; [`World::finish_battle`]
+    /// resolves [`World::battle_captures`] against it into [`World::seru_log`].
+    /// Empty by default - captures then bank no points (the monster is still
+    /// downed + logged, but nothing is learned).
+    pub seru_registry: crate::seru_learning::SeruRegistry,
+
+    /// Capture outcomes produced by the most recently finished battle, one per
+    /// captured Seru that the registry accepted. Hosts drain this with
+    /// [`World::drain_last_capture_outcomes`] to drive the "captured / learned"
+    /// banner ([`crate::seru_learning::SeruCaptureSession`]).
+    pub last_capture_outcomes: Vec<crate::seru_learning::CaptureOutcome>,
 
     /// Total game time in wall-clock seconds since the world was
     /// instantiated or loaded. Engines tick this independently of
@@ -815,8 +908,10 @@ pub struct World {
     /// [`World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
     /// [`Self::live_gameplay_loop`]; hosts that want a playable battle
-    /// (`legaia-engine play-window`) set both after boot. v0.1 enables only
-    /// the Attack command.
+    /// (`legaia-engine play-window`) set both after boot. All four commands
+    /// are wired: Attack strikes; Arts / Magic / Item open
+    /// [`Self::battle_arts_menu`] / [`Self::battle_spell_menu`] /
+    /// [`Self::battle_item_menu`].
     pub battle_player_driven: bool,
 
     /// Active command-selection session for the player-driven battle. `Some`
@@ -825,6 +920,50 @@ pub struct World {
     /// Managed by the live loop; hosts read it to draw the command menu /
     /// target cursor.
     pub battle_command: Option<crate::battle_input::BattleCommandSession>,
+
+    /// Active inventory submenu for the player-driven battle, opened when the
+    /// player picks **Item** from the command menu. `Some` while the player
+    /// browses items / picks a target (both the action SM and
+    /// [`Self::battle_command`] are parked meanwhile); `None` otherwise. The
+    /// World owns it - not [`crate::battle_input::BattleCommandSession`] -
+    /// because it needs the live inventory + party stats. Hosts read it to
+    /// draw the item overlay.
+    pub battle_item_menu: Option<crate::inventory_use::InventoryUseSession>,
+
+    /// Active spell submenu for the player-driven battle, opened when the
+    /// player picks **Magic** from the command menu. `Some` while the player
+    /// browses spells / picks a target (both the action SM and
+    /// [`Self::battle_command`] are parked meanwhile); `None` otherwise. The
+    /// World owns it because building the spell list needs the caster's
+    /// learned spells + live MP. Hosts read it to draw the spell overlay.
+    pub battle_spell_menu: Option<crate::battle_magic::BattleSpellSession>,
+
+    /// Active Arts submenu for the player-driven battle, opened when the player
+    /// picks **Arts** from the command menu. `Some` while the player browses
+    /// saved chains / picks a target (the action SM and [`Self::battle_command`]
+    /// are parked meanwhile); `None` otherwise. The World owns it because each
+    /// row's power profile is resolved from [`Self::saved_chains`] +
+    /// [`Self::art_records`] by [`Self::build_battle_arts_rows`]. Hosts read it
+    /// to draw the arts overlay.
+    pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
+
+    /// Active stat buffs / debuffs applied by battle Magic, one entry per
+    /// `(slot, stat)`. Each holds the exact delta written into the per-slot
+    /// scalar so expiry can undo it, plus the remaining turn count (decremented
+    /// at the start of the buffed actor's turn). Cleared - and their deltas
+    /// reverted - by [`World::finish_battle`].
+    pub battle_buffs: Vec<BattleBuff>,
+
+    /// Monster ids captured this battle by a capture spell (`SpellEffect::Capture`).
+    /// The captured monster is downed immediately; the host drains this for
+    /// post-battle Seru-learning resolution (the live loop carries no Seru
+    /// registry, so the learn step itself lives outside the battle tick).
+    pub battle_captures: Vec<u16>,
+
+    /// Set when an escape spell (`SpellEffect::Escape`) resolves. The live
+    /// battle tick returns to the field on the next pass (no loot, no
+    /// game-over). Cleared by [`World::finish_battle`].
+    pub battle_escaped: bool,
 
     /// Formation currently being fought, captured at the `Field -> Battle`
     /// transition. Drives [`World::apply_battle_loot`] on victory. `None`
@@ -961,6 +1100,7 @@ impl World {
             character_ability_bits: [0; 8],
             range_table: Default::default(),
             battle_attack: [0; 8],
+            battle_magic: [0; 8],
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
             prev_action_cleared: true,
@@ -973,7 +1113,11 @@ impl World {
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
+            battle_hit_fx: Vec::new(),
             current_bgm: None,
+            battle_bgm: None,
+            field_bgm_resume: None,
+            battle_bgm_active: false,
             current_dialog: None,
             last_field_interact: None,
             party_leader_slot: None,
@@ -987,17 +1131,25 @@ impl World {
             current_art_banner: None,
             level_up_tracker: LevelUpTracker::new(),
             current_level_up_banner: None,
+            current_capture_banner: None,
             world_map_ctrl: None,
             tile_board: None,
             tile_board_target: None,
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
+            spell_catalog: crate::spells::SpellCatalog::default(),
+            art_records: std::collections::HashMap::new(),
+            battle_buffs: Vec::new(),
+            battle_captures: Vec::new(),
+            battle_escaped: false,
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
             saved_chains: Vec::new(),
             seru_log: crate::seru_learning::SeruCaptureLog::new(),
+            seru_registry: crate::seru_learning::SeruRegistry::new(),
+            last_capture_outcomes: Vec::new(),
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
@@ -1007,6 +1159,9 @@ impl World {
             live_gameplay_loop: false,
             battle_player_driven: false,
             battle_command: None,
+            battle_item_menu: None,
+            battle_spell_menu: None,
+            battle_arts_menu: None,
             active_formation: None,
             last_battle_rewards: None,
             game_over: false,
@@ -1204,6 +1359,14 @@ impl World {
         std::mem::take(&mut self.pending_battle_events)
     }
 
+    /// Drain the presentation-only per-strike HP deltas queued by the live
+    /// battle loop. Engines feed these into a damage-popup model; the HP
+    /// mutation has already happened, so they are never re-applied. Returns
+    /// the FX in the order they were resolved this frame.
+    pub fn drain_battle_hit_fx(&mut self) -> Vec<BattleHitFx> {
+        std::mem::take(&mut self.battle_hit_fx)
+    }
+
     /// Apply the gameplay-state side of a single battle event - currently
     /// `ApplyArtStrike` (subtracts the resolved damage from the target's
     /// `BattleActor::hp`, clamping at zero, and records the enemy effect on
@@ -1272,6 +1435,89 @@ impl World {
         self.item_catalog = catalog;
     }
 
+    /// Install the spell catalog used by the player-driven battle Magic
+    /// submenu. Engines call this at battle init (commonly
+    /// [`crate::spells::SpellCatalog::vanilla`]).
+    pub fn set_spell_catalog(&mut self, catalog: crate::spells::SpellCatalog) {
+        self.spell_catalog = catalog;
+    }
+
+    /// Stage one decoded art record for the player-driven battle Arts submenu,
+    /// keyed by `(character, art constant)`. Engines call this at battle init
+    /// for every art the party can run (parsed from disc PROT entry `0x05C4`)
+    /// so a saved chain ending in that art deals its real per-strike power.
+    pub fn set_art_record(
+        &mut self,
+        character: legaia_art::Character,
+        action: legaia_art::ActionConstant,
+        record: legaia_art::ArtRecord,
+    ) {
+        self.art_records.insert((character, action), record);
+    }
+
+    /// Bulk-install art records (see [`World::set_art_record`]). Existing
+    /// entries for the same key are replaced.
+    pub fn set_art_records(
+        &mut self,
+        records: impl IntoIterator<
+            Item = (
+                (legaia_art::Character, legaia_art::ActionConstant),
+                legaia_art::ArtRecord,
+            ),
+        >,
+    ) {
+        self.art_records.extend(records);
+    }
+
+    /// Resolve a party slot to the [`legaia_art::Character`] whose art tables
+    /// apply. Party slots 0/1/2 are Vahn/Noa/Gala; out-of-range slots (story
+    /// guests, monsters) fall back to Vahn so the lookup never panics.
+    fn caster_character(&self, slot: u8) -> legaia_art::Character {
+        legaia_art::Character::all()
+            .get(slot as usize)
+            .copied()
+            .unwrap_or(legaia_art::Character::Vahn)
+    }
+
+    /// Build the Arts submenu rows for `caster` from their saved chains. For
+    /// each chain, the longest staged art record whose command string the
+    /// chain ends with ([`crate::battle_arts::chain_matches_record`]) supplies
+    /// the real power profile; chains with no matching record fall back to a
+    /// synthetic profile derived from the directional commands.
+    fn build_battle_arts_rows(&self, caster: u8) -> Vec<crate::battle_arts::ArtRow> {
+        use crate::battle_arts::{
+            ArtRow, chain_matches_record, power_from_record, synthetic_power,
+        };
+        let character = self.caster_character(caster);
+        self.saved_chains
+            .iter()
+            .filter(|c| c.char_slot == caster)
+            .map(|c| {
+                let best = self
+                    .art_records
+                    .iter()
+                    .filter(|((ch, _), _)| *ch == character)
+                    .filter(|(_, rec)| chain_matches_record(&c.sequence, rec))
+                    .max_by_key(|(_, rec)| rec.commands.len());
+                match best {
+                    Some((_, rec)) => {
+                        let (power, enemy_effect) = power_from_record(rec);
+                        ArtRow {
+                            name: c.name.clone(),
+                            power,
+                            enemy_effect,
+                        }
+                    }
+                    None => ArtRow {
+                        name: c.name.clone(),
+                        power: synthetic_power(&c.sequence),
+                        enemy_effect: legaia_art::EnemyEffect::None,
+                    },
+                }
+            })
+            .collect()
+    }
+
     /// Use an item from the catalog against a target slot. Wraps the
     /// `items::apply_effect` resolution and folds the outcome back into
     /// world state (HP/MP deltas, status cure, revive HP). Returns the
@@ -1338,6 +1584,27 @@ impl World {
                 // Refund AP into the active actor's gauge if it's a party slot.
                 self.ap_gauges[idx].refund(amount);
             }
+            crate::items::ItemOutcome::DamageDealt { amount } => {
+                // Offensive item (e.g. Bomb): subtract HP from the enemy slot
+                // and down it if it reaches zero.
+                if let Some(a) = self.actors.get_mut(idx) {
+                    a.battle.hp = a.battle.hp.saturating_sub(amount);
+                    if a.battle.hp == 0 {
+                        a.battle.liveness = 0;
+                    }
+                }
+            }
+            crate::items::ItemOutcome::CaptureRolled { strength } => {
+                // Capture item: roll against the enemy's missing-HP fraction
+                // (shared with the Magic capture path); a success downs the
+                // monster and logs its id into `battle_captures`.
+                self.resolve_capture(target_slot, strength.min(u8::MAX as u16) as u8);
+            }
+            crate::items::ItemOutcome::EscapeRequested => {
+                // Escape item (e.g. Goblin Foot): flag the encounter to end;
+                // the battle item-menu tick returns to the field.
+                self.battle_escaped = true;
+            }
             _ => {}
         }
         outcome
@@ -1370,6 +1637,15 @@ impl World {
     pub fn set_battle_attack(&mut self, slot: u8, atk: u16) {
         if let Some(s) = self.battle_attack.get_mut(slot as usize) {
             *s = atk;
+        }
+    }
+
+    /// Set the per-slot magic attack scalar used by battle Magic damage
+    /// resolution. Engines call this at battle init from the active stat
+    /// record's magic stat.
+    pub fn set_battle_magic(&mut self, slot: u8, mag: u16) {
+        if let Some(s) = self.battle_magic.get_mut(slot as usize) {
+            *s = mag;
         }
     }
 
@@ -1731,10 +2007,18 @@ impl World {
             }
             // Spells: the per-character learned spell list from the seru log.
             ce.spells = self.seru_log.learned_spells(slot).to_vec();
-            // Seru captures: walk the ext mirror - fall back to empty for
-            // characters that haven't captured anything yet.
+            // Seru captures: export the live log's per-Seru capture-point
+            // progress (real seru_id -> points) so sub-threshold progress
+            // survives a save/load. Sorted for deterministic output.
+            ce.seru_captures = self
+                .seru_log
+                .iter_rows()
+                .filter(|(s, _, _)| *s == slot)
+                .map(|(_, sid, row)| (sid, row.points))
+                .collect();
+            ce.seru_captures.sort_by_key(|&(sid, _)| sid);
+            // Active-chain selection still lives in the per-char ext mirror.
             if let Some((_, src)) = self.per_char_ext.iter().find(|(s, _)| *s == slot) {
-                ce.seru_captures = src.seru_captures.clone();
                 ce.active_chains = src.active_chains;
             }
             per_char.push((slot, ce));
@@ -1799,14 +2083,26 @@ impl World {
                     self.tactical_arts.mark_known(*slot, art_id);
                 }
             }
-            // Re-seed the seru log's learned-spells list. We synthesise
-            // a placeholder seru_id for each spell since the save layer
-            // only persists the spell ids - engines can rebuild the
-            // capture-points totals from the saved seru_captures pairs.
+            // Restore per-Seru capture-point progress. When the registry is
+            // installed, a row that's already over threshold restores as
+            // learned (with its spell), so a later capture doesn't re-fire
+            // the learn event.
+            for &(sid, pts) in &ce.seru_captures {
+                let def = self.seru_registry.get(sid);
+                let learned = def.is_some_and(|d| pts >= d.learn_threshold);
+                let spell_id = def.map(|d| d.spell_id);
+                self.seru_log
+                    .restore_row(*slot, sid, pts, 0, learned, spell_id);
+            }
+            // Ensure every persisted learned spell lands in the learned list,
+            // even with no registry installed: map it back to its teaching
+            // Seru when known, else key by the spell id as a surrogate.
             for &spell_id in &ce.spells {
-                // seru_id is unknown without the registry; use spell_id
-                // as a surrogate key (preserves uniqueness within a slot).
-                self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
+                if let Some(def) = self.seru_registry.seru_for_spell(spell_id) {
+                    self.seru_log.mark_learned(*slot, def.id, spell_id);
+                } else {
+                    self.seru_log.mark_learned(*slot, spell_id as u16, spell_id);
+                }
             }
         }
     }
@@ -2188,6 +2484,13 @@ impl World {
                 banner.frames_remaining -= 1;
             } else {
                 self.current_level_up_banner = None;
+            }
+        }
+        // Advance the post-battle Seru-capture banner; clear when it finishes.
+        if let Some(banner) = &mut self.current_capture_banner {
+            banner.tick_frame();
+            if banner.is_done() {
+                self.current_capture_banner = None;
             }
         }
         match self.mode {
@@ -2903,6 +3206,61 @@ impl World {
     /// monster. The battle-action context is seeded at `Begin` with the
     /// Attack action queued. This is the live-loop counterpart to the
     /// generic [`Self::enter_battle`] placement helper.
+    /// Configure the battle BGM track id. `Some(id)` enables the
+    /// Battle↔Field music swap (the live loop switches to `id` on encounter
+    /// and restores the field track on battle end); `None` disables it. See
+    /// [`World::battle_bgm`].
+    pub fn set_battle_bgm(&mut self, bgm_id: Option<u16>) {
+        self.battle_bgm = bgm_id;
+    }
+
+    /// Switch to the configured battle track at encounter start. No-op when
+    /// [`World::battle_bgm`] is `None` or the swap is already active. Stashes
+    /// the current field track for [`World::restore_field_bgm`] and queues a
+    /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
+    fn swap_to_battle_bgm(&mut self) {
+        let Some(battle) = self.battle_bgm else {
+            return;
+        };
+        if self.battle_bgm_active || self.current_bgm == Some(battle) {
+            return;
+        }
+        self.field_bgm_resume = self.current_bgm;
+        self.current_bgm = Some(battle);
+        self.battle_bgm_active = true;
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: battle,
+            sub_op: 1,
+        });
+    }
+
+    /// Restore the field track stashed by [`World::swap_to_battle_bgm`] when
+    /// a battle ends. No-op unless a battle swap is active. Queues a
+    /// `FieldEvent::Bgm` start for the stashed track, or a stop (sub-op 4)
+    /// when no field track was playing at encounter start.
+    fn restore_field_bgm(&mut self) {
+        if !self.battle_bgm_active {
+            return;
+        }
+        self.battle_bgm_active = false;
+        match self.field_bgm_resume.take() {
+            Some(track) => {
+                self.current_bgm = Some(track);
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: track,
+                    sub_op: 1,
+                });
+            }
+            None => {
+                self.current_bgm = None;
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: 0,
+                    sub_op: 4,
+                });
+            }
+        }
+    }
+
     fn enter_battle_from_formation(&mut self, formation: &crate::monster_catalog::FormationDef) {
         let party_count = self.party_count.clamp(1, 3);
         let monster_count = formation.slots.len().min(5) as u8;
@@ -2944,6 +3302,9 @@ impl World {
         }
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
+        // Switch to the battle track (if configured) - the host's BGM
+        // director cross-fades from the field music.
+        self.swap_to_battle_bgm();
         if self.battle_player_driven {
             // Player-driven: don't pre-arm the first attack - open the command
             // menu for party member 0 and let the SM idle until the player
@@ -3026,6 +3387,40 @@ impl World {
                 self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
                 // Session done; SM resumes next tick.
             }
+            Some(Resolution::OpenArtsMenu) => {
+                // Player picked Arts: hand off to the saved-chain submenu (same
+                // pattern as Magic / Item). `tick_battle_arts_menu` drives until
+                // the player runs an art (turn cycles via EndOfAction) or backs
+                // out.
+                self.battle_ctx.active_actor = session.actor;
+                let rows = self.build_battle_arts_rows(session.actor);
+                self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+                    session.actor,
+                    session.actor,
+                    rows,
+                ));
+            }
+            Some(Resolution::OpenSpellMenu) => {
+                // Player picked Magic: hand off to the spell submenu (same
+                // pattern as Item). `tick_battle_spell_menu` drives until the
+                // player casts (turn cycles via EndOfAction) or backs out.
+                self.battle_ctx.active_actor = session.actor;
+                match self.build_battle_spell_session(session.actor) {
+                    Some(menu) => self.battle_spell_menu = Some(menu),
+                    // No caster record / no catalog - don't strand the SM;
+                    // reopen the command menu so the player can pick again.
+                    None => self.open_battle_command(session.actor),
+                }
+            }
+            Some(Resolution::OpenItemMenu) => {
+                // Player picked Item: hand off to the inventory submenu. The
+                // command session is dropped (already taken) and the action SM
+                // stays parked; `tick_battle_item_menu` drives until the player
+                // uses an item (turn cycles via EndOfAction) or backs out
+                // (the command menu reopens for the same actor).
+                self.battle_ctx.active_actor = session.actor;
+                self.battle_item_menu = Some(self.build_battle_item_session());
+            }
             Some(Resolution::Aborted) => {
                 // No valid target the player could pick - arm a default strike
                 // on the first living monster so the loop progresses.
@@ -3046,6 +3441,781 @@ impl World {
                 self.battle_command = Some(session);
             }
         }
+    }
+
+    /// Drive the open battle Arts submenu one frame from [`World::input`].
+    ///
+    /// Edge-triggered pad → one [`crate::battle_arts::BattleArtsInput`] per
+    /// frame. On a confirmed execution the art runs via [`Self::apply_battle_art`]
+    /// (driving each strike's power byte through the real `apply_art_strike`
+    /// path) and the action SM parks at `EndOfAction` so the live loop cycles to
+    /// the next combatant. Backing out reopens the command menu.
+    fn tick_battle_arts_menu(&mut self) {
+        use crate::battle_arts::{ArtsResolution, BattleArtsInput};
+        use crate::input::PadButton;
+        use crate::target_picker::SlotState;
+
+        let Some(mut menu) = self.battle_arts_menu.take() else {
+            return;
+        };
+
+        let party_count = self.party_count.clamp(1, 3);
+        let slot_at = |idx: usize| -> SlotState {
+            match self.actors.get(idx) {
+                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
+                _ => SlotState::default(),
+            }
+        };
+        let mut party = [SlotState::default(); 3];
+        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
+            *p = slot_at(i);
+        }
+        let mut monsters = [SlotState::default(); 5];
+        for (i, m) in monsters.iter_mut().enumerate() {
+            *m = slot_at(party_count as usize + i);
+        }
+
+        let ev = BattleArtsInput {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+        };
+        menu.input(ev, party, monsters);
+
+        match menu.resolved() {
+            Some(ArtsResolution::Confirmed {
+                art_index,
+                target_row,
+                target_slot,
+            }) => {
+                let caster = menu.actor;
+                let (power, enemy_effect) = menu
+                    .arts
+                    .get(art_index as usize)
+                    .map(|a| (a.power.clone(), a.enemy_effect))
+                    .unwrap_or_default();
+                self.apply_battle_art(caster, &power, enemy_effect, target_row, target_slot);
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
+            Some(ArtsResolution::Aborted) => {
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            None => {
+                self.battle_arts_menu = Some(menu);
+            }
+        }
+    }
+
+    /// Execute an art against the picked target through the real art-power
+    /// path.
+    ///
+    /// Each [`legaia_art::PowerByte`] in `power` drives one strike through
+    /// [`crate::art_strike::apply_art_strike`]: the byte's multiplier tier +
+    /// UDF/LDF target are decoded, [`Self::resolve_battle_defense`] picks the
+    /// matching defense half (when a UDF/LDF split is configured), and the
+    /// per-strike damage is deducted. The art's `enemy_effect` is applied once
+    /// after a landing hit (if the target survives). Summed damage surfaces as
+    /// one HUD popup; the target is downed if its HP reaches zero.
+    ///
+    /// `power` comes from the matched art record when one is staged, else a
+    /// synthetic per-direction profile (see [`Self::build_battle_arts_rows`]),
+    /// so the same kernel handles both real and demo arts.
+    fn apply_battle_art(
+        &mut self,
+        caster: u8,
+        power: &[legaia_art::PowerByte],
+        enemy_effect: legaia_art::EnemyEffect,
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        use crate::target_picker::CursorRow;
+        use legaia_engine_vm::battle_action::ArtStrikeInfo;
+        let party_count = self.party_count.clamp(1, 3);
+        let target = match target_row {
+            CursorRow::Enemy => party_count + target_slot,
+            CursorRow::Ally => target_slot,
+        } as usize;
+        if target >= self.actors.len() {
+            return;
+        }
+        let attack = self
+            .battle_attack
+            .get(caster as usize)
+            .copied()
+            .unwrap_or(0);
+        let character = self.caster_character(caster);
+        let mut total: u32 = 0;
+        let mut landed: u8 = 0;
+        for (i, pb) in power.iter().enumerate() {
+            if self.actors[target].battle.liveness == 0 {
+                break;
+            }
+            // Minimal per-strike info: `apply_art_strike` + `resolve_battle_defense`
+            // only read `power` + `enemy_effect`. `art` is a placeholder; the
+            // live loop doesn't drive the per-art animation script.
+            let info = ArtStrikeInfo {
+                strike_index: i as u8,
+                anim_byte: 0,
+                actor_slot: caster,
+                target_slot: target as u8,
+                character,
+                art: legaia_art::ActionConstant::Art1B,
+                power: Some(*pb),
+                dmg_timing: None,
+                enemy_effect,
+                hit_cue: None,
+            };
+            let defense = self.resolve_battle_defense(target as u8, &info);
+            let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
+            if let Some(dmg) = outcome.damage {
+                let a = &mut self.actors[target].battle;
+                a.hp = a.hp.saturating_sub(dmg);
+                total = total.saturating_add(dmg as u32);
+                landed = landed.saturating_add(1);
+                if a.hp == 0 {
+                    a.liveness = 0;
+                }
+            }
+        }
+        if landed > 0
+            && enemy_effect != legaia_art::EnemyEffect::None
+            && self.actors[target].battle.liveness != 0
+        {
+            self.status_effects
+                .apply_from_enemy_effect(target as u8, enemy_effect);
+        }
+        if total > 0 {
+            self.battle_hit_fx.push(BattleHitFx {
+                target_slot: target as u8,
+                amount: total.min(u16::MAX as u32) as u16,
+                is_heal: false,
+                is_crit: landed > 1,
+            });
+        }
+    }
+
+    /// Build the battle Magic submenu for `caster` (an actor-table / party-row
+    /// index). Reads the caster's learned spells off their roster record and
+    /// their live battle MP to grey out unaffordable rows. Returns `None` when
+    /// there's no roster record for the slot (the caller reopens the command
+    /// menu so the SM isn't stranded).
+    fn build_battle_spell_session(
+        &self,
+        caster: u8,
+    ) -> Option<crate::battle_magic::BattleSpellSession> {
+        let member = self.roster.members.get(caster as usize)?;
+        let list = member.spell_list();
+        let n = (list.count as usize).min(list.ids.len());
+        // Union the roster's saved spell list with anything learned via Seru
+        // capture this session, so a freshly-learned spell is immediately
+        // castable without waiting for a save/load round-trip.
+        let mut learned: Vec<u8> = list.ids[..n].to_vec();
+        for &sid in self.seru_log.learned_spells(caster) {
+            if !learned.contains(&sid) {
+                learned.push(sid);
+            }
+        }
+        let caster_mp = self
+            .actors
+            .get(caster as usize)
+            .map(|a| a.battle.mp)
+            .unwrap_or(0);
+        Some(crate::battle_magic::BattleSpellSession::new(
+            caster,
+            caster,
+            &learned,
+            &self.spell_catalog,
+            caster_mp,
+        ))
+    }
+
+    /// Drive the open battle Magic submenu one frame from [`World::input`].
+    ///
+    /// Edge-triggered pad → one [`crate::battle_magic::BattleSpellInput`] per
+    /// frame. On a confirmed cast the spell applies via [`Self::apply_battle_spell`]
+    /// (MP deducted, HP / heal / cure / revive folded, popups surfaced) and the
+    /// action SM parks at `EndOfAction` so the live loop cycles to the next
+    /// combatant - a cast is the caster's whole turn, no strike fires. Backing
+    /// out reopens the command menu for the same actor.
+    fn tick_battle_spell_menu(&mut self) {
+        use crate::battle_magic::{BattleSpellInput, SpellResolution};
+        use crate::input::PadButton;
+        use crate::target_picker::SlotState;
+
+        let Some(mut menu) = self.battle_spell_menu.take() else {
+            return;
+        };
+
+        let party_count = self.party_count.clamp(1, 3);
+        let slot_at = |idx: usize| -> SlotState {
+            match self.actors.get(idx) {
+                Some(a) if a.battle.max_hp > 0 => SlotState::alive(true, a.battle.liveness != 0),
+                _ => SlotState::default(),
+            }
+        };
+        let mut party = [SlotState::default(); 3];
+        for (i, p) in party.iter_mut().enumerate().take(party_count as usize) {
+            *p = slot_at(i);
+        }
+        let mut monsters = [SlotState::default(); 5];
+        for (i, m) in monsters.iter_mut().enumerate() {
+            *m = slot_at(party_count as usize + i);
+        }
+
+        let ev = BattleSpellInput {
+            up: self.input.just_pressed(PadButton::Up),
+            down: self.input.just_pressed(PadButton::Down),
+            left: self.input.just_pressed(PadButton::Left),
+            right: self.input.just_pressed(PadButton::Right),
+            cross: self.input.just_pressed(PadButton::Cross),
+            circle: self.input.just_pressed(PadButton::Circle),
+        };
+        menu.input(ev, &self.spell_catalog, party, monsters);
+
+        match menu.resolved() {
+            Some(SpellResolution::Confirmed {
+                spell_id,
+                target_row,
+                target_slot,
+            }) => {
+                let caster = menu.actor;
+                self.apply_battle_spell(caster, spell_id, target_row, target_slot);
+                if self.battle_escaped {
+                    // Escape spell succeeded: leave the encounter now (no loot,
+                    // no game-over) instead of cycling the turn.
+                    self.finish_battle();
+                } else {
+                    self.battle_ctx.action_state =
+                        vm::battle_action::ActionState::EndOfAction.as_byte();
+                }
+            }
+            Some(SpellResolution::Aborted) => {
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            None => {
+                self.battle_spell_menu = Some(menu);
+            }
+        }
+    }
+
+    /// Cast `spell_id` from `caster` against the picked target and fold the
+    /// outcome into world state. MP is deducted once up-front; the spell's
+    /// [`crate::spells::SpellTarget`] shape decides which slots are affected
+    /// (single → the picked slot; `AllEnemies` / `AllAllies` → the whole band),
+    /// each resolved through [`crate::spells::cast_spell`]. Caster magic comes
+    /// from [`Self::battle_magic`]; target magic-defense reuses
+    /// [`Self::battle_defense`]. Damage / heal / cure / revive / buff / capture
+    /// / escape all fold through [`Self::fold_spell_outcome`].
+    fn apply_battle_spell(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        target_row: crate::target_picker::CursorRow,
+        target_slot: u8,
+    ) {
+        use crate::spells::{SpellSnapshot, SpellTarget, cast_spell};
+        use crate::target_picker::CursorRow;
+
+        let Some(def) = self.spell_catalog.get(spell_id).cloned() else {
+            return;
+        };
+        let cost = def.mp_cost as u16;
+        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
+            Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
+            None => return,
+        };
+        if caster_mp_before < cost {
+            return;
+        }
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.mp = a.battle.mp.saturating_sub(cost);
+        }
+
+        let party_count = self.party_count.clamp(1, 3);
+        let targets: Vec<u8> = match def.target {
+            SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
+                let abs = match target_row {
+                    CursorRow::Enemy => party_count + target_slot,
+                    CursorRow::Ally => target_slot,
+                };
+                vec![abs]
+            }
+            SpellTarget::AllEnemies => (party_count..self.actors.len() as u8).collect(),
+            SpellTarget::AllAllies => (0..party_count).collect(),
+        };
+        let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
+
+        for t in targets {
+            let Some(actor) = self.actors.get(t as usize) else {
+                continue;
+            };
+            // Skip empty monster slots (no configured HP).
+            if actor.battle.max_hp == 0 {
+                continue;
+            }
+            let snap = SpellSnapshot {
+                caster_mag,
+                caster_hp,
+                caster_max_hp,
+                caster_mp: caster_mp_before,
+                target_mdef: self.battle_defense.get(t as usize).copied().unwrap_or(0),
+                target_hp: actor.battle.hp,
+                target_hp_max: actor.battle.max_hp,
+                target_mp: actor.battle.mp,
+                target_alive: actor.battle.liveness != 0,
+                target_weakness: crate::spells::ElementMask::default(),
+            };
+            let outcome = cast_spell(&def, t, &snap);
+            self.fold_spell_outcome(outcome);
+        }
+    }
+
+    /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
+    /// state and surface a HUD popup. Damage subtracts HP (and downs the
+    /// target at zero); heals / revives add HP (capped); cures clear the
+    /// target's status; buffs adjust a per-slot scalar with a turn timer
+    /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
+    /// state ([`Self::resolve_capture`]); escape flags a return to the field
+    /// ([`Self::battle_escaped`]). `Failed` is a no-op (MP already spent).
+    fn fold_spell_outcome(&mut self, outcome: crate::spells::SpellOutcome) {
+        use crate::spells::SpellOutcome as O;
+        match outcome {
+            O::Damage { target, amount, .. } => {
+                if let Some(a) = self.actors.get_mut(target as usize) {
+                    a.battle.hp = a.battle.hp.saturating_sub(amount);
+                    if a.battle.hp == 0 {
+                        a.battle.liveness = 0;
+                    }
+                }
+                self.battle_hit_fx.push(BattleHitFx {
+                    target_slot: target,
+                    amount,
+                    is_heal: false,
+                    is_crit: false,
+                });
+            }
+            O::Heal { target, amount } => {
+                if let Some(a) = self.actors.get_mut(target as usize) {
+                    a.battle.hp = a.battle.hp.saturating_add(amount).min(a.battle.max_hp);
+                }
+                if amount > 0 {
+                    self.battle_hit_fx.push(BattleHitFx {
+                        target_slot: target,
+                        amount,
+                        is_heal: true,
+                        is_crit: false,
+                    });
+                }
+            }
+            O::Cure { target, .. } => {
+                self.status_effects.cure_all(target);
+            }
+            O::Revive { target, hp } => {
+                if let Some(a) = self.actors.get_mut(target as usize) {
+                    a.battle.hp = hp.min(a.battle.max_hp);
+                    if a.battle.hp > 0 {
+                        a.battle.liveness = 1;
+                    }
+                }
+                self.battle_hit_fx.push(BattleHitFx {
+                    target_slot: target,
+                    amount: hp,
+                    is_heal: true,
+                    is_crit: false,
+                });
+            }
+            O::Buff {
+                target,
+                stat,
+                magnitude,
+                turns,
+            } => {
+                self.apply_battle_buff(target, stat, magnitude, turns);
+            }
+            O::CaptureRoll { target, hit_pct } => {
+                self.resolve_capture(target, hit_pct);
+            }
+            O::Escape => {
+                self.battle_escaped = true;
+            }
+            // Multi-target variants aren't produced by per-slot casts; Failed
+            // is a no-op (MP was already spent up front).
+            _ => {}
+        }
+    }
+
+    /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
+    /// straight into the matching per-slot battle scalar so it changes damage
+    /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
+    /// [`Self::battle_attack`] / [`Self::battle_magic`] / [`Self::battle_defense`]
+    /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy). The
+    /// scalar is `u16`, so a negative magnitude saturates at zero and the
+    /// recorded `applied_delta` is the exact change (for precise undo on
+    /// expiry). Accuracy / Evasion / Speed have no live-loop scalar; the buff
+    /// is tracked with a zero delta so the turn timer still runs. Re-casting
+    /// the same `(slot, stat)` refreshes: the old delta is reverted first.
+    fn apply_battle_buff(
+        &mut self,
+        slot: u8,
+        stat: crate::spells::BuffStat,
+        magnitude: i16,
+        turns: u8,
+    ) {
+        // Refresh: revert + drop any existing buff on this (slot, stat).
+        if let Some(pos) = self
+            .battle_buffs
+            .iter()
+            .position(|b| b.slot == slot && b.stat == stat)
+        {
+            let old = self.battle_buffs.remove(pos);
+            self.add_to_buff_scalar(old.slot, old.stat, -old.applied_delta);
+        }
+        if turns == 0 {
+            return;
+        }
+        let applied_delta = self.add_to_buff_scalar(slot, stat, magnitude);
+        self.battle_buffs.push(BattleBuff {
+            slot,
+            stat,
+            applied_delta,
+            turns,
+        });
+    }
+
+    /// Add `delta` to the per-slot scalar backing `stat` and return the exact
+    /// change made (after `u16` saturation). Stats with no live-loop scalar
+    /// return `0`.
+    fn add_to_buff_scalar(&mut self, slot: u8, stat: crate::spells::BuffStat, delta: i16) -> i16 {
+        use crate::spells::BuffStat;
+        let scalar = match stat {
+            BuffStat::Attack => self.battle_attack.get_mut(slot as usize),
+            BuffStat::MagicAttack => self.battle_magic.get_mut(slot as usize),
+            BuffStat::Defense | BuffStat::MagicDefense => {
+                self.battle_defense.get_mut(slot as usize)
+            }
+            BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
+        };
+        let Some(scalar) = scalar else { return 0 };
+        let before = *scalar as i32;
+        let after = (before + delta as i32).clamp(0, u16::MAX as i32);
+        *scalar = after as u16;
+        (after - before) as i16
+    }
+
+    /// Tick the buffs on `slot` at the start of its turn: decrement each, and
+    /// revert + drop those that reach zero.
+    fn tick_battle_buffs_on_turn(&mut self, slot: u8) {
+        let mut expired: Vec<BattleBuff> = Vec::new();
+        self.battle_buffs.retain_mut(|b| {
+            if b.slot != slot {
+                return true;
+            }
+            b.turns = b.turns.saturating_sub(1);
+            if b.turns == 0 {
+                expired.push(*b);
+                false
+            } else {
+                true
+            }
+        });
+        for b in expired {
+            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+        }
+    }
+
+    /// Resolve a capture-spell roll against the monster in `target`. The
+    /// effective chance scales with the monster's missing-HP fraction (full
+    /// `hit_pct` only near death, zero at full HP) - mirroring retail capture,
+    /// which is reliable only on a weakened Seru. On success the monster is
+    /// downed (so it counts toward the wipe) and its id is logged into
+    /// [`Self::battle_captures`] for post-battle Seru learning.
+    fn resolve_capture(&mut self, target: u8, hit_pct: u8) {
+        let (hp, max, monster_id, alive) = match self.actors.get(target as usize) {
+            Some(a) => (
+                a.battle.hp as u32,
+                a.battle.max_hp as u32,
+                a.battle_monster_id,
+                a.battle.liveness != 0,
+            ),
+            None => return,
+        };
+        if !alive || max == 0 {
+            return;
+        }
+        let missing = max.saturating_sub(hp);
+        let effective = (hit_pct as u32 * missing / max).min(100);
+        let roll = self.next_rng() % 100;
+        if roll >= effective {
+            return;
+        }
+        if let Some(a) = self.actors.get_mut(target as usize) {
+            a.battle.hp = 0;
+            a.battle.liveness = 0;
+        }
+        if let Some(id) = monster_id {
+            self.battle_captures.push(id);
+        }
+    }
+
+    /// Drain the monster ids captured this battle (see [`Self::battle_captures`]).
+    pub fn drain_battle_captures(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.battle_captures)
+    }
+
+    /// Install the master [`crate::seru_learning::SeruRegistry`]. Boot wires
+    /// this once; [`Self::finish_battle`] consults it to bank capture points.
+    pub fn set_seru_registry(&mut self, registry: crate::seru_learning::SeruRegistry) {
+        self.seru_registry = registry;
+    }
+
+    /// Resolve this battle's captured monsters into Seru-learning progress.
+    ///
+    /// Drains [`Self::battle_captures`] (so the list is always cleared), maps
+    /// each captured monster id to its Seru id via [`Self::monster_catalog`],
+    /// and banks capture points against [`Self::seru_log`] for every active
+    /// party slot through [`crate::seru_learning::record_capture`]. Any Seru
+    /// that crosses its learn threshold adds its spell to the character's
+    /// learned list (which [`Self::build_battle_spell_session`] then offers).
+    /// Accepted outcomes are stashed in [`Self::last_capture_outcomes`] for the
+    /// host to drive the capture / learned banner. Monsters with no Seru, or
+    /// any capture when the registry is empty, bank nothing.
+    fn resolve_captures(&mut self) {
+        let captures = std::mem::take(&mut self.battle_captures);
+        self.last_capture_outcomes.clear();
+        self.current_capture_banner = None;
+        if captures.is_empty() || self.seru_registry.is_empty() {
+            return;
+        }
+        let party_slots: Vec<u8> = (0..self.party_count.clamp(1, 3)).collect();
+        let seru_ids: Vec<u16> = captures
+            .iter()
+            .filter_map(|&mid| self.monster_catalog.get(mid).and_then(|d| d.seru_id))
+            .collect();
+        let mut first_accepted: Option<(u16, crate::seru_learning::CaptureOutcome)> = None;
+        for sid in seru_ids {
+            let outcome = crate::seru_learning::record_capture(
+                &self.seru_registry,
+                &mut self.seru_log,
+                sid,
+                &party_slots,
+            );
+            if outcome.accepted {
+                if first_accepted.is_none() {
+                    first_accepted = Some((sid, outcome.clone()));
+                }
+                self.last_capture_outcomes.push(outcome);
+            }
+        }
+        // Build the host-facing banner for the first accepted capture (a
+        // single battle captures at most one Seru in practice). Names resolve
+        // the Seru from the registry and the learned spell from the catalog.
+        if let Some((sid, outcome)) = first_accepted {
+            let seru_name = self
+                .seru_registry
+                .get(sid)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| format!("Seru {sid:#04X}"));
+            let spell_catalog = &self.spell_catalog;
+            let banner = crate::seru_learning::SeruCaptureSession::new(
+                seru_name,
+                sid,
+                outcome,
+                |char_slot, spell_id| {
+                    let char_name = format!("Character {}", char_slot + 1);
+                    let spell_name = spell_catalog
+                        .get(spell_id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+                    (char_name, spell_name)
+                },
+            );
+            self.current_capture_banner = Some(banner);
+        }
+    }
+
+    /// Drain the capture outcomes from the most recently finished battle.
+    pub fn drain_last_capture_outcomes(&mut self) -> Vec<crate::seru_learning::CaptureOutcome> {
+        std::mem::take(&mut self.last_capture_outcomes)
+    }
+
+    /// Build the battle-context inventory submenu from live world state:
+    /// every item the player holds (`count > 0`), one party-member target row
+    /// per configured party slot, then one enemy row per live monster slot
+    /// (tagged `is_enemy`). Healing / cure / revive items validate against the
+    /// party rows; offensive items (Bomb / capture / escape) validate against
+    /// the enemy rows - the session routes the cursor to the correct side.
+    fn build_battle_item_session(&self) -> crate::inventory_use::InventoryUseSession {
+        use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow};
+        let names = crate::field_menu_dispatch::roster_names(self);
+        let items: Vec<u8> = self
+            .inventory
+            .iter()
+            .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
+            .collect();
+        let pc = self.party_count.clamp(1, 3) as usize;
+        let mut targets: Vec<TargetRow> = (0..pc)
+            .filter_map(|i| {
+                let a = self.actors.get(i)?;
+                // Skip unconfigured party slots (no battle stats).
+                if a.battle.max_hp == 0 {
+                    return None;
+                }
+                let mp_max = self.character_max_mp.get(i).copied().unwrap_or(0);
+                let name = names
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("P{}", i + 1));
+                let mut row = TargetRow::new(i as u8, name).with_stats(
+                    a.battle.hp,
+                    a.battle.max_hp,
+                    a.battle.mp,
+                    mp_max,
+                );
+                row.alive = a.battle.liveness != 0;
+                Some(row)
+            })
+            .collect();
+        // Enemy rows: every monster slot that's configured for battle. Tagged
+        // `is_enemy` so the session only accepts offensive items here.
+        for slot in pc..self.actors.len() {
+            let Some(a) = self.actors.get(slot) else {
+                break;
+            };
+            if a.battle.max_hp == 0 || a.battle_monster_id.is_none() {
+                continue;
+            }
+            let name = a
+                .battle_monster_id
+                .and_then(|id| self.monster_catalog.get(id))
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| format!("Enemy {}", slot - pc + 1));
+            let mut row = TargetRow::new(slot as u8, name)
+                .with_stats(a.battle.hp, a.battle.max_hp, 0, 0)
+                .with_enemy(true);
+            row.alive = a.battle.liveness != 0;
+            targets.push(row);
+        }
+        InventoryUseSession::new(
+            self.item_catalog.clone(),
+            items,
+            targets,
+            InventoryContext::Battle,
+        )
+    }
+
+    /// Drive the open battle inventory submenu one frame from [`World::input`].
+    ///
+    /// Edge-triggered pad → one [`crate::inventory_use::InventoryUseInput`] per
+    /// frame. On a completed use the chosen item is applied authoritatively via
+    /// [`Self::use_item`], one copy is consumed from the inventory, a heal /
+    /// cure popup is surfaced for the HUD, and the action SM is parked at
+    /// `EndOfAction` so the live loop cycles to the next combatant (no strike
+    /// fires - using an item is the actor's whole turn). Backing out reopens
+    /// the command menu for the same actor.
+    fn tick_battle_item_menu(&mut self) {
+        use crate::input::PadButton;
+        use crate::inventory_use::{InventoryUseEvent, InventoryUseInput, InventoryUseState};
+
+        let Some(mut menu) = self.battle_item_menu.take() else {
+            return;
+        };
+
+        let ev = if self.input.just_pressed(PadButton::Up) {
+            Some(InventoryUseInput::Up)
+        } else if self.input.just_pressed(PadButton::Down) {
+            Some(InventoryUseInput::Down)
+        } else if self.input.just_pressed(PadButton::Cross) {
+            Some(InventoryUseInput::Confirm)
+        } else if self.input.just_pressed(PadButton::Circle) {
+            Some(InventoryUseInput::Cancel)
+        } else {
+            None
+        };
+
+        // The item under the cursor before the input - `current_item` reads
+        // the `item_cursor` in TargetSelect, so this is the item that a Confirm
+        // on a target row resolves to (the Done state no longer exposes it).
+        let item_before = menu.current_item().map(|e| e.id);
+        if let Some(ev) = ev {
+            menu.input(ev);
+        }
+        let used = menu.drain_events().into_iter().find_map(|e| match e {
+            InventoryUseEvent::Used { slot, .. } => Some(slot),
+            _ => None,
+        });
+
+        if let Some(target_slot) = used {
+            if let Some(item_id) = item_before {
+                let outcome = self.use_item(item_id, target_slot);
+                self.consume_item(item_id);
+                self.push_item_use_fx(target_slot, outcome);
+            }
+            if self.battle_escaped {
+                // Escape item succeeded: leave the encounter now (no loot, no
+                // game-over) instead of cycling the turn.
+                self.finish_battle();
+            } else {
+                // Using an item is the actor's whole turn: park at EndOfAction
+                // so the live loop's re-arm block cycles to the next combatant.
+                self.battle_ctx.action_state =
+                    vm::battle_action::ActionState::EndOfAction.as_byte();
+            }
+            return;
+        }
+
+        match menu.state {
+            InventoryUseState::Aborted => {
+                // Backed out without using an item - reopen the command menu.
+                let actor = self.battle_ctx.active_actor;
+                self.open_battle_command(actor);
+            }
+            _ => {
+                // Still browsing / target-selecting - keep the menu open.
+                self.battle_item_menu = Some(menu);
+            }
+        }
+    }
+
+    /// Remove one copy of `item_id` from the inventory, dropping the entry
+    /// when the count reaches zero. No-op when the player holds none.
+    pub fn consume_item(&mut self, item_id: u8) {
+        if let Some(qty) = self.inventory.get_mut(&item_id) {
+            *qty = qty.saturating_sub(1);
+            if *qty == 0 {
+                self.inventory.remove(&item_id);
+            }
+        }
+    }
+
+    /// Surface a cosmetic HUD popup for a resolved item use. Heals / MP
+    /// restores / revives push a heal-coloured number; offensive items push a
+    /// damage-coloured number; cures push the status letter. The HP / status
+    /// side is already applied by [`Self::use_item`]; this is presentation-only
+    /// (drained via [`Self::drain_battle_hit_fx`]).
+    fn push_item_use_fx(&mut self, target_slot: u8, outcome: crate::items::ItemOutcome) {
+        use crate::items::ItemOutcome;
+        let (amount, is_heal) = match outcome {
+            ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => (amount, true),
+            ItemOutcome::Revived { hp_after } => (hp_after, true),
+            ItemOutcome::DamageDealt { amount } => (amount, false),
+            // Cures / capture / escape / stat boosts / no-effect: no number.
+            _ => return,
+        };
+        if amount == 0 {
+            return;
+        }
+        self.battle_hit_fx.push(BattleHitFx {
+            target_slot,
+            amount,
+            is_heal,
+            is_crit: false,
+        });
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by
@@ -3072,6 +4242,30 @@ impl World {
     fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // Player-driven: while the Arts submenu is open the action SM is
+        // parked - drive it from the pad and return until the player runs an
+        // art (turn cycles) or backs out (reopens the command menu).
+        if self.battle_arts_menu.is_some() {
+            self.tick_battle_arts_menu();
+            return None;
+        }
+
+        // Player-driven: while the spell submenu is open the action SM is
+        // parked - drive it from the pad and return until the player casts
+        // (turn cycles) or backs out (reopens the command menu).
+        if self.battle_spell_menu.is_some() {
+            self.tick_battle_spell_menu();
+            return None;
+        }
+
+        // Player-driven: while the inventory submenu is open the action SM is
+        // parked - drive it from the pad and return until the player uses an
+        // item (turn cycles) or backs out (reopens the command menu).
+        if self.battle_item_menu.is_some() {
+            self.tick_battle_item_menu();
+            return None;
+        }
+
         // Player-driven: while a command session is open the action SM is
         // parked - drive the command picker from the pad and return without
         // advancing the SM until the player confirms.
@@ -3087,8 +4281,25 @@ impl World {
         let events = std::mem::take(&mut self.pending_battle_events);
         let mut art_strike_applied = false;
         for e in &events {
-            if matches!(e, BattleEvent::ApplyArtStrike { .. }) {
+            if let BattleEvent::ApplyArtStrike {
+                target_slot,
+                outcome,
+                ..
+            } = e
+            {
                 art_strike_applied = true;
+                // Surface the resolved strike damage for HUD popups (the
+                // fold below applies the HP side; this is cosmetic only).
+                if let Some(dmg) = outcome.damage
+                    && dmg > 0
+                {
+                    self.battle_hit_fx.push(BattleHitFx {
+                        target_slot: *target_slot,
+                        amount: dmg,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+                }
             }
             self.fold_battle_event(e);
         }
@@ -3126,27 +4337,41 @@ impl World {
                 .clear(ActorFlags::ADVANCE_DONE);
         }
 
-        // Re-arm the next party attacker when the SM idles at EndOfAction
-        // with monsters still alive.
+        // Re-arm the next combatant when the SM idles at EndOfAction, cycling
+        // across the whole actor table (party AND monsters) in slot order so
+        // monsters take their turns. Only re-arm while BOTH sides still have a
+        // living member - if either side is wiped we leave the SM at
+        // EndOfAction so its liveness scan resolves the wipe into
+        // BattleComplete next step.
         let party_count = self.party_count.max(1);
-        let monsters_alive = (party_count..self.actors.len() as u8)
-            .any(|i| self.actors[i as usize].battle.liveness != 0);
-        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte() && monsters_alive {
-            let next = (self.battle_ctx.active_actor + 1) % party_count;
-            if self.battle_player_driven {
-                // Pause the SM and let the player pick the next member's
-                // command. `tick_battle_command` arms the SM on confirm.
+        let n = self.actors.len() as u8;
+        let party_alive = (0..party_count).any(|i| self.actors[i as usize].battle.liveness != 0);
+        let monsters_alive = (party_count..n).any(|i| self.actors[i as usize].battle.liveness != 0);
+        if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
+            && party_alive
+            && monsters_alive
+            && let Some(next) = self.next_living_combatant(self.battle_ctx.active_actor)
+        {
+            // Start-of-turn: age this actor's buffs / debuffs, reverting any
+            // that expire this turn.
+            self.tick_battle_buffs_on_turn(next);
+            let next_is_party = next < party_count;
+            if next_is_party && self.battle_player_driven {
+                // Party turn under player control: pause the SM and let the
+                // player pick the command. `tick_battle_command` arms the SM
+                // on confirm.
                 self.open_battle_command(next);
             } else {
+                // Auto-resolved turn (any monster turn, or a party turn when
+                // not player-driven). Arm a generic physical attack against
+                // the first living opponent.
+                let target = self.first_living_opponent_of(next).unwrap_or(next);
                 self.battle_ctx.active_actor = next;
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
-                let target = (party_count..self.actors.len() as u8)
-                    .find(|&i| self.actors[i as usize].battle.liveness != 0)
-                    .unwrap_or(party_count);
-                for slot in 0..party_count as usize {
-                    self.actors[slot].battle.active_target = target;
-                    self.actors[slot].battle.action_category = 3;
+                if let Some(a) = self.actors.get_mut(next as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3;
                 }
             }
         }
@@ -3158,17 +4383,18 @@ impl World {
     }
 
     /// Apply one generic physical strike from the active attacker to the
-    /// first living monster. v0.1 stand-in for the art-driven strike path:
-    /// `damage = art_strike_damage_default(attack, defense, 16)` (≈
-    /// `attack - defense`, floored at 1) so a party with no configured
-    /// weapon attack still chips the monster down. Always hits (no accuracy
-    /// roll) to guarantee the loop resolves.
+    /// first living combatant on the opposing side. v0.1 stand-in for the
+    /// art-driven strike path: `damage = art_strike_damage_default(attack,
+    /// defense, 16)` (≈ `attack - defense`, floored at 1) so a party with no
+    /// configured weapon attack still chips the monster down - and, for a
+    /// monster attacker, a monster with no configured attack still chips the
+    /// party. Always hits (no accuracy roll) to guarantee the loop resolves.
+    ///
+    /// The opposing side is chosen by the attacker's slot: party slots
+    /// (`< party_count`) strike monsters; monster slots strike the party.
     fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor as usize;
-        let party_count = self.party_count.max(1);
-        let Some(target) = (party_count..self.actors.len() as u8)
-            .find(|&i| self.actors[i as usize].battle.liveness != 0)
-        else {
+        let Some(target) = self.first_living_opponent_of(attacker as u8) else {
             return;
         };
         let target = target as usize;
@@ -3180,6 +4406,42 @@ impl World {
         if a.battle.hp == 0 {
             a.battle.liveness = 0;
         }
+        // Surface the strike for HUD damage popups.
+        self.battle_hit_fx.push(BattleHitFx {
+            target_slot: target as u8,
+            amount: dmg,
+            is_heal: false,
+            is_crit: false,
+        });
+    }
+
+    /// First living actor on the side opposing `attacker`. Party slots
+    /// (`< party_count`) oppose the monster band (`party_count..`); monster
+    /// slots oppose the party. `None` if that side is wiped.
+    fn first_living_opponent_of(&self, attacker: u8) -> Option<u8> {
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
+        (lo..hi).find(|&i| {
+            self.actors
+                .get(i as usize)
+                .is_some_and(|a| a.battle.liveness != 0)
+        })
+    }
+
+    /// Next living combatant after `after` in round-robin slot order across
+    /// the whole actor table (party then monsters, wrapping). Drives the live
+    /// loop's turn cycling so monsters take turns interleaved with the party.
+    /// `None` only when no actor is alive.
+    fn next_living_combatant(&self, after: u8) -> Option<u8> {
+        let n = self.actors.len();
+        if n == 0 {
+            return None;
+        }
+        (1..=n).find_map(|step| {
+            let idx = (after as usize + step) % n;
+            (self.actors[idx].battle.liveness != 0).then_some(idx as u8)
+        })
     }
 
     /// Resolve a finished battle and return to the field.
@@ -3206,8 +4468,27 @@ impl World {
         }
         self.active_formation = None;
         self.battle_end = None;
-        // Drop any open command session - it belongs to the finished battle.
+        self.battle_escaped = false;
+        // Restore the field track stashed at encounter start (cross-fades
+        // back from the battle music). No-op if no swap was active.
+        self.restore_field_bgm();
+        // Revert any lingering buff deltas so the per-slot scalars return to
+        // base, then drop the trackers + captured-id log (a new battle re-inits
+        // these).
+        let buffs = std::mem::take(&mut self.battle_buffs);
+        for b in buffs {
+            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+        }
+        // Bank any captured Seru into learning progress (drains battle_captures).
+        self.resolve_captures();
+        // Drop any open command / item / spell session - they belong to the
+        // finished battle.
         self.battle_command = None;
+        self.battle_item_menu = None;
+        self.battle_spell_menu = None;
+        self.battle_arts_menu = None;
+        // Stale damage popups must not bleed into the next encounter / field.
+        self.battle_hit_fx.clear();
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Restore the field actor table captured at the transition.
@@ -6234,6 +7515,1060 @@ mod tests {
         let rewards = world.apply_battle_loot(&formation, &cat);
         assert_eq!(rewards.drops, vec![0x42]);
         assert_eq!(world.inventory.get(&0x42).copied(), Some(1));
+    }
+
+    #[test]
+    fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        // Slot 0 attacker, slot 1 a living monster.
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.hp = 60;
+        world.actors[1].battle.max_hp = 60;
+        world.actors[1].battle.liveness = 1;
+        world.battle_ctx.active_actor = 0;
+        // Give the attacker enough ATK to chip the monster (>defense).
+        world.battle_attack[0] = 40;
+        world.battle_defense[1] = 10;
+        world.apply_basic_attack();
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert_eq!(fx[0].target_slot, 1);
+        assert!(fx[0].amount > 0);
+        assert!(!fx[0].is_heal);
+        // Drain empties the queue.
+        assert!(world.drain_battle_hit_fx().is_empty());
+    }
+
+    #[test]
+    fn first_living_opponent_is_chosen_by_attacker_side() {
+        let mut world = World {
+            party_count: 2,
+            ..World::default()
+        };
+        // Party slots 0,1 dead+alive; monster slots 2,3.
+        world.actors[0].battle.liveness = 0;
+        world.actors[1].battle.liveness = 1;
+        world.actors[2].battle.liveness = 0;
+        world.actors[3].battle.liveness = 1;
+        // Party attacker -> first living monster (slot 3, since 2 is dead).
+        assert_eq!(world.first_living_opponent_of(1), Some(3));
+        // Monster attacker -> first living party member (slot 1, since 0 dead).
+        assert_eq!(world.first_living_opponent_of(3), Some(1));
+    }
+
+    #[test]
+    fn next_living_combatant_round_robins_skipping_dead() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        world.actors[0].battle.liveness = 1; // party
+        world.actors[2].battle.liveness = 1; // monster
+        // After party (0) comes monster (2); after monster (2) wraps to party (0).
+        assert_eq!(world.next_living_combatant(0), Some(2));
+        assert_eq!(world.next_living_combatant(2), Some(0));
+    }
+
+    #[test]
+    fn monsters_take_turns_and_can_wipe_the_party() {
+        use legaia_engine_vm::battle_action::ActionState;
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.live_gameplay_loop = true;
+        world.mode = SceneMode::Battle;
+        // Lone party member: low HP, weak attack so the fight lasts several
+        // rounds and the monster gets turns.
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 40;
+        world.actors[0].battle.max_hp = 40;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 4);
+        // Lone monster: tanky + hits hard enough to kill the party member.
+        world.actors[1].battle.hp = 500;
+        world.actors[1].battle.max_hp = 500;
+        world.actors[1].battle.liveness = 1;
+        world.set_battle_attack(1, 25);
+        // Arm the first turn (party member swings at the monster).
+        world.battle_ctx.active_actor = 0;
+        world.battle_ctx.queued_action = 3;
+        world.battle_ctx.action_state = ActionState::Begin.as_byte();
+        world.actors[0].battle.active_target = 1;
+        world.actors[0].battle.action_category = 3;
+
+        let start_party_hp = world.actors[0].battle.hp;
+        let mut party_took_damage = false;
+        let mut ended = false;
+        for _ in 0..4000 {
+            world.tick();
+            if world.actors[0].battle.hp < start_party_hp {
+                party_took_damage = true;
+            }
+            // finish_battle flips back to Field (and raises game_over on a
+            // party wipe).
+            if world.mode == SceneMode::Field {
+                ended = true;
+                break;
+            }
+        }
+        assert!(
+            party_took_damage,
+            "the monster must take turns and damage the party"
+        );
+        assert!(ended, "the battle must resolve (party wiped)");
+        assert!(world.game_over, "a party wipe raises game_over");
+    }
+
+    #[test]
+    fn multi_monster_battle_all_monsters_act_and_party_can_win() {
+        use legaia_engine_vm::battle_action::ActionState;
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.live_gameplay_loop = true;
+        world.mode = SceneMode::Battle;
+        // Lone party member: enough HP to survive three weak monsters, enough
+        // attack to chip each down over a few rounds.
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 30);
+        // Three monsters in slots 1..=3, each with modest HP + a light hit.
+        for s in 1..=3 {
+            world.actors[s].battle.hp = 40;
+            world.actors[s].battle.max_hp = 40;
+            world.actors[s].battle.liveness = 1;
+            world.set_battle_attack(s as u8, 3);
+        }
+        // Arm the party member's first swing.
+        world.battle_ctx.active_actor = 0;
+        world.battle_ctx.queued_action = 3;
+        world.battle_ctx.action_state = ActionState::Begin.as_byte();
+        world.actors[0].battle.active_target = 1;
+        world.actors[0].battle.action_category = 3;
+
+        let start_hp = world.actors[0].battle.hp;
+        let mut ended = false;
+        for _ in 0..8000 {
+            world.tick();
+            if world.mode == SceneMode::Field {
+                ended = true;
+                break;
+            }
+        }
+        assert!(ended, "the multi-monster battle must resolve");
+        // Party wiped all three monsters (victory, not a party wipe).
+        assert!(!world.game_over, "party should survive and win");
+        for s in 1..=3 {
+            assert_eq!(
+                world.actors[s].battle.liveness, 0,
+                "monster slot {s} should be defeated"
+            );
+        }
+        // The monsters got turns: the party took at least some damage from
+        // three light attackers over the fight.
+        assert!(
+            world.actors[0].battle.hp < start_hp,
+            "monsters should have damaged the party over the multi-round fight"
+        );
+    }
+
+    #[test]
+    fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
+        use crate::input::PadButton;
+        use crate::items::ItemCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 2,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_item_catalog(ItemCatalog::vanilla());
+        // Two party members (slot 0 wounded), one monster.
+        for i in 0..2usize {
+            world.actors[i].battle.max_hp = 200;
+            world.actors[i].battle.hp = 200;
+            world.actors[i].battle.liveness = 1;
+            world.set_character_max_mp(i as u8, 30);
+        }
+        world.actors[0].battle.hp = 50;
+        world.actors[2].battle.max_hp = 80;
+        world.actors[2].battle.hp = 80;
+        world.actors[2].battle.liveness = 1;
+        // Healing Leaf (id 0x01) heals 100 HP; hold two.
+        world.inventory.insert(0x01, 2);
+
+        // Open the item submenu for the active party member.
+        world.battle_ctx.active_actor = 0;
+        world.battle_item_menu = Some(world.build_battle_item_session());
+        {
+            let m = world.battle_item_menu.as_ref().unwrap();
+            assert_eq!(m.filtered_items.len(), 1, "one battle-usable item");
+            assert_eq!(m.targets.len(), 2, "two party targets");
+        }
+
+        // Frame 1: Cross confirms the item -> target select.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+        assert!(world.battle_item_menu.is_some(), "still picking a target");
+
+        // Frame 2: Cross confirms the first target (the wounded slot 0).
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+
+        assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
+        assert_eq!(
+            world.inventory.get(&0x01).copied(),
+            Some(1),
+            "one Healing Leaf consumed"
+        );
+        assert!(world.battle_item_menu.is_none(), "menu closed after use");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction so the loop cycles"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert!(fx[0].is_heal);
+        assert_eq!(fx[0].amount, 100);
+        assert_eq!(fx[0].target_slot, 0);
+    }
+
+    #[test]
+    fn battle_item_menu_cancel_reopens_command_menu() {
+        use crate::input::PadButton;
+        use crate::items::ItemCatalog;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_item_catalog(ItemCatalog::vanilla());
+        world.actors[0].battle.max_hp = 100;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.liveness = 1;
+        world.inventory.insert(0x01, 1);
+
+        world.battle_ctx.active_actor = 0;
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        // Circle from the item list backs all the way out.
+        world.set_pad(0);
+        world.set_pad(PadButton::Circle.mask());
+        world.tick_battle_item_menu();
+
+        assert!(world.battle_item_menu.is_none(), "item menu closed");
+        assert!(
+            world.battle_command.is_some(),
+            "command menu reopened for the same actor"
+        );
+        assert_eq!(world.battle_command.as_ref().unwrap().actor, 0);
+        // No item was consumed on a cancel.
+        assert_eq!(world.inventory.get(&0x01).copied(), Some(1));
+    }
+
+    /// Build a 1-party-member, 1-monster battle world for the offensive-item
+    /// tests. The monster sits at slot 1 (party_count = 1) with the supplied
+    /// HP and a `battle_monster_id` so it shows up as an enemy target row.
+    #[cfg(test)]
+    fn offensive_item_world(monster_hp: u16, monster_id: u16) -> World {
+        use crate::items::ItemCatalog;
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_item_catalog(ItemCatalog::vanilla());
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = monster_hp;
+        world.actors[1].battle.hp = monster_hp;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(monster_id);
+        world.battle_ctx.active_actor = 0;
+        world
+    }
+
+    #[test]
+    fn battle_item_bomb_damages_enemy_and_cursor_lands_on_the_monster() {
+        use crate::input::PadButton;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = offensive_item_world(500, 7);
+        // Bomb (0x13) deals 200 HP to an enemy.
+        world.inventory.insert(0x13, 1);
+        world.battle_item_menu = Some(world.build_battle_item_session());
+        {
+            let m = world.battle_item_menu.as_ref().unwrap();
+            assert_eq!(m.targets.len(), 2, "one ally + one enemy target");
+            assert!(!m.targets[0].is_enemy, "ally row first");
+            assert!(m.targets[1].is_enemy, "enemy row second");
+        }
+
+        // Frame 1: Cross confirms the Bomb -> target select. The cursor must
+        // skip the ally and land on the enemy row (offensive item).
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+        {
+            let m = world.battle_item_menu.as_ref().unwrap();
+            match m.state {
+                crate::inventory_use::InventoryUseState::TargetSelect { cursor, .. } => {
+                    assert_eq!(cursor, 1, "cursor positioned on the enemy row");
+                }
+                other => panic!("expected TargetSelect, got {other:?}"),
+            }
+        }
+
+        // Frame 2: Cross confirms the enemy -> 200 damage.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu();
+
+        assert_eq!(world.actors[1].battle.hp, 300, "500 -> 300 after Bomb");
+        assert_eq!(world.inventory.get(&0x13).copied(), None, "Bomb consumed");
+        assert!(world.battle_item_menu.is_none(), "menu closed after use");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert!(!fx[0].is_heal, "damage-coloured popup");
+        assert_eq!(fx[0].amount, 200);
+        assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_item_bomb_downs_a_low_hp_enemy() {
+        use crate::input::PadButton;
+
+        let mut world = offensive_item_world(120, 7);
+        world.inventory.insert(0x13, 1); // Bomb, 200 dmg vs 120 HP.
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm item -> target
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm enemy
+
+        assert_eq!(world.actors[1].battle.hp, 0, "HP floored at zero");
+        assert_eq!(world.actors[1].battle.liveness, 0, "monster downed");
+    }
+
+    #[test]
+    fn battle_item_capture_downs_a_weakened_enemy_and_logs_the_id() {
+        use crate::input::PadButton;
+
+        // Weakened monster (10/500 HP) so the missing-HP capture roll is
+        // near-certain; pin the RNG so the roll (23) lands.
+        let mut world = offensive_item_world(500, 42);
+        world.actors[1].battle.hp = 10;
+        world.rng_state = 0;
+        world.inventory.insert(0x11, 1); // Genocide Crystal (capture).
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // item -> target (lands on enemy)
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm enemy
+
+        assert_eq!(
+            world.actors[1].battle.liveness, 0,
+            "captured monster downed"
+        );
+        assert_eq!(
+            world.drain_battle_captures(),
+            vec![42],
+            "monster id logged for post-battle Seru learning"
+        );
+    }
+
+    #[test]
+    fn battle_item_escape_returns_to_field() {
+        use crate::input::PadButton;
+
+        let mut world = offensive_item_world(500, 7);
+        world.inventory.insert(0x12, 1); // Goblin Foot (escape).
+        world.battle_item_menu = Some(world.build_battle_item_session());
+
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // item -> target
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_item_menu(); // confirm
+
+        assert_eq!(world.mode, SceneMode::Field, "escaped back to the field");
+        assert!(!world.battle_escaped, "escape flag reset by finish_battle");
+        assert!(world.battle_item_menu.is_none(), "battle menus cleared");
+        assert_eq!(world.inventory.get(&0x12).copied(), None, "item consumed");
+    }
+
+    #[test]
+    fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
+        use crate::input::PadButton;
+        use crate::spells::SpellCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        // Caster with a magic stat + MP; one monster.
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.mp = 50;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_magic(0, 100);
+        world.actors[1].battle.max_hp = 300;
+        world.actors[1].battle.hp = 300;
+        world.actors[1].battle.liveness = 1;
+        // Give the caster a learned offensive spell: Flame (0x20, 5 MP).
+        let mut party = legaia_save::Party::zeroed(1);
+        let mut list = party.members[0].spell_list();
+        list.count = 1;
+        list.ids[0] = 0x20;
+        party.members[0].set_spell_list(list);
+        world.roster = party;
+
+        // Open the spell submenu for the caster.
+        world.battle_ctx.active_actor = 0;
+        world.battle_spell_menu = world.build_battle_spell_session(0);
+        {
+            let m = world.battle_spell_menu.as_ref().expect("spell menu built");
+            assert_eq!(m.spells.len(), 1, "one learned spell");
+            assert!(m.spells[0].affordable, "50 MP covers a 5 MP spell");
+        }
+
+        // Frame 1: Cross opens the target cursor on the lone monster.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+        assert!(world.battle_spell_menu.is_some(), "still picking a target");
+
+        // Frame 2: Cross confirms the monster; the cast resolves.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+
+        assert!(world.battle_spell_menu.is_none(), "spell menu closed");
+        assert_eq!(world.actors[0].battle.mp, 45, "5 MP spent on Flame");
+        assert!(
+            world.actors[1].battle.hp < 300,
+            "Flame should have damaged the monster"
+        );
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction so the loop cycles"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert!(!fx[0].is_heal, "offensive spell is damage, not heal");
+        assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
+        use crate::spells::{BuffStat, SpellOutcome};
+
+        let mut world = World::default();
+        world.set_battle_attack(0, 50);
+
+        // Power Up: +20 Attack for 2 turns.
+        world.fold_spell_outcome(SpellOutcome::Buff {
+            target: 0,
+            stat: BuffStat::Attack,
+            magnitude: 20,
+            turns: 2,
+        });
+        assert_eq!(world.battle_attack[0], 70, "buff adds to the scalar");
+        assert_eq!(world.battle_buffs.len(), 1);
+
+        // Re-casting refreshes (reverts the old delta first, no stacking).
+        world.fold_spell_outcome(SpellOutcome::Buff {
+            target: 0,
+            stat: BuffStat::Attack,
+            magnitude: 20,
+            turns: 2,
+        });
+        assert_eq!(world.battle_attack[0], 70, "refresh does not stack");
+        assert_eq!(world.battle_buffs.len(), 1);
+
+        // Ages one turn per the buffed actor's turn; expires on the 2nd.
+        world.tick_battle_buffs_on_turn(0);
+        assert_eq!(world.battle_attack[0], 70);
+        world.tick_battle_buffs_on_turn(0);
+        assert_eq!(
+            world.battle_attack[0], 50,
+            "expiry reverts the delta exactly"
+        );
+        assert!(world.battle_buffs.is_empty());
+    }
+
+    #[test]
+    fn battle_magic_debuff_saturates_at_zero_and_reverts_exactly() {
+        use crate::spells::{BuffStat, SpellOutcome};
+
+        let mut world = World::default();
+        // Power Down on an enemy with a small attack: -25 saturates the u16
+        // scalar at 0, and the recorded delta is the actual change (-10).
+        world.set_battle_attack(3, 10);
+        world.fold_spell_outcome(SpellOutcome::Buff {
+            target: 3,
+            stat: BuffStat::Attack,
+            magnitude: -25,
+            turns: 1,
+        });
+        assert_eq!(world.battle_attack[3], 0, "debuff saturates at zero");
+
+        // One tick expires it; the exact -10 delta is reverted back to 10.
+        world.tick_battle_buffs_on_turn(3);
+        assert_eq!(world.battle_attack[3], 10);
+        assert!(world.battle_buffs.is_empty());
+    }
+
+    #[test]
+    fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
+        use crate::spells::SpellOutcome;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // rng_state 0 -> first next_rng() % 100 == 23 (deterministic).
+        world.rng_state = 0;
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 10; // missing 90
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(42);
+
+        // hit_pct 60, missing 90/100 -> effective 54; roll 23 < 54 -> captured.
+        world.fold_spell_outcome(SpellOutcome::CaptureRoll {
+            target: 1,
+            hit_pct: 60,
+        });
+        assert_eq!(
+            world.actors[1].battle.liveness, 0,
+            "captured monster is downed"
+        );
+        assert_eq!(world.actors[1].battle.hp, 0);
+        assert_eq!(world.drain_battle_captures(), vec![42]);
+
+        // A near-full-HP monster has a tiny effective chance -> the same roll
+        // misses and the monster is untouched.
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.rng_state = 0; // roll 23
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 95; // missing 5 -> effective 3
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(7);
+        world.fold_spell_outcome(SpellOutcome::CaptureRoll {
+            target: 1,
+            hit_pct: 60,
+        });
+        assert_eq!(
+            world.actors[1].battle.liveness, 1,
+            "healthy monster resists"
+        );
+        assert!(world.battle_captures.is_empty());
+    }
+
+    #[test]
+    fn battle_magic_escape_returns_to_field() {
+        use crate::input::PadButton;
+        use crate::spells::SpellCatalog;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 100;
+        world.actors[0].battle.hp = 100;
+        world.actors[0].battle.mp = 20;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = 200;
+        world.actors[1].battle.hp = 200;
+        world.actors[1].battle.liveness = 1;
+        world.spell_catalog = SpellCatalog::vanilla();
+
+        // Open the spell submenu with Warp (0x41, SelfOnly escape) learned.
+        world.battle_ctx.active_actor = 0;
+        world.battle_spell_menu = Some(crate::battle_magic::BattleSpellSession::new(
+            0,
+            0,
+            &[0x41],
+            &world.spell_catalog,
+            20,
+        ));
+
+        // SelfOnly target resolves immediately, so one Cross casts Warp.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_spell_menu();
+
+        assert_eq!(world.mode, SceneMode::Field, "escape returns to the field");
+        assert!(
+            world.battle_spell_menu.is_none(),
+            "submenu dropped on escape"
+        );
+        assert!(
+            !world.battle_escaped,
+            "escape flag cleared by finish_battle"
+        );
+        assert!(world.last_battle_rewards.is_none(), "escape grants no loot");
+    }
+
+    /// A registry whose Seru hits its learn threshold in one capture, and a
+    /// monster catalog linking monster id 7 -> Seru 1.
+    #[cfg(test)]
+    fn capture_world(party_count: u8) -> World {
+        use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+        use crate::seru_learning::{SeruDef, SeruRegistry};
+
+        let mut world = World {
+            party_count,
+            ..World::default()
+        };
+        // Zeroed roster (empty spell lists) so `build_battle_spell_session`
+        // resolves a member per party slot; learned spells come from the log.
+        world.roster = legaia_save::Party::zeroed(party_count.max(1) as usize);
+        let mut reg = SeruRegistry::new();
+        reg.insert(SeruDef {
+            id: 1,
+            name: "Spark".into(),
+            spell_id: 0x20,
+            capture_points: 100,
+            learnable_mask: 0b0000_0111,
+            learn_threshold: 100,
+        });
+        reg.insert(SeruDef {
+            id: 2,
+            name: "Slow".into(),
+            spell_id: 0x21,
+            capture_points: 40, // below threshold in one capture
+            learnable_mask: 0b0000_0111,
+            learn_threshold: 100,
+        });
+        world.set_seru_registry(reg);
+        let mut cat = MonsterCatalog::new();
+        cat.insert(MonsterDef::new(7, "Killer Bee", 25, 9).with_seru(1));
+        cat.insert(MonsterDef::new(8, "Slime", 40, 8).with_seru(2));
+        cat.insert(MonsterDef::new(9, "Wolf", 35, 12)); // no Seru
+        world.set_monster_catalog(cat);
+        world
+    }
+
+    #[test]
+    fn capture_banks_points_and_learns_on_finish_battle() {
+        let mut world = capture_world(2);
+        // Two monsters captured this battle: Killer Bee (Seru 1, learns) and
+        // Wolf (no Seru, banks nothing).
+        world.battle_captures = vec![7, 9];
+
+        world.finish_battle();
+
+        // battle_captures always drained.
+        assert!(world.battle_captures.is_empty());
+        // Both party slots learned Spark (id 0x20).
+        assert!(world.seru_log.has_learned(0, 1));
+        assert!(world.seru_log.has_learned(1, 1));
+        assert_eq!(world.seru_log.learned_spells(0), &[0x20]);
+        // One accepted outcome (the Wolf had no Seru), with two learn events.
+        let outcomes = world.drain_last_capture_outcomes();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].learns.len(), 2);
+        // Outcomes drained.
+        assert!(world.drain_last_capture_outcomes().is_empty());
+    }
+
+    #[test]
+    fn capture_below_threshold_banks_points_without_learning() {
+        let mut world = capture_world(1);
+        world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100
+
+        world.finish_battle();
+
+        assert!(!world.seru_log.has_learned(0, 2), "not learned yet");
+        assert_eq!(world.seru_log.row(0, 2).points, 40, "points banked");
+        let outcomes = world.drain_last_capture_outcomes();
+        assert_eq!(outcomes.len(), 1);
+        assert!(outcomes[0].learns.is_empty());
+    }
+
+    #[test]
+    fn capture_sets_the_banner_and_it_clears_on_tick() {
+        use crate::seru_learning::CaptureState;
+
+        let mut world = capture_world(1);
+        world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+        world.battle_captures = vec![7]; // Killer Bee -> Seru 1 (Spark), learns
+        world.finish_battle();
+
+        // The banner opens on the capture phase naming the captured Seru.
+        let banner = world
+            .current_capture_banner
+            .as_ref()
+            .expect("capture banner set");
+        assert_eq!(banner.seru_name(), "Spark");
+        assert!(matches!(banner.state(), CaptureState::Capturing { .. }));
+        assert_eq!(banner.current_banner().as_deref(), Some("Captured: Spark!"));
+        // A learn event was recorded (party slot 0 crossed the threshold).
+        assert_eq!(banner.learns().len(), 1);
+
+        // Drive the banner to completion via World::tick (Field mode after the
+        // battle). The default durations are 60 capture + 90 announce frames.
+        for _ in 0..(60 + 90 + 4) {
+            world.tick();
+        }
+        assert!(
+            world.current_capture_banner.is_none(),
+            "banner clears after its phases elapse"
+        );
+    }
+
+    #[test]
+    fn sub_threshold_capture_banner_shows_no_learn_line() {
+        let mut world = capture_world(1);
+        world.battle_captures = vec![8]; // Slime -> Seru 2, 40 < 100, no learn
+        world.finish_battle();
+
+        let banner = world
+            .current_capture_banner
+            .as_ref()
+            .expect("capture banner set even without a learn");
+        assert_eq!(banner.seru_name(), "Slow");
+        assert!(banner.learns().is_empty());
+    }
+
+    #[test]
+    fn battle_bgm_swaps_on_encounter_and_restores_on_finish() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.current_bgm = Some(0x0A); // field track playing
+        world.set_battle_bgm(Some(0x40)); // configured battle track
+        let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+
+        world.enter_battle_from_formation(&formation);
+
+        // Swapped to the battle track, with a start event queued for the host.
+        assert_eq!(world.current_bgm, Some(0x40));
+        assert!(world.battle_bgm_active);
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::Bgm {
+                    text_id: 0x40,
+                    sub_op: 1
+                }
+            )),
+            "battle BGM start queued: {evs:?}"
+        );
+
+        // Finish (no formation/loot) restores the field track + queues its start.
+        world.finish_battle();
+        assert_eq!(world.current_bgm, Some(0x0A));
+        assert!(!world.battle_bgm_active);
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::Bgm {
+                    text_id: 0x0A,
+                    sub_op: 1
+                }
+            )),
+            "field BGM restore queued: {evs:?}"
+        );
+    }
+
+    #[test]
+    fn battle_bgm_unset_leaves_music_untouched() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.current_bgm = Some(0x0A);
+        // No battle_bgm configured (default None) -> no swap, no events.
+        let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+        world.enter_battle_from_formation(&formation);
+        assert_eq!(world.current_bgm, Some(0x0A));
+        assert!(!world.battle_bgm_active);
+        assert!(
+            !world
+                .drain_field_events()
+                .iter()
+                .any(|e| matches!(e, FieldEvent::Bgm { .. })),
+            "no BGM events when battle_bgm is unset"
+        );
+        world.finish_battle();
+        assert_eq!(world.current_bgm, Some(0x0A));
+    }
+
+    #[test]
+    fn battle_bgm_with_silent_field_stops_on_finish() {
+        use crate::monster_catalog::{FormationDef, FormationSlot};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.current_bgm = None; // no field music playing
+        world.set_battle_bgm(Some(0x40));
+        let formation = FormationDef::new(7, vec![FormationSlot::new(1)]);
+
+        world.enter_battle_from_formation(&formation);
+        assert_eq!(world.current_bgm, Some(0x40));
+        let _ = world.drain_field_events();
+
+        world.finish_battle();
+        // Nothing to resume -> battle music stops (sub-op 4) and id clears.
+        assert_eq!(world.current_bgm, None);
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter()
+                .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 4, .. })),
+            "BGM stop queued when no field track to resume: {evs:?}"
+        );
+    }
+
+    #[test]
+    fn learned_spell_is_offered_in_the_battle_spell_session() {
+        let mut world = capture_world(1);
+        world.set_spell_catalog(crate::spells::SpellCatalog::vanilla());
+        // Caster has an empty roster spell list; learning Spark via capture
+        // should still surface it in the battle spell menu.
+        world.battle_captures = vec![7];
+        world.finish_battle();
+        world.actors[0].battle.mp = 99;
+
+        let session = world
+            .build_battle_spell_session(0)
+            .expect("session builds for slot 0");
+        assert!(
+            session.spells.iter().any(|s| s.id == 0x20),
+            "captured Spark is castable: {:?}",
+            session.spells.iter().map(|s| s.id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn capture_progress_round_trips_through_save_load() {
+        // Bank a sub-threshold capture, save, reload into a fresh world that
+        // has the registry installed, and confirm the points + learned state
+        // survive.
+        let mut world = capture_world(1);
+        world.battle_captures = vec![7, 8]; // Seru 1 learns; Seru 2 banks 40
+        world.finish_battle();
+        assert!(world.seru_log.has_learned(0, 1));
+        assert_eq!(world.seru_log.row(0, 2).points, 40);
+
+        let save = world.save_full();
+
+        let mut reloaded = capture_world(1);
+        reloaded.load_full(save);
+        assert!(
+            reloaded.seru_log.has_learned(0, 1),
+            "learned Spark restored"
+        );
+        assert_eq!(
+            reloaded.seru_log.learned_spells(0),
+            &[0x20],
+            "spell list restored"
+        );
+        assert_eq!(
+            reloaded.seru_log.row(0, 2).points,
+            40,
+            "sub-threshold progress restored"
+        );
+        assert!(
+            !reloaded.seru_log.has_learned(0, 2),
+            "still below threshold after reload"
+        );
+    }
+
+    #[test]
+    fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
+        use crate::input::PadButton;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 40);
+        world.actors[1].battle.max_hp = 500;
+        world.actors[1].battle.hp = 500;
+        world.actors[1].battle.liveness = 1;
+        world.set_battle_defense(1, 10);
+        // One saved chain, 3 directional commands (Left, Right, Down) -> 3 hits.
+        // No art record staged, so the row uses the synthetic ×12 profile.
+        world.saved_chains.push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Combo".into(),
+            sequence: vec![1, 2, 3],
+        });
+
+        world.battle_ctx.active_actor = 0;
+        world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
+            0,
+            0,
+            world.build_battle_arts_rows(0),
+        ));
+        assert_eq!(world.battle_arts_menu.as_ref().unwrap().arts[0].hits(), 3);
+
+        // Frame 1: Cross opens the target cursor.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+        assert!(world.battle_arts_menu.is_some(), "still picking a target");
+
+        // Frame 2: Cross confirms the monster; the art runs.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+
+        assert!(world.battle_arts_menu.is_none(), "arts menu closed");
+        // Three synthetic ×12 hits: (40*12/16 - 10) = 20 each => 60 total.
+        let per_hit = legaia_engine_vm::battle_formulas::art_strike_damage_default(40, 10, 12);
+        assert_eq!(world.actors[1].battle.hp, 500 - per_hit * 3);
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "turn parked at EndOfAction so the loop cycles"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1, "one summed popup for the combo");
+        assert!(!fx[0].is_heal);
+        assert_eq!(fx[0].amount, per_hit * 3);
+        assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
+        use crate::input::PadButton;
+        use legaia_art::power::PowerByte;
+        use legaia_art::queue::{ActionConstant, Command};
+        use legaia_art::record::EnemyEffect;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 64);
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.liveness = 1;
+        // UDF / LDF split so the record's per-strike target picks the right half.
+        world.set_battle_defense_split(1, Some((10, 40)));
+
+        // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns.
+        let rec = legaia_art::ArtRecord {
+            action: ActionConstant::Art1B,
+            commands: vec![Command::Up, Command::Up],
+            anim_index: 0,
+            anim_extra: vec![],
+            name: None,
+            power: vec![PowerByte::from_byte(0x1A), PowerByte::from_byte(0x1F)],
+            dmg_timing: vec![],
+            effect_cues: Default::default(),
+            hit_cues: vec![],
+            identifier: 0,
+            anim_speed: 0,
+            enemy_effect: EnemyEffect::Burned,
+            repeat_frames: Default::default(),
+            background: 0,
+            runtime_address: None,
+        };
+        world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1B, rec);
+
+        // Saved chain ending in the art's command string (Up, Up).
+        world.saved_chains.push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Burning Combo".into(),
+            sequence: vec![1, 4, 4], // Left, Up, Up
+        });
+
+        let rows = world.build_battle_arts_rows(0);
+        assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
+        assert_eq!(rows[0].enemy_effect, EnemyEffect::Burned);
+
+        world.battle_ctx.active_actor = 0;
+        world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
+
+        // Open the target cursor, then confirm.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+
+        // UDF ×28 vs udf=10: 64*28/16 - 10 = 112 - 10 = 102.
+        // LDF ×28 vs ldf=40: 64*28/16 - 40 = 112 - 40 = 72.
+        let expect = (102u16 + 72u16) as u32;
+        assert_eq!(world.actors[1].battle.hp, 4000 - expect as u16);
+        assert!(
+            world.status_effects.is_afflicted(1),
+            "the art's Burned effect was applied to the target"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert_eq!(fx[0].amount, expect as u16);
+        assert!(fx[0].is_crit, "multi-hit art flagged as crit popup");
     }
 
     #[test]

@@ -34,6 +34,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+pub mod arts_table;
 pub mod miracle;
 pub mod parse;
 pub mod power;
@@ -42,6 +43,7 @@ pub mod record;
 pub mod super_art;
 pub mod tables;
 
+pub use arts_table::{ArtTableEntry, ArtsOracle};
 pub use miracle::{MIRACLE_ARTS, MiracleArt, MiracleMatcher};
 pub use parse::{ParseError, ParsedArtRecord, parse_record};
 pub use power::{ArtPower, PowerByte, PowerTarget};
