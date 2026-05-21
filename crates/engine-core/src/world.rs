@@ -728,6 +728,18 @@ pub struct World {
     /// [`World::set_spell_catalog`]); empty by default.
     pub spell_catalog: crate::spells::SpellCatalog,
 
+    /// Art-record catalog used by the player-driven battle Arts submenu to
+    /// resolve a saved chain → its real per-strike power profile. Keyed by
+    /// `(character, art constant)`; populated from disc art data (PROT entry
+    /// `0x05C4`) via [`World::set_art_record`] when available. Empty by
+    /// default - the Arts submenu then falls back to a synthetic power profile
+    /// derived from the chain's directional commands
+    /// (see [`crate::battle_arts::synthetic_power`]).
+    pub art_records: std::collections::HashMap<
+        (legaia_art::Character, legaia_art::ActionConstant),
+        legaia_art::ArtRecord,
+    >,
+
     /// Per-actor character max MP. The retail `BattleActor` holds only
     /// the running `mp` value (not the cap); the cap lives on the
     /// character record at `+0x140`. Engines populate this from the
@@ -868,9 +880,10 @@ pub struct World {
     /// Active Arts submenu for the player-driven battle, opened when the player
     /// picks **Arts** from the command menu. `Some` while the player browses
     /// saved chains / picks a target (the action SM and [`Self::battle_command`]
-    /// are parked meanwhile); `None` otherwise. The World owns it because the
-    /// chain list comes from [`Self::saved_chains`]. Hosts read it to draw the
-    /// arts overlay.
+    /// are parked meanwhile); `None` otherwise. The World owns it because each
+    /// row's power profile is resolved from [`Self::saved_chains`] +
+    /// [`Self::art_records`] by [`Self::build_battle_arts_rows`]. Hosts read it
+    /// to draw the arts overlay.
     pub battle_arts_menu: Option<crate::battle_arts::BattleArtsSession>,
 
     /// Formation currently being fought, captured at the `Field -> Battle`
@@ -1043,6 +1056,7 @@ impl World {
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             item_catalog: crate::items::ItemCatalog::default(),
             spell_catalog: crate::spells::SpellCatalog::default(),
+            art_records: std::collections::HashMap::new(),
             character_max_mp: Vec::new(),
             encounter: None,
             per_char_ext: Vec::new(),
@@ -1338,6 +1352,82 @@ impl World {
     /// [`crate::spells::SpellCatalog::vanilla`]).
     pub fn set_spell_catalog(&mut self, catalog: crate::spells::SpellCatalog) {
         self.spell_catalog = catalog;
+    }
+
+    /// Stage one decoded art record for the player-driven battle Arts submenu,
+    /// keyed by `(character, art constant)`. Engines call this at battle init
+    /// for every art the party can run (parsed from disc PROT entry `0x05C4`)
+    /// so a saved chain ending in that art deals its real per-strike power.
+    pub fn set_art_record(
+        &mut self,
+        character: legaia_art::Character,
+        action: legaia_art::ActionConstant,
+        record: legaia_art::ArtRecord,
+    ) {
+        self.art_records.insert((character, action), record);
+    }
+
+    /// Bulk-install art records (see [`World::set_art_record`]). Existing
+    /// entries for the same key are replaced.
+    pub fn set_art_records(
+        &mut self,
+        records: impl IntoIterator<
+            Item = (
+                (legaia_art::Character, legaia_art::ActionConstant),
+                legaia_art::ArtRecord,
+            ),
+        >,
+    ) {
+        self.art_records.extend(records);
+    }
+
+    /// Resolve a party slot to the [`legaia_art::Character`] whose art tables
+    /// apply. Party slots 0/1/2 are Vahn/Noa/Gala; out-of-range slots (story
+    /// guests, monsters) fall back to Vahn so the lookup never panics.
+    fn caster_character(&self, slot: u8) -> legaia_art::Character {
+        legaia_art::Character::all()
+            .get(slot as usize)
+            .copied()
+            .unwrap_or(legaia_art::Character::Vahn)
+    }
+
+    /// Build the Arts submenu rows for `caster` from their saved chains. For
+    /// each chain, the longest staged art record whose command string the
+    /// chain ends with ([`crate::battle_arts::chain_matches_record`]) supplies
+    /// the real power profile; chains with no matching record fall back to a
+    /// synthetic profile derived from the directional commands.
+    fn build_battle_arts_rows(&self, caster: u8) -> Vec<crate::battle_arts::ArtRow> {
+        use crate::battle_arts::{
+            ArtRow, chain_matches_record, power_from_record, synthetic_power,
+        };
+        let character = self.caster_character(caster);
+        self.saved_chains
+            .iter()
+            .filter(|c| c.char_slot == caster)
+            .map(|c| {
+                let best = self
+                    .art_records
+                    .iter()
+                    .filter(|((ch, _), _)| *ch == character)
+                    .filter(|(_, rec)| chain_matches_record(&c.sequence, rec))
+                    .max_by_key(|(_, rec)| rec.commands.len());
+                match best {
+                    Some((_, rec)) => {
+                        let (power, enemy_effect) = power_from_record(rec);
+                        ArtRow {
+                            name: c.name.clone(),
+                            power,
+                            enemy_effect,
+                        }
+                    }
+                    None => ArtRow {
+                        name: c.name.clone(),
+                        power: synthetic_power(&c.sequence),
+                        enemy_effect: legaia_art::EnemyEffect::None,
+                    },
+                }
+            })
+            .collect()
     }
 
     /// Use an item from the catalog against a target slot. Wraps the
@@ -3109,10 +3199,11 @@ impl World {
                 // the player runs an art (turn cycles via EndOfAction) or backs
                 // out.
                 self.battle_ctx.active_actor = session.actor;
+                let rows = self.build_battle_arts_rows(session.actor);
                 self.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
                     session.actor,
                     session.actor,
-                    &self.saved_chains,
+                    rows,
                 ));
             }
             Some(Resolution::OpenSpellMenu) => {
@@ -3162,8 +3253,9 @@ impl World {
     ///
     /// Edge-triggered pad → one [`crate::battle_arts::BattleArtsInput`] per
     /// frame. On a confirmed execution the art runs via [`Self::apply_battle_art`]
-    /// (a multi-hit strike) and the action SM parks at `EndOfAction` so the live
-    /// loop cycles to the next combatant. Backing out reopens the command menu.
+    /// (driving each strike's power byte through the real `apply_art_strike`
+    /// path) and the action SM parks at `EndOfAction` so the live loop cycles to
+    /// the next combatant. Backing out reopens the command menu.
     fn tick_battle_arts_menu(&mut self) {
         use crate::battle_arts::{ArtsResolution, BattleArtsInput};
         use crate::input::PadButton;
@@ -3206,12 +3298,12 @@ impl World {
                 target_slot,
             }) => {
                 let caster = menu.actor;
-                let hits = menu
+                let (power, enemy_effect) = menu
                     .arts
                     .get(art_index as usize)
-                    .map(|a| a.hits)
-                    .unwrap_or(1);
-                self.apply_battle_art(caster, hits, target_row, target_slot);
+                    .map(|a| (a.power.clone(), a.enemy_effect))
+                    .unwrap_or_default();
+                self.apply_battle_art(caster, &power, enemy_effect, target_row, target_slot);
                 self.battle_ctx.action_state =
                     vm::battle_action::ActionState::EndOfAction.as_byte();
             }
@@ -3225,22 +3317,30 @@ impl World {
         }
     }
 
-    /// Execute an art as a `hits`-strike combo against the picked target.
+    /// Execute an art against the picked target through the real art-power
+    /// path.
     ///
-    /// Each hit deals one generic strike of
-    /// [`vm::battle_formulas::art_strike_damage_default`] (`battle_attack` vs
-    /// `battle_defense`, the same kernel [`Self::apply_basic_attack`] uses), so
-    /// a longer saved chain hits more times - the live-loop stand-in for the
-    /// full per-art power table. The summed damage is surfaced as one HUD
-    /// popup; the target is downed if its HP reaches zero.
+    /// Each [`legaia_art::PowerByte`] in `power` drives one strike through
+    /// [`crate::art_strike::apply_art_strike`]: the byte's multiplier tier +
+    /// UDF/LDF target are decoded, [`Self::resolve_battle_defense`] picks the
+    /// matching defense half (when a UDF/LDF split is configured), and the
+    /// per-strike damage is deducted. The art's `enemy_effect` is applied once
+    /// after a landing hit (if the target survives). Summed damage surfaces as
+    /// one HUD popup; the target is downed if its HP reaches zero.
+    ///
+    /// `power` comes from the matched art record when one is staged, else a
+    /// synthetic per-direction profile (see [`Self::build_battle_arts_rows`]),
+    /// so the same kernel handles both real and demo arts.
     fn apply_battle_art(
         &mut self,
         caster: u8,
-        hits: u8,
+        power: &[legaia_art::PowerByte],
+        enemy_effect: legaia_art::EnemyEffect,
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
         use crate::target_picker::CursorRow;
+        use legaia_engine_vm::battle_action::ArtStrikeInfo;
         let party_count = self.party_count.clamp(1, 3);
         let target = match target_row {
             CursorRow::Enemy => party_count + target_slot,
@@ -3254,26 +3354,53 @@ impl World {
             .get(caster as usize)
             .copied()
             .unwrap_or(0);
-        let defense = self.battle_defense.get(target).copied().unwrap_or(0);
-        let per_hit = vm::battle_formulas::art_strike_damage_default(attack, defense, 16);
+        let character = self.caster_character(caster);
         let mut total: u32 = 0;
-        for _ in 0..hits.max(1) {
+        let mut landed: u8 = 0;
+        for (i, pb) in power.iter().enumerate() {
             if self.actors[target].battle.liveness == 0 {
                 break;
             }
-            let a = &mut self.actors[target].battle;
-            a.hp = a.hp.saturating_sub(per_hit);
-            total = total.saturating_add(per_hit as u32);
-            if a.hp == 0 {
-                a.liveness = 0;
+            // Minimal per-strike info: `apply_art_strike` + `resolve_battle_defense`
+            // only read `power` + `enemy_effect`. `art` is a placeholder; the
+            // live loop doesn't drive the per-art animation script.
+            let info = ArtStrikeInfo {
+                strike_index: i as u8,
+                anim_byte: 0,
+                actor_slot: caster,
+                target_slot: target as u8,
+                character,
+                art: legaia_art::ActionConstant::Art1B,
+                power: Some(*pb),
+                dmg_timing: None,
+                enemy_effect,
+                hit_cue: None,
+            };
+            let defense = self.resolve_battle_defense(target as u8, &info);
+            let outcome = crate::art_strike::apply_art_strike(attack, defense, &info);
+            if let Some(dmg) = outcome.damage {
+                let a = &mut self.actors[target].battle;
+                a.hp = a.hp.saturating_sub(dmg);
+                total = total.saturating_add(dmg as u32);
+                landed = landed.saturating_add(1);
+                if a.hp == 0 {
+                    a.liveness = 0;
+                }
             }
+        }
+        if landed > 0
+            && enemy_effect != legaia_art::EnemyEffect::None
+            && self.actors[target].battle.liveness != 0
+        {
+            self.status_effects
+                .apply_from_enemy_effect(target as u8, enemy_effect);
         }
         if total > 0 {
             self.battle_hit_fx.push(BattleHitFx {
                 target_slot: target as u8,
                 amount: total.min(u16::MAX as u32) as u16,
                 is_heal: false,
-                is_crit: hits > 1,
+                is_crit: landed > 1,
             });
         }
     }
@@ -7260,7 +7387,7 @@ mod tests {
     }
 
     #[test]
-    fn battle_arts_run_multi_hit_strike_and_cycles_turn() {
+    fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
         use crate::input::PadButton;
         use legaia_engine_vm::battle_action::ActionState;
 
@@ -7278,7 +7405,8 @@ mod tests {
         world.actors[1].battle.hp = 500;
         world.actors[1].battle.liveness = 1;
         world.set_battle_defense(1, 10);
-        // One saved chain for the caster: 3 commands -> 3 hits.
+        // One saved chain, 3 directional commands (Left, Right, Down) -> 3 hits.
+        // No art record staged, so the row uses the synthetic ×12 profile.
         world.saved_chains.push(legaia_save::SavedChainRecord {
             char_slot: 0,
             name: "Combo".into(),
@@ -7289,9 +7417,9 @@ mod tests {
         world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(
             0,
             0,
-            &world.saved_chains,
+            world.build_battle_arts_rows(0),
         ));
-        assert_eq!(world.battle_arts_menu.as_ref().unwrap().arts[0].hits, 3);
+        assert_eq!(world.battle_arts_menu.as_ref().unwrap().arts[0].hits(), 3);
 
         // Frame 1: Cross opens the target cursor.
         world.set_pad(0);
@@ -7305,8 +7433,8 @@ mod tests {
         world.tick_battle_arts_menu();
 
         assert!(world.battle_arts_menu.is_none(), "arts menu closed");
-        // Three hits of (40*16/16 - 10) = 30 each => 90 total.
-        let per_hit = legaia_engine_vm::battle_formulas::art_strike_damage_default(40, 10, 16);
+        // Three synthetic ×12 hits: (40*12/16 - 10) = 20 each => 60 total.
+        let per_hit = legaia_engine_vm::battle_formulas::art_strike_damage_default(40, 10, 12);
         assert_eq!(world.actors[1].battle.hp, 500 - per_hit * 3);
         assert_eq!(
             world.battle_ctx.action_state,
@@ -7318,6 +7446,83 @@ mod tests {
         assert!(!fx[0].is_heal);
         assert_eq!(fx[0].amount, per_hit * 3);
         assert_eq!(fx[0].target_slot, 1);
+    }
+
+    #[test]
+    fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
+        use crate::input::PadButton;
+        use legaia_art::power::PowerByte;
+        use legaia_art::queue::{ActionConstant, Command};
+        use legaia_art::record::EnemyEffect;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.battle_player_driven = true;
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 64);
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.liveness = 1;
+        // UDF / LDF split so the record's per-strike target picks the right half.
+        world.set_battle_defense_split(1, Some((10, 40)));
+
+        // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns.
+        let rec = legaia_art::ArtRecord {
+            action: ActionConstant::Art1B,
+            commands: vec![Command::Up, Command::Up],
+            anim_index: 0,
+            anim_extra: vec![],
+            name: None,
+            power: vec![PowerByte::from_byte(0x1A), PowerByte::from_byte(0x1F)],
+            dmg_timing: vec![],
+            effect_cues: Default::default(),
+            hit_cues: vec![],
+            identifier: 0,
+            anim_speed: 0,
+            enemy_effect: EnemyEffect::Burned,
+            repeat_frames: Default::default(),
+            background: 0,
+            runtime_address: None,
+        };
+        world.set_art_record(legaia_art::Character::Vahn, ActionConstant::Art1B, rec);
+
+        // Saved chain ending in the art's command string (Up, Up).
+        world.saved_chains.push(legaia_save::SavedChainRecord {
+            char_slot: 0,
+            name: "Burning Combo".into(),
+            sequence: vec![1, 4, 4], // Left, Up, Up
+        });
+
+        let rows = world.build_battle_arts_rows(0);
+        assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
+        assert_eq!(rows[0].enemy_effect, EnemyEffect::Burned);
+
+        world.battle_ctx.active_actor = 0;
+        world.battle_arts_menu = Some(crate::battle_arts::BattleArtsSession::new(0, 0, rows));
+
+        // Open the target cursor, then confirm.
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+        world.set_pad(0);
+        world.set_pad(PadButton::Cross.mask());
+        world.tick_battle_arts_menu();
+
+        // UDF ×28 vs udf=10: 64*28/16 - 10 = 112 - 10 = 102.
+        // LDF ×28 vs ldf=40: 64*28/16 - 40 = 112 - 40 = 72.
+        let expect = (102u16 + 72u16) as u32;
+        assert_eq!(world.actors[1].battle.hp, 4000 - expect as u16);
+        assert!(
+            world.status_effects.is_afflicted(1),
+            "the art's Burned effect was applied to the target"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1);
+        assert_eq!(fx[0].amount, expect as u16);
+        assert!(fx[0].is_crit, "multi-hit art flagged as crit popup");
     }
 
     #[test]

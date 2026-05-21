@@ -5577,7 +5577,7 @@ impl PlayWindowApp {
                         for (i, row) in arts.arts.iter().enumerate() {
                             let sel = i as u8 == *cursor;
                             let marker = if sel { ">" } else { " " };
-                            let line = format!("{} {} x{}", marker, row.name, row.hits);
+                            let line = format!("{} {} x{}", marker, row.name, row.hits());
                             let color = if sel { white } else { dim };
                             out.extend(text_draws_for(
                                 &self.font.layout_ascii(&line),
@@ -6389,6 +6389,36 @@ fn cmd_play_window_with_record(
                         name: "Combo".into(),
                         sequence: vec![1, 2, 3, 4],
                     });
+                }
+                // Stage a demo art record per character so the "Combo" chain
+                // (it ends in Up) resolves through the real art-power path -
+                // two damage strikes that burn the target. "Quick" has no
+                // matching record and falls back to the synthetic profile.
+                use legaia_art::power::PowerByte;
+                use legaia_art::queue::{ActionConstant, Command};
+                use legaia_art::record::EnemyEffect;
+                for character in legaia_art::Character::all() {
+                    world.set_art_record(
+                        character,
+                        ActionConstant::Art1B,
+                        legaia_art::ArtRecord {
+                            action: ActionConstant::Art1B,
+                            commands: vec![Command::Up],
+                            anim_index: 0,
+                            anim_extra: vec![],
+                            name: None,
+                            power: vec![PowerByte::from_byte(0x18), PowerByte::from_byte(0x1D)],
+                            dmg_timing: vec![],
+                            effect_cues: Default::default(),
+                            hit_cues: vec![],
+                            identifier: 0,
+                            anim_speed: 0,
+                            enemy_effect: EnemyEffect::Burned,
+                            repeat_frames: Default::default(),
+                            background: 0,
+                            runtime_address: None,
+                        },
+                    );
                 }
             }
         }
