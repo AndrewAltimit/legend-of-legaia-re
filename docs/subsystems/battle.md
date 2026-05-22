@@ -252,25 +252,34 @@ Retail monster AI is two routines in the battle overlay:
   `ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`,
   `overlay_battle_action_801e7320.txt`.
 
-The clean-room engine ports the parts that are fully grounded in traced data:
-`World::pick_monster_action` is the action picker's generic core (real RNG, real
-`magic_attacks`, spell-shape targeting through the catalog's `SpellTarget`), and
-`World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
-`monster_setup` hook. The picker drives the live loop's monster turns, folding a
-chosen cast through `cast_spell_on_slots` (the shared player/monster cast path)
-and parking the SM at `EndOfAction`.
+The clean-room engine ports it across `engine-core`:
 
-**Open / deferred** (now grounded, a follow-up port): the per-monster-id
-scripted-cast `switch`, the multi-art spirit/SP chain queue at `actor+0x1DF`, the
-`'#'`-marked spell-entry scan, and the `ctx+0x28a` battle-mode overrides. The
-engine runs the generic (non-special-cased) path; the `switch` keys on the
-monster id (which the engine knows via `battle_monster_id`), so it can be ported
-incrementally. The `actor+0x16e & 0x380` flag that gates `FUN_801E7320` is set by
-`FUN_80047430` (a battle actor-update routine) when the monster record's flags
-dword at record `+0x00` has bit `0x2000` - none of the four AI/SM functions write
-`+0x16e`. In the engine monsters carry `field_flags == 0`, so the picker's own
-target stands and the resolver is exercised directly (and via the hook once the
-flag write is wired).
+- `World::pick_monster_action` is the action picker's **generic core** (real
+  RNG, real `magic_attacks`, spell-shape targeting through the catalog's
+  `SpellTarget`).
+- `monster_ai::decide` is the **per-monster-id `switch`** - keyed by monster id,
+  it overrides the generic choice with the bespoke scripted casts (low-HP
+  self-heal, MP-gated nukes, multi-phase boss scripts), reading/writing the
+  battle-scoped `MonsterAiState` (per-monster cooldowns `DAT_801C8FE0`, the
+  `DAT_801C8FE4` phase counter, the recent-target ring).
+- `monster_ai::apply_recent_target_ring` is the post-switch anti-repeat ring.
+- `World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
+  `monster_setup` hook.
+
+The picker drives the live loop's monster turns, folding a chosen cast through
+`cast_spell_on_slots` (the shared player/monster cast path) and parking the SM at
+`EndOfAction`. Scripted casts emit retail spell ids; they fold when the active
+catalog knows the id (the disc spell table, or the clean-room monster block in
+`SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
+
+**Remaining gaps** (documented in `monster_ai`): a few cases touch actor fields
+the engine doesn't model yet - monster `0x8A`'s `actor+0x170` charge counter, the
+`'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
+preload for spell ids `0x2E/0x2F`. The `ctx+0x28a` battle-mode flag (gating the
+boss/scripted-mode cases) and the `actor+0x16e & 0x380` AI flag (gating the
+`FUN_801E7320` hook, set by `FUN_80047430` when the monster record's flags dword
+`+0x00` has bit `0x2000`) default to `0` in normal battles - none of the AI/SM
+functions write them, so those cases stay dormant until the writers are wired.
 
 ## Stat aggregator (`FUN_80042558`)
 

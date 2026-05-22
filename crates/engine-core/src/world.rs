@@ -876,6 +876,11 @@ pub struct World {
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
 
+    /// Battle-scoped monster-AI state (cooldowns / phase counter / recent-target
+    /// ring) read & written by the per-monster-id scripted-cast picker
+    /// ([`crate::monster_ai::decide`]). Reset on each battle enter.
+    pub monster_ai_state: crate::monster_ai::MonsterAiState,
+
     /// CDNAME label of the active scene, if any. Set by
     /// [`World::set_active_scene_label`] on scene-load and consumed by
     /// engine-side helpers ([`World::install_encounter_for_scene`] reads
@@ -1180,6 +1185,7 @@ impl World {
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
+            monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
@@ -3378,6 +3384,8 @@ impl World {
         }
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
+        // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
+        self.monster_ai_state.reset();
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();
@@ -4599,22 +4607,23 @@ impl World {
     /// MP (`actor+0x150`) falls back to a physical strike, matching retail's
     /// affordability gate (`actor[0x150] < spell.mp_cost`).
     ///
-    /// **Deferred** (a follow-up port, now grounded): the multi-art spirit/SP
-    /// chain queue, the `'#'`-marked spell-entry scan, and the large
-    /// per-monster-id scripted-cast `switch`. That `switch` keys on
-    /// `DAT_8007BD0C[slot]`, which `FUN_801DA51C` fills from the encounter
-    /// record's `[+4 + slot]` monster ids - i.e. it is the **monster id**, not
-    /// an abstract AI-type, so each case is bespoke AI for a specific monster
-    /// the engine already identifies via `battle_monster_id`. This port models
-    /// the generic (non-special-cased) path. The companion target resolver
-    /// `FUN_801E7320` is ported as [`Self::resolve_monster_target`] (the
-    /// `monster_setup` hook).
+    /// The large per-monster-id scripted-cast `switch` that follows the core in
+    /// retail keys on `DAT_8007BD0C[slot]`, which `FUN_801DA51C` fills from the
+    /// encounter record's `[+4 + slot]` monster ids - i.e. the **monster id**,
+    /// not an abstract AI-type, so each case is bespoke AI for a specific
+    /// monster the engine already identifies via `battle_monster_id`. That
+    /// switch is ported in [`crate::monster_ai`] ([`crate::monster_ai::decide`])
+    /// and consulted here as an override, followed by the post-switch
+    /// recent-target ring ([`crate::monster_ai::apply_recent_target_ring`]). The
+    /// companion target resolver `FUN_801E7320` is ported as
+    /// [`Self::resolve_monster_target`] (the `monster_setup` hook).
     ///
     /// PORT: FUN_801E9FD4
     /// REF: FUN_801DABA4
     fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
         let pc = self.party_count.max(1);
 
+        // --- generic decision core ---
         // The monster's own castable global magic ids (parser already drops the
         // empty `<= 1` slots, so every entry is "live").
         let magic: Vec<u8> = self
@@ -4624,38 +4633,107 @@ impl World {
             .and_then(|id| self.monster_catalog.get(id))
             .map(|d| d.magic_attacks.clone())
             .unwrap_or_default();
+        let mp = self
+            .actors
+            .get(slot as usize)
+            .map(|a| a.battle.mp)
+            .unwrap_or(0);
 
-        // FUN_801E9FD4: roll over (1 + live_magic_count); 0 => physical attack.
-        // The roll always consumes one RNG draw, exactly like retail.
+        // Roll over (1 + live_magic_count); 0 => physical. Always consumes one
+        // RNG draw, exactly like retail.
         let denom = 1 + magic.len() as u32;
         let roll = self.next_rng() % denom;
+        // Provisional choice (category 3 = physical strike, 2 = magic).
+        let (mut category, mut spell_id) = (3u8, 0u8);
+        let mut target_class;
         if roll != 0 {
-            let spell_id = magic[(roll - 1) as usize];
-            let mp = self
-                .actors
-                .get(slot as usize)
-                .map(|a| a.battle.mp)
-                .unwrap_or(0);
-            if let Some(def) = self.spell_catalog.get(spell_id).cloned()
+            let id = magic[(roll - 1) as usize];
+            if let Some(def) = self.spell_catalog.get(id).cloned()
                 && mp >= def.mp_cost as u16
             {
-                let targets = self.resolve_monster_cast_targets(slot, &def);
-                if !targets.is_empty() {
-                    if let Some(a) = self.actors.get_mut(slot as usize) {
-                        a.battle.action_category = 2; // magic
-                        a.battle.params[0] = spell_id;
-                    }
-                    return MonsterAction::Cast { spell_id, targets };
-                }
+                category = 2;
+                spell_id = id;
+                target_class = self.monster_cast_target_class(slot, &def);
+            } else {
+                target_class = self.random_living_party_member(pc).unwrap_or(slot);
             }
-            // Unaffordable / unknown / no target: fall through to physical.
+        } else {
+            target_class = self.random_living_party_member(pc).unwrap_or(slot);
         }
 
-        // Physical strike: FUN_801E9FD4 sets target = rand % party_count.
-        let target = self
-            .random_living_party_member(pc)
-            .or_else(|| self.first_living_opponent_of(slot))
-            .unwrap_or(slot);
+        // --- per-monster-id scripted override (the FUN_801E9FD4 switch) + the
+        // post-switch recent-target anti-repeat ring. Run in a borrow window
+        // with the AI state owned locally so the RNG closure can take `self`.
+        if let Some(monster_id) = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+        {
+            let (hp, max_hp) = self
+                .actors
+                .get(slot as usize)
+                .map(|a| (a.battle.hp, a.battle.max_hp))
+                .unwrap_or((0, 0));
+            let allies_with_mp = (0..pc)
+                .filter(|&i| {
+                    self.actors
+                        .get(i as usize)
+                        .is_some_and(|a| a.battle.liveness != 0 && a.battle.mp != 0)
+                })
+                .count() as u8;
+            let n = self.actors.len() as u8;
+            let ctx = crate::monster_ai::MonsterAiCtx {
+                monster_id: (monster_id & 0xFF) as u8,
+                monster_index: slot.saturating_sub(pc),
+                caster_slot: slot,
+                hp,
+                max_hp,
+                mp,
+                party_count: pc,
+                monster_count: n.saturating_sub(pc).max(1),
+                field_flags: self
+                    .actors
+                    .get(slot as usize)
+                    .map(|a| a.battle.field_flags)
+                    .unwrap_or(0),
+                allies_with_mp,
+            };
+            let mut ai = std::mem::take(&mut self.monster_ai_state);
+            if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
+                category = cast.category;
+                spell_id = cast.spell_id;
+                target_class = cast.target_class;
+            }
+            // Anti-repeat ring (applies to whichever single party target stands).
+            target_class = crate::monster_ai::apply_recent_target_ring(
+                target_class,
+                spell_id,
+                pc,
+                &mut ai,
+                &mut || self.next_rng(),
+            );
+            self.monster_ai_state = ai;
+        }
+
+        // --- build the action ---
+        if category == 2 {
+            let targets = self.resolve_class_to_slots(slot, target_class);
+            if !targets.is_empty() {
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 2;
+                    a.battle.params[0] = spell_id;
+                }
+                return MonsterAction::Cast { spell_id, targets };
+            }
+        }
+        // Physical strike (or a cast that resolved no targets).
+        let target = if target_class < pc {
+            target_class
+        } else {
+            self.random_living_party_member(pc)
+                .or_else(|| self.first_living_opponent_of(slot))
+                .unwrap_or(slot)
+        };
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.action_category = 3;
             a.battle.active_target = target;
@@ -4663,29 +4741,21 @@ impl World {
         MonsterAction::Physical { target }
     }
 
-    /// Resolve the absolute target slots for a monster casting `def`, by the
-    /// spell's [`crate::spells::SpellTarget`] shape (from the monster's
-    /// perspective: enemies = the party band, allies = the monster band).
-    /// Mirrors the shape dispatch in `FUN_801E9FD4`.
-    fn resolve_monster_cast_targets(&mut self, slot: u8, def: &crate::spells::SpellDef) -> Vec<u8> {
+    /// Target **class** the generic core picks for a monster casting `def`, by
+    /// the spell's [`crate::spells::SpellTarget`] shape (monster's perspective:
+    /// enemies = party band, allies = monster band). Single-enemy → a random
+    /// living party slot; `AllEnemies` → class `8`; `AllAllies` → class `9`;
+    /// `OneAlly` → the most-weakened living ally (or self); `SelfOnly` → self.
+    fn monster_cast_target_class(&mut self, slot: u8, def: &crate::spells::SpellDef) -> u8 {
         use crate::spells::SpellTarget;
         let pc = self.party_count.max(1);
         let n = self.actors.len() as u8;
-        let alive = |w: &Self, i: u8| -> bool {
-            w.actors
-                .get(i as usize)
-                .is_some_and(|a| a.battle.liveness != 0)
-        };
         match def.target {
-            SpellTarget::OneEnemy => self
-                .random_living_party_member(pc)
-                .map(|t| vec![t])
-                .unwrap_or_default(),
-            SpellTarget::AllEnemies => (0..pc).filter(|&i| alive(self, i)).collect(),
-            SpellTarget::AllAllies => (pc..n).filter(|&i| alive(self, i)).collect(),
+            SpellTarget::OneEnemy => self.random_living_party_member(pc).unwrap_or(slot),
+            SpellTarget::AllEnemies => 8,
+            SpellTarget::AllAllies => 9,
+            SpellTarget::SelfOnly => slot,
             SpellTarget::OneAlly => {
-                // Retail picks the most-weakened living ally (HP < maxHP/2);
-                // fall back to self.
                 let mut best: Option<(u8, u16)> = None;
                 for i in pc..n {
                     if let Some(a) = self.actors.get(i as usize)
@@ -4696,9 +4766,29 @@ impl World {
                         best = Some((i, a.battle.hp));
                     }
                 }
-                vec![best.map(|(i, _)| i).unwrap_or(slot)]
+                best.map(|(i, _)| i).unwrap_or(slot)
             }
-            SpellTarget::SelfOnly => vec![slot],
+        }
+    }
+
+    /// Resolve an absolute target list from a `+0x1DD` target class: `8` = all
+    /// living party, `9` = all living monsters, `< party_count` = that single
+    /// party slot, otherwise that single monster/self slot.
+    fn resolve_class_to_slots(&self, slot: u8, class: u8) -> Vec<u8> {
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let alive = |i: u8| {
+            self.actors
+                .get(i as usize)
+                .is_some_and(|a| a.battle.liveness != 0)
+        };
+        let _ = slot;
+        match class {
+            8 => (0..pc).filter(|&i| alive(i)).collect(),
+            9 => (pc..n).filter(|&i| alive(i)).collect(),
+            t if t < n => vec![t],
+            // Out-of-range class: no targets (the caller falls back to physical).
+            _ => Vec::new(),
         }
     }
 
@@ -8382,6 +8472,56 @@ mod tests {
             world.actors[1].battle.active_target, 0,
             "targets the only living party member (slot 0)"
         );
+    }
+
+    /// Per-monster-id scripted AI (the `FUN_801E9FD4` switch) end-to-end: a
+    /// wounded monster whose id has a low-HP self-heal case folds that heal onto
+    /// itself rather than striking the party. Monster id 6 (case `0x06`) casts
+    /// `0x52` at self when `HP <= maxHP/2` and its ability cooldown is clear.
+    #[test]
+    fn scripted_ai_monster_self_heals_when_wounded() {
+        use crate::monster_catalog::vanilla_monster_catalog;
+        use crate::spells::SpellCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        // Monster id 6 (Skeleton -> AI case 0x06) at slot 1, wounded to 20/100
+        // with MP to spare for the heal.
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 20;
+        world.actors[1].battle.mp = 20;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(6);
+        world.rng_state = 7;
+
+        world.take_monster_turn(1);
+
+        assert_eq!(
+            world.actors[1].battle.params[0], 0x52,
+            "self-heal spell queued"
+        );
+        assert!(
+            world.actors[1].battle.hp > 20,
+            "the monster healed itself instead of striking the party"
+        );
+        assert_eq!(world.actors[0].battle.hp, 200, "party untouched");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "cast is the whole turn"
+        );
+        assert_eq!(world.monster_ai_state.dat[4], 1, "ability cooldown armed");
+        let fx = world.drain_battle_hit_fx();
+        assert!(fx.iter().any(|f| f.is_heal && f.target_slot == 1));
     }
 
     /// Faithful `FUN_801E7320`: a targeting class in `3..=6` resolves to a
