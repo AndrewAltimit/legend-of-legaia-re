@@ -1,36 +1,37 @@
-//! v0.1 playthrough oracle — SCAFFOLD.
+//! v0.1 playthrough oracle.
 //!
-//! Composes the four existing parity oracles (VRAM, audio-trace,
-//! mode-trace, SC round-trip) across one scripted `j-replay-v1`
-//! recording that drives the shortest gameplay path exercising every
-//! deep subsystem:
+//! Drives one scripted `j-replay-v1` recording through the engine and
+//! checks it against the retail parity oracles. The v0.1 target path is:
 //!
-//!   boot -> title -> load real save -> walk in field scene ->
-//!   fixed encounter -> battle victory -> XP/level/loot -> save back
+//!   boot -> field scene -> [deferred: scripted encounter -> battle ->
+//!   loot -> save back]
 //!
-//! The recording itself lives at `scripts/replays/v0_1_playthrough.toml`
-//! (override via `LEGAIA_V0_1_REPLAY`). Two halves run here:
+//! **Phase 1 (current).** The engine drives a cold boot into Field for the
+//! scenario's scene via [`build_engine_mode_trace_field_live`]
+//! ([`BootSession::enter_field_live`]) and asserts:
+//!   - it actually reaches `SceneMode::Field` (not stuck in `Title`);
+//!   - the replay `[[expected]]` Field rows hold across the run;
+//!   - the retail mode-trace converges (when a non-drifted save resolves);
+//!   - an SC round-trip on the post-Field world is byte-identical.
 //!
-//! 1. **Determinism gate (disc-free).** Drives a synthetic
+//! **Deferred Battle leg.** Reaching BattleMode is the scripted Tetsu
+//! tutorial fight, gated on mc7's story state (a cold boot into town01
+//! record 0 produces no dialogue; town scenes have a 0% random rate). It
+//! needs mc7's save state seeded into the World so the trigger arms, then
+//! the field-VM dialogue-accept -> scripted-encounter install. The VRAM
+//! (title frame) and audio-trace (BGM swap) hooks land with it.
+//!
+//! The recording lives at `scripts/replays/v0_1_playthrough.toml`
+//! (override via `LEGAIA_V0_1_REPLAY`). Three tests run here:
+//!
+//! 1. **Replay smoke (always).** The replay file parses + validates.
+//! 2. **Determinism gate (disc-free, always).** Drives a synthetic
 //!    [`legaia_engine_core::world::World`] through the replay twice and
-//!    asserts the per-frame state-trace bytes are identical. Mirrors
-//!    [`determinism_j2`](crate::determinism_j2) but binds to the v0.1
-//!    replay file so a regression on the file shape surfaces here.
-//!    Always runs in CI.
-//!
-//! 2. **Oracle convergence gate (disc-gated).** Resolves the replay's
-//!    `meta.scenario` to a row in `scripts/scenarios.toml`, locates the
-//!    matching `.mc{slot}` save, builds the engine's mode-trace via
-//!    [`build_engine_mode_trace`], and asserts convergence against the
-//!    retail snapshot at the frames named in `[[expected]]`. Skip-passes
-//!    when the scaffold isn't yet populated (no scenario binding, no
-//!    save, or no disc).
-//!
-//! VRAM and audio-trace oracle hooks will land on top of this scaffold
-//! when the replay carries real events. The plumbing for both already
-//! exists in `legaia_engine_shell::{vram_oracle, audio_trace_oracle}`;
-//! this file picks them up via composition once the third assertion
-//! shape is finalised.
+//!    asserts byte-identical per-frame state traces.
+//! 3. **Oracle convergence gate (disc-gated).** Resolves the replay's
+//!    `meta.scenario`, runs the field-live engine driver, and asserts the
+//!    Field-reach + replay-fixture + retail convergence + SC round-trip
+//!    above. Skip-passes without disc data (CLAUDE.md convention).
 //!
 //! Skip-pass cases (CLAUDE.md disc-gated convention):
 //!   - replay file missing (smoke test fails loudly; oracle test skips)
@@ -43,8 +44,9 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 use legaia_engine_shell::mode_trace_oracle::{
-    ModeTraceFrame, build_engine_mode_trace_with_inputs, first_mode_trace_divergence,
+    ModeTraceFrame, build_engine_mode_trace_field_live, first_mode_trace_divergence,
     load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
 use legaia_engine_shell::replay::ReplayFile;
@@ -343,19 +345,20 @@ fn v0_1_oracle_convergence() {
     // -- pad-threaded mode-trace ---------------------------------------
     //
     // Run the engine for `max(MIN_ORACLE_FRAMES, replay.meta.frames)`
-    // ticks, feeding the replay's expanded pad stream into
-    // `World.input` per frame. The world-tick path now consumes
-    // `World.input` for the field-VM dialog-advance poll
-    // (`SceneMode::Field`) and the world-map controller
-    // (`SceneMode::WorldMap`); see `build_engine_mode_trace_with_inputs`
-    // doc. The prologue path is `SceneMode::Field`, where player
-    // locomotion isn't yet input-driven, so a fresh boot still doesn't
-    // reach Battle from the pad stream alone -- that leg lands with the
-    // field locomotion + encounter->battle work. The pad threading is
-    // behavioural for the consumers above and contractual for the rest.
+    // ticks via the field-live driver: it calls
+    // `BootSession::enter_field_live`, so the engine reaches
+    // `SceneMode::Field` for `scene_name` immediately (instead of sitting
+    // in `Title` like the bare `load_scene` path), then ticks feeding the
+    // replay's expanded pad stream into `World.input` per frame.
+    //
+    // This converges against a field-phase retail snapshot (`game_mode
+    // 0x03` -> Field). The scripted-encounter Battle leg needs the scene's
+    // story state seeded so the trigger is armed (a cold boot into record 0
+    // produces no dialogue, and town scenes have a 0% random rate); that is
+    // a separate, tracked milestone. This oracle stops at Field.
     let pad_stream = replay.expand_pad_stream();
     let oracle_frames = replay.meta.frames.max(MIN_ORACLE_FRAMES);
-    let trace = build_engine_mode_trace_with_inputs(
+    let trace = build_engine_mode_trace_field_live(
         scene_name,
         &extracted,
         None,
@@ -374,12 +377,19 @@ fn v0_1_oracle_convergence() {
     };
 
     // Diagnostic: print the unique scene_mode transitions across the
-    // trace. With no pad consumer wired into the engine tick today,
-    // the expected output is a single Title row -- the engine never
-    // leaves Title from a fresh boot. When dialogue advance lands,
-    // additional transitions (Title -> Field -> Battle) will surface
-    // here without changing the test code.
+    // trace. With the field-live driver the engine reaches Field for
+    // `scene_name` at frame 0 and stays there (the Battle leg is the
+    // tracked follow-on). When that lands, a Field -> Battle transition
+    // surfaces here without changing the test code.
     print_scene_mode_transitions(scenario_label, &trace);
+
+    // The engine must actually reach Field (not sit in Title) -- this is
+    // the Phase-1 deliverable the field-live driver unblocks.
+    assert!(
+        trace.iter().any(|f| f.scene_mode == "Field"),
+        "v0.1 engine never reached Field for scenario {scenario_label:?} (scene={scene_name}); \
+         field-live driver regressed"
+    );
 
     // Retail-snapshot convergence (existing assertion shape from
     // mode_trace_e3). Passes today because the engine reaches
@@ -403,11 +413,10 @@ fn v0_1_oracle_convergence() {
 
     // Replay-fixture diff (sharper assertion). The replay file's
     // [[expected]] rows pin specific frames to specific scene_modes,
-    // typically aligned with the anchors captured in
-    // `scripts/scenarios.toml`. Today the engine can't drive the
-    // prologue from a cold boot, so any [[expected]] row past frame 0
-    // that asserts `scene_mode != "Title"` will RED this test -- that
-    // failure IS the v0.1 finding, not a scaffold defect.
+    // aligned with the anchors in `scripts/scenarios.toml`. With the
+    // field-live driver these are `Field` rows for the field-phase
+    // scenario; the deferred Battle leg will add a `Battle` row once the
+    // scripted trigger is seeded.
     if let Some(d) = replay.diff(&trace) {
         panic!(
             "v0.1 replay fixture drift at frame {}: kind={:?} expected={:?} recorded(scene_mode={}, active_scene={:?})",
@@ -430,13 +439,46 @@ fn v0_1_oracle_convergence() {
         ),
     }
 
-    // TODO(item 1 follow-ups):
-    //   - VRAM oracle at the frame the replay marks as the title screen.
-    //   - audio-trace oracle across field BGM transition frames.
-    //   - SC round-trip on the final save block (post-replay World).
-    //
-    // Each lands as its own diff block once the corresponding
-    // [[expected]] row shape stabilises.
+    // SC round-trip on the post-Field World: save the live world to an
+    // `LGSF` SaveFile, parse it back, load it, and re-save -- the two
+    // serialisations must be byte-identical. This exercises the save path
+    // on a real disc-loaded field world (party + globals + inventory),
+    // not just a synthetic fixture.
+    {
+        let cfg = BootConfig {
+            scene: scene_name.to_string(),
+            enable_audio: false,
+        };
+        let mut session = BootSession::open(&extracted, &cfg).expect("reopen for SC round-trip");
+        session
+            .enter_field_live(
+                scene_name,
+                &FieldLiveOpts {
+                    live_loop: true,
+                    ..Default::default()
+                },
+            )
+            .expect("enter_field_live for SC round-trip");
+        for i in 0..oracle_frames {
+            let pad = pad_stream.get(i as usize).copied().unwrap_or(0);
+            session.host.world.set_pad(pad);
+            let _ = session.tick().expect("tick during SC round-trip run");
+        }
+        let world = &mut session.host.world;
+        let first = world.save_full().write();
+        let parsed = legaia_save::SaveFile::parse(&first).expect("parse round-tripped SaveFile");
+        world.load_full(parsed);
+        let second = world.save_full().write();
+        assert_eq!(
+            first, second,
+            "v0.1 SC round-trip not byte-identical for scenario {scenario_label:?}"
+        );
+    }
+
+    // Deferred with the scripted-Tetsu Battle leg (need the armed trigger
+    // before these have meaningful frames to assert against):
+    //   - VRAM oracle at the title-screen frame.
+    //   - audio-trace oracle across the Battle<->Field BGM transition.
 }
 
 /// Walk `trace` left-to-right printing one row per `scene_mode`

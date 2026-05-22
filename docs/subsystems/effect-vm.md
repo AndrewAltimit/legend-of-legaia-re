@@ -20,6 +20,14 @@ Each 28-byte master slot carries `(state, counter, ?, sub_state, pos_x, pos_y, p
 
 The cleaner port path: model the walker as a state-machine class and accept its decompile-shape rather than insisting on an opcode table. The 32-master / 128-child slot pool, the spawn API, and the per-frame walker are all well-understood - the port itself is straightforward; the question is just whether to label the format an "opcode table" or a "state machine".
 
+## Lifetime + render bridge (engine port)
+
+The retail per-state token algebra (`FUN_801E0088` pass 1) is inlined and not yet extracted, so `EffectHost::advance_state` models the lifecycle as a fixed-frame countdown: each work tick increments `master.field_14`, and the slot retires once it reaches `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`. Without this an effect terminated on its first work tick and never persisted to draw.
+
+`World::active_effect_markers` is the render-agnostic seam between the pool and the host. It returns one `EffectMarker` per active master slot (world position decoded from the 8.8-fixed pool coords, spawn angle, and a `0.0..=1.0` lifetime fraction for fade). The native host (`play-window`) turns each marker into a world-space billboard cross through the existing `UploadedLines` pipeline (`Scene.overlay_lines`), fading it as it ages. `World::spawn_debug_effect` seats a synthetic effect at a point so the bridge can be exercised by hand (the `E` key in `play-window` spawns one at the player); it is not a retail path.
+
+**Deferred (needs new infra):** the faithful render is Pass 2 of the walker - per-child billboarded PSX sprite primitives sampling the effect bundle's inline atlas (`u,v,page,clut`) from VRAM. That requires decoding the [2-pack wrapper's](../formats/effect.md) inline sprite atlas, uploading the effect-bundle textures into VRAM, and a billboard sprite primitive in the renderer. The runtime effect catalog (PROT 873 `efect.dat`) is also not yet loaded into the battle-enter path, so the action SM's `ui_element` spawns currently resolve to no script - wiring that catalog is the prerequisite for real (non-debug) effect spawns.
+
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 
 ```

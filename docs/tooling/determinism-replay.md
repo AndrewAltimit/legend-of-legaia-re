@@ -142,3 +142,16 @@ so a captured session can be paired back to its retail starting state
 via [`scripts/scenarios.toml`](../../scripts/scenarios.toml). Future
 work pairs `record` + `replay` with E1/E3 to produce identical engine
 traces from canonical inputs.
+
+The [`v0_1_playthrough`](../../crates/engine-shell/tests/v0_1_playthrough.rs)
+oracle composes these: a disc-free determinism gate plus a disc-gated
+convergence gate. Its engine driver is
+`mode_trace_oracle::build_engine_mode_trace_field_live`, which calls
+[`BootSession::enter_field_live`] so the engine drives a cold boot into
+the scenario's field scene (run record 0, install the encounter table,
+arm the live loop) instead of sitting in `Title`. Phase 1 asserts the
+engine reaches `Field`, the replay `[[expected]]` Field rows hold, the
+retail mode-trace converges, and an SC round-trip on the post-Field world
+is byte-identical. The scripted-encounter Battle leg is deferred (see the
+"Scripted Tetsu encounter → Battle" row in
+[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).

@@ -157,6 +157,15 @@ impl GameMode {
     /// for the per-frame mode).
     pub fn scene_mode(self) -> SceneMode {
         match self {
+            // game_mode 0x03 is the in-town / on-field gameplay mode. Two
+            // independent retail captures confirm this empirically: the
+            // `v0_1_pre_battle_tetsu` save (Vahn walking in Rim Elm / town01)
+            // and the runtime-pinned free-movement controller on `map03`,
+            // both at game_mode 0x03 (see docs/subsystems/field-locomotion.md).
+            // The dev mode-table label "MAIN MODE" / "options menu" reading is
+            // misleading here; the broader question of which handler the retail
+            // dispatcher runs for index 3 is a separate open RE thread.
+            GameMode::MainMode => SceneMode::Field,
             GameMode::MapdispInit | GameMode::MapdispMode => SceneMode::Field,
             GameMode::BattleInit | GameMode::BattleMode => SceneMode::Battle,
             GameMode::StrInit | GameMode::StrMode => SceneMode::Cutscene,

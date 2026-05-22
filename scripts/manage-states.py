@@ -227,73 +227,58 @@ def set_scenario_field(
     Returns True on success, False if the label wasn't found.
     """
     lines = manifest_path.read_text().splitlines(keepends=True)
-    out: list[str] = []
-    in_block = False
-    matched_block = False
-    label_line_idx_in_block: int | None = None
-    pending_insert = False
-    replaced = False
-    last_block_start = -1
+    n = len(lines)
 
+    # --- Phase 1: locate the matched [[scenarios]] block's line span,
+    # its `label` line, and any pre-existing `{field} =` line within it.
+    #
+    # A [[scenarios]] block runs until the next top-level [[table]] (a
+    # nested [scenarios.subtable] does NOT end it). We must scan the
+    # whole block before deciding insert-vs-replace: a single-pass
+    # "insert right after label" would duplicate a field that already
+    # exists later in the same block.
+    block_start: int | None = None  # index of the matched `[[scenarios]]` line
+    label_idx: int | None = None  # index of the matched `label = ...` line
+    field_idx: int | None = None  # index of an existing `{field} =` line in-block
+
+    cur_block: int | None = None
+    cur_matched = False
     i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        # A new [[scenarios]] block.
+    while i < n:
+        stripped = lines[i].strip()
         if stripped == "[[scenarios]]":
-            in_block = True
-            matched_block = False
-            label_line_idx_in_block = None
-            last_block_start = len(out)
-            out.append(line)
+            cur_block = i
+            cur_matched = False
             i += 1
             continue
-
-        # A different top-level table ends the current scenario block.
-        if in_block and stripped.startswith("[[") and stripped != "[[scenarios]]":
-            in_block = False
-        # Nested subtable (e.g. [scenarios.overlay_slice]) does NOT end
-        # the block — those belong to the outer [[scenarios]] entry.
-
-        # If we matched and haven't inserted yet, do it before the next
-        # line that isn't part of our block.
-        if pending_insert and matched_block:
-            out.append(f'{field} = "{value}"\n')
-            pending_insert = False
-            replaced = True
-
-        if in_block:
-            m = _SCENARIO_LABEL_RE.match(line)
-            if m and m.group(1) == label:
-                matched_block = True
-                out.append(line)
-                # We'll insert <field> on the next line if it doesn't exist.
-                pending_insert = True
-                i += 1
-                continue
-
-            if matched_block and line.lstrip().startswith(f"{field} ="):
-                # Replace existing line.
-                indent = line[:len(line) - len(line.lstrip())]
-                out.append(f'{indent}{field} = "{value}"\n')
-                pending_insert = False
-                replaced = True
-                i += 1
-                continue
-
-        out.append(line)
+        # Any other top-level [[table]] ends the current block.
+        if stripped.startswith("[[") and stripped != "[[scenarios]]":
+            if cur_matched:
+                break  # matched block fully scanned
+            cur_block = None
+        if cur_block is not None:
+            m = _SCENARIO_LABEL_RE.match(lines[i])
+            if m and m.group(1) == label and block_start is None:
+                block_start = cur_block
+                label_idx = i
+                cur_matched = True
+            elif cur_matched and lines[i].lstrip().startswith(f"{field} ="):
+                field_idx = i
+                break  # existing field found; nothing left to scan
         i += 1
 
-    # Trailing-EOF pending insert.
-    if pending_insert and matched_block:
-        out.append(f'{field} = "{value}"\n')
-        replaced = True
-
-    if not replaced:
+    if block_start is None or label_idx is None:
         return False
 
-    manifest_path.write_text("".join(out))
+    # --- Phase 2: replace in place if the field exists, else insert it
+    # on the line after `label`.
+    if field_idx is not None:
+        indent = lines[field_idx][: len(lines[field_idx]) - len(lines[field_idx].lstrip())]
+        lines[field_idx] = f'{indent}{field} = "{value}"\n'
+    else:
+        lines.insert(label_idx + 1, f'{field} = "{value}"\n')
+
+    manifest_path.write_text("".join(lines))
     return True
 
 

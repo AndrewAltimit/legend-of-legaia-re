@@ -125,6 +125,23 @@ pub struct FadeRequest {
     pub ticks: u16,
 }
 
+/// Render-agnostic snapshot of one live effect-pool master slot, produced by
+/// [`World::active_effect_markers`]. Hosts turn these into whatever they can
+/// draw (billboard markers today, textured sprites once the effect-bundle
+/// atlas pipeline lands) without reaching into the effect VM's pool layout.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectMarker {
+    /// Effect origin in world units (the pool stores 8.8 fixed-point; this
+    /// is the integer-unit position the renderer's MVP consumes).
+    pub world_pos: [f32; 3],
+    /// 12-bit spawn angle (`master.angle`), passed through for hosts that
+    /// orient the effect.
+    pub angle: u16,
+    /// Lifetime fraction in `0.0..=1.0` (0 = just spawned, 1 = about to
+    /// retire). Hosts fade the marker out as this approaches 1.
+    pub age01: f32,
+}
+
 /// Scene mode the world is running. Drives which top-level VMs tick and
 /// which auxiliary state lives in the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -2233,6 +2250,55 @@ impl World {
         // the borrow.
         let pool = unsafe { &mut *pool_ptr };
         pool.tick(&mut host);
+    }
+
+    /// Snapshot every live effect for the renderer: one [`EffectMarker`] per
+    /// active master slot (`child_count > 0`), with its world position, spawn
+    /// angle, and lifetime fraction.
+    ///
+    /// This is the render-agnostic seam between the effect VM and the host's
+    /// draw path. The host drains it each frame after [`Self::tick`] and emits
+    /// whatever it can draw; nothing here depends on the renderer.
+    pub fn active_effect_markers(&self) -> Vec<EffectMarker> {
+        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        self.effect_pool
+            .master_slots
+            .iter()
+            .filter(|m| m.child_count > 0)
+            .map(|m| EffectMarker {
+                // Pool positions are 8.8 fixed-point world units.
+                world_pos: [
+                    (m.pos_x as f32) / 256.0,
+                    (m.pos_y as f32) / 256.0,
+                    (m.pos_z as f32) / 256.0,
+                ],
+                angle: m.angle,
+                age01: ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0),
+            })
+            .collect()
+    }
+
+    /// Dev/visualization helper: seat one synthetic active effect into the
+    /// pool at `world_pos` (world units) so the effect-pool render bridge can
+    /// be exercised by hand. It ages and retires through the normal
+    /// [`Self::tick_effects`] lifetime like any spawned effect.
+    ///
+    /// This is **not** a retail code path - it stands in for the runtime
+    /// effect catalog (PROT 873 `efect.dat` 2-pack), which isn't yet wired
+    /// into the battle-enter path so the action SM's `ui_element` spawns
+    /// resolve to real scripts. Returns `false` when the pool is full.
+    pub fn spawn_debug_effect(&mut self, world_pos: [f32; 3]) -> bool {
+        let Some(slot) = self.effect_pool.allocate_master() else {
+            return false;
+        };
+        let m = &mut self.effect_pool.master_slots[slot];
+        *m = vm::effect_vm::MasterSlot::default();
+        // child_count > 0 marks the slot active for the walker + markers.
+        m.child_count = 1;
+        m.pos_x = (world_pos[0] * 256.0) as i32;
+        m.pos_y = (world_pos[1] * 256.0) as i32;
+        m.pos_z = (world_pos[2] * 256.0) as i32;
+        true
     }
 
     /// Spawn effect `ui_id` at `world_pos` / `angle` via the pool, looking
@@ -4856,10 +4922,21 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
     fn next_random(&mut self) -> i32 {
         self.world.next_rng() as i32
     }
-    fn advance_state(&mut self, _slot: usize, _master: &mut MasterSlot) -> StateOutcome {
-        // Default world has no state-transition wiring; let the slot terminate
-        // so the pool doesn't leak. Engines that wire sprites override this.
-        StateOutcome::Terminate
+    fn advance_state(&mut self, _slot: usize, master: &mut MasterSlot) -> StateOutcome {
+        // REF: FUN_801e0088
+        // Clean-room lifetime: count elapsed frames in `field_14` (a scratch
+        // word the retail walker manages during state advance) and retire the
+        // effect after a fixed budget. Without this an effect terminates on
+        // its first work tick and never persists long enough to render. The
+        // faithful per-state token walk (retail `FUN_801E0088` pass 1) lands
+        // with the textured-sprite render path; see
+        // `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`.
+        master.field_14 = master.field_14.saturating_add(1);
+        if (master.field_14 as u32) >= vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+            StateOutcome::Terminate
+        } else {
+            StateOutcome::Continue
+        }
     }
 }
 
@@ -5599,13 +5676,25 @@ mod tests {
     }
 
     #[test]
-    fn effect_pool_tick_terminates_default_slots() {
+    fn effect_pool_persists_then_terminates_over_lifetime() {
         let mut world = World::new();
         // Mark slot 0 active by setting child_count > 0 so the tick walker
         // visits it.
         world.effect_pool.master_slots[0].child_count = 4;
+
+        // The effect must survive each work tick until the fixed lifetime
+        // budget is spent - it no longer terminates on the first tick.
+        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES;
+        for frame in 1..lifetime {
+            world.tick_effects();
+            assert_eq!(
+                world.effect_pool.master_slots[0].child_count, 4,
+                "effect retired early at frame {frame}"
+            );
+            assert_eq!(world.effect_pool.master_slots[0].field_14, frame as i32);
+        }
+        // The tick that reaches the budget retires the slot.
         world.tick_effects();
-        // Default advance_state returns Terminate → slot zeroes out.
         assert_eq!(world.effect_pool.master_slots[0].child_count, 0);
     }
 
@@ -7342,6 +7431,58 @@ mod tests {
         world.try_spawn_effect(0, [10, 0, -10], 0x200);
         assert_eq!(world.effect_pool.active_count(), 1);
         assert_eq!(world.effect_pool.master_slots[0].pos_x, 10i32 << 8);
+    }
+
+    #[test]
+    fn active_effect_markers_reflect_pool_and_fade_with_age() {
+        let mut world = World::default();
+        let script = vm::effect_vm::EffectScript {
+            child_count: 2,
+            flags: 0,
+            spread: 0,
+            body: vec![],
+        };
+        world.effect_catalog = vm::effect_vm::EffectCatalog::new(vec![(script, vec![])]);
+
+        // No live effects -> no markers.
+        assert!(world.active_effect_markers().is_empty());
+
+        world.try_spawn_effect(0, [10, 0, -10], 0x200);
+        let markers = world.active_effect_markers();
+        assert_eq!(markers.len(), 1);
+        // 8.8 fixed pool position decodes back to the spawn world units.
+        assert_eq!(markers[0].world_pos, [10.0, 0.0, -10.0]);
+        assert_eq!(markers[0].angle, 0x200);
+        // Freshly spawned: no elapsed frames yet.
+        assert_eq!(markers[0].age01, 0.0);
+
+        // Age advances toward 1.0 as the effect ticks through its lifetime.
+        world.tick_effects();
+        let aged = world.active_effect_markers();
+        assert_eq!(aged.len(), 1);
+        assert!(aged[0].age01 > 0.0 && aged[0].age01 < 1.0);
+
+        // Once the lifetime is spent the slot retires and emits no marker.
+        for _ in 0..vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+            world.tick_effects();
+        }
+        assert!(world.active_effect_markers().is_empty());
+    }
+
+    #[test]
+    fn spawn_debug_effect_seats_marker_then_ages_out() {
+        let mut world = World::default();
+        assert!(world.spawn_debug_effect([128.0, 0.0, -64.0]));
+        let markers = world.active_effect_markers();
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers[0].world_pos, [128.0, 0.0, -64.0]);
+        assert_eq!(markers[0].age01, 0.0);
+
+        // Ages and retires via the normal effect lifetime.
+        for _ in 0..=vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+            world.tick_effects();
+        }
+        assert!(world.active_effect_markers().is_empty());
     }
 
     #[test]

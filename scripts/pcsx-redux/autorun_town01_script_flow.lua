@@ -34,7 +34,7 @@
 -- Steady-state run (no transition; observes the live context set + grid):
 --   timeout --kill-after=30s 600s \
 --   bash scripts/pcsx-redux/run_probe.sh \
---     --scenario v0_1_pre_battle_tetsu \
+--     --scenario v0_1_post_battle_tetsu_town \
 --     --lua scripts/pcsx-redux/autorun_town01_script_flow.lua \
 --     --frames 300
 --

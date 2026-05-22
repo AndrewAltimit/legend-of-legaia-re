@@ -87,7 +87,15 @@ impl AdpcmDecoder {
             return (out, flags);
         }
         let filter = ((header >> 4) & 0x0F) as usize;
-        let shift = (header & 0x0F) as i32;
+        // PSX SPU shift range is 0..12; header nibble values 13..15 act like
+        // shift = 9 on real hardware (per psx-spx). Without this clamp the
+        // `(s as i32) << (12 - shift)` below underflows (shift-left by a
+        // negative amount) and panics in debug builds. Garbage / terminator
+        // blocks in real SPU RAM hit this.
+        let shift = match (header & 0x0F) as i32 {
+            s @ 0..=12 => s,
+            _ => 9,
+        };
         let f0 = F0[filter];
         let f1 = F1[filter];
 
@@ -142,6 +150,23 @@ mod tests {
         let (pcm, flags) = d.decode_block(&block);
         assert!(flags.bad_header);
         assert_eq!(pcm, [0i16; SAMPLES_PER_BLOCK]);
+    }
+
+    /// A header shift nibble of 13..15 (out of the valid 0..12 range) must
+    /// not panic: real SPU RAM contains such blocks (garbage / terminators).
+    /// Per psx-spx these act like shift = 9; the decode must complete and
+    /// produce finite samples.
+    #[test]
+    fn out_of_range_shift_does_not_panic() {
+        for hi_shift in [13u8, 14, 15] {
+            let mut d = AdpcmDecoder::new();
+            let mut block = [0xFFu8; BLOCK_BYTES];
+            block[0] = hi_shift; // filter=0 (valid), shift=hi_shift (out of range)
+            block[1] = 0x00;
+            let (pcm, flags) = d.decode_block(&block);
+            assert!(!flags.bad_header, "filter 0 is valid");
+            assert_eq!(pcm.len(), SAMPLES_PER_BLOCK);
+        }
     }
 
     /// flag-byte bits are correctly decoded.

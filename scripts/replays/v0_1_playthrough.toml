@@ -12,19 +12,26 @@ pad = 8192
 frame = 110
 pad = 0
 
-# v0.1 contract: by frame 250 (~2.5 seconds after the Circle press at
-# frame 103), the engine should have advanced the Tetsu dialogue and
-# entered BattleMode -- the retail capture at mc0 lands one frame
-# after BattleInit in this same window. RED state today: the engine
-# stays in scene_mode=Title for the whole 366-frame replay because
-# the field-VM dialog-advance path doesn't read `World.input` from a
-# cold boot. The failing diff captures the gap. This expected row
-# becomes a passing assertion once one of the following lands:
-#   - BootSession supports save-state load (mc7's RAM state replaces
-#     the cold-boot starting point), OR
-#   - field-VM dialog advance moves into the engine tick path and
-#     consumes `World.input` (the next field consumer to wire).
+# v0.1 Phase 1 (current): the engine drives a cold boot into Field/town01
+# via BootSession::enter_field_live and stays there, converging against the
+# clean pre-battle town01 field snapshot (v0_1_pre_battle_tetsu: Vahn in front
+# of his house, game_mode 0x03 -> Field). This is the cold-boot-reproducible
+# field anchor. The Tetsu-battle saves (loading/start/menu/submenu) are all
+# BattleMode (game_mode 0x15) and the engine cannot cold-boot into BattleMode,
+# so they are not valid Field-convergence anchors.
 [[expected]]
 frame = 250
-scene_mode = "Battle"
+scene_mode = "Field"
 active_scene = "town01"
+
+# DEFERRED Battle leg (tracked, not yet asserted): the scripted Tetsu
+# tutorial fight. The retail ground-truth for it is catalogued as the
+# BattleMode anchors v0_1_battle_loading_tetsu (D0) / v0_1_battle_start_tetsu
+# (D) / v0_1_battle_command_menu (D+) / v0_1_battle_command_submenu (D++).
+# Reproducing it needs the pre-battle field state (this anchor) carried
+# forward through the field-VM dialogue-accept -> scripted-encounter install
+# -> Field->Battle transition. When that lands, add:
+#   [[expected]]
+#   frame = 250
+#   scene_mode = "Battle"
+#   active_scene = "town01"

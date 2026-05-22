@@ -206,93 +206,27 @@ end = 0x80084560
 hint = "Active scene: `map01` (debug-menu trigger from the same field scene as the rest of the corpus)."
 
 # ----------------------------------------------------------------------
-# mc4 - fmv_id=2. Plays \MOV\MV3.STR;1 SECOND segment. Same path as
-# slot[1] but with start-sector offset `+0x1A5` (~635 frames). The
-# duplicate path-pointer + distinct sector offset is the runtime's way
-# of partitioning a single MV*.STR file into multiple cutscenes.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 4
-label = "fmv_trigger_str_2"
-description = "Per-STR FMV trigger captured for fmv_id=2 → MV3.STR (second segment)"
-topics = ["FMV trigger", "fmv_id 2", "MV3.STR segment 2", "multi-segment"]
-diff_against = [5]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `02 00` (fmv_id = 2)."
-
-# ----------------------------------------------------------------------
-# mc5 - fmv_id=3. Plays \MOV\MV4.STR;1.
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 5
-label = "fmv_trigger_str_3"
-description = "Per-STR FMV trigger captured for fmv_id=3 → MV4.STR"
-topics = ["FMV trigger", "fmv_id 3", "MV4.STR"]
-diff_against = [6]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `03 00` (fmv_id = 3)."
-
-# ----------------------------------------------------------------------
-# mc6 - fmv_id=4. Plays \MOV\MV6.STR;1. NOTE: skips MV5.STR (which is
-# on the disc but never referenced by any FMV-state slot).
+# v0.1 playthrough oracle anchor C: clean pre-battle field state.
+#
+# Vahn standing in Rim Elm (`town01`) in front of his house, free
+# movement, BEFORE talking to Tetsu and before the tutorial training
+# battle. Game mode 0x03 - this empirically confirms that 0x03 is the
+# field/town gameplay mode (corroborating the runtime pin on `map03`
+# mode 0x03 in docs/subsystems/field-locomotion.md), NOT the "options
+# menu" the dev mode-table label in engine-core::mode suggests.
+#
+# This is the clean cold-boot-reproducible town01 field anchor: the
+# engine's `enter_field_live` drives a cold boot into Field/town01,
+# which is exactly this state, so it is the convergence anchor for the
+# v0.1 playthrough oracle's Phase-1 Field leg.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 6
-label = "fmv_trigger_str_4"
-description = "Per-STR FMV trigger captured for fmv_id=4 → MV6.STR"
-topics = ["FMV trigger", "fmv_id 4", "MV6.STR", "skips MV5"]
-diff_against = [7]
-
-[scenarios.overlay_slice]
-start = 0x801C0000
-end = 0x80200000
-
-[[scenarios.watchpoints]]
-label = "fmv_id_global"
-start = 0x8007BA78
-end = 0x8007BA7A
-hint = "_DAT_8007BA78 = `04 00` (fmv_id = 4)."
-
-# ----------------------------------------------------------------------
-# mc7 - v0.1 playthrough oracle anchor C: pre-battle field state.
-#
-# Player (Vahn) stands in Rim Elm (scene `town01`, game mode 0x03
-# MainMode) one button-press from the scripted Tetsu tutorial battle.
-# Pressing Cross (X / mapped to keyboard `S`) advances the dialogue
-# trigger that fires the field-VM battle-init opcode.
-#
-# Anchor in the v0.1 slice taxonomy (see backlog item 1): this is the
-# load-from-disk state. The replay's `meta.scenario` binds to this
-# save; downstream anchors (D = battle-init, E = post-victory) are
-# additional save captures that the oracle compares against at
-# specific frames in the recorded timeline.
-#
-# Supersedes the FMV-trigger-corpus `fmv_trigger_str_5` capture that
-# previously occupied this slot (the corpus comment at the top of
-# this file is now stale for slot 7).
-# ----------------------------------------------------------------------
-[[scenarios]]
-slot = 7
 label = "v0_1_pre_battle_tetsu"
-ram_fingerprint_sha256 = "db4c3b06b5a362c9519702ba1fa7c6a3e3730288ecd07858ef5777d35bf92fab"
-description = "v0.1 slice anchor C: Vahn in Rim Elm, one button-press from the Tetsu tutorial battle trigger"
-topics = ["v0.1 slice", "pre-battle", "scripted encounter", "Tetsu tutorial", "town01"]
+ram_fingerprint_sha256 = "cf9fede947e0269460b41f4773011edd7490dc4d202f041bced7cecc5bfcdde7"
+backup_fingerprint = "4c650a3bb872b22029851a2a2e919fd8e3bb05eee19abaec9f5c82976424a779"
+description = "v0.1 slice anchor C: Vahn in front of his house in Rim Elm, before talking to Tetsu / before the training battle (game_mode 0x03 field, town01)"
+topics = ["v0.1 slice", "pre-battle", "field", "Tetsu tutorial", "town01"]
 phase = "field"
 expected_active_scene = "town01"
 expected_game_mode = 0x03
@@ -302,28 +236,134 @@ start = 0x801C0000
 end = 0x80200000
 
 # ----------------------------------------------------------------------
-# mc8 - v0.1 playthrough oracle anchor C+: post-accept, pre-battle.
+# The Tetsu tutorial battle progression (anchors D0 / D / D+ / D++).
 #
-# One field-VM tick after the player accepts the Tetsu fight at mc7.
-# Dialogue has advanced; the field-VM is ticking through the battle-
-# trigger sequence but BattleInit has not fired yet (`game_mode = 0x03`
-# MainMode is still live, `active_scene = "town01"`).
+# Four save states captured in chronological order through the scripted
+# Tetsu tutorial fight, all at game mode 0x15 BattleMode on top of
+# `town01`:
 #
-# Anchor in the v0.1 slice taxonomy: a mid-transition checkpoint
-# between C (mc7, pre-accept) and D (mc0, BattleMode running). Lets
-# the recorded replay's `[[expected]]` fixture name an intermediate
-# frame where the engine should still be in MainMode but with the
-# advanced dialogue queue state. Useful for catching the case where
-# the engine prematurely transitions to BattleInit.
+#   D0  battle scene loading - screen black, battle flag already
+#       flipped (game_mode 0x15), graphics not yet drawn.
+#   D   battle graphics visible; Tetsu's pre-fight dialogue.
+#   D+  top-level command menu (Fight / Run).
+#   D++ command submenu (Spirit / Item / Attack).
+#
+# Followed by anchor E (post-victory town dialogue, back at game_mode
+# 0x03 field). Together they are the retail ground-truth sequence for
+# the v0.1 oracle's deferred Battle leg.
+#
+# LIBRARY-ONLY: these were captured in live slots mc4/mc5/mc6 but those
+# slots have since been refreshed to other content. They survive only as
+# the immutable, content-hashed copies in saves/library/ and resolve via
+# `backup_fingerprint`, so `slot` is set to 255 (the "no live mednafen
+# slot" sentinel) - re-capturing them into a live slot is not required.
+#
+# `expected_active_scene` is intentionally unset on all four: the battle
+# runs as a scene-mode overlay on the loaded field scene, and the engine
+# cannot cold-boot directly into BattleMode, so the auto-discover oracles
+# (mode_trace / vram / pcm / audio, which key off `expected_active_scene`)
+# must skip them. The overlay_slice covers the RAM-overlay region where
+# the battle action SM lives.
+# ----------------------------------------------------------------------
+
+# D0 is mc7 (still a live slot); see its block further below.
+
+# anchor D: battle graphics visible, Tetsu pre-fight dialogue.
+[[scenarios]]
+slot = 255
+label = "v0_1_battle_start_tetsu"
+ram_fingerprint_sha256 = "66bef6b52a5e1d98f7cf3b06fa4c030fa2967a143736b95e371d5fb4e8a3d23c"
+backup_fingerprint = "a4673cb5bfa57ab5135820b846cf2d227f69ce4c3dadb613cebc6df588d80cd7"
+description = "v0.1 slice anchor D: Tetsu tutorial battle, graphics visible (past loading), Tetsu pre-fight dialogue; BattleMode over town01"
+topics = ["v0.1 slice", "battle init", "Tetsu tutorial", "BattleMode", "town01"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# anchor D+: top-level battle command menu (Fight / Run).
+[[scenarios]]
+slot = 255
+label = "v0_1_battle_command_menu"
+ram_fingerprint_sha256 = "253a180e33ce95050095d699e4512a0b9fdc798c218947807e2d9268a6733d81"
+backup_fingerprint = "42845402539bfda659b9e17dd2d82749749cccffdb36882243bcde19d230f04e"
+description = "v0.1 slice anchor D+: Tetsu battle, top-level command menu open (Fight / Run)"
+topics = ["v0.1 slice", "battle command menu", "Tetsu tutorial", "BattleMode", "town01"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# anchor D++: battle command submenu (Spirit / Item / Attack).
+[[scenarios]]
+slot = 255
+label = "v0_1_battle_command_submenu"
+ram_fingerprint_sha256 = "e6d05047346bac2b8e241bb8b711fdb071419687c017b4f6d06e7b23148e4f12"
+backup_fingerprint = "281c7a3ac1497bdf5365f58d35d93b10b14d1268a2bad2e103cc1e232517e289"
+description = "v0.1 slice anchor D++: Tetsu battle, command submenu open (Spirit / Item / Attack options)"
+topics = ["v0.1 slice", "battle submenu", "Tetsu tutorial", "BattleMode", "town01"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# ----------------------------------------------------------------------
+# mc7 - v0.1 playthrough oracle anchor D0: battle scene loading.
+#
+# The earliest of the Tetsu-battle captures: the screen is black and
+# the battle scene is mid-load. The battle flag is already flipped -
+# `_DAT_8007B83C` (game mode) reads 0x15 BattleMode - but the battle
+# graphics are not yet drawn. Chronologically this precedes mc4 (D),
+# which is the first frame with battle graphics visible.
+#
+# `expected_active_scene` is intentionally unset (battle anchor; see the
+# Tetsu-progression header above): the engine cannot cold-boot into
+# BattleMode, so the auto-discover oracles skip it.
+#
+# Supersedes the FMV-trigger-corpus `fmv_trigger_str_5` capture that
+# previously occupied this slot.
+# ----------------------------------------------------------------------
+[[scenarios]]
+slot = 7
+label = "v0_1_battle_loading_tetsu"
+ram_fingerprint_sha256 = "5962a9313814c6ec1963fd2b495dabdd2a7ba2fa6bfc6a72310275f548bdf0a5"
+backup_fingerprint = "5649c05e0b96b87758cdfc204995efc60dda009baaa4a783b6df8c0cb1010b0a"
+description = "v0.1 slice anchor D0: Tetsu battle scene loading - screen black, battle flag set (game_mode 0x15), graphics not yet drawn"
+topics = ["v0.1 slice", "battle init", "battle loading", "Tetsu tutorial", "BattleMode", "town01"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+# ----------------------------------------------------------------------
+# mc8 - v0.1 playthrough oracle anchor E: post-victory town dialogue.
+#
+# *After* the Tetsu tutorial battle ends: the player is back in Rim Elm
+# (`town01`) at game mode 0x03 (field / MainMode), talking to Tetsu in
+# the town. This is the post-battle field state - the tail end of the
+# v0.1 slice, after the BattleMode anchors (mc7 / mc4 / mc5 / mc6).
+#
+# Unlike the battle anchors this IS a field scene the engine can
+# cold-boot into, so it keeps `expected_active_scene = town01` and is
+# picked up by the auto-discover field oracles.
 #
 # Supersedes the FMV-trigger-corpus `fmv_trigger_str_6` capture.
 # ----------------------------------------------------------------------
 [[scenarios]]
 slot = 8
-label = "v0_1_post_accept_pre_battle"
-ram_fingerprint_sha256 = "f41310385f48bce6f553a0a4d5b4d87aec8a1eeae01a372480f12705c822257e"
-description = "v0.1 slice anchor C+: one tick past Tetsu-accept, still in MainMode walking toward BattleInit"
-topics = ["v0.1 slice", "pre-battle", "Tetsu tutorial", "MainMode", "town01"]
+label = "v0_1_post_battle_tetsu_town"
+ram_fingerprint_sha256 = "0b42d20e47f16c1d7e6fbf97b07b61bada3965640819a1ae03d29a5bb2f34fb7"
+backup_fingerprint = "1b1d645f8f8827c97f678d214fe16d273153313872ef8ce29b426baeffbf8f84"
+description = "v0.1 slice anchor E: post-victory, back in Rim Elm talking to Tetsu (game_mode 0x03 field, town01)"
+topics = ["v0.1 slice", "post-battle", "Tetsu tutorial", "MainMode", "town01"]
 phase = "field"
 expected_active_scene = "town01"
 expected_game_mode = 0x03

@@ -36,6 +36,18 @@
 
 #![allow(clippy::too_many_arguments)]
 
+/// Default per-effect lifetime in frames, for hosts that model the effect
+/// lifecycle as a fixed countdown rather than walking the inlined per-state
+/// token stream of the retail walker.
+///
+/// Clean-room stand-in: retail (`FUN_801E0088` pass 1) derives each effect's
+/// duration from the per-frame state tokens in its script body. That
+/// per-state algebra is inlined across 600+ instructions and not yet
+/// extracted; until it is, a host can keep a spawned effect visible for a
+/// sensible fixed budget and then retire it. The faithful token-driven
+/// lifetime lands alongside the textured-sprite render path.
+pub const DEFAULT_EFFECT_LIFETIME_FRAMES: u32 = 30;
+
 /// Maximum simultaneous effects (master slots).
 pub const MAX_MASTER_SLOTS: usize = 32;
 

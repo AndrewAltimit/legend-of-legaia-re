@@ -5821,6 +5821,31 @@ impl ApplicationHandler for PlayWindowApp {
                     evl.exit();
                     return;
                 }
+                // Dev affordance: spawn a debug effect marker at the player so
+                // the effect-pool render bridge can be exercised by hand
+                // before the runtime effect catalog is wired into battle-enter.
+                if matches!(code, KeyCode::KeyE)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    let pos = self
+                        .session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .find(|a| a.active)
+                        .map(|a| {
+                            [
+                                a.move_state.world_x as f32,
+                                a.move_state.world_y as f32,
+                                a.move_state.world_z as f32,
+                            ]
+                        })
+                        .unwrap_or([0.0, 0.0, 0.0]);
+                    self.session.host.world.spawn_debug_effect(pos);
+                    return;
+                }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {
                     let prev = self.pad;
@@ -6128,10 +6153,33 @@ impl ApplicationHandler for PlayWindowApp {
                     } else {
                         None
                     };
+                    // Effect-pool markers: bridge live effects into the
+                    // renderer as world-space billboard crosses through the
+                    // existing Lines pipeline. Faithful textured sprites from
+                    // the effect bundle's inline atlas are a separate
+                    // follow-up (see docs/subsystems/effect-vm.md); these
+                    // markers make spawns visible and prove the seam.
+                    let effect_lines = if self.boot_ui.is_active() {
+                        None
+                    } else {
+                        let markers = self.session.host.world.active_effect_markers();
+                        if markers.is_empty() {
+                            None
+                        } else {
+                            let (pos, col, idx) = effect_marker_line_geometry(&markers);
+                            match r.upload_lines(&pos, &col, &idx) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    log::warn!("effect marker lines upload: {e:#}");
+                                    None
+                                }
+                            }
+                        }
+                    };
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
-                        overlay_lines: None,
+                        overlay_lines: effect_lines.as_ref().map(|m| (m, cam)),
                         overlay_sprites: sprites_slot_1,
                         overlay_sprites_2: sprites_slot_2,
                         overlay_text: Some(&overlay),
@@ -6146,6 +6194,48 @@ impl ApplicationHandler for PlayWindowApp {
             _ => {}
         }
     }
+}
+
+/// Build line-mesh geometry (positions / per-vertex RGBA / `LineList`
+/// indices) for the live effect-pool markers: each effect renders as a
+/// world-space 3D cross that fades out as it ages. World-space points are
+/// consumed by the Lines pipeline under the scene camera MVP.
+fn effect_marker_line_geometry(
+    markers: &[legaia_engine_core::world::EffectMarker],
+) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
+    /// World-unit half-extent of each marker cross (tunable).
+    const H: f32 = 24.0;
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(markers.len() * 6);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(markers.len() * 6);
+    let mut idx: Vec<u32> = Vec::with_capacity(markers.len() * 6);
+    for m in markers {
+        let [x, y, z] = m.world_pos;
+        // Warm spark colour, dimmed as the effect ages toward retirement.
+        let fade = (1.0 - m.age01).clamp(0.0, 1.0);
+        let c = [
+            (80.0 + 175.0 * fade) as u8,
+            (200.0 * fade) as u8,
+            (255.0 * fade) as u8,
+            255,
+        ];
+        let base = pos.len() as u32;
+        // Three axis-aligned segments forming a 3D cross at the origin.
+        let segs = [
+            ([x - H, y, z], [x + H, y, z]),
+            ([x, y - H, z], [x, y + H, z]),
+            ([x, y, z - H], [x, y, z + H]),
+        ];
+        for (a, b) in segs {
+            pos.push(a);
+            pos.push(b);
+            col.push(c);
+            col.push(c);
+        }
+        for k in 0..6u32 {
+            idx.push(base + k);
+        }
+    }
+    (pos, col, idx)
 }
 
 /// Map a winit `KeyCode` to the user-friendly key name used in
@@ -6330,139 +6420,74 @@ fn cmd_play_window_with_record(
             ctrl.view_mode = 1;
         }
     } else {
-        // Enter the field scene's first event-script record (the init
-        // prologue) so the field VM actually runs on subsequent ticks.
-        // `BootSession::open` only calls `load_scene`, which leaves the
-        // world in `SceneMode::Title` with an empty actor pool - meaning
-        // no field events ever fire and every actor stays at the origin.
-        // `enter_field_scene` switches to `SceneMode::Field`, installs
-        // record 0 into the bytecode buffer, and pre-binds actor TMD /
-        // ANM bindings via `World::init_scene_animations`.
-        //
-        // Soft-fails: scenes without event scripts log and continue
-        // (rare for field scenes but possible for stripped-down dev
-        // scenes).
-        match session.host.enter_field_scene(scene, 0) {
-            Ok(()) => {
-                log::info!("play-window: entered field scene '{scene}' record 0 (field VM live)")
-            }
-            Err(e) => log::warn!(
-                "play-window: enter_field_scene('{scene}', 0) failed ({e:#}); \
-                 falling back to load_scene-only path (field VM will not tick)"
-            ),
+        // Drop into the live field scene (run record 0, install the encounter
+        // table, arm the live loop). Shared with the v0.1 oracle + headless
+        // drivers via `BootSession::enter_field_live`.
+        let opts = legaia_engine_shell::boot::FieldLiveOpts {
+            live_loop,
+            player_battle,
+            battle_bgm,
+        };
+        match session.enter_field_live(scene, &opts) {
+            Ok(mode) => log::info!("play-window: entered field scene '{scene}' (mode={mode:?})"),
+            Err(e) => log::warn!("play-window: enter_field_live('{scene}') failed: {e:#}"),
         }
     }
 
-    // Wire monster + encounter tables so triggered encounters resolve to a
-    // concrete monster set.
-    //
-    // `enter_field_scene` already installs the disc-resident per-scene
-    // encounter table + formations from the scene's MAN asset (incl. the
-    // `count=6` town scenes) AND merges real per-id monster stats from the
-    // monster archive (PROT 867) for those formations. Only fall back to the
-    // synthetic-pattern registry + vanilla formation/monster tables when no
-    // MAN encounter was installed (scenes whose bundle carries no MAN, or
-    // towns with no rollable formations).
-    {
+    // Play-window demo seeding (NOT part of the shared field-live core): when
+    // a player-driven battle is requested but the boot save carries no items /
+    // saved chains, seed a couple so the Item / Arts submenus are exercisable
+    // by hand. No-ops when the save already has inventory / chains.
+    if player_battle {
         let world = &mut session.host.world;
-        world.set_active_scene_label(scene);
-        if world.encounter.is_none() && matches!(world.mode, SceneMode::Field) {
-            world.set_formation_table(
-                legaia_engine_core::monster_catalog::vanilla_formation_table(),
-                legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
-            );
-            let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
-            world.install_encounter_for_scene(&registry, scene);
+        if world.inventory.is_empty() {
+            world.inventory.insert(0x01, 5); // Healing Leaf
+            world.inventory.insert(0x13, 3); // Bomb (offensive)
         }
-    }
-
-    // Live gameplay loop opt-in. `--player-battle` implies `--live-loop`
-    // (a player-driven battle is meaningless without the loop that enters
-    // one). Both default off, so the legacy "explore but never fight"
-    // behaviour is unchanged unless a flag is passed.
-    {
-        let world = &mut session.host.world;
-        if live_loop || player_battle {
-            world.live_gameplay_loop = true;
-        }
-        // Optional Battle<->Field BGM swap: the live loop cross-fades to this
-        // track on encounter and resumes the field track on battle end. The
-        // id must resolve through the current scene's BGM table.
-        world.set_battle_bgm(battle_bgm);
-        if player_battle {
-            world.battle_player_driven = true;
-            // Give the player-driven battle usable Magic / Item submenus.
-            // Without catalogs both submenus would render empty; the spell
-            // list still gates on each character's learned spells from the
-            // boot save, and the item list on the live inventory.
-            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
-            // Real player Seru-magic ids (0x81..=0x8b, pinned from SCUS) on top
-            // of the demo entries, paired with a Seru registry that teaches
-            // those real ids - so a captured Seru learns a correctly-named
-            // retail spell (e.g. Gimard = 0x81, matching the save-state pin).
-            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
-            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
-            // Seed a couple of demo items when the boot save carries none, so
-            // both the ally-heal and offensive (Bomb) item paths are
-            // exercisable in the window. (No-op when the save has inventory.)
-            if world.inventory.is_empty() {
-                world.inventory.insert(0x01, 5); // Healing Leaf
-                world.inventory.insert(0x13, 3); // Bomb (offensive)
+        if world.saved_chains.is_empty() {
+            use legaia_save::SavedChainRecord;
+            for slot in 0u8..3 {
+                world.saved_chains.push(SavedChainRecord {
+                    char_slot: slot,
+                    name: "Quick".into(),
+                    sequence: vec![1, 2],
+                });
+                world.saved_chains.push(SavedChainRecord {
+                    char_slot: slot,
+                    name: "Combo".into(),
+                    sequence: vec![1, 2, 3, 4],
+                });
             }
-            // Seed a couple of demo saved chains when the boot save carries
-            // none, so the Arts submenu is exercisable in the window. (No-op
-            // when the save already has a chain library.)
-            if world.saved_chains.is_empty() {
-                use legaia_save::SavedChainRecord;
-                for slot in 0u8..3 {
-                    world.saved_chains.push(SavedChainRecord {
-                        char_slot: slot,
-                        name: "Quick".into(),
-                        sequence: vec![1, 2],
-                    });
-                    world.saved_chains.push(SavedChainRecord {
-                        char_slot: slot,
-                        name: "Combo".into(),
-                        sequence: vec![1, 2, 3, 4],
-                    });
-                }
-                // Stage a demo art record per character so the "Combo" chain
-                // (it ends in Up) resolves through the real art-power path -
-                // two damage strikes that burn the target. "Quick" has no
-                // matching record and falls back to the synthetic profile.
-                use legaia_art::power::PowerByte;
-                use legaia_art::queue::{ActionConstant, Command};
-                use legaia_art::record::EnemyEffect;
-                for character in legaia_art::Character::all() {
-                    world.set_art_record(
-                        character,
-                        ActionConstant::Art1B,
-                        legaia_art::ArtRecord {
-                            action: ActionConstant::Art1B,
-                            commands: vec![Command::Up],
-                            anim_index: 0,
-                            anim_extra: vec![],
-                            name: None,
-                            power: vec![PowerByte::from_byte(0x18), PowerByte::from_byte(0x1D)],
-                            dmg_timing: vec![],
-                            effect_cues: Default::default(),
-                            hit_cues: vec![],
-                            identifier: 0,
-                            anim_speed: 0,
-                            enemy_effect: EnemyEffect::Burned,
-                            repeat_frames: Default::default(),
-                            background: 0,
-                            runtime_address: None,
-                        },
-                    );
-                }
+            // Stage a demo art record per character so the "Combo" chain
+            // (it ends in Up) resolves through the real art-power path -
+            // two damage strikes that burn the target. "Quick" has no
+            // matching record and falls back to the synthetic profile.
+            use legaia_art::power::PowerByte;
+            use legaia_art::queue::{ActionConstant, Command};
+            use legaia_art::record::EnemyEffect;
+            for character in legaia_art::Character::all() {
+                world.set_art_record(
+                    character,
+                    ActionConstant::Art1B,
+                    legaia_art::ArtRecord {
+                        action: ActionConstant::Art1B,
+                        commands: vec![Command::Up],
+                        anim_index: 0,
+                        anim_extra: vec![],
+                        name: None,
+                        power: vec![PowerByte::from_byte(0x18), PowerByte::from_byte(0x1D)],
+                        dmg_timing: vec![],
+                        effect_cues: Default::default(),
+                        hit_cues: vec![],
+                        identifier: 0,
+                        anim_speed: 0,
+                        enemy_effect: EnemyEffect::Burned,
+                        repeat_frames: Default::default(),
+                        background: 0,
+                        runtime_address: None,
+                    },
+                );
             }
-        }
-        if world.live_gameplay_loop {
-            log::info!(
-                "play-window: live gameplay loop ON (player-driven battle: {})",
-                world.battle_player_driven
-            );
         }
     }
 
