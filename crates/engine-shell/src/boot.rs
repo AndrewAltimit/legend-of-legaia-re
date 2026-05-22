@@ -238,6 +238,37 @@ impl BootSession {
         Ok(world.mode)
     }
 
+    /// Enter a field scene live, then seed the world from a saved game.
+    ///
+    /// [`Self::enter_field_live`] cold-boots the scene at record 0 (a fresh
+    /// party, no story progress). This variant runs that path and then
+    /// hydrates the world from `save` via [`legaia_engine_core::World::load_full`]
+    /// (party records, story flags, money, inventory) so the field VM sees the
+    /// saved story state on its first tick. It is the building block for
+    /// "continue a saved game" and for the story-gated paths that a cold boot
+    /// into record 0 can't reach, such as a scripted-encounter trigger armed
+    /// by story state.
+    ///
+    /// The save is applied *after* the scene is entered, so the scene record
+    /// is still 0; selecting the story-appropriate record from the seeded
+    /// flags is a separate concern (the field VM's record picker).
+    ///
+    /// To seed from a retail memory-card SC block, parse it first with
+    /// [`legaia_save::SaveFile::from_retail_sc_block`].
+    pub fn enter_field_live_from_save(
+        &mut self,
+        scene: &str,
+        opts: &FieldLiveOpts,
+        save: legaia_save::SaveFile,
+    ) -> Result<SceneMode> {
+        self.enter_field_live(scene, opts)?;
+        self.host.world.load_full(save);
+        log::info!("seeded world from save ({} party records)", {
+            self.host.world.party_count
+        });
+        Ok(self.host.world.mode)
+    }
+
     /// Shut down the audio stream and clear the scene. Idempotent.
     pub fn shutdown(&mut self) {
         if let Some(audio) = self.audio.take() {
