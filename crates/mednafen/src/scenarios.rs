@@ -224,6 +224,13 @@ pub fn library_backup_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serializes the tests that mutate the process-global `LEGAIA_MEDNAFEN_DIR`
+    /// env var so they don't race each other under the default parallel test
+    /// runner. Poison is recovered (a panicking test still releases the guard
+    /// logically) so one failure doesn't cascade into spurious failures.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn sample_toml() -> &'static str {
         r#"
@@ -278,21 +285,15 @@ diff_against = [2, 3]
         assert!(m.by_label("missing").is_none());
     }
 
-    // IGNORED: flaky under the default parallel `cargo test`. This test and
-    // `save_path_uses_pattern` both mutate the process-global
-    // `LEGAIA_MEDNAFEN_DIR` env var; running concurrently they race and one
-    // observes the other's value. The library-preference resolver is also
-    // covered end-to-end by the disc-gated mednafen oracles. Re-enable once
-    // the env dependency is removed or the two tests are serialized (no new
-    // dep): inject the mcs dir explicitly instead of via env, or guard both
-    // with a shared `static Mutex`. Run meanwhile with
-    // `--ignored --test-threads=1`. (Backlog: test-hygiene.)
-    #[ignore = "flaky: races save_path_uses_pattern on the global LEGAIA_MEDNAFEN_DIR env var; run with --ignored --test-threads=1"]
+    // This test and `save_path_uses_pattern` both mutate the process-global
+    // `LEGAIA_MEDNAFEN_DIR` env var, so they share `ENV_LOCK` to serialize
+    // against each other under the default parallel test runner.
     #[test]
     fn mednafen_save_path_prefers_library_backup_then_falls_back_to_live_slot() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let m = ScenarioManifest::parse_toml(sample_toml()).unwrap();
         // Hermetic mcs dir for the live-slot fallback.
-        // SAFETY: test-controlled environment.
+        // SAFETY: test-controlled environment, serialized by ENV_LOCK.
         unsafe {
             std::env::set_var("LEGAIA_MEDNAFEN_DIR", "/tmp/scenario_test_mcs");
         }
@@ -329,9 +330,10 @@ diff_against = [2, 3]
 
     #[test]
     fn save_path_uses_pattern() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let m = ScenarioManifest::parse_toml(sample_toml()).unwrap();
         // Force LEGAIA_MEDNAFEN_DIR via env so the test is hermetic.
-        // SAFETY: we control the test harness environment.
+        // SAFETY: we control the test harness environment, serialized by ENV_LOCK.
         unsafe {
             std::env::set_var("LEGAIA_MEDNAFEN_DIR", "/tmp/scenario_test");
         }
