@@ -45,6 +45,13 @@ pub struct MonsterDef {
     pub udf: u16,
     /// Lower-defense stat (used against low-power-target strikes).
     pub ldf: u16,
+    /// SPD - turn-order initiative seed (record `stats[5]`, actor
+    /// `+0x164/+0x166`). Feeds the per-turn initiative key the battle's
+    /// next-actor selector reads (`+0x16c = speed + rand()%(speed/2+1) + 1`;
+    /// see [`crate::world::World`] initiative selection and
+    /// `docs/subsystems/battle-formulas.md`). `0` leaves the battle on the
+    /// round-robin turn-order fallback.
+    pub speed: u16,
     pub accuracy: u8,
     pub evasion: u8,
     /// Experience awarded to the party on defeat.
@@ -78,6 +85,7 @@ impl MonsterDef {
             attack,
             udf: attack / 2,
             ldf: attack / 2,
+            speed: 0,
             accuracy: 70,
             evasion: 10,
             exp: hp / 2,
@@ -144,9 +152,13 @@ impl MonsterCatalog {
 /// - `accuracy` / `evasion` <- `rec.agility()` (`stats[4]`) clamped to a byte
 ///   — the actor seeds both the accuracy and evasion roll from this stat.
 ///
-/// `stats[0]` (SP / spirit-action gauge) and `stats[5]` (SPD / turn-order
-/// speed) are identified but have no `MonsterDef` field yet, so they're not
-/// consumed here. `exp` / `gold` / `drop_item` / `drop_rate_q8` come from the
+/// - `speed` <- `rec.speed()` (`stats[5]`, record `+0x1A`) — the turn-order
+///   initiative seed (actor `+0x164`). The battle's next-actor selector seeds
+///   each living actor's per-turn key from it.
+///
+/// `stats[0]` (SP / spirit-action gauge) is identified but has no `MonsterDef`
+/// field yet, so it's not consumed here. `exp` / `gold` / `drop_item` /
+/// `drop_rate_q8` come from the
 /// record's reward fields (`+0x44..+0x49`) - these are the **base** values;
 /// the retail victory-spoils formula scales them (EXP `* 3/4` then split among
 /// the party; gold `(Σ base>>1) * 0.5`). The drop chance is stored as a `u8`
@@ -156,6 +168,7 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.mp = rec.mp;
     def.udf = rec.defense_high();
     def.ldf = rec.defense_low();
+    def.speed = rec.speed();
     let agl = rec.agility().min(u8::MAX as u16) as u8;
     def.accuracy = agl;
     def.evasion = agl;
@@ -309,6 +322,11 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             attack: atk,
             udf: def,
             ldf: def,
+            // The vanilla catalog leaves SPD at 0 so disc-free battles stay on
+            // the round-robin turn-order fallback (deterministic for tests).
+            // Real per-monster SPD comes from the disc archive via
+            // `monster_def_from_record`.
+            speed: 0,
             accuracy: acc,
             evasion: eva,
             exp,

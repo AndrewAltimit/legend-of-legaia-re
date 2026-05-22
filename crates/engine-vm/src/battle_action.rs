@@ -347,6 +347,14 @@ pub struct BattleActor {
     /// `0x380` = AI-controlled, `0x404` = AI + non-targetable. Read at state
     /// `ActionSeed` to decide between party-setup and monster-setup hooks.
     pub field_flags: u16,
+    /// `+0x16c` - per-turn **initiative key**. The next-actor selector
+    /// (`recompute_battle_order` / `FUN_801daba4`) picks the living actor with
+    /// the highest key each turn (random tiebreak), then the key is consumed.
+    /// Seeded each round from the actor's SPD (`+0x164`):
+    /// `init_key = speed + rand()%(speed/2 + 1) + 1` (`overlay_0897_801e23ec`).
+    /// `0` = "has acted this round / dead" (the selector zeroes dead actors'
+    /// keys). See `docs/subsystems/battle-formulas.md`.
+    pub init_key: u16,
     /// `+0x172` / `+0x174` - HP / max-HP (or current / max).
     pub hp: u16,
     pub max_hp: u16,

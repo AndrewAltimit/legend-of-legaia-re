@@ -46,6 +46,11 @@ use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 /// 8 + 32 spare slots for field-side NPCs / cutscene actors.
 pub const MAX_ACTORS: usize = 64;
 
+/// Number of stat-bearing battle slots (party + monsters). Indexes
+/// [`World::battle_attack`] / [`World::battle_defense`] / [`World::battle_speed`]
+/// and bounds the turn-order initiative scan.
+const BATTLE_SLOTS: usize = 8;
+
 /// Default `start_slot` engines pass to
 /// [`World::materialize_actor_spawns`]. Slots `0..FIELD_SPAWN_START_SLOT`
 /// stay reserved so the field-VM actor-allocator path can't clobber the
@@ -634,6 +639,16 @@ pub struct World {
     /// class instead of [`Self::battle_defense`]. Engines that don't
     /// distinguish UDF / LDF can leave this `None`.
     pub battle_defense_split: [Option<(u16, u16)>; 8],
+    /// Per-slot SPD (turn-order initiative seed, retail actor `+0x164`).
+    /// Party slots are seeded from each character record's live SPD in
+    /// [`World::load_party`]; monster slots from [`crate::monster_catalog::MonsterDef::speed`]
+    /// at battle setup. When **every** living actor has SPD `0` (the
+    /// disc-free / synthetic case) the battle stays on the round-robin
+    /// turn-order fallback ([`World::next_living_combatant`]); when any actor
+    /// carries real SPD the next-actor selector switches to the SPD-seeded
+    /// initiative scheme ([`World::next_combatant_by_initiative`], the port of
+    /// `recompute_battle_order` / `FUN_801daba4`).
+    pub battle_speed: [u16; 8],
 
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
@@ -1191,6 +1206,7 @@ impl World {
             battle_magic: [0; 8],
             battle_defense: [0; 8],
             battle_defense_split: [None; 8],
+            battle_speed: [0; 8],
             prev_action_cleared: true,
             sound_bank_ready: true,
             party_count: 3,
@@ -2039,6 +2055,12 @@ impl World {
             a.battle.max_hp = hms.hp_max;
             a.battle.mp = hms.mp_cur;
             a.battle.liveness = if hms.hp_cur > 0 { 1 } else { 0 };
+            // Seed the per-slot turn-order SPD from the record's live stats so
+            // a battle's next-actor selector can run the initiative scheme.
+            // A zeroed record leaves SPD at 0 -> round-robin fallback.
+            if let Some(s) = self.battle_speed.get_mut(slot) {
+                *s = rec.live_stats().spd;
+            }
         }
         self.party_count = n as u8;
         self.roster = party;
@@ -3540,6 +3562,11 @@ impl World {
             // previous battle that placed an enemy in this slot.
             a.battle_monster_id = None;
         }
+        // Clear any monster-slot SPD left over from a previous battle so the
+        // initiative gate only sees this formation's speeds.
+        for s in self.battle_speed.iter_mut().skip(party_count as usize) {
+            *s = 0;
+        }
         for (i, fslot) in formation.slots.iter().take(5).enumerate() {
             let mslot = party_count as usize + i;
             if mslot >= self.actors.len() {
@@ -3549,6 +3576,7 @@ impl World {
             // battle mesh, even if the catalog has no stats for it.
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
             if let Some(def) = self.monster_catalog.get(fslot.monster_id) {
+                let speed = def.speed;
                 let a = &mut self.actors[mslot];
                 a.battle.hp = def.hp;
                 a.battle.max_hp = def.hp;
@@ -3561,12 +3589,21 @@ impl World {
                 if let Some(s) = self.battle_defense.get_mut(mslot) {
                     *s = def.udf.max(def.ldf);
                 }
+                if let Some(s) = self.battle_speed.get_mut(mslot) {
+                    *s = speed;
+                }
             }
         }
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
         // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
         self.monster_ai_state.reset();
+        // Seed the turn-order initiative keys for this battle. When real SPD is
+        // present this lets the next-actor selector run the initiative scheme;
+        // slot 0 still opens round 1 (its key is consumed below) so subsequent
+        // turns order by initiative. A no-SPD battle leaves every key at 0 and
+        // stays on the round-robin fallback.
+        self.seed_battle_initiative();
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();
@@ -4634,7 +4671,7 @@ impl World {
         if self.battle_ctx.action_state == ActionState::EndOfAction.as_byte()
             && party_alive
             && monsters_alive
-            && let Some(next) = self.next_living_combatant(self.battle_ctx.active_actor)
+            && let Some(next) = self.next_combatant_by_initiative()
         {
             // Start-of-turn: age this actor's buffs / debuffs, reverting any
             // that expire this turn.
@@ -5135,6 +5172,112 @@ impl World {
             let idx = (after as usize + step) % n;
             (self.actors[idx].battle.liveness != 0).then_some(idx as u8)
         })
+    }
+
+    /// True when at least one living battle slot carries a non-zero SPD. Gates
+    /// the SPD-seeded initiative turn order on real speed data; otherwise the
+    /// battle stays on the round-robin [`Self::next_living_combatant`].
+    fn any_battle_speed(&self) -> bool {
+        (0..BATTLE_SLOTS).any(|i| {
+            self.battle_speed[i] != 0 && self.actors.get(i).is_some_and(|a| a.battle.liveness != 0)
+        })
+    }
+
+    /// Seed every living battle slot's initiative key from its SPD; dead slots
+    /// get `0`. Per-actor formula `init_key = speed + rand()%(speed/2 + 1) + 1`
+    /// (`overlay_0897_801e23ec`), so every living actor's key is `>= 1`.
+    fn reseed_initiative(&mut self) {
+        for i in 0..BATTLE_SLOTS {
+            let alive = self.actors.get(i).is_some_and(|a| a.battle.liveness != 0);
+            if !alive {
+                if let Some(a) = self.actors.get_mut(i) {
+                    a.battle.init_key = 0;
+                }
+                continue;
+            }
+            let speed = self.battle_speed[i];
+            let span = (speed / 2 + 1) as u32; // never 0
+            let key = speed as u32 + (self.next_rng() % span) + 1;
+            if let Some(a) = self.actors.get_mut(i) {
+                a.battle.init_key = key.min(u16::MAX as u32) as u16;
+            }
+        }
+    }
+
+    /// Seed the battle's initiative keys at setup: every living actor gets a
+    /// key, then slot 0's key is consumed so it leads round 1 and the selector
+    /// orders the rest by initiative. No-op (keys left at `0`) when no SPD is
+    /// present, leaving the battle on the round-robin fallback.
+    fn seed_battle_initiative(&mut self) {
+        if !self.any_battle_speed() {
+            return;
+        }
+        self.reseed_initiative();
+        if let Some(a) = self.actors.get_mut(0) {
+            a.battle.init_key = 0;
+        }
+    }
+
+    /// Next combatant by SPD-seeded initiative - the port of
+    /// `recompute_battle_order` (`FUN_801daba4`). Returns the living actor with
+    /// the highest current initiative key (random tiebreak via `rand %
+    /// tie_count`), consuming that actor's key so the next turn picks another.
+    /// When every living actor's key is spent a new round is seeded. Dead
+    /// actors' keys are zeroed (the function's first loop) so they can't be
+    /// picked. Falls back to round-robin when no actor carries SPD.
+    ///
+    /// PORT: FUN_801DABA4
+    fn next_combatant_by_initiative(&mut self) -> Option<u8> {
+        if !self.any_battle_speed() {
+            return self.next_living_combatant(self.battle_ctx.active_actor);
+        }
+        // First loop: zero dead actors' keys so the max-pick skips them.
+        for i in 0..BATTLE_SLOTS {
+            if self.actors.get(i).is_some_and(|a| a.battle.liveness == 0)
+                && let Some(a) = self.actors.get_mut(i)
+            {
+                a.battle.init_key = 0;
+            }
+        }
+        // Round boundary: when no living actor still holds a key, reseed.
+        let any_key = (0..BATTLE_SLOTS).any(|i| {
+            self.actors
+                .get(i)
+                .is_some_and(|a| a.battle.liveness != 0 && a.battle.init_key != 0)
+        });
+        if !any_key {
+            self.reseed_initiative();
+        }
+        // Highest key among living actors; ties collected in slot order.
+        let mut best: u16 = 0;
+        let mut ties: Vec<u8> = Vec::new();
+        for i in 0..BATTLE_SLOTS {
+            let Some(a) = self.actors.get(i) else {
+                continue;
+            };
+            if a.battle.liveness == 0 {
+                continue;
+            }
+            let key = a.battle.init_key;
+            if key == 0 {
+                continue;
+            }
+            if key > best {
+                best = key;
+                ties.clear();
+                ties.push(i as u8);
+            } else if key == best {
+                ties.push(i as u8);
+            }
+        }
+        if ties.is_empty() {
+            return self.next_living_combatant(self.battle_ctx.active_actor);
+        }
+        let pick = ties[(self.next_rng() as usize) % ties.len()];
+        if let Some(a) = self.actors.get_mut(pick as usize) {
+            a.battle.init_key = 0; // consume this turn
+        }
+        Some(pick)
     }
 
     /// Resolve a finished battle and return to the field.
@@ -8367,6 +8510,115 @@ mod tests {
         // After party (0) comes monster (2); after monster (2) wraps to party (0).
         assert_eq!(world.next_living_combatant(0), Some(2));
         assert_eq!(world.next_living_combatant(2), Some(0));
+    }
+
+    /// Three living actors with well-separated SPD: the per-turn key ranges
+    /// (`speed + rand()%(speed/2+1) + 1`) can't overlap, so the order is fixed
+    /// by SPD regardless of the RNG. Highest SPD acts first; each turn is
+    /// consumed; a fresh round is seeded once everyone has acted.
+    #[test]
+    fn initiative_orders_turns_by_speed_then_reseeds() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        // slot 0 (party) SPD 10, slot 1 (monster) SPD 50, slot 2 (monster) 30.
+        // Key ranges: 11..=16, 51..=76, 31..=46 — disjoint.
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.liveness = 1;
+        world.actors[2].battle.liveness = 1;
+        world.battle_speed[0] = 10;
+        world.battle_speed[1] = 50;
+        world.battle_speed[2] = 30;
+        // Fresh keys (all 0): the first pick seeds a round, then orders by SPD.
+        assert_eq!(world.next_combatant_by_initiative(), Some(1)); // SPD 50
+        assert_eq!(world.next_combatant_by_initiative(), Some(2)); // SPD 30
+        assert_eq!(world.next_combatant_by_initiative(), Some(0)); // SPD 10
+        // Round exhausted -> reseed -> highest SPD again.
+        assert_eq!(world.next_combatant_by_initiative(), Some(1));
+    }
+
+    /// A dead actor never wins a turn even with the highest SPD: the selector
+    /// zeroes dead actors' keys (the `FUN_801daba4` first loop).
+    #[test]
+    fn initiative_skips_dead_high_speed_actor() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        world.actors[0].battle.liveness = 1; // party, SPD 20
+        world.actors[1].battle.liveness = 0; // dead monster, SPD 90
+        world.actors[2].battle.liveness = 1; // monster, SPD 40
+        world.battle_speed[0] = 20;
+        world.battle_speed[1] = 90;
+        world.battle_speed[2] = 40;
+        // Slot 1 is dead -> skipped; slot 2 (40) outruns slot 0 (20).
+        assert_eq!(world.next_combatant_by_initiative(), Some(2));
+        assert_eq!(world.next_combatant_by_initiative(), Some(0));
+    }
+
+    /// With no SPD anywhere the selector defers to round-robin slot order.
+    #[test]
+    fn initiative_falls_back_to_round_robin_without_speed() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        world.actors[0].battle.liveness = 1;
+        world.actors[2].battle.liveness = 1;
+        assert!(!world.any_battle_speed());
+        world.battle_ctx.active_actor = 0;
+        assert_eq!(world.next_combatant_by_initiative(), Some(2));
+        world.battle_ctx.active_actor = 2;
+        assert_eq!(world.next_combatant_by_initiative(), Some(0));
+    }
+
+    /// Setup seeding consumes slot 0's key so the party lead opens round 1 and
+    /// the rest order by initiative behind it.
+    #[test]
+    fn seed_battle_initiative_lets_slot0_lead_round_one() {
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        world.actors[0].battle.liveness = 1; // party, SPD 10
+        world.actors[1].battle.liveness = 1; // monster, SPD 50
+        world.battle_speed[0] = 10;
+        world.battle_speed[1] = 50;
+        world.seed_battle_initiative();
+        // Slot 0 consumed (leads round 1 separately); slot 1 still armed.
+        assert_eq!(world.actors[0].battle.init_key, 0);
+        assert!(world.actors[1].battle.init_key > 0);
+        // The selector therefore picks slot 1 next, then slot 0 (after reseed).
+        assert_eq!(world.next_combatant_by_initiative(), Some(1));
+    }
+
+    /// `any_battle_speed` only fires for SPD carried by a *living* actor.
+    #[test]
+    fn any_battle_speed_requires_a_living_carrier() {
+        let mut world = World::default();
+        for a in world.actors.iter_mut() {
+            a.battle.liveness = 0;
+        }
+        assert!(!world.any_battle_speed());
+        // SPD on a dead slot doesn't count.
+        world.battle_speed[3] = 40;
+        assert!(!world.any_battle_speed());
+        // Living carrier flips the gate.
+        world.actors[3].battle.liveness = 1;
+        assert!(world.any_battle_speed());
     }
 
     #[test]
