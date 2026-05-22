@@ -264,7 +264,9 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 </section>
 
 <section class="doc-section" id="provenance">
-  <h2>Provenance</h2>
+  <details class="disclosure">
+    <summary>Provenance (Ghidra trace)</summary>
+    <div class="disclosure-body">
 <table>
 <thead><tr>
 <th>Subject</th>
@@ -306,6 +308,8 @@ VRAM (96 + 16*i, 510)   // CLUT i - colored variants for status text, system pro
 </tbody>
 </table>
   <p>The dialog opener that reaches this renderer chain from the <a href="../subsystems/script-vm.html">field script VM</a> opcode <code>0x3F</code> is <code>FUN_8001FD44</code> - it sets the "dialog active" story flag (<code>_DAT_1F800394 |= 0x40</code>) before forwarding into the renderer.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="what-s-still-open">

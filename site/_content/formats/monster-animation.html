@@ -42,11 +42,15 @@ v5 = b7 | (b8 &amp; 0xf0) &lt;&lt; 4     rz</code></pre>
 </section>
 
 <section class="doc-section" id="provenance">
-  <h2>Provenance</h2>
+  <details class="disclosure">
+    <summary>Provenance (Ghidra trace)</summary>
+    <div class="disclosure-body">
   <ul>
     <li><code>FUN_8004998c</code> &mdash; packed-stream decoder + frame interpolation.</li>
     <li><code>FUN_80048a08</code> &mdash; per-actor battle draw; reads the phase, drives the decoder, applies the pose per object.</li>
     <li><code>FUN_800495c8</code> / <code>FUN_8005b038</code> &mdash; GTE vertex blend of the decoded pose.</li>
     <li><code>FUN_80054cb0</code> &mdash; monster init; copies the action/effect pointer (record <code>+0x04</code>) into actor <code>+0x230</code>.</li>
   </ul>
+    </div>
+  </details>
 </section>
