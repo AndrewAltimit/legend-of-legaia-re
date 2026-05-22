@@ -657,6 +657,149 @@ dl.kv dd { color: var(--text); line-height: 1.55; }
 }
 .hint code { background: rgba(13, 17, 23, 0.6); }
 
+/* ---------- Native CLI command block ----------
+   For "the native-tool equivalent of this interactive surface". A labelled
+   monospace line with a hover copy button. Use on demo pages instead of
+   inline "Native: <cmd>" prose. */
+.cli {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin: 0.7rem 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-code);
+  overflow: hidden;
+}
+.cli::before {
+  content: "CLI";
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-right: 1px solid var(--border);
+}
+.cli code {
+  flex: 1 1 auto;
+  padding: 0.55rem 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+/* Stack the label on top on narrow viewports. */
+@media (max-width: 560px) {
+  .cli { flex-direction: column; }
+  .cli::before { border-right: 0; border-bottom: 1px solid var(--border); padding: 0.25rem 0.7rem; }
+}
+
+/* ---------- "Reference →" link row ----------
+   Replaces inline RE provenance on demo pages: a compact, scannable row of
+   links to the format / subsystem pages that own the low-level detail. */
+.see-also {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.55rem;
+  margin: 0.7rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 3px 3px 0;
+  font-size: 0.86rem;
+}
+.see-also .see-also-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-right: 0.15rem;
+}
+.see-also .see-also-label::after { content: " \2192"; } /* arrow */
+.see-also a {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border-hi);
+  border-radius: 3px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  transition: color var(--transition), border-color var(--transition);
+}
+.see-also a:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ---------- Disclosure: "Under the hood" collapsible ----------
+   Generalised from .home-status-details. Keeps deep reverse-engineering
+   provenance one click away on reference pages without dominating the flow. */
+details.disclosure {
+  margin: 0.85rem 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+details.disclosure > summary {
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  user-select: none;
+  list-style: none;
+}
+details.disclosure > summary::-webkit-details-marker { display: none; }
+details.disclosure > summary::before {
+  content: "+ ";
+  color: var(--accent);
+  font-weight: 700;
+}
+details.disclosure[open] > summary { border-bottom: 1px solid var(--border); }
+details.disclosure[open] > summary::before { content: "\2212 "; } /* minus */
+details.disclosure .disclosure-body {
+  padding: 0.8rem 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+details.disclosure .disclosure-body > :first-child { margin-top: 0; }
+details.disclosure .disclosure-body > :last-child { margin-bottom: 0; }
+details.disclosure .disclosure-body pre { margin: 0.6rem 0; }
+
+/* ---------- Confidence badge ----------
+   Surfaces a format/finding's confidence level (see formats/overview). Reuses
+   the status colour ramp: confirmed = done, inferred = partial, open = open. */
+.conf {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 0.06rem 0.4rem;
+  border-radius: 2px;
+  border: 1px solid;
+  vertical-align: middle;
+  line-height: 1.5;
+}
+.conf-confirmed { color: var(--done);    border-color: var(--done); }
+.conf-inferred  { color: var(--partial); border-color: var(--partial); }
+.conf-open      { color: var(--open);    border-color: var(--open); }
+
 /* ---------- Code copy button ---------- */
 .copy-btn {
   position: absolute;

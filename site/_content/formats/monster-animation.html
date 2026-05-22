@@ -10,6 +10,11 @@
   <p>Action <strong>index 0</strong> (id <code>0x00</code>) is the neutral <strong>idle</strong> animation the engine loops when the monster isn't acting; index 1 (id <code>0x01</code>) is the basic attack, and the rest correspond to the monster's spell / special actions.</p>
 </section>
 
+<section class="doc-section" id="texture-pool">
+  <h2>Texture pool (record <code>+0x08</code>)</h2>
+  <p>The same archive block carries the model's colours in a texture pool the battle loader decodes from <code>FUN_80055468</code>: a <code>0x1E0</code>-byte region of <strong>fifteen 16-colour palettes</strong> followed by a <strong>4bpp index page</strong> (always 256 rows tall, 128 or 256 texels wide). Each <a href="tmd.html">TMD</a> primitive selects its palette from the low six bits of its CBA (<code>cba &amp; 0x3F</code>) and samples the page at its UVs &mdash; exactly the index-then-palette lookup the PSX GPU performs from VRAM (see the <a href="tim.html">TIM</a> 4bpp / CLUT model and the <a href="../subsystems/renderer.html">renderer</a>). <strong>186 of the 194 archive slots</strong> carry a clean TMD + texture pool; the rest are filler ids.</p>
+</section>
+
 <section class="doc-section" id="packed-stream">
   <h2>Packed stream (entry <code>+0x8c</code>)</h2>
 <pre><code>u8  part_count    // animated objects per frame == TMD object count
