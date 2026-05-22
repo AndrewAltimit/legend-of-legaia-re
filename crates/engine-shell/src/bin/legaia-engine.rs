@@ -6153,29 +6153,43 @@ impl ApplicationHandler for PlayWindowApp {
                     } else {
                         None
                     };
-                    // Effect-pool markers: bridge live effects into the
-                    // renderer as world-space billboard crosses through the
-                    // existing Lines pipeline. Faithful textured sprites from
-                    // the effect bundle's inline atlas are a separate
-                    // follow-up (see docs/subsystems/effect-vm.md); these
-                    // markers make spawns visible and prove the seam.
-                    let effect_lines = if self.boot_ui.is_active() {
-                        None
+                    // Effect-pool billboards: bridge live effect child sprites
+                    // into the renderer as faithful camera-facing quads sized
+                    // and UV-addressed from the effect bundle's inline atlas
+                    // (`World::active_effect_sprites`). Each draws two ways: a
+                    // textured quad sampling the scene VRAM at the sprite's
+                    // atlas page/clut/uv (the retail FUN_801E0088 pass-2 path -
+                    // invisible while the texel-source upload is unpinned, real
+                    // once it lands), plus a tinted outline through the Lines
+                    // pipeline so the spawn is visible now. See
+                    // docs/subsystems/effect-vm.md.
+                    let (effect_billboard, effect_lines) = if self.boot_ui.is_active() {
+                        (None, None)
                     } else {
-                        let markers = self.session.host.world.active_effect_markers();
-                        if markers.is_empty() {
-                            None
+                        let sprites = self.session.host.world.active_effect_sprites();
+                        if sprites.is_empty() {
+                            (None, None)
                         } else {
-                            let (pos, col, idx) = effect_marker_line_geometry(&markers);
-                            match r.upload_lines(&pos, &col, &idx) {
+                            // Camera right/up in world space (clip-space basis
+                            // dirs mapped back through the inverse MVP).
+                            let inv = cam.inverse();
+                            let right = inv.transform_vector3(Vec3::X).normalize_or_zero();
+                            let up = inv.transform_vector3(Vec3::Y).normalize_or_zero();
+                            let mesh = effect_billboard_mesh(r, &sprites, right, up);
+                            let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
+                            let lines = match r.upload_lines(&pos, &col, &idx) {
                                 Ok(m) => Some(m),
                                 Err(e) => {
-                                    log::warn!("effect marker lines upload: {e:#}");
+                                    log::warn!("effect outline lines upload: {e:#}");
                                     None
                                 }
-                            }
+                            };
+                            (mesh, lines)
                         }
                     };
+                    if let Some(mesh) = effect_billboard.as_ref() {
+                        draws.push(SceneDraw { mesh, mvp: cam });
+                    }
                     let scene = RenderScene {
                         vram,
                         draws: &draws,
@@ -6196,22 +6210,94 @@ impl ApplicationHandler for PlayWindowApp {
     }
 }
 
-/// Build line-mesh geometry (positions / per-vertex RGBA / `LineList`
-/// indices) for the live effect-pool markers: each effect renders as a
-/// world-space 3D cross that fades out as it ages. World-space points are
-/// consumed by the Lines pipeline under the scene camera MVP.
-fn effect_marker_line_geometry(
-    markers: &[legaia_engine_core::world::EffectMarker],
+/// World-unit size of one texel when drawing an effect billboard (the atlas
+/// stores sprite extents in texels; the renderer scales them to world units).
+const EFFECT_TEXEL_WORLD: f32 = 1.0;
+
+/// The four world-space corners of a camera-facing billboard for `sprite`,
+/// using the camera's world `right`/`up` basis. Order: TL, TR, BL, BR.
+fn effect_sprite_corners(
+    sprite: &legaia_engine_core::world::EffectSprite,
+    right: Vec3,
+    up: Vec3,
+) -> [Vec3; 4] {
+    let c = Vec3::from(sprite.world_pos);
+    let hw = sprite.size[0] * 0.5 * EFFECT_TEXEL_WORLD;
+    let hh = sprite.size[1] * 0.5 * EFFECT_TEXEL_WORLD;
+    let rx = right * hw;
+    let uy = up * hh;
+    [c - rx + uy, c + rx + uy, c - rx - uy, c + rx - uy]
+}
+
+/// Build a textured billboard mesh for the live effect sprites: one
+/// camera-facing quad per child, sampling the scene VRAM at the sprite's
+/// atlas `(u, v)` / `tpage` / `clut`. Mirrors the retail per-frame walker
+/// (`FUN_801E0088` pass 2), which emits one GPU sprite primitive per child.
+///
+/// The texel-source upload for battle effects is not yet pinned, so a quad
+/// over empty VRAM samples all-zero texels which the VRAM-mesh shader
+/// discards (clean, not garbage); real pixels appear once that upload lands.
+/// Returns `None` when there is nothing to draw.
+fn effect_billboard_mesh(
+    r: &legaia_engine_render::Renderer,
+    sprites: &[legaia_engine_core::world::EffectSprite],
+    right: Vec3,
+    up: Vec3,
+) -> Option<UploadedVramMesh> {
+    if sprites.is_empty() {
+        return None;
+    }
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(sprites.len() * 4);
+    let mut uvs: Vec<[u8; 2]> = Vec::with_capacity(sprites.len() * 4);
+    let mut cba_tsb: Vec<[u16; 2]> = Vec::with_capacity(sprites.len() * 4);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(sprites.len() * 4);
+    let mut indices: Vec<u32> = Vec::with_capacity(sprites.len() * 6);
+    // Quad faces the camera; a single normal toward the viewer keeps the
+    // lambert term stable rather than relying on the derivative fallback.
+    let face = right.cross(up).normalize_or_zero().to_array();
+    for s in sprites {
+        let [u0, v0] = s.uv;
+        let u1 = u0.saturating_add(s.uv_size[0].saturating_sub(1)).min(255) as u8;
+        let v1 = v0.saturating_add(s.uv_size[1].saturating_sub(1)).min(255) as u8;
+        let u0 = (u0 & 0xFF) as u8;
+        let v0 = (v0 & 0xFF) as u8;
+        let corners = effect_sprite_corners(s, right, up);
+        let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
+        let base = positions.len() as u32;
+        for (corner, uv) in corners.iter().zip(corner_uv) {
+            positions.push(corner.to_array());
+            uvs.push(uv);
+            cba_tsb.push([s.clut, s.page]);
+            normals.push(face);
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
+    }
+    match r.upload_vram_mesh(&positions, &uvs, &cba_tsb, &normals, &indices) {
+        Ok(m) => Some(m),
+        Err(e) => {
+            log::warn!("effect billboard mesh upload: {e:#}");
+            None
+        }
+    }
+}
+
+/// Build a tinted outline for each effect billboard through the Lines
+/// pipeline (a camera-facing rectangle, sized from the sprite atlas, faded by
+/// age). This keeps spawned effects visible while the textured-quad's VRAM
+/// source is unpinned - the billboard's geometry and animation are faithful
+/// even when its texels are not yet resident.
+fn effect_sprite_line_geometry(
+    sprites: &[legaia_engine_core::world::EffectSprite],
+    right: Vec3,
+    up: Vec3,
 ) -> (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>) {
-    /// World-unit half-extent of each marker cross (tunable).
-    const H: f32 = 24.0;
-    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(markers.len() * 6);
-    let mut col: Vec<[u8; 4]> = Vec::with_capacity(markers.len() * 6);
-    let mut idx: Vec<u32> = Vec::with_capacity(markers.len() * 6);
-    for m in markers {
-        let [x, y, z] = m.world_pos;
+    let mut pos: Vec<[f32; 3]> = Vec::with_capacity(sprites.len() * 4);
+    let mut col: Vec<[u8; 4]> = Vec::with_capacity(sprites.len() * 4);
+    let mut idx: Vec<u32> = Vec::with_capacity(sprites.len() * 8);
+    for s in sprites {
+        let [tl, tr, bl, br] = effect_sprite_corners(s, right, up);
         // Warm spark colour, dimmed as the effect ages toward retirement.
-        let fade = (1.0 - m.age01).clamp(0.0, 1.0);
+        let fade = (1.0 - s.age01).clamp(0.0, 1.0);
         let c = [
             (80.0 + 175.0 * fade) as u8,
             (200.0 * fade) as u8,
@@ -6219,20 +6305,14 @@ fn effect_marker_line_geometry(
             255,
         ];
         let base = pos.len() as u32;
-        // Three axis-aligned segments forming a 3D cross at the origin.
-        let segs = [
-            ([x - H, y, z], [x + H, y, z]),
-            ([x, y - H, z], [x, y + H, z]),
-            ([x, y, z - H], [x, y, z + H]),
-        ];
-        for (a, b) in segs {
-            pos.push(a);
-            pos.push(b);
-            col.push(c);
+        for corner in [tl, tr, br, bl] {
+            pos.push(corner.to_array());
             col.push(c);
         }
-        for k in 0..6u32 {
-            idx.push(base + k);
+        // Four edges of the rectangle (LineList).
+        for &(a, b) in &[(0u32, 1u32), (1, 2), (2, 3), (3, 0)] {
+            idx.push(base + a);
+            idx.push(base + b);
         }
     }
     (pos, col, idx)

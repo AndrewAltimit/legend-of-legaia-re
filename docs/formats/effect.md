@@ -91,7 +91,21 @@ Each **pack1 entry** is an effect-ID script:
 
 The retail random-distribution loop (`FUN_801E0088` pass 1) reads only `+0x02` (width) and `+0x06` (depth) per child - those two govern where a child sprite spawns relative to the effect origin. `anim_flags` and `tail` are consumed later by the per-frame walker when advancing a live child slot's animation state.
 
-A live `0873_befect_data` sample carries 14 entries in pack0 and 33 entries in pack1. Inline sprite atlas entries (between `buffer+8` and pack0) decode as `(u16 u, u16 v, u16 page_descriptor, u8 clut, u8 ?)` - standard PSX sprite UV packets.
+A live `0873_befect_data` sample carries 14 entries in pack0 and 33 entries in pack1. The pack0/pack1 offset tables hold **absolute file offsets** (not the `word*4` offsets of `asset::pack`). Parser: `legaia_engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes`.
+
+Inline sprite atlas entries (between `buffer+8` and pack0) are 8 bytes each. The layout is pinned from the consumer (`FUN_801E0088` pass 2, the sprite-emit block ~`0x801E0840`), which reads them byte-wise to build each child's GPU sprite primitive:
+
+```
++0  u8  u       ; source texel U within the texture page
++1  u8  v       ; source texel V
++2  u8  w       ; sprite width in texels
++3  u8  h       ; sprite height
++4  u16 tpage   ; PSX texture-page descriptor, copied verbatim to the primitive
++6  u8  clut    ; CLUT (CBA) id
++7  u8  ?        ; unknown / reserved
+```
+
+The texel rectangle is `(u, v)..(u+w-1, v+h-1)`. A typical entry is a 32×32 sprite (`w=h=0x20`) with `tpage=0x7680` (page base (0,0), 8-bit colour mode) and a per-effect CLUT id. The pixels live in VRAM; the upload source for those texels is not yet pinned (PROT 0872 is **not** a plain TIM pack), so the engine renders the billboard geometry/animation now and gains real texels once that upload path is traced - an open thread alongside the effect-ID → name mapping below.
 
 ### Consumer cluster
 

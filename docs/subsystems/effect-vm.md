@@ -24,9 +24,20 @@ The cleaner port path: model the walker as a state-machine class and accept its 
 
 The retail per-state token algebra (`FUN_801E0088` pass 1) is inlined and not yet extracted, so `EffectHost::advance_state` models the lifecycle as a fixed-frame countdown: each work tick increments `master.field_14`, and the slot retires once it reaches `effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES`. Without this an effect terminated on its first work tick and never persisted to draw.
 
-`World::active_effect_markers` is the render-agnostic seam between the pool and the host. It returns one `EffectMarker` per active master slot (world position decoded from the 8.8-fixed pool coords, spawn angle, and a `0.0..=1.0` lifetime fraction for fade). The native host (`play-window`) turns each marker into a world-space billboard cross through the existing `UploadedLines` pipeline (`Scene.overlay_lines`), fading it as it ages. `World::spawn_debug_effect` seats a synthetic effect at a point so the bridge can be exercised by hand (the `E` key in `play-window` spawns one at the player); it is not a retail path.
+### Catalog load
 
-**Deferred (needs new infra):** the faithful render is Pass 2 of the walker - per-child billboarded PSX sprite primitives sampling the effect bundle's inline atlas (`u,v,page,clut`) from VRAM. That requires decoding the [2-pack wrapper's](../formats/effect.md) inline sprite atlas, uploading the effect-bundle textures into VRAM, and a billboard sprite primitive in the renderer. The runtime effect catalog (PROT 873 `efect.dat`) is also not yet loaded into the battle-enter path, so the action SM's `ui_element` spawns currently resolve to no script - wiring that catalog is the prerequisite for real (non-debug) effect spawns.
+The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `EffectCatalog::from_efect_dat_bytes` (the 2-pack parser - see [`formats/effect.md`](../formats/effect.md)), staying resident on `World::effect_catalog` across field/battle transitions. So the action SM's `ui_element` spawns (`FUN_801D8DE8 → FUN_801DFDF8`, ported as `World::try_spawn_effect`) resolve to real effect scripts. The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.
+
+### Render snapshots
+
+Two render-agnostic seams expose the live pool:
+
+- `World::active_effect_markers` - one coarse `EffectMarker` per effect (origin + age). For hosts/tests that only need effect positions.
+- `World::active_effect_sprites` - the faithful per-child billboard view (the textured-quad path). For each active effect it resolves the effect's children through the catalog, walks each child's pack0 animation to the current frame, and reads that frame's sprite-atlas entry for size + VRAM `(u, v)` / `tpage` / `clut`. Mirrors `FUN_801E0088` pass 2 (one GPU sprite primitive per child).
+
+The native host (`play-window`) draws each `EffectSprite` two ways: a **camera-facing textured quad** through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`), plus a **tinted outline** through the `UploadedLines` pipeline so the billboard is visible regardless of VRAM contents, faded by age. `World::spawn_debug_effect` seats a synthetic effect by hand (the `E` key in `play-window`); it is not a retail path.
+
+**Open thread - effect texel source.** The atlas gives VRAM coordinates (`tpage 0x7680` → page (0,0), 8-bit; `clut` → a CLUT row) that *something* at battle-init uploads; that upload path is not pinned (PROT 0872 is not the sprite-texture TIM pack). Until it lands, the textured quad samples empty VRAM, whose all-zero texels the VRAM-mesh shader discards - so the billboard shows as the tinted outline now and gains real pixels once the texel source is wired (no renderer change needed). The faithful per-frame token cadence (`FUN_801E0088` pass 1 state algebra) is also still inlined-only; the render loops each child's anim batch uniformly over the effect lifetime as a stand-in.
 
 ## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
 

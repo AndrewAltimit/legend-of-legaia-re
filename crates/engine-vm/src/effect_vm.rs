@@ -100,6 +100,18 @@ pub struct MasterSlot {
     /// We store this as a `u32` "offset" so it survives moves; the host
     /// resolves it to a real Rust slice during [`Pool::tick`].
     pub script_offset: u32,
+
+    // --- engine-side render aids (not part of the 28-byte retail slot) ---
+    /// The effect id this slot was spawned with, so a render snapshot can
+    /// resolve the effect's child descriptors + animations back through the
+    /// [`EffectCatalog`]. Retail re-reads these from the live script pointer;
+    /// the port keeps the id since it stores the catalog separately.
+    pub ui_id: u8,
+    /// Per-child `(dx, dz)` spawn offsets (8.8 fixed world units) for the
+    /// random-distribution path (`flags & 0x01`). Empty when the walker
+    /// populates child positions itself. Used by the render snapshot to place
+    /// each child billboard around the effect origin.
+    pub child_offsets: Vec<(i16, i16)>,
 }
 
 /// Per-sprite render state. Retail layout: 32 bytes per slot at offset
@@ -298,6 +310,8 @@ impl Pool {
         // Retail: `*piVar8 + 4` - pointer past the 4-byte script header.
         // We store offset-into-body since we keep the header separately.
         m.script_offset = 0;
+        m.ui_id = effect_id;
+        m.child_offsets = Vec::new();
 
         // If the script's flags bit 0 is clear, the child slots will be
         // populated by the per-frame walker rather than upfront. Done.
@@ -322,6 +336,7 @@ impl Pool {
             let raw_z = host.next_random();
             let dx = (raw_x.rem_euclid(modulus) - (spread as i32)) as i16;
             let dz = (raw_z.rem_euclid(modulus) - (spread as i32)) as i16;
+            self.master_slots[slot].child_offsets.push((dx, dz));
             host.assign_child_random_offset(slot, child_idx, dx, dz);
         }
 
@@ -478,16 +493,30 @@ pub trait EffectHost {
 /// One inline sprite-atlas entry from the runtime effect buffer (the 8-byte
 /// records between `buffer+8` and `pack0`). This is the PSX sprite UV packet
 /// the per-frame walker (`FUN_801E0088` pass 2) reads to build each child
-/// sprite's GPU primitive: `u`/`v` are the source texel within the texture
-/// page, `page` is the PSX `tpage` descriptor (texture-page X/Y + colour mode),
-/// `clut` is the CLUT (CBA) id. The pixels themselves live in VRAM, uploaded
-/// from the sibling TIM pack (PROT 0872).
+/// sprite's GPU primitive. The exact byte layout is pinned from that consumer
+/// (dump `overlay_battle_801e0088.txt`, the sprite-emit block ~0x801e0840):
+/// it reads `atlas[0]=u`, `atlas[1]=v`, `atlas[2]=w`, `atlas[3]=h` as bytes,
+/// copies the u16 at `atlas+4` straight into the primitive's `tpage` field,
+/// and the byte at `atlas+6` into the CLUT field. The texel rectangle is
+/// `(u, v)..(u+w-1, v+h-1)`; the pixels live in VRAM, uploaded from the
+/// sibling TIM pack (PROT 0872).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SpriteAtlasEntry {
-    pub u: u16,
-    pub v: u16,
+    /// `+0` source texel U within the texture page.
+    pub u: u8,
+    /// `+1` source texel V within the texture page.
+    pub v: u8,
+    /// `+2` sprite width in texels.
+    pub w: u8,
+    /// `+3` sprite height in texels.
+    pub h: u8,
+    /// `+4` PSX `tpage` descriptor (texture-page X/Y base + colour mode +
+    /// semi-transparency), used verbatim as the GPU primitive's tpage.
     pub page: u16,
-    pub clut: u16,
+    /// `+6` CLUT (CBA) id.
+    pub clut: u8,
+    /// `+7` unknown / reserved byte.
+    pub unk: u8,
 }
 
 /// One frame of a pack0 animation batch. The first byte indexes the sprite
@@ -601,10 +630,13 @@ impl EffectCatalog {
         for i in 0..atlas_bytes / 8 {
             let p = 8 + i * 8;
             atlas.push(SpriteAtlasEntry {
-                u: u16::from_le_bytes([buf[p], buf[p + 1]]),
-                v: u16::from_le_bytes([buf[p + 2], buf[p + 3]]),
+                u: buf[p],
+                v: buf[p + 1],
+                w: buf[p + 2],
+                h: buf[p + 3],
                 page: u16::from_le_bytes([buf[p + 4], buf[p + 5]]),
-                clut: u16::from_le_bytes([buf[p + 6], buf[p + 7]]),
+                clut: buf[p + 6],
+                unk: buf[p + 7],
             });
         }
 
@@ -1272,9 +1304,13 @@ mod tests {
         let mut buf = Vec::new();
         // Reserve header (filled at the end).
         buf.extend_from_slice(&[0u8; 8]);
-        // Inline atlas: 2 entries (u, v, page, clut).
-        buf.extend_from_slice(&[0u16, 8224, 0x7680, 0x0025].map(u16::to_le_bytes).concat());
-        buf.extend_from_slice(&[32u16, 8224, 0x7680, 0x0025].map(u16::to_le_bytes).concat());
+        // Inline atlas: 2 entries (u, v, w, h, u16 tpage, clut, unk).
+        buf.extend_from_slice(&[0u8, 0, 32, 32]); // u=0 v=0 w=32 h=32
+        buf.extend_from_slice(&0x7680u16.to_le_bytes());
+        buf.extend_from_slice(&[0x25u8, 0]); // clut, unk
+        buf.extend_from_slice(&[32u8, 0, 32, 32]); // u=32 v=0 w=32 h=32
+        buf.extend_from_slice(&0x7680u16.to_le_bytes());
+        buf.extend_from_slice(&[0x25u8, 0]);
         let pack0_off = buf.len() as u32; // 8 + 16 = 24
 
         // pack0: 1 anim batch with 2 frames.
@@ -1311,7 +1347,10 @@ mod tests {
         assert_eq!(cat.len(), 1, "one effect script");
         assert_eq!(cat.atlas().len(), 2, "two atlas entries");
         assert_eq!(cat.atlas()[1].u, 32);
+        assert_eq!(cat.atlas()[0].w, 32);
+        assert_eq!(cat.atlas()[0].h, 32);
         assert_eq!(cat.atlas()[0].page, 0x7680);
+        assert_eq!(cat.atlas()[0].clut, 0x25);
         assert_eq!(cat.anim_count(), 1);
         let batch = cat.anim(0).expect("anim batch 0");
         assert_eq!(batch.frames.len(), 2);

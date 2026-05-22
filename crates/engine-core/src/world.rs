@@ -126,9 +126,10 @@ pub struct FadeRequest {
 }
 
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
-/// [`World::active_effect_markers`]. Hosts turn these into whatever they can
-/// draw (billboard markers today, textured sprites once the effect-bundle
-/// atlas pipeline lands) without reaching into the effect VM's pool layout.
+/// [`World::active_effect_markers`] - one entry per effect (effect origin +
+/// age). [`World::active_effect_sprites`] is the richer per-child billboard
+/// view the textured-quad render path uses; this coarse marker remains for
+/// hosts/tests that only need effect positions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectMarker {
     /// Effect origin in world units (the pool stores 8.8 fixed-point; this
@@ -139,6 +140,35 @@ pub struct EffectMarker {
     pub angle: u16,
     /// Lifetime fraction in `0.0..=1.0` (0 = just spawned, 1 = about to
     /// retire). Hosts fade the marker out as this approaches 1.
+    pub age01: f32,
+}
+
+/// Render-agnostic snapshot of one live effect **child sprite**, produced by
+/// [`World::active_effect_sprites`]. This is the faithful billboard the retail
+/// per-frame walker (`FUN_801E0088` pass 2) emits: a camera-facing quad sized
+/// by the sprite-atlas entry, positioned at the effect origin plus the child's
+/// spread offset, sampling VRAM at the atlas's `(u, v)` / `tpage` / `clut`.
+///
+/// The texel-source VRAM upload for battle effects is not yet pinned (see
+/// `docs/formats/effect.md`), so a host that samples VRAM here will draw the
+/// faithful geometry/animation with whatever is resident; the `page`/`clut`/
+/// `uv` carry the real coordinates so textures appear once that upload lands.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectSprite {
+    /// Child world position in world units (effect origin + spread offset).
+    pub world_pos: [f32; 3],
+    /// Billboard size in world units (atlas `w` × `h`, in texel-equivalent
+    /// units the host scales as it sees fit).
+    pub size: [f32; 2],
+    /// Top-left source texel within the texture page (atlas `u`, `v`).
+    pub uv: [u16; 2],
+    /// Source rectangle size in texels (atlas `w`, `h`).
+    pub uv_size: [u16; 2],
+    /// PSX `tpage` descriptor (texture-page base + colour mode).
+    pub page: u16,
+    /// CLUT (CBA) id.
+    pub clut: u16,
+    /// Lifetime fraction `0.0..=1.0` (for fade-out), shared with the effect.
     pub age01: f32,
 }
 
@@ -2294,15 +2324,86 @@ impl World {
             .collect()
     }
 
+    /// Snapshot every live effect's **child sprites** as faithful billboards -
+    /// the textured-quad seam that supersedes [`Self::active_effect_markers`]'
+    /// one-cross-per-effect view. For each active master slot it resolves the
+    /// effect's children through the loaded [`crate::world::World::effect_catalog`],
+    /// walks each child's pack0 animation to the current frame, and reads the
+    /// frame's sprite-atlas entry for size + VRAM `(u, v)` / `tpage` / `clut`.
+    ///
+    /// Mirrors the retail per-frame walker (`FUN_801E0088` pass 2): one GPU
+    /// sprite primitive per child, sized from the atlas, placed at the effect
+    /// origin plus the child's spread offset. Returns an empty vector when the
+    /// catalog is empty (e.g. no disc), so it degrades cleanly.
+    pub fn active_effect_sprites(&self) -> Vec<EffectSprite> {
+        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        let atlas = self.effect_catalog.atlas();
+        let mut out = Vec::new();
+        for m in self.effect_pool.master_slots.iter() {
+            if m.child_count == 0 {
+                continue;
+            }
+            let Some((_script, children)) = self.effect_catalog.entry(m.ui_id) else {
+                continue;
+            };
+            let age01 = ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0);
+            let frame_idx = m.field_14.max(0) as usize;
+            let origin = [
+                m.pos_x as f32 / 256.0,
+                m.pos_y as f32 / 256.0,
+                m.pos_z as f32 / 256.0,
+            ];
+            for (i, child) in children.iter().enumerate() {
+                // Resolve the current animation frame -> atlas entry.
+                let entry = self.effect_catalog.anim(child.sprite_id).and_then(|batch| {
+                    if batch.frames.is_empty() {
+                        return None;
+                    }
+                    // Loop the batch over the effect lifetime (the faithful
+                    // per-frame token cadence is not extracted; a uniform loop
+                    // keeps the sprite animating over its visible life).
+                    let f = frame_idx % batch.frames.len();
+                    atlas.get(batch.frames[f].atlas_index as usize)
+                });
+                let Some(e) = entry else {
+                    continue;
+                };
+                // Child placement: the stored spread offset (random-distribution
+                // path) or a small deterministic ring (walker-populated path).
+                let (dx, dz) = m
+                    .child_offsets
+                    .get(i)
+                    .copied()
+                    .map(|(x, z)| (x as f32 / 256.0, z as f32 / 256.0))
+                    .unwrap_or_else(|| {
+                        let a = i as f32 * std::f32::consts::TAU / children.len().max(1) as f32;
+                        let r = (child.width.max(child.depth).max(8) as f32) / 256.0;
+                        (a.cos() * r, a.sin() * r)
+                    });
+                out.push(EffectSprite {
+                    world_pos: [origin[0] + dx, origin[1], origin[2] + dz],
+                    size: [e.w.max(1) as f32, e.h.max(1) as f32],
+                    uv: [e.u as u16, e.v as u16],
+                    uv_size: [e.w as u16, e.h as u16],
+                    page: e.page,
+                    clut: e.clut as u16,
+                    age01,
+                });
+            }
+        }
+        out
+    }
+
     /// Dev/visualization helper: seat one synthetic active effect into the
     /// pool at `world_pos` (world units) so the effect-pool render bridge can
     /// be exercised by hand. It ages and retires through the normal
     /// [`Self::tick_effects`] lifetime like any spawned effect.
     ///
-    /// This is **not** a retail code path - it stands in for the runtime
-    /// effect catalog (PROT 873 `efect.dat` 2-pack), which isn't yet wired
-    /// into the battle-enter path so the action SM's `ui_element` spawns
-    /// resolve to real scripts. Returns `false` when the pool is full.
+    /// This is **not** a retail code path - it's a hand-spawn for exercising
+    /// the render bridge without driving the action SM. The real catalog (PROT
+    /// 0873 `efect.dat`) loads at scene entry, so `ui_element` spawns resolve
+    /// to real scripts; use [`Self::try_spawn_effect`] for the production path.
+    /// Returns `false` when the pool is full.
     pub fn spawn_debug_effect(&mut self, world_pos: [f32; 3]) -> bool {
         let Some(slot) = self.effect_pool.allocate_master() else {
             return false;
@@ -8494,6 +8595,73 @@ mod tests {
             world.actors[1].battle.active_target, 0,
             "targets the only living party member (slot 0)"
         );
+    }
+
+    /// A minimal `efect.dat` 2-pack: 1 atlas entry (a 24x24 sprite at texel
+    /// (5,7), tpage 0x88, clut 0x12), 1 anim batch (one frame -> atlas 0), and
+    /// 1 effect script with 1 child referencing sprite_id 0.
+    fn minimal_efect_dat() -> Vec<u8> {
+        let mut buf = vec![0u8; 8];
+        // atlas[0]: u=5 v=7 w=24 h=24, tpage=0x88, clut=0x12, unk=0
+        buf.extend_from_slice(&[5u8, 7, 24, 24]);
+        buf.extend_from_slice(&0x88u16.to_le_bytes());
+        buf.extend_from_slice(&[0x12u8, 0]);
+        let pack0 = buf.len() as u32;
+        // pack0: 1 anim batch, 1 frame (atlas_index 0).
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        let p0_tbl = buf.len();
+        buf.extend_from_slice(&[0u8; 4]);
+        let anim0 = buf.len() as u32;
+        buf.extend_from_slice(&[1u8, 0]); // frame_count=1, flags
+        buf.extend_from_slice(&[0u8, 0, 0, 0, 0, 0]); // frame 0 -> atlas 0
+        buf[p0_tbl..p0_tbl + 4].copy_from_slice(&anim0.to_le_bytes());
+        let pack1 = buf.len() as u32;
+        // pack1: 1 effect script, 1 child (sprite_id 0), flags 0 (no spread).
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        let p1_tbl = buf.len();
+        buf.extend_from_slice(&[0u8; 4]);
+        let script0 = buf.len() as u32;
+        buf.extend_from_slice(&[1u8, 0]); // child_count=1, flags=0
+        buf.extend_from_slice(&0i16.to_le_bytes()); // spread
+        buf.extend_from_slice(&0u16.to_le_bytes()); // child sprite_id=0
+        buf.extend_from_slice(&0i16.to_le_bytes()); // width
+        buf.extend_from_slice(&0u16.to_le_bytes()); // anim_flags
+        buf.extend_from_slice(&0i16.to_le_bytes()); // depth
+        buf.extend_from_slice(&[0u8; 6]); // tail
+        buf[p1_tbl..p1_tbl + 4].copy_from_slice(&script0.to_le_bytes());
+        buf[0..4].copy_from_slice(&pack0.to_le_bytes());
+        buf[4..8].copy_from_slice(&pack1.to_le_bytes());
+        buf
+    }
+
+    /// A spawned effect produces a faithful billboard sprite per child, sized
+    /// and UV-addressed from the real sprite atlas (the textured-quad seam).
+    #[test]
+    fn active_effect_sprites_carry_atlas_size_and_vram_coords() {
+        use legaia_engine_vm::effect_vm::EffectCatalog;
+        let mut world = World {
+            effect_catalog: EffectCatalog::from_efect_dat_bytes(&minimal_efect_dat()),
+            ..World::default()
+        };
+        assert_eq!(world.effect_catalog.len(), 1, "one effect script");
+
+        // No effects yet -> no sprites.
+        assert!(world.active_effect_sprites().is_empty());
+
+        // Spawn effect 0 at world (10, 0, 20).
+        world.try_spawn_effect(0, [10, 0, 20], 0);
+        let sprites = world.active_effect_sprites();
+        assert_eq!(sprites.len(), 1, "one child sprite");
+        let s = sprites[0];
+        assert_eq!(s.uv, [5, 7], "atlas texel origin");
+        assert_eq!(s.uv_size, [24, 24], "atlas sprite size");
+        assert_eq!(s.size, [24.0, 24.0]);
+        assert_eq!(s.page, 0x88);
+        assert_eq!(s.clut, 0x12);
+        // Origin Y matches; X/Z within a small deterministic ring of (10, 20).
+        assert!((s.world_pos[1] - 0.0).abs() < 1e-3);
+        assert!((s.world_pos[0] - 10.0).abs() < 1.0);
+        assert!((s.world_pos[2] - 20.0).abs() < 1.0);
     }
 
     /// Per-monster-id scripted AI (the `FUN_801E9FD4` switch) end-to-end: a
