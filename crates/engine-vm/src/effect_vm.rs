@@ -100,6 +100,26 @@ pub struct MasterSlot {
     /// We store this as a `u32` "offset" so it survives moves; the host
     /// resolves it to a real Rust slice during [`Pool::tick`].
     pub script_offset: u32,
+
+    // --- engine-side render aids (not part of the 28-byte retail slot) ---
+    /// The effect id this slot was spawned with, so a render snapshot can
+    /// resolve the effect's child descriptors + animations back through the
+    /// [`EffectCatalog`]. Retail re-reads these from the live script pointer;
+    /// the port keeps the id since it stores the catalog separately.
+    pub ui_id: u8,
+    /// Per-child `(dx, dz)` spawn offsets (8.8 fixed world units) for the
+    /// random-distribution path (`flags & 0x01`). Empty when the walker
+    /// populates child positions itself. Used by the render snapshot to place
+    /// each child billboard around the effect origin.
+    pub child_offsets: Vec<(i16, i16)>,
+    /// Optional index into the host's global TMD pool (`etmd.dat`) for the
+    /// effect's 3D model. `Some` for model-driven effects (the flame mesh of a
+    /// spell like *Tail Fire* - an `etmd` TMD textured by `etim`); `None` for
+    /// the 2D-billboard-only effects. Not part of the 28-byte retail slot: the
+    /// production effect-id -> etmd-model selection is driven by the move/art
+    /// VM and not yet decoded, so this is currently set only by the host's
+    /// model-spawn helper.
+    pub model_index: Option<usize>,
 }
 
 /// Per-sprite render state. Retail layout: 32 bytes per slot at offset
@@ -298,6 +318,8 @@ impl Pool {
         // Retail: `*piVar8 + 4` - pointer past the 4-byte script header.
         // We store offset-into-body since we keep the header separately.
         m.script_offset = 0;
+        m.ui_id = effect_id;
+        m.child_offsets = Vec::new();
 
         // If the script's flags bit 0 is clear, the child slots will be
         // populated by the per-frame walker rather than upfront. Done.
@@ -322,6 +344,7 @@ impl Pool {
             let raw_z = host.next_random();
             let dx = (raw_x.rem_euclid(modulus) - (spread as i32)) as i16;
             let dz = (raw_z.rem_euclid(modulus) - (spread as i32)) as i16;
+            self.master_slots[slot].child_offsets.push((dx, dz));
             host.assign_child_random_offset(slot, child_idx, dx, dz);
         }
 
@@ -475,23 +498,77 @@ pub trait EffectHost {
     }
 }
 
-/// Script catalog loaded from the on-disc effect bundle's pack1 data.
-/// Each entry holds one `EffectScript` (header + body) and the matching
-/// per-child descriptor slice, indexed by effect id.
+/// One inline sprite-atlas entry from the runtime effect buffer (the 8-byte
+/// records between `buffer+8` and `pack0`). This is the PSX sprite UV packet
+/// the per-frame walker (`FUN_801E0088` pass 2) reads to build each child
+/// sprite's GPU primitive. The exact byte layout is pinned from that consumer
+/// (dump `overlay_battle_801e0088.txt`, the sprite-emit block ~0x801e0840):
+/// it reads `atlas[0]=u`, `atlas[1]=v`, `atlas[2]=w`, `atlas[3]=h` as bytes,
+/// copies the u16 at `atlas+4` straight into the primitive's `tpage` field,
+/// and the byte at `atlas+6` into the CLUT field. The texel rectangle is
+/// `(u, v)..(u+w-1, v+h-1)`; the pixels live in VRAM, uploaded from the
+/// sibling TIM pack (PROT 0872).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpriteAtlasEntry {
+    /// `+0` source texel U within the texture page.
+    pub u: u8,
+    /// `+1` source texel V within the texture page.
+    pub v: u8,
+    /// `+2` sprite width in texels.
+    pub w: u8,
+    /// `+3` sprite height in texels.
+    pub h: u8,
+    /// `+4` PSX `tpage` descriptor (texture-page X/Y base + colour mode +
+    /// semi-transparency), used verbatim as the GPU primitive's tpage.
+    pub page: u16,
+    /// `+6` CLUT (CBA) id.
+    pub clut: u8,
+    /// `+7` unknown / reserved byte.
+    pub unk: u8,
+}
+
+/// One frame of a pack0 animation batch. The first byte indexes the sprite
+/// atlas (which texel rect to draw this frame); the remaining 5 bytes are
+/// timing / direction bits the walker advances per frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AnimFrame {
+    pub atlas_index: u8,
+    pub timing: [u8; 5],
+}
+
+/// One pack0 entry: a frame-batched sprite animation. A child sprite's
+/// `sprite_id` indexes this list; the batch's frames drive its on-screen
+/// texel over the effect's lifetime.
+#[derive(Debug, Clone, Default)]
+pub struct AnimBatch {
+    pub flags: u8,
+    pub frames: Vec<AnimFrame>,
+}
+
+/// Script catalog loaded from the runtime effect buffer (`efect.dat`, PROT
+/// 0873). Holds the pack1 effect scripts (one `EffectScript` + its per-child
+/// descriptors per effect id), plus the pack0 animation batches and the inline
+/// sprite atlas the render path needs to turn a spawned child into a textured
+/// billboard.
 ///
-/// Built by calling [`EffectCatalog::from_pack1_bytes`] on the raw pack1
-/// slice from PROT 873 (`efect.dat`). An empty catalog is safe - all
-/// `spawn_by_ui_id` calls simply return `None`.
+/// Built by [`EffectCatalog::from_efect_dat_bytes`] on the whole PROT 0873
+/// buffer. An empty catalog is safe - all `spawn_by_ui_id` calls simply return
+/// `None` and there is nothing to draw.
 #[derive(Debug, Clone, Default)]
 pub struct EffectCatalog {
     entries: Vec<(EffectScript, Vec<ChildSprite>)>,
+    atlas: Vec<SpriteAtlasEntry>,
+    anims: Vec<AnimBatch>,
 }
 
 impl EffectCatalog {
     /// Construct from pre-parsed `(script, children)` pairs. Index 0 = effect
-    /// id 0, index 1 = effect id 1, etc.
+    /// id 0, index 1 = effect id 1, etc. (atlas + anims empty - test helper).
     pub fn new(entries: Vec<(EffectScript, Vec<ChildSprite>)>) -> Self {
-        Self { entries }
+        Self {
+            entries,
+            ..Self::default()
+        }
     }
 
     /// Number of effect scripts in the catalog.
@@ -509,17 +586,181 @@ impl EffectCatalog {
         Some((s, c.as_slice()))
     }
 
-    /// Parse from a raw pack1 byte slice. The pack1 format mirrors
-    /// `asset::pack`: `u32 count`, `u32 word_offsets[count]`, then entries.
-    /// Each entry begins with the 4-byte `EffectScript` header followed by
-    /// `child_count × 14` bytes of `ChildSprite` descriptors and then the
-    /// remainder as the script body.
+    /// The inline sprite atlas (PSX UV packets). Indexed by an [`AnimFrame`]'s
+    /// `atlas_index`.
+    pub fn atlas(&self) -> &[SpriteAtlasEntry] {
+        &self.atlas
+    }
+
+    /// The pack0 animation batches. A [`ChildSprite`]'s `sprite_id` indexes
+    /// this list (`None` when out of range).
+    pub fn anim(&self, sprite_id: u16) -> Option<&AnimBatch> {
+        self.anims.get(sprite_id as usize)
+    }
+
+    /// Number of pack0 animation batches.
+    pub fn anim_count(&self) -> usize {
+        self.anims.len()
+    }
+
+    /// Parse the whole runtime effect buffer - the `efect.dat` 2-pack wrapper
+    /// (PROT 0873). This is the format battle code actually consumes (see
+    /// `docs/formats/effect.md`):
     ///
-    /// Returns an empty catalog on any parse failure so callers never need
-    /// to handle an error - a missing effect just doesn't spawn.
+    /// ```text
+    /// +0  u32 pack0_offset    +4  u32 pack1_offset
+    /// +8  [inline 8-byte sprite-atlas entries up to pack0_offset]
+    /// pack0: u32 count, u32 abs_offsets[count], frame-batch anim records
+    /// pack1: u32 count, u32 abs_offsets[count], 4-byte-header effect scripts
+    /// ```
+    ///
+    /// The pack tables hold **absolute file offsets** (not the `word*4`
+    /// offsets of `asset::pack`). Returns an empty catalog on any structural
+    /// failure so a malformed buffer just yields nothing to spawn or draw.
+    pub fn from_efect_dat_bytes(buf: &[u8]) -> Self {
+        Self::try_parse_efect_dat(buf).unwrap_or_default()
+    }
+
+    fn try_parse_efect_dat(buf: &[u8]) -> Option<Self> {
+        let rd_u32 = |off: usize| -> Option<u32> {
+            buf.get(off..off + 4)
+                .map(|s| u32::from_le_bytes(s.try_into().unwrap()))
+        };
+        let pack0_off = rd_u32(0)? as usize;
+        let pack1_off = rd_u32(4)? as usize;
+        if pack0_off < 8 || pack0_off > buf.len() || pack1_off > buf.len() {
+            return None;
+        }
+
+        // Inline sprite atlas: 8-byte records from +8 up to pack0.
+        let mut atlas = Vec::new();
+        let atlas_bytes = pack0_off - 8;
+        for i in 0..atlas_bytes / 8 {
+            let p = 8 + i * 8;
+            atlas.push(SpriteAtlasEntry {
+                u: buf[p],
+                v: buf[p + 1],
+                w: buf[p + 2],
+                h: buf[p + 3],
+                page: u16::from_le_bytes([buf[p + 4], buf[p + 5]]),
+                clut: buf[p + 6],
+                unk: buf[p + 7],
+            });
+        }
+
+        // pack0 - animation batches.
+        let mut anims = Vec::new();
+        for entry in Self::pack_entries(buf, pack0_off)? {
+            if entry.len() < 2 {
+                anims.push(AnimBatch::default());
+                continue;
+            }
+            let frame_count = entry[0] as usize;
+            let flags = entry[1];
+            let mut frames = Vec::with_capacity(frame_count);
+            for f in 0..frame_count {
+                let fb = 2 + f * 6;
+                let Some(rec) = entry.get(fb..fb + 6) else {
+                    break;
+                };
+                frames.push(AnimFrame {
+                    atlas_index: rec[0],
+                    timing: [rec[1], rec[2], rec[3], rec[4], rec[5]],
+                });
+            }
+            anims.push(AnimBatch { flags, frames });
+        }
+
+        // pack1 - effect scripts (header + per-child descriptors).
+        let mut entries = Vec::new();
+        for entry in Self::pack_entries(buf, pack1_off)? {
+            entries.push(Self::parse_script_entry(entry));
+        }
+
+        Some(Self {
+            entries,
+            atlas,
+            anims,
+        })
+    }
+
+    /// Read a `[u32 count][u32 abs_offset[count]]` table at `base` and return
+    /// each entry as a byte slice. Entry `i` runs from `offset[i]` to
+    /// `offset[i+1]` (last entry to end-of-buffer). Offsets are absolute file
+    /// offsets and must be non-decreasing and in-bounds.
+    fn pack_entries(buf: &[u8], base: usize) -> Option<Vec<&[u8]>> {
+        let count = buf
+            .get(base..base + 4)
+            .map(|s| u32::from_le_bytes(s.try_into().unwrap()))? as usize;
+        if count == 0 || count > 4096 {
+            return None;
+        }
+        let table = base + 4;
+        let mut offs = Vec::with_capacity(count + 1);
+        for i in 0..count {
+            let p = table + i * 4;
+            let o = buf
+                .get(p..p + 4)
+                .map(|s| u32::from_le_bytes(s.try_into().unwrap()))? as usize;
+            if o > buf.len() {
+                return None;
+            }
+            offs.push(o);
+        }
+        for w in offs.windows(2) {
+            if w[0] > w[1] {
+                return None;
+            }
+        }
+        offs.push(buf.len());
+        Some((0..count).map(|i| &buf[offs[i]..offs[i + 1]]).collect())
+    }
+
+    /// Parse one pack1 entry: `[u8 child_count][u8 flags][i16 spread]` then
+    /// `child_count × 14-byte` child descriptors, remainder is the body.
+    fn parse_script_entry(entry: &[u8]) -> (EffectScript, Vec<ChildSprite>) {
+        if entry.len() < 4 {
+            return (EffectScript::default(), Vec::new());
+        }
+        let child_count = entry[0] as usize;
+        let flags = entry[1];
+        let spread = u16::from_le_bytes([entry[2], entry[3]]);
+        let mut children = Vec::with_capacity(child_count);
+        for c in 0..child_count {
+            let cb = 4 + c * 14;
+            let Some(rec) = entry.get(cb..cb + 14) else {
+                break;
+            };
+            children.push(ChildSprite {
+                sprite_id: u16::from_le_bytes([rec[0], rec[1]]),
+                width: i16::from_le_bytes([rec[2], rec[3]]),
+                anim_flags: u16::from_le_bytes([rec[4], rec[5]]),
+                depth: i16::from_le_bytes([rec[6], rec[7]]),
+                tail: [rec[8], rec[9], rec[10], rec[11], rec[12], rec[13]],
+            });
+        }
+        let body_start = (4 + child_count * 14).min(entry.len());
+        (
+            EffectScript {
+                child_count: child_count as u8,
+                flags,
+                spread,
+                body: entry[body_start..].to_vec(),
+            },
+            children,
+        )
+    }
+
+    /// Parse from a raw pack1 byte slice using the abstract `asset::pack`
+    /// `word*4` offset convention. Retained for the abstract-pack path; the
+    /// runtime `efect.dat` file uses absolute offsets - see
+    /// [`Self::from_efect_dat_bytes`].
     pub fn from_pack1_bytes(data: &[u8]) -> Self {
         match Self::try_parse(data) {
-            Some(entries) => Self { entries },
+            Some(entries) => Self {
+                entries,
+                ..Self::default()
+            },
             None => Self::default(),
         }
     }
@@ -1061,6 +1302,80 @@ mod tests {
         let data = 0xFFFF_FFFFu32.to_le_bytes();
         let catalog = EffectCatalog::from_pack1_bytes(&data);
         assert!(catalog.is_empty());
+    }
+
+    /// The real `efect.dat` 2-pack: header pointers, an inline sprite atlas,
+    /// pack0 anim batches, and pack1 effect scripts - all with **absolute**
+    /// file offsets (the shape verified against PROT 0873).
+    #[test]
+    fn catalog_from_efect_dat_parses_packs_atlas_and_anims() {
+        let mut buf = Vec::new();
+        // Reserve header (filled at the end).
+        buf.extend_from_slice(&[0u8; 8]);
+        // Inline atlas: 2 entries (u, v, w, h, u16 tpage, clut, unk).
+        buf.extend_from_slice(&[0u8, 0, 32, 32]); // u=0 v=0 w=32 h=32
+        buf.extend_from_slice(&0x7680u16.to_le_bytes());
+        buf.extend_from_slice(&[0x25u8, 0]); // clut, unk
+        buf.extend_from_slice(&[32u8, 0, 32, 32]); // u=32 v=0 w=32 h=32
+        buf.extend_from_slice(&0x7680u16.to_le_bytes());
+        buf.extend_from_slice(&[0x25u8, 0]);
+        let pack0_off = buf.len() as u32; // 8 + 16 = 24
+
+        // pack0: 1 anim batch with 2 frames.
+        let p0_table = buf.len();
+        buf.extend_from_slice(&1u32.to_le_bytes()); // count
+        buf.extend_from_slice(&[0u8; 4]); // offset[0] placeholder
+        let anim0 = buf.len() as u32;
+        buf.extend_from_slice(&[2u8, 0x00]); // frame_count=2, flags
+        buf.extend_from_slice(&[0u8, 1, 4, 0, 0, 0]); // frame 0 (atlas_index 0)
+        buf.extend_from_slice(&[1u8, 1, 4, 0, 0, 0]); // frame 1 (atlas_index 1)
+        buf[p0_table + 4..p0_table + 8].copy_from_slice(&anim0.to_le_bytes());
+        let pack1_off = buf.len() as u32;
+
+        // pack1: 1 effect script with 2 children.
+        let p1_table = buf.len();
+        buf.extend_from_slice(&1u32.to_le_bytes()); // count
+        buf.extend_from_slice(&[0u8; 4]); // offset[0] placeholder
+        let script0 = buf.len() as u32;
+        buf.extend_from_slice(&[2u8, 0x00]); // child_count=2, flags
+        buf.extend_from_slice(&0i16.to_le_bytes()); // spread
+        for sid in [514u16, 2u16] {
+            buf.extend_from_slice(&sid.to_le_bytes()); // sprite_id
+            buf.extend_from_slice(&0i16.to_le_bytes()); // width
+            buf.extend_from_slice(&0u16.to_le_bytes()); // anim_flags
+            buf.extend_from_slice(&0i16.to_le_bytes()); // depth
+            buf.extend_from_slice(&[0u8; 6]); // tail
+        }
+        buf[p1_table + 4..p1_table + 8].copy_from_slice(&script0.to_le_bytes());
+
+        buf[0..4].copy_from_slice(&pack0_off.to_le_bytes());
+        buf[4..8].copy_from_slice(&pack1_off.to_le_bytes());
+
+        let cat = EffectCatalog::from_efect_dat_bytes(&buf);
+        assert_eq!(cat.len(), 1, "one effect script");
+        assert_eq!(cat.atlas().len(), 2, "two atlas entries");
+        assert_eq!(cat.atlas()[1].u, 32);
+        assert_eq!(cat.atlas()[0].w, 32);
+        assert_eq!(cat.atlas()[0].h, 32);
+        assert_eq!(cat.atlas()[0].page, 0x7680);
+        assert_eq!(cat.atlas()[0].clut, 0x25);
+        assert_eq!(cat.anim_count(), 1);
+        let batch = cat.anim(0).expect("anim batch 0");
+        assert_eq!(batch.frames.len(), 2);
+        assert_eq!(batch.frames[1].atlas_index, 1);
+        let (script, children) = cat.entry(0).unwrap();
+        assert_eq!(script.child_count, 2);
+        assert_eq!(children[0].sprite_id, 514);
+        assert_eq!(children[1].sprite_id, 2);
+    }
+
+    #[test]
+    fn catalog_from_efect_dat_empty_on_truncated() {
+        assert!(EffectCatalog::from_efect_dat_bytes(&[0u8; 4]).is_empty());
+        // pack0_offset past EOF.
+        let mut buf = vec![0u8; 8];
+        buf[0..4].copy_from_slice(&0xFFFFu32.to_le_bytes());
+        assert!(EffectCatalog::from_efect_dat_bytes(&buf).is_empty());
     }
 
     /// `is_summon_effect` short-circuits BEFORE consuming a master slot.

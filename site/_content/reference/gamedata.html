@@ -37,16 +37,17 @@
   armor.toml          - 49 armor / helmet / shoes entries
   accessories.toml    - 70+ accessories with structured effect classes
   enemies.toml        - 130+ enemies with location + drop / steal table
-  bosses.toml         - boss HP estimates
+  bosses.toml         - boss HP estimates (sanity-check data)
   shops.toml          - per-town shop inventories with item-key references
   casino.toml         - Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter
+  sol_tower.toml      - Sol Tower floor map + side-quest chains
   fishing.toml        - Vidna/Buma fishing pond prizes
   characters.toml     - Vahn / Noa / Gala affinities and weapon classes</code></pre>
   <p>Implementation: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/crates/gamedata" target="_blank" rel="noopener"><code>crates/gamedata</code></a>.</p>
 </section>
 
 <section class="doc-section" id="arts-schema">
-  <h2>Arts schema</h2>
+  <h2>Schema highlights &middot; Arts</h2>
   <p>Each art carries a <code>command</code> (player-facing input tokens: <code>Arms</code>, <code>Ra-Seru</code>, <code>High</code>, <code>Low</code>) <em>and</em> a <code>directions</code> array of raw direction bytes (<code>1=L, 2=R, 3=D, 4=U</code>) - exactly the prefix that ends up in the on-disc Art Record. The mapping is per-character because Noa is left-handed:</p>
   <table>
     <thead><tr><th>Token</th><th>Vahn / Gala</th><th>Noa</th></tr></thead>
@@ -58,6 +59,45 @@
     </tbody>
   </table>
   <p>The <code>action_constant</code> field (<code>0x1B..=0x32</code>) cross-references the per-character art name table in <code>crates/art/src/tables.rs</code>. The <code>arts_action_constants_match_legaia_art_tables</code> integration test pins the relationship.</p>
+</section>
+
+<section class="doc-section" id="magic-schema">
+  <h2>Schema highlights &middot; Magic</h2>
+  <p>21 Seru spells + 8 Ra-Seru summons. <code>element</code> is lowercase (<code>fire</code>, <code>water</code>, <code>earth</code>, <code>wind</code>, <code>thunder</code>, <code>light</code>, <code>dark</code>, <code>evil</code>). <code>target</code> is one of <code>single_enemy</code>, <code>all_enemies</code>, <code>single_ally</code>, <code>all_allies</code>, <code>self</code>.</p>
+</section>
+
+<section class="doc-section" id="items-schema">
+  <h2>Schema highlights &middot; Items / weapons / armor / accessories</h2>
+  <p>Each row carries a stable snake_case <code>key</code> that <code>shops.toml</code>, <code>casino.toml</code>, <code>fishing.toml</code>, and <code>enemies.toml</code> reference; the <code>shop_inventory_keys_resolve</code> test asserts every reference resolves.</p>
+  <p><code>accessories.toml</code> carries an informal <code>effect_class</code> taxonomy (<code>hp_max_pct</code>, <code>ap_accrual_pct</code>, <code>mp_cost_pct</code>, <code>attack_pct</code>, <code>speed_pct</code>, <code>revive_once</code>, <code>protect_status</code>, <code>elemental_def</code>, <code>summon_seru</code>, &hellip;). This is <em>not</em> retail data - it's a structured re-encoding of the walkthrough effect text designed for the engine to dispatch on. As individual cheats and battle-formula reverse-engineering pin exact retail mechanics, <code>effect_class</code> rows can be promoted to retail-confirmed data.</p>
+</section>
+
+<section class="doc-section" id="enemies-schema">
+  <h2>Schema highlights &middot; Enemies</h2>
+  <p>Per enemy: <code>name</code>, <code>location</code>, an optional <code>element</code> (for elemental Seru enemies), an optional <code>boss = true</code>, and optional <code>drop</code> / <code>steal</code> item keys. The <code>enemy_drop_and_steal_keys_resolve</code> test asserts every drop/steal target exists in the item tables.</p>
+</section>
+
+<section class="doc-section" id="shops-schema">
+  <h2>Schema highlights &middot; Shops</h2>
+  <p>One <code>[[shop]]</code> per merchant. Inventories reference item keys; the <code>gamedata-tool shop &lt;town&gt;</code> CLI joins those keys against the four item tables and prints a fully-priced inventory.</p>
+</section>
+
+<section class="doc-section" id="casino-schema">
+  <h2>Schema highlights &middot; Casino + Muscle Dome</h2>
+  <p><code>casino.toml</code> carries several concept families:</p>
+  <ul class="bullets">
+    <li><code>[[slot_prize]]</code> rows for the Vidna casino counter and the Sol Tower Muscle Dome prize-exchange counter (<code>location = "Sol"</code> is the F4 counter, <em>not</em> the slot machine itself - slot machines only pay coins).</li>
+    <li><code>[[muscle_dome_course]]</code> rows (Beginner / Expert / Master) with entry fee, clear reward, and <code>restrictions</code> / <code>allowed</code> arrays capturing the equipment / item / magic gating. Master Course's <code>reward_first_clear = "war_god_icon"</code> requires Jette to have been defeated in Absolute Fortress. The flat <code>enemies = [...]</code> field is the encounter-order roster as plain strings.</li>
+    <li><code>[[muscle_dome_round]]</code> rows pin the round-by-round assignment for each course as a normalised <code>(course_key, round, boss_key, seru_level)</code> table. Beginner and Expert have 8 rows each; Master has 13 rows (the longest progression).</li>
+    <li><code>[[muscle_dome_boss]]</code> rows hold the full per-enemy stat block (HP / MP / ATK / UDF / LDF / <code>intelligence</code> / SPD / AGL / XP / <code>gold</code>), drop and steal items with chance percentages, attack list, immunity tags, element + weakness/strength arrays, plus <code>wiki_path</code> for provenance back to the Fandom source. Seru enemies (<code>kind = "seru"</code>) carry their Lv1 / Lv2 / Lv3 stats as nested <code>[[muscle_dome_boss.seru_level]]</code> blocks; the round table's <code>seru_level</code> field selects which block applies.</li>
+    <li><code>[baka_fighter_meta]</code> records the all-rounds-clear reward (<code>reward_coins = 460</code>) and the rule sketch. Per-round button sequences live as <code>[[baka_fighter]]</code> rows.</li>
+    <li><code>[[muscle_paradise_secret]]</code> records the Chicken King easter egg ("run from the first battle in all three difficulties").</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="sol-tower-schema">
+  <h2>Schema highlights &middot; Sol Tower</h2>
+  <p><code>sol_tower.toml</code> is location-scoped data that doesn't fit any of the type-scoped tables: a per-floor map (<code>[[floor]]</code> rows with named sections) and the side-quest chains (<code>[[side_quest]]</code> rows with ordered step lists and reward pointers). The <code>scene_label = "town0d"</code> ties the data back to the CDNAME map in <code>site/_gen.py</code> and the field-VM bundle.</p>
 </section>
 
 <section class="doc-section" id="invariants">

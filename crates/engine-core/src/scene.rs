@@ -1321,6 +1321,16 @@ impl SceneHost {
         {
             eprintln!("[scene] global TMD-pool seed skipped: {err:#}");
         }
+        // Load the runtime effect-script catalog from PROT 0873 (`efect.dat`)
+        // so the battle-action SM's `ui_element` spawns resolve to real
+        // effect scripts. Idempotent: only loads when the catalog is empty
+        // (it persists on `World` across field/battle transitions, like the
+        // global TMD pool). Soft-fails - an empty catalog just doesn't spawn.
+        if self.world.effect_catalog.is_empty()
+            && let Err(err) = seed_effect_catalog_from_efect_dat(&self.index, &mut self.world)
+        {
+            eprintln!("[scene] effect-catalog load skipped: {err:#}");
+        }
         // Pre-bind actor ↔ TMD/ANM resources so they survive the first
         // field-VM actor-spawn opcode (see `World::init_scene_animations`).
         //
@@ -1340,7 +1350,7 @@ impl SceneHost {
                 }
             }
             let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-            if let Ok((res, _stats)) =
+            if let Ok((mut res, _stats)) =
                 crate::scene_resources::SceneResources::build_targeted_with_options(
                     scene,
                     &shared_refs,
@@ -1349,6 +1359,13 @@ impl SceneHost {
                     },
                 )
             {
+                // Upload the battle effect-model textures (etim.dat, PROT 0874
+                // section 2) into the scene VRAM so the 3D effect models
+                // (etmd.dat) have their texels resident. Kept across the battle
+                // scene-mode overlay; soft-fails (textures just stay absent).
+                if let Err(err) = seed_effect_vram_from_befect_data(&self.index, &mut res.vram) {
+                    eprintln!("[scene] effect-texture VRAM upload skipped: {err:#}");
+                }
                 self.world.init_scene_animations(&res);
                 self.resources = Some(res);
             }
@@ -1403,6 +1420,12 @@ impl SceneHost {
 /// RAM snapshot.
 const PROT_BEFECT_DATA_ENTRY: u32 = 874;
 
+/// PROT entry holding the runtime effect buffer `data\battle\efect.dat` - the
+/// 2-pack wrapper (inline sprite atlas + pack0 anim batches + pack1 effect
+/// scripts) the battle effect VM consumes. Stored uncompressed; the raw entry
+/// bytes are byte-identical to the post-init runtime buffer (`docs/formats/effect.md`).
+const PROT_EFECT_DAT_ENTRY: u32 = 873;
+
 /// PROT entry holding the global monster stat archive (one `0x14000`-byte
 /// LZS slot per monster id; the CDNAME label `battle_data` is shared across
 /// 0865-0868). The misleading `monster_data` label (PROT 869) is a stub.
@@ -1413,6 +1436,15 @@ const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
 /// global TMD pool. Set by the section's TMD-pack `count` field; the
 /// retail pack carries exactly 5 character meshes.
 const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
+
+/// Index into [`crate::world::World::global_tmd_pool`] of the *Tail Fire*
+/// flame mesh - the smallest of the five `etmd.dat` models (2 objects, 18
+/// verts, 25 prims). Its textured primitives sample `etim` at page (832,256)
+/// 4bpp with CLUT row 478 (`cba=0x778E`), byte-for-byte the live battle prim
+/// pool captured mid-cast (Gimard's *Tail Fire*). The other four `etmd` models
+/// are large (200-400 prims) - bigger spell/summon effects. See
+/// `docs/formats/effect.md`.
+pub const ETMD_TAIL_FIRE_MODEL_INDEX: usize = 4;
 
 /// Seed `World::global_tmd_pool[0..=4]` from PROT 0874 (`befect_data`)
 /// section 0. Soft-fails (returns `Err`) when the entry is missing, the
@@ -1425,6 +1457,26 @@ const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
 /// item in `docs/formats/world-map-overlay.md`); this routes the disc
 /// bytes directly through the `parse_player_lzs + pack` parsers and
 /// installs the parsed TMDs onto the world.
+/// Load the effect-script catalog from PROT 0873 (`efect.dat`) into
+/// `World::effect_catalog`. Soft-fails when the entry is missing or the
+/// 2-pack is malformed (the catalog stays empty and nothing spawns). Parsing
+/// itself never errors - [`EffectCatalog::from_efect_dat_bytes`] returns an
+/// empty catalog on bad data - so the only error is the disc read.
+fn seed_effect_catalog_from_efect_dat(
+    index: &ProtIndex,
+    world: &mut crate::world::World,
+) -> Result<()> {
+    let raw = index
+        .entry_bytes(PROT_EFECT_DAT_ENTRY)
+        .with_context(|| format!("read PROT entry {} (efect.dat)", PROT_EFECT_DAT_ENTRY))?;
+    let catalog = legaia_engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes(&raw);
+    if catalog.is_empty() {
+        anyhow::bail!("efect.dat parsed to an empty catalog (unexpected 2-pack shape)");
+    }
+    world.effect_catalog = catalog;
+    Ok(())
+}
+
 fn seed_global_tmd_pool_from_befect_data(
     index: &ProtIndex,
     world: &mut crate::world::World,
@@ -1465,9 +1517,162 @@ fn seed_global_tmd_pool_from_befect_data(
     Ok(())
 }
 
+/// PROT 0874 (`befect_data`) section index carrying `etim.dat` - the battle
+/// effect-sprite TIMs. The three LZS sections are: 0 = effect 3D models
+/// (`etmd.dat`, the global-TMD-pool head), 1 = `vdf.dat`, 2 = `etim.dat`.
+const BEFECT_ETIM_SECTION: usize = 2;
+
+/// Upload the battle effect textures (`etim.dat`, PROT 0874 section 2) into
+/// `vram`. These 4bpp TIMs (pages at `fb_x≥320`, CLUTs in rows 473..478) are
+/// the texel source for the 3D effect *models* (`etmd.dat`, section 0, the
+/// global-TMD-pool head) - the model primitives reference exactly these CLUT
+/// rows. Pinned pixel-exact against a live battle VRAM capture (Gimard's Tail
+/// Fire, a 3D flame mesh; see `docs/formats/effect.md`). Retail blits them at
+/// battle load via `FUN_800520F0` → `FUN_800198E0` (`LoadImage`); the engine
+/// keeps the field VRAM resident across the battle scene-mode overlay, so
+/// uploading at scene entry is equivalent and harmless to field rendering
+/// (the effect pages sit outside the field meshes' sampled region).
+///
+/// This makes the texels resident for effect-model rendering. (It does *not*
+/// feed the 2D `efect.dat` sprite-atlas billboards, which sample a separate
+/// page-`(0,0)` 8bpp source - see [`crate::world::World::active_effect_sprites`]
+/// and the open atlas-source thread in `docs/formats/effect.md`.)
+///
+/// Mirrors [`seed_global_tmd_pool_from_befect_data`]'s LZS path. Soft-fails;
+/// returns the number of TIMs uploaded.
+fn seed_effect_vram_from_befect_data(
+    index: &ProtIndex,
+    vram: &mut legaia_tim::Vram,
+) -> Result<usize> {
+    let raw = index
+        .entry_bytes(PROT_BEFECT_DATA_ENTRY)
+        .with_context(|| format!("read PROT entry {} (befect_data)", PROT_BEFECT_DATA_ENTRY))?;
+    let container = legaia_asset::parse_player_lzs(&raw, 3)
+        .context("parse befect_data as a 3-descriptor player.lzs-shaped container")?;
+    let section = container
+        .descriptors
+        .get(BEFECT_ETIM_SECTION)
+        .ok_or_else(|| {
+            anyhow::anyhow!("befect_data has no section {BEFECT_ETIM_SECTION} (etim)")
+        })?;
+    let decoded = legaia_asset::decode(&raw, section, legaia_asset::DecodeMode::Lzs)
+        .with_context(|| format!("LZS-decode befect_data section {BEFECT_ETIM_SECTION} (etim)"))?;
+    let mut uploaded = 0;
+    for target in legaia_asset::befect_cluster::scan_tims(&decoded) {
+        match legaia_tim::parse(&decoded[target.offset..]) {
+            Ok(tim) => {
+                vram.upload_tim(&tim);
+                uploaded += 1;
+            }
+            Err(err) => {
+                eprintln!(
+                    "[scene] etim TIM @0x{:x} did not parse ({err:#}); skipping",
+                    target.offset
+                );
+            }
+        }
+    }
+    if uploaded == 0 {
+        anyhow::bail!("etim section carried no uploadable TIMs");
+    }
+    Ok(uploaded)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Disc-gated: the `etim.dat` effect-sprite TIMs (PROT 0874 section 2)
+    /// decode and upload into a software VRAM, populating the fire-sprite tile
+    /// at fb(832,256) (the texel target verified pixel-exact against a live
+    /// battle VRAM capture). Skips when the disc data isn't present.
+    #[test]
+    fn etim_effect_textures_upload_into_vram() {
+        if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        }
+        let root = ["extracted", "../../extracted"]
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.join("PROT.DAT").is_file());
+        let Some(root) = root else {
+            eprintln!("[skip] extracted/PROT.DAT missing");
+            return;
+        };
+        let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
+        let mut vram = legaia_tim::Vram::new();
+        let n = seed_effect_vram_from_befect_data(&index, &mut vram).expect("seed etim VRAM");
+        assert!(n >= 5, "expected >=5 etim TIMs uploaded, got {n}");
+        assert!(
+            vram.region_has_data(832, 256, 20, 64),
+            "etim fire-sprite tile @fb(832,256) should be populated"
+        );
+    }
+
+    /// Disc-gated: the global TMD pool seeded from `etmd.dat` (PROT 0874
+    /// section 0) holds the five effect models, and the slot named by
+    /// [`ETMD_TAIL_FIRE_MODEL_INDEX`] is the small *Tail Fire* flame mesh - far
+    /// fewer primitives than the other four models, with textured primitives
+    /// sampling the `etim` CLUT rows (473..=478). Pins the constant to real
+    /// disc bytes. Skips when the disc data isn't present.
+    #[test]
+    fn etmd_tail_fire_model_is_the_small_flame_mesh() {
+        if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        }
+        let root = ["extracted", "../../extracted"]
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.join("PROT.DAT").is_file());
+        let Some(root) = root else {
+            eprintln!("[skip] extracted/PROT.DAT missing");
+            return;
+        };
+        let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
+        let mut world = crate::world::World::default();
+        seed_global_tmd_pool_from_befect_data(&index, &mut world).expect("seed etmd pool");
+
+        // All five etmd models present.
+        for i in 0..GLOBAL_TMD_POOL_HEAD_COUNT {
+            assert!(
+                world.global_tmd(i as i16).is_some(),
+                "etmd model {i} should be present"
+            );
+        }
+        let flame = world
+            .global_tmd(ETMD_TAIL_FIRE_MODEL_INDEX as i16)
+            .expect("flame model present");
+        let flame_prims: usize = flame
+            .tmd
+            .objects
+            .iter()
+            .map(|o| o.header.n_primitive as usize)
+            .sum();
+
+        // The flame is the smallest model by a wide margin.
+        for i in 0..GLOBAL_TMD_POOL_HEAD_COUNT {
+            if i == ETMD_TAIL_FIRE_MODEL_INDEX {
+                continue;
+            }
+            let other = world.global_tmd(i as i16).unwrap();
+            let other_prims: usize = other
+                .tmd
+                .objects
+                .iter()
+                .map(|o| o.header.n_primitive as usize)
+                .sum();
+            assert!(
+                flame_prims < other_prims,
+                "flame model ({flame_prims} prims) should be smaller than model {i} ({other_prims} prims)"
+            );
+        }
+        assert!(
+            flame_prims < 64,
+            "flame model is a small mesh, got {flame_prims} prims"
+        );
+    }
 
     #[test]
     fn cutscene_str_for_resolves_known_op_scenes() {

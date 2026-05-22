@@ -42,6 +42,7 @@ pub mod levelup;
 pub mod menu_glyph_atlas;
 pub mod menu_runtime;
 pub mod mode;
+pub mod monster_ai;
 pub mod monster_catalog;
 pub mod move_buffer_host;
 pub mod options;

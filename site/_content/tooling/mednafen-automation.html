@@ -18,7 +18,7 @@
 <section class="doc-section" id="the-save-states">
   <h2>The save states</h2>
   <p>The toolkit operates on mednafen <code>.mc{0..9}</code> save states stored under <code>~/.mednafen/mcs/</code>. Each save is a frozen RAM snapshot at a specific gameplay moment - the slot number itself is ephemeral, so the toolkit identifies scenarios by <strong>label</strong> rather than slot index.</p>
-  <p>Slot → label → watchpoint mapping is declared in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> and consumed by the <code>mednafen-state watch</code> subcommand. Sister-state pairings (e.g. "pre-encounter ↔ post-encounter", "pre-rank-up ↔ post-rank-up") are the primary unit of analysis: the diff between a pair surfaces every RAM region touched in the gap between the two captures.</p>
+  <p>Slot → label → watchpoint mapping is declared in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/scenarios.toml"><code>scripts/scenarios.toml</code></a> and consumed by the <code>mednafen-state watch</code> subcommand. Sister-state pairings (e.g. "pre-encounter ↔ post-encounter", "pre-rank-up ↔ post-rank-up") are the primary unit of analysis: the diff between a pair surfaces every RAM region touched in the gap between the two captures.</p>
   <p>Capture conventions:</p>
   <ul class="bullets">
     <li>One save per scenario keeps diffs interpretable. A single state capturing two gameplay events at once (e.g. <em>both</em> the encounter trigger <em>and</em> a level-up) widens the diff window and forces the reader to disentangle two unrelated write streams.</li>
@@ -31,7 +31,7 @@
 <section class="doc-section" id="quick-reference">
   <h2>Quick reference</h2>
   <h3>List the manifest</h3>
-<pre><code>target/release/mednafen-state scenarios --manifest scripts/mednafen/scenarios.toml</code></pre>
+<pre><code>target/release/mednafen-state scenarios --manifest scripts/scenarios.toml</code></pre>
   <h3>Inspect one save's section table</h3>
 <pre><code>target/release/mednafen-state info \
     "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.&lt;SLOT&gt;"</code></pre>
@@ -112,22 +112,16 @@ mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></p
   <ol class="bullets">
     <li>Pick a <code>(before, after)</code> save-state pair that brackets the suspected write (e.g. a battle-intro state and a mid-animation state from the same encounter).</li>
     <li>Run <code>mednafen-state diff before.mc after.mc --start &lt;region&gt; --end &lt;region+N&gt;</code>.</li>
-  </ol>
-  <ol class="bullets">
     <li>The largest region in the output is the candidate. Note its address.</li>
-    <li>In Ghidra, search for stores to that address in the relevant overlay</li>
-  </ol>
-  <p>(Search → For Direct References, or <code>find_lui_writers.py</code> for LUI+ADDIU pairs).</p>
-  <ol class="bullets">
+    <li>In Ghidra, search for stores to that address in the relevant overlay (Search → For Direct References, or <code>find_lui_writers.py</code> for LUI+ADDIU pairs).</li>
     <li>The writer function is what to dump and document.</li>
   </ol>
   <h3>"When did X become populated?" with progressive states</h3>
   <ol class="bullets">
     <li>Take save states at progressive points during a sequence.</li>
     <li><code>watchpoint-bisect.py --addr X save0 save1 save2 ...</code></li>
-    <li>The reported <code>BracketedAt { i, j }</code> says "between save i and save j</li>
+    <li>The reported <code>BracketedAt { i, j }</code> says "between save i and save j the write happened". Tighten with more saves between i and j if needed (record an .mcm movie that replays the same scripted action to add intermediate frames).</li>
   </ol>
-  <p>the write happened". Tighten with more saves between i and j if needed (record an .mcm movie that replays the same scripted action to add intermediate frames).</p>
   <h3>"Diff the same scene at two camera angles"</h3>
   <p>When the user has two saves that differ only in camera or cursor state, the diff naturally surfaces the camera/cursor-state addresses. Useful for finding <code>cursor_x</code> / <code>cursor_y</code> style globals that show up nowhere in static analysis.</p>
 </section>
@@ -149,7 +143,7 @@ mednafen-state prim-dispatch-table &lt;save&gt; --overlay-targets-only</code></p
 
 <section class="doc-section" id="the-scenarios-manifest">
   <h2>The scenarios manifest</h2>
-  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/mednafen/scenarios.toml"><code>scripts/mednafen/scenarios.toml</code></a> declares every scenario, its overlay slice, its watchpoint regions, and its <code>diff_against</code> sister-slot list. The schema:</p>
+  <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/scenarios.toml"><code>scripts/scenarios.toml</code></a> declares every scenario, its overlay slice, its watchpoint regions, and its <code>diff_against</code> sister-slot list. The schema:</p>
 <pre><code>[defaults]
 filename_pattern = "Legend of Legaia (USA).&lt;HASH&gt;.mc{slot}"
 
@@ -159,6 +153,9 @@ label = "pre_encounter"
 description = "Walking the field, one step before an encounter triggers (`map01`)"
 topics = ["encounter table base", "field state", "navmesh"]
 diff_against = [2, 3]
+# Optional drift guards (see "Save resolution" below):
+# backup_fingerprint   = "&lt;sha256 of an immutable saves/library copy&gt;"
+# ram_fingerprint_sha256 = "&lt;sha256 of first 64 KiB of main RAM&gt;"
 
 [scenarios.overlay_slice]
 start = 0x801C0000
@@ -170,45 +167,33 @@ start = 0x801CE808
 end = 0x801F3818
 hint = "133 KB battle overlay. Loaded between the pre-encounter and post-encounter sister states."</code></pre>
   <p><code>mednafen-state watch &lt;label&gt;</code> runs the scenario's watchpoints against each <code>diff_against</code> sister, writing a per-scenario JSON report.</p>
+  <h3>Save resolution: library backups vs live slots</h3>
+  <p>Live <code>.mc{slot}</code> files get overwritten every time you play, so a slot can silently drift away from the scenario it's catalogued as. Two fields guard against trusting a drifted slot:</p>
+  <dl class="kv">
+    <dt><code>backup_fingerprint</code></dt>
+    <dd>sha256 of an immutable copy stashed in <code>saves/library/&lt;emulator&gt;/&lt;fingerprint&gt;.&lt;ext&gt;</code> (gitignored; the manifest field is the committed catalogue, the library is the bytes). When set, consumers resolve this stable copy <em>in preference to</em> the live slot. <code>scripts/manage-states.py</code> and <code>ScenarioManifest::mednafen_save_path</code> both honour it.</dd>
+    <dt><code>ram_fingerprint_sha256</code></dt>
+    <dd>sha256 of the first 64 KiB of main RAM in the save state. Computed directly from the save (no emulator re-run) by <code>legaia_engine_shell::mode_trace_oracle::save_ram_fingerprint</code>. The mode-trace oracle tests (<code>mode_trace_e3</code>, <code>v0_1_playthrough</code>) gate the live-slot fallback on this digest: a slot that no longer matches the catalogued value is <strong>skipped, not failed</strong> &mdash; comparing the engine against an arbitrary save proves nothing. A scenario with a <code>backup_fingerprint</code> resolves to the stable library copy and passes the gate by construction.</dd>
+  </dl>
 </section>
 
 <section class="doc-section" id="adding-a-new-scenario">
   <h2>Adding a new scenario</h2>
   <ol class="bullets">
-    <li>Capture a save state in mednafen at the moment you care about (<code>F5</code></li>
+    <li>Capture a save state in mednafen at the moment you care about (<code>F5</code> in a free slot 0..9, or another slot if you free one up).</li>
+    <li>Add a <code>[[scenarios]]</code> block to <code>scripts/scenarios.toml</code> with the slot index, a short label, and a description.</li>
+    <li>Optionally add <code>[[scenarios.watchpoints]]</code> blocks for regions you suspect carry the writes the scenario should surface.</li>
+    <li>Optionally add <code>diff_against = [...]</code> listing sister scenarios for the auto-capture pass to compare against.</li>
+    <li>Run <code>target/release/mednafen-state watch &lt;label&gt;</code> to see what's in the watch regions.</li>
   </ol>
-  <p>in a free slot 0..9, or another slot if you free one up).</p>
-  <ol class="bullets">
-    <li>Add a <code>[[scenarios]]</code> block to <code>scripts/mednafen/scenarios.toml</code> with</li>
-  </ol>
-  <p>the slot index, a short label, and a description.</p>
-  <ol class="bullets">
-    <li>Optionally add <code>[[scenarios.watchpoints]]</code> blocks for regions you</li>
-  </ol>
-  <p>suspect carry the writes the scenario should surface.</p>
-  <ol class="bullets">
-    <li>Optionally add <code>diff_against = [...]</code> listing sister scenarios for</li>
-  </ol>
-  <p>the auto-capture pass to compare against.</p>
-  <ol class="bullets">
-    <li>Run <code>target/release/mednafen-state watch &lt;label&gt;</code> to see what's in</li>
-  </ol>
-  <p>the watch regions.</p>
 </section>
 
 <section class="doc-section" id="cross-links">
   <h2>Cross-links</h2>
   <ul class="bullets">
-    <li><a href="overlay-capture.html"><code>overlay-capture.md</code></a> - how the resulting overlay</li>
+    <li><a href="overlay-capture.html"><code>overlay-capture.md</code></a> - how the resulting overlay slices get imported into Ghidra and analysed.</li>
+    <li><a href="extraction.html"><code>extraction.md</code></a> - disc-side extraction; runs upstream of save-state work.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/README.md"><code>crates/mednafen/README.md</code></a> - the crate's API contract.</li>
   </ul>
-  <p>slices get imported into Ghidra and analysed.</p>
-  <ul class="bullets">
-    <li><a href="extraction.html"><code>extraction.md</code></a> - disc-side extraction; runs upstream</li>
-  </ul>
-  <p>of save-state work.</p>
-  <ul class="bullets">
-    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/README.md"><code>crates/mednafen/README.md</code></a> - the</li>
-  </ul>
-  <p>crate's API contract.</p>
 </section>
 

@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
-  <p>The retail engine enters the shop from the field-VM shop-trigger opcode. The menu overlay dispatches on a sub-screen ID (pointer table at <code>0x801E4F40</code>). The five phases are:</p>
+  <p>The retail engine enters the shop from the field-VM WARP / shop-trigger opcode. The menu overlay dispatches on a sub-screen ID (pointer table at <code>0x801E4F40</code>, the same table the save screen and inn use). The five phases are:</p>
   <table>
     <thead><tr><th>Phase</th><th>State</th><th>Description</th></tr></thead>
     <tbody>
@@ -37,17 +37,22 @@
 
 <section class="doc-section" id="render">
   <h2>Render layout</h2>
-  <p>Traced from <code>FUN_801d5de0</code> (<code>overlay_shop_save.bin</code>). Each visible row (up to 8 with scroll) uses a 14 px stride:</p>
+  <p>Traced from <code>FUN_801d5de0</code> (<code>overlay_shop_save.bin</code>). The buy list iterates up to 8 visible rows (scroll managed by <code>_DAT_8007bb98</code> / <code>_DAT_8007bb90</code>), each row drawn at a fixed 14 px (<code>0x0E</code>) vertical stride:</p>
   <table>
     <thead><tr><th>Element</th><th>X offset (px)</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td>Cursor <code>&gt;</code></td><td>+0</td><td>Selected row only</td></tr>
       <tr><td>Item name</td><td>+20 (<code>0x14</code>)</td><td><code>func_0x80036888</code></td></tr>
       <tr><td>Price</td><td>+112 (<code>0x70</code>)</td><td>6-digit field; <code>func_0x80034b78</code></td></tr>
-      <tr><td>Gold footer</td><td>+0</td><td>Below last row; 8-digit field</td></tr>
+      <tr><td>Gold footer</td><td>+0</td><td>Below last row; 8-digit field via <code>func_0x80034b78</code></td></tr>
     </tbody>
   </table>
-  <p>Row colour: white = affordable; dim = price exceeds gold or held count &gt; 98; blue = equipped-comparison flag set. <code>engine-render::shop_draws_for</code> implements these constants. Cost prompt and Yes/No cursor render in <code>legaia-engine play-window</code> when <code>MenuState::ShopConfirm</code> is active.</p>
+  <p>Row colour (retail <code>_DAT_8007b454</code> palette index): white = affordable; dim = unaffordable (<code>price &gt; gold</code>) or held count &gt; 98; blue = equipped-comparison flag set. <code>engine-render::shop_draws_for</code> implements these constants. Cost prompt and Yes/No cursor render in <code>legaia-engine play-window</code> when <code>MenuState::ShopConfirm</code> is active.</p>
+  <p>The other shop sub-screens reuse the same line metrics:</p>
+  <ul>
+    <li><strong>Quantity selector</strong> (<code>FUN_801d5510</code>) - same 14 px line height; shows &ldquo;Have N [item]&rdquo; + &ldquo;How many will you buy?&rdquo; + a quantity&times;price line at y+34 (<code>0x22</code>) from the panel top.</li>
+    <li><strong>Sell-item detail panel</strong> (<code>FUN_801d5ae8</code>) - shows item name, type description, and sell price (buy price &divide; 2) at y+43 (<code>0x2b</code>), with an icon at x+84.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="open-items">
@@ -55,7 +60,13 @@
   <ul>
     <li><strong>Per-scene item tables.</strong> Retail shop stocks are in the menu overlay DATA segment at <code>0x801E4518</code> (8-byte strides, <code>0x60</code> bytes per scene; dispatched by <code>FUN_801DC6B4</code>). Scene-index to offset mapping is not yet traced.</li>
     <li><strong>Quantity cap.</strong> Retail caps held count at 98 before dimming; the current port allows unlimited stacking.</li>
+    <li><strong>Mode-select panel.</strong> The Buy / Sell / Quit selector (<code>FUN_801d4868</code>) uses x+20 for text and the same 14 px line height as the item list.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="legaia-save">
+  <h2>Relationship to <code>legaia_save</code></h2>
+  <p>Gold is stored at <code>_DAT_8008459C</code> in retail RAM and in <code>World::money</code> in the engine. Inventory is a <code>HashMap&lt;u8, u8&gt;</code> (<code>item_id &rarr; count</code>) in <code>World::inventory</code>. <code>SaveFile</code> / <code>SaveExt</code> round-trips both through the <code>LGSF v1</code> format.</p>
 </section>
 
 <section class="doc-section" id="full-reference">

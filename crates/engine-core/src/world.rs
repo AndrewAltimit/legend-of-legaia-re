@@ -126,9 +126,10 @@ pub struct FadeRequest {
 }
 
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by
-/// [`World::active_effect_markers`]. Hosts turn these into whatever they can
-/// draw (billboard markers today, textured sprites once the effect-bundle
-/// atlas pipeline lands) without reaching into the effect VM's pool layout.
+/// [`World::active_effect_markers`] - one entry per effect (effect origin +
+/// age). [`World::active_effect_sprites`] is the richer per-child billboard
+/// view the textured-quad render path uses; this coarse marker remains for
+/// hosts/tests that only need effect positions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectMarker {
     /// Effect origin in world units (the pool stores 8.8 fixed-point; this
@@ -139,6 +140,61 @@ pub struct EffectMarker {
     pub angle: u16,
     /// Lifetime fraction in `0.0..=1.0` (0 = just spawned, 1 = about to
     /// retire). Hosts fade the marker out as this approaches 1.
+    pub age01: f32,
+}
+
+/// Render-agnostic snapshot of one live effect **child sprite**, produced by
+/// [`World::active_effect_sprites`]. This is the faithful billboard the retail
+/// per-frame walker (`FUN_801E0088` pass 2) emits: a camera-facing quad sized
+/// by the sprite-atlas entry, positioned at the effect origin plus the child's
+/// spread offset, sampling VRAM at the atlas's `(u, v)` / `tpage` / `clut`.
+///
+/// The texel-source VRAM upload for battle effects is not yet pinned (see
+/// `docs/formats/effect.md`), so a host that samples VRAM here will draw the
+/// faithful geometry/animation with whatever is resident; the `page`/`clut`/
+/// `uv` carry the real coordinates so textures appear once that upload lands.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectSprite {
+    /// Child world position in world units (effect origin + spread offset).
+    pub world_pos: [f32; 3],
+    /// Billboard size in world units (atlas `w` × `h`, in texel-equivalent
+    /// units the host scales as it sees fit).
+    pub size: [f32; 2],
+    /// Top-left source texel within the texture page (atlas `u`, `v`).
+    pub uv: [u16; 2],
+    /// Source rectangle size in texels (atlas `w`, `h`).
+    pub uv_size: [u16; 2],
+    /// PSX `tpage` descriptor (texture-page base + colour mode).
+    pub page: u16,
+    /// CLUT (CBA) id.
+    pub clut: u16,
+    /// Lifetime fraction `0.0..=1.0` (for fade-out), shared with the effect.
+    pub age01: f32,
+}
+
+/// Render-agnostic snapshot of one live effect's **3D model** (`etmd.dat`),
+/// produced by [`World::active_effect_models`]. This is the other effect
+/// render path alongside [`EffectSprite`]'s 2D billboards: spell effects like
+/// *Tail Fire* are small Gouraud-shaded `etmd` meshes textured by `etim`
+/// (pinned pixel-exact against a live battle VRAM capture - see
+/// `docs/formats/effect.md`), not billboards.
+///
+/// The host resolves `tmd_index` through its global TMD pool
+/// ([`World::global_tmd`]), builds a VRAM mesh, and draws it at `world_pos`
+/// (the `etim` texels are already resident in scene VRAM). The retail
+/// effect-id -> model selection is driven by the move/art VM and not yet
+/// decoded, so the only producer today is the model-spawn helper
+/// ([`World::spawn_debug_effect_model`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectModel {
+    /// Index into [`World::global_tmd_pool`] (the `etmd.dat` head) for this
+    /// effect's mesh.
+    pub tmd_index: usize,
+    /// Effect origin in world units (the pool stores 8.8 fixed-point).
+    pub world_pos: [f32; 3],
+    /// 12-bit spawn angle (`master.angle`).
+    pub angle: u16,
+    /// Lifetime fraction `0.0..=1.0` (0 = just spawned, 1 = about to retire).
     pub age01: f32,
 }
 
@@ -378,6 +434,16 @@ pub struct BattleBuff {
     pub applied_delta: i16,
     /// Turns remaining before the buff expires.
     pub turns: u8,
+}
+
+/// One monster's chosen action for its turn, produced by the action picker
+/// [`World::pick_monster_action`] (the port of `FUN_801E9FD4`'s decision core).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MonsterAction {
+    /// Physical strike against party slot `target`.
+    Physical { target: u8 },
+    /// Cast `spell_id` against the resolved absolute `targets` slots.
+    Cast { spell_id: u8, targets: Vec<u8> },
 }
 
 /// Singleton world / scene held by an engine integration.
@@ -866,6 +932,11 @@ pub struct World {
     /// initialising the [`crate::battle_session::BattleSession`].
     pub monster_catalog: crate::monster_catalog::MonsterCatalog,
 
+    /// Battle-scoped monster-AI state (cooldowns / phase counter / recent-target
+    /// ring) read & written by the per-monster-id scripted-cast picker
+    /// ([`crate::monster_ai::decide`]). Reset on each battle enter.
+    pub monster_ai_state: crate::monster_ai::MonsterAiState,
+
     /// CDNAME label of the active scene, if any. Set by
     /// [`World::set_active_scene_label`] on scene-load and consumed by
     /// engine-side helpers ([`World::install_encounter_for_scene`] reads
@@ -1170,6 +1241,7 @@ impl World {
             play_time_seconds: 0,
             formation_table: crate::monster_catalog::FormationTable::new(),
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
+            monster_ai_state: crate::monster_ai::MonsterAiState::new(),
             active_scene_label: String::new(),
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
@@ -2278,15 +2350,140 @@ impl World {
             .collect()
     }
 
+    /// Snapshot every live effect's **child sprites** as faithful billboards -
+    /// the textured-quad seam that supersedes [`Self::active_effect_markers`]'
+    /// one-cross-per-effect view. For each active master slot it resolves the
+    /// effect's children through the loaded [`crate::world::World::effect_catalog`],
+    /// walks each child's pack0 animation to the current frame, and reads the
+    /// frame's sprite-atlas entry for size + VRAM `(u, v)` / `tpage` / `clut`.
+    ///
+    /// Mirrors the retail per-frame walker (`FUN_801E0088` pass 2): one GPU
+    /// sprite primitive per child, sized from the atlas, placed at the effect
+    /// origin plus the child's spread offset. Returns an empty vector when the
+    /// catalog is empty (e.g. no disc), so it degrades cleanly.
+    pub fn active_effect_sprites(&self) -> Vec<EffectSprite> {
+        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        let atlas = self.effect_catalog.atlas();
+        let mut out = Vec::new();
+        for m in self.effect_pool.master_slots.iter() {
+            if m.child_count == 0 {
+                continue;
+            }
+            let Some((_script, children)) = self.effect_catalog.entry(m.ui_id) else {
+                continue;
+            };
+            let age01 = ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0);
+            let frame_idx = m.field_14.max(0) as usize;
+            let origin = [
+                m.pos_x as f32 / 256.0,
+                m.pos_y as f32 / 256.0,
+                m.pos_z as f32 / 256.0,
+            ];
+            for (i, child) in children.iter().enumerate() {
+                // Resolve the current animation frame -> atlas entry.
+                let entry = self.effect_catalog.anim(child.sprite_id).and_then(|batch| {
+                    if batch.frames.is_empty() {
+                        return None;
+                    }
+                    // Loop the batch over the effect lifetime (the faithful
+                    // per-frame token cadence is not extracted; a uniform loop
+                    // keeps the sprite animating over its visible life).
+                    let f = frame_idx % batch.frames.len();
+                    atlas.get(batch.frames[f].atlas_index as usize)
+                });
+                let Some(e) = entry else {
+                    continue;
+                };
+                // Child placement: the stored spread offset (random-distribution
+                // path) or a small deterministic ring (walker-populated path).
+                let (dx, dz) = m
+                    .child_offsets
+                    .get(i)
+                    .copied()
+                    .map(|(x, z)| (x as f32 / 256.0, z as f32 / 256.0))
+                    .unwrap_or_else(|| {
+                        let a = i as f32 * std::f32::consts::TAU / children.len().max(1) as f32;
+                        let r = (child.width.max(child.depth).max(8) as f32) / 256.0;
+                        (a.cos() * r, a.sin() * r)
+                    });
+                out.push(EffectSprite {
+                    world_pos: [origin[0] + dx, origin[1], origin[2] + dz],
+                    size: [e.w.max(1) as f32, e.h.max(1) as f32],
+                    uv: [e.u as u16, e.v as u16],
+                    uv_size: [e.w as u16, e.h as u16],
+                    page: e.page,
+                    clut: e.clut as u16,
+                    age01,
+                });
+            }
+        }
+        out
+    }
+
+    /// Snapshot every live effect that has a 3D model assigned, for the
+    /// `etmd`-model render path. One [`EffectModel`] per active master slot
+    /// whose `model_index` is set (the model-driven effects); 2D-billboard-only
+    /// effects are skipped. The host resolves `tmd_index` through
+    /// [`Self::global_tmd`], builds a VRAM mesh, and draws it at `world_pos`.
+    ///
+    /// Distinct from [`Self::active_effect_sprites`] (the 2D billboard seam):
+    /// effects like *Tail Fire* render as a small `etmd` mesh textured by the
+    /// resident `etim` texels, not a billboard.
+    pub fn active_effect_models(&self) -> Vec<EffectModel> {
+        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        self.effect_pool
+            .master_slots
+            .iter()
+            .filter(|m| m.child_count > 0)
+            .filter_map(|m| {
+                let tmd_index = m.model_index?;
+                Some(EffectModel {
+                    tmd_index,
+                    world_pos: [
+                        m.pos_x as f32 / 256.0,
+                        m.pos_y as f32 / 256.0,
+                        m.pos_z as f32 / 256.0,
+                    ],
+                    angle: m.angle,
+                    age01: ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0),
+                })
+            })
+            .collect()
+    }
+
+    /// Dev/visualization helper: seat one synthetic active effect carrying a
+    /// 3D `etmd` model at `world_pos` (world units), so the model render path
+    /// (e.g. *Tail Fire* = `etmd` mesh index 4, textured by `etim`) can be
+    /// exercised by hand. `tmd_index` indexes [`Self::global_tmd_pool`]. The
+    /// slot ages and retires through the normal [`Self::tick_effects`] lifetime.
+    ///
+    /// Like [`Self::spawn_debug_effect`], this is **not** a retail code path -
+    /// the production effect-id -> etmd-model selection (driven by the move/art
+    /// VM) is not yet decoded. Returns `false` when the pool is full.
+    pub fn spawn_debug_effect_model(&mut self, world_pos: [f32; 3], tmd_index: usize) -> bool {
+        let Some(slot) = self.effect_pool.allocate_master() else {
+            return false;
+        };
+        let m = &mut self.effect_pool.master_slots[slot];
+        *m = vm::effect_vm::MasterSlot::default();
+        m.child_count = 1;
+        m.pos_x = (world_pos[0] * 256.0) as i32;
+        m.pos_y = (world_pos[1] * 256.0) as i32;
+        m.pos_z = (world_pos[2] * 256.0) as i32;
+        m.model_index = Some(tmd_index);
+        true
+    }
+
     /// Dev/visualization helper: seat one synthetic active effect into the
     /// pool at `world_pos` (world units) so the effect-pool render bridge can
     /// be exercised by hand. It ages and retires through the normal
     /// [`Self::tick_effects`] lifetime like any spawned effect.
     ///
-    /// This is **not** a retail code path - it stands in for the runtime
-    /// effect catalog (PROT 873 `efect.dat` 2-pack), which isn't yet wired
-    /// into the battle-enter path so the action SM's `ui_element` spawns
-    /// resolve to real scripts. Returns `false` when the pool is full.
+    /// This is **not** a retail code path - it's a hand-spawn for exercising
+    /// the render bridge without driving the action SM. The real catalog (PROT
+    /// 0873 `efect.dat`) loads at scene entry, so `ui_element` spawns resolve
+    /// to real scripts; use [`Self::try_spawn_effect`] for the production path.
+    /// Returns `false` when the pool is full.
     pub fn spawn_debug_effect(&mut self, world_pos: [f32; 3]) -> bool {
         let Some(slot) = self.effect_pool.allocate_master() else {
             return false;
@@ -3368,6 +3565,8 @@ impl World {
         }
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.active_actor = 0;
+        // Fresh battle: clear the monster-AI cooldowns / phase counter / ring.
+        self.monster_ai_state.reset();
         // Switch to the battle track (if configured) - the host's BGM
         // director cross-fades from the field music.
         self.swap_to_battle_bgm();
@@ -3785,24 +3984,12 @@ impl World {
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
-        use crate::spells::{SpellSnapshot, SpellTarget, cast_spell};
+        use crate::spells::SpellTarget;
         use crate::target_picker::CursorRow;
 
         let Some(def) = self.spell_catalog.get(spell_id).cloned() else {
             return;
         };
-        let cost = def.mp_cost as u16;
-        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
-            Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
-            None => return,
-        };
-        if caster_mp_before < cost {
-            return;
-        }
-        if let Some(a) = self.actors.get_mut(caster as usize) {
-            a.battle.mp = a.battle.mp.saturating_sub(cost);
-        }
-
         let party_count = self.party_count.clamp(1, 3);
         let targets: Vec<u8> = match def.target {
             SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
@@ -3815,13 +4002,43 @@ impl World {
             SpellTarget::AllEnemies => (party_count..self.actors.len() as u8).collect(),
             SpellTarget::AllAllies => (0..party_count).collect(),
         };
+        self.cast_spell_on_slots(caster, &def, &targets);
+    }
+
+    /// Deduct `def`'s MP cost from `caster` and fold its effect onto each
+    /// absolute actor slot in `targets`. Shared by the player cast path
+    /// ([`Self::apply_battle_spell`], which resolves the cursor rows to slots
+    /// from the player's perspective) and the monster-AI cast path
+    /// ([`Self::apply_monster_spell`], which resolves party slots). MP is spent
+    /// once up front; each target folds through [`Self::fold_spell_outcome`].
+    /// Returns `false` (no MP spent, nothing folded) when the caster can't
+    /// afford the cost.
+    fn cast_spell_on_slots(
+        &mut self,
+        caster: u8,
+        def: &crate::spells::SpellDef,
+        targets: &[u8],
+    ) -> bool {
+        use crate::spells::{SpellSnapshot, cast_spell};
+
+        let cost = def.mp_cost as u16;
+        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
+            Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
+            None => return false,
+        };
+        if caster_mp_before < cost {
+            return false;
+        }
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.mp = a.battle.mp.saturating_sub(cost);
+        }
         let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
 
-        for t in targets {
+        for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
                 continue;
             };
-            // Skip empty monster slots (no configured HP).
+            // Skip empty slots (no configured HP).
             if actor.battle.max_hp == 0 {
                 continue;
             }
@@ -3837,9 +4054,10 @@ impl World {
                 target_alive: actor.battle.liveness != 0,
                 target_weakness: crate::spells::ElementMask::default(),
             };
-            let outcome = cast_spell(&def, t, &snap);
+            let outcome = cast_spell(def, t, &snap);
             self.fold_spell_outcome(outcome);
         }
+        true
     }
 
     /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
@@ -4427,10 +4645,12 @@ impl World {
                 // player pick the command. `tick_battle_command` arms the SM
                 // on confirm.
                 self.open_battle_command(next);
+            } else if !next_is_party {
+                // Monster turn: the AI picks a spell or a physical strike.
+                self.take_monster_turn(next);
             } else {
-                // Auto-resolved turn (any monster turn, or a party turn when
-                // not player-driven). Arm a generic physical attack against
-                // the first living opponent.
+                // Party turn when not player-driven: arm a generic physical
+                // attack against the first living opponent.
                 let target = self.first_living_opponent_of(next).unwrap_or(next);
                 self.battle_ctx.active_actor = next;
                 self.battle_ctx.queued_action = 3;
@@ -4460,7 +4680,7 @@ impl World {
     /// (`< party_count`) strike monsters; monster slots strike the party.
     fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor as usize;
-        let Some(target) = self.first_living_opponent_of(attacker as u8) else {
+        let Some(target) = self.resolve_attack_target(attacker as u8) else {
             return;
         };
         let target = target as usize;
@@ -4479,6 +4699,413 @@ impl World {
             is_heal: false,
             is_crit: false,
         });
+    }
+
+    /// Resolve the slot a strike from `attacker` should land on. Honors a
+    /// pre-selected [`battle::BattleActor::active_target`] when it points at a
+    /// living actor on the opposing side (so the player's target-picker choice
+    /// and the monster-AI target choice both take effect), otherwise falls back
+    /// to [`Self::first_living_opponent_of`].
+    fn resolve_attack_target(&self, attacker: u8) -> Option<u8> {
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
+        if let Some(a) = self.actors.get(attacker as usize) {
+            let t = a.battle.active_target;
+            if (lo..hi).contains(&t)
+                && self
+                    .actors
+                    .get(t as usize)
+                    .is_some_and(|x| x.battle.liveness != 0)
+            {
+                return Some(t);
+            }
+        }
+        self.first_living_opponent_of(attacker)
+    }
+
+    /// Drive one monster's turn. Runs the action picker
+    /// ([`Self::pick_monster_action`], the port of `FUN_801E9FD4`'s generic
+    /// decision core) and either folds the chosen cast and parks the SM at
+    /// `EndOfAction` (a spell is the whole turn, like the player magic path) or
+    /// arms a physical strike for the action SM to run.
+    fn take_monster_turn(&mut self, slot: u8) {
+        use vm::battle_action::ActionState;
+
+        self.battle_ctx.active_actor = slot;
+        match self.pick_monster_action(slot) {
+            MonsterAction::Cast { spell_id, targets } => {
+                let def = self.spell_catalog.get(spell_id).cloned();
+                if let Some(def) = def
+                    && self.cast_spell_on_slots(slot, &def, &targets)
+                {
+                    self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                    return;
+                }
+                // Cast didn't fold (no catalog entry / unaffordable after the
+                // pick) - fall through to a physical strike.
+                self.arm_monster_physical(slot);
+            }
+            MonsterAction::Physical { target } => {
+                self.battle_ctx.queued_action = 3;
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.active_target = target;
+                    a.battle.action_category = 3;
+                }
+            }
+        }
+    }
+
+    /// Arm a generic physical strike for monster `slot` against the first
+    /// living party member (fallback when a picked cast can't fold).
+    fn arm_monster_physical(&mut self, slot: u8) {
+        use vm::battle_action::ActionState;
+        let target = self.first_living_opponent_of(slot).unwrap_or(slot);
+        self.battle_ctx.queued_action = 3;
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.active_target = target;
+            a.battle.action_category = 3;
+        }
+    }
+
+    /// Monster-AI action picker - clean-room port of the **generic decision
+    /// core** of `FUN_801E9FD4` (`overlay_battle_action_801e9fd4.txt`), the
+    /// routine retail runs (from `recompute_battle_order` / `FUN_801DABA4`) to
+    /// choose each monster's action.
+    ///
+    /// Faithful to the core: it rolls `rand % (1 + live_magic_count)` over the
+    /// monster's own global magic-attack ids (record `+0x21..=+0x23`, carried on
+    /// [`crate::monster_catalog::MonsterDef::magic_attacks`]); a roll of `0`
+    /// picks a **physical** strike (target `rand % party_count`), otherwise it
+    /// picks magic id `magic[roll-1]` and resolves the target by the spell's
+    /// shape byte (`spell_table[id*0xC + 2] & 0x60`), modelled here through the
+    /// catalog's [`crate::spells::SpellTarget`]: `OneEnemy` → a random living
+    /// party member, `AllEnemies` → the whole living party, `AllAllies` → the
+    /// whole living monster band, `OneAlly` → the most-weakened living ally (or
+    /// self), `SelfOnly` → self. A cast the monster can't afford from its live
+    /// MP (`actor+0x150`) falls back to a physical strike, matching retail's
+    /// affordability gate (`actor[0x150] < spell.mp_cost`).
+    ///
+    /// The large per-monster-id scripted-cast `switch` that follows the core in
+    /// retail keys on `DAT_8007BD0C[slot]`, which `FUN_801DA51C` fills from the
+    /// encounter record's `[+4 + slot]` monster ids - i.e. the **monster id**,
+    /// not an abstract AI-type, so each case is bespoke AI for a specific
+    /// monster the engine already identifies via `battle_monster_id`. That
+    /// switch is ported in [`crate::monster_ai`] ([`crate::monster_ai::decide`])
+    /// and consulted here as an override, followed by the post-switch
+    /// recent-target ring ([`crate::monster_ai::apply_recent_target_ring`]). The
+    /// companion target resolver `FUN_801E7320` is ported as
+    /// [`Self::resolve_monster_target`] (the `monster_setup` hook).
+    ///
+    /// PORT: FUN_801E9FD4
+    /// REF: FUN_801DABA4
+    fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
+        let pc = self.party_count.max(1);
+
+        // --- generic decision core ---
+        // The monster's own castable global magic ids (parser already drops the
+        // empty `<= 1` slots, so every entry is "live").
+        let magic: Vec<u8> = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.monster_catalog.get(id))
+            .map(|d| d.magic_attacks.clone())
+            .unwrap_or_default();
+        let mp = self
+            .actors
+            .get(slot as usize)
+            .map(|a| a.battle.mp)
+            .unwrap_or(0);
+
+        // Roll over (1 + live_magic_count); 0 => physical. Always consumes one
+        // RNG draw, exactly like retail.
+        let denom = 1 + magic.len() as u32;
+        let roll = self.next_rng() % denom;
+        // Provisional choice (category 3 = physical strike, 2 = magic).
+        let (mut category, mut spell_id) = (3u8, 0u8);
+        let mut target_class;
+        if roll != 0 {
+            let id = magic[(roll - 1) as usize];
+            if let Some(def) = self.spell_catalog.get(id).cloned()
+                && mp >= def.mp_cost as u16
+            {
+                category = 2;
+                spell_id = id;
+                target_class = self.monster_cast_target_class(slot, &def);
+            } else {
+                target_class = self.random_living_party_member(pc).unwrap_or(slot);
+            }
+        } else {
+            target_class = self.random_living_party_member(pc).unwrap_or(slot);
+        }
+
+        // --- per-monster-id scripted override (the FUN_801E9FD4 switch) + the
+        // post-switch recent-target anti-repeat ring. Run in a borrow window
+        // with the AI state owned locally so the RNG closure can take `self`.
+        if let Some(monster_id) = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+        {
+            let (hp, max_hp) = self
+                .actors
+                .get(slot as usize)
+                .map(|a| (a.battle.hp, a.battle.max_hp))
+                .unwrap_or((0, 0));
+            let allies_with_mp = (0..pc)
+                .filter(|&i| {
+                    self.actors
+                        .get(i as usize)
+                        .is_some_and(|a| a.battle.liveness != 0 && a.battle.mp != 0)
+                })
+                .count() as u8;
+            let n = self.actors.len() as u8;
+            let ctx = crate::monster_ai::MonsterAiCtx {
+                monster_id: (monster_id & 0xFF) as u8,
+                monster_index: slot.saturating_sub(pc),
+                caster_slot: slot,
+                hp,
+                max_hp,
+                mp,
+                party_count: pc,
+                monster_count: n.saturating_sub(pc).max(1),
+                field_flags: self
+                    .actors
+                    .get(slot as usize)
+                    .map(|a| a.battle.field_flags)
+                    .unwrap_or(0),
+                allies_with_mp,
+            };
+            let mut ai = std::mem::take(&mut self.monster_ai_state);
+            if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rng()) {
+                category = cast.category;
+                spell_id = cast.spell_id;
+                target_class = cast.target_class;
+            }
+            // Anti-repeat ring (applies to whichever single party target stands).
+            target_class = crate::monster_ai::apply_recent_target_ring(
+                target_class,
+                spell_id,
+                pc,
+                &mut ai,
+                &mut || self.next_rng(),
+            );
+            self.monster_ai_state = ai;
+        }
+
+        // --- build the action ---
+        if category == 2 {
+            let targets = self.resolve_class_to_slots(slot, target_class);
+            if !targets.is_empty() {
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 2;
+                    a.battle.params[0] = spell_id;
+                }
+                return MonsterAction::Cast { spell_id, targets };
+            }
+        }
+        // Physical strike (or a cast that resolved no targets).
+        let target = if target_class < pc {
+            target_class
+        } else {
+            self.random_living_party_member(pc)
+                .or_else(|| self.first_living_opponent_of(slot))
+                .unwrap_or(slot)
+        };
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.action_category = 3;
+            a.battle.active_target = target;
+        }
+        MonsterAction::Physical { target }
+    }
+
+    /// The live battle-mode counter (`ctx+0x28A`, `_DAT_8007BD24[0x28A]`).
+    ///
+    /// This is the boss/scripted-mode gate the per-monster AI `switch` reads:
+    /// multi-phase bosses (`0xA8`, `0xB4`, `0xB5`, `0xB6`, `0xA2..=0xA4`, …)
+    /// change which spell they cast as it advances. `0` in a normal battle.
+    pub fn battle_mode(&self) -> u8 {
+        self.monster_ai_state.mode_flags
+    }
+
+    /// Advance the battle-mode counter by one - the faithful port of the
+    /// battle-action SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), the
+    /// boss-phase-transition pseudo-action. A boss script issues action `0xFF`
+    /// when the fight crosses a scripted phase boundary; the next monster turn's
+    /// [`Self::pick_monster_action`] then reads the bumped mode through
+    /// [`crate::monster_ai::decide`], activating that phase's scripted casts.
+    /// The retail counter is a byte, so it wraps at `0xFF`.
+    ///
+    /// PORT: FUN_801E295C
+    pub fn advance_battle_mode(&mut self) {
+        self.monster_ai_state.mode_flags = self.monster_ai_state.mode_flags.wrapping_add(1);
+    }
+
+    /// Target **class** the generic core picks for a monster casting `def`, by
+    /// the spell's [`crate::spells::SpellTarget`] shape (monster's perspective:
+    /// enemies = party band, allies = monster band). Single-enemy → a random
+    /// living party slot; `AllEnemies` → class `8`; `AllAllies` → class `9`;
+    /// `OneAlly` → the most-weakened living ally (or self); `SelfOnly` → self.
+    fn monster_cast_target_class(&mut self, slot: u8, def: &crate::spells::SpellDef) -> u8 {
+        use crate::spells::SpellTarget;
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        match def.target {
+            SpellTarget::OneEnemy => self.random_living_party_member(pc).unwrap_or(slot),
+            SpellTarget::AllEnemies => 8,
+            SpellTarget::AllAllies => 9,
+            SpellTarget::SelfOnly => slot,
+            SpellTarget::OneAlly => {
+                let mut best: Option<(u8, u16)> = None;
+                for i in pc..n {
+                    if let Some(a) = self.actors.get(i as usize)
+                        && a.battle.liveness != 0
+                        && a.battle.hp < a.battle.max_hp / 2
+                        && best.is_none_or(|(_, hp)| a.battle.hp < hp)
+                    {
+                        best = Some((i, a.battle.hp));
+                    }
+                }
+                best.map(|(i, _)| i).unwrap_or(slot)
+            }
+        }
+    }
+
+    /// Resolve an absolute target list from a `+0x1DD` target class: `8` = all
+    /// living party, `9` = all living monsters, `< party_count` = that single
+    /// party slot, otherwise that single monster/self slot.
+    fn resolve_class_to_slots(&self, slot: u8, class: u8) -> Vec<u8> {
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let alive = |i: u8| {
+            self.actors
+                .get(i as usize)
+                .is_some_and(|a| a.battle.liveness != 0)
+        };
+        let _ = slot;
+        match class {
+            8 => (0..pc).filter(|&i| alive(i)).collect(),
+            9 => (pc..n).filter(|&i| alive(i)).collect(),
+            t if t < n => vec![t],
+            // Out-of-range class: no targets (the caller falls back to physical).
+            _ => Vec::new(),
+        }
+    }
+
+    /// Pick a random living party member (`rand % party_count`, re-rolled until
+    /// it lands on a living slot), mirroring the party-target roll shared by
+    /// `FUN_801E9FD4` and `FUN_801E7320`. `None` only when the whole party is
+    /// down. The deterministic LCG cycles every value, so the re-roll loop
+    /// always terminates once one member is alive.
+    fn random_living_party_member(&mut self, party_count: u8) -> Option<u8> {
+        let pc = party_count.max(1);
+        let any_alive = (0..pc).any(|i| {
+            self.actors
+                .get(i as usize)
+                .is_some_and(|a| a.battle.liveness != 0)
+        });
+        if !any_alive {
+            return None;
+        }
+        loop {
+            let t = (self.next_rng() % pc as u32) as u8;
+            if self
+                .actors
+                .get(t as usize)
+                .is_some_and(|a| a.battle.liveness != 0)
+            {
+                return Some(t);
+            }
+        }
+    }
+
+    /// Clean-room port of `FUN_801E7320` - the monster-AI **target resolver**,
+    /// invoked by the battle SM (`FUN_801E295C`) at `ActionSeed` as the
+    /// `monster_setup` hook for monster actors whose `field_flags & 0x380` is
+    /// set. It reads the targeting-class byte the action picker left in
+    /// `actor.active_target` (`+0x1DD`) and expands it into a concrete target,
+    /// re-rolling the deterministic RNG until it lands on a living actor on the
+    /// matching side:
+    ///
+    /// - **class `0..2`** → a living **monster** slot (`rand % monster_count +
+    ///   party_count`); if it lands on self, clears `action_category` and keeps
+    ///   self as the target.
+    /// - **class `3..6`** → a living **party** slot (`rand % party_count`).
+    /// - **class `8`** → 1-in-3 keeps the all-target code `9`, else self.
+    /// - **class `7` / other** → 1-in-3 sets the all-target code `8`, else self.
+    ///
+    /// Retail ctx fields: `ctx[+0]` = party count, `ctx[+1]` = monster count,
+    /// `ctx[+0x13]` = active slot - here read from `party_count` / the actor
+    /// table / `slot`. See `ghidra/scripts/funcs/overlay_battle_action_801e7320.txt`.
+    ///
+    /// Note: in the current live loop monsters carry `field_flags == 0`, so the
+    /// SM does not invoke this and the picker's own target stands. Wiring the
+    /// `0x380` flag (set by retail at an as-yet-untraced init site) is the open
+    /// RE thread; this port keeps the routine faithful for when that lands.
+    ///
+    /// PORT: FUN_801E7320
+    /// REF: FUN_801E295C
+    fn resolve_monster_target(&mut self, slot: u8) {
+        let pc = self.party_count.max(1);
+        let mc = (self.actors.len() as u8).saturating_sub(pc).max(1);
+        let class = match self.actors.get(slot as usize) {
+            Some(a) => a.battle.active_target,
+            None => return,
+        };
+        let set_target = |w: &mut Self, t: u8| {
+            if let Some(a) = w.actors.get_mut(slot as usize) {
+                a.battle.active_target = t;
+            }
+        };
+        let clear_category_self = |w: &mut Self| {
+            if let Some(a) = w.actors.get_mut(slot as usize) {
+                a.battle.action_category = 0;
+                a.battle.active_target = slot;
+            }
+        };
+        if class < 3 {
+            // Target a living monster (the caster's own band).
+            loop {
+                let t = (self.next_rng() % mc as u32) as u8 + pc;
+                set_target(self, t);
+                if self
+                    .actors
+                    .get(t as usize)
+                    .is_some_and(|a| a.battle.liveness != 0)
+                {
+                    if t == slot {
+                        clear_category_self(self);
+                    }
+                    return;
+                }
+            }
+        } else if class < 7 {
+            // Target a living party member.
+            loop {
+                let t = (self.next_rng() % pc as u32) as u8;
+                set_target(self, t);
+                if self
+                    .actors
+                    .get(t as usize)
+                    .is_some_and(|a| a.battle.liveness != 0)
+                {
+                    return;
+                }
+            }
+        } else if class == 8 {
+            if self.next_rng().is_multiple_of(3) {
+                set_target(self, 9);
+            } else {
+                clear_category_self(self);
+            }
+        } else if self.next_rng().is_multiple_of(3) {
+            set_target(self, 8);
+        } else {
+            clear_category_self(self);
+        }
     }
 
     /// First living actor on the side opposing `attacker`. Party slots
@@ -5468,6 +6095,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::MonsterSetup { actor_slot });
+        // Faithful `FUN_801E7320`: expand the targeting class the action picker
+        // left in `actor.active_target` into a concrete target slot.
+        self.world.resolve_monster_target(actor_slot);
     }
     fn recompute_battle_order(&mut self) {
         self.world
@@ -7486,6 +8116,28 @@ mod tests {
     }
 
     #[test]
+    fn spawn_debug_effect_model_emits_model_not_billboard() {
+        let mut world = World::default();
+        // A model-only effect (no catalog): emits an EffectModel carrying the
+        // requested global-TMD-pool index, and no 2D billboard sprite.
+        assert!(world.spawn_debug_effect_model([16.0, 4.0, -8.0], 4));
+        let models = world.active_effect_models();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].tmd_index, 4);
+        assert_eq!(models[0].world_pos, [16.0, 4.0, -8.0]);
+        assert_eq!(models[0].age01, 0.0);
+        // Plain debug effect (no model_index) emits no model.
+        assert!(world.spawn_debug_effect([0.0, 0.0, 0.0]));
+        assert_eq!(world.active_effect_models().len(), 1);
+
+        // Ages and retires via the normal effect lifetime.
+        for _ in 0..=vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+            world.tick_effects();
+        }
+        assert!(world.active_effect_models().is_empty());
+    }
+
+    #[test]
     fn try_spawn_effect_noop_on_empty_catalog() {
         let mut world = World::default();
         world.try_spawn_effect(0, [0, 0, 0], 0);
@@ -7947,6 +8599,308 @@ mod tests {
         world.actors[1].battle_monster_id = Some(monster_id);
         world.battle_ctx.active_actor = 0;
         world
+    }
+
+    /// Monster-AI cast path: a monster whose record carries a castable spell
+    /// it can afford folds a real spell onto the party (HP drops, MP spent, a
+    /// damage popup queues) and parks the SM at `EndOfAction` so the loop
+    /// cycles - rather than the generic physical strike. RNG is pinned so the
+    /// cast-vs-strike roll lands on "cast".
+    #[test]
+    fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
+        use crate::monster_catalog::vanilla_monster_catalog;
+        use crate::spells::SpellCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        // Party member at slot 0.
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        // Bandit Boss (id 5) at slot 1: carries [Flame 0x20, Thunder Bolt 0x23]
+        // and 10 MP - enough to afford either.
+        world.actors[1].battle.max_hp = 120;
+        world.actors[1].battle.hp = 120;
+        world.actors[1].battle.mp = 10;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.set_battle_magic(1, 40);
+        // Seed 0: the action picker's first `rand % (1 + magic_count)` (magic
+        // count 2 -> `% 3`) lands on 1, so it casts magic[0] = Flame (0x20).
+        world.rng_state = 0;
+
+        let party_hp_before = world.actors[0].battle.hp;
+        world.take_monster_turn(1);
+
+        assert_eq!(
+            world.actors[1].battle.params[0], 0x20,
+            "picker chose Flame (magic_attacks[0])"
+        );
+        assert!(
+            world.actors[0].battle.hp < party_hp_before,
+            "the monster's spell dealt damage to the party"
+        );
+        assert!(world.actors[1].battle.mp < 10, "the monster spent MP");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "a cast is the whole turn; SM parks at EndOfAction"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1, "one damage popup queued");
+        assert!(!fx[0].is_heal, "damage-coloured popup");
+        assert_eq!(fx[0].target_slot, 0, "the party member took the hit");
+    }
+
+    /// A monster with no castable spells always picks a physical strike: the
+    /// action picker rolls `rand % (1 + 0) == 0`, so the magic branch is never
+    /// taken regardless of the seed. It still targets a (single living) party
+    /// member and arms the SM at `Begin`.
+    #[test]
+    fn spell_less_monster_always_arms_physical_strike() {
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        // Goblin (id 1) has no magic_attacks; leave the catalog empty so the
+        // monster id doesn't resolve either - the magic branch can't be taken.
+        world.actors[1].battle.max_hp = 30;
+        world.actors[1].battle.hp = 30;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(1);
+
+        world.take_monster_turn(1);
+
+        assert_eq!(world.battle_ctx.queued_action, 3, "physical strike queued");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::Begin.as_byte(),
+            "SM armed at Begin to run the strike"
+        );
+        assert_eq!(
+            world.actors[1].battle.action_category, 3,
+            "physical action category"
+        );
+        assert_eq!(
+            world.actors[1].battle.active_target, 0,
+            "targets the only living party member (slot 0)"
+        );
+    }
+
+    /// A minimal `efect.dat` 2-pack: 1 atlas entry (a 24x24 sprite at texel
+    /// (5,7), tpage 0x88, clut 0x12), 1 anim batch (one frame -> atlas 0), and
+    /// 1 effect script with 1 child referencing sprite_id 0.
+    fn minimal_efect_dat() -> Vec<u8> {
+        let mut buf = vec![0u8; 8];
+        // atlas[0]: u=5 v=7 w=24 h=24, tpage=0x88, clut=0x12, unk=0
+        buf.extend_from_slice(&[5u8, 7, 24, 24]);
+        buf.extend_from_slice(&0x88u16.to_le_bytes());
+        buf.extend_from_slice(&[0x12u8, 0]);
+        let pack0 = buf.len() as u32;
+        // pack0: 1 anim batch, 1 frame (atlas_index 0).
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        let p0_tbl = buf.len();
+        buf.extend_from_slice(&[0u8; 4]);
+        let anim0 = buf.len() as u32;
+        buf.extend_from_slice(&[1u8, 0]); // frame_count=1, flags
+        buf.extend_from_slice(&[0u8, 0, 0, 0, 0, 0]); // frame 0 -> atlas 0
+        buf[p0_tbl..p0_tbl + 4].copy_from_slice(&anim0.to_le_bytes());
+        let pack1 = buf.len() as u32;
+        // pack1: 1 effect script, 1 child (sprite_id 0), flags 0 (no spread).
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        let p1_tbl = buf.len();
+        buf.extend_from_slice(&[0u8; 4]);
+        let script0 = buf.len() as u32;
+        buf.extend_from_slice(&[1u8, 0]); // child_count=1, flags=0
+        buf.extend_from_slice(&0i16.to_le_bytes()); // spread
+        buf.extend_from_slice(&0u16.to_le_bytes()); // child sprite_id=0
+        buf.extend_from_slice(&0i16.to_le_bytes()); // width
+        buf.extend_from_slice(&0u16.to_le_bytes()); // anim_flags
+        buf.extend_from_slice(&0i16.to_le_bytes()); // depth
+        buf.extend_from_slice(&[0u8; 6]); // tail
+        buf[p1_tbl..p1_tbl + 4].copy_from_slice(&script0.to_le_bytes());
+        buf[0..4].copy_from_slice(&pack0.to_le_bytes());
+        buf[4..8].copy_from_slice(&pack1.to_le_bytes());
+        buf
+    }
+
+    /// A spawned effect produces a faithful billboard sprite per child, sized
+    /// and UV-addressed from the real sprite atlas (the textured-quad seam).
+    #[test]
+    fn active_effect_sprites_carry_atlas_size_and_vram_coords() {
+        use legaia_engine_vm::effect_vm::EffectCatalog;
+        let mut world = World {
+            effect_catalog: EffectCatalog::from_efect_dat_bytes(&minimal_efect_dat()),
+            ..World::default()
+        };
+        assert_eq!(world.effect_catalog.len(), 1, "one effect script");
+
+        // No effects yet -> no sprites.
+        assert!(world.active_effect_sprites().is_empty());
+
+        // Spawn effect 0 at world (10, 0, 20).
+        world.try_spawn_effect(0, [10, 0, 20], 0);
+        let sprites = world.active_effect_sprites();
+        assert_eq!(sprites.len(), 1, "one child sprite");
+        let s = sprites[0];
+        assert_eq!(s.uv, [5, 7], "atlas texel origin");
+        assert_eq!(s.uv_size, [24, 24], "atlas sprite size");
+        assert_eq!(s.size, [24.0, 24.0]);
+        assert_eq!(s.page, 0x88);
+        assert_eq!(s.clut, 0x12);
+        // Origin Y matches; X/Z within a small deterministic ring of (10, 20).
+        assert!((s.world_pos[1] - 0.0).abs() < 1e-3);
+        assert!((s.world_pos[0] - 10.0).abs() < 1.0);
+        assert!((s.world_pos[2] - 20.0).abs() < 1.0);
+    }
+
+    /// Per-monster-id scripted AI (the `FUN_801E9FD4` switch) end-to-end: a
+    /// wounded monster whose id has a low-HP self-heal case folds that heal onto
+    /// itself rather than striking the party. Monster id 6 (case `0x06`) casts
+    /// `0x52` at self when `HP <= maxHP/2` and its ability cooldown is clear.
+    #[test]
+    fn scripted_ai_monster_self_heals_when_wounded() {
+        use crate::monster_catalog::vanilla_monster_catalog;
+        use crate::spells::SpellCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        // Monster id 6 (Skeleton -> AI case 0x06) at slot 1, wounded to 20/100
+        // with MP to spare for the heal.
+        world.actors[1].battle.max_hp = 100;
+        world.actors[1].battle.hp = 20;
+        world.actors[1].battle.mp = 20;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(6);
+        world.rng_state = 7;
+
+        world.take_monster_turn(1);
+
+        assert_eq!(
+            world.actors[1].battle.params[0], 0x52,
+            "self-heal spell queued"
+        );
+        assert!(
+            world.actors[1].battle.hp > 20,
+            "the monster healed itself instead of striking the party"
+        );
+        assert_eq!(world.actors[0].battle.hp, 200, "party untouched");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "cast is the whole turn"
+        );
+        assert_eq!(world.monster_ai_state.dat[4], 1, "ability cooldown armed");
+        let fx = world.drain_battle_hit_fx();
+        assert!(fx.iter().any(|f| f.is_heal && f.target_slot == 1));
+    }
+
+    /// Faithful `FUN_801E7320`: a targeting class in `3..=6` resolves to a
+    /// living PARTY slot; a class in `0..=2` resolves to a living MONSTER slot.
+    /// (Dead slots are skipped via the re-roll loop.)
+    #[test]
+    fn monster_target_resolver_expands_class_to_correct_side() {
+        let mut world = World {
+            party_count: 3,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // Party slots 0..2: slot 0 dead, slots 1+2 alive.
+        for i in 0..3u8 {
+            let a = &mut world.actors[i as usize];
+            a.battle.max_hp = 100;
+            a.battle.hp = if i == 0 { 0 } else { 100 };
+            a.battle.liveness = if i == 0 { 0 } else { 1 };
+        }
+        // Monster slots 3+4 alive.
+        for i in 3..5u8 {
+            let a = &mut world.actors[i as usize];
+            a.battle.max_hp = 80;
+            a.battle.hp = 80;
+            a.battle.liveness = 1;
+        }
+
+        // Caster = monster slot 3, class 3 (party-targeting). Resolves to a
+        // LIVING party slot (1 or 2, never the dead slot 0).
+        world.actors[3].battle.active_target = 3; // class 3..6 -> party
+        world.rng_state = 12345;
+        world.resolve_monster_target(3);
+        let t = world.actors[3].battle.active_target;
+        assert!(
+            (1..=2).contains(&t),
+            "class 3 -> living party slot, got {t}"
+        );
+
+        // Class 1 (monster-band targeting). Resolves to a living monster slot.
+        world.actors[3].battle.active_target = 1; // class 0..2 -> monster band
+        world.rng_state = 999;
+        world.resolve_monster_target(3);
+        let t = world.actors[3].battle.active_target;
+        assert!(
+            (3..=4).contains(&t),
+            "class 1 -> living monster slot, got {t}"
+        );
+    }
+
+    /// `advance_battle_mode` (the SM `case 0xFF` writer for `ctx+0x28A`) flips a
+    /// multi-phase boss from its first-phase cast to its phased cast on the next
+    /// turn. Monster id `0xB6` always casts, picking its spell purely by mode.
+    #[test]
+    fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
+        use crate::monster_catalog::MonsterDef;
+        use crate::spells::SpellCatalog;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        // A clean-room boss at monster slot 1 with id 0xB6 (no own magic - it
+        // casts purely off its scripted phase table).
+        world
+            .monster_catalog
+            .insert(MonsterDef::new(0xb6, "Boss", 400, 50));
+        world.actors[0].battle.max_hp = 300;
+        world.actors[0].battle.hp = 300;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = 400;
+        world.actors[1].battle.hp = 400;
+        world.actors[1].battle.mp = 250;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(0xb6);
+        world.rng_state = 1;
+
+        assert_eq!(world.battle_mode(), 0, "fresh battle starts in phase 0");
+        world.take_monster_turn(1);
+        assert_eq!(world.actors[1].battle.params[0], 0xa2, "phase 0 cast");
+
+        // A scripted phase transition advances the mode; next turn is phase I.
+        world.advance_battle_mode();
+        assert_eq!(world.battle_mode(), 1);
+        world.take_monster_turn(1);
+        assert_eq!(world.actors[1].battle.params[0], 0xa3, "phase 1 cast");
     }
 
     #[test]

@@ -32,6 +32,9 @@ record:
   <h2>CDNAME mismatch</h2>
   <p>The CDNAME-named <code>0972</code> / <code>0973</code> <code>move_program_no.BIN</code> files are flat 128-byte stride record arrays - they <strong>don't</strong> match the runtime buffer layout above. <code>mdt classify</code> flags this.</p>
   <p><code>crates/mdt</code> parses both layouts and surfaces a verdict (<code>OffsetTableLayout</code> / <code>FlatRecordTable</code> / <code>Unknown</code>).</p>
+  <h3>Caveat: <code>MoveBuffer::parse</code> over-reads past the real table boundary</h3>
+  <p>Real per-scene Move buffers have offset tables shorter than the consumer-facing 1024-entry mask (most use 8-30 ids) and pack record data densely past the real table end. <code>MoveBuffer::parse</code> keeps reading u32s past the real boundary, where record bytes masquerade as offsets. Most of those over-read entries point past the buffer end and get counted as <code>bogus_offsets</code>, so the strict <code>MoveBuffer::fitness()</code> score (<code>used - 2*bogus</code>) is strongly negative for valid retail data (e.g. <code>0086_map01.BIN</code>: used=1020 bogus=973 &rarr; fitness=-926). Use <code>MoveBuffer::looks_like_move_buffer()</code> instead: it requires <code>records.len() &gt; 0 &amp;&amp; used &gt; bogus</code>, which 75/79 retail per-scene Move buffers pass while random / non-Move data still fails.</p>
+  <p><code>classify()</code>'s <code>OffsetTableLayout</code> verdict also routes through <code>looks_like_move_buffer</code>, so the CLI reports the same shape the engine accepts.</p>
 </section>
 
 <section class="doc-section" id="on-disc-source-per-scene-scene-asset-table-slot-4">
@@ -71,7 +74,7 @@ record:
 </tr>
 </tbody>
 </table>
-  <p>The <code>meta1</code> u32 in the scene_asset_table header is the per-scene meta value the loader carries forward; the <code>data_offset</code> for descriptor[4] (and the other six) references positions inside a runtime-allocated decompression buffer rather than a file-relative byte offset, so the on-disc payload is decoded into a working buffer before the per-asset slicing runs.</p>
+  <p>The <code>meta1</code> u32 in the scene_asset_table header is the per-scene meta value the loader carries forward. Each descriptor (including <code>desc[4]</code> = Move) is its own independently LZS-compressed stream at <code>data_offset</code> bytes into the bundle entry's <strong>extended on-disc footprint</strong> (<code>Archive::read_entry</code>), decompressing to exactly <code>size</code> bytes. Several scenes have Move descriptor offsets that fall past the TOC-indexed end and into trailing-overlay sectors - readers must use the extended footprint (or <code>ProtIndex::entry_bytes_extended</code>) rather than <code>Archive::read_entry_indexed</code>. See <code>engine-core::scene_bundle::extract_move_payload</code> for the canonical pattern.</p>
   <p><code>scene_asset_table::move_descriptor</code> exposes the slot lookup as a typed accessor:</p>
 <pre><code>let s = legaia_asset::scene_asset_table::detect(&amp;prot_bytes)?;
 let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>

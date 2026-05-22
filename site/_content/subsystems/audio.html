@@ -69,6 +69,7 @@
   <h2>BGM dispatch</h2>
   <p>The field VM's opcode <code>0x35</code> writes the BGM ID to <code>_DAT_8007BAC8</code>. <code>FUN_800243F0</code> (the per-frame asset poller) resolves it to a PROT index - <code>bgm_id &lt; 2000</code> is scene-local, <code>bgm_id &ge; 2000</code> is a global pool. There's no literal BGM table; the resolution is a PROT-relative offset into the <a href="../formats/index.html">CDNAME</a> per-scene block.</p>
   <p>See <a href="script-vm.html">script VM &rarr; "BGM lookup table"</a> for the resolver code.</p>
+  <p>The engine port reuses this same dispatch for the <strong>Battle&harr;Field music swap</strong>: <code>World::set_battle_bgm</code> configures a battle track id, and the live gameplay loop queues an ordinary <code>FieldEvent::Bgm{sub_op: 1}</code> start for it on encounter (<code>swap_to_battle_bgm</code>) and resumes the stashed field track on battle end (<code>restore_field_bgm</code>). The host's <code>AudioBgmDirector</code> cross-fades both transitions over ~0.5&nbsp;s through its existing <code>start_inner</code> path - no separate battle-audio code path. The battle id must resolve in the current scene's BGM table since the live loop doesn't load a distinct battle audio bundle.</p>
 </section>
 
 <section class="doc-section" id="ssapi">
@@ -103,6 +104,17 @@
     </tbody>
   </table>
 
+  <h3>SEQ internals</h3>
+  <table>
+    <thead><tr><th>Function</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80062410(seq_data)</code></td><td><code>_SsSeqInit</code> - validates <code>'S'</code>/<code>'p'</code> magic + version byte <code>0x01</code>, reads PPQN base (<code>0x393_8700</code> = 60&nbsp;000&nbsp;000), BPM, ticks-per-quarter from the SEQ header.</td></tr>
+      <tr><td><code>FUN_80061C68(slot)</code></td><td><code>_SsSeqGetVar</code> - MIDI-style 7-bit-with-continuation varint decode for delta-time bytes; accumulates into <code>+0x88</code> running tick.</td></tr>
+      <tr><td><code>FUN_80061EDC(slot, channel, vol, &hellip;)</code></td><td><code>SsSeqSetVol</code> - calls <code>FUN_800683D8</code> to fetch <code>(vol_l, vol_r)</code>, clamps target &ge; requested, calls <code>FUN_8006206C</code> (slewer), sets bit <code>0x20</code>, clears bit <code>0x10</code> in <code>+0x98</code>.</td></tr>
+      <tr><td><code>FUN_8006206C(&hellip;)</code></td><td><code>_SsSetSlideVolume</code> - ramp from&rarr;to over N ticks. Signed-divide per-tick delta; gated by flags <code>4 &amp; 0x100</code> in <code>+0x98</code>.</td></tr>
+    </tbody>
+  </table>
+
   <h3>Voice / mixer (audible-output critical path)</h3>
   <table>
     <thead><tr><th>Function</th><th>Role</th></tr></thead>
@@ -111,10 +123,22 @@
       <tr><td><code>FUN_80067E9C</code></td><td><code>_SsSeqNoteOn</code> - sequence-driven keyon. Iterates <code>DAT_801CE344</code>, calls <code>FUN_80068B98</code> (program-change?).</td></tr>
       <tr><td><code>FUN_80065978</code></td><td><code>_SsVoKeyOnDirect</code> - allocates a voice from <code>_DAT_801CE208</code>, looks up region in <code>_DAT_801CE334</code> (stride <code>0x10</code>), writes pitch + base note.</td></tr>
       <tr><td><code>FUN_80066E50(key, fine)</code></td><td><code>_SsPitchFromKey</code> - indexes 12-entry pitch table <code>&amp;DAT_8007A940</code>, octave-shift by <code>(oct-5)</code>. Returns 16-bit SPU PITCH register value.</td></tr>
+      <tr><td><code>FUN_80065B88</code></td><td><code>SsResetTranspose</code> - single-store stub: zeros <code>_DAT_801CE2E8</code> (a base-note offset shifted in by <code>FUN_80065978</code>).</td></tr>
     </tbody>
   </table>
 
-  <p class="hint">The cluster previously appeared in the renderer / GPU primitives inventory; that was a citation artefact (battle / field code triggers SFX cues during render passes). None of these functions is libgpu / libgs - they're all libsnd.</p>
+  <h3>SPU command shims (<code>*0x81</code> scaling = 0..127 &rarr; 0..16383)</h3>
+  <table>
+    <thead><tr><th>Function</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_80062AA0(x, y)</code></td><td><code>SsSetMVol</code> - packs <code>[cmd=3, x*0x81, y*0x81]</code>, calls <code>FUN_8006BCB4</code> (SPU-cmd dispatcher).</td></tr>
+      <tr><td><code>FUN_80065440(p1, p2)</code></td><td>Single-shot SPU command (likely <code>SsUtKeyOn</code> / <code>SsUtPitchBend</code>) - <code>[cmd=6, p1*0x81, p2*0x81]</code>, calls <code>FUN_8006ACBC</code> (sister of <code>FUN_8006BCB4</code>).</td></tr>
+    </tbody>
+  </table>
+
+  <p class="hint">The cluster previously appeared in the renderer / GPU primitives inventory; that was a citation artefact (battle / field code triggers SFX cues during render passes). None of these functions is libgpu / libgs - they're all libsnd. The "renderer / GPU primitives" inventory in <code>functions.md</code> previously listed <code>FUN_80061EDC / FUN_80067E9C / FUN_80066E50 / FUN_80067550</code> under the renderer; they belong here.</p>
+
+  <p>Interpretation: <code>_DAT_8007BAC8 = bgm_id</code> written by field-VM <code>0x35</code> is consumed by <code>FUN_800243F0</code> to load a <code>.SEQ</code> payload via the streaming-asset path, and that payload is then handed to <code>FUN_80062340</code> for sequencer playback.</p>
 
   <p>Engine reimpl can stub the entire cluster behind a <code>legaia-engine-audio::Sequencer</code> trait without touching the per-note math.</p>
 </section>
@@ -257,21 +281,26 @@
 </section>
 
 <section class="doc-section" id="audio-trace-oracle">
-  <h2>Audio-trace parity oracle (foundation)</h2>
-  <p>Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side lifts a single-cycle snapshot from a mednafen save state's <code>SPU</code> section via <code>legaia_mednafen::PsxSpu</code> (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). The engine side runs a standalone <code>legaia_engine_audio::Spu</code> + optional <code>Sequencer</code> alongside a headless <code>BootSession::tick</code>, sampling voice / master / reverb state after each frame.</p>
-  <p>JSONL is the wire format - one <code>AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }</code> per line. Convergence rule: at least one engine frame's <code>active_voice_mask</code> is a superset of retail's mask AND for every retail-active voice the engine matches <code>start_addr</code> (when both sides report it).</p>
+  <h2>Audio-trace parity oracle</h2>
+  <p>Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, both emitting the same <code>AudioTraceFrame</code> JSONL wire format:</p>
+  <ol>
+    <li><strong>Single-cycle snapshot</strong> lifted from a mednafen save state's <code>SPU</code> section via <code>legaia_mednafen::PsxSpu</code> (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). One <code>.mc{slot}</code> save &rarr; one retail <code>AudioTraceFrame</code>. Convergence: "did any engine frame in the window match retail's voice mask?".</li>
+    <li><strong>Multi-frame trace</strong> captured by <code>autorun_audio_trace.lua</code> running inside PCSX-Redux: per-vsync <code>PCSX.createSaveState()</code> calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by <code>extract_audio_trace_from_sstates.py</code>. Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via <code>first_audio_trace_divergence_multi</code>.</li>
+  </ol>
+  <p>The engine side runs a standalone <code>legaia_engine_audio::Spu</code> + optional <code>Sequencer</code> alongside a headless <code>BootSession::tick</code>, sampling voice / master / reverb state after each frame. JSONL is one <code>AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, active_voice_mask, voices[24] }</code> per line. Convergence rule per retail frame: at least one engine frame's <code>active_voice_mask</code> is a superset of retail's mask AND for every retail-active voice the engine matches <code>start_addr</code> (when both sides report it).</p>
+  <p>PCSX-Redux's Lua API does not expose the SPU register file directly (<code>SPUInterface::lockSPURAM</code> is C++-internal, not bound). The probe leans on <code>PCSX.createSaveState()</code>, which returns the full state as a protobuf slice (~20&nbsp;MiB); the autorun script walks the slice in-place via FFI and writes only the ~600&nbsp;KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt <code>GPU::Vsync</code> event delivery. The SPU schema is the one declared in PCSX-Redux's <code>src/core/sstate.h</code> + <code>src/spu/types.h</code>: <code>Channel.Data.on || .stop</code> is the retail-side "audible" criterion (<code>ADSRInfoEx.state</code> reads as Sustain even for unused voices, so it's not a reliable audibility signal).</p>
   <p>Two known asymmetries the diff function explicitly models:</p>
   <ol>
     <li><strong>Headless engine SPU.</strong> <code>BootSession</code> only attaches a real cpal <code>AudioOut</code> when <code>enable_audio = true</code>, which fails in CI. The oracle constructs a standalone <code>Spu</code> in parallel and routes scene-resolved BGM events into it. Not bit-identical to the retail SPU, but the voice-activity envelope is.</li>
-    <li><strong>Single retail frame vs. windowed engine.</strong> Save states freeze one SPU cycle; the engine trace produces <code>frames + 1</code> records. Convergence is "any engine frame matches retail's voice mask".</li>
+    <li><strong>Retail capture shape.</strong> The single-snapshot case freezes one SPU cycle; the multi-frame case carries per-vsync state. The engine produces <code>frames + 1</code> records either way. <code>NoFrameMatched</code> stays tolerable drift in both modes; <code>VoiceStartAddrMismatch</code> and <code>MasterVolumeMismatch</code> are hard failures.</li>
   </ol>
+  <p>The engine drives BGM through a private <code>TraceBgmDirector</code> that routes field-VM op <code>0x35</code> events into a headless <code>Sequencer</code> in lock-step with <code>SceneHost::route_bgm_events</code> - so the engine trace <em>does</em> play music. <code>NoFrameMatched</code> is treated as tolerable drift (the scene prescript may not emit op <code>0x35</code> within the trace window, or may target a different track than retail captured); <code>VoiceStartAddrMismatch</code> and <code>MasterVolumeMismatch</code> are hard failures.</p>
   <p>Entry points:</p>
   <ul>
-    <li>Library: <code>engine_shell::audio_trace_oracle</code> - <code>build_engine_audio_trace</code>, <code>load_runtime_audio_trace_from_save</code>, <code>first_audio_trace_divergence</code>, JSONL round-trip.</li>
-    <li>CLI: <code>legaia-engine audio-trace --scene NAME</code> (explicit) or <code>--scenario LABEL</code> (compares against <code>.mc{slot}</code> SPU).</li>
-    <li>Disc-gated test: <code>crates/engine-shell/tests/audio_trace_i1.rs</code> auto-discovers every scenario in <code>scripts/scenarios.toml</code> with both <code>expected_active_scene</code> and an on-disk <code>.mc{slot}</code> save.</li>
+    <li>Library: <code>engine_shell::audio_trace_oracle</code> - <code>build_engine_audio_trace</code>, <code>load_runtime_audio_trace_from_save</code>, <code>load_runtime_audio_trace_jsonl</code>, <code>first_audio_trace_divergence</code>, <code>first_audio_trace_divergence_multi</code>, JSONL round-trip.</li>
+    <li>CLI: <code>legaia-engine audio-trace --scene NAME</code> (explicit), <code>--scenario LABEL</code> (single-snapshot vs <code>.mc{slot}</code> SPU), or <code>--retail-jsonl PATH</code> (multi-frame vs PCSX-Redux capture).</li>
+    <li>Disc-gated tests: <code>audio_trace.rs</code> auto-discovers scenarios with both <code>expected_active_scene</code> and an on-disk <code>.mc{slot}</code> save; <code>audio_trace_multi.rs</code> walks the same scenarios but skips unless <code>LEGAIA_AUDIO_TRACE_JSONL_DIR</code> points at a directory of <code>&lt;label&gt;.jsonl</code> files from the PCSX-Redux probe.</li>
   </ul>
-  <p>The foundation cut does not drive BGM in the engine trace (no <code>--bgm-id</code> by default), so scenarios with retail-active voices report <code>NoFrameMatched</code> as expected-drift. Strengthening the engine side to play BGM in the trace (and a paired PCSX-Redux Lua probe to capture per-vsync retail SsAPI state) are follow-up work; the harness shape matches the VRAM and mode-trace oracles for downstream reuse.</p>
 </section>
 
 <section class="doc-section" id="whats-left">

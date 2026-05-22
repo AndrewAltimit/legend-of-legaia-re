@@ -57,7 +57,10 @@ docker compose up -d ghidra</code></pre>
     -loader BinaryLoader \
     -loader-baseAddr 0x80010000 \
     -processor MIPS:LE:32:default</code></pre>
-  <p>&gt; <strong>Use <code>MIPS:LE:32:default</code>, not <code>MIPS:LE:32:R3000</code>.</strong> Ghidra rejects <code>R3000</code> as <code>Unsupported language</code>. The PSX R3000A is a strict subset of MIPS-I; the default little-endian profile handles it correctly.</p>
+  <aside class="notice warn">
+    <div class="notice-title">Use <code>MIPS:LE:32:default</code>, not <code>MIPS:LE:32:R3000</code></div>
+    Ghidra rejects <code>R3000</code> as <code>Unsupported language</code>. The PSX R3000A is a strict subset of MIPS-I; the default little-endian profile handles it correctly.
+  </aside>
   <p>After import, run analysis:</p>
 <pre><code>docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54</code></pre>
@@ -96,14 +99,35 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
   <p>If both return zero hits, the function has no static caller <em>in the program currently loaded into Ghidra</em> - that's NOT the same as "dead code in retail". Most game logic lives in RAM-loaded overlays at <code>0x801C0000+</code> that aren't part of <code>SCUS_942.54</code>. The negative result bounds where the caller can possibly live, but doesn't prove the function unreachable.</p>
   <h3>"Where does this constant address get used?"</h3>
   <p>If the address is referenced via <code>lui+addiu</code>, the reference manager will miss it. Use <code>find_lui_writers.py</code> with <code>LO</code>/<code>HI</code> narrowed to your target range.</p>
+  <h3>"Ghidra says nothing writes / reads this global, but I know something does"</h3>
+  <p>Common when the address is materialized by <code>lui+addiu</code> and then <em>passed</em> to a helper (so the actual <code>sw</code>/<code>lw</code> is in the helper, against <code>$a0</code>/<code>$a1</code>), OR when it's stored as a function-argument base that an <code>addu</code> reroutes (so the constant tracker bails and the final <code>sw</code> doesn't appear in the xref database).</p>
+  <p>Use <code>find_addr_materializers.py</code> to walk every instruction in a program, track per-register <code>lui</code> + <code>addiu</code> pairs, and report every site where the combined value lands on one of your target addresses - plus the next 6 instructions for use-classification (store base = writer, load base = reader, <code>jal</code>/<code>jalr</code> follows = address passed as argument).</p>
+<pre><code>docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 -noanalysis \
+    -postScript /scripts/find_addr_materializers.py \
+    0x8007C018 0x8007BB38 0x8007B7DC</code></pre>
+  <p>Arguments may be decimal or hex (<code>0x...</code> prefix). Multiple addresses are scanned in a single pass. Alternative: set <code>GHIDRA_FIND_ADDRS='0x8007c018,0x8007bb38'</code> and run without args.</p>
+  <p>The pattern this catches (the actual installer for <code>DAT_8007C018</code> at <code>FUN_80026B4C</code> - missed by the reference manager):</p>
+<pre><code>lui   v0, 0x8008
+lui   v1, 0x8008
+lw    v1, -0x488c(v1)     ; v1 = *DAT_8007B774 (index counter)
+addiu v0, v0, -0x3fe8     ; v0 = 0x8007C018   &lt;-- the materializer site
+sll   v1, v1, 0x2         ; v1 = idx * 4
+addu  v1, v1, v0          ; v1 = idx*4 + 0x8007C018
+sw    a0, 0(v1)           ; store to table    &lt;-- the missed writer</code></pre>
+  <p>The reference manager tracks <code>lui+addiu</code> pairs but bails when <code>addu</code> mixes the propagated constant with a value loaded from memory. So <code>sw a0, 0(v1)</code> is invisible to it - but the <code>addiu v0, v0, -0x3fe8</code> site IS visible to a manual scanner that knows the combination forms the target address. Once you see the materializer, the surrounding 6 instructions usually make the role obvious.</p>
   <h3>"What format does this PROT entry use?"</h3>
   <p>Empirical workflow:</p>
   <ol class="bullets">
     <li><code>xxd extracted/PROT/&lt;entry&gt;.BIN | head -5</code> - eyeball the header.</li>
-    <li>Try each known parser:</li>
-  </ol>
-  <p>- <code>asset stream &lt;file&gt;</code> - DATA_FIELD streaming. - <code>asset describe &lt;file&gt;</code> - descriptor format (when applicable). - <code>lzs-decode raw --size N &lt;file&gt;</code> - top-level LZS. - <code>asset categorize &lt;DIR&gt;</code> - runs every detector and emits a per-class breakdown.</p>
-  <ol class="bullets">
+    <li>Try each known parser:
+      <ul class="bullets">
+        <li><code>asset stream &lt;file&gt;</code> - DATA_FIELD streaming.</li>
+        <li><code>asset describe &lt;file&gt;</code> - descriptor format (when applicable).</li>
+        <li><code>lzs-decode raw --size N &lt;file&gt;</code> - top-level LZS.</li>
+        <li><code>asset categorize &lt;DIR&gt;</code> - runs every detector and emits a per-class breakdown.</li>
+      </ul>
+    </li>
     <li>If nothing matches, dig into the function that loads it (find by reversing the call site).</li>
   </ol>
 </section>
@@ -112,10 +136,11 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
   <h2>Adding a new function dump</h2>
   <ol class="bullets">
     <li>Edit <code>ghidra/scripts/dump_funcs.py</code>'s <code>TARGETS</code> list to add the entry-point address.</li>
-    <li>Run the dump:</li>
-  </ol>
-  <p>``<code>bash docker compose exec ghidra /ghidra/support/analyzeHeadless \ /projects legaia -process SCUS_942.54 -noanalysis \ -postScript /scripts/dump_funcs.py </code>``</p>
-  <ol class="bullets">
+    <li>Run the dump:
+<pre><code>docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process SCUS_942.54 -noanalysis \
+    -postScript /scripts/dump_funcs.py</code></pre>
+    </li>
     <li>Open <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> and analyze.</li>
     <li>Update <a href="../reference/functions.html"><code>reference/functions.md</code></a> if it's a notable entry point.</li>
   </ol>
@@ -154,7 +179,11 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
 <tbody>
 <tr>
 <td><code>find_lui_writers.py</code></td>
-<td>Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in <code>[LO, HI]</code>. Critical for finding references the ref manager misses.</td>
+<td>Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in <code>[LO, HI]</code>. Critical for finding references the ref manager misses. Edit <code>LO</code>/<code>HI</code> per run.</td>
+</tr>
+<tr>
+<td><code>find_addr_materializers.py</code></td>
+<td>Per-address LUI+ADDIU materializer finder. Reports every <code>addiu</code> whose combined value lands on one of the targets, plus the next 6 instructions for use-classification. Accepts addresses via <code>getScriptArgs()</code> or the <code>GHIDRA_FIND_ADDRS</code> env var - no source edit needed per invocation. See the LUI+ADDIU + ADDU+SW investigation pattern above.</td>
 </tr>
 <tr>
 <td><code>find_addr_data.py</code></td>
@@ -244,7 +273,7 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
 </tr>
 <tr>
 <td><code>find_xp_table_all_overlays.py</code></td>
-<td>Same scan, intended for <code>-process -recursive</code> over every imported program (SCUS + overlays).</td>
+<td>Same scan, intended for <code>-process -recursive</code> over every imported program (SCUS + overlays). Used to confirm no static reader for the XP table surfaces in the current overlay set.</td>
 </tr>
 <tr>
 <td><code>find_prot_consumers.py</code></td>
@@ -265,6 +294,22 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0</code></pre>
 <tr>
 <td><code>find_effect_bundle_consumers.py</code></td>
 <td>Effect-bundle init / spawn / walker (run on an imported battle overlay).</td>
+</tr>
+<tr>
+<td><code>dump_field_locomotion_cluster.py</code></td>
+<td>Re-decompile the 0897 field camera / region cluster (<code>801db81c</code> / <code>801dbec4</code> / <code>801f5748</code>) + raw-disassemble the surrounding window. Read-only; surfaces the data holes that corrupt the decompiles.</td>
+</tr>
+<tr>
+<td><code>fix_field_locomotion_flow.py</code></td>
+<td>DB-modifying repair for the same cluster: force-disassemble the <code>jal 0x8003ce9c</code> (non-returning operand reader) data holes, drop mid-block fake <code>FUN_</code> entries, re-create functions at real <code>addiu sp,sp,-N</code> prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole.</td>
+</tr>
+<tr>
+<td><code>dump_player_locomotion_integrator.py</code></td>
+<td>Dumps the player free-movement controller <code>FUN_801d01b0</code> + collision <code>FUN_801cfe4c</code> / <code>FUN_801cf9f4</code> + pad-remap <code>func_0x800467e8</code> / <code>FUN_80046494</code>, pinned by the <code>autorun_player_pos_watch.lua</code> write-watchpoint. <code>in_program</code> guards run it across SCUS + overlay_0897. See <a href="../subsystems/field-locomotion.html"><code>subsystems/field-locomotion.md</code></a>.</td>
+</tr>
+<tr>
+<td><code>dump_4c_jumptables.py</code></td>
+<td>Dumps the field-VM main dispatcher JT (<code>0x801E00F4</code>) + the <code>0x4C</code> outer-nibble JT (<code>0x801CEE60</code>, 16 entries) with each target's containing function. Use to pin a <code>0x4C</code> sub-opcode's exact nibble when the decompiler's reconstructed <code>case</code> numbering is ambiguous &mdash; e.g. confirmed the collision-grid paint is nibble-7 (<code>0x801e1c64</code>), not the decompile's misleading "case 5".</td>
 </tr>
 </tbody>
 </table>

@@ -477,6 +477,25 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         only_hits: bool,
     },
+    /// Cluster-aware extraction of the battle-effect `befect_data` cluster.
+    /// The per-entry PROT extractor over-reads here (the entries overlap on
+    /// disc), so this slices each entry at its true footprint, expands the
+    /// LZS-container entry into its sub-files, classifies every part
+    /// (`efect.dat` 2-pack / effect-model TMDs / effect-texture TIMs / packs),
+    /// and optionally writes the clean parts to `--out`.
+    BefectCluster {
+        /// Path to `PROT.DAT`.
+        prot: PathBuf,
+        /// Path to `CDNAME.TXT` (locates the `befect_data` cluster).
+        #[arg(long)]
+        cdname: PathBuf,
+        /// Write each classified part to this directory.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Emit a JSON manifest instead of a formatted table.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -625,6 +644,12 @@ fn main() -> Result<()> {
             counts,
             only_hits,
         } => validate_blocks(&dir, cdname.as_ref(), &counts, only_hits),
+        Cmd::BefectCluster {
+            prot,
+            cdname,
+            out,
+            json,
+        } => befect_cluster_cmd(&prot, &cdname, out.as_deref(), json),
         Cmd::Categorize {
             dir,
             out,
@@ -3593,4 +3618,92 @@ fn display_name_for(stem: &str, names: Option<&cdname::IndexMap>) -> String {
         }
     }
     stem.to_string()
+}
+
+/// `asset befect-cluster`: cluster-aware extraction of the `befect_data`
+/// battle-effect cluster (footprint-bounded entries, LZS-container expansion,
+/// per-part content classification).
+fn befect_cluster_cmd(
+    prot: &Path,
+    cdname_path: &Path,
+    out: Option<&Path>,
+    json: bool,
+) -> Result<()> {
+    use legaia_asset::befect_cluster::{self, Component};
+    use legaia_prot::archive::Archive;
+
+    let mut archive = Archive::open(prot)?;
+    let names = cdname::parse(cdname_path)?;
+    let cluster = befect_cluster::extract(&mut archive, &names)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&cluster)?);
+    } else {
+        println!(
+            "befect_data cluster: first PROT entry {}, {} parts",
+            cluster.first_index,
+            cluster.parts.len()
+        );
+        for p in &cluster.parts {
+            let src = match p.lzs_section {
+                Some(i) => format!("entry {} / lzs section {}", p.prot_index, i),
+                None => format!("entry {}", p.prot_index),
+            };
+            let desc = match &p.component {
+                Component::EffectScript2Pack {
+                    atlas_entries,
+                    anim_batches,
+                    scripts,
+                } => format!(
+                    "efect.dat 2-pack: {atlas_entries} atlas entries, {anim_batches} anim batches, {scripts} scripts"
+                ),
+                Component::TmdPack { count } => format!("TMD pack: {count} effect models"),
+                Component::TimImages { tims } => {
+                    let mut s = format!("{} effect-texture TIM(s):", tims.len());
+                    for t in tims {
+                        let clut = t
+                            .clut_fb
+                            .map(|(x, y)| format!(" clut@({x},{y})"))
+                            .unwrap_or_default();
+                        s.push_str(&format!(
+                            "\n        @0x{:x} {}bpp pix@fb({},{}) {}x{}hw{}",
+                            t.offset, t.bpp, t.fb_x, t.fb_y, t.w_hw, t.h, clut
+                        ));
+                    }
+                    s
+                }
+                Component::OffsetPack { count } => format!("offset pack: {count} entries"),
+                Component::Raw => "raw / unclassified".to_string(),
+            };
+            println!("  [{src}] {} bytes  {desc}", p.len);
+        }
+    }
+
+    if let Some(dir) = out {
+        std::fs::create_dir_all(dir)?;
+        for p in &cluster.parts {
+            let tag = match &p.component {
+                Component::EffectScript2Pack { .. } => "efect_2pack",
+                Component::TmdPack { .. } => "effect_tmds",
+                Component::TimImages { .. } => "effect_tims",
+                Component::OffsetPack { .. } => "offset_pack",
+                Component::Raw => "raw",
+            };
+            let name = match p.lzs_section {
+                Some(i) => format!("{:04}_s{}_{}.bin", p.prot_index, i, tag),
+                None => format!("{:04}_{}.bin", p.prot_index, tag),
+            };
+            std::fs::write(dir.join(&name), &p.data)?;
+        }
+        std::fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_string_pretty(&cluster)?,
+        )?;
+        println!(
+            "wrote {} parts + manifest.json to {}",
+            cluster.parts.len(),
+            dir.display()
+        );
+    }
+    Ok(())
 }

@@ -221,6 +221,83 @@ the relocated mesh to the actor. `play-window --live-loop` / `--player-battle`
 does this on each `Field → Battle` transition (against a throwaway clone of the
 field VRAM, restored on the way back) so the enemy is drawn, not a stand-in.
 
+### Monster AI (`FUN_801E9FD4` action picker + `FUN_801E7320` target resolver)
+
+Retail monster AI is two routines in the battle overlay:
+
+- **`FUN_801E9FD4` - action picker.** Called per monster from `FUN_801DABA4`
+  (`recompute_battle_order`). Its **generic decision core** counts the live
+  global magic ids in the monster record's `+0x21..=+0x23` array, rolls
+  `rand % (1 + live_count)`; a `0` selects a physical strike (target
+  `rand % party_count`), otherwise it picks magic id `magic[roll-1]`, gates on
+  affordability (`actor[+0x150] MP < spell_table[id*0xC + 3]` cost), and resolves
+  the target by the spell's shape byte `spell_table[id*0xC + 2] & 0x60`
+  (`0x40` = one enemy → random party member; `0x60` = all enemies → class `8`;
+  `0x20` = all allies → class `9`; `0x00` = one ally → most-weakened-ally HP
+  scan). After the core, a large `switch` on `DAT_8007BD0C[slot]` can
+  **override** the choice with bespoke scripted casts (hard-coded ids
+  `0x50/0x51/0x52/0x53/0x6f/0x40`, cooldowns in `DAT_801C8FE0`).
+  `DAT_8007BD0C[slot]` is the **per-slot monster id** - `FUN_801DA51C` fills it
+  from the encounter record's `[+4 + slot]` ids (the `[3 reserved][count][ids]`
+  format) - so each `switch` case is bespoke AI for a specific monster id, not
+  an abstract AI-type.
+- **`FUN_801E7320` - target resolver.** Called from the action SM
+  (`FUN_801E295C`) at `ActionSeed` as the `monster_setup` hook, but only for
+  monster actors with `actor[+0x16e] & 0x380 != 0`. It reads the targeting class
+  the picker left in `actor[+0x1DD]` and expands it: class `0..2` → a living
+  monster slot (`rand % monster_count + party_count`); class `3..6` → a living
+  party slot (`rand % party_count`); class `8`/other → a `rand % 3` gate
+  selecting all-target codes `8`/`9` or self. ctx fields: `ctx[+0]` = party
+  count, `ctx[+1]` = monster count, `ctx[+0x13]` = active slot. Dumps:
+  `ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`,
+  `overlay_battle_action_801e7320.txt`.
+
+The clean-room engine ports it across `engine-core`:
+
+- `World::pick_monster_action` is the action picker's **generic core** (real
+  RNG, real `magic_attacks`, spell-shape targeting through the catalog's
+  `SpellTarget`).
+- `monster_ai::decide` is the **per-monster-id `switch`** - keyed by monster id,
+  it overrides the generic choice with the bespoke scripted casts (low-HP
+  self-heal, MP-gated nukes, multi-phase boss scripts), reading/writing the
+  battle-scoped `MonsterAiState` (per-monster cooldowns `DAT_801C8FE0`, the
+  `DAT_801C8FE4` phase counter, the recent-target ring).
+- `monster_ai::apply_recent_target_ring` is the post-switch anti-repeat ring.
+- `World::resolve_monster_target` is the exact `FUN_801E7320` port, wired as the
+  `monster_setup` hook.
+- `World::advance_battle_mode` is the `ctx+0x28a` writer - the battle-action SM's
+  `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), the boss phase-transition
+  pseudo-action. Advancing the mode walks a multi-phase boss to its next
+  scripted cast on the following turn (`World::battle_mode` reads the counter).
+
+The picker drives the live loop's monster turns, folding a chosen cast through
+`cast_spell_on_slots` (the shared player/monster cast path) and parking the SM at
+`EndOfAction`. Scripted casts emit retail spell ids; they fold when the active
+catalog knows the id (the disc spell table, or the clean-room monster block in
+`SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
+
+**The two AI gates.** The `ctx+0x28a` battle-mode counter and the `actor+0x16e &
+0x380` flag are distinct, and only the first is a monster behaviour the AI flips:
+
+- **`ctx+0x28a` (battle mode)** gates the multi-phase boss cases. Its writer is
+  the SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`), a scripted phase-transition
+  action a boss issues at an HP/script boundary - **ported as
+  `World::advance_battle_mode`**, so those cases activate once a boss script
+  drives a transition (proven by the `0xB6` phase-walk test). `0` until then.
+- **`actor+0x16e & 0x380`** is **not** a monster flag. `FUN_80047430` sets it
+  only on **party** slots (`slot < 3`) whose status word `+0x00` has bit `0x2000`
+  (Confuse/Charm), delegating that party member to the AI target resolver
+  `FUN_801E7320`; the resolver runs only when it is set. A normal monster keeps
+  `0x380` **clear**, so its `!ai380` scripted-cast cases fire and `monster_setup`
+  stays dormant - exactly what the engine does (monster actors carry
+  `field_flags == 0`). The set-`0x380` path (AI-driven party members) is a
+  separate status-effect feature, not a flag the monster AI sets.
+
+**Remaining gaps** (documented in `monster_ai`): a few cases touch actor fields
+the engine doesn't model yet - monster `0x8A`'s `actor+0x170` charge counter, the
+`'O'` (`0x4F`) boss that rewrites another actor slot, and the capture-archive
+preload for spell ids `0x2E/0x2F`.
+
 ## Stat aggregator (`FUN_80042558`)
 
 Per-frame helper that walks the 3 active party members (stride `0x414` - see [character record layout](#character-record-layout)) and:

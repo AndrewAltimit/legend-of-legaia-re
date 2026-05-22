@@ -27,7 +27,7 @@
 <td>Title screen</td>
 <td>✓</td>
 <td><code>overlay_title.bin</code></td>
-<td>Actor / sprite VM (<code>FUN_801D6628</code>); title-overlay tick <code>FUN_801DD35C</code> (pinned via watchpoint on the title-attract countdown at <code>0x801EF16C</code> &mdash; decrement instruction at <code>0x801DDCCC</code>, see <a href="../subsystems/boot.html#title-overlay-state">boot &mdash; tick function</a>). Captured live via <code>autorun_countdown_trigger.lua</code> against a save state at the title screen; sidecar <code>.screen</code> blob is a PNG-decodable framebuffer of the live title (<code>scripts/decode_pcsx_screen.py</code>).</td>
+<td>Actor / sprite VM (<code>FUN_801D6628</code>); title-overlay tick <code>FUN_801DD35C</code> (pinned via watchpoint on the title-attract countdown at <code>0x801EF16C</code> &mdash; decrement instruction at <code>0x801DDCCC</code>, see <a href="../subsystems/boot.html#tick-function">boot &mdash; tick function</a>). Captured live via <code>scripts/pcsx-redux/autorun_countdown_trigger.lua</code> against a save state at the title screen; sidecar <code>.screen</code> blob is a PNG-decodable framebuffer of the live title (<code>scripts/pcsx-redux/decode_pcsx_screen.py</code>).</td>
 </tr>
 <tr>
 <td>Town / field / dialog / inventory (<code>0897</code>)</td>
@@ -137,7 +137,9 @@
     <li><code>File → Show Lua Console</code>.</li>
     <li>Run <code>ghidra/scripts/dump_overlay.lua</code> from the Lua console - it writes <code>0x801C0000-0x801EFFFF</code> to <code>/tmp/legaia_overlay_&lt;TIMESTAMP&gt;.bin</code>.</li>
   </ol>
-  <p>&gt; The 192 KB window in <code>dump_overlay.lua</code> is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at <code>0x801F7644..0x801F8690</code> (consumed by <code>FUN_80043390</code>'s overlay-mode dispatch table at <code>0x801F8968</code>). Use <code>extract-mednafen-overlay.py</code> (default window is now <code>0x801C0000-0x801F9000</code>, 228 KB) &mdash; or pass <code>--end 0x80200000</code> for the full 256 KB.</p>
+  <aside class="notice">
+    The 192 KB window in <code>dump_overlay.lua</code> is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at <code>0x801F7644..0x801F8690</code> (consumed by <code>FUN_80043390</code>'s overlay-mode dispatch table at <code>0x801F8968</code>). Use <code>extract-mednafen-overlay.py</code> (default window is now <code>0x801C0000-0x801F9000</code>, 228 KB) &mdash; or pass <code>--end 0x80200000</code> for the full 256 KB.
+  </aside>
   <p>Then load the dump into Ghidra:</p>
 <pre><code>docker compose cp /tmp/legaia_overlay_&lt;TIMESTAMP&gt;.bin ghidra:/data/overlay.bin
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
@@ -150,6 +152,47 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin</code></pre>
+</section>
+
+<section class="doc-section" id="overlay-buffer-mixed-content">
+  <h2>Caveat: overlay-buffer captures are mixed content</h2>
+  <p>A captured 256 KiB slice of an overlay buffer at <code>0x801C0000</code> is <strong>not equivalent to a single overlay file on disc</strong>. The buffer holds interleaved data from multiple sources at any given moment:</p>
+  <ul class="bullets">
+    <li>Old overlay code/data from a previous mode (only partially overwritten).</li>
+    <li>Streaming buffers that share address space (e.g. SEQ data from the BGM streamer).</li>
+    <li>Multi-pak loads where different ranges of the buffer come from different PROT entries.</li>
+    <li>Runtime-initialised BSS/state that has no on-disc counterpart.</li>
+  </ul>
+  <p>Concrete example: at title-screen showing, <code>captures/boot_walk/overlay_title.bin</code> contains PROT 1053 (<code>music_01</code>) SEQ data at <code>0x00000..~0x03000</code>, PROT 0899 options-menu data at <code>0x0E818..0x15818</code>, PROT 0897 trailing shared menu helpers at <code>0x0EFE8..0x10818</code>, and the title-overlay code proper at <code>0x0F000..0x25000</code>. Byte-searching for a fingerprint from one region will only find the corresponding source PROT entry, not a single "title overlay" file. To pin a region's source: identify the region boundaries first (look for transitions in content type), pick a fingerprint UNIQUE to that region, then sweep PROT.</p>
+</section>
+
+<section class="doc-section" id="extracting-tims-from-ram">
+  <h2>Extracting TIMs from a RAM snapshot</h2>
+  <p>A captured RAM dump often contains transient TIMs that the game staged in main RAM before uploading to VRAM. These can be identified, decoded, and <strong>traced back to their source PROT entry</strong> even when the source is uncompressed - the on-disc CLUT + pixel data is byte-identical to the staged copy; only the RECT fields (VRAM target coords) get rewritten at runtime.</p>
+  <h3>Methodology</h3>
+  <ol class="bullets">
+    <li>Sweep the RAM dump for byte sequence <code>10 00 00 00</code> followed by valid PSX TIM flags:
+<pre><code>import struct
+for off in range(0, len(data) - 32, 4):
+    if struct.unpack_from('&lt;I', data, off)[0] != 0x10:
+        continue
+    flags = struct.unpack_from('&lt;I', data, off+4)[0]
+    mode = flags &amp; 7
+    if mode &gt; 3: continue
+    # validate CLUT block size + RECT, then pixel block size + RECT
+    # (within sane bounds: w/h &lt;= 1024 / 512, sizes in plausible ranges)</code></pre>
+    </li>
+    <li>Extract each hit as a <code>.tim</code> file and decode with <code>legaia-tim convert</code> to PNG to identify visually.</li>
+    <li>Build a 16-byte fingerprint from the first CLUT row at offset <code>0x14</code> inside the TIM file (skip the RECT bytes at <code>0x0C..0x14</code> because those get runtime-relocated).</li>
+    <li>Grep the PROT corpus (<code>extracted/PROT/*.BIN</code>) for that fingerprint. Each hit identifies the source entry; byte-compare CLUT + pixel data to confirm.</li>
+  </ol>
+  <h3>Worked example</h3>
+  <ul class="bullets">
+    <li>The captured <code>captures/boot_walk/snap_vsync_0300.bin</code> (full 2 MiB main RAM, taken during the publisher-logo phase) contains four TIMs at <code>0x801D09DC</code>, <code>0x801DBBFC</code>, <code>0x801E761C</code>, <code>0x801EB65C</code>.</li>
+    <li>Visual decode: PROKION, Contrail "A Contrail Production", "Sony Computer Entertainment America Presents", and the WARNING screen.</li>
+    <li>All four CLUT fingerprints match <code>0895_bat_back_dat.BIN</code> at well-separated offsets - PROT 0895 is the boot <code>init.pak</code> bundle (CDNAME label <code>bat_back_dat</code> is misleading). Documented in <a href="../subsystems/boot.html#boot-initpak-prot-0895">boot &mdash; boot init.pak</a>.</li>
+  </ul>
+  <p>The same method should work for any other transient TIM (battle backgrounds, menu chrome, world-map terrain textures) provided the source PROT entry stores the TIM uncompressed. LZS-compressed sources won't match by direct byte search - either decompress them first or use a different signature (e.g. the rendered pixel histogram or framebuffer-area VRAM coords).</p>
 </section>
 
 <section class="doc-section" id="one-command-capture">
@@ -173,7 +216,9 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
 
 <section class="doc-section" id="mednafen-pipeline-asset-loader-csv">
   <h2>Mednafen pipeline with asset-loader CSV</h2>
-  <p>&gt; For the broader save-state automation toolkit - diffing two saves to &gt; see what was written between them, bisecting a sequence of saves to &gt; find a transition, and the declarative scenario manifest that names &gt; each <code>mc{0..9}</code> slot - see &gt; <a href="mednafen-automation.html"><code>mednafen-automation.md</code></a>.</p>
+  <aside class="notice">
+    For the broader save-state automation toolkit - diffing two saves to see what was written between them, bisecting a sequence of saves to find a transition, and the declarative scenario manifest that names each <code>mc{0..9}</code> slot - see <a href="mednafen-automation.html"><code>mednafen-automation.md</code></a>.
+  </aside>
   <p>The <code>scripts/analyze-overlay.sh</code> helper is the older flow. Use it when you specifically need the asset-loader CSV (which PROT entries the runtime loader requested for that scene); for plain "capture overlay + stub dump" use the auto-name helper above.</p>
 <pre><code>scripts/analyze-overlay.sh \
     "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0" \
@@ -279,52 +324,31 @@ scripts/import-overlay-named.sh /tmp/legaia_overlay_fishing.bin fishing</code></
   <ol class="bullets">
     <li>Load a save where you can talk to an NPC (any town).</li>
     <li>Initiate dialog (Cross on an NPC).</li>
-    <li><strong>As soon as the dialog box appears</strong>, save state. (The overlay unloads</li>
-  </ol>
-  <p>when the box closes; capturing mid-conversation is essential.)</p>
-  <ol class="bullets">
+    <li><strong>As soon as the dialog box appears</strong>, save state. (The overlay unloads when the box closes; capturing mid-conversation is essential.)</li>
     <li>Run <code>scripts/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0" --label dialog</code>.</li>
-    <li>Run <code>scripts/import-overlay-named.sh dialog</code> so the overlay imports as</li>
+    <li>Run <code>scripts/import-overlay-named.sh dialog</code> so the overlay imports as a named program (preserved across re-imports of other overlays).</li>
   </ol>
-  <p>a named program (preserved across re-imports of other overlays).</p>
   <p>What to look for after import:</p>
   <ul class="bullets">
     <li>Strings near the overlay base - Japanese / English glyph table headers.</li>
-    <li>Functions that take a <code>MES container ptr + msg_id + (x, y)</code> shape - likely</li>
+    <li>Functions that take a <code>MES container ptr + msg_id + (x, y)</code> shape - likely the dialog opener <code>FUN_8001FD44</code>'s overlay callee.</li>
+    <li><code>LoadImage</code>-shaped writes to VRAM via <code>_DAT_8007AF40</code>-region SPU/GPU regs - that's the per-page glyph upload.</li>
   </ul>
-  <p>the dialog opener <code>FUN_8001FD44</code>'s overlay callee.</p>
-  <ul class="bullets">
-    <li><code>LoadImage</code>-shaped writes to VRAM via <code>_DAT_8007AF40</code>-region SPU/GPU regs</li>
-  </ul>
-  <p>- that's the per-page glyph upload.</p>
   <p>This unblocks the dialog-rendering side of the engine. Once captured, the crate <code>legaia-mes</code> already has the bytecode walker; the renderer-side quads can land in <code>crates/engine-render</code> against the extracted font atlas.</p>
   <h3>Cutscene</h3>
-  <p>Cutscenes use XA-streamed audio + a per-cutscene mode driver in an overlay distinct from town/battle. The XA demuxer is in <code>crates/xa</code>; the game-mode driver landed in PR #9. The missing piece is the cutscene overlay's outer state machine that picks XA tracks + scene transitions.</p>
+  <p>Cutscenes use XA-streamed audio + a per-cutscene mode driver in an overlay distinct from town/battle. The XA demuxer is in <code>crates/xa</code>; the game-mode driver is the STR mode-26/27 dispatcher described in <a href="../subsystems/cutscene.html"><code>cutscene.md</code></a>. The missing piece is the cutscene overlay's outer state machine that picks XA tracks + scene transitions.</p>
   <ol class="bullets">
-    <li>Load a save just before a known cutscene trigger (post-boss,</li>
-  </ol>
-  <p>chapter-end, etc.).</p>
-  <ol class="bullets">
-    <li><strong>Once the cutscene starts playing</strong> (XA audio audible, fullscreen</li>
-  </ol>
-  <p>playback), save state. The first 1-2 seconds work - the overlay is resident as long as the cutscene is active.</p>
-  <ol class="bullets">
+    <li>Load a save just before a known cutscene trigger (post-boss, chapter-end, etc.).</li>
+    <li><strong>Once the cutscene starts playing</strong> (XA audio audible, fullscreen playback), save state. The first 1-2 seconds work - the overlay is resident as long as the cutscene is active.</li>
     <li>Run <code>scripts/analyze-overlay.sh "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0" --label cutscene</code>.</li>
     <li>Run <code>scripts/import-overlay-named.sh cutscene</code>.</li>
   </ol>
   <p>What to look for after import:</p>
   <ul class="bullets">
-    <li><code>jal</code> to <code>_DAT_8007AF40</code>-region SPU regs at the XA-DMA destination</li>
+    <li><code>jal</code> to <code>_DAT_8007AF40</code>-region SPU regs at the XA-DMA destination (mirror of the SPU port in <code>engine-audio</code>).</li>
+    <li>A 28-mode-style table indexed by cutscene ID - the cutscene equivalent of the global game-mode table at <code>0x8007078C</code>.</li>
+    <li>Strings with cutscene-specific filenames (<code>opening.xa</code>, <code>ending.xa</code>, per-chapter labels).</li>
   </ul>
-  <p>(mirror of the SPU port in <code>engine-audio</code>).</p>
-  <ul class="bullets">
-    <li>A 28-mode-style table indexed by cutscene ID - the cutscene equivalent</li>
-  </ul>
-  <p>of the global game-mode table at <code>0x8007078C</code>.</p>
-  <ul class="bullets">
-    <li>Strings with cutscene-specific filenames (<code>opening.xa</code>, <code>ending.xa</code>,</li>
-  </ul>
-  <p>per-chapter labels).</p>
   <p>Once captured, the engine-side cutscene driver in <code>engine-core</code> can upgrade from "stub" to "drives the XA stream against the captured mode table."</p>
 </section>
 

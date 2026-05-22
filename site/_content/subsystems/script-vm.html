@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field / event script VM</div>
   <h1>Field / event script VM</h1>
-  <p class="lede">The bytecode interpreter behind Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in the town/field overlay at <code>FUN_801DE840</code>. The largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls. <span class="status-done">All 43 opcodes ported.</span></p>
+  <p class="lede">The bytecode interpreter behind Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in PROT entry <code>0897_xxx_dat</code> (the town/field overlay) at <code>FUN_801DE840</code>. The largest function in the corpus: ~17.5&nbsp;KB / 4099 instructions / 357 outgoing calls. <span class="status-done">All 43 opcodes ported.</span></p>
 </header>
 
 <section class="doc-section" id="how-it-works">
@@ -14,7 +14,23 @@
 
   <p>Three of Legaia's flag-storage banks are exposed by clean opcode triplets: per-script local flags, global story flags (in PSX scratchpad), and ctx flag word. A fourth flag bank is hidden in the dispatcher's "default route" - opcodes whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code> get dispatched to set / clear / test handlers operating on a 256-bit bitfield, almost certainly an "engine system flags" bank.</p>
 
+  <p>The decompiled source is at <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>. References below to <code>func_0x80xxxxxx</code> are calls into <code>SCUS_942.54</code>; <code>FUN_801xxxxx</code> are sister functions inside the same 0897 overlay.</p>
+
   <p>For the full opcode reference, the source markdown has the complete tables. This page summarises the structure; jump to <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> for the definitive listing.</p>
+</section>
+
+<section class="doc-section" id="on-disc-form">
+  <h2>On-disc form: <code>scene_event_scripts</code></h2>
+  <p>The on-disc carrier for field-VM bytecode is the <code>scene_event_scripts</code> / <code>scene_scripted_asset_table</code> PROT-entry shape (see <a href="../formats/index.html">scene-bundles</a>). Both share a <code>[u16 count][u16 offsets[count]]</code> prescript at offset 0; each offset points to one record's bytecode, and most records open with the four-byte <code>0xFFFF 0x0000</code> frame-divider sentinel.</p>
+  <p>99 of 124 CDNAME scenes carry an event-script entry (~80% of the disc's scenes); per-scene record counts run from 1 to 71+ records.</p>
+  <p>The Rust API for walking these records lives in <code>legaia-asset</code>:</p>
+  <pre><code>use legaia_asset::scene_event_scripts;
+let ranges = scene_event_scripts::record_ranges(buf)?;
+for (start, end) in ranges {
+    let record_bytes = &amp;buf[start..end];
+    // record_bytes opens with the frame divider 0xFFFF 0x0000 in most cases
+}</code></pre>
+  <p><code>Scene::find_event_scripts()</code> resolves the correct entry within a loaded <code>Scene</code> and exposes per-record byte ranges; <code>World::load_field_record()</code> skips the leading frame-divider sentinel and resets the VM cursor. The <code>asset-viewer field &lt;scene&gt;</code> subcommand drives this end-to-end - it loads a scene, finds the event-script entry, ticks the VM frame-by-frame against record N (default 0), and surfaces the running step-result tally in the HUD so missing <code>FieldHost</code> hooks are visible at a glance.</p>
 </section>
 
 <section class="doc-section" id="signature">
@@ -162,14 +178,16 @@ switch (*pc & 0x7f) {
       <tr><td><code>0x7x</code></td><td><code>func_0x8003CE64</code></td><td>TEST bit (returns <code>0xFF</code> if set)</td></tr>
     </tbody>
   </table>
-  <p>All three operate on the <strong>same 256-bit bitfield array</strong> at <code>DAT_80086D70</code>. Each does <code>index &gt;&gt; 3</code> to pick the byte and <code>0x80 &gt;&gt; (index &amp; 7)</code> to pick the bit.</p>
+  <p>All three operate on the <strong>same bitfield array based at <code>0x80085758</code></strong>. Each does <code>index &gt;&gt; 3</code> to pick the byte and <code>0x80 &gt;&gt; (index &amp; 7)</code> to pick the bit.</p>
   <pre><code>// 0x8003CE08 (SET):
 (&amp;DAT_80085758)[(int)idx &gt;&gt; 3] |= (byte)(0x80 &gt;&gt; (idx &amp; 7));
 // 0x8003CE34 (CLEAR):
 (&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp;= ~(byte)(0x80 &gt;&gt; (idx &amp; 7));
 // 0x8003CE64 (TEST):
 return ((&amp;DAT_80085758)[(int)idx &gt;&gt; 3] &amp; (0x80 &gt;&gt; (idx &amp; 7))) ? 0xFF : 0;</code></pre>
-  <p>This is a fourth flag bank, distinct from the three exposed by the explicit <code>0x2B</code>&ndash;<code>0x33</code> opcodes - likely "system" / engine-wide event flags. Effective opcode space therefore includes the explicit <code>0x21</code>&ndash;<code>0x4F</code> range <em>and</em> any byte whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code>.</p>
+  <p>The low 4 bits of the opcode plus the next operand byte form an 8-bit flag index, but with the &ldquo;extended&rdquo; prefix bit (<code>0x80</code>) preserved into the high bits the addressable space is 12-bit, suggesting per-script-context banks within the same array. The TEST dispatcher consumes two extra operand bytes (<code>pc[2..4]</code>) as the post-test action target when the bit is set.</p>
+  <p class="hint">An earlier draft mislabelled the base as <code>DAT_80086D70</code> by double-counting the <code>0x1618</code> displacement onto <code>0x80085758</code>. The Ghidra symbol <code>DAT_80085758</code> is itself <code>0x80084140 + 0x1618</code>, and the array is indexed directly from there - no further <code>+0x1618</code>.</p>
+  <p>This is a fourth flag bank, distinct from the three exposed by the explicit <code>0x2B</code>&ndash;<code>0x33</code> opcodes - likely "system" / engine-wide event flags. It is <strong>not</strong> a wholly separate region: base <code>0x80085758</code> falls inside the story-flag RAM window <code>0x80085600..0x80085800</code> (at <code>+0x158</code>) and the bank extends past <code>0x80085800</code> (indices up to ~<code>0xFFF</code> reach <code>0x80085758 + 0x1FF</code>). In a retail SC save block the bank lives at SC offset <code>0x1618</code>, overlapping the story-flag bitmap (SC <code>0x14C0</code>, 512 bytes) and continuing to the inventory array (SC <code>0x1818</code>); seeding <code>World::system_flags</code> from <code>sc_block[0x1618..0x1818]</code> reproduces the live bank as of the save. Note this bank is <strong>not</strong> sufficient on its own to drive a scene's collision: the <code>0x4C</code> nibble-7 wall paints reached through it are story-conditional collision <em>deltas</em>, not the base walkable grid (see <a href="field-locomotion.html">field locomotion</a>). Effective opcode space therefore includes the explicit <code>0x21</code>&ndash;<code>0x4F</code> range <em>and</em> any byte whose high nibble is <code>0x5</code>, <code>0x6</code>, or <code>0x7</code> (potentially 192 more "wide" opcodes routed to three SCUS dispatchers).</p>
 </section>
 
 <section class="doc-section" id="bgm-table">
@@ -185,7 +203,35 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
     <li><code>bgm_id &lt; 2000</code> - scene-local. Different scenes have different BGM at the same script ID.</li>
     <li><code>bgm_id &ge; 2000</code> - global. Shared across scenes (cutscene / title / event music).</li>
   </ul>
-  <p>The "table" <em>is</em> the <a href="../formats/index.html">CDNAME.TXT name map</a>'s per-scene block layout.</p>
+  <p>The "table" <em>is</em> the <a href="../formats/index.html">CDNAME.TXT name map</a>'s per-scene block layout. There's no separate BGM index in <code>SCUS_942.54</code>.</p>
+</section>
+
+<section class="doc-section" id="helpers">
+  <h2>Helper functions</h2>
+  <p>A growing set of small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they get clean-room ports in <code>crates/engine-vm/src/field_helpers.rs</code> rather than host hooks, and the dispatcher arms call into them directly.</p>
+  <table>
+    <thead><tr><th>Helper</th><th>Original</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td><code>packet_length</code></td><td><code>FUN_8003CA38</code></td><td><code>0x4C nE sub-1</code>, <code>0x49</code></td></tr>
+      <tr><td><code>party_flag_test</code></td><td><code>FUN_8003CE64</code></td><td><code>0x4C nC sub-1</code> (host-side)</td></tr>
+      <tr><td><code>small_table_search</code></td><td><code>FUN_80042EE0</code></td><td><code>0x4C nD sub-C/E</code></td></tr>
+      <tr><td><code>load_u16_le</code> / <code>load_u24_le</code> / <code>load_u32_le</code></td><td><code>FUN_8003CE9C</code> / <code>CEB8</code> / <code>CED8</code></td><td>LE immediate decoding across many <code>0x4C</code> sub-ops</td></tr>
+      <tr><td><code>tile_center</code></td><td>inline (multi-arm)</td><td><code>0x4C nE sub-3/4</code>, MOVE_TO, dialog spawn</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong><code>packet_length(buf)</code></strong> measures one variable-length packet of the in-game text encoding: walks until any byte <code>&le; 0x1E</code> (terminator), counts bytes <code>&ge; 0x1F</code> as 1 each, and bytes whose top nibble is <code>0xC</code> consume the next byte unconditionally (escape, counts as 2). The terminator is not included.</li>
+    <li><strong><code>party_flag_test(idx, flags)</code></strong> reads bit <code>idx</code> of a packed bit array, MSB-first per byte; returns <code>0xFF</code> when set, <code>0</code> otherwise. Exposed to <code>0x4C nC sub-5/6</code> via the <code>op4c_n_c_party_flag_test</code> host hook.</li>
+    <li><strong><code>small_table_search(needle, table, lo, hi)</code></strong> searches <code>table[i*2]</code> (stride 2, low byte of each short) for <code>needle</code> across <code>[lo, hi)</code>; returns the index or <code>SEARCH_NOT_FOUND</code> (<code>0x100</code>) on miss.</li>
+    <li><strong>The LE byte-load family</strong> assembles results from sequential bytes and returns 0 for missing bytes; the 24-bit version pairs with <code>sign_extend_24</code> for the few opcodes (notably <code>0x4C nE sub-5</code>'s XP-add) needing a signed 24-bit immediate.</li>
+    <li><strong><code>tile_center(b)</code></strong> is the grid-byte &rarr; world-coord conversion: <code>b == 0</code> returns 0; otherwise <code>(b &amp; 0x7F) &lt;&lt; 7 | 0x40</code>, plus <code>0x40</code> if the high bit is set. The original inlines this in nine separate dispatcher arms.</li>
+  </ul>
+  <p>The Rust ports are exhaustively tested alongside the helpers in <code>field_helpers.rs</code>.</p>
+</section>
+
+<section class="doc-section" id="vram-stp">
+  <h2>0x4C nibble-D sub-4 / sub-5 &mdash; VRAM STP-bit set/clear</h2>
+  <p>The 6-byte <code>[4C, 0xD4|0xD5, x_lo, x_hi, y_lo, y_hi]</code> operand is a <code>(vram_x, vram_y)</code> pair; the rect is hard-coded to <code>w = 0x10, h = 1</code>. The original runs the PsyQ libgs <code>StoreImage</code> &rarr; per-pixel STP-bit edit &rarr; <code>LoadImage</code> read-modify-write over 16 u16 pixels: sub-4 (op <code>0xD4</code>) sets STP on non-zero pixels, sub-5 (op <code>0xD5</code>) clears STP unless the pixel is already STP-only. The 16-element buffer lives on the dispatcher stack, <em>not</em> in the bytecode - it's pixels read from VRAM at runtime. The host hooks <code>op4c_n_d_sub_4_vram_stp_set(x, y)</code> / <code>op4c_n_d_sub_5_vram_stp_clear(x, y)</code> receive only the rect origin; a clean-room renderer that maintains its own framebuffer can emulate the read-modify-write itself.</p>
 </section>
 
 <section class="doc-section" id="cross-refs">
@@ -205,6 +251,8 @@ _DAT_8007BAB8 = _DAT_8007BAC8 + _DAT_8007BAB8;     // final PROT index</code></p
     <li><strong><code>switchD_801e00f4::default()</code> is misleading.</strong> Ghidra renders the function-epilogue tail block as a synthetic function call; in the original asm, opcodes that "fall through to default" actually advance <code>param_2</code> via the <code>addiu s8, s8, N</code> instruction in the MIPS branch-delay slot of the <code>j 0x801df09c</code> jump. So <code>0x39</code>, <code>0x3B</code>, <code>0x44</code>, <code>0x4C</code> and friends DO advance the PC - just not in a way the C-level decompile makes obvious.</li>
     <li><strong><code>LAB_801df09c</code></strong> is just <code>j 0x801e3628; move v0, s8</code> - return <code>s8</code> unchanged. Most callsites jump there with an <code>addiu s8, s8, N</code> in the delay slot of the j, supplying the per-callsite PC delta.</li>
     <li><strong>0x42 mode 0 jump-take target</strong> is <code>pc + 3 + LE_u16(operand[2..4])</code> (non-extended), found via the join point <code>LAB_801e35fc</code>.</li>
+    <li><strong>Relative-jump deltas wrap at 16 bits.</strong> Each script's PC is stored as a signed 16-bit value (<code>*(short*)(ctx + 0x9e)</code>), so every relative branch (<code>0x26</code> JMP_REL, the <code>0x7x</code> flag-TEST conditional jump, <code>0x42</code> COND_JMP, the <code>0x4E</code> compare jumps) computes <code>(base + delta) mod 0x10000</code>. A delta with the high bit set is a <em>backward</em> jump - e.g. <code>0xFFFE</code> = -2, the per-frame "park here" wait-loop idiom (<code>[21] [26 FE FF]</code> ping-pongs two bytes until a story flag flips a guarded TEST). Computing <code>base + delta</code> in a wider int without the 16-bit truncation turns every backward jump into a <code>+0xFFxx</code> forward overrun. The clean-room port models this with a <code>rel_jump(base, lo, hi)</code> helper that wraps in <code>u16</code>.</li>
+    <li><strong>Intra-function label catalogue.</strong> Several <code>iVar = FUN_801xxxxx(); return iVar;</code> patterns in the C decompile look like helper calls but are intra-function <code>j</code> targets Ghidra promoted to fake function names - each is a <code>addiu s8, s8, N; j epilogue</code> block supplying a PC delta. Notable entries: <code>0x801df098</code> (PC += 2), <code>0x801df09c</code> (PC unchanged, the epilogue), <code>0x801df8dc</code> (PC += 6), <code>0x801e00b8</code> (PC += 3), <code>0x801e212c</code> (PC += 7), <code>0x801e3614</code> (BBOX outside-box, <code>pc + 5 + skip</code>), <code>0x801e3620</code> (PC += 4). Always cross-check <code>grep -n "0x&lt;addr&gt;" overlay_0897_801de840.txt</code> before treating a <code>FUN_xxxxxxxx</code> reference as a separate function - the misleadingly-named dump file <code>overlay_0897_801e3620.txt</code> actually has entry <code>0x801e3578</code>.</li>
   </ul>
   <p>For the exhaustive opcode reference and the full <code>0x4C</code> outer-nibble dispatcher table, see <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md" target="_blank" rel="noopener">docs/subsystems/script-vm.md</a> on GitHub.</p>
 </section>
@@ -221,7 +269,8 @@ cargo run -p legaia-engine-vm --bin field-disasm -- scene-event-scripts &lt;PATH
 
 # Walk every PROT.DAT entry and report 0x4C 0xE2 byte-pattern hits with
 # their CDNAME label and decoded fmv_id (filtered to the retail valid
-# range 0..=5 unless --no-filter is passed):
+# range 0..=8 unless --no-filter is passed; the runtime FMV-state table
+# at 0x801D0A6C carries 12 slots - slots 5..=11 point at cut paths):
 cargo run -p legaia-engine-vm --bin field-disasm -- scan-prot \
     --disc &lt;PROT.DAT&gt; --cdname &lt;CDNAME.TXT&gt; --bytewise</code></pre>
   <p>The library exposes <code>legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}</code> for downstream tooling. The <code>InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }</code> variant carries the operand of the <code>0x4C 0xE2</code> op for callers who want to grep for cutscene triggers across the corpus.</p>

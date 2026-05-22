@@ -558,6 +558,56 @@ Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
   <p>Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/src/super_art.rs"><code>crates/art/src/super_art.rs</code></a>.</p>
 </section>
 
+<section class="doc-section" id="arts-name-table">
+  <h2>Arts-name table (<code>DAT_80075EC4</code>)</h2>
+  <p>The display names + AP costs of every Tactical Art live in a static table in <code>SCUS_942.54</code> at <code>DAT_80075EC4</code>. It's the table the MES interpreter's <code>0xC5</code> substitution code reads (see <a href="mes.html#bytecode-encoding">MES bytecode encoding</a>) - the <code>0xC5</code> operand <code>XX</code> keys it as <code>(character = XX&gt;&gt;6, art index = XX&amp;0x3F)</code>.</p>
+  <p>The expander (<code>FUN_80036514</code>) scans 20-byte (<code>0x14</code>) records sorted by character, matching <code>(record[+0], record[+1])</code> against the key, and returns the <code>+0xC</code> name pointer (<code>(&amp;PTR_DAT_80075ED0)[match_index * 5]</code>).</p>
+<table>
+<thead><tr>
+<th>Offset</th>
+<th>Type</th>
+<th>Field</th>
+</tr></thead>
+<tbody>
+<tr><td><code>+0</code></td><td>u8</td><td>character: <code>0</code> Vahn, <code>1</code> Noa, <code>2</code> Gala</td></tr>
+<tr><td><code>+1</code></td><td>u8</td><td>art display index within the character</td></tr>
+<tr><td><code>+2</code></td><td>u8</td><td><strong>AP cost</strong></td></tr>
+<tr><td><code>+3</code></td><td>u8</td><td>padding</td></tr>
+<tr><td><code>+4</code></td><td>u16</td><td>round value (&asymp; power/score; exact meaning unconfirmed)</td></tr>
+<tr><td><code>+6</code></td><td>u16</td><td>zero</td></tr>
+<tr><td><code>+8</code></td><td>u32</td><td>pointer to the command-input display string (MES arrow-glyph sequence; its first byte is the input count)</td></tr>
+<tr><td><code>+0xC</code></td><td>u32</td><td>pointer to the name string</td></tr>
+<tr><td><code>+0x10</code></td><td>u32</td><td>aux pointer (second string)</td></tr>
+</tbody>
+</table>
+  <p>A <code>(99, 99)</code> record named <code>"End"</code> terminates the table. Each character's index <code>0</code> entry is the <strong>Miracle Art</strong> (AP byte <code>99</code>; the name string opens with a <code>0xCE 0x09</code> character-name-substitution control, e.g. <em>"&amp;'s Ark"</em> / Gala's <em>"Biron Rage"</em>).</p>
+  <p>The AP costs are byte-exact against the curated <a href="../reference/gamedata.html">gamedata</a> arts table (every matched art agrees), which makes this the on-disc provenance for that table's <code>ap</code> column + the canonical art display order.</p>
+
+  <h3>Command-glyph string (<code>+8</code>)</h3>
+  <p>The <code>+8</code> pointer is the <strong>command-input display string</strong> - the arrow sequence shown in the arts menu, and an independent on-disc source for each art's directional command (the PROT <code>0x05C4</code> art-record command bytes are a best-effort parse pending a watchpoint). Encoding: <code>[count u8]</code> then <code>count</code> two-byte glyph codes. A one-off <code>0xFF XX</code> marker separates the sequence (<code>0xFF06</code> for regular arts, <code>0xFF09</code> for Miracle arts) and is <strong>not</strong> a direction. The arrow glyphs map to physical d-pad directions:</p>
+<table>
+<thead><tr>
+<th>Glyph</th>
+<th>Direction</th>
+<th>dir code</th>
+</tr></thead>
+<tbody>
+<tr><td><code>0x81A9</code></td><td>Left</td><td>1</td></tr>
+<tr><td><code>0x81A8</code></td><td>Right</td><td>2</td></tr>
+<tr><td><code>0x81AB</code></td><td>Down</td><td>3</td></tr>
+<tr><td><code>0x81AA</code></td><td>Up</td><td>4</td></tr>
+</tbody>
+</table>
+  <p>The string stores the <strong>physical</strong> direction; the logical action (Arms / Ra-Seru) depends on the character's handedness (Noa's Arms / Ra-Seru are swapped). The codes match the <code>Left=1 / Right=2 / Down=3 / Up=4</code> encoding the PROT records use. Cross-checking against gamedata surfaces at least one walkthrough error (Vahn's <em>Hyper Elbow</em> is <code>L R L</code> on disc, not <code>Arms / Ra-Seru / High</code>). Decoded by <code>legaia_art::arts_table::parse_from_scus</code>; dump it with <code>art arts-table</code>.</p>
+
+  <h3>Validation oracle</h3>
+  <p>Because the glyph string is byte-exact ground truth, it serves as the validation oracle for the two derived command sources:</p>
+  <ul class="bullets">
+    <li><strong>The best-effort PROT <code>0x05C4</code> parser</strong> (<code>legaia_art::parse_record</code>). <code>legaia_art::ArtsOracle::by_command(character, &amp;commands)</code> resolves a decoded command sequence back to a named art; the disc-gated contract test <code>crates/art/tests/arts_table_real.rs</code> runs every art's canonical record bytes through <code>parse_record</code> and asserts the decode round-trips through the oracle. This pins the parser's <code>1=L,2=R,3=D,4=U</code> command-byte decode against the executable without needing the (still-unpinned) full record stride.</li>
+    <li><strong>The curated <code>legaia-gamedata</code> <code>arts.toml</code> <code>ap</code> + <code>directions</code> columns.</strong> The disc-gated test <code>crates/gamedata/tests/arts_scus_oracle.rs</code> matches each curated art to its SCUS row by name and asserts AP + directions agree, with a small explicit allowlist for documented walkthrough errors (currently only <em>Hyper Elbow</em>). A new undocumented divergence fails the test.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <ul class="bullets">

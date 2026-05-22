@@ -35,6 +35,28 @@
   <p>The walker reads <code>*data_ptr</code> as the next-state token, but state transitions are inlined throughout <code>FUN_801E0088</code>. To produce a clean-room opcode table you'd need to extract per-state-byte transition logic by hand. The 32-master / 128-child slot pool, the spawn API, and the per-frame walker are all well-understood - the port itself is straightforward; the only question is whether to label the format an "opcode table" or a "state machine".</p>
 </section>
 
+<section class="doc-section" id="render-bridge">
+  <h2>Lifetime + render bridge (engine port)</h2>
+  <p>The retail per-state token algebra (<code>FUN_801E0088</code> pass 1) is inlined and not yet extracted, so the port's <code>EffectHost::advance_state</code> models the lifecycle as a fixed-frame countdown: each work tick increments <code>master.field_14</code>, and the slot retires once it reaches <code>effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES</code>. Without that, an effect terminated on its first work tick and never persisted long enough to draw.</p>
+
+  <h3>Catalog load</h3>
+  <p>The runtime effect catalog (PROT 0873 <code>efect.dat</code>) loads at scene entry via <code>EffectCatalog::from_efect_dat_bytes</code> (the 2-pack parser - see <a href="../formats/effect.html">formats / effect</a>), staying resident on <code>World::effect_catalog</code> across field/battle transitions. So the action SM's <code>ui_element</code> spawns (<code>FUN_801D8DE8 &rarr; FUN_801DFDF8</code>, ported as <code>World::try_spawn_effect</code>) resolve to real effect scripts. The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.</p>
+
+  <h3>Render snapshots</h3>
+  <p>Two render-agnostic seams expose the live pool:</p>
+  <ul class="bullets">
+    <li><code>World::active_effect_markers</code> - one coarse <code>EffectMarker</code> per effect (origin + age). For hosts/tests that only need effect positions.</li>
+    <li><code>World::active_effect_sprites</code> - the faithful per-child billboard view (the textured-quad path). For each active effect it resolves the effect's children through the catalog, walks each child's pack0 animation to the current frame, and reads that frame's sprite-atlas entry for size + VRAM <code>(u, v)</code> / <code>tpage</code> / <code>clut</code>. Mirrors <code>FUN_801E0088</code> pass 2 (one GPU sprite primitive per child).</li>
+  </ul>
+  <p>The native host (<code>play-window</code>) draws each <code>EffectSprite</code> two ways: a <strong>camera-facing textured quad</strong> through the VRAM-mesh pipeline (<code>upload_vram_mesh</code>, sampling the scene VRAM at the sprite's atlas page/clut/uv as a <code>SceneDraw</code>), plus a <strong>tinted outline</strong> through the <code>UploadedLines</code> pipeline so the billboard is visible regardless of VRAM contents, faded by age. <code>World::spawn_debug_effect</code> seats a synthetic effect by hand (the <code>E</code> key in <code>play-window</code>); it is not a retail path.</p>
+
+  <aside class="notice warn">
+    <div class="notice-title">Two effect-texel systems &mdash; and the summon model is neither</div>
+    <p>The <code>efect.dat</code> 2D billboards (<code>World::active_effect_sprites</code>) sample VRAM <strong>page (0,0), 8bpp</strong> (atlas <code>tpage = 0x7680</code>, confirmed via <code>FUN_801E0088</code> pass 2). That page-(0,0) source is <em>not</em> identified yet, so the billboards currently sample empty VRAM (the shader discards zero texels &rarr; the tinted-outline fallback) until it's traced. The faithful per-frame token cadence is also still inlined-only; the render loop walks each child's anim batch uniformly over the effect lifetime as a stand-in.</p>
+    <p>Separately, the <strong>3D summon model</strong> (e.g. Gimard's <em>Tail Fire</em> flame) is <em>not</em> spawned by this effect VM, and is <em>not</em> in <code>befect_data</code>. A live Tail-Fire RAM capture shows the real summon visual is drawn from a <strong>per-summon code overlay</strong> (Gimard &rarr; PROT 905, dispatched by the battle SM &mdash; see <a href="battle-action.html#summon-overlay">battle action &middot; Seru-magic summon overlay</a>), whose models come from the PROT 871 effect-model library (<code>DAT_8007C018[3..32]</code>; Gimard's flame is index 26). The engine's <code>engine-core::scene::ETMD_TAIL_FIRE_MODEL_INDEX</code> stand-in (the <code>F</code> key in <code>play-window</code>) is a <em>preview</em> mesh only, not the retail battle model. The retail spawn is a code overlay, not a move/art-VM opcode.</p>
+  </aside>
+</section>
+
 <section class="doc-section" id="pool">
   <h2>Pool layout</h2>
   <p>One contiguous 5008-byte block at <code>_DAT_8007BD30</code>:</p>

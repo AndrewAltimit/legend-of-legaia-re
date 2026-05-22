@@ -62,7 +62,62 @@ if let Some(eb) = effect_bundle::detect(&amp;buf) {
     +0x06  i16  depth         ← half-width of random Z distribution (8.8 fixed)
     +0x08  u8[6] tail         ← animation curves / sound-id / timing (per-frame walker only)</code></pre>
   <p>The retail random-distribution loop (<code>FUN_801E0088</code> pass 1) reads only <code>+0x02</code> (width) and <code>+0x06</code> (depth) per child - those two govern where a child sprite spawns relative to the effect origin. <code>anim_flags</code> and <code>tail</code> are consumed later by the per-frame walker when advancing a live child slot's animation state.</p>
-  <p>A live <code>0873_befect_data</code> sample carries 14 entries in pack0 and 33 entries in pack1. Inline sprite atlas entries (between <code>buffer+8</code> and pack0) decode as <code>(u16 u, u16 v, u16 page_descriptor, u8 clut, u8 ?)</code> - standard PSX sprite UV packets.</p>
+  <p>A live <code>0873_befect_data</code> sample carries 14 entries in pack0 and 33 entries in pack1. The pack0/pack1 offset tables hold <strong>absolute file offsets</strong> (not the <code>word*4</code> offsets of <code>asset::pack</code>). Parser: <code>legaia_engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes</code>.</p>
+  <p>Inline sprite atlas entries (between <code>buffer+8</code> and pack0) are 8 bytes each. The layout is pinned from the consumer (<code>FUN_801E0088</code> pass 2, the sprite-emit block ~<code>0x801E0840</code>), which reads them byte-wise to build each child's GPU sprite primitive:</p>
+<pre><code>+0  u8  u       ; source texel U within the texture page
++1  u8  v       ; source texel V
++2  u8  w       ; sprite width in texels
++3  u8  h       ; sprite height
++4  u16 tpage   ; PSX texture-page descriptor, copied verbatim to the primitive
++6  u8  clut    ; CLUT (CBA) id
++7  u8  ?       ; unknown / reserved</code></pre>
+  <p>The texel rectangle is <code>(u, v)..(u+w-1, v+h-1)</code>. A typical entry is a 32&times;32 sprite (<code>w=h=0x20</code>) with <code>tpage=0x7680</code> (page base (0,0), 8-bit colour mode) and a per-effect CLUT id. The pixels live in VRAM, uploaded at battle load from the sibling files in the same <code>befect_data</code> cluster (below). The atlas only carries the VRAM coordinates; the actual texel bytes are blitted by the battle scene loader.</p>
+
+  <h3>Battle effect cluster (<code>befect_data</code>, CDNAME 872)</h3>
+  <p><code>efect.dat</code> is one of four logical files in the <code>befect_data</code> cluster the battle scene loader <code>FUN_800520F0</code> pulls in. <code>FUN_800520F0</code> is a sequential state machine (sub-state byte at <code>gp+0xa59</code>); each state loads one file through the dual-mode loader - retail opens the dev-path string, debug uses a PROT index (<code>FUN_8003e8a8</code>):</p>
+<table>
+<thead><tr><th>Loader state / case</th><th>Dev-path string</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td>case <code>0x8</code></td><td><code>h:\prot\battle\etim.dat</code></td><td>Effect TIM images (textures).</td></tr>
+<tr><td>case <code>0xb</code></td><td><code>h:\prot\battle\etmd.dat</code></td><td>Effect 3D models (Legaia TMDs; registered via <code>FUN_80026b4c</code>, which asserts magic <code>0x80000002</code>).</td></tr>
+<tr><td>case <code>0xb</code></td><td><code>h:\prot\battle\vdf.dat</code></td><td>VDF buffer (asset type <code>0x07</code>, appended via <code>FUN_8001fbcc</code>).</td></tr>
+<tr><td>case <code>0xc</code></td><td><code>data\battle\efect.dat</code></td><td>The 2-pack above; initialised by <code>FUN_801DE914</code> (offset fixup only).</td></tr>
+</tbody>
+</table>
+
+  <h4>On-disc layout + the cluster-aware extractor</h4>
+  <p>The per-entry PROT extractor does <strong>not</strong> cleanly separate these files: the four cluster entries (872..875) overlap on disc (each starts only a few sectors into the previous entry's extended footprint), so the naive per-entry <code>.BIN</code> files bleed into their neighbours - e.g. <code>0873_befect_data.BIN</code> at offset <code>0x2000</code> is byte-identical to the start of <code>0874_befect_data.BIN</code>. The true per-file size is the <strong>footprint</strong> (<code>next_lba - this_lba</code>), which the indexed/extended TOC formula over-reads here.</p>
+  <p><code>asset befect-cluster PROT.DAT --cdname CDNAME.TXT [--out DIR]</code> (in <code>legaia-asset</code>) does the cluster-aware extraction: footprint-bound each entry, expand the one LZS-container entry into its sections, and classify every part. It resolves to:</p>
+<table>
+<thead><tr><th>Part</th><th>Footprint / section</th><th>Classification</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>entry 872</td><td><code>0x4800</code></td><td>offset pack, 32 entries</td><td>Effect billboard geometry (small per-entry records, ~96 B each).</td></tr>
+<tr><td>entry 873</td><td><code>0x2000</code></td><td><code>efect.dat</code> 2-pack</td><td>144 atlas entries, 14 anim batches, 33 scripts (<code>pack0@0x488</code>, <code>pack1@0x900</code>).</td></tr>
+<tr><td>entry 874 &sect;0</td><td>LZS, 46236 B</td><td>TMD pack, 5 models</td><td>Labelled <code>etmd.dat</code> &mdash; <em>flagged for re-verification</em> (see below).</td></tr>
+<tr><td>entry 874 &sect;1</td><td>LZS, 16864 B</td><td>offset pack, 23 entries</td><td>Labelled <code>vdf.dat</code> &mdash; <em>flagged for re-verification</em>.</td></tr>
+<tr><td>entry 874 &sect;2</td><td>LZS, 120100 B</td><td>8 effect-texture TIMs</td><td>Labelled <code>etim.dat</code>. 4bpp, CLUTs in high VRAM rows 473..478, pixels at <code>fb_x&ge;320</code>.</td></tr>
+<tr><td>entry 875</td><td><code>0x20000</code></td><td>raw</td><td>A 256&times;256-halfword page blob.</td></tr>
+</tbody>
+</table>
+  <aside class="notice warn">
+    <div class="notice-title">874 &sect;0/&sect;1/&sect;2 = etmd/vdf/etim split needs re-verification</div>
+    <p>The standalone cluster extractor's <code>etim</code>/<code>etmd</code>/<code>vdf</code> labels on entry 874's three LZS sections are <strong>flagged for re-verification</strong> against the <code>FUN_800520F0</code> case&rarr;index map. The dev-path names map to <em>separate</em> PROT entries the loader pulls by index, <em>not</em> to the three sections of entry 874: the model load resolves to debug index <code>0x367</code> = PROT 871, and <code>etim</code> (case <code>0x8</code>) to <code>0x368</code> = PROT 872. The 874 &sect;2 = <code>etim</code> texture identity is still <strong>pixel-confirmed</strong> (next section); it's the &sect;0 etmd / &sect;1 vdf reading that's in doubt.</p>
+  </aside>
+
+  <h4>Texel source &mdash; <code>etim</code>, pixel-verified</h4>
+  <p><code>FUN_800198e0</code> is the general packed-image &rarr; VRAM uploader the loader uses (loader state <code>9</code> walks a pack and calls it per entry): it reads a per-chunk tag/flag word, builds a PSX <code>RECT</code>, and calls <code>FUN_800583c8</code> = <code>LoadImage</code> to DMA pixels into VRAM, maintaining a CLUT cache at <code>0x8007BEC0</code>. (Same routine the title / menu / save overlays and the type-<code>0x01</code> CLUT walker <code>FUN_8001fe70</code> use.)</p>
+  <p>There are <strong>two independent effect-texel systems</strong> here:</p>
+  <ol class="bullets">
+    <li><strong>3D effect models.</strong> The <code>etim</code> texture set (entry 874 &sect;2) holds 4bpp TIMs (pages at <code>fb_x&ge;320</code>, <code>fb_y=256+</code>, CLUTs in rows <code>473..478</code>) whose CLUT rows are referenced exactly by the 3D effect-model primitives. This is confirmed <strong>pixel-exact</strong> against a live battle VRAM dump captured mid-cast (Gimard's <em>Tail Fire</em>, a 3D flame mesh): five of the seven <code>etim</code> TIM pixel blocks byte-match VRAM at their stated targets, and the CLUT rows match. The engine uploads <code>etim</code> into the scene VRAM at scene entry (<code>seed_effect_vram_from_befect_data</code> in <code>engine-core</code>), making those texels resident for effect-model rendering.</li>
+    <li><strong>2D sprite billboards.</strong> The <code>efect.dat</code> sprite atlas (entry 873) drives the per-frame billboard emit in <code>FUN_801E0088</code> pass 2. The atlas's <code>tpage = 0x7680</code> decodes to VRAM <strong>page (0,0), 8bpp</strong> - a <em>different</em> region than <code>etim</code>. So the 2D billboards sample a page-(0,0) 8bpp texel source that is <strong>not</strong> <code>etim</code> and is <strong>not yet identified</strong> (it isn't entries 872 or 875 either - neither byte-matches that VRAM region). Pinning it is the remaining open thread.</li>
+  </ol>
+
+  <aside class="notice warn">
+    <div class="notice-title">Correction: the battle summon model is NOT in <code>befect_data</code></div>
+    <p>An earlier reading had the 3D flame mesh coming from 874 &sect;0 (the so-called "etmd" pack). A live Tail-Fire RAM capture falsifies that. <code>etim</code> (874 &sect;2) is resident in VRAM (the cluster was loaded), yet <strong>none of 874 &sect;0's five TMDs are resident in main RAM</strong>. Instead, a player Seru-magic cast pages in a <strong>per-summon code overlay</strong> (<code>FUN_8003EC70(id - 0x79)</code> &rarr; PROT 905..915; Gimard <em>Tail Fire</em> <code>0x81</code> &rarr; PROT 905), and the summon's meshes come from a separately-loaded 30-entry small-TMD library at <strong>PROT entry 871</strong> (CDNAME label <code>sound_data</code>), registered into <code>DAT_8007C018[3..32]</code> via <code>FUN_80026B4C</code>. Gimard's flame is <code>DAT_8007C018[26]</code>; its fire flicker is <strong>CLUT/palette cycling</strong> (the PROT-905 overlay uploads animated CLUT frames each frame via <code>LoadImage</code>), not model cycling. See <a href="../subsystems/battle-action.html#summon-overlay">battle action &middot; Seru-magic summon overlay</a>.</p>
+    <p>The engine's 874 &sect;0 stand-in mesh (<code>engine-core::scene::ETMD_TAIL_FIRE_MODEL_INDEX</code>, dev-spawned by the <code>F</code> key) does bake the <code>etim</code> CLUT and is flame-shaped, so it demonstrates the render seam &mdash; but it is a <strong>preview only</strong>, not the model retail draws in battle. Faithful battle parity requires loading PROT 871 and rendering <code>[26]</code> with CLUT animation.</p>
+  </aside>
+
   <h3>Consumer cluster</h3>
   <p>The runtime consumer lives in the battle overlay (<code>0898_xxx_dat</code>):</p>
 <table>
@@ -105,7 +160,9 @@ if let Some(eb) = effect_bundle::detect(&amp;buf) {
   <p>Buffer size per slot: <code>0x10800</code> = 67584 bytes. Format unverified; may share the 2-pack layout but not yet confirmed.</p>
   <h3>Open questions</h3>
   <ul class="bullets">
-    <li><strong>Effect-ID → human effect name.</strong> Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". Reachable by tracing call sites of <code>FUN_801DFDF8</code> in damage / battle-action code.</li>
+    <li><strong>Effect-ID &rarr; human effect name.</strong> Effect IDs are anonymous; no string table maps id &rarr; "fireball / thunder / heal". Reachable by tracing call sites of <code>FUN_801DFDF8</code> in damage / battle-action code.</li>
+    <li><strong>2D billboard page-(0,0) texel source.</strong> The 3D-effect-model textures are pinned (<code>etim</code>, pixel-verified). Separately, the <code>efect.dat</code> 2D sprite atlas samples VRAM <strong>page (0,0), 8bpp</strong> (atlas <code>tpage = 0x7680</code>, confirmed via <code>FUN_801E0088</code> pass 2). What populates that page at battle load is not yet identified - it isn't <code>etim</code>, nor cluster entries 872 / 875 (neither byte-matches the page-(0,0) region in a live battle VRAM). Trace the <code>LoadImage</code> site that fills page (0,0) at battle init.</li>
+    <li><strong>874 &sect;0 / &sect;1 labels.</strong> The standalone extractor's etmd/vdf reading of entry 874's first two LZS sections needs re-verification against the loader's case&rarr;index map (the real battle model library is PROT 871, not 874 &sect;0).</li>
     <li><strong>summon.dat / readef.dat formats.</strong> Not yet decoded.</li>
   </ul>
 </section>

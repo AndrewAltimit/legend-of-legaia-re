@@ -159,7 +159,29 @@ The bitmask is cited via `*(uint *)(((byte)(&DAT_8007BD10)[ctx[+0x13]] - 1) * 0x
 - **`FUN_801D8DE8(effect_id, mode)`** - the hottest battle utility (3 KB / 77 incoming refs), called 30+ times across the state machine. This is the wrapper that lays out a battle UI element (damage popup, weapon-slash trail, spell-icon banner, run-status banner, etc.) and internally schedules its visuals. Effect IDs surfaced in this function: `0x07` (party weapon-slash), `0x0F` (damage popup setup), `0x34` (Originals burst), `0x43` (run banner), `0x44` (terminate banner), `0x4C` (spell-name HUD), `0x4E`/`0x4F` (monster effect pair), `0x51` (combo continue), `0x52` (damage text), `0x59` (queue marker), `0x66` (counter-attack flash). The `mode` argument is `0` for "spawn / reset" and `1` for "terminate / unload."
 - **`FUN_801DBF9C(party, spell_id)`** + **`FUN_801DC0A0(actor, anim_id)`** - chained from state `0x29` and `0x2A..0x2D` to drive spell visuals. These ultimately fan out to the [effect VM](effect-vm.md) which uses `FUN_801DFDF8` for the actual sprite-anim spawn.
 
-So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`. The state machine never names an effect ID directly; it names *UI element* IDs which the effect VM resolves.
+So the dataflow is `FUN_801E295C` → `FUN_801D8DE8` / `FUN_801DBF9C` / `FUN_801DC0A0` → effect VM (`FUN_801DE914` / `FUN_801E0088`) → `FUN_801DFDF8`. The state machine never names an effect ID directly; it names *UI element* IDs which the effect VM resolves. Note this path drives the **2D UI/sprite** layer (`FUN_801DFDF8` emits `POLY_FT4` billboard quads into the effect pool); the 3D summon model is a separate mechanism (next).
+
+### Seru-magic summon-overlay dispatch
+
+The 3D visual of a player Seru-magic cast (the summoned Seru and its attack mesh - e.g. Gimard's *Tail Fire* flame) is **not** spawned by an opcode and does **not** live in `befect_data`. It is a **per-summon code overlay** paged in on demand. In outer state **case `0x29`**, when the queued action's spell id `actor[+0x1df]` is in the player Seru-magic block `0x81..0x8b`:
+
+```c
+_DAT_8007bd24[7] = 0x32;                                   // advance to the cast band
+_DAT_8007ba2c = (&PTR_s_re_check_801f6734)[id - 0x81];     // per-summon effect-data pointer
+FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: PROT (id - 0x79 + 0x381)
+```
+
+`FUN_8003EC70(param)` (overlay loader B) loads PROT index `param + 0x381` into `*DAT_80010390` (= `0x801F69D8`, above the resident battle overlay), so the summons map to **PROT 905..915** (Gimard *Tail Fire* `0x81` → param `8` → **PROT 905**; byte-verified MIPS-code overlays). The capture-class (`'c'`) spell branch loads from a different base: `FUN_8003EC70(spell_record[+1] + 0x28)`.
+
+#### Inside a summon overlay (PROT 905, decoded)
+
+The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic). The summon's meshes are the separately-loaded `DAT_8007C018` model library: **PROT entry 871** (`etmd.dat`), a 30-entry `asset::pack` of Legaia TMDs that the battle scene loader `FUN_800520F0` pulls at battle init (debug index `0x367`, retail dev path `h:\prot\battle\etmd.dat`) and registers via `FUN_80026B4C`, populating `DAT_8007C018[3..32]` (`[0..2]` are the party battle meshes). Despite its CDNAME label `sound_data`, PROT 871 is the effect-model library; its texture sibling PROT 870 (a 256×256 flame-frame atlas, also `sound_data`) is loaded by a separate path. What the overlay supplies is a **move-VM scene-graph** that poses and animates those meshes:
+
+- The overlay init calls **`FUN_80021B04(ctx, position, record_ptr, 0x1000)` ~22 times** - one per body part of the summon - walking a record table (file offset `0x180C..~0x1E5C`, ~17 unique records of stride ~`0x58`, some reused for symmetric/repeated parts).
+- Each record is `[i16 model_sel @+0][u16 flags @+2][move-VM u16 bytecode @+0x4 …]`. `FUN_80021B04` stages it as an actor: `actor[+0x48] = record` (move-buffer base), `actor[+0x70] = 2` (move-VM PC, u16 units → bytecode begins at `record+0x4`), `actor[+0x58] = 0x7f`, then `jal FUN_80023070` to run the part's [move-VM](move-vm.md) animation. So the summon is a hierarchy of move-VM-driven animated parts; the per-frame animation is the standard actor-tick + move-VM path, which is why the overlay code itself need not stay resident.
+- `record[+0]` is the mesh selector: `≥0` → `DAT_8007C018[record[+0] + gp[0x754]]` (a per-summon base offset into the global table), `-1` = model-less transform/pivot node, `0x4000`/`0x4001` = special render-mode nodes. In PROT 905 **all 22 records are `-1`** - the parts are transform nodes whose mesh is bound from the move bytecode's animation-bank opcodes (move-VM `0x00` → `actor[+0x3C..40]`, `0x04` → `actor[+0x80..84]`), not from `record[+0]`.
+
+The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the resident `etim` page (832,256) 4bpp; `cba`/`tsb` are applied at render. In a live Tail-Fire capture the summon library occupies `DAT_8007C018[3..32]`; ten of those (`[23..32]`) are fire-textured meshes (cba row 478 `0x778B` baked), and the **active Gimard flame is `DAT_8007C018[26]`** - the only rendered model baking etim, with both rendering actors carrying `actor[+0x64]=26` and `actor[+0x56]=5` (full-TMD mode → `FUN_8002735C`). The flame mesh is **static**; its fire flicker is **CLUT/palette animation**, not model cycling - PROT 905 uploads animated CLUT frames each frame via `LoadImage` (`FUN_800583C8`, source palette frame `base + phase*480`, a 240×1 strip), which is why the rendered prims' cba column cycles (0/16/32) within row 478. The absolute index is load-relative. **Residual:** the load path + VRAM target of the PROT 870 flame-texture atlas. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### `FUN_801D5854` - per-actor pose driver
 

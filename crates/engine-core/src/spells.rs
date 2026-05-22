@@ -422,6 +422,49 @@ impl SpellCatalog {
             anim_id: 0x61,
             ..Default::default()
         });
+        // Clean-room monster-spell block. The per-monster-id AI script
+        // ([`crate::monster_ai`]) emits retail monster spell ids; the real
+        // shapes/powers come from the disc spell table. These placeholders cover
+        // the ids the early-roster cases use so their scripted casts fold and
+        // draw disc-free (effects/powers are stand-ins, like the player block).
+        for &(id, name, mp, target, dmg) in &[
+            (0x50u8, "Monster Buff", 6u8, SpellTarget::SelfOnly, 0u16),
+            (0x51, "Monster Bolt", 5, SpellTarget::OneEnemy, 70),
+            (0x52, "Monster Mend", 8, SpellTarget::SelfOnly, 0),
+            (0x53, "Monster Burst", 12, SpellTarget::AllEnemies, 60),
+            (0x60, "Monster Guard", 10, SpellTarget::SelfOnly, 0),
+            (0x6f, "Monster Spit", 9, SpellTarget::OneEnemy, 80),
+            // Boss-phase block - the spells the multi-phase scripted cases pick
+            // by battle-mode (`ctx+0x28A`); see [`crate::monster_ai`] id `0xB6`.
+            (0xa1, "Boss Nova", 30, SpellTarget::AllEnemies, 120),
+            (0xa2, "Boss Phase I", 20, SpellTarget::SelfOnly, 0),
+            (0xa3, "Boss Phase II", 24, SpellTarget::SelfOnly, 0),
+            (0xa4, "Boss Phase III", 28, SpellTarget::SelfOnly, 0),
+            (0xa5, "Boss Smite", 26, SpellTarget::OneEnemy, 100),
+        ] {
+            let effect = if dmg > 0 {
+                SpellEffect::Damage {
+                    base_power: dmg,
+                    element: SpellElement::Neutral,
+                }
+            } else if target == SpellTarget::SelfOnly && name.contains("Mend") {
+                SpellEffect::Heal { amount: 80 }
+            } else {
+                SpellEffect::Buff {
+                    stat: BuffStat::Defense,
+                    magnitude: 15,
+                    turns: 4,
+                }
+            };
+            c.insert(SpellDef {
+                id,
+                name: name.into(),
+                mp_cost: mp,
+                target,
+                effect,
+                ..Default::default()
+            });
+        }
         c
     }
 
