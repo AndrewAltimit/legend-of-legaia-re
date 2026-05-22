@@ -2977,6 +2977,12 @@ impl World {
     /// then resolves into a battle ([`SceneMode::WorldMap`] → [`SceneMode::Battle`],
     /// returning to the world map on victory). Interactions / portal
     /// transitions surface as [`FieldEvent::FieldInteract`] for the host.
+    ///
+    /// The per-entity SM itself is ported in [`vm::world_map`]; the encounter
+    /// formation resolver it gates is the retail BGM/asset resolver.
+    ///
+    /// REF: FUN_801DA51C
+    /// REF: FUN_800243F0
     fn tick_world_map(&mut self) {
         let pad = self.input.pad();
         let pad_held = pad & !self.input.pad_prev();
