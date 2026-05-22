@@ -2854,6 +2854,27 @@ fn write_vram_diff_png(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()>
     Ok(())
 }
 
+/// Decode a raw PSX STR file (2048-byte sectors) headlessly and return the
+/// number of MDEC video frames that decode cleanly. Shared by the `play`
+/// pre-decode pass and the in-flow cutscene driver.
+fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
+    use legaia_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
+    let data = std::fs::read(str_path)?;
+    let n_sectors = data.len() / 2048;
+    let mut asm = StrFrameAssembler::new();
+    let mut decoded = 0usize;
+    for i in 0..n_sectors {
+        let sector = &data[i * 2048..(i + 1) * 2048];
+        if let Some((hdr, bs)) = asm.push_sector(sector)? {
+            let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
+            if dec.decode_frame(&bs).is_ok() {
+                decoded += 1;
+            }
+        }
+    }
+    Ok(decoded)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_play(
     scene: &str,
@@ -2900,21 +2921,8 @@ fn cmd_play(
     // dialogue-overlay scene proper. The scene ticking (phase 2) runs
     // unconditionally after this block.
     if let Some(str_path) = resolved_str {
-        use legaia_mdec::{MdecDecoder, str_sector::StrFrameAssembler};
-        let data = std::fs::read(str_path)
+        let decoded = decode_str_frame_count(str_path)
             .with_context(|| format!("read STR file {}", str_path.display()))?;
-        let n_sectors = data.len() / 2048;
-        let mut asm = StrFrameAssembler::new();
-        let mut decoded = 0usize;
-        for i in 0..n_sectors {
-            let sector = &data[i * 2048..(i + 1) * 2048];
-            if let Some((hdr, bs)) = asm.push_sector(sector)? {
-                let dec = MdecDecoder::new(hdr.width as u32, hdr.height as u32);
-                if dec.decode_frame(&bs).is_ok() {
-                    decoded += 1;
-                }
-            }
-        }
         println!(
             "play: pre-decoded {} STR frames from {}",
             decoded,
@@ -2988,6 +2996,30 @@ fn cmd_play(
                 );
             }
             SceneTickEvent::Stepped => {}
+        }
+        // Field -> Cutscene -> Field flow: when the field VM's FMV-trigger op
+        // flips the world into the cutscene mode (game mode 26 / StrInit), play
+        // the resolved `MV*.STR` here (headless MDEC decode) and tell the world
+        // playback finished so the field resumes. The STR overlay owns the
+        // frame in retail; the world keeps the field VM suspended until then.
+        if let Some(fmv_id) = session.host.world.active_fmv() {
+            match session.host.world.active_fmv_str_filename() {
+                Some(rel) => {
+                    let path = extracted_root.join(rel);
+                    match decode_str_frame_count(&path) {
+                        Ok(n) => println!(
+                            "frame {tick_count}: cutscene fmv_id={fmv_id} {rel} ({n} frames)"
+                        ),
+                        Err(_) => println!(
+                            "frame {tick_count}: cutscene fmv_id={fmv_id} {rel} (not extracted; skipped)"
+                        ),
+                    }
+                }
+                None => {
+                    println!("frame {tick_count}: cutscene fmv_id={fmv_id} (cut path; skipped)")
+                }
+            }
+            session.host.world.finish_cutscene();
         }
         if let Some(bgm) = session.bgm.as_ref()
             && bgm.last_started.is_some()

@@ -684,6 +684,22 @@ pub struct World {
     /// retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
 
+    /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
+    /// world consumes a [`Self::pending_fmv_trigger`] at the top of a
+    /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
+    /// next-game-mode dispatch to game mode 26 one frame after the field-VM
+    /// op writes the global). While `Some`, the field VM is suspended (the
+    /// STR overlay owns the frame in retail); the host plays the resolved
+    /// `MV*.STR` and calls [`World::finish_cutscene`] when playback ends.
+    /// `None` outside an STR-FMV cutscene.
+    pub active_fmv: Option<i16>,
+
+    /// Scene mode to restore when the active STR-FMV cutscene finishes
+    /// (set on entry, consumed by [`World::finish_cutscene`]). Retail
+    /// returns to the field after the cutscene overlay unloads; `None`
+    /// outside a cutscene.
+    pub cutscene_return_mode: Option<SceneMode>,
+
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
     /// Mirror of the `FieldHost` callbacks - see [`FieldEvent`] for the
@@ -1214,6 +1230,8 @@ impl World {
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_fmv_trigger: None,
+            active_fmv: None,
+            cutscene_return_mode: None,
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
@@ -2751,6 +2769,11 @@ impl World {
     ///     - `Title`      → no further VM.
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Consume a pending FMV transition the field VM signalled last frame
+        // (op `0x4C 0xE2`). Retail's main mode dispatcher reads the
+        // next-game-mode global one frame after the op writes it, so the flip
+        // into the cutscene mode lands here, at the top of the following tick.
+        self.maybe_enter_pending_cutscene();
         self.tick_effects();
         self.tick_move_vms();
         self.tick_actor_physics();
@@ -2796,7 +2819,15 @@ impl World {
                 None
             }
             SceneMode::Cutscene => {
-                self.step_field();
+                // An in-engine choreography cutscene (no STR FMV) is just a
+                // field scene that suppresses field/battle dispatch, so the
+                // field VM keeps stepping. While an STR FMV is playing
+                // ([`active_fmv`] set), the field VM is suspended - retail
+                // hands the frame to the cutscene/MDEC overlay - and the host
+                // drives playback, calling [`finish_cutscene`] when it ends.
+                if self.active_fmv.is_none() {
+                    self.step_field();
+                }
                 None
             }
             SceneMode::WorldMap => {
@@ -3119,6 +3150,60 @@ impl World {
         self.mode = SceneMode::WorldMap;
         if self.world_map_ctrl.is_none() {
             self.world_map_ctrl = Some(WorldMapController::new());
+        }
+    }
+
+    /// Consume a pending field-VM FMV trigger and flip into the cutscene
+    /// mode, mirroring retail's main mode dispatcher reading the
+    /// next-game-mode global (`_DAT_8007B83C == 0x1A`, game mode 26) one
+    /// frame after the field-VM op `0x4C 0xE2` writes it.
+    ///
+    /// Only fires from [`SceneMode::Field`] (the only mode that runs the
+    /// field VM and so the only one that can set the trigger). The pending
+    /// id is always drained; an id whose runtime FMV slot points at a
+    /// cut/missing path ([`crate::cutscene::fmv_index_to_str_filename`]
+    /// returns `None`) is a no-op transition - the field continues - which
+    /// matches the engine's documented "treat a cut slot as a no-op" rule.
+    fn maybe_enter_pending_cutscene(&mut self) {
+        let Some(fmv_id) = self.pending_fmv_trigger.take() else {
+            return;
+        };
+        if self.mode != SceneMode::Field {
+            return;
+        }
+        if crate::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
+            self.cutscene_return_mode = Some(self.mode);
+            self.mode = SceneMode::Cutscene;
+            self.active_fmv = Some(fmv_id);
+        }
+    }
+
+    /// The FMV index currently playing in [`SceneMode::Cutscene`], or `None`
+    /// when no STR FMV is active. Hosts poll this after [`World::tick`] to
+    /// learn which `MV*.STR` to open.
+    pub fn active_fmv(&self) -> Option<i16> {
+        self.active_fmv
+    }
+
+    /// The retail `MV*.STR` path of the active cutscene FMV, or `None` when
+    /// no STR FMV is active. Convenience over
+    /// [`crate::cutscene::fmv_index_to_str_filename`].
+    pub fn active_fmv_str_filename(&self) -> Option<&'static str> {
+        self.active_fmv
+            .and_then(crate::cutscene::fmv_index_to_str_filename)
+    }
+
+    /// End the active STR-FMV cutscene and return to the scene mode that was
+    /// live when it started (the field, in the normal flow). Retail returns
+    /// here when the cutscene/MDEC overlay finishes playback and unloads.
+    ///
+    /// The field VM resumes from where it paused - its program counter is
+    /// already past the FMV op, so the next field tick continues the script.
+    /// A no-op when no cutscene is active.
+    pub fn finish_cutscene(&mut self) {
+        if self.mode == SceneMode::Cutscene {
+            self.mode = self.cutscene_return_mode.take().unwrap_or(SceneMode::Field);
+            self.active_fmv = None;
         }
     }
 
@@ -7049,6 +7134,67 @@ mod tests {
         assert!(events.contains(&FieldEvent::FmvTrigger { fmv_id: 3 }));
         assert_eq!(fmv_index_to_str_filename(3), Some("MOV/MV4.STR"));
         assert_eq!(STR_INIT_GAME_MODE, 26);
+    }
+
+    /// The FMV trigger transitions Field → Cutscene one frame later (retail's
+    /// main dispatcher reads the next-game-mode global the frame after the
+    /// field-VM op writes it), exposes the active FMV + its `MV*.STR` path,
+    /// and suspends the field VM while it plays. `finish_cutscene` returns to
+    /// the field.
+    #[test]
+    fn field_fmv_trigger_drives_field_cutscene_field_flow() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // fmv_id 3 → MV4.STR (a playable slot).
+        world.load_field_script(vec![0x4C, 0xE2, 0x03, 0x00, 0, 0]);
+
+        // Frame 1: op fires, records the pending trigger; still in Field.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Field);
+        assert_eq!(world.pending_fmv_trigger, Some(3));
+        assert_eq!(world.active_fmv(), None);
+
+        // Frame 2: the pending trigger is consumed at the top of the tick and
+        // the world flips into the cutscene mode for the resolved FMV.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Cutscene);
+        assert_eq!(world.pending_fmv_trigger, None);
+        assert_eq!(world.active_fmv(), Some(3));
+        assert_eq!(world.active_fmv_str_filename(), Some("MOV/MV4.STR"));
+
+        // While the FMV plays the field VM is suspended (no further field
+        // stepping); ticking keeps the world in Cutscene until the host ends
+        // playback.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Cutscene);
+        assert_eq!(world.active_fmv(), Some(3));
+
+        // Host signals playback complete → back to the field.
+        world.finish_cutscene();
+        assert_eq!(world.mode, SceneMode::Field);
+        assert_eq!(world.active_fmv(), None);
+    }
+
+    /// An FMV id whose runtime slot points at a cut/missing path is drained
+    /// without entering the cutscene mode - the engine treats it as a no-op
+    /// and the field keeps running.
+    #[test]
+    fn field_fmv_trigger_cut_path_is_a_noop() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // fmv_id 7 → slots 5..=11 are dev-only cut paths (no retail STR).
+        world.load_field_script(vec![0x4C, 0xE2, 0x07, 0x00, 0, 0]);
+
+        let _ = world.tick(); // op fires
+        assert_eq!(world.pending_fmv_trigger, Some(7));
+        let _ = world.tick(); // pending consumed
+        assert_eq!(
+            world.mode,
+            SceneMode::Field,
+            "cut path does not enter cutscene"
+        );
+        assert_eq!(world.pending_fmv_trigger, None, "pending still drained");
+        assert_eq!(world.active_fmv(), None);
     }
 
     // --- Save / load round-trip ----------------------------------------

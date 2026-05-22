@@ -115,8 +115,11 @@ implement the per-VM `Host` traits themselves; `World` is the default.
   field-VM `0x4C 0xE2` op writes a 16-bit FMV index to
   `_DAT_8007BA78` and kicks game mode `StrInit` (26); the world
   records it as `pending_fmv_trigger` plus a `FieldEvent::FmvTrigger`
-  event. Engines drain the event and resolve the index via
-  `cutscene::fmv_index_to_str_filename`.
+  event. The next `World::tick` consumes the pending trigger and, for a
+  playable slot, flips into `SceneMode::Cutscene` (suspending the field
+  VM) exposing the FMV via `World::active_fmv()`; the host plays the
+  resolved STR and calls `World::finish_cutscene()` to return to the
+  field. Cut/missing slots drain as a no-op.
 
 ## See also
 
