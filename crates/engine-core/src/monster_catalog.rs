@@ -60,6 +60,12 @@ pub struct MonsterDef {
     /// capture (capture spell / Genocide Crystal) feeds this id into the
     /// [`crate::seru_learning::SeruRegistry`]. `None` = no Seru to capture.
     pub seru_id: Option<u16>,
+    /// Global spell ids this monster can cast in battle (from the monster
+    /// record's 3-slot magic-attack array at `+0x21..=+0x23`; see
+    /// [`legaia_asset::monster_archive::MonsterRecord::magic_attacks`]). The
+    /// battle monster-AI chooses among the entries it can afford to fold a
+    /// real spell cast onto the party. Empty = physical attacker only.
+    pub magic_attacks: Vec<u8>,
 }
 
 impl MonsterDef {
@@ -79,6 +85,7 @@ impl MonsterDef {
             drop_item: None,
             drop_rate_q8: 0,
             seru_id: None,
+            magic_attacks: Vec::new(),
         }
     }
 
@@ -86,6 +93,12 @@ impl MonsterDef {
     /// [`crate::seru_learning::SeruRegistry`].
     pub fn with_seru(mut self, seru_id: u16) -> Self {
         self.seru_id = Some(seru_id);
+        self
+    }
+
+    /// Builder: attach the global spell ids this monster can cast in battle.
+    pub fn with_magic(mut self, magic_attacks: impl Into<Vec<u8>>) -> Self {
+        self.magic_attacks = magic_attacks.into();
         self
     }
 }
@@ -150,6 +163,9 @@ pub fn monster_def_from_record(rec: &legaia_asset::monster_archive::MonsterRecor
     def.gold = rec.gold;
     def.drop_item = (rec.drop_item != 0).then_some(rec.drop_item);
     def.drop_rate_q8 = ((rec.drop_chance_pct as u16 * 256 / 100).min(255)) as u8;
+    // Castable spells: the record's 3-slot global-id array (`+0x21..=+0x23`);
+    // the parser already filters out the empty `<= 1` slots.
+    def.magic_attacks = rec.magic_attacks.clone();
     def
 }
 
@@ -300,8 +316,23 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             drop_item: None,
             drop_rate_q8: 0,
             seru_id: None,
+            magic_attacks: Vec::new(),
         };
         cat.insert(def_struct);
+    }
+    // Attach castable spells to a few roster entries so the monster-AI cast
+    // path is exercisable disc-free. The ids index the vanilla spell catalog
+    // ([`crate::spells::SpellCatalog::vanilla`]); MP budgets above let the
+    // monster afford at least one cast.
+    for &(monster_id, ref spells) in &[
+        (4u16, vec![0x20u8]),   // Bandit      -> Flame
+        (9, vec![0x22]),        // Big Slime   -> Aqua
+        (5, vec![0x20, 0x23]),  // Bandit Boss -> Flame, Thunder Bolt
+        (19, vec![0x20, 0x26]), // Drake Wyrm  -> Flame, Crash
+    ] {
+        if let Some(def) = cat.by_id.get_mut(&monster_id) {
+            def.magic_attacks = spells.clone();
+        }
     }
     // Attach a few Seru so the capture → learn path is exercisable against
     // the vanilla SeruRegistry (ids align with `SeruRegistry::vanilla`).

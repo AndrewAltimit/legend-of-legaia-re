@@ -3785,24 +3785,12 @@ impl World {
         target_row: crate::target_picker::CursorRow,
         target_slot: u8,
     ) {
-        use crate::spells::{SpellSnapshot, SpellTarget, cast_spell};
+        use crate::spells::SpellTarget;
         use crate::target_picker::CursorRow;
 
         let Some(def) = self.spell_catalog.get(spell_id).cloned() else {
             return;
         };
-        let cost = def.mp_cost as u16;
-        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
-            Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
-            None => return,
-        };
-        if caster_mp_before < cost {
-            return;
-        }
-        if let Some(a) = self.actors.get_mut(caster as usize) {
-            a.battle.mp = a.battle.mp.saturating_sub(cost);
-        }
-
         let party_count = self.party_count.clamp(1, 3);
         let targets: Vec<u8> = match def.target {
             SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly => {
@@ -3815,13 +3803,43 @@ impl World {
             SpellTarget::AllEnemies => (party_count..self.actors.len() as u8).collect(),
             SpellTarget::AllAllies => (0..party_count).collect(),
         };
+        self.cast_spell_on_slots(caster, &def, &targets);
+    }
+
+    /// Deduct `def`'s MP cost from `caster` and fold its effect onto each
+    /// absolute actor slot in `targets`. Shared by the player cast path
+    /// ([`Self::apply_battle_spell`], which resolves the cursor rows to slots
+    /// from the player's perspective) and the monster-AI cast path
+    /// ([`Self::apply_monster_spell`], which resolves party slots). MP is spent
+    /// once up front; each target folds through [`Self::fold_spell_outcome`].
+    /// Returns `false` (no MP spent, nothing folded) when the caster can't
+    /// afford the cost.
+    fn cast_spell_on_slots(
+        &mut self,
+        caster: u8,
+        def: &crate::spells::SpellDef,
+        targets: &[u8],
+    ) -> bool {
+        use crate::spells::{SpellSnapshot, cast_spell};
+
+        let cost = def.mp_cost as u16;
+        let (caster_hp, caster_max_hp, caster_mp_before) = match self.actors.get(caster as usize) {
+            Some(a) => (a.battle.hp, a.battle.max_hp, a.battle.mp),
+            None => return false,
+        };
+        if caster_mp_before < cost {
+            return false;
+        }
+        if let Some(a) = self.actors.get_mut(caster as usize) {
+            a.battle.mp = a.battle.mp.saturating_sub(cost);
+        }
         let caster_mag = self.battle_magic.get(caster as usize).copied().unwrap_or(0);
 
-        for t in targets {
+        for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
                 continue;
             };
-            // Skip empty monster slots (no configured HP).
+            // Skip empty slots (no configured HP).
             if actor.battle.max_hp == 0 {
                 continue;
             }
@@ -3837,9 +3855,10 @@ impl World {
                 target_alive: actor.battle.liveness != 0,
                 target_weakness: crate::spells::ElementMask::default(),
             };
-            let outcome = cast_spell(&def, t, &snap);
+            let outcome = cast_spell(def, t, &snap);
             self.fold_spell_outcome(outcome);
         }
+        true
     }
 
     /// Fold a single-target [`crate::spells::SpellOutcome`] into live actor
@@ -4427,10 +4446,12 @@ impl World {
                 // player pick the command. `tick_battle_command` arms the SM
                 // on confirm.
                 self.open_battle_command(next);
+            } else if !next_is_party {
+                // Monster turn: the AI picks a spell or a physical strike.
+                self.take_monster_turn(next);
             } else {
-                // Auto-resolved turn (any monster turn, or a party turn when
-                // not player-driven). Arm a generic physical attack against
-                // the first living opponent.
+                // Party turn when not player-driven: arm a generic physical
+                // attack against the first living opponent.
                 let target = self.first_living_opponent_of(next).unwrap_or(next);
                 self.battle_ctx.active_actor = next;
                 self.battle_ctx.queued_action = 3;
@@ -4460,7 +4481,7 @@ impl World {
     /// (`< party_count`) strike monsters; monster slots strike the party.
     fn apply_basic_attack(&mut self) {
         let attacker = self.battle_ctx.active_actor as usize;
-        let Some(target) = self.first_living_opponent_of(attacker as u8) else {
+        let Some(target) = self.resolve_attack_target(attacker as u8) else {
             return;
         };
         let target = target as usize;
@@ -4479,6 +4500,123 @@ impl World {
             is_heal: false,
             is_crit: false,
         });
+    }
+
+    /// Resolve the slot a strike from `attacker` should land on. Honors a
+    /// pre-selected [`battle::BattleActor::active_target`] when it points at a
+    /// living actor on the opposing side (so the player's target-picker choice
+    /// and the monster-AI target choice both take effect), otherwise falls back
+    /// to [`Self::first_living_opponent_of`].
+    fn resolve_attack_target(&self, attacker: u8) -> Option<u8> {
+        let pc = self.party_count.max(1);
+        let n = self.actors.len() as u8;
+        let (lo, hi) = if attacker < pc { (pc, n) } else { (0, pc) };
+        if let Some(a) = self.actors.get(attacker as usize) {
+            let t = a.battle.active_target;
+            if (lo..hi).contains(&t)
+                && self
+                    .actors
+                    .get(t as usize)
+                    .is_some_and(|x| x.battle.liveness != 0)
+            {
+                return Some(t);
+            }
+        }
+        self.first_living_opponent_of(attacker)
+    }
+
+    /// Drive one monster's turn: pick an action (a castable, affordable spell
+    /// or a physical strike) and a target, then either fold the cast and park
+    /// the SM at `EndOfAction` (a spell is the whole turn, like the player
+    /// magic path) or arm a generic physical strike for the action SM to run.
+    ///
+    /// Monsters with no castable spells (the common case) consume no RNG and
+    /// arm a physical strike against the first living party member - byte-for-
+    /// byte the prior behaviour, so spell-less encounters stay deterministic.
+    fn take_monster_turn(&mut self, slot: u8) {
+        use vm::battle_action::ActionState;
+
+        if let Some((spell_id, targets)) = self.choose_monster_spell(slot) {
+            self.battle_ctx.active_actor = slot;
+            let def = self.spell_catalog.get(spell_id).cloned();
+            if let Some(def) = def
+                && self.cast_spell_on_slots(slot, &def, &targets)
+            {
+                // The spell is the monster's whole turn: park at EndOfAction so
+                // the live loop cycles to the next combatant.
+                self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+                return;
+            }
+        }
+
+        // Physical strike fallback. Targeting stays "first living opponent" so
+        // spell-less monsters behave exactly as before.
+        let target = self.first_living_opponent_of(slot).unwrap_or(slot);
+        self.battle_ctx.active_actor = slot;
+        self.battle_ctx.queued_action = 3;
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.active_target = target;
+            a.battle.action_category = 3;
+        }
+    }
+
+    /// Choose a spell for monster `slot` to cast this turn, or `None` to fall
+    /// back to a physical strike. Considers only the monster's own castable
+    /// global spell ids ([`crate::monster_catalog::MonsterDef::magic_attacks`])
+    /// that resolve to an offensive ([`crate::spells::SpellEffect::Damage`])
+    /// entry in the spell catalog the monster can currently afford. Casts
+    /// roughly one such turn in three, picks a spell and (single-target) victim
+    /// from the live party - all rolled off the deterministic replay RNG so the
+    /// decision reproduces under [`Self::next_rng`]. Returns the chosen spell id
+    /// and the absolute party slots it targets.
+    fn choose_monster_spell(&mut self, slot: u8) -> Option<(u8, Vec<u8>)> {
+        use crate::spells::{SpellEffect, SpellTarget};
+
+        let pc = self.party_count.max(1);
+        let monster_id = self.actors.get(slot as usize)?.battle_monster_id?;
+        let mp = self.actors.get(slot as usize)?.battle.mp;
+        let spell_ids = self.monster_catalog.get(monster_id)?.magic_attacks.clone();
+        if spell_ids.is_empty() {
+            return None;
+        }
+
+        // Offensive, affordable spells the catalog actually knows.
+        let mut castable: Vec<(u8, SpellTarget)> = Vec::new();
+        for id in spell_ids {
+            if let Some(def) = self.spell_catalog.get(id)
+                && matches!(def.effect, SpellEffect::Damage { .. })
+                && def.mp_cost as u16 <= mp
+            {
+                castable.push((id, def.target));
+            }
+        }
+        if castable.is_empty() {
+            return None;
+        }
+
+        // A living party member must exist to receive the spell.
+        let living_party: Vec<u8> = (0..pc)
+            .filter(|&i| {
+                self.actors
+                    .get(i as usize)
+                    .is_some_and(|a| a.battle.liveness != 0)
+            })
+            .collect();
+        if living_party.is_empty() {
+            return None;
+        }
+
+        // Cast ~1 turn in 3; otherwise strike.
+        if !self.next_rng().is_multiple_of(3) {
+            return None;
+        }
+        let (spell_id, shape) = castable[(self.next_rng() as usize) % castable.len()];
+        let targets = match shape {
+            SpellTarget::AllEnemies => living_party,
+            _ => vec![living_party[(self.next_rng() as usize) % living_party.len()]],
+        };
+        Some((spell_id, targets))
     }
 
     /// First living actor on the side opposing `attacker`. Party slots
@@ -7947,6 +8085,96 @@ mod tests {
         world.actors[1].battle_monster_id = Some(monster_id);
         world.battle_ctx.active_actor = 0;
         world
+    }
+
+    /// Monster-AI cast path: a monster whose record carries a castable spell
+    /// it can afford folds a real spell onto the party (HP drops, MP spent, a
+    /// damage popup queues) and parks the SM at `EndOfAction` so the loop
+    /// cycles - rather than the generic physical strike. RNG is pinned so the
+    /// cast-vs-strike roll lands on "cast".
+    #[test]
+    fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
+        use crate::monster_catalog::vanilla_monster_catalog;
+        use crate::spells::SpellCatalog;
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.monster_catalog = vanilla_monster_catalog();
+        // Party member at slot 0.
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        // Bandit Boss (id 5) at slot 1: carries [Flame 0x20, Thunder Bolt 0x23]
+        // and 10 MP - enough to afford either.
+        world.actors[1].battle.max_hp = 120;
+        world.actors[1].battle.hp = 120;
+        world.actors[1].battle.mp = 10;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.set_battle_magic(1, 40);
+        // Seed 1: first `next_rng() % 3 == 0`, so the AI chooses to cast.
+        world.rng_state = 1;
+
+        let party_hp_before = world.actors[0].battle.hp;
+        world.take_monster_turn(1);
+
+        assert!(
+            world.actors[0].battle.hp < party_hp_before,
+            "the monster's spell dealt damage to the party"
+        );
+        assert!(world.actors[1].battle.mp < 10, "the monster spent MP");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::EndOfAction.as_byte(),
+            "a cast is the whole turn; SM parks at EndOfAction"
+        );
+        let fx = world.drain_battle_hit_fx();
+        assert_eq!(fx.len(), 1, "one damage popup queued");
+        assert!(!fx[0].is_heal, "damage-coloured popup");
+        assert_eq!(fx[0].target_slot, 0, "the party member took the hit");
+    }
+
+    /// A monster with no castable spells consumes no RNG and arms a physical
+    /// strike against the first living party member - byte-for-byte the prior
+    /// behaviour, so spell-less encounters stay deterministic.
+    #[test]
+    fn spell_less_monster_arms_physical_strike_and_spends_no_rng() {
+        use legaia_engine_vm::battle_action::ActionState;
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 200;
+        world.actors[0].battle.liveness = 1;
+        // Goblin (id 1) has no magic_attacks; leave the catalog empty so the
+        // monster id doesn't resolve either - both paths bail before any roll.
+        world.actors[1].battle.max_hp = 30;
+        world.actors[1].battle.hp = 30;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(1);
+        let rng_before = world.rng_state;
+
+        world.take_monster_turn(1);
+
+        assert_eq!(world.rng_state, rng_before, "no RNG consumed");
+        assert_eq!(world.battle_ctx.queued_action, 3, "physical strike queued");
+        assert_eq!(
+            world.battle_ctx.action_state,
+            ActionState::Begin.as_byte(),
+            "SM armed at Begin to run the strike"
+        );
+        assert_eq!(
+            world.actors[1].battle.active_target, 0,
+            "targets party slot 0"
+        );
     }
 
     #[test]

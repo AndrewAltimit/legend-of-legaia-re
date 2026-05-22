@@ -221,6 +221,23 @@ the relocated mesh to the actor. `play-window --live-loop` / `--player-battle`
 does this on each `Field → Battle` transition (against a throwaway clone of the
 field VRAM, restored on the way back) so the enemy is drawn, not a stand-in.
 
+### Monster AI action selection (clean-room engine)
+
+On a monster's turn the clean-room loop chooses between a physical strike and a
+spell cast rather than always striking. `World::take_monster_turn` consults the
+monster's own castable spell ids - the `+0x21..=+0x23` global magic-attack array
+carried onto `MonsterDef::magic_attacks` - and keeps only the entries that
+resolve to an offensive (`SpellEffect::Damage`) spell in the active catalog that
+the monster can currently afford from its live MP. It then rolls the
+deterministic replay RNG (`World::next_rng`): roughly one eligible turn in three
+casts (single-target spells pick a living party victim, `AllEnemies` spells hit
+the whole party), folding through the same `cast_spell_on_slots` path the player
+magic command uses, and parks the SM at `EndOfAction` so the loop cycles. A
+monster with no castable spell consumes no RNG and arms the prior generic strike,
+so spell-less encounters stay bit-identical. The retail per-monster AI-parameter
+hook `FUN_801E7320` (`monster_setup`) is still a no-op; this engine-side chooser
+stands in for it until that overlay routine is traced.
+
 ## Stat aggregator (`FUN_80042558`)
 
 Per-frame helper that walks the 3 active party members (stride `0x414` - see [character record layout](#character-record-layout)) and:
