@@ -4599,12 +4599,16 @@ impl World {
     /// MP (`actor+0x150`) falls back to a physical strike, matching retail's
     /// affordability gate (`actor[0x150] < spell.mp_cost`).
     ///
-    /// **Deferred** (gated on tracing the per-monster AI-type byte
-    /// `DAT_8007BD0C`, see the open RE thread): the multi-art spirit/SP chain
-    /// queue, the `'#'`-marked spell-entry scan, and the large per-monster-type
-    /// scripted-cast `switch`. Until that source is grounded this models the
-    /// generic (AI-type 0) path. The companion target resolver `FUN_801E7320`
-    /// is ported as [`Self::resolve_monster_target`] (the `monster_setup` hook).
+    /// **Deferred** (a follow-up port, now grounded): the multi-art spirit/SP
+    /// chain queue, the `'#'`-marked spell-entry scan, and the large
+    /// per-monster-id scripted-cast `switch`. That `switch` keys on
+    /// `DAT_8007BD0C[slot]`, which `FUN_801DA51C` fills from the encounter
+    /// record's `[+4 + slot]` monster ids - i.e. it is the **monster id**, not
+    /// an abstract AI-type, so each case is bespoke AI for a specific monster
+    /// the engine already identifies via `battle_monster_id`. This port models
+    /// the generic (non-special-cased) path. The companion target resolver
+    /// `FUN_801E7320` is ported as [`Self::resolve_monster_target`] (the
+    /// `monster_setup` hook).
     ///
     /// PORT: FUN_801E9FD4
     /// REF: FUN_801DABA4
@@ -4750,6 +4754,7 @@ impl World {
     /// RE thread; this port keeps the routine faithful for when that lands.
     ///
     /// PORT: FUN_801E7320
+    /// REF: FUN_801E295C
     fn resolve_monster_target(&mut self, slot: u8) {
         let pc = self.party_count.max(1);
         let mc = (self.actors.len() as u8).saturating_sub(pc).max(1);

@@ -234,9 +234,13 @@ Retail monster AI is two routines in the battle overlay:
   the target by the spell's shape byte `spell_table[id*0xC + 2] & 0x60`
   (`0x40` = one enemy → random party member; `0x60` = all enemies → class `8`;
   `0x20` = all allies → class `9`; `0x00` = one ally → most-weakened-ally HP
-  scan). After the core, a large per-monster-type `switch` on the AI-type byte
-  `DAT_8007BD0C[slot]` can **override** the choice with bespoke scripted casts
-  (hard-coded ids `0x50/0x51/0x52/0x53/0x6f/0x40`, cooldowns in `DAT_801C8FE0`).
+  scan). After the core, a large `switch` on `DAT_8007BD0C[slot]` can
+  **override** the choice with bespoke scripted casts (hard-coded ids
+  `0x50/0x51/0x52/0x53/0x6f/0x40`, cooldowns in `DAT_801C8FE0`).
+  `DAT_8007BD0C[slot]` is the **per-slot monster id** - `FUN_801DA51C` fills it
+  from the encounter record's `[+4 + slot]` ids (the `[3 reserved][count][ids]`
+  format) - so each `switch` case is bespoke AI for a specific monster id, not
+  an abstract AI-type.
 - **`FUN_801E7320` - target resolver.** Called from the action SM
   (`FUN_801E295C`) at `ActionSeed` as the `monster_setup` hook, but only for
   monster actors with `actor[+0x16e] & 0x380 != 0`. It reads the targeting class
@@ -256,15 +260,17 @@ The clean-room engine ports the parts that are fully grounded in traced data:
 chosen cast through `cast_spell_on_slots` (the shared player/monster cast path)
 and parking the SM at `EndOfAction`.
 
-**Open / deferred** (gated on tracing where the per-monster AI-type byte
-`DAT_8007BD0C` is populated): the per-monster-type scripted-cast `switch`, the
-multi-art spirit/SP chain queue at `actor+0x1DF`, the `'#'`-marked spell-entry
-scan, and the `ctx+0x28a` battle-mode overrides. Until grounded, the engine runs
-the generic (AI-type 0) path. The owner of the `actor+0x16e & 0x380` flag that
-gates `FUN_801E7320` is also outside these four functions (none of them write
-`+0x16e`); in the engine monsters carry `field_flags == 0`, so the picker's own
+**Open / deferred** (now grounded, a follow-up port): the per-monster-id
+scripted-cast `switch`, the multi-art spirit/SP chain queue at `actor+0x1DF`, the
+`'#'`-marked spell-entry scan, and the `ctx+0x28a` battle-mode overrides. The
+engine runs the generic (non-special-cased) path; the `switch` keys on the
+monster id (which the engine knows via `battle_monster_id`), so it can be ported
+incrementally. The `actor+0x16e & 0x380` flag that gates `FUN_801E7320` is set by
+`FUN_80047430` (a battle actor-update routine) when the monster record's flags
+dword at record `+0x00` has bit `0x2000` - none of the four AI/SM functions write
+`+0x16e`. In the engine monsters carry `field_flags == 0`, so the picker's own
 target stands and the resolver is exercised directly (and via the hook once the
-flag source is wired).
+flag write is wired).
 
 ## Stat aggregator (`FUN_80042558`)
 
