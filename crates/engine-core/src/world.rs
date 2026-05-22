@@ -684,6 +684,22 @@ pub struct World {
     /// retail mapping). `None` between triggers.
     pub pending_fmv_trigger: Option<i16>,
 
+    /// The FMV currently playing in [`SceneMode::Cutscene`]. Set when the
+    /// world consumes a [`Self::pending_fmv_trigger`] at the top of a
+    /// [`World::tick`] and flips into the cutscene mode (mirroring retail's
+    /// next-game-mode dispatch to game mode 26 one frame after the field-VM
+    /// op writes the global). While `Some`, the field VM is suspended (the
+    /// STR overlay owns the frame in retail); the host plays the resolved
+    /// `MV*.STR` and calls [`World::finish_cutscene`] when playback ends.
+    /// `None` outside an STR-FMV cutscene.
+    pub active_fmv: Option<i16>,
+
+    /// Scene mode to restore when the active STR-FMV cutscene finishes
+    /// (set on entry, consumed by [`World::finish_cutscene`]). Retail
+    /// returns to the field after the cutscene overlay unloads; `None`
+    /// outside a cutscene.
+    pub cutscene_return_mode: Option<SceneMode>,
+
     /// Field-VM side-effects emitted this frame. Engines drain after
     /// [`World::tick`] to dispatch BGM, dialog, money, party, camera, etc.
     /// Mirror of the `FieldHost` callbacks - see [`FieldEvent`] for the
@@ -1096,6 +1112,69 @@ pub struct World {
     /// `None` until the first field tick records a tile. Managed by the live
     /// loop.
     pub field_last_tile: Option<(i16, i16)>,
+
+    /// Per-entity world-map state machines (the port of `FUN_801DA51C` in
+    /// [`vm::world_map`]). One [`vm::world_map::WorldMapEntityCtx`] per
+    /// installed overworld entity (encounter zones / town portals / NPCs).
+    /// Empty unless [`Self::install_world_map_entities`] seeded them, so
+    /// world-map mode without gameplay (camera-only) keeps ticking untouched.
+    /// Driven each [`SceneMode::WorldMap`] tick by [`Self::tick_world_map`].
+    pub world_map_entities: Vec<vm::world_map::WorldMapEntityCtx>,
+
+    /// Shared overworld encounter-rate state - the retail globals the
+    /// world-map entity SM reads (`DAT_8007b604` countdown, `DAT_8007b5f8`
+    /// enable flag) plus the formation an overworld encounter spawns.
+    pub world_map_encounter: WorldMapEncounterState,
+
+    /// Whether the player is moving on the overworld this tick (the entity
+    /// SM's `_DAT_8007c364[+0x10] & 0x80000` player-walking gate). Set from
+    /// the pad each world-map tick; a stationary player lets the interaction
+    /// check fire.
+    pub world_map_player_walking: bool,
+
+    /// Overworld encounter pending resolution into a battle: the formation id
+    /// an entity SM's encounter handler latched this frame. Drained at the end
+    /// of [`Self::tick_world_map`] to flip into [`SceneMode::Battle`]. `None`
+    /// between encounters.
+    pub pending_world_map_encounter: Option<u16>,
+
+    /// Scene mode to return to when the current battle finishes. Captured at
+    /// the transition into [`SceneMode::Battle`]; [`Self::finish_battle`]
+    /// restores it (an overworld encounter returns to [`SceneMode::WorldMap`],
+    /// a field encounter to [`SceneMode::Field`]). Defaults to
+    /// [`SceneMode::Field`].
+    pub battle_return_mode: SceneMode,
+}
+
+/// Shared overworld encounter-rate state read by the world-map entity SM.
+#[derive(Debug, Clone)]
+pub struct WorldMapEncounterState {
+    /// `DAT_8007b604` - signed per-step encounter countdown shared across all
+    /// overworld entities. Decremented in the entity SM's Idle state; an
+    /// encounter fires when it reaches zero (and [`Self::enabled`]).
+    pub countdown: i8,
+    /// `DAT_8007b5f8 != 0` - master encounter-enable flag. When `false`,
+    /// overworld encounters never fire regardless of the countdown.
+    pub enabled: bool,
+    /// Formation id an overworld encounter spawns (resolved against
+    /// [`World::formation_table`]). The retail per-region resolution
+    /// (`FUN_800243F0` → the MAN region table) is a separate thread; v0.1
+    /// uses one configured formation for the whole map.
+    pub formation_id: u16,
+    /// Frames to reset the countdown to after an encounter fires (so the next
+    /// encounter is paced rather than re-firing every frame at zero).
+    pub reset_to: i8,
+}
+
+impl Default for WorldMapEncounterState {
+    fn default() -> Self {
+        Self {
+            countdown: 0,
+            enabled: false,
+            formation_id: 0,
+            reset_to: 64,
+        }
+    }
 }
 
 /// Field state snapshot taken at the `Field -> Battle` transition and
@@ -1214,6 +1293,8 @@ impl World {
             roster: legaia_save::Party::zeroed(0),
             pending_scene_transition: None,
             pending_fmv_trigger: None,
+            active_fmv: None,
+            cutscene_return_mode: None,
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
             pending_battle_events: Vec::new(),
@@ -1272,6 +1353,11 @@ impl World {
             game_over: false,
             field_return: None,
             field_last_tile: None,
+            world_map_entities: Vec::new(),
+            world_map_encounter: WorldMapEncounterState::default(),
+            world_map_player_walking: false,
+            pending_world_map_encounter: None,
+            battle_return_mode: SceneMode::Field,
         }
     }
 
@@ -2751,6 +2837,11 @@ impl World {
     ///     - `Title`      → no further VM.
     pub fn tick(&mut self) -> Option<StepOutcome> {
         self.frame += 1;
+        // Consume a pending FMV transition the field VM signalled last frame
+        // (op `0x4C 0xE2`). Retail's main mode dispatcher reads the
+        // next-game-mode global one frame after the op writes it, so the flip
+        // into the cutscene mode lands here, at the top of the following tick.
+        self.maybe_enter_pending_cutscene();
         self.tick_effects();
         self.tick_move_vms();
         self.tick_actor_physics();
@@ -2796,7 +2887,15 @@ impl World {
                 None
             }
             SceneMode::Cutscene => {
-                self.step_field();
+                // An in-engine choreography cutscene (no STR FMV) is just a
+                // field scene that suppresses field/battle dispatch, so the
+                // field VM keeps stepping. While an STR FMV is playing
+                // ([`active_fmv`] set), the field VM is suspended - retail
+                // hands the frame to the cutscene/MDEC overlay - and the host
+                // drives playback, calling [`finish_cutscene`] when it ends.
+                if self.active_fmv.is_none() {
+                    self.step_field();
+                }
                 None
             }
             SceneMode::WorldMap => {
@@ -2869,12 +2968,98 @@ impl World {
     ///
     /// Reads only pad bits, never wall-clock state, so the resulting
     /// controller mutation is deterministic across identical pad streams.
+    ///
+    /// When overworld entities are installed
+    /// ([`Self::install_world_map_entities`]) it also steps each one through
+    /// the ported entity SM ([`vm::world_map::step`]): the Idle state drains
+    /// the shared encounter countdown and, when it reaches zero with
+    /// encounters enabled, latches the configured formation, which this method
+    /// then resolves into a battle ([`SceneMode::WorldMap`] → [`SceneMode::Battle`],
+    /// returning to the world map on victory). Interactions / portal
+    /// transitions surface as [`FieldEvent::FieldInteract`] for the host.
+    ///
+    /// The per-entity SM itself is ported in [`vm::world_map`]; the encounter
+    /// formation resolver it gates is the retail BGM/asset resolver.
+    ///
+    /// REF: FUN_801DA51C
+    /// REF: FUN_800243F0
     fn tick_world_map(&mut self) {
         let pad = self.input.pad();
         let pad_held = pad & !self.input.pad_prev();
         if let Some(ctrl) = &mut self.world_map_ctrl {
             ctrl.tick(pad, pad_held);
         }
+        // Player is "walking" on the overworld this frame when any d-pad
+        // direction is held (bits 0x1000/0x2000/0x4000/0x8000).
+        const WORLD_MAP_DPAD: u16 = 0x1000 | 0x2000 | 0x4000 | 0x8000;
+        self.world_map_player_walking = pad & WORLD_MAP_DPAD != 0;
+
+        if !self.world_map_entities.is_empty() {
+            // Take the entity list out so the SM's host bridge can borrow the
+            // world mutably (mirrors the monster-AI-state borrow window).
+            let mut entities = std::mem::take(&mut self.world_map_entities);
+            for (idx, ctx) in entities.iter_mut().enumerate() {
+                let mut host = WorldMapEntityHostImpl { world: self };
+                vm::world_map::step(idx, ctx, &mut host);
+            }
+            self.world_map_entities = entities;
+
+            // Resolve a latched overworld encounter into a battle.
+            if let Some(formation_id) = self.pending_world_map_encounter.take() {
+                self.begin_world_map_encounter(formation_id);
+            }
+        }
+    }
+
+    /// Seed `count` overworld entity state machines (all Idle) so
+    /// [`Self::tick_world_map`] drives encounter / interaction gameplay.
+    /// Replaces any previously installed set. The retail engine builds one
+    /// record per on-map entity from the scene's entity table; the clean-room
+    /// world takes the count and pairs it with the shared encounter state
+    /// configured via [`Self::set_world_map_encounter`].
+    pub fn install_world_map_entities(&mut self, count: usize) {
+        self.world_map_entities = (0..count)
+            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .collect();
+    }
+
+    /// Configure the shared overworld encounter rate. `enabled` is the master
+    /// gate, `start_countdown` the initial per-step counter, `formation_id`
+    /// the formation an encounter spawns (resolved against
+    /// [`Self::formation_table`]), and `reset_to` the value the countdown is
+    /// reset to after each encounter fires.
+    pub fn set_world_map_encounter(
+        &mut self,
+        enabled: bool,
+        start_countdown: i8,
+        formation_id: u16,
+        reset_to: i8,
+    ) {
+        self.world_map_encounter = WorldMapEncounterState {
+            enabled,
+            countdown: start_countdown,
+            formation_id,
+            reset_to,
+        };
+    }
+
+    /// Resolve `formation_id` against [`Self::formation_table`] and flip from
+    /// the world map into a battle, snapshotting the world-map context so
+    /// [`Self::finish_battle`] returns to [`SceneMode::WorldMap`]. No-op when
+    /// the id isn't registered (the encounter is simply dropped).
+    fn begin_world_map_encounter(&mut self, formation_id: u16) {
+        let Some(formation) = self.formation_table.formation(formation_id).cloned() else {
+            return;
+        };
+        self.field_return = Some(FieldReturnState {
+            actors: self.actors.clone(),
+            player_actor_slot: self.player_actor_slot,
+            party_count: self.party_count,
+        });
+        self.battle_return_mode = SceneMode::WorldMap;
+        // `enter_battle_from_formation` swaps to the battle BGM itself.
+        self.enter_battle_from_formation(&formation);
+        self.active_formation = Some(formation);
     }
 
     /// Per-actor move-VM tick - clean port of `FUN_80021DF4` (lines
@@ -3119,6 +3304,60 @@ impl World {
         self.mode = SceneMode::WorldMap;
         if self.world_map_ctrl.is_none() {
             self.world_map_ctrl = Some(WorldMapController::new());
+        }
+    }
+
+    /// Consume a pending field-VM FMV trigger and flip into the cutscene
+    /// mode, mirroring retail's main mode dispatcher reading the
+    /// next-game-mode global (`_DAT_8007B83C == 0x1A`, game mode 26) one
+    /// frame after the field-VM op `0x4C 0xE2` writes it.
+    ///
+    /// Only fires from [`SceneMode::Field`] (the only mode that runs the
+    /// field VM and so the only one that can set the trigger). The pending
+    /// id is always drained; an id whose runtime FMV slot points at a
+    /// cut/missing path ([`crate::cutscene::fmv_index_to_str_filename`]
+    /// returns `None`) is a no-op transition - the field continues - which
+    /// matches the engine's documented "treat a cut slot as a no-op" rule.
+    fn maybe_enter_pending_cutscene(&mut self) {
+        let Some(fmv_id) = self.pending_fmv_trigger.take() else {
+            return;
+        };
+        if self.mode != SceneMode::Field {
+            return;
+        }
+        if crate::cutscene::fmv_index_to_str_filename(fmv_id).is_some() {
+            self.cutscene_return_mode = Some(self.mode);
+            self.mode = SceneMode::Cutscene;
+            self.active_fmv = Some(fmv_id);
+        }
+    }
+
+    /// The FMV index currently playing in [`SceneMode::Cutscene`], or `None`
+    /// when no STR FMV is active. Hosts poll this after [`World::tick`] to
+    /// learn which `MV*.STR` to open.
+    pub fn active_fmv(&self) -> Option<i16> {
+        self.active_fmv
+    }
+
+    /// The retail `MV*.STR` path of the active cutscene FMV, or `None` when
+    /// no STR FMV is active. Convenience over
+    /// [`crate::cutscene::fmv_index_to_str_filename`].
+    pub fn active_fmv_str_filename(&self) -> Option<&'static str> {
+        self.active_fmv
+            .and_then(crate::cutscene::fmv_index_to_str_filename)
+    }
+
+    /// End the active STR-FMV cutscene and return to the scene mode that was
+    /// live when it started (the field, in the normal flow). Retail returns
+    /// here when the cutscene/MDEC overlay finishes playback and unloads.
+    ///
+    /// The field VM resumes from where it paused - its program counter is
+    /// already past the FMV op, so the next field tick continues the script.
+    /// A no-op when no cutscene is active.
+    pub fn finish_cutscene(&mut self) {
+        if self.mode == SceneMode::Cutscene {
+            self.mode = self.cutscene_return_mode.take().unwrap_or(SceneMode::Field);
+            self.active_fmv = None;
         }
     }
 
@@ -3477,6 +3716,7 @@ impl World {
             player_actor_slot: self.player_actor_slot,
             party_count: self.party_count,
         });
+        self.battle_return_mode = SceneMode::Field;
         self.enter_battle_from_formation(&formation);
         self.active_formation = Some(formation);
     }
@@ -5333,7 +5573,12 @@ impl World {
             self.player_actor_slot = ret.player_actor_slot;
             self.party_count = ret.party_count;
         }
-        self.mode = SceneMode::Field;
+        // Return to the mode the battle was entered from (the field for a
+        // field encounter, the overworld for a world-map encounter), then
+        // reset the latch so a subsequent direct `enter_battle` defaults back
+        // to the field.
+        self.mode = self.battle_return_mode;
+        self.battle_return_mode = SceneMode::Field;
         // Reset step tracking so the post-battle position doesn't count as a
         // step on the next field tick.
         self.field_last_tile = None;
@@ -5711,6 +5956,72 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
 }
 
 // --- field VM host ---------------------------------------------------------
+
+/// Bridge between the ported world-map entity SM ([`vm::world_map::step`]) and
+/// the [`World`]. One is constructed per [`Self::tick_world_map`]; the entity
+/// `Vec` is taken out of the world while the SM runs so the bridge can hold a
+/// `&mut World`, then put back.
+struct WorldMapEntityHostImpl<'a> {
+    world: &'a mut World,
+}
+
+impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
+    fn activation_gate_open(&self) -> bool {
+        // Retail gates the SM body on `_DAT_8007b868 == 0` (door/portal open).
+        // The clean-room world has no closed-portal state yet, so the body
+        // always runs when world-map entities are installed; the per-state
+        // gates (encounter-enabled, dialog-active) still apply below.
+        true
+    }
+    fn encounter_countdown(&self) -> i8 {
+        self.world.world_map_encounter.countdown
+    }
+    fn set_encounter_countdown(&mut self, v: i8) {
+        self.world.world_map_encounter.countdown = v;
+    }
+    fn encounter_enabled(&self) -> bool {
+        self.world.world_map_encounter.enabled
+    }
+    fn on_encounter(&mut self, _entity_idx: usize, _resolver_result: u32) {
+        // Latch the configured formation for resolution into a battle at the
+        // end of the world-map tick, and pace the next encounter by resetting
+        // the shared countdown.
+        self.world.pending_world_map_encounter = Some(self.world.world_map_encounter.formation_id);
+        self.world.world_map_encounter.countdown = self.world.world_map_encounter.reset_to;
+    }
+    fn on_activating(&mut self, _entity_idx: usize) {
+        // Pending scene/portal data copy - no engine-side scene buffer yet.
+    }
+    fn on_scene_transition(&mut self, entity_idx: usize) {
+        // A town-portal entity reached the transition state. Surfaced as an
+        // interaction event for the host to resolve into a scene load (the
+        // per-portal target map id is a separate world-map RE thread).
+        self.world
+            .pending_field_events
+            .push(FieldEvent::FieldInteract {
+                interact_id: 0xFF,
+                slot: entity_idx as u8,
+            });
+    }
+    fn dialog_active(&self) -> bool {
+        self.world.current_dialog.is_some()
+    }
+    fn player_walking(&self) -> bool {
+        self.world.world_map_player_walking
+    }
+    fn on_interact(&mut self, entity_idx: usize) {
+        self.world
+            .pending_field_events
+            .push(FieldEvent::FieldInteract {
+                interact_id: 0,
+                slot: entity_idx as u8,
+            });
+    }
+    fn encounter_counter_is_sentinel(&self) -> bool {
+        false
+    }
+    fn clear_encounter_counter(&mut self) {}
+}
 
 struct FieldHostImpl<'a> {
     world: &'a mut World,
@@ -6816,6 +7127,109 @@ mod tests {
         assert_eq!(drive(&pad_stream), drive(&pad_stream));
     }
 
+    /// With no overworld entities installed, the world-map tick is camera-only:
+    /// the encounter state never advances even when encounters are enabled.
+    #[test]
+    fn world_map_without_entities_never_encounters() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.set_world_map_encounter(true, 0, 7, 64);
+        // No install_world_map_entities call.
+        for _ in 0..10 {
+            let _ = world.tick();
+        }
+        assert_eq!(world.mode, SceneMode::WorldMap);
+        assert!(world.pending_world_map_encounter.is_none());
+    }
+
+    /// An installed overworld entity whose shared countdown reaches zero (with
+    /// encounters enabled) fires an encounter that resolves into a battle, and
+    /// the battle is tagged to return to the overworld - not the field.
+    #[test]
+    fn world_map_encounter_flips_to_battle_returning_to_world_map() {
+        use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+
+        let mut world = World {
+            party_count: 1,
+            ..World::default()
+        };
+        world.live_gameplay_loop = true;
+        world.enter_world_map();
+        // A capable lone party member.
+        world.actors[0].active = true;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.liveness = 1;
+        world.set_battle_attack(0, 80);
+        // Formation 7 spawns one weak monster (id 100); register its stats.
+        world
+            .formation_table
+            .insert(FormationDef::new(7, vec![FormationSlot::new(100)]));
+        let mut cat = MonsterCatalog::new();
+        cat.insert(MonsterDef::new(100, "Test Slug", 20, 4));
+        world.set_monster_catalog(cat);
+        // One entity; encounters enabled with the countdown already at zero so
+        // the first Idle step fires immediately.
+        world.install_world_map_entities(1);
+        world.set_world_map_encounter(true, 0, 7, 64);
+
+        // Tick once: the entity SM fires the encounter and the world flips into
+        // battle, tagged to return to the overworld.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Battle);
+        assert_eq!(world.battle_return_mode, SceneMode::WorldMap);
+        assert!(world.field_return.is_some());
+
+        // Drive the fight to completion; it must return to the world map, not
+        // the field.
+        let mut returned = false;
+        for _ in 0..8000 {
+            world.tick();
+            if world.mode != SceneMode::Battle {
+                returned = true;
+                break;
+            }
+        }
+        assert!(returned, "the overworld battle must resolve");
+        assert_eq!(
+            world.mode,
+            SceneMode::WorldMap,
+            "an overworld encounter returns to the world map"
+        );
+    }
+
+    /// A stationary player next to an idle overworld entity triggers an
+    /// interaction (surfaced as a `FieldInteract` event), and a moving player
+    /// does not.
+    #[test]
+    fn world_map_idle_entity_interacts_only_when_player_stationary() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_world_map_entities(1);
+        // Encounters disabled so only the interaction path can fire.
+        world.set_world_map_encounter(false, 50, 0, 64);
+
+        // Player moving (d-pad held): no interaction.
+        world.set_pad(0x1000);
+        let _ = world.tick();
+        assert!(
+            !world
+                .pending_field_events
+                .iter()
+                .any(|e| matches!(e, FieldEvent::FieldInteract { .. })),
+            "a walking player does not interact"
+        );
+
+        // Player stationary: the idle entity interacts.
+        world.set_pad(0);
+        let _ = world.tick();
+        let interacted = world
+            .drain_field_events()
+            .iter()
+            .any(|e| matches!(e, FieldEvent::FieldInteract { interact_id: 0, .. }));
+        assert!(interacted, "a stationary player interacts with the entity");
+    }
+
     // ---- tile-board step + collision (A2) ----
 
     /// Tile-board world: 3x3 board, all floor except a wall at (1,1);
@@ -7049,6 +7463,67 @@ mod tests {
         assert!(events.contains(&FieldEvent::FmvTrigger { fmv_id: 3 }));
         assert_eq!(fmv_index_to_str_filename(3), Some("MOV/MV4.STR"));
         assert_eq!(STR_INIT_GAME_MODE, 26);
+    }
+
+    /// The FMV trigger transitions Field → Cutscene one frame later (retail's
+    /// main dispatcher reads the next-game-mode global the frame after the
+    /// field-VM op writes it), exposes the active FMV + its `MV*.STR` path,
+    /// and suspends the field VM while it plays. `finish_cutscene` returns to
+    /// the field.
+    #[test]
+    fn field_fmv_trigger_drives_field_cutscene_field_flow() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // fmv_id 3 → MV4.STR (a playable slot).
+        world.load_field_script(vec![0x4C, 0xE2, 0x03, 0x00, 0, 0]);
+
+        // Frame 1: op fires, records the pending trigger; still in Field.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Field);
+        assert_eq!(world.pending_fmv_trigger, Some(3));
+        assert_eq!(world.active_fmv(), None);
+
+        // Frame 2: the pending trigger is consumed at the top of the tick and
+        // the world flips into the cutscene mode for the resolved FMV.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Cutscene);
+        assert_eq!(world.pending_fmv_trigger, None);
+        assert_eq!(world.active_fmv(), Some(3));
+        assert_eq!(world.active_fmv_str_filename(), Some("MOV/MV4.STR"));
+
+        // While the FMV plays the field VM is suspended (no further field
+        // stepping); ticking keeps the world in Cutscene until the host ends
+        // playback.
+        let _ = world.tick();
+        assert_eq!(world.mode, SceneMode::Cutscene);
+        assert_eq!(world.active_fmv(), Some(3));
+
+        // Host signals playback complete → back to the field.
+        world.finish_cutscene();
+        assert_eq!(world.mode, SceneMode::Field);
+        assert_eq!(world.active_fmv(), None);
+    }
+
+    /// An FMV id whose runtime slot points at a cut/missing path is drained
+    /// without entering the cutscene mode - the engine treats it as a no-op
+    /// and the field keeps running.
+    #[test]
+    fn field_fmv_trigger_cut_path_is_a_noop() {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        // fmv_id 7 → slots 5..=11 are dev-only cut paths (no retail STR).
+        world.load_field_script(vec![0x4C, 0xE2, 0x07, 0x00, 0, 0]);
+
+        let _ = world.tick(); // op fires
+        assert_eq!(world.pending_fmv_trigger, Some(7));
+        let _ = world.tick(); // pending consumed
+        assert_eq!(
+            world.mode,
+            SceneMode::Field,
+            "cut path does not enter cutscene"
+        );
+        assert_eq!(world.pending_fmv_trigger, None, "pending still drained");
+        assert_eq!(world.active_fmv(), None);
     }
 
     // --- Save / load round-trip ----------------------------------------
