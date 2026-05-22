@@ -104,8 +104,11 @@ fn tmd_magic_count(b: &[u8]) -> usize {
         .count()
 }
 
-/// Scan a blob for embedded PSX TIMs with sane VRAM targets.
-fn scan_tims(b: &[u8]) -> Vec<TimTarget> {
+/// Scan a blob for embedded PSX TIMs with sane VRAM targets. Public so
+/// consumers (e.g. the engine's effect-texture VRAM seeder) can locate the
+/// `etim.dat` TIMs inside a decompressed cluster section and re-parse each at
+/// its `offset` for upload.
+pub fn scan_tims(b: &[u8]) -> Vec<TimTarget> {
     let mut out = Vec::new();
     let mut o = 0usize;
     while o + 8 <= b.len() {
