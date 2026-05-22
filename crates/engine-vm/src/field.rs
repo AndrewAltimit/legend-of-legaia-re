@@ -884,6 +884,43 @@ pub trait FieldHost {
         false
     }
 
+    /// Is the active field entity an encounter carrier?
+    ///
+    /// This is the engine-side stand-in for retail's scripted-encounter
+    /// **discriminator**: there is no dedicated "encounter" opcode - the
+    /// arm-encounter opcodes (`0x37`/`0x41`, `0x38`, `0x43`, `0x47`, `0x4C`)
+    /// are the field VM's generic halt-acquire family, and what turns a halt
+    /// into an encounter arm is the *consumer*. Retail only reads `+0x94` as a
+    /// formation record on entities ticked by the 5-state `FUN_801DA51C` SM,
+    /// once that SM reaches the encounter-confirm state. The field VM cannot
+    /// see that per-entity SM, so it asks the host whether the active entity
+    /// is armed; only then does the bare arm-encounter op forward the record.
+    ///
+    /// The default impl returns `false`, so generic script yields never get
+    /// mistaken for encounter arms.
+    fn is_scripted_encounter_armed(&self) -> bool {
+        false
+    }
+
+    /// Install a scripted encounter from the bytecode window at the bare
+    /// arm-encounter op (`0x37`/`0x41`).
+    ///
+    /// The retail writer (`0x801DEEDC..0x801DEEEC`) sets `actor[+0x94] = s0`,
+    /// where `s0 = bytecode_buffer + pc_offset` is the **current opcode
+    /// pointer** - i.e. the encounter record overlays the install opcode
+    /// itself: `record[+0] = opcode byte`, `[+1..+2] = its operands`,
+    /// `[+3] = monster_count`, `[+4..] = ids`. The consumer (`FUN_801DA51C`)
+    /// reads that pointer to fill the formation cell exactly once per arm.
+    ///
+    /// The VM hands the host the bounded window starting at the current PC
+    /// (`[opcode][op1][op2][count][<=4 ids]`, at most 8 bytes). Called only
+    /// when [`Self::is_scripted_encounter_armed`] returned `true`; the host is
+    /// expected to install the formation and disarm (fire-once semantics). The
+    /// default impl ignores the window.
+    fn install_scripted_encounter(&mut self, window: &[u8]) {
+        let _ = window;
+    }
+
     /// Op 0x34 sub-0 (effect-global colour + intensity setup).
     ///
     /// 7-byte instruction `[34, op0, r, g, b, intensity_lo, intensity_hi]`
@@ -2780,6 +2817,14 @@ pub fn step<H: FieldHost>(
         // The original also propagates the halt to caller_ctx (param_3) when
         // ctx is the player. Use [`step_with_caller`] to get that propagation.
         0x37 | 0x41 => {
+            // Bare arm-encounter: when the host reports the active entity is an
+            // encounter carrier (the consumer-SM discriminator), the record
+            // overlays this opcode (`record[+0]=opcode`, count@+3, ids@+4). Hand
+            // the host the bounded window so it can install the formation.
+            if host.is_scripted_encounter_armed() {
+                let end = (pc + 8).min(bytecode.len());
+                host.install_scripted_encounter(bytecode.get(pc..end).unwrap_or(&[]));
+            }
             ctx.saved_pc = pc as u32;
             ctx.wait_accum = 0;
             ctx.halt();
@@ -5835,6 +5880,8 @@ mod tests {
         // 0x34 sub-2 capture-and-yield.
         op34_sub2_capture_match: bool, // gates whether the lookup hits
         op34_sub2_captures: Vec<(u8, usize)>, // (b1, captured_pc_offset)
+        scripted_encounter_armed: bool, // gates the bare arm-encounter forward
+        scripted_encounter_windows: Vec<Vec<u8>>, // record windows from 0x37/0x41
         // 0x34 sub-0 / sub-1.
         op34_sub0_calls: Vec<(u8, [u8; 3], i16)>, // (op0, rgb, intensity)
         op34_sub1_calls: Vec<Op34Sub1Call>,
@@ -6181,6 +6228,12 @@ mod tests {
             } else {
                 false
             }
+        }
+        fn is_scripted_encounter_armed(&self) -> bool {
+            self.scripted_encounter_armed
+        }
+        fn install_scripted_encounter(&mut self, window: &[u8]) {
+            self.scripted_encounter_windows.push(window.to_vec());
         }
         fn op34_sub0_color_intensity_setup(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
             self.op34_sub0_calls.push((op0, rgb, intensity));
@@ -8083,6 +8136,40 @@ mod tests {
         assert_eq!(r, StepResult::Yield { resume_pc: 0 });
         // Captured PC offset should be `pc + header_size + 2` = 3.
         assert_eq!(host.op34_sub2_captures, vec![(0x40u8, 3usize)]);
+    }
+
+    #[test]
+    fn op_37_arm_encounter_forwards_record_window_when_armed() {
+        // When the host reports the active entity is an encounter carrier, the
+        // bare arm-encounter op (0x37) hands the host the record window that
+        // overlays the opcode: [opcode][op1][op2][count][ids..].
+        let mut host = TestHost {
+            scripted_encounter_armed: true,
+            ..TestHost::default()
+        };
+        let mut ctx = FieldCtx::default();
+        // record overlay at pc 0: [0x37][op1][op2][count=2][id=0x4F][id=0x50](+tail)
+        let bc = [0x37, 0x00, 0x00, 0x02, 0x4F, 0x50, 0x00, 0x00, 0x99];
+        let r = step(&mut host, &mut ctx, &bc, 0);
+        assert_eq!(r, StepResult::Yield { resume_pc: 3 });
+        assert_eq!(host.scripted_encounter_windows.len(), 1);
+        // Bounded 8-byte window starting at the opcode.
+        assert_eq!(
+            host.scripted_encounter_windows[0],
+            vec![0x37, 0x00, 0x00, 0x02, 0x4F, 0x50, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn op_37_yield_does_not_arm_encounter_when_unarmed() {
+        // Default host is unarmed: a generic 0x37 yield must not be mistaken
+        // for an encounter arm.
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        let bc = [0x37, 0x00, 0x00, 0x02, 0x4F, 0x50, 0x00, 0x00];
+        let r = step(&mut host, &mut ctx, &bc, 0);
+        assert_eq!(r, StepResult::Yield { resume_pc: 3 });
+        assert!(host.scripted_encounter_windows.is_empty());
     }
 
     #[test]

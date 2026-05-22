@@ -114,6 +114,13 @@ pub enum FieldEvent {
     /// can drop the event - the field VM doesn't require any
     /// host-side response.
     FmvTrigger { fmv_id: i16 },
+    /// Emitted by [`crate::world::World::install_scripted_encounter`] when the
+    /// field VM forwards a `+0x94` record pointer (op 0x34 sub-2 capture) and
+    /// the scripted-encounter consumer is armed. `record` is the bounded
+    /// bytecode window the VM captured ( `[flag][_][_][count][ids..]`, at most
+    /// 8 bytes). Engines can drain this to log / visualize the install; the
+    /// formation is already registered + armed by the time the event surfaces.
+    ScriptedEncounter { record: Vec<u8> },
     /// Field-VM op `0x4C 0x80` (actor allocator, halt-acquire prelude).
     ///
     /// The dispatcher has already routed through the halt-acquire predicate
@@ -247,6 +254,9 @@ impl FieldEvent {
             }
             FieldEvent::ExecMove { move_id } => format!("ExecMove({move_id})"),
             FieldEvent::FmvTrigger { fmv_id } => format!("FmvTrigger({fmv_id})"),
+            FieldEvent::ScriptedEncounter { record } => {
+                format!("ScriptedEncounter({}B)", record.len())
+            }
             FieldEvent::ActorAllocate { records } => {
                 let bytes: usize = records.iter().map(|r| r.len()).sum();
                 format!("ActorAllocate(count={}, body={}B)", records.len(), bytes,)
