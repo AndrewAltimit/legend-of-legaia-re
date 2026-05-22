@@ -90,8 +90,9 @@ fn befect_cluster_extracts_clean_classified_parts() {
         Component::OffsetPack { .. }
     ));
 
-    // Part 4: entry 874 LZS section 2 - the effect-texture TIMs (CLUTs in the
-    // high VRAM rows 473..478; these texture the 3D effect models).
+    // Part 4: entry 874 LZS section 2 - `etim.dat`, the effect texel source.
+    // CLUTs in the high VRAM rows 473..478; the pixel blocks byte-match a live
+    // battle VRAM dump captured mid-cast (verified out-of-band).
     assert_eq!(cluster.parts[4].lzs_section, Some(2));
     match &cluster.parts[4].component {
         Component::TimImages { tims } => {

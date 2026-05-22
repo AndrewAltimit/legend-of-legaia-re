@@ -135,13 +135,13 @@ The per-entry PROT extractor does **not** cleanly separate these files: the four
 
 So `etim.dat` / `etmd.dat` / `vdf.dat` are the three LZS sections of PROT entry 874, and `efect.dat` is entry 873.
 
-#### Two texel destinations - and the open one
+#### Texel source - `etim.dat`, pixel-verified
 
 `FUN_800198e0` is the general packed-image → VRAM uploader the loader uses (loader state `9` walks a pack and calls it per entry): it reads a per-chunk tag/flag word, builds a PSX `RECT`, and calls `FUN_800583c8` = `LoadImage` (`0x800156d4`) to DMA pixels into VRAM, maintaining a CLUT cache at `0x8007BEC0`. (Same routine the title / menu / save overlays and the type-`0x01` CLUT walker `FUN_8001fe70` use.)
 
-The **effect-texture TIMs** (entry 874 §2) upload to `fb_x≥320`, `fb_y=256` - they texture the **3D effect models** (entry 874 §0), not the 2D billboards.
+The **effect-texture TIMs** (`etim.dat`, entry 874 §2) are the effect texel source. They upload to VRAM pages at `fb_x≥320`, `fb_y=256+` with CLUTs in the high rows (`475..478`). This is confirmed **pixel-exact** against a live battle VRAM dump captured mid-cast (Gimard's *Tail Fire*): five of the seven `etim` TIM pixel blocks - the fire-sprite tiles at `fb(832,256)`, `(852,256)`, `(872,256)`, `(880,384)`, `(880,448)` - byte-match VRAM at their stated targets, and their CLUT rows match (modulo shared-row overwrites). The two larger `64×256` blocks at `fb(320,256)` / `(384,256)` instead hold background / character textures in that capture, so they aren't this effect's tiles.
 
-The **2D sprite atlas** inside `efect.dat` (entry 873) instead references VRAM pages at `fb_x ∈ {0,64,128,192}`, `fb_y=0` (mixed 4/8/15bpp) with CLUTs around `(592,0)` - a *different* VRAM region than the §2 TIMs populate. The source of those billboard texels is **not yet pinned**: the prime candidate is **entry 875**, whose `0x20000` byte size is exactly the `256×256`-halfword span the atlas covers, but it isn't a TIM or recognised pack and its upload mechanism (likely the `FUN_800198e0` magic-`0x11` raw-sprite path) isn't traced. A battle save state with effects resident is needed to byte-confirm. (Earlier notes claimed the billboard texels came from `etim.dat`; that file textures the 3D models, so that mapping was wrong.)
+One open detail remains: the `efect.dat` sprite atlas's `tpage`/`clut` fields, decoded with the historical 8-byte layout, resolve to a *different* region (`fb_x ∈ {0,64,128,192}`, `fb_y=0`) than where `etim` actually lands - so either that atlas-entry layout needs re-decoding, or model-based effects like *Tail Fire* render as the 3D `etmd` meshes textured by `etim` and bypass the 2D atlas. The texel *bytes* are pinned (`etim.dat`); only the atlas-entry → VRAM-page mapping is unresolved. (An earlier note guessed the source was the raw blob at entry 875 - that is wrong; the live-VRAM oracle pins it to `etim`.)
 
 ### Consumer cluster
 
@@ -178,7 +178,7 @@ Buffer size per slot: `0x10800` = 67584 bytes. Format unverified; may share the 
 ### Open questions
 
 - **Effect-ID → human effect name.** Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". Reachable by tracing call sites of `FUN_801DFDF8` in damage / battle-action code.
-- **2D billboard atlas texel source.** The `efect.dat` sprite atlas samples VRAM pages at `fb_x ∈ {0,64,128,192}`, `fb_y=0` (CLUTs ~`(592,0)`). The cluster's effect-texture TIMs (entry 874 §2) populate a *different* region (`fb_x≥320`) and texture the 3D effect models, so they are not the billboard source. Entry 875 (a raw `0x20000` blob, exactly the atlas's page span) is the leading candidate; confirm against a battle save state with effects resident and pin its upload site.
+- **Atlas-entry → VRAM-page mapping.** The texel source is pinned (`etim.dat`, entry 874 §2, pixel-verified). What's still loose is how the `efect.dat` atlas's `tpage`/`clut` fields index those `etim` pages: the historical 8-byte atlas layout decodes to `fb_x ∈ {0,64,128,192}`/`fb_y=0`, which doesn't match where `etim` uploads (`fb_x≥320`). Re-decode the atlas entry layout against `FUN_801E0088` pass 2, or confirm that model-based effects render via the `etmd` meshes rather than the 2D atlas.
 - **summon.dat / readef.dat formats.** Not yet decoded.
 
 ## Field-pack format (magic `0x01059B84`)
