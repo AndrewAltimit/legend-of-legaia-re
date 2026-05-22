@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; row-479 NPC CLUTs</div>
-  <h1>NPC CLUTs at VRAM row 479</h1>
+  <h1>NPC CLUTs at VRAM row 479 <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">PSX field/town NPC TMDs commonly sample CLUT cells along row 479. The data is <strong>plain PSX TIMs</strong> sitting inside the scene's PROT entries, uploaded to VRAM by the <code>FUN_8001FE70</code> battle-init walker (no special "hue-ramp generator" function exists). Implementation: <code>crates/tim/src/vram.rs</code> (merge-zeros CLUT upload), <code>crates/tmd/src/vram_targeted.rs</code> (targeted dispatch), and <code>crates/asset/src/scene_tmd_stream.rs::battle_tim_chunks</code> (FUN_8001FE70 emulation).</p>
 </header>
 

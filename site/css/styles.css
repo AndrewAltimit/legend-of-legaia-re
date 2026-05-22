@@ -780,26 +780,6 @@ details.disclosure .disclosure-body > :first-child { margin-top: 0; }
 details.disclosure .disclosure-body > :last-child { margin-bottom: 0; }
 details.disclosure .disclosure-body pre { margin: 0.6rem 0; }
 
-/* ---------- Confidence badge ----------
-   Surfaces a format/finding's confidence level (see formats/overview). Reuses
-   the status colour ramp: confirmed = done, inferred = partial, open = open. */
-.conf {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  padding: 0.06rem 0.4rem;
-  border-radius: 2px;
-  border: 1px solid;
-  vertical-align: middle;
-  line-height: 1.5;
-}
-.conf-confirmed { color: var(--done);    border-color: var(--done); }
-.conf-inferred  { color: var(--partial); border-color: var(--partial); }
-.conf-open      { color: var(--open);    border-color: var(--open); }
-
 /* ---------- Code copy button ---------- */
 .copy-btn {
   position: absolute;
@@ -949,7 +929,7 @@ pre:hover .copy-btn { opacity: 1; }
   justify-content: space-between;
   gap: 0.5rem;
 }
-.card-title .conf { flex: 0 0 auto; }
+.card-title .tag { flex: 0 0 auto; }
 
 .card-body {
   color: var(--text-muted);
