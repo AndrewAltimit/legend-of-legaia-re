@@ -944,7 +944,12 @@ pre:hover .copy-btn { opacity: 1; }
   margin-bottom: 0.4rem;
   line-height: 1.35;
   transition: color var(--transition);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
+.card-title .conf { flex: 0 0 auto; }
 
 .card-body {
   color: var(--text-muted);
