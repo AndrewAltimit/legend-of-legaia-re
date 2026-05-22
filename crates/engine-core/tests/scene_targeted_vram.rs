@@ -150,6 +150,7 @@ fn town01_field_mode_skips_battle_only_scene_tmd_stream() {
         &shared_refs,
         BuildOptions {
             kind: SceneLoadKind::Battle,
+            ..Default::default()
         },
     )
     .expect("build_targeted town01 battle");
@@ -158,6 +159,7 @@ fn town01_field_mode_skips_battle_only_scene_tmd_stream() {
         &shared_refs,
         BuildOptions {
             kind: SceneLoadKind::Field,
+            ..Default::default()
         },
     )
     .expect("build_targeted town01 field");

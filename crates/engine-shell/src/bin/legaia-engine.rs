@@ -6686,6 +6686,7 @@ fn cmd_play_window_with_record(
             &shared_refs,
             BuildOptions {
                 kind: SceneLoadKind::Battle,
+                ..Default::default()
             },
         )?;
         res
