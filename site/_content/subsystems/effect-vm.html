@@ -89,3 +89,13 @@
   <h2>Effect-ID &rarr; human effect name mapping</h2>
   <p>Effect IDs are anonymous; no string table maps id &rarr; "fireball / thunder / heal". To name effects, trace call sites of <code>FUN_801DFDF8</code> in damage / battle-action code (in the town/level-up overlays). Each caller passes a literal byte for <code>effect_id</code>; correlate with the action that triggered it (a Tactical Arts move, an item use, a spell cast).</p>
 </section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../formats/effect.html">efect.dat format</a>
+    <a href="battle-action.html">Battle action SM</a>
+    <a href="move-vm.html">Move-table VM</a>
+  </div>
+</section>
