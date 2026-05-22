@@ -6,10 +6,10 @@
 
 <section class="doc-section" id="confidence">
   <h2>Confidence levels</h2>
+  <p>Each format below carries a badge for how solid its decode is:</p>
   <ul class="bullets">
-    <li><strong>Confirmed</strong> - verified end-to-end against real on-disc data, with passing tests.</li>
-    <li><strong>Inferred</strong> - deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.</li>
-    <li><strong>Unknown</strong> - known to exist but not yet decoded.</li>
+    <li><span class="tag tag-done">Confirmed</span> &mdash; verified end-to-end against real on-disc data, with passing tests.</li>
+    <li><span class="tag tag-partial">Inferred</span> &mdash; deduced empirically from byte patterns; structurally consistent but not yet exhaustively validated.</li>
   </ul>
 </section>
 
@@ -18,19 +18,19 @@
   <p>What the disc image looks like before any in-game format gets involved.</p>
   <div class="card-grid">
     <a class="card" id="disc" href="disc.html">
-      <div class="card-title">PSX disc geometry</div>
+      <div class="card-title"><span>PSX disc geometry</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Mode2/2352 sectors, 24-byte ECC overhead, ISO9660 path resolution. The <code>iso</code> crate's <code>RawDisc::read_sector</code> hides the sector layer and returns clean 2048-byte user data.</div>
     </a>
     <a class="card" id="prot" href="prot.html">
-      <div class="card-title">PROT.DAT TOC</div>
+      <div class="card-title"><span>PROT.DAT TOC</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The project archive. 1234 entries indexed by a 16-byte TOC. <code>start_lba = toc[p+2]</code>, <code>size = toc[p+5] - toc[p+3] + 4</code>. Walked at boot by <code>FUN_8003E4E8</code>.</div>
     </a>
     <a class="card" id="cdname" href="cdname.html">
-      <div class="card-title">CDNAME.TXT name map</div>
+      <div class="card-title"><span>CDNAME.TXT name map</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body"><code>#define name N</code> markers tag block <em>starts</em>; names inherit forward to subsequent entries. Some labels are misleading (vab_01, move_program_no) - verify against the loader-call constant or magic bytes.</div>
     </a>
     <a class="card" href="dmy.html">
-      <div class="card-title">DMY.DAT (dev fixtures)</div>
+      <div class="card-title"><span>DMY.DAT (dev fixtures)</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Memory-bus test pattern + paired random blobs. Not real game data.</div>
     </a>
   </div>
@@ -40,35 +40,35 @@
   <h2>Compression + dispatch</h2>
   <div class="card-grid">
     <a class="card" id="lzs" href="lzs.html">
-      <div class="card-title">Legaia LZS</div>
+      <div class="card-title"><span>Legaia LZS</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Custom LZSS decoder reverse-engineered from <code>FUN_8001A55C</code>. 4096-byte ring buffer, zero-init. "Decompresses without error" is not a validity signal - always magic-check the decoded output.</div>
     </a>
     <a class="card" id="asset-type" href="asset-type.html">
-      <div class="card-title">Asset type dispatcher</div>
+      <div class="card-title"><span>Asset type dispatcher</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body"><code>FUN_8001F05C</code> dispatches by 8-bit type byte: 0=TIM, 2=TMD, 4=MES, 6=ANM, 7=VDF, 8=SIN, 9=TMD2, B=MOVE2. LZS-vs-raw decided per asset.</div>
     </a>
     <a class="card" href="asset-descriptor.html">
-      <div class="card-title">Asset descriptor format</div>
+      <div class="card-title"><span>Asset descriptor format</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The <code>(type_byte &lt;&lt; 24) | size</code> calling convention used by <code>FUN_8001F05C</code> and the descriptor-pair walker.</div>
     </a>
     <a class="card" id="pack" href="pack.html">
-      <div class="card-title">Pack format</div>
+      <div class="card-title"><span>Pack format</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Used inside DATA_FIELD streaming chunks. Header <code>u32 count</code> + <code>u32 word_offsets[count]</code>.</div>
     </a>
     <a class="card" id="tim-pack" href="tim-pack.html">
-      <div class="card-title">Standalone TIM-pack</div>
+      <div class="card-title"><span>Standalone TIM-pack</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Used by some standalone PROT entries. Header <code>(magic_lo, magic_hi, count&lt;16, marker=0x01)</code> + offsets; <code>byte_offset = word_index*4 + 4</code>.</div>
     </a>
     <a class="card" href="field-pack.html">
-      <div class="card-title">Field-pack format</div>
+      <div class="card-title"><span>Field-pack format</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Magic <code>0x01059B84</code>. 4 PROT entries share a byte-identical 97-entry static schema. Consumer is <code>FUN_801D6704</code> (overlay 0897); slots are read at hard-coded offsets.</div>
     </a>
     <a class="card" href="battle-data-pack.html">
-      <div class="card-title">Battle-data pack</div>
+      <div class="card-title"><span>Battle-data pack</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Custom 16 MB-ish container for the <code>battle_data</code> block (PROT 0865 + sister <code>edstati3</code>). Streaming preamble + 12-byte record table + per-record LZS streams that decompress to <code>[32-byte header + Legaia TMD + texture pool]</code>.</div>
     </a>
     <a class="card" href="npc-palette.html">
-      <div class="card-title">Row-479 NPC CLUTs</div>
+      <div class="card-title"><span>Row-479 NPC CLUTs</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Plain PSX TIMs in scene PROT entries with CLUT block at <code>(fb_x=0, fb_y=479, w=256, h=1)</code>. Engine uploads them via the targeted-upload CLUT pass with merge-zeros semantics so multiple scene-pack TIMs targeting the same row coexist (full slots 0..14 + partial slots 0..7).</div>
     </a>
   </div>
@@ -78,51 +78,51 @@
   <h2>Per-asset formats</h2>
   <div class="card-grid">
     <a class="card" id="tim" href="tim.html">
-      <div class="card-title">PSX TIM</div>
+      <div class="card-title"><span>PSX TIM</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Standard PlayStation texture format. 4 / 8 / 15 bpp; CLUTs scatter across PROT entries. <code>crates/tim</code> exports to PNG.</div>
     </a>
     <a class="card" id="tmd" href="tmd.html">
-      <div class="card-title">Legaia TMD</div>
+      <div class="card-title"><span>Legaia TMD</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Custom PSX TMD variant - magic <code>0x80000002</code>. Object pointers are byte offsets relative to header end. Primitives use a custom 8-byte group header + per-mode descriptor table at <code>DAT_8007326C</code>.</div>
     </a>
     <a class="card" id="vab" href="vab.html">
-      <div class="card-title">VAB sound bank</div>
+      <div class="card-title"><span>VAB sound bank</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">PSX-standard VAB (program/tone/SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. Banks live in battle_data / level_up - vab_01 is misleading.</div>
     </a>
     <a class="card" id="seq" href="seq.html">
-      <div class="card-title">PsyQ SEQ</div>
+      <div class="card-title"><span>PsyQ SEQ</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">PsyQ's MIDI-derived sequence format (<code>pQES</code> magic). 13-byte header (PPQN, tempo, time-sig) + delta-time / MIDI events with running status. Drives <code>SsSeqOpen</code> / <code>SsSeqPlay</code>. <code>crates/seq</code> parses + walks.</div>
     </a>
     <a class="card" href="xa.html">
-      <div class="card-title">XA-ADPCM</div>
+      <div class="card-title"><span>XA-ADPCM</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">CD-XA Mode 2 Form 2 audio. <code>crates/xa</code> demuxes per (file_no, ch_no) channel and emits one WAV per stream.</div>
     </a>
     <a class="card" id="mes" href="mes.html">
-      <div class="card-title">MES dialog</div>
+      <div class="card-title"><span>MES dialog</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Two variants: Compact (<code>0x404</code> magic) and Records (<code>0x44 0x78</code>). Bytecode tokens (Glyph / Op65 / Op4c / Op26 / End). Renderer is overlay-resident.</div>
     </a>
     <a class="card" id="dialog-font" href="dialog-font.html">
-      <div class="card-title">Dialog font</div>
+      <div class="card-title"><span>Dialog font</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Proportional Latin font (<code>FUN_80036888</code>). 256-byte width table at <code>0x80073F1C</code>; 38-entry escape table at <code>0x80074050</code>; glyph bitmaps in VRAM at <code>(896, 0)</code>, 4bpp, 16x16 cells (drawn 14x15).</div>
     </a>
     <a class="card" id="anm" href="anm.html">
-      <div class="card-title">ANM animation</div>
+      <div class="card-title"><span>ANM animation</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Asset-type 6 container. <code>(count + byte_offsets + records)</code>; marker_1 = <code>0x080C</code> across all observed records. Keyframe pose decoder ported in <code>legaia_anm::AnimPlayer</code>.</div>
     </a>
     <a class="card" id="monster-animation" href="monster-animation.html">
-      <div class="card-title">Monster animation</div>
+      <div class="card-title"><span>Monster animation</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Enemy battle animation inside the monster archive (PROT 867). Per-action transform-keyframe stream at entry <code>+0x8c</code>: <code>[u8 parts][u8 frames]</code> + nine-byte TRS records (one part per TMD object). Action 0 is the idle loop; decoder <code>FUN_8004998c</code>.</div>
     </a>
     <a class="card" id="mdt" href="mdt.html">
-      <div class="card-title">MDT - move tables</div>
+      <div class="card-title"><span>MDT - move tables</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Tactical Arts move records. Both layouts parse cleanly; the consumer is <code>FUN_800204F8</code>. The runtime <code>MOVE</code> base is sourced per-scene from a CDNAME slot, not from a single boot-time PROT entry.</div>
     </a>
     <a class="card" id="art-data" href="art-data.html">
-      <div class="card-title">Art data - Tactical Arts records</div>
+      <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Per-character art records (Vahn / Noa / Gala; PROT entry <code>0x05C4</code>). 40-field schema: command sequence, action constant, power bytes, hit timing, special / hit effect cues, status effects, repeat-frame replay.</div>
     </a>
     <a class="card" id="save-record" href="save-record.html">
-      <div class="card-title">Per-character save record</div>
+      <div class="card-title"><span>Per-character save record</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Runtime <code>0x414</code>-byte record at <code>0x80084708 + slot * 0x414</code>. Cheat-database-pinned offset table for stats, level, magic rank, spells, summons, equipment.</div>
     </a>
   </div>
@@ -132,35 +132,35 @@
   <h2>Streaming + scene containers</h2>
   <div class="card-grid">
     <a class="card" href="data-field.html">
-      <div class="card-title">DATA_FIELD streaming</div>
+      <div class="card-title"><span>DATA_FIELD streaming</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Chunked container parsed by <code>crates/asset::parse_streaming</code>. Sister detector <code>data_field_truncated</code> catches the shape where the final chunk's declared size walks past EOF.</div>
     </a>
     <a class="card" href="scene-bundles.html">
-      <div class="card-title">Scene bundles</div>
+      <div class="card-title"><span>Scene bundles</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Five sister detectors covering ~50% of PROT entries: <code>scene_tmd_stream</code>, <code>scene_vab_stream</code>, <code>scene_asset_table</code>, <code>scene_scripted_asset_table</code>, <code>scene_event_scripts</code>, plus <code>tmd_size_prefix</code>.</div>
     </a>
     <a class="card" href="scene-v12-table.html">
-      <div class="card-title">scene_v12_table</div>
+      <div class="card-title"><span>scene_v12_table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Per-scene container: runtime-fixup header + inline record table + event-script prescript at sector offset <code>0x800</code>. 97 PROT entries (one per scene); strict header algebra <code>N = 4*param + 22</code>; field VM (<code>FUN_801DE840</code>) walks the prescript.</div>
     </a>
     <a class="card" href="world-map-overlay.html">
-      <div class="card-title">World-map slot-4 records</div>
+      <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Slot 4 of each kingdom bundle (PROT 0085 / 0244 / 0391, type byte <code>0x05</code>). Outer pack of 15 sub-bodies; per-body header <code>[u8 count_a, u8 flag_a, u8 count_b, u8 flag_b, u16 0x080C, u16 kind]</code> + <code>count_a*count_b</code> 8-byte records. Container byte-verified vs live RAM; record interpretation <strong>open</strong> (wireframe / coastline hypothesis falsified). Most likely a runtime library of small object-local 3D meshes. <strong>Not</strong> the bulk continent terrain source.</div>
     </a>
     <a class="card" href="effect.html">
-      <div class="card-title">Effect bundles</div>
+      <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Magic <code>0x02018B0C</code> (efect.dat). 2-pack wrapper: 14 sprite-anim entries + 33 effect scripts indexed by effect ID.</div>
     </a>
     <a class="card" href="navmesh.html">
-      <div class="card-title">Per-scene primitive scratch buffer</div>
+      <div class="card-title"><span>Per-scene primitive scratch buffer</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Negative-finding entry. The 1700-byte cluster at <code>0x80108EA4..0x80109550</code> that earlier readings called "navmesh" is actually a per-scene scratch buffer the renderer fills with assembled GPU primitive data on scene entry. No RAM cell anywhere holds a pointer into the window.</div>
     </a>
     <a class="card" href="encounter.html">
-      <div class="card-title">Encounter record</div>
+      <div class="card-title"><span>Encounter record</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">On-disc encounter record installed at <code>actor[+0x94]</code> by the script-VM and read by <code>FUN_801DA51C</code>. Layout: <code>[3 reserved][count: u8][monster_ids: u8[count]]</code>. Reader copies the ids into the global formation cell at <code>0x8007BD0C</code>.</div>
     </a>
     <a class="card" href="str-fmv-table.html">
-      <div class="card-title">STR FMV table</div>
+      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">In-RAM compact table the cutscene / MDEC overlay uses to look up MV*.STR files. Six 24-byte entries at <code>0x801CAE40</code>: filename + libcd BCD MSF + size. Pinned via mc1 capture during FMV playback.</div>
     </a>
   </div>
@@ -170,11 +170,11 @@
   <h2>Runtime overlay carriers</h2>
   <div class="card-grid">
     <a class="card" href="mips-overlay.html">
-      <div class="card-title">MIPS overlay code</div>
+      <div class="card-title"><span>MIPS overlay code</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Some PROT entries carry MIPS code that loads into the overlay window at <code>0x801C0000+</code>. The detector finds them by SP-prologue density.</div>
     </a>
     <a class="card" href="overlay-ptr-table.html">
-      <div class="card-title">Overlay pointer-table code</div>
+      <div class="card-title"><span>Overlay pointer-table code</span> <span class="tag tag-partial">Inferred</span></div>
       <div class="card-body">Sister format to MIPS overlay. Header is a pointer table; the rest is overlay code referenced by those pointers. 42 PROT entries.</div>
     </a>
   </div>
@@ -184,11 +184,11 @@
   <h2>Auxiliary</h2>
   <div class="card-grid">
     <a class="card" href="sound-driver.html">
-      <div class="card-title">Sound-driver path strings</div>
+      <div class="card-title"><span>Sound-driver path strings</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">3 SCUS consumers: sound init / streaming-asset loader / mode-aware ext dispatcher. 8 extensions: .MAP, .PCH, .spk, .dpk, etc.</div>
     </a>
     <a class="card" href="pochi.html">
-      <div class="card-title">Pochi-filler placeholder slots</div>
+      <div class="card-title"><span>Pochi-filler placeholder slots</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">265 PROT entries are dev-fill placeholders ("pochipochi..." byte pattern). Reserved-but-unused scene asset slots.</div>
     </a>
   </div>

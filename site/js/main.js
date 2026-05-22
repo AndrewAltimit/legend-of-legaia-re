@@ -39,32 +39,39 @@
   }
 
   /* ---------- Copy-to-clipboard on code blocks ---------- */
+  function attachCopyButton(host, getText) {
+    if (host.querySelector('.copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', () => {
+      const text = getText();
+      const ok = () => {
+        btn.textContent = 'copied';
+        setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+      };
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(ok).catch(() => { btn.textContent = 'err'; });
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) { btn.textContent = 'err'; }
+        document.body.removeChild(ta);
+      }
+    });
+    host.appendChild(btn);
+  }
+
   function setupCopyButtons() {
     document.querySelectorAll('pre').forEach(pre => {
-      if (pre.querySelector('.copy-btn')) return;
-      const btn = document.createElement('button');
-      btn.className = 'copy-btn';
-      btn.type = 'button';
-      btn.textContent = 'copy';
-      btn.addEventListener('click', () => {
-        const code = pre.querySelector('code');
-        const text = (code || pre).textContent;
-        const ok = () => {
-          btn.textContent = 'copied';
-          setTimeout(() => { btn.textContent = 'copy'; }, 1500);
-        };
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(text).then(ok).catch(() => { btn.textContent = 'err'; });
-        } else {
-          const ta = document.createElement('textarea');
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          try { document.execCommand('copy'); ok(); } catch (e) { btn.textContent = 'err'; }
-          document.body.removeChild(ta);
-        }
-      });
-      pre.appendChild(btn);
+      attachCopyButton(pre, () => (pre.querySelector('code') || pre).textContent);
+    });
+    /* Native-CLI command blocks: copy just the command text. */
+    document.querySelectorAll('.cli').forEach(cli => {
+      attachCopyButton(cli, () => (cli.querySelector('code') || cli).textContent.trim());
     });
   }
 

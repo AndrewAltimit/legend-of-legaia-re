@@ -63,7 +63,11 @@ The reader copies `monster_ids[0..count]` into the global formation cell at `0x8
 801da678  _nop
 ```
 
-The `s1` register is the actor record (caller's `a0` in `FUN_801DA51C`); `+0x94` is the encounter-record pointer slot. The clear-then-copy ordering means a `monster_count < 4` record correctly leaves trailing slots zeroed.
+The `s1` register is the actor record (caller's `a0` in `FUN_801DA51C`); `+0x94` is the encounter-record pointer slot. The clear-then-copy ordering means a `monster_count < 4` record correctly leaves trailing slots zeroed. After the copy the reader clears `entity[+0x94]` and advances the entity's 5-state SM (`entity[+0x8A]++`), so the formation copy fires exactly once per arm.
+
+Just before the copy (`0x801DA5F8..0x801DA61C`) the reader also reads `record[+0]` (the **opcode byte** the record overlays — see the writer below) and, when it is non-zero, ORs bit `0x80` into a battle-setup flag byte. Because the install opcodes are themselves non-zero, this bit is effectively always raised for a scripted arm; the byte is the first of the record's three "reserved" bytes (`+0x00..+0x02` = the install opcode + its two operand bytes).
+
+**Discriminator (relevant to wiring this in an engine).** There is no dedicated "encounter" opcode: the install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields. What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state. The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context. Which specific opcode a given scripted fight uses, and how that scene advances the entity SM to the confirm state, are therefore per-scene bytecode facts (not resolvable from the static dispatcher alone).
 
 ## Writer (record-pointer install)
 

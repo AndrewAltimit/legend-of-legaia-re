@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; STR FMV table</div>
-  <h1>In-RAM STR FMV file tables</h1>
+  <h1>In-RAM STR FMV file tables <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">The cutscene / MDEC overlay's lookup tables for STR FMV files. Two distinct tables coexist in the str_fmv overlay's data section, with different roles: a 6-entry <em>compact</em> dev-shape metadata table at <code>0x801CAE40</code>, and a 12-entry <em>runtime FMV-state</em> table at <code>0x801D0A6C</code>. The play loop (<code>FUN_801CF098</code>) reads the runtime table; the compact table is dev-only.</p>
 </header>
 

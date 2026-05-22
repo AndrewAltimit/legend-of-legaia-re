@@ -114,12 +114,21 @@ pub struct BuildOptions {
     /// Defaults to [`SceneLoadKind::Battle`] in [`BuildOptions::default`]
     /// so legacy `build_targeted` calls behave the same as before.
     pub kind: SceneLoadKind,
+    /// When `true`, upload **every** collected scene TIM to its VRAM
+    /// destination instead of only the render-targeted subset a mesh prim
+    /// samples. This mirrors the retail field loader's "DMA every TIM"
+    /// behaviour and is what the VRAM parity oracle wants (the targeted
+    /// subset is a render optimisation, not a faithful VRAM image). The
+    /// render path leaves this `false` so its prim filter still matches the
+    /// uploaded set. Default `false`.
+    pub upload_all_tims: bool,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
         Self {
             kind: SceneLoadKind::Battle,
+            upload_all_tims: false,
         }
     }
 }
@@ -576,10 +585,18 @@ impl SceneResources {
         collect_tim_bufs(scene, &mut tim_bufs, &mut tim_parse_failures);
         let tim_count = tim_bufs.len();
 
-        let (mut vram, upload_stats) = legaia_tmd::vram_targeted::build_vram_targeted_from_buffers(
-            tim_bufs.iter().map(|v| v.as_slice()),
-            &needs,
-        );
+        let (mut vram, upload_stats) = if options.upload_all_tims {
+            // Parity-oracle path: DMA-every-TIM, like the retail field loader.
+            legaia_tmd::vram_targeted::build_vram_full_from_buffers(
+                tim_bufs.iter().map(|v| v.as_slice()),
+            )
+        } else {
+            // Render path: only the subset a mesh prim samples.
+            legaia_tmd::vram_targeted::build_vram_targeted_from_buffers(
+                tim_bufs.iter().map(|v| v.as_slice()),
+                &needs,
+            )
+        };
 
         // Synthetic CLUT pass: for every `battle_data` pack entry in the
         // scene's CDNAME block (and any shared block), surface CLUT-row

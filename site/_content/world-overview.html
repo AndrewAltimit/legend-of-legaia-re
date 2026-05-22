@@ -105,9 +105,13 @@
 
 <section class="doc-section" id="related">
   <h2>Related</h2>
-  <p>
-    Engine-runtime semantics behind the world map &mdash; controller, top-view debug toggle, per-frame render pipeline, bulk-terrain emit mechanism &mdash; live on the <a href="subsystems/world-map.html">world-map subsystem</a>. The reverse-engineering provenance specific to this WebGL viewer &mdash; slot-1 layout heuristics, distance-cue fog approximation, MAN <code>0x7F</code> sentinel resolver, ocean asset extraction, camera anchors &mdash; is on the <a href="subsystems/world-overview-viewer.html">world-overview viewer subsystem</a>. Slot-4 container layout (record interpretation still open): <a href="formats/world-map-overlay.html">slot-4 records format</a>.
-  </p>
+  <p>The runtime semantics behind the world map &mdash; controller, top-view toggle, render pipeline, bulk-terrain emit &mdash; live on the <strong>world-map subsystem</strong>. The reverse-engineering specific to this WebGL viewer &mdash; slot-1 layout heuristics, fog approximation, the MAN <code>0x7F</code> sentinel resolver, ocean extraction, camera anchors &mdash; is on the <strong>world-overview viewer</strong> page.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="subsystems/world-map.html">World-map subsystem</a>
+    <a href="subsystems/world-overview-viewer.html">World-overview viewer</a>
+    <a href="formats/world-map-overlay.html">Slot-4 records</a>
+  </div>
 </section>
 
 <style>

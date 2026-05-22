@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; scene-prefixed asset bundles</div>
-  <h1>Scene-prefixed asset bundles</h1>
+  <h1>Scene-prefixed asset bundles <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">Four related shapes account for the dominant per-scene asset layouts on the disc. All of them lead with a 4-byte chunk0 header in the form <code>(type &lt;&lt; 24) | size</code>, with <code>type = 0x00</code> - the same encoding as a <a href="data-field.html">DATA_FIELD streaming</a> chunk header. The standard streaming walker would interpret <code>type=0x00</code> as the TIM dispatcher slot; specialised loaders in the runtime know to dispatch chunk0 differently based on the <em>content</em> magic at offset +4.</p>
 </header>
 

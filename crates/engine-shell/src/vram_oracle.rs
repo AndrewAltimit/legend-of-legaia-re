@@ -23,7 +23,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{FIELD_SHARED_BLOCKS, SceneResources};
+use legaia_engine_core::scene_resources::{
+    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+};
 
 use crate::{BootConfig, BootSession};
 
@@ -65,7 +67,15 @@ pub fn build_engine_vram_bytes_prepass(
         }
     }
     let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-    let (resources, _) = SceneResources::build_targeted(&scene, &shared_refs)?;
+    // Parity oracle: field-mode dispatch + DMA-every-TIM. The retail field
+    // loader uploads every scene TIM to VRAM, not just the render-targeted
+    // subset a mesh prim samples, so the oracle build does the same.
+    let options = BuildOptions {
+        kind: SceneLoadKind::Field,
+        upload_all_tims: true,
+    };
+    let (resources, _) =
+        SceneResources::build_targeted_with_options(&scene, &shared_refs, options)?;
     Ok(vram_to_le_bytes(&resources.vram))
 }
 
@@ -145,6 +155,89 @@ pub fn first_texpage_divergence(engine: &[u8], runtime: &[u8]) -> Option<Texpage
     None
 }
 
+/// VRAM rows occupied by the **runtime-managed NPC / character CLUT band**
+/// (centred on the row-479 NPC palette row; character palettes stack into the
+/// adjacent rows). This region is *not* part of the static DMA-every-TIM scene
+/// upload: the retail engine paints it per-frame via the targeted CLUT pass
+/// keyed on which NPCs / party members are present (see
+/// [`docs/formats/npc-palette.md`] and the row-479 merge-zeros mechanism). It
+/// is therefore scene/actor-state-dependent rather than a static scene
+/// texture, so the static-mask oracle excludes it. Measured empirically: all
+/// engine-vs-retail discrepancies on the town01 static mask fall inside this
+/// band; the bulk texture region is byte-exact on every uploaded static pixel.
+pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
+
+/// Per-word "static" mask across a set of same-scene runtime VRAM snapshots:
+/// `mask[i] == true` where every snapshot holds the **same** 16-bit word, i.e.
+/// the pixel is part of the scene's static VRAM rather than dynamic /
+/// residual state (animation frames, battle leftovers, scroll position). The
+/// engine's stateless pre-pass can only be held to the static set. Requires at
+/// least one snapshot; with one snapshot every pixel is trivially "static".
+pub fn compute_static_mask(snapshots: &[&[u8]]) -> Vec<bool> {
+    let words = VRAM_WIDTH * VRAM_HEIGHT;
+    let mut mask = vec![true; words];
+    if snapshots.len() < 2 {
+        return mask;
+    }
+    let first = snapshots[0];
+    for other in &snapshots[1..] {
+        for (m, (fa, ob)) in mask
+            .iter_mut()
+            .zip(first.chunks_exact(2).zip(other.chunks_exact(2)))
+        {
+            if fa != ob {
+                *m = false;
+            }
+        }
+    }
+    mask
+}
+
+/// First pixel where the engine's upload is **wrong** on the static mask: a
+/// pixel that is (a) static (`mask` true), (b) in the texpage region
+/// (`y >= TEXPAGE_Y_START`), (c) **outside** [`NPC_CLUT_BAND_ROWS`], (d)
+/// uploaded by the engine (`engine_word != 0`), yet (e) differs from the
+/// runtime word. Returns `None` when the engine's static uploads are all
+/// byte-exact. Incompleteness (engine `0` where retail has texture) is *not*
+/// flagged - the engine is allowed to be a faithful subset (it doesn't yet
+/// assemble every boot-resident texture), but it must never upload a wrong
+/// texel where the scene is static.
+pub fn first_static_upload_divergence(
+    engine: &[u8],
+    runtime: &[u8],
+    static_mask: &[bool],
+) -> Option<TexpageDivergence> {
+    assert_eq!(engine.len(), VRAM_BYTES);
+    assert_eq!(runtime.len(), VRAM_BYTES);
+    for y in TEXPAGE_Y_START..VRAM_HEIGHT {
+        if NPC_CLUT_BAND_ROWS.contains(&y) {
+            continue;
+        }
+        let row_base = y * VRAM_WIDTH;
+        for x in 0..VRAM_WIDTH {
+            let widx = row_base + x;
+            if !static_mask[widx] {
+                continue;
+            }
+            let off = widx * 2;
+            let ew = u16::from_le_bytes([engine[off], engine[off + 1]]);
+            if ew == 0 {
+                continue; // incompleteness not asserted
+            }
+            let rw = u16::from_le_bytes([runtime[off], runtime[off + 1]]);
+            if ew != rw {
+                return Some(TexpageDivergence {
+                    y,
+                    x,
+                    engine_word: ew,
+                    runtime_word: rw,
+                });
+            }
+        }
+    }
+    None
+}
+
 fn open_index(extracted_root: &Path, disc: Option<&Path>) -> Result<ProtIndex> {
     if let Some(disc_path) = disc {
         use legaia_engine_core::{DiscVfs, Vfs};
@@ -181,4 +274,84 @@ fn open_index(extracted_root: &Path, disc: Option<&Path>) -> Result<ProtIndex> {
     };
     ProtIndex::from_bytes(prot_bytes, cdname_text.as_deref())
         .with_context(|| format!("build ProtIndex from {}", extracted_root.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blank() -> Vec<u8> {
+        vec![0u8; VRAM_BYTES]
+    }
+    fn set(buf: &mut [u8], x: usize, y: usize, w: u16) {
+        let off = (y * VRAM_WIDTH + x) * 2;
+        buf[off..off + 2].copy_from_slice(&w.to_le_bytes());
+    }
+
+    #[test]
+    fn static_mask_flags_only_disagreeing_words() {
+        let mut a = blank();
+        let mut b = blank();
+        // y=300 x=10 agrees; y=300 x=11 disagrees.
+        set(&mut a, 10, 300, 0x1234);
+        set(&mut b, 10, 300, 0x1234);
+        set(&mut a, 11, 300, 0x1111);
+        set(&mut b, 11, 300, 0x2222);
+        let mask = compute_static_mask(&[a.as_slice(), b.as_slice()]);
+        assert!(mask[300 * VRAM_WIDTH + 10], "agreeing word is static");
+        assert!(!mask[300 * VRAM_WIDTH + 11], "disagreeing word is dynamic");
+    }
+
+    #[test]
+    fn single_snapshot_is_all_static() {
+        let a = blank();
+        let mask = compute_static_mask(&[a.as_slice()]);
+        assert!(mask.iter().all(|&b| b));
+    }
+
+    #[test]
+    fn wrong_static_upload_in_bulk_region_is_flagged() {
+        let mut engine = blank();
+        let mut runtime = blank();
+        // Static pixel in the bulk texpage region (y=300, outside the CLUT band):
+        // engine uploads 0xAAAA but retail has 0xBBBB.
+        set(&mut engine, 5, 300, 0xAAAA);
+        set(&mut runtime, 5, 300, 0xBBBB);
+        let mask = vec![true; VRAM_WIDTH * VRAM_HEIGHT];
+        let d = first_static_upload_divergence(&engine, &runtime, &mask)
+            .expect("wrong static upload must be flagged");
+        assert_eq!((d.y, d.x), (300, 5));
+        assert_eq!((d.engine_word, d.runtime_word), (0xAAAA, 0xBBBB));
+    }
+
+    #[test]
+    fn incompleteness_and_over_upload_and_clut_band_are_not_flagged() {
+        let mut engine = blank();
+        let mut runtime = blank();
+        let mask = vec![true; VRAM_WIDTH * VRAM_HEIGHT];
+
+        // (a) Incompleteness: engine 0 where retail has texture - allowed.
+        set(&mut runtime, 5, 300, 0xBBBB);
+        // (b) Over-upload INTO the CLUT band (row 479): engine wrong, retail 0 -
+        //     excluded because the band is runtime-managed.
+        set(&mut engine, 5, 479, 0xAAAA);
+        // (c) Wrong upload but on a NON-static pixel - excluded by the mask.
+        let mut m = mask.clone();
+        set(&mut engine, 9, 300, 0xCCCC);
+        set(&mut runtime, 9, 300, 0xDDDD);
+        m[300 * VRAM_WIDTH + 9] = false;
+
+        assert!(first_static_upload_divergence(&engine, &runtime, &m).is_none());
+    }
+
+    #[test]
+    fn framebuffer_half_is_not_asserted() {
+        let mut engine = blank();
+        let mut runtime = blank();
+        // y < TEXPAGE_Y_START: a wrong upload here is ignored.
+        set(&mut engine, 5, 100, 0xAAAA);
+        set(&mut runtime, 5, 100, 0xBBBB);
+        let mask = vec![true; VRAM_WIDTH * VRAM_HEIGHT];
+        assert!(first_static_upload_divergence(&engine, &runtime, &mask).is_none());
+    }
 }

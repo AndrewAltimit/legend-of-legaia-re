@@ -356,6 +356,53 @@ where
     (vram, stats)
 }
 
+/// Upload **every** parseable TIM in `tim_bufs` to its header `(fb_x, fb_y)`
+/// destination - the byte-faithful analogue of the retail field loader, which
+/// DMAs every TIM in the scene to VRAM regardless of which prim samples it
+/// (see [`docs/subsystems/asset-loader.md`]). Unlike
+/// [`build_vram_targeted_from_buffers`], there is no render `needs` filter;
+/// this is for the VRAM parity oracle, where the goal is to reproduce the live
+/// VRAM rather than the minimal set a renderer samples.
+///
+/// Two passes preserve the same CLUT semantics as the targeted builder:
+/// pass 1 writes all image blocks (last-write-wins in iteration order, like
+/// sequential DMA), pass 2 writes all CLUT blocks with **merge-zeros** so the
+/// row-479 multi-TIM palette split survives (each TIM populating a different
+/// subset of the 16 colour slots - see the `town01` row-479 regression).
+pub fn build_vram_full_from_buffers<'a, I>(tim_bufs: I) -> (Vram, VramUploadStats)
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
+    let mut vram = Vram::new();
+    let mut stats = VramUploadStats::default();
+    let parsed: Vec<legaia_tim::Tim> = tim_bufs
+        .into_iter()
+        .filter_map(|buf| {
+            stats.total_tims += 1;
+            legaia_tim::parse(buf).ok()
+        })
+        .collect();
+    // Pass 1: image blocks.
+    for tim in &parsed {
+        vram.upload_tim_partial(tim, true, false);
+    }
+    // Pass 2: CLUT blocks last, with merge-zeros semantics.
+    for tim in &parsed {
+        if tim.clut.is_some() {
+            vram.upload_tim_partial_opts(tim, false, true, true);
+        }
+    }
+    for tim in &parsed {
+        stats.uploaded_tims += 1;
+        if tim.clut.is_some() {
+            stats.uploaded_both += 1;
+        } else {
+            stats.uploaded_image_only += 1;
+        }
+    }
+    (vram, stats)
+}
+
 /// Internal helper used by both [`build_vram_from_dirs`] and the
 /// targeted-upload empty-needs fallback.
 fn build_vram_unfiltered(dirs: &[&Path]) -> (Vram, usize, usize) {

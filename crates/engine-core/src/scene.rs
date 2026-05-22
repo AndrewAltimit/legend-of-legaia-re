@@ -1356,6 +1356,7 @@ impl SceneHost {
                     &shared_refs,
                     crate::scene_resources::BuildOptions {
                         kind: crate::scene_resources::SceneLoadKind::Field,
+                        ..Default::default()
                     },
                 )
             {

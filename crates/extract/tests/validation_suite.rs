@@ -39,10 +39,17 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // the pack-shape detector (3 entries total now).
     ("battle_data_pack", 3),
     ("data_field_streaming", 34),
-    ("field_pack", 2),
-    // `lzs_container` 40 → 42 as two entries with trailing-overlay tails
-    // newly satisfy the LZS-descriptor heuristic.
-    ("lzs_container", 42),
+    // `field_pack` 2 → 1: one of the two entries (PROT 4) leads with a
+    // count=6 scene-asset table at offset 0 and only carries a field-pack
+    // *region* deeper in the file. The offset-0 scene-table shape is the
+    // authoritative outer classification (same precedence as v12-over-
+    // fieldpack), so it now lands in `scene_asset_table`. PROT 5 remains
+    // the sole pure field_pack.
+    ("field_pack", 1),
+    // `lzs_container` 42 → 35: the count=6 scene-asset-table variant
+    // (town01/town0c-class MAN bundles) now claims 7 entries that were
+    // coincidental strict-LZS matches before the more specific schema ran.
+    ("lzs_container", 35),
     ("mips_overlay", 22),
     ("monster_sound_bank", 1),
     // `mostly_zeros` dropped (101 → 70) because many zero-padded entries
@@ -54,7 +61,12 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("overlay_data_blob", 27),
     ("overlay_ptr_table", 42),
     ("pochi_filler", 265),
-    ("scene_asset_table", 80),
+    // `scene_asset_table` 80 → 88: the detector now also accepts the
+    // count=6 header variant used by the early standalone towns (first
+    // descriptor anchored at 0x38, MAN at descriptor index 1/2). Eight
+    // entries (PROT 4, 13, 22, 183, 348, 742, 1196, 1229) shifted in — one
+    // from `field_pack`, seven from `lzs_container`.
+    ("scene_asset_table", 88),
     // `scene_tmd_stream` jumped (148 → 182) as 34 entries' trailing-overlay
     // bytes happened to fit the streaming-with-bare-TMD shape.
     ("scene_tmd_stream", 182),

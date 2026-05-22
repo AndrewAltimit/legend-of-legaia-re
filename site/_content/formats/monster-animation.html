@@ -1,6 +1,6 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; monster animation</div>
-  <h1>Monster (enemy) battle animation</h1>
+  <h1>Monster (enemy) battle animation <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">Per-object rigid-transform keyframe animation for battle monsters, stored inside the monster's archive block (PROT entry 867). Distinct from the <a href="anm.html">ANM container</a>, which drives player / field actors. Implementation: <code>legaia_asset::monster_archive</code> (<code>MonsterAnimation</code>, <code>PartPose</code>, <code>animations</code>, <code>idle_animation</code>). Seen live on the <a href="../monsters.html">enemy table</a>, which plays each monster's idle loop.</p>
 </header>
 
@@ -8,6 +8,11 @@
   <h2>Where it lives</h2>
   <p>Each monster's decoded archive block is <code>[stat record + +0x4C action-offset array][name][TMD mesh @ +0x04][per-action entries][texture pool @ +0x08]</code>. The <code>magic_count</code> (<code>+0x4A</code>) action entries the <code>+0x4C</code> u32 array points at are not just &ldquo;spells&rdquo; &mdash; each is an action descriptor whose head holds the action id (<code>+0x00</code>), SP cost (<code>+0x74</code>), and a sub-id (<code>+0x77</code>), and whose <code>+0x8c</code> field begins a packed transform-keyframe stream. (The runtime keyframe pointers at entry <code>+0x04</code>/<code>+0x08</code> and the self-pointer at <code>+0x88</code> are zero on disc; the loader reconstructs them, with <code>+0x88</code> pointing at the <code>+0x8c</code> stream.)</p>
   <p>Action <strong>index 0</strong> (id <code>0x00</code>) is the neutral <strong>idle</strong> animation the engine loops when the monster isn't acting; index 1 (id <code>0x01</code>) is the basic attack, and the rest correspond to the monster's spell / special actions.</p>
+</section>
+
+<section class="doc-section" id="texture-pool">
+  <h2>Texture pool (record <code>+0x08</code>)</h2>
+  <p>The same archive block carries the model's colours in a texture pool the battle loader decodes from <code>FUN_80055468</code>: a <code>0x1E0</code>-byte region of <strong>fifteen 16-colour palettes</strong> followed by a <strong>4bpp index page</strong> (always 256 rows tall, 128 or 256 texels wide). Each <a href="tmd.html">TMD</a> primitive selects its palette from the low six bits of its CBA (<code>cba &amp; 0x3F</code>) and samples the page at its UVs &mdash; exactly the index-then-palette lookup the PSX GPU performs from VRAM (see the <a href="tim.html">TIM</a> 4bpp / CLUT model and the <a href="../subsystems/renderer.html">renderer</a>). <strong>186 of the 194 archive slots</strong> carry a clean TMD + texture pool; the rest are filler ids.</p>
 </section>
 
 <section class="doc-section" id="packed-stream">
@@ -37,11 +42,15 @@ v5 = b7 | (b8 &amp; 0xf0) &lt;&lt; 4     rz</code></pre>
 </section>
 
 <section class="doc-section" id="provenance">
-  <h2>Provenance</h2>
+  <details class="disclosure">
+    <summary>Provenance (Ghidra trace)</summary>
+    <div class="disclosure-body">
   <ul>
     <li><code>FUN_8004998c</code> &mdash; packed-stream decoder + frame interpolation.</li>
     <li><code>FUN_80048a08</code> &mdash; per-actor battle draw; reads the phase, drives the decoder, applies the pose per object.</li>
     <li><code>FUN_800495c8</code> / <code>FUN_8005b038</code> &mdash; GTE vertex blend of the decoded pose.</li>
     <li><code>FUN_80054cb0</code> &mdash; monster init; copies the action/effect pointer (record <code>+0x04</code>) into actor <code>+0x230</code>.</li>
   </ul>
+    </div>
+  </details>
 </section>
