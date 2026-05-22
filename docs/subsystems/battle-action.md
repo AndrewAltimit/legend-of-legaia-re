@@ -171,7 +171,17 @@ _DAT_8007ba2c = (&PTR_s_re_check_801f6734)[id - 0x81];     // per-summon effect-
 FUN_8003ec70(id - 0x79, 0);                                // overlay loader B: PROT (id - 0x79 + 0x381)
 ```
 
-`FUN_8003EC70(param)` (overlay loader B) loads PROT index `param + 0x381` into `*DAT_80010390`, so the summons map to **PROT 905..915** (Gimard *Tail Fire* `0x81` → param `8` → **PROT 905**; byte-verified MIPS-code overlays). The loaded overlay carries the summon's embedded TMD models and the register/spawn/animate logic; it installs its models into the global TMD table `DAT_8007C018` (the small-TMD library that shows up in a live battle as entries `[3..]`) and the SCUS render pass draws them. The flame mesh is Gouraud-textured (`POLY_GT3`/`POLY_GT4`) and samples the resident `etim` texture page (832,256) 4bpp with a **CLUT-animated** palette in row 478 (the fire flicker); the `cba`/`tsb` are applied at render time, not baked in the TMD. The capture-class (`'c'`) spell branch loads from a different base: `FUN_8003EC70(spell_record[+1] + 0x28)`. The per-summon overlay's internal model table + animation are not yet decoded - see [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+`FUN_8003EC70(param)` (overlay loader B) loads PROT index `param + 0x381` into `*DAT_80010390` (= `0x801F69D8`, above the resident battle overlay), so the summons map to **PROT 905..915** (Gimard *Tail Fire* `0x81` → param `8` → **PROT 905**; byte-verified MIPS-code overlays). The capture-class (`'c'`) spell branch loads from a different base: `FUN_8003EC70(spell_record[+1] + 0x28)`.
+
+#### Inside a summon overlay (PROT 905, decoded)
+
+The summon overlay carries **no embedded TMD geometry** (no `0x80000002` magic). The summon's meshes are the separately-loaded `DAT_8007C018` model library (the 30 small single-group TMDs that show up in a live battle as entries `[3..]`). What the overlay supplies is a **move-VM scene-graph** that poses and animates those meshes:
+
+- The overlay init calls **`FUN_80021B04(ctx, position, record_ptr, 0x1000)` ~22 times** - one per body part of the summon - walking a record table (file offset `0x180C..~0x1E5C`, ~17 unique records of stride ~`0x58`, some reused for symmetric/repeated parts).
+- Each record is `[i16 model_sel @+0][u16 flags @+2][move-VM u16 bytecode @+0x4 …]`. `FUN_80021B04` stages it as an actor: `actor[+0x48] = record` (move-buffer base), `actor[+0x70] = 2` (move-VM PC, u16 units → bytecode begins at `record+0x4`), `actor[+0x58] = 0x7f`, then `jal FUN_80023070` to run the part's [move-VM](move-vm.md) animation. So the summon is a hierarchy of move-VM-driven animated parts; the per-frame animation is the standard actor-tick + move-VM path, which is why the overlay code itself need not stay resident.
+- `record[+0]` is the mesh selector: `≥0` → `DAT_8007C018[record[+0] + gp[0x754]]` (a per-summon base offset into the global table), `-1` = model-less transform/pivot node, `0x4000`/`0x4001` = special render-mode nodes. In PROT 905 **all 22 records are `-1`** - the parts are transform nodes whose mesh is bound from the move bytecode's animation-bank opcodes (move-VM `0x00` → `actor[+0x3C..40]`, `0x04` → `actor[+0x80..84]`), not from `record[+0]`.
+
+The flame renders as Gouraud-textured (`POLY_GT3`/`POLY_GT4`) prims sampling the resident `etim` page (832,256) 4bpp with a **CLUT-animated** palette in row 478 (the fire flicker); `cba`/`tsb` are applied at render, not baked. **Residual:** the exact `DAT_8007C018` index of the flame mesh - reachable by decoding each record's animation-bank opcode and the `gp[0x754]` per-summon base, then matching the live render. See [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### `FUN_801D5854` - per-actor pose driver
 
