@@ -71,6 +71,18 @@ machines that aren't pure data-driven.
 into the overlay-resident `FUN_801D362C` extension VM (61 sub-opcodes);
 the dispatch table is ported in `world_map_draw_vm.rs`.
 
+## `world_map` - `FUN_801DA51C`
+
+Per-entity overworld state machine (5 states on `entity[+0x8A]`:
+Idle → Activating → Transitioning → Terminal). `step` drains the shared
+encounter countdown in the Idle state, fires `on_encounter` /
+`on_interact` / `on_scene_transition` host callbacks, and advances the
+scene-transition states. `legaia_engine_core::World` drives one
+`WorldMapEntityCtx` per installed overworld entity each
+`SceneMode::WorldMap` tick, bridging `on_encounter` into a real
+Field-machinery battle (returning to the world map on resolution) and
+`on_interact` into a `FieldInteract` event.
+
 ## `actor_tick` - `FUN_80021DF4`
 
 Per-actor physics tick - the `FUN_8002519C`-driven per-frame loop calls

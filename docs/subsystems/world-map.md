@@ -117,6 +117,16 @@ at `0x8007BD0C` is the input to the battle-scene loader (`FUN_800520F0`); the
 adjacent byte at `0x8007BD11` is a battle-data PROT-id selector that picks
 between PROT entries `0x367` and `0x36D`.
 
+The clean-room engine ports this SM as `legaia_engine_vm::world_map::step`
+(host trait `WorldMapEntityHost`). `legaia_engine_core::World` drives one
+`WorldMapEntityCtx` per installed overworld entity each `SceneMode::WorldMap`
+tick: the Idle state's encounter (countdown reaches zero with encounters
+enabled) latches the configured formation, which the world resolves into a
+battle through the same `formation_table` machinery as a field encounter,
+tagged via `World::battle_return_mode` to return to the overworld rather than
+the field. Interactions / portal transitions surface as a `FieldInteract`
+event for the host.
+
 The pointer at `entity[+0x94]` is set by field-VM op handlers inside the
 script VM dispatcher (`FUN_801DE840`); see
 [`subsystems/script-vm.md`](script-vm.md) and the op-handler family at
