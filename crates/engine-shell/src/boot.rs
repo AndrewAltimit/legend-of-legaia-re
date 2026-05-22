@@ -22,8 +22,24 @@ use anyhow::{Context, Result};
 use legaia_engine_audio::{AudioOut, Spu, SpuAllocator, VabBank};
 use legaia_engine_core::camera::Camera;
 use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, SceneTickEvent};
+use legaia_engine_core::world::SceneMode;
 
 use crate::bgm::AudioBgmDirector;
+
+/// Options for [`BootSession::enter_field_live`] - how much of the live
+/// gameplay loop to arm when dropping into a field scene.
+#[derive(Debug, Clone, Default)]
+pub struct FieldLiveOpts {
+    /// Arm the Field<->Battle live gameplay loop (`World::live_gameplay_loop`).
+    /// `player_battle` implies this.
+    pub live_loop: bool,
+    /// Make battles player-driven (command menu). Implies `live_loop` and
+    /// installs the item / spell / Seru catalogs a player-driven battle needs.
+    pub player_battle: bool,
+    /// Optional Battle<->Field BGM swap id (resolved through the scene's BGM
+    /// table by the live loop).
+    pub battle_bgm: Option<u16>,
+}
 
 /// Default scene the binary boots into when no `--scene` is supplied. Uses
 /// the canonical first-town label from CDNAME.TXT.
@@ -168,6 +184,58 @@ impl BootSession {
         }
         self.frames += 1;
         Ok(event)
+    }
+
+    /// Drop the world into a live field scene: run the scene's event-script
+    /// record 0 (the init prologue) so the field VM actually ticks, install
+    /// the per-scene encounter table, and arm the live gameplay loop per
+    /// `opts`.
+    ///
+    /// [`BootSession::open`] only calls `load_scene`, which leaves the world
+    /// in [`SceneMode::Title`] with no field events firing. This is the
+    /// reusable core of the windowed host's `--live-loop` setup, shared so the
+    /// v0.1 oracle and headless drivers reach Field/Battle the same way the
+    /// window does.
+    ///
+    /// Soft-fails the same way the window does: a scene with no event script
+    /// logs and continues (the world stays in whatever mode it was in).
+    /// Returns the active [`SceneMode`] after the attempt.
+    pub fn enter_field_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
+        match self.host.enter_field_scene(scene, 0) {
+            Ok(()) => log::info!("entered field scene '{scene}' record 0 (field VM live)"),
+            Err(e) => log::warn!(
+                "enter_field_scene('{scene}', 0) failed ({e:#}); staying on the load_scene-only \
+                 path (field VM will not tick)"
+            ),
+        }
+
+        let world = &mut self.host.world;
+        world.set_active_scene_label(scene);
+
+        // `enter_field_scene` already installs the disc-resident per-scene
+        // encounter table from the MAN asset. Only fall back to the synthetic
+        // registry + vanilla tables when no MAN encounter was installed.
+        if world.encounter.is_none() && matches!(world.mode, SceneMode::Field) {
+            world.set_formation_table(
+                legaia_engine_core::monster_catalog::vanilla_formation_table(),
+                legaia_engine_core::monster_catalog::vanilla_monster_catalog(),
+            );
+            let registry = legaia_engine_core::encounter_registry::vanilla_encounter_registry();
+            world.install_encounter_for_scene(&registry, scene);
+        }
+
+        if opts.live_loop || opts.player_battle {
+            world.live_gameplay_loop = true;
+        }
+        world.set_battle_bgm(opts.battle_bgm);
+        if opts.player_battle {
+            world.battle_player_driven = true;
+            world.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+            world.set_spell_catalog(legaia_engine_core::retail_magic::retail_seru_magic_catalog());
+            world.set_seru_registry(legaia_engine_core::seru_learning::SeruRegistry::retail());
+        }
+
+        Ok(world.mode)
     }
 
     /// Shut down the audio stream and clear the scene. Idempotent.

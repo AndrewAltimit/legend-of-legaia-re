@@ -119,6 +119,51 @@ pub fn build_engine_mode_trace_with_inputs(
     Ok(out)
 }
 
+/// Variant of [`build_engine_mode_trace_with_inputs`] that drops the
+/// session into a *live field scene* before sampling - it calls
+/// [`BootSession::enter_field_live`] (run record 0, install the encounter
+/// table, arm the live loop) so the engine reaches `SceneMode::Field` the way
+/// the windowed host does, instead of sitting in `Title` like the plain
+/// `load_scene` path.
+///
+/// This is the v0.1 oracle's engine driver: from a cold boot it reaches
+/// Field/town01 immediately, which converges against the retail mode-trace
+/// snapshot of a field-phase save (`game_mode 0x03`). The scripted-encounter
+/// Battle leg (which needs the scene's story state seeded so the trigger is
+/// armed) is a separate milestone; this builder stops at Field.
+pub fn build_engine_mode_trace_field_live(
+    scene_name: &str,
+    extracted_root: &Path,
+    disc: Option<&Path>,
+    frames: u64,
+    pad_stream: &[u16],
+) -> Result<Vec<ModeTraceFrame>> {
+    let cfg = BootConfig {
+        scene: scene_name.to_string(),
+        enable_audio: false,
+    };
+    let mut session = match disc {
+        Some(p) => BootSession::open_disc(p, &cfg)?,
+        None => BootSession::open(extracted_root, &cfg)?,
+    };
+    session.enter_field_live(
+        scene_name,
+        &crate::boot::FieldLiveOpts {
+            live_loop: true,
+            ..Default::default()
+        },
+    )?;
+    let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
+    out.push(sample_engine_frame(&session));
+    for i in 0..frames {
+        let pad = pad_stream.get(i as usize).copied().unwrap_or(0);
+        session.host.world.set_pad(pad);
+        let _ = session.tick()?;
+        out.push(sample_engine_frame(&session));
+    }
+    Ok(out)
+}
+
 fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
     ModeTraceFrame {
         frame: session.frames,

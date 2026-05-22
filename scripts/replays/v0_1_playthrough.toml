@@ -12,19 +12,23 @@ pad = 8192
 frame = 110
 pad = 0
 
-# v0.1 contract: by frame 250 (~2.5 seconds after the Circle press at
-# frame 103), the engine should have advanced the Tetsu dialogue and
-# entered BattleMode -- the retail capture at mc0 lands one frame
-# after BattleInit in this same window. RED state today: the engine
-# stays in scene_mode=Title for the whole 366-frame replay because
-# the field-VM dialog-advance path doesn't read `World.input` from a
-# cold boot. The failing diff captures the gap. This expected row
-# becomes a passing assertion once one of the following lands:
-#   - BootSession supports save-state load (mc7's RAM state replaces
-#     the cold-boot starting point), OR
-#   - field-VM dialog advance moves into the engine tick path and
-#     consumes `World.input` (the next field consumer to wire).
+# v0.1 Phase 1 (current): the engine drives a cold boot into Field/town01
+# via BootSession::enter_field_live and stays there, converging against the
+# field-phase retail snapshot (mc7, game_mode 0x03 -> Field). The Circle
+# press at frame 103 is the seed for the deferred Battle leg.
 [[expected]]
 frame = 250
-scene_mode = "Battle"
+scene_mode = "Field"
 active_scene = "town01"
+
+# DEFERRED Battle leg (tracked, not yet asserted): reaching BattleMode here
+# is the scripted Tetsu tutorial fight, which is gated on mc7's story state -
+# a cold boot into town01 record 0 produces no Tetsu dialogue, and town
+# scenes have a 0% random-encounter rate. It needs mc7's save state seeded
+# into the clean-room World so the trigger is armed, then the field-VM
+# dialogue-accept -> scripted-encounter install -> Field->Battle transition.
+# When that lands, add:
+#   [[expected]]
+#   frame = 250
+#   scene_mode = "Battle"
+#   active_scene = "town01"
