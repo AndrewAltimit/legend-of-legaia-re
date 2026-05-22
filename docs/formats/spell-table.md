@@ -43,18 +43,25 @@ A 2-bit shape: bit `0x40` targets enemies (else allies), bit `0x20` is "all"
 
 | Ids | Contents |
 |---|---|
-| `0x00..=0x24` | elemental enemy-attack tiers; **empty inline name pointers** (see below) |
-| `0x25..=0x7f` | monster / capture-class spells (`'c'` at `+0`) |
+| `0x00..=0x24` | internal enemy-attack tiers; **empty inline name pointers** (see below) |
+| `0x25..=0x7f` | **named monster attacks** (`Fire Breath` `0x25`, `Tail Fire` `0x27`, …) + capture-class spells (`'c'` at `+0`) |
 | `0x80` | "Flip Frog" — boundary entry below the player block (`mp`/`anim` both 0), not part of the sequential set |
 | `0x81..=0x8b` | **player Seru-magic** — 11 named summon spells, `anim` ids `0x25..=0x2f` |
 
-There is **no global elemental-spell name table**. The `0x00..=0x24` records
-carry MP / element / target but their `name_ptr` is an empty string - these are
-internal enemy-attack ids, named per-monster in the [monster archive's spell
-records](../subsystems/battle-formulas.md) (name at the spell entry `+0`), not
-from a shared table. The only spells with inline names in this table are the
-player Seru-magic block. (The `0xC5` MES substitution table at `DAT_80075EC4`,
-once mistaken for a spell-name source, is the [Tactical Arts name
+The `0x00..=0x24` records carry MP / element / target but their `name_ptr` is an
+empty string. These are **not** the ids a monster's archive spell entries store
+(those local `+0x4C` entry ids in `0x0C..=0x1F` only gate the SP cost). The
+named monster attacks live at **`0x25..`** in this same table, and an enemy is
+named exactly like a party caster: the AI spell picker (`FUN_801E9FD4`,
+`overlay_0898`) reads a **global** spell id from the monster record's
+magic-attack array at [`+0x21..=+0x23`](../subsystems/battle.md) (values `> 1`
+are live), writes it into the live actor at `+0x1DF`, and the battle-action SM
+prints `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). So the enemy spell name
+*is* in this shared table after all - just keyed by the record's global id, not
+the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md).
+
+(The `0xC5` MES substitution table at `DAT_80075EC4`, once mistaken for a
+spell-name source, is the [Tactical Arts name
 table](art-data.md#arts-name-table-dat_80075ec4) - per-character art names, no
 spells.)
 

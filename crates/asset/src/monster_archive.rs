@@ -183,6 +183,16 @@ pub struct MonsterRecord {
     /// The `magic_count` spell entries the `+0x4C` offset array points at.
     /// Empty when `magic_count == 0` or an offset falls outside the block.
     pub spells: Vec<MonsterSpell>,
+    /// Global magic-attack ids the enemy AI casts by name. The record carries a
+    /// 3-slot array at `+0x21..=+0x23`; a slot is a live attack when its value
+    /// is `> 1` (`0` / `1` are empty / marker slots). Each id is a **global
+    /// spell id** - the same value the AI writes into the live actor at
+    /// `+0x1DF` and names through `&DAT_800754D0 + id*0xC`, so it resolves with
+    /// [`crate::spell_names::SpellNameTable`] (`0x27` -> `Tail Fire`). This is
+    /// distinct from the local `spells` ids above (the `+0x4C` action entries):
+    /// those gate the SP cost, these carry the on-screen name. Pinned from the
+    /// AI spell picker `FUN_801E9FD4` (`overlay_0898`).
+    pub magic_attacks: Vec<u8>,
 }
 
 impl MonsterRecord {
@@ -317,6 +327,12 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
     let drop_chance_pct = *block.get(0x49)?;
     let magic_count = *block.get(0x4A)?;
     let spells = parse_spells(block, magic_count);
+    // Global magic-attack ids at +0x21..=+0x23; a slot is live when its value
+    // is > 1 (0 / 1 are empty / marker slots), matching the AI picker's gate.
+    let magic_attacks = (0x21..=0x23)
+        .filter_map(|o| block.get(o).copied())
+        .filter(|&b| b > 1)
+        .collect();
     Some(MonsterRecord {
         id,
         name,
@@ -329,6 +345,7 @@ fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         drop_chance_pct,
         magic_count,
         spells,
+        magic_attacks,
     })
 }
 

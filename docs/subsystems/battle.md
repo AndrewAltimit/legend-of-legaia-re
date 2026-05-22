@@ -115,6 +115,7 @@ This is the canonical "monster spawn" path. Engine port reads the record once, p
 | `+0x16` | u16 | **DEF↓** → actor `+0x160/+0x162` (defender defense, low facet). |
 | `+0x18` | u16 | **AGL** → actor `+0x168/+0x16A` (rescaled into the accuracy/evasion seed). |
 | `+0x1A` | u16 | **SPD** → actor `+0x164/+0x166` (turn-order initiative seed; buffable). |
+| `+0x21` | u8[3] | **Magic-attack ids** (`+0x21..+0x23`): up to three **global** spell ids the enemy casts. A slot is live when its value is `> 1`. The AI spell picker `FUN_801E9FD4` (`overlay_0898`) reads `record[0x21 + slot]`, writes it into the live actor at `+0x1DF`, and the battle-action SM names it via `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). These global ids are **distinct** from the local `+0x4C` entry ids (which only gate SP); they are the names that appear on screen. Parser: `MonsterRecord::magic_attacks` + `legaia_asset::spell_names`. |
 | `+0x44` | u16 | **gold** (base victory-spoils gold). |
 | `+0x46` | u16 | **EXP** (base victory-spoils experience). |
 | `+0x48` | u8 | **drop item id** (`0` = no drop). |

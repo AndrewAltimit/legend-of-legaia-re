@@ -38,6 +38,7 @@ pub mod scene_scripted_asset_table;
 pub mod scene_tmd_stream;
 pub mod scene_v12_table;
 pub mod scene_vab_stream;
+pub mod spell_names;
 pub mod stage_geom;
 pub mod str_fmv_table;
 pub mod tim_scan;
