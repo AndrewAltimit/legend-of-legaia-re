@@ -1321,6 +1321,16 @@ impl SceneHost {
         {
             eprintln!("[scene] global TMD-pool seed skipped: {err:#}");
         }
+        // Load the runtime effect-script catalog from PROT 0873 (`efect.dat`)
+        // so the battle-action SM's `ui_element` spawns resolve to real
+        // effect scripts. Idempotent: only loads when the catalog is empty
+        // (it persists on `World` across field/battle transitions, like the
+        // global TMD pool). Soft-fails - an empty catalog just doesn't spawn.
+        if self.world.effect_catalog.is_empty()
+            && let Err(err) = seed_effect_catalog_from_efect_dat(&self.index, &mut self.world)
+        {
+            eprintln!("[scene] effect-catalog load skipped: {err:#}");
+        }
         // Pre-bind actor ↔ TMD/ANM resources so they survive the first
         // field-VM actor-spawn opcode (see `World::init_scene_animations`).
         //
@@ -1403,6 +1413,12 @@ impl SceneHost {
 /// RAM snapshot.
 const PROT_BEFECT_DATA_ENTRY: u32 = 874;
 
+/// PROT entry holding the runtime effect buffer `data\battle\efect.dat` - the
+/// 2-pack wrapper (inline sprite atlas + pack0 anim batches + pack1 effect
+/// scripts) the battle effect VM consumes. Stored uncompressed; the raw entry
+/// bytes are byte-identical to the post-init runtime buffer (`docs/formats/effect.md`).
+const PROT_EFECT_DAT_ENTRY: u32 = 873;
+
 /// PROT entry holding the global monster stat archive (one `0x14000`-byte
 /// LZS slot per monster id; the CDNAME label `battle_data` is shared across
 /// 0865-0868). The misleading `monster_data` label (PROT 869) is a stub.
@@ -1425,6 +1441,26 @@ const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
 /// item in `docs/formats/world-map-overlay.md`); this routes the disc
 /// bytes directly through the `parse_player_lzs + pack` parsers and
 /// installs the parsed TMDs onto the world.
+/// Load the effect-script catalog from PROT 0873 (`efect.dat`) into
+/// `World::effect_catalog`. Soft-fails when the entry is missing or the
+/// 2-pack is malformed (the catalog stays empty and nothing spawns). Parsing
+/// itself never errors - [`EffectCatalog::from_efect_dat_bytes`] returns an
+/// empty catalog on bad data - so the only error is the disc read.
+fn seed_effect_catalog_from_efect_dat(
+    index: &ProtIndex,
+    world: &mut crate::world::World,
+) -> Result<()> {
+    let raw = index
+        .entry_bytes(PROT_EFECT_DAT_ENTRY)
+        .with_context(|| format!("read PROT entry {} (efect.dat)", PROT_EFECT_DAT_ENTRY))?;
+    let catalog = legaia_engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes(&raw);
+    if catalog.is_empty() {
+        anyhow::bail!("efect.dat parsed to an empty catalog (unexpected 2-pack shape)");
+    }
+    world.effect_catalog = catalog;
+    Ok(())
+}
+
 fn seed_global_tmd_pool_from_befect_data(
     index: &ProtIndex,
     world: &mut crate::world::World,
