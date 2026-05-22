@@ -112,6 +112,14 @@ pub struct MasterSlot {
     /// populates child positions itself. Used by the render snapshot to place
     /// each child billboard around the effect origin.
     pub child_offsets: Vec<(i16, i16)>,
+    /// Optional index into the host's global TMD pool (`etmd.dat`) for the
+    /// effect's 3D model. `Some` for model-driven effects (the flame mesh of a
+    /// spell like *Tail Fire* - an `etmd` TMD textured by `etim`); `None` for
+    /// the 2D-billboard-only effects. Not part of the 28-byte retail slot: the
+    /// production effect-id -> etmd-model selection is driven by the move/art
+    /// VM and not yet decoded, so this is currently set only by the host's
+    /// model-spawn helper.
+    pub model_index: Option<usize>,
 }
 
 /// Per-sprite render state. Retail layout: 32 bytes per slot at offset

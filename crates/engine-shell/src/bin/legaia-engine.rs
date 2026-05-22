@@ -5846,6 +5846,36 @@ impl ApplicationHandler for PlayWindowApp {
                     self.session.host.world.spawn_debug_effect(pos);
                     return;
                 }
+                // `F`: seat a synthetic *Tail Fire* effect carrying its `etmd`
+                // 3D model (global TMD pool index 4, textured by the resident
+                // `etim` texels) at the first active actor, exercising the
+                // model render path. Like `E`, a dev hand-spawn - the runtime
+                // effect-id -> etmd-model selection is not yet decoded.
+                if matches!(code, KeyCode::KeyF)
+                    && state == ElementState::Pressed
+                    && !self.boot_ui.is_active()
+                {
+                    let pos = self
+                        .session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .find(|a| a.active)
+                        .map(|a| {
+                            [
+                                a.move_state.world_x as f32,
+                                a.move_state.world_y as f32,
+                                a.move_state.world_z as f32,
+                            ]
+                        })
+                        .unwrap_or([0.0, 0.0, 0.0]);
+                    self.session.host.world.spawn_debug_effect_model(
+                        pos,
+                        legaia_engine_core::scene::ETMD_TAIL_FIRE_MODEL_INDEX,
+                    );
+                    return;
+                }
                 let key_name = keycode_to_name(code);
                 if let Some(button) = self.mapping.pad_button_for_key(key_name) {
                     let prev = self.pad;
@@ -6189,6 +6219,51 @@ impl ApplicationHandler for PlayWindowApp {
                     };
                     if let Some(mesh) = effect_billboard.as_ref() {
                         draws.push(SceneDraw { mesh, mvp: cam });
+                    }
+                    // Effect 3D models (`etmd.dat`): spell effects like Tail
+                    // Fire are small Gouraud-shaded `etmd` meshes textured by
+                    // the resident `etim` texels, not billboards. Build a
+                    // per-frame VRAM mesh + transform for each live effect that
+                    // has a model assigned (same Y-flip model-matrix convention
+                    // as `actor_model`). Held in a local Vec so the meshes
+                    // outlive the render borrow.
+                    let mut effect_model_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
+                    if !self.boot_ui.is_active() && !in_world_map {
+                        for em in self.session.host.world.active_effect_models() {
+                            let Some(gtmd) = self
+                                .session
+                                .host
+                                .world
+                                .global_tmd(em.tmd_index as i16)
+                                .map(std::sync::Arc::clone)
+                            else {
+                                continue;
+                            };
+                            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
+                            if vmesh.indices.is_empty() {
+                                continue;
+                            }
+                            match r.upload_vram_mesh(
+                                &vmesh.positions,
+                                &vmesh.uvs,
+                                &vmesh.cba_tsb,
+                                &vmesh.normals,
+                                &vmesh.indices,
+                            ) {
+                                Ok(m) => {
+                                    let model = Mat4::from_translation(Vec3::from(em.world_pos))
+                                        * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+                                    effect_model_draws.push((m, model));
+                                }
+                                Err(e) => log::warn!("effect model mesh upload: {e:#}"),
+                            }
+                        }
+                    }
+                    for (mesh, model) in &effect_model_draws {
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                        });
                     }
                     let scene = RenderScene {
                         vram,

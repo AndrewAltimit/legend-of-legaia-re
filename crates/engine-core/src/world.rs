@@ -172,6 +172,32 @@ pub struct EffectSprite {
     pub age01: f32,
 }
 
+/// Render-agnostic snapshot of one live effect's **3D model** (`etmd.dat`),
+/// produced by [`World::active_effect_models`]. This is the other effect
+/// render path alongside [`EffectSprite`]'s 2D billboards: spell effects like
+/// *Tail Fire* are small Gouraud-shaded `etmd` meshes textured by `etim`
+/// (pinned pixel-exact against a live battle VRAM capture - see
+/// `docs/formats/effect.md`), not billboards.
+///
+/// The host resolves `tmd_index` through its global TMD pool
+/// ([`World::global_tmd`]), builds a VRAM mesh, and draws it at `world_pos`
+/// (the `etim` texels are already resident in scene VRAM). The retail
+/// effect-id -> model selection is driven by the move/art VM and not yet
+/// decoded, so the only producer today is the model-spawn helper
+/// ([`World::spawn_debug_effect_model`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectModel {
+    /// Index into [`World::global_tmd_pool`] (the `etmd.dat` head) for this
+    /// effect's mesh.
+    pub tmd_index: usize,
+    /// Effect origin in world units (the pool stores 8.8 fixed-point).
+    pub world_pos: [f32; 3],
+    /// 12-bit spawn angle (`master.angle`).
+    pub angle: u16,
+    /// Lifetime fraction `0.0..=1.0` (0 = just spawned, 1 = about to retire).
+    pub age01: f32,
+}
+
 /// Scene mode the world is running. Drives which top-level VMs tick and
 /// which auxiliary state lives in the world.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -2392,6 +2418,60 @@ impl World {
             }
         }
         out
+    }
+
+    /// Snapshot every live effect that has a 3D model assigned, for the
+    /// `etmd`-model render path. One [`EffectModel`] per active master slot
+    /// whose `model_index` is set (the model-driven effects); 2D-billboard-only
+    /// effects are skipped. The host resolves `tmd_index` through
+    /// [`Self::global_tmd`], builds a VRAM mesh, and draws it at `world_pos`.
+    ///
+    /// Distinct from [`Self::active_effect_sprites`] (the 2D billboard seam):
+    /// effects like *Tail Fire* render as a small `etmd` mesh textured by the
+    /// resident `etim` texels, not a billboard.
+    pub fn active_effect_models(&self) -> Vec<EffectModel> {
+        let lifetime = vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES.max(1) as f32;
+        self.effect_pool
+            .master_slots
+            .iter()
+            .filter(|m| m.child_count > 0)
+            .filter_map(|m| {
+                let tmd_index = m.model_index?;
+                Some(EffectModel {
+                    tmd_index,
+                    world_pos: [
+                        m.pos_x as f32 / 256.0,
+                        m.pos_y as f32 / 256.0,
+                        m.pos_z as f32 / 256.0,
+                    ],
+                    angle: m.angle,
+                    age01: ((m.field_14 as f32) / lifetime).clamp(0.0, 1.0),
+                })
+            })
+            .collect()
+    }
+
+    /// Dev/visualization helper: seat one synthetic active effect carrying a
+    /// 3D `etmd` model at `world_pos` (world units), so the model render path
+    /// (e.g. *Tail Fire* = `etmd` mesh index 4, textured by `etim`) can be
+    /// exercised by hand. `tmd_index` indexes [`Self::global_tmd_pool`]. The
+    /// slot ages and retires through the normal [`Self::tick_effects`] lifetime.
+    ///
+    /// Like [`Self::spawn_debug_effect`], this is **not** a retail code path -
+    /// the production effect-id -> etmd-model selection (driven by the move/art
+    /// VM) is not yet decoded. Returns `false` when the pool is full.
+    pub fn spawn_debug_effect_model(&mut self, world_pos: [f32; 3], tmd_index: usize) -> bool {
+        let Some(slot) = self.effect_pool.allocate_master() else {
+            return false;
+        };
+        let m = &mut self.effect_pool.master_slots[slot];
+        *m = vm::effect_vm::MasterSlot::default();
+        m.child_count = 1;
+        m.pos_x = (world_pos[0] * 256.0) as i32;
+        m.pos_y = (world_pos[1] * 256.0) as i32;
+        m.pos_z = (world_pos[2] * 256.0) as i32;
+        m.model_index = Some(tmd_index);
+        true
     }
 
     /// Dev/visualization helper: seat one synthetic active effect into the
@@ -8033,6 +8113,28 @@ mod tests {
             world.tick_effects();
         }
         assert!(world.active_effect_markers().is_empty());
+    }
+
+    #[test]
+    fn spawn_debug_effect_model_emits_model_not_billboard() {
+        let mut world = World::default();
+        // A model-only effect (no catalog): emits an EffectModel carrying the
+        // requested global-TMD-pool index, and no 2D billboard sprite.
+        assert!(world.spawn_debug_effect_model([16.0, 4.0, -8.0], 4));
+        let models = world.active_effect_models();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].tmd_index, 4);
+        assert_eq!(models[0].world_pos, [16.0, 4.0, -8.0]);
+        assert_eq!(models[0].age01, 0.0);
+        // Plain debug effect (no model_index) emits no model.
+        assert!(world.spawn_debug_effect([0.0, 0.0, 0.0]));
+        assert_eq!(world.active_effect_models().len(), 1);
+
+        // Ages and retires via the normal effect lifetime.
+        for _ in 0..=vm::effect_vm::DEFAULT_EFFECT_LIFETIME_FRAMES {
+            world.tick_effects();
+        }
+        assert!(world.active_effect_models().is_empty());
     }
 
     #[test]

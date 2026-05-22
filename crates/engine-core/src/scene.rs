@@ -1437,6 +1437,15 @@ const MONSTER_ARCHIVE_PROT_ENTRY: u32 = 867;
 /// retail pack carries exactly 5 character meshes.
 const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
 
+/// Index into [`crate::world::World::global_tmd_pool`] of the *Tail Fire*
+/// flame mesh - the smallest of the five `etmd.dat` models (2 objects, 18
+/// verts, 25 prims). Its textured primitives sample `etim` at page (832,256)
+/// 4bpp with CLUT row 478 (`cba=0x778E`), byte-for-byte the live battle prim
+/// pool captured mid-cast (Gimard's *Tail Fire*). The other four `etmd` models
+/// are large (200-400 prims) - bigger spell/summon effects. See
+/// `docs/formats/effect.md`.
+pub const ETMD_TAIL_FIRE_MODEL_INDEX: usize = 4;
+
 /// Seed `World::global_tmd_pool[0..=4]` from PROT 0874 (`befect_data`)
 /// section 0. Soft-fails (returns `Err`) when the entry is missing, the
 /// section header is malformed, the LZS decode fails, or the inner
@@ -1598,6 +1607,70 @@ mod tests {
         assert!(
             vram.region_has_data(832, 256, 20, 64),
             "etim fire-sprite tile @fb(832,256) should be populated"
+        );
+    }
+
+    /// Disc-gated: the global TMD pool seeded from `etmd.dat` (PROT 0874
+    /// section 0) holds the five effect models, and the slot named by
+    /// [`ETMD_TAIL_FIRE_MODEL_INDEX`] is the small *Tail Fire* flame mesh - far
+    /// fewer primitives than the other four models, with textured primitives
+    /// sampling the `etim` CLUT rows (473..=478). Pins the constant to real
+    /// disc bytes. Skips when the disc data isn't present.
+    #[test]
+    fn etmd_tail_fire_model_is_the_small_flame_mesh() {
+        if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        }
+        let root = ["extracted", "../../extracted"]
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.join("PROT.DAT").is_file());
+        let Some(root) = root else {
+            eprintln!("[skip] extracted/PROT.DAT missing");
+            return;
+        };
+        let index = ProtIndex::open_extracted(&root).expect("open ProtIndex");
+        let mut world = crate::world::World::default();
+        seed_global_tmd_pool_from_befect_data(&index, &mut world).expect("seed etmd pool");
+
+        // All five etmd models present.
+        for i in 0..GLOBAL_TMD_POOL_HEAD_COUNT {
+            assert!(
+                world.global_tmd(i as i16).is_some(),
+                "etmd model {i} should be present"
+            );
+        }
+        let flame = world
+            .global_tmd(ETMD_TAIL_FIRE_MODEL_INDEX as i16)
+            .expect("flame model present");
+        let flame_prims: usize = flame
+            .tmd
+            .objects
+            .iter()
+            .map(|o| o.header.n_primitive as usize)
+            .sum();
+
+        // The flame is the smallest model by a wide margin.
+        for i in 0..GLOBAL_TMD_POOL_HEAD_COUNT {
+            if i == ETMD_TAIL_FIRE_MODEL_INDEX {
+                continue;
+            }
+            let other = world.global_tmd(i as i16).unwrap();
+            let other_prims: usize = other
+                .tmd
+                .objects
+                .iter()
+                .map(|o| o.header.n_primitive as usize)
+                .sum();
+            assert!(
+                flame_prims < other_prims,
+                "flame model ({flame_prims} prims) should be smaller than model {i} ({other_prims} prims)"
+            );
+        }
+        assert!(
+            flame_prims < 64,
+            "flame model is a small mesh, got {flame_prims} prims"
         );
     }
 
