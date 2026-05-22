@@ -217,14 +217,19 @@
 <section class="doc-section" id="using-the-viewer">
   <h2>Using the viewer</h2>
   <p>The sidebar groups entries by scene category and classification. Filter by class (e.g. only <code>scene_tmd_stream</code> for character meshes, or <code>tim_passthrough</code> for standalone images) and jump by PROT index. By default the 3D path renders Legaia TMDs textured (WebGL2; same paletted fragment shader the native engine uses); toggle "textured" off in the sidebar for a flat-shaded fallback.</p>
-  <p class="hint">Sound on disc is on the <a href="audio.html">audio browser</a>. For stage geometry and cross-PROT-entry CLUT chains via <code>--vram-extra-dir</code>, run the native build: <code>./target/release/asset-viewer prot extracted/PROT.DAT</code>.</p>
+  <p class="hint">Sound on disc lives on the <a href="audio.html">audio browser</a>. The native build adds stage geometry and cross-PROT-entry CLUT chains (via <code>--vram-extra-dir</code>):</p>
+  <div class="cli"><code>./target/release/asset-viewer prot extracted/PROT.DAT</code></div>
 </section>
 
 <section class="doc-section" id="related">
   <h2>Related</h2>
-  <p>
-    Loaded disc data never leaves your browser &mdash; <code>FileReader</code> reads straight into WebAssembly memory; no network calls for the disc bytes. Project legal posture (zero Sony bytes shipped; bring your own disc) is on the <a href="subsystems/engine.html">engine port plan</a>. Detector chain + dispatcher: <a href="subsystems/asset-loader.html">asset loader</a> &middot; PROT TOC layout: <a href="formats/prot.html">PROT.DAT TOC</a>.
-  </p>
+  <p>Loaded disc data never leaves your browser &mdash; <code>FileReader</code> reads straight into WebAssembly memory, with no network calls for the disc bytes. The project ships zero Sony bytes (bring your own disc).</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="subsystems/engine.html">Engine port plan</a>
+    <a href="subsystems/asset-loader.html">Asset loader</a>
+    <a href="formats/prot.html">PROT.DAT TOC</a>
+  </div>
 </section>
 
 <script src="js/webgl-shaders.js"></script>
